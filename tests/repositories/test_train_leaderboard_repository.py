@@ -1,4 +1,4 @@
-"""Tests for app.repositories.train_leaderboard_repository (Phase 230, plan 02).
+"""Tests for app.repositories.train_leaderboard_repository.
 
 Real-row checks of the weekly aggregate and the caller-scoped session contribution,
 on the rollback-scoped ``db_session`` fixture (no committed rows leak).
@@ -132,11 +132,11 @@ async def test_contribution_returns_the_callers_in_window_session_totals(
 
     # 3 points (True, GOOD) + 2 points (False, GOOD, filler): 5 points, 2 puzzles, of
     # which only the SR solve is non-filler.
-    assert own == SolveTotals(points=5, puzzles=2, nf_points=3, nf_puzzles=1)
+    assert own == SolveTotals(points=5, puzzles=2, non_filler_points=3, non_filler_puzzles=1)
     # Another user's session id contributes nothing (IDOR guard).
     assert foreign == SolveTotals(0, 0, 0, 0)
     # The week-1 solve belongs to week 1 only.
-    assert next_week == SolveTotals(points=3, puzzles=1, nf_points=3, nf_puzzles=1)
+    assert next_week == SolveTotals(points=3, puzzles=1, non_filler_points=3, non_filler_puzzles=1)
 
 
 async def _aggregates_for(db: AsyncSession, k: int, *user_ids: int) -> dict[int, WeeklyAggregate]:
@@ -150,7 +150,7 @@ async def _aggregates_for(db: AsyncSession, k: int, *user_ids: int) -> dict[int,
 async def test_points_follow_the_guess_and_tier_scoring_including_legacy_null_tier(
     db_session: AsyncSession,
 ) -> None:
-    """Points (k=2): D-01 on real rows, a NULL legacy tier scores only the guess point."""
+    """Points (k=2): a NULL legacy tier scores only the guess point."""
     await ensure_test_user(db_session, _USER_A)
     at = _week(2)[0] + datetime.timedelta(hours=1)
     sr = DrillSource.SR_ITEM
@@ -169,7 +169,9 @@ async def test_points_follow_the_guess_and_tier_scoring_including_legacy_null_ti
 
     aggregates = await _aggregates_for(db_session, 2, _USER_A)
 
-    assert aggregates[_USER_A].totals == SolveTotals(points=9, puzzles=6, nf_points=9, nf_puzzles=6)
+    assert aggregates[_USER_A].totals == SolveTotals(
+        points=9, puzzles=6, non_filler_points=9, non_filler_puzzles=6
+    )
 
 
 @pytest.mark.asyncio
@@ -190,14 +192,16 @@ async def test_unsolved_rows_are_not_counted(db_session: AsyncSession) -> None:
 
     aggregates = await _aggregates_for(db_session, 3, _USER_A)
 
-    assert aggregates[_USER_A].totals == SolveTotals(points=3, puzzles=1, nf_points=3, nf_puzzles=1)
+    assert aggregates[_USER_A].totals == SolveTotals(
+        points=3, puzzles=1, non_filler_points=3, non_filler_puzzles=1
+    )
 
 
 @pytest.mark.asyncio
 async def test_filler_solves_count_on_points_but_not_in_non_filler_totals(
     db_session: AsyncSession,
 ) -> None:
-    """Filler (k=4): SHARP_FILLER adds to points and puzzles, not to nf_points / nf_puzzles."""
+    """Filler (k=4): SHARP_FILLER adds to points and puzzles, not to non_filler_points / non_filler_puzzles."""
     await ensure_test_user(db_session, _USER_A)
     at = _week(4)[0] + datetime.timedelta(hours=1)
     await _seed_session(
@@ -212,7 +216,9 @@ async def test_filler_solves_count_on_points_but_not_in_non_filler_totals(
 
     aggregates = await _aggregates_for(db_session, 4, _USER_A)
 
-    assert aggregates[_USER_A].totals == SolveTotals(points=9, puzzles=3, nf_points=3, nf_puzzles=1)
+    assert aggregates[_USER_A].totals == SolveTotals(
+        points=9, puzzles=3, non_filler_points=3, non_filler_puzzles=1
+    )
 
 
 @pytest.mark.asyncio
@@ -234,7 +240,9 @@ async def test_window_is_half_open_on_solved_at(db_session: AsyncSession) -> Non
 
     aggregates = await _aggregates_for(db_session, 6, _USER_A)
 
-    assert aggregates[_USER_A].totals == SolveTotals(points=3, puzzles=1, nf_points=3, nf_puzzles=1)
+    assert aggregates[_USER_A].totals == SolveTotals(
+        points=3, puzzles=1, non_filler_points=3, non_filler_puzzles=1
+    )
 
 
 @pytest.mark.asyncio
@@ -252,7 +260,7 @@ async def test_deadline_splits_one_session_across_two_weeks(db_session: AsyncSes
     ending = await _aggregates_for(db_session, 8, _USER_A)
     starting = await _aggregates_for(db_session, 9, _USER_A)
 
-    one_solve = SolveTotals(points=3, puzzles=1, nf_points=3, nf_puzzles=1)
+    one_solve = SolveTotals(points=3, puzzles=1, non_filler_points=3, non_filler_puzzles=1)
     assert ending[_USER_A].totals == one_solve
     assert starting[_USER_A].totals == one_solve
 

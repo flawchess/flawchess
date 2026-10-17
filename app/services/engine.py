@@ -1,4 +1,4 @@
-"""Stockfish engine wrapper (Phase 78 ENG-02 / ENG-03).
+"""Stockfish engine wrapper.
 
 Single source of UCI option configuration. The module-level API is backed by
 an internal `EnginePool` of size `STOCKFISH_POOL_SIZE` (env var, default 1).
@@ -16,14 +16,13 @@ Two APIs:
         start_engine()              -- call from FastAPI lifespan startup.
         stop_engine()               -- call from lifespan shutdown.
         evaluate(board)             -- async; returns (eval_cp, eval_mate); depth-15.
-        evaluate_nodes(board)       -- async; returns (eval_cp, eval_mate); 1M nodes (EVAL-02).
+        evaluate_nodes(board)       -- async; returns (eval_cp, eval_mate); 1M nodes.
         evaluate_nodes_with_pv(board) -- async; returns (eval_cp, eval_mate, best_move, pv_string);
-                                        zero extra search cost (EVAL-04, Phase 117).
+                                        zero extra search cost.
         evaluate_nodes_multipv2(board) -- async; returns 7-tuple
                                          (eval_cp, eval_mate, best_move, pv_string,
                                           second_cp, second_mate, second_uci);
-                                         multipv=2 at the same 1M-node budget
-                                         (Phase 142 MPV-01).
+                                         multipv=2 at the same 1M-node budget.
 
         With STOCKFISH_POOL_SIZE=1 (the dev/CI default) this behaves exactly
         like the original singleton. Set STOCKFISH_POOL_SIZE=2+ on prod to get
@@ -36,12 +35,12 @@ Two APIs:
         await pool.start(); ...; await pool.evaluate(board); ...; await pool.stop()
 
         Use directly when you need a different size than the module-level
-        pool (e.g. scripts/backfill_eval.py running on a beefy host).
+        pool (e.g. scripts/remote_eval_worker.py or scripts/opening_cache_repair.py,
+        which size their own pool).
 
 On engine crash, evaluate() restarts the affected worker and returns
 (None, None). On a plain timeout it returns (None, None) WITHOUT restarting
-(260725-da3 — see `_acquire_and_analyse`). The caller decides whether to log
-to Sentry (import path: D-11; backfill script: log).
+(see `_acquire_and_analyse`). The caller decides whether to log to Sentry.
 """
 
 from __future__ import annotations
@@ -61,7 +60,7 @@ from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
 
 logger = logging.getLogger(__name__)
 
-# D-06: STOCKFISH_PATH env var wins when set (prod Docker sets it, CI sets it).
+# STOCKFISH_PATH env var wins when set (prod Docker sets it, CI sets it).
 # When unset we probe well-known locations so local dev needs no env var: the
 # prod Docker path, then bin/install_stockfish.sh's dev install location, then
 # anything named `stockfish` on PATH (e.g. Homebrew / apt). Falls back to the
@@ -84,7 +83,7 @@ def _resolve_stockfish_path() -> str:
 
 
 _STOCKFISH_PATH: str = _resolve_stockfish_path()
-# D-03: UCI options live ONLY in this module (ENG-03 grep gate)
+# UCI options live ONLY in this module.
 # Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced 64 -> 32. With
 # the hotfix-era STOCKFISH_POOL_SIZE=4 the pool reserved 4 * 64 = 256MB of
 # hash tables alone, a material contributor to the import-time Postgres
@@ -95,16 +94,16 @@ _HASH_MB: int = 32
 _THREADS: int = 1
 # SPEC constraint: depth 15 fixed, no per-call tuning
 _DEPTH: int = 15
-# D-05: defensive per-eval timeout
+# Defensive per-eval timeout
 _TIMEOUT_S: float = 2.0
-# Phase 116 EVAL-02: node-budget constants for full-game analysis drain.
+# Node-budget constants for full-game analysis drain.
 # _NODES_TIMEOUT_S is distinct from _TIMEOUT_S: depth-15 mean ~0.09s; 1M-node
 # mean ~0.98s (prod spike 002 p90 = 1.277s). _TIMEOUT_S = 2.0 would time out ~50%
 # of node-budget calls on prod. 5.0s = ~4x prod p90 (spike 002).
-_NODES_BUDGET: int = 1_000_000  # EVAL-02: Lichess fishnet parity (D-6 SEED-012)
+_NODES_BUDGET: int = 1_000_000  # Lichess fishnet parity
 _NODES_TIMEOUT_S: float = 5.0  # 4x prod p90 (1.277s, spike 002)
-# Phase 117 EVAL-04 / D-117-02: PV cap for flaw refutation lines.
-# SEED-039 motif-line depth: tier-1/2 need 1-2 plies; tier-3 needs ~3 plies.
+# PV cap for flaw refutation lines.
+# Motif-line depth: tactic-motif tiers 1 and 2 need 1-2 plies, tier 3 needs ~3 plies.
 # Cap at 12 for margin. At 12 moves: max 12×5 + 11 = 71 chars — fits Text easily.
 PV_CAP_PLIES: int = 12
 #
@@ -122,7 +121,7 @@ PV_CAP_PLIES: int = 12
 # sub-percentile and at the +-100cp classification boundary. If dev/prod must match
 # exactly, copy eval_cp/eval_mate between DBs rather than re-backfilling each.
 #
-# QUEUE-07 / D-116-12: Memory accounting for the pool-size decision (Phase 116).
+# Memory accounting for the pool-size decision.
 #
 # Measured per-worker RSS at 1M-node budget on the dev box (2026-06-12):
 #   1 worker:  277 MB    (includes full NNUE net load)
@@ -130,23 +129,23 @@ PV_CAP_PLIES: int = 12
 #   6 workers: 1586 MB   (264 MB/worker)
 #   8 workers: 2083 MB   (260 MB/worker)
 # The sub-linear scaling (8x277 would be 2216 MB; actual 2083 MB) confirms the
-# 125 MiB NNUE net is shared across workers from the same binary via page cache (A3).
+# 125 MiB NNUE net is shared across workers from the same binary via page cache.
 #
-# Conservative prod estimate (Phase 91 stress test measured ~368 MB/worker at
-# depth-15 with concurrent imports; 1M-node calls are similar in working-set):
+# Conservative prod estimate (a stress test with concurrent imports measured ~368 MB/worker at
+# depth-15; 1M-node calls are similar in working-set):
 #   8 workers x 368 MB = ~2.94 GB Stockfish
 #   FastAPI/Uvicorn ~0.3 GB
 #   Total estimate:   ~3.24 GB
 #   4g mem_limit headroom: ~0.76 GB  (sufficient; import-era OOM needed ~3.7+ GB)
 #
-# Deploy decision (D-116-13): ship at STOCKFISH_POOL_SIZE=6 first, monitor prod
+# Deploy decision: ship at STOCKFISH_POOL_SIZE=6 first, monitor prod
 # API p50/p90 and container RSS for ~24 h, then raise to 8 only if (a) the
-# accounting fits 4g with headroom AND (b) API latency is clean. All Phase 116
-# throughput targets (5.83 pos/s, 8.4k games/day) were benchmarked at 6 workers.
+# accounting fits 4g with headroom AND (b) API latency is clean. The throughput
+# targets (5.83 pos/s, 8.4k games/day) were benchmarked at 6 workers.
 #
 # Module-level pool size. Default 1 = dev/CI singleton behavior. Prod sets
-# STOCKFISH_POOL_SIZE via .env (currently 6; 8 is the Phase 116 target,
-# contingent on the QUEUE-07 accounting check -- see comment above). Workers
+# STOCKFISH_POOL_SIZE via .env (currently 6; 8 is the target, contingent on
+# the memory accounting above). Workers
 # run under Linux SCHED_IDLE (see _sched_idle_preexec) so they only consume
 # idle CPU and never preempt Uvicorn or Postgres. Read at start_engine() time.
 _POOL_SIZE_ENV: str = "STOCKFISH_POOL_SIZE"
@@ -173,7 +172,7 @@ def _sched_idle_preexec() -> None:
         os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
     except OSError:
         pass
-    # PR_SET_PDEATHSIG (SEED-059): ask the kernel to SIGKILL this child the
+    # PR_SET_PDEATHSIG: ask the kernel to SIGKILL this child the
     # instant its parent dies by any means — mashed ctrl-c (a 2nd SIGINT lands
     # mid-`EnginePool.stop()` and aborts the graceful UCI quit loop), `kill -9`,
     # or a hard interpreter crash. The best-effort `protocol.quit()` in
@@ -202,7 +201,7 @@ def _engine_popen_kwargs() -> dict[str, Any]:
 
     On Linux, request SCHED_IDLE scheduling for the child. On macOS / Windows
     the os.sched_setscheduler API doesn't exist, so we spawn with default
-    scheduling. Dev-on-Mac behaves exactly as before this change.
+    scheduling.
 
     Return type is `dict[str, Any]` (not `dict[str, object]`) because
     `chess.engine.popen_uci` declares a typed `setpgrp: bool` keyword in
@@ -217,8 +216,8 @@ def _engine_popen_kwargs() -> dict[str, Any]:
 def read_pool_size() -> int:
     """Pool size from STOCKFISH_POOL_SIZE (default 1, floor 1, non-integer -> default).
 
-    Public so operator scripts that own their own EnginePool (Phase 220
-    opening_cache_repair.py) size it from the same env var the server uses.
+    Public so operator scripts that own their own EnginePool
+    (opening_cache_repair.py) size it from the same env var the server uses.
     """
     raw = os.environ.get(_POOL_SIZE_ENV)
     if raw is None or raw == "":
@@ -265,7 +264,7 @@ async def evaluate(board: chess.Board) -> tuple[int | None, int | None]:
 
     Returns (None, None) if the engine is not started, or on timeout / crash.
     A crash restarts the affected worker before returning so the next caller
-    sees a clean state; a timeout keeps the worker as-is (260725-da3).
+    sees a clean state; a timeout keeps the worker as-is.
 
     Sign convention matches app/services/zobrist.py:183-197 byte-for-byte:
         eval_cp  -- centipawn score from white's perspective; None for mate positions
@@ -279,9 +278,9 @@ async def evaluate(board: chess.Board) -> tuple[int | None, int | None]:
 async def evaluate_nodes(board: chess.Board) -> tuple[int | None, int | None]:
     """Evaluate position at 1M nodes. Returns (eval_cp, eval_mate) in white perspective.
 
-    EVAL-02: Lichess-parity budget for full-game analysis drain.
+    Lichess-parity budget for full-game analysis drain.
     Returns (None, None) on engine failure — same contract as evaluate().
-    Single PV only (Phase 116). PV capture is EVAL-04 / Phase 117.
+    Single PV only, no PV string returned (use evaluate_nodes_with_pv for the PV).
     Scalar InfoDict returned directly, handled by existing _score_to_cp_mate().
     """
     if _pool is None:
@@ -294,16 +293,16 @@ async def evaluate_nodes_with_pv(
 ) -> tuple[int | None, int | None, str | None, str | None]:
     """Evaluate position at 1M nodes, returning eval + PV data.
 
-    EVAL-04 / Phase 117: PV capture at zero extra engine cost — the PV falls
+    PV capture at zero extra engine cost — the PV falls
     out of the same 1M-node search as evaluate_nodes (info=Info.ALL default).
 
     Returns (eval_cp, eval_mate, best_move_uci, pv_uci_string):
         eval_cp / eval_mate: same sign convention as evaluate_nodes (white perspective).
-        best_move_uci: info["pv"][0].uci() when PV present, else None (D-117-01).
-        pv_uci_string: space-joined UCI, capped at PV_CAP_PLIES (D-117-02); None when
+        best_move_uci: info["pv"][0].uci() when PV present, else None.
+        pv_uci_string: space-joined UCI, capped at PV_CAP_PLIES; None when
             PV absent.
 
-    Returns (None, None, None, None) on engine failure — D-09 semantics preserved.
+    Returns (None, None, None, None) on engine failure, same contract as evaluate().
     """
     if _pool is None:
         return None, None, None, None
@@ -315,12 +314,12 @@ async def evaluate_nodes_multipv2(
 ) -> tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]:
     """Evaluate position at 1M nodes with multipv=2, returning best + second-best data.
 
-    Phase 142 MPV-01: returns (eval_cp, eval_mate, best_move, pv_string,
+    Returns (eval_cp, eval_mate, best_move, pv_string,
     second_cp, second_mate, second_uci).
 
     second_uci is str (never None) when the engine ran — empty string indicates a
     single-legal-move position (PvNode.su sentinel;
-    forcing_line_gate.PvNode.su: str, D-02 Pitfall 3).
+    forcing_line_gate.PvNode.su is typed `str`, not `str | None`).
     Returns (None, None, None, None, None, None, None) on engine failure or
     when the pool is not started.
     """
@@ -332,7 +331,7 @@ async def evaluate_nodes_multipv2(
 async def evaluate_nodes_multipv5(board: chess.Board) -> list[chess.engine.InfoDict] | None:
     """Evaluate position at 1M nodes with multipv=5, returning the raw per-PV info list.
 
-    Phase 192 (D-12): module-level wrapper around `EnginePool.evaluate_nodes_multipv5`
+    Module-level wrapper around `EnginePool.evaluate_nodes_multipv5`
     for the red-herring pool generator's ladder search. Callers must reject positions
     with fewer than 5 legal moves before calling — see
     `EnginePool.evaluate_nodes_multipv5`'s docstring for the full contract.
@@ -345,7 +344,7 @@ async def evaluate_nodes_multipv5(board: chess.Board) -> list[chess.engine.InfoD
 
 
 def _pv_to_best_move(info: chess.engine.InfoDict) -> str | None:
-    """Extract the best move UCI string from an InfoDict (EVAL-04 / D-117-01).
+    """Extract the best move UCI string from an InfoDict.
 
     Returns info["pv"][0].uci() when the PV is present and non-empty, else None.
     Mirrors the _score_to_cp_mate info.get(...) guard style.
@@ -357,7 +356,7 @@ def _pv_to_best_move(info: chess.engine.InfoDict) -> str | None:
 
 
 def _pv_to_uci_string(info: chess.engine.InfoDict, cap: int = PV_CAP_PLIES) -> str | None:
-    """Build a space-joined UCI PV string from an InfoDict (EVAL-04 / D-117-02).
+    """Build a space-joined UCI PV string from an InfoDict.
 
     Caps at `cap` plies (default PV_CAP_PLIES=12 for the flaw refutation line).
     Returns None when the PV is absent or empty.
@@ -392,7 +391,7 @@ async def get_stockfish_version() -> str:
     """Read Stockfish version string via UCI handshake.
 
     Returns e.g. 'Stockfish 18'. Called once by the remote worker CLI at
-    startup to populate sf_version in SubmitRequest (Phase 120 D-5).
+    startup to populate sf_version in SubmitRequest.
     Opens and immediately quits a single UCI connection; does not use EnginePool.
     """
     transport, protocol = await chess.engine.popen_uci(_STOCKFISH_PATH, **_engine_popen_kwargs())
@@ -411,7 +410,7 @@ class EnginePool:
     analyse in parallel.
 
     On a per-worker crash, that worker restarts in place; siblings keep going.
-    A per-worker timeout does NOT restart it (260725-da3) — the slot is simply
+    A per-worker timeout does NOT restart it — the slot is simply
     released back to the queue. If restart fails, the worker's slot is NOT dropped — it
     stays in the available queue and every future pickup returns None
     almost instantly (see the `protocol is None` early-return in
@@ -419,11 +418,12 @@ class EnginePool:
     therefore answers
     every evaluate() call near-instantly with (None, None) rather than
     hanging — this is what the entry/full-ply drain "all engine evals
-    failed" circuit breakers (WR-05, Phase 148 item 2) detect and react to.
+    failed" circuit breakers detect and react to.
 
     The module-level start_engine() / evaluate() use a pool of size
     STOCKFISH_POOL_SIZE (default 1). Use this class directly when you need
-    a different size — e.g. scripts/backfill_eval.py on a beefy host.
+    a different size — e.g. scripts/remote_eval_worker.py or
+    scripts/opening_cache_repair.py, which size their own pool.
     """
 
     def __init__(self, size: int) -> None:
@@ -474,7 +474,7 @@ class EnginePool:
     async def _restart_worker(self, idx: int) -> bool:
         """Restart worker at index `idx` after an engine crash. Returns True on success.
 
-        NOT called for a plain analyse timeout (260725-da3) — see the
+        NOT called for a plain analyse timeout — see the
         `except asyncio.TimeoutError` handler in `_acquire_and_analyse`.
         """
         old_protocol = self._protocols[idx]
@@ -516,12 +516,11 @@ class EnginePool:
         *,
         multipv: int | None = None,
     ) -> chess.engine.InfoDict | list[chess.engine.InfoDict] | None:
-        """Shared worker-acquisition / analyse / failure-restart path (WR-05).
+        """Shared worker-acquisition / analyse / failure-restart path.
 
-        Single implementation behind evaluate(), evaluate_nodes(),
-        evaluate_nodes_with_pv(), and evaluate_nodes_multipv2() — the acquisition,
-        exception handling, restart-on-crash, and slot-release logic must never
-        diverge between the four public methods. Only genuine difference across
+        Single implementation behind every public evaluate* method — the
+        acquisition, exception handling, restart-on-crash, and slot-release logic
+        must never diverge between them. Only genuine difference across
         callers is whether `multipv` is passed to `protocol.analyse()`; everything
         else (post-processing into (cp, mate), raw InfoDict, or list[InfoDict])
         is the caller's responsibility.
@@ -529,11 +528,11 @@ class EnginePool:
         Returns the raw analyse() result — a scalar InfoDict when multipv is None,
         or list[InfoDict] when multipv is set — or None on failure (not started,
         missing protocol, timeout, or engine crash/restart). Only the crash cases
-        restart the worker; a timeout does not (260725-da3).
+        restart the worker; a timeout does not.
         """
         if not self._started:
             return None
-        # Bug fix (quick 260914-w1m / FLAWCHESS-BE): Stockfish dies (SIGABRT in prod,
+        # Bug fix (FLAWCHESS-BE): Stockfish dies (SIGABRT in prod,
         # SIGSEGV locally) on positions that cannot arise in a legal game. chess.com
         # custom-position games ship roots such as two full ranks of white pawns, and
         # every ply of such a game used to be fed here by the eval drain — each crash
@@ -561,7 +560,7 @@ class EnginePool:
                         timeout=timeout,
                     )
             except asyncio.TimeoutError:
-                # Bug fix (2026-07-25, quick task 260725-da3 / FLAWCHESS-8B): a
+                # Bug fix (2026-07-25, FLAWCHESS-8B): a
                 # timeout used to share the restart path below. It shouldn't — a
                 # timeout means the BOX is slow, not that the engine is broken, so
                 # restarting spawned a fresh Stockfish process (NNUE net load, cold
@@ -601,10 +600,11 @@ class EnginePool:
         return _score_to_cp_mate(result)
 
     async def evaluate_nodes(self, board: chess.Board) -> tuple[int | None, int | None]:
-        """Evaluate at 1M nodes on the next idle worker. EVAL-02.
+        """Evaluate at 1M nodes on the next idle worker.
 
         Same contract as evaluate() but uses Limit(nodes=_NODES_BUDGET) and
-        _NODES_TIMEOUT_S. Single PV only (Phase 116); PV capture is EVAL-04 / Phase 117.
+        _NODES_TIMEOUT_S. Single PV only, no PV string returned (use
+        evaluate_nodes_with_pv for the PV).
         Scalar InfoDict returned directly, handled by _score_to_cp_mate() unchanged.
         """
         result = await self._acquire_and_analyse(
@@ -622,15 +622,15 @@ class EnginePool:
     ) -> tuple[int | None, int | None, str | None, str | None]:
         """Evaluate at 1M nodes, returning (eval_cp, eval_mate, best_move_uci, pv_uci_string).
 
-        EVAL-04 / Phase 117: PV falls out of the SAME 1M-node search as evaluate_nodes —
+        PV falls out of the SAME 1M-node search as evaluate_nodes —
         zero extra engine compute. Reuses _NODES_BUDGET; resolves _NODES_TIMEOUT_S when
         timeout_s is None (every server-side caller), else uses timeout_s directly.
 
-        best_move_uci: info["pv"][0].uci() when PV present, else None (D-117-01).
-        pv_uci_string: space-joined UCI capped at PV_CAP_PLIES (D-117-02).
-        Returns (None, None, None, None) on engine failure (D-09 failure semantics).
+        best_move_uci: info["pv"][0].uci() when PV present, else None.
+        pv_uci_string: space-joined UCI capped at PV_CAP_PLIES.
+        Returns (None, None, None, None) on engine failure, same contract as evaluate().
 
-        timeout_s (SEED-139 D-04): the remote worker's retry pass on a slow or
+        timeout_s: the remote worker's retry pass on a slow or
         oversubscribed box passes a longer wall clock here. A 1M-node search
         always terminates, so this is a wall-clock allowance, not a larger search
         budget — no server-side caller passes it.
@@ -655,20 +655,20 @@ class EnginePool:
     ) -> tuple[int | None, int | None, str | None, str | None, int | None, int | None, str | None]:
         """Evaluate at 1M nodes with multipv=2, returning best + second-best per-ply data.
 
-        Phase 142 MPV-01: returns (eval_cp, eval_mate, best_move, pv_string,
+        Returns (eval_cp, eval_mate, best_move, pv_string,
         second_cp, second_mate, second_uci). Reuses _NODES_BUDGET; resolves
         _NODES_TIMEOUT_S when timeout_s is None (every server-side caller), else
-        uses timeout_s directly (D-06: keep existing node budget; raise only if
-        SC4 histogram fails).
+        uses timeout_s directly (the node budget stays fixed; only the wall-clock
+        allowance changes).
 
         second_uci is str (never None) when the engine ran — empty string indicates a
         single-legal-move position (PvNode.su sentinel;
-        forcing_line_gate.PvNode.su: str, D-02 Pitfall 3).
-        Returns (None, None, None, None, None, None, None) on engine failure (D-09).
-        Caller must handle len(result) < 2: single-legal-move positions return a
-        list of length 1 — second_cp/second_mate=None, second_uci="" (Pitfall 2).
+        forcing_line_gate.PvNode.su is typed `str`, not `str | None`).
+        Returns (None, None, None, None, None, None, None) on engine failure.
+        Single-legal-move positions (Stockfish returns one PV) yield
+        second_cp=None, second_mate=None, second_uci="".
 
-        timeout_s (SEED-139 D-04): the remote worker's retry pass on a slow or
+        timeout_s: the remote worker's retry pass on a slow or
         oversubscribed box passes a longer wall clock here. A 1M-node search
         always terminates, so this is a wall-clock allowance, not a larger search
         budget — no server-side caller passes it.
@@ -687,7 +687,7 @@ class EnginePool:
         pv_string = _pv_to_uci_string(info_list[0])
         # Guard single-legal-move positions: Stockfish returns len(info_list)==1
         # when only one legal move exists. Set su="" (not None) — PvNode.su is str,
-        # not str | None (Pitfall 2 + Pitfall 3 from RESEARCH.md).
+        # not str | None.
         if len(info_list) > 1:
             second_cp, second_mate = _score_to_cp_mate(info_list[1])
             second_pv = info_list[1].get("pv")
@@ -703,13 +703,13 @@ class EnginePool:
     ) -> list[chess.engine.InfoDict] | None:
         """Evaluate at 1M nodes with multipv=5, returning the raw per-PV info list.
 
-        Phase 192 (D-12): the red-herring pool generator's MultiPV-5 ladder search.
-        Reuses `_NODES_BUDGET` and `_NODES_TIMEOUT_S` verbatim — D-12 forbids a new
-        budget constant.
+        The red-herring pool generator's MultiPV-5 ladder search.
+        Reuses `_NODES_BUDGET` and `_NODES_TIMEOUT_S` verbatim — it deliberately
+        has no budget constant of its own.
 
         Callers are responsible for rejecting positions with fewer than 5 legal
         moves BEFORE calling (the cheapest possible reject — see
-        `scripts/gen_red_herring_pool.py`'s D-18 legal-move-count guard). The
+        `scripts/gen_red_herring_pool.py`'s legal-move-count guard). The
         return may still be shorter than 5 at the margin (Stockfish returns at
         most `len(legal_moves)` PVs), so no caller may index blindly past the
         returned list's actual length.

@@ -1,24 +1,18 @@
 /**
- * TrainBotStepper — Phase 222: a forward-only step index for the bot
- * first-session intro (two bubbles since Phase 240; the reveal tour uses the
- * board overlay since Phase 237). This is a CONTROLLED component — the caller
- * owns the step index (`step`) in its own `useState`, because the parent also
- * needs that same number to feed `resolveBubbleState`'s `introStep` and the
- * matching `introCopy` resolver. `TrainBotStepper` owns NO copy of its own —
- * it renders whatever `children` the caller passes for the current step.
- *
- * NOT a wrapper around `TrainLineStepper` (RESEARCH Pitfall 4): that
- * component replays SAN moves from a FEN onto the shared board — an
- * entirely different contract with its own prev/next chess-move-stepper
- * testids, which this component must never reuse (see that file for the
- * exact names).
+ * TrainBotStepper — a forward-only step index for the bot first-session
+ * intro (two bubbles; the reveal tour uses the board overlay instead). This
+ * is a CONTROLLED component — the caller owns the step index (`step`) in its
+ * own `useState`, because the parent also needs that same number to feed
+ * `resolveBubbleState`'s `introStep` and the matching `introCopy` resolver.
+ * `TrainBotStepper` owns NO copy of its own — it renders whatever `children`
+ * the caller passes for the current step.
  */
 import type { ReactElement, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 
 export interface TrainBotStepperProps {
-  /** Total number of steps (e.g. 3 for the intro stepper). */
+  /** Total number of steps. */
   stepCount: number;
   /** The currently active step index, owned by the caller. */
   step: number;
@@ -30,13 +24,7 @@ export interface TrainBotStepperProps {
   lastControl: ReactNode;
   /** The current step's copy/content. */
   children: ReactNode;
-  /**
-   * Phase 222 plan 06 (D-24): the Next button's testid, so a second caller
-   * (the first-reveal walkthrough) can carry its own distinct testid
-   * (`btn-train-bot-walkthrough-next`) instead of colliding with the intro
-   * stepper's `btn-train-bot-step-next`. Defaults to the intro stepper's
-   * original testid, so that call site is unaffected.
-   */
+  /** The Next button's testid; defaults to `btn-train-bot-step-next`. */
   nextTestId?: string;
 }
 

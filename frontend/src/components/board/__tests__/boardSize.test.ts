@@ -19,7 +19,7 @@ describe('computeBoardSize', () => {
     expect(computeBoardSize(600, 300, 600)).toBe(BOARD_MIN_WIDTH);
   });
 
-  it('does NOT floor a narrow WIDTH budget — width-driven callers size to their container (CR-01 regression)', () => {
+  it('does NOT floor a narrow WIDTH budget — width-driven callers size to their container', () => {
     // The 400px Openings mini-board (default maxWidth=400, no heightRef → Infinity).
     expect(computeBoardSize(400, Infinity, 400)).toBe(400);
     // A sub-floor phone width must never overflow the viewport by snapping up to 420.

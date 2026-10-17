@@ -111,7 +111,7 @@ function isPageview(type: string, payload: UmamiPayload): boolean {
 }
 
 /**
- * Quick 261004-rmc: set at boot when this page load came from an automatic
+ * Set at boot when this page load came from an automatic
  * reload (see autoReload.ts); its landing pageview is a duplicate. Consumed at
  * boot rather than at send time so a marker left behind by a blocked tracker
  * can never swallow a later, real pageview.
@@ -178,7 +178,7 @@ export function distinctIdFromToken(token: string | null): string | null {
   const payload = decodeJwtPayload(token);
   if (payload === null) return null;
   // Impersonation tokens carry the TARGET's sub; the admin's browser must never
-  // be attributed to the impersonated user (Phase 229 D-11).
+  // be attributed to the impersonated user.
   if (payload.is_impersonation === true) return null;
   const sub = payload.sub;
   return typeof sub === 'string' && DISTINCT_ID_PATTERN.test(sub) ? sub : null;
@@ -191,12 +191,12 @@ let lastIdentifyKey: string | null = null;
 /**
  * Identify the Umami session with the account id (users.id from the JWT sub)
  * plus, when known, the coarse guest/registered tag. The id lives only in
- * tracker memory (Phase 229 D-08). String form only: the object form copies
- * the id into session_data (D-09). Deduped per page load.
+ * tracker memory. String form only: the object form copies
+ * the id into session_data. Deduped per page load.
  */
 export function identifyUser(distinctId: string, accountType?: UmamiAccountType): void {
   // Bail BEFORE recording the dedupe key: a tracker that loads late must still
-  // receive this identify on a later attempt (RESEARCH Pitfall 7).
+  // receive this identify on a later attempt.
   if (!window.umami) return;
   const key = `${distinctId}|${accountType ?? ''}`;
   if (key === lastIdentifyKey) return;
@@ -220,16 +220,16 @@ export function identifyFromStoredToken(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Feature-event registry (Phase 229 D-01, D-04, D-14, D-15)
+// Feature-event registry
 //
 // ONE typed vocabulary for in-app feature analytics. Every call site goes
 // through `trackFeature`, so an event name, target or value outside this
 // registry fails `npm run build`. Values are literal unions imported from their
 // source types: no FEN, username, opening name, game id or free text can be
-// expressed. The const arrays below are the durable inventory (D-15).
+// expressed. The const arrays below are the durable inventory.
 //
 // Adding a UI feature: add its target here, then call `trackFeature` from the
-// user-initiated handler (D-03). Never from an effect on a value: that fires on
+// user-initiated handler. Never from an effect on a value: that fires on
 // mount and on state restore, not on a user action.
 // ---------------------------------------------------------------------------
 
@@ -257,7 +257,7 @@ const PAGE_BY_SEGMENT: Readonly<Record<string, PageId>> = {
   welcome: 'welcome',
 };
 
-/** D-14: admin/activity are internal tooling, auth outcomes are already DB-known. */
+/** admin/activity are internal tooling, auth outcomes are already DB-known. */
 const EXCLUDED_PAGE_SEGMENTS: readonly string[] = ['admin', 'activity', 'login', 'auth'];
 
 function firstPathSegment(pathname: string): string {
@@ -269,7 +269,7 @@ export function currentPage(pathname: string = window.location.pathname): PageId
   return PAGE_BY_SEGMENT[firstPathSegment(pathname)] ?? 'other';
 }
 
-/** True on routes that must send no feature events even from shared components (D-14). */
+/** True on routes that must send no feature events even from shared components. */
 export function isTrackingExcludedPath(pathname: string): boolean {
   return EXCLUDED_PAGE_SEGMENTS.includes(firstPathSegment(pathname));
 }
@@ -277,7 +277,7 @@ export function isTrackingExcludedPath(pathname: string): boolean {
 export const ANALYSIS_TAB_IDS = ['moves', 'eval', 'human', 'flawchess', 'stats'] as const;
 export type AnalysisTabId = (typeof ANALYSIS_TAB_IDS)[number];
 
-/** Train weekly leaderboard tabs (Phase 230), sent as `tab-switch` targets. */
+/** Train weekly leaderboard tabs, sent as `tab-switch` targets. */
 export const LEADERBOARD_TAB_IDS = ['leaderboard-points', 'leaderboard-accuracy'] as const;
 export type LeaderboardTabId = (typeof LEADERBOARD_TAB_IDS)[number];
 
@@ -338,7 +338,7 @@ export const REMINDER_HOUR_VALUES = [
 
 /**
  * Narrow a number to the matching literal of an enumerated string list, or null
- * when it is off the list (callers then send nothing, D-04).
+ * when it is off the list (callers then send nothing).
  */
 export function enumeratedValue<T extends string>(values: readonly T[], n: number): T | null {
   const text = String(n);
@@ -405,7 +405,7 @@ type NavDestination = (typeof NAV_DESTINATIONS)[number];
 export const NAV_SOURCES = ['more-drawer'] as const;
 type NavSource = (typeof NAV_SOURCES)[number];
 
-/** Map a nav link path to its destination; null for anything else (admin and activity can never be named, D-14). */
+/** Map a nav link path to its destination; null for anything else (admin and activity can never be named). */
 export function navDestinationOf(path: string): NavDestination | null {
   const segment = firstPathSegment(path);
   return NAV_DESTINATIONS.find((destination) => destination === segment) ?? null;
@@ -478,9 +478,9 @@ export type OptionChangeProps =
   | { target: 'import-cap'; value: `${GameCap}` }
   | { target: 'train-puzzles-per-session'; value: (typeof TRAIN_PUZZLES_PER_SESSION_VALUES)[number] }
   | { target: 'train-reminder-hour'; value: (typeof REMINDER_HOUR_VALUES)[number] }
-  // Phase 238 D-00h: the synced time-control switch on the Endgame Stats tab.
+  // The synced time-control switch on the Endgame Stats tab.
   | { target: 'endgame-stats-tc'; value: TimeControlBucket }
-  // Phase 239 D-02: the one time-control switch on the Library Stats tab (tracked only on
+  // The one time-control switch on the Library Stats tab (tracked only on
   // a user click, never on restore or default).
   | { target: 'library-stats-tc'; value: TimeControlBucket };
 
@@ -524,14 +524,14 @@ export const FEATURE_EVENT_NAMES = Object.keys(FEATURE_EVENT_NAME_SET) as Featur
  *
  * Deferred senders (see `useDebouncedTrackFeature`) pass the pathname captured
  * when the user acted, so a send that happens after navigation is attributed to
- * the right page and still honors the D-14 exclusion for that page.
+ * the right page and still honors the excluded-route rule for that page.
  */
 export function trackFeature<E extends FeatureEventName>(
   name: E,
   props: FeatureEventMap[E],
   pathname: string = window.location.pathname,
 ): void {
-  // D-14: shared components also render on /admin and /auth/*; send nothing there.
+  // Shared components also render on /admin and /auth/*; send nothing there.
   if (isTrackingExcludedPath(pathname)) return;
   // Every registry value is a string literal, which is what Umami event data takes.
   trackEvent(name, { page: currentPage(pathname), ...props } as Record<string, string>);

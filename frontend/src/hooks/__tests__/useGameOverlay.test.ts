@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Blue best-move arrow source contract (Quick 260627-l2z; +1 ply Quick thl):
+// Blue best-move arrow source contract:
 //   - The blue arrow is the engine's best move FROM the displayed position. The
 //     board at mainLine[k] is the position after move k, so its best move is the
 //     NEXT eval-series row, best_move[k+1] (not best_move[k], which is the move that
@@ -72,7 +72,7 @@ describe('useGameOverlay blue-arrow source', () => {
     expect(blue).toMatchObject({ startSquare: 'c2', endSquare: 'c4' });
   });
 
-  it('suppresses the blue best-move arrow when Stockfish is toggled off (155 UAT)', () => {
+  it('suppresses the blue best-move arrow when Stockfish is toggled off', () => {
     const { result } = renderHook(() =>
       useGameOverlay({
         ...base,
@@ -91,7 +91,7 @@ describe('useGameOverlay blue-arrow source', () => {
     expect(arrows.find((a) => a.startSquare === 'd2' && a.endSquare === 'd4')).toBeUndefined();
   });
 
-  it('never draws a second-best arrow for enginePvLines[1], engine on (Phase 228 retired it)', () => {
+  it('never draws a second-best arrow for enginePvLines[1], engine on (that arrow was retired)', () => {
     const { result } = renderHook(() =>
       useGameOverlay({
         ...base,
@@ -113,7 +113,7 @@ describe('useGameOverlay blue-arrow source', () => {
     expect(arrows.find((a) => a.startSquare === 'd2' && a.endSquare === 'd4')).toBeUndefined();
   });
 
-  it('keeps the crimson allowed-tactic arrow even when Stockfish is toggled off (155 UAT)', () => {
+  it('keeps the crimson allowed-tactic arrow even when Stockfish is toggled off', () => {
     const allowedFork: FlawMarker = {
       ply: 1,
       severity: 'blunder',
@@ -150,7 +150,7 @@ describe('useGameOverlay blue-arrow source', () => {
   });
 });
 
-// ── Violet should-have-played arrow parity (Quick 260628-1t5 DECISION 1) ────────
+// ── Violet should-have-played arrow parity ────────
 //
 // The recurring off-by-one guard. At a missed-tactic flaw ply k the violet arrow must be
 // the engine best move FROM the pre-flaw DECISION position mainLine[k-1] — i.e.
@@ -217,7 +217,7 @@ describe('useGameOverlay violet should-have-played arrow (missed tactic)', () =>
     expect(arrows.find((a) => a.color === TAC_MISSED)).toBeUndefined();
     // The following-best arrow IS the opponent's refuting response, so it carries the
     // allowed-tactic crimson AND the allowed depth label on its target square (g1f3), not
-    // plain blue (Quick 260628-pu2 UAT, mirrors the game card). allowed_depth 2 → label '3'.
+    // plain blue (mirrors the game card). allowed_depth 2 → label '3'.
     expect(arrows.find((a) => a.color === BEST_MOVE_ARROW)).toBeUndefined();
     expect(arrows.find((a) => a.color === TAC_ALLOWED)).toMatchObject({
       startSquare: 'g1',
@@ -230,7 +230,7 @@ describe('useGameOverlay violet should-have-played arrow (missed tactic)', () =>
   });
 
   it('draws NO tactic arrows for an opponent flaw (is_user=false), keeping the blue best-move arrow', () => {
-    // Quick 260705: opponent tactics live in the eval-chart tooltip only, never on the board.
+    // Opponent tactics live in the eval-chart tooltip only, never on the board.
     const oppAllowed: FlawMarker = {
       ...missedFork(1),
       is_user: false,
@@ -276,16 +276,16 @@ describe('useGameOverlay violet should-have-played arrow (missed tactic)', () =>
   });
 });
 
-// ── Off-main-line eval-bar passthrough (Phase 162, SEED-090 D-08) ──────────────
+// ── Off-main-line eval-bar passthrough ──────────────
 //
 // Off the main line (a sideline / fork with no precomputed data), the hook's
 // enginePassthrough branch surfaces the caller's engineEvalCp/Mate/Depth params
-// UNCHANGED — useGameOverlay's own internals are not touched by Phase 162; only
+// UNCHANGED — useGameOverlay's own internals are not touched; only
 // Analysis.tsx's caller-side values change (raw engine.evalCp/Mate/depth ->
 // reconciledBestEval's fields). This proves the passthrough itself is faithful,
 // so wiring a reconciled value through it (rather than the raw free-run eval)
 // is a pure caller-side change with no hook-internal risk.
-describe('useGameOverlay eval-bar passthrough (off main line, Phase 162 D-08)', () => {
+describe('useGameOverlay eval-bar passthrough (off main line)', () => {
   it('surfaces the caller-supplied engineEvalCp/Mate/Depth unchanged off the main line', () => {
     const { result } = renderHook(() =>
       useGameOverlay({

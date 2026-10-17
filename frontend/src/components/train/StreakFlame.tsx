@@ -1,11 +1,11 @@
 /**
  * StreakFlame — the session-streak count drawn inside a 3-layer flame
- * (SEED-181, sketch 005 variant A "Concentric"): one silhouette repeated at
- * 100/76/56% scale, red outer, orange middle, yellow core, the number in the
- * wide lower bowl. Streak 0 renders an unlit grey outline flame.
+ * (concentric: one silhouette repeated at 100/76/56% scale, red outer,
+ * orange middle, yellow core, the number in the wide lower bowl). Streak 0
+ * renders an unlit grey outline flame.
  *
- * Two one-shot animations, both chosen by the caller from the arrival diff
- * (`lib/streakArrival.ts`) and both skipped under prefers-reduced-motion:
+ * Three one-shot animations, all chosen by the caller from the arrival diff
+ * (`lib/streakArrival.ts`) and all skipped under prefers-reduced-motion:
  * - `ignite`: the layers grow from an ember with a lagging flicker and the
  *   number counts up from `countFrom`.
  * - `frostDelayMs`: after the freeze meter's cracks finish, a frost band

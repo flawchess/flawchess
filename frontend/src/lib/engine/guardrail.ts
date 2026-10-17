@@ -1,9 +1,9 @@
 /**
- * guardrail — the frozen `SearchRunner` type (ENGINE-06 / D-06).
+ * guardrail — the frozen `SearchRunner` type.
  *
  * `mctsSearch` (the primary orchestrator) and `fallbackExpectimax` (the
  * guardrail's backup path) both implement this EXACT function type with no
- * call-site differences — `useFlawChessEngine.ts` (Phase 155) imports
+ * call-site differences — `useFlawChessEngine.ts` imports
  * exactly one of them behind this single signature. This module intentionally
  * contains no logic, only the type.
  */

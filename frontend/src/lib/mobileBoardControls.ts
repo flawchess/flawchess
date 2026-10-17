@@ -1,7 +1,7 @@
 /**
  * mobileBoardControls — a tiny cross-tree store for "a page below the layout
  * wants the mobile bottom bar to show board controls instead of the main nav
- * buttons" (Quick 260809-g0n: Train free-move mode, matching the /analysis
+ * buttons" (Train free-move mode, matching the /analysis
  * mobile footer's board-controls treatment).
  *
  * A module-level store (not context) because the writer and the reader live
@@ -16,7 +16,7 @@ export interface MobileBoardControls {
   onBack: () => void;
   onForward: () => void;
   /**
-   * Phase 223 (BOTVOICE-05, D-10): optional because the bot game's
+   * Optional because the bot game's
    * four-action payload (Resign/Back/Forward/Flip) has no reset control.
    * Every other publisher (Train, Analysis, Openings) still supplies it.
    */
@@ -27,7 +27,7 @@ export interface MobileBoardControls {
   /** Optional alongside `onReset` — see that field's comment. */
   canReset?: boolean;
   /**
-   * Phase 223 (BOTVOICE-05, D-10): presence (not a default) is the signal
+   * Presence (not a default) is the signal
    * `MobileBottomBar` uses to swap in the bot game's four-action bar instead
    * of the shared `BoardControls` row — deliberately NOT given a NOOP
    * default below, unlike every other field, because a default would make
@@ -36,7 +36,7 @@ export interface MobileBoardControls {
    */
   onResign?: () => void;
   /**
-   * Phase 237 plan 07 (the Train reveal bar): presence of `onNext` selects
+   * The Train reveal bar: presence of `onNext` selects
    * `TrainRevealActionBar` in `MobileBottomBar`, ahead of the bot-game branch.
    * Like `onResign`, deliberately NOT given a NOOP default. `analyzeTo` is the
    * source game's analysis URL (null: no Analyze button), `onAnalyzeClick` fires
@@ -47,7 +47,7 @@ export interface MobileBoardControls {
   analyzeTo?: string | null;
   onAnalyzeClick?: () => void;
   /**
-   * Phase 240 D-20 (Train reveal only): true while the reveal tour's Analyze
+   * Train reveal only: true while the reveal tour's Analyze
    * step is active, so the fixed phone bar's Analyze button carries the shared
    * spotlight glow. Not in `NOOP_PAYLOAD`: absent means no spotlight.
    */
@@ -102,11 +102,11 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     canReset = NOOP_PAYLOAD.canReset,
     // No default — undefined is the meaningful "not the bot bar" value.
     onResign,
-    // Phase 237: same rule for the Train reveal bar's fields.
+    // Same rule for the Train reveal bar's fields.
     onNext,
     analyzeTo,
     onAnalyzeClick,
-    // Phase 240 D-20: the tour's Analyze-step glow; absent means no spotlight.
+    // The tour's Analyze-step glow; absent means no spotlight.
     spotlightAnalyze,
   } = controls ?? {};
   const hasControls = controls != null;

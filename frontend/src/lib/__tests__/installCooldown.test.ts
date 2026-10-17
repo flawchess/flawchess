@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * installCooldown.test.ts — Phase 203 Plan 02 (INSTALL-01, D-04). Covers the
+ * installCooldown.test.ts covers the
  * pure `resolveInstallOfferState` resolver end to end, including the two
  * boundary pairs and the cap-before-elapsed evaluation order, plus the
  * storage helpers' corrupt-value coercion.
@@ -18,7 +18,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const COOLDOWN_MS = INSTALL_COOLDOWN_DAYS * DAY_MS;
 
 describe('installCooldown constants', () => {
-  it('locks the D-04 values', () => {
+  it('locks the cooldown and attempt-cap values', () => {
     expect(INSTALL_COOLDOWN_DAYS).toBe(14);
     expect(INSTALL_MAX_ATTEMPTS).toBe(3);
   });

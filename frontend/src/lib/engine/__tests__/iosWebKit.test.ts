@@ -1,5 +1,5 @@
 /**
- * iosWebKit.ts unit tests (hotfix 2026-09-06, SEED-158) — the probe must
+ * iosWebKit.ts unit tests — the probe must
  * catch both UA shapes iOS produces (classic `iPhone`/`iPad` token, and the
  * iPadOS 13+ desktop-mode macOS masquerade) while leaving real Macs and every
  * non-Apple platform on the normal spawn path, and it must never throw.

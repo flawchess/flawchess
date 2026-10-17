@@ -1,8 +1,8 @@
 /**
  * botSetupSettings — the THIRD, separate owner-scoped localStorage key for
- * the Bots setup screen's last-used settings (Phase 171 D-10/D-12, PLAY-02).
+ * the Bots setup screen's last-used settings.
  *
- * Phase 170's `botGameSnapshot.ts` (in-progress game) and `botPendingStore.ts`
+ * `botGameSnapshot.ts` (in-progress game) and `botPendingStore.ts`
  * (finished-game upload queue) already own two distinct keys — this module
  * adds a third, mirroring their shape VERBATIM (SSR guard -> try/catch ->
  * JSON.parse -> shape validator -> Sentry-once-on-corruption -> silent-no-op
@@ -10,10 +10,10 @@
  * is forbidden: `botGameSnapshot.ts`'s `isValidSnapshotShape` requires
  * `pgn`/`whiteClockMs`, so a settings-shaped object written under that key
  * would fail its validator and get wrongly Sentry-flagged as corrupt on the
- * next `/bots` visit (RESEARCH.md's explicit anti-pattern warning). A settings
+ * next `/bots` visit. A settings
  * write here also must never overwrite or clear either sibling key — each
  * lives under a physically separate localStorage key, so this is structural,
- * not merely convention-enforced (T-171-04-03).
+ * not merely convention-enforced.
  */
 
 import * as Sentry from '@sentry/react';
@@ -23,12 +23,12 @@ import { DEFAULT_TC_PRESET_LABEL, findPresetByLabel } from '@/lib/botTimeControl
 
 export const BOT_SETUP_SETTINGS_KEY_PREFIX = 'flawchess_bot_setup_settings:';
 
-/** UI-DEFAULT-ONLY fallback ELO (D-07 midpoint) when a normalized rating is
+/** UI-DEFAULT-ONLY fallback ELO (ladder midpoint) when a normalized rating is
  * unavailable (guests, no blitz-bucket anchor). */
 export const BOT_SETUP_DEFAULT_ELO = 1500;
 
 /** The ladder's outer rungs — the ONLY legal bounds for a persisted `botElo`
- * (WR-01) and the clamp bounds for `resolveDefaultBotElo`. Derived from
+ * and the clamp bounds for `resolveDefaultBotElo`. Derived from
  * `MAIA_ELO_LADDER` rather than literals so a ladder revision cannot leave
  * either consumer behind. */
 const LADDER_MIN_ELO = MAIA_ELO_LADDER[0] ?? BOT_SETUP_DEFAULT_ELO;
@@ -41,7 +41,7 @@ function setupSettingsKey(ownerKey: string | null | undefined): string {
 /**
  * The setup screen's own last-used preferences. `colorPreference` deliberately
  * includes `'random'` — this is a SETUP-screen preference, not
- * `BotGameSettings.userColor`. D-12 requires Random to be resolved to a
+ * `BotGameSettings.userColor`. Random must be resolved to a
  * concrete color at Start, BEFORE `useBotGame` mounts, so the snapshot and
  * the exported PGN carry the actual color played and never "random".
  */
@@ -60,7 +60,7 @@ function isNumberInRange(value: unknown, min: number, max: number): boolean {
 }
 
 /**
- * Bug fix (Phase 171 code review, WR-01): this used to type-check `botElo` /
+ * Bug fix: this used to type-check `botElo` /
  * `blend` (`typeof === 'number'`) WITHOUT range-checking them, so a stale or
  * tampered blob (`botElo: 40000`, `blend: 5`) validated clean and flowed all
  * the way through: the setup screen seeded its state from it, `blend` reached
@@ -136,7 +136,7 @@ export function readSetupSettings(ownerKey: string | null | undefined): BotSetup
 /** Writes the last-used setup settings for `ownerKey`. Silently no-ops on an
  * SSR environment or a storage throw (QuotaExceeded / Safari private mode) —
  * degrade, never crash the setup screen. Only ever touches this module's own
- * key — never `botGameSnapshot`'s or `botPendingStore`'s (T-171-04-03). */
+ * key — never `botGameSnapshot`'s or `botPendingStore`'s. */
 export function writeSetupSettings(
   ownerKey: string | null | undefined,
   settings: BotSetupSettings,
@@ -155,7 +155,7 @@ export function writeSetupSettings(
  * and snaps to the nearest ACTUAL ladder rung, falling back to
  * `BOT_SETUP_DEFAULT_ELO` when the input is null/undefined/non-finite.
  *
- * Bug fix (Phase 171 code review, WR-02): the snap used to be
+ * Bug fix: the snap used to be
  * `Math.round((clamped - min) / 100) * 100 + min` — a bare `100` literal,
  * decoupled from the ladder whose min/max the same function derives. A ladder
  * revision (a 50- or 200-Elo step, or a non-uniform ladder) would have left it
@@ -165,17 +165,15 @@ export function writeSetupSettings(
  * constant at all and is correct for a non-uniform ladder too. Ties resolve
  * UPWARD (`<=`), preserving the old round-half-up behaviour (1650 -> 1700).
  *
- * BOT-03 (recorded here per the plan's requirement, not just in a commit
- * message): this rating is a **UI DEFAULT ONLY** — user-visible,
+ * This rating is a **UI DEFAULT ONLY** — user-visible,
  * user-overridable, fixed for the game once chosen. It is never fed into
  * the bot's own move selection (`selectBotMove`'s `settings.elo` is always
  * the BOT's own configured strength, symmetric and non-adaptive) — a future
  * reviewer must not read this function as an adaptivity violation.
  *
- * D-06 (also recorded here): this function does NOT map the displayed ELO
- * to a "corrected" Maia rung using the 2026-07-12 calibration-harness table —
- * every cell in that table is a clamped bound, not an inversion; building
- * that inversion table is SEED-104's job, not this plan's.
+ * This function does NOT map the displayed ELO to a "corrected" Maia rung
+ * using the calibration-harness table — every cell in that table is a clamped
+ * bound, not an inversion; building that inversion table is out of scope here.
  */
 export function resolveDefaultBotElo(normalizedRating: number | null | undefined): number {
   if (normalizedRating == null || !Number.isFinite(normalizedRating)) {

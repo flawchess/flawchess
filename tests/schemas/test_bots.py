@@ -1,8 +1,7 @@
-"""Schema tests for the bot-game store request/response (Phase 167 Plan 01).
+"""Schema tests for the bot-game store request/response.
 
-Covers STORE-01..07 boundary contract: game_uuid UUID validation, play_style_blend
-range, PGN size bound, and the absence of any server-owned field on the request
-(T-167-01/T-167-02/T-167-03).
+Covers the boundary contract: game_uuid UUID validation, play_style_blend
+range, PGN size bound, and the absence of any server-owned field on the request.
 """
 
 from __future__ import annotations
@@ -70,7 +69,7 @@ class TestStoreBotGameRequestValidation:
             StoreBotGameRequest(**_kwargs_with(bot_elo=100))
 
     def test_oversized_tc_preset_rejected(self) -> None:
-        """CR-01: tc_preset must never overflow games.time_control_str String(50) —
+        """tc_preset must never overflow games.time_control_str String(50) —
         an unbounded value previously reached the INSERT unvalidated and crashed with
         an unhandled 500 (Postgres DataError) instead of a 422.
         """
@@ -78,15 +77,15 @@ class TestStoreBotGameRequestValidation:
             StoreBotGameRequest(**_kwargs_with(tc_preset="a" * (_MAX_TC_PRESET_LENGTH + 1)))
 
     def test_no_server_owned_fields_on_request(self) -> None:
-        """T-167-01: client cannot inject rating/platform/user_id/etc."""
+        """Client cannot inject rating/platform/user_id/etc."""
         forbidden = {"rating", "platform", "user_id", "username", "is_computer_game"}
         present = forbidden & set(StoreBotGameRequest.model_fields.keys())
         assert present == set(), f"Server-owned fields leaked onto request: {present}"
 
     def test_game_uuid_canonicalized_across_spellings(self) -> None:
-        """WR-01: differently-formatted representations of the same UUID (upper-case,
+        """Differently-formatted representations of the same UUID (upper-case,
         braces, urn:uuid: prefix) must canonicalize to one identical stored value, or
-        the D-11 "re-submit is a no-op" idempotency guarantee silently breaks.
+        the "re-submit is a no-op" idempotency guarantee silently breaks.
         """
         raw = uuid.uuid4()
         canonical = str(raw)
@@ -109,20 +108,20 @@ class TestStoreBotGameRequestValidation:
         assert request.persona_id is None
 
     def test_persona_id_at_max_length_accepted(self) -> None:
-        """T-185-01: a persona_id at exactly _MAX_PERSONA_ID_LENGTH must validate."""
+        """A persona_id at exactly _MAX_PERSONA_ID_LENGTH must validate."""
         value = "a" * _MAX_PERSONA_ID_LENGTH
         request = StoreBotGameRequest(**_kwargs_with(persona_id=value))
         assert request.persona_id == value
 
     def test_persona_id_over_max_length_rejected(self) -> None:
-        """T-185-01: an overlong persona_id 422s at the Pydantic boundary, never
+        """An overlong persona_id 422s at the Pydantic boundary, never
         reaching SQL.
         """
         with pytest.raises(pydantic.ValidationError):
             StoreBotGameRequest(**_kwargs_with(persona_id="a" * (_MAX_PERSONA_ID_LENGTH + 1)))
 
     def test_persona_id_empty_string_rejected(self) -> None:
-        """WR-03: an empty string is not None, so without min_length=1 it would
+        """An empty string is not None, so without min_length=1 it would
         pass validation and get persisted (store_bot_game_service.py's
         `if request.persona_id is not None:` guard), producing a spurious ""
         key in GET /bots/persona-wins.
@@ -130,7 +129,7 @@ class TestStoreBotGameRequestValidation:
         with pytest.raises(pydantic.ValidationError):
             StoreBotGameRequest(**_kwargs_with(persona_id=""))
 
-    # quick-260722-ucc: persona_name/bot_rating acceptance + bounds.
+    # persona_name/bot_rating acceptance + bounds.
     def test_persona_name_and_bot_rating_omitted_default_to_none(self) -> None:
         """Custom-mode games omit both fields entirely — must default to None."""
         request = StoreBotGameRequest(**_VALID_KWARGS)

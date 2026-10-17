@@ -1,4 +1,4 @@
-"""Repository for the current-strength estimate (Quick 260811-u11, SEED-147).
+"""Repository for the current-strength estimate.
 
 A "rung" is one (platform, time_control_bucket) combination the user has
 played recently -- e.g. ("lichess", "blitz") or ("chess.com", "rapid"). This
@@ -45,11 +45,11 @@ class RecentRungRow:
         ``apply_game_filters(platform=None)``).
       time_control_bucket: The rung's TC bucket.
       n_games: The full qualifying-game count inside the window -- used for
-        the activity floor (D-01) and for display (n_games in the popover).
+        the activity floor and for display (n_games in the popover).
       recent_ratings: The user's own-side rating for up to ``sample_size``
         most recent qualifying games in this rung, most-recent-first.
       latest_played_at: The ``played_at`` of the rung's single most recent
-        qualifying game -- the recency-ranking signal (D-03).
+        qualifying game -- the recency-ranking signal.
     """
 
     platform: AnalyticsPlatform
@@ -99,7 +99,7 @@ async def fetch_recent_rungs(
         Game.time_control_str,
         user_rating.label("user_rating"),
     ).where(Game.user_id == user_id)
-    # Qualifying-games definition (D-04): these four apply_game_filters
+    # Qualifying-games definition: these four apply_game_filters
     # arguments are the WHOLE definition of a qualifying game. Loosening any
     # one of rated=True / opponent_type="human" / platform=None reintroduces
     # the bot-game rating echo described in the module docstring above.

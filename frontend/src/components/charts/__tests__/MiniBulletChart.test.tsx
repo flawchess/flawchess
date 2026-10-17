@@ -81,7 +81,7 @@ describe('MiniBulletChart — CI whisker', () => {
   });
 });
 
-describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
+describe('MiniBulletChart — tickPawns prop', () => {
   function leftPercent(el: HTMLElement | null): number | null {
     if (!el) return null;
     const m = (el.getAttribute('style') ?? '').match(/left:\s*([\d.]+)%/);
@@ -141,7 +141,7 @@ describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
   });
 });
 
-describe('MiniBulletChart — barColor prop (260507-t4r)', () => {
+describe('MiniBulletChart — barColor prop', () => {
   /**
    * The `barColor` prop controls the fill color of the value bar.
    * 'zone' (default): fill uses the zone color (danger/neutral/success).
@@ -304,7 +304,7 @@ describe('MiniBulletChart — barColor prop (260507-t4r)', () => {
   });
 });
 
-describe('MiniBulletChart — center prop (260504-my2)', () => {
+describe('MiniBulletChart — center prop', () => {
   function leftPercent(el: HTMLElement | null): number | null {
     if (!el) return null;
     const m = (el.getAttribute('style') ?? '').match(/left:\s*([\d.]+)%/);
@@ -365,7 +365,7 @@ describe('MiniBulletChart — center prop (260504-my2)', () => {
   });
 });
 
-describe('MiniBulletChart — asymmetric neutral zone (260516-0ax)', () => {
+describe('MiniBulletChart — asymmetric neutral zone', () => {
   /**
    * Locks in that `neutralMin` and `neutralMax` are independent signed offsets
    * from `center`. Asymmetric tuples like (-0.11, 0.00) or (+0.01, +0.11) must
@@ -378,7 +378,7 @@ describe('MiniBulletChart — asymmetric neutral zone (260516-0ax)', () => {
 
   // Width parsing helper — tolerates floating-point format drift across
   // platforms (e.g. '36.25%' vs '36.2500000000001%') while keeping the
-  // expectations on the exact percentages computed in PLAN.md.
+  // expectations on exact percentages.
   function widthPct(el: Element | null): number | null {
     if (!el) return null;
     const s = (el as HTMLElement).style.width;
@@ -488,9 +488,9 @@ describe('MiniBulletChart — asymmetric neutral zone (260516-0ax)', () => {
   });
 });
 
-// ─── invertColors prop (Phase 115 D-08) ──────────────────────────────────────
+// ─── invertColors prop ──────────────────────────────────────
 
-describe('MiniBulletChart — invertColors prop (Phase 115, D-08)', () => {
+describe('MiniBulletChart — invertColors prop', () => {
   /**
    * When invertColors=true, the color semantics are reversed for flaw-delta
    * bullets where NEGATIVE delta = fewer flaws than opponents = better.

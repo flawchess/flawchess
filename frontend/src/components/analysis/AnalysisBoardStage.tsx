@@ -6,24 +6,19 @@ import {
   TagsPanel,
   type TagsPanelProps,
 } from '@/components/analysis/AnalysisTabs';
-import { PlayerBar, BoardHeaderRow, BoardFooterRow } from '@/components/analysis/AnalysisPlayerBar';
-import type { PlayerBarProps } from '@/components/analysis/AnalysisPlayerBar';
+import { AnalysisPlayerBar, BoardHeaderRow, BoardFooterRow } from '@/components/analysis/AnalysisPlayerBar';
+import type { AnalysisPlayerBarProps } from '@/components/analysis/AnalysisPlayerBar';
 import { BOARD_EVAL_BARS_ALLOWANCE_PX } from '@/components/board/boardSize';
 
 /**
- * AnalysisBoardStage — the board row and the desktop/mid JS-sized board column,
- * extracted from `Analysis.tsx`'s `boardRow`/`desktopBoardStage` render fragments
- * (215-06). Both are plain `const x = (<JSX/>)` values in the original file, so
- * every `&&`/`?:` inside them contributed directly to `Analysis()`'s own
- * cyclomatic complexity; as real components those operators now count toward
- * these components' own complexity instead.
+ * AnalysisBoardStage — the board row and the desktop/mid JS-sized board column.
  */
 
-// Player-bar props shared by every `<PlayerBar>` render call in this file — the
+// Player-bar props shared by every `<AnalysisPlayerBar>` render call in this file — the
 // same "resolved once, threaded as a bag" shape `Analysis.tsx` itself uses for
-// `flawChessCardProps` (215-06 Task 2).
+// `flawChessCardProps`.
 type SharedPlayerBarProps = Pick<
-  PlayerBarProps,
+  AnalysisPlayerBarProps,
   'pastedHeaders' | 'gameData' | 'playerClocks' | 'position'
 >;
 
@@ -75,16 +70,16 @@ export type DesktopBoardStageProps = {
   tagsPanelProps: Omit<TagsPanelProps, 'withHighlight' | 'section'>;
 };
 
-// Desktop board column (Phase 161 UAT). The outer div is the measured "stage" (see
+// Desktop board column. The outer div is the measured "stage" (see
 // `useBoardStageSize`): a full-width, viewport-height-locked box. Inside sits ONE
 // tight, centered group — source caps + top player, the board flanked by its two
 // eval bars, the bottom player, and the eval chart. The board is JS-sized
 // (computeBoardSize) so:
 //   • the eval bars are exactly as tall as the board and sit flush to its edges (gap-2),
 //   • the player rows and chart stay directly adjacent to the board (no flex-1 gap), and
-//   • the board shrinks to fit as width/height tighten until it hits the board's floor
-//     (D-08), past which the overflowing bottom (eval chart, then board) is CLIPPED, not
-//     scrolled — a middle-column scrollbar is never acceptable (Phase 161 UAT).
+//   • the board shrinks to fit as width/height tighten until it hits the board's floor,
+//     past which the overflowing bottom (eval chart, then board) is CLIPPED, not
+//     scrolled — a middle-column scrollbar is never acceptable.
 // The group's width follows the board+bars row (maxWidth = boardWidth + bars allowance),
 // so the caps, player rows and chart all align to the board edges. `w-5` fixes each bar's
 // width; `h-full` makes it fill the boardWidth-tall wrapper.
@@ -112,8 +107,8 @@ export function DesktopBoardStage({
       ref={boardStageRef}
       // overflow-hidden on BOTH axes: x clips the EvalChart slider's intentional ±8px
       // alignment slack (its -ml-8px track overhang); y clips a too-tall group on a short
-      // window instead of showing a vertical scrollbar (Phase 161 UAT — the user prefers
-      // the eval chart cut off at the bottom over a middle-column scrollbar).
+      // window instead of showing a vertical scrollbar (the eval chart is cut off at the
+      // bottom rather than adding a middle-column scrollbar).
       className="flex w-full min-w-0 shrink-0 flex-col items-center desk3col:min-h-0 desk3col:h-full desk3col:justify-start desk3col:overflow-hidden"
     >
       <div
@@ -121,7 +116,7 @@ export function DesktopBoardStage({
         style={{ maxWidth: boardWidth ? boardWidth + BOARD_EVAL_BARS_ALLOWANCE_PX : undefined }}
       >
         {/* Source caps (Maia/SF) over the bars + top player (game mode, or an
-            ephemeral pasted PGN — Phase 208). */}
+            ephemeral pasted PGN). */}
         <div className="w-full">
           <BoardHeaderRow
             flawChessEnabled={flawChessEnabled}
@@ -153,7 +148,7 @@ export function DesktopBoardStage({
         {showPlayerBars && (
           <div className="w-full">
             <BoardFooterRow
-              player={<PlayerBar color={bottomPlayerColor} {...sharedPlayerBarProps} />}
+              player={<AnalysisPlayerBar color={bottomPlayerColor} {...sharedPlayerBarProps} />}
             />
           </div>
         )}
@@ -169,8 +164,8 @@ export function DesktopBoardStage({
         </Card>
 
         {/* EvalChart with slider — game mode only, aligned to the board width.
-            highlightedPlies (Task 3): dims non-matching markers on tags-panel hover.
-            Quick 260714-rj5: also renders while analysis is pending/leased, showing
+            highlightedPlies: dims non-matching markers on tags-panel hover.
+            Also renders while analysis is pending/leased, showing
             the pill in the chart's slot instead of nothing.
             Suppressed in the mid layout (!isMid): there the chart lives in the Eval
             tab (mobile parity), and a second EvalChart under the board would clash on
@@ -182,7 +177,7 @@ export function DesktopBoardStage({
         )}
 
         {/* Missed/Allowed/Context tags in a charcoal container, below the eval
-            chart (UAT 179). Desktop only (!isMid) — the mid/mobile layouts keep the
+            chart. Desktop only (!isMid) — the mid/mobile layouts keep the
             tags below the MoveStats card in the tabbed panel. Aligned to the board
             width by the group's maxWidth, filling the slack under the chart. */}
         {!isMid && (

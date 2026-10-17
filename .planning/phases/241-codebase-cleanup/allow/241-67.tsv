@@ -1,0 +1,2 @@
+kind	path	needle	reason
+diff	app/services/library_service.py	MIN_TACTIC_CHIP_CONFIDENCE : int = MIN_TACTIC_CHIP_CONFIDENCE	X4: alias line removed, one value one name (INVENTORY §3 X4)

@@ -1,10 +1,6 @@
 /**
  * EndgameScoreOverTimeChart: two-line absolute Score timeline (endgame +
  * non-endgame) with a sign-aware shaded band in between.
- *
- * Extracted from EndgamePerformanceSection.tsx in Phase 85 (D-09) so the
- * legacy section file can be deleted cleanly in Plan 04 without entangling
- * this unrelated timeline chart.
  */
 
 import { useEffect, useId, useMemo, useState } from 'react';
@@ -25,7 +21,7 @@ import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { ScoreGapTimelinePoint } from '@/types/endgames';
 
-// Endgame vs Non-Endgame Score timeline (Phase 68). Absolute scores on a
+// Endgame vs Non-Endgame Score timeline. Absolute scores on a
 // clamped Y-axis: typical score values sit in 20-80%; 0-100 wastes vertical
 // space and flattens the lines. Matches the Time Pressure vs Performance
 // chart's Y_AXIS_DOMAIN treatment.
@@ -54,7 +50,7 @@ function useIsMobile(): boolean {
 
 export interface EndgameScoreOverTimeChartProps {
   timeline: ScoreGapTimelinePoint[];
-  window: number;
+  windowSize: number;
 }
 
 interface ScoreOverTimeChartPoint {
@@ -71,36 +67,31 @@ interface ScoreOverTimeChartPoint {
 }
 
 /**
- * Phase 68: two-line absolute Score timeline (endgame + non-endgame) with a
+ * Two-line absolute Score timeline (endgame + non-endgame) with a
  * sign-aware shaded band in between.
  *
- * Shading strategy (Phase 68 UAT fix): a single <Area> renders the band
+ * Shading strategy: a single <Area> renders the band
  * between min(endgame, non_endgame) and max(endgame, non_endgame) and is
  * filled by a horizontal <linearGradient> whose stop offsets are computed at
  * each crossover x-position. At every sign flip two stops with identical
  * offset but different stopColor produce an instant color switch, so the
- * green and red regions meet exactly at the crossover with no gap. This
- * replaces an earlier two-Area approach that used null masking plus an ±1 pp
- * epsilon — that combination left a visible unshaded band across every
- * crossover, which was the bug this wiring fixes.
+ * green and red regions meet exactly at the crossover with no gap. Don't split
+ * this into two null-masked Areas: that leaves an unshaded gap at every
+ * crossover.
  *
- * UAT diagnosis (Phase 68, 260424-pc6): the earlier `<g data-testid=...>`
- * wrapper around each `<Area>` silently broke rendering. Recharts'
- * `findAllByType` in `generateCategoricalChart` only inspects DIRECT
- * children's `type.displayName`; a plain `<g>` wrapper hides the `<Area>`
- * from that scan, so the area never registers with the chart axes and no
- * `<path>` is emitted. The `<Area>` must remain a direct child of
- * ComposedChart — tests now query by the `SCORE_BAND_CLASS` className.
+ * Keep the <Area> a direct child of ComposedChart (don't wrap it in a <g> for a
+ * testid), or it never registers and no `<path>` is emitted. Tests query the
+ * `SCORE_BAND_CLASS` className instead.
  */
-export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOverTimeChartProps) {
+export function EndgameScoreOverTimeChart({ timeline, windowSize }: EndgameScoreOverTimeChartProps) {
   const isMobile = useIsMobile();
   const rawId = useId();
   const gradientId = `score-gap-gradient-${rawId.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
   const { data, gradientStops } = useMemo(() => {
     const data: ScoreOverTimeChartPoint[] = timeline.map((p) => {
-      // Plan 01 guarantees endgame_score / non_endgame_score are present
-      // on every point — no fallback needed.
+      // endgame_score / non_endgame_score are present on every point, so no
+      // fallback is needed.
       const endgame = Math.round(p.endgame_score * 100);
       const non_endgame = Math.round(p.non_endgame_score * 100);
       return {
@@ -114,9 +105,6 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
       };
     });
 
-    // Phase 87.6: extracted into shared helper signedBandGradient.
-    // Verbatim algorithm from EndgameScoreOverTimeChart.tsx:121-163 before extraction.
-    // GradientStop type is now imported from the helper module.
     const rows: Array<{ x: number; sign: 1 | -1 | 0 }> = data.map((p, i) => ({
       x: i,
       sign: Math.sign(p.endgame - p.non_endgame) as 1 | -1 | 0,
@@ -131,13 +119,10 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
   }, [timeline]);
 
   // Volume-bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest bar
-  // to the bottom 20% of the chart canvas (Pattern 3 in 57.1-RESEARCH.md).
+  // to the bottom 20% of the chart canvas.
   // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
   const barMax = Math.max(1, ...data.map((r) => r.per_week_total_games));
 
-  // dates and inactivityGaps are derived from `data` (itself from `timeline`),
-  // so they are placed BEFORE the early-return to satisfy the rules-of-hooks
-  // constraint (no hooks after a conditional return).
   const dates = data.map((p) => p.date);
   const formatDateTick = createDateTickFormatter(dates);
 
@@ -199,7 +184,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
             />
             {/* Hidden right Y-axis dedicated to volume bars.
                 domain={[0, barMax * 5]} pins the tallest bar to the bottom
-                20% of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+                20% of the chart canvas. */}
             <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
             <ChartTooltip
               content={({ active, payload, label }) => {
@@ -259,8 +244,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
             {/* Inactivity-gap annotations via shared helper: one ReferenceLine + Palmtree
                 glyph + label per gap that exceeds INACTIVITY_GAP_THRESHOLD_DAYS.
                 Placed BEFORE <Bar> so annotations sit behind the data series in SVG
-                z-order. x must exactly match a value from the dates array
-                (Recharts Pitfall 1 from 88.3-01-PLAN.md). */}
+                z-order. x must exactly match a value from the dates array. */}
             {inactivityGapReferenceLines({ dates, yAxisId: 'value' })}
             <Bar
               yAxisId="bars"
@@ -333,7 +317,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
         </span>
       </div>
       <p className="text-xs text-muted-foreground text-center mt-1">
-        Week (rolling average of the last {window} games per side)
+        Week (rolling average of the last {windowSize} games per side)
       </p>
       </div>
     </div>

@@ -44,10 +44,9 @@ const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
   pawnless: 'Pawnless',
 };
 
-// HIDDEN_ENDGAME_CLASSES lifted to @/lib/endgameMetrics in Phase 87 Plan 03 so
-// TypeTable and this page share one source of truth (pawnless
-// is hidden everywhere). Classification stays in the DB so re-enabling does
-// not require a reimport.
+// HIDDEN_ENDGAME_CLASSES lives in @/lib/endgameMetrics so TypeTable and this
+// page share one source of truth (pawnless is hidden everywhere).
+// Classification stays in the DB so re-enabling does not require a reimport.
 
 const VISIBLE_ENDGAME_CLASS_ENTRIES = (
   Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]
@@ -55,7 +54,7 @@ const VISIBLE_ENDGAME_CLASS_ENTRIES = (
 
 const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
 
-// Phase 87 (D-08, SEC3-02): inverse of ENDGAME_CLASS_TO_SLUG so the
+// Inverse of ENDGAME_CLASS_TO_SLUG so the
 // /endgames/games?type=<slug> deep-link can pre-seed the selected category on
 // page load (shareable URLs, browser back/forward). Built once at module scope.
 const SLUG_TO_ENDGAME_CLASS: Record<string, EndgameClass> = Object.fromEntries(
@@ -122,8 +121,8 @@ export function EndgamesPage() {
   useEffect(() => {
     // Pulse once whenever appliedFilters transitions to a new value (i.e. a commit fired).
     // On initial mount prevAppliedRef.current === appliedFilters so no pulse fires on load.
-    // Subsequent changes to appliedFilters (via setAppliedFilters in handleSidebarOpenChange
-    // or handleMobileFiltersOpenChange) will trigger the pulse.
+    // Subsequent changes to appliedFilters (via setAppliedFilters in handleDesktopFiltersApply
+    // or handleMobileFiltersApply) will trigger the pulse.
     if (prevAppliedRef.current !== appliedFilters) {
       prevAppliedRef.current = appliedFilters;
       setIsPulsing(true);
@@ -158,9 +157,9 @@ export function EndgamesPage() {
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   // The Games tab reads the filtered per-category stats (and the match label total)
-  // from GET /endgames/stats (Phase 238 D-01); the Stats tab never sees the filters.
+  // from GET /endgames/stats; the Stats tab never sees the filters.
   // Both Games-tab queries run only while that tab is active: the filtered GROUP BY is
-  // expensive and the Stats tab never reads it (Phase 238 review FE-IN-03).
+  // expensive and the Stats tab never reads it.
   const gamesTabActive = tier2 && activeTab === 'games';
   const { data: rawStatsData } = useEndgameStats(appliedFilters, { enabled: gamesTabActive });
 
@@ -215,7 +214,7 @@ export function EndgamesPage() {
     setMobileFiltersOpen(false);
   }, [pendingFilters, setAppliedFilters, setGamesOffset]);
 
-  // ── Filter UI is hidden on the Stats tab (Phase 238 D-02) ───────────────────
+  // ── Filter UI is hidden on the Stats tab ───────────────────
   // Entering the Stats tab closes any open desktop panel / mobile drawer. Only the
   // open flags reset: the applied-filter setter is never called and the pending draft
   // is never committed, so the filter store is exactly as it was when the user returns
@@ -235,10 +234,10 @@ export function EndgamesPage() {
     window.scrollTo(0, 0);
   }, []);
 
-  // Phase 87 (D-08, SEC3-02): `?type=<slug>` URL hydration so shareable
-  // deep-links into /endgames/games?type=rook pre-seed the type filter on page
-  // load and on subsequent SPA navigations. Unknown / malformed slugs are
-  // ignored (T-87-07 mitigation: validate against SLUG_TO_ENDGAME_CLASS).
+  // `?type=<slug>` URL hydration so shareable deep-links into
+  // /endgames/games?type=rook pre-seed the type filter on page load and on
+  // subsequent SPA navigations. Unknown / malformed slugs are ignored
+  // (validated against SLUG_TO_ENDGAME_CLASS).
   useEffect(() => {
     const slug = searchParams.get('type');
     if (!slug) return;
@@ -255,9 +254,9 @@ export function EndgamesPage() {
 
 // ── Stats tab content ──────────────────────────────────────────────────────
 
-  // The Stats tab owns its data, insights state and sections (Phase 238); the
+  // The Stats tab owns its data, insights state and sections; the
   // page only tells it whether the Tier-2 queries may fire and where the per-type
-  // games links should navigate. It takes no filter state (D-01).
+  // games links should navigate. It takes no filter state.
   const statisticsContent = (
     <EndgameStatsTab tier2={tier2} onCategorySelect={handleCategorySelect} />
   );
@@ -336,7 +335,7 @@ export function EndgamesPage() {
     </div>
   );
 
-  // The Games-tab filter panel (D-02: the Stats tab renders no filter UI at all).
+  // The Games-tab filter panel (the Stats tab renders no filter UI at all).
   const filtersPanel: SidebarPanelConfig = {
     id: 'filters',
     label: 'Filters',
@@ -345,7 +344,7 @@ export function EndgamesPage() {
     content: (
       <div className="p-3">
         {/* 'playedAs' omitted: endgame queries ignore color/playedAs entirely
-            (see useEndgames "no color per D-02"), so the control was a no-op here. */}
+            (see useEndgames "no color"), so the control would be a no-op here. */}
         <FilterPanel
           filters={pendingFilters}
           onChange={setPendingFilters}
@@ -371,7 +370,7 @@ export function EndgamesPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  // Whole-page lock until Tier 2 (D-01/D-02): uniform for first-import and
+  // Whole-page lock until Tier 2: uniform for first-import and
   // incremental import — the nav link stays enabled but the page shows the
   // processing state. No forced navigation; unlock is reactive once tier2=true.
   if (!tier2) {
@@ -390,8 +389,8 @@ export function EndgamesPage() {
     <div data-testid="endgames-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 pb-20 md:py-6 md:pb-6 md:px-6">
 
-        {/* Desktop: full-width subnav above the sidebar strip + content (Phase 111 —
-            matches the Library page; the subnav spans both the strip and content
+        {/* Desktop: full-width subnav above the sidebar strip + content (matches
+            the Library page; the subnav spans both the strip and content
             instead of sitting only over the content column). Tabs wraps SidebarLayout
             so TabsContent keeps its Tabs context while TabsList renders full-width above. */}
         <Tabs
@@ -471,7 +470,7 @@ export function EndgamesPage() {
               </TabsList>
             </div>
 
-            {/* Mobile filter UI exists only on the Games tab (Phase 238 D-02). */}
+            {/* Mobile filter UI exists only on the Games tab. */}
             {activeTab === 'games' && (
               <>
                 {/* Sticky Filters button, styled like the Library page. The full-width
@@ -517,7 +516,7 @@ export function EndgamesPage() {
               </>
             )}
 
-            {/* No sticky Filters row on the Stats tab (D-02), so the content sits
+            {/* No sticky Filters row on the Stats tab, so the content sits
                 directly under the sub-navigation at the Tabs root's `gap-2`. */}
             <TabsContent value="stats">
               {statisticsContent}

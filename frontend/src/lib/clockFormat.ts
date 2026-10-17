@@ -1,7 +1,5 @@
 /**
- * Shared signed-clock formatters used by EndgameClockPressureSection (Phase 54)
- * and MostPlayedOpeningsTable (Phase 80, D-05) so the two clock-diff cells
- * "read identically across the app."
+ * Shared signed-clock formatters so clock-diff cells read identically across the app.
  *
  * Zero convention: formatSignedPct1(0) returns '0.0%' (no '+' prefix) since
  * zero clock advantage is neutral — neither positive nor negative.
@@ -22,8 +20,7 @@ export function formatSignedSeconds(seconds: number | null): string {
  * Format a signed percent value (pre-computed difference) to one decimal place.
  * Returns '+X.X%', '-X.X%', '0.0%', or '—' for null.
  *
- * Note: formatSignedPct in EndgameClockPressureSection takes (userPct, oppPct)
- * and computes the difference; this function takes the pre-computed diff directly.
+ * This function takes the pre-computed difference directly.
  */
 export function formatSignedPct1(pct: number | null): string {
   if (pct === null) return '—';
@@ -36,7 +33,7 @@ export function formatSignedPct1(pct: number | null): string {
  * Format signed eval in pawns to one decimal place with explicit sign.
  *
  * Examples: 2.13 -> '+2.1', -0.47 -> '-0.5', 0 -> '+0.0'.
- * Used for the "MG eval" text column in MostPlayedOpeningsTable (Phase 80).
+ * Used for the "MG eval" text in the opening cards and results panel.
  */
 export function formatSignedEvalPawns(value: number): string {
   const sign = value >= 0 ? '+' : '';

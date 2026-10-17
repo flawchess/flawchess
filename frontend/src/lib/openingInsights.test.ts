@@ -30,7 +30,7 @@ describe('formatCandidateMove', () => {
   });
 });
 
-describe('shared constants — stale-constant removal (Phase 76 D-20)', () => {
+describe('shared constants — stale-constant removal', () => {
   it('does not export getSeverityBorderColor', () => {
     expect((openingInsights as Record<string, unknown>).getSeverityBorderColor).toBeUndefined();
   });

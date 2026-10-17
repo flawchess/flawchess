@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
  * TrainScheduleSettings.test.tsx — coverage for the auto-saving weekday +
- * puzzles-per-session picker (191-04-PLAN.md Task 1, SCHD-01, D-09..D-12)
- * AND, since Phase 202 Plan 02, the PERM-03/PERM-04 master reminder toggle
- * and 24-hour picker (202-02-PLAN.md Tasks 1-2, D-06..D-13).
+ * puzzles-per-session picker AND the master reminder toggle
+ * and 24-hour picker.
  *
  * Mocks `@/api/client` (TrainProgressRow.test.tsx's precedent), wrapped in a
  * QueryClientProvider with `retry: false`.
@@ -15,7 +14,7 @@
  * advanced by actually waiting past it in real time instead.
  *
  * Browser-global stubs for `Notification`/`PushManager`/`navigator.serviceWorker`
- * follow `TrainReminderButton.test.tsx`'s (Plan 01) scaffolding shape —
+ * follow `useTrainReminderSlot.test.tsx`'s scaffolding shape —
  * reused here rather than reinvented (`navigator.serviceWorker` is a
  * read-only getter in jsdom, so it needs `Object.defineProperty` rather than
  * `vi.stubGlobal`).
@@ -54,16 +53,16 @@ vi.mock('@/api/client', async () => {
   };
 });
 
-// Phase 203 Plan 03 (HANDOFF-04): TrainInstallQr lazy-loads qrcode.react —
+// TrainInstallQr lazy-loads qrcode.react —
 // stub it so this file's tests don't depend on the library's real SVG
 // rendering (TrainInstallQr.test.tsx owns that coverage).
 vi.mock('qrcode.react', () => ({
   QRCodeSVG: ({ value }: { value: string }) => <svg data-testid="qr-code-svg-stub" data-value={value} />,
 }));
 
-// UAT item 5 (post-review fix, 203-REVIEW.md): mock the whole hook rather
+// Mock the whole hook rather
 // than stub UA/matchMedia globals in this file, same as
-// `TrainReminderButton.test.tsx`'s precedent — the UA/media-query mocking
+// `useTrainReminderSlot.test.tsx`'s precedent — the UA/media-query mocking
 // for the hook's OWN internals lives in `useInstallPrompt.test.ts`. Every
 // pre-existing test in this file gets the desktop-shaped default via the
 // `beforeEach` below; only the new platform-specific tests override it.
@@ -105,8 +104,8 @@ function defaultInstallPrompt(): ReturnType<typeof useInstallPrompt> {
 
 // Mon (bit 0) + Wed (bit 2) = 0b0000101 = 5.
 //
-// reminder_enabled/reminder_hour became REQUIRED fields on
-// TrainSettingsResponse in Phase 202 Plan 01. tsconfig.app.json excludes
+// reminder_enabled/reminder_hour are REQUIRED fields on
+// TrainSettingsResponse. tsconfig.app.json excludes
 // src/**/*.test.ts(x), so `npm run build` does NOT catch a stale fixture —
 // the component reading `data.reminder_hour` as `undefined` at runtime is
 // what breaks, and it breaks quietly. Keep both fields present here.
@@ -116,7 +115,7 @@ const BASE_SETTINGS: TrainSettingsResponse = {
   puzzles_per_session: 12,
   reminder_enabled: false,
   reminder_hour: 18,
-  // Phase 203 Plan 01 (OFFER-03, D-02): a non-null fixture value so an
+  // A non-null fixture value so an
   // echo-through assertion can distinguish "sent the real value" from "sent
   // undefined/null by accident".
   reminder_intent_at: '2026-08-02T12:00:00Z',
@@ -129,10 +128,10 @@ const fakeSubscription = {
 };
 
 /**
- * Browser-global scaffolding, shaped like `TrainReminderButton.test.tsx`'s
- * `stubBrowserGlobals` (Plan 01) — same shape reused rather than a second
+ * Browser-global scaffolding, shaped like `useTrainReminderSlot.test.tsx`'s
+ * `stubBrowserGlobals` — same shape reused rather than a second
  * one invented. `getSubscription`'s mock exposes an `unsubscribe` spy that
- * PERM-04's negative assertions check was never called.
+ * the reminder toggle's negative assertions check was never called.
  */
 function stubBrowserGlobals(options?: {
   permission?: NotificationPermission;
@@ -173,7 +172,7 @@ function renderWithClient(onSaved?: () => void, isGuest = false): QueryClient {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
   render(<TrainScheduleSettings onSaved={onSaved} isGuest={isGuest} />, { wrapper: Wrapper });
-  // SEED-181: the card starts collapsed; these tests exercise the controls.
+  // The card starts collapsed; these tests exercise the controls.
   expandSchedule();
   return client;
 }
@@ -228,8 +227,8 @@ describe('TrainScheduleSettings', () => {
     renderWithClient();
 
     // Weekday chips are ToggleChipButton (plain <button aria-pressed>), not
-    // the Radix ToggleGroup (which would expose data-state) — 191-06 restyle
-    // to match FilterPanel's "Time control" multi-select pattern.
+    // the Radix ToggleGroup (which would expose data-state);
+    // they match FilterPanel's "Time control" multi-select pattern.
     await waitFor(() => {
       expect(screen.getByTestId('filter-weekday-mo').getAttribute('aria-pressed')).toBe('true');
     });
@@ -272,7 +271,7 @@ describe('TrainScheduleSettings', () => {
     expect(call).toBeDefined();
     const body = call?.[0] as TrainSettingsUpdate;
     expect(body.weekday_mask).toBe(5 | (1 << 4)); // 21
-    // Phase 203 Plan 01 (OFFER-03, D-02): a weekday-chip save must echo the
+    // A weekday-chip save must echo the
     // current server value it read from the GET response, not undefined —
     // this debounced save never writes a NEW intent.
     expect(body.reminder_intent_at).toBe(BASE_SETTINGS.reminder_intent_at);
@@ -399,7 +398,7 @@ describe('TrainScheduleSettings', () => {
     expect(screen.getByText('Saved')).not.toBeNull();
   });
 
-  it('191-06 UAT bug fix: a resolved updateSettings calls onSaved exactly once', async () => {
+  it('a resolved updateSettings calls onSaved exactly once', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, weekday_mask: 21 });
     const onSaved = vi.fn();
@@ -417,7 +416,7 @@ describe('TrainScheduleSettings', () => {
     });
   });
 
-  it('191-06: a rejected updateSettings never calls onSaved', async () => {
+  it('a rejected updateSettings never calls onSaved', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     vi.mocked(trainApi.updateSettings).mockRejectedValue(new Error('network down'));
     const onSaved = vi.fn();
@@ -445,14 +444,14 @@ describe('TrainScheduleSettings', () => {
     expect(screen.queryByTestId('filter-weekday-mo')).toBeNull();
   });
 
-  // ── Phase 203 Plan 03: HANDOFF-04 permanent QR home ──
-  // UAT item 5 (post-review fix): "unconditional" below means unconditional
+  // ── Permanent QR home ──
+  // "Unconditional" below means unconditional
   // on the reminder toggle / push capability, NOT on device platform — these
   // tests run under the desktop-shaped `defaultInstallPrompt()` mock. The
-  // platform gating itself is covered by the "phone section platform gating
-  // (UAT item 5)" describe block further down.
+  // platform gating itself is covered by the "phone section platform gating"
+  // describe block further down.
 
-  it('HANDOFF-04: on desktop, renders the qr-handoff-settings block with no dismiss control inside it', async () => {
+  it('on desktop, renders the qr-handoff-settings block with no dismiss control inside it', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     renderWithClient();
 
@@ -465,11 +464,11 @@ describe('TrainScheduleSettings', () => {
     expect(qrBlock.querySelector('[aria-label*="dismiss" i], [aria-label*="close" i]')).toBeNull();
   });
 
-  it('HANDOFF-04: on desktop, the QR block still renders even when push is unsupported (unconditional, unlike ReminderControls)', async () => {
+  it('on desktop, the QR block still renders even when push is unsupported (unconditional, unlike ReminderControls)', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     // No mockVapidConfigured() / stubBrowserGlobals() call — push capability
     // stays unresolved/unsupported, so showReminderBlock is false, but the
-    // QR block must still be present (HANDOFF-04: not gated on capability).
+    // QR block must still be present (not gated on capability).
     renderWithClient();
 
     await waitFor(() => {
@@ -478,7 +477,7 @@ describe('TrainScheduleSettings', () => {
     expect(screen.queryByTestId('filter-reminder-enabled')).toBeNull();
   });
 
-  describe('phone section platform gating (UAT item 5 regression)', () => {
+  describe('phone section platform gating', () => {
     it('mobile with a live install prompt: renders the Install FlawChess button, not the QR, and no orphaned heading survives without it', async () => {
       vi.mocked(useInstallPrompt).mockReturnValue({
         ...defaultInstallPrompt(),
@@ -548,9 +547,9 @@ describe('TrainScheduleSettings', () => {
     });
   });
 
-  // ── Phase 202 Plan 02: PERM-03/PERM-04 master reminder toggle + hour picker ──
+  // ── Master reminder toggle + hour picker ──
 
-  describe('reminder toggle and hour picker (PERM-03/PERM-04)', () => {
+  describe('reminder toggle and hour picker', () => {
     it('the block is absent when push is unsupported (PushManager not stubbed), and the weekday chips still render', async () => {
       vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
       mockVapidConfigured();
@@ -602,7 +601,7 @@ describe('TrainScheduleSettings', () => {
       expect(trainApi.updateSettings).not.toHaveBeenCalled();
     });
 
-    it('D-11 mount-time reconciliation: reminder_enabled true from the server plus permission denied never issues a PUT (render-only, no silent account-wide disable)', async () => {
+    it('mount-time reconciliation: reminder_enabled true from the server plus permission denied never issues a PUT (render-only, no silent account-wide disable)', async () => {
       vi.mocked(trainApi.getSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
       mockVapidConfigured();
       stubBrowserGlobals({ permission: 'denied' });
@@ -712,7 +711,7 @@ describe('TrainScheduleSettings', () => {
       expect(trainApi.updateSettings).not.toHaveBeenCalled();
     });
 
-    it('PERM-04: toggling off from an enabled state issues exactly one updateSettings call with reminder_enabled: false, and never touches subscribe or unsubscribe', async () => {
+    it('toggling off from an enabled state issues exactly one updateSettings call with reminder_enabled: false, and never touches subscribe or unsubscribe', async () => {
       vi.mocked(trainApi.getSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
       vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: false });
       mockVapidConfigured();
@@ -729,7 +728,7 @@ describe('TrainScheduleSettings', () => {
       expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
       const call = vi.mocked(trainApi.updateSettings).mock.calls[0];
       expect((call?.[0] as TrainSettingsUpdate).reminder_enabled).toBe(false);
-      // PERM-04's whole point: turning off must never spend the subscription.
+      // The whole point: turning off must never spend the subscription.
       expect(pushApi.subscribe).not.toHaveBeenCalled();
       expect(subscriptionUnsubscribe).not.toHaveBeenCalled();
       // pushApi exposes no unsubscribe method at all — a regression here is
@@ -739,7 +738,7 @@ describe('TrainScheduleSettings', () => {
       expect(Object.keys(pushApi)).not.toContain('unsubscribe');
     });
 
-    it('PERM-03: changing the hour issues exactly one updateSettings call whose reminder_hour is the chosen value and whose weekday_mask/puzzles_per_session are unchanged', async () => {
+    it('changing the hour issues exactly one updateSettings call whose reminder_hour is the chosen value and whose weekday_mask/puzzles_per_session are unchanged', async () => {
       vi.mocked(trainApi.getSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
       vi.mocked(trainApi.updateSettings).mockResolvedValue({
         ...BASE_SETTINGS,
@@ -857,7 +856,7 @@ describe('TrainScheduleSettings', () => {
   });
 });
 
-describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
+describe('TrainScheduleSettings — guest visibility', () => {
   it('isGuest=false with a resolved, available push capability: the reminder controls and the phone section render exactly as today', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     mockVapidConfigured();
@@ -872,7 +871,7 @@ describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
     expect(
       screen.getByText('Reminders work better with FlawChess on your phone'),
     ).not.toBeNull();
-    // The weekday cadence controls are untouched by D-13.
+    // The weekday cadence controls are untouched for a guest.
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
   });
 
@@ -890,7 +889,7 @@ describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
     expect(screen.queryByTestId('filter-reminder-hour')).toBeNull();
     expect(screen.queryByText('Reminders work better with FlawChess on your phone')).toBeNull();
     expect(screen.queryByTestId('qr-handoff-settings')).toBeNull();
-    // D-13 removes only the reminder block and phone/QR section — the
+    // A guest loses only the reminder block and phone/QR section — the
     // weekday cadence and puzzles-per-session controls stay for a guest.
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
     expect(screen.getByTestId('filter-puzzles-per-session')).not.toBeNull();
@@ -914,7 +913,7 @@ describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
   });
 });
 
-describe('collapsed schedule card (SEED-181)', () => {
+describe('collapsed schedule card', () => {
   function renderCollapsed(nextSessionDate?: string): void {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(

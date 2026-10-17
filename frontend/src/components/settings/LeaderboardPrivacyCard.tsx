@@ -28,11 +28,11 @@ function PrivacyLoadErrorCard() {
 }
 
 /**
- * Phase 230 D-16: the server-persisted "Hide me from leaderboards" switch.
+ * The server-persisted "Hide me from leaderboards" switch.
  * Reads useUserProfile().data (not useAuth) and writes through the profile PUT.
  * Sends the legacy `settings-change` Umami event: the profile row is overwritten
- * in place, so switch-offs and change history would otherwise be lost
- * (quick 261004-rre). Renders nothing for guests: they never appear on boards, so there is nothing
+ * in place, so switch-offs and change history would otherwise be lost.
+ * Renders nothing for guests: they never appear on boards, so there is nothing
  * to hide.
  */
 export function LeaderboardPrivacyCard() {

@@ -47,7 +47,7 @@ import {
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
 
-/** Shorthand: wrap UCIs as clean ('good') fine moves — the pre-260726-fma
+/** Shorthand: wrap UCIs as clean ('good') fine moves — the original
  * shape every legacy case in this file exercised. */
 function good(...ucis: string[]): TrainFineMove[] {
   return ucis.map((uci) => ({ uci, quality: 'good' as const }));
@@ -68,7 +68,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.alsoFineMoves).toEqual([]);
   });
 
-  it('a sharp puzzle with four good moves returns exactly one arrow — the BLUE best move — with a best badge on its target square (190.1 UAT); alsoFineMoves is empty (D-03)', () => {
+  it('a sharp puzzle with four good moves returns exactly one arrow — the BLUE best move — with a best badge on its target square; alsoFineMoves is empty', () => {
     const overlay = buildTrainRevealOverlay(
       'sharp',
       good('e2e4', 'd2d4', 'g1f3', 'c2c4'),
@@ -87,7 +87,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.alsoFineMoves).toEqual([]);
   });
 
-  it('a soft puzzle draws exactly ONE alternative when BOTH served entries survive the filter (client best and played move match neither) — the soft cap of 1 truncates to the FIRST entry, which best-first server order makes the STRONGEST new fine move (D-01 amendment)', () => {
+  it('a soft puzzle draws exactly ONE alternative when BOTH served entries survive the filter (client best and played move match neither) — the soft cap of 1 truncates to the FIRST entry, which best-first server order makes the STRONGEST new fine move', () => {
     const overlay = buildTrainRevealOverlay(
       'soft',
       [
@@ -109,12 +109,12 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.arrows[1]!.color).toBe(TRAIN_BEST_MOVE_ARROW);
     expect(overlay.arrows[2]!.color).toBe(DARK_GREEN);
     // The su (g1f3) is beyond TRAIN_SOFT_ALT_MOVE_ARROWS and must never leak
-    // into the sidebar row either — the LEGEND-04 1:1 invariant.
+    // into the sidebar row either — the 1:1 invariant.
     expect(overlay.arrows.some((a) => `${a.startSquare}${a.endSquare}` === 'g1f3')).toBe(false);
     expect(overlay.alsoFineMoves).toEqual([{ uci: 'd2d4', quality: 'best' }]);
   });
 
-  it("the operator's Task 3 round-2 scenario: the served su coincides with the client's best AND played move, so the deep-best entry is what keeps the \"Also fine\" row non-empty (D-01 amendment)", () => {
+  it("the served su coincides with the client's best AND played move, so the deep-best entry is what keeps the \"Also fine\" row non-empty", () => {
     // Before the amendment the served list was [d1a4] alone; the filter below
     // absorbed it (== bestMoveUci AND == playedMove.uci) and the row rendered
     // EMPTY under the "several fine moves" copy. The deep best (d1e2 — Be2 in
@@ -139,7 +139,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.markers).toContainEqual({ square: 'e2', best: true });
   });
 
-  it('an inaccuracy-level fine move renders the SAME dark-green arrow and good badge as a clean alternative — the D-05 collapse applies to alternatives too', () => {
+  it('an inaccuracy-level fine move renders the SAME dark-green arrow and good badge as a clean alternative — the collapse applies to alternatives too', () => {
     const overlay = buildTrainRevealOverlay(
       'herring',
       [
@@ -167,15 +167,15 @@ describe('buildTrainRevealOverlay', () => {
     ]);
     // alsoFineMoves keeps the fine move's OWN classified quality (the
     // collapse is a drawing decision only, never a data mutation) — and
-    // equals exactly the drawn alternatives (LEGEND-04).
+    // equals exactly the drawn alternatives.
     expect(overlay.alsoFineMoves).toEqual([
       { uci: 'd2d4', quality: 'good' },
       { uci: 'g1f3', quality: 'inaccuracy' },
     ]);
   });
 
-  it('a herring puzzle draws up to FOUR alternatives from a five-entry vetted list (Phase 211 D-01: the ladder minus its top entry) — its own budget, no longer the soft cap', () => {
-    // Mutation guard (RESEARCH Pitfall 6): collapsing alternativeArrowCap
+  it('a herring puzzle draws up to FOUR alternatives from a five-entry vetted list (the ladder minus its top entry) — its own budget, no longer the soft cap', () => {
+    // Mutation guard: collapsing alternativeArrowCap
     // back to a two-way sharp/non-sharp branch caps this at the soft budget
     // (1) and turns the two assertions below red.
     const overlay = buildTrainRevealOverlay(
@@ -187,7 +187,7 @@ describe('buildTrainRevealOverlay', () => {
       true,
     );
     expect(overlay.arrows).toHaveLength(5); // blue best + four green
-    // The legend row equals exactly the drawn alternatives (LEGEND-04).
+    // The legend row equals exactly the drawn alternatives.
     expect(overlay.alsoFineMoves).toEqual([
       { uci: 'd2d4', quality: 'good' },
       { uci: 'g1f3', quality: 'good' },
@@ -247,15 +247,15 @@ describe('buildTrainRevealOverlay', () => {
     expect(d4Arrows).toHaveLength(1);
     expect(d4Arrows[0]!.color).toBe(MOVE_QUALITY_GOOD);
     // d2d4 is skipped from alsoFineMoves exactly as it is from the arrows —
-    // only g1f3 (the one remaining drawn alternative) survives (LEGEND-04).
+    // only g1f3 (the one remaining drawn alternative) survives.
     expect(overlay.alsoFineMoves).toEqual([{ uci: 'g1f3', quality: 'good' }]);
   });
 
-  // UAT round 4 regression (recast on the herring budget in Phase 211): the
+  // Regression (on the herring budget): the
   // best move and the played alternative are filtered out BEFORE the slice,
   // so neither consumes an alternative slot — all three remaining vetted
   // entries draw and list.
-  it('a played fine alternative does not consume an alternative slot — the remaining alternatives all still draw and all list (UAT round 4)', () => {
+  it('a played fine alternative does not consume an alternative slot — the remaining alternatives all still draw and all list', () => {
     const overlay = buildTrainRevealOverlay(
       'herring',
       good('e2e4', 'd2d4', 'g1f3', 'c2c4', 'b1c3'),
@@ -267,7 +267,7 @@ describe('buildTrainRevealOverlay', () => {
     // best (blue) + played d2d4 (good) + g1f3 + c2c4 + b1c3 (all green).
     expect(overlay.arrows).toHaveLength(5);
     expect(overlay.arrows.filter((a) => a.layerKey?.startsWith('good-'))).toHaveLength(3);
-    // The legend row equals exactly the drawn alternatives (LEGEND-04).
+    // The legend row equals exactly the drawn alternatives.
     expect(overlay.alsoFineMoves).toEqual([
       { uci: 'g1f3', quality: 'good' },
       { uci: 'c2c4', quality: 'good' },
@@ -275,7 +275,7 @@ describe('buildTrainRevealOverlay', () => {
     ]);
   });
 
-  it('a sharp puzzle still draws ZERO alternatives even when the user played a fine one — the deep answer key outranks the live search (UAT round 4)', () => {
+  it('a sharp puzzle still draws ZERO alternatives even when the user played a fine one — the deep answer key outranks the live search', () => {
     const overlay = buildTrainRevealOverlay(
       'sharp',
       good('e2e4', 'd2d4', 'g1f3', 'c2c4'),
@@ -291,7 +291,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.alsoFineMoves).toEqual([]);
   });
 
-  it("alsoFineMoves.length always equals the number of arrows whose layerKey starts with 'good-' (D-03 1:1 invariant)", () => {
+  it("alsoFineMoves.length always equals the number of arrows whose layerKey starts with 'good-' (1:1 invariant)", () => {
     const overlay = buildTrainRevealOverlay(
       'soft',
       good('e2e4', 'd2d4', 'g1f3', 'c2c4', 'b1c3'),
@@ -361,7 +361,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.markers).toEqual([]);
   });
 
-  it('badges dedupe by target square with the played move winning (played and best land on the same square from different origins); the played inaccuracy keeps its own severity badge (quick 261008-opg)', () => {
+  it('badges dedupe by target square with the played move winning (played and best land on the same square from different origins); the played inaccuracy keeps its own severity badge', () => {
     const overlay = buildTrainRevealOverlay(
       'sharp',
       good('e2e4'),
@@ -374,7 +374,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(e4Markers).toEqual([{ square: 'e4', severity: 'inaccuracy' }]);
   });
 
-  it('a played inaccuracy draws the inaccuracy-yellow arrow, not the good green (quick 261008-opg)', () => {
+  it('a played inaccuracy draws the inaccuracy-yellow arrow, not the good green', () => {
     const overlay = buildTrainRevealOverlay(
       'sharp',
       good('e2e4'),
@@ -417,11 +417,9 @@ describe('buildTrainRevealOverlay', () => {
   });
 });
 
-// Phase 211 (Plan 03, D-06): the free-play root ply's key lookup. These four
-// cases carry forward, in substance, the behavior contract of the deleted
-// squares-only rank matcher (formerly in uciParser.ts, deleted in 211-03):
+// The free-play root ply's key lookup. These four cases pin its contract:
 // empty-list null, no-match null, promotion tolerance, array-order ties.
-describe('vettedMoveForSquares (Phase 211 D-06)', () => {
+describe('vettedMoveForSquares', () => {
   it('returns null for an empty vetted list', () => {
     expect(vettedMoveForSquares([], 'e2', 'e4')).toBeNull();
   });
@@ -467,7 +465,7 @@ describe('classifyTrainMoveQuality', () => {
   });
 });
 
-describe('buildTrainStepArrows (190.1 UAT stepping)', () => {
+describe('buildTrainStepArrows', () => {
   it('returns a single blue engine-hue arrow for the next move', () => {
     const arrows = buildTrainStepArrows('g1f3');
     expect(arrows).toHaveLength(1);
@@ -503,7 +501,7 @@ function gradeOf(lines: PvLine[], rank: number) {
   return grade;
 }
 
-describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15, quick 261012-a6m)', () => {
+describe('buildTrainFreePlayOverlay', () => {
   const pv = gradedPv;
 
   it("count 1 returns a single blue engine-hue arrow for the free-play engine's top move with a primary-alpha best star", () => {
@@ -572,7 +570,7 @@ describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15,
   });
 });
 
-describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)', () => {
+describe('buildTrainStepOverlay', () => {
   const pv = gradedPv;
 
   it('engine agrees with the line: exactly the single blue line arrow with a primary-alpha best star', () => {
@@ -678,7 +676,7 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
   });
 });
 
-describe('buildTrainStepMarkers (190.1 UAT round 4)', () => {
+describe('buildTrainStepMarkers', () => {
   it('returns the quality badge on the moved-to square for the FIRST move only', () => {
     expect(buildTrainStepMarkers('e2e4', 'best', true)).toEqual([{ square: 'e4', best: true }]);
     expect(buildTrainStepMarkers('e2e4', 'blunder', true)).toEqual([
@@ -693,8 +691,8 @@ describe('buildTrainStepMarkers (190.1 UAT round 4)', () => {
   });
 });
 
-describe('TRAIN_STEP_HIGHLIGHT (190.1 UAT stepping)', () => {
-  it('maps best to the engine-blue highlight and inaccuracy to the shared yellow, not good (quick 261008-opg)', () => {
+describe('TRAIN_STEP_HIGHLIGHT', () => {
+  it('maps best to the engine-blue highlight and inaccuracy to the shared yellow, not good', () => {
     expect(TRAIN_STEP_HIGHLIGHT.best).toBe(MOVE_HIGHLIGHT_BEST);
     expect(TRAIN_STEP_HIGHLIGHT.inaccuracy).toBe(MOVE_HIGHLIGHT_SQUARE);
     expect(TRAIN_STEP_HIGHLIGHT.inaccuracy).not.toBe(MOVE_HIGHLIGHT_GOOD);
@@ -707,7 +705,7 @@ describe('TRAIN_STEP_HIGHLIGHT (190.1 UAT stepping)', () => {
   });
 });
 
-describe('buildChipFocusOverlay (Phase 237)', () => {
+describe('buildChipFocusOverlay', () => {
   const squaresOf = (a: { startSquare: string; endSquare: string }): string =>
     `${a.startSquare}${a.endSquare}`;
 
@@ -771,13 +769,13 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
     });
   });
 
-  // WR-02 regression. Two candidate moves can land on the SAME target square
+  // Regression: two candidate moves can land on the SAME target square
   // (here c4d5 as the best move and e4d5 as a fine alternative). `pushMarker`
   // dedups badges by end square under precedence played > best > fine > game,
   // so only the blue best badge on d5 survives the build. Lighting markers by
   // end-square membership would hand that blue badge to the focused move,
   // including the green alternative that owns no badge at all.
-  it('does not light another move’s badge when two candidate moves share a target square (WR-02)', () => {
+  it('does not light another move’s badge when two candidate moves share a target square', () => {
     const overlay = buildTrainRevealOverlay('soft', good('e4d5'), 'c4d5', null, null, true);
 
     // One badge total, on the shared square, owned by the BEST move.
@@ -801,7 +799,7 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
   it.each([
     ['null', null],
     ['empty', []],
-  ] as const)('a %s active set dims every arrow and badge (D-04: no active move)', (_label, active) => {
+  ] as const)('a %s active set dims every arrow and badge (no active move)', (_label, active) => {
     const overlay = buildTrainRevealOverlay(
       'soft',
       good('e2e4', 'd2d4'),
@@ -832,7 +830,7 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
     expect(focused.markers.every((m) => m.opacity === TRAIN_FOCUS_BADGE_DIM_OPACITY)).toBe(true);
   });
 
-  it('passes alsoFineMoves and markerOwners through unchanged (Phase 200 LEGEND-04: the sidebar row is never emptied by the board focus)', () => {
+  it('passes alsoFineMoves and markerOwners through unchanged (the sidebar row is never emptied by the board focus)', () => {
     const overlay = buildTrainRevealOverlay(
       'soft',
       good('e2e4', 'd2d4', 'g1f3'),
@@ -853,7 +851,7 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
     expect(overlay.markers.every((m) => m.opacity === undefined)).toBe(true);
   });
 
-  describe('liveAlternatives (quick 261010-e5l)', () => {
+  describe('liveAlternatives', () => {
     const live = (uci: string): TrainFineMove => ({ uci, quality: 'good' });
     const rootOverlay = () =>
       buildTrainRevealOverlay(
@@ -910,7 +908,7 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
   });
 });
 
-describe('chipArrowColor (Phase 237 UAT)', () => {
+describe('chipArrowColor', () => {
   it('matches the board arrow each chip focuses', () => {
     expect(chipArrowColor(['your', 'best'], 'best')).toBe(TRAIN_BEST_MOVE_ARROW);
     expect(chipArrowColor(['best', 'game'], 'best')).toBe(TRAIN_BEST_MOVE_ARROW);
@@ -921,7 +919,7 @@ describe('chipArrowColor (Phase 237 UAT)', () => {
   });
 });
 
-describe('trainRootMultiPvFloor (quick 261010-e5l)', () => {
+describe('trainRootMultiPvFloor', () => {
   it('widens only a soft root to best + every alternative slot', () => {
     expect(TRAIN_LIVE_ALT_ROOT_MULTIPV).toBe(TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS + 1);
     expect(trainRootMultiPvFloor('soft')).toBe(TRAIN_LIVE_ALT_ROOT_MULTIPV);
@@ -930,7 +928,7 @@ describe('trainRootMultiPvFloor (quick 261010-e5l)', () => {
   });
 });
 
-describe('buildTrainLiveAlternatives (quick 261010-e5l)', () => {
+describe('buildTrainLiveAlternatives', () => {
   const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const BLACK_TO_MOVE_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
   // White-POV cp of the top line; candidates are scored relative to it.

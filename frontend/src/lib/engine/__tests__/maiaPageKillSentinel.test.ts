@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * maiaPageKillSentinel.ts unit tests (SEED-158, 2026-09-07): the record must
+ * maiaPageKillSentinel.ts unit tests: the record must
  * exist exactly while Maia is alive AND the page is in the foreground, must
  * vanish on every ordinary end of a page, and a leftover record on the next
  * load must become exactly one Sentry event carrying the previous session's
@@ -116,7 +116,7 @@ describe('maiaPageKillSentinel', () => {
   });
 
   it('a record whose last dispatch is older than the idle threshold is cleared without a report (FLAWCHESS-BM)', () => {
-    // Quick 260916-g38: Android tablet, 53 min idle in a 55 min session — an idle
+    // Android tablet, 53 min idle in a 55 min session — an idle
     // foreground kill (app swiped away, OS reclaim) is not a Maia memory kill.
     const now = Date.now();
     const idle = {

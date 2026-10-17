@@ -16,8 +16,8 @@ _OPENINGS_TSV = Path(__file__).resolve().parent.parent / "data" / "openings.tsv"
 class TrieNode:
     """A node in the opening lookup trie.
 
-    Created per D-04: typed class for recursive structures (not Pydantic).
-    Replaces bare dict trie to eliminate unresolved-attribute ty errors.
+    Typed class for recursive structures (not Pydantic), used instead of a bare
+    dict trie to avoid unresolved-attribute ty errors.
     """
 
     __slots__ = ("children", "result")
@@ -123,13 +123,13 @@ def find_opening(pgn: str | None) -> tuple[str | None, str | None]:
 def find_opening_ply_count(moves: list[str]) -> int:
     """Return the 1-based ply depth of the deepest known-opening match in moves.
 
-    Phase 172 (SEED-106 D-06): computed on-read from the SAN mainline the
+    Computed on-read from the SAN mainline the
     game-detail payload already ships (`GameFlawCard.moves`) — no column, no
     migration, no backfill. Walks the same `_TRIE` singleton as `find_opening`,
     but (unlike `find_opening`) tracks and returns the *depth* of the deepest
     result-carrying node rather than discarding it. Gates the background gem
-    sweep (D-04: book plies never enter the cascade) and marks theory plies
-    with the book badge (D-08).
+    sweep (book plies never enter the cascade) and marks theory plies
+    with the book badge.
 
     `moves` is already-tokenized SAN (the same dialect `openings.tsv` uses,
     including `O-O` castling) — unlike `find_opening`, this does NOT call

@@ -34,7 +34,7 @@ describe('useOpeningInsights', () => {
     (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data: EMPTY_RESPONSE });
   });
 
-  it('POSTs to /insights/openings with color: "all" regardless of input filter color (D-02)', async () => {
+  it('POSTs to /insights/openings with color: "all" regardless of input filter color', async () => {
     renderHook(
       () =>
         useOpeningInsights({

@@ -1,4 +1,4 @@
-"""Tests for scripts/engine_interleave_227.py: the Phase 227 interleave driver (D-04, D-17).
+"""Tests for scripts/engine_interleave_227.py: the interleave driver.
 
 Covers the pieces that decide whether a throughput session is trustworthy:
 schedule rotation and arm alternation (drift hits both arms equally), the exact
@@ -6,7 +6,7 @@ pinned argv per config and arm, the speed-probe line parser, the bounded load
 gate, resume (only rc 0 steps are skipped, failed rows never reach the verdict
 twin), the manifest column contract the verdict twin reads, and dry-run.
 
-Mutation check (recorded in 227-07-SUMMARY.md): disabling the even-round arm
+Mutation check: disabling the even-round arm
 reversal in `build_schedule` fails `test_schedule_arms_alternate_between_rounds`.
 """
 

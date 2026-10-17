@@ -1,15 +1,14 @@
 /**
  * EngineUnsupportedNotice — the in-card copy for a device on which Maia can
- * never start (SEED-158, 2026-09-07).
+ * never start.
  *
  * Why a card-level notice: `EngineReadyGate` carries the same message, but
  * it is deliberately suppressed on /analysis for the `unsupported` status
  * (it would lock the board out), and it never mounts on a returning device
- * whose engine assets were already cached. So a gated device saw the Maia
- * card's pulsing skeleton forever and an empty FlawChess Engine card, with no
- * explanation (found on iPhones while the 2026-09-06 blanket iOS gate was
- * in force). Both cards now render this instead of their loading state
- * whenever the store reports `unsupported`.
+ * whose engine assets were already cached. Without this notice a gated device
+ * would see the Maia card's pulsing skeleton forever and an empty FlawChess
+ * Engine card, with no explanation. Both cards render this instead of their
+ * loading state whenever the store reports `unsupported`.
  *
  * Copy mirrors the gate's `unsupported` variant, minus the "you can still
  * use the analysis board" pointer (the reader is on it).

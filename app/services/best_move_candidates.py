@@ -1,18 +1,18 @@
-"""best_move_candidates.py — pure candidate logic for Gem/Great detection (Phase 174).
+"""best_move_candidates.py — pure candidate logic for Gem/Great detection.
 
 Three pure, unit-testable pieces, each reusing an existing single-source
 implementation so the backend can never drift from the live board:
 
-  * pinned_elo_for_mover (GEMS-05, D-04) — the mover's lichess-blitz-equivalent
+  * pinned_elo_for_mover — the mover's lichess-blitz-equivalent
     rating, clamped to the Maia ELO ladder [600, 2600]. Reproduces the frontend's
     `deriveRawDefault` (`*_lichess_blitz ?? raw`, flawchess passthrough) via the
     shared normalize_to_lichess_blitz + clamp_to_ladder_bounds — no re-derivation.
-  * passes_inaccuracy_gate (GEMS-02, D-05a) — the write-time candidate gate: keep
+  * passes_inaccuracy_gate — the write-time candidate gate: keep
     a ply only when its best move beats the runner-up by >= INACCURACY_DROP in
     expected score, via the shared eval_cp_to_expected_score sigmoid with the
     flaws_service Option-B mate mapping (map mate to ±MATE_CP_EQUIVALENT BEFORE
     the sigmoid, NOT eval_mate_to_expected_score).
-  * classify_best_move (GEMS-07) — the query-time gem/great/neither tier, a PURE
+  * classify_best_move — the query-time gem/great/neither tier, a PURE
     function of stored (maia_prob, cp margin) and module constants only: no DB
     read, no engine call, no re-inference. A threshold retune therefore
     reclassifies the whole corpus with zero re-analysis.
@@ -34,16 +34,16 @@ from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
 from app.services.flaws_service import INACCURACY_DROP, MATE_CP_EQUIVALENT, MISTAKE_DROP
 from app.services.maia_encoding import clamp_to_ladder_bounds
 
-# ─── Classification constants (GEMS-07) ────────────────────────────────────────
+# ─── Classification constants ────────────────────────────────────────
 
 # Maia policy-probability ceilings, mirroring the frontend gemMove.ts semantics.
 # A gem is "fewer than 1 in 5 rating-peers would play it" (GEM_MAIA_MAX_PROB); a
-# great move is the (0.20, 0.50] band (ROADMAP SC5). Both are flat cutoffs (D-08
-# defers any per-ELO iso-rarity curve). Named constants — no magic numbers.
+# great move is the (0.20, 0.50] band. Both are flat cutoffs (no per-ELO
+# iso-rarity curve). Named constants — no magic numbers.
 GEM_MAIA_MAX_PROB: float = 0.20
 GREAT_MAIA_MAX_PROB: float = 0.50
 
-# Imported-eval divergence guard (Quick 260717-gmg). For a lichess-eval game the
+# Imported-eval divergence guard. For a lichess-eval game the
 # eval graph (game_positions.eval_cp) is lichess's imported %eval, while best_cp
 # is OUR Stockfish (1M nodes) — two different engines. When our best-move eval is
 # more OPTIMISTIC than lichess's authoritative post-move eval (mover POV) by more
@@ -52,7 +52,7 @@ GREAT_MAIA_MAX_PROB: float = 0.50
 # rather than surface a spurious gem/great (e.g. game 640125, 55.Qc6+: our −0.82
 # vs lichess −2.46 = 0.14 ES optimism). Directional (only optimistic divergence
 # is a false positive) and query-time, so retuning reclassifies the corpus with
-# zero re-analysis (GEMS-07). No-op for engine games (one engine feeds both).
+# zero re-analysis. No-op for engine games (one engine feeds both).
 BEST_MOVE_DIVERGENCE_MAX_ES: float = 0.10
 
 MoverColor = Literal["white", "black"]
@@ -68,7 +68,7 @@ def mover_color_for_ply(ply: int) -> MoverColor:
     return "white" if ply % 2 == 0 else "black"
 
 
-# ─── Pinned ELO (GEMS-05, D-04) ────────────────────────────────────────────────
+# ─── Pinned ELO ────────────────────────────────────────────────
 
 
 def pinned_elo_for_mover(
@@ -79,13 +79,13 @@ def pinned_elo_for_mover(
     is_correspondence: bool,
 ) -> float:
     """Derive the mover's Maia-facing ELO: the lichess-blitz-equivalent rating,
-    clamped to the [600, 2600] ladder (D-04), matching the live board exactly.
+    clamped to the [600, 2600] ladder, matching the live board exactly.
 
     Reproduces the frontend `deriveRawDefault` fallback chain (`*_lichess_blitz ??
     raw`) with a flawchess passthrough, delegating to the shared
     normalize_to_lichess_blitz + clamp_to_ladder_bounds — never re-deriving either.
-    A stored flawchess rating is already lichess-blitz-equivalent by construction
-    (STORE-03), so it skips normalization. When normalization returns None
+    A stored flawchess rating is already lichess-blitz-equivalent by construction,
+    so it skips normalization. When normalization returns None
     (correspondence has no real-time analogue) or the TC bucket is missing, fall
     back to the raw rating, then clamp.
 
@@ -135,7 +135,7 @@ def _eval_to_expected_score(
     return None
 
 
-# ─── Inaccuracy candidate gate (GEMS-02, D-05a) ────────────────────────────────
+# ─── Inaccuracy candidate gate ─────────────────────────────────────────────────
 
 
 def passes_inaccuracy_gate(
@@ -146,7 +146,7 @@ def passes_inaccuracy_gate(
     mover_color: MoverColor,
 ) -> bool:
     """True iff the best move beats the runner-up by at least INACCURACY_DROP in
-    mover-POV expected score (D-05a). False when either eval is missing."""
+    mover-POV expected score. False when either eval is missing."""
     best_es = _eval_to_expected_score(best_cp, best_mate, mover_color)
     second_es = _eval_to_expected_score(second_cp, second_mate, mover_color)
     if best_es is None or second_es is None:
@@ -154,7 +154,7 @@ def passes_inaccuracy_gate(
     return best_es - second_es >= INACCURACY_DROP
 
 
-# ─── Gem/Great/neither classification (GEMS-07) ────────────────────────────────
+# ─── Gem/Great/neither classification ────────────────────────────────
 
 
 def classify_best_move(
@@ -169,7 +169,7 @@ def classify_best_move(
     is_lichess_eval_game: bool = False,
 ) -> BestMoveTier:
     """Classify a stored best-move candidate as gem / great / neither, PURELY from
-    the stored maia_prob + cp margin and module constants (GEMS-07): no DB, no
+    the stored maia_prob + cp margin and module constants: no DB, no
     engine, no re-inference. A threshold retune reclassifies the corpus for free.
 
     C2 (only-good-move): the best move must beat the runner-up by >= MISTAKE_DROP
@@ -177,7 +177,7 @@ def classify_best_move(
     maia_prob <= GEM_MAIA_MAX_PROB -> "gem"; <= GREAT_MAIA_MAX_PROB -> "great";
     otherwise "neither".
 
-    Imported-eval divergence guard (Quick 260717-gmg): for lichess-eval games
+    Imported-eval divergence guard: for lichess-eval games
     (is_lichess_eval_game=True) `post_move_cp`/`post_move_mate` carry lichess's
     authoritative post-move %eval for this ply. Because a candidate is stored only
     when played == our Stockfish best, that eval describes the same resulting
@@ -203,16 +203,16 @@ def classify_best_move(
     return "neither"
 
 
-# ─── SQL twins of _eval_to_expected_score / classify_best_move (FILT-01) ───────
+# ─── SQL twins of _eval_to_expected_score / classify_best_move ───────
 #
-# The Library "has gem" / "has great" filter (FILT-01) must decide gem/great
+# The Library "has gem" / "has great" filter must decide gem/great
 # tiers inside a correlated EXISTS (app/repositories/library_repository.py::
 # best_move_exists_from_table), so the classification needs a SQLAlchemy Core
 # expression twin of the two Python functions above. Board (classify_best_move,
 # called in Python) and filter (these SQL twins) agree by construction because
 # both read the SAME module constants (GEM_MAIA_MAX_PROB, GREAT_MAIA_MAX_PROB,
 # MISTAKE_DROP, MATE_CP_EQUIVALENT) and the same LICHESS_K sigmoid coefficient —
-# never re-declared here (GEMS-07/D-03b: one retune surface).
+# never re-declared here (one retune surface).
 #
 # Must stay consistent with _eval_to_expected_score / classify_best_move (the
 # Python counterparts, same module). If either side changes, update the other —
@@ -220,7 +220,7 @@ def classify_best_move(
 # (app/repositories/library_repository.py).
 
 
-def _es_sql(cp_col: Any, mate_col: Any, user_color_col: Any) -> ColumnElement[float | None]:
+def _es_sql(cp_col: Any, mate_col: Any, mover_color_col: Any) -> ColumnElement[float | None]:
     """SQL twin of _eval_to_expected_score.
 
     Option-B mate mapping: a mate eval maps to ±MATE_CP_EQUIVALENT centipawns
@@ -228,7 +228,7 @@ def _es_sql(cp_col: Any, mate_col: Any, user_color_col: Any) -> ColumnElement[fl
     are present, matching the Python function's `if eval_mate is not None: ...
     elif eval_cp is not None: ...` branch order). NULL when both cols are NULL.
     """
-    sign = case((user_color_col == "white", 1.0), else_=-1.0)
+    sign = case((mover_color_col == "white", 1.0), else_=-1.0)
     mate_cp_equiv = case(
         (mate_col > 0, float(MATE_CP_EQUIVALENT)), else_=-float(MATE_CP_EQUIVALENT)
     )
@@ -245,7 +245,7 @@ def best_move_tier_sql(
     best_mate_col: Any,
     second_cp_col: Any,
     second_mate_col: Any,
-    user_color_col: Any,
+    mover_color_col: Any,
     post_move_cp_col: Any = None,
     post_move_mate_col: Any = None,
     is_lichess_eval_col: Any = None,
@@ -258,7 +258,7 @@ def best_move_tier_sql(
 
     C2 (only-good-move) gate: NULL when either expected score is missing, or
     when the best-second margin is below MISTAKE_DROP. Then the imported-eval
-    divergence guard (Quick 260717-gmg, mirrors classify_best_move): when
+    divergence guard (mirrors classify_best_move): when
     is_lichess_eval_col is true and the post-move expected score is present and
     our best-move ES exceeds it by more than BEST_MOVE_DIVERGENCE_MAX_ES, NULL.
     Given both, C1 (hard-to-find): maia_prob_col <= GEM_MAIA_MAX_PROB -> 'gem';
@@ -268,15 +268,15 @@ def best_move_tier_sql(
     The three post-move params default to None: when the caller omits them the
     guard is inert (no cols to read), so the classifier behaves exactly as before.
     """
-    best_es = _es_sql(best_cp_col, best_mate_col, user_color_col)
-    second_es = _es_sql(second_cp_col, second_mate_col, user_color_col)
+    best_es = _es_sql(best_cp_col, best_mate_col, mover_color_col)
+    second_es = _es_sql(second_cp_col, second_mate_col, mover_color_col)
     branches: list[Any] = [
         (best_es.is_(None), literal(None)),
         (second_es.is_(None), literal(None)),
         ((best_es - second_es) < MISTAKE_DROP, literal(None)),
     ]
     if is_lichess_eval_col is not None and post_move_cp_col is not None:
-        post_es = _es_sql(post_move_cp_col, post_move_mate_col, user_color_col)
+        post_es = _es_sql(post_move_cp_col, post_move_mate_col, mover_color_col)
         branches.append(
             (
                 and_(

@@ -1,5 +1,5 @@
 /**
- * Post-auth return path (quick 260926-9bg).
+ * Post-auth return path.
  *
  * A logged-out visitor who opens a protected route (e.g. a newsletter link to
  * /train) is sent to the home page, and an expired session is sent to /login.

@@ -1,4 +1,4 @@
-"""Source-level invariant test for the D-04 reversal (Phase 207, RESET-05).
+"""Source-level invariant test: password-reset eligibility is credential state.
 
 Eligibility for password reset means "has a password to reset" (credential
 state), never "is this a Google/SSO account" (account type). 125 of the 172

@@ -1,6 +1,6 @@
 /**
  * botTimeControlPresets — the 9 lichess-style time-control presets offered on
- * the Bots setup screen (Phase 171 D-14, PLAY-02). Bullet is excluded by
+ * the Bots setup screen. Bullet is excluded by
  * design (client-side compute headroom, milestone framing) — do not add a
  * bullet row here.
  *
@@ -35,7 +35,7 @@ export const TIME_CONTROL_PRESETS = [
   { label: '10+0', baseSeconds: 600, incrementSeconds: 0, bucket: 'rapid' },
   { label: '10+5', baseSeconds: 600, incrementSeconds: 5, bucket: 'rapid' },
   { label: '15+10', baseSeconds: 900, incrementSeconds: 10, bucket: 'rapid' },
-  // NOTE (accepted, documented quirk — RESEARCH.md Pitfall 4, do NOT "fix"
+  // NOTE (accepted, documented quirk — do NOT "fix"
   // this here or in app/services/normalization.py): the backend's frozen
   // `parse_time_control` computes `estimated = base + inc*40 = 1800 + 0 = 1800`,
   // and its boundary rule sends `estimated <= 1800` to the RAPID bucket, not
@@ -47,7 +47,7 @@ export const TIME_CONTROL_PRESETS = [
   { label: '30+20', baseSeconds: 1800, incrementSeconds: 20, bucket: 'classical' },
 ] as const satisfies readonly TimeControlPreset[];
 
-/** Union of the nine preset labels, derived from the tuple so a new preset flows through (Phase 229 analytics registry). */
+/** Union of the nine preset labels, derived from the tuple so a new preset flows through (the analytics registry). */
 export type TimeControlPresetLabel = (typeof TIME_CONTROL_PRESETS)[number]['label'];
 
 export const DEFAULT_TC_PRESET_LABEL = '10+0';

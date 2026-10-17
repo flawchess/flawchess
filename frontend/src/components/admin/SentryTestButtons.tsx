@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 
 // Admin-only: Sentry error path test.
 // Tests four error paths: event handler, TanStack Query, React render, and backend.
-// Moved from frontend/src/pages/GlobalStats.tsx in Phase 62 (D-19).
 export function SentryTestButtons() {
   const [shouldCrash, setShouldCrash] = useState(false);
   const [tqEnabled, setTqEnabled] = useState(false);

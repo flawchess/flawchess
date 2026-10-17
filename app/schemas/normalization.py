@@ -1,6 +1,6 @@
-"""Pydantic schema for normalized game data from chess.com and lichess.
+"""Pydantic schema for normalized game data (chess.com, lichess, bot and pasted games).
 
-Created per D-01: Pydantic models at system boundaries (external API input).
+Pydantic models at system boundaries (external API input).
 """
 
 import datetime
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 # Literal types for fields with fixed value sets (per CLAUDE.md)
 # "flawchess" and "pgn" are analytics-excluded values — see
 # app.repositories.query_utils.DEFAULT_EXCLUDED_PLATFORMS, the single seam
-# that decides analytics eligibility for every Platform member (Phase 208 D-05).
+# that decides analytics eligibility for every Platform member.
 Platform = Literal["chess.com", "lichess", "flawchess", "pgn"]
 GameResult = Literal["1-0", "0-1", "1/2-1/2"]
 Color = Literal["white", "black"]
@@ -20,9 +20,9 @@ TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 
 
 class NormalizedGame(BaseModel):
-    """Typed representation of a normalized game from chess.com or lichess.
+    """Typed representation of a normalized game (chess.com, lichess, bot or pasted).
 
-    Created per D-01: Pydantic models at system boundaries (external API input).
+    Pydantic models at system boundaries (external API input).
     Uses Literal types for fixed-value fields per CLAUDE.md.
     """
 
@@ -49,11 +49,12 @@ class NormalizedGame(BaseModel):
     white_accuracy: float | None
     black_accuracy: float | None
     played_at: datetime.datetime | None
-    # Phase 210 (SEED-042): the game's starting position when it is NOT the
+    # The game's starting position when it is NOT the
     # standard one (chess.com thematic tournaments and custom-position "Let's
     # Play!" games carry [SetUp "1"][FEN ...] but use standard rules, so the
     # variant filter passes them). None means the standard start — see
-    # normalization.extract_initial_fen, which is the only producer.
+    # normalization.extract_initial_fen (platform imports) and non_standard_root_fen
+    # (pasted games).
     initial_fen: str | None = None
     # per-game base clock fields (optional, default None)
     base_time_seconds: int | None = None

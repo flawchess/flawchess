@@ -1,12 +1,11 @@
 /**
- * openings.ts unit tests (PLAY-11 / 169.5-01).
+ * openings.ts unit tests.
  *
  * Two independent things are tested here:
  * 1. A standing property test that every line in the REAL shipped
  *    frontend/public/openings.tsv corpus replays legally through chess.js
  *    with byte-identical canonical SAN — the guard against a book that
- *    silently matches nothing (see 169.5-RESEARCH.md's empirical
- *    verification and 169.5-VALIDATION.md non-inferable check #4). This
+ *    silently matches nothing. This
  *    reads the TSV directly off disk and replays it through chess.js
  *    independently of openings.ts — it validates the ASSET against
  *    chess.js, not the module's own parsing.
@@ -14,7 +13,7 @@
  *    both against a synthetic two-row TSV (pins the prefix-expansion logic
  *    itself, corpus-independent) and against the real shipped TSV (proves
  *    the real asset produces the expected prefix membership and that
- *    findOpening() — Task 1's refactor target — still works).
+ *    findOpening() still works).
  *
  * buildLookup() caches its promise at module scope, so a synthetic-TSV test
  * must not be poisoned by a prior real-TSV test's cached promise (or vice
@@ -146,7 +145,7 @@ describe('prefix set', () => {
     expect(prefixSet.has('Nf3 Nf6 Ng1 Ng8')).toBe(false);
   });
 
-  it('findOpening still resolves a non-null opening against the real TSV (proves Task 1s refactor did not break name lookup)', async () => {
+  it('findOpening still resolves a non-null opening against the real TSV (proves the refactor did not break name lookup)', async () => {
     const { findOpening } = await loadOpenings(REAL_TSV);
 
     const opening = await findOpening(['e4', 'c6']);

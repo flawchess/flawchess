@@ -1,5 +1,5 @@
 /**
- * Pure, React-free pieces of useTrainGradingEngine (review WR-02): the search
+ * Pure, React-free pieces of useTrainGradingEngine: the search
  * and grade types, the key-anchor builders, terminal-position scoring, the
  * bestmove commit, the disagreement re-check plan/finish stages, and the shared
  * settle-once timeout race. Nothing here touches a Worker or a ref, so each
@@ -25,23 +25,22 @@ export interface RawSearchResult {
   evalMate: number | null;
   bestMoveUci: string | null;
   /** Engine depth of the top (multipv 1) exact line; null when no exact line
-   * arrived, 0 for a terminal position scored without a search (Phase 235
-   * D-17: recorded with the re-check). */
+   * arrived, 0 for a terminal position scored without a search. It is
+   * recorded with the re-check. */
   depth: number | null;
   /** UCI moves following the top (multipv 1) line's `pv` keyword — mover-POV
-   * move list, not sign-dependent (190.1-01: captured for the reveal-time
-   * lines, previously parsed but discarded). */
+   * move list, not sign-dependent (captured for the reveal-time lines). */
   pv: string[];
   /**
    * Every rank the engine returned for this search, sorted by `multipv`
-   * ascending and white-POV sign-normalized (190.1-02 D-01 point 1). As of
-   * Phase 211 (D-05) EVERY search this hook dispatches — mount, after-move,
-   * reveal-time — is width 1, so this normally holds exactly one entry
-   * (rank 1, whose convenience values are `evalCp`/`evalMate`/`pv` above).
-   * The array shape is kept because the commit path is width-agnostic; as of
-   * Phase 235 no consumer reads it any more (the anchor owns the key line, and
+   * ascending and white-POV sign-normalized. EVERY search this hook
+   * dispatches — mount, after-move, reveal-time — is width 1, so this normally
+   * holds exactly one entry (rank 1, whose convenience values are
+   * `evalCp`/`evalMate`/`pv` above).
+   * The array shape is kept because the commit path is width-agnostic; no
+   * consumer reads it (the anchor owns the key line, and
    * `startGameMoveSearch` compares against the key instead of an exact-UCI rank
-   * lookup), and it never left this hook. Never assume
+   * lookup), and it never leaves this hook. Never assume
    * `lines.length` equals the requested width: the engine returns only as
    * many ranks as there are legal moves and never pads — nor that every
    * rank holds a DISTINCT move before `dedupePvLinesByFirstMove` runs at
@@ -53,10 +52,10 @@ export interface RawSearchResult {
 
 /**
  * The settled think-time search for the puzzle most recently passed to
- * `startGrading` (Phase 235, replaces the old root-search result). `keyLine`
+ * `startGrading`. `keyLine`
  * moves are rooted at the PUZZLE fen and `es` is the mover-POV expected score
  * of `keyLine`. `legacy` is true when the anchor came from a root search
- * (D-07: null, missing or illegal key), where `keyUci` is that search's own
+ * (null, missing or illegal key), where `keyUci` is that search's own
  * bestmove.
  */
 export interface GradingAnchor {
@@ -65,12 +64,12 @@ export interface GradingAnchor {
   keyUci: string | null;
   keyLine: TrainEngineLine;
   es: number;
-  /** Engine depth of the anchor search (Phase 235 D-17), null when none was reported. */
+  /** Engine depth of the anchor search, null when none was reported. */
   depth: number | null;
   legacy: boolean;
   /**
-   * True after a CONFIRMED re-check swapped this anchor for the 3 s key line
-   * (Phase 235 D-16): the game-move search then shows the phone's honest eval
+   * True after a CONFIRMED re-check swapped this anchor for the 3 s key line:
+   * the game-move search then shows the phone's honest eval
    * instead of clamping it to the key line. False everywhere else.
    */
   unclamped: boolean;
@@ -83,31 +82,31 @@ export interface RecheckInnerResult {
 }
 
 export interface GradeResult {
-  /** SEED-119: the three-way move-quality tier, derived from
+  /** The three-way move-quality tier, derived from
    * `classifyLiveSeverity` via `moveTierFromSeverity` — never a re-derived
    * boolean. `moveTier !== 'wrong'` is what feeds the SR ladder verdict. */
   moveTier: TrainMoveTier;
-  /** Phase 235 (D-09): the server key on the keyed path (the root search's
-   * bestmove on the legacy D-07 path), so the reveal arrow and BEST MOVE box
+  /** The server key on the keyed path (the root search's
+   * bestmove on the legacy path), so the reveal arrow and BEST MOVE box
    * name the key even when the phone's own search would prefer another move. */
   bestMoveUci: string | null;
-  /** Phase 235 (D-01): the phone's expected score after the KEY (mover POV);
+  /** The phone's expected score after the KEY (mover POV);
    * the root ES on the legacy path. */
   esBefore: number;
   esAfter: number;
   /** The key line: `[keyUci, ...afterKeySearch.pv]` rooted at the puzzle fen
-   * (D-09), derived at think time without any additional search. */
+   * derived at think time without any additional search. */
   bestLine: TrainEngineLine;
   /**
    * The played move's own line. When the played move IS the key this is
    * exactly `bestLine`. Otherwise it comes from the after-move grading search
    * (`[playedMoveUci, ...afterSearch.pv]`), with the displayed eval clamped to
-   * never read better than the key line's (D-09).
+   * never read better than the key line's.
    */
   playedLine: TrainEngineLine;
   /**
-   * Phase 236 (D-01/D-04): the 1.5 s reading for the phone_grade record. Null
-   * or absent on the legacy root anchor (D-06), on the defensive fallbacks and
+   * The 1.5 s reading for the phone_grade record. Null
+   * or absent on the legacy root anchor, on the defensive fallbacks and
    * on a re-check's replacement grade. Optional because restored reveal-cache
    * entries predate it.
    */
@@ -115,7 +114,7 @@ export interface GradeResult {
 }
 
 /**
- * One reveal-time engine line (190.1-01, D-01/D-03). `moves` are UCI strings
+ * One reveal-time engine line. `moves` are UCI strings
  * rooted at the PUZZLE's fen — not the position after any move — the
  * invariant shared by all three reveal lines (YOUR MOVE / BEST MOVE /
  * PLAYED IN GAME) so a single replay-from-puzzle-fen call always applies.
@@ -128,7 +127,7 @@ export interface TrainEngineLine {
 }
 
 /**
- * Optional hooks into a `gradeMove` call. Phase 236 D-14: the instant path
+ * Optional hooks into a `gradeMove` call. The instant path
  * renders the solution card from the think-time after-key line as soon as the
  * anchor has settled, before the played move's search finishes.
  */
@@ -138,11 +137,11 @@ export interface GradeMoveOptions {
   onKeyLine?: (keyLine: TrainEngineLine) => void;
 }
 
-/** Phase 236 D-14/D-15: where a server-graded move's background phone grade is. */
+/** Where a server-graded move's background phone grade is. */
 export type InstantGradeStatus = 'pending' | 'failed';
 
 /**
- * Phase 236 D-14/D-15: the reveal's view of a server-graded move whose phone
+ * The reveal's view of a server-graded move whose phone
  * grade has not landed. `keyLine` is the think-time after-key line, set once
  * the anchor has settled (null before that). The solve screen holds `null`
  * when no instant grade is outstanding (the normal path, or the grade landed).
@@ -154,13 +153,13 @@ export interface InstantGradeState {
 }
 
 /**
- * Phase 236 review WR-02: a stand-in GradeResult for the reveal cache, used when
+ * A stand-in GradeResult for the reveal cache, used when
  * Analyze is pressed before the instant path's background grade landed. Without
  * it the click cached nothing, so browser Back lost the solved reveal (a resumed
  * session no longer contains the solved puzzle). Every number is the SERVER's
  * graded pair from the verdict (never a fabricated 0.5), the key line is the
  * think-time one when the anchor had settled, and the played-move line is empty,
- * so the restored Your-move card is the header-only card of the D-15 failed
+ * so the restored Your-move card is the header-only card of the failed
  * state. `phoneReading` is null: the search ends with the unmount, so this solve
  * records no phone_grade (accepted gap). Returns null when the verdict carries no
  * server pair, where the caller keeps the old no-cache behaviour.
@@ -181,7 +180,7 @@ export function gradeFromServerPair(verdict: SolveResponse, instant: InstantGrad
 }
 
 /**
- * A completed disagreement re-check (Phase 235 D-11/D-13/D-17): `grade` replaces
+ * A completed disagreement re-check: `grade` replaces
  * the 1.5 s grade whatever it says, `recheck` is the record that rides the
  * solve POST.
  */
@@ -194,17 +193,17 @@ export interface RecheckResult {
 
 /** Build the legacy root anchor's key line from a settled root search: rank
  * 1's PV, falling back to a single-element array containing the bestmove token
- * when the PV is empty (190.1-02 D-01 point 1). */
+ * when the PV is empty. */
 function bestLineFrom(best: RawSearchResult): TrainEngineLine {
   const moves = best.pv.length > 0 ? best.pv : best.bestMoveUci !== null ? [best.bestMoveUci] : [];
   return { moves, evalCp: best.evalCp, evalMate: best.evalMate };
 }
 
 /**
- * Bug fix (190.1 UAT round 9; rationale narrowed by Phase 211): a played/game
+ * Bug fix: a played/game
  * move evaluated by its own after-move search occasionally READS better than
  * the best move (e.g. your Ke4 −4.5 vs best Ke5 −4.0). With the mount search
- * at width 1 (Phase 211 D-05) the node budget is no longer split across
+ * at width 1 the node budget is no longer split across
  * ranks, so the surviving causes are the after-move search spending its
  * budget one ply DEEPER than the mount search, and ordinary cross-search cp
  * variance in decided positions (project_eval_nondeterminism). The verdict
@@ -250,7 +249,7 @@ export function fenAfterUciMove(fen: string, uci: string): string | null {
 const DELIVERED_MATE_DISTANCE = 1;
 
 /**
- * Bug fix (Phase 235): the vendored Stockfish answers a mated or stalemated FEN
+ * Bug fix: the vendored Stockfish answers a mated or stalemated FEN
  * with `mate 0` or no score at all, which `evalToExpectedScore` reads as a
  * neutral 0.5. A mating key anchored at 0.5 would let any decent move grade
  * good, and a non-best mating move was already graded as a blunder before this
@@ -284,7 +283,7 @@ export function terminalSearchResult(fen: string): RawSearchResult | null {
   return null;
 }
 
-/** Phase 235 (D-08): the keyed anchor from the settled after-key search. The
+/** The keyed anchor from the settled after-key search. The
  * raw eval is already white-POV, so `evalToExpectedScore` with the PUZZLE mover
  * yields a value directly comparable with the after-played search. */
 export function keyedAnchorFrom(
@@ -305,7 +304,7 @@ export function keyedAnchorFrom(
   };
 }
 
-/** Phase 235 (D-07): the legacy anchor from a root search, exactly today's. */
+/** The legacy anchor from a root search. */
 export function legacyAnchorFrom(fen: string, generation: number, raw: RawSearchResult): GradingAnchor {
   return {
     fen,
@@ -320,7 +319,7 @@ export function legacyAnchorFrom(fen: string, generation: number, raw: RawSearch
 }
 
 /** The 1.5 s after-played search of the move `gradeMoveInner` most recently
- * graded (Phase 235 D-17): the re-check needs its ES and depth for the record,
+ * graded: the re-check needs its ES and depth for the record,
  * and matches on generation and move so it never reads a stale one. */
 export interface LastPlayedSearch {
   generation: number;
@@ -332,7 +331,7 @@ export interface LastPlayedSearch {
 // ─── Bestmove commit ────────────────────────────────────────────────────────
 
 /**
- * 190.1-02: commit the accumulated MultiPV map, sorted by rank and sign-normalized
+ * Commit the accumulated MultiPV map, sorted by rank and sign-normalized
  * to white POV, exactly once at `bestmove`. Never assume the requested width was
  * returned (the map may have fewer entries than requested); a width-1 search
  * still yields one entry.
@@ -378,7 +377,7 @@ export interface RecheckPlan {
 }
 
 /**
- * Phase 235 (D-10): null when there is nothing coherent to re-check (anchor
+ * Null when there is nothing coherent to re-check (anchor
  * mismatch, legacy anchor, played == key, no recorded 1.5 s played search,
  * illegal after-move FEN).
  */
@@ -421,7 +420,7 @@ export function planRecheck(
 }
 
 /** Grade the two 3 s searches with the same `classifyLiveSeverity` as the 1.5 s
- * pair (D-11) and build the record plus the anchor the re-check would install. */
+ * pair and build the record plus the anchor the re-check would install. */
 export function finishRecheck(
   plan: RecheckPlan,
   keyRaw: RawSearchResult,
@@ -444,7 +443,7 @@ export function finishRecheck(
     evalCp: playedRaw.evalCp,
     evalMate: playedRaw.evalMate,
   };
-  // D-16: a confirmed re-check shows the phone's honest eval; a resolved
+  // A confirmed re-check shows the phone's honest eval; a resolved
   // one is capped at the (3 s) key line like any off-key played line.
   const playedLine =
     outcome === 'confirmed' ? rawPlayedLine : clampLineEvalToBest(rawPlayedLine, keyLine, mover);
@@ -471,7 +470,7 @@ export function finishRecheck(
       }),
     },
     // The 3 s key reading becomes the anchor, so the reveal's game line is
-    // judged against it (clamped when resolved, honest when confirmed, D-16).
+    // judged against it (clamped when resolved, honest when confirmed).
     anchor: {
       fen,
       generation,
@@ -493,7 +492,7 @@ export function finishRecheck(
  * the loser is ignored. On timeout it rejects with `timeoutMessage` AND aborts the
  * `signal` handed to `work`, so work that is still running (a multi-search
  * pipeline) can stop dispatching further engine searches instead of running on
- * as a zombie (review WR-01). A non-Error rejection from `work` is normalized to
+ * as a zombie. A non-Error rejection from `work` is normalized to
  * `new Error(failureMessage)`.
  */
 export function raceWithTimeout<T>(

@@ -1,18 +1,18 @@
 /**
- * useBotGameVoice — bubble-state sub-hook of useBotGame (Phase 223,
- * BOTVOICE-01/02/03). Owns the in-game speech-bubble line: the one-time
- * game-start greeting, the clear-on-player-commit seam (D-07), the async
- * graded-score seam that produces swing lines (D-01/D-02/D-03/D-04), the draw-offer and
- * terminal effects, and the pacing gate that keeps the bot from chattering.
- * Modeled on `useBotGameDrawOffer.ts`'s shape: it owns its own state and
- * returns the callbacks the other sub-hooks take as options.
+ * useBotGameVoice — bubble-state sub-hook of useBotGame. Owns the in-game
+ * speech-bubble line: the one-time game-start greeting, the
+ * clear-on-player-commit seam, the async graded-score seam that produces
+ * swing lines, the draw-offer and terminal effects, and the pacing gate that
+ * keeps the bot from chattering. Modeled on `useBotGameDrawOffer.ts`'s shape:
+ * it owns its own state and returns the callbacks the other sub-hooks take as
+ * options.
  *
- * D-07 is enforced structurally in this file: no timer-based scheduling of
- * any kind (delayed callback, repeating callback, or animation-frame
- * callback) and no CSS transition/animation utility anywhere — the
- * bubble's content changes only in direct response to a commit, a grade
- * resolving, an outcome landing, or a draw offer being raised, never on a
- * clock tick.
+ * The no-timer rule is enforced structurally in this file: no timer-based
+ * scheduling of any kind (delayed callback, repeating callback, or
+ * animation-frame callback) and no CSS transition/animation utility
+ * anywhere — the bubble's content changes only in direct response to a
+ * commit, a grade resolving, an outcome landing, or a draw offer being
+ * raised, never on a clock tick.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,18 +33,18 @@ import {
 export interface UseBotGameVoiceOptions {
   userColor: MoverColor;
   /** The resumed game's ply count at mount (0 for a fresh game). A resumed
-   * game (`initialPly > 0`) never greets — D-06's game-start line is pure
-   * voice for a game that has not started, and a resumed game already has. */
+   * game (`initialPly > 0`) never greets — the game-start line is pure voice
+   * for a game that has not started, and a resumed game already has. */
   initialPly: number;
-  /** Phase 170 D-03 `live` gate — mirrors every other sub-hook's contract:
-   * the greeting effect waits for `confirmLive()` exactly like the
+  /** The `live` gate — mirrors every other sub-hook's contract: the greeting
+   * effect waits for `confirmLive()` exactly like the
    * turn-anchor/clock-tick/bot-turn-trigger effects in `useBotGame.ts` do. */
   live: boolean;
-  /** Phase 183 D-07's live outgoing offer, forwarded from
+  /** The bot's live outgoing draw offer, forwarded from
    * `useBotGameDrawOffer` via `useBotGame.ts` — feeds the resolver's
-   * draw-offer arm (BOTVOICE-02) both from `onBotMoveGraded` and from the
-   * dedicated immediate-fire effect below. */
-  botDrawOffer: boolean;
+   * draw-offer arm both from `onBotMoveGraded` and from the dedicated
+   * immediate-fire effect below. */
+  botDrawOfferPending: boolean;
   /** Set once the game has ended; `null` while in progress — feeds the
    * resolver's terminal arm both from `onBotMoveGraded` and from the
    * dedicated terminal effect below, since a game can end (flag,
@@ -54,13 +54,13 @@ export interface UseBotGameVoiceOptions {
 
 export interface UseBotGameVoiceResult {
   /** The bubble's current line key, or `null` for an empty (but still
-   * reserved-height, D-07) slot. */
+   * reserved-height) slot. */
   botLine: BotLineKey | null;
   /** Supplied to `useBotGameMoves`'s `commitMove` (seam A) — fires for
    * every committed move, player and bot alike. Narrower than the seam's own
    * 3-arg prop type (which still passes the post-move `Chess`): this hook
-   * stopped reading the board when the `'player-threat'` probe was retired,
-   * and a 2-arg function is assignable to the 3-arg prop. */
+   * does not read the board, and a 2-arg function is assignable to the 3-arg
+   * prop. */
   onMoveCommitted: (move: Move, mover: MoverColor) => void;
   /** Supplied to `useBotGameEngineDispatch`'s grade continuation (seam B) —
    * fires once per SEARCHED (non-book) bot move whose grade resolved, with
@@ -89,10 +89,10 @@ function defaultResolveBotLineInput(): ResolveBotLineInput {
 }
 
 /** Resolves a finished game's `BotGameOutcome` to the resolver's
- * `outcomeKind` shape, from `userColor`'s point of view — `null` while the
- * game continues, `'draw'` for any draw reason, else `'loss'` when the
- * winner is the USER (the bot lost) and `'win'` when it is not (the bot
- * won). Mirrors `botGameEnd.ts`'s own `userWon` framing. */
+ * `outcomeKind`, from the BOT's point of view (`userColor` identifies the
+ * opponent) — `null` while the game continues, `'draw'` for any draw reason,
+ * else `'loss'` when the winner is the USER (the bot lost) and `'win'` when
+ * it is not (the bot won). Mirrors `botGameEnd.ts`'s own `userWon` framing. */
 function outcomeKindFor(
   outcome: BotGameOutcome | null,
   userColor: MoverColor,
@@ -103,10 +103,10 @@ function outcomeKindFor(
 }
 
 /**
- * Bubble-state sub-hook of `useBotGame` (Phase 223). See file header.
+ * Bubble-state sub-hook of `useBotGame`. See file header.
  */
 export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoiceResult {
-  const { userColor, initialPly, live, botDrawOffer, outcome } = options;
+  const { userColor, initialPly, live, botDrawOfferPending, outcome } = options;
 
   const [botLine, setBotLine] = useState<BotLineKey | null>(null);
 
@@ -116,9 +116,9 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
    * (or not) exactly once, never on a later re-render. */
   const gameStartLatchRef = useRef(false);
 
-  /** D-01/BOTVOICE-03: the ply the last SEARCHED bot grade was recorded
-   * at — `null` until the first grade resolves this game. Read (never
-   * written) outside `onBotMoveGraded`. */
+  /** The ply the last SEARCHED bot grade was recorded at — `null` until the
+   * first grade resolves this game. Read (never written) outside
+   * `onBotMoveGraded`. */
   const lastGradedPlyRef = useRef<number | null>(null);
 
   /** The bot-POV clamped centipawn score of that same last graded ply, so a
@@ -130,8 +130,8 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
   const lastGradedCpRef = useRef<number | null>(null);
 
   /**
-   * The regret latch (Phase 223 UAT): the bot-POV clamped centipawn score at
-   * the moment the bot's own graded move dropped the position by a full
+   * The regret latch: the bot-POV clamped centipawn score at the moment the
+   * bot's own graded move dropped the position by a full
    * threshold, or `null` when nothing is outstanding. Set instead of
    * speaking, so the bot never announces its own blunder before the player
    * has had a move; consumed by whichever comes first — the player's
@@ -143,13 +143,12 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
    * (never reset back to false) once the first-capture line has fired —
    * see `firstCaptureAnnouncedRef`. */
   const firstCaptureSeenRef = useRef(false);
-  /** BOTVOICE-02: set true once the `'first-capture'` key has actually
-   * fired, so `firstCapturePending` (seen-but-not-announced) can never
-   * re-trigger the same fact twice. */
+  /** Set true once the `'first-capture'` key has actually fired, so
+   * `firstCapturePending` (seen-but-not-announced) can never re-trigger the
+   * same fact twice. */
   const firstCaptureAnnouncedRef = useRef(false);
 
-  /** Claude's Discretion (223-CONTEXT.md): bot moves elapsed since the last
-   * NON-terminal line fired. Initialized at `BOT_LINE_MIN_SPACING_MOVES` —
+  /** Bot moves elapsed since the last NON-terminal line fired. Initialized at `BOT_LINE_MIN_SPACING_MOVES` —
    * "already spaced enough" — mirroring `movesSinceLastDecline`'s own init
    * convention (`DRAW_OFFER_COOLDOWN_MOVES`), so nothing needs to wait
    * before the first line a fresh game could ever fire. Incremented on
@@ -158,9 +157,9 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
   const botMovesSinceLastLineRef = useRef(BOT_LINE_MIN_SPACING_MOVES);
 
   /** One-shot latch for the terminal effect below — the first outcome wins
-   * (mirrors `outcomeRef`'s WR-03 pattern one layer up in `useBotGame.ts`,
-   * though this hook only ever needs single-fire, not idempotency across
-   * async races). */
+   * (mirrors `outcomeRef`'s latch one layer up in `useBotGame.ts`, though
+   * this hook only ever needs single-fire, not idempotency across async
+   * races). */
   const outcomeLineLatchRef = useRef(false);
 
   // ─── Game-start greeting (fires at most once per game) ────────────────
@@ -174,7 +173,7 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
     if (line !== null) setBotLine(line);
   }, [live, initialPly]);
 
-  // ─── Terminal effect (BOTVOICE-02): fires once, with or without a grade ─
+  // ─── Terminal effect: fires once, with or without a grade ─────────────
   //
   // A game can end on a flag, a resignation, or a stalemate with no grade
   // in flight at all — the terminal key must still appear, so this effect
@@ -185,8 +184,8 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
     if (outcome === null) return;
     if (outcomeLineLatchRef.current) return;
     outcomeLineLatchRef.current = true;
-    // Phase 223 UAT: the terminal line is rendered INSIDE `GameResultDialog`
-    // (with the persona's avatar), so whether or not `useWinCelebrationHold`
+    // The terminal line is rendered INSIDE `GameResultDialog` (with the
+    // persona's avatar), so whether or not `useResultDialogHold`
     // delays the dialog for this ending (it does for a human win and a bot
     // checkmate, not for other losses or draws), the line is read in the
     // dialog and never goes unread.
@@ -196,17 +195,17 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
     if (line !== null) setBotLine(line);
   }, [outcome, userColor]);
 
-  // ─── Draw-offer effect (BOTVOICE-02, D-12): fires the moment the offer
-  // exists, rather than waiting for the next grade ─────────────────────────
+  // ─── Draw-offer effect: fires the moment the offer exists, rather than
+  // waiting for the next grade ────────────────────────────────────────────
 
   useEffect(() => {
-    if (!botDrawOffer) return;
+    if (!botDrawOfferPending) return;
     const line = resolveBotLine({ ...defaultResolveBotLineInput(), drawOfferLive: true });
     if (line !== null) setBotLine(line);
-  }, [botDrawOffer]);
+  }, [botDrawOfferPending]);
 
-  // ─── Seam A: commit callback — clears on the player's own move (D-07),
-  // latches the board-truth facts each arm needs ─────────────────────────
+  // ─── Seam A: commit callback — clears on the player's own move, latches
+  // the board-truth facts each arm needs ──────────────────────────────────
   //
   // Two guard clauses, never nested: the player branch clears the bubble and
   // re-latches the capture facts for the CURRENT move pair; the bot branch
@@ -217,7 +216,7 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
       if (mover === userColor) {
         const captured = move.captured !== undefined;
         if (captured) firstCaptureSeenRef.current = true;
-        // Phase 223 UAT: the ONE line that fires on the player's own move.
+        // The ONE line that fires on the player's own move.
         // The bot owns up the moment its outstanding blunder is actually
         // taken — the beat a human opponent would react on, and the beat the
         // engine can never put a swing on (the capture itself moves the eval
@@ -239,7 +238,7 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
     [userColor],
   );
 
-  // ─── Seam B: the async graded-score path (BOTVOICE-03) ─────────────────
+  // ─── Seam B: the async graded-score path ───────────────────────────────
 
   const onBotMoveGraded = useCallback(
     (cp: number, ply: number): void => {
@@ -256,13 +255,13 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
         swingCp,
         recoveryCp,
         firstCapturePending: firstCaptureSeenRef.current && !firstCaptureAnnouncedRef.current,
-        drawOfferLive: botDrawOffer,
+        drawOfferLive: botDrawOfferPending,
         outcomeKind: outcomeKindFor(outcome, userColor),
         botMovesSinceLastLine: botMovesSinceLastLineRef.current,
       });
       // An outstanding latch settles on THIS grade: the resolver always
-      // yields a key for a live latch and never paces it (223-REVIEW CR-01),
-      // so clearing here cannot drop a line. Re-arming afterwards is
+      // yields a key for a live latch and never paces it, so clearing here
+      // cannot drop a line. Re-arming afterwards is
       // deliberate: a bot that blunders again on the very move that answered
       // its last blunder gets a fresh latch rather than silence.
       if (recoveryCp !== null) regretCpRef.current = null;
@@ -276,7 +275,7 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
       lastGradedPlyRef.current = ply;
       lastGradedCpRef.current = cp;
     },
-    [botDrawOffer, outcome, userColor],
+    [botDrawOfferPending, outcome, userColor],
   );
 
   return {

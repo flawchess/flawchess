@@ -1,6 +1,6 @@
 /**
  * moveQuality — pure, worker-free 5-bucket move-quality classification and
- * candidate-set selection for the Moves-by-Rating chart (Phase 151.1).
+ * candidate-set selection for the Moves-by-Rating chart.
  *
  * classifyMoveQuality reuses FlawChess's OWN existing grading pipeline
  * (evalToExpectedScore -> classifyLiveSeverity, from liveFlaw.ts) verbatim —
@@ -8,18 +8,18 @@
  * thresholds. Only two new buckets ("best", "good") are layered on top: the
  * grading search's own top-scoring candidate is "best"; any other candidate
  * whose expected-score drop against that best is below the inaccuracy
- * threshold is "good" (151.1-RESEARCH.md Pattern 3).
+ * threshold is "good".
  *
- * selectCandidatesByMass implements D-02/D-06/D-07 (151.1-RESEARCH.md): the
+ * selectCandidatesByMass: the
  * Maia cumulative-probability >= 0.95 set at the SELECTED ELO (not
- * peak-across-all-ELO, which is what the superseded `capMovesByPeak` used),
+ * peak-across-all-ELO),
  * capped to the top CANDIDATE_HARD_CAP by probability, always unioned with
  * {bestSan} and {playedSan} so the SF-best and the actually-played move are
  * never dropped even when below the cut.
  *
- * MoveQuality is a NEW, frontend-only type. FlawSeverity (types/library.ts)
+ * MoveQuality is a frontend-only type. FlawSeverity (types/library.ts)
  * is the cross-stack contract mirroring the backend's severity enum and must
- * NOT be extended with 'best'/'good' (RESEARCH Anti-Patterns).
+ * NOT be extended with 'best'/'good'.
  */
 
 import { evalToExpectedScore, classifyLiveSeverity, type MoverColor } from '@/lib/liveFlaw';
@@ -30,7 +30,7 @@ import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 /**
  * 7-bucket move quality (NEW, frontend-only — do not merge with FlawSeverity).
  * 'gem' and 'great' are positive buckets that override 'best' at the display
- * layer (Phase 163, SEED-092; Phase 175, SEED-108) — applied by the Analysis
+ * layer — applied by the Analysis
  * page's post-hoc gem/great overlay, not by `classifyMoveQuality` itself
  * (which stays single-position, Maia-unaware).
  */
@@ -43,7 +43,7 @@ export interface MoveGrade {
   depth: number;
   /**
    * Full PV (UCI moves, starting with the graded move itself) from the search
-   * that produced this grade — retained (162 UAT) so the Stockfish card can
+   * that produced this grade — retained so the Stockfish card can
    * display a graded line's move sequence when the reconciled ranking surfaces
    * a move outside the free run's own PV lines. Optional: older call sites and
    * classification-only consumers never read it.
@@ -58,10 +58,10 @@ export interface MoveQualityInfo {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Maia cumulative-probability mass cutoff at the selected ELO (D-02). */
+/** Maia cumulative-probability mass cutoff at the selected ELO. */
 export const CUMULATIVE_MASS_THRESHOLD = 0.95;
 
-/** Hard cap on displayed candidate lines after the mass cut (D-06). */
+/** Hard cap on displayed candidate lines after the mass cut. */
 export const CANDIDATE_HARD_CAP = 5;
 
 // ─── classifyMoveQuality ────────────────────────────────────────────────────
@@ -72,12 +72,12 @@ export const CANDIDATE_HARD_CAP = 5;
  * The "best" reference is the primary engine's top move (`designatedBestSan`,
  * the same move the eval bar + engine card show) whenever it's provided AND
  * already graded — so the chart's "best" never contradicts the rest of the
- * page (151.1 UAT: two independent Stockfish searches broke near-ties
+ * page (two independent Stockfish searches can break near-ties
  * differently, e.g. the engine card called Nf6 best while this grading pass's
  * own top scorer was d5, yielding a self-contradictory "Nf6 · best: Good"
  * tooltip). We fall back to this pass's own top scorer only when
  * `designatedBestSan` is null (no engine PV yet) or hasn't streamed a grade
- * yet (D-05 progressive fill), so lines still color before the primary engine
+ * yet (progressive fill), so lines still color before the primary engine
  * catches up.
  *
  * Every other candidate is graded via classifyLiveSeverity against that best,
@@ -123,8 +123,8 @@ export function classifyMoveQuality(
 
 /**
  * Finds the perElo rung whose ELO is numerically closest to `target` (mirrors
- * useMaiaEngine's nearestByElo). Exported so positionVerdict.ts (quick
- * 260705-m3z) reuses this exact lookup instead of re-deriving it.
+ * useMaiaEngine's nearestByElo). Exported so positionVerdict.ts
+ * reuses this exact lookup instead of re-deriving it.
  */
 export function nearestByElo(perElo: MoveCurvePoint[], target: number): MoveCurvePoint | undefined {
   return perElo.reduce<MoveCurvePoint | undefined>((closest, point) => {
@@ -137,7 +137,7 @@ export function nearestByElo(perElo: MoveCurvePoint[], target: number): MoveCurv
  * Selects the SANs to display as chart lines: the Maia cumulative-probability
  * >= CUMULATIVE_MASS_THRESHOLD set at the perElo rung nearest `selectedElo`,
  * capped to the top CANDIDATE_HARD_CAP by probability, always unioned with
- * `bestSan` and `playedSan` (D-02/D-06/D-07). Returned in probability-
+ * `bestSan` and `playedSan`. Returned in probability-
  * descending order for stable stacking/legend order.
  */
 export function selectCandidatesByMass(
@@ -160,12 +160,12 @@ export function selectCandidatesByMass(
 
   const keep = new Set(massSet.slice(0, CANDIDATE_HARD_CAP));
   if (bestSan != null) keep.add(bestSan);
-  if (playedSan != null) keep.add(playedSan); // D-07: always show played, even below the cut
+  if (playedSan != null) keep.add(playedSan); // always show played, even below the cut
 
   return sorted.map(([san]) => san).filter((san) => keep.has(san));
 }
 
-// ─── bucketMovesByQuality (move-quality bar, quick 260705-kfg) ────────────────
+// ─── bucketMovesByQuality (move-quality bar) ──────────────────────────────────
 
 /**
  * Ordered quality buckets for the Maia move-quality bar. The 5-bucket
@@ -214,7 +214,7 @@ function bucketKeyForQuality(quality: MoveQuality | undefined): QualityBucketKey
     case 'great':
       return 'good';
     default:
-      return 'pending'; // not yet graded (D-05 progressive fill)
+      return 'pending'; // not yet graded (progressive fill)
   }
 }
 

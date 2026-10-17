@@ -1,16 +1,15 @@
 /**
- * types — the frozen public contract of the Phase 153 pure search core.
+ * types — the frozen public contract of the pure search core.
  *
- * These types are locked for the rest of the v2.0 FlawChess Engine milestone
- * (Phases 154-157 build against them unchanged). Every field cites the
- * decision that fixes its shape:
- *   - D-04: the root-only extra-move union with Maia top-k.
- *   - D-06: `practicalScore`/`RankedLine` are root-side-to-move expected
+ * These types are shared by every search consumer and change only
+ * deliberately. Their shapes encode these decisions:
+ *   - The root-only extra-move union with Maia top-k.
+ *   - `practicalScore`/`RankedLine` are root-side-to-move expected
  *     score (0-1), never a per-node/per-ply-relative value.
- *   - D-07: ELO is color-keyed ({w, b}), never self/opponent-keyed.
- *   - D-08: the engine core speaks UCI everywhere (moves, policy keys,
+ *   - ELO is color-keyed ({w, b}), never self/opponent-keyed.
+ *   - The engine core speaks UCI everywhere (moves, policy keys,
  *     grade keys, paths) and side-to-move is the FEN 'w'/'b' literal.
- *   - D-09: one node = one expansion event (the unit `maxNodes` counts).
+ *   - One node = one expansion event (the unit `maxNodes` counts).
  */
 
 import type { MoveGrade } from '@/lib/moveQuality';
@@ -19,14 +18,14 @@ import type { MoveGrade } from '@/lib/moveQuality';
 // grading — do NOT redeclare a structurally-duplicate interface here.
 export type { MoveGrade };
 
-/** FEN side-to-move literal (D-08) — 'w' or 'b', never a full-word color. */
+/** FEN side-to-move literal — 'w' or 'b', never a full-word color. */
 export type Side = 'w' | 'b';
 
-/** Fabricated-in-tests-today, real-workers-in-Phase-154 provider surface. */
+/** Provider surface for the search core: test fakes or the real Maia and Stockfish workers. */
 export interface EngineProviders {
   /**
-   * UCI-keyed Maia move-probability distribution at `elo` for `side` to move
-   * (D-08). `signal` (8XN-2) is OPTIONAL, following `grade`'s own precedent
+   * UCI-keyed Maia move-probability distribution at `elo` for `side` to move.
+   * `signal` is OPTIONAL, following `grade`'s own precedent
    * below — every existing 3-parameter implementation (test fakes, the
    * `selectBotMove`/`openingBook` deps, and the Node calibration providers
    * outside the frontend `tsc` project) stays structurally assignable to this
@@ -37,15 +36,15 @@ export interface EngineProviders {
   policy(fen: string, elo: number, side: Side, signal?: AbortSignal): Promise<Record<string, number>>;
   /**
    * UCI-keyed Stockfish shallow-eval grades for the candidate UCI moves,
-   * white-POV cp (D-08). `signal` (Phase 194 ABORT-01/03) is OPTIONAL so a
+   * white-POV cp. `signal` is OPTIONAL so a
    * two-argument implementation/call site stays structurally assignable to
    * this interface — widening it to required would break every existing
    * fabricated-in-tests provider and the Node calibration providers outside
-   * the frontend `tsc` project (ABORT-03).
+   * the frontend `tsc` project.
    */
   grade(fen: string, candidateUcis: string[], signal?: AbortSignal): Promise<Map<string, MoveGrade>>;
   /**
-   * Root-only grade fan-out (Phase 226 D-18): same contract as `grade`, but
+   * Root-only grade fan-out: same contract as `grade`, but
    * implemented by a caller that can split the request across multiple idle
    * workers/engines below this boundary (`rootSplit.ts`'s
    * `partitionCandidates`/`mergeShardGrades`) — the fan-out itself is never
@@ -62,7 +61,7 @@ export interface EngineProviders {
 }
 
 /**
- * Bot-play early-stop knobs (Phase 168.5 D-05/D-06) — evaluated in the
+ * Bot-play early-stop knobs — evaluated in the
  * `mctsSearch` canonical apply-order loop against `root.children`'s own
  * `.value` fields (== `RankedLine.practicalScore`), never the findability-
  * sorted `buildRankedLines` output. Optional on `SearchBudget`; `undefined`
@@ -70,57 +69,57 @@ export interface EngineProviders {
  * behavior for every existing caller — the analysis board never sets this).
  */
 export interface BotStopRule {
-  /** D-05: clear-winner margin the top root child's `.value` must lead the runner-up by. */
+  /** Clear-winner margin the top root child's `.value` must lead the runner-up by. */
   marginThreshold: number;
-  /** D-05: near-tie-flatness spread ceiling across ALL current root children's `.value`s. */
+  /** Near-tie-flatness spread ceiling across ALL current root children's `.value`s. */
   epsilonThreshold: number;
-  /** D-05/D-06: consecutive post-expansion checks the argmax UCI must hold stable before either side of the rule can fire. */
+  /** Consecutive post-expansion checks the argmax UCI must hold stable before either side of the rule can fire. */
   stabilityWindow: number;
-  /** D-05: shared floor gating BOTH the clear-winner and near-tie-flatness checks — neither fires before this many expansions. */
+  /** Shared floor gating BOTH the clear-winner and near-tie-flatness checks — neither fires before this many expansions. */
   minNodes: number;
   /**
-   * Phase 225 D-01/D-02: the extra value gap beyond `marginThreshold` within
+   * The extra value gap beyond `marginThreshold` within
    * which a root child that is neither visited nor closed blocks the
    * clear-winner branch — it sizes the guard set only and never enters a
    * value. Measured in `reports/engine-search-fixes-225/d02-allowance.md`.
    * Required (not optional) so any `BotStopRule` literal that omits it is a
-   * `tsc -b` error (RESEARCH Pattern 3) — an accidentally-omitted allowance
-   * would silently reintroduce the SEED-170 item-1 comparability bug.
+   * `tsc -b` error — an accidentally-omitted allowance
+   * would silently reintroduce the root-comparability bug.
    */
   rootGuardBoostAllowance: number;
 }
 
 /**
- * Phase 227 D-13: which dispatch loop `mctsSearch` runs. `'round'` is the
+ * Which dispatch loop `mctsSearch` runs. `'round'` is the
  * existing barrier loop (fill up to `concurrency` expansions, `Promise.all`,
  * apply in canonical order). `'continuous'` is asynchronous dispatch with
  * pending exclusion and arrival-order apply under the relaxed, statistical
- * determinism contract (Phase 226 D-05 read through D-01).
+ * determinism contract (expected score within a tolerance, checked statistically, not bit-identity).
  */
 export type DispatchMode = 'round' | 'continuous';
 
-/** Bounds one `SearchRunner` invocation (ENGINE-06). */
+/** Bounds one `SearchRunner` invocation. */
 export interface SearchBudget {
-  /** D-09: one node = one expansion event; the unit this budget counts. */
+  /** One node = one expansion event; the unit this budget counts. */
   maxNodes: number;
-  /** D-07: color-keyed ELO, never self/opponent-keyed. */
+  /** Color-keyed ELO, never self/opponent-keyed. */
   elo: { w: number; b: number };
-  /** Locked 6-10 ply band (SEED-082). */
+  /** Locked 6-10 ply band. */
   maxPlies: number;
-  /** D-03: in-flight expansion concurrency, >=1. */
+  /** In-flight expansion concurrency, >=1. */
   concurrency: number;
-  /** D-04: root-only UCI moves unioned with Maia top-k at the root. */
+  /** Root-only UCI moves unioned with Maia top-k at the root. */
   extraRootMoves?: string[];
-  /** Phase 159 D-06/D-07: reshapes the user's-side policy before truncation; omitted/1 = no-op. */
+  /** Reshapes the user's-side policy before truncation; omitted/1 = no-op. */
   policyTemperature?: number;
-  /** Phase 168.5 D-05/D-06: optional bot-play early-stop rule; omitted/undefined = today's unchanged full-budget behavior. */
+  /** Optional bot-play early-stop rule; omitted/undefined = today's unchanged full-budget behavior. */
   stopRule?: BotStopRule;
   /**
-   * Phase 227 D-13/D-11: dispatch loop selector. Omitted/undefined = `'round'`,
-   * the byte-identical A21S barrier loop, so every existing caller, test and
+   * Dispatch loop selector. Omitted/undefined = `'round'`,
+   * the byte-identical barrier loop, so every existing caller, test and
    * fixture gate is unchanged with zero edits. `'continuous'` = asynchronous
    * dispatch with pending exclusion and arrival-order apply under the relaxed,
-   * statistical contract (226 D-05 read through D-01).
+   * statistical contract (see `DispatchMode`).
    */
   dispatchMode?: DispatchMode;
 }
@@ -130,7 +129,7 @@ export interface SearchBudget {
  * with it (`modalStats[i]` describes `modalPath[i]`). Surfaced for the
  * move-chip hover preview so each miniboard can annotate the position it
  * shows; NOT consumed by the search itself. Both fields are read straight off
- * the search-tree node the modal path walks through (Phase 160).
+ * the search-tree node the modal path walks through.
  */
 export interface ModalPlyStat {
   /** White-POV Stockfish eval (cp) of the position AFTER this move, if graded. */
@@ -139,7 +138,7 @@ export interface ModalPlyStat {
    * White-POV Stockfish mate distance of the position AFTER this move, if the
    * grade was a forced mate (e.g. -4 for "mate in 4 against the mover"). Carried
    * alongside `objectiveEvalCp` so a forced-mate leaf renders `#-4` instead of the
-   * `…` placeholder a null cp would print (quick 260709). Mutually exclusive with a
+   * `…` placeholder a null cp would print. Mutually exclusive with a
    * non-null `objectiveEvalCp` — exactly one is set for a graded position.
    */
   objectiveEvalMate: number | null;
@@ -152,24 +151,24 @@ export interface ModalPlyStat {
   maiaProb: number | null;
 }
 
-/** One ranked root candidate line in an `EngineSnapshot` (D-06/D-08). */
+/** One ranked root candidate line in an `EngineSnapshot`. */
 export interface RankedLine {
-  /** The root candidate move, UCI (D-08). */
+  /** The root candidate move, UCI. */
   rootMove: string;
-  /** D-06: root-side-to-move expected score, 0-1 — never per-ply-relative. */
+  /** Root-side-to-move expected score, 0-1 — never per-ply-relative. */
   practicalScore: number;
-  /** Objective white-POV Stockfish eval (cp) at the modal leaf, if available. */
+  /** Objective white-POV Stockfish eval (cp) of the root candidate (the position after `rootMove`), if graded. */
   objectiveEvalCp: number | null;
   /**
    * Objective white-POV Stockfish mate distance at the root candidate, when the
    * grade is a forced mate (e.g. -4). Set instead of `objectiveEvalCp` for a
    * mate leaf so the FlawChess card + agreement verdict can render `#-4` rather
-   * than the `…` a null cp would print (quick 260709).
+   * than the `…` a null cp would print.
    */
   objectiveEvalMate: number | null;
   /**
-   * The line's most-visited continuation, UCI sequence (D-08). Phase 194
-   * JANK-03: constructed as a LAZY accessor property (a getter, not a data
+   * The line's most-visited continuation, UCI sequence.
+   * Constructed as a LAZY accessor property (a getter, not a data
    * property) — computed only on first read, memoized thereafter. TypeScript
    * cannot distinguish an accessor from a data property in this type
    * declaration, so this comment is the only signal a future editor gets:
@@ -181,8 +180,8 @@ export interface RankedLine {
    */
   modalPath: string[];
   /**
-   * Per-ply display stats index-aligned with `modalPath` (Phase 160). Phase
-   * 194 JANK-03: same lazy-accessor caveat as `modalPath` above — shares ONE
+   * Per-ply display stats index-aligned with `modalPath`.
+   * Same lazy-accessor caveat as `modalPath` above — shares ONE
    * memoized computation with it, so reading both costs exactly one
    * `buildModalPath` call, not two. Never spread a `RankedLine`.
    */
@@ -190,10 +189,10 @@ export interface RankedLine {
   /** Total expansion visits attributed to this root candidate. */
   visits: number;
   /**
-   * Variance/"sharpness" proxy for this root candidate (Phase 182 D-10): the
+   * Variance/"sharpness" proxy for this root candidate: the
    * max−min spread across the candidate's OWN children's backed-up expected
    * scores (i.e. the grandchildren of the search root) — the per-candidate
-   * signal STYLE-04's variance-preference lever reads. `null` when the
+   * signal the variance-preference style lever reads. `null` when the
    * candidate has 0 or 1 own children (no meaningful spread to report; never
    * 0-as-a-signal for that empty case). Only comparable within a single
    * `SearchBudget.concurrency` level — differing concurrency can grow
@@ -206,12 +205,12 @@ export interface RankedLine {
 /** The output a `SearchRunner` reports — both at completion and per `onSnapshot` tick. */
 export interface EngineSnapshot {
   rankedLines: RankedLine[];
-  /** D-09: count of expansion events consumed so far. */
+  /** Count of expansion events consumed so far. */
   nodesEvaluated: number;
   /** True once `SearchBudget.maxNodes`/`maxPlies` stopped the search (not an abort). */
   budgetExhausted: boolean;
   /**
-   * Phase 168.5 D-05/D-06: why the search stopped, as a sibling of
+   * Why the search stopped, as a sibling of
    * `budgetExhausted` (never overloading that boolean, which stays
    * maxNodes/maxPlies-only). `'early-stop'` when `SearchBudget.stopRule`
    * ended the search early, `'budget'` when maxNodes/maxPlies did, `null`

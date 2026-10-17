@@ -1,11 +1,11 @@
-"""Tests for the D-02 flawchess default-exclusion predicate (Phase 167 Plan 02).
+"""Tests for the flawchess default-exclusion predicate.
 
 Covers apply_game_filters' platform-None branch: a flawchess bot-practice
 game must be excluded from the default population, even when opponent_type
-is explicitly set to 'bot' (RESEARCH Pitfall 1 — a test using the default
-opponent_type='human' view would pass even without D-02, since is_computer_game
+is explicitly set to 'bot' (a test using the default
+opponent_type='human' view would pass even without the predicate, since is_computer_game
 already excludes it there). An explicit platform=['flawchess'] list must still
-return the flawchess row (opt-in path, D-03's foundation).
+return the flawchess row (the opt-in path).
 
 Data isolation: uses the rollback-scoped ``db_session`` fixture — no committed
 rows leak between tests.
@@ -62,7 +62,7 @@ class TestDefaultExcludedPlatformsConstant:
         assert isinstance(DEFAULT_EXCLUDED_PLATFORMS, tuple)
 
     def test_contains_pgn(self) -> None:
-        """Phase 208 (PASTE-05): pasted PGN games are excluded by the same seam."""
+        """Pasted PGN games are excluded by the same seam."""
         assert "pgn" in DEFAULT_EXCLUDED_PLATFORMS
 
 
@@ -71,10 +71,8 @@ def test_every_platform_has_an_analytics_disposition() -> None:
 
     Goes red when a new platform value is added to the Platform Literal
     without also assigning it to exactly one of DEFAULT_EXCLUDED_PLATFORMS or
-    ANALYTICS_INCLUDED_PLATFORMS — the eligibility invariant recorded in this
-    plan's assumption_delta_decision (208-02-PLAN.md). Prevents a future
-    platform value from silently inheriting analytics eligibility by omission
-    (T-208-06).
+    ANALYTICS_INCLUDED_PLATFORMS — the eligibility invariant. Prevents a future
+    platform value from silently inheriting analytics eligibility by omission.
     """
     platform_members = set(typing.get_args(Platform))
     excluded = set(DEFAULT_EXCLUDED_PLATFORMS)
@@ -95,13 +93,13 @@ class TestApplyGameFiltersFlawchessExclusion:
     async def test_bot_opponent_type_excludes_flawchess_but_keeps_imported_bot_game(
         self, db_session: AsyncSession
     ) -> None:
-        """D-02: platform=None + opponent_type='bot' hides flawchess, keeps real bot games.
+        """platform=None + opponent_type='bot' hides flawchess, keeps real bot games.
 
-        This is the case RESEARCH Pitfall 1 flags — opponent_type='human' (the
+        This is the case where opponent_type='human' (the
         default everywhere) would already exclude the flawchess row via
         is_computer_game alone, making a negative test with that default a false
         positive. Setting opponent_type='bot' explicitly is what actually
-        exercises the D-02 platform predicate.
+        exercises the platform predicate.
         """
         await ensure_test_user(db_session, _TEST_USER_ID)
 
@@ -112,7 +110,7 @@ class TestApplyGameFiltersFlawchessExclusion:
             platform="lichess",
             is_computer_game=True,
         )
-        # Flawchess practice game — also is_computer_game=True (D-04), but must
+        # Flawchess practice game — also is_computer_game=True, but must
         # be excluded from the default (platform=None) population regardless.
         flawchess_id = await _seed_game(
             db_session,
@@ -177,7 +175,7 @@ class TestApplyGameFiltersFlawchessExclusion:
     ) -> None:
         """platform=None + opponent_type='human' (the pre-existing default view) still
         excludes flawchess — unchanged behavior, since is_computer_game=True already
-        filtered it out before D-02, and D-02 doesn't change that outcome.
+        filtered it out before the predicate existed, and the predicate doesn't change that outcome.
         """
         await ensure_test_user(db_session, _TEST_USER_ID)
 
@@ -207,7 +205,7 @@ class TestApplyGameFiltersFlawchessExclusion:
 class TestMoverColorExpr:
     """mover_color_expr — the SQL twin of mover_is_white_at_ply/mover_color_for_ply.
 
-    Phase 205 (dead-band exclusion): evaluated against a real DB query for
+    Evaluated against a real DB query for
     both ply parities, compared through the Python helper (not a hardcoded
     string) so the two sources cannot drift independently.
     """
@@ -231,7 +229,7 @@ class TestMoverColorExpr:
 
 
 class TestGameIdsKeyword:
-    """Phase 238: apply_game_filters(game_ids=...) restricts to the ranked-sample ids."""
+    """apply_game_filters(game_ids=...) restricts to the ranked-sample ids."""
 
     @staticmethod
     def _filtered(game_ids: list[int] | None) -> typing.Any:

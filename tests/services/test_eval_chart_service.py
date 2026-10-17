@@ -1,4 +1,4 @@
-"""Unit tests for the Phase 109 eval chart builder (_build_eval_series).
+"""Unit tests for the eval chart builder (_build_eval_series).
 
 No DB required — all tests construct GamePosition / Game objects in memory
 using the _make_pos / _make_game helpers from the flaws_service test pattern.
@@ -100,7 +100,7 @@ class TestEvalSeries:
             assert point.es < 0.5, f"Expected es < 0.5 for negative eval_cp, got {point.es}"
 
     def test_null_eval_produces_null_es(self) -> None:
-        """eval_cp=None and eval_mate=None → es=None (D-05: line breaks at missing eval)."""
+        """eval_cp=None and eval_mate=None → es=None (the line breaks at a missing eval)."""
         positions = [
             _make_pos(0, eval_cp=100),
             _make_pos(1, eval_cp=None, eval_mate=None),  # null eval
@@ -127,7 +127,7 @@ class TestEvalSeries:
         assert eval_series[1].es == pytest.approx(0.0), "Black mate-in-N → es must be 0.0"
 
     def test_es_rounded_to_3dp(self) -> None:
-        """ES values are rounded to 3 decimal places (D-05)."""
+        """ES values are rounded to 3 decimal places."""
         positions = [_make_pos(0, eval_cp=100)]
         game = _make_game()
         eval_series, _, _ = _build_eval_series(game, positions)
@@ -167,7 +167,7 @@ class TestClockAndMoveTime:
         assert eval_series[1].clock_seconds == 595.0
 
     def test_best_move_passthrough(self) -> None:
-        """EvalPoint carries the position's best_move (UCI) for the board arrow (quick-260618-oqw)."""
+        """EvalPoint carries the position's best_move (UCI) for the board arrow."""
         positions = [
             _make_pos(0, eval_cp=10, best_move="e2e4"),
             _make_pos(1, eval_cp=10, best_move=None),
@@ -265,7 +265,7 @@ class TestFlawMarkers:
         return positions, game
 
     def test_both_color_detection(self) -> None:
-        """Both a white-mover drop and a black-mover drop produce FlawMarker rows (D-01/D-02)."""
+        """Both a white-mover drop and a black-mover drop produce FlawMarker rows."""
         # ply 2: white mover blunder (+500 → −500 white-perspective)
         # ply 3: black mover blunder from black's perspective
         # For black mover at ply 3: es_before from black's POV at positions[2], es_after at positions[3]
@@ -311,7 +311,7 @@ class TestFlawMarkers:
         assert user_markers[0].is_user is False, "White mover when user is black → is_user=False"
 
     def test_inaccuracy_has_empty_tags(self) -> None:
-        """Inaccuracy markers carry empty tags (D-03)."""
+        """Inaccuracy markers carry empty tags."""
         # eval_cp drop just above INACCURACY_DROP but below MISTAKE_DROP:
         # eval_cp_to_expected_score(100, "white") ≈ 0.591
         # eval_cp_to_expected_score(0, "white") = 0.5
@@ -331,7 +331,7 @@ class TestFlawMarkers:
                 )
 
     def test_opponent_tags_strip_user_framed(self) -> None:
-        """Opponent B/M markers never contain 'miss' or 'lucky' (D-03 resolution)."""
+        """Opponent B/M markers never contain 'miss' or 'lucky'."""
         # Build positions where an opponent blunder occurs.
         # The specific tags depend on context, but 'miss' and 'lucky' must be absent.
         # ply 2 is white mover (n=2, n%2==0); user=black → white is opponent
@@ -376,7 +376,7 @@ class TestFlawMarkers:
 
 class TestPhaseTransitions:
     def test_no_ply_0_line(self) -> None:
-        """Phase transition at ply 0 is NOT emitted (D-06: no ply-0 line).
+        """Phase transition at ply 0 is NOT emitted (no ply-0 line).
 
         Even if positions[0].phase == 1, it should not become middlegame_ply=0.
         Note: ply 0 is the initial position (no move played), so a phase=1 there
@@ -395,7 +395,7 @@ class TestPhaseTransitions:
             assert phase_transitions.middlegame_ply != 0, "ply-0 must not be a phase transition"
 
     def test_middlegame_first_ply(self) -> None:
-        """middlegame_ply = first ply where phase == 1 (D-06)."""
+        """middlegame_ply = first ply where phase == 1."""
         positions = [
             _make_pos(0, eval_cp=0, phase=0),
             _make_pos(1, eval_cp=50, phase=0),
@@ -409,7 +409,7 @@ class TestPhaseTransitions:
         )
 
     def test_endgame_first_ply(self) -> None:
-        """endgame_ply = first ply where phase == 2 (D-06)."""
+        """endgame_ply = first ply where phase == 2."""
         positions = [
             _make_pos(0, eval_cp=0, phase=0),
             _make_pos(1, eval_cp=50, phase=1),
@@ -423,7 +423,7 @@ class TestPhaseTransitions:
         )
 
     def test_at_most_two_transitions(self) -> None:
-        """At most two phase transitions are emitted (D-06)."""
+        """At most two phase transitions are emitted."""
         positions = [
             _make_pos(0, eval_cp=0, phase=0),
             _make_pos(1, eval_cp=50, phase=1),  # middlegame starts
@@ -441,7 +441,7 @@ class TestPhaseTransitions:
         assert len(transitions) <= 2, f"At most 2 phase transitions, got {len(transitions)}"
 
     def test_absent_phase_is_none(self) -> None:
-        """When a phase is never reached, its ply is None (D-06)."""
+        """When a phase is never reached, its ply is None."""
         positions = [
             _make_pos(0, eval_cp=0, phase=0),
             _make_pos(1, eval_cp=50, phase=0),

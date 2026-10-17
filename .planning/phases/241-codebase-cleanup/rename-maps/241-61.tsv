@@ -1,0 +1,10 @@
+old	new	kind	absent_paths	ref	canon_paths
+BulletConfidencePopover.tsx	EvalConfidencePopover.tsx	file	frontend	INVENTORY §5 BulletConfidencePopover.tsx:32 (D-09 group)	
+WdlConfidenceTooltip.tsx	ScoreConfidenceTooltip.tsx	file	frontend	INVENTORY §5 WdlConfidenceTooltip.tsx:82 (D-09 group)	
+WdlConfidenceTooltip.test.tsx	ScoreConfidenceTooltip.test.tsx	file	frontend	D-09 group: test file follows the component	
+BulletConfidencePopover	EvalConfidencePopover	identifier	frontend	INVENTORY §5 BulletConfidencePopover.tsx:32 (D-09 group)	
+BulletConfidencePopoverProps	EvalConfidencePopoverProps	identifier	frontend	D-09 group: props interface follows the component	
+WdlConfidenceTooltip	ScoreConfidenceTooltip	identifier	frontend	INVENTORY §5 WdlConfidenceTooltip.tsx:82 (D-09 group)	
+WdlConfidenceTooltipProps	ScoreConfidenceTooltipProps	identifier	frontend	D-09 group: props interface follows the component	
+hasMgEval	hasAvgEval	identifier	frontend/src/components/charts/PositionResultsPanel.tsx	INVENTORY §5 PositionResultsPanel.tsx:90	frontend/src/components/charts/PositionResultsPanel.tsx
+isPending	hasPendingEvals	identifier	-	INVENTORY §5 hooks/useEvalCoverage.ts:118 (useEvalCoverage result field only)	frontend/src/hooks/useEvalCoverage.ts,frontend/src/components/EvalCoverageHeader.tsx,frontend/src/components/__tests__/EvalCoverageHeader.test.tsx,frontend/src/__tests__/noEndgameSkillString.test.tsx,frontend/src/components/insights/OpeningFindingCard.test.tsx,frontend/src/pages/__tests__/Endgames.filterVisibility.test.tsx,frontend/src/pages/__tests__/Endgames.overallPerformance.test.tsx,frontend/src/pages/__tests__/Endgames.readinessGate.test.tsx,frontend/src/pages/__tests__/Import.pasteHandoff.test.tsx,frontend/src/pages/__tests__/Import.queuedState.test.tsx,frontend/src/pages/__tests__/Import.stateMachine.test.tsx,frontend/src/pages/__tests__/Import.feedbackAsk.test.tsx,frontend/src/hooks/__tests__/useEvalCoverage.test.tsx

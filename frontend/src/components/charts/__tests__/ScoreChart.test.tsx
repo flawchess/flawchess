@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Regression tests for ScoreChart inactivity-gap annotation (SC-4 Task 3).
+ * Regression tests for ScoreChart inactivity-gap annotation.
  *
  * Asserts that the shared inactivityGapReferenceLines helper renders the
  * Palmtree break annotation for a >90-day gap fixture and no-ops gracefully

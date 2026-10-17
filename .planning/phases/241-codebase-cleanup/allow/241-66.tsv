@@ -1,0 +1,3 @@
+kind	path	needle	reason
+diff	app/repositories/train_leaderboard_repository.py	,	ruff format magic trailing comma after X5 rename lengthened the SolveTotals constructor line
+diff	tests/services/test_train_leaderboard.py	,	ruff format magic trailing comma after X5 rename lengthened the _contribution signature

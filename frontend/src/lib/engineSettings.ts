@@ -1,5 +1,5 @@
 /**
- * Display settings store (Phase 228, SEED-175): how many lines and arrows each
+ * Display settings store: how many lines and arrows each
  * engine (FlawChess, Stockfish) shows, persisted in localStorage.
  *
  * This module plus `useMuted` / `setMuted` in `lib/sounds.ts` (the Sound
@@ -16,7 +16,7 @@
  * MultiPV, so every read accepts only an integer inside the setting's range and
  * falls back to the default otherwise (never a clamp).
  *
- * Quick 261004-nxn: the store also persists the three analysis-board engine
+ * The store also persists the three analysis-board engine
  * on/off switches (Stockfish, Maia, FlawChess), same flat-key pattern, default
  * ON. They are not panel settings, so `resetAllSettings` deliberately leaves
  * them alone: a reset that silently re-enabled heavy engines would surprise users.

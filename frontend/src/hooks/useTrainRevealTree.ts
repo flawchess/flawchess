@@ -1,13 +1,13 @@
 /**
- * useTrainRevealTree — the Train reveal's single move tree (Phase 237, SEED-194;
- * reworked by SEED-197 into a first-move + live-preview model).
+ * useTrainRevealTree — the Train reveal's single move tree (a first-move +
+ * live-preview model).
  *
  * One `useAnalysisBoard` tree. Each chip owns only its FIRST move, grafted as a
  * ROOT node by the non-navigating `graftLine` (so a chip that arrives late never
  * yanks the user off the position they are looking at). Everything after that
  * first move is an ordinary free node. The hook's own `mainLine` stays empty:
  * which nodes belong to which chip is DERIVED each render from the chip's
- * first-move node, never stored on a node (RESEARCH Pattern 1).
+ * first-move node, never stored on a node.
  *
  * The engine continuation is NOT in the tree. `useRevealPreview` resolves a dimmed
  * preview at the end of the current leaf (seeded from the chip's graded line,
@@ -15,12 +15,12 @@
  * `commitPreview(n)` (a tap on preview token n-1) graft its moves as real nodes.
  * Committed nodes never change afterwards and are never graded.
  *
- * Chip focus (RESEARCH Pattern 3) is one stored value, `rootFocus` (the chip
+ * Chip focus is one stored value, `rootFocus` (the chip
  * whose arrow is lit at the puzzle position, or null once the user played a
- * move no chip owns, D-04), plus a derivation: away from the root, the active
+ * move no chip owns), plus a derivation: away from the root, the active
  * chip is the owner of the current node.
  *
- * T-190-16 / T-237-04: nothing is seeded while `active` is false (the solve
+ * Nothing is seeded while `active` is false (the solve
  * verdict has not landed), so the answer lines never exist in the client tree
  * before the verdict.
  *
@@ -80,7 +80,7 @@ const NO_MULTIPV_FLOOR = 0;
  * satisfies it. */
 export type RevealChipLine = Pick<ChipGroup, 'key' | 'uci' | 'line'>;
 
-/** One user-played move, reported for review telemetry (D-13): a hand-played
+/** One user-played move, reported for review telemetry: a hand-played
  * move that matches an existing node is a board move, not a fork. */
 export interface RevealUserMove {
   source: ExploreMoveSource;
@@ -114,13 +114,13 @@ export interface UseTrainRevealTreeOptions {
    */
   seedEval?: TreeSeedEval | null;
   /**
-   * False keeps the reveal engine off (the Phase 236 instant grade is still
+   * False keeps the reveal engine off (the instant grade is still
    * pending, so nothing may compete with the phone-accuracy background search).
    */
   engineEnabled?: boolean;
   /**
-   * A MultiPV floor applied only while the shown node is the puzzle position
-   * (quick 261010-e5l). The Train screen passes 4 for a soft puzzle so the root
+   * A MultiPV floor applied only while the shown node is the puzzle position.
+   * The Train screen passes 4 for a soft puzzle so the root
    * can offer live good-move alternatives; default none.
    */
   rootMinMultiPv?: number;
@@ -138,7 +138,7 @@ export interface TrainRevealTree {
   fen: string;
   nodes: Map<NodeId, MoveNode>;
   currentNodeId: NodeId | null;
-  /** The chip lit at the puzzle position; null = no chip (D-04). */
+  /** The chip lit at the puzzle position; null = no chip. */
   rootFocus: RoleKey | null;
   /** The chip owning the shown position, or null (no chip / a root fork). */
   activeChip: RoleKey | null;
@@ -204,7 +204,7 @@ type ChipLineSpec = [key: RoleKey, uci: string];
 /** Never consulted: `canGoForward` only asks whether a target exists. */
 const NO_LAST_CHILDREN: ReadonlyMap<NodeId | null, NodeId> = new Map();
 
-/** Ply offset of a FEN (mirrors Analysis.tsx's `fenToPly`). */
+/** Ply offset of a FEN, from its side-to-move and fullmove fields. */
 export function fenToPly(fen: string): number {
   const parts = fen.split(' ');
   const side = parts[1];
@@ -325,10 +325,10 @@ export function useTrainRevealTree({
   // root with the same child-reusing graft as the chip lines, so a game line that
   // arrives later lands on the restored nodes instead of duplicating them. Applied
   // once per puzzle position; the capped, chess.js-guarded replay never throws on
-  // a tampered snapshot (T-237-05). Declared AFTER the seeding effect.
+  // a tampered snapshot. Declared AFTER the seeding effect.
   const restoredFenRef = useRef<string | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<string[] | null>(null);
-  // WR-02: the paths of the preview-committed nodes, resolved to ids (and re-marked
+  // The paths of the preview-committed nodes, resolved to ids (and re-marked
   // never-graded) once the grafted nodes exist, in the effect after useRevealPreview.
   const [restoreCommitted, setRestoreCommitted] = useState<string[][] | null>(null);
   useEffect(() => {
@@ -395,7 +395,7 @@ export function useTrainRevealTree({
   // is a slightly shallower root top line within the same movetime. Not started
   // lazily: the eval bar and the preview need a search on every shown node, and
   // searching it also fills the eval cache, so a fork from it grades. Off while
-  // the Phase 236 background grade is pending (`engineEnabled`).
+  // the background grade is pending (`engineEnabled`).
   const { sfLines, sfArrows } = useEngineDisplaySettings();
   const shownFen = active ? board.position : null;
   const multiPvFloor = currentNodeId === null ? rootMinMultiPv : NO_MULTIPV_FLOOR;
@@ -409,7 +409,7 @@ export function useTrainRevealTree({
   // and, worse here, grade a move against them.
   const engineIsCurrent = shownFen !== null && engine.currentFen === shownFen;
   const pvLines = engineIsCurrent ? engine.pvLines : NO_PV_LINES;
-  const live = useMemo(
+  const liveEval = useMemo(
     () =>
       engineIsCurrent
         ? { cp: engine.evalCp, mate: engine.evalMate, bestUci: engine.pvLines[0]?.moves[0] ?? null }
@@ -431,10 +431,10 @@ export function useTrainRevealTree({
     chips,
     pvLines,
   });
-  // WR-02 fix: a restore regrafts the committed continuations as plain nodes with
-  // fresh ids, so the node-id based committed set was lost across Analyze -> Back and
-  // every engine move became "free" (graded, badged) as soon as the user stepped onto
-  // it. Re-resolve the saved paths against the regrafted tree and mark them again.
+  // Bug fix: a restore regrafts the committed continuations as plain nodes with
+  // fresh ids, so the node-id based committed set is lost across Analyze -> Back and
+  // every engine move would become "free" (graded, badged) as soon as the user stepped
+  // onto it. Re-resolve the saved paths against the regrafted tree and mark them again.
   // Same render as the landing effect above: the nodes already hold the grafts. A
   // path cut short by an illegal move, or over the ply cap, marks nothing.
   useEffect(() => {
@@ -451,7 +451,7 @@ export function useTrainRevealTree({
   }, [restoreCommitted, nodes, markCommitted]);
   // The user's own moves are graded; a chip's first move keeps its served quality
   // and a node committed from the preview is the engine's move, never graded
-  // (SEED-197, CONTEXT "Grading of preview-committed moves").
+  // (the user did not play it).
   const isFreeNode = useCallback(
     (id: NodeId): boolean => !knownIds.has(id) && !committedIds.has(id),
     [knownIds, committedIds],
@@ -463,7 +463,7 @@ export function useTrainRevealTree({
     currentNodeId,
     fen: shownFen,
     isFreeNode,
-    live,
+    live: liveEval,
     seedEval,
   });
 
@@ -521,8 +521,8 @@ export function useTrainRevealTree({
 
   const selectChip = useCallback(
     (key: RoleKey): void => {
-      // D-01: a chip tap jumps to the puzzle position unless the board is already
-      // on that chip's line or a sideline hanging off it (RESEARCH Open Question 2).
+      // A chip tap jumps to the puzzle position unless the board is already
+      // on that chip's line or a sideline hanging off it.
       if (latestRef.current.activeChip !== key) boardGoToRoot();
       setRootFocus(key);
       onChipSelectRef.current?.(key);
@@ -539,14 +539,14 @@ export function useTrainRevealTree({
         preview: livePreview,
       } = latestRef.current;
       // Decided BEFORE the move: an existing child is a hand-played line move
-      // (a board move, D-13), and so is the engine preview's own next move (what
+      // (a board move), and so is the engine preview's own next move (what
       // the forward button would commit); anything else forks a new node.
       const existing = findChildBySquares(liveNodes, liveCurrent, from, to);
       const nextStep = livePreview?.anchorId === liveCurrent ? livePreview?.steps[0] : undefined;
       const followsPreview = nextStep !== undefined && nextStep.uci.slice(0, 4) === from + to;
       if (!boardMakeMove(from, to)) return false;
       if (liveCurrent === null) {
-        // D-04: a root move onto a chip's first move focuses that chip; any other
+        // A root move onto a chip's first move focuses that chip; any other
         // root move (a new fork, or an earlier free fork) deselects every chip.
         const owner = existing !== undefined ? (liveOwners.get(existing.id) ?? null) : null;
         setRootFocus(owner);
@@ -572,7 +572,7 @@ export function useTrainRevealTree({
   const goToRoot = useCallback((): void => {
     boardGoToRoot();
     // Rewinding with no chip focused restores the default focus so the puzzle
-    // position always shows a lit arrow (RESEARCH A1; one line to flip).
+    // position always shows a lit arrow.
     if (latestRef.current.rootFocus === null) setRootFocus(DEFAULT_ROOT_FOCUS);
   }, [boardGoToRoot, setRootFocus]);
 
@@ -586,7 +586,7 @@ export function useTrainRevealTree({
     onUserStepRef.current?.();
   }, [boardGoBack, setRootFocus]);
 
-  // WR-01: the first id NOT yet consumed once the commit(s) queued in the current
+  // The first id NOT yet consumed once the commit(s) queued in the current
   // event have been applied. `latestRef` only syncs after a render, so a second
   // commit in the same event reads the SAME nextId / preview / nodes as the first.
   // Its stale steps replay from the new current node, where the mover's from-square
@@ -604,7 +604,7 @@ export function useTrainRevealTree({
         nextId: liveNextId,
       } = latestRef.current;
       if (shown === null || plies < 1) return;
-      // WR-01 guard: the ref has not seen the previous commit of this event yet, so
+      // Guard: the ref has not seen the previous commit of this event yet, so
       // everything read from it is stale. Ignore the repeat; the first one stands.
       if (liveNextId < pendingNextIdRef.current) return;
       const anchor = liveNodes.get(shown.anchorId);
@@ -649,9 +649,9 @@ export function useTrainRevealTree({
   const goToNode = useCallback(
     (id: NodeId): void => {
       const live = latestRef.current;
-      // WR-04: tapping the node the board is already on moves nothing, so it must
-      // not report a user step either (it inflated review_line_steps and
-      // auto-advanced the tour's "stepping" step). goBack/goForward already guard this.
+      // Tapping the node the board is already on moves nothing, so it must
+      // not report a user step either (that would inflate review_line_steps and
+      // auto-advance the tour's "stepping" step). goBack/goForward already guard this.
       if (!live.nodes.has(id) || live.currentNodeId === id) return;
       boardGoToNode(id);
       onUserStepRef.current?.();

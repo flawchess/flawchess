@@ -1,6 +1,5 @@
 /**
- * SetupScreen — the pre-game setup screen for the Bots page (Phase 171 D-09,
- * PLAY-02). Composes the ELO, play-style, color, and time-control controls
+ * SetupScreen — the pre-game setup screen for the Bots page. Composes the ELO, play-style, color, and time-control controls
  * and emits a fully-resolved `BotGameSettings` on Start.
  *
  * This is a pure, self-contained form: it takes a profile-derived ELO
@@ -8,9 +7,6 @@
  * `useUserProfile()` itself — `Bots.tsx` already has the profile and passes
  * `ownerKey` + `normalizedRating` down), so it stays trivially testable
  * without a QueryClient.
- *
- * Replaces the D-14 hardcoded start-settings stub that Phase 170
- * deliberately left behind. Plan 06 wires this component into `Bots.tsx`.
  */
 
 import { useCallback, useState } from 'react';
@@ -43,7 +39,7 @@ import { trackFeature } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 
 export interface SetupScreenProps {
-  /** Owner-scoped localStorage key (D-10) — `null` degrades to the shared `'anon'` bucket. */
+  /** Owner-scoped localStorage key — `null` degrades to the shared `'anon'` bucket. */
   ownerKey: string | null;
   /** The caller's lichess-blitz-equivalent rating, or `null` for no anchor. */
   normalizedRating: number | null;
@@ -101,12 +97,12 @@ function useSetupScreenState(
   ownerKey: string | null,
   normalizedRating: number | null,
 ): SetupScreenState {
-  // BOT-03 (UI DEFAULT ONLY, not a bot-adaptivity signal): this default is
+  // UI DEFAULT ONLY, not a bot-adaptivity signal: this default is
   // user-visible, user-overridable, and fixed for the game once chosen — it
   // is never fed into the bot's own move selection (selectBotMove's ELO
-  // stays symmetric and non-adaptive per its own D-07 invariant). D-06: no
-  // harness-table rung correction is applied here either — the ladder value
-  // from `resolveDefaultBotElo` passes straight through.
+  // stays symmetric and non-adaptive). No harness-table rung correction is
+  // applied here either — the ladder value from `resolveDefaultBotElo`
+  // passes straight through.
   const defaultElo = resolveDefaultBotElo(normalizedRating);
 
   // Lazy initializer — read the persisted settings ONCE at first render. The
@@ -128,7 +124,7 @@ function useSetupScreenState(
     const baseSeconds = preset?.baseSeconds ?? DEFAULT_BOT_SETUP_SETTINGS.baseSeconds;
     const incrementSeconds = preset?.incrementSeconds ?? DEFAULT_BOT_SETUP_SETTINGS.incrementSeconds;
 
-    // D-12: an unresolved 'random' preference must NEVER reach `useBotGame` —
+    // An unresolved 'random' preference must NEVER reach `useBotGame` —
     // it is resolved to a concrete color HERE, before `onStart` fires, so the
     // snapshot and the exported PGN always carry the color actually played.
     const userColor: MoverColor =
@@ -161,20 +157,18 @@ function TcBucketGroup({ bucket, activeLabel, onSelect }: TcBucketGroupProps): R
   const presets = TIME_CONTROL_PRESETS.filter((preset) => preset.bucket === bucket);
 
   return (
-    // Density pass (171 UAT gap 3, Task 2): mb-1 (was mb-2, -12px across 3
-    // groups). The sub-header moves INLINE, to the left of the chip grid
-    // (was stacked above it, -72px total across all 3 groups) — the 3-group
-    // structure and per-group labelling are unchanged, only the layout axis.
+    // Each bucket's label sits inline, left of its chip grid, to keep the
+    // Start CTA above the fold.
     <div className="mb-1 flex items-center gap-2">
       {/* whitespace-nowrap: the label column is a fixed 80px, and "Classical"
           at text-sm is close enough to that budget on real device fonts that it
           would otherwise wrap to a second line, pushing this row taller than the
           h-10 chip grid it aligns with. jsdom does no layout, so no test can
-          catch that (WR-02). */}
+          catch that. */}
       <p className="w-20 shrink-0 whitespace-nowrap text-sm text-muted-foreground">
         {TC_BUCKET_LABELS[bucket]}
       </p>
-      {/* WR-06: the track count is DERIVED from the bucket's own preset count,
+      {/* The track count is DERIVED from the bucket's own preset count,
           not read from a hand-maintained `{ blitz: 'grid-cols-4', ... }` lookup
           whose "matching each bucket's preset count" invariant nothing enforced
           — adding a 5th blitz preset silently wrapped the grid to a second row
@@ -194,7 +188,7 @@ function TcBucketGroup({ bucket, activeLabel, onSelect }: TcBucketGroupProps): R
               data-testid={tcPresetTestId(bucket, preset.label)}
               aria-pressed={isActive}
               onClick={() => {
-                // Phase 229 D-12: re-picking the active preset is not a change.
+                // Re-picking the active preset is not a change.
                 if (!isActive) trackFeature('option-change', { target: 'bot-tc', value: preset.label });
                 onSelect(preset.label);
               }}
@@ -214,8 +208,8 @@ export function SetupScreen({ ownerKey, normalizedRating, onStart }: SetupScreen
 
   const handleStart = (): void => {
     const settings = state.buildSettings();
-    // Persist the UNRESOLVED color PREFERENCE (D-10/D-12) — a returning
-    // Random user stays on Random next visit, never pinned to whichever side
+    // Persist the UNRESOLVED color PREFERENCE — a returning Random user
+    // stays on Random next visit, never pinned to whichever side
     // this game's coin flip drew.
     writeSetupSettings(ownerKey, {
       botElo: settings.botElo,
@@ -228,10 +222,10 @@ export function SetupScreen({ ownerKey, normalizedRating, onStart }: SetupScreen
   };
 
   return (
-    // Bottom-nav clearance (171 UAT gap 3, Task 1): the fixed mobile bottom
+    // Bottom-nav clearance: the fixed mobile bottom
     // bar is `4rem` + `env(safe-area-inset-bottom)` -> ~64-98px worst case in
     // an installed PWA. Total clearance = 80px (this `pb-20`) + 64px
-    // (App.tsx:567's `<main className="pb-16 sm:pb-0">`) = 144px, comfortably
+    // (App.tsx's `<main className="pb-16 sm:pb-0">`) = 144px, comfortably
     // clearing the 98px worst case. These two terms are on TWO DIFFERENT
     // elements (this page root and `<main>`) and therefore add — `pb-20`
     // itself OVERRIDES (not adds to) this root's own `p-4`'s padding-bottom,
@@ -239,13 +233,11 @@ export function SetupScreen({ ownerKey, normalizedRating, onStart }: SetupScreen
     // vertical space above the CTA; the padding is entirely below it.
     <div
       data-testid="setup-screen"
-      // Density pass (171 UAT gap 3, Task 2): gap-4 -> gap-3 (-16px across the
-      // 4 inter-group gaps). The `[&_[data-slot=slider]]:min-h-10` descendant
-      // override scopes the ELO/Play-style sliders' hit target to 40px on
-      // THIS screen only (-8px total) — the shared `ui/slider.tsx` root's
-      // `min-h-11` (44px, app-wide iOS-HIG/Material contract) is left
-      // untouched; only this one page takes the deviation, and only because
-      // the CTA must clear the fold.
+      // The `[&_[data-slot=slider]]:min-h-10` descendant override scopes the
+      // ELO/Play-style sliders' hit target to 40px on THIS screen only — the
+      // shared `ui/slider.tsx` root's `min-h-11` (44px, app-wide
+      // iOS-HIG/Material contract) is left untouched; only this one page takes
+      // the deviation, and only because the CTA must clear the fold.
       className="mx-auto flex max-w-md flex-col gap-3 p-4 pb-20 sm:pb-4 [&_[data-slot=slider]]:min-h-10"
     >
       <div data-testid="setup-elo">
@@ -296,9 +288,7 @@ export function SetupScreen({ ownerKey, normalizedRating, onStart }: SetupScreen
         ))}
       </div>
 
-      {/* Density pass (171 UAT gap 3, Task 2): h-12 (48px) — the Start CTA was
-          the SHORTEST control on a screen where every chip was 44px, backwards
-          for the primary CTA. Now it is the tallest control on the screen. */}
+      {/* h-12 (48px): the Start CTA is the tallest control on the screen. */}
       <Button
         variant="default"
         data-testid="btn-start-game"

@@ -1,30 +1,31 @@
 /**
- * Shared vocabulary for the percentile-first Endgame Stats tab (Phase 238):
+ * Shared vocabulary for the percentile-first Endgame Stats tab:
  * metric labels and WHAT + sign copy, value formatting, the section ids, and the
- * percentile helpers every bar and popover uses. A non-component module so fast refresh stays happy in the components.
+ * percentile helpers every bar and popover uses. A non-component module so fast
+ * refresh stays happy in the components.
  */
 
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { CdfMetricId } from '@/types/endgames';
 
-// ── Percentile bar geometry and bands (D-00a) ────────────────────────────────
+// ── Percentile bar geometry and bands ────────────────────────────────
 
 export const PERCENTILE_TYPICAL_LOW = 25;
 export const PERCENTILE_TYPICAL_HIGH = 75;
 export const PERCENTILE_MEDIAN = 50;
 /** The dot never sits on the very edge: no "0th" or "100th" percentile. */
-export const MIN_PERCENT = 1;
-export const MAX_PERCENT = 99;
+export const PERCENTILE_DISPLAY_MIN = 1;
+export const PERCENTILE_DISPLAY_MAX = 99;
 
 /**
  * The one displayed percentile: rounded, then clamped into 1..99. The bar's dot,
  * ordinal and band color and the popover's "Better than N%" all use it, so they
- * never disagree. Phase 238 review (FE-WR-03 / FE-IN-01): the backend returns exact
- * 0.0 / 100.0 tail percentiles, and the bar clamped only the dot ("0th" label next to
- * a 1% dot); the color also used the raw value, so 24.6 read "25th" in red.
+ * never disagree. The backend returns exact 0.0 / 100.0 tail percentiles, so the
+ * clamp keeps the ordinal and color in step with the dot (no "0th" label next to a
+ * 1% dot, no 24.6 reading "25th" in red).
  */
 export function displayPercentile(percentile: number): number {
-  return Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(percentile)));
+  return Math.max(PERCENTILE_DISPLAY_MIN, Math.min(PERCENTILE_DISPLAY_MAX, Math.round(percentile)));
 }
 
 /** Dot and number color: red below 25, blue from 25 to 75 inclusive, green above 75. */
@@ -102,7 +103,7 @@ export function formatMetricValue(metric: CdfMetricId, value: number): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
-/** Said where a value outside the typical range is not significant (239 D-14). */
+/** Said where a value outside the typical range is not significant. */
 export const COPY_CHANCE = 'This could be chance, there are not enough games to be sure.';
 
 const CI_DECIMALS = 1;

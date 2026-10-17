@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 96 Plan 02 — Endgames page readiness gate tests.
+ * Endgames page readiness gate tests.
  *
  * Verifies that the Endgames page whole-page tier2 lock works correctly:
  * - When tier2=false: EndgamesProcessingState renders, real Endgames content does not.
@@ -63,7 +63,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));

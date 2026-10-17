@@ -41,7 +41,7 @@ function render(initial: Props) {
 
 const ucis = (moves: readonly TrainFineMove[]) => moves.map((m) => m.uci);
 
-describe('useTrainLiveAlternatives (quick 261010-e5l)', () => {
+describe('useTrainLiveAlternatives', () => {
   it('keeps the settled root list while a line is stepped and while the root search restarts', () => {
     const { result, rerender } = render({ fen: START_FEN, isAtRoot: true, pvLines: SETTLED });
     expect(ucis(result.current)).toEqual(['d2d4', 'g1f3']);

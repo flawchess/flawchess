@@ -29,7 +29,7 @@ interface ContextTagRowProps {
   tcStats: FlawComparisonTc;
 }
 
-/** One tag row: unchanged name, one-line hint, gap bar, Search popover (D-00f). */
+/** One tag row: unchanged name, one-line hint, gap bar, Search popover. */
 function ContextTagRow({ metric, tcStats }: ContextTagRowProps) {
   const cell = flawMetricCell(tcStats, metric);
   if (!cell) return null;
@@ -93,7 +93,7 @@ interface ContextTagCardsProps {
 }
 
 /**
- * The four context-tag cards (D-00f, D-00j): Game phase, Clock, Lost advantages, Opponent
+ * The four context-tag cards: Game phase, Clock, Lost advantages, Opponent
  * errors. Two columns from lg up, one on phones. Each card ends with the
  * better / worse axis caption: fewer flaws (better) sit left on every gap bar.
  */

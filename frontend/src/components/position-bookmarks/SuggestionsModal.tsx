@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { MiniBoard } from './MiniBoard';
+import { BookmarkMiniBoard } from './BookmarkMiniBoard';
 import { positionBookmarksApi } from '@/api/client';
 import { pgnToSanArray } from '@/lib/pgn';
 import type { MostPlayedOpeningsResponse, OpeningWDL } from '@/types/stats';
@@ -57,7 +57,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
         .slice(0, SUGGESTIONS_PER_COLOR)
     : [];
 
-  const allSuggestions = whiteSuggestions.length === 0 && blackSuggestions.length === 0;
+  const hasNoSuggestions = whiteSuggestions.length === 0 && blackSuggestions.length === 0;
   const allBookmarked =
     mostPlayedData !== undefined &&
     mostPlayedData.white.slice(0, SUGGESTIONS_POOL_SIZE).every(o => bookmarkedHashes.has(o.full_hash)) &&
@@ -118,7 +118,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
   };
 
   const selectedCount = selected.size;
-  const savingLabel = saving
+  const saveButtonLabel = saving
     ? `Saving ${saveProgress} of ${selectedCount}...`
     : selectedCount > 0
       ? `Save ${selectedCount} bookmark${selectedCount !== 1 ? 's' : ''}`
@@ -143,7 +143,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
           className="mt-1 flex-shrink-0"
           data-testid={`suggestion-checkbox-${key}`}
         />
-        <MiniBoard
+        <BookmarkMiniBoard
           fen={opening.fen}
           flipped={color === 'black'}
           size={100}
@@ -189,19 +189,19 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
             </div>
           )}
 
-          {mostPlayedData !== undefined && allSuggestions && allBookmarked && (
+          {mostPlayedData !== undefined && hasNoSuggestions && allBookmarked && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               All your most-played openings are already bookmarked. Try creating custom bookmarks on the board and experimenting with the Piece filter.
             </div>
           )}
 
-          {mostPlayedData !== undefined && allSuggestions && !allBookmarked && (
+          {mostPlayedData !== undefined && hasNoSuggestions && !allBookmarked && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               No suggestions available. Import games to get bookmark suggestions based on your most-played openings.
             </div>
           )}
 
-          {mostPlayedData !== undefined && !allSuggestions && (
+          {mostPlayedData !== undefined && !hasNoSuggestions && (
             <>
               {renderSection('White openings', whiteSuggestions, 'white')}
               {renderSection('Black openings', blackSuggestions, 'black')}
@@ -209,7 +209,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
           )}
         </div>
 
-        {mostPlayedData !== undefined && !allSuggestions && (
+        {mostPlayedData !== undefined && !hasNoSuggestions && (
           <DialogFooter>
             <Button
               data-testid="btn-save-suggestions"
@@ -217,7 +217,7 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
               disabled={saving || selectedCount === 0}
               className="w-full sm:w-auto"
             >
-              {savingLabel}
+              {saveButtonLabel}
             </Button>
           </DialogFooter>
         )}

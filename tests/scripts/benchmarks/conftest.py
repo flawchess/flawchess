@@ -1,4 +1,4 @@
-"""Shared fixtures for the benchmark-generator numeric gates (SEED-029 Phase A).
+"""Shared fixtures for the benchmark-generator numeric gates.
 
 The chapter `*_diff.py` tests are local calibration-source regression checks: they
 run the ported queries against the live benchmark DB (localhost:5433) and assert the

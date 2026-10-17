@@ -1,4 +1,4 @@
-"""Data-correctness test for the Phase 117.1 clean-slate migration (SEED-044).
+"""Data-correctness test for the eval-convention clean-slate migration.
 
 Proves the gating of the engine-eval/flaw wipe WITHOUT depending on live prod data:
 seed one ENGINE game and one LICHESS game (each with positions, a game_flaws row, and
@@ -7,7 +7,7 @@ assert engine eval/flaw data is cleared, eval_jobs is emptied, and ALL lichess d
 preserved (the over-touch guard).
 
 The test DB is already at head, so we exercise the migration's data statements directly
-against seeded rows (the plan's recommended approach) rather than re-running
+against seeded rows rather than re-running
 `alembic upgrade`. The SQL mirrors the four statements in
 `alembic/versions/20260614_120000_phase_117_1_eval_convention_cleanslate.py::upgrade`;
 keep them in sync (the load-bearing invariant is the `lichess_evals_at IS NULL` gate).

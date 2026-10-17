@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { useReadiness } from '@/hooks/useReadiness';
@@ -35,8 +35,8 @@ import type { Color, WDLStats } from '@/types/api';
 
 type PositionResultsPanelProps = {
   stats: WDLStats;
-  /** Caller passes `gamesData.eval_baseline_pawns ?? fallback`. The component
-   *  ignores this when deriving its own per-color fallback (stale-cache guard). */
+  /** Backend eval_baseline_pawns. If a stale cache omits it at runtime, the component
+   *  falls back to the per-color constant. */
   evalBaselinePawns: number;
   filterColor: Color;
   label: ReactNode;
@@ -48,15 +48,15 @@ type PositionResultsPanelProps = {
    *  move explorer / Openings) = end of the openings containing this position;
    *  'endgame-entry' (Endgames Games subtab) = the position where the endgame
    *  begins. Drives the Eval popover copy and hides the opening-only per-color
-   *  baseline tick (the Endgames eval is color-agnostic — see quick 260519-lu0). */
+   *  baseline tick (the Endgames eval is color-agnostic). */
   evalContext?: 'opening-end' | 'endgame-entry';
 };
 
 /**
  * Shared WDL + Score bullet + Eval bullet three-row results panel.
  *
- * Extracted from ExplorerTab.tsx so that ExplorerTab, Openings GamesTab, and
- * Endgames gamesContent all render the same presentation (quick task 260519-lu0).
+ * Shared by ExplorerTab, Openings GamesTab and the Endgames games subtab so all
+ * three render the same presentation.
  *
  * Returns null when stats.total === 0.
  */
@@ -86,14 +86,14 @@ export function PositionResultsPanel({
 
   // MG-entry eval row. Mirrors OpeningStatsCard / OpeningFindingCard
   // scoreEvalBlock: a third bullet chart row showing signed pawns + Cpu icon
-  // + BulletConfidencePopover when MG eval data is available, em-dash otherwise.
-  const hasMgEval =
+  // + EvalConfidencePopover when MG eval data is available, em-dash otherwise.
+  const hasAvgEval =
     stats.eval_n > 0 &&
     stats.avg_eval_pawns !== null &&
     stats.avg_eval_pawns !== undefined;
-  const evalZoneHex = hasMgEval ? evalZoneColor(stats.avg_eval_pawns as number) : null;
+  const evalZoneHex = hasAvgEval ? evalZoneColor(stats.avg_eval_pawns as number) : null;
   const showEvalZoneFont =
-    hasMgEval &&
+    hasAvgEval &&
     isConfident(stats.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
@@ -108,8 +108,8 @@ export function PositionResultsPanel({
   // and the popover copy describes the endgame start rather than opening end.
   const isEndgameEntryEval = evalContext === 'endgame-entry';
   const evalAriaLabel = isEndgameEntryEval
-    ? `Avg eval at endgame entry: ${hasMgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`
-    : `Avg eval at MG entry: ${hasMgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`;
+    ? `Avg eval at endgame entry: ${hasAvgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`
+    : `Avg eval at MG entry: ${hasAvgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`;
 
   return (
     <Card
@@ -203,7 +203,7 @@ export function PositionResultsPanel({
               data-testid="eval-text-position"
             >
               <span className="text-muted-foreground">End Eval:</span>
-              {hasMgEval ? (
+              {hasAvgEval ? (
                 <span
                   className="ml-auto font-semibold inline-flex items-center gap-0.3"
                   style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
@@ -214,8 +214,8 @@ export function PositionResultsPanel({
               ) : (
                 <span className="ml-auto text-muted-foreground">—</span>
               )}
-              {hasMgEval && (
-                <BulletConfidencePopover
+              {hasAvgEval && (
+                <EvalConfidencePopover
                   level={stats.eval_confidence}
                   pValue={stats.eval_p_value}
                   gameCount={stats.eval_n}
@@ -228,7 +228,7 @@ export function PositionResultsPanel({
               )}
             </span>
             <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
-              {hasMgEval ? (
+              {hasAvgEval ? (
                 <MiniBulletChart
                   value={stats.avg_eval_pawns as number}
                   ciLow={stats.eval_ci_low_pawns ?? undefined}

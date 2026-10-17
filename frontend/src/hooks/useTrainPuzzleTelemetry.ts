@@ -1,13 +1,13 @@
 /**
- * useTrainPuzzleTelemetry — Phase 233 think-time measurement for one Train
- * puzzle (D-02): `guess_ms` (engine-ready board -> guess press) and `move_ms`
+ * useTrainPuzzleTelemetry — think-time measurement for one Train
+ * puzzle: `guess_ms` (engine-ready board -> guess press) and `move_ms`
  * (guess press -> graded drop), VISIBLE time only with the hidden-tab span
- * kept as `think_hidden_ms` (D-04), plus `client` (D-09) and `resumed`.
+ * kept as `think_hidden_ms`, plus `client` and `resumed`.
  *
  * All mutable state lives in refs and every returned callback is
  * `useCallback`-stable. The solve snapshot is frozen at move time and never
  * recomputed, so a solve retry resends the identical telemetry. Telemetry is
- * a recorded outcome only; it never feeds grading or scoring (D-05).
+ * a recorded outcome only; it never feeds grading or scoring.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -34,7 +34,7 @@ interface UseTrainPuzzleTelemetryOptions {
   isReady: boolean;
   /** A restored (already solved) reveal: no think phase to measure. */
   isRestored: boolean;
-  /** The verdict has landed: the reveal is open and the review timer runs (D-03). */
+  /** The verdict has landed: the reveal is open and the review timer runs. */
   hasVerdict: boolean;
   /** Review totals persisted in the reveal cache (Analyze round trip); seeds the timer when restored. */
   restoredReview: ReviewTelemetrySnapshot | undefined;
@@ -48,29 +48,29 @@ interface TrainPuzzleTelemetry {
   flushReviewOnNext: () => void;
   /** Analyze click: the current review totals for the reveal cache. Does NOT stop the timer. */
   snapshotReviewForAnalyze: () => ReviewTelemetrySnapshot | undefined;
-  /** A user prev/next/token click on a reveal line stepper (D-14). */
+  /** A user prev/next/token click on a reveal line stepper. */
   onLineUserStep: () => void;
   /**
-   * A user-played move on the reveal tree (D-14, quick 261007-axc): a board move
-   * or an engine-line click. `forked` (D-13) is true only when it created a new
+   * A user-played move on the reveal tree: a board move
+   * or an engine-line click. `forked` is true only when it created a new
    * sideline node; a move that matches a known line or an existing sideline is
    * counted as a move but is not a fork.
    */
   onExploreMove: (source: ExploreMoveSource, forked: boolean) => void;
-  /** The first-reveal walkthrough is active: sticky for this puzzle (D-13). */
-  markWalkthroughActive: () => void;
+  /** The first-reveal tour is active: sticky for this puzzle. */
+  markTourActive: () => void;
   /**
-   * A chip was selected (D-12), by tap or by a line-matching move from the puzzle
+   * A chip was selected, by tap or by a line-matching move from the puzzle
    * position. The default You chip is never counted, so opening on it or
    * re-tapping it adds nothing; each other chip counts once.
    */
   onChipSelect: (key: RoleKey) => void;
-  /** The number of chips currently shown on the reveal (D-12); the hook keeps the maximum. */
+  /** The number of chips currently shown on the reveal; the hook keeps the maximum. */
   onChipsTotalChange: (total: number) => void;
-  /** The phone verdict strip was expanded (D-12): sticky for this puzzle. */
+  /** The phone verdict strip was expanded: sticky for this puzzle. */
   markStripExpanded: () => void;
   /**
-   * Phase 236 D-12: the late 1.5 s phone reading of a server-graded move, once
+   * The late 1.5 s phone reading of a server-graded move, once
    * the background search settled. Stored only while `(sessionId, position)` is
    * still the puzzle on screen; sent on the next Next or pagehide flush.
    * Nothing is sent while the search is still running.
@@ -115,9 +115,9 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
   const guessMarkRef = useRef<number | null>(null);
   const frozenRef = useRef<SolveTelemetry | null>(null);
   const reviewRef = useRef<ReviewState | null>(null);
-  // Phase 236 D-12: the late phone_grade record for this puzzle, cleared with the other per-puzzle refs.
+  // The late phone_grade record for this puzzle, cleared with the other per-puzzle refs.
   const latePhoneGradeRef = useRef<PhoneGrade | null>(null);
-  // Engagement counters (D-14): cumulative totals for this puzzle's reveal.
+  // Engagement counters: cumulative totals for this puzzle's reveal.
   const countersRef = useRef<ReviewCounters>(emptyCounters());
   // Set ONLY by the Next flush: after it every later trigger for this puzzle is a no-op.
   const nextFlushedRef = useRef(false);
@@ -147,12 +147,12 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       hiddenFlushedRef.current = false;
     }
     if (!isReady || isRestored || stopwatchRef.current !== null) return;
-    // A mount into an already-hidden tab starts paused (useBotGameClock CR-01).
+    // A mount into an already-hidden tab starts paused.
     stopwatchRef.current = startStopwatch(Date.now(), isTabHidden());
     resumedRef.current = sessionId === null ? false : noteThinkStarted(sessionId, position);
   }, [sessionId, position, isReady, isRestored]);
 
-  // Review timer (D-03): starts when the verdict lands. Declared AFTER the
+  // Review timer: starts when the verdict lands. Declared AFTER the
   // reset effect so a key change clears the previous puzzle's state first.
   useEffect(() => {
     if (!hasVerdict || reviewRef.current !== null) return;
@@ -198,7 +198,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
   }, []);
 
   // The flush body for both review flushes: the cumulative telemetry plus the
-  // D-12 late phone_grade record when the background search has settled.
+  // late phone_grade record when the background search has settled.
   const buildReviewBody = useCallback(
     (snapshot: ReviewTelemetrySnapshot, exit: ReviewExit): ReviewRequest => ({
       ...buildReviewTelemetry(snapshot, countersRef.current, exit),
@@ -219,7 +219,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     // body in the same hidden span (the pagehide after visibilitychange-hidden on
     // a tab close) could only repeat the values.
     if (hidden && hiddenFlushedRef.current) return;
-    // 'pagehide' here means "left the reveal without pressing Next" (D-07), not
+    // 'pagehide' here means "left the reveal without pressing Next", not
     // literally the pagehide event.
     const snapshot = takeReviewSnapshot();
     if (snapshot === undefined) return;
@@ -304,16 +304,16 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     if (nextFlushedRef.current || review === null || review.sessionId === null) return;
     const snapshot = takeReviewSnapshot();
     if (snapshot === undefined) return;
-    // Fix (233 review WR-02): Next used to go through an axios XHR with this
-    // guard set before any response, so a request cancelled by an unload right
-    // after Next (e.g. the last puzzle navigating away) or a failed one was lost
-    // for good, and the row kept exit='pagehide' (breaking the D-07 "next puzzle
-    // shown" derivation). The keepalive transport outlives the page.
+    // Use the keepalive transport, not an axios XHR: this guard is set before
+    // any response, so a request cancelled by an unload right after Next (e.g.
+    // the last puzzle navigating away) or a failed one would be lost for good,
+    // and the row would keep exit='pagehide' (breaking the "next puzzle shown"
+    // derivation). The keepalive transport outlives the page.
     postReviewKeepalive(review.sessionId, review.position, buildReviewBody(snapshot, 'next'));
     nextFlushedRef.current = true;
   }, [takeReviewSnapshot, buildReviewBody]);
 
-  // D-14: the flag is set BEFORE the snapshot so the Analyze snapshot, and the
+  // The flag is set BEFORE the snapshot so the Analyze snapshot, and the
   // unmount flush that follows a plain Analyze click, both carry it.
   const snapshotReviewForAnalyze = useCallback((): ReviewTelemetrySnapshot | undefined => {
     countersRef.current = { ...countersRef.current, analyzeOpened: true };
@@ -330,7 +330,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       ...counters,
       exploreMoves: counters.exploreMoves + 1,
       boardMoves: source === 'board' ? counters.boardMoves + 1 : counters.boardMoves,
-      // D-13: sticky; a move onto a known line or an existing sideline never sets it.
+      // Sticky; a move onto a known line or an existing sideline never sets it.
       forked: counters.forked || forked,
     };
   }, []);
@@ -351,11 +351,11 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     countersRef.current = { ...countersRef.current, stripExpanded: true };
   }, []);
 
-  const markWalkthroughActive = useCallback((): void => {
+  const markTourActive = useCallback((): void => {
     countersRef.current = { ...countersRef.current, walkthrough: true };
   }, []);
 
-  // Pitfall 4: TrainSolveScreen is one instance across puzzles, so a reading
+  // TrainSolveScreen is one instance across puzzles, so a reading
   // that settles after the user moved on must not be attributed to the next
   // puzzle: it is stored only when its (session, position) is the current key.
   const setLatePhoneGrade = useCallback((recordSessionId: number | null, recordPosition: number, record: PhoneGrade): void => {
@@ -372,7 +372,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       snapshotReviewForAnalyze,
       onLineUserStep,
       onExploreMove,
-      markWalkthroughActive,
+      markTourActive,
       onChipSelect,
       onChipsTotalChange,
       markStripExpanded,
@@ -386,7 +386,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       snapshotReviewForAnalyze,
       onLineUserStep,
       onExploreMove,
-      markWalkthroughActive,
+      markTourActive,
       onChipSelect,
       onChipsTotalChange,
       markStripExpanded,

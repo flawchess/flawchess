@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useBoardNavigationInput tests (Phase 237 Plan 02): the optional `goHome` binding
+ * useBoardNavigationInput tests: the optional `goHome` binding
  * for the Home key. The ArrowLeft/ArrowRight/wheel behavior itself is covered
  * through useAnalysisBoard.test.ts; this file pins what the new option adds and
  * that omitting it leaves Home alone for Analysis and Openings.

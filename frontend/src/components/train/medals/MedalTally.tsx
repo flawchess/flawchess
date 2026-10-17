@@ -1,8 +1,9 @@
 /**
- * MedalTally — one row owner's lifetime medals for one board (Phase 231).
- * Non-zero types only, gold, silver, bronze order, each a tinted lucide Medal
- * plus a text-sm count from 2 up (a single medal is just the icon). Renders nothing when the owner has no medals, so a
- * board before the first deadline looks exactly as in Phase 230.
+ * MedalTally — one row owner's lifetime medals for one board.
+ * Non-zero types only, gold, silver, bronze order, each a MedalIcon plus a
+ * text-sm count from 2 up (a single medal is just the icon). Renders nothing
+ * when the owner has no medals, so a board before the first deadline shows no
+ * tally.
  *
  * It is its own nowrap item inside the row's wrapping name block (only the
  * name truncates), so it drops below the name on a narrow screen and the value

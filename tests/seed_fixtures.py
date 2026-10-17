@@ -1,4 +1,4 @@
-"""Shared seeded-user fixture for router integration tests (Phase 61).
+"""Shared seeded-user fixture for router integration tests.
 
 Provides a single authoritative test user with a deterministic portfolio of
 games and positions, committed to the per-run test database so HTTP endpoints

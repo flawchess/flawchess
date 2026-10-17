@@ -184,7 +184,7 @@ class TestFetchLichessGames:
         """A structurally-malformed (but valid-JSON) game -- missing the "id"
         key, which normalize_lichess_game subscripts directly with no .get()
         fallback -- is skipped; g1/g2 are still yielded and one Sentry capture
-        is recorded for the bad game (item 4, Phase 148).
+        is recorded for the bad game.
 
         Note: `players` itself is read via `game.get("players", {})` inside
         normalize_lichess_game, so a missing "players" key does NOT raise --
@@ -352,7 +352,7 @@ class TestFetchLichessGames:
 
     @pytest.mark.asyncio
     async def test_backward_until_ms_passed_in_params(self):
-        """Phase 186 Plan 02 (IMPORT-03, D-06): until_ms should include 'until='
+        """until_ms should include 'until='
         in request params for the backward-fetch backlog walk."""
         mock_client = MagicMock()
         mock_client.stream = MagicMock(return_value=_make_streaming_response([]))

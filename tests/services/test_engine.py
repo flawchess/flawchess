@@ -1,4 +1,4 @@
-"""Engine wrapper contract tests (ENG-02). Phase 78 Wave 0."""
+"""Engine wrapper contract tests."""
 
 from __future__ import annotations
 
@@ -132,10 +132,10 @@ def _make_pool_with_mock_protocol(mock_analyse_fn: object) -> "EnginePool":
 
 
 class TestEvaluateNodesMultipv2:
-    """Unit tests for evaluate_nodes_multipv2 (Phase 142 MPV-01).
+    """Unit tests for evaluate_nodes_multipv2.
 
     Covers: two-line extraction, single-legal-move su='' guard,
-    not-started 7-None return, and a mate-in-N first line (Pitfall 1 guard).
+    not-started 7-None return, and a mate-in-N first line.
     No real Stockfish process is started — all tests use mock protocols.
     """
 
@@ -158,7 +158,7 @@ class TestEvaluateNodesMultipv2:
         assert result == (None, None, None, None, None, None, None)
 
     async def test_two_line_extraction(self) -> None:
-        """Two-line info_list: best from line 0, second from line 1 (Pitfall 1 guard).
+        """Two-line info_list: best from line 0, second from line 1.
 
         Verifies correct extraction from each InfoDict by index — the list must
         never be passed whole to scalar helpers (_score_to_cp_mate etc.).
@@ -204,7 +204,7 @@ class TestEvaluateNodesMultipv2:
         """Single-legal-move board (len(info_list)==1): second_cp=None, second_mate=None, second_uci=''.
 
         PvNode.su is str (not str | None) — the empty string sentinel must be used,
-        never None (Pitfall 2 + Pitfall 3 from RESEARCH.md D-02).
+        never None.
         """
         info_only: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
             {
@@ -242,7 +242,7 @@ class TestEvaluateNodesMultipv2:
     async def test_mate_line_best_and_second_extracted(self) -> None:
         """Line 0 has a mate score: best_mate populated, best_cp None, second line still extracted.
 
-        Guards Pitfall 1: the list[InfoDict] must not be passed to scalar helpers.
+        Guards the rule that the list[InfoDict] must not be passed to scalar helpers.
         With multipv=2 and a forced mate, Stockfish may still return a second PV
         line — verify it is extracted correctly.
         """
@@ -289,7 +289,7 @@ class TestEvaluateNodesMultipv2:
 
 
 class TestNodesTimeoutOverride:
-    """SEED-139 D-04: evaluate_nodes_with_pv / evaluate_nodes_multipv2 accept an
+    """evaluate_nodes_with_pv / evaluate_nodes_multipv2 accept an
     optional keyword-only timeout_s, resolving to _NODES_TIMEOUT_S when omitted
     and using the override otherwise. Asserts the value actually handed to
     _acquire_and_analyse — the only load-bearing behavior of the parameter.
@@ -361,7 +361,7 @@ class TestEngineNotStarted:
         """When start_engine() has not been called, evaluate() degrades to (None, None).
 
         Required for tests that don't bring up the engine and for the import-time
-        graceful-degradation path (D-11).
+        graceful-degradation path.
 
         NOTE: This test must NOT be marked with @skip_if_no_stockfish — it tests
         the not-started branch which is independent of binary presence.

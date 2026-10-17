@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 // Generic boolean flag persisted per-user in localStorage. Used for one-shot
 // "has the user seen X yet?" markers that drive the red notification dots in
-// the nav and on first-use CTAs (Endgames tab visit, Generate Insights click).
+// the nav (Openings, Endgames and Train/Bots tab visits).
 // Scoped per-email so a shared browser does not bleed flag state between
 // accounts.
 

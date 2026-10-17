@@ -20,19 +20,18 @@ import type { MaiaFailureKind } from '@/lib/maiaWorkerErrors';
 
 // ─── Named constants (CLAUDE.md no-magic-numbers) ──────────────────────────
 
-/** G-213-34: the two surfaces that can mount this gate — bot play and the
+/** The two surfaces that can mount this gate — bot play and the
  * analysis board — read via the `surface` prop for copy AND telemetry. */
 export type EngineGateSurface = 'bots' | 'analysis';
 
 /**
- * G-213-34: per-surface title + one-time-download note. The bots entry keeps
- * the exact strings this gate always used. The analysis entry names the
+ * Per-surface title + one-time-download note. The analysis entry names the
  * engine, never a bot or a game — there is neither on that surface.
  */
 const SURFACE_COPY: Record<EngineGateSurface, { title: string; note: string }> = {
   bots: {
     title: 'Getting the bot ready',
-    /** G-213-4: reassures the user the wait is not repeated on every game. */
+    /** Reassures the user the wait is not repeated on every game. */
     note: 'This is a one-time download. Later games start straight away.',
   },
   analysis: {
@@ -41,7 +40,7 @@ const SURFACE_COPY: Record<EngineGateSurface, { title: string; note: string }> =
   },
 };
 /**
- * G-213-19: what the readout says after the last byte lands but before the
+ * What the readout says after the last byte lands but before the
  * worker reports `ready`. The bytes are only half the wait — the worker still
  * has to build the ONNX session and run the warmup inference, which is near
  * instant on the WebGPU path but takes seconds on the wasm fallback (observed
@@ -55,16 +54,16 @@ const MB_DECIMALS = 1;
 const START_BUTTON_LABEL = 'Start';
 const RETRY_BUTTON_LABEL = 'Retry';
 
-// ─── D-16 Umami telemetry (kebab-case, matches analytics.ts's convention) ──
+// ─── Umami telemetry (kebab-case, matches analytics.ts's convention) ──
 
 const ENGINE_GATE_SHOWN_EVENT = 'engine-gate-shown';
 const ENGINE_GATE_STARTED_EVENT = 'engine-gate-started';
 const ENGINE_GATE_ABANDONED_EVENT = 'engine-gate-abandoned';
 
 /**
- * D-18 (Phase 213-11): distinguishes an analysis-surface auto-close from a
+ * Distinguishes an analysis-surface auto-close from a
  * bots-surface user click on the `engine-gate-started` event, so the
- * per-surface G-213-34 dashboard does not silently reinterpret every
+ * per-surface dashboard does not silently reinterpret every
  * analysis session as a deliberate Start click. Named per CLAUDE.md's
  * no-magic-strings-from-a-fixed-set rule.
  */
@@ -74,7 +73,7 @@ type EngineGateStartedTrigger =
   | typeof ENGINE_GATE_STARTED_TRIGGER_AUTO
   | typeof ENGINE_GATE_STARTED_TRIGGER_USER;
 
-/** D-16 wait-duration bucket boundaries, ms. Buckets (not raw milliseconds)
+/** Wait-duration bucket boundaries, ms. Buckets (not raw milliseconds)
  * because Umami event props are strings — raw values would fragment the
  * dashboard into one row per distinct wait time. */
 const WAIT_BUCKET_UNDER_2S_MS = 2_000;
@@ -108,12 +107,11 @@ function waitBucket(elapsedMs: number): WaitBucketLabel {
   return WAIT_BUCKET_LABELS[index] ?? OVER_60S_LABEL;
 }
 
-// ─── D-17 Sentry — fixed, variable-free messages (grouping rule); device
-// details travel via `contexts`, never interpolated into the message. The
-// `unsupported` capture is NOT here any more (SEED-158, 2026-09-07): it moved
-// to `engineAssetProgress.ts`'s `markEngineAssetsUnsupported`, because this
-// modal never mounts on a returning device (cached assets) and is suppressed
-// on /analysis, so the iOS-gated population was invisible in Sentry. ────────
+// ─── Sentry: fixed, variable-free messages (grouping rule); device details
+// travel via `contexts`, never interpolated into the message. Don't capture
+// `unsupported` here: this modal never mounts on a returning device (cached
+// assets) and /analysis suppresses it for an unsupported device, so
+// `engineAssetProgress.ts`'s `markEngineAssetsUnsupported` owns that capture. ──
 
 const SENTRY_MESSAGE_FAILED = 'Engine cold start: engine failed to start';
 
@@ -122,11 +120,11 @@ const SENTRY_MESSAGE_FAILED = 'Engine cold start: engine failed to start';
 const ENGINE_FAILURE_TAG_DOWNLOAD = 'download';
 
 /**
- * D-14: genuinely different terminal states, never the canonical data-load
+ * Genuinely different terminal states, never the canonical data-load
  * error component's copy (that component's mandated trailer sentence always
  * implies a retry will help, which is false for the `unsupported` state
  * below). `unsupported` renders NO button of any kind; `failed` and `oom`
- * (quick 260829-tku) each render exactly one, Retry.
+ * each render exactly one, Retry.
  */
 type TerminalVariant = 'unsupported' | 'failed' | 'oom';
 
@@ -134,7 +132,7 @@ type TerminalVariant = 'unsupported' | 'failed' | 'oom';
 const NO_RETRY_VARIANTS: ReadonlySet<TerminalVariant> = new Set(['unsupported']);
 
 const TERMINAL_COPY: Record<TerminalVariant, { title: string; body: string; testId: string }> = {
-  // G-213-34: reachable ONLY from the bots surface — the analysis mount
+  // Reachable ONLY from the bots surface — the analysis mount
   // predicate in Analysis.tsx suppresses this state entirely
   // (`engineAssets.status !== 'unsupported'`), because this body's own
   // pointer at "the free analysis board" would be nonsensical (and would
@@ -150,20 +148,19 @@ const TERMINAL_COPY: Record<TerminalVariant, { title: string; body: string; test
     testId: 'engine-gate-unsupported',
   },
   failed: {
-    // Surface-neutral (G-213-34): both bots and analysis mount this state,
-    // so the title cannot scope itself to bot play. The body was already
-    // neutral and stays byte-identical.
+    // Surface-neutral: both bots and analysis mount this state, so the
+    // title and body cannot scope themselves to bot play.
     title: 'The engine did not start',
     body:
       'Something interrupted the download. Starting over re-downloads the engine model ' +
       'from scratch, so it can take a little while.',
     testId: 'engine-gate-failed',
   },
-  // Quick 260829-tku: a real user (FLAWCHESS Sentry, 2026-08-29, iOS 18.7
-  // Mobile Safari) hit an onnxruntime "Out of memory" error while the model
-  // bytes were already cached — the download was never the problem, so the
-  // generic `failed` copy above misled them into retrying a download that
-  // had already succeeded. Keeps Retry (unlike `unsupported`): freeing
+  // An onnxruntime "Out of memory" error (seen on iOS Mobile Safari) can hit
+  // while the model bytes are already cached — the download was never the
+  // problem, so the generic `failed` copy above would mislead the user into
+  // retrying a download that had already succeeded. Keeps Retry (unlike
+  // `unsupported`): freeing
   // memory is something the user can actually do, and on the analysis
   // surface `onRetry` is a full page reload, which also releases the failed
   // attempt's wasm heap.
@@ -178,19 +175,18 @@ const TERMINAL_COPY: Record<TerminalVariant, { title: string; body: string; test
 };
 
 export interface EngineReadyGateProps {
-  /** G-213-34: which surface mounted the gate — drives copy (`SURFACE_COPY`)
+  /** Which surface mounted the gate — drives copy (`SURFACE_COPY`)
    * and travels on every telemetry event so the two mount sites never merge
    * in the dashboard. */
   surface: EngineGateSurface;
   onStart: () => void;
-  /** D-15: called after the manual Retry button clears the failed status —
+  /** Called after the manual Retry button clears the failed status —
    * re-triggers the provider `warm()` calls so the dropped worker respawns. */
   onRetry: () => void;
 }
 
 /**
- * Quick 260829-tku: picks the terminal variant from the store's status +
- * failure kind. `'unsupported'` always wins (checked first by the gate); a
+ * Picks the terminal variant from the store's status + failure kind. `'unsupported'` always wins (checked first by the gate); a
  * `'failed'` status splits into `'oom'` for a classified memory exhaustion
  * and `'failed'` for every other case (`'load'`, `'inference'`, or `null`).
  */
@@ -200,26 +196,27 @@ function pickTerminalVariant(status: 'unsupported' | 'failed', failureKind: Maia
 }
 
 /**
- * The D-09 non-dismissible readiness gate: mirrors `ResumeGate.tsx`'s
- * structure (non-dismissible `Dialog`, `showCloseButton={false}`) and mounts
- * as its sibling in `Bots.tsx` — `resume === null && !game.live`, where
- * `ResumeGate` covers `resume !== null && !game.live`.
+ * The non-dismissible readiness gate, mirroring `ResumeGate.tsx`'s structure
+ * (non-dismissible `Dialog`, `showCloseButton={false}`). Mounted by `Bots.tsx`
+ * (beside `ResumeGate`: this one covers `resume === null && !game.live`,
+ * `ResumeGate` covers `resume !== null && !game.live`) and by the analysis
+ * page (`surface`).
  *
- * Four states inside the ONE `DialogContent`, an internal branch on
+ * States inside the ONE `DialogContent`, an internal branch on
  * `assets.status` (never sibling `Dialog`s): downloading -> ready (the
- * common path), plus the two D-14 terminal states, `unsupported` (D-13's
- * WASM-SIMD probe failed — a dead end, no retry affordance of any kind) and
- * `failed` (a download/init failure — Retry re-enters the worker self-heal
+ * common path), plus the terminal variants `unsupported` (the WASM-SIMD probe
+ * failed — a dead end, no retry affordance of any kind), `failed` (a
+ * download/init failure) and `oom` (Retry re-enters the worker self-heal
  * path via `onRetry`).
  *
- * No `setTimeout`/`setInterval`/polling anywhere here (D-04): the gate is
+ * No `setTimeout`/`setInterval`/polling anywhere here: the gate is
  * driven purely by `engineAssetProgress.ts`'s store notifications.
  */
 export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGateProps): ReactElement {
   const required = requiredEngineAssets();
   const assets = useEngineAssets(required);
 
-  // D-16: lazily seeded mount timestamp — Date.now() is impure, so it must
+  // Lazily seeded mount timestamp — Date.now() is impure, so it must
   // not be read directly during render (mirrors ResumeGate.tsx's
   // `useState(() => Date.now())` precedent).
   const [mountedAt] = useState(() => Date.now());
@@ -228,8 +225,8 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
   const abandonedFiredRef = useRef(false);
   const failedCapturedRef = useRef(false);
 
-  // D-16: gate-shown fires exactly once, the first time this component
-  // renders (it only ever mounts in a non-ready state — the D-04 cache-hit
+  // gate-shown fires exactly once, the first time this component
+  // renders (it only ever mounts in a non-ready state — the cache-hit
   // path never mounts it at all, so no event fires there).
   useEffect(() => {
     if (shownFiredRef.current) return;
@@ -237,7 +234,7 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
     trackEvent(ENGINE_GATE_SHOWN_EVENT, { surface });
   }, [surface]);
 
-  // D-16: abandonment fires exactly once — on unmount (leaving /bots,
+  // Abandonment fires exactly once — on unmount (leaving /bots,
   // switching persona) or on `pagehide`, whichever comes first — and never
   // after `engine-gate-started` has already fired.
   useEffect(() => {
@@ -253,14 +250,14 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
     };
   }, [surface]);
 
-  // D-17: terminal-failure Sentry capture for the `failed` state, at most
+  // Terminal-failure Sentry capture for the `failed` state, at most
   // once per mount. A clean downloading -> ready run never enters this
   // branch, so it produces zero Sentry calls. (`unsupported` is captured by
   // the store itself — see the header note above.)
   useEffect(() => {
     if (assets.status === 'failed' && !failedCapturedRef.current) {
       failedCapturedRef.current = true;
-      // Dedupe (FLAWCHESS-A5): a non-null `failureKind` means the Maia worker
+      // Dedupe: a non-null `failureKind` means the Maia worker
       // host already captured this failure (`Maia worker inference error
       // (<kind>)`, with the raw text, backend and device context) — the
       // gate re-reporting it turned one OOM cold start into three Sentry
@@ -275,7 +272,7 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
     }
   }, [assets.status, assets.failureKind]);
 
-  // D-18: the single start path for BOTH surfaces — a bots-surface click and
+  // The single start path for BOTH surfaces — a bots-surface click and
   // an analysis-surface auto-close both funnel through this one function, so
   // telemetry, the `startedFiredRef` single-fire guard, and the `onStart()`
   // callback all keep their existing semantics regardless of trigger. The
@@ -303,11 +300,11 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
     onRetry();
   }, [onRetry]);
 
-  // D-18: on the analysis surface, the gate closes itself the moment the
+  // On the analysis surface, the gate closes itself the moment the
   // engine is genuinely ready — no footer, no Start button (rendered below).
   // Keyed on `assets.ready`, the SAME readiness signal that enables Start on
   // bots — NEVER on `allBytesIn` (last-byte-in), which would drop the user
-  // onto a board whose engine is not yet live and undo G-213-19's
+  // onto a board whose engine is not yet live and undo the
   // `PREPARING_READOUT` state. Bots is unaffected: this effect no-ops for
   // `surface === 'bots'` on every render.
   useEffect(() => {
@@ -351,14 +348,14 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
   // Once every asset is done, useEngineAssets() reports activeAssetLabel as
   // null (nothing left in flight) — fall back to "Ready" so the readout never
   // renders a blank name ("— 100%") in the brief window before Start is tapped.
-  // G-213-4: the bare percent gave no sense of scale or of how much was left.
+  // The bare percent gave no sense of scale or of how much was left.
   // The MB pair is the same byte-weighted aggregate the bar and percent use,
   // so the three can never disagree.
   const loadedMb = (assets.loadedBytes / BYTES_PER_MB).toFixed(MB_DECIMALS);
   const totalMb = (assets.totalBytes / BYTES_PER_MB).toFixed(MB_DECIMALS);
   // Compare BYTES, not `percent`: percent rounds to 100 slightly before the
   // last chunk lands, which would show the preparing copy while bytes are
-  // still arriving. G-213-19b: every session requires BOTH assets, so this
+  // still arriving. Every session requires BOTH assets, so this
   // stays false until BOTH are fully in — a finished Maia download does not
   // claim the Stockfish one is done too.
   const allBytesIn = assets.totalBytes > 0 && assets.loadedBytes >= assets.totalBytes;
@@ -383,9 +380,9 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
         <p className="text-muted-foreground text-sm" data-testid="engine-ready-readout">
           {readout}
         </p>
-        {/* D-18: bots keeps its Start button and click-to-close behavior
-            unchanged; analysis renders NO footer and NO button in any state —
-            the effect above closes it automatically once ready. */}
+        {/* Bots shows a Start button that closes the gate on click; analysis
+            renders NO footer and NO button in any state — the effect above
+            closes it automatically once ready. */}
         {surface === 'bots' && (
           <DialogFooter>
             <Button

@@ -1,16 +1,16 @@
 """Unit tests for app.services.accuracy_acpl — lichess-compatible accuracy + ACPL.
 
-Covers Phase 178 D-07..D-11 (SEED-110): the pure formula port of lichess's own
+Covers the pure formula port of lichess's own
 Win%/per-move-accuracy/windowed-game-accuracy/ACPL formulas.
 
 The primary correctness proof is `test_acpl_fixture`: lichess game 296343's
 real, dev-DB-verified `eval_cp` sequence (`[VERIFIED: dev DB game 296343]` —
-NOT the RESEARCH.md/PLAN.md prose copy, which drops one of the five
+NOT a prose copy of it, which drops one of the five
 consecutive zeros at ply 9-13; re-confirmed against `game_positions` directly)
 reproduces lichess's own imported `white_acpl=18`/`black_acpl=61` exactly.
 This single reproduction simultaneously validates sign convention + the
-post-move-shift mapping + mover parity + the ACPL formula (RESEARCH §
-"Worked example — game 296343").
+post-move-shift mapping + mover parity + the ACPL formula (the worked
+example for game 296343).
 
 DB-free: no session fixture, no `GamePosition` ORM rows — `Pos` below is a
 lightweight stand-in matching `accuracy_acpl.PositionLike`'s duck-typed shape
@@ -74,7 +74,7 @@ class TestAcplFixture:
 
 
 class TestWinPctAndMoveAccuracy:
-    """D-08 (Win%) and D-09 (per-move accuracy) formula coverage."""
+    """Win% and per-move accuracy formula coverage."""
 
     def test_win_pct_zero_is_fifty(self) -> None:
         assert win_pct(0) == pytest.approx(50.0, abs=1e-9)
@@ -95,10 +95,10 @@ class TestWinPctAndMoveAccuracy:
         assert move_accuracy(90.0, 5.0) < 20.0
 
     def test_move_accuracy_plus_one_bonus_present(self) -> None:
-        """The trailing +1 uncertainty bonus (Pitfall 3) shifts the raw formula by exactly 1."""
+        """The trailing +1 uncertainty bonus shifts the raw formula by exactly 1."""
         before, after = 70.0, 50.0
         with_bonus = move_accuracy(before, after)
-        # Hand-computed via the exact D-09 constants, without the +1 term.
+        # Hand-computed via the exact formula constants, without the +1 term.
         import math
 
         from app.services.accuracy_acpl import MOVE_ACC_A, MOVE_ACC_B, MOVE_ACC_C
@@ -107,12 +107,12 @@ class TestWinPctAndMoveAccuracy:
         assert with_bonus - without_bonus == pytest.approx(1.0, abs=1e-9)
 
     def test_move_accuracy_known_value_reproduces_lichess_fixture(self) -> None:
-        """Regression pin on the exact D-09 formula (hand-computed reference value)."""
+        """Regression pin on the exact formula (hand-computed reference value)."""
         assert move_accuracy(70.0, 50.0) == pytest.approx(41.016818741417126, abs=1e-9)
 
 
 class TestGameAccuracyFixture:
-    """D-10 windowed aggregation, reconciled against lichess's own published accuracy."""
+    """Windowed aggregation, reconciled against lichess's own published accuracy."""
 
     def test_game_accuracy_fixture(self) -> None:
         result = compute_game_accuracy_acpl(_build_296343_positions())
@@ -128,7 +128,7 @@ class TestGameAccuracyFixture:
 
 
 class TestIncompleteSequenceReturnsNone:
-    """Complete-Sequence Gate (Pitfall 6): a stamp-complete game can still have holes."""
+    """Complete-Sequence Gate: a stamp-complete game can still have holes."""
 
     def test_interior_hole_returns_none(self) -> None:
         # 4-move game; ply=1's row is an interior hole (both eval_cp/eval_mate NULL) —
@@ -149,7 +149,7 @@ class TestIncompleteSequenceReturnsNone:
 
 
 class TestEdgeCases:
-    """D-07 edge-case checklist: 0/1-move games, mid-game mate, checkmate, harmonic-zero."""
+    """Edge-case checklist: 0/1-move games, mid-game mate, checkmate, harmonic-zero."""
 
     def test_zero_move_game_returns_none(self) -> None:
         # Only the (unmovable) initial/terminal position exists — no move was played.

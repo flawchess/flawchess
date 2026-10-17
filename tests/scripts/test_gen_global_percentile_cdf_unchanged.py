@@ -1,4 +1,4 @@
-"""Phase 94.4 canary: ``_build_per_user_with_anchor_query`` SQL is stable.
+"""Canary: ``_build_per_user_with_anchor_query`` SQL is stable.
 
 Drift here means a downstream consumer (``gen_global_percentile_cdf.py`` re-
 runs) will produce a different cohort CDF than the one committed in
@@ -12,7 +12,7 @@ Regenerating goldens
 --------------------
 
 When the per-(metric, TC) SQL surface changes intentionally (e.g. a future
-inclusion-floor adjustment or recency-window tweak, or a Plan 02/03 builder
+inclusion-floor adjustment or recency-window tweak, or a builder
 change), re-run::
 
     uv run python - <<'PY'
@@ -25,7 +25,7 @@ change), re-run::
     )
     out_dir = Path('tests/scripts/fixtures/global_percentile_cdf')
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Remove stale Phase 94.3 fixtures (named ``{metric}.sql`` without _tc suffix).
+    # Remove stale flat fixtures (named ``{metric}.sql`` without _tc suffix).
     for p in out_dir.glob('*.sql'):
         p.unlink()
     for m in IN_SCOPE_METRICS:
@@ -37,19 +37,19 @@ change), re-run::
 Fixtures live in
 ``tests/scripts/fixtures/global_percentile_cdf/{metric}__{tc}.sql`` (one
 file per (metric, tc) cell; double-underscore separator avoids collision
-with the legacy ``time_pressure_score_gap_bullet.sql`` Phase 94.3 naming).
+with the legacy flat ``time_pressure_score_gap_bullet.sql`` naming).
 Trailing newline stripped on read so the in-memory golden matches the
 function's no-trailing-newline output.
 
 History
 -------
 
-- Phase 94.1 Plan 03: original goldens (per-cell stratified SQL).
-- Phase 94.2 Plan 02: regenerated under pooled-per-user methodology.
-- Phase 94.3 Plan 03: widened to 16 metrics (still one query per metric).
-- Phase 94.4 Plan 04: SQL surface widened from per-metric to per-(metric,
-  TC) — joins per_user_values × per_user_anchor on user_id (RESEARCH
-  Pitfall 1 + 8). Fixtures regenerated; the prior 16-file flat fixture
+- Original goldens (per-cell stratified SQL).
+- Regenerated under pooled-per-user methodology.
+- Widened to 16 metrics (still one query per metric).
+- SQL surface widened from per-metric to per-(metric,
+  TC) — joins per_user_values × per_user_anchor on user_id.
+  Fixtures regenerated; the prior 16-file flat fixture
   set is replaced by a 32-file per-(metric, tc) set. The 8-value
   ``CdfMetricId`` Literal × 4-value ``TimeControlBucket`` = 32 cells.
 """
@@ -96,11 +96,11 @@ def test_build_per_user_with_anchor_query_byte_identical_after_refactor(
     metric_id: str,
     tc: str,
 ) -> None:
-    """SQL output is byte-identical to the committed Phase 94.4 fixture goldens.
+    """SQL output is byte-identical to the committed fixture goldens.
 
     Imports ``_build_per_user_with_anchor_query`` from the script directly
     (no DB required — the function is a pure SQL string builder). Asserts
-    byte-identical equality against the fixture captured under Phase 94.4's
+    byte-identical equality against the fixture captured under the
     cohort sliding-window methodology.
     """
     expected = _load_golden(metric_id, tc)

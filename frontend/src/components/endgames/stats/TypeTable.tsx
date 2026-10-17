@@ -29,11 +29,11 @@ import type {
 } from '@/types/endgames';
 import { TC_LABELS } from '@/lib/timeControlLabels';
 
-// Cell domains: the value range each range cell maps onto its 0-100% track (D-00e).
+// Cell domains: the value range each range cell maps onto its 0-100% track.
 type Domain = readonly [number, number];
 const CONVERSION_DOMAIN: Domain = [0.4, 1.0];
 const RECOVERY_DOMAIN: Domain = [0.0, 0.6];
-const VS_ENGINE_DOMAIN: Domain = [-0.15, 0.15];
+const ACHIEVABLE_SCORE_GAP_DOMAIN: Domain = [-0.15, 0.15];
 
 const PERCENT_SCALE = 100;
 const NO_VALUE = '—';
@@ -71,13 +71,13 @@ interface RangeCellProps {
   band: readonly [number, number] | null;
   domain: Domain;
   format: (fraction: number) => string;
-  /** 99% significance vs the band centre (rates) or 0 (gap); red/green needs it (239 D-14). */
+  /** 99% significance vs the band centre (rates) or 0 (gap); red/green needs it. */
   significant: boolean;
 }
 
 /**
  * Value text color: red below the typical range, green above it, default (white) inside
- * or when the difference is not significant (Phase 239 D-14).
+ * or when the difference is not significant.
  */
 function rangeValueColor(
   value: number | null,
@@ -93,7 +93,7 @@ function rangeValueColor(
 /**
  * "You" dot color, matching the Endgame Metrics percentile dot: red below the typical
  * range, blue inside it (or when the class has no range, or the difference is not
- * significant, 239 D-14), green above it.
+ * significant), green above it.
  */
 function rangeDotColor(
   value: number,
@@ -180,7 +180,7 @@ function recoveryValue(category: EndgameCategoryStats): number | null {
 }
 
 /** Mean score gap vs. the engine's expectation; null when no span carries an eval. */
-function vsEngineValue(category: EndgameCategoryStats): number | null {
+function achievableScoreGapValue(category: EndgameCategoryStats): number | null {
   if ((category.type_achievable_score_gap_n ?? 0) === 0) return null;
   return category.type_achievable_score_gap_mean;
 }
@@ -284,9 +284,9 @@ function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
         caption="vs. expected"
         slug="gap"
         rowTestId={rowTestId}
-        value={vsEngineValue(category)}
+        value={achievableScoreGapValue(category)}
         band={typicalBand(category.endgame_class, tc, 'achievable_score_gap')}
-        domain={VS_ENGINE_DOMAIN}
+        domain={ACHIEVABLE_SCORE_GAP_DOMAIN}
         format={formatSignedPercent}
         significant={category.type_achievable_score_gap_significant}
       />
@@ -304,11 +304,11 @@ interface TypeTableProps {
 }
 
 /**
- * Endgame Type Breakdown (D-00e, D-05): one row per endgame type for the selected
+ * Endgame Type Breakdown: one row per endgame type for the selected
  * time control, from the ranked sample. Conversion, recovery and vs.-engine cells
  * show where the value sits against the typical range for that type and time
  * control. There is no per-type percentile: the value text is red below the range,
- * green above it and white inside it (238 UAT).
+ * green above it and white inside it.
  */
 export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
   const [selectedTc] = useEndgameStatsTc(tcs);
@@ -324,7 +324,7 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
       className="flex flex-col gap-4"
       data-testid="endgame-type-breakdown-section"
       // aria-label, not aria-labelledby: the tab mounts twice (desktop + mobile), so a
-      // fixed heading id is duplicated in the DOM (Phase 238 review FE-IN-02).
+      // fixed heading id is duplicated in the DOM.
       aria-label="Endgame Type Breakdown"
     >
       <h2

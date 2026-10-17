@@ -5,15 +5,14 @@ import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { trackEvent } from '@/lib/analytics';
 
 /**
- * ImportAskActions: quick task 260926-8p5. The "Import games" action rendered
- * into `TrainBotBubble`'s `actions` slot for a REGISTERED account with zero
+ * ImportAskActions: the "Import games" action rendered into
+ * `TrainBotBubble`'s `actions` slot for a REGISTERED account with zero
  * imported games, on the Train landing bubble and the warm-up score bubble.
  *
- * Why it exists: every zero-game Train surface already SAID "Import your
- * games", but the only clickable import button lived in the `no_material`
- * empty state, which a zero-game account never reaches (sharp fillers always
- * compose a session). Prod 2026-09-25: ~2/3 of first-time Train users with no
- * games solved nothing, vs ~1/4 of users with games.
+ * Why it exists: every zero-game Train surface says "Import your games", but
+ * the only other clickable import button lives in the `no_material` empty
+ * state, which a zero-game account never reaches (sharp fillers always
+ * compose a session).
  *
  * Guests keep `SignupAskActions` instead: sign-up is their funnel lever.
  *

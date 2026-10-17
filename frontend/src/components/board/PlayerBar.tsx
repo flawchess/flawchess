@@ -6,7 +6,7 @@ import { MaterialDisplay } from './MaterialDisplay';
 
 /**
  * Remaining clock as m:ss (floored), e.g. 179.4 → "2:59".
- * Local helper, not a shared import (D-05 — see EvalChart/FlawCard).
+ * Local helper, not a shared import.
  */
 function formatClock(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -16,11 +16,10 @@ function formatClock(seconds: number): string {
 }
 
 /**
- * The clock readout as a colour-coded badge (Phase 223 UAT). The background is
- * the player's own board colour — the same two values the MoveStats accuracy
- * pills use — so the badge doubles as the row's side-identity indicator and the
- * ■/□ glyph beside the name becomes redundant. Its own component purely to keep
- * `PlayerBar` under the eslint complexity ceiling.
+ * The clock readout as a colour-coded badge. The background is the player's own
+ * board colour — the same two values the MoveStats accuracy pills use — so the
+ * badge doubles as the row's side-identity indicator and the ■/□ glyph beside
+ * the name becomes redundant.
  */
 function ClockBadge({
   isWhite,
@@ -64,45 +63,39 @@ interface PlayerBarProps {
   /** ELO/rating; rendered in parentheses when present. */
   rating: number | null;
   /**
-   * Phase 223 (BOTVOICE-05, D-11): an honest, tilde-prefixed rating estimate
-   * (e.g. a persona's `calibratedLabel`, or the player's own rounded
-   * `~${rating}` estimate) — wins over the numeric `rating` prop when both
-   * are present, because a calibrated estimate is not an exact rating and a
-   * parenthesised integer would misrepresent it as one. Optional and purely
-   * additive: every existing call site keeps rendering `rating` exactly as
-   * before by simply never passing this prop.
+   * An honest, tilde-prefixed rating estimate (e.g. a persona's
+   * `calibratedLabel`, or the player's own rounded `~${rating}` estimate) —
+   * wins over the numeric `rating` prop when both are present, because a
+   * calibrated estimate is not an exact rating and a parenthesised integer
+   * would misrepresent it as one.
    */
   ratingLabel?: string;
   /** Mover's remaining clock at the current position (seconds); null = no %clk → clock hidden. */
   clockSeconds: number | null;
   /**
-   * Phase 223 UAT: `false` hides the clock ICON (digits stay) so only the
-   * side to move carries it — a live-game affordance. The icon keeps its
-   * layout slot (`invisible`, not unmounted) so the digits never shift when
-   * the turn passes. Omitted (`undefined`) keeps the icon on every row, the
-   * Analysis board's pre-existing rendering.
+   * `false` hides the clock ICON (digits stay) so only the side to move
+   * carries it — a live-game affordance. The icon keeps its layout slot
+   * (`invisible`, not unmounted) so the digits never shift when the turn
+   * passes. Omitted (`undefined`) keeps the icon on every row, as the Analysis
+   * board does.
    */
   clockActive?: boolean;
   /**
-   * Phase 223 UAT: paints the digits in `CLOCK_LOW_TIME_URGENT` — the bot
-   * game's low-time treatment (Phase 169 D-07), carried over from the
-   * retired mobile clock strip now that both breakpoints render this row.
-   * The caller decides via `isLowTime` (`lib/chessClock.ts`); this row owns
-   * no clock math.
+   * Paints the clock badge background in `CLOCK_LOW_TIME_URGENT` (the bot
+   * game's low-time treatment). The caller decides via `isLowTime`
+   * (`lib/chessClock.ts`); this row owns no clock math.
    */
   clockUrgent?: boolean;
   /**
-   * Phase 208 (PASTE-02, UI-SPEC § Interaction Contract 6): optional content
-   * for the right-aligned slot, rendered ONLY when clockSeconds is null — a
-   * real game's clock always wins. Used by Analysis.tsx to show "{Result} ·
+   * Optional content for the right-aligned slot, rendered ONLY when
+   * clockSeconds is null — a real game's clock always wins. Used by Analysis.tsx to show "{Result} ·
    * {Date}" in an ephemeral pasted game's freed clock slot, on the top
    * player row only.
    */
   rightSlotContent?: ReactNode;
   /**
-   * Quick 260809-jzz (D-05): the FEN of the position currently on the board.
-   * Omitted means no material display — Analysis free play stays unchanged,
-   * since every call site already sits behind the `showPlayerBars` gate.
+   * The FEN of the position currently on the board, for the material display.
+   * Omitted means no material display.
    */
   fen?: string;
   testId?: string;
@@ -128,7 +121,7 @@ export function PlayerBar({
   fen,
   testId,
 }: PlayerBarProps): ReactElement {
-  // Phase 223 UAT: the badge carries the side identity, so the ■/□ glyph
+  // The badge carries the side identity, so the ■/□ glyph
   // renders ONLY in the fallback case where there is no clock to paint (an
   // import without %clk) and the row would otherwise have no colour cue.
   const hasClock = clockSeconds !== null;
@@ -147,7 +140,7 @@ export function PlayerBar({
           rating !== null && <span className="text-muted-foreground"> ({rating})</span>
         )}
       </span>
-      {/* Right group (Phase 223 UAT): material imbalance sits immediately left
+      {/* Right group: material imbalance sits immediately left
           of the clock badge, so both of the row's live readouts share one edge
           instead of the material hanging off the end of the name. */}
       <span className="flex shrink-0 items-center gap-2">

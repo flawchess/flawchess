@@ -2,10 +2,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { DEFAULT_FILTERS, FILTER_DOT_FIELDS, areFiltersEqual } from '@/components/filters/FilterPanel';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
-// SEED-163 2d: named empty state for a user whose imported games exist but
-// whose analytics population is emptied by the new Human + Rated defaults
-// (SEED-163 2a). One-directional import from FilterPanel — FilterPanel must
-// not import this module.
+// Named empty state for a user whose imported games exist but whose analytics
+// population is emptied by the Human + Rated defaults. One-directional import
+// from FilterPanel — FilterPanel must not import this module.
 
 /**
  * True only when the CURRENT filters are exactly the analytics defaults (no
@@ -32,11 +31,9 @@ export function shouldShowNoHumanRatedGames(
 
 interface NoHumanRatedGamesStateProps {
   /**
-   * Accepts `number | null` (rather than requiring callers to `?? 0`) so
-   * pages already at an eslint `complexity` per-file baseline (Endgames.tsx,
-   * GlobalStats.tsx) don't pick up an extra nullish-coalescing branch inline
-   * — the fallback lives here instead. shouldShowNoHumanRatedGames already
-   * guarantees non-null/positive whenever this component is actually shown.
+   * Accepts `number | null` so callers need no `?? 0`;
+   * shouldShowNoHumanRatedGames already guarantees a positive count whenever
+   * this is shown.
    */
   totalGames: number | null;
 }

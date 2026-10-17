@@ -1,5 +1,5 @@
 // ── Automatic (non-user) page reloads ──────────────────────────────────────
-// Quick 261004-rmc: an idle open tab reloads itself after every deploy (the
+// An idle open tab reloads itself after every deploy (the
 // hourly service-worker update check, or stale-chunk recovery), and Umami
 // recorded each of those reloads as a fresh pageview: prod sessions sitting on
 // one path picked up a pageview per release. The reload leaves a marker in

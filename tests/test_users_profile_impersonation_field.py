@@ -1,4 +1,4 @@
-"""Integration tests for the impersonation field on GET /api/users/me/profile (D-22).
+"""Integration tests for the impersonation field on GET /api/users/me/profile.
 
 Covers:
 - Impersonation token → profile.impersonation == {admin_id, target_email}
@@ -71,7 +71,7 @@ async def make_admin_and_target(
 
 @pytest.mark.asyncio
 async def test_profile_impersonation_populated_when_impersonating(test_engine):
-    """With an impersonation token, /users/me/profile.impersonation == {admin_id, target_email} (D-22)."""
+    """With an impersonation token, /users/me/profile.impersonation == {admin_id, target_email}."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:

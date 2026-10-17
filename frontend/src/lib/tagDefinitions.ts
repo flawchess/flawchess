@@ -1,15 +1,14 @@
 /**
  * Human-readable definitions for FlawTags.
  *
- * TAG_DEFINITIONS is rebuilt (Phase 110 Plan 05 D-07) for the TagChip and
+ * TAG_DEFINITIONS is rebuilt for the TagChip and
  * FlawFilterControl definition popovers: each entry is a one-sentence definition with all
  * numeric thresholds interpolated from @/generated/flawThresholds — no hard-coded
  * percentages or evals anywhere in this file. Expected-score thresholds are shown as
  * Stockfish eval (pawns), which most players reason in more readily than win probability.
  *
  * Every tag surface (chips, Flaw-Stats panel, filter control) renders the raw
- * lowercase-with-dash tag string; there is no title-cased label map (D-07 amendment,
- * Phase 110 UAT).
+ * lowercase-with-dash tag string; there is no title-cased label map.
  */
 
 import type { FlawTag } from '@/types/library';

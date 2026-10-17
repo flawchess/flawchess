@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * FlawChessAgreementVerdict tests (Phase 157-02, REVIEW-02). Mirrors
+ * FlawChessAgreementVerdict tests. Mirrors
  * MaiaMoveQualityBar.test.tsx's prose-span fireEvent patterns (no
  * matchMedia/ResizeObserver stubs needed — same simpler setup). Covers the
- * <behavior> cases from 157-02-PLAN.md: D-02/D-03 muted prompt, D-06
- * null-verdict fallback, D-04/D-05/D-07 tier prose, D-09 hover-arrow
- * isolation, D-10 engine-labeled popover (two-line vs omitted-FC-line), and
- * D-11 reveal-then-play.
+ * muted prompt, the
+ * null-verdict fallback, tier prose, the hover-arrow
+ * isolation, the engine-labeled popover (two-line vs omitted-FC-line), and
+ * reveal-then-play.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -51,7 +51,7 @@ function sfLine(move: string, evalCp: number | null, evalMate: number | null = n
 afterEach(cleanup);
 
 describe('FlawChessAgreementVerdict', () => {
-  it('shows the muted prompt (not the classifier) when Stockfish is off (D-02/D-03)', () => {
+  it('shows the muted prompt (not the classifier) when Stockfish is off', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -69,7 +69,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(screen.queryByTestId('flawchess-verdict-move-e4')).toBeNull();
   });
 
-  it('falls back to the same muted slot on a partial/null verdict (D-06)', () => {
+  it('falls back to the same muted slot on a partial/null verdict', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={null}
@@ -88,7 +88,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(screen.queryByTestId('flawchess-verdict-sentence')).toBeNull();
   });
 
-  it('renders the aligned tier with a single named move (D-04)', () => {
+  it('renders the aligned tier with a single named move', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -107,7 +107,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(screen.getByTestId('flawchess-verdict-move-e4')).toBeTruthy();
   });
 
-  it('renders the safe-divergence tier naming both picks (D-05/D-07)', () => {
+  it('renders the safe-divergence tier naming both picks', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -128,7 +128,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(screen.getByTestId('flawchess-verdict-move-d4')).toBeTruthy();
   });
 
-  it('shows the findability claim when the gate passes (Phase 159 D-10): FC pick clears the margin AND is in the plotted set', () => {
+  it('shows the findability claim when the gate passes: FC pick clears the margin AND is in the plotted set', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -145,7 +145,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(sentence).toMatch(/far easier to find and play/);
   });
 
-  it('shows the D-11 fallback (no findability claim) when the gate fails: FC pick not in the plotted set', () => {
+  it('shows the fallback (no findability claim) when the gate fails: FC pick not in the plotted set', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -163,7 +163,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(sentence).toMatch(/safer follow-ups/);
   });
 
-  it('shows the D-11 fallback (no findability claim) when the gate fails: margin not exceeded', () => {
+  it('shows the fallback (no findability claim) when the gate fails: margin not exceeded', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -181,7 +181,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(sentence).toMatch(/safer follow-ups/);
   });
 
-  it('renders the sharp-divergence tier naming both picks (D-05/D-07)', () => {
+  it('renders the sharp-divergence tier naming both picks', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 40)}
@@ -203,7 +203,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(screen.getByTestId('flawchess-verdict-move-Nf3')).toBeTruthy();
   });
 
-  it('renders sentence eval chips player-POV: a black-mover white-POV mate reads "-M4", not the raw "M4" (quick 260709-o72)', () => {
+  it('renders sentence eval chips player-POV: a black-mover white-POV mate reads "-M4", not the raw "M4"', () => {
     const BLACK_TO_MOVE_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1';
     render(
       <FlawChessAgreementVerdict
@@ -222,7 +222,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(sentence).not.toMatch(/(?<!-)M4/);
   });
 
-  it('isolates the hovered pick\'s board arrow in its tier color, restoring on leave (D-09)', () => {
+  it('isolates the hovered pick\'s board arrow in its tier color, restoring on leave', () => {
     const onHover = vi.fn();
     render(
       <FlawChessAgreementVerdict
@@ -251,7 +251,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(onHover).toHaveBeenLastCalledWith(null);
   });
 
-  it('shows all three unified engine-labeled lines in the FlawChess pick\'s popover (D-10 / quick 260708-qrr)', () => {
+  it('shows all three unified engine-labeled lines in the FlawChess pick\'s popover', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30, 0.5)}
@@ -271,7 +271,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(tooltip).toMatch(/Maia \(human\)82%/);
   });
 
-  it('omits the Maia line from the popover when the pick has no Maia probability (quick 260708-qrr)', () => {
+  it('omits the Maia line from the popover when the pick has no Maia probability', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30, 0.5)}
@@ -291,7 +291,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(tooltip).not.toMatch(/Maia \(human\)/);
   });
 
-  it('omits the FlawChess line from the Stockfish pick\'s popover when not FlawChess-ranked (D-10)', () => {
+  it('omits the FlawChess line from the Stockfish pick\'s popover when not FlawChess-ranked', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -310,7 +310,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(tooltip).toMatch(/Stockfish \(objective\)/);
   });
 
-  it('includes the FlawChess line in the Stockfish pick\'s popover when it WAS FlawChess-ranked (D-10)', () => {
+  it('includes the FlawChess line in the Stockfish pick\'s popover when it WAS FlawChess-ranked', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -329,7 +329,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(tooltip).toMatch(/Stockfish \(objective\)/);
   });
 
-  it('plays a verdict move as a free move when clicked while its popover is open (D-11)', () => {
+  it('plays a verdict move as a free move when clicked while its popover is open', () => {
     const onPlayMove = vi.fn();
     render(
       <FlawChessAgreementVerdict
@@ -351,7 +351,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(onPlayMove).toHaveBeenCalledWith('e4');
   });
 
-  it('the first interaction reveals a verdict move without playing it (D-11)', () => {
+  it('the first interaction reveals a verdict move without playing it', () => {
     const onPlayMove = vi.fn();
     render(
       <FlawChessAgreementVerdict
@@ -373,11 +373,11 @@ describe('FlawChessAgreementVerdict', () => {
     expect(screen.getByTestId('flawchess-verdict-tooltip-e4')).toBeTruthy();
   });
 
-  // ─── Phase 196 (INJECT-06): component-level proof — the lookup is a plain
+  // ─── Component-level proof: the lookup is a plain
   // `rootMove` find over whatever array it is handed, with no hidden top-N
   // assumption, no score comparison, and no provenance distinction. ─────────
 
-  it('renders the FlawChess practical line for a Stockfish pick placed at index 3 of a 5-entry flawChessRankedLines (out-of-top-2 shape, INJECT-06)', () => {
+  it('renders the FlawChess practical line for a Stockfish pick placed at index 3 of a 5-entry flawChessRankedLines (out-of-top-2 shape)', () => {
     render(
       <FlawChessAgreementVerdict
         flawChessLine={fcLine('e2e4', 30)}
@@ -428,7 +428,7 @@ describe('FlawChessAgreementVerdict', () => {
     expect(tooltip).toMatch(/FlawChess \(practical\)/);
   });
 
-  it('renders identical tooltip text regardless of the Stockfish pick\'s array position in flawChessRankedLines (no provenance distinction, D-01/D-02)', () => {
+  it('renders identical tooltip text regardless of the Stockfish pick\'s array position in flawChessRankedLines (no provenance distinction)', () => {
     const sfPickLine = fcLine('d2d4', 50, 0.6);
     const other0 = fcLine('e2e4', 30);
     const other1 = fcLine('c2c4', 20);

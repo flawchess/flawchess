@@ -2,7 +2,7 @@
 /**
  * useRevealPreview tests: the keyed ephemeral state (stored live lines and
  * preview-committed ids) must not resurrect across a deactivate/reactivate of the
- * SAME puzzle FEN in one mounted screen (WR-03). The preview resolution itself is
+ * SAME puzzle FEN in one mounted screen. The preview resolution itself is
  * covered through useTrainRevealTree and lib/trainRevealPreview.
  */
 import { act, renderHook } from '@testing-library/react';
@@ -57,7 +57,7 @@ function renderPreview(initial: Partial<UseRevealPreviewOptions>) {
   });
 }
 
-describe('useRevealPreview keyed state (WR-03)', () => {
+describe('useRevealPreview keyed state', () => {
   it('committed ids do not come back when the same FEN reactivates', () => {
     const { result, rerender } = renderPreview({});
     act(() => result.current.markCommitted([3]));

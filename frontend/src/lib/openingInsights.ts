@@ -1,7 +1,3 @@
-// ConfidenceTooltipContent (JSX tooltip body) lives in
-// components/insights/ConfidenceTooltipContent.tsx — kept separate so
-// react-refresh can fast-refresh component vs. helper changes.
-
 /**
  * Render a ply index and SAN in PGN move-number notation.
  *
@@ -13,7 +9,7 @@
  * @returns "N. san" for white plys (e.g. plyIndex=2 → "2. Nxd4"),
  *          "N... san" for black plys (e.g. plyIndex=3 → "2... c5").
  *
- * Shared primitive (D-04): FlawCard imports this directly;
+ * Shared primitive: FlawCard imports this directly;
  * formatCandidateMove delegates to it (no duplication).
  */
 export function formatMoveNotation(plyIndex: number, san: string): string {
@@ -27,7 +23,7 @@ export function formatMoveNotation(plyIndex: number, san: string): string {
  * already shows the position context, so the card only needs to identify the
  * single move that produced the score.
  *
- * Delegates to `formatMoveNotation` (D-04 — no duplicated plyIndex/moveNumber
+ * Delegates to `formatMoveNotation` (no duplicated plyIndex/moveNumber
  * logic). The plyIndex is derived from `entrySanSequence.length` — the number
  * of half-moves played to reach the entry position equals the 0-based index
  * of the next (candidate) move in the full game.

@@ -1,16 +1,16 @@
 /**
  * useTreeMoveGrading — grades the user's own moves on the Train reveal's move
- * tree (Phase 237 plan 06, lifted from the retired free-play hook, Phase 200).
+ * tree.
  *
  * Every sideline (free) move is graded with the SAME expected-score pipeline as
  * the solve verdict (`classifyTrainMoveQuality` over `liveFlaw`'s sigmoid): the
  * parent position's completed engine eval vs the child position's, with "was it
  * the engine's own top move" answered from the parent's rank-1 PV. ONE
- * exception (Phase 211, D-06): a non-best ROOT-ply move that matches the SERVED
+ * exception: a non-best ROOT-ply move that matches the SERVED
  * vetted list (`TreeSeedEval.vettedMoves`, the same `SolveResponse.vetted_moves`
  * the reveal's "Also fine" row draws) is badged with that entry's own
  * server-computed quality, never re-derived from evals, so the badge can never
- * contradict the list (SEED-137 case 2). Deliberately NO Maia (Phase 200 UAT):
+ * contradict the list. Deliberately NO Maia:
  * the Train loop never loads the ONNX runtime, so what the Analysis page would
  * call a gem or a great move is labelled plainly `best` here.
  *
@@ -52,18 +52,18 @@ interface TreeEval {
 }
 
 /**
- * Phase 211 (D-06, replacing Phase 205's mount-rank seam): the grading engine's
+ * The grading engine's
  * seed for the tree, threaded through `TrainSolveScreen`'s `treeSeedEval`.
  * Extends `TreeEval`'s three fields with the SERVED vetted list
  * (`SolveResponse.vetted_moves`, the same entries the reveal's "Also fine" row
  * and green arrows draw), so a move played from the puzzle's ROOT ply that
  * matches a served entry is badged with that entry's own server-computed
  * quality instead of a fresh, independently-searched post-move eval that can
- * disagree with the list (SEED-137 case 2). See `currentQuality`'s root-only
+ * disagree with the list. See `currentQuality`'s root-only
  * branch below. `vettedMoves` is REQUIRED here (unlike the OPTIONAL wire field,
- * which a pre-211 restored verdict genuinely lacks at runtime): the one nullish
+ * which an older restored verdict genuinely lacks at runtime): the one nullish
  * default that absorbs a missing/older-bundle value lives at
- * `TrainSolveScreen.tsx`'s hoisted `vettedMoves` memo, not here (D-10: a second
+ * `TrainSolveScreen.tsx`'s hoisted `vettedMoves` memo, not here (a second
  * default would make that one untestable).
  */
 export interface TreeSeedEval extends TreeEval {
@@ -79,7 +79,7 @@ export interface TreeLiveEval {
 }
 
 /**
- * Phase 211 (D-06): frozen empty vetted-move array, for referential stability so
+ * Frozen empty vetted-move array, for referential stability so
  * `currentQuality`'s memo does not re-run every render when no seed is present.
  * Never mutated.
  */
@@ -119,8 +119,7 @@ export interface TreeMoveGrading {
  * The `VariationTree` marker entry for one graded move. Maps the Train quality
  * taxonomy onto the move list's icon slots. An inaccuracy is passed through as
  * `severity: 'inaccuracy'`, but the shared move list draws no glyph for it
- * (D-03, same as the Analysis page); only the board badge shows "?!" (quick
- * 261008-opg). Never sets `gem`/`great`: no Maia runs in the Train loop.
+ * (same as the Analysis page); only the board badge shows "?!". Never sets `gem`/`great`: no Maia runs in the Train loop.
  */
 function markerEntryForQuality(quality: TrainMoveQuality): FlawMarkerEntry {
   const base: FlawMarkerEntry = {
@@ -167,12 +166,12 @@ export function useTreeMoveGrading({
   const seedCp = seedEval?.cp ?? null;
   const seedMate = seedEval?.mate ?? null;
   const seedBestUci = seedEval?.bestUci ?? null;
-  // Phase 211 (D-06): the SERVED vetted list, or the shared frozen empty array
+  // The SERVED vetted list, or the shared frozen empty array
   // when no seed is present yet. Deliberately NOT
   // `seedEval?.vettedMoves ?? NO_VETTED_MOVES` here: `seedEval.vettedMoves` is a
   // REQUIRED field on `TreeSeedEval` (the one nullish default for a missing
-  // value lives at the hoisted `vettedMoves` memo in `TrainSolveScreen.tsx`, per
-  // D-10; a second default here would make that one untestable).
+  // value lives at the hoisted `vettedMoves` memo in `TrainSolveScreen.tsx`;
+  // a second default here would make that one untestable).
   const seedVettedMoves = seedEval === null ? NO_VETTED_MOVES : seedEval.vettedMoves;
   useEffect(() => {
     if (seedCp === null && seedMate === null) return;
@@ -229,12 +228,12 @@ export function useTreeMoveGrading({
     const isBest =
       parent.bestUci !== null &&
       parent.bestUci.slice(0, 4) === `${currentNode.from}${currentNode.to}`;
-    // Phase 211 (D-06, replacing Phase 205's mount-rank lookup): when the played
+    // When the played
     // move is the puzzle's ROOT ply (no parent move: `currentNode.parentId ===
     // null`) and it matches a SERVED vetted move, return that entry's own
     // server-computed quality directly. The reveal's "Also fine" row and this
     // badge read the SAME key, so a move the row calls fine can never be badged
-    // worse when played (SEED-137 case 2). The badge is deliberately NOT
+    // worse when played. The badge is deliberately NOT
     // re-derived from evals here: mixing this client engine's parent eval with
     // the server key's deep child eval would create a THIRD grader that agrees
     // with neither side, the trap the retired rank-line mechanism would have

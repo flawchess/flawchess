@@ -8,11 +8,9 @@ interface AnalysisPendingPillProps {
 
 /**
  * The pulsing "Pending…"/"Analyzing…" pill shown while a game's eval job is
- * in flight. Extracted verbatim from NoAnalysisState (Quick 260714-rj5) so
- * Analysis.tsx's game-mode board can render the same pill where the eval
- * chart would go, in place of a raw evalChart(...) call, while an unanalyzed
- * game's analysis is pending/leased. Presentational only — callers decide
- * when to show it.
+ * in flight. Shared by NoAnalysisState and the analysis board (where the eval
+ * chart would go while an unanalyzed game's analysis is pending or leased).
+ * Presentational only; callers decide when to show it.
  */
 export function AnalysisPendingPill({ gameId, leased }: AnalysisPendingPillProps) {
   const label = leased ? 'Analyzing…' : 'Pending…';

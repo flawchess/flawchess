@@ -1,14 +1,14 @@
-"""Re-tagger dry-run + idempotency tests for Phase 143 Plan 03.
+"""Re-tagger dry-run + idempotency tests.
 
 Tests that run_backfill (from scripts/retag_flaws.py):
 
-  (a) RETAG-01/SC1 — dry_run=True writes a per-motif delta report AND writes 0 DB rows
+  (a) dry_run=True writes a per-motif delta report AND writes 0 DB rows
       (the DB tag columns are unchanged after the dry-run).
-  (b) RETAG-02/SC4 idempotency — a real run suppresses the non-forcing tag; a SECOND
+  (b) Idempotency — a real run suppresses the non-forcing tag; a SECOND
       real run at the SAME margin changes 0 rows (second run is a no-op).
   (c) Margin sensitivity — a larger margin suppresses more tags than a smaller one on
-      the same fixture (--margin threads through correctly, RETAG-01 tunability).
-  (d) TestRetagLiveClassifyParity (Phase 221 TAGFIX-09) — the retag's 8-tuple must equal
+      the same fixture (--margin threads through correctly).
+  (d) TestRetagLiveClassifyParity — the retag's 8-tuple must equal
       a direct live _classify_tactic_gated call on a castling flaw and an en-passant PV,
       the two shapes a placement-only FEN (game_flaws.fen) provably corrupts.
 
@@ -284,7 +284,7 @@ async def _reset_flaw_tags(
 
 
 # ---------------------------------------------------------------------------
-# SC1: dry-run writes zero DB rows and produces a report file (RETAG-01)
+# Dry-run writes zero DB rows and produces a report file
 # ---------------------------------------------------------------------------
 
 
@@ -298,7 +298,7 @@ class TestRetagDryRun:
         retag_fixture: tuple[int, int, int, int],
         tmp_path: Path,
     ) -> None:
-        """SC1: dry_run=True must not change any game_flaws rows."""
+        """dry_run=True must not change any game_flaws rows."""
         from scripts.retag_flaws import run_backfill
 
         user_id, game_id, flaw_ply, _ = retag_fixture
@@ -331,7 +331,7 @@ class TestRetagDryRun:
         retag_fixture: tuple[int, int, int, int],
         tmp_path: Path,
     ) -> None:
-        """SC1: dry_run=True writes a reports/retag/retag-YYYY-MM-DD.md file."""
+        """dry_run=True writes a reports/retag/retag-YYYY-MM-DD.md file."""
         from scripts.retag_flaws import run_backfill
 
         user_id, game_id, flaw_ply, _ = retag_fixture
@@ -368,7 +368,7 @@ class TestRetagDryRun:
         retag_fixture: tuple[int, int, int, int],
         tmp_path: Path,
     ) -> None:
-        """SC1: The dry-run report must reflect per-motif removed/survived counts.
+        """The dry-run report must reflect per-motif removed/survived counts.
 
         The fixture seeds one flaw with:
         - allowed_pv_lines = FORCING (allowed tag survives at margin=0.35)
@@ -402,12 +402,12 @@ class TestRetagDryRun:
 
 
 # ---------------------------------------------------------------------------
-# SC4: idempotency — second run at same margin changes 0 rows (RETAG-02)
+# Idempotency — second run at same margin changes 0 rows
 # ---------------------------------------------------------------------------
 
 
 class TestRetagIdempotency:
-    """A second real run at the same margin changes 0 rows (SC4, RETAG-02)."""
+    """A second real run at the same margin changes 0 rows."""
 
     @pytest.mark.asyncio
     async def test_second_run_changes_zero_rows(
@@ -416,7 +416,7 @@ class TestRetagIdempotency:
         retag_fixture: tuple[int, int, int, int],
         tmp_path: Path,
     ) -> None:
-        """SC4: a second real run at the same margin is a no-op (idempotent)."""
+        """A second real run at the same margin is a no-op (idempotent)."""
         from scripts.retag_flaws import run_backfill
 
         user_id, game_id, flaw_ply, _ = retag_fixture
@@ -495,12 +495,12 @@ class TestRetagIdempotency:
 
 
 # ---------------------------------------------------------------------------
-# Margin sensitivity — larger margin suppresses more tags (RETAG-01 tunability)
+# Margin sensitivity — larger margin suppresses more tags (--margin tunability)
 # ---------------------------------------------------------------------------
 
 
 class TestRetagMarginSensitivity:
-    """A larger --margin suppresses strictly more tags than a smaller one (RETAG-01)."""
+    """A larger --margin suppresses strictly more tags than a smaller one."""
 
     @pytest.mark.asyncio
     async def test_larger_margin_suppresses_more_tags(
@@ -523,7 +523,7 @@ class TestRetagMarginSensitivity:
         user_id, game_id, flaw_ply, _ = retag_fixture
 
         # Replace the allowed blob with one that passes at margin=0.1 but fails at margin=0.5.
-        # From PATTERNS.md: p(400, white) - p(200, white) ≈ 0.799 - 0.677 = 0.122.
+        # p(400, white) - p(200, white) ≈ 0.799 - 0.677 = 0.122.
         # At margin=0.1: 0.122 > 0.1 → passes (forced).
         # At margin=0.5: 0.122 < 0.5 → fails (not forced).
         intermediate_blob: list[dict[str, Any]] = [
@@ -626,7 +626,7 @@ class TestRetagMarginSensitivity:
 
 # ---------------------------------------------------------------------------
 # TestPreFlawEvalParity: the re-tagger and the live import path must derive the
-# gate's pre_flaw_eval_cp identically (Bug A regression guard, Phase 144).
+# gate's pre_flaw_eval_cp identically (regression guard).
 # ---------------------------------------------------------------------------
 
 
@@ -634,7 +634,7 @@ class TestPreFlawEvalParity:
     """`retag_flaws._worker_recompute` and `flaws_service._build_flaw_record` must agree.
 
     Both wrappers independently derive pre_flaw_eval_cp before calling the shared
-    `_classify_tactic_gated`, so a divergence there is silent (it was: Bug A had the
+    `_classify_tactic_gated`, so a divergence there is silent (it was: the
     re-tagger read the eval AFTER the flaw move while the live path read the board before
     it). These tests pin both wrappers to positions[n-1].eval_cp by patching the shared
     detector to a fixed motif and choosing a position where the pre-flaw eval is outcome-
@@ -710,9 +710,9 @@ class TestPreFlawEvalParity:
 
         # Re-tagger path: _worker_recompute reads work.prv.eval_cp for pre_flaw_eval_cp.
         # fen_map mirrors the live path's `{ply: fen}` blobs dict above exactly (both
-        # sides use the SAME bare fen string) -- this test targets Bug-A pre_flaw_eval_cp
+        # sides use the SAME bare fen string) -- this test targets pre_flaw_eval_cp
         # parity specifically, not fen_map full-FEN correctness (that is
-        # TestRetagLiveClassifyParity's job, Phase 221 TAGFIX-09).
+        # TestRetagLiveClassifyParity's job).
         work = _FlawWork(
             user_id=1,
             game_id=1,
@@ -747,7 +747,7 @@ class TestPreFlawEvalParity:
         # so the parity above is meaningful (not vacuously suppressed for another reason).
         from app.services.flaws_service import _classify_tactic_gated
 
-        # Phase 221 TAGFIX-02: _classify_tactic_gated now reads positions[n-1].eval_mate
+        # _classify_tactic_gated now reads positions[n-1].eval_mate
         # directly (for the already-winning-by-mate reject), even though the detector
         # itself is patched below -- so these stand-ins need a real eval_mate attribute,
         # not a bare object(). None -> no mate-derived reject (matches pre_flaw_eval_cp=0).
@@ -777,9 +777,9 @@ class TestPreFlawEvalParity:
 
 
 # ---------------------------------------------------------------------------
-# TestRetagLiveClassifyParity: SC4 no-drift guard (Phase 221, TAGFIX-09).
+# TestRetagLiveClassifyParity: no-drift guard.
 #
-# The retag must reproduce the live classify path EXACTLY (RESEARCH.md Pitfall 2). Two
+# The retag must reproduce the live classify path EXACTLY. Two
 # fixture games probe the two shapes a placement-only FEN (game_flaws.fen) provably
 # corrupts:
 #   (a) a castling flaw move — the ALLOWED orientation's board_before.parse_san() needs
@@ -873,7 +873,7 @@ async def _seed_parity_game(
     bucketing.
 
     eval_cp_overrides: {ply: eval_cp} exceptions to the uniform _PARITY_EVAL_CP
-    placeholder (Phase 221 TAGFIX-01/D-03: pv_blob=None now still faces the motif's
+    placeholder (pv_blob=None still faces the motif's
     per-tier winning floor from game_positions, so a move-type motif like EN_PASSANT
     (floor +200) needs its fallback-read ply to clear that floor even with no blob —
     unlike a geometric motif, which clears the 0-floor at the shared placeholder).
@@ -1032,7 +1032,7 @@ async def _live_classify_tuple(
 
 
 class TestRetagLiveClassifyParity:
-    """The retag must not diverge from a fresh analysis (SC4). Two fixture games are the
+    """The retag must not diverge from a fresh analysis. Two fixture games are the
     shapes a placement-only FEN provably corrupts: castling rights and the en-passant
     target. Each is torn down in a finally block (non-guest Game inserts must not leak
     into the eval-queue lottery test).
@@ -1115,7 +1115,7 @@ class TestRetagLiveClassifyParity:
                 _EN_PASSANT_FLAW_PLY,
                 allowed_pv=None,
                 missed_pv=_EN_PASSANT_MISSED_PV,
-                # Phase 221 TAGFIX-01/D-03: pv_blob=None now still faces EN_PASSANT's
+                # pv_blob=None now still faces EN_PASSANT's
                 # +200 move-type floor via the game_positions fallback. The MISSED
                 # orientation's solver is white (flaw_ply=12 is even), reading
                 # positions[flaw_ply - 1] = ply 11 -- override it to a clearly-winning
@@ -1162,14 +1162,14 @@ class TestRetagLiveClassifyParity:
 
 
 # ---------------------------------------------------------------------------
-# TestRetagReportWrittenOnEveryRun / TestRetagReportShiftBuckets (Phase 221, TAGFIX-09):
+# TestRetagReportWrittenOnEveryRun / TestRetagReportShiftBuckets:
 # the per-motif tag-delta report is written on a WRITING run too (not just --dry-run),
 # and it now carries four bucket families per orientation instead of two.
 # ---------------------------------------------------------------------------
 
 
 class TestRetagReportWrittenOnEveryRun:
-    """The report used to be written only under --dry-run; TAGFIX-09 requires it on a
+    """The report used to be written only under --dry-run; it is now written on a
     real writing run too, since the acceptance instrument reads it after the prod run.
     """
 
@@ -1229,9 +1229,9 @@ _DEPTH_SHIFT_STALE_DEPTH = 5  # deliberately WRONG vs the real recomputed depth 
 
 
 class TestRetagReportShiftBuckets:
-    """D-11 (Phase 221): a row whose motif is unchanged but whose depth changed must be
+    """A row whose motif is unchanged but whose depth changed must be
     counted in the report's depth-shifted bucket, not survived/motif-shifted/removed —
-    the adjacency truth this plan's must_haves pins.
+    the adjacency truth the report depends on.
     """
 
     @pytest.mark.asyncio

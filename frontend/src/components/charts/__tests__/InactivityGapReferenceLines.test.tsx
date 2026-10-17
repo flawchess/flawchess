@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Unit and render tests for the shared inactivityGapReferenceLines helper (SC-4).
+ * Unit and render tests for the shared inactivityGapReferenceLines helper.
  *
  * Pure cases (empty/single/short arrays) assert on the returned array length
  * directly without mounting. Render cases extract the label ReactElement from

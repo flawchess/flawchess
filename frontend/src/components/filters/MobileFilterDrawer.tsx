@@ -68,10 +68,10 @@ export function MobileFilterDrawer({
 }: MobileFilterDrawerProps) {
   const label = closeLabel ?? `Close ${title.toLowerCase()}`;
 
-  // The one allowed effect-style tracking site (Phase 229 D-13): parents open this
+  // The one allowed effect-style tracking site: parents open this
   // drawer by setting state from their own trigger buttons, so the false-to-true
   // transition of `open` is the user's tap. The ref starts at the mount-time value
-  // so a drawer mounted already open fires nothing (D-03).
+  // so a drawer mounted already open fires nothing.
   const wasOpenRef = useRef(open);
   useEffect(() => {
     if (open && !wasOpenRef.current) trackFeature('panel-open', { target: panel });

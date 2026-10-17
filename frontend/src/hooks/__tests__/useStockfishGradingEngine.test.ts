@@ -3,18 +3,18 @@
  * useStockfishGradingEngine mock-Worker unit tests.
  *
  * Mirrors useStockfishEngine.test.ts's MockWorker harness (no real WASM — that
- * is Plan 01's spike + Plan 04's SC3 HUMAN-UAT). Behaviors verified:
+ * is covered separately). Behaviors verified:
  * 1. Init: uci -> uciok -> isready -> readyok -> isReady false->true.
  * 2. Search command: setoption name MultiPV value <N> + go movetime 4000
  *    searchmoves <ucis> (no depth clause — searchmoves MUST be last, per
- *    Phase 158 Plan 01's headless-measurement bug fix) for a settled
+ *    a headless-measurement bug fix) for a settled
  *    (fen, candidateSans).
  * 3. pv[0] keying: two info lines report the SAME multipv index but
  *    DIFFERENT pv[0] moves — both must appear as distinct grade-map keys
- *    (Pitfall 1 — never key by multipv index).
+ *    (never key by multipv index).
  * 4. White-POV normalization: a black-to-move FEN's `score cp` info line is
  *    negated in the committed grade.
- * 5. Cache short-circuit (Pitfall 2): re-rendering with an already-graded
+ * 5. Cache short-circuit: re-rendering with an already-graded
  *    subset of the same FEN's candidates sends NO new go.
  * 6. Stale-guard (FLAWCHESS-7V): a new FEN while thinking sends stop and
  *    defers the re-go until the stale bestmove arrives.
@@ -24,7 +24,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useStockfishGradingEngine } from '../useStockfishGradingEngine';
 
-// ─── stockfishWorkerSource mock (Phase 213-08, G-213-35) ───────────────────
+// ─── stockfishWorkerSource mock ───────────────────
 //
 // The worker-lifecycle effect now constructs through the shared source
 // module, via `ensureStockfishWorkerUrl().then(setupWorker)`. This file's
@@ -160,7 +160,7 @@ describe('useStockfishGradingEngine', () => {
 
     const goCmd = mockWorker.messages.find((m) => m.startsWith('go '));
     expect(goCmd).toBeDefined();
-    // No depth clause (Phase 158 Plan 01 measurement chose a pure movetime cap).
+    // No depth clause (measurement chose a pure movetime cap).
     expect(goCmd).not.toContain('depth ');
     expect(goCmd).toContain('movetime 4000');
     // Candidate SANs converted to UCI in order (e5->e7e5, c5->c7c5, e6->e7e6).
@@ -179,8 +179,8 @@ describe('useStockfishGradingEngine', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
 
-    // Confirmed-on-the-real-binary reordering scenario (151.1-01-SUMMARY.md
-    // Caveat 2): multipv 1 first reports e5 at a shallow depth, then later
+    // Confirmed-on-the-real-binary reordering scenario:
+    // multipv 1 first reports e5 at a shallow depth, then later
     // reports a DIFFERENT move (c5) at a deeper depth — as would happen when
     // the restricted search's eval ranking reorders as depth climbs.
     act(() => {
@@ -263,7 +263,7 @@ describe('useStockfishGradingEngine', () => {
     expect([...result.current.gradeMap.keys()].sort()).toEqual(['c5', 'e5']);
   });
 
-  it('gradeMapFen reports the FEN the displayed grades belong to, and clears with the map on navigation (163-REVIEW WR-03)', async () => {
+  it('gradeMapFen reports the FEN the displayed grades belong to, and clears with the map on navigation', async () => {
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) =>
         useStockfishGradingEngine({ fen, candidateSans: CANDIDATES, enabled: true }),

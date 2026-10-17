@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * useGemSweep unit tests — hook-level contention, isolation, and cache-bound
- * proof (Phase 172 Plan 04, Task 3).
+ * proof.
  *
  * `@/hooks/useMaiaEngine` and `@/hooks/useStockfishGradingEngine` are mocked
  * so every call's options are captured into an array — this is what makes
@@ -11,11 +11,11 @@
  * the mobile gate is deterministic regardless of the CI runner's reported
  * `hardwareConcurrency`.
  *
- * Per 172-VALIDATION.md's Half-Invariant Risk section and the project's own
+ * Per the half-invariant risk and the project's own
  * mutation-test-gap-closure discipline: a test that merely asserts "the
- * sweep resolves gems" proves NOTHING about D-05. The yield case below is
- * the load-bearing one — its revert-and-fail-red proof is recorded in
- * 172-04-SUMMARY.md, not just asserted here.
+ * sweep resolves gems" proves NOTHING about yielding to the cursor. The yield case below is
+ * the load-bearing one — it was proven by reverting the yield logic and
+ * watching it fail, not just asserted here.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -53,7 +53,7 @@ const gradingCalls: GradingCallOptions[] = [];
  *  `ready: false` simulates an inference still in flight — `resultFen` stays
  *  null even once `fen` is set, so a test can observe the fen the hook
  *  DISPATCHED before the mock lets the cascade resolve it and move on.
- *  `isLadderComplete` (Phase 219-03, D-12) defaults to mirroring `ready` —
+ *  `isLadderComplete` defaults to mirroring `ready` —
  *  most tests here don't care about the coarse/fill distinction, only about
  *  "has the ladder this hook needs landed at all"; the dedicated invariant
  *  test below overrides it independently of `ready` to prove the C1 guard is
@@ -71,7 +71,7 @@ vi.mock('@/hooks/useMaiaEngine', () => ({
     return {
       perElo: maiaState.perElo,
       // null (the default) means "mirror resultFen" — the ordinary complete-
-      // ladder case every pre-219-03 test exercises; a test may override with
+      // ladder case every test without a coarse/fill split exercises; a test may override with
       // an explicit true/false to simulate a coarse-only (partial) result.
       isLadderComplete: maiaState.isLadderComplete ?? resultFen !== null,
       expectedScoreAtSelectedElo: null,
@@ -79,7 +79,7 @@ vi.mock('@/hooks/useMaiaEngine', () => ({
       isReady: true,
       isAnalyzing: false,
       hasFailed: false,
-      // WR-03 mock convention (mirrors Analysis.test.tsx): a completed result
+      // Mock convention (mirrors Analysis.test.tsx): a completed result
       // is "for" whatever fen was requested, once the stub curve is non-empty
       // AND the test has flipped `ready` (simulating inference completion).
       resultFen,
@@ -170,7 +170,7 @@ describe('useGemSweep', () => {
     expect(SWEEP_GRADING_MOVETIME_MS).toBeLessThan(4000);
   });
 
-  it('LOAD-BEARING (D-05 yield-to-cursor invariant): with liveBusy true, the sweep\'s Maia instance is driven with fen: null; flipping liveBusy to false dispatches the first candidate', async () => {
+  it('LOAD-BEARING (yield-to-cursor invariant): with liveBusy true, the sweep\'s Maia instance is driven with fen: null; flipping liveBusy to false dispatches the first candidate', async () => {
     // Keep the Maia mock "in flight" (never resolving) so the dispatched fen
     // is observable rather than resolving-and-clearing within the same tick.
     maiaState.ready = false;
@@ -197,7 +197,7 @@ describe('useGemSweep', () => {
     });
   });
 
-  it('cheap-tier short-circuit (SC1/D-04): a candidate whose Maia probability exceeds GEM_MAIA_MAX_PROB resolves to null and the grading mock is never driven with a non-null fen for it', async () => {
+  it('cheap-tier short-circuit: a candidate whose Maia probability exceeds GEM_MAIA_MAX_PROB resolves to null and the grading mock is never driven with a non-null fen for it', async () => {
     const c0 = candidate(0);
     // Default maiaState (0.9 probability) fails C1 for every candidate.
     const { result } = renderHook((props: UseGemSweepOptions) => useGemSweep(props), {
@@ -211,7 +211,7 @@ describe('useGemSweep', () => {
     expect(gradingCalls.every((c) => c.fen === null)).toBe(true);
   });
 
-  it('LOAD-BEARING (T-219-12, Phase 219-03 D-12): an 11-rung coarse result whose FEN matches the sweep\'s parent FEN does NOT advance past the Maia stage', async () => {
+  it('LOAD-BEARING: an 11-rung coarse result whose FEN matches the sweep\'s parent FEN does NOT advance past the Maia stage', async () => {
     const c0 = candidate(0);
     // Would pass C1 (<= GEM_MAIA_MAX_PROB) and would reach grading if the
     // guard were absent — resultFen already matches parentFen (ready: true),
@@ -243,7 +243,7 @@ describe('useGemSweep', () => {
     expect(lastGradingCall()?.movetimeMs).toBe(SWEEP_GRADING_MOVETIME_MS);
   });
 
-  it('pinned rung (SC3/D-01): two candidates with different pinnedEloForPly values read their Maia probability from DIFFERENT rungs of the same curve', async () => {
+  it('pinned rung: two candidates with different pinnedEloForPly values read their Maia probability from DIFFERENT rungs of the same curve', async () => {
     // Candidate A ("Nf3") is rare (passes C1) only at the 1200 rung; common
     // (fails C1) at 2000. Candidate B ("e4") is the mirror image. If the hook
     // used a single shared rung for both (ignoring pinnedEloForPly's
@@ -292,7 +292,7 @@ describe('useGemSweep', () => {
     );
   });
 
-  it('cache bound (Pitfall 4): resolving more than 256 candidates does not evict ply 0 — the sweep map is not FIFO-capped', async () => {
+  it('cache bound: resolving more than 256 candidates does not evict ply 0 — the sweep map is not FIFO-capped', async () => {
     const CANDIDATE_COUNT = 260;
     const candidates = Array.from({ length: CANDIDATE_COUNT }, (_, i) => candidate(i));
     // Default maiaState (0.9 probability) fails C1 for every candidate —
@@ -360,7 +360,7 @@ describe('useGemSweep', () => {
     });
   });
 
-  it('LOAD-BEARING (CR-03 watchdog): a candidate whose cascade never resolves is abandoned after SWEEP_CANDIDATE_TIMEOUT_MS, unpinning the single-in-flight queue so the NEXT candidate dispatches — removing the watchdog effect MUST turn this red', () => {
+  it('LOAD-BEARING (watchdog): a candidate whose cascade never resolves is abandoned after SWEEP_CANDIDATE_TIMEOUT_MS, unpinning the single-in-flight queue so the NEXT candidate dispatches — removing the watchdog effect MUST turn this red', () => {
     vi.useFakeTimers();
     try {
       // Maia never resolves (`ready: false` keeps resultFen null), so candidate 0
@@ -399,14 +399,14 @@ describe('useGemSweep', () => {
     }
   });
 
-  // ─── Phase 175 (SEED-108 D-01/D-01a/WR-06) ───────────────────────────────
+  // ─── Fallback-only sweep ───────────────────────────────
   // The sweep is demoted to a fallback-only mechanism: Analysis.tsx now ANDs
   // `!gameHasStoredBestMoveData` into the `enabled` prop it passes in, so an
   // analyzed game's mainline never re-derives what the stored backend tier
   // already owns. `enabled` stays an opaque boolean at this hook's level —
   // these tests document the TWO scenarios that boolean now represents.
 
-  it('stored-data-disables-sweep: Analysis.tsx passes enabled: false once gameHasStoredBestMoveData is true, and the sweep produces no dispatch even with a real D-04 candidate (Phase 175, SEED-108 D-01)', () => {
+  it('stored-data-disables-sweep: Analysis.tsx passes enabled: false once gameHasStoredBestMoveData is true, and the sweep produces no dispatch even with a real candidate', () => {
     const c0 = candidate(0);
     // Would pass C1 (<= GEM_MAIA_MAX_PROB) if the sweep ever ran.
     maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.05 } }];
@@ -421,7 +421,7 @@ describe('useGemSweep', () => {
     expect(lastGradingCall()?.fen).toBeNull();
   });
 
-  it('unanalyzed-still-runs: with enabled: true (Analysis.tsx\'s gate for a game with NO eval_series/stored data), the sweep still dispatches and resolves a candidate as before (D-01 fallback preserved)', async () => {
+  it('unanalyzed-still-runs: with enabled: true (Analysis.tsx\'s gate for a game with NO eval_series/stored data), the sweep still dispatches and resolves a candidate as before (fallback preserved)', async () => {
     const c0 = candidate(0);
     maiaState.perElo = [{ elo: 1500, moveProbabilities: { e4: 0.05 } }]; // passes C1
     // Two graded candidates with a wide gap so classifyGem's C2 (best beats
@@ -441,7 +441,7 @@ describe('useGemSweep', () => {
     expect(result.current.gemByPly.get(0)).not.toBeNull();
   });
 
-  it('stable-callback (WR-06): resolveCandidate is a stable useCallback([]) identity — repeated re-renders mid-cascade never reset the CR-03 watchdog, so an in-flight candidate still resolves at (not restarted past) SWEEP_CANDIDATE_TIMEOUT_MS', () => {
+  it('stable-callback: resolveCandidate is a stable useCallback([]) identity — repeated re-renders mid-cascade never reset the watchdog, so an in-flight candidate still resolves at (not restarted past) SWEEP_CANDIDATE_TIMEOUT_MS', () => {
     vi.useFakeTimers();
     try {
       // Maia never resolves (`ready: false` keeps resultFen null), so the
@@ -460,7 +460,7 @@ describe('useGemSweep', () => {
       expect(lastMaiaCall()?.fen).toBe(c0.parentFen);
 
       // Re-render 3 times with a BRAND-NEW candidates array + pinnedEloForPly
-      // closure each time (a fresh reference every render — before WR-06,
+      // closure each time (a fresh reference every render — before the callback was stabilized,
       // this is exactly the shape of caller churn that could have made an
       // UNSTABLE resolveCandidate re-trigger the watchdog effect's
       // cleanup+re-schedule on every commit), interleaved with timer
@@ -495,7 +495,7 @@ describe('useGemSweep', () => {
     }
   });
 
-  it('WR-02: once every candidate is resolved the dedicated engines are torn down (enabled: false) — hasWork tracks UNRESOLVED candidates, not candidates.length', async () => {
+  it('once every candidate is resolved the dedicated engines are torn down (enabled: false) — hasWork tracks UNRESOLVED candidates, not candidates.length', async () => {
     // Default maiaState (0.9 probability) fails C1, so the single candidate
     // resolves to null (an explicit miss) almost immediately.
     const c0 = candidate(0);

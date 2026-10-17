@@ -1,5 +1,5 @@
 /**
- * Copy for the Endgames Insights host bubble (quick 260927-b05).
+ * Copy for the Endgames Insights host bubble.
  *
  * Shelly the Turtle is the page's FIXED host: Endgames is a data page, not a
  * social one, so it gets one stable character instead of the /train and

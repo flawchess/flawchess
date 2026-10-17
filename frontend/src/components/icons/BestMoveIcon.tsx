@@ -1,8 +1,7 @@
 /**
  * Best-move badge icon — a filled white star on a dark-green (`MOVE_QUALITY_BEST`)
- * dot, marking a "best move" (Phase 179 Plan 02, D-04, quick 260717-rbn's
- * `best_move_tier === 'best'`): the played move identity-equals the engine's
- * stored best move, out of book, not gem/great. The star (not a checkmark)
+ * dot, marking a "best move" (`best_move_tier === 'best'`): the played move
+ * identity-equals the engine's stored best move, out of book, not gem/great. The star (not a checkmark)
  * matches the on-board best badge in `boardMarkers.tsx`, keeping the glyph
  * identical across the move list and the board.
  *
@@ -41,7 +40,7 @@ export function BestMoveIcon({
       aria-hidden={ariaHidden}
       role="img"
     >
-      {/* Accessible name (mirrors GemIcon's 163-REVIEW IN-02 fix): aria-hidden
+      {/* Accessible name (mirrors GemIcon): aria-hidden
           defaults to true, but a caller passing false would otherwise expose an
           UNNAMED role="img" to screen readers — the badge conveys meaning only
           via color/shape. */}

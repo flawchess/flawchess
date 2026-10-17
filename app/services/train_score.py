@@ -1,4 +1,4 @@
-"""Server-side mirror of the Train scoring constants (Phase 230 D-01).
+"""Server-side mirror of the Train scoring constants.
 
 `frontend/src/lib/trainScore.ts` stays the single source of truth for the
 per-session score a user sees. The weekly leaderboard needs the same points on

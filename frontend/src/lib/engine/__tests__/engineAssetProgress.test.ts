@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * engineAssetProgress.ts unit tests (Phase 213-01) — covers the T-213-01
- * coercion/clamping/monotonicity contract, the D-11 byte-weighted aggregate
+ * engineAssetProgress.ts unit tests — covers the
+ * coercion/clamping/monotonicity contract, the byte-weighted aggregate
  * (asserted through `useEngineAssets`, so the `useSyncExternalStore` wiring
- * is covered too), and the D-04 `engineGateRequired` gate predicate.
+ * is covered too), and the `engineGateRequired` gate predicate.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.mocked(Sentry.captureException).mockClear();
 });
 
-describe('markEngineAssetsUnsupported — Sentry capture at the store choke point (SEED-158, 2026-09-07)', () => {
+describe('markEngineAssetsUnsupported — Sentry capture at the store choke point', () => {
   // Bug fix: the capture used to live in EngineReadyGate's effect, so an
   // iPhone whose model was already cached (gate never mounts) or that opened
   // /analysis (gate suppressed for `unsupported`) produced NO event at all.
@@ -73,8 +73,8 @@ describe('markEngineAssetsUnsupported — Sentry capture at the store choke poin
   });
 });
 
-describe('requiredEngineAssets — G-213-19b referential stability', () => {
-  it('returns all three assets, unconditionally (Phase 213-09 adds ort-runtime — G-213-35)', () => {
+describe('requiredEngineAssets — referential stability', () => {
+  it('returns all three assets, unconditionally (including ort-runtime)', () => {
     expect(requiredEngineAssets()).toEqual(['maia-model', 'stockfish-wasm', 'ort-runtime']);
   });
 
@@ -83,7 +83,7 @@ describe('requiredEngineAssets — G-213-19b referential stability', () => {
   });
 });
 
-describe('reportEngineAssetProgress — coercion (T-213-01)', () => {
+describe('reportEngineAssetProgress — coercion', () => {
   it('falls back to ENGINE_ASSET_FALLBACK_BYTES when total is non-finite (NaN)', () => {
     reportEngineAssetProgress('maia-model', 100, Number.NaN);
     const { result } = renderHook(() => useEngineAssets(['maia-model']));
@@ -137,7 +137,7 @@ describe('reportEngineAssetProgress — clamping + monotonicity', () => {
   });
 });
 
-describe('useEngineAssets — byte-weighted aggregate (D-11)', () => {
+describe('useEngineAssets — byte-weighted aggregate', () => {
   it('weights the aggregate by total bytes, NOT a per-asset average', () => {
     // maia-model: 0 / 45,683,686 (untouched — denominator via fallback).
     // stockfish-wasm: fully done (7,295,411 / 7,295,411).
@@ -161,9 +161,9 @@ describe('useEngineAssets — byte-weighted aggregate (D-11)', () => {
   });
 });
 
-// ─── Phase 213-09 (G-213-35): ort-runtime as the third gate asset ──────────
+// ─── ort-runtime as the third gate asset ──────────
 
-describe('useEngineAssets — three-asset denominator (Phase 213-09 adds ort-runtime)', () => {
+describe('useEngineAssets — three-asset denominator (includes ort-runtime)', () => {
   it('the denominator is the sum of ALL THREE assets, not just maia-model + stockfish-wasm', () => {
     // maia-model: 0 / 45,683,686 (untouched — denominator via fallback).
     // stockfish-wasm: fully done. ort-runtime: fully done.
@@ -176,7 +176,7 @@ describe('useEngineAssets — three-asset denominator (Phase 213-09 adds ort-run
       useEngineAssets(['maia-model', 'stockfish-wasm', 'ort-runtime'] as const),
     );
 
-    // Byte-weighted (onnxruntime-web 1.29.0 sizes, Phase 217-02):
+    // Byte-weighted (onnxruntime-web 1.29.0 sizes):
     // (7,295,411 + 13,961,845) / (45,683,686 + 7,295,411 + 13,961,845) ≈ 31.76% -> 32.
     expect(result.current.percent).toBe(32);
   });
@@ -198,7 +198,7 @@ describe('reportEngineAssetProgress — ort-runtime monotonicity across the esti
     // Content-Length — this is "the exact figure lands before the bar leaves
     // zero": total corrects upward in the SAME call that first reports any
     // loaded bytes, so percent only ever moves forward from here.
-    const ASYNCIFY_TOTAL = 25_749_873; // onnxruntime-web 1.29.0 (Phase 217-02)
+    const ASYNCIFY_TOTAL = 25_749_873; // onnxruntime-web 1.29.0
     act(() => {
       reportEngineAssetProgress('ort-runtime', 1_000_000, ASYNCIFY_TOTAL);
     });
@@ -239,7 +239,7 @@ describe("resetEngineAssetForRefetch('ort-runtime') — the webgpu->wasm respawn
   });
 });
 
-describe('markEngineAssetPending / markEngineAssetReady — CR-02: allDone must not fire on a still-downloading concurrently-spawned asset', () => {
+describe('markEngineAssetPending / markEngineAssetReady: allDone must not fire on a still-downloading concurrently-spawned asset', () => {
   it('does not flip status to ready when a concurrently-armed asset has not reported progress yet', () => {
     // Mirrors workerPool.ts::ensureSpawned() and maiaWorkerHost.ts::spawn()
     // both firing synchronously from the same provider bring-up effect,
@@ -272,7 +272,7 @@ describe('markEngineAssetPending / markEngineAssetReady — CR-02: allDone must 
     expect(result.current.status).toBe('ready');
   });
 
-  it('store-level property only, not reachable under G-213-19b: an asset that was never registered does not hold allDone back', () => {
+  it('store-level property only, not reachable through the unconditional engine gate: an asset that was never registered does not hold allDone back', () => {
     markEngineAssetPending('maia-model');
     markEngineAssetReady('maia-model');
 
@@ -281,7 +281,7 @@ describe('markEngineAssetPending / markEngineAssetReady — CR-02: allDone must 
   });
 });
 
-describe('engineGateRequired — G-213-19b unconditional bundle (no per-persona subset)', () => {
+describe('engineGateRequired: unconditional bundle (no per-persona subset)', () => {
   it('is true on a clean localStorage', () => {
     expect(engineGateRequired()).toBe(true);
   });
@@ -302,7 +302,7 @@ describe('engineGateRequired — G-213-19b unconditional bundle (no per-persona 
     expect(engineGateRequired()).toBe(false);
   });
 
-  it('stays true when only TWO of the three assets have been seen — a partially-cached device is still gated (Phase 213-09)', () => {
+  it('stays true when only TWO of the three assets have been seen — a partially-cached device is still gated', () => {
     markEngineAssetReady('maia-model');
     markEngineAssetReady('stockfish-wasm'); // ort-runtime never marked
     expect(engineGateRequired()).toBe(true);
@@ -324,7 +324,7 @@ describe('engineGateRequired — G-213-19b unconditional bundle (no per-persona 
   });
 });
 
-describe('markEngineAssetFailed — Plan 04 owns this UI; Task 1 owns the transport', () => {
+describe('markEngineAssetFailed — failure transport', () => {
   it('sets status to failed without discarding the prior progress on that asset', () => {
     reportEngineAssetProgress('maia-model', 20_000_000, MAIA_MODEL_BYTES_FALLBACK);
 
@@ -334,7 +334,7 @@ describe('markEngineAssetFailed — Plan 04 owns this UI; Task 1 owns the transp
     expect(result.current.status).toBe('failed');
   });
 
-  // ─── Quick 260829-tku: failureKind transport ──────────────────────────────
+  // ─── failureKind transport ──────────────────────────────
 
   it('called WITH a kind records that kind on the snapshot alongside status:failed, without disturbing prior byte progress', () => {
     reportEngineAssetProgress('maia-model', 20_000_000, MAIA_MODEL_BYTES_FALLBACK);
@@ -361,7 +361,7 @@ describe('markEngineAssetFailed — Plan 04 owns this UI; Task 1 owns the transp
   });
 });
 
-describe('markEngineAssetsRetrying — D-15 manual retry seam', () => {
+describe('markEngineAssetsRetrying — manual retry seam', () => {
   it('clears a failed status back to idle, leaves an already-done asset (and every seen flag) untouched', () => {
     reportEngineAssetProgress('maia-model', 20_000_000, MAIA_MODEL_BYTES_FALLBACK);
     markEngineAssetFailed('maia-model');
@@ -380,7 +380,7 @@ describe('markEngineAssetsRetrying — D-15 manual retry seam', () => {
     expect(hasSeenEngineAsset('stockfish-wasm')).toBe(true);
   });
 
-  it("WR-01: resets the failed (not-done) asset's loaded byte count to 0, so a fresh worker is not clamped up to the old high-water mark", () => {
+  it("resets the failed (not-done) asset's loaded byte count to 0, so a fresh worker is not clamped up to the old high-water mark", () => {
     reportEngineAssetProgress('maia-model', 20_000_000, MAIA_MODEL_BYTES_FALLBACK);
     markEngineAssetFailed('maia-model');
 
@@ -402,7 +402,7 @@ describe('markEngineAssetsRetrying — D-15 manual retry seam', () => {
     expect(getEngineAssetsSnapshot().failureKind).toBeNull();
   });
 
-  it("WR-01: a fresh worker's first near-zero progress report is not clamped up to the failed attempt's old high-water mark", () => {
+  it("a fresh worker's first near-zero progress report is not clamped up to the failed attempt's old high-water mark", () => {
     // Failed attempt had already downloaded ~87% (40 of 45.7 MB) before dying.
     reportEngineAssetProgress('maia-model', 40_000_000, MAIA_MODEL_BYTES_FALLBACK);
     markEngineAssetFailed('maia-model');
@@ -420,7 +420,7 @@ describe('markEngineAssetsRetrying — D-15 manual retry seam', () => {
   });
 });
 
-describe('resetEngineAssetForRefetch — WR-02: mid-session self-heal must not report a stale ready signal', () => {
+describe('resetEngineAssetForRefetch: mid-session self-heal must not report a stale ready signal', () => {
   it('resets loaded to 0 and done to false, preserving total and leaving status untouched', () => {
     markEngineAssetReady('maia-model'); // status -> 'ready' (only asset touched)
 
@@ -465,9 +465,9 @@ describe('hasSeenEngineAsset — Safari private mode', () => {
   });
 });
 
-// ─── Phase 213-10 (G-213-35 third part): coalesced store notifications ─────
+// ─── Coalesced store notifications ─────
 
-describe('reportEngineAssetProgress — coalesced notifications (G-213-35)', () => {
+describe('reportEngineAssetProgress — coalesced notifications', () => {
   it('a listener spy receives ONE notification across many sub-one-percent progress calls, and the snapshot still reports the exact latest byte count throughout', () => {
     const total = 1_000_000;
     // idle -> downloading transition; establishes a baseline at 0%.
@@ -506,7 +506,7 @@ describe('reportEngineAssetProgress — coalesced notifications (G-213-35)', () 
     unsubscribe();
   });
 
-  it('markEngineAssetPending notifies even when nothing else has changed (CR-02)', () => {
+  it('markEngineAssetPending notifies even when nothing else has changed', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeEngineAssets(listener);
 
@@ -587,7 +587,7 @@ describe('reportEngineAssetProgress — coalesced notifications (G-213-35)', () 
   });
 });
 
-// ─── Hotfix 2026-09-06 (SEED-158): unsupportedReason ─────────────────────────
+// ─── unsupportedReason ─────────────────────────
 
 describe('unsupportedReason', () => {
   beforeEach(() => {
@@ -614,7 +614,7 @@ describe('unsupportedReason', () => {
   });
 });
 
-// ─── Hotfix 2026-09-06 (SEED-158 follow-up): unsupported is sticky ───────────
+// ─── Unsupported is sticky ───────────
 
 describe('unsupported status survives other assets\' traffic', () => {
   beforeEach(() => {

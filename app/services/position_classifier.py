@@ -10,15 +10,15 @@ Provides a pure function that accepts a ``chess.Board`` and returns a
 
 These four values are computed in-memory to derive ``endgame_class`` (from
 ``material_signature``) and ``phase`` (from the other three); none of the four
-is persisted to ``game_positions`` (SEED-055 dropped the columns).
+is persisted to ``game_positions``.
 
 Game phase is NOT a per-position attribute under Lichess Divider semantics —
 it requires the full game ply timeline so the assignment is monotonic
 (opening → middlegame → endgame, never back). Use ``assign_game_phases()``
 on a per-ply predicate sequence to derive phase values.
 
-Endgame class is derived at query time from material_signature, allowing
-threshold tuning without data migration.
+Endgame class is derived from material_signature at import time and stored in
+game_positions.endgame_class.
 
 No I/O, no DB access, no async.  All computation is deterministic.
 """
@@ -234,7 +234,7 @@ def _compute_mixedness(board: chess.Board) -> int:
     computing white_count and black_count of pieces within each region and
     accumulating the score from _mixedness_score.
 
-    Uses int.bit_count() for popcount (SEED-172 item 3, ~5-10% of import CPU vs bin().count).
+    Uses int.bit_count() for popcount (saves ~5-10% of import CPU vs bin().count).
     """
     score = 0
     white_occ = board.occupied_co[chess.WHITE]

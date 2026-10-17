@@ -5,7 +5,7 @@ Covers:
 - Integration: last_activity is set on authenticated request
 - Integration: throttle prevents update within 1 hour
 - Integration: update fires again after throttle window expires
-- Integration: impersonation tokens skip last_activity writes (D-07, phase 62)
+- Integration: impersonation tokens skip last_activity writes
 """
 
 import asyncio
@@ -250,7 +250,7 @@ class TestLastActivityIntegration:
 
 
 # ---------------------------------------------------------------------------
-# D-07: impersonation tokens must skip last_activity writes (phase 62)
+# impersonation tokens must skip last_activity writes
 # ---------------------------------------------------------------------------
 
 
@@ -327,7 +327,7 @@ class TestImpersonationSkip:
 
     @pytest.mark.asyncio
     async def test_impersonation_skips_target_last_activity(self, test_engine):
-        """Under impersonation, target's last_activity must NOT be updated (D-07)."""
+        """Under impersonation, target's last_activity must NOT be updated."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -358,7 +358,7 @@ class TestImpersonationSkip:
 
     @pytest.mark.asyncio
     async def test_impersonation_skips_admin_last_activity(self, test_engine):
-        """Under impersonation, admin's last_activity must NOT be updated (D-08 defensive)."""
+        """Under impersonation, admin's last_activity must NOT be updated (defensive)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -410,7 +410,7 @@ class TestImpersonationSkip:
 
 
 # ---------------------------------------------------------------------------
-# User activity recording tests (DDG-01)
+# User activity recording tests
 # ---------------------------------------------------------------------------
 
 
@@ -549,7 +549,7 @@ class TestUserActivityRecording:
 
     @pytest.mark.asyncio
     async def test_impersonated_request_records_no_activity_row(self, test_engine):
-        """Impersonated request must not create a user_activity row for the target (D-07)."""
+        """Impersonated request must not create a user_activity row for the target."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:

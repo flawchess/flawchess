@@ -15,7 +15,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import type { UserSearchResult } from '@/types/admin';
 
-// D-12: min query length. D-13: backend caps at 20 rows.
+// Minimum query length; the backend caps results at 20 rows.
 const MIN_QUERY_LEN = 2;
 const DEBOUNCE_MS = 250;
 const SEARCH_STALE_MS = 10_000;
@@ -50,8 +50,8 @@ export function ImpersonationSelector() {
     // Route to the Library: LibraryPage redirects /library -> /library/games, or
     // /library/import when the impersonated user has no games. impersonate() clears
     // the query cache, so the profile refetches for the new user before that redirect
-    // evaluates. (Previously landed on the Openings explorer, which is empty/locked
-    // for users with no imported games.)
+    // evaluates. Don't route to /openings: it is locked for users with no
+    // imported games.
     navigate('/library');
   }
 

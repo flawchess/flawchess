@@ -1,14 +1,14 @@
 /**
- * EvalChart — per-game expected-score area chart (Phase 109, LIBG-10).
+ * EvalChart — per-game expected-score area chart.
  *
  * White-perspective ES per ply, shown as a filled eval bar: the area below the
  * ES line (0% → eval) is grey, the area above it (eval → 100%) is near-black,
  * with rounded chart corners, at most two
  * phase-transition annotations (fine top tick + rotated label) centered on the
  * phase boundary (middlegame, endgame — no full vertical lines, no ply-0
- * annotation per D-06), and
- * dual-marker flaw dots (filled = player, hollow = opponent, color = severity — D-07),
- * and gem/great dots (Phase 175 Plan 06 — filled violet/blue, sourced from each
+ * annotation), and
+ * dual-marker flaw dots (filled = player, hollow = opponent, color = severity),
+ * and gem/great dots (filled violet/blue, sourced from each
  * EvalPoint's own `best_move_tier`; mutually exclusive with a flaw dot on the same
  * ply, so both layers can share the same highlightedPlies emphasis/dim convention).
  *
@@ -84,9 +84,10 @@ interface EvalChartProps {
   /** SAN mainline (moves[i] = move at ply i) — labels the tooltip for any ply. */
   moves: string[];
   /**
-   * Tailwind height class for the chart area only — 'h-[116px]' (desktop) or
-   * 'h-[114px]' (mobile). Chart height + the 16px (h-4) slider row should equal
-   * the adjacent miniboard size so the eval block lines up with the board.
+   * Tailwind height class for the chart area only (e.g. 'h-[104px]' desktop card,
+   * 'h-[114px]' mobile card, 'h-[120px]' analysis board). Chart height + the 16px
+   * (h-4) slider row should equal the adjacent miniboard size so the eval block
+   * lines up with the board.
    */
   heightClass?: string;
   /**
@@ -99,8 +100,8 @@ interface EvalChartProps {
    */
   flipped?: boolean;
   /**
-   * The user's color, for scoping the gem/great dot layer to the user's OWN moves
-   * (Phase 175 Plan 06 fix). `best_move_tier` is position-scoped (both players'
+   * The user's color, for scoping the gem/great dot layer to the user's OWN moves.
+   * `best_move_tier` is position-scoped (both players'
    * best moves carry it), so without this the dots painted the opponent's
    * gems/greats too. Kept SEMANTICALLY SEPARATE from `flipped` (which is a display
    * concern): move ownership is a data-scoping concern and must stay explicit.
@@ -113,7 +114,7 @@ interface EvalChartProps {
    * (always a number, never null). During chart hover the hovered ply is reported;
    * on mouse-leave it reverts to the slider value.
    */
-  onHoverPlyChange?: (ply: number | null) => void;
+  onActivePlyChange?: (ply: number | null) => void;
   /**
    * Plies to emphasize while the user hovers a tag chip / severity badge in the
    * card's flaw column. null (default) renders markers normally. A non-empty set
@@ -148,11 +149,11 @@ interface EvalChartProps {
   /**
    * Override the slider's data-testid. Defaults to `eval-slider-${gameId}` so
    * existing LibraryGameCard callers require no change. The analysis page passes
-   * 'analysis-eval-chart-slider' for its dedicated testid (plan 140-01, D-05).
+   * 'analysis-eval-chart-slider' for its dedicated testid.
    */
   sliderTestId?: string;
   /**
-   * Externally-driven slider position (Quick 260627-mt8). When this changes, the
+   * Externally-driven slider position. When this changes, the
    * slider parks at the given ply WITHOUT surfacing the tooltip or stealing focus
    * (unlike commandedPly). The analysis page passes the board's current main-line
    * ply (or the fork point on a sideline) so navigating the move list / board keeps
@@ -160,7 +161,7 @@ interface EvalChartProps {
    */
   syncPly?: number | null;
   /**
-   * Disable the desktop hover-to-scrub interaction (Quick: analysis page found it too
+   * Disable the desktop hover-to-scrub interaction (the analysis page found it too
    * distracting). When true, mouse hover no longer moves the slider/crosshair/board —
    * only an explicit click or the slider itself scrubs. The game card leaves this off
    * (hover scrub stays). Touch scrub is unaffected either way.
@@ -238,7 +239,7 @@ const SLIDER_THUMB_PX = 16;
 /**
  * Max finger travel (px) for a chart touch to count as a tap (commit the slider)
  * rather than a drag (preview-only). Above this the touch is a scrub that reverts
- * on lift, per the "drag doesn't move the slider" rule (Quick 260627-r9g).
+ * on lift, per the "drag doesn't move the slider" rule.
  */
 const TAP_MOVE_TOLERANCE_PX = 8;
 
@@ -353,9 +354,9 @@ function trimToEvalRange(series: EvalPoint[]): EvalPoint[] {
 
 /**
  * The flaw-marker glyph: filled circle for the player (is_user), hollow square
- * for the opponent — color = severity (D-07). Shared by the chart dot renderer
+ * for the opponent — color = severity. Shared by the chart dot renderer
  * and the tooltip so the two surfaces stay in sync. fill="none" is explicit
- * on the square to avoid SVG's default black fill (Pitfall 6 — omitting the fill
+ * on the square to avoid SVG's default black fill (omitting the fill
  * attribute is not the same as transparent).
  */
 function flawDotElement(
@@ -408,8 +409,8 @@ function flawDotElement(
  * are always drawn; inaccuracy dots are off-chart by default and only drawn when
  * their ply is highlighted (Inaccuracies-badge hover/tap), rendered yellow at the
  * same enlarged size as highlighted M/B dots. Returns empty <g> for non-flaw /
- * hidden plies — never null
- * (Pitfall 7). `markerMap` carries all severities (the caller filters via drawing).
+ * hidden plies — never null (a null return trips React's key warning).
+ * `markerMap` carries all severities (the caller filters via drawing).
  */
 function buildDotRenderer(
   markerMap: Map<number, FlawMarker>,
@@ -426,7 +427,7 @@ function buildDotRenderer(
   }): React.ReactElement {
     const { cx, cy, payload } = props;
     if (!payload || cx == null || cy == null || !Number.isFinite(cx) || !Number.isFinite(cy)) {
-      // Empty <g> not null — avoids React key warning (recharts 3.8.1 Pitfall 7).
+      // Empty <g> not null — avoids React key warning (recharts 3.8.1).
       return <g key={`nodot-${String(payload?.ply ?? cx)}`} />;
     }
     const marker = markerMap.get(payload.ply);
@@ -463,7 +464,7 @@ function buildDotRenderer(
  * circle only (the user's own good move, like the flaw layer's is_user=true
  * branch). `best_move_tier` is position-scoped, so the backend DOES record the
  * opponent's best moves too; those are intentionally excluded here by passing
- * `userColor` into bestMoveDotSpec (Phase 175 Plan 06 fix — the gem/great surfaces
+ * `userColor` into bestMoveDotSpec (the gem/great surfaces
  * are user-only). Reads `best_move_tier` straight off the EvalPoint payload (no
  * marker map needed — every point already carries it).
  */
@@ -546,10 +547,10 @@ function MarkerGlyph({ isUser, color }: { isUser: boolean; color: string }): Rea
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * Expected-score area chart embedded in LibraryGameCard (Phase 109, LIBG-10).
+ * Expected-score area chart embedded in LibraryGameCard.
  *
- * Renders the chart at the height specified by `heightClass` (desktop: h-[116px],
- * mobile: h-[114px]) with a native range scrub slider below it, and a floating
+ * Renders the chart at the height specified by `heightClass` (default h-[116px];
+ * callers pass their own) with a native range scrub slider below it, and a floating
  * semi-transparent tooltip anchored at the active datapoint while interacting.
  * The outer wrapper keeps data-testid + aria-label for accessibility.
  */
@@ -562,7 +563,7 @@ export function EvalChart({
   heightClass = 'h-[116px]',
   flipped = false,
   userColor,
-  onHoverPlyChange,
+  onActivePlyChange,
   highlightedPlies,
   outlinedPlies,
   initialPly,
@@ -572,18 +573,17 @@ export function EvalChart({
   syncPly,
   disableHoverScrub = false,
 }: EvalChartProps) {
-  // The tooltip shows flaw detail whenever the marker's dot is visible: M/B always,
-  // inaccuracy only when revealed (highlighted via its badge, or cycled to). The dot
-  // renderer gets the all-severity map so it can reveal inaccuracy dots on demand and
-  // hide them otherwise; the tooltip applies the same visibility gate (below).
+  // The dot renderer gets the all-severity map so it can reveal inaccuracy dots on
+  // demand (badge highlight or cycling) and hide them otherwise; the tooltip shows
+  // flaw detail for every severity.
   const evalByPly = useMemo(() => new Map(evalSeries.map((p) => [p.ply, p])), [evalSeries]);
   const allMarkerMap = useMemo(() => new Map(flawMarkers.map((m) => [m.ply, m])), [flawMarkers]);
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
-  // Gem/great dot layer (Phase 175 Plan 06) — shares the SAME highlightedPlies prop
-  // as the flaw layer, so a Library-card / analysis-panel badge hover emphasizes
+  // Gem/great dot layer — shares the SAME highlightedPlies prop as the flaw layer,
+  // so a Library-card / analysis-panel badge hover emphasizes
   // gem/great dots exactly like it does severity/tag dots. `userColor` scopes the
   // layer to the user's OWN plies (best_move_tier is position-scoped, so the
-  // opponent's gems/greats are in the data and must be excluded — Plan 06 fix).
+  // opponent's gems/greats are in the data and must be excluded).
   const bestMoveDotRenderer = buildBestMoveDotRenderer(highlightedPlies, userColor);
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width
@@ -601,7 +601,7 @@ export function EvalChart({
 
   // Resting slider position: the flaw ply the card was opened to (clamped into the
   // eval'd range) when provided (Flaws subtab modal), else the last eval'd ply
-  // (locked decision 5 — Games subtab and explorer).
+  // (Games subtab and explorer).
   const restingPly =
     initialPly != null ? Math.min(Math.max(initialPly, sliderMin), sliderMax) : sliderMax;
 
@@ -612,10 +612,10 @@ export function EvalChart({
   //   slider thumb, and parent (hover sweeps the thumb along with it).
   //
   // Initialize sliderPly to the resting ply (initialPly when opened on a flaw, else
-  // the last eval'd ply — locked decision 5). When the parent controls the chart via
+  // the last eval'd ply). When the parent controls the chart via
   // syncPly (analysis board), seed from the current syncPly instead so a mount/remount
   // (e.g. a mobile tab switch after cycling tags) opens the slider on the board's actual
-  // position, not the entry/last ply (Quick 260702-nm8 follow-up).
+  // position, not the entry/last ply.
   const [sliderPly, setSliderPly] = useState<number>(
     syncPly != null ? Math.min(Math.max(syncPly, sliderMin), sliderMax) : restingPly,
   );
@@ -625,7 +625,7 @@ export function EvalChart({
   // OVER the chart). While previewing, the slider thumb must NOT move: the parent
   // may echo the previewed ply back via syncPly (the analysis board navigates on
   // hover), and that echo would otherwise sweep the thumb along. A ref (not state)
-  // so toggling it never itself re-runs the syncPly effect. (Quick 260627-r9g.)
+  // so toggling it never itself re-runs the syncPly effect.
   const previewingRef = useRef(false);
 
   // Notify the parent of the active scrub ply. Called IMPERATIVELY from the user-
@@ -639,7 +639,7 @@ export function EvalChart({
   // up. Parent-driven syncPly is deliberately NOT echoed back (the parent already
   // knows that ply), which also keeps the binding one-directional.
   const notifyActivePly = (ply: number): void => {
-    onHoverPlyChange?.(ply);
+    onActivePlyChange?.(ply);
   };
 
   // Reset sliderPly when the resting ply changes (a data swap moves sliderMax; opening
@@ -652,15 +652,15 @@ export function EvalChart({
     // restingPly back here on mount/remount would notify the parent to navigate to
     // restingPly (initial/last ply), discarding the position the board is actually on —
     // e.g. after a mobile tab remount when cycling tags. Only the uncontrolled card
-    // miniboard needs this mount echo. (Quick 260702-nm8 follow-up.)
+    // miniboard needs this mount echo.
     if (syncPly != null) return;
     setSliderPly(restingPly);
     notifyActivePly(restingPly);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restingPly]);
 
-  // External sync (Quick 260627-mt8): park the slider on a parent-driven ply when
-  // it changes — e.g. the analysis board navigating via the move list. Unlike
+  // External sync: park the slider on a parent-driven ply when it changes — e.g.
+  // the analysis board navigating via the move list. Unlike
   // commandedPly this never focuses the input or shows the tooltip (keyboard board
   // navigation must not be stolen). Clamped into the eval'd range; null is a no-op.
   // Does NOT call notifyActivePly — echoing a parent-pushed ply straight back is the
@@ -715,7 +715,7 @@ export function EvalChart({
   // Touch interaction over the chart. On coarse pointers the recharts surface is inert
   // (pointer-events-none, see below) so recharts' onMouseMove/onClick never fire; a
   // transparent overlay (rendered below the chart) forwards finger gestures here. We map
-  // clientX → nearest ply across the chart's 0%–100% span. Two gestures (Quick 260627-r9g):
+  // clientX → nearest ply across the chart's 0%–100% span. Two gestures:
   //   • DRAG  → transient PREVIEW (mirrors desktop hover): drives the board + tooltip via
   //             hoverPly but leaves the slider put; reverts to the committed ply on lift.
   //   • TAP   → commits the slider to the tapped ply (mirrors desktop click).
@@ -852,8 +852,8 @@ export function EvalChart({
     if (!isTouch) sliderRef.current?.focus({ preventScroll: true });
   }, [initialPly, isTouch]);
 
-  // Tooltip content for activePly (original floating-tooltip content: move + eval,
-  // clock + move time, M/B flaw detail — inaccuracy plies show eval only).
+  // Tooltip content for activePly: move + eval, clock + move time, flaw detail for
+  // any severity.
   const activeSan = moves[activePly] ?? null;
   const activePoint = evalByPly.get(activePly);
   // A mating move (SAN ends '#') has no engine eval — show "Checkmate" instead.
@@ -863,14 +863,14 @@ export function EvalChart({
   // Flaw marker at activePly — all severities (blunder/mistake/inaccuracy) show their
   // flaw-detail line in the tooltip whenever the scrub lands on a flaw ply.
   const activeMarker = allMarkerMap.get(activePly);
-  // Gem/great tooltip row (Phase 175 Plan 06) — mutually exclusive with activeMarker
+  // Gem/great tooltip row — mutually exclusive with activeMarker
   // (a gem/great ply is never also a flaw ply), so only shown when there's no flaw
   // detail to display instead. User-scoped to match the dot layer: best_move_tier is
-  // position-scoped, so the opponent's tier must NOT surface here either (Plan 06 fix).
+  // position-scoped, so the opponent's tier must NOT surface here either.
   // isRareMoveTier gate: best_move_tier also carries the board/card-only best/good
-  // tiers (Quick 260717-rbn), which must NOT surface a chart tooltip row — without
-  // this they fell into the `=== 'gem' ? … : Great` fallback below and mislabeled as
-  // "Great" with a blue dot.
+  // tiers, which must NOT surface a chart tooltip row — without this they would fall
+  // into the `=== 'gem' ? … : Great` fallback below and be mislabeled as "Great" with
+  // a blue dot.
   const activeTier =
     activePoint != null &&
     isRareMoveTier(activePoint.best_move_tier) &&
@@ -878,10 +878,9 @@ export function EvalChart({
       ? activePoint.best_move_tier
       : null;
   const tooltipTags = activeMarker ? activeMarker.tags.filter((t) => !PHASE_TAGS.has(t)) : [];
-  // Tactic motifs for the active marker (Phase 126 UAT) — listed first in the tooltip,
+  // Tactic motifs for the active marker — listed first in the tooltip,
   // above the flaw tags. Family-mapped only. Both orientations are listed
-  // with a "missed:"/"allowed:" prefix. Missed is always listed before Allowed
-  // (Phase 135 UAT).
+  // with a "missed:"/"allowed:" prefix. Missed is always listed before Allowed.
   const tooltipTactics: {
     orientation: 'missed' | 'allowed';
     motif: string;
@@ -905,8 +904,8 @@ export function EvalChart({
       if (family == null) return;
       out.push({ orientation, motif: raw, family, depth });
     };
-    // Both orientations come from this ply's own flaw marker (Quick 260628-1t5, reverting
-    // cfaa7856's one-ply-early missed sourcing — the miss belongs to the flaw ply).
+    // Both orientations come from this ply's own flaw marker. Don't source 'missed' one
+    // ply early: the miss belongs to the flaw ply.
     add(activeMarker.missed_tactic_motif, 'missed', activeMarker.missed_tactic_depth);
     add(activeMarker.allowed_tactic_motif, 'allowed', activeMarker.allowed_tactic_depth);
     return out;
@@ -970,7 +969,7 @@ export function EvalChart({
       aria-label={`Expected score chart for game ${gameId}`}
       role="img"
       // Suppress the UA focus outline recharts shows when its surface / tabIndex=-1
-      // takes focus on click. Tooltip z-lift hack removed (tooltip is gone).
+      // takes focus on click.
       className="w-full [&_:focus]:outline-none [&_:focus-visible]:outline-none"
       // data-vaul-no-drag: when the chart is inside a Vaul Drawer (mobile game
       // view), horizontal drags on the scrub slider / touch-scrub overlay were
@@ -1042,7 +1041,7 @@ export function EvalChart({
             aria-hidden="true"
           />
 
-          {/* Phase-transition labels (D-06) — stroke-less ReferenceLines used purely
+          {/* Phase-transition labels — stroke-less ReferenceLines used purely
               to position the rotated label at the boundary x; no visible line. */}
           {phaseTransitions.middlegame_ply != null && (
             <ReferenceLine
@@ -1108,9 +1107,10 @@ export function EvalChart({
 
       {/* Touch scrub overlay — the recharts surface is inert on coarse pointers, so this
           transparent layer captures finger drags across the chart and maps them to a ply
-          (handleChartTouchScrub), giving touch users the same scrub-by-dragging-over-the-chart
-          that desktop hover provides. touch-none disables scroll-pan during a drag. Desktop
-          (fine pointer) keeps recharts' native hover and never renders this. */}
+          (handleChartTouchStart/Move/End), giving touch users the same
+          scrub-by-dragging-over-the-chart that desktop hover provides. touch-none
+          disables scroll-pan during a drag. Desktop (fine pointer) keeps recharts'
+          native hover and never renders this. */}
       {isTouch && (
         <div
           className="absolute inset-0 z-10 touch-none"
@@ -1123,10 +1123,11 @@ export function EvalChart({
         />
       )}
 
-      {/* Floating tooltip — self-positioned at the active datapoint's x, vertically
-          centered on the chart, flipping sides at the midpoint. Semi-transparent so
-          the eval bar stays readable beneath it; pointer-events-none so it never
-          steals the chart's hover. Shown only while interacting (hover / slider focus). */}
+      {/* Floating tooltip — self-positioned at the active datapoint's x (centered
+          while hovering, bottom-aligned while slider-driven), flipping sides at the
+          midpoint. Semi-transparent so the eval bar stays readable beneath it;
+          pointer-events-none so it never steals the chart's hover. Shown only while
+          interacting (hover / slider focus). */}
       {tooltipVisible && (
         <div
           data-testid={`eval-tooltip-${gameId}`}
@@ -1189,13 +1190,12 @@ export function EvalChart({
                 </div>
                 {(tooltipTactics.length > 0 || tooltipTags.length > 0) && (
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
-                    {/* Tactic motifs listed first (Phase 126 UAT), each prefixed with its
+                    {/* Tactic motifs listed first, each prefixed with its
                         missed/allowed orientation to match the dual-orientation chips. */}
                     {tooltipTactics.map(({ orientation, motif, family, depth }) => {
                       const TacticIcon = TACTIC_FAMILY_ICON[family];
-                      // Orientation drives the row color (missed = blue, allowed = light
-                      // red), matching the dual-orientation TacticMotifChip. Blue is
-                      // reserved for missed tactics, so allowed must not reuse it.
+                      // Orientation drives the row color (missed = teal, allowed = crimson),
+                      // matching the dual-orientation TacticMotifChip.
                       const orientationColor =
                         orientation === 'allowed' ? TAC_ALLOWED : TAC_MISSED;
                       return (
@@ -1213,9 +1213,9 @@ export function EvalChart({
                               text (icon width + gap = 12px + 6px). */}
                           {depth != null && (
                             <span className="pl-[18px]">
-                              {/* anchored=false (Quick 260628-1t5 DECISION 2): the eval-chart
-                                  tooltip is a navigable surface, so the allowed +1 offset is
-                                  dropped (allowed reads on the same scale as missed). */}
+                              {/* anchored=false: the eval-chart tooltip is a navigable
+                                  surface, so the allowed +1 offset is dropped (allowed
+                                  reads on the same scale as missed). */}
                               depth {toDisplayDepthForOrientation(depth, orientation, false)}
                             </span>
                           )}
@@ -1244,7 +1244,8 @@ export function EvalChart({
           the thumb CENTER (not its edge) travels exactly the chart's 0%–100% width.
           A native range thumb at min/max has its EDGE flush with the track end, which
           would put the thumb center half a thumb inside the chart edges and misalign
-          it with the crosshair. The 6px overhang lands in the card's px-4 padding. */}
+          it with the crosshair. The half-thumb (8px) overhang lands in the card's px-4
+          padding. */}
       <div
         className="relative"
         style={{
@@ -1267,9 +1268,8 @@ export function EvalChart({
           // parks at the committed sliderPly instead of sweeping with the cursor.
           value={sliderPly}
           onChange={handleSliderChange}
-          // Free any sticky hover the instant the slider is grabbed, before the
-          // first onChange — otherwise the controlled value stays pinned to hoverPly
-          // for one frame and the thumb can't start moving (see handleSliderChange).
+          // Free any sticky hover the instant the slider is grabbed so the crosshair
+          // and tooltip track the thumb immediately.
           onPointerDown={handleSliderEngage}
           onFocus={() => setSliderFocused(true)}
           onBlur={() => setSliderFocused(false)}
@@ -1284,8 +1284,7 @@ export function EvalChart({
           // `block` (not the default inline-block) so the input leaves no inline
           // descender space below it — that 7px gap inflated the eval-chart container
           // past the slider's true bottom and made the analysis board controls (which
-          // bottom-align to the container) hang ~7px below the slider (Quick w8k item 2,
-          // round 6 follow-up: "bottom alignment of the eval chart slider and controls").
+          // bottom-align to the container) hang ~7px below the slider.
           className={`block w-full h-5 appearance-none bg-transparent cursor-pointer
             [&::-webkit-slider-runnable-track]:h-1.5
             [&::-webkit-slider-runnable-track]:rounded-full

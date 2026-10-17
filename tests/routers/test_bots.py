@@ -1,12 +1,12 @@
-"""Integration tests for POST /api/bots/games (Phase 167 STORE-01/02/05/06).
+"""Integration tests for POST /api/bots/games.
 
 Covers:
-- STORE-01: valid bot PGN -> 200, created:true, exactly one platform='flawchess'
+- Valid bot PGN -> 200, created:true, exactly one platform='flawchess'
   games row, visible via GET /api/library/games?platform=flawchess.
-- STORE-02: missing [%clk] / unparseable PGN -> 422.
-- STORE-05: re-POSTing the same game_uuid -> 200, created:false, same game_id,
+- Missing [%clk] / unparseable PGN -> 422.
+- Re-POSTing the same game_uuid -> 200, created:false, same game_id,
   still exactly one games row.
-- STORE-06: a stored non-guest game has evals_completed_at IS NULL (drain-eligible).
+- A stored non-guest game has evals_completed_at IS NULL (drain-eligible).
 - Auth: unauthenticated request -> 401.
 
 Uses httpx AsyncClient with ASGITransport, mirroring
@@ -44,11 +44,11 @@ _PGN_CHECKMATE = (
 )
 
 # A 40-ply game (both-color [%clk]) — long enough to have midgame entry plies,
-# so Stage 5c's "covered" gate (RESEARCH Pitfall 6) does NOT fire and
-# evals_completed_at stays NULL (drain-eligible, STORE-06). A pathologically
+# so Stage 5c's "covered" gate does NOT fire and
+# evals_completed_at stays NULL (drain-eligible). A pathologically
 # short game (like _PGN_CHECKMATE above) has no entry plies at all and gets
 # marked covered immediately — correct existing behavior, but the wrong fixture
-# for asserting STORE-06's "left pending for the cold drain" claim.
+# for asserting the "left pending for the entry-ply lane" claim.
 _PGN_LONG_GAME = (
     '[Event "FlawChess Bot Game"]\n[Result "1-0"]\n\n'
     "1. Na3 {[%clk 0:02:58.9]} d6 {[%clk 0:02:57.5]} 2. Nf3 {[%clk 0:02:55.0]} g5 {[%clk 0:02:52.5]} "
@@ -63,7 +63,7 @@ _PGN_LONG_GAME = (
     "19. Qb4 {[%clk 0:01:48.9]} Rg6 {[%clk 0:01:45.9]} 20. Kf2 {[%clk 0:01:43.5]} c5 {[%clk 0:01:41.0]} 1-0\n"
 )
 
-# Missing black's [%clk] annotations (STORE-02).
+# Missing black's [%clk] annotations.
 _PGN_MISSING_CLOCK = (
     '[Event "FlawChess Bot Game"]\n[Result "1-0"]\n\n'
     "1. e4 {[%clk 0:03:00]} e5 "
@@ -147,7 +147,7 @@ async def test_store_bot_game_requires_auth() -> None:
 async def test_store_bot_game_creates_flawchess_game(
     bots_user_client: tuple[int, str], test_engine
 ) -> None:
-    """STORE-01: valid bot PGN -> 200, created:true, one platform='flawchess' row,
+    """Valid bot PGN -> 200, created:true, one platform='flawchess' row,
     visible via GET /library/games?platform=flawchess.
     """
     user_id, token = bots_user_client
@@ -189,7 +189,7 @@ async def test_store_bot_game_creates_flawchess_game(
             .all()
         )
         assert len(rows) == 1
-        # STORE-06: fresh non-guest bot game is drain-eligible (evals pending).
+        # Fresh non-guest bot game is drain-eligible (evals pending).
         assert rows[0].evals_completed_at is None
 
 
@@ -197,7 +197,7 @@ async def test_store_bot_game_creates_flawchess_game(
 async def test_store_bot_game_missing_clock_returns_422(
     bots_user_client: tuple[int, str],
 ) -> None:
-    """STORE-02: PGN missing [%clk] on one color -> 422."""
+    """PGN missing [%clk] on one color -> 422."""
     _user_id, token = bots_user_client
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -219,7 +219,7 @@ async def test_store_bot_game_missing_clock_returns_422(
 async def test_store_bot_game_unparseable_pgn_returns_422(
     bots_user_client: tuple[int, str],
 ) -> None:
-    """STORE-02: unparseable PGN -> 422, not 500."""
+    """Unparseable PGN -> 422, not 500."""
     _user_id, token = bots_user_client
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -241,7 +241,7 @@ async def test_store_bot_game_unparseable_pgn_returns_422(
 async def test_store_bot_game_idempotent_resubmit(
     bots_user_client: tuple[int, str], test_engine
 ) -> None:
-    """STORE-05: re-POSTing the same game_uuid -> 200, created:false, same game_id,
+    """Re-POSTing the same game_uuid -> 200, created:false, same game_id,
     still exactly one games row.
     """
     user_id, token = bots_user_client
@@ -284,7 +284,7 @@ async def test_store_bot_game_idempotent_resubmit(
 async def test_persona_win_round_trips_to_persona_wins_endpoint(
     bots_user_client: tuple[int, str],
 ) -> None:
-    """Phase 185 tracer: a persona game's win persists to games.persona_id and
+    """A persona game's win persists to games.persona_id and
     is reflected by GET /bots/persona-wins for the submitting user.
     """
     _user_id, token = bots_user_client
@@ -341,7 +341,7 @@ async def test_persona_id_persisted_on_create(
 async def test_persona_id_unchanged_on_idempotent_resubmit(
     bots_user_client: tuple[int, str], test_engine
 ) -> None:
-    """D-11: re-POSTing the same game_uuid does not re-write persona_id."""
+    """Re-POSTing the same game_uuid does not re-write persona_id."""
     user_id, token = bots_user_client
     headers = {"Authorization": f"Bearer {token}"}
     payload = _make_bot_game_payload(persona_id="wall-800")
@@ -377,7 +377,7 @@ async def test_persona_id_unchanged_on_idempotent_resubmit(
 
 @pytest.mark.asyncio
 async def test_persona_wins_requires_auth() -> None:
-    """T-185-02: unauthenticated GET /bots/persona-wins -> 401."""
+    """Unauthenticated GET /bots/persona-wins -> 401."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -389,7 +389,7 @@ async def test_persona_wins_requires_auth() -> None:
 async def test_persona_wins_scoped_to_authenticated_user(
     bots_user_client: tuple[int, str], test_engine
 ) -> None:
-    """T-185-02: user B cannot read user A's persona wins (no cross-user leakage)."""
+    """User B cannot read user A's persona wins (no cross-user leakage)."""
     _user_a_id, token_a = bots_user_client
     email_b = f"bots_test_{uuid.uuid4().hex[:8]}@example.com"
     user_b_id, token_b = await _register_and_login(email_b)

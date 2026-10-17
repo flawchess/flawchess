@@ -94,7 +94,7 @@ describe('supportsPlyDeepLink', () => {
   });
 });
 
-describe('flawchess bot games (quick-260714-qaj)', () => {
+describe('flawchess bot games', () => {
   // games.platform_url IS populated for bot games, but it is self-referential
   // (the in-app /analysis board). Both builders must return null so the cards
   // render no "Open game on platform" external link duplicating the in-app

@@ -13,7 +13,7 @@ interface NoEngineAnalysisFlawsStateProps {
  * but none have analyzed flaws.
  *
  * Branches:
- * - Guest: sign-up CTA to /login?tab=register that keeps the guest data (D-118-13).
+ * - Guest: sign-up CTA to /login?tab=register that keeps the guest data.
  * - Non-guest: passive explainer — analysis runs automatically in the
  *   background; points to the per-game "Analyze" button on the Games tab
  *   for immediate single-game analysis. No bulk button (auto-enqueue covers it).
@@ -21,10 +21,9 @@ interface NoEngineAnalysisFlawsStateProps {
  *   per-card NoAnalysisState button are the real-time progress signals; this
  *   state provides context for why the flaw list is empty.
  *
- * The "Analyzing your games…" in-flight branch was removed in Phase 119-03:
- * inFlightCount was structurally blind to the dominant tier-3 backlog drain
- * (tier-3 derived picks have no eval_jobs rows). The pulsing EvalCoverageBadge
- * now covers the "analysis is running" signal for all tiers.
+ * No in-flight branch here: an eval_jobs count misses tier-3 picks (they have no
+ * eval_jobs rows). The pulsing EvalCoverageBadge carries the 'analysis is running'
+ * signal for all tiers.
  */
 export function NoEngineAnalysisFlawsState({ isGuest }: NoEngineAnalysisFlawsStateProps) {
   const { logoutForPromotion } = useAuth();
@@ -51,7 +50,7 @@ export function NoEngineAnalysisFlawsState({ isGuest }: NoEngineAnalysisFlawsSta
             data-umami-event="signup-cta"
             data-umami-event-source="flaws-no-analysis"
             aria-label="Sign up to unlock full-game analysis"
-            // Bug fix (quick 261016-fwd): this used to navigate('/login?tab=register')
+            // Bug fix: this used to navigate('/login?tab=register')
             // while the guest was still signed in, so AuthPage bounced them back to /
             // and the button did nothing. Drop the guest session first (guest_token is
             // kept for promotion) and hard-navigate, like EvalCoverageBadge.

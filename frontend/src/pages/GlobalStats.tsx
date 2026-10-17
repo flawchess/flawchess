@@ -24,11 +24,8 @@ import type { ReactNode } from 'react';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { GlobalStatsResponse } from '@/types/stats';
 
-// SEED-163 2d: extracted to a standalone function (rather than inlined
-// booleans in GlobalStatsPage) so its branches count toward THIS function's
-// complexity, not GlobalStatsPage's — that page is already at the eslint
-// `complexity` per-file baseline (frontend/CLAUDE.md: fix new breaches, don't
-// widen the baseline).
+// Extracted to a standalone function so its branches count toward THIS
+// function's complexity, not GlobalStatsPage's.
 function computeGlobalStatsNoHumanRatedGames(
   globalStats: GlobalStatsResponse | undefined,
   filters: FilterState,
@@ -77,8 +74,8 @@ export function GlobalStatsPage() {
 
   const isLoading = ratingLoading || statsLoading;
 
-  // SEED-163 2d: total imported-game count (all platforms), used to detect
-  // when the Human+Rated defaults alone emptied the Stats population.
+  // Total imported-game count (all platforms), used to detect when the
+  // Human+Rated defaults alone emptied the Stats population.
   const gameCount = useGameCountValue();
 
   const { data: profile } = useUserProfile();
@@ -142,7 +139,7 @@ export function GlobalStatsPage() {
 
   const sectionsContent = (
     <div className="space-y-8">
-      {/* ── Flaw Stats + Tactic motifs: per-TC sections sharing one TC switch (Phase 239) ── */}
+      {/* ── Flaw Stats + Tactic motifs: per-TC sections sharing one TC switch ── */}
       <LibraryStatsSections filters={filters} isGuest={isGuest} />
 
       {/* ── ELO Ratings ── */}

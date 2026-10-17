@@ -1,6 +1,6 @@
 """chess.com API client.
 
-Fetches game archives for a user and yields normalized game dicts.
+Fetches game archives for a user and yields NormalizedGame objects.
 Rate limits are respected by sleeping 150ms between archive fetches,
 with a 60-second backoff on 429 responses.
 
@@ -142,8 +142,8 @@ def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
 def _month_before(ym: tuple[int, int]) -> tuple[int, int]:
     """Return the (year, month) immediately preceding ``ym``.
 
-    Phase 186 Plan 02: used to compute the backward walk's end boundary --
-    "just before the persisted oldest-attempted cursor" (Pitfall 1).
+    Used to compute the backward walk's end boundary --
+    "just before the persisted oldest-attempted cursor".
     """
     year, month = ym
     if month == 1:
@@ -218,13 +218,13 @@ async def fetch_chesscom_games(
     Args:
         client: Shared httpx.AsyncClient instance.
         username: The chess.com username to fetch games for.
-        user_id: Internal database user ID (denormalized into each game dict).
+        user_id: Internal database user ID (denormalized into each NormalizedGame).
         since_timestamp: If provided, skip archive months that ended before this time.
             Also applies during month-enumeration fallback: enumeration starts at
             max(joined_month, since_timestamp_month).
         on_game_fetched: Optional callback called once per yielded game (for progress tracking).
         on_archive_skipped: Optional callback invoked with the (year, month) of each
-            monthly archive skipped due to a 404/410 (D-03). Lets the caller hold
+            monthly archive skipped due to a 404/410. Lets the caller hold
             `last_synced_at` back to the earliest skipped month instead of letting
             it advance past a month that was never actually fetched.
 
@@ -238,7 +238,6 @@ async def fetch_chesscom_games(
             429 after retries, or unexpected non-200). Raising halts the import so the
             job is marked ``failed`` and ``last_synced_at`` is preserved — preventing
             silent data loss when chess.com / Cloudflare hiccups for a single archive.
-            See ``.planning/debug/prod-import-missed-games.md``.
     """
     # chess.com API requires lowercase usernames (returns 301 for mixed case)
     api_username = username.lower()
@@ -261,7 +260,7 @@ async def fetch_chesscom_games(
                 await asyncio.sleep(backoff)
             else:
                 # Sentry capture omitted — last-attempt error re-raises to run_import()
-                # top-level handler which calls capture_exception (per D-02).
+                # top-level handler which calls capture_exception.
                 raise
 
     if archives_resp.status_code == 404:
@@ -269,10 +268,9 @@ async def fetch_chesscom_games(
         #   1. User truly absent — body: {"message": "User \"X\" not found."}
         #   2. Real user, archives unavailable (no public archives, or transient
         #      chess.com error) — body: {"message": "An internal error has occurred..."}
-        # Pre-2026-04-25 this branch conflated both as "user not found", which sent
-        # users with valid accounts on a fruitless typo hunt. We now parse the body
-        # and, on ambiguity, probe /pub/player/{username} to disambiguate.
-        # See .planning/quick/260425-lii-fix-misleading-chess-com-user-not-found-.
+        # Don't treat both as "user not found": that sent users with valid accounts
+        # on a fruitless typo hunt. Parse the body and, on ambiguity, probe
+        # /pub/player/{username} to disambiguate.
         try:
             body = archives_resp.json()
             message = str(body.get("message", "")) if isinstance(body, dict) else ""
@@ -345,7 +343,7 @@ async def fetch_chesscom_games(
         # is the fix for the silent-data-loss bug where a transient 5xx on one
         # archive completed the import with 0 games and advanced last_synced_at.
         if resp is None:
-            # D-03: report the skipped month so the forward-pass caller can hold
+            # Report the skipped month so the forward-pass caller can hold
             # last_synced_at back to it instead of letting it advance past a month
             # that was never actually fetched.
             if on_archive_skipped is not None:
@@ -354,7 +352,7 @@ async def fetch_chesscom_games(
 
         games = resp.json().get("games", [])
         for game in games:
-            # Item 4 (Phase 148): normalize_chesscom_game does direct-subscript
+            # normalize_chesscom_game does direct-subscript
             # lookups (e.g. game["white"]) with no .get() fallback, so a single
             # malformed chess.com game raised an uncaught KeyError that aborted
             # the whole import. Mirror the existing per-game PGN-parse precedent
@@ -377,12 +375,11 @@ async def _yield_games_from_archive(
 ) -> AsyncIterator[NormalizedGame]:
     """Normalize and yield each game in one already-fetched month archive response.
 
-    Extracted from fetch_chesscom_games_backward's per-month fetch loop body
-    (216-06, zero behavior change): same per-game try/except swallow-and-
-    continue on normalization failure as the inline code it replaces, mirroring
-    fetch_lichess_games's per-line extraction (Task 1 of this plan). Callers
-    still own the fetched-game callback since this generator has no visibility
-    into the outer retry-attempt vs. per-yield distinction.
+    Extracted from fetch_chesscom_games_backward's per-month fetch loop body:
+    per-game try/except swallow-and-continue on normalization failure,
+    mirroring fetch_lichess_games's per-line extraction. Callers still own the
+    fetched-game callback since this generator has no visibility into the
+    outer retry-attempt vs. per-yield distinction.
     """
     games = resp.json().get("games", [])
     for game in games:
@@ -408,8 +405,8 @@ async def fetch_chesscom_games_backward(
 ) -> AsyncIterator[NormalizedGame]:
     """Async generator that walks chess.com monthly archives newest -> oldest.
 
-    Phase 186 Plan 02 (IMPORT-03, D-06/D-07). Mirror-image of
-    ``fetch_chesscom_games``'s forward (oldest -> newest) walk: this directly
+    Mirror-image of ``fetch_chesscom_games``'s forward (oldest -> newest)
+    walk: this directly
     enumerates archive months (via ``_enumerate_archive_urls``, same as the
     archives-list-404 fallback) rather than consulting the ``/games/archives``
     index, since we need to iterate in reverse from an arbitrary resume point.
@@ -421,29 +418,29 @@ async def fetch_chesscom_games_backward(
     already full performs zero HTTP requests. ``on_month_attempted`` fires
     after every attempted month up to and excluding the first skipped
     (404/410) month, regardless of whether it yielded any TC-matching games --
-    Pitfall 1: the persisted cursor must track fetch ATTEMPTS, not successful
-    inserts, or a month with zero matches would be re-fetched forever. D-03:
-    once a month is skipped, the cursor must not advance past it, so the
+    the persisted cursor must track fetch ATTEMPTS, not successful
+    inserts, or a month with zero matches would be re-fetched forever. Once a
+    month is skipped, the cursor must not advance past it, so the
     callback stops firing for that month and every OLDER month in this walk.
 
     Args:
         client: Shared httpx.AsyncClient instance.
         username: The chess.com username to fetch games for.
-        user_id: Internal database user ID (denormalized into each game dict).
+        user_id: Internal database user ID (denormalized into each NormalizedGame).
         oldest_attempted_ym: The (year, month) of the oldest month already
             attempted in a previous walk, or None on the very first backward
             walk for this user+platform.
         should_stop: Synchronous closure returning True once the caller's
-            per-(platform, TC) budgets are all full (D-07). Checked at month
+            per-(platform, TC) budgets are all full. Checked at month
             granularity only -- a single month's archive may push a budget
-            from under-cap to over-cap in one shot (Pitfall 3, accepted).
+            from under-cap to over-cap in one shot (accepted).
         on_game_fetched: Optional callback called once per yielded game.
         on_month_attempted: Optional ASYNC callback awaited with the
             (year, month) of each month AFTER it has been fetched (or
             skipped -- as a zero-match 200), so the caller can persist the new
             oldest-attempted cursor incrementally (typically an awaited DB
             write). Stops firing from the first 404/410-skipped month onward
-            (D-03) -- a 200-with-zero-games month still fires normally.
+            -- a 200-with-zero-games month still fires normally.
 
     Raises:
         RuntimeError: If a per-archive fetch fails persistently (5xx after
@@ -475,14 +472,14 @@ async def fetch_chesscom_games_backward(
 
     archive_urls = _enumerate_archive_urls(api_username, start_ym, end_ym)
 
-    # D-03: once a month's fetch is skipped (404/410), the cursor must not move
+    # Once a month's fetch is skipped (404/410), the cursor must not move
     # past it or that month is lost permanently. Suppressing on_month_attempted
     # for the remainder of this walk (months only get OLDER from here, since
     # the walk is newest -> oldest) pins the persisted cursor to the last clean
     # month. Re-walking already-attempted older months next Sync is deliberate
-    # and safe: bulk_insert_games is ON CONFLICT DO NOTHING, and the CR-01 dedup
-    # in _admit_backward_game means an already-imported platform_game_id never
-    # counts against the budget again -- re-attempts cost time, not correctness.
+    # and safe: bulk_insert_games is ON CONFLICT DO NOTHING, and the
+    # already-imported-id dedup in _admit_backward_game means an
+    # already-imported platform_game_id never counts against the budget again -- re-attempts cost time, not correctness.
     skipped_any = False
 
     for archive_url in reversed(archive_urls):
@@ -495,8 +492,8 @@ async def fetch_chesscom_games_backward(
 
         year, month = _parse_archive_year_month(archive_url)
 
-        # _fetch_archive_with_retries returns None only for skippable client
-        # errors (404/410) -- treat as an attempted-but-empty month, not a stop.
+        # _fetch_archive_with_retries returns None only for skippable client errors
+        # (404/410): keep walking, but stop advancing the cursor (see skipped_any above).
         if resp is not None:
             async for normalized in _yield_games_from_archive(resp, username, user_id):
                 yield normalized
@@ -518,7 +515,7 @@ async def _fetch_archive_with_retries(
         client: Shared httpx.AsyncClient instance.
         archive_url: Full monthly archive URL, e.g. .../games/2024/03.
         user_id: Internal database user ID, attached to the skip-event Sentry
-            context (D-02) so a skip is triageable without reconstructing the
+            context so a skip is triageable without reconstructing the
             user + month from the event timestamp against import_jobs.
 
     Returns:
@@ -571,17 +568,17 @@ async def _fetch_archive_with_retries(
                 archive_url,
                 resp.status_code,
             )
-            # Bug fix (FLAWCHESS-39, quick-260806-p9n): a 404 on /games/YYYY/MM for a
+            # Bug fix (FLAWCHESS-39): a 404 on /games/YYYY/MM for a
             # valid user is a chess.com server-side fault, not an empty month —
             # genuinely empty and pre-join months both return 200 with {"games": []}
             # (probed live 2026-08-06 for ocnafr: 2025/09 and 2020/01 returned 200-empty,
             # while 2025/11 returned a persistent 404 with the same ambiguous "internal
             # error" body the archives-list handler above already distrusts, despite
             # 2025/11 being listed in that player's archives index). Treating it as
-            # attempted-but-empty was silent data loss of the same class as the 5xx bug
-            # in .planning/debug/prod-import-missed-games.md, and the event was
-            # untriageable from Sentry alone because it previously carried only
-            # source/platform tags. Context must be set BEFORE capture_message, and the
+            # attempted-but-empty was silent data loss of the same class as an error
+            # body parsed as an empty month, and the event was untriageable from
+            # Sentry alone because it carried only source/platform tags. Context
+            # must be set BEFORE capture_message, and the
             # message string must stay a literal with no interpolation (CLAUDE.md Sentry
             # rule) so this issue keeps its existing grouping.
             sentry_sdk.set_context(

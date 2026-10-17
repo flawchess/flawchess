@@ -1,7 +1,4 @@
-"""Pydantic v2 schemas for admin API (user search + impersonation).
-
-Phase 62.
-"""
+"""Pydantic v2 schemas for admin API (user search + impersonation)."""
 
 from datetime import datetime
 from typing import Literal
@@ -23,7 +20,7 @@ class ImpersonateResponse(BaseModel):
 class ImpersonationContext(BaseModel):
     """Populated on /users/me/profile when the request carries an impersonation token.
 
-    Mirrors the JWT claims; the frontend uses this to render the pill (D-22).
+    Mirrors the JWT claims; the frontend uses this to render the pill.
     """
 
     admin_id: int

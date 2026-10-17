@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * MoveStats vitest suite (Phase 179 Plan 02, SEED-112) — covers D-01 (accuracy
- * strip canonical-or-muted), D-03 (all 7 rows always render), D-05 (counts
- * derive from flaw_markers/eval_series), D-08 (opponent tiers surfaced), and
+ * MoveStats vitest suite — covers the accuracy
+ * strip (canonical-or-muted), all 7 rows always rendering, counts
+ * derived from flaw_markers/eval_series, opponent tiers surfaced, and
  * the player-first column reorder.
  */
 
@@ -82,7 +82,7 @@ function point(overrides: Partial<EvalPoint> & Pick<EvalPoint, 'ply'>): EvalPoin
 
 const ALL_CATEGORIES = ['gem', 'great', 'best', 'good', 'inaccuracy', 'mistake', 'blunder'] as const;
 
-describe('MoveStats — D-03 all 7 rows always render', () => {
+describe('MoveStats — all 7 rows always render', () => {
   it('renders exactly 7 category rows with muted 0s for an all-zero analyzed game', () => {
     render(<MoveStats game={makeGame()} />);
     for (const category of ALL_CATEGORIES) {
@@ -98,7 +98,7 @@ describe('MoveStats — D-03 all 7 rows always render', () => {
   });
 });
 
-describe('MoveStats — D-01/D-02 accuracy strip', () => {
+describe('MoveStats — accuracy strip', () => {
   it('renders a numeric white cell and a muted em-dash black cell when black_accuracy is null', () => {
     render(<MoveStats game={makeGame({ white_accuracy: 87.4, black_accuracy: null })} />);
     const white = screen.getByTestId('move-stats-accuracy-white');
@@ -117,7 +117,7 @@ describe('MoveStats — D-01/D-02 accuracy strip', () => {
   });
 });
 
-describe('MoveStats — D-05/D-09 non-zero cell interaction', () => {
+describe('MoveStats — non-zero cell interaction', () => {
   it('dispatches { kind: "category", category, side } on click for a non-zero cell', () => {
     const onCellActivate = vi.fn();
     const game = makeGame({
@@ -141,7 +141,7 @@ describe('MoveStats — D-05/D-09 non-zero cell interaction', () => {
   });
 });
 
-describe('MoveStats — D-08 opponent positive tiers surfaced', () => {
+describe('MoveStats — opponent positive tiers surfaced', () => {
   it('shows an opponent-ply gem in the opponent column', () => {
     // user_color=white, so ply 1 (odd=black) is the opponent.
     const game = makeGame({

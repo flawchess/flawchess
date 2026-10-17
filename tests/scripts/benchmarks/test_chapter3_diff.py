@@ -413,7 +413,7 @@ EXPECTED_321_VERDICTS = {
     "parity": {"TC": (("rapid", "classical"), 0.11), "ELO": (("1200", "2400"), 0.22)},
     "recovery": {"TC": (("bullet", "classical"), 0.90), "ELO": (("1200", "2400"), 0.25)},
 }
-# Endgame Skill (composite, retracted Phase 87.4) — informational, no verdict. The report
+# Endgame Skill (composite, retracted) — informational, no verdict. The report
 # shows only POOLED + 800 + 2400; the generator emits full marginals (superset is fine).
 EXPECTED_321_SKILL_POOLED = {
     "n": 4616,

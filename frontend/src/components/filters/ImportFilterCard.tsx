@@ -30,8 +30,8 @@ function infoPopoverBody(cap: GameCap): string {
   return `Each time control you enable gets its own ${cap}-game backlog budget per platform. New games always import regardless of budget. Lowering a setting never deletes games you already have.`;
 }
 
-// Exported for reuse by Import.tsx (Task 2) so budget chips render only for
-// currently-selected TCs (D-11), matching this card's own toggle state.
+// Exported for reuse by Import.tsx so budget chips render only for
+// currently-selected TCs, matching this card's own toggle state.
 export function isTcActive(settings: ImportSettings, tc: TimeControl): boolean {
   return settings[tcSettingsKey(tc)];
 }
@@ -47,16 +47,16 @@ function withTcToggle(settings: ImportSettings, tc: TimeControl, active: boolean
   };
 }
 
-/**
- * "Import filters" card (D-08): TC multiselect + backlog-cap single-select, auto-saving
- * on every change (D-09 — no Save button, no dirty state). Takes no `isGuest` prop —
- * guests and registered users share the identical UI and code path (D-16).
- */
-// UI-SPEC error state (PATCH failure): a small inline line near the toggled
+// Error state (PATCH failure): a small inline line near the toggled
 // control, not a modal — the toggle itself already reverted via the hook's
 // optimistic-rollback onError.
 const SAVE_ERROR_COPY = "Couldn't save your import settings. Your change was undone — please try again.";
 
+/**
+ * "Import filters" card: TC multiselect + backlog-cap single-select, auto-saving
+ * on every change (no Save button, no dirty state). Takes no `isGuest` prop —
+ * guests and registered users share the identical UI and code path.
+ */
 export function ImportFilterCard() {
   const { data: settings, isLoading, isError } = useImportSettings();
   const updateSettings = useUpdateImportSettings();
@@ -75,13 +75,13 @@ export function ImportFilterCard() {
   }
 
   // Rides the same profile/settings fetch that already gates the Import page —
-  // no separate spinner/skeleton (UI-SPEC loading state). Render nothing until data lands.
+  // no separate spinner/skeleton. Render nothing until data lands.
   if (isLoading || !settings) return null;
 
   const handleToggleTc = (tc: TimeControl) => {
     const activeCount = TIME_CONTROLS.filter((t) => isTcActive(settings, t)).length;
     const currentlyActive = isTcActive(settings, tc);
-    // Last-one-standing guard (UI-SPEC zero-one-many): deselecting the final
+    // Last-one-standing guard: deselecting the final
     // active TC is a no-op — at least one TC must always stay enabled.
     if (currentlyActive && activeCount === 1) return;
     updateSettings.mutate(withTcToggle(settings, tc, !currentlyActive));

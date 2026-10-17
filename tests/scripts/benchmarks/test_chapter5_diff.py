@@ -6,7 +6,7 @@ for the 38 tactic metrics the pooled (n, p25, p50, p75) and the verdicts, plus t
 set and the per-basis cohort summaries. Skips when the benchmark DB is unreachable.
 `benchmark_session` is from conftest.py.
 
-Bases (quick 261014-rux): the flaw metrics and crossed cells read the whole cohort (every eval'd
+Bases: the flaw metrics and crossed cells read the whole cohort (every eval'd
 game of a selected user, all four TCs); the tactic metrics read the full-analysis lane
 (classical + rapid tranches of `benchmark_selection`, armed, full evals + PVs + blobs). User
 moves: CEIL(ply_count/2) for white, FLOOR for black (parity fixed 2026-10-14).
@@ -15,7 +15,7 @@ rapid 99.9% complete). Whole cohort: 1,338,092 games, 4,831 user-cells, 3,559
 distinct users. Lane: 138,104 games, 2,006 user-cells, 1,590 distinct users.
 The benchmark DB is not static (eval backfill keeps stamping games), so a later run can move
 these numbers by a hair; if the gate drifts after a refresh, re-run the fast path and
-regenerate this file from the same run that the report narrates (Pitfall 5).
+regenerate this file from the same run that the report narrates.
 
 EXPECTED_* shapes:
   - flaw / tempo x phase: metric -> {pooled, elo, tc, verdicts}
@@ -25,11 +25,11 @@ EXPECTED_* shapes:
   - tactic pooled: metric -> (n, p25, p50, p75)      (6 dp, per-game count difference, NOT x100)
 
 NOTE: Flaw values are in proportion units (NOT x100). The rendered "pp" values in the report
-are these values multiplied by 100. The double-x100 bug (Phase 114 fix) would cause a p50 100x
+are these values multiplied by 100. A double-x100 bug would cause a p50 100x
 larger; the render-layer guard test catches this. Tactic values are per-game count
 differences; the "per 100 games" report values are x100.
 
-All-analyzed-games basis (Phase 114 final fix): the per_game_tags CTE uses base_games LEFT JOIN
+All-analyzed-games basis: the per_game_tags CTE uses base_games LEFT JOIN
 game_flaws so clean games (zero detected flaws) contribute a 0 delta.
 """
 
@@ -875,9 +875,9 @@ EXPECTED_COHORTS: dict[str, dict[str, int]] = {
 async def test_chapter5_render_scale_guard(benchmark_session: AsyncSession) -> None:
     """Render-layer regression guard: catches double-x100 scaling bugs.
 
-    The D-01 estimator emits proportion-scale values from SQL (e.g. a blunder p50 of about
+    The estimator emits proportion-scale values from SQL (e.g. a blunder p50 of about
     -0.002). The 'pp' render unit multiplies by 100 to display per-100-moves values. If someone
-    re-introduces x100 in the SQL (the bug fixed in Phase 114), the rendered blunder pooled p50
+    re-introduces x100 in the SQL (a past bug), the rendered blunder pooled p50
     would jump to ~-21pp or worse, which is caught here.
 
     Guard: blunder pooled p50 rendered as pp must be in the plausible range (-2.0, 2.0).

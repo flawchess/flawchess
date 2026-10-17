@@ -54,8 +54,7 @@ import { trackFeature } from '@/lib/analytics';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
-// Standalone component per D-05 — do NOT import from or modify GameCard.tsx.
-// formatDate / formatTimeControl copied verbatim from GameCard.tsx (same display requirements).
+// formatDate copied verbatim from GameCard.tsx (same display requirements).
 
 interface LibraryGameCardProps {
   game: GameFlawCard;
@@ -81,10 +80,9 @@ interface LibraryGameCardProps {
 const MOBILE_BOARD_SIZE = 130;
 const DESKTOP_BOARD_SIZE = 225;
 
-// Severity-coded last-move square overlay on the hover miniboard (Quick 260627-r9g
-// item 5): inaccuracy keeps the legacy yellow; blunder/mistake get red/orange at the
-// same alpha. The flaw itself is now a severity glyph in the target-square corner
-// (item 4) rather than a red/orange/yellow arrow.
+// Severity-coded last-move square overlay on the hover miniboard: inaccuracy is
+// yellow; blunder/mistake get red/orange at the same alpha. The flaw itself is a
+// severity glyph in the target-square corner rather than a red/orange/yellow arrow.
 const MOVE_HIGHLIGHT_SEVERITY: Record<FlawSeverity, string> = {
   blunder: MOVE_HIGHLIGHT_BLUNDER,
   mistake: MOVE_HIGHLIGHT_MISTAKE,
@@ -99,11 +97,11 @@ interface PerPly {
 }
 
 /**
- * Replay the SAN mainline once into per-ply {fen, to} entries (memoized per card).
+ * Replay the SAN mainline once into per-ply {fen, from, to} entries (memoized per card).
  * moves[i] is the move at ply i, so perPly[i] is the position after that move —
  * matching eval_series[i].es (eval_cp is the post-move eval; see zobrist.py). The
- * moved piece sits at perPly[i].to, which the corner dot marks for M/B plies.
- * Stops early on a malformed SAN — earlier plies still scrub.
+ * moved piece sits at perPly[i].to, where the corner glyph marks flaws and best-move
+ * tiers. Stops early on a malformed SAN — earlier plies still scrub.
  */
 function buildPerPly(moves: string[] | null): PerPly[] | null {
   if (!moves || moves.length === 0) return null;
@@ -144,9 +142,9 @@ const TAG_FAMILIES: readonly (readonly FlawTag[])[] = [
   ['reversed', 'squandered'],
 ];
 
-// Phase family (Quick 260612-fow): a filterable family on the backend
-// (game_flaws.phase). Markers don't carry a phase tag, so each ply's phase is
-// derived from the game's phase_transitions to mirror the filter on the chart.
+// Phase family: a filterable family on the backend (game_flaws.phase). Markers
+// don't carry a phase tag, so each ply's phase is derived from the game's
+// phase_transitions to mirror the filter on the chart.
 const PHASE_FILTER_TAGS: readonly FlawTag[] = ['opening', 'middlegame', 'endgame'];
 
 /** Derive a ply's game phase from the transition plies (first ply of each phase). */
@@ -164,12 +162,12 @@ function plyPhase(
 // A flaw chip/badge the user can hover (highlight) or click (cycle): a flaw-tag
 // chip, a tactic-motif chip, or a severity badge. Shared by the hover-highlight
 // and click-to-cycle paths.
-// Quick 260620-pza: tactic chips carry orientation so "missed: fork" and
-// "allowed: fork" are two distinct refs (separate chips, separate cycle keys).
+// Tactic chips carry orientation so "missed: fork" and "allowed: fork" are two
+// distinct refs (separate chips, separate cycle keys).
 type TacticChipOrientation = 'missed' | 'allowed';
 
-// Quick 260620-sep: column render order (Missed before Allowed, per UAT) + the muted
-// labels for the grouped tactic columns on the Games-tab card.
+// Column render order (Missed before Allowed) + the muted labels for the grouped
+// tactic columns on the Games-tab card.
 const TACTIC_ORIENTATIONS: readonly TacticChipOrientation[] = ['missed', 'allowed'];
 const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
   allowed: 'Allowed',
@@ -179,11 +177,10 @@ const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
   | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
-  // Move Stats (category × side) cell (Phase 179 Plan 03, D-09) — replaces the
-  // former separate 'severity'/'bestMove' kinds. category spans all 7 Move
-  // Stats rows (severities + positive tiers); side is the literal board color
-  // of the mover (moverColorAtPly), NOT user-relative — D-08 deliberately
-  // surfaces both players' cells on this surface.
+  // Move Stats (category × side) cell. category spans all 7 Move Stats rows
+  // (severities + positive tiers); side is the literal board color of the mover
+  // (moverColorAtPly), NOT user-relative — this surface deliberately shows both
+  // players' cells.
   | { kind: 'category'; category: MoveStatCategory; side: MoveStatSide };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
@@ -205,7 +202,8 @@ function motifPliesKey(orientation: TacticChipOrientation, motifLabel: string): 
   return `${orientation}:${motifLabel}`;
 }
 
-// Copied verbatim from GameCard.tsx — same display requirements (D-05 forbids shared import).
+// Copied verbatim from GameCard.tsx — same display requirements; this card is
+// standalone and does not import from GameCard.
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—';
   try {
@@ -222,10 +220,9 @@ function formatDate(dateStr: string | null): string {
 /**
  * Analyzed game card for the Library Games subtab.
  *
- * Standalone component per D-05 — does NOT extend or modify GameCard. Borrows
- * GameCard's metadata/board/platform patterns but adds a full-width header, a
- * responsive body (1 column mobile, 2 columns tablet, 3 columns desktop), and a
- * flaw block on mobile.
+ * Standalone component — does NOT extend or modify GameCard. Borrows GameCard's
+ * metadata/board/platform patterns but adds a full-width header, a stacked body
+ * below lg, and at lg+ a board beside two lanes (eval chart + tags, MoveStats).
  *
  * Flaw column branches on analysis_state:
  * - "analyzed"         → MoveStats (accuracies card + two-sided category table)
@@ -234,7 +231,7 @@ function formatDate(dateStr: string | null): string {
  *
  * Security: all user-provided strings (usernames, opening name, platform_url) are
  * rendered as React children or href (auto-escaped). platform_url uses
- * target="_blank" rel="noopener noreferrer" to prevent reverse-tabnabbing (T-107-10).
+ * target="_blank" rel="noopener noreferrer" to prevent reverse-tabnabbing.
  */
 export function LibraryGameCard({
   game,
@@ -245,10 +242,10 @@ export function LibraryGameCard({
   // Live miniboard: hovering the eval chart sets the ply; the board scrubs to
   // that position and (on M/B plies) marks the moved piece. At rest the board
   // shows result_fen, as before.
-  const [hoverPly, setHoverPly] = useState<number | null>(null);
+  const [scrubPly, setScrubPly] = useState<number | null>(null);
 
-  // In-flight state for the tier-1 analyze button (D-118-11 — only the clicked game
-  // shows "Analyzing…", not a global spinner across all cards). Controlled when the
+  // In-flight state for the tier-1 analyze button (only the clicked game shows
+  // "Analyzing…", not a global spinner across all cards). Controlled when the
   // parent passes onInFlightChange (Games subtab); otherwise managed locally
   // (FlawCard modal). See LibraryGameCardProps.isInFlight.
   const isControlled = onInFlightChange !== undefined;
@@ -263,13 +260,13 @@ export function LibraryGameCard({
 
   // Narrowed user color (game.user_color is typed `string`). Used to scope the
   // gem/great surfaces to the user's OWN plies — best_move_tier is position-scoped,
-  // so gems/greats exist on the opponent's moves too and must be excluded (Plan 06 fix).
+  // so gems/greats exist on the opponent's moves too and must be excluded.
   const userColor: 'white' | 'black' | undefined =
     game.user_color === 'white' || game.user_color === 'black' ? game.user_color : undefined;
 
   // Clear in-flight state when the games list refetches and the game flips to
   // analyzed — prevents the card staying stuck in "Analyzing…" after the eval
-  // completes and the query refreshes (D-118-11).
+  // completes and the query refreshes.
   useEffect(() => {
     if (isAnalyzed && isInFlight) {
       if (isControlled) onInFlightChange(game.game_id, false);
@@ -305,17 +302,15 @@ export function LibraryGameCard({
 
   // Per-ply tactic-depth badges (1-based display). missed → blue best-move arrow,
   // allowed → colored flaw-move arrow. Null when the tactic's motif chip is hidden.
-  // Allowed is decision-anchored (+1 vs missed): the opponent's refutation line
-  // starts one ply after the shared decision board (Quick 260621-qz9).
   const tacticDepthByPly = useMemo(() => {
     const m = new Map<number, { missed?: string; allowed?: string }>();
     for (const fm of game.flaw_markers ?? []) {
-      // tacticDepthBadge returns null for family-less motifs (promotion (28),
-      // self-interference (14)), so their depth never leaks onto the board as a
-      // bare number with no chip to explain it (D-09).
-      // anchored=false (Quick 260628-1t5 DECISION 2): on the navigable miniboard the
-      // missed and allowed depths are no longer co-anchored on one decision board, so the
-      // allowed +1 offset is dropped — allowed reads on the same plain scale as missed.
+      // tacticDepthBadge returns null for family-less motifs (self-interference,
+      // clearance), so their depth never leaks onto the board as a bare number with
+      // no chip to explain it.
+      // anchored=false: on the navigable miniboard the missed and allowed depths are
+      // not co-anchored on one decision board, so the allowed +1 offset is dropped —
+      // allowed reads on the same plain scale as missed.
       const missed = tacticDepthBadge(fm.missed_tactic_motif, fm.missed_tactic_depth, 'missed', false);
       const allowed = tacticDepthBadge(
         fm.allowed_tactic_motif,
@@ -364,11 +359,9 @@ export function LibraryGameCard({
   // the SAME predicate used to select games (OR within family, AND across families —
   // build_flaw_filter_clauses). Returns null when no context/phase filter is active.
   //
-  // Quick 260702-mnd: this is now the eval chart's ONLY consumer — the persistent
-  // white marker outline (passed as `outlinedPlies`, mirroring the TagChip ring).
-  // It no longer gates the tactic-motif chip derivations below (motifPlies,
-  // tacticMotifs, highlightedPlies) — those now render/highlight unconditionally,
-  // consistent with the context chips (which never gated on this set either).
+  // Used only for the eval chart's white marker outline (passed as `outlinedPlies`,
+  // mirroring the TagChip ring); tactic chips, motifPlies and highlights are not
+  // filtered by it.
   const [flawFilter] = useFlawFilterStore();
   const filterTags = flawFilter.tags;
   const outlinedPlies = useMemo(() => {
@@ -395,16 +388,13 @@ export function LibraryGameCard({
   }, [filterTags, game.flaw_markers, game.phase_transitions]);
 
   // Per-tactic-motif ascending list of the user's marker plies, for click-to-cycle
-  // on the tactic-motif chips (Phase 126 UAT). Quick 260620-pza: keyed by
+  // on the tactic-motif chips. Keyed by
   // orientation + display label (motifPliesKey) so the missed and allowed chips for
   // the same motif cycle through their own plies independently. Keying on the display
   // label (not raw motif) collapses every mate subtype to the single "checkmate" key
-  // so one chip cycles through all checkmate plies (Quick 260620-onv).
-  // Quick 260702-mnd: tactic chips now render unconditionally on every analyzed
-  // card, independent of the active context/tactic filter — a selected card is a
-  // complete picture of its own flaws (consistent with context chips, which never
-  // pruned by filter). outlinedPlies keeps its ONE remaining role: driving the
-  // eval-chart white marker outline (below); it no longer gates tactic derivations.
+  // so one chip cycles through all checkmate plies.
+  // Tactic chips render on every analyzed card regardless of the active filter, so a
+  // card shows all of its own flaws.
   const motifPlies = useMemo(() => {
     const m = new Map<string, number[]>();
     const push = (key: string, ply: number): void => {
@@ -423,12 +413,11 @@ export function LibraryGameCard({
     return m;
   }, [game.flaw_markers]);
 
-  // Move Stats (category × side) ascending ply lists (Phase 179 Plan 03, D-09),
+  // Move Stats (category × side) ascending ply lists,
   // for the MoveStats cells' click-to-cycle. Folds BOTH flaw_markers (I/M/B
   // severities) and eval_series (gem/great/best/good tiers) into one map keyed
-  // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since D-08
-  // deliberately surfaces both players' cells here (replaces the former
-  // user-only severityPlies/bestMovePlies memos).
+  // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since this
+  // surface deliberately shows both players' cells.
   const categoryPlies = useMemo(() => {
     const m = new Map<string, number[]>();
     const push = (category: MoveStatCategory, side: MoveStatSide, ply: number): void => {
@@ -454,11 +443,9 @@ export function LibraryGameCard({
   // corner badge mirrors the flaw corner dots (flawByPly above), which show BOTH
   // players' blunders/mistakes/inaccuracies — so scrubbing onto an opponent's
   // gem/great/best/good shows its icon too. MoveStats' own count/cycling
-  // (categoryPlies above) is ALSO both-sided now (D-08) — this map and that one
-  // now share the same "show everyone" scoping. Keyed by ply for the O(1) lookup
-  // the squareMarkers memo needs.
-  // Quick 260717-rbn widened this to carry 'best'/'good'; the both-players change
-  // (opponent tiers on the miniboard) followed the flaw-dot precedent.
+  // (categoryPlies above) is also both-sided — this map and that one
+  // share the same "show everyone" scoping. Keyed by ply for the O(1) lookup
+  // the squareMarkers memo needs. Carries 'best'/'good' as well as gem/great.
   const bestTierByPly = useMemo(() => {
     const m = new Map<number, 'gem' | 'great' | 'best' | 'good'>();
     for (const pt of game.eval_series ?? []) {
@@ -490,8 +477,8 @@ export function LibraryGameCard({
   const highlightedPlies = useMemo(() => {
     const ref = highlight ?? cycle?.ref ?? null;
     if (!ref) return null;
-    // Move Stats (category × side) plies come straight from the categoryPlies
-    // map (D-09) — both sides, not gated by is_user (D-08).
+    // Move Stats (category × side) plies come straight from the categoryPlies map —
+    // both sides, not gated by is_user.
     if (ref.kind === 'category')
       return new Set(categoryPlies.get(categoryPliesKey(ref.category, ref.side)) ?? []);
     const set = new Set<number>();
@@ -501,12 +488,10 @@ export function LibraryGameCard({
       if (ref.kind === 'tag')
         matches = fm.tags.includes(ref.tag); // inaccuracies have no tags → never match a tag hover
       else {
-        // Quick 260620-pza: match the orientation the chip represents.
+        // Match the orientation the chip represents.
         const col =
           ref.orientation === 'missed' ? fm.missed_tactic_motif : fm.allowed_tactic_motif;
-        // Quick 260702-mnd: no longer gated by outlinedPlies (context filter) — hovering
-        // or cycling a tactic chip highlights ALL of its plies, matching the
-        // now-unconditional tactic-chip rendering (motifPlies/tacticMotifs above).
+        // Hovering or cycling a tactic chip highlights ALL of its plies.
         matches = col != null && tacticMotifLabel(col) === ref.motif;
       }
       if (matches) set.add(fm.ply);
@@ -518,12 +503,12 @@ export function LibraryGameCard({
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
 
   // Tactic motifs: collect unique (orientation, motif-label) pairs from user flaw
-  // markers so the chip row shows one chip per distinct orientation+label
-  // (D-10). Quick 260620-pza: BOTH orientations are surfaced — "missed: fork" and
-  // "allowed: fork" are separate chips. Deduping on the display label (not the raw
-  // motif) collapses named-mate subtypes to a single "checkmate" chip per orientation
-  // (Quick 260620-onv). The label doubles as the chip's motif prop and FlawRef key —
-  // TACTIC_FAMILY_FOR_MOTIF resolves "checkmate" via its alias. Allowed chips are
+  // markers so the chip row shows one chip per distinct orientation+label. BOTH
+  // orientations are surfaced — "missed: fork" and "allowed: fork" are separate
+  // chips. Deduping on the display label (not the raw motif) collapses named-mate
+  // subtypes to a single "checkmate" chip per orientation. The label doubles as the
+  // chip's motif prop and FlawRef key — TACTIC_FAMILY_FOR_MOTIF resolves "checkmate"
+  // via its alias. Allowed chips are
   // listed before missed chips (stable grouping).
   const tacticMotifs = useMemo<{ motif: string; orientation: TacticChipOrientation }[]>(() => {
     const seen = new Set<string>();
@@ -532,7 +517,7 @@ export function LibraryGameCard({
       if (raw == null) return;
       // Skip family-less motifs (clearance, deflection, en-passant, …): they render
       // no chip and no legend row, so including them left an empty tactic row with a
-      // stray legend tooltip icon (Quick 260620: empty tag tooltip icons).
+      // stray legend tooltip icon.
       const label = tacticMotifLabel(raw);
       if (TACTIC_FAMILY_FOR_MOTIF[label] == null) return;
       const key = motifPliesKey(orientation, label);
@@ -541,20 +526,18 @@ export function LibraryGameCard({
       out.push({ motif: label, orientation });
     };
     const markers = game.flaw_markers ?? [];
-    // Quick 260702-mnd: surface every user tactic chip unconditionally — no longer
-    // gated by the active context/tactic filter (matching motifPlies above).
-    const passesContext = (fm: (typeof markers)[number]): boolean => fm.is_user;
-    for (const fm of markers) if (passesContext(fm)) collect(fm.allowed_tactic_motif, 'allowed');
-    for (const fm of markers) if (passesContext(fm)) collect(fm.missed_tactic_motif, 'missed');
+    // Surface every user tactic chip, regardless of the active filter.
+    const isUserMarker = (fm: (typeof markers)[number]): boolean => fm.is_user;
+    for (const fm of markers) if (isUserMarker(fm)) collect(fm.allowed_tactic_motif, 'allowed');
+    for (const fm of markers) if (isUserMarker(fm)) collect(fm.missed_tactic_motif, 'missed');
     return out;
   }, [game.flaw_markers]);
 
-  // Quick 260702-mnd (D-2): depth-aware active-filter ring. Since every tactic chip
-  // now renders regardless of the filter, the ring must independently reflect the
-  // full active filter (family + orientation + depth) so a same-family chip whose
-  // plies fall OUTSIDE the depth range does NOT light up — "highlighted === actually
-  // matches the active filter". True only when a tactic axis (not context tags or
-  // severity) is non-default.
+  // Depth-aware active-filter ring. The ring reflects the full active tactic filter
+  // (family + orientation + depth), so a same-family chip whose plies fall OUTSIDE the
+  // depth range does NOT light up — "highlighted === actually matches the active
+  // filter". True only when a tactic axis (not context tags or severity) is
+  // non-default.
   const tacticFilterActive =
     flawFilter.tacticFamilies.length > 0 ||
     flawFilter.tacticOrientation !== 'either' ||
@@ -600,7 +583,7 @@ export function LibraryGameCard({
   const handleActivate = (ref: FlawRef) => {
     const plies = pliesForRef(ref);
     if (plies.length === 0) return;
-    // No ref, tag or game id in the payload (D-04).
+    // No ref, tag or game id in the payload.
     trackFeature('action', { target: 'chip-cycle' });
     const pos = cycle && sameFlawRef(cycle.ref, ref) ? (cycle.pos + 1) % plies.length : 0;
     setCycle({ ref, pos });
@@ -610,8 +593,8 @@ export function LibraryGameCard({
   };
   const commandedPly = cycle ? (pliesForRef(cycle.ref)[cycle.pos] ?? null) : null;
 
-  // MoveStats (category × side) wiring (Phase 179 Plan 03, D-09/D-10) — shared by
-  // both the mobile (collapsible) and desktop MoveStats renders below. Cell
+  // MoveStats (category × side) wiring — shared by both the mobile (collapsible)
+  // and desktop MoveStats renders below. Cell
   // activate/hover route straight through the existing tag/motif handleActivate/
   // setHighlight machinery via the unified 'category' FlawRef kind.
   const handleMoveStatsCellActivate = (ref: MoveStatsCellRef): void =>
@@ -622,7 +605,7 @@ export function LibraryGameCard({
     cycle && cycle.ref.kind === 'category'
       ? { kind: 'category', category: cycle.ref.category, side: cycle.ref.side }
       : null;
-  // D-10: the global filter stays user-scoped and rings ONLY the player-side cell
+  // The global filter stays user-scoped and rings ONLY the player-side cell
   // of the matching row (never an opponent cell) — mirrors SeverityBadge's own
   // isActive semantic (severity narrowed to exactly one of blunder/mistake;
   // inaccuracy is not a filterable severity, so it never rings, matching
@@ -633,7 +616,7 @@ export function LibraryGameCard({
     if (sev == null) return null;
     return { kind: 'category', category: sev, side: userColor };
   }, [flawFilter.severity, userColor]);
-  // D-06 (UAT 179): mobile default shows the accuracy card + the compact
+  // Mobile default shows the accuracy card + the compact
   // single-line summary row (user-side counts + chevron); tapping the chevron
   // (move-stats-expand-toggle) reveals the full two-sided 7-row table.
   const [mobileMoveStatsExpanded, setMobileMoveStatsExpanded] = useState(false);
@@ -672,7 +655,7 @@ export function LibraryGameCard({
   }, [cycle, game.game_id]);
 
   const activePly =
-    hoverPly != null && perPly ? Math.min(Math.max(hoverPly, 0), perPly.length - 1) : null;
+    scrubPly != null && perPly ? Math.min(Math.max(scrubPly, 0), perPly.length - 1) : null;
   const hoverEntry = activePly != null ? perPly?.[activePly] : undefined;
   const boardFen = hoverEntry?.fen ?? game.result_fen ?? null;
   const hoverSeverity = activePly != null ? flawByPly.get(activePly) : undefined;
@@ -685,7 +668,7 @@ export function LibraryGameCard({
   // The scrubbed board perPly[activePly] is the position AFTER move activePly, so its
   // best move lives on the NEXT eval-series row: best_move[activePly+1] (best move from
   // that position). best_move[activePly] is the move that *led into* the shown position,
-  // which drew the arrow one ply behind (UAT thl item 2). Null for lichess-eval-only
+  // which drew the arrow one ply behind. Null for lichess-eval-only
   // games (no PV), at rest, and at the final position.
   const bestMoveByPly = useMemo(() => {
     const m = new Map<number, string>();
@@ -704,7 +687,7 @@ export function LibraryGameCard({
   // bestMoveByPly.get(activePly) — because best_move[j] = best move from perPly[j-1] (the
   // blue following-best uses get(activePly+1) = best from the displayed perPly[activePly]).
   // This get(k) vs get(k+1) distinction is the recurring off-by-one; it renders the SAME
-  // move FlawCard's blue should-have-played arrow shows for the same flaw (Quick 260628-1t5).
+  // move FlawCard's blue should-have-played arrow shows for the same flaw.
   const shouldHaveSquares =
     activePly != null ? uciToSquares(bestMoveByPly.get(activePly) ?? null) : null;
   const boardArrows = useMemo(() => {
@@ -712,11 +695,10 @@ export function LibraryGameCard({
       [];
     if (bestMoveSquares) {
       // Following-best arrow: the missed-tactic depth rides the teal should-have-played arrow
-      // below (Quick 260628-1t5, reverting cfaa7856). When the scrubbed flaw allowed a tactic,
-      // this arrow IS the opponent's refuting response, so it carries the allowed-tactic crimson
-      // AND the allowed depth label — the label belongs on the response's target square, not the
-      // played flaw square (Quick 260628-pu2 UAT round 2). Otherwise it stays the neutral
-      // best-continuation blue with no label.
+      // below. When the scrubbed flaw allowed a tactic, this arrow IS the opponent's
+      // refuting response, so it carries the allowed-tactic crimson AND the allowed depth
+      // label — the label belongs on the response's target square, not the played flaw
+      // square. Otherwise it stays the neutral best-continuation blue with no label.
       const allowedDepth = activePly != null ? tacticDepthByPly.get(activePly)?.allowed : undefined;
       arrows.push({
         from: bestMoveSquares.from,
@@ -726,7 +708,7 @@ export function LibraryGameCard({
         labelColor: allowedDepth != null ? TAC_ALLOWED_LABEL : undefined,
       });
     }
-    // Teal (TAC_MISSED) should-have-played arrow at a missed-tactic flaw ply (DECISION 1): a
+    // Teal (TAC_MISSED) should-have-played arrow at a missed-tactic flaw ply: a
     // counterfactual arrow on the post-flaw miniboard, mirroring the analysis board.
     const missedDepth = activePly != null ? tacticDepthByPly.get(activePly)?.missed : undefined;
     if (shouldHaveSquares && missedDepth != null) {
@@ -741,9 +723,9 @@ export function LibraryGameCard({
     return arrows.length > 0 ? arrows : undefined;
   }, [bestMoveSquares, shouldHaveSquares, activePly, tacticDepthByPly]);
 
-  // Severity glyph marker on the played (flawed) move's target square (item 4). The allowed
-  // depth label now rides the crimson opponent-response arrow (its target square), not this
-  // played-flaw square (Quick 260628-pu2 UAT round 2 — the label was on the wrong square).
+  // Severity glyph marker on the played (flawed) move's target square. The allowed
+  // depth label rides the crimson opponent-response arrow (its target square), not this
+  // played-flaw square.
   const squareMarkers = useMemo<SquareMarker[] | undefined>(() => {
     if (!hoverEntry) return undefined;
     // Severity wins (matches the eval-chart tooltip, where a flaw marker suppresses the
@@ -758,14 +740,13 @@ export function LibraryGameCard({
     const tier = activePly != null ? bestTierByPly.get(activePly) : undefined;
     if (tier === 'gem') return [{ square: hoverEntry.to, gem: true }];
     if (tier === 'great') return [{ square: hoverEntry.to, great: true }];
-    // Quick 260717-rbn: best/good corner badges, same "no flaw here" gate as
-    // gem/great above.
+    // Best/good corner badges, same "no flaw here" gate as gem/great above.
     if (tier === 'best') return [{ square: hoverEntry.to, best: true }];
     if (tier === 'good') return [{ square: hoverEntry.to, good: true }];
     return undefined;
   }, [hoverEntry, hoverSeverity, activePly, bestTierByPly]);
 
-  // Severity/tier-coded last-move overlay (item 5): a scrubbed flaw move gets its
+  // Severity/tier-coded last-move overlay: a scrubbed flaw move gets its
   // red/orange/yellow tint; a gem move reads violet and a great ("best") move reads
   // blue, matching their corner badges; any other clean scrubbed move reads green. At
   // rest there is no lastMove, so the color is unused.
@@ -810,22 +791,22 @@ export function LibraryGameCard({
   // Platform link follows the eval-chart scrub (matching the Flaws card's per-move
   // deep link): when the slider sits anywhere but the last eval'd ply, deep-link to
   // that move's resulting position; at the end-of-game resting position, open the
-  // game itself. hoverPly is the chart's active scrub ply (slider or hover), reported
+  // game itself. scrubPly is the chart's active scrub ply (slider or hover), reported
   // even at rest; null until the chart mounts → game-level link.
   // lichess links open from the user's side (board flipped for black); chess.com has
-  // no orientation URL param, so it is unchanged (see lib/platformLinks.ts). T-107-10.
+  // no orientation URL param, so it is unchanged (see lib/platformLinks.ts).
   const isScrubbedBack =
-    hoverPly != null && lastEvalPly != null && hoverPly !== lastEvalPly;
+    scrubPly != null && lastEvalPly != null && scrubPly !== lastEvalPly;
   const gameUrl = isScrubbedBack
-    ? platformPlyUrl(game.platform, game.platform_url, hoverPly, game.user_color)
+    ? platformPlyUrl(game.platform, game.platform_url, scrubPly, game.user_color)
     : gamePlatformUrl(game.platform, game.platform_url, game.user_color);
   const linkLabel = isScrubbedBack ? 'Open at this move on platform' : 'Open game on platform';
 
-  // Analyze deep-link ply (Quick 260628-qta UAT): when the slider rests on the game's
-  // end position (not scrubbed back), omit the ply so the analysis board opens the game
-  // at ply 0. When scrubbed to an earlier move, deep-link to that move's ply. isScrubbedBack
-  // already means "slider is somewhere other than the last eval'd (end) ply".
-  const analyzePly = isScrubbedBack ? hoverPly : null;
+  // Analyze deep-link ply: when the slider rests on the game's end position (not
+  // scrubbed back), omit the ply so the analysis board opens the game at ply 0. When
+  // scrubbed to an earlier move, deep-link to that move's ply. isScrubbedBack already
+  // means "slider is somewhere other than the last eval'd (end) ply".
+  const analyzePly = isScrubbedBack ? scrubPly : null;
   const analyzeTo = buildGameAnalysisUrl(game.game_id, analyzePly);
   const platformIconAndLink = (
     <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
@@ -846,16 +827,14 @@ export function LibraryGameCard({
           </a>
         </Tooltip>
       ) : null}
-      {/* Phase 208 (D-13): a pasted game has no registered PlatformIcon and no
-          gameUrl, so this slot renders empty today — the badge drops straight
-          in with no layout change. A text badge (not an icon-only glyph)
-          because it must read as "this is not a game you played". The explicit
-          text-sm override is mandatory: Badge's base class is text-xs (below
-          the CLAUDE.md 14px floor), and cn() (tailwind-merge) resolves the
+      {/* A pasted game has no registered PlatformIcon and no gameUrl, so the badge
+          takes that slot with no layout change. A text badge (not an icon-only
+          glyph) because it must read as "this is not a game you played". The
+          explicit text-sm override is mandatory: Badge's base class is text-xs
+          (below the CLAUDE.md 14px floor), and cn() (tailwind-merge) resolves the
           conflict correctly because className is passed last. variant="outline"
           — a neutral label, not a status/severity signal, and specifically not
-          brand-brown (UI-SPEC reserves that for the paste modal's one accent
-          slot elsewhere in this phase). */}
+          brand-brown (reserved for the paste modal's one accent slot). */}
       {game.platform === 'pgn' && (
         <Badge
           variant="outline"
@@ -936,7 +915,7 @@ export function LibraryGameCard({
 
   // Shared game-info block (same order on every game card):
   //   line 1: "<TC name> <base>[+inc]"
-  //   line 2: "# n Moves" — on its own line below TC (plan 260610-vru)
+  //   line 2: "# n Moves" — on its own line below TC
   //   line 3: date
   //   line 4: termination (result chip + reason)
   const metadata = (
@@ -949,8 +928,8 @@ export function LibraryGameCard({
   );
 
   // Desktop-only one-line metadata strip: opening · TC · moves · date · result.
-  // Spans the full card width on top of the board (Quick 260622-fdh follow-up); the date
-  // lives here (not the header) so it isn't duplicated on adjacent rows.
+  // Spans the full card width on top of the board; the date lives here (not the
+  // header) so it isn't duplicated on adjacent rows.
   // Used only by the desktop body; does not affect the shared `metadata` or mobile rendering.
   const desktopMetaStrip = (
     <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
@@ -969,11 +948,9 @@ export function LibraryGameCard({
     </div>
   );
 
-  // Context flaw-tag chips (miss/lucky/low-clock/unrushed/phase…). Reused by both the
-  // columned beta layout and the non-beta full-width row. The explanatory legend is split
-  // out into `contextLegend` so the columned layout can pin it to the right of the
-  // "Context" label (Quick 260620: per-column legend icons next to the labels) instead of
-  // trailing the chips inline.
+  // Context flaw-tag chips (miss/lucky/low-clock/unrushed/phase…), rendered in the
+  // Context column of the tags block. The legend is split out into `contextLegend` so
+  // it can sit next to the "Context" label.
   const contextChips =
     game.chips.length > 0 ? (
       <>
@@ -983,7 +960,7 @@ export function LibraryGameCard({
             tag={tag}
             gameId={game.game_id}
             count={tagCounts.get(tag)}
-            definition={false}
+            showDefinitionPopover={false}
             onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
             onActivate={() => handleActivate({ kind: 'tag', tag })}
           />
@@ -1000,7 +977,7 @@ export function LibraryGameCard({
   // e.g. a flawless game with no tactic motifs or context chips.
   const hasTags = tacticMotifs.length > 0 || contextChips != null;
 
-  // Tags block (UAT 179): the Missed / Allowed / Context tags rendered as label|chips
+  // Tags block: the Missed / Allowed / Context tags rendered as label|chips
   // rows (ChipColumn `inline` — the label sits left of its chips, matching the mobile
   // layout), wrapped in a charcoal card. Shared by mobile (below the eval chart) and
   // desktop (filling the gap under the eval chart). Only rendered when `hasTags`.
@@ -1021,7 +998,7 @@ export function LibraryGameCard({
             motifs={groupMotifs.map(({ motif }) => ({
               motif,
               count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
-              // Quick 260702-mnd (D-2): ring lights only when a tactic filter is active
+              // Ring lights only when a tactic filter is active
               // AND this chip's slot(s) actually match it on every axis (depth-aware).
               filterRingActive:
                 tacticFilterActive && matchingFilterKeys.has(motifPliesKey(orientation, motif)),
@@ -1066,7 +1043,7 @@ export function LibraryGameCard({
   const flawContent =
     game.analysis_state === 'analyzed' ? (
       <div data-testid={`flaw-controls-${game.game_id}`} className="contents">
-        {/* UAT 179: accuracy card + compact 8-column summary row; the chevron
+        {/* Accuracy card + compact 8-column summary row; the chevron
             (move-stats-expand-toggle) reveals the full two-sided 7-row table. */}
         <MoveStats
           game={game}
@@ -1091,10 +1068,9 @@ export function LibraryGameCard({
       />
     );
 
-  // D-06/D-08: Unified Analyze button — analyzed games only. Replaces the old Explore +
-  // Analyze-position pair. Opens /analysis?game_id=X&ply=Y; ply is the current slider
-  // position (hoverPly) falling back to the last eval'd ply then 0.
-  const renderDesktopExploreButton = () =>
+  // Analyze button (analyzed games only). Opens /analysis?game_id=X[&ply=Y]; ply is
+  // the scrubbed slider position, omitted when the slider rests on the end position.
+  const renderDesktopAnalyzeButton = () =>
     isAnalyzed ? (
       <Button asChild variant="brand-outline" className="w-full">
         {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
@@ -1112,8 +1088,6 @@ export function LibraryGameCard({
     ) : null;
 
   return (
-    // The docked readout and slider live inside the card, so overflowVisible and
-    // the z-30 hover hack (previously needed for the escaping tooltip) are removed.
     <Card
       as="article"
       data-testid={`library-game-card-${game.game_id}`}
@@ -1157,7 +1131,7 @@ export function LibraryGameCard({
               moves={game.moves ?? []}
               flipped={game.user_color === 'black'}
               userColor={userColor}
-              onHoverPlyChange={setHoverPly}
+              onActivePlyChange={setScrubPly}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
               initialPly={initialPly}
@@ -1173,7 +1147,7 @@ export function LibraryGameCard({
         <div className="flex flex-col gap-2">
           {flawContent}
         </div>
-        {/* D-06/D-08: Unified Analyze button — mobile, below eval chart. Analyzed games only. */}
+        {/* Analyze button — mobile, below eval chart. Analyzed games only. */}
         {isAnalyzed && (
           <div className="lg:hidden flex gap-2">
             <Button asChild variant="brand-outline" className="w-full">
@@ -1193,10 +1167,10 @@ export function LibraryGameCard({
         )}
       </div>
 
-      {/* Desktop body (Quick 260622-fdh): full-width metadata strip on top, then a
+      {/* Desktop body: full-width metadata strip on top, then a
           two-column row — board-only left column at DESKTOP_BOARD_SIZE, right column
-          stacking eval chart + severity badges + tactic chips. The date lives in the
-          strip (opening · TC · moves · date · result). Mobile keeps the simpler stacked
+          with the eval chart + tags card beside the MoveStats card. The date lives in
+          the strip (opening · TC · moves · date · result). Mobile keeps the stacked
           body above. */}
       <div className="hidden lg:flex lg:flex-col lg:gap-2 px-4 py-4">
         {/* Full-width metadata strip spanning the whole card, above the board. */}
@@ -1241,7 +1215,7 @@ export function LibraryGameCard({
                       moves={game.moves ?? []}
                       flipped={game.user_color === 'black'}
                       userColor={userColor}
-                      onHoverPlyChange={setHoverPly}
+                      onActivePlyChange={setScrubPly}
                       highlightedPlies={highlightedPlies}
                       outlinedPlies={outlinedPlies}
                       initialPly={initialPly}
@@ -1272,7 +1246,7 @@ export function LibraryGameCard({
               {/* MoveStats column: one charcoal card (accuracy header band + category
                   table) stretched to the miniboard height, ~256px
                   fixed width beside the miniboard — wide enough that the strip's
-                  "Accuracies" label + two pills never squeeze the shared grid, so the
+                  "Accuracy" label + two pills never squeeze the shared grid, so the
                   table's count columns stay aligned under the pills. Marked as
                   flaw-controls for the outside-pointer highlight guard. */}
               <div className="shrink-0 w-64 flex flex-col" data-testid={`flaw-controls-${game.game_id}`}>
@@ -1300,9 +1274,8 @@ export function LibraryGameCard({
           )}
           </div>
         </div>
-        {/* D-01 Explore + D-02 Analyze position button row (Quick 260625-2):
-            own full-width row below the board + right-column row, spanning the whole card. */}
-        {renderDesktopExploreButton()}
+        {/* Analyze button row: own full-width row below the board + right-column row. */}
+        {renderDesktopAnalyzeButton()}
       </div>
     </Card>
   );

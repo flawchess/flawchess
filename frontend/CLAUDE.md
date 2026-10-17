@@ -10,7 +10,7 @@ Rules specific to `frontend/` (React 19 + TypeScript + Vite 8, react-chessboard 
 - **`max-depth` (4) gates `npm run lint`** — the only hard complexity rule, enforced at `error`. Fix a new breach rather than baselining it. Cognitive complexity is report-only via `npm run lint:cognitive` (soft guidance per root `CLAUDE.md`).
 - **`npm run lint` and `npm test` do not type-check** — run `npm run build` (`tsc -b` + vite) before integrating a change to shared types or property access.
 - **Minimum font size is `text-sm`** — never use `text-xs` (or smaller) in new code. Even for badges, captions, metadata, footnotes, and "supporting" labels — `text-sm` is the floor. Sub-`text-sm` becomes unreadable on real devices and at high DPI. If a row feels too dense at `text-sm`, fix the layout (more whitespace, fewer columns, shorter labels), don't shrink the type. Applies to all Tailwind utilities (`text-xs`, raw `font-size` < 14px, `[font-size:0.75rem]`, etc.) and to UI copy on both desktop and mobile.
-  - **Exception: hover/tap-activated info tooltips** (Radix popover bodies with the HelpCircle trigger pattern — `MetricStatPopover`, `WdlConfidenceTooltip`, `EvalConfidenceTooltip`, `AchievableScorePopover`, etc.) may use `text-xs`; these are short, transient, opt-in surfaces where denser text reads as a visual aside rather than primary content.
+  - **Exception: hover/tap-activated info tooltips** (Radix popover bodies with the HelpCircle trigger pattern — `MetricStatPopover`, `ScoreConfidenceTooltip`, `EvalConfidenceTooltip`, `AchievableScorePopover`, etc.) may use `text-xs`; these are short, transient, opt-in surfaces where denser text reads as a visual aside rather than primary content.
 
 ## UI & Components
 

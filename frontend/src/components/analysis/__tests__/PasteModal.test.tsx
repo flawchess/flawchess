@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * PasteModal.test.tsx — modal state-machine, testid, and a11y coverage
- * (Phase 208 Plan 01 Task 3 + Plan 03 Task 2). PasteModal now uses
+ * PasteModal.test.tsx — modal state-machine, testid, and a11y coverage.
+ * PasteModal uses
  * useSavePastedGame (TanStack Query), so every render needs a
  * QueryClientProvider ancestor (mirrors FeedbackModal.test.tsx's precedent
  * — the load-only coverage below never triggers a network call, so
@@ -97,7 +97,7 @@ describe('PasteModal', () => {
     expect((screen.getByTestId('btn-paste-load') as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByTestId('paste-side-selector')).toBeTruthy();
     expect(screen.getByTestId('btn-paste-analyze')).toBeTruthy();
-    // D-06: default selection is White.
+    // Default selection is White.
     expect(screen.getByTestId('paste-side-white').getAttribute('data-state')).toBe('on');
     expect(screen.getByTestId('paste-side-black').getAttribute('data-state')).toBe('off');
   });

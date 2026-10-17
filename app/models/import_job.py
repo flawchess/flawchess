@@ -11,7 +11,7 @@ from app.models.base import Base
 class ImportJob(Base):
     __tablename__ = "import_jobs"
     __table_args__ = (
-        # Phase 149 PRUNE-05: partial unique — at most one active (pending or
+        # Partial unique — at most one active (pending or
         # in_progress) job per (user_id, platform). Declared here for
         # model/DB parity (keeps `alembic revision --autogenerate` a no-op);
         # the actual DDL is created/dropped by the dedicated migration.

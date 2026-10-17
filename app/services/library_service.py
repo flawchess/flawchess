@@ -1,20 +1,19 @@
-"""Library (Games-surface) service — Phase 106 (SEED-036, LIBG-08).
+"""Library (Games-surface) service.
 
-Phase 108 D-02 migration: GET /library/games and GET /library/flaw-stats now
-read M+B flaws from `game_flaws` instead of re-calling the Phase 105 kernel
-per query. The per-game N+1 `_load_analyzed_flaws` loop is retired.
+GET /library/games reads M+B flaws from `game_flaws` (batched per page), never
+from the classification kernel.
 
 Games card chips (curated/deduped M+B tags) and per-game M+B severity counts
 come from a single batched `game_flaws` read for the whole page. Inaccuracy
 counts come from the oracle columns (games.white_/black_inaccuracies) — never
-from game_flaws (D-03). Analysis state ("no engine analysis") is determined by
+from game_flaws. Analysis state ("no engine analysis") is determined by
 the eval-coverage gate on game_positions (not by game_flaws row presence).
 
-Flaw-stats (Phase 239) returns the analyzed-game count plus a per-time-control Flaws
+Flaw-stats returns the analyzed-game count plus a per-time-control Flaws
 Timeline. analyzed_n stays on the eval-coverage gate — a game analyzed with zero M+B
-flaws still counts toward it (Pitfall 6/RESEARCH §7).
+flaws still counts toward it.
 
-Chip curation (SEED-036): aggregate tags to the game level across all game_flaws
+Chip curation: aggregate tags to the game level across all game_flaws
 rows, drop any phase tag (opening/middlegame/endgame), emit one chip per
 remaining tag type (game-level dedupe), in a deterministic order.
 """
@@ -34,7 +33,7 @@ from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
     TacticOrientation,
-    _TACTIC_CHIP_CONFIDENCE_MIN,
+    MIN_TACTIC_CHIP_CONFIDENCE,
     _TEMPO_INT_TO_TAG,
     is_decided_lost,
     tactic_slot_visible,
@@ -104,10 +103,10 @@ from app.services.openings_service import (
 )
 
 # ---------------------------------------------------------------------------
-# Phase 109 eval chart helpers (LIBG-10) — Task 1 stubs, Task 2 implements
+# Eval chart helpers
 # ---------------------------------------------------------------------------
 
-# Tags that are user-framed and must be stripped from opponent flaw markers (D-03).
+# Tags that are user-framed and must be stripped from opponent flaw markers.
 _USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky"})
 
 
@@ -119,10 +118,10 @@ _TacticByPlyEntry = tuple[str | None, int | None, int | None, str | None, int | 
 def _derive_phase_transitions(positions: list[GamePosition]) -> PhaseTransitions:
     """First ply of middlegame (phase==1) and endgame (phase==2), first occurrence wins.
 
-    Quick 260714-rj5: extracted from _build_eval_series's main loop so there is
-    ONE derivation, not two — an unanalyzed card (no eval_series) still needs
-    phase_transitions to render the board's phase markers. No ply-0 transition
-    (D-06): ply 0 is the initial position, not a transition.
+    Shared by _build_eval_series and _build_card so there is ONE derivation, not
+    two — an unanalyzed card (no eval_series) still needs phase_transitions to
+    render the board's phase markers. No ply-0 transition: ply 0 is the initial
+    position, not a transition.
     """
     middlegame_ply: int | None = None
     endgame_ply: int | None = None
@@ -137,7 +136,7 @@ def _derive_phase_transitions(positions: list[GamePosition]) -> PhaseTransitions
 def _best_move_identity_plies(positions: list[GamePosition]) -> set[int]:
     """Plies where the played move identity-equals the stored engine best_move.
 
-    Quick 260717-rbn (Task 1): replays ONE chess.Board() over `positions` in ply
+    Replays ONE chess.Board() over `positions` in ply
     order. For each position with a move played, parses it via
     board.parse_san(pos.move_san) on the PRE-move board and compares it by
     Move-object equality to chess.Move.from_uci(pos.best_move) — never a raw
@@ -172,8 +171,8 @@ def _build_eval_series(
 
     Line perspective: white-perspective (eval_mate_to_expected_score/eval_cp_to_expected_score
     called with "white"). Flaw detection perspective: mover-POV drops via
-    _run_all_moves_pass (D-01/D-04). No DB access — positions are pre-fetched
-    by get_library_games (D-10: single batched query, no N+1).
+    _run_all_moves_pass. No DB access — positions are pre-fetched
+    by the caller in a single batched query (no N+1).
 
     Args:
         game: Game row with user_color, result, base_time_seconds, increment_seconds.
@@ -181,38 +180,37 @@ def _build_eval_series(
         tactic_by_ply: Optional dict mapping ply → (allowed_motif, allowed_conf,
                        allowed_depth, missed_motif, missed_conf, missed_depth) for
                        tactic chip + depth data on FlawMarkers.
-                       Sourced from game_flaws rows (Phase 126, TACUI-01 single-game
-                       card; Phase 128 D-07 extends to both orientation column sets).
+                       Sourced from game_flaws rows, with both orientation column sets.
                        None = no tactic chip data (default, preserves backward compat).
-                       Each motif/conf pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN
+                       Each motif/conf pair is None when below MIN_TACTIC_CHIP_CONFIDENCE
                        or when the DB column is NULL.
         best_moves_by_ply: Optional dict mapping ply -> GameBestMove candidate row
-                       (Phase 175, BOARD-01). None/missing entry -> EvalPoint.
+                       None/missing entry -> EvalPoint.
                        best_move_tier/maia_prob stay null (a stored row is not
-                       automatically a marker — Pitfall 3 — classify_best_move is
+                       automatically a marker: classify_best_move is
                        always called on the raw floats). maia_prob is populated
-                       ONLY when the tier is not "neither" (Pitfall 5).
+                       ONLY when the tier is not "neither".
         opening_ply_count: 1-based ply depth of the deepest opening-book match
-                       (Quick 260717-rbn), computed by the caller via
+                       computed by the caller via
                        find_opening_ply_count BEFORE calling this function.
-                       Gates the new best/good tiers to out-of-book plies
+                       Gates the best/good tiers to out-of-book plies
                        (pos.ply >= opening_ply_count) — book/theory plies never
                        get a best/good label. Defaults to 0 (no book gate).
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
-        - eval_series: white-perspective ES per ply (es=None for missing eval, D-05)
-        - flaw_markers: both-color B/M/I dots with is_user discriminator (D-01/D-07)
-        - phase_transitions: first ply of middlegame (phase==1) and endgame (phase==2) (D-06)
+        - eval_series: white-perspective ES per ply (es=None for missing eval)
+        - flaw_markers: both-color B/M/I dots with is_user discriminator
+        - phase_transitions: first ply of middlegame (phase==1) and endgame (phase==2)
     """
     all_moves = _run_all_moves_pass(positions)
-    # Quick 260717-rbn (Task 1): plies where the played move identity-equals the
+    # Plies where the played move identity-equals the
     # stored engine best_move — the noise-immune basis for the 'best' tier.
     identity_plies = _best_move_identity_plies(positions)
     eval_series: list[EvalPoint] = []
     flaw_markers: list[FlawMarker] = []
 
-    # Increment for _build_tags tempo computation (Phase 109: shared helper).
+    # Increment for _build_tags tempo computation (shared helper).
     increment = _resolve_increment(game)
 
     # Bug fix: daily (chess.com) and correspondence (lichess) games emit %clk
@@ -223,7 +221,7 @@ def _build_eval_series(
     # (game_positions.clock_seconds feeds time-management stats, out of scope).
     is_correspondence = is_correspondence_time_control(game.time_control_str)
 
-    # Per-color previous clock for move-time computation (Phase 109 feedback:
+    # Per-color previous clock for move-time computation (the
     # tooltip shows clock remaining + time spent on the move). clock_seconds is
     # the mover's remaining time AFTER the move; even ply = White, odd = Black.
     # Seed with the base time so move 0/1 (each side's first move) get a value.
@@ -231,9 +229,9 @@ def _build_eval_series(
     prev_clock: dict[int, float | None] = {0: base_time, 1: base_time}  # 0 = White, 1 = Black
 
     for pos in positions:
-        # White-perspective ES for the chart line (D-04).
+        # White-perspective ES for the chart line.
         # Use eval_mate_to_expected_score (hard 1.0/0.0) for the line only —
-        # NOT for drop math (Pitfall 1/2 in RESEARCH: _ply_to_es uses MATE_CP_EQUIVALENT).
+        # NOT for drop math (_ply_to_es uses MATE_CP_EQUIVALENT).
         if pos.eval_mate is not None:
             es: float | None = eval_mate_to_expected_score(pos.eval_mate, "white")
         elif pos.eval_cp is not None:
@@ -254,10 +252,10 @@ def _build_eval_series(
                 move_seconds = round(max(0.0, prior - clock + increment), 1)
             prev_clock[color] = clock
 
-        # Phase 175 (BOARD-01): pre-classified gem/great tier from the stored
+        # Pre-classified gem/great tier from the stored
         # game_best_moves row, via the SAME authoritative classify_best_move the
-        # FILT-01 filter's SQL twin agrees with (D-03b). Row presence alone is
-        # NEVER the marker (Pitfall 3) — classify_best_move is always called on
+        # filter's SQL twin agrees with. Row presence alone is
+        # NEVER the marker — classify_best_move is always called on
         # the raw floats; a [0.05, 0.10) margin row classifies "neither" here.
         best_move_tier: Literal["gem", "great", "best", "good"] | None = None
         best_move_maia_prob: float | None = None
@@ -270,14 +268,14 @@ def _build_eval_series(
                 best_row.second_cp,
                 best_row.second_mate,
                 mover_color_for_ply(pos.ply),
-                # Imported-eval divergence guard (Quick 260717-gmg): pos.eval_cp is
+                # Imported-eval divergence guard: pos.eval_cp is
                 # lichess's authoritative post-move %eval for a lichess-eval game;
                 # suppress the badge when our best_cp overrates it. Since played ==
                 # best for every candidate, pos.eval_cp describes the same resulting
-                # position as best_cp (both post-best-move). Phase 212 D-03: routed
+                # position as best_cp (both post-best-move). Routed
                 # through the single derivation point -- under
                 # BENCHMARK_HOMOGENIZE_EVAL_SOURCE, pos.eval_cp holds OUR engine's
-                # value while lichess_evals_at deliberately stays set (D-04), so
+                # value while lichess_evals_at deliberately stays set, so
                 # the guard's "pos.eval_cp is lichess's %eval" premise no longer
                 # holds and this read must follow the homogenized boolean, not the
                 # raw timestamp.
@@ -287,10 +285,10 @@ def _build_eval_series(
             )
             if tier != "neither":
                 best_move_tier = tier
-                # Pitfall 5: maia_prob populated ONLY alongside a non-null tier.
+                # maia_prob populated ONLY alongside a non-null tier.
                 best_move_maia_prob = best_row.maia_prob
 
-        # Quick 260717-rbn (Task 1): 'best'/'good' tiers, computed live (no
+        # 'best'/'good' tiers, computed live (no
         # stored row involved). Precedence gem > great > best > good > null —
         # only applied when gem/great left best_move_tier unset. Gated to
         # out-of-book plies (pos.ply >= opening_ply_count) with a move played.
@@ -323,7 +321,7 @@ def _build_eval_series(
             )
         )
 
-        # Flaw markers from the mover-POV kernel dict (both colors, D-01/D-02).
+        # Flaw markers from the mover-POV kernel dict (both colors).
         # The kernel skips plies with missing eval — no entry → no marker.
         entry = all_moves.get(pos.ply)
         if entry is None:
@@ -358,9 +356,9 @@ def _build_eval_series(
                     increment,
                 )
         else:
-            tags = []  # inaccuracy — no tags (D-03)
-        # Phase 126 (TACUI-01): tactic chip fields from pre-fetched game_flaws data.
-        # Phase 128 D-07: both orientation column sets on FlawMarker (orientation-labeled).
+            tags = []  # inaccuracy — no tags
+        # Tactic chip fields from pre-fetched game_flaws data.
+        # Both orientation column sets on FlawMarker (orientation-labeled).
         tac_allowed_motif: str | None = None
         tac_allowed_conf: int | None = None
         tac_allowed_depth: int | None = None
@@ -430,12 +428,12 @@ def _build_opponent_tags(
     game: Game,
     increment: float,
 ) -> list[FlawTag]:
-    """Tags for an opponent flaw dot — mover-framed only (D-03 resolution).
+    """Tags for an opponent flaw dot — mover-framed only.
 
     Impact tags (reversed/squandered) are outcome-independent (mover-relative by
-    definition). Flips user_result to opponent's perspective for lucky
+    definition). Flips mover_result to opponent's perspective for lucky
     (_is_unpunished). Strips 'miss' and 'lucky' which are user-framed
-    and meaningless/misleading from the opponent's perspective (RESEARCH D-03 Gray Area).
+    and meaningless/misleading from the opponent's perspective.
     """
     opponent_color: Literal["white", "black"] = "black" if game.user_color == "white" else "white"
     opponent_result = derive_user_result(game.result, opponent_color)
@@ -456,7 +454,7 @@ def _build_opponent_tags(
 # ---------------------------------------------------------------------------
 # Canonical chip order — a subset of flaws_service.FlawTag with all phase
 # tags removed. Defines the deterministic ordering of curated card chips.
-# game_flaws rows are M+B-only (D-03), so inaccuracy tags never appear here.
+# game_flaws rows are M+B-only, so inaccuracy tags never appear here.
 _CHIP_ORDER: tuple[FlawTag, ...] = (
     "miss",
     "lucky",
@@ -475,7 +473,7 @@ def _curate_chips_from_rows(flaw_rows: list[GameFlaw]) -> list[FlawTag]:
     - Boolean columns: is_miss, is_lucky, is_reversed, is_squandered
     - Tempo column: _TEMPO_INT_TO_TAG lookup (None → skip)
     Phase tags are excluded (opening/middlegame/endgame per _CHIP_ORDER curation).
-    One chip per remaining tag type (game-level dedupe), in _CHIP_ORDER (SEED-036).
+    One chip per remaining tag type (game-level dedupe), in _CHIP_ORDER.
     """
     present: set[FlawTag] = set()
     for row in flaw_rows:
@@ -499,7 +497,7 @@ def _build_tactic_by_ply_entry(
 ) -> tuple[int, _TacticByPlyEntry] | None:
     """Compute one row's tactic-by-ply entry, or `None` if neither slot is visible.
 
-    Extracted from `_build_card`'s per-row tactic-slot loop (216-06, zero
+    Extracted from `_build_card`'s per-row tactic-slot loop (zero
     behavior change): the decided-lost lookup, both `tactic_slot_visible`
     gates, and the motif/confidence/depth resolution for the allowed and
     missed slots are exactly as the inline code it replaces. Visibility
@@ -578,30 +576,30 @@ def _build_card(
     tactic_flaw_rows: list[GameFlaw] | None = None,
     best_moves_by_ply: dict[int, GameBestMove] | None = None,
 ) -> GameFlawCard:
-    """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
+    """Build one GameFlawCard from pre-fetched game_flaws rows.
 
-    No DB access — data is pre-fetched by get_library_games in three batch queries:
-    fetch_page_game_flaws (chips + M+B counts), fetch_page_analyzed_set
-    (analysis_state), and fetch_page_eval_positions (eval chart data). This
-    eliminates the per-game classify_game_flaws kernel re-call.
+    No DB access: everything is pre-fetched by the caller in page-batched queries
+    (no N+1), e.g. fetch_page_game_flaws (chips + M+B counts),
+    fetch_page_analyzed_set (analysis_state) and fetch_page_eval_positions (eval
+    chart data). No per-game classify_game_flaws kernel re-call.
 
     Inaccuracy count comes from the oracle columns (games.white_/black_inaccuracies)
-    — never from game_flaws (D-03). NULL oracle values default to 0.
+    — never from game_flaws. NULL oracle values default to 0.
 
     "No engine analysis" state is gated on the eval-coverage check (is_analyzed),
     NOT on game_flaws row count — an analyzed game with zero M+B flaws still
-    returns analysis_state="analyzed" (LIBG-02).
+    returns analysis_state="analyzed".
 
-    Phase 109 (LIBG-10): when is_analyzed and positions are provided, the three
-    new eval chart fields (eval_series, flaw_markers, phase_transitions) are
+    When is_analyzed and positions are provided, the three
+    eval chart fields (eval_series, flaw_markers, phase_transitions) are
     populated via _build_eval_series. Unanalyzed games always get None for
-    eval_series/flaw_markers (no evals exist to synthesize). Quick 260714-rj5:
-    when positions are provided for an unanalyzed game (single-game path only),
+    eval_series/flaw_markers (no evals exist to synthesize). When positions
+    are provided for an unanalyzed game (single-game path only),
     moves and phase_transitions ARE populated — they derive from move_san/phase
     on game_positions, not from evals, so an unanalyzed game can still render a
     navigable board.
 
-    Quick 260702-mnd: the card now surfaces every valid tactic slot regardless of
+    The card surfaces every valid tactic slot regardless of
     the active tactic/severity filter — a selected card is a complete picture of
     that game's flaws, consistent with the context chips (which already ignore
     every filter, see _curate_chips_from_rows). Game SELECTION (which games
@@ -609,10 +607,10 @@ def _build_card(
     function only decides which tags render on an already-selected card. The two
     validity gates that remain are: (1) decided_lost — the pre-move position was
     not already decisively lost for the mover, and (2) the confidence floor
-    (_TACTIC_CHIP_CONFIDENCE_MIN, inside tactic_slot_visible). Both gate
+    (MIN_TACTIC_CHIP_CONFIDENCE, inside tactic_slot_visible). Both gate
     correctness/noise, not filter membership.
 
-    Quick 260628-u7d: tactic_flaw_rows is a both-color (ungated) row list used
+    tactic_flaw_rows is a both-color (ungated) row list used
     ONLY to populate the per-ply tactic map for eval-chart tooltips — it may
     include opponent rows. When None, falls back to flaw_rows so any other caller
     keeps exact existing behavior. severity_counts, chips, and all stats still
@@ -626,7 +624,7 @@ def _build_card(
         severity_counts = None
         chips = []
         analysis_state = "no_engine_analysis"
-        # Quick 260714-rj5: unanalyzed games have no evals — do NOT synthesize an
+        # Unanalyzed games have no evals — do NOT synthesize an
         # all-None eval series — but moves come from game_positions.move_san and
         # do NOT depend on evals, so an unanalyzed game can still render a
         # navigable board (fixes the empty-board dead end for unanalyzed/pending
@@ -639,11 +637,11 @@ def _build_card(
             [p.move_san for p in positions if p.move_san is not None] if positions else None
         )
     else:
-        # M+B counts from game_flaws rows (D-02); inaccuracy from oracle (D-03).
+        # M+B counts from game_flaws rows; inaccuracy from oracle.
         mistake_count = sum(1 for r in flaw_rows if r.severity == 1)
         blunder_count = sum(1 for r in flaw_rows if r.severity == 2)
-        # Oracle columns come from the chess.com/lichess API analysis (acceptable
-        # approximation for the card display; D-03 keeps inaccuracy off game_flaws).
+        # Oracle columns come from lichess analysis or our engine pass; game_flaws is
+        # M+B only, so inaccuracies are read from these columns.
         if game.user_color == "white":
             inaccuracy_count = game.white_inaccuracies or 0
         else:
@@ -655,16 +653,16 @@ def _build_card(
         )
         chips = _curate_chips_from_rows(flaw_rows)
         analysis_state = "analyzed"
-        # Phase 109 (LIBG-10): populate eval chart fields for analyzed games.
+        # Populate eval chart fields for analyzed games.
         if positions:
-            # Quick 260702-mnd: build tactic_by_ply via the shared per-slot predicate
+            # Build tactic_by_ply via the shared per-slot predicate
             # (tactic_slot_visible), called with filter-neutral arguments so it only
             # applies the two validity gates (decided_lost + confidence floor) — no
             # filter/severity pruning. Game SELECTION is enforced upstream by
             # query_filtered_games (D-1: the severity gate that used to live here is
             # removed too, matching the context chips which never pruned by severity).
             # Build a ply → GamePosition index once for decided-lost lookups (per-row ply N-1).
-            # Quick 260628-u7d: tactic_flaw_rows may include opponent rows (both movers),
+            # tactic_flaw_rows may include opponent rows (both movers),
             # so mover_is_white is derived per-ply instead of assuming mover == user.
             pos_by_ply: dict[int, GamePosition] = {p.ply: p for p in positions}
             tactic_by_ply: dict[int, _TacticByPlyEntry] = {}
@@ -680,7 +678,7 @@ def _build_card(
             # SAN mainline for client-side per-ply board reconstruction on chart
             # hover. move_san is None on the terminal position only — filter it out
             # so moves[i] aligns with ply i (positions are ply-ordered). Quick
-            # 260717-rbn: computed BEFORE _build_eval_series (not after, as
+            # computed BEFORE _build_eval_series (not after, as
             # previously) so opening_ply_count is available to gate the new
             # best/good tiers to out-of-book plies.
             moves_data = [p.move_san for p in positions if p.move_san is not None]
@@ -700,17 +698,17 @@ def _build_card(
             phase_transition_data = None
             moves_data = None
 
-    # Phase 164 (SEED-093): Lichess-Blitz-normalized ratings for Maia ELO slider
+    # Lichess-Blitz-normalized ratings for Maia ELO slider
     # conditioning. Correspondence check runs FIRST (chess.com Daily / lichess
     # correspondence lack a real-time-play equivalent in either ChessGoals
     # table) before dispatching by (platform, time_control_bucket).
     is_correspondence = is_correspondence_time_control(game.time_control_str)
-    # BUG FIX (Phase 167, RESEARCH Pitfall 3): normalize_to_lichess_blitz has only
+    # BUG FIX: normalize_to_lichess_blitz has only
     # chess.com/lichess branches (if platform == "chess.com": ... else: # lichess).
-    # Once Platform gained "flawchess" (Plan 01, D-17), a flawchess game's rating
+    # Once Platform gained "flawchess", a flawchess game's rating
     # would silently fall into the lichess else-branch and get re-run through the
     # Table-2 inversion for non-blitz buckets — but a stored flawchess rating is
-    # ALREADY lichess-blitz-equivalent by construction of anchor_rating (STORE-03).
+    # ALREADY lichess-blitz-equivalent by construction of anchor_rating.
     # Guard both call sites so a flawchess rating passes through unchanged instead
     # of being double-converted.
     is_flawchess = game.platform == "flawchess"
@@ -743,11 +741,11 @@ def _build_card(
         )
     )
 
-    # Phase 172 (SEED-106 D-06): computed unconditionally for every card (list
+    # Computed unconditionally for every card (list
     # mode included), not just the single-game path. This is a few dozen dict
     # lookups against an already-loaded module-level trie (tens of
     # microseconds) — gating it to get_library_game alone would fork
-    # _build_card's contract for no measurable gain (RESEARCH Open Question 1).
+    # _build_card's contract for no measurable gain.
     opening_ply_count = find_opening_ply_count(moves_data) if moves_data else 0
 
     return GameFlawCard(
@@ -771,7 +769,7 @@ def _build_card(
         time_control_str=game.time_control_str,
         result_fen=game.result_fen,
         severity_counts=severity_counts,
-        # Phase 179 (SEED-112, D-01): canonical Phase 178 accuracy columns only —
+        # Canonical accuracy columns only —
         # deliberately never game.white_accuracy_imported / black_accuracy_imported.
         white_accuracy=game.white_accuracy,
         black_accuracy=game.black_accuracy,
@@ -793,7 +791,7 @@ async def get_library_game(
 ) -> GameFlawCard | None:
     """Return a single GameFlawCard for any game, by id.
 
-    Quick 260717-agv: this is the analysis-page game-view path
+    This is the analysis-page game-view path
     (GET /library/games/{game_id}, used only by the Analysis board). It is
     intentionally NOT owner-scoped — any authenticated user may inspect any
     game by url (e.g. /analysis?game_id=640125) for opponent scouting and game
@@ -806,15 +804,10 @@ async def get_library_game(
     every downstream batch query is passed owner_id (a different requester would
     otherwise get empty rows).
 
-    Reuses _build_card with the same three batch queries as get_library_games
-    (fetch_page_analyzed_set, fetch_page_game_flaws, fetch_page_eval_positions),
-    called with [game_id]. Queries run sequentially on the one AsyncSession
+    Reuses _build_card with the same page-batched fetches as get_library_games
+    (fetch_page_analyzed_set, fetch_page_game_flaws, fetch_page_eval_positions and
+    others), called with [game_id]. Queries run sequentially on the one AsyncSession
     (no asyncio.gather — CLAUDE.md §"Never use asyncio.gather on the same AsyncSession").
-
-    Quick 260702-mnd (D-3): the tactic/severity filter params this endpoint used
-    to accept existed ONLY to drive per-slot pruning in _build_card, which is now
-    removed. The single-game path does no game selection, so those params had no
-    other purpose — dropped end-to-end (router, service, frontend client/hook).
     """
     game = await session.get(Game, game_id)
     if game is None:
@@ -839,7 +832,7 @@ async def get_library_game(
     # Sequential call on the same AsyncSession (no asyncio.gather per CLAUDE.md).
     active_map = await library_repository.fetch_page_active_eval_status(session, owner_id, game_ids)
 
-    # Quick 260714-rj5: always fetch positions on the single-game path (not
+    # Always fetch positions on the single-game path (not
     # gated on is_analyzed) — moves come from game_positions.move_san, which
     # does not depend on evals, so an unanalyzed game can still render a
     # navigable board. fetch_page_eval_positions has no analyzed-ness predicate
@@ -848,7 +841,7 @@ async def get_library_game(
         await library_repository.fetch_page_eval_positions(session, owner_id, game_ids)
     ).get(game_id, [])
 
-    # Phase 175 (BOARD-01): batch-fetch stored best-move candidate rows for this
+    # Batch-fetch stored best-move candidate rows for this
     # game, same already-user-scoped game_ids list as fetch_page_eval_positions
     # (fetch_page_best_moves has no user_id column of its own — IDOR safety comes
     # from this caller-side scoping).
@@ -868,14 +861,14 @@ async def get_library_game(
 
 
 # ---------------------------------------------------------------------------
-# Phase 208 (D-11/D-12, PASTE-05/09) — Library-scoped "Pasted" opt-in
+# Library-scoped "Pasted" opt-in
 # ---------------------------------------------------------------------------
 
-# The Games tab's default platform population (LIBG-08 substitution below).
-# `flawchess` is in this list because Phase 167 D-03 opted bot games back INTO
+# The Games tab's default platform population.
+# `flawchess` is in this list because bot games are opted back INTO
 # the Library (the opposite of the default-exclusion the rest of the app
-# applies to them). `"pgn"` is deliberately NOT in it: D-11 makes pasted games
-# opt-in, the OPPOSITE of how bot games were handled — a user pastes games
+# applies to them). `"pgn"` is deliberately NOT in it: pasted games are
+# opt-in, the OPPOSITE of how bot games are handled — a user pastes games
 # that are frequently NOT their own, so they must stay hidden until the
 # Library's explicit "Pasted" chip asks for them. This list must NEVER gain
 # "pgn".
@@ -888,18 +881,18 @@ def resolve_library_platforms(
     include_pasted: bool,
     surface: Literal["games", "analytics"],
 ) -> list[str]:
-    """Resolve the platform list a Library surface should query (D-11/D-12).
+    """Resolve the platform list a Library surface should query.
 
     Each Library surface has its own correct default population, so a single
     shared base would silently change one of them:
     - surface="games" (GET /library/games): the Games tab shows flawchess
-      bot-practice games by Phase 167 D-03, so its base is
+      bot-practice games, so its base is
       LIBRARY_GAMES_BASE_PLATFORMS (chess.com/lichess/flawchess).
     - surface="analytics" (flaw-stats/flaws/flaw-comparison/tactic-comparison):
       these surfaces do NOT show bot games — their base is
       ANALYTICS_INCLUDED_PLATFORMS (chess.com/lichess), the explicit-list
       equivalent of the `platform=None` default through apply_game_filters
-      (Plan 02's test_analytics_included_platforms_list_equals_default keeps
+      (test_analytics_included_platforms_list_equals_default keeps
       the two readings equal).
 
     When `platform` is already explicit (caller passed a list), that list is
@@ -946,33 +939,34 @@ async def get_library_games(
     has_great: bool | None = None,
     include_pasted: bool = False,
 ) -> LibraryGamesResponse:
-    """Return the flaw-filtered paginated games archive (LIBG-08).
+    """Return the flaw-filtered paginated games archive.
 
-    D-02 migration: no per-game kernel re-call. Two batch queries cover the page:
+    No per-game kernel re-call; page-batched queries cover the page (game_flaws,
+    analyzed set, eval positions, eval status, best moves). The two that decide
+    chips, counts and analysis state:
     1. fetch_page_game_flaws — one query for all game_flaws rows (chips + M+B counts)
     2. fetch_page_analyzed_set — one query for the eval-coverage-analyzed subset
 
     Inaccuracy count comes from oracle columns (games.white_/black_inaccuracies),
-    never from game_flaws (D-03). Analysis state is gated on eval coverage, not
-    on game_flaws row presence (LIBG-02 — never a false 0/0/0).
+    never from game_flaws. Analysis state is gated on eval coverage, not
+    on game_flaws row presence (never a false 0/0/0).
 
-    Phase 167 D-03: apply_game_filters now excludes platform='flawchess' by
-    default (D-02, STORE-07). The Library Games tab is the one surface that
-    SHOULD show flawchess bot-practice games, so when the caller passes no
-    explicit platform filter, substitute an explicit list covering all three
-    platforms to opt back in. NOTE: this alone is not sufficient for a bot
-    game to actually surface here — the router's `opponent_type` query param
-    still defaults to "human" (RESEARCH Pitfall 5), which independently
-    excludes is_computer_game=True rows; wiring that default/filter-chip is
-    Phase 171's job, out of scope here.
+    apply_game_filters excludes platform='flawchess' by default. The Library
+    Games tab is the one surface that SHOULD show flawchess bot-practice games,
+    so when the caller passes no explicit platform filter, substitute an explicit
+    list covering all three platforms to opt back in. NOTE: this alone is not
+    sufficient for a bot game to actually surface here — the router's
+    `opponent_type` query param defaults to "human", which independently
+    excludes is_computer_game=True rows, so the caller must also send
+    opponent_type="bot" or "all".
 
-    Phase 208 (D-11/D-12, PASTE-05/09): `include_pasted` is the Library-only
+    `include_pasted` is the Library-only
     opt-in that reveals `platform='pgn'` games, off by default, additive to
     whatever population this tab already shows — resolved through
     resolve_library_platforms (surface="games") so pasted games join the
     existing chess.com/lichess/flawchess default rather than replacing it.
 
-    has_gem / has_great (FILT-01, D-04/D-05): threaded straight through to
+    has_gem / has_great: threaded straight through to
     query_filtered_games -> apply_game_filters -> best_move_exists_from_table,
     no transformation at this layer.
     """
@@ -1028,7 +1022,7 @@ async def get_library_games(
             session, user_id, page_game_ids
         )
 
-        # Phase 109 (D-02/D-10): batch-load positions for analyzed games only (no N+1).
+        # Batch-load positions for analyzed games only (no N+1).
         # Scoped to analyzed_set so unanalyzed games incur zero position rows.
         analyzed_game_ids = [gid for gid in page_game_ids if gid in analyzed_set]
         page_positions = await library_repository.fetch_page_eval_positions(
@@ -1041,7 +1035,7 @@ async def get_library_games(
             session, user_id, page_game_ids
         )
 
-        # Phase 175 (BOARD-01): batch-fetch stored best-move candidate rows,
+        # Batch-fetch stored best-move candidate rows,
         # scoped to the same analyzed_game_ids as page_positions (unanalyzed
         # games have no eval_series to attach tiers to). No user_id scoping of
         # its own — IDOR safety comes from this already-user-scoped id list.
@@ -1073,7 +1067,7 @@ async def get_library_games(
 
 
 # ---------------------------------------------------------------------------
-# Stats panel (LIBG-09) — GET /api/library/flaw-stats
+# Stats panel — GET /api/library/flaw-stats
 # ---------------------------------------------------------------------------
 
 _PER_100 = 100.0
@@ -1149,7 +1143,7 @@ def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
 
 
 def _compute_flaw_trend_by_tc(rows: Sequence[Any]) -> list[FlawTrendTc]:
-    """One Flaws Timeline series per time control (Phase 239 D-00k).
+    """One Flaws Timeline series per time control.
 
     Buckets the trend rows by their tc column and runs the unchanged
     _compute_flaw_trend per TC in LIBRARY_TC_ORDER. A TC is emitted only when it has
@@ -1189,7 +1183,7 @@ async def get_flaw_stats(
     color: str | None = None,
     include_pasted: bool = False,
 ) -> FlawStatsResponse:
-    """Analyzed-game count + per-TC Flaws Timeline over the filtered set (LIBG-09, Phase 239).
+    """Analyzed-game count + per-TC Flaws Timeline over the filtered set.
 
     Pipeline:
     1. count_filtered_and_analyzed — analyzed_n (eval-coverage gate). An empty
@@ -1198,11 +1192,11 @@ async def get_flaw_stats(
        control by _compute_flaw_trend_by_tc.
 
     analyzed_n derives from the eval-coverage subquery — NOT from game_flaws
-    row counts (Pitfall 6). An analyzed game with zero M+B flaws counts toward
-    analyzed_n. The severity counts, rates and tag distribution this endpoint used to
-    return are gone (Phase 239 D-00e/D-00k): the tiles read the flaw-comparison bullets.
+    row counts. An analyzed game with zero M+B flaws counts toward
+    analyzed_n. This endpoint returns no severity counts, rates or tag distribution:
+    the tiles read the flaw-comparison bullets.
 
-    Phase 208 (D-11/D-12, PASTE-05/09): `include_pasted` opts pasted games into
+    `include_pasted` opts pasted games into
     this analytics surface's own default population (resolve_library_platforms,
     surface="analytics" — chess.com/lichess, NOT flawchess), off by default.
     """
@@ -1257,10 +1251,10 @@ async def get_flaw_stats(
 
 
 # ---------------------------------------------------------------------------
-# Flaws subtab (Plan 108-05) — GET /api/library/flaws
+# Flaws subtab — GET /api/library/flaws
 # ---------------------------------------------------------------------------
 
-# Default severity tiers when none are specified (D-08: M+B only)
+# Default severity tiers when none are specified (M+B only)
 _DEFAULT_SEVERITY: list[FlawSeverity] = ["mistake", "blunder"]
 
 
@@ -1285,15 +1279,15 @@ async def get_library_flaws(
     limit: int,
     include_pasted: bool = False,
 ) -> LibraryFlawsResponse:
-    """Paginated per-flaw list for the Flaws subtab (Plan 108-05, D-07/D-08).
+    """Paginated per-flaw list for the Flaws subtab.
 
     Each row is one flawed position from game_flaws, ordered recent-first
-    (g.played_at DESC, f.ply ASC per D-07), with page size 20 per D-08.
+    (g.played_at DESC, f.ply ASC), with page size 20.
 
-    Severity defaults to M+B when unset (D-08). User-scoped (IDOR: user_id
+    Severity defaults to M+B when unset. User-scoped (IDOR: user_id
     comes from the authenticated user only — the caller must never derive it
     from a request parameter). Predicate shared with the Games EXISTS filter
-    (build_flaw_filter_clauses) to enforce cross-tab unification (SEED-038).
+    (build_flaw_filter_clauses) to enforce cross-tab unification.
 
     Args:
         session: AsyncSession for DB access.
@@ -1304,8 +1298,8 @@ async def get_library_flaws(
         time_control / platform / rated / opponent_type / from_date / to_date /
           color: Game-metadata filters.
         offset: Pagination offset (>= 0).
-        limit: Page size (1..100, default 20 per D-08).
-        include_pasted: Phase 208 (D-11/D-12, PASTE-05/09) — the Library-only
+        limit: Page size (1..100, default 20).
+        include_pasted: the Library-only
           opt-in that reveals `platform='pgn'` games on the Flaws tab, off by
           default, resolved through resolve_library_platforms(surface="analytics")
           so it never admits flawchess bot games (this surface's own default
@@ -1349,16 +1343,16 @@ async def get_library_flaws(
 
 
 # ---------------------------------------------------------------------------
-# Phase 115 — You-vs-Opponent flaw comparison (FLAWCMP-01/03/04/05)
+# You-vs-Opponent flaw comparison
 # ---------------------------------------------------------------------------
 
 # Named constant — no magic number (CLAUDE.md no-magic-numbers rule).
 # Matches §5 cohort inclusion basis: only users with >= 20 analyzed games
 # were included in the benchmark pool, so the user's delta and the zone
-# rest on comparable sample sizes (D-09).
+# rest on comparable sample sizes.
 FLAW_COMPARISON_GATE: int = 20
 
-# Phase 239 D-14: a cell gets a red/green verdict only when the 99% CI on its mean
+# A cell gets a red/green verdict only when the 99% CI on its mean
 # per-game gap excludes 0. The test is score_confidence.compute_paired_difference_test
 # (shared with the endgame pages). The frontend checks the band position separately: a
 # gap outside the band whose CI still covers 0 renders neutral, like a typical one.
@@ -1368,7 +1362,7 @@ FLAW_COMPARISON_GATE: int = 20
 def _paired_gap_test(
     deltas: Sequence[float],
 ) -> tuple[float, float | None, float | None, float | None, bool]:
-    """Return (mean, p_value, ci_low, ci_high, significant) for per-game gaps (D-14).
+    """Return (mean, p_value, ci_low, ci_high, significant) for per-game gaps.
 
     p_value is None below the helper's n-gate and the CI is None below two games
     (compute_paired_difference_test semantics); significant is the 99% CI excluding 0.
@@ -1377,12 +1371,12 @@ def _paired_gap_test(
     return mean, p_value, ci_low, ci_high, ci_excludes(0.0, ci_low, ci_high)
 
 
-# Phase 239 D-02: TC order of the per-TC payloads (fast to slow, same as the TC switch).
+# TC order of the per-TC payloads (fast to slow, same as the TC switch).
 LIBRARY_TC_ORDER: Final[tuple[TimeControlBucket, ...]] = ("bullet", "blitz", "rapid", "classical")
 
 
 def _bucket_rows_by_tc(rows: Sequence[Any]) -> dict[str, list[Any]]:
-    """Group per-game rows by their tc column (Phase 239 D-02).
+    """Group per-game rows by their tc column.
 
     One fetched row set serves every TC, so the switch never costs an extra query.
     """
@@ -1398,13 +1392,13 @@ def _build_flaw_bullet(
     deltas: list[float],
     player_rates: list[float],
     opp_rates: list[float],
-    p_total: int,
-    o_total: int,
+    player_total: int,
+    opp_total: int,
 ) -> FlawBullet:
     """Build one FlawBullet from the per-game accumulators of one metric in one TC."""
     band = flaw_delta_zone(metric, tc)
-    if p_total == 0 and o_total == 0:
-        # Zero-event: no events on either side, render muted placeholder (D-11)
+    if player_total == 0 and opp_total == 0:
+        # Zero-event: no events on either side, render muted placeholder
         return FlawBullet(
             tag=metric,
             delta=None,
@@ -1429,8 +1423,8 @@ def _build_flaw_bullet(
         player_rate=sum(player_rates) / len(player_rates) if player_rates else 0.0,
         opp_rate=sum(opp_rates) / len(opp_rates) if opp_rates else 0.0,
         p_value=p_value,
-        player_events=p_total,
-        opp_events=o_total,
+        player_events=player_total,
+        opp_events=opp_total,
         zone_lo=band.zone_lo,
         zone_hi=band.zone_hi,
         has_zone=True,
@@ -1484,9 +1478,8 @@ def _compute_bullets(rows: Sequence[Any], tc: TimeControlBucket) -> list[FlawBul
     Each row has: game_id, tc, user_moves, player_<tag>, opp_<tag> for all 12 tags.
     For each metric: _paired_series collects per-game deltas (player - opp) /
     user_moves * 100, the per-game player and opponent rates, and total event counts.
-    Zero-event bullet: both sides = 0 across all games → delta=None (not 0.0, D-11).
-    Zone bounds come from the per-TC registry via flaw_delta_zone(metric, tc)
-    (D-07; each TC has its own band since quick 261014-rux).
+    Zero-event bullet: both sides = 0 across all games → delta=None (not 0.0).
+    Zone bounds come from the per-TC registry via flaw_delta_zone(metric, tc).
     """
     bullets: list[FlawBullet] = []
     for tag in FLAW_DELTA_METRICS:
@@ -1513,7 +1506,7 @@ def _build_tempo_phase_cell(
 ) -> TempoPhaseCell:
     """Build one crossed TempoPhaseCell; mirrors _build_flaw_bullet.
 
-    The band comes from tempo_phase_zone (quick 261014-qj8): None for the degenerate
+    The band comes from tempo_phase_zone: None for the degenerate
     low_clock x opening cell (has_zone False, zones 0.0), set on both return paths.
     """
     band = tempo_phase_zone(tempo, phase, tc)
@@ -1559,11 +1552,11 @@ def _build_tempo_phase_cell(
 
 
 def _compute_tempo_phase_cells(rows: Sequence[Any], tc: TimeControlBucket) -> list[TempoPhaseCell]:
-    """The 9 crossed tempo x phase cells of one TC, phase-major (quick 261014-pb9).
+    """The 9 crossed tempo x phase cells of one TC, phase-major.
 
     Same paired per-100-user-moves machinery as the bullets, over the crossed COUNT
     FILTER columns. Flaws with NULL tempo are counted in no cell. Each cell carries its
-    benchmark band for this TC (quick 261014-qj8, per-TC since 261014-rux).
+    benchmark band for this TC.
     """
     cells: list[TempoPhaseCell] = []
     for phase in TEMPO_PHASE_PHASES:
@@ -1593,22 +1586,22 @@ async def get_flaw_comparison(
     color: str | None = None,
     include_pasted: bool = False,
 ) -> FlawComparisonResponse:
-    """Per-TC you-vs-opponent flaw comparison over the filtered analyzed set (Phase 115, 239).
+    """Per-TC you-vs-opponent flaw comparison over the filtered analyzed set.
 
     Pipeline:
     1. count_analyzed_by_tc: analyzed games per time control within the current
-       filters (the sidebar TC filter narrows the list, D-02). No analyzed games at
+       filters (the sidebar TC filter narrows the list). No analyzed games at
        all → tcs=[].
     2. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (42 COUNT FILTER
        columns plus the tc column); sequential awaits only, never gather on the session.
     3. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC,
        zone bounds from the per-TC registry; also the 9 crossed tempo x phase
        cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
-       for below-gate TCs, so tiles can show rates (D-03); below_gate is flagged.
+       for below-gate TCs, so tiles can show rates; below_gate is flagged.
 
-    IDOR guard (T-115-01): user_id is from current_active_user, never a request param.
+    IDOR guard: user_id is from current_active_user, never a request param.
 
-    Phase 208 (D-11/D-12, PASTE-05/09): `include_pasted` opts pasted games into
+    `include_pasted` opts pasted games into
     this analytics surface's own default population (resolve_library_platforms,
     surface="analytics"), off by default.
     """
@@ -1683,21 +1676,15 @@ async def get_flaw_comparison(
 
 
 # ---------------------------------------------------------------------------
-# Phase 126 — Tactic comparison (TACCMP-01/02/03)
+# Tactic comparison
 # ---------------------------------------------------------------------------
 
 # Named constant — no magic number (CLAUDE.md no-magic-numbers rule).
 # Mirrors FLAW_COMPARISON_GATE: same minimum analyzed-game floor so the section
-# gate is consistent with the flaw comparison section (D-03).
+# gate is consistent with the flaw comparison section.
 TACTIC_COMPARISON_GATE: int = 20
 
-# Confidence threshold for chip display (D-09). Re-exported from library_repository
-# where it gates the query_flaws row build; named here so callers import from the
-# service layer (MIN_TACTIC_CHIP_CONFIDENCE is the public constant name per PATTERNS).
-MIN_TACTIC_CHIP_CONFIDENCE: int = _TACTIC_CHIP_CONFIDENCE_MIN
-
-
-# Phase 239 D-00h: tactic gaps read per 100 games. The per-game counts are multiplied once,
+# Tactic gaps read per 100 games. The per-game counts are multiplied once,
 # in _compute_tactic_bullets; the mean and CI scale linearly and the p-value is
 # scale-invariant, so nothing downstream rescales.
 PER_100_GAMES: float = 100.0
@@ -1717,7 +1704,7 @@ def _build_tactic_bullet(
     zone_lo = band.zone_lo if band is not None else 0.0
     zone_hi = band.zone_hi if band is not None else 0.0
     if you_total == 0 and opp_total == 0:
-        # Zero-event family-side: delta=None (mirrors the FlawBullet zero-event pattern, D-11).
+        # Zero-event family-side: delta=None (mirrors the FlawBullet zero-event pattern).
         return TacticBullet(
             family=family,
             orientation=orientation,
@@ -1762,11 +1749,11 @@ def _compute_tactic_bullets(
     """Aggregate one TC's per-game rows into the 19 TacticBullets of one orientation.
 
     Each row has: game_id, tc, player_{family}, opp_{family} for every family in
-    TACTIC_FAMILIES. Per game, the rate is the count times PER_100_GAMES (Phase 239
-    D-00h), so a single game with one missed fork reads 100.0. Bullets come back in
+    TACTIC_FAMILIES. Per game, the rate is the count times PER_100_GAMES, so a
+    single game with one missed fork reads 100.0. Bullets come back in
     TACTIC_FAMILIES order with no ranking or selection; get_tactic_comparison interleaves
     the two orientations. Zone bounds come from the tactic registry via
-    tactic_delta_zone(family, orientation, tc) (D-11); zero-event family: delta=None.
+    tactic_delta_zone(family, orientation, tc); zero-event family: delta=None.
     """
     bullets: list[TacticBullet] = []
     for family in TACTIC_FAMILIES:
@@ -1789,7 +1776,7 @@ def _compute_tactic_bullets(
 def _interleave_tactic_bullets(
     missed: Sequence[TacticBullet], allowed: Sequence[TacticBullet]
 ) -> list[TacticBullet]:
-    """Fixed payload order: per family, missed bullet then allowed bullet (D-00h)."""
+    """Fixed payload order: per family, missed bullet then allowed bullet."""
     return [bullet for pair in zip(missed, allowed, strict=True) for bullet in pair]
 
 
@@ -1810,12 +1797,12 @@ async def get_tactic_comparison(
     tactic_families: Sequence[str] | None = None,
     include_pasted: bool = False,
 ) -> TacticComparisonResponse:
-    """Per-TC tactic motif you-vs-opponent comparison, per 100 games (Phase 126/129/239).
+    """Per-TC tactic motif you-vs-opponent comparison, per 100 games.
 
     Returns one TacticComparisonTc per time control that the filters allow and that has
-    at least one analyzed game (D-02), ordered bullet..classical. Each carries all 19
+    at least one analyzed game, ordered bullet..classical. Each carries all 19
     families x missed/allowed in fixed FAMILY_TO_MOTIF_INTS order (missed before allowed),
-    also when the TC is below the 20-game gate (D-03). No ranking, no top-N (D-00h).
+    also when the TC is below the 20-game gate. No ranking, no top-N.
 
     Pipeline:
     1. count_analyzed_by_tc: analyzed games per TC under the current filters
@@ -1824,11 +1811,11 @@ async def get_tactic_comparison(
     2. fetch_tactic_comparison called TWICE (once per orientation), sequential awaits
        only, never gather on the session.
     3. _bucket_rows_by_tc + _compute_tactic_bullets: mean + Wald-z CI per family per
-       orientation per TC, zone bounds from the tactic registry (D-11).
+       orientation per TC, zone bounds from the tactic registry.
 
-    IDOR guard (T-126-01, T-239-08): user_id is from current_active_user, never a request param.
+    IDOR guard: user_id is from current_active_user, never a request param.
 
-    Phase 208 (D-11/D-12, PASTE-05/09): `include_pasted` opts pasted games into
+    `include_pasted` opts pasted games into
     this analytics surface's own default population (resolve_library_platforms,
     surface="analytics"), off by default.
     """
@@ -1848,9 +1835,9 @@ async def get_tactic_comparison(
             opponent_gap_max=opponent_gap_max,
             color=color,
             # Thread the tactic-family filter into BOTH the count and the per-game
-            # fetches so analyzed_n matches the set the bullets aggregate over (WR-02).
+            # fetches so analyzed_n matches the set the bullets aggregate over.
             tactic_families=tactic_families,
-            # SEED-062: the grid shows BOTH orientations, so narrow the game
+            # The grid shows BOTH orientations, so narrow the game
             # population on "either" (not the apply_game_filters "allowed" default).
             tactic_filter_orientation="either",
         )
@@ -1858,7 +1845,7 @@ async def get_tactic_comparison(
         counts = await library_repository.count_analyzed_by_tc(
             session,
             user_id=user_id,
-            # WR-01: the tactic population is blob-done games only (the section 5
+            # The tactic population is blob-done games only (the section 5
             # calibration basis); the flaw comparison does not pass this.
             require_tactic_blobs=True,
             **_filter_kwargs,

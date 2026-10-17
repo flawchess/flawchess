@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Phase 239 D-00c / D-00d / D-11 / D-14: the gap popover copy on the shared shell, and GapRow. */
+/** The gap popover copy on the shared shell, and GapRow. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -12,7 +12,7 @@ afterEach(cleanup);
 const TRIGGER_ID = 'library-gap-blunder-tc-blitz';
 const BASIS = 'Based on your 1,000 analyzed blitz games in the current filters.';
 
-/** Sketch 010 blitz blunder row: you 5.46, opponents 6.12, band -0.3 to 0.3 (symmetric, D-15). */
+/** Blitz blunder row: you 5.46, opponents 6.12, band -0.3 to 0.3 (symmetric). */
 function blunderCell(overrides: Partial<GapCell> = {}): GapCell {
   return {
     delta: -0.6607,
@@ -49,7 +49,7 @@ function openPopover(cell: GapCell): HTMLElement {
   return popover as HTMLElement;
 }
 
-describe('GapPopover (D-00c)', () => {
+describe('GapPopover', () => {
   it('shows every section in order for a zoned, normal cell', () => {
     const text = openPopover(blunderCell()).textContent ?? '';
     const parts = [
@@ -121,7 +121,7 @@ describe('GapPopover (D-00c)', () => {
     ['zoned', {}],
     ['not-significant', { significant: false }],
     ['zoneless', { hasZone: false }],
-  ])('never says "event" in a %s popover (D-00d)', (_name, overrides) => {
+  ])('never says "event" in a %s popover', (_name, overrides) => {
     const popover = openPopover(blunderCell(overrides));
     expect(popover.textContent ?? '').not.toMatch(/\bevents?\b/i);
   });

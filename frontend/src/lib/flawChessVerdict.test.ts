@@ -37,7 +37,7 @@ function sfLine(move: string, evalCp: number | null, evalMate: number | null = n
   };
 }
 
-describe('computeFlawChessVerdict — D-04 aligned', () => {
+describe('computeFlawChessVerdict — aligned', () => {
   it('same UCI move on both sides -> aligned, drop 0', () => {
     const fc = fcLine('g1f3', 30);
     const sf = sfLine('g1f3', 30);
@@ -47,7 +47,7 @@ describe('computeFlawChessVerdict — D-04 aligned', () => {
   });
 });
 
-describe('computeFlawChessVerdict — D-05 safe divergence', () => {
+describe('computeFlawChessVerdict — safe divergence', () => {
   it('divergent picks with a small win%-drop -> safe', () => {
     // white to move: FC objective +30cp, SF objective +60cp — self-checking via evalToExpectedScore
     const fcEvalCp = 30;
@@ -63,7 +63,7 @@ describe('computeFlawChessVerdict — D-05 safe divergence', () => {
   });
 });
 
-describe('computeFlawChessVerdict — D-05 sharp divergence', () => {
+describe('computeFlawChessVerdict — sharp divergence', () => {
   it('divergent picks with a large win%-drop (trap) -> sharp', () => {
     // white to move: SF objective +300cp trap vs FC objective +40cp
     const fcEvalCp = 40;
@@ -139,7 +139,7 @@ describe('computeFlawChessVerdict — nearlySameEval / objectiveEvalGapCp gating
   });
 });
 
-describe('computeFlawChessVerdict — D-06 null gate', () => {
+describe('computeFlawChessVerdict — null gate', () => {
   it('flawChessLine null -> null result', () => {
     const sf = sfLine('g1f3', 30);
     expect(computeFlawChessVerdict(null, sf, 'white')).toBeNull();
@@ -163,7 +163,7 @@ describe('computeFlawChessVerdict — D-06 null gate', () => {
   });
 });
 
-describe('computeFlawChessVerdict — mate scores on either side (quick 260709)', () => {
+describe('computeFlawChessVerdict — mate scores on either side', () => {
   it('an SF pick expressed as mate still classifies (uses the mate mapping)', () => {
     const fc = fcLine('e2e4', 40);
     const sf = sfLine('d1h5', null, 3); // mate in 3, no evalCp
@@ -193,7 +193,7 @@ describe('computeFlawChessVerdict — mate scores on either side (quick 260709)'
   });
 });
 
-describe('computeFindabilityGate — D-10/D-11/D-12', () => {
+describe('computeFindabilityGate', () => {
   it('fires when the FC pick clears the margin AND is in the plotted set', () => {
     const pYouFc = 0.4;
     const pYouSf = 0.1;

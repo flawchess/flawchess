@@ -5,7 +5,7 @@
  * - `findOpening()` NAMES an already-played sequence: it walks `len` DOWN
  *   from the history length against `fullLineMap` (keyed by a line's FULL
  *   SAN sequence), returning the longest match. Used by useChessGame.ts.
- * - the bot's opening book (Phase 169.5) tests candidate LEGAL MOVES for
+ * - the bot's opening book tests candidate LEGAL MOVES for
  *   book membership: for each candidate, it checks whether
  *   `[...history, candidateSan].join(' ')` is a member of `prefixSet` (every
  *   PREFIX of every line, not just full lines) — a fixed-length forward
@@ -100,10 +100,10 @@ export async function findOpening(moveHistory: string[]): Promise<Opening | null
  * The set of every prefix (of every length) of every ECO line, keyed by
  * space-joined canonical SAN tokens — exactly what chess.js's `Move.san`
  * emits (verified by the corpus-parity test in openings.test.ts). Used by
- * the bot's opening book (Phase 169.5) to test "does history + candidateSan
+ * the bot's opening book to test "does history + candidateSan
  * stay inside book theory". Does NOT swallow fetch errors — the book's
- * caller decides how to react to a rejected promise (Phase 169.5 D-03:
- * latch permanently out of book on failure rather than silently degrade).
+ * caller decides how to react to a rejected promise (the book
+ * latches permanently out of book on failure rather than silently degrading).
  */
 export async function loadOpeningPrefixSet(): Promise<ReadonlySet<string>> {
   const { prefixSet } = await buildLookup();

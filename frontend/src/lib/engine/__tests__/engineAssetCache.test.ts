@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * engineAssetCache.ts unit tests (Phase 213-12, D-20, closing G-213-37).
+ * engineAssetCache.ts unit tests.
  *
  * jsdom has no real CacheStorage, so `caches` is stubbed with an in-memory
  * `Map`-backed double supporting `open`/`keys`/`delete`, and a per-cache
@@ -183,7 +183,7 @@ describe('getEngineAsset — populated-vs-cleared pair (real cache read, not a r
   it('after one completed call, clearing the cache and calling again produces exactly ONE additional fetch', async () => {
     const bytes = new Uint8Array([9, 8, 7]);
     // A fresh response per call — a real fetch never hands back an already
-    // consumed body, and the CR-01 truncation guard rightly rejects one.
+    // consumed body, and the truncation guard rightly rejects one.
     const fetchMock = vi.fn().mockImplementation(async () => makeImmediateResponse(bytes));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -359,12 +359,12 @@ describe('getEngineAsset — streamed progress reporting on a miss', () => {
   });
 });
 
-// ─── CR-01: truncated / unverifiable bodies are never cached ───────────────
+// ─── Truncated / unverifiable bodies are never cached ───────────────
 
-describe('getEngineAsset — truncation guard (CR-01)', () => {
+describe('getEngineAsset — truncation guard', () => {
   it('a stream that ends short of a trustworthy content-length rejects and writes NOTHING to the cache', async () => {
     // Clean-EOF truncation: the reader reports done after 3 of 5 declared
-    // bytes without ever rejecting — the shape CR-01 identified as being
+    // bytes without ever rejecting — the shape that was being
     // persisted and served back as complete indefinitely.
     const { reader, release } = createControlledReader([new Uint8Array([1, 2, 3])]);
     release(0);
@@ -470,11 +470,11 @@ describe('getEngineAsset — stale-cache sweep on open', () => {
   });
 });
 
-// ─── One-knob invariant (quick 260905-rhc) ─────────────────────────────────
+// ─── One-knob invariant ─────────────────────────────────
 //
 // `ENGINE_ASSET_CACHE_VERSION` must be the SOLE source feeding both the
 // CacheStorage name and the URL query suffix — a second independent version
-// source is exactly the failure mode this task exists to remove (D-01).
+// source is exactly the failure mode this test exists to guard against.
 // Both assertions below use a regex, never a hardcoded version number, so a
 // future bump does not require editing this test.
 
@@ -494,7 +494,7 @@ describe('versionedEngineAssetUrl / ENGINE_ASSET_VERSION_QUERY — one-knob inva
   });
 });
 
-// ─── Source gate: no unwrapped engine-asset URL literal (Task 3, quick 260905-rhc) ──
+// ─── Source gate: no unwrapped engine-asset URL literal ──
 //
 // Proves the sole legitimate way to reference a `/maia/` or `/engine/` URL
 // literal under `frontend/src` is to wrap it in `versionedEngineAssetUrl()`.

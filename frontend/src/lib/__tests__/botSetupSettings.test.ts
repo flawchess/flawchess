@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * botSetupSettings.ts unit tests (Phase 171 Plan 04, D-10/V-10).
+ * botSetupSettings.ts unit tests.
  *
  * jsdom supplies a real `localStorage`; @sentry/react is mocked (mirrors
  * botGameSnapshot.test.ts — the ESM module namespace is not configurable).
@@ -23,7 +23,7 @@ import { PLAY_STYLE_DEFAULT_BLEND } from '../playStyle';
 import { MAIA_ELO_LADDER } from '../maiaEncoding';
 import { Chess } from 'chess.js';
 
-/** Ladder bounds, read from the ladder itself — the WR-02 test must not
+/** Ladder bounds, read from the ladder itself — the ladder-rung test must not
  * re-hard-code the very literals the fix removed. */
 const LADDER_MIN = MAIA_ELO_LADDER[0] ?? 0;
 const LADDER_MAX = MAIA_ELO_LADDER[MAIA_ELO_LADDER.length - 1] ?? 0;
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('key distinctness (T-171-04-03)', () => {
+describe('key distinctness', () => {
   it('the three owner-scoped key prefixes are pairwise distinct (imported constants, not hard-coded strings)', () => {
     expect(BOT_SETUP_SETTINGS_KEY_PREFIX).not.toBe(BOT_GAME_SNAPSHOT_KEY_PREFIX);
     expect(BOT_SETUP_SETTINGS_KEY_PREFIX).not.toBe(BOT_PENDING_STORE_KEY_PREFIX);
@@ -129,7 +129,7 @@ describe('corruption recovery', () => {
     expect(localStorage.getItem(key)).toBeNull();
   });
 
-  // WR-01 regression: a correctly-TYPED but out-of-RANGE blob used to validate
+  // Regression: a correctly-TYPED but out-of-RANGE blob used to validate
   // clean and reach the setup screen, `selectBotMove` (negative tau for
   // blend > 1), and finally the backend, whose Field bounds 422 it — which the
   // drain reads as "remove", silently discarding the finished game. These are
@@ -185,7 +185,7 @@ describe('resolveDefaultBotElo', () => {
     expect(resolveDefaultBotElo(3400)).toBe(2600);
   });
 
-  // WR-02 regression: the snap used a bare `step = 100` literal decoupled from
+  // Regression: the snap used a bare `step = 100` literal decoupled from
   // the ladder it snaps to, so a ladder revision would have produced values
   // that are NOT rungs — which EloSelector's prop contract forbids. Pin the
   // invariant itself (result ∈ ladder) rather than the arithmetic.

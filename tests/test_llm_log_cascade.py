@@ -1,15 +1,15 @@
-"""SC #3 / LOG-04: ON DELETE CASCADE on llm_logs.user_id.
+"""ON DELETE CASCADE on llm_logs.user_id.
 
 Deleting a user MUST delete that user's llm_logs rows. This is a GDPR
-requirement (SEED-003 §Privacy) enforced by the FK `ondelete="CASCADE"`
-declared in app/models/llm_log.py and materialized in the Phase 64
-migration (Plan 02).
+requirement enforced by the FK `ondelete="CASCADE"`
+declared in app/models/llm_log.py and materialized in the llm_logs
+migration.
 
 This test explicitly creates + deletes its own user (not via the
 fresh_test_user fixture) because the fixture auto-deletes on teardown and
 this test needs to control the delete timing.
 
-Per RESEARCH.md Pitfall 5, cannot use db_session: create_llm_log opens its
+This test cannot use db_session: create_llm_log opens its
 own async_session_maker() scope which commits outside the fixture's
 rollback transaction.
 """

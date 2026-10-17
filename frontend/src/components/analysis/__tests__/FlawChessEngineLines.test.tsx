@@ -1,21 +1,19 @@
 // @vitest-environment jsdom
 /**
- * Phase 155 Plan 03 — FlawChessEngineLines render tests.
- * Replaces the Plan 01 Wave 0 `it.todo` scaffolds with real assertions,
- * mirroring EngineLines.test.tsx's chip-rendering + score-badge assertion
+ * FlawChessEngineLines render tests.
+ * Mirrors EngineLines.test.tsx's chip-rendering + score-badge assertion
  * style against a `RankedLine[]` fixture instead of `PvLine[]`.
  *
  * Verifies:
  *  - the maxLines prop caps rows (default 2 from a 4-line fixture; 4 and 5 per the
- *    FlawChess lines setting, Phase 228 D-16)
- *  - modalPath renders SAN chips, first 5 visible + expand for a >5-ply path
- *    (DISPLAY-02)
+ *    FlawChess lines setting)
+ *  - modalPath renders SAN chips, first 4 visible + expand for a >4-ply path
  *  - the brown practical badge shows the practical (expected-score-derived,
  *    white-POV cp) number, and the blue objective eval next to it shows the
- *    (white-POV cp) eval of the same move, for a known fixture (DISPLAY-03)
- *  - clicking a chip calls onMoveClick with the expected UCI prefix (D-10)
+ *    (white-POV cp) eval of the same move, for a known fixture
+ *  - clicking a chip calls onMoveClick with the expected UCI prefix
  *  - a null objectiveEvalCp renders the "…" placeholder without crashing
- *  - no rendered string contains "best move" unqualified (D-06/ARROW-04)
+ *  - no rendered string contains "best move" unqualified
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -135,7 +133,7 @@ describe('FlawChessEngineLines', () => {
     );
   }
 
-  it('renders the default 2 rows from a 4-line fixture (DEFAULT_LINES, D-08)', () => {
+  it('renders the default 2 rows from a 4-line fixture (DEFAULT_LINES)', () => {
     renderWithMaxLines(DEFAULT_LINES);
 
     // Lines 0-1 render (their first move chip is present)...
@@ -146,7 +144,7 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-3-move-0')).toBeNull();
   });
 
-  it('maxLines 4 renders lines 0..3 (Phase 228 D-16)', () => {
+  it('maxLines 4 renders lines 0..3', () => {
     renderWithMaxLines(4);
     for (const i of [0, 1, 2, 3]) {
       expect(screen.getByTestId(`flawchess-line-${i}-move-0`)).toBeTruthy();
@@ -190,7 +188,7 @@ describe('FlawChessEngineLines', () => {
     expect(screen.getByTestId('analysis-flawchess-loading').children).toHaveLength(5);
   });
 
-  it('renders modalPath as SAN chips, first MAX_PLIES=4 plies + expand chevron (DISPLAY-02)', () => {
+  it('renders modalPath as SAN chips, first MAX_PLIES=4 plies + expand chevron', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
@@ -234,7 +232,7 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-0-expand')).toBeNull();
   });
 
-  it('renders the objective/practical score pair per line (DISPLAY-03)', () => {
+  it('renders the objective/practical score pair per line', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
@@ -249,12 +247,12 @@ describe('FlawChessEngineLines', () => {
     );
 
     // Practical: practicalScore=0.9, rootMover=white → expectedScoreToWhitePovCp
-    // ≈ +596.7cp → formatScore → "+6.0" (the brown practical badge).
+    // ≈ +596.7cp → formatEval → "+6.0" (the brown practical badge).
     expect(screen.getByText('+6.0')).toBeTruthy();
     // Objective: 300cp white-POV → "+3.0", rendered in Stockfish blue next to the badge.
     expect(screen.getByText('+3.0')).toBeTruthy();
     // Accessible label frames it as practical "for you" / objective — never the
-    // bare phrase "best move" unqualified (D-06/ARROW-04).
+    // bare phrase "best move" unqualified.
     expect(
       screen.getByLabelText('Line 1: practically +6.0 for you, objectively +3.0'),
     ).toBeTruthy();
@@ -276,7 +274,7 @@ describe('FlawChessEngineLines', () => {
     expect(screen.getByText('…')).toBeTruthy();
   });
 
-  it('a forced-mate line renders "#-4" on BOTH the objective and practical badges, not "…" or a saturated cp (quick 260709)', () => {
+  it('a forced-mate line renders "#-4" on BOTH the objective and practical badges, not "…" or a saturated cp', () => {
     // Regression: a mate leaf grades to objectiveEvalMate with cp null, which
     // previously printed "…" (objective) because only objectiveEvalCp was
     // formatted, and "-10.0" (practical) because the saturated expected-score cap
@@ -353,7 +351,7 @@ describe('FlawChessEngineLines', () => {
     expect((await screen.findAllByLabelText('Maia probability …')).length).toBeGreaterThan(0);
   });
 
-  it('clicking a modal-path chip calls onMoveClick with the expected UCI prefix (D-10)', () => {
+  it('clicking a modal-path chip calls onMoveClick with the expected UCI prefix', () => {
     const onMoveClick = vi.fn();
     render(
       <TooltipProvider>
@@ -452,7 +450,7 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-0-move-0')).toBeNull();
   });
 
-  it('checkmate terminalOutcome + empty rankedLines → renders a gold "#0" Checkmate badge (quick 260709)', () => {
+  it('checkmate terminalOutcome + empty rankedLines → renders a gold "#0" Checkmate badge', () => {
     render(
       <FlawChessEngineLines
         maxLines={DEFAULT_LINES}

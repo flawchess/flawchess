@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from app.core.platform_usernames import extract_platform_username
 from app.schemas.normalization import Color
 
-# SURGE-04/D-03 (Phase 209): the five exhaustive values import_jobs.status can
+# The five exhaustive values import_jobs.status can
 # take. "queued" is in-memory only (import_service.JobStatus.QUEUED) -- never
 # written to the DB row -- but flows through the same response fields as the
 # other four, so it belongs in the same wire type. The only writers of
@@ -24,7 +24,7 @@ class ImportRequest(BaseModel):
     @field_validator("username", mode="before")
     @classmethod
     def _extract_username(cls, value: Any, info: ValidationInfo) -> Any:
-        # mode="before" is load-bearing (D-03/T-IQ1-02): it must run ahead of
+        # mode="before" is load-bearing: it must run ahead of
         # max_length=100 so a long pasted profile URL is shortened to the bare
         # username instead of rejected. `platform` is declared before
         # `username`, so it is already validated and present here -- except
@@ -47,7 +47,7 @@ class ImportStatusResponse(BaseModel):
     games_fetched: int
     games_imported: int
     error: str | None = None
-    other_importers: int = 0  # Count of other users importing from same platform (D-23)
+    other_importers: int = 0  # Count of other users importing from same platform
 
     @classmethod
     def from_dict(cls, data: dict) -> "ImportStatusResponse":
@@ -71,9 +71,8 @@ class DeleteGamesResponse(BaseModel):
 class EnqueueTier1Response(BaseModel):
     """Response for POST /imports/eval/tier1/{game_id} (and re-exported to admin).
 
-    Phase 117 D-117-05 built the internal/admin trigger; Phase 118 adds the
-    user-facing endpoint. Moved here from admin.py (D-118-12) so imports.py
-    owns the full eval-enqueue schema set.
+    Shared by the internal/admin trigger and the user-facing endpoint. Lives
+    here (not admin.py) so imports.py owns the full eval-enqueue schema set.
     """
 
     status: Literal["enqueued", "skipped_guest", "already_queued"]
@@ -81,32 +80,32 @@ class EnqueueTier1Response(BaseModel):
 
 
 class EvalCoverageResponse(BaseModel):
-    """Response for GET /imports/eval-coverage (D-118-12 extension).
+    """Response for GET /imports/eval-coverage.
 
-    Extended in Phase 118 with analyzed_count. Existing fields (pending_count,
-    total_count, pct_complete) are unchanged for backward compatibility with
-    Endgames/Openings/GlobalStats readiness gates. in_flight_count removed in
-    Phase 119-03: tier-3 derived picks have no eval_jobs rows, so the count was
-    structurally blind to the dominant backlog drain and never an honest signal.
+    pending_count, total_count and pct_complete feed the
+    Endgames/Openings/GlobalStats readiness gates; analyzed_count is the number
+    of fully analyzed games. There is no in-flight count: tier-3 derived picks
+    have no eval_jobs rows, so such a count would be structurally blind to the
+    dominant backlog drain and never an honest signal.
     """
 
     pending_count: int
     total_count: int
     pct_complete: int  # 0-100, rounded
-    analyzed_count: int  # white_blunders IS NOT NULL (is_analyzed — flaw-surface denominator)
+    analyzed_count: int  # full_evals_completed_at IS NOT NULL (same column the Library cards use)
 
 
-# Phase 208 (T-208-12): bounds the DoS surface of a client-POSTed pasted PGN —
+# Bounds the DoS surface of a client-POSTed pasted PGN —
 # mirrors MAX_BOT_PGN_LENGTH's convention (app/schemas/bots.py). Rejected at
 # schema validation, before any chess.pgn parse.
 MAX_PASTED_PGN_LENGTH = 100_000
 
 
 class SavePastedGameRequest(BaseModel):
-    """Request body for POST /imports/paste (Phase 208, PASTE-04).
+    """Request body for POST /imports/paste.
 
     No owner field of any kind — the principal is server-derived from
-    current_active_user (ASVS V4, T-208-10); a body carrying a foreign
+    current_active_user (ASVS V4); a body carrying a foreign
     user_id-shaped field is simply ignored by the schema.
     """
 
@@ -119,12 +118,10 @@ class SavePastedGameResponse(BaseModel):
 
     eval_status distinguishes four post-save outcomes: "enqueued" (a fresh
     tier-1 job was inserted), "already_queued" (an active job already
-    existed, D-17 no-op), "already_analyzed" (the reused row was already
-    fully analyzed, D-17 no re-enqueue), and "enqueue_failed" (the game row
-    IS durably saved, but the post-commit enqueue_tier1_game call raised —
-    the SC-7 post-commit failure window; see 208-03-PLAN.md's dedicated
-    section). "enqueue_failed" is still a 200 — the save genuinely
-    succeeded.
+    existed, no-op), "already_analyzed" (the reused row was already
+    fully analyzed, no re-enqueue), and "enqueue_failed" (the game row
+    IS durably saved, but the post-commit enqueue_tier1_game call raised).
+    "enqueue_failed" is still a 200 — the save genuinely succeeded.
     """
 
     game_id: int
@@ -140,12 +137,13 @@ class ReadinessResponse(BaseModel):
     Tier 1 (tier1=True): no active import job in-flight for this user.
         False while a PENDING or IN_PROGRESS import exists in-memory.
         NOTE: In-memory only — orphaned DB jobs after server restart are not
-        detected here (RESEARCH Open Question 1 / A3). Out of scope.
+        detected here. Out of scope.
 
-    Tier 2 (tier2=True): tier1 AND pending evals == 0 AND
-        (user has no games OR at least one user_benchmark_percentiles row exists).
-        The "no games" escape prevents a below-floor user from being locked out
-        forever when Stage B has nothing to compute (Pitfall 1).
+    Tier 2 (tier2=True): tier1 AND pending evals == 0 AND not mid-Stage-B AND
+        (no games OR a percentile row exists OR the settled-empty or
+        below-anchor-floor escape applies). See get_readiness.
+        The escapes prevent a below-floor user from being locked out
+        forever when Stage B has nothing to compute.
         Row existence is the post-commit Stage-B signal — computed_at is
         refreshed on every upsert, so no Stage-B race with create_task.
     """

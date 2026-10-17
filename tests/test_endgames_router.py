@@ -4,9 +4,9 @@ Tests the HTTP layer. Uses httpx AsyncClient with ASGITransport to test the
 FastAPI app directly without spinning up a real server.
 
 Coverage:
-- GET /endgames/overview: removed in Phase 238 (D-00h), returns 404
+- GET /endgames/overview: removed, returns 404
 - GET /endgames/ranked-stats: filter-free ranked sample, auth-scoped
-- GET /endgames/stats: filtered per-category stats (Phase 238, Games tab)
+- GET /endgames/stats: filtered per-category stats (Games tab)
 - GET /endgames/performance, /timeline, /conv-recov-timeline: return 404 (removed)
 - GET /endgames/games: still returns 200
 """
@@ -105,10 +105,9 @@ async def _seed_game_with_endgame(
 
 
 class TestEndgameStats:
-    """GET /api/endgames/stats (Phase 238, D-01): filtered stats for the Games tab.
+    """GET /api/endgames/stats: filtered stats for the Games tab.
 
-    The route was removed in Phase 52 and returns now, with the same sidebar filter
-    parameters the retired overview took.
+    Takes the same sidebar filter parameters the retired overview took.
     """
 
     @pytest.mark.asyncio
@@ -173,9 +172,9 @@ class TestLegacyEndpointsRemoved:
 
     @pytest.mark.asyncio
     async def test_overview_returns_404(self, auth_headers: dict[str, str]) -> None:
-        """GET /api/endgames/overview returns 404 (route removed in Phase 238, D-00h).
+        """GET /api/endgames/overview returns 404 (route removed).
 
-        No stale handler may keep serving the old aggregated cross-TC payload (T-238-16).
+        No stale handler may keep serving the old aggregated cross-TC payload.
         """
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -186,7 +185,7 @@ class TestLegacyEndpointsRemoved:
 
     @pytest.mark.asyncio
     async def test_performance_returns_404(self, auth_headers: dict[str, str]) -> None:
-        """GET /api/endgames/performance returns 404 (route removed in Phase 52)."""
+        """GET /api/endgames/performance returns 404 (route removed)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -196,7 +195,7 @@ class TestLegacyEndpointsRemoved:
 
     @pytest.mark.asyncio
     async def test_timeline_returns_404(self, auth_headers: dict[str, str]) -> None:
-        """GET /api/endgames/timeline returns 404 (route removed in Phase 52)."""
+        """GET /api/endgames/timeline returns 404 (route removed)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -206,7 +205,7 @@ class TestLegacyEndpointsRemoved:
 
     @pytest.mark.asyncio
     async def test_conv_recov_timeline_returns_404(self, auth_headers: dict[str, str]) -> None:
-        """GET /api/endgames/conv-recov-timeline returns 404 (route removed in Phase 52)."""
+        """GET /api/endgames/conv-recov-timeline returns 404 (route removed)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -216,7 +215,7 @@ class TestLegacyEndpointsRemoved:
 
 
 class TestGamesEndpointStillWorks:
-    """GET /api/endgames/games must remain functional (untouched by Phase 52)."""
+    """GET /api/endgames/games must remain functional."""
 
     @pytest.mark.asyncio
     async def test_games_returns_200(self, auth_headers: dict[str, str]) -> None:
@@ -248,7 +247,7 @@ class TestGamesEndpointStillWorks:
 
 
 class TestEndgameCategoryStatsWdlAlignedFieldsRouter:
-    """Quick task 260519-lu0: GET /api/endgames/stats serializes the new
+    """GET /api/endgames/stats serializes the new
     WDLStats-aligned fields on each EndgameCategoryStats category.
 
     The empty-user path produces zero categories, so we use a seeded-data fixture
@@ -383,7 +382,7 @@ class TestEndgameCategoryStatsWdlAlignedFieldsRouter:
 
 
 class TestRankedStats:
-    """GET /api/endgames/ranked-stats (Phase 238): filter-free, auth-scoped ranked sample."""
+    """GET /api/endgames/ranked-stats: filter-free, auth-scoped ranked sample."""
 
     @pytest.mark.asyncio
     async def test_ranked_stats_requires_auth(self) -> None:
@@ -397,7 +396,7 @@ class TestRankedStats:
     async def test_ranked_stats_empty_sample_returns_no_tcs(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """D-10: a user with no ranked games gets tcs == [] (not an error)."""
+        """A user with no ranked games gets tcs == [] (not an error)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -409,7 +408,7 @@ class TestRankedStats:
     async def test_ranked_stats_ignores_filter_query_params(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """D-01: any query string produces the same body as no query string."""
+        """Any query string produces the same body as no query string."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:

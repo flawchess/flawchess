@@ -1,8 +1,7 @@
-"""Repository for the Train reminder scheduler's SQL (Phase 201, REMIND-02..07).
+"""Repository for the Train reminder scheduler's SQL.
 
 All SQL for the reminder job lives HERE -- `app/services/train_reminder_service.py`
-holds no statements of its own. A new module rather than more lines in
-`app/repositories/train_repository.py` (already ~2450 lines).
+holds no statements of its own.
 
 V4 Information Disclosure mitigation: every function requires `user_id` (or
 `day`/`today` scoped to a user) as a keyword-only argument. Callers MUST pass
@@ -24,7 +23,7 @@ from app.models.user import User
 
 
 async def list_reminder_candidate_user_ids(session: AsyncSession) -> list[int]:
-    """Return user ids that MAY be due a Train reminder (D-16: SQL narrows only).
+    """Return user ids that MAY be due a Train reminder (SQL narrows only).
 
     Narrows on `reminder_enabled` + at least one live `push_subscriptions`
     row + not a guest. Returns bare ids, mirroring
@@ -40,15 +39,14 @@ async def list_reminder_candidate_user_ids(session: AsyncSession) -> list[int]:
     the boundary. The per-user claim UPDATE (`claim_reminder_day`), evaluated
     against that user's own already-resolved local date, is the real guard.
 
-    Guest exclusion (REMIND-07): as of Phase 224, `/train/*` no longer 403s
-    guests -- `PUT /train/settings` (and every other Train endpoint) accepts
-    a guest bearer token, so a guest CAN reach `reminder_enabled=True`
-    through the API. This filter is therefore load-bearing, not defence in
-    depth: it is the only thing keeping a reminder from being scheduled for
-    an account the 30-day cleanup may purge out from under it. The frontend
-    also hides the reminder toggle from guests (Phase 224 D-13), but the UI
-    is not the guard -- this SQL filter is, since this job runs behind no
-    request-scoped gate.
+    Guest exclusion: `/train/*` does not 403 guests -- `PUT /train/settings`
+    (and every other Train endpoint) accepts a guest bearer token, so a guest
+    CAN reach `reminder_enabled=True` through the API. This filter is
+    therefore load-bearing, not defence in depth: it is the only thing keeping
+    a reminder from being scheduled for an account the 30-day cleanup may
+    purge out from under it. The frontend also hides the reminder toggle from
+    guests, but the UI is not the guard -- this SQL filter is, since this job
+    runs behind no request-scoped gate.
     """
     subscription_exists = (
         select(PushSubscription.id)
@@ -69,16 +67,16 @@ async def list_reminder_candidate_user_ids(session: AsyncSession) -> list[int]:
 
 
 async def claim_reminder_day(session: AsyncSession, *, user_id: int, today: datetime.date) -> bool:
-    """Atomically claim `today` as sent for `user_id` (REMIND-05, D-06/D-07).
+    """Atomically claim `today` as sent for `user_id`.
 
     A conditional `UPDATE ... RETURNING`: only claims when
     `reminder_last_sent_on` is NULL or strictly before `today`. Returns
     whether THIS call won the claim -- a loser's UPDATE matches zero rows.
 
     Does NOT commit. The caller MUST commit this before issuing any push
-    POST (D-07): a send-then-mark ordering would double-send after a crash
+    POST: a send-then-mark ordering would double-send after a crash
     between the POST and the commit, and would quietly reintroduce the retry
-    semantics D-04 rejects.
+    semantics the job deliberately avoids.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -105,21 +103,20 @@ async def claim_reminder_day(session: AsyncSession, *, user_id: int, today: date
 async def release_reminder_claim(
     session: AsyncSession, *, user_id: int, today: datetime.date
 ) -> bool:
-    """Undo THIS tick's claim when the fan-out delivered to nobody (Phase 204 D3).
+    """Undo THIS tick's claim when the fan-out delivered to nobody.
 
     Released when, and only when,
     `train_reminder_service._process_candidate`'s fan-out attempted zero
     sends or every attempted send came back pruned (`attempted == 0 or
-    attempted == pruned`) -- see 204-DECISIONS.md for the full reasoning and
-    the rejected alternatives. `failed` never triggers this (D-15): a
+    attempted == pruned`). `failed` never triggers this: a
     construction/encryption exception is deliberately excluded from the
     predicate.
 
     The `reminder_last_sent_on == today` guard is deliberately NARROWER than
     `claim_reminder_day`'s predicate above -- no `or_`, no `.is_(None)`,
-    equality with `today` only (D-14). This means the release can only ever
+    equality with `today` only. This means the release can only ever
     un-claim the day THIS tick claimed, never a later claim written by a
-    second ticker, which keeps the D-07 double-send invariant structural
+    second ticker, which keeps the no-double-send invariant structural
     rather than resting on "there is only one process". 404/410 are terminal
     statuses under RFC 8030 Sec. 7, so a pruned subscription demonstrably
     never received the message -- releasing the claim cannot therefore
@@ -151,9 +148,9 @@ async def release_reminder_claim(
 async def has_completed_session_on(
     session: AsyncSession, *, user_id: int, day: datetime.date
 ) -> bool:
-    """True when `user_id` has a completed `drill_sessions` row for `day` (D-09/REMIND-04).
+    """True when `user_id` has a completed `drill_sessions` row for `day`.
 
-    This is what REMIND-04 means by "already trained today" -- matches what
+    This is what "already trained today" means -- matches what
     the streak machine already counts. A session opened at 17:00 and
     abandoned half-done deliberately still earns the nudge (only a
     non-NULL `completed_at` suppresses).

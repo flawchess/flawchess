@@ -26,7 +26,7 @@ interface WDLChartRowProps {
   /** Optional info popover rendered after the label */
   infoPopover?: ReactNode;
 
-  /** Optional games link — renders as a React Router Link with ExternalLink icon */
+  /** Optional games link — renders as a React Router Link with a Swords icon */
   gamesLink?: string;
   /** Optional click handler for the games link (e.g. for side effects before navigation) */
   onGamesLinkClick?: () => void;

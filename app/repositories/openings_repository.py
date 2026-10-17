@@ -36,24 +36,18 @@ HASH_COLUMN_MAP = {
     "full": GamePosition.full_hash,
 }
 
-# query_opening_transitions is now a flat aggregation (no CTE, no window functions,
-# no standard-start subquery). See PR #89 + Alembic migration e925558020b9 (extended
-# statistics) for the belt-and-suspenders planner hint that preceded this refactor.
-#
 # Custom-FEN ply-0 games: ~176 of 344,013 prod ply-0 rows (0.05%) come from
 # chess.com thematic tournaments and chess.com custom-position "Let's Play!" games
 # that carry [SetUp "1"][FEN ...] PGN headers. These are NOT puzzles, NOT themed
 # events, and NOT chess variants — variants are already filtered at import in
 # app/services/normalization.py. The flat query does not pre-filter them, because
 # they legitimately reached these positions and belong in the W/D/L counts.
-# Phase 210 (SEED-042) instead marks them at import (games.initial_fen) and
-# excludes them from the sample-representative aggregate only, so the SAN prefix
+# They are marked at import (games.initial_fen) and
+# excluded from the sample-representative aggregate only, so the SAN prefix
 # is always replayable. _wrap_transition_row's guards remain for the residual
 # all-custom group (warning-level Sentry message, never a 500).
 #
-# STARTING_POSITION_HASH is no longer used by the production query path after this
-# refactor but is retained here for potential future callers (e.g. custom tooling
-# that needs to check whether a game starts from the standard position).
+# STARTING_POSITION_HASH: signed zobrist of the standard start (used by tests to seed ply-0 rows).
 STARTING_POSITION_HASH: int = ctypes.c_int64(chess.polyglot.zobrist_hash(chess.Board())).value
 
 
@@ -87,7 +81,7 @@ def _build_base_query(
 
     if target_hash is not None and hash_column is not None:
         # Position-filtered query: join game_positions and filter by hash.
-        # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
+        # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used.
         base = (
             select(*entities)
             .join(GamePosition, GamePosition.game_id == Game.id)
@@ -102,10 +96,8 @@ def _build_base_query(
         # All-games query: no position filter, query games table directly
         base = select(*entities).where(Game.user_id == user_id)
 
-    # Routes through the single documented filter seam (query_utils.py) instead
-    # of a hand-rolled block, which restores the default-population exclusion
-    # of "flawchess" / "pgn" (SEED-163 §1) — this call site previously had no
-    # `else` branch and never excluded them when platform=None.
+    # Routes through apply_game_filters (the single documented filter seam in
+    # query_utils.py) so the default population excludes "flawchess"/"pgn".
     base = apply_game_filters(
         base,
         time_control=time_control,
@@ -143,7 +135,7 @@ async def query_time_series(
     DISTINCT by Game.id prevents games with the target hash at multiple plies
     from being counted more than once.  Games without played_at are excluded.
 
-    D-19: no date filter on this path — the rolling-window chart covers the
+    No date filter on this path — the rolling-window chart covers the
     full game history so that context games before the window anchor rolling
     averages correctly.
     """
@@ -153,18 +145,17 @@ async def query_time_series(
         .where(
             GamePosition.user_id == user_id,
             hash_column == target_hash,
-            # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
+            # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used.
             GamePosition.ply <= MAX_EXPLORER_PLY,
             Game.played_at.isnot(None),
         )
         .distinct(Game.id)
         .order_by(Game.id, Game.played_at)
     )
-    # Routes through the single documented filter seam (query_utils.py) instead
-    # of a hand-rolled block, which restores the default-population exclusion
-    # of "flawchess" / "pgn" (SEED-163 §1). from_date/to_date are pinned to
-    # None: D-19 — this path intentionally has no date bounds so the
-    # rolling-window chart has context games from before its anchor.
+    # Routes through apply_game_filters (the single documented filter seam in
+    # query_utils.py) so the default population excludes "flawchess"/"pgn".
+    # from_date/to_date are pinned to None: this path intentionally has no date
+    # bounds so the rolling-window chart has context games from before its anchor.
     stmt = apply_game_filters(
         stmt,
         time_control=time_control,
@@ -442,7 +433,7 @@ async def query_next_moves(
         .where(
             gp1.user_id == user_id,
             gp1.full_hash == target_hash,
-            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used.
             # gp2.ply == gp1.ply + 1, so gp2 is implicitly <= MAX_EXPLORER_PLY + 1 —
             # only gp1 needs the predicate for index selection.
             gp1.ply <= MAX_EXPLORER_PLY,
@@ -482,23 +473,14 @@ async def query_resulting_position_wdl(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> dict[int, tuple[int, int, int, datetime.datetime | None]]:
-    """Return {resulting_full_hash: (wins, draws, losses)} for Opening Insights.
+    """Return {resulting_full_hash: (wins, draws, losses, last_played_at)}.
 
-    Phase 80.1 D-06: Opening Insights findings show resulting-position WDL.
-    Same SQL shape as historic query_transposition_wdl (deleted; see quick
-    task 260512-p5p) but the parameter is named
-    `hash_list` to reflect the call-site semantics (list of
-    `resulting_full_hash` values from query_opening_transitions).
+    Opening Insights findings show resulting-position WDL. `hash_list` holds
+    the `resulting_full_hash` values from query_opening_transitions.
 
     Filters MUST be identical to query_opening_transitions for consistency.
-    The caller (compute_insights) passes color=None to apply_game_filters,
-    mirroring query_opening_transitions' filter behavior — both white-perspective
-    and black-perspective games visiting the same position contribute to the
-    same resulting-position summary the user lands on.
-
-    Kept as a separate function (not a default-named alias) so call sites in
-    openings_service vs opening_insights_service stay visually distinct, and so
-    future filter divergence between the two surfaces lands cleanly.
+    Opening Insights calls it once per color with color=color so the denominator
+    matches query_opening_transitions' Game.user_color filter.
 
     Returns ``{full_hash: (wins, draws, losses, last_played_at)}``. The
     last_played_at element is ``MAX(games.played_at)`` across the games that
@@ -541,7 +523,7 @@ async def query_resulting_position_wdl(
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(hash_list),
-            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used.
             GamePosition.ply <= MAX_EXPLORER_PLY,
         )
         .group_by(GamePosition.full_hash)
@@ -580,18 +562,18 @@ async def query_opening_transitions(
     """Flat aggregation of (entry_hash, candidate_san) transitions for one user & color.
 
     Single SELECT-GROUP-BY-HAVING: no CTE, no window functions, no subquery JOIN.
-    Eliminates the structural complexity that caused planner misestimation (see
-    PR #89 debug session). Alembic migration e925558020b9 (extended statistics)
-    remains as belt-and-suspenders.
+    Eliminates the structural complexity that caused planner misestimation.
+    Alembic migration e925558020b9 (extended statistics) remains as
+    belt-and-suspenders.
 
     Custom-FEN games (chess.com thematic tournaments and custom-position "Let's
     Play!" games with [SetUp "1"][FEN ...] PGN headers — ~176 of 344k prod
     ply-0 rows, 0.05%) are NOT excluded here: they legitimately reached these
-    positions and must keep contributing to n/w/d/l. Phase 210 (SEED-042)
-    excludes them from the *sample representative* aggregate only, so the SAN
-    prefix handed to the service layer is always replayable from a standard
-    board. Before that fix they were preferred as the representative (shallower
-    ply) and took the whole transition down with them.
+    positions and must keep contributing to n/w/d/l. They are excluded from the
+    *sample representative* aggregate only, so the SAN prefix handed to the
+    service layer is always replayable from a standard board. Don't prefer them
+    as the representative (shallower ply): that takes the whole transition down
+    with them.
 
     Returns one Row per surviving (entry_hash, move_san) pair with attrs:
         entry_hash: int        (gp.full_hash, never NULL in output)
@@ -627,7 +609,7 @@ async def query_opening_transitions(
     draws = func.count(func.distinct(Game.id)).filter(draw_cond)
     losses = func.count(func.distinct(Game.id)).filter(loss_cond)
 
-    # Phase 75 D-08: score-based effect-size gate. score = (W + 0.5·D) / N.
+    # Score-based effect-size gate. score = (W + 0.5·D) / N.
     # Minor-effect threshold drives the SQL gate; major findings are a post-filter
     # in Python (_classify_row). Symmetric on both sides → OR keeps the gate simple.
     score_expr = (cast(wins, Float) + 0.5 * cast(draws, Float)) / cast(n_games, Float)
@@ -649,8 +631,7 @@ async def query_opening_transitions(
             # one of the input arrays. Sorted (ply, game_id) so smaller ply wins
             # the tiebreak — gives the shallowest reachable prefix.
             #
-            # Phase 210 (SEED-042): FILTER to standard-start games. A custom-FEN
-            # game reaches a shared entry position at a SHALLOWER ply than
+            # FILTER to standard-start games. A custom-FEN game reaches a shared entry position at a SHALLOWER ply than
             # standard games (it skips the opening half-moves baked into its
             # [SetUp]/[FEN] header), so an unfiltered MIN(ply) systematically
             # preferred it as the representative — and its SAN prefix is
@@ -720,9 +701,9 @@ async def query_transition_prefixes(
     move_san values played BEFORE the entry position at the given ply. For ply=0
     samples the list is always [] (no preceding moves). Empty input returns {} immediately.
 
-    Used by opening_insights_service._collect_attribution_hashes to reconstruct
-    entry_san_sequence in Python after query_opening_transitions dropped the window
-    function that previously computed it in SQL.
+    Used by opening_insights_service._fetch_attribution_context to reconstruct
+    entry_san_sequence in Python, since query_opening_transitions has no window
+    function to compute it in SQL.
     """
     if not samples:
         return {}
@@ -775,9 +756,9 @@ async def query_openings_by_hashes(
 
     "Deepest" = MAX(ply_count) among rows whose Opening.full_hash matches.
     Hashes with no match are absent from the result dict (the service
-    falls back to lineage walk per D-23).
+    falls back to lineage walk).
 
-    See CONTEXT.md D-22, RESEARCH.md Pitfall 6 (NULL full_hash filter).
+    Openings with a NULL full_hash are filtered out in SQL.
     """
     if not full_hashes:
         return {}

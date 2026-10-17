@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 239 D-00f, D-00j, D-14: the four context-tag cards.
+ * The four context-tag cards.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -99,7 +99,7 @@ describe('ContextTagCards popovers', () => {
     expect(screen.getByTestId('gap-popover-squandered-tc-rapid')).not.toBeNull();
   });
 
-  it('says flaws with the TC basis in the popover, never events (D-00d)', () => {
+  it('says flaws with the TC basis in the popover, never events', () => {
     render(<ContextTagCards tcStats={SKETCH_RAPID_ENTRY} />);
     fireEvent.click(screen.getByTestId('gap-popover-squandered-tc-rapid'));
     const popover = text('gap-popover-squandered-tc-rapid-popover');
@@ -119,7 +119,7 @@ describe('ContextTagCards popovers', () => {
   });
 });
 
-describe('ContextTagCards significance gate (D-14)', () => {
+describe('ContextTagCards significance gate', () => {
   const notSignificantEntry = makeTcEntry('rapid', {
     analyzedN: 1841,
     overrides: {

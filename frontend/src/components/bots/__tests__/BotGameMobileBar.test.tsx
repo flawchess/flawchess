@@ -26,7 +26,7 @@ function renderBar(overrides?: Partial<Parameters<typeof BotGameMobileBar>[0]>) 
   return { onResign, onBack, onForward, onFlip };
 }
 
-describe('BotGameMobileBar (Phase 223, BOTVOICE-05/D-10)', () => {
+describe('BotGameMobileBar', () => {
   it('renders exactly four actions: Resign, Back, Forward, Flip', () => {
     renderBar();
     expect(screen.getByTestId('bot-game-mobile-bar')).toBeTruthy();
@@ -72,7 +72,7 @@ describe('BotGameMobileBar (Phase 223, BOTVOICE-05/D-10)', () => {
     expect(onResign).toHaveBeenCalledTimes(1);
   });
 
-  // Phase 223 UAT: every action carries a visible label under its icon, the
+  // Every action carries a visible label under its icon, the
   // same shape as the main nav bar this one replaces.
   it('labels all four actions Resign / Back / Next / Flip', () => {
     renderBar();

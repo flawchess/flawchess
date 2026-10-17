@@ -1,47 +1,43 @@
 /**
  * maiaQueue — a Maia policy provider supplying per-node UCI-keyed
- * move-probability distributions for an explicit per-side ELO (POOL-03).
+ * move-probability distributions for an explicit per-side ELO.
  *
- * This is the real implementation of the frozen `EngineProviders.policy()`
- * method (Phase 153), forking the already-shipped `useMaiaEngine.ts`
- * `{type:'analyze', fen, eloInputs}` protocol into a non-React async queue.
- * Not a React hook — plain module, no UI wiring (that lands in Phase 155).
+ * This is the real implementation of `EngineProviders.policy()`, forking
+ * the `useMaiaEngine.ts` `{type:'analyze', fen, eloInputs}` protocol into a
+ * non-React async queue. Not a React hook — plain module, no UI wiring.
  *
- * D-04: requests only the distinct ELOs the search needs (often just `{w,b}`
+ * Requests only the distinct ELOs the search needs (often just `{w,b}`
  * from `SearchBudget.elo`, deduped) — NEVER the full 600-2600 ELO ladder
- * `useMaiaEngine` sweeps for its chart. Cache is keyed by `(fen, elo)` — as of
- * Phase 194 CACHE-05, this cache is `maiaPolicyCache.ts`'s shared
- * module-scoped singleton, also write-through-populated by `useMaiaEngine`'s
- * chart, NOT a separate cache as before.
+ * `useMaiaEngine` sweeps for its chart. Cache is keyed by `(fen, elo)` — it is
+ * `maiaPolicyCache.ts`'s shared module-scoped singleton, also
+ * write-through-populated by `useMaiaEngine`'s chart, not a separate cache.
  *
- * Open Question 2 (154-RESEARCH.md): unlike `useMaiaEngine`'s single-in-flight
+ * Unlike `useMaiaEngine`'s single-in-flight
  * "drop and reissue" discipline (fine for a UI that only cares about the
  * LATEST position), every `policy()` call issued by `mctsSearch.ts` needs an
  * answer — dropping one would leave an expansion's promise hanging forever.
  * This module therefore uses a proper async FIFO queue: one ONNX inference in
  * flight at a time, every caller's promise resolves.
  *
- * Worker ownership (quick 260729-sod, FIX 3 — reverses Phase 154 D-04's
- * "SEPARATE Worker() instance" decision): this module no longer constructs
- * its own Worker. `/analysis` running up to THREE concurrent Maia workers —
- * this queue's own, `useMaiaEngine`'s chart worker, and `useGemSweep`'s own
- * `useMaiaEngine` instance — cost ~226 MB of WASM heap EACH: up to 3 on
+ * Worker ownership: this module does not construct its own Worker.
+ * `/analysis` running up to THREE concurrent Maia workers — this queue's own,
+ * `useMaiaEngine`'s chart worker, and `useGemSweep`'s own `useMaiaEngine`
+ * instance — would cost ~226 MB of WASM heap EACH: up to 3 on
  * desktop (~678 MB) and 2 on mobile/low-power (~452 MB, the configuration
  * that actually OOM'd mobile Safari on FLAWCHESS-92 — the gem sweep's
  * `isLowPowerDevice()` gate keeps its instance from spawning there). This
- * module now acquires a `priority: false` lease from the shared
- * `maiaWorkerHost` singleton instead, which owns Worker spawn/respawn/death
- * and guarantees every request settles. The D-04 part that still holds is
- * requesting only deduped per-side ELOs instead of the full ladder — the
- * previously-separate `(fen, elo)`-keyed cache is now the shared
- * `maiaPolicyCache.ts` singleton (Phase 194 CACHE-05, see above).
+ * module therefore acquires a `priority: false` lease from the shared
+ * `maiaWorkerHost` singleton, which owns Worker spawn/respawn/death
+ * and guarantees every request settles. It requests only deduped per-side
+ * ELOs instead of the full ladder, and its `(fen, elo)`-keyed cache is the
+ * shared `maiaPolicyCache.ts` singleton (see above).
  *
- * Lazy lease acquisition on the first `policy()`/`warm()` call (D-02),
- * `type: 'error'`/`webgpu-unavailable`/worker-death Sentry reporting is now
+ * Lazy lease acquisition on the first `policy()`/`warm()` call,
+ * `type: 'error'`/`webgpu-unavailable`/worker-death Sentry reporting is
  * entirely owned by `maiaWorkerHost.ts`; this module's own graceful-
  * degradation floor is the `.catch` in `processQueue` below — a lease
  * rejection (worker death) settles every affected promise instead of leaving
- * it hanging (Pitfall 1).
+ * it hanging.
  */
 
 import * as Sentry from '@sentry/react';
@@ -53,14 +49,14 @@ import { getCachedPolicy, getPendingPolicy, setCachedPolicy } from './maiaPolicy
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-/** The public surface `createMaiaQueue()` returns — implements `EngineProviders.policy` (D-08). */
+/** The public surface `createMaiaQueue()` returns — implements `EngineProviders.policy`. */
 export interface MaiaQueue {
   /**
    * UCI-keyed Maia move-probability distribution at `elo` for `side` to move
    * (EngineProviders.policy shape). `side` is accepted for contract-shape
    * parity only — it does not change the result independently of `fen`,
-   * since side-to-move is already implicit in the FEN's own 'w'/'b' field
-   * (D-08). `signal` (8XN-2) drops this request from the queue's own
+   * since side-to-move is already implicit in the FEN's own 'w'/'b' field.
+   * `signal` drops this request from the queue's own
    * not-yet-dispatched `pending` backlog on abort, resolving it to `{}` — it
    * does NOT cancel an in-flight ONNX inference (not interruptible) or the
    * chart's own pending entry this call might be awaiting via
@@ -73,7 +69,7 @@ export interface MaiaQueue {
   /**
    * Acquires the shared worker lease (which lazily spawns the Worker and
    * begins the ONNX weight load) WITHOUT enqueueing an `analyze` request —
-   * the Phase 169.5 prewarm counterpart to `WorkerPool.warm()`.
+   * the prewarm counterpart to `WorkerPool.warm()`.
    *
    * This exists even though the opening book's own `deps.policy()` call
    * already warms Maia by necessity on essentially every bot turn: that makes
@@ -85,12 +81,12 @@ export interface MaiaQueue {
    */
   warm(): void;
   /**
-   * Resolves once the shared Maia worker (D-01) is ready to serve `policy()`
+   * Resolves once the shared Maia worker is ready to serve `policy()`
    * — pure forwarding to the lease's own `whenReady()`, lazily acquiring the
-   * lease exactly like `warm()` does. Consumed by `useBotGame.ts`'s D-05
+   * lease exactly like `warm()` does. Consumed by `useBotGame.ts`'s
    * readiness gate via `engineAssetProgress.ts`'s `'ready'` message forward,
    * not directly by this method today — exposed for parity with
-   * `WorkerPool.whenReady()` (Phase 213-03).
+   * `WorkerPool.whenReady()`.
    */
   whenReady(): Promise<'webgpu' | 'wasm'>;
 }
@@ -118,7 +114,7 @@ export function createMaiaQueue(): MaiaQueue {
    * naturally batches every same-FEN request that arrived in that window —
    * without this gate, this queue's own `dispatching` flag would let the
    * very first `policy()` call dispatch alone (a batch of one) before a
-   * second synchronous call ever gets a chance to join it, defeating D-04's
+   * second synchronous call ever gets a chance to join it, defeating the
    * same-FEN batching.
    */
   let leaseReady = false;
@@ -128,13 +124,9 @@ export function createMaiaQueue(): MaiaQueue {
   /**
    * Converts the host's raw per-ELO logits into UCI-keyed probabilities for
    * every request in the just-completed batch, resolving each caller's own
-   * promise. `maskAndSoftmaxUci` (JANK-01, single-sourced from
+   * promise. `maskAndSoftmaxUci` (single-sourced from
    * maiaEncoding.ts) builds the UCI-keyed distribution directly in one pass
-   * over legal moves — no SAN intermediate, so no conversion step can fail;
-   * this replaces the old SAN-keyed `maskAndSoftmax` + per-key `sanToUci`
-   * replay (the WR-07 "dropping only genuinely unconvertible entries"
-   * convention this comment used to describe no longer applies, since there
-   * is no longer a conversion step that can produce an unconvertible entry).
+   * over legal moves — no SAN intermediate, so no conversion step can fail.
    */
   function handleResult(batch: PendingPolicyRequest[], msg: MaiaAnalyzeResult): void {
     const uciByElo = new Map<number, Record<string, number>>();
@@ -155,7 +147,7 @@ export function createMaiaQueue(): MaiaQueue {
    * queue (one ONNX inference at a time — the ONNX runtime can't run two
    * analyses concurrently). Batches every pending request sharing the
    * head-of-queue's FEN into one `analyze` call with the deduped distinct
-   * ELOs they need (D-04) — never the full ladder.
+   * ELOs they need — never the full ladder.
    */
   function processQueue(): void {
     if (dispatching) return;
@@ -177,21 +169,21 @@ export function createMaiaQueue(): MaiaQueue {
         try {
           handleResult(batch, result);
         } catch (err) {
-          // Phase 194 code-review WR-03: a throw inside THIS fulfilment handler
+          // A throw inside THIS fulfilment handler
           // is not caught by the sibling rejection handler below — it becomes an
           // unhandled rejection and every request in `batch` hangs forever,
           // freezing the whole search with no telemetry. The realistic trigger is
           // `maskAndSoftmaxUci`, which reads chess.js's PRIVATE `_moves()` under a
           // `^1.4.0` caret range, so a minor bump can change or remove it.
           // Degrade exactly as the rejection path does (resolve empty — the
-          // no-hanging-promise invariant, Pitfall 1) and make it visible.
+          // no-hanging-promise invariant) and make it visible.
           Sentry.captureException(err, { tags: { source: 'maia-queue' } });
           for (const req of batch) req.resolve({});
         }
         processQueue();
       },
       () => {
-        // Unconditional: this IS the no-hanging-promise invariant (Pitfall 1)
+        // Unconditional: this IS the no-hanging-promise invariant
         // — a lease rejection (worker death, or this lease being released)
         // must not leave any request in this batch hanging forever.
         dispatching = false;
@@ -216,7 +208,7 @@ export function createMaiaQueue(): MaiaQueue {
 
   /**
    * Lazily acquires the shared worker lease on the first policy()/warm() call
-   * (D-02) — never eagerly — and, on every call while not yet ready, (re-)
+   * — never eagerly — and, on every call while not yet ready, (re-)
    * subscribes to `whenReady()`. This is what makes "the next analyze()
    * re-spawns" (the host's worker-death self-heal contract) actually happen
    * from this queue's side: the SAME lease persists across a worker death
@@ -246,7 +238,7 @@ export function createMaiaQueue(): MaiaQueue {
   }
 
   /**
-   * `signal` (8XN-2): when present, registers a `{ once: true }` abort
+   * `signal`: when present, registers a `{ once: true }` abort
    * listener that — ONLY if this request is still sitting in the
    * not-yet-dispatched `pending` backlog (`indexOf >= 0`) — splices it out
    * and resolves it to `{}`, the same empty-record semantics
@@ -257,7 +249,7 @@ export function createMaiaQueue(): MaiaQueue {
    * Every `pending` entry has exactly one waiter (its own caller), so
    * removing it here never strands another `policy()` call. Why `{}` is
    * safe downstream: `dispatchExpansion` turns an empty policy distribution
-   * into an empty candidate set (the WR-04 early return, never calling
+   * into an empty candidate set (an early return, never calling
    * `grade()`), and the orchestrator's own apply loop breaks on
    * `signal.aborted` before applying anything — an aborted expansion's
    * result is discarded either way.
@@ -266,7 +258,7 @@ export function createMaiaQueue(): MaiaQueue {
     return new Promise<Record<string, number>>((resolvePromise) => {
       // Every settlement path below calls `req.resolve(...)` — wrapping it
       // once here means the abort listener is removed on EVERY one of them
-      // (handleResult, the WR-03 catch, a rejected lease, onFatal, terminate,
+      // (handleResult, its fulfilment-handler catch, a rejected lease, onFatal, terminate,
       // and abort itself), so a long-lived search signal never accumulates
       // one listener per policy() call it ever made.
       let removeAbortListener: (() => void) | undefined;
@@ -293,18 +285,18 @@ export function createMaiaQueue(): MaiaQueue {
   }
 
   function policy(fen: string, elo: number, side: Side, signal?: AbortSignal): Promise<Record<string, number>> {
-    void side; // side is implicit in fen's own 'w'/'b' field (D-08); accepted for contract shape only.
+    void side; // side is implicit in fen's own 'w'/'b' field; accepted for contract shape only.
     const cached = getCachedPolicy(fen, elo);
     if (cached) return Promise.resolve(cached);
-    // 8XN-2: an already-aborted signal with no cache entry never enqueues —
+    // An already-aborted signal with no cache entry never enqueues —
     // resolve {} immediately, matching the pending-abort semantics below.
     if (signal?.aborted) return Promise.resolve({});
-    // Quick 260906-gu2: the chart hook (`useMaiaEngine`) already has this exact
+    // The chart hook (`useMaiaEngine`) already has this exact
     // `(fen, elo)` in flight on the shared worker (its priority request is
     // queued AHEAD of anything this lease would add) — await that result
     // instead of paying a duplicate ~200 ms wasm inference. If the producer's
     // request fails, fall back to a request of our own. This join is
-    // deliberately NOT signal-aware (8XN-2): the chart OWNS that pending
+    // deliberately NOT signal-aware: the chart OWNS that pending
     // entry and still needs its own result, so an abort here must never
     // cancel it — only a request THIS call itself enqueues (the fallback
     // below) can be dropped.

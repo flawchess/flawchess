@@ -1,16 +1,16 @@
-"""Predicate unit tests for build_flaw_filter_clauses + flaw_exists_from_table (Plan 108-03).
+"""Predicate unit tests for build_flaw_filter_clauses + flaw_exists_from_table.
 
-Verifies the SEED-038 family-aware boolean logic and single-flaw EXISTS semantics:
+Verifies the family-aware boolean logic and single-flaw EXISTS semantics:
 
 - build_flaw_filter_clauses([], []) returns [] (no filter = match all)
 - single-flaw EXISTS: a game whose one flaw is BOTH low-clock AND reversed
   matches the combined filter; a game with a low-clock flaw on ply X and a
   reversed flaw on a DIFFERENT ply Y does NOT match (AND across families is
-  per-flaw, not per-game — the make-or-break SEED-038 test)
+  per-flaw, not per-game — the make-or-break test)
 - OR within family: a flaw tagged "miss" OR "lucky" matches either
 - severity set-membership: ["mistake"] matches mistakes only (not blunders)
 - cross-user isolation: another user's game_flaws row does not satisfy the EXISTS
-  for the requesting user (T-108-07)
+  for the requesting user
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ _TEMPO_LOW_CLOCK = 0
 _TEMPO_HASTY = 1
 _TEMPO_UNRUSHED = 2
 # Tactic encoding — FORK motif int (TacticMotifInt.FORK) + a confidence above the
-# _TACTIC_CHIP_CONFIDENCE_MIN (70) gate so the row counts as a "fork" tactic slot.
+# MIN_TACTIC_CHIP_CONFIDENCE (70) gate so the row counts as a "fork" tactic slot.
 _MOTIF_FORK = 1
 _TACTIC_CONF_HIGH = 80
 
@@ -203,23 +203,23 @@ class TestBuildFlawFilterClausesUnit:
         assert len(clauses) == 4
 
     def test_empty_tactic_families_produces_no_clause(self) -> None:
-        """Phase 126: empty tactic_families → no tactic clause (off by default)."""
+        """Empty tactic_families → no tactic clause (off by default)."""
         clauses = build_flaw_filter_clauses([], [], [])
         assert clauses == [], "no tactic families selected must add no filter"
 
     def test_tactic_families_produce_one_combined_clause(self) -> None:
-        """Phase 126: selected tactic families OR within a single flaw-level clause."""
+        """Selected tactic families OR within a single flaw-level clause."""
         clauses = build_flaw_filter_clauses([], [], ["fork", "pin"])
         assert len(clauses) == 1, "tactic families share one OR-within clause"
 
     def test_tactic_families_are_distinct_from_tag_families(self) -> None:
-        """Phase 126: tactic family is its own family — AND-ed across with tags/severity."""
+        """Tactic family is its own family — AND-ed across with tags/severity."""
         clauses = build_flaw_filter_clauses(["blunder"], ["miss"], ["mate"])
         # severity (1) + opportunity family (1) + tactic family (1) = 3
         assert len(clauses) == 3
 
     def test_unknown_tactic_family_adds_no_clause(self) -> None:
-        """Phase 126: an unknown family key expands to no motif ints → no clause."""
+        """An unknown family key expands to no motif ints → no clause."""
         clauses = build_flaw_filter_clauses([], [], ["not-a-family"])
         assert clauses == [], "unknown family keys must be dropped, not raise"
 
@@ -314,7 +314,7 @@ class TestFlawExistsFromTable:
 
     @pytest.mark.asyncio
     async def test_single_flaw_exists_both_families_match(self, db_session: AsyncSession) -> None:
-        """SEED-038 make-or-break: a SINGLE flaw satisfying BOTH families matches.
+        """Make-or-break: a SINGLE flaw satisfying BOTH families matches.
 
         A game with ONE flaw row tagged low-clock AND reversed satisfies the
         combined filter (low-clock + reversed) because the same row satisfies
@@ -351,7 +351,7 @@ class TestFlawExistsFromTable:
     async def test_split_flaws_across_plies_do_not_match_cross_family(
         self, db_session: AsyncSession
     ) -> None:
-        """SEED-038 make-or-break: AND across families is per-flaw, NOT per-game.
+        """Make-or-break: AND across families is per-flaw, NOT per-game.
 
         A game with:
         - Flaw at ply 2: low-clock (but NOT reversed)
@@ -405,7 +405,7 @@ class TestFlawExistsFromTable:
 
     @pytest.mark.asyncio
     async def test_single_flaw_tactic_and_context_match(self, db_session: AsyncSession) -> None:
-        """Quick 260621 fix: a SINGLE flaw that is BOTH a fork AND low-clock matches.
+        """A SINGLE flaw that is BOTH a fork AND low-clock matches.
 
         The Games-tab EXISTS (flaw_exists_from_table) ANDs the tactic family and the
         context tag onto the same game_flaws row, so one flaw satisfying both
@@ -445,7 +445,7 @@ class TestFlawExistsFromTable:
     async def test_split_tactic_and_context_flaws_do_not_match(
         self, db_session: AsyncSession
     ) -> None:
-        """Quick 260621 fix (regression): tactic AND context is per-flaw, NOT per-game.
+        """Regression: tactic AND context is per-flaw, NOT per-game.
 
         A game with:
         - Flaw at ply 2: a high-confidence fork, but NOT low-clock
@@ -579,7 +579,7 @@ class TestFlawExistsFromTable:
     async def test_cross_user_isolation(self, db_session: AsyncSession) -> None:
         """Another user's game_flaws rows do not satisfy the EXISTS for the requesting user.
 
-        T-108-07: flaw_exists_from_table always includes GameFlaw.user_id == user_id.
+        flaw_exists_from_table always includes GameFlaw.user_id == user_id.
         User 77001's flaw row must not satisfy the EXISTS when the query is for user 77002.
         """
         # Game owned by user 77001 with a blunder flaw.
@@ -626,17 +626,17 @@ class TestFlawExistsFromTable:
 
 
 # ---------------------------------------------------------------------------
-# TestFlawExistsPlayerOnly — D-04 player-only gate on flaw_exists_from_table (R1/R6)
+# TestFlawExistsPlayerOnly — player-only gate on flaw_exists_from_table
 # ---------------------------------------------------------------------------
 
 
 class TestFlawExistsPlayerOnly:
     """flaw_exists_from_table must gate on player flaws only after both-sides materialization.
 
-    After Phase 113 Plan 01, game_flaws contains rows for BOTH the player and
+    game_flaws contains rows for BOTH the player and
     the opponent (distinguished by ply parity + games.user_color). The EXISTS
-    check (R1/R6) must apply the player-only gate so opponent-only flaws do NOT
-    flag a game into the cross-tab Flaw filter (D-04).
+    check must apply the player-only gate so opponent-only flaws do NOT
+    flag a game into the cross-tab Flaw filter.
 
     Parity convention (is_opponent_expr — query_utils.py):
         even ply → white mover → player row iff user_color == 'white'

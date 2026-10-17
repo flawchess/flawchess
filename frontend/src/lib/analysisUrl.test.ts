@@ -149,7 +149,7 @@ describe('parseAnalysisFenParam', () => {
     expect(parseAnalysisFenParam('not-a-fen')).toBeNull();
   });
 
-  // Regression (CR-01): a stray `%` makes decodeURIComponent throw URIError.
+  // Regression: a stray `%` makes decodeURIComponent throw URIError.
   // The guard must catch it and return null, not crash the board render.
   it('returns null for a malformed percent-escape', () => {
     expect(parseAnalysisFenParam('50%')).toBeNull();

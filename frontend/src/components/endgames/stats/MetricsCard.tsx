@@ -50,8 +50,8 @@ function bucketShares(bucket: RankedBucketOut | undefined): WdlShares | null {
 
 /**
  * How much of the bar the rate counts, in percent of the bar width. Parity's score
- * counts half of each draw, so its span ends halfway through the draw segment (238 UAT:
- * the parity bracket spans its score like the other two cards instead of only labelling it).
+ * counts half of each draw, so its span ends halfway through the draw segment; the
+ * parity bracket spans its score like the other two cards.
  */
 function coveredPct(bucket: MaterialBucket, shares: WdlShares): number {
   if (bucket === 'conversion') return shares.win;
@@ -66,8 +66,8 @@ interface MetricsCardProps {
 
 /**
  * One material bucket (Conversion, Parity or Recovery) for the selected time
- * control (D-00d). The big rate, the WDL bar and the percentile rows all come
- * from the same ranked sample, so they always describe the same games (D-00b).
+ * control. The big rate, the WDL bar and the percentile rows all come
+ * from the same ranked sample, so they always describe the same games.
  * No gauge: the bracket over the bar shows what the rate counts instead.
  */
 export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
@@ -76,7 +76,7 @@ export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
   const gap = tcStats.metrics[copy.gapMetric];
   const shares = bucketShares(tcStats.buckets.find((b) => b.bucket === bucket));
   const testId = `metrics-card-${bucket}`;
-  // D-11: while entry evals are missing the rate is not computable, so the
+  // While entry evals are missing the rate is not computable, so the
   // pending line (inside the rate row) stands in for the big number and the bar.
   const showHeadline = rate.status !== 'pending';
   const rateText = rate.value === null ? NO_VALUE : formatMetricValue(copy.rateMetric, rate.value);
@@ -86,7 +86,7 @@ export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
       <CardHeader>{copy.title}</CardHeader>
       <CardBody className="flex flex-col gap-4">
         {/* Reserve two lines so the rows below line up across the three cards
-            when one definition wraps to a second line (238 UAT). */}
+            when one definition wraps to a second line. */}
         <p className="min-h-[2lh] text-sm text-muted-foreground">{copy.definition}</p>
         {showHeadline && (
           <div className="flex flex-col gap-2">

@@ -1,6 +1,5 @@
 /**
- * Shared "only one good move vs several" guess vocabulary (190.1-03 D-03;
- * revocabularized Phase 222 D-09).
+ * Shared "only one good move vs several" guess vocabulary.
  *
  * Single source of truth for the exact wording so `TrainSolveScreen`'s guess
  * buttons and `TrainReveal`'s verdict row can never drift apart — extracted
@@ -8,13 +7,13 @@
  * parent/child circular import between the two (`TrainSolveScreen` renders
  * `TrainReveal`).
  *
- * D-09 (Phase 222): the short button-label form became "Only one" / "Several"
+ * The short button-label form became "Only one" / "Several"
  * (`GUESS_LABELS`) — the old "One critical move" / "Several fine moves" pair
  * read as two full sentences stacked in a 375px button row. The reveal's
  * guess card header needs its own longer call-form ("Your call: only one
  * good move" / "Your call: several good moves") because the short label
  * alone is unreadable out of context there — `GUESS_CALL_LABELS` is a
- * SEPARATE map, not an overload of `GUESS_LABELS`. `guessFeedbackProse`'s six
+ * SEPARATE map, not an overload of `GUESS_LABELS`. `guessFeedbackProse`'s
  * sentences below are untouched LOCKED wording — they already spell out
  * "only one move works" / "several moves are fine" in full prose and do not
  * read `GUESS_LABELS` at all.
@@ -24,13 +23,13 @@ import type { TrainMoveTier } from '@/lib/trainScore';
 
 export type Guess = 'critical' | 'several';
 
-/** Short guess-button labels (D-09). Read by `TrainSolveScreen`'s guess pair. */
+/** Short guess-button labels. Read by `TrainSolveScreen`'s guess pair. */
 export const GUESS_LABELS: Record<Guess, string> = {
   critical: 'Only one',
   several: 'Several',
 };
 
-/** Long call-form for the reveal's guess card header (D-09) — "Only one" read
+/** Long call-form for the reveal's guess card header — "Only one" read
  * alone as `Guess: Only one` was unreadable out of context. */
 export const GUESS_CALL_LABELS: Record<Guess, string> = {
   critical: 'only one good move',
@@ -38,15 +37,15 @@ export const GUESS_CALL_LABELS: Record<Guess, string> = {
 };
 
 /**
- * Quick 260803-iv6 (Task 3): one prose sentence stating what the guess verdict
+ * One prose sentence stating what the guess verdict
  * MEANS — the guess card states the verdict but never says WHY it landed
  * where it did. Belongs beside `GUESS_LABELS` (this module already owns the
  * guess vocabulary) rather than inline in `TrainReveal`.
  *
- * The six return strings are LOCKED wording — reproduced verbatim, never
- * reworded. Guard-clause returns, no nesting.
+ * The return strings are LOCKED wording, reproduced verbatim, never reworded.
+ * Guard-clause returns, no nesting.
  *
- * Two bug fixes (2026-08-03) shaped the current branch set:
+ * These bug fixes shaped the current branch set:
  *
  * 1. The correct-`critical` branch used to be a single "You identified the one
  *    critical move.", which reads as "you PLAYED the critical move" — badly
@@ -69,7 +68,7 @@ export const GUESS_CALL_LABELS: Record<Guess, string> = {
  *    across both guesses — the position fact does not depend on what the user
  *    guessed about it. Only the herring case still splits on `correctGuess`,
  *    for the affirming "Indeed".
- * 4. Phase 235 (D-15, owner sign-off on a new branch of LOCKED copy): when the
+ * 4. A branch added to the LOCKED copy with owner sign-off: when the
  *    SERVER reports a confirmed disagreement (the user's off-key move held up on
  *    the deeper re-check), the sentence names the key move and says the user's
  *    move holds up too. It outranks every "only one move works" branch above

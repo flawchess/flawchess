@@ -1,19 +1,19 @@
 /**
- * Desktop custom-range popover (Phase 92 Plan 05 — D-03/D-04/D-17 + UAT revision).
+ * Desktop custom-range popover.
  *
  * Renders a Radix `PopoverContent` containing a two-month range Calendar.
  * The Popover itself is controlled from FilterPanel.tsx via the `open`/`onOpenChange`
  * props; FilterPanel wraps the Select in `<PopoverAnchor asChild>` so the content
  * appears anchored to the Select trigger.
  *
- * Commit semantics (revised in UAT, supersedes D-05 auto-close):
+ * Commit semantics:
  *   - `value`/`onChange` here drive FilterPanel's *pending* range state. The
  *     filter is only updated when the popover closes (Done, outside click,
  *     Escape) — see FilterPanel's `Popover onOpenChange` handler.
  *   - The calendar stays open after a full range is picked so the user can
  *     keep correcting until they explicitly dismiss.
  *
- * Single-bound (D-17): from-only or to-only ranges are valid commits.
+ * Single-bound: from-only or to-only ranges are valid commits.
  */
 
 import { format } from 'date-fns';
@@ -38,7 +38,7 @@ export const CALENDAR_MAX_DATE = new Date();
  *
  * Both bounds set  → `"MMM d, yyyy – MMM d, yyyy"` (en-dash, space-padded)
  * From only        → `"From MMM d, yyyy"`
- * To only          → `"Until MMM d, yyyy"` (symmetric per CONTEXT.md D-17)
+ * To only          → `"Until MMM d, yyyy"` (symmetric with "From")
  * Neither set      → `"Custom range…"` (defensive fallback)
  */
 export function formatCustomRangeLabel(
@@ -57,9 +57,9 @@ export function formatCustomRangeLabel(
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 interface CustomRangePopoverProps {
-  /** Currently committed custom range (null = nothing committed yet). */
+  /** In-progress (pending) range; FilterPanel commits it when the popover closes. */
   value: { from?: Date; to?: Date } | null;
-  /** Called when the user picks a range (or a partial range on D-17). */
+  /** Called when the user picks a range (a partial range is valid). */
   onChange: (range: { from?: Date; to?: Date } | null) => void;
   /** Controlled open-change callback. */
   onOpenChange: (open: boolean) => void;

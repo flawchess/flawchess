@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * Phase 237 Plan 04: the tracer harness. The REAL buildChipGroups feeds the REAL
+ * The tracer harness. The REAL buildChipGroups feeds the REAL
  * useTrainRevealTree, which drives TrainLineChips and TrainMoveTreeList together
  * (no mock of either module), so the chip -> tree -> list path is proven as one
  * slice before the reveal screen mounts it.
  *
- * SEED-197: each chip owns only its first move; the rest of its graded line is the
+ * Each chip owns only its first move; the rest of its graded line is the
  * dimmed preview at the end of the list, and the Stockfish row drops the top engine
  * line at a previewed leaf.
  */
@@ -26,7 +26,7 @@ vi.mock('@/lib/sounds', () => ({
   unlockAudio: vi.fn(),
 }));
 
-// The tree hook owns the reveal's one Stockfish engine (plan 06). jsdom has no
+// The tree hook owns the reveal's one Stockfish engine. jsdom has no
 // Worker, so drive it with a mutable state object (the useTrainRevealTree test's
 // pattern): `lineCount` PV lines, the first starting with `engineState.pvFirstMove`.
 const SECONDARY_ENGINE_MOVES = ['c7c5', 'e7e6', 'd7d5', 'c7c6'];
@@ -138,7 +138,7 @@ describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
     expect(screen.getByTestId('variation-preview-0').textContent).toContain('e5');
     expect(screen.getByTestId('variation-preview-1').textContent).toContain('Nf3');
     expect(within(list()).queryByTestId('variation-preview-2')).toBeNull();
-    // SEED-197 UAT: no eval pill in the move list; the chip keeps the frozen graded eval.
+    // No eval pill in the move list; the chip keeps the frozen graded eval.
     expect(screen.queryByTestId('variation-preview-eval')).toBeNull();
     expect(screen.getByTestId('train-chip-your-eval').getAttribute('title')).toBe('Graded eval');
 
@@ -147,7 +147,7 @@ describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
     expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('e4', 'e5'));
     expect(within(list()).getByText('e5').closest('[data-testid^="variation-node-"]')).toBeTruthy();
 
-    // D-01: a chip tap from another chip's line returns to the puzzle position.
+    // A chip tap from another chip's line returns to the puzzle position.
     fireEvent.click(screen.getByTestId('train-chip-best'));
     expect(screen.getByTestId('harness-fen').textContent).toBe(START_FEN);
     expect(screen.getByTestId('train-chip-best').getAttribute('aria-pressed')).toBe('true');
@@ -178,7 +178,7 @@ describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
     renderHarness();
     const list = () => screen.getByTestId('train-move-tree');
 
-    // e4 is a leaf with a preview. SEED-197 UAT: the row still leads with Line 1 (the
+    // e4 is a leaf with a preview. The row still leads with Line 1 (the
     // solid-blue best line carrying the live eval) next to the dimmed preview.
     fireEvent.click(within(list()).getByText('e4'));
     expect(screen.getByTestId('variation-preview-0')).toBeTruthy();

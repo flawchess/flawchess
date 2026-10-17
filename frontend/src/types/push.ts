@@ -1,5 +1,5 @@
 /**
- * TypeScript mirrors of the Phase 201 push API Pydantic schemas
+ * TypeScript mirrors of the push API Pydantic schemas
  * (app/schemas/push.py). Field-for-field, following `types/train.ts`'s
  * docstring convention.
  */

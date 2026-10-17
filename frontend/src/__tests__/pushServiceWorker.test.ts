@@ -1,13 +1,13 @@
 /**
  * Executable tests for frontend/public/push-sw.js — the service-worker
  * handlers imported via workbox.importScripts into the Workbox-generated
- * sw.js (PUSH-06). push-sw.js registers listeners on a service-worker
+ * sw.js. push-sw.js registers listeners on a service-worker
  * global that does not exist in Node, so it is loaded the way the browser
  * loads it (read the raw file, run it in a stub global via node:vm) rather
  * than imported as an ES module.
  *
- * Pins the D-13 (focus-existing-or-open) and D-14 (fixed tag,
- * renotify:false) contracts as named, failing tests — a future edit that
+ * Pins the focus-existing-or-open and fixed-tag (renotify:false)
+ * contracts as named, failing tests — a future edit that
  * "simplifies" notificationclick into a bare openWindow call must fail one
  * of these, not quietly regress to duplicate tabs.
  */

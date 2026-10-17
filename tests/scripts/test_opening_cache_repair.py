@@ -1,4 +1,4 @@
-"""Tests for scripts/opening_cache_repair.py (Phase 220, Plan 01).
+"""Tests for scripts/opening_cache_repair.py.
 
 These are selection/persistence-logic tests -- the engine is always stubbed
 (a `_FakePool` recording every board it was asked to evaluate, keyed by FEN)
@@ -39,12 +39,12 @@ Coverage:
   leaves the batch's audit rows at `pending` and the cursor unchanged; a
   second run reprocesses exactly that batch (asserted from the fresh fake
   pool's recorded board list) with no duplication.
-- TestReport (Phase 220 Plan 04, CACHEFIX-07) : write_repair_report is
+- TestReport : write_repair_report is
   read-only (six table row counts identical before/after), tolerates zero
   audit rows, orders the top-30 table by carrier count DESC then full_hash
   ASC (a total order), emits no PII token, and the injected now/out_dir
   determine the filename/location.
-- TestLegacySample (Phase 220 Plan 04, CACHEFIX-10, D-07) : refuses to run
+- TestLegacySample : refuses to run
   without a calibrated screen_floor, the decision rule's four corners (ratio
   exactly 2x, ratio>2x with excess just under/at/above 1.0pp), a short
   cohort uses all available games and reports the real n, a zero-eligible
@@ -134,7 +134,7 @@ class _FakePool:
     evaluate() and an optional separate scripted 4-tuple for
     evaluate_nodes_with_pv(), records every board it was asked to evaluate
     (fen strings), and can raise on the Nth evaluate() call to simulate a
-    kill mid-batch (RESEARCH §Testing SIGTERM-mid-batch resume, design 1)."""
+    kill mid-batch (SIGTERM-mid-batch resume)."""
 
     def __init__(
         self,
@@ -726,7 +726,7 @@ class TestScreen:
         self, test_engine: AsyncEngine
     ) -> None:
         """A cache row carried ONLY as the final position of a game that ended by
-        resignation/timeout inside 20 plies must still be screened (Phase 220 dev
+        resignation/timeout inside 20 plies must still be screened (dev
         smoke: 94 such rows stayed `pending` forever and `orphans` refused them)."""
         session_maker = _session_maker(test_engine)
         await _ensure_user(session_maker, _TEST_USER_ID)
@@ -1540,7 +1540,7 @@ class TestOrphans:
     async def test_orphans_lichess_carrier_not_orphan(self, test_engine: AsyncEngine) -> None:
         """A cache row whose ONLY carrier is a lichess game is NOT marked
         orphan -- the board is a legitimate source even though its eval is
-        never read (Pitfall 6)."""
+        never read."""
         session_maker = _session_maker(test_engine)
         await _ensure_user(session_maker, _TEST_USER_ID)
         real_hashes = _real_hashes_by_ply(_RUY_LOPEZ_PGN)
@@ -1570,7 +1570,7 @@ class TestOrphans:
 
 
 class TestConfirm:
-    """CACHEFIX-04: `confirm` re-evaluates `flagged` rows at the drain's own
+    """`confirm` re-evaluates `flagged` rows at the drain's own
     1M-node budget and overwrites the cache row only on the `confirmed_bad`
     branch."""
 
@@ -1853,7 +1853,7 @@ class TestConfirm:
 
 
 class TestPropagate:
-    """CACHEFIX-05: `propagate` rewrites only carrier `game_positions` rows
+    """`propagate` rewrites only carrier `game_positions` rows
     that still hold a `confirmed_bad` audit row's exact OLD cached value, on
     the correct side of the post-move shift."""
 
@@ -2185,8 +2185,8 @@ class TestPropagate:
 
     async def test_propagate_transitions_status_to_repaired(self, test_engine: AsyncEngine) -> None:
         """Propagate moves the audit row `confirmed_bad -> repaired` (not just a
-        `repaired_at` stamp): Release 2's migration trusts `repaired` rows and must
-        not demote a just-repaired position to candidate (Phase 220 dev smoke)."""
+        `repaired_at` stamp): `demote` trusts `repaired` rows and must
+        not demote a just-repaired position to candidate (found in a dev smoke)."""
         session_maker = _session_maker(test_engine)
         target_hash = 555_035
         try:
@@ -2472,13 +2472,13 @@ class TestPropagateBestMoves:
 
 
 class TestRederive:
-    """CACHEFIX-06: `rederive` reclassifies every affected game under the
+    """`rederive` reclassifies every affected game under the
     per-game advisory lock, through the drain's own diff/upsert classifier,
     preserving blobs/tactic tags for every surviving flaw."""
 
     async def test_rederive_preserves_blobs(self, test_engine: AsyncEngine) -> None:
         """A surviving flaw's two blob columns and its tactic-tag columns are
-        byte-identical after rederive (preserve-by-omission, D-03/D-04)."""
+        byte-identical after rederive (preserve-by-omission)."""
         session_maker = _session_maker(test_engine)
         await _ensure_user(session_maker, _TEST_USER_ID)
         game_id = await _insert_rederive_game(session_maker, include_mistake=True)
@@ -2566,7 +2566,7 @@ class TestRederive:
 
     async def test_rederive_rearm(self, test_engine: AsyncEngine) -> None:
         """`blobs_completed_at` is cleared when a new blob-less flaw appears
-        (D-08/SEED-125 bidirectional re-arm)."""
+        (bidirectional re-arm)."""
         session_maker = _session_maker(test_engine)
         await _ensure_user(session_maker, _TEST_USER_ID)
         game_id = await _insert_rederive_game(session_maker, include_mistake=True)
@@ -2595,7 +2595,7 @@ class TestRederive:
 
     async def test_rederive_drills(self, test_engine: AsyncEngine) -> None:
         """The orphaned drill_item is pruned, a still-valid one survives, and
-        herring_pool rows are counted (never deleted, D-08)."""
+        herring_pool rows are counted (never deleted)."""
         session_maker = _session_maker(test_engine)
         await _ensure_user(session_maker, _TEST_USER_ID)
         game_id = await _insert_rederive_game(session_maker, include_mistake=True)
@@ -2807,7 +2807,7 @@ class TestRederive:
 
 
 # ---------------------------------------------------------------------------
-# `demote` (Phase 220 Release 2, CACHEFIX-08 -- operator escape hatch)
+# `demote` (operator escape hatch)
 # ---------------------------------------------------------------------------
 
 
@@ -2985,7 +2985,7 @@ class TestDemote:
 
 
 # ---------------------------------------------------------------------------
-# `report` fixtures (Phase 220 Plan 04, CACHEFIX-07)
+# `report` fixtures
 # ---------------------------------------------------------------------------
 
 _REPORT_READ_ONLY_MODELS = (
@@ -3011,7 +3011,7 @@ async def _report_read_only_table_counts(
 
 
 class TestReport:
-    """CACHEFIX-07: `report` renders every audit table into a committed,
+    """`report` renders every audit table into a committed,
     read-only, PII-free markdown trail."""
 
     async def test_report_read_only(self, test_engine: AsyncEngine, tmp_path: Path) -> None:
@@ -3160,12 +3160,12 @@ class TestReport:
 
 
 # ---------------------------------------------------------------------------
-# `legacy-sample` fixtures (Phase 220 Plan 04, CACHEFIX-10, D-07)
+# `legacy-sample` fixtures
 # ---------------------------------------------------------------------------
 
 
 class TestLegacySample:
-    """CACHEFIX-10/D-07: `legacy-sample` measures the pre-2026-06-18 legacy
+    """`legacy-sample` measures the pre-2026-06-18 legacy
     cohort's disagreement rate beyond ply 20 against a like-for-like control,
     through the same per-row test `screen` uses."""
 
@@ -3330,9 +3330,9 @@ class TestLegacySample:
 
 
 class TestPoolFromEnv:
-    """Stages must size their own EnginePool from STOCKFISH_POOL_SIZE (CONTEXT.md:
-    'STOCKFISH_POOL_SIZE=4 on the local box'). Regression for the hardcoded
-    EnginePool(1) found during the Phase 220 dev smoke."""
+    """Stages must size their own EnginePool from STOCKFISH_POOL_SIZE (4 on the
+    local box). Regression for the hardcoded
+    EnginePool(1) found during a dev smoke."""
 
     def test_honours_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from scripts.opening_cache_repair import _pool_from_env

@@ -1,4 +1,4 @@
-"""Router tests for GET /api/train/leaderboard (Phase 230, plans 01 and 02).
+"""Router tests for GET /api/train/leaderboard.
 
 Cases:
 - test_points_and_accuracy_boards_rank_this_week: tracer, both boards end to end
@@ -6,14 +6,14 @@ Cases:
 - test_response_key_set_has_no_user_ids: exact key sets, no id/email anywhere
 - test_leaderboard_requires_auth: 401 without a token
 - test_solves_outside_the_pinned_week_are_ignored: half-open week boundaries,
-  keyed on solved_at and not on drill_sessions.session_date (D-02)
+  keyed on solved_at and not on drill_sessions.session_date
 
 Isolation rule: leaderboard data is global and router tests commit, so every test
 in this module pins `dev_now_utc` into its own ISO week (the Monday 2032-01-05 plus
 k weeks) and deletes the users it registered in `finally` (deleting a user cascades
 its sessions and solves). A k is never reused anywhere in the phase.
 
-k table (this plan holds k 0-9; Plan 02 holds k 10-29; Plan 04 holds k 30-39):
+k table (k 0-9 are used first, k 10-29 by the later tests, k 30-39 are reserved):
 - k=0  test_points_and_accuracy_boards_rank_this_week
 - k=1  owned by test_solves_outside_the_pinned_week_are_ignored (its previous-week row)
 - k=2  test_solves_outside_the_pinned_week_are_ignored
@@ -110,7 +110,7 @@ async def _seed_solves(
     """Insert one completed session with one solved row per outcome; return its id.
 
     `session_date` defaults to the solve's UTC date. A test can override it to prove
-    the window keys on solved_at, not on the session date (D-02).
+    the window keys on solved_at, not on the session date.
     """
     day = session_date or solved_at.astimezone(datetime.UTC).date()
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -342,7 +342,7 @@ async def test_solves_outside_the_pinned_week_are_ignored(
         u_id, u_token = await _register_and_login(f"lb-window-{tag}@example.com")
         user_ids = [u_id]
         # The out-of-week rows carry a session_date INSIDE the pinned week, so a window
-        # keyed on drill_sessions.session_date would wrongly count them (D-02).
+        # keyed on drill_sessions.session_date would wrongly count them.
         await _seed_solves(
             test_engine,
             u_id,
@@ -422,7 +422,7 @@ async def test_rank_without_session_follows_the_viewer_across_two_sessions(
 async def test_foreign_session_id_ignored(
     test_engine: Any, pin_now: Callable[[datetime.datetime], None]
 ) -> None:
-    """Foreign session id (k=11): another user's session subtracts nothing (T-230-04)."""
+    """Foreign session id (k=11): another user's session subtracts nothing."""
     pin_now(_wednesday_noon(11))
     solved_at = _week_monday(11) + datetime.timedelta(days=1)
     tag = uuid.uuid4().hex[:8]

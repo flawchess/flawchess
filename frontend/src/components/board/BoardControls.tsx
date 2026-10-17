@@ -15,9 +15,9 @@ interface BoardControlsProps {
   canReset?: boolean;
   canGoForward: boolean;
   /**
-   * Fast-forward handler (Quick 260831-s4y). The button renders ONLY when this
-   * is supplied — Openings, Bots, Train and the App.tsx mobile board bar all
-   * render BoardControls without it and deliberately keep four buttons (D-07).
+   * Fast-forward handler. The button renders ONLY when this is supplied —
+   * Openings, Bots, Train and the App.tsx mobile board bar all render
+   * BoardControls without it and deliberately keep four buttons.
    */
   onFastForward?: () => void;
   /** Enable state for the fast-forward button. Ignored when onFastForward is omitted. */
@@ -27,16 +27,17 @@ interface BoardControlsProps {
   /** Render buttons in a vertical column (used on mobile beside the board) */
   vertical?: boolean;
   /**
-   * Flat surface (Quick 260628-dgv): drop the rounded charcoal pill so the buttons
+   * Flat surface: drop the rounded charcoal pill so the buttons
    * sit directly on the parent bar, reading like the main nav buttons. Used by the
    * mobile /analysis board-controls footer; desktop/Openings keep the pill.
    */
   flat?: boolean;
   /**
-   * Phase 223 UAT: render a visible text label under each icon, the icon-over-label
-   * column shape `BotGameMobileBar` and the main nav already use. Opt-in, and only
-   * meaningful together with `flat` — the mobile /analysis footer is the one caller;
-   * every desktop/vertical caller stays icon-only with its tooltip.
+   * Render a visible text label under each icon, the icon-over-label column
+   * shape `BotGameMobileBar` and the main nav already use. Opt-in, and only
+   * meaningful together with `flat` — used by the mobile /analysis footer and
+   * the Train reveal phone bar; every desktop/vertical caller stays icon-only
+   * with its tooltip.
    */
   labels?: boolean;
   /**
@@ -62,7 +63,7 @@ const SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
 
 /**
  * Icon-over-label column, byte-identical to `BotGameMobileBar`'s own button
- * class so the two mobile bars read as the same furniture (Phase 223 UAT).
+ * class so the two mobile bars read as the same furniture.
  * Exported for bars that add their own labelled column beside the controls
  * (the Train reveal's Analyze).
  */
@@ -74,11 +75,7 @@ interface BoardControlsLayout {
   iconSize: string;
 }
 
-/**
- * All of the bar's class-resolution branching, pulled out of the component
- * body: `BoardControls.tsx` is pinned at cyclomatic complexity 16 in
- * `frontend/eslint.config.js`, so the `labels` arm could not be added inline.
- */
+/** All of the bar's class-resolution branching, kept out of the component body. */
 function resolveLayout(
   props: Pick<BoardControlsProps, 'flat' | 'labels' | 'vertical' | 'size' | 'buttonClassName'>,
 ): BoardControlsLayout {
@@ -86,9 +83,9 @@ function resolveLayout(
   const resolvedSize = size ?? (vertical ? 'lg' : 'sm');
   // flat (mobile /analysis footer) reads like the main nav bar: each control fills an
   // equal share of the width (flex-1) with a tall 48px tap target, unless the caller
-  // pins an explicit size/buttonClassName (Quick 260628-cjp — larger tap targets).
+  // pins an explicit size/buttonClassName (larger tap targets).
   const navStyle = flat && !buttonClassName && !size;
-  // flat drops the charcoal pill so the bar reads like the main nav (Quick 260628-dgv).
+  // flat drops the charcoal pill so the bar reads like the main nav.
   const surfaceClass = flat ? '' : 'rounded-lg charcoal-texture';
   // Match the main nav icon size (h-5) on the flat mobile bar and the 48px 'xl'
   // bar; keep h-4 on the smaller desktop/vertical pills.
@@ -112,10 +109,7 @@ interface ControlButtonProps {
   disabled?: boolean;
 }
 
-/**
- * One control in the bar. Extracted from the five near-identical Button blocks
- * this file used to repeat so the visible-label arm lives in exactly one place.
- */
+/** One control in the bar; the visible-label arm lives here only. */
 function ControlButton({
   layout,
   label,

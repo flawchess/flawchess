@@ -1,10 +1,10 @@
 """Async repository for reading ``benchmark_cohort_cdf`` breakpoint data.
 
-This is the ONLY async DB access for Phase 99.1 (D-04).  ``global_percentile_cdf``
+This is the ONLY async DB access for the benchmark cohort CDF.  ``global_percentile_cdf``
 stays 100% pure and synchronous; this repository handles the DB round-trip and
 reconstructs ``CdfTable`` instances from the long-format rows.
 
-Design (D-03): ``load_cohort_cells`` is a BATCHED PREFETCH loader.  The caller
+Design: ``load_cohort_cells`` is a BATCHED PREFETCH loader.  The caller
 issues ONE call before a per-import loop, pulling all needed (metric, anchor, TC)
 cells into an in-memory dict.  Each subsequent interpolation hits that dict, not
 the DB (~32 lookups per import, zero extra queries).

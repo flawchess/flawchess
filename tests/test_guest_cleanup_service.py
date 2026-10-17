@@ -1,24 +1,23 @@
-"""Tests for app.services.guest_cleanup_service (Phase 187, SEED-116).
+"""Tests for app.services.guest_cleanup_service.
 
 Covers:
 - TestPurgeGuestEndToEnd: _purge_guest deletes games + 5 cascading children +
   import_jobs + the 2 derived-stats tables, resets both backfill-cursor
   mechanisms, and leaves the guest User row + bookmarks + user_import_settings
-  row (and its tc_*/game_cap preferences) untouched (D-03/D-04/D-05/D-06,
-  Pitfall 1/Pitfall 2, 187-RESEARCH.md).
+  row (and its tc_*/game_cap preferences) untouched.
 - TestEligibilityQuery: get_eligible_guest_ids selects only guests inactive
   >= 30 days, excluding recent guests, NULL-last_activity guests, and
   registered (non-guest) users.
 - TestTransactionPerGuest: a failure purging one guest does not roll back or
-  block another guest's already-committed purge (D-06 isolation).
+  block another guest's already-committed purge.
 - TestCleanupSummaryLog: cleanup_inactive_guests emits one summary log line
-  carrying scanned/purged/games_deleted counts (D-07).
+  carrying scanned/purged/games_deleted counts.
 
 Uses the real per-run test DB via a genuine (non-savepoint) session bound to
 test_engine -- see the module-scoped fixtures below for why the usual
 rollback-scoped `db_session` fixture cannot be used for tests that exercise
 _purge_guest/cleanup_inactive_guests: those open their OWN
-async_session_maker() session (D-06: one transaction per guest) on a
+async_session_maker() session (one transaction per guest) on a
 SEPARATE physical connection, and Postgres MVCC means that connection can
 never see another connection's uncommitted work. TestEligibilityQuery calls
 get_eligible_guest_ids directly with an explicit session (no separate
@@ -85,7 +84,7 @@ async def real_session_maker(
     Postgres MVCC) -- confirmed via a scratch repro where a game committed
     through `db_session` read back as 0 rows from a second connection.
 
-    _purge_guest opens its own D-06 per-guest session on a genuinely separate
+    _purge_guest opens its own per-guest session on a genuinely separate
     connection, so test data it must see has to be committed for real. This
     fixture (mirroring conftest.py's own `fresh_test_user` pattern) provides
     a sessionmaker whose sessions own their transaction outright, so
@@ -98,7 +97,7 @@ async def real_session_maker(
 async def _patch_guest_cleanup_session_maker(real_session_maker, monkeypatch):
     """Route guest_cleanup_service's OWN async_session_maker() opens to the test DB.
 
-    _purge_guest opens its own session per guest (D-06) via a module-level
+    _purge_guest opens its own session per guest via a module-level
     `from app.core.database import async_session_maker` binding, captured at
     guest_cleanup_service's own import time (collection) -- BEFORE conftest's
     session-scoped override_get_async_session fixture ever patches
@@ -121,10 +120,10 @@ async def _patch_guest_cleanup_session_maker(real_session_maker, monkeypatch):
 
 @pytest_asyncio.fixture(autouse=True)
 async def _cleanup_leaked_guest_rows(real_session_maker):
-    """Delete guest User rows a test creates so committed rows don't pollute later tests (WR-03).
+    """Delete guest User rows a test creates so committed rows don't pollute later tests.
 
     The real_session_maker-based tests commit for real (no rollback), and
-    _purge_guest deliberately KEEPS the guest User row (D-05). So a committed
+    _purge_guest deliberately KEEPS the guest User row. So a committed
     test leaves an eligible-looking guest (is_guest=True, last_activity 30+
     days ago) in the per-run test DB for the rest of the xdist worker's
     session, which any future exact-`is_guest`-count assertion would trip on.
@@ -159,14 +158,14 @@ class TestPurgeGuestEndToEnd:
     async def test_purge_deletes_all_and_resets_cursors_keeps_survivors(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        """_purge_guest deletes games+children+cursors, keeps kept rows (D-03..D-06)."""
+        """_purge_guest deletes games+children+cursors, keeps kept rows."""
         async with real_session_maker() as seed_session:
             user, _token = await create_guest_user(seed_session)
             guest_id = user.id
 
             # Narrative fidelity with the 30-day threshold (_purge_guest itself
             # does not gate on eligibility -- the caller/orchestrator does, see
-            # Task 2's TestEligibilityQuery/TestTransactionPerGuest).
+            # TestEligibilityQuery/TestTransactionPerGuest).
             cutoff = datetime.now(timezone.utc) - timedelta(days=31)
             await seed_session.execute(
                 text("UPDATE users SET last_activity = :ts WHERE id = :uid"),
@@ -343,7 +342,7 @@ class TestPurgeGuestEndToEnd:
     async def test_purge_stamps_games_purged_at_keeps_usernames(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        """QTE-02: _purge_guest stamps games_purged_at, keeps platform usernames intact."""
+        """_purge_guest stamps games_purged_at, keeps platform usernames intact."""
         async with real_session_maker() as seed_session:
             guest_id, _game_id = await _seed_eligible_guest_with_game(seed_session)
             await seed_session.execute(
@@ -372,7 +371,7 @@ class TestPurgeGuestEndToEnd:
     async def test_reactivated_guest_is_skipped_not_purged(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        """WR-01: a guest who becomes active after the eligibility snapshot is not purged.
+        """A guest who becomes active after the eligibility snapshot is not purged.
 
         cleanup_inactive_guests snapshots eligible ids, then purges each in its
         own later transaction; during a large first-tick backlog a guest can log
@@ -410,11 +409,10 @@ class TestPurgeGuestEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# TestPurgeGuestDrillCascade (Phase 224 D-08, GUESTACT-10, ROADMAP SC 8 —
-# supersedes the Phase 189 Plan 02 / POOL-09 preservation reading below,
-# FOR GUESTS ONLY. Registered users' Phase 189 D-04 preservation is
-# unchanged: _purge_guest re-verifies User.is_guest.is_(True) in the same
-# transaction (WR-01), so this code can never reach a registered user.)
+# TestPurgeGuestDrillCascade (FOR GUESTS ONLY: their Train rows are deleted
+# with their games, while registered users' Train state is preserved.
+# _purge_guest re-verifies User.is_guest.is_(True) in the same
+# transaction, so this code can never reach a registered user.)
 # ---------------------------------------------------------------------------
 
 
@@ -424,20 +422,19 @@ class TestPurgeGuestDrillCascade:
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
         """The 30-day guest purge deletes the guest's Train rows with the
-        games (Phase 224 D-08, GUESTACT-10, ROADMAP SC 8).
+        games.
 
         `_purge_guest` deletes the guest's `drill_sessions` row, which
         cascades every `drill_solves` row through `session_id` (`ON DELETE
         CASCADE`), and the guest's `train_settings` row, in the same
         transaction as the existing games cascade that removes `drill_items`.
 
-        This supersedes the Phase 189 D-04 "preserved by design" reading FOR
-        GUESTS ONLY: Phase 224 opened Train to guests (reversing Phase 189
-        D-05's guest gate), so a guest now accumulates real Train state, and
+        This applies to GUESTS ONLY: Train is open to guests, so a guest now
+        accumulates real Train state, and
         `/welcome` advertises "nothing is deleted after 30 days of
         inactivity" as a sign-up delta -- honest only if a purged guest's
-        Train state goes with their games. Registered users' D-04
-        preservation is untouched (see class docstring above).
+        Train state goes with their games. Registered users' Train state
+        is preserved (see the comment above the class).
 
         The seed includes a second `drill_solves` row with `game_id=None`
         (a sharp-filler solve, `source=SHARP_FILLER`) on the SAME session as
@@ -549,7 +546,7 @@ class TestPurgeGuestDrillCascade:
 
 
 # ---------------------------------------------------------------------------
-# Shared seed helpers (Task 2)
+# Shared seed helpers
 # ---------------------------------------------------------------------------
 
 
@@ -610,7 +607,7 @@ class TestEligibilityQuery:
         await _set_last_activity(db_session, user_id=recent_guest.id, days_ago=29)
 
         null_activity_guest, _ = await create_guest_user(db_session)
-        # last_activity stays NULL (create_guest_user never sets it -- Pitfall 3).
+        # last_activity stays NULL (create_guest_user never sets it).
 
         registered = User(
             email=f"registered-{uuid.uuid4().hex}@example.com",
@@ -642,7 +639,7 @@ class TestTransactionPerGuest:
     async def test_one_guest_failure_does_not_block_or_rollback_another(
         self, real_session_maker: async_sessionmaker[AsyncSession], monkeypatch
     ) -> None:
-        """A failure purging guest 2 leaves guest 1's committed purge intact (D-06)."""
+        """A failure purging guest 2 leaves guest 1's committed purge intact."""
         async with real_session_maker() as seed_session:
             guest1_id, guest1_game_id = await _seed_eligible_guest_with_game(seed_session)
             guest2_id, guest2_game_id = await _seed_eligible_guest_with_game(seed_session)
@@ -685,7 +682,7 @@ class TestCleanupSummaryLog:
     async def test_emits_one_summary_line_with_counts(
         self, real_session_maker: async_sessionmaker[AsyncSession], caplog: pytest.LogCaptureFixture
     ) -> None:
-        """cleanup_inactive_guests logs one summary line with scanned/purged/games_deleted (D-07)."""
+        """cleanup_inactive_guests logs one summary line with scanned/purged/games_deleted."""
         async with real_session_maker() as seed_session:
             await _seed_eligible_guest_with_game(seed_session)
             await seed_session.commit()
@@ -704,7 +701,7 @@ class TestCleanupSummaryLog:
 
 
 # ---------------------------------------------------------------------------
-# TestRunPeriodicGuestCleanup (Plan 02)
+# TestRunPeriodicGuestCleanup
 # ---------------------------------------------------------------------------
 
 

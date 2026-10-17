@@ -6,7 +6,7 @@
  * account. It never takes a target user id, so it can only ever notify you.
  *
  * Local-dev only: the backend 404s the endpoint outside
- * `ENVIRONMENT=development` (D-17, mirroring `app/core/dev_clock.py`'s
+ * `ENVIRONMENT=development` (mirroring `app/core/dev_clock.py`'s
  * fail-closed gate), so the caller in `pages/Admin.tsx` gates on
  * `import.meta.env.DEV` rather than rendering a button that is dead in prod.
  *

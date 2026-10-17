@@ -1,20 +1,18 @@
-"""Pydantic v2 schemas for the Train API (Phase 189).
+"""Pydantic v2 schemas for the Train API.
 
-Phase 235 (SEED-192, D-05, supersedes POOL-10 / P-01): `TrainPuzzle` is the
-pre-attempt payload and carries the server's answer key (`key_move_uci`), the
-puzzle type and, for a sharp SR item only, the runner-up — see its class
-docstring for the exact-equality contract and the display rule. Phase 211:
-the vetted-move material ("also fine" moves, the graded-ES pair) lives on
-`SolveResponse` — produced only once the attempt is already recorded — and
+`TrainPuzzle` is the pre-attempt payload and carries the server's answer key
+(`key_move_uci`), the puzzle type and, for a sharp SR item only, the runner-up;
+see its class docstring for the exact-equality contract and the display rule.
+The vetted-move material ("also fine" moves, the graded-ES pair) lives on
+`SolveResponse`, produced only once the attempt is already recorded, and
 never on `TrainPuzzle`.
 
-Phase 236 (SEED-193, D-03/D-08): `TrainPuzzle` also carries
-`server_graded_moves`, the tier-only set of moves whose grade the server owns,
-so a played move the server grades itself is POSTed without the phone's engine
-wait. It is read only after the move and never displayed before the attempt;
-it exposes nothing beyond the key already sent, whose server-certified good
-band the owner accepted in Phase 235 D-05. This is a different, tier-only wire
-type from `VettedMove`, which still never goes on `TrainPuzzle`.
+`TrainPuzzle` also carries `server_graded_moves`, the tier-only set of moves
+whose grade the server owns, so a played move the server grades itself is
+POSTed without the phone's engine wait. It is read only after the move and never
+displayed before the attempt; it exposes nothing beyond the key already sent,
+whose server-certified good band the owner accepted. This is a different,
+tier-only wire type from `VettedMove`, which still never goes on `TrainPuzzle`.
 """
 
 from __future__ import annotations
@@ -41,13 +39,12 @@ from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
 
 
 class ServerGradedMove(BaseModel):
-    """One move whose grade the server owns (Phase 236, SEED-193, D-03/D-08).
+    """One move whose grade the server owns.
 
     The wire twin of `app.services.train_pool.ServerGradedMove` (same name,
-    different module, the Phase 211 `VettedMove` precedent; mapped field-by-field
-    at the router). Only the UCI and its tier cross the wire: the expected
+    different module, like `VettedMove`; mapped field-by-field at the router). Only the UCI and its tier cross the wire: the expected
     scores stay server-side. The tier is what the client asserts on the instant
-    POST (D-10) when the move has left the live set by solve time.
+    POST when the move has left the live set by solve time.
     """
 
     uci: str
@@ -57,35 +54,33 @@ class ServerGradedMove(BaseModel):
 class TrainPuzzle(BaseModel):
     """One pre-attempt puzzle.
 
-    Phase 235 (SEED-192, D-05, supersedes POOL-10 / P-01): the pre-attempt
-    payload carries the server's answer key (`key_move_uci`), the puzzle type
-    and, for a sharp SR item only, the runner-up (`runner_up_uci`, D-19). Why:
-    the phone grades the played move against the key with its own engine on
-    both sides (D-01), and the puzzle type lets the sharp disagreement
-    re-check run before the POST (D-10). The owner ruled cheating out as a
-    concern on 2026-10-07 (anyone can run Stockfish in another tab, and
-    off-key `move_quality` was already client-asserted). The guess UI must
-    still never DISPLAY the type or the key before the attempt. A null key
-    means no usable key (D-07): the client keeps today's root-search grading.
+    The pre-attempt payload carries the server's answer key (`key_move_uci`),
+    the puzzle type and, for a sharp SR item only, the runner-up
+    (`runner_up_uci`). Why: the phone grades the played move against the key
+    with its own engine on both sides, and the puzzle type lets the sharp
+    disagreement re-check run before the POST. Cheating is ruled out as a
+    concern (anyone can run Stockfish in another tab, and off-key
+    `move_quality` is client-asserted anyway). The guess UI must still never
+    DISPLAY the type or the key before the attempt. A null key means no usable
+    key: the client falls back to root-search grading.
     `best_move`, `pv` and `source` remain forbidden here.
 
-    Phase 236 (SEED-193, D-03/D-08): `server_graded_moves` is the set of
-    (uci, tier) the server grades itself (soft best + second-best, a sharp
+    `server_graded_moves` is the set of (uci, tier) the server grades itself (soft best + second-best, a sharp
     runner-up, a herring's good-band ladder), legal in `fen` and empty for a
     puzzle with no usable key. The client reads it only after the move, to POST
     without the ~1.5 s phone wait; it is never displayed before the attempt and
-    exposes nothing beyond the key already sent (Phase 235 D-05). Only uci and
-    tier are sent; the expected scores stay server-side.
+    exposes nothing beyond the key already sent. Only uci and tier are sent;
+    the expected scores stay server-side.
 
-    `last_move_uci` (190-02, SOLV-02) describes the position's ARRIVAL — the
+    `last_move_uci` describes the position's ARRIVAL: the
     half-move immediately before `ply`, i.e. the opponent's (or the user's
     own) prior move — so the solve screen can animate/highlight it. It does
     not reveal what to play next.
 
-    `game_id` is `int | None` (Phase 192 Plan 02, D-01/D-05): a red herring's
+    `game_id` is `int | None`: a red herring's
     source-game link is nullable provenance — `None` here means either the
     herring's source game has been deleted (the puzzle is still fully
-    servable off its `herring_pool` row, D-03) or the pool row was never
+    servable off its `herring_pool` row) or the pool row was never
     linked to a game in the first place. Never used as an identity key
     client-side; a puzzle's identity within a session is `position`.
     """
@@ -96,42 +91,39 @@ class TrainPuzzle(BaseModel):
     fen: str
     side_to_move: Literal["white", "black"]
     last_move_uci: str | None
-    # Phase 235 (D-05/D-06): the server's key move; None = no usable key (D-07).
+    # The server's key move; None = no usable key.
     key_move_uci: str | None = None
-    # Phase 235 (D-05): wire puzzle type; a sharp filler reads "sharp".
+    # Wire puzzle type; a sharp filler reads "sharp".
     puzzle_type: Literal["sharp", "soft", "herring"] | None = None
-    # Phase 235 (D-19): the blob's second-best move, sharp SR items only.
+    # The blob's second-best move, sharp SR items only.
     runner_up_uci: str | None = None
-    # Phase 236 (D-08): read only after the move, never displayed pre-attempt.
+    # Read only after the move, never displayed pre-attempt.
     server_graded_moves: list[ServerGradedMove] = Field(default_factory=list)
 
 
 class SolvedResult(BaseModel):
     """One recorded solve's outcome, part of `TrainSessionResponse.solved_results`.
 
-    Quick task 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): one entry per
-    `drill_solves` row with `solved_at IS NOT NULL`, in `position` order. The
-    client aggregates these with its own points formula
-    (`frontend/src/lib/trainScore.ts`, `scorePuzzle` + `aggregateSessionScore`)
-    — that file stays the single source of truth for per-session display
-    (LOCKED, Option B). This response deliberately carries NO precomputed
-    score integer. Phase 230 D-01 later added a deliberate server port of the
-    three scoring constants for the weekly leaderboard aggregate only
-    (`app.services.train_score`), pinned to trainScore.ts by
+    One entry per `drill_solves` row with `solved_at IS NOT NULL`, in
+    `position` order. The client aggregates these with its own points formula
+    (`frontend/src/lib/trainScore.ts`, `scorePuzzle` + `aggregateSessionScore`);
+    that file is the single source of truth for per-session display. This
+    response deliberately carries NO precomputed score integer. The three
+    scoring constants have a deliberate server port for the weekly leaderboard
+    aggregate only (`app.services.train_score`), pinned to trainScore.ts by
     `tests/services/test_train_score_parity.py`.
 
-    Not an answer-key leak: `correct_guess`, `move_quality`, and (Phase 222,
-    TRAINBOT-04/D-17) `source`/`item_status`/`due_date` were ALL already
+    Not an answer-key leak: `correct_guess`, `move_quality`, and
+    `source`/`item_status`/`due_date` were ALL already
     returned by `SolveResponse` for each of these same positions at the
     moment they were attempted — this endpoint just re-serves outcomes the
     client already saw once, from the server instead of a device-local
-    cache. The `PuzzleRevealResponse` 409 gate (which protects the actual
-    answer key — best move, PV, puzzle type) is untouched and continues to
-    protect UNSOLVED positions only. Entries here carry no `position`,
-    `game_id`, `ply`, or best-move field, so they reveal nothing about
-    puzzles still to be attempted in the session.
+    cache. The `PuzzleRevealResponse` 409 gate (in-game move and reveal
+    payload) still protects UNSOLVED positions. Entries here carry no
+    `position`, `game_id`, `ply`, or best-move field, so they reveal nothing
+    about puzzles still to be attempted in the session.
 
-    `due_date` (D-17 caveat): this is the item's CURRENT value, not a frozen
+    `due_date`: this is the item's CURRENT value, not a frozen
     at-solve-time snapshot — identical within one session, and arguably more
     truthful for a "when does it come back" statement across a re-composed
     one (e.g. after a later solve in the same session re-advanced the ladder).
@@ -161,21 +153,20 @@ class TrainSessionResponse(BaseModel):
     key. A caller seeing `puzzle_count < requested_count` MUST read
     `blob_pending_count` to tell "still analyzing" (non-zero) apart from
     "genuinely caught up" (zero) — removing either field re-hides the
-    Pitfall 4 signal this schema exists to surface.
+    "still analyzing" signal this schema exists to surface.
 
-    `solved_results` (260728-tgc) is one `SolvedResult` per recorded solve in
+    `solved_results` is one `SolvedResult` per recorded solve in
     `position` order — see that schema's docstring. Empty for a freshly
     composed session and for the no-eligible-material (`session_id is None`)
     case. This is what makes "Scored today" correct on a device that never
     saw the original solve responses (the reproduced prod bug: a
     localStorage-only tally read "0 of 18" on a second device).
 
-    `is_warmup` (Phase 206, D-06/D-07) is frozen at composition and derived
-    purely from material scarcity — `True` iff the session contains zero
+    `is_warmup` is frozen at composition and derived purely from material scarcity — `True` iff the session contains zero
     surviving SR_ITEM puzzles at the moment it was (re-)composed. It is
     never derived from session ordinal, session count, or account age, and
     the client performs no arithmetic to reproduce it: it is a single
-    server-computed boolean to branch on (T-191-24).
+    server-computed boolean to branch on.
     """
 
     session_id: int | None
@@ -190,31 +181,31 @@ class TrainSessionResponse(BaseModel):
     is_warmup: bool
 
 
-# Phase 233 (SEED-190): per-puzzle telemetry boundary. Mirrored by the frontend in
+# Per-puzzle telemetry boundary. Mirrored by the frontend in
 # frontend/src/lib/trainTelemetry.ts (plain integer literals, regex-parity-tested).
 # Schema version stamped as `v` on the SOLVE patch (a `Literal[1]` cannot reference it).
 TELEMETRY_SCHEMA_VERSION: Final = 1
-# Phase 237 D-12: the REVIEW patch's own schema version, mirrored in
-# frontend/src/lib/trainTelemetry.ts by plan 09. Separate from the solve constant on
-# purpose (RESEARCH Pitfall 4): bumping TELEMETRY_SCHEMA_VERSION would make every solve
+# The REVIEW patch's own schema version, mirrored in
+# frontend/src/lib/trainTelemetry.ts. Separate from the solve constant on
+# purpose: bumping TELEMETRY_SCHEMA_VERSION would make every solve
 # POST send `v: 2`, which SolveTelemetry rejects (and SolveRequest then silently drops).
 REVIEW_TELEMETRY_SCHEMA_VERSION: Final = 2
-# D-04: a forgotten tab must not record a 9-hour think; a data-quality cap, not a security bound.
+# A forgotten tab must not record a 9-hour think; a data-quality cap, not a security bound.
 TELEMETRY_DURATION_CAP_MS: Final = 30 * 60 * 1000
-# Cap on prev/next/token steps through a reveal line (D-14).
+# Cap on prev/next/token steps through a reveal line.
 TELEMETRY_LINE_STEPS_CAP: Final = 50
-# Cap on free-play moves played on the reveal board (D-14).
+# Cap on free-play moves played on the reveal board.
 TELEMETRY_EXPLORE_MOVES_CAP: Final = 50
 # Cap on card counts (the reveal shows at most 4 cards today).
 TELEMETRY_CARDS_CAP: Final = 10
 
-# Phase 235 (SEED-192, D-17/D-18): disagreement re-check boundary. Schema version
+# Disagreement re-check boundary. Schema version
 # stamped on the stored record (a `Literal[1]` cannot reference it).
 RECHECK_SCHEMA_VERSION: Final = 1
 # A data-quality bound on Stockfish's reported depth, which can run into the
 # hundreds once a mate is found; clamped, not rejected.
 RECHECK_DEPTH_CAP: Final = 255
-# Phase 236 (SEED-193, D-01): schema version stamped as `v` on the stored phone
+# Schema version stamped as `v` on the stored phone
 # grade record (a `Literal[1]` cannot reference it); mirrored in
 # frontend/src/lib/trainPhoneGrade.ts.
 PHONE_GRADE_SCHEMA_VERSION: Final = 1
@@ -263,20 +254,19 @@ TelemetryExploreMoves = Annotated[
 
 
 class SolveTelemetry(BaseModel):
-    """Client-measured think-time telemetry riding on the solve POST (Phase 233).
+    """Client-measured think-time telemetry riding on the solve POST.
 
-    D-01: validated at the boundary (`extra="forbid"`, typed and capped fields,
+    Validated at the boundary (`extra="forbid"`, typed and capped fields,
     a `v` schema-version key), so nothing unvalidated reaches the JSONB column.
-    D-02: `guess_ms` is board shown -> guess pressed, `move_ms` is guess pressed
+    `guess_ms` is board shown -> guess pressed, `move_ms` is guess pressed
     -> move played, both measured client-side (the server cannot measure this,
-    puzzles are pre-materialized at composition). D-04: only visible time is
+    puzzles are pre-materialized at composition). Only visible time is
     counted; the hidden span is stored as `think_hidden_ms` here and as
-    `review_hidden_ms` on the review patch. The two are distinct keys on purpose
-    (refinement of D-04's single `hidden_ms`): the per-key last-write-wins merge
-    would otherwise let the review flush overwrite the think value. D-09:
-    `client` is a closed Literal. `resumed` marks a timer that restarted after a
-    reload or remount. D-05: never an input to grading, scoring, the SR ladder or
-    the leaderboard.
+    `review_hidden_ms` on the review patch. The two are distinct keys on purpose:
+    the per-key last-write-wins merge would otherwise let the review flush
+    overwrite the think value. `client` is a closed Literal. `resumed` marks a
+    timer that restarted after a reload or remount. Never an input to grading,
+    scoring, the SR ladder or the leaderboard.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -299,9 +289,9 @@ RecheckDepth = Annotated[
 
 
 class SolveRecheck(BaseModel):
-    """The phone's disagreement re-check record riding on the solve POST (Phase 235).
+    """The phone's disagreement re-check record riding on the solve POST.
 
-    D-11/D-13/D-17/D-18: when the phone's own search disagrees with the server key
+    When the phone's own search disagrees with the server key
     it re-searches at a longer budget. `key_es` / `played_es` are the mover-POV
     expected scores of the key and the played move from the phone's first
     after-move searches (the 1.5 s pair); `key_es_recheck` / `played_es_recheck`
@@ -310,12 +300,12 @@ class SolveRecheck(BaseModel):
     search rates the played move good and "resolved" otherwise.
 
     Two triggers produce this record: a sharp puzzle's off-key move the 1.5 s
-    pair rated good (Phase 235), and any keyed puzzle's off-key move the 1.5 s
-    pair rated inaccuracy (quick 261008-ob1, rescuing short-search under-reads).
+    pair rated good, and any keyed puzzle's off-key move the 1.5 s
+    pair rated inaccuracy (rescuing short-search under-reads).
     The 1.5 s pair (`key_es - played_es`) tells the two apart.
 
     Validated at the boundary and stored as the `drill_solves.recheck` record.
-    Whether the disagreement earns credit (D-14) is decided server-side in
+    Whether the disagreement earns credit is decided server-side in
     `train_repository._resolve_grade`, never by this model.
     """
 
@@ -335,21 +325,21 @@ class SolveRecheck(BaseModel):
 
 
 class PhoneGrade(BaseModel):
-    """The phone's own grading reading for one keyed solve (Phase 236, SEED-193).
+    """The phone's own grading reading for one keyed solve.
 
-    D-04: the phone's grading reading at the standard 1.5 s budget, never the 3 s
+    The phone's grading reading at the standard 1.5 s budget, never the 3 s
     re-check reading (that stays in `SolveRecheck`). `key_es` / `played_es` are the
     mover-POV expected scores of the phone's after-key and after-played searches and
     `key_depth` / `played_depth` the Stockfish depths they reached. `tier` is the
     phone's own grade of the played move.
 
-    D-05: a played == key solve carries equal pairs and tier good, so accuracy
-    queries filter `played_move != key`. D-06: the legacy no-key path sends no
-    record. D-07: no device or engine hint (depth already measures a slow device),
-    so `extra="forbid"` rejects any extra field and drops the whole record.
+    A played == key solve carries equal pairs and tier good, so accuracy
+    queries filter `played_move != key`. The legacy no-key path sends no
+    record. There is no device or engine hint (depth already measures a slow
+    device), so `extra="forbid"` rejects any extra field and drops the whole record.
 
     Validated at the boundary and stored as the `drill_solves.phone_grade` record.
-    D-02: audit data only, never an input to `_resolve_grade`; `move_quality` stays
+    Audit data only, never an input to `_resolve_grade`; `move_quality` stays
     the effective tier.
     """
 
@@ -365,10 +355,10 @@ class PhoneGrade(BaseModel):
 
 
 class ReviewTelemetry(BaseModel):
-    """Client-measured reveal telemetry flushed once per puzzle (Phase 233).
+    """Client-measured reveal telemetry flushed once per puzzle.
 
-    D-03: accumulated in the reveal and flushed via the review route on Next and
-    on page unload; no per-click events. D-07: `exit` is required, the abandon
+    Accumulated in the reveal and flushed via the review route on Next and
+    on page unload; no per-click events. `exit` is required: the abandon
     analysis derives "puzzle N was shown" from puzzle N-1's `exit == "next"`.
     `exit` is a closed enum with no third value: "next" means the user pressed
     Next on the reveal, "pagehide" means the user left the reveal WITHOUT pressing
@@ -376,12 +366,12 @@ class ReviewTelemetry(BaseModel):
     via Analyze). A reveal can be flushed with "pagehide" several times and then
     with "next" (the user came back), so every counter is a cumulative TOTAL,
     never a delta: each later flush overwrites per key via the jsonb merge.
-    D-14: the closed counter set (no flip counter, no Solution-return counter),
-    plus `review_board_moves` (quick 261007-axc).
-    D-04: `review_hidden_ms` is the hidden-tab span of the review (the solve
+    The closed counter set (no flip counter, no Solution-return counter),
+    plus `review_board_moves`.
+    `review_hidden_ms` is the hidden-tab span of the review (the solve
     patch carries `think_hidden_ms`, distinct keys so the merge cannot collide).
 
-    Phase 237 D-12/D-13, schema v2: line chips replace the cards, so v2 carries
+    Schema v2: line chips replace the cards, so v2 carries
     `review_chips_selected` (distinct line chips selected beyond the default You
     chip, by tap or by a line-matching move from the puzzle position),
     `review_chips_total` (chips shown, the largest number seen on this reveal) and
@@ -414,10 +404,10 @@ class ReviewTelemetry(BaseModel):
     exit: Literal["next", "pagehide"]
     review_ms: TelemetryDurationMs | None = None
     review_hidden_ms: TelemetryDurationMs | None = None
-    # D-12: distinct cards inspected at least once, and the number shown.
+    # Distinct cards inspected at least once, and the number shown.
     review_cards_opened: TelemetryCardCount | None = None
     review_cards_total: TelemetryCardCount | None = None
-    # Phase 237 D-12 (v2 only): distinct chips selected beyond the default You chip,
+    # v2 only: distinct chips selected beyond the default You chip,
     # chips shown, and whether the phone verdict strip was opened (phone only).
     review_chips_selected: TelemetryCardCount | None = None
     review_chips_total: TelemetryCardCount | None = None
@@ -426,16 +416,16 @@ class ReviewTelemetry(BaseModel):
     review_explored: StrictBool | None = None
     # Every user-played free-play move: board moves plus Stockfish engine-line clicks.
     review_explore_moves: TelemetryExploreMoves | None = None
-    # Quick 261007-axc: only the moves played on the board by hand (drag or tap),
+    # Only the moves played on the board by hand (drag or tap),
     # a subset of review_explore_moves. Absent on rows from older clients.
     review_board_moves: TelemetryExploreMoves | None = None
     review_analyze_opened: StrictBool | None = None
-    # D-13: the Phase 222 first-reveal walkthrough was active on this reveal.
+    # The first-reveal walkthrough was active on this reveal.
     review_walkthrough: StrictBool | None = None
 
     @model_validator(mode="after")
     def _keys_match_version(self) -> ReviewTelemetry:
-        """Keep the stored JSONB to two clean shapes (Phase 237 D-12).
+        """Keep the stored JSONB to two clean shapes.
 
         v1 must not carry the v2 chip/strip keys and v2 must not carry the v1 card
         keys. A plain ValueError (no variables, no Sentry): a mixed body is expected
@@ -451,13 +441,13 @@ class ReviewTelemetry(BaseModel):
 
 
 class ReviewRequest(ReviewTelemetry):
-    """Body for the review route (Phase 236 D-12).
+    """Body for the review route.
 
-    The Phase 233 telemetry plus, for a server-graded move, the phone's late 1.5 s
+    The review telemetry plus, for a server-graded move, the phone's late 1.5 s
     reading that finished after the instant solve POST. `phone_grade` is written to
     its own `drill_solves.phone_grade` column, never merged into telemetry and never
-    a grading input (Phase 233 D-05, Phase 236 D-02). A malformed record is dropped
-    to None so it never costs the flush its telemetry (mirrors D-01).
+    a grading input. A malformed record is dropped
+    to None so it never costs the flush its telemetry (like `SolveRequest`).
     `extra="forbid"` is inherited, so unknown top-level keys still 422.
     """
 
@@ -468,7 +458,7 @@ class ReviewRequest(ReviewTelemetry):
     def _drop_invalid_phone_grade(
         cls, value: object, handler: ValidatorFunctionWrapHandler
     ) -> PhoneGrade | None:
-        """Drop a malformed phone grade to None instead of 422-ing the flush (D-01).
+        """Drop a malformed phone grade to None instead of 422-ing the flush.
 
         No logging and no Sentry capture: a malformed object comes from a stale or
         tampered client and is an expected condition, not a bug.
@@ -482,45 +472,26 @@ class ReviewRequest(ReviewTelemetry):
 class SolveRequest(BaseModel):
     """Body for POST /train/sessions/{session_id}/solve.
 
-    P-02 (LOCKED) / SEED-119: the client asserts a three-way `move_quality`
-    tier (the backend never grades the move — grading is still entirely
-    client-side, see the module/plan docstrings) but NEVER `correct_guess`
-    or `puzzle_type` — those are computed server-side from the live
-    `game_flaws` blob so the sharp/soft ground truth is never handed to the
-    client before the attempt (T-189-18/T-189-11). The server derives the
+    The client asserts `move_quality`, a three-way tier that is authoritative
+    for every OFF-key move. For a `played_move` matching the server-certified
+    key (the soft blob's `su`, or a qualifying herring ladder entry) or a played
+    sharp runner-up, the server grades the move from its own stored evals and
+    discards the client's value: the client can never assert a verdict it does
+    not own. `correct_guess` and `puzzle_type` are always computed server-side
+    from the live `game_flaws` blob, so the sharp/soft ground truth is never
+    handed to the client before the attempt; a confirmed, sanity-checked phone
+    disagreement (`recheck`) can earn the guess point. The server derives the
     spaced-repetition ladder's pass/fail boolean from `move_quality`
     (`!= "wrong"`) — see `app.repositories.train_repository.record_solve`.
 
-    Phase 211 (D-03/D-07) narrows the sentence above: as of this phase the
-    backend DOES grade the move for the one case where it owns the truth —
-    a `played_move` matching the server-certified key (the soft blob's `su`,
-    or a qualifying herring ladder entry). The client's assertion is still
-    required in every request and still authoritative for every OFF-key move
-    (D-04's accepted residual); for a key move the server recomputes the
-    tier from its own stored evals and discards the client's value. This is
-    the same shape as the pre-existing `_compute_correct_guess` override —
-    the client can never assert a verdict it does not own.
-
-    Phase 233 (SEED-190): `telemetry` is optional so a stale frontend bundle
-    still solves. Invalid telemetry never costs the solve (D-02): a malformed
-    object is dropped to None and only the telemetry is lost. It is never an
-    input to grading (D-05).
-
-    Phase 235 (SEED-192): the client knows the key before attempting since D-05
-    (the pre-attempt payload carries it), so the old "the client cannot know the
-    key" argument no longer applies. `recheck` is the optional D-17/D-18
+    `telemetry`, `recheck` and `phone_grade` are optional and dropped to None
+    when malformed, so they never cost the solve (only that record is lost).
+    `telemetry` and `phone_grade` are never grading inputs. `recheck` is the
     disagreement re-check record, separate from telemetry because it feeds
-    grading. The server grades a played sharp runner-up itself from its own blob
-    (D-02) and accepts a confirmed disagreement only after its own sanity checks
-    (D-14), which amends P-02: `correct_guess` is still computed server-side, but
-    a confirmed, sanity-checked phone disagreement can now earn the guess point.
-    A malformed `recheck` is dropped to None and never costs the solve; unknown
-    top-level keys are ignored so a stale bundle still solves.
-
-    Phase 236 (SEED-193): `phone_grade` is the optional D-01 audit record of the
-    phone's own 1.5 s grading reading (D-13: sent on the POST for phone-graded
-    moves and for played == key). A malformed record is dropped to None and never
-    costs the solve. It is never a grading input (D-02).
+    grading: the server accepts a confirmed disagreement only after its own
+    sanity checks. `phone_grade` is the audit record of the phone's own 1.5 s
+    grading reading, sent for phone-graded moves and for played == key. Unknown
+    keys are ignored so a stale bundle still solves.
     """
 
     position: int
@@ -537,7 +508,7 @@ class SolveRequest(BaseModel):
     def _drop_invalid_telemetry(
         cls, value: object, handler: ValidatorFunctionWrapHandler
     ) -> SolveTelemetry | None:
-        """Drop malformed telemetry to None instead of 422-ing the solve (D-02).
+        """Drop malformed telemetry to None instead of 422-ing the solve.
 
         No logging and no Sentry capture: a malformed object comes from a stale
         or tampered client and is an expected condition, not a bug.
@@ -552,7 +523,7 @@ class SolveRequest(BaseModel):
     def _drop_invalid_recheck(
         cls, value: object, handler: ValidatorFunctionWrapHandler
     ) -> SolveRecheck | None:
-        """Drop a malformed re-check to None instead of 422-ing the solve (D-18).
+        """Drop a malformed re-check to None instead of 422-ing the solve.
 
         Same contract as `_drop_invalid_telemetry`: no logging, no Sentry, a
         malformed object comes from a stale or tampered client.
@@ -567,7 +538,7 @@ class SolveRequest(BaseModel):
     def _drop_invalid_phone_grade(
         cls, value: object, handler: ValidatorFunctionWrapHandler
     ) -> PhoneGrade | None:
-        """Drop a malformed phone grade to None instead of 422-ing the solve (D-01).
+        """Drop a malformed phone grade to None instead of 422-ing the solve.
 
         Same contract as `_drop_invalid_recheck`: no logging, no Sentry, a
         malformed object comes from a stale or tampered client.
@@ -579,7 +550,7 @@ class SolveRequest(BaseModel):
 
 
 class VettedMove(BaseModel):
-    """One server-certified "also fine" alternative move (Phase 211, D-01).
+    """One server-certified "also fine" alternative move.
 
     The wire twin of `app.services.train_pool.VettedMove` (same name,
     different module — mapped field-by-field at the router). Deliberately
@@ -589,12 +560,12 @@ class VettedMove(BaseModel):
 
     POST-ATTEMPT-ONLY material: this model appears exclusively on
     `SolveResponse`, which is produced solely by `record_solve` after the
-    attempt row is resolved. Never add it to `TrainPuzzle` (P-01) or
-    `SolveRequest`. (`TrainPuzzle.server_graded_moves`, Phase 236 D-03, is a
+    attempt row is resolved. Never add it to `TrainPuzzle` or
+    `SolveRequest`. (`TrainPuzzle.server_graded_moves` is a
     different, tier-only wire type, `ServerGradedMove`; this `VettedMove` itself
     still never goes on `TrainPuzzle`.)
 
-    D-01 amendment (2026-08-16): quality "best" marks the deep best move
+    Quality "best" marks the deep best move
     itself, served first on a soft puzzle alongside the certified
     second-best (`game_positions.best_move` supplies the UCI; su-only when
     unavailable) so the "several fine moves" copy is always backed by a
@@ -609,23 +580,23 @@ class VettedMove(BaseModel):
 class SolveResponse(BaseModel):
     """Response for POST /train/sessions/{session_id}/solve.
 
-    `item_status`/`streak`/`due_date` are None for a red-herring puzzle,
-    which carries no SR bookkeeping (POOL-08). `correct_guess` is always the
+    `item_status`/`streak`/`due_date` are None for red-herring and sharp-filler
+    puzzles, which carry no SR bookkeeping. `correct_guess` is always the
     server-computed verdict, never an echo of the client's own guess.
 
-    SEED-119: `correct_move` retains its exact prior meaning — the
+    `correct_move` is the
     spaced-repetition ladder's pass/fail verdict, which is also what the
-    reveal's check/cross mark reads. `move_quality` is the new three-way
+    reveal's check/cross mark reads. `move_quality` is the three-way
     scoring tier the client's points formula consumes; it is NOT a synonym
     for `correct_move` (an "inaccuracy" tier still means `correct_move=True`).
 
-    Phase 206 (RESEARCH Pitfall 1): `source` mirrors `puzzle_type`'s existing
-    shape and lands synchronously with this response — the client's D-19
+    `source` mirrors `puzzle_type`'s
+    shape and lands synchronously with this response — the client's
     your-game predicates read `verdict.source`, never the separate,
     asynchronously-fetched `PuzzleRevealResponse.source`, to avoid a
     post-solve window where a real SR puzzle misrenders as suppressed.
 
-    Phase 211 (D-01/D-03/D-07, amended 2026-08-16): `vetted_moves` is the
+    `vetted_moves` is the
     server's certified "also fine" set for this puzzle — the deep best plus
     the blob's `su` for a soft puzzle (best-first; su-only when
     `game_positions.best_move` is unavailable), the good-band ladder entries
@@ -639,10 +610,10 @@ class SolveResponse(BaseModel):
     the SAME numbers the score came from — display and recorded verdict can
     never diverge for a key move.
 
-    Phase 235 (SEED-192): `graded_es_*` also cover the D-02 case: a played sharp
-    runner-up is graded by the server from its own blob, and the two ES values
+    `graded_es_*` also cover a played sharp runner-up, which the server grades
+    from its own blob: the two ES values
     are that move's before/after pair (`vetted_moves` stays empty, the runner-up
-    is never shown as also fine). `disagreement` (D-14/D-15) is true when the
+    is never shown as also fine). `disagreement` is true when the
     server accepted a confirmed phone disagreement for this solve, i.e. the
     played move was credited as good and either guess earns the point.
     """
@@ -659,18 +630,18 @@ class SolveResponse(BaseModel):
     vetted_moves: list[VettedMove]
     graded_es_before: float | None
     graded_es_after: float | None
-    # D-14/D-15: the server accepted a confirmed phone disagreement for this solve.
+    # The server accepted a confirmed phone disagreement for this solve.
     disagreement: bool
 
 
 class PuzzleRevealResponse(BaseModel):
     """Response for GET /train/sessions/{session_id}/puzzles/{position}/reveal.
 
-    Reachable ONLY after the attempt is recorded (409 otherwise — T-189-17):
+    Reachable ONLY after the attempt is recorded (409 otherwise):
     the puzzle type and the in-game move are unreachable before `solved_at`
     is set.
 
-    190.1-03 (D-01/D-05): this response is DELIBERATELY thin. The answer key
+    This response is DELIBERATELY thin. The answer key
     it carries is the puzzle type, the in-game move (SAN + UCI), and a
     tactic-lines pointer — no `best_move`, `best_move_san`, or `pv` field.
     The best move, the best line, and every eval shown in the reveal panel
@@ -680,25 +651,25 @@ class PuzzleRevealResponse(BaseModel):
     (project_eval_nondeterminism), so this endpoint must never be a second,
     contradicting source of truth for a number the reveal panel displays.
 
-    Phase 235 (SEED-192, D-09) amends the above: the SERVER now picks every
+    The SERVER picks every
     move the reveal shows (the pre-attempt key names the solution arrow and
     card; the soft `su` and herring ladder moves stay on
     `SolveResponse.vetted_moves`), while the phone still supplies every
     NUMBER (every eval shown is computed client-side), so this response still
     carries no best move, PV or eval.
 
-    `played_in_game_move_uci` (190.1-01, D-05) is the UCI counterpart of
+    `played_in_game_move_uci` is the UCI counterpart of
     `played_in_game_san`, behind the identical 409 gate — the client uses it
-    to dispatch its own reveal-time engine search (T-190.1-01/T-190.1-02).
+    to dispatch its own reveal-time engine search.
 
     `has_tactic_lines` is a POINTER, not a payload: when True, the client
     calls the existing `GET /api/library/flaws/{game_id}/{ply}/tactic-lines`
     endpoint for the steppable PV line. Train adds no second PV-fetching
-    surface — see 189-05-PLAN.md's key_links.
+    surface.
 
-    `game_id` is `int | None` (Phase 192 Plan 02, D-01/D-05): `None` means the
+    `game_id` is `int | None`: `None` means the
     puzzle's source game has since been deleted. The client hides the Analyze
-    deep-link in that case (D-09) rather than disabling it — nothing else on
+    deep-link in that case rather than disabling it — nothing else on
     the reveal panel references the game either way.
     """
 
@@ -710,38 +681,38 @@ class PuzzleRevealResponse(BaseModel):
     puzzle_type: Literal["sharp", "soft", "herring"]
     source: Literal["sr_item", "red_herring", "sharp_filler"]
     has_tactic_lines: bool
-    # Phase 206 (D-20): the sharp filler's motif label. None for every
+    # The sharp filler's motif label. None for every
     # SR_ITEM/RED_HERRING row.
     motif: str | None
 
 
-#: Phase 222 (TRAINBOT-05, D-11/D-12): the path parameter for
+#: The path parameter for
 #: POST /train/onboarding/{step}. FastAPI 422s any value outside this set
 #: before the handler body runs — no hand-rolled validation, and the
 #: repository maps each member through a fixed lookup (never a string
 #: interpolated into SQL, never `getattr` on a request-supplied name).
-#: Phase 240 (D-09/D-11): `intro` and `sr_explained` stamp their own timestamp
+#: `intro` and `sr_explained` stamp their own timestamp
 #: (first-write-wins); each `reveal_tour_N` advances `reveal_tour_stage` to N,
-#: forward-only. The Phase 222 walkthrough step name is gone on purpose (D-11,
-#: hard cut): a stale PWA bundle POSTing it gets a 422 until it reloads.
+#: forward-only. The old walkthrough step name is gone on purpose
+#: (hard cut): a stale PWA bundle POSTing it gets a 422 until it reloads.
 OnboardingStep = Literal["intro", "sr_explained", "reveal_tour_1", "reveal_tour_2", "reveal_tour_3"]
 
 
 class TrainSettingsResponse(BaseModel):
     """Response for GET/PUT /train/settings.
 
-    `reminder_enabled`/`reminder_hour` (Phase 201, REMIND-01/D-18) are the
+    `reminder_enabled`/`reminder_hour` are the
     user-owned reminder configuration, round-tripped through this same
-    settings surface so it is fully testable before Phase 202 builds any UI.
+    settings surface.
     `reminder_last_sent_on` is deliberately absent — it is the reminder job's
-    own watermark (D-06), never readable or writable by a client.
-    `reminder_intent_at` (Phase 203, OFFER-03/OFFER-05/D-02/D-15) is the
+    own watermark, never readable or writable by a client.
+    `reminder_intent_at` is the
     OPPOSITE of `reminder_last_sent_on`: it IS client-writable (stamped when
     the user taps the iOS install affordance), so it appears here.
 
-    `intro_seen_at`/`sr_explained_at` (Phase 222, TRAINBOT-05, D-11/D-12/D-13)
+    `intro_seen_at`/`sr_explained_at`
     are the bot-onboarding "explanation seen" watermarks, and
-    `reveal_tour_stage` (Phase 240, D-09/D-10) is the number of completed
+    `reveal_tour_stage` is the number of completed
     reveal-tour parts (0..3). Like `reminder_last_sent_on`, each is a
     server-owned fact — but unlike it, all ARE readable here (so the client can
     branch on them without a second fetch) while remaining absent from
@@ -749,7 +720,7 @@ class TrainSettingsResponse(BaseModel):
     `POST /train/onboarding/{step}` endpoint on stepper completion, never by
     a settings PUT. The timestamps read back NULL for "never seen".
 
-    `has_mobile_subscription` (Phase 222 UAT round 5) is a derived, read-only
+    `has_mobile_subscription` is a derived, read-only
     fact: whether ANY of the account's push subscriptions came from a mobile
     browser (`push_repository.MOBILE_USER_AGENT_PATTERN`). The desktop score
     screen uses it to replace the phone QR handoff with a "reminders on your
@@ -779,11 +750,10 @@ class TrainSettingsUpdate(BaseModel):
     `TrainSettingsResponse` — see that class's docstring.
 
     `reminder_intent_at` has NO default (required-but-nullable), a deliberate
-    choice per D-02: this schema is a full-replace PUT body, so a defaulted
+    choice: this schema is a full-replace PUT body, so a defaulted
     field would let a payload that omits the key silently clear a
     previously-recorded install intent. Omitting the key must 422 loudly
-    instead. No bound validator: a timestamp has no injection surface
-    (RESEARCH.md Security Domain V5).
+    instead. No bound validator: a timestamp has no injection surface.
     """
 
     timezone: str
@@ -796,7 +766,7 @@ class TrainSettingsUpdate(BaseModel):
     @field_validator("timezone")
     @classmethod
     def _validate_timezone(cls, value: str) -> str:
-        """D-06: reject an unresolvable IANA timezone with 422, never persist it.
+        """Reject an unresolvable IANA timezone with 422, never persist it.
 
         A stored bad zone would silently shift every future due-date and
         session-window computation (`local_today` falls back to UTC for a
@@ -811,27 +781,24 @@ class TrainSettingsUpdate(BaseModel):
 
 
 class TrainProgressResponse(BaseModel):
-    """Response for GET /train/progress (PROG-01/PROG-04).
+    """Response for GET /train/progress.
 
-    Phase 193 (SEED-121) replaced Phase 191's weekly D-18 settled-streak
-    snapshot with a per-scheduled-day tick + a 0-7 depletable shield:
-    `session_streak_count` (was `settled_streak_weeks`; the wire field spells
-    out the D-02 unit — it counts completed scheduled-day SESSIONS, not
-    settled weeks) and `shield_level` (was `flame_state`, a 3-state enum;
-    now a plain int) come from the persisted tick snapshot on
-    `train_settings`, lazily advanced by this same request
-    (`app.repositories.train_repository.settle_streak_snapshot`). There is
-    no display overlay any more — the returned values are always exactly
-    what is persisted. `current_week_required` is None when
+    A per-scheduled-day tick plus a 0-7 depletable shield:
+    `session_streak_count` (completed scheduled-day SESSIONS, not settled
+    weeks) and `shield_level` (the 0-7 depletable shield) come from the
+    persisted tick snapshot on `train_settings`, lazily advanced by this same
+    request (`app.repositories.train_repository.settle_streak_snapshot`), so
+    the returned values are always exactly what is persisted.
+    `current_week_required` is None when
     `weekday_mask == 0` ("train anytime" has no denominator to show);
     otherwise it is the popcount of the scheduled-day mask (no special-
-    casing — nothing gates on this value any more).
+    casing — nothing gates on this value).
     `mastered_count`/`parked_count` are computed on the fly from
-    `drill_items` (D-05, unaffected by the tick snapshot — only the
+    `drill_items` (unaffected by the tick snapshot — only the
     streak/shield portion is persisted).
 
     `waiting_count`/`pool_state`/`next_due_date` are the server-side signals
-    the nav badge and the two PROG-05 empty states need: `waiting_count` is
+    the nav badge and the two empty states need: `waiting_count` is
     an upper-bound estimate of puzzles waiting right now (never a promise of
     exact session size — see
     `app.repositories.train_repository.get_waiting_puzzle_count`).
@@ -845,11 +812,11 @@ class TrainProgressResponse(BaseModel):
     resurface, or null when nothing will (the "All caught up!" empty state's
     date).
 
-    `streak_reset_notice` (was `streak_lost_last_week`) is derived from the
+    `streak_reset_notice` is derived from the
     RESULTING state (never from "did this call settle the reset"), so it
     survives a page reload and self-clears once the user trains again.
 
-    `badge_visible` (Plan 02, D-09/D-10) is a DISPLAY HINT ONLY — it gates no
+    `badge_visible` is a DISPLAY HINT ONLY — it gates no
     server-side authorization, and the number the nav badge shows still
     comes from `waiting_count`. True when `waiting_count > 0` AND (today is
     a scheduled day per the user's `weekday_mask` OR an already-open
@@ -878,7 +845,7 @@ MedalKind = Literal["gold", "silver", "bronze"]
 
 
 class LeaderboardMedals(BaseModel):
-    """Lifetime medal counts of one row's user (Phase 231). Counts only, no user id."""
+    """Lifetime medal counts of one row's user. Counts only, no user id."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -898,17 +865,17 @@ class LeaderboardPodiumEntry(BaseModel):
 
 
 class LeaderboardLastWeek(BaseModel):
-    """Last week's podium and the viewer's own non-medal rank on one board (Phase 231)."""
+    """Last week's podium and the viewer's own non-medal rank on one board."""
 
     model_config = ConfigDict(from_attributes=True)
 
     week_start: date  # the previous ISO Monday (UTC)
     podium: list[LeaderboardPodiumEntry]  # gold, silver, bronze; every tied name listed
-    viewer_final_rank: int | None  # only when the viewer has a row with no medal (D-03)
+    viewer_final_rank: int | None  # only when the viewer has a row with no medal
 
 
 class LeaderboardRow(BaseModel):
-    """One displayed row of a weekly leaderboard (Phase 230).
+    """One displayed row of a weekly leaderboard.
 
     Deliberately carries no user id or email: rows are keyed by position only,
     and the viewer's own row is marked `is_viewer`.
@@ -935,7 +902,7 @@ class LeaderboardViewer(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     rank: int | None  # None while the viewer is a tentative Accuracy entry (unranked)
-    # Rank without the current session's solves (D-12). Null when no session_id
+    # Rank without the current session's solves. Null when no session_id
     # was supplied, the viewer had no entry before the session, or the viewer is
     # tentative with or without the session (no delta across the cutoff).
     rank_without_session: int | None
@@ -961,8 +928,8 @@ class LeaderboardBoard(BaseModel):
     rows: list[LeaderboardRow]
     viewer: LeaderboardViewer | None
     pass_target: LeaderboardPassTarget | None  # Points board only
-    # The immediately previous ISO week only (D-07); null when that board awarded no
-    # medal and the viewer has no non-medal row there (D-08).
+    # The immediately previous ISO week only; null when that board awarded no
+    # medal and the viewer has no non-medal row there.
     last_week: LeaderboardLastWeek | None
 
 
@@ -987,7 +954,7 @@ MEDAL_CLAIM_MAX_ITEMS: Final = 100
 
 
 class UnclaimedMedal(BaseModel):
-    """One medal the caller has not yet seen celebrated (Phase 231, D-11).
+    """One medal the caller has not yet seen celebrated.
 
     Carries no row id or user id: a medal is identified by its (week_start, board) pair,
     the per-user natural key the claim POST echoes back.

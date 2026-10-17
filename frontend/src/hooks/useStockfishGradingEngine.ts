@@ -4,24 +4,23 @@
  * `searchmoves`-restricted MultiPV root search, streaming progressive `info`
  * lines into a per-FEN, pv[0]-keyed grade cache.
  *
- * Structural sibling of useStockfishEngine.ts (same ENGINE_PATH, same
+ * Structural sibling of useStockfishEngine.ts (same createStockfishWorker source, same
  * idle/thinking/stopping state machine, same stop-before-go serialization,
  * same tab-hide pause / unmount cleanup) — but a SEPARATE Worker instance with
  * a SEPARATE UCI configuration. It never imports, mutates, or reads
- * useStockfishEngine's state (SC3 isolation — "without disturbing the primary
- * eval bar / engine card").
+ * useStockfishEngine's state, so it cannot disturb the primary eval bar /
+ * engine card.
  *
- * Load-bearing caveats confirmed by Plan 01's real-binary spike
- * (151.1-01-SUMMARY.md):
+ * Load-bearing caveats, confirmed on the real Stockfish binary:
  *  1. Key the grade map by `pv[0]` (the move), NEVER by the `multipv` index —
  *     multipv is an EVAL RANK that reorders as depth climbs, not a stable
- *     move identity (Pitfall 1).
+ *     move identity.
  *  2. Pass ONLY legal UCI candidates to `searchmoves` — the engine silently
- *     drops illegal entries, under-counting MultiPV lines (Caveat 1).
+ *     drops illegal entries, under-counting MultiPV lines.
  *
  * Grades are position-only (ELO-independent) and cacheable per (FEN, SAN);
- * only the DISPLAYED candidate subset changes with the ELO slider (Pitfall
- * 2) — dragging it must not re-issue a search when every newly-shown SAN is
+ * only the DISPLAYED candidate subset changes with the ELO slider —
+ * dragging it must not re-issue a search when every newly-shown SAN is
  * already graded for the current FEN.
  */
 
@@ -37,20 +36,19 @@ import {
   ensureStockfishWorkerUrl,
 } from '@/lib/engine/stockfishWorkerSource';
 
-// ─── Constants (SC4 degradation knobs — tunable without touching logic) ──────
+// ─── Constants (degradation knobs — tunable without touching logic) ──────
 
 /**
  * Wall-clock cap (ms) — the grading run's ONLY search-termination clause, no
  * depth cap (mirrors useStockfishEngine's movetime-only convention). Value
- * measured via a headless Node WASM sweep (Phase 158 Plan 01, SEED-087): at
+ * measured via a headless Node WASM sweep: at
  * movetime=4000 on both a middlegame and an endgame position, the grading
  * run's depth for a candidate-union size of 6-8 reaches parity with (or
  * exceeds) the free run's depth at its existing MOVETIME_MS=1500/MULTIPV=2
  * budget, and a shared candidate's eval agrees with the free run's eval for
  * that same move within noise (2cp and 23cp deltas on the two test
- * positions — see 158-01-SUMMARY.md for the full depth-per-config table).
- * Replaces the prior depth-14/movetime-2500 cap, which the seed's live UAT
- * confirmed was the source of the cross-card eval skew this phase fixes.
+ * positions). An earlier depth-14/movetime-2500 cap made the grading evals
+ * disagree with the free run's (cross-card eval skew), so don't lower this cap.
  */
 const GRADING_MOVETIME_SAFETY_CAP_MS = 4000;
 
@@ -68,16 +66,16 @@ type EngineState = 'idle' | 'thinking' | 'stopping';
 export interface UseStockfishGradingEngineOptions {
   /** Current board position. null keeps the grading worker idle (no go sent). */
   fen: string | null;
-  /** The candidate SANs to grade/display for the current position (Plan 02's selectCandidatesByMass output). */
+  /** The candidate SANs to grade/display for the current position (selectCandidatesByMass output). */
   candidateSans: string[];
   /** When false the Worker is not created and grading does not run. */
   enabled: boolean;
   /**
    * Movetime cap (ms) for this instance's `go` command, defaulting to
    * `GRADING_MOVETIME_SAFETY_CAP_MS`. The two live instances (`Analysis.tsx`'s
-   * `grading`/`gemGrading`) omit this and keep the measured 4000ms cap (Phase
-   * 158's headless depth-parity measurement — see the constant's doc comment).
-   * A caller with no deadline — the Phase 172 background sweep
+   * `grading`/`gemGrading`) omit this and keep the measured 4000ms cap (the
+   * headless depth-parity measurement — see the constant's doc comment).
+   * A caller with no deadline — the background gem sweep
    * (`useGemSweep.ts`) — passes a deliberately SMALLER value to bound how long
    * each background candidate pegs a CPU core, trading grading depth for
    * lower wall-clock cost. This is a genuinely different constant by design,
@@ -91,7 +89,7 @@ export interface StockfishGradingEngineState {
   gradeMap: Map<string, MoveGrade>;
   /**
    * The FEN `gradeMap`'s grades actually belong to; null while the map is empty.
-   * Bug fix (163-REVIEW WR-03): the map is cleared in an effect one commit
+   * Bug fix: the map is cleared in an effect one commit
    * AFTER the caller's `fen` prop changes, so on the navigation commit it still
    * holds the PREVIOUS position's grades. Callers writing per-FEN caches must
    * key/guard on `gradeMapFen`, never on their own current position.
@@ -102,7 +100,7 @@ export interface StockfishGradingEngineState {
   /** True once the UCI init sequence completes (uciok + readyok). */
   isReady: boolean;
   /**
-   * CR-03 (Phase 172, SEED-106): true once the Worker fired an `onerror` — an
+   * True once the Worker fired an `onerror` — an
    * async script-load failure (404, CSP block, syntax error) that never throws
    * a catchable exception on the main thread and so leaves the worker dead but
    * silent. Lets a consumer (the background gem sweep) abandon an in-flight
@@ -122,9 +120,7 @@ interface GradingRequest {
 
 /**
  * Convert a UCI move string (pv[0] from a grading info line) back to its SAN
- * relative to `baseFen`. Mirrors Analysis.tsx's `bestSanFromPv` logic — kept
- * as a private local helper here (rather than importing from a page) since
- * hooks must not depend on page-level modules.
+ * relative to `baseFen` (same logic as `bestSanFromPv` in lib/analysisTactics).
  */
 function sanFromUci(baseFen: string, uci: string): string | null {
   const squares = uciToSquares(uci);
@@ -157,7 +153,7 @@ export function useStockfishGradingEngine({
   /** Internal UCI state machine — mutated from the onmessage handler (no re-render). */
   const stateRef = useRef<EngineState>('idle');
 
-  /** Stale-eval guard (mirrors useStockfishEngine's Pitfall 3 stopPendingRef). */
+  /** Stale-eval guard (mirrors useStockfishEngine's stopPendingRef). */
   const stopPendingRef = useRef(false);
 
   /** Ref-for-latest-value: the current fen/candidateSans/isReady props, visible inside callbacks. */
@@ -178,7 +174,7 @@ export function useStockfishGradingEngine({
   /** Timestamp of the last (fen, candidateSans) change, for the adaptive debounce. */
   const lastChangeAtRef = useRef(0);
 
-  /** Previous fen value, used to detect an actual FEN change (vs. a candidateSans-only change) so the displayed gradeMap is only cleared on real navigation (D-05), not on an ELO-drag candidate-set change (Pitfall 2). */
+  /** Previous fen value, used to detect an actual FEN change (vs. a candidateSans-only change) so the displayed gradeMap is only cleared on real navigation, not on an ELO-drag candidate-set change. */
   const prevFenRef = useRef<string | null>(null);
 
   // ─── State ─────────────────────────────────────────────────────────────────
@@ -187,7 +183,7 @@ export function useStockfishGradingEngine({
   const [isGrading, setIsGrading] = useState(false);
   const [hasFailed, setHasFailed] = useState(false);
   const [gradeMap, setGradeMap] = useState<Map<string, MoveGrade>>(new Map());
-  /** FEN the displayed gradeMap belongs to (WR-03) — set with every commit, cleared with the map. */
+  /** FEN the displayed gradeMap belongs to — set with every commit, cleared with the map. */
   const [gradeMapFen, setGradeMapFen] = useState<string | null>(null);
   const [debouncedRequest, setDebouncedRequest] = useState<GradingRequest | null>(null);
 
@@ -217,7 +213,7 @@ export function useStockfishGradingEngine({
       }
     }
     setGradeMap(displayed);
-    // WR-03: record which FEN the displayed grades belong to, so callers can
+    // Record which FEN the displayed grades belong to, so callers can
     // detect (and skip) the one-commit window where their own position has
     // already moved on but this hook's state has not yet cleared.
     setGradeMapFen(fenKey);
@@ -234,9 +230,9 @@ export function useStockfishGradingEngine({
 
   /**
    * Sends setoption+position+go for (fenToGrade, candidateSans), or serves a
-   * pure cache hit with no worker round-trip (Pitfall 2). Carries over
+   * pure cache hit with no worker round-trip. Carries over
    * useStockfishEngine's idle/thinking/stopping + stopPendingRef serialization
-   * verbatim (Pitfall 5 / FLAWCHESS-7V guard) — stable (empty deps) so it can
+   * verbatim (FLAWCHESS-7V guard) — stable (empty deps) so it can
    * be called from the worker's bestmove handler and the tab-visibility
    * handler without stale-closure issues.
    */
@@ -264,7 +260,7 @@ export function useStockfishGradingEngine({
     const cache = cacheRef.current.get(fenToGrade);
     const ungraded = sans.filter((san) => !cache?.has(san));
     if (ungraded.length === 0) {
-      // Pitfall 2: every requested SAN is already graded for this FEN (typical
+      // Every requested SAN is already graded for this FEN (typical
       // of an ELO-slider drag that only changes the displayed subset) — serve
       // from cache, no new go.
       commitDisplayedGradeMap(fenToGrade, sans);
@@ -284,7 +280,7 @@ export function useStockfishGradingEngine({
 
     worker.postMessage(`setoption name MultiPV value ${candidateUcis.length}`);
     worker.postMessage(`position fen ${fenToGrade}`);
-    // Bug fix (Rule 1, found during Phase 158 Plan 01's headless measurement):
+    // Bug fix (found in a headless measurement):
     // `searchmoves` MUST be the LAST clause in the go command on this WASM
     // build — everything after it is silently swallowed into the move list
     // (the engine's documented "illegal searchmoves are silently dropped"
@@ -313,12 +309,12 @@ export function useStockfishGradingEngine({
     const fenChanged = fen !== prevFenRef.current;
     prevFenRef.current = fen;
     if (fenChanged) {
-      // D-05: a new board navigation cancels the in-flight grade immediately —
+      // A new board navigation cancels the in-flight grade immediately —
       // the displayed gradeMap must never show the PREVIOUS position's colors.
       // A candidateSans-only change (ELO drag, same fen) must NOT clear it —
-      // that's exactly Pitfall 2's re-search-avoidance case.
+      // that's exactly the re-search-avoidance case.
       setGradeMap(new Map());
-      setGradeMapFen(null); // WR-03: an empty map belongs to no FEN
+      setGradeMapFen(null); // an empty map belongs to no FEN
     }
 
     const sans = candidateSansRef.current;
@@ -348,7 +344,7 @@ export function useStockfishGradingEngine({
   useEffect(() => {
     if (!enabled) return;
 
-    // Phase 213-08 (G-213-35): an unmount that beats the shared fetch must
+    // An unmount that beats the shared fetch must
     // not construct (and immediately leak) a worker nobody will ever clean
     // up — mirrors useStockfishEngine.ts's identical guard.
     let cancelled = false;
@@ -357,12 +353,10 @@ export function useStockfishGradingEngine({
       if (cancelled) return;
 
       // Classic (non-module) Worker — same vendored Emscripten glue as the
-      // primary engine, a SEPARATE instance (SC3 isolation). Phase 213-08:
-      // constructed through the shared source module — a non-null
-      // `sharedUrl` routes to the already-fetched-once `.wasm`; a null
-      // `sharedUrl` constructs against the served path exactly as before.
-      // Neither hook reports asset progress today and does not start doing
-      // so here — the only change is where the worker's `.wasm` comes from.
+      // primary engine, a SEPARATE instance. Constructed through the shared
+      // source module — a non-null `sharedUrl` routes to the already-fetched-once
+      // `.wasm`; a null `sharedUrl` constructs against the served path.
+      // This hook reports no asset progress (the analysis-board Stockfish worker does).
       const worker = createStockfishWorker(sharedUrl, 'grading');
       workerRef.current = worker;
 
@@ -396,13 +390,13 @@ export function useStockfishGradingEngine({
           const fenKey = gradingFenRef.current;
           if (fenKey === null) return;
 
-          // Pitfall 1 (confirmed on the real binary, 151.1-01-SUMMARY.md): key
+          // Confirmed on the real binary: key
           // by pv[0]'s SAN, NEVER by parsed.multipv (an eval rank that reorders
           // as depth climbs).
           const san = sanFromUci(fenKey, uci);
           if (san === null) return;
 
-          // Normalize the mover-POV UCI score to white-POV (D-08).
+          // Normalize the mover-POV UCI score to white-POV.
           const whitePovSign = gradingSideRef.current === 'b' ? -1 : 1;
           const toWhitePov = (v: number | null): number | null => (v === null ? null : v * whitePovSign);
 
@@ -420,14 +414,14 @@ export function useStockfishGradingEngine({
             evalCp: toWhitePov(parsed.scoreCp),
             evalMate: toWhitePov(parsed.scoreMate),
             depth: parsed.depth,
-            // 162 UAT: retain the full PV so the Stockfish card can render a
+            // Retain the full PV so the Stockfish card can render a
             // graded line's move sequence when the reconciled ranking surfaces
-            // a move outside the free run's own top-2 (option-2 card re-source).
+            // a move outside the free run's own top-2.
             pv: parsed.pv,
           });
 
           // Stream progressively: refine the displayed gradeMap on every info
-          // line (D-05).
+          // line.
           commitDisplayedGradeMap(fenKey, candidateSansRef.current);
           return;
         }
@@ -436,7 +430,7 @@ export function useStockfishGradingEngine({
           if (stopPendingRef.current) {
             // Discard: this bestmove is the termination response to our stop —
             // it reflects a superseded search. Re-trigger with the LATEST
-            // fen/candidateSans (deferred re-go, Pitfall 5 / FLAWCHESS-7V).
+            // fen/candidateSans (deferred re-go, FLAWCHESS-7V).
             stopPendingRef.current = false;
             stateRef.current = 'idle';
             const latestFen = currentFenRef.current;
@@ -444,12 +438,11 @@ export function useStockfishGradingEngine({
             if (latestFen !== null && latestSans.length > 0 && document.visibilityState !== 'hidden') {
               prepareSearchRef.current(latestFen, latestSans);
             } else {
-              // CR-03 (Phase 172, SEED-106): no re-`go` will be issued (position
-              // cleared, no candidates, or tab hidden). Without clearing the flag
-              // here, `isGrading` stays true forever — which the gem sweep's C2
-              // guard reads as "still working", one of the ways a swept candidate
-              // could sit with no timeout out of it (the watchdog now covers that,
-              // but the state must still reflect reality here).
+              // No re-`go` will be issued (position cleared, no candidates, or
+              // tab hidden). Without clearing the flag here, `isGrading` stays
+              // true forever, which the gem sweep reads as "still working" (the
+              // watchdog covers that case, but the state must still reflect
+              // reality here).
               setIsGrading(false);
             }
             return;
@@ -464,11 +457,11 @@ export function useStockfishGradingEngine({
         handleLine(e.data);
       };
 
-      // CR-03 (Phase 172, SEED-106): mirror workerPool.createSlot — an async
+      // Mirror workerPool.createSlot — an async
       // script-load failure (404, CSP block, syntax error) never throws a
       // catchable JS exception on the main thread; it only surfaces here. Without
       // this handler the worker dies silently: no `uciok` -> `isReady` never flips
-      // -> any in-flight grading request (including a gem-sweep candidate whose C2
+      // -> any in-flight grading request (including a gem-sweep candidate that
       // depends on this instance) hangs forever. Capture to Sentry (CLAUDE.md
       // frontend rules — a classic Worker has no Sentry init of its own) and
       // surface `hasFailed` so the sweep can abandon a candidate stuck on it.
@@ -492,7 +485,7 @@ export function useStockfishGradingEngine({
 
     return () => {
       cancelled = true;
-      // Phase 213-08: the shared-URL promise may not have resolved yet — if
+      // The shared-URL promise may not have resolved yet — if
       // `setupWorker` never ran, there is no worker to stop/terminate, and
       // `cancelled` above stops the deferred continuation from constructing
       // one after this cleanup has already run.

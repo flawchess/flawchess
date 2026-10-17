@@ -1,15 +1,15 @@
-"""Backend tests for the per-TC flaw-comparison service (Phase 115, Phase 239 plan 02).
+"""Backend tests for the per-TC flaw-comparison service.
 
 Validation architecture:
-- test_per_tc_split              : D-02 (one entry per TC, fast to slow, 12 bullets each)
-- test_no_analyzed_games         : D-02 (empty tcs, gate echoed, total_n still counts)
-- test_bullets_and_zone_bounds   : FLAWCMP-01/03 (registry-banded bullets, no domain)
-- test_rates_and_pvalue          : UAT (player_rate - opp_rate == delta, p-value)
-- test_ci_formula                : FLAWCMP-01 / D-14 (99% Wald-z math independent of SQL)
+- test_per_tc_split              : one entry per TC, fast to slow, 12 bullets each
+- test_no_analyzed_games         : empty tcs, gate echoed, total_n still counts
+- test_bullets_and_zone_bounds   : registry-banded bullets, no domain
+- test_rates_and_pvalue          : player_rate - opp_rate == delta, p-value
+- test_ci_formula                : 99% Wald-z math independent of SQL
 - test_user_moves_parity         : white = ceil(ply_count/2), black = floor
-- test_filter_plumbing           : FLAWCMP-03 (filter kwargs narrow the TC list)
-- test_severity_filter_zones     : FLAWCMP-03 / D-13 (zones stay with severity filter)
-- test_zero_event_bullet         : FLAWCMP-05 / D-11 (zero-event -> delta=None)
+- test_filter_plumbing           : filter kwargs narrow the TC list
+- test_severity_filter_zones     : zones stay with severity filter
+- test_zero_event_bullet         : zero-event -> delta=None
 
 The db_session fixture wraps each test in a transaction that is always rolled
 back, so seeded users and games never leak into other tests.
@@ -97,7 +97,7 @@ async def _seed_analyzed(session: AsyncSession, *, game: "Game") -> None:  # typ
     """Mark the game analyzed via both gates.
 
     _analyzed_game_ids_subquery uses the authoritative full_evals_completed_at
-    column (quick-task 260617-pu4, replaces per-ply eval-coverage recompute). The
+    column, not a per-ply eval-coverage recompute. The
     cheap Game.is_analyzed detector (white_blunders IS NOT NULL) is seeded too, as
     a real Lichess analyzed game satisfies both.
     """
@@ -182,7 +182,7 @@ async def _create_test_user(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_per_tc_split(db_session: AsyncSession) -> None:
-    """25 blitz + 25 rapid analyzed games -> tcs == [blitz, rapid], 12 bullets each (D-02).
+    """25 blitz + 25 rapid analyzed games -> tcs == [blitz, rapid], 12 bullets each.
 
     Blitz games carry a player mistake, rapid games do not: pooling the rows would
     blur the two TCs, so the per-TC mistake events must differ.
@@ -213,7 +213,7 @@ async def test_per_tc_split(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_no_analyzed_games(db_session: AsyncSession) -> None:
-    """No analyzed games -> tcs == [] and analyzed_gate is the gate constant (D-02)."""
+    """No analyzed games -> tcs == [] and analyzed_gate is the gate constant."""
     await _seed_game(db_session, user_id=_TEST_USER)  # not analyzed
 
     result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
@@ -236,7 +236,7 @@ async def test_no_games_total_n_zero(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_bullets_and_zone_bounds(db_session: AsyncSession) -> None:
-    """Each TC's bullets carry that TC's own band; no bullet has a domain (quick 261014-rux)."""
+    """Each TC's bullets carry that TC's own band; no bullet has a domain."""
     for bucket in ("blitz", "rapid"):
         for _ in range(FLAW_COMPARISON_GATE):
             g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
@@ -260,7 +260,7 @@ async def test_bullets_and_zone_bounds(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_rates_and_pvalue(db_session: AsyncSession) -> None:
-    """player_rate/opp_rate/p_value populated; player_rate - opp_rate == delta (UAT).
+    """player_rate/opp_rate/p_value populated; player_rate - opp_rate == delta.
 
     Seeds 20 analyzed games each with one player mistake (ply=2, white) so the
     mistake bullet has a nonzero, significant positive delta and per-player rates.
@@ -292,7 +292,7 @@ async def test_rates_and_pvalue(db_session: AsyncSession) -> None:
 
 
 def test_ci_formula() -> None:
-    """Bullet CI = the shared paired test at 99% (D-14), verified independently of SQL.
+    """Bullet CI = the shared paired test at 99%, verified independently of SQL.
 
     - n=1 -> CI None (no variance), not significant
     - n>=2 -> ci_high - mean == z99 * sample_sd / sqrt(n)  within float tolerance
@@ -345,7 +345,7 @@ async def test_user_moves_parity(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_filter_plumbing(db_session: AsyncSession) -> None:
-    """Filter kwargs narrow the analyzed set and the TC list (FLAWCMP-03, D-02).
+    """Filter kwargs narrow the analyzed set and the TC list.
 
     Seeds 20 blitz games on lichess (player mistake each) and 20 rapid games on
     chess.com (no flaws). Unfiltered: two TC entries. time_control=["blitz"]: one.
@@ -389,7 +389,7 @@ async def test_filter_plumbing(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_severity_filter_zones(db_session: AsyncSession) -> None:
-    """flaw_severity=[blunder] keeps all 12 bullets WITH zone bounds (D-13).
+    """flaw_severity=[blunder] keeps all 12 bullets WITH zone bounds.
 
     Seeds:
     - 20 games with BOTH player mistake + player blunder -> included under both filters
@@ -467,7 +467,7 @@ async def test_zero_event_bullet(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 239 plan 02 task 2: gate, filter, NULL-bucket, significance, isolation edges
+# Gate, filter, NULL-bucket, significance, isolation edges
 # ---------------------------------------------------------------------------
 
 _OTHER_USER = 88889
@@ -476,7 +476,7 @@ _BELOW_GATE_GAMES = 12
 
 @pytest.mark.asyncio
 async def test_below_gate_tc_keeps_bullets(db_session: AsyncSession) -> None:
-    """A TC with 12 analyzed games is listed, below_gate True, with populated rates (D-03)."""
+    """A TC with 12 analyzed games is listed, below_gate True, with populated rates."""
     for _ in range(_BELOW_GATE_GAMES):
         g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="rapid")
         await _seed_analyzed(db_session, game=g)
@@ -497,7 +497,7 @@ async def test_below_gate_tc_keeps_bullets(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_tc_filter_narrows_list_and_omits_unanalyzed_tc(db_session: AsyncSession) -> None:
-    """time_control narrows tcs[]; a TC with games but none analyzed is omitted (D-02)."""
+    """time_control narrows tcs[]; a TC with games but none analyzed is omitted."""
     for bucket in ("blitz", "rapid"):
         for _ in range(3):
             g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
@@ -517,7 +517,7 @@ async def test_tc_filter_narrows_list_and_omits_unanalyzed_tc(db_session: AsyncS
 
 @pytest.mark.asyncio
 async def test_null_time_control_bucket_excluded(db_session: AsyncSession) -> None:
-    """A game with a NULL time_control_bucket counts nowhere (Pitfall 8)."""
+    """A game with a NULL time_control_bucket counts nowhere."""
     for _ in range(FLAW_COMPARISON_GATE):
         g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
         await _seed_analyzed(db_session, game=g)
@@ -549,7 +549,7 @@ async def test_null_time_control_bucket_excluded(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_null_or_zero_ply_count_not_counted(db_session: AsyncSession) -> None:
-    """Games with ply_count NULL or 0 are not counted in analyzed_n (WR-03).
+    """Games with ply_count NULL or 0 are not counted in analyzed_n.
 
     count_analyzed_by_tc must share the ply_count gate of the fetch anchors; otherwise
     a TC of such games is offered above the gate while its aggregated rows are empty.
@@ -584,7 +584,7 @@ async def test_total_n_counts_unanalyzed_games(db_session: AsyncSession) -> None
         await _seed_analyzed(db_session, game=g)
     for _ in range(3):
         await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
-    # Unanalyzed rapid games alone do not put rapid on the switch (D-02).
+    # Unanalyzed rapid games alone do not put rapid on the switch.
     await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="rapid")
     g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
     g.ply_count = None
@@ -610,13 +610,13 @@ async def _seed_mistake_cell(db_session: AsyncSession, *, user_id: int, total_fl
         await _seed_flaw(db_session, game=g, ply=2 if i % 2 == 0 else 3, severity=1)
 
 
-# D-14 fixture size: enough games that a one-sided cell clears the 99% CI.
+# Fixture size: enough games that a one-sided cell clears the 99% CI.
 _SIGNIFICANCE_GAMES = 40
 
 
 @pytest.mark.asyncio
 async def test_balanced_cell_is_not_significant(db_session: AsyncSession) -> None:
-    """Mistakes split evenly between you and opponents: the 99% CI covers 0 (D-14)."""
+    """Mistakes split evenly between you and opponents: the 99% CI covers 0."""
     await _seed_mistake_cell(db_session, user_id=_TEST_USER, total_flaws=_SIGNIFICANCE_GAMES)
 
     result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
@@ -628,7 +628,7 @@ async def test_balanced_cell_is_not_significant(db_session: AsyncSession) -> Non
 
 @pytest.mark.asyncio
 async def test_one_sided_cell_is_significant(db_session: AsyncSession) -> None:
-    """A mistake by you in every game and none by opponents: the 99% CI excludes 0 (D-14)."""
+    """A mistake by you in every game and none by opponents: the 99% CI excludes 0."""
     for _ in range(_SIGNIFICANCE_GAMES):
         g = await _seed_game(db_session, user_id=_TEST_USER, user_color="white")
         await _seed_analyzed(db_session, game=g)
@@ -644,7 +644,7 @@ async def test_one_sided_cell_is_significant(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_zero_event_bullet_is_not_significant(db_session: AsyncSession) -> None:
-    """A zero-event bullet has significant False and delta None (D-14)."""
+    """A zero-event bullet has significant False and delta None."""
     for _ in range(FLAW_COMPARISON_GATE):
         g = await _seed_game(db_session, user_id=_TEST_USER)
         await _seed_analyzed(db_session, game=g)
@@ -660,7 +660,7 @@ async def test_zero_event_bullet_is_not_significant(db_session: AsyncSession) ->
 async def test_classical_and_bullet_bands(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bullet reads the bullet band and classical the classical band (quick 261014-rux).
+    """Bullet reads the bullet band and classical the classical band.
 
     The registry is patched with four distinct bands so a lookup that falls back to another
     TC (e.g. the tactic-only ZONE_TC_FOR mapping bullet -> rapid) fails here.
@@ -689,7 +689,7 @@ async def test_classical_and_bullet_bands(
 
 @pytest.mark.asyncio
 async def test_two_user_isolation(db_session: AsyncSession) -> None:
-    """Each user sees only their own analyzed_n and events (T-239-03)."""
+    """Each user sees only their own analyzed_n and events."""
     await _ensure_user(db_session, _OTHER_USER)
     user_a_games, user_b_games = 4, 7
     for _ in range(user_a_games):
@@ -714,7 +714,7 @@ async def test_two_user_isolation(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Quick 261014-pb9 — tempo x phase crossed cells
+# tempo x phase crossed cells
 # ---------------------------------------------------------------------------
 
 # SQL ints for the seed helper (game_flaws_repository._TEMPO_INT / _PHASE_INT).
@@ -735,7 +735,7 @@ async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> No
     """Exactly 9 cells, phase-major, tempo order inside each phase; 7 carry the registry band.
 
     Every cell is a zero-event cell here, so this also proves the zero-event return path
-    carries the band (quick 261014-qj8). low_clock x opening and low_clock x middlegame have
+    carries the band. low_clock x opening and low_clock x middlegame have
     none (has_zone False).
     """
     for _ in range(FLAW_COMPARISON_GATE):

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 Plan 03 — page-level integration tests for the Endgames Stats tab
+ * Page-level integration tests for the Endgames Stats tab
  * after the ranked-sample Overall section replaced the filtered composite.
  *
  * Strategy: full-page render of <EndgamesPage /> is heavy, so the data hooks are
@@ -102,7 +102,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));
@@ -268,7 +268,7 @@ describe('Endgames page: ranked Overall section', () => {
     expect(firstText('endgame-overall-eval-score-gap-value')).toBe('+5%');
   });
 
-  it('defaults to the TC with the most ranked games (D-12)', () => {
+  it('defaults to the TC with the most ranked games', () => {
     renderPage();
     const rapid = screen.getAllByTestId('tc-switch-endgame-stats-rapid')[0];
     const blitz = screen.getAllByTestId('tc-switch-endgame-stats-blitz')[0];
@@ -318,7 +318,7 @@ describe('Endgames page: ranked Overall section', () => {
     expect(endgameScoreIdx).toBeGreaterThan(entryEvalIdx);
   });
 
-  // Phase 87.5 WR-01: the wrapper renders the ELO section whenever ranked data
+  // The wrapper renders the ELO section whenever ranked data
   // is present and delegates empty/error/loading to the component itself.
   it('renders the Endgame ELO Timeline wrapper even when combos array is empty', () => {
     rankedState.data = buildRankedResponse([buildRankedTc('rapid', { elo_timeline: [] })]);

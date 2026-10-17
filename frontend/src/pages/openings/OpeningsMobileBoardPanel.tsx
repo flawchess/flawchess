@@ -11,7 +11,7 @@ import type { Opening } from '@/lib/openings';
 import type { Color } from '@/types/api';
 
 export type OpeningsMobileBoardPanelProps = {
-  /** Board block is only rendered on the Moves + Games subtabs (D-07, D-08, D-09). */
+  /** Board block is only rendered on the Moves + Games subtabs. */
   activeTab: 'explorer' | 'games' | 'stats' | 'insights';
 
   // Board
@@ -29,18 +29,18 @@ export type OpeningsMobileBoardPanelProps = {
   canGoForward: boolean;
 
   // Settings column
-  onOpenFilterSidebar: () => void;
+  onOpenFilterDrawer: () => void;
   filtersNotificationDot: ReactNode;
   filterColor: Color;
   onTogglePlayedAs: () => void;
   showPlayedAsHint: boolean;
-  onOpenBookmarkSidebar: () => void;
+  onOpenBookmarkDrawer: () => void;
   showBookmarksHint: boolean;
   showAnalyzeButton: boolean;
   onAnalyzePosition: () => void;
 
   // Opening name + move list
-  openingName: Opening | null;
+  opening: Opening | null;
   moveHistory: string[];
   currentPly: number;
   onMoveClick: (ply: number) => void;
@@ -71,16 +71,16 @@ export function OpeningsMobileBoardPanel({
   onFlip,
   canGoBack,
   canGoForward,
-  onOpenFilterSidebar,
+  onOpenFilterDrawer,
   filtersNotificationDot,
   filterColor,
   onTogglePlayedAs,
   showPlayedAsHint,
-  onOpenBookmarkSidebar,
+  onOpenBookmarkDrawer,
   showBookmarksHint,
   showAnalyzeButton,
   onAnalyzePosition,
-  openingName,
+  opening,
   moveHistory,
   currentPly,
   onMoveClick,
@@ -125,7 +125,7 @@ export function OpeningsMobileBoardPanel({
               variant="ghost"
               size="icon"
               className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-              onClick={onOpenFilterSidebar}
+              onClick={onOpenFilterDrawer}
               data-testid="subnav-filter-button"
               aria-label="Open filters"
             >
@@ -159,7 +159,7 @@ export function OpeningsMobileBoardPanel({
               variant="ghost"
               size="icon"
               className="h-11 w-11 shrink-0 bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active/80 relative"
-              onClick={onOpenBookmarkSidebar}
+              onClick={onOpenBookmarkDrawer}
               data-testid="btn-open-bookmark-sidebar"
               aria-label="Open bookmarks"
             >
@@ -198,10 +198,10 @@ export function OpeningsMobileBoardPanel({
       </div>
       {/* Opening name line (always visible on Moves/Games subtabs) */}
       <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-        {openingName ? (
+        {opening ? (
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{openingName.eco}</span>
-            <span className="text-foreground">{openingName.name}</span>
+            <span className="font-mono text-xs text-muted-foreground">{opening.eco}</span>
+            <span className="text-foreground">{opening.name}</span>
           </div>
         ) : (
           <span className="text-muted-foreground italic">Play some moves</span>

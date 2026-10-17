@@ -1,5 +1,5 @@
 /**
- * Opening explorer depth cap (SEED-033).
+ * Opening explorer depth cap.
  *
  * Mirrors backend `app/models/game_position.py` MAX_EXPLORER_PLY.
  *
@@ -9,6 +9,6 @@
  * changes, change this value too and ship both in the same commit.
  *
  * COUPLING INVARIANT: if this value exceeds the index boundary, hash lookups
- * for positions past the cap silently miss the partial index (SEED-033 §3).
+ * for positions past the cap silently miss the partial index.
  */
 export const MAX_EXPLORER_PLY = 28;

@@ -1,15 +1,15 @@
 /**
  * botGameSnapshot — the versioned, owner-scoped in-progress bot-game
- * localStorage snapshot (Phase 170, RESUME-01).
+ * localStorage snapshot.
  *
  * Pure module, no React import (a zero-React localStorage module with an SSR
  * guard, the same shape as other pure localStorage helpers in this codebase)
  * — Bots.tsx reads this once on mount, no live-subscription
  * requirement). Persists `chess.pgn()` as the move/clock source of truth
- * (D-08 RESOLVED: chess.js 1.4.0 round-trips `{[%clk ...]}` comments through
- * `pgn() -> loadPgn() -> pgn()` losslessly — verified in 170-RESEARCH.md).
+ * (chess.js 1.4.0 round-trips `{[%clk ...]}` comments through
+ * `pgn() -> loadPgn() -> pgn()` losslessly).
  * Do NOT swap this for a FEN or a bare SAN list: a FEN loses the move stack
- * (breaks 169.5's `resolveBookMove`, which requires `chess.history()`), and
+ * (breaks `resolveBookMove`, which requires `chess.history()`), and
  * a bare SAN list loses every `[%clk]` comment (`annotateClock` writes them
  * into chess.js's own comment store, not a parallel structure).
  *
@@ -17,9 +17,9 @@
  * (an SSR guard plus `useUserFlag.ts`'s try/catch shape):
  * an SSR/prerender environment with no `localStorage`, and a storage-API
  * throw (QuotaExceededError, Safari private mode). Both degrade to "no
- * resumable snapshot" — never a throw, never a crash (T-170-02).
+ * resumable snapshot" — never a throw, never a crash.
  *
- * Owner scoping (T-170-04): the key is suffixed by the caller's email (or
+ * Owner scoping: the key is suffixed by the caller's email (or
  * 'anon'), copying `useUserFlag.ts`'s `storageKey` precedent verbatim — a
  * shared browser cannot bleed one account's resumable game into another's.
  */
@@ -29,7 +29,7 @@ import * as Sentry from '@sentry/react';
 
 import type { BotGameSettings } from '@/hooks/useBotGame';
 
-/** Bumping this invalidates every existing snapshot (D-06: a schema-version
+/** Bumping this invalidates every existing snapshot (a schema-version
  * change is a silent hard drop, never a migration). */
 export const CURRENT_SNAPSHOT_VERSION = 1;
 
@@ -37,7 +37,7 @@ export const BOT_GAME_SNAPSHOT_KEY_PREFIX = 'flawchess_bot_game:';
 
 /** Owner-scoped key, copied from `useUserFlag.ts`'s `storageKey` — a
  * different key per account means a cross-user resume is structurally
- * impossible, not merely guard-enforced (T-170-04). */
+ * impossible, not merely guard-enforced. */
 function snapshotKey(ownerKey: string | null | undefined): string {
   return `${BOT_GAME_SNAPSHOT_KEY_PREFIX}${ownerKey ?? 'anon'}`;
 }
@@ -47,16 +47,16 @@ export interface BotGameSnapshot {
   gameUuid: string;
   settings: BotGameSettings;
   /** `chess.pgn()` at snapshot time — carries every `[%clk]` comment
-   * losslessly (D-08 RESOLVED). The ONLY move/clock source of truth. */
+   * losslessly. The ONLY move/clock source of truth. */
   pgn: string;
   whiteClockMs: number;
   blackClockMs: number;
   movesSinceLastDecline: number;
-  /** 169.5 D-03 one-way latch — cannot be re-derived from move history, a
+  /** One-way latch — cannot be re-derived from move history, a
    * fresh latch on resume would silently re-enter the book mid-game. */
   hasLeftBook: boolean;
   hasFiredLowTime: boolean;
-  /** `Date.now()` at write time, for D-06's "2 days ago" age display. */
+  /** `Date.now()` at write time, for the "2 days ago" age display. */
   savedAt: number;
 }
 
@@ -92,7 +92,7 @@ function isValidSnapshotShape(value: unknown): value is BotGameSnapshot {
   );
 }
 
-/** T-170-02: clears the bad key immediately so subsequent reads on the same
+/** Clears the bad key immediately so subsequent reads on the same
  * visit see a clean "no snapshot" state, and captures to Sentry exactly
  * ONCE at that clear point — otherwise a persistently-corrupted value would
  * spam Sentry on every `/bots` mount. */
@@ -110,7 +110,7 @@ function clearCorruptSnapshot(key: string, err: unknown): void {
  * (SSR, storage throw, JSON.parse failure, missing/mistyped field, or a
  * version mismatch) degrades to `null` — "no resumable snapshot". A parse
  * or shape-validation failure additionally clears the bad key and captures
- * to Sentry once; a clean version mismatch (D-06) is a silent hard drop
+ * to Sentry once; a clean version mismatch is a silent hard drop
  * with no removal and no capture — it is expected schema evolution, not
  * corruption.
  */
@@ -178,8 +178,8 @@ export function clearSnapshot(ownerKey: string | null | undefined): void {
 }
 
 /**
- * The ONLY snapshot->board replay path in the codebase (D-08). Do NOT add a
- * parallel SAN-replay helper: 169.5's `resolveBookMove` requires a board
+ * The ONLY snapshot->board replay path in the codebase. Do NOT add a
+ * parallel SAN-replay helper: `resolveBookMove` requires a board
  * with real pushed moves (`chess.history()`), which `loadPgn` satisfies for
  * free — a `new Chess(fen)` board silently matches the wrong ECO prefixes.
  */

@@ -1,11 +1,10 @@
 /**
- * rootSplit.ts unit tests (Phase 226 D-18/L-2/L-3).
+ * rootSplit.ts unit tests.
  *
  * Covers the pure partition/merge helpers that underlie the root grade
  * split: `partitionCandidates` (round-robin sharding) and `mergeShardGrades`
  * (order-preserving, no-fabrication merge). Edge cases (k > n, k <= 0, k ===
- * n, n === 1, empty input, missing/duplicate candidates) and mutation checks
- * land in Plan 226-10 Task 2.
+ * n, n === 1, empty input, missing/duplicate candidates) are covered below.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -87,7 +86,7 @@ describe('mergeShardGrades', () => {
     }
   });
 
-  it('a candidate missing from every shard is absent from the result — never fabricated (L-2)', () => {
+  it('a candidate missing from every shard is absent from the result — never fabricated', () => {
     const shards = [new Map([['a', makeGrade(10)]]), new Map([['c', makeGrade(30)]])];
 
     const merged = mergeShardGrades(['a', 'b', 'c'], shards);

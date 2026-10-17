@@ -1,17 +1,17 @@
-"""Integration tests for app.repositories.library_repository (Phase 106-01).
+"""Integration tests for app.repositories.library_repository.
 
 Uses a real PostgreSQL database via the db_session fixture (rolled-back per test).
-Covers the Wave-0 seam guards from 106-VALIDATION.md:
+Covers the seam guards:
 
 - `-k exists_filter` — the user-color-scoped EXISTS severity filter selects games
   with >=1 USER ply of the requested severity, excludes clean games, and EXCLUDES
-  a game where only the OPPONENT blundered (B1 guard).
-- `-k analyzed_denominator` — placeholder, implemented in 106-03.
+  a game where only the OPPONENT blundered.
+- `-k analyzed_denominator` — the analyzed-games denominator (covered games only,
+  user-scoped).
 
-Note: The SQL<->kernel cross-check (B2, `TestCrossCheck`) was retired in Phase 108
-Plan 03 (D-02 migration). The `game_flaws` table IS the materialized kernel output,
-so there is no longer a separate SQL path that could drift from the kernel. The new
-invariant is tested in `tests/test_flaw_predicate.py`.
+Note: there is no SQL<->kernel cross-check test. The `game_flaws` table IS the
+materialized kernel output, so there is no separate SQL path that could drift from
+the kernel. The invariant is tested in `tests/test_flaw_predicate.py`.
 
 Reuses _seed_game / _seed_position helpers patterned on tests/test_flaws_repository.py.
 """
@@ -70,8 +70,7 @@ async def _seed_game(
 
     white_blunders drives Game.is_analyzed (the cheap analyzed detector): pass a
     non-None value to mark the game as having full move-quality analysis.
-    full_evals_completed_at drives the _analyzed_game_ids_subquery gate (replaced the
-    old per-ply eval-coverage recompute in quick-task 260617-pu4): pass a non-None
+    full_evals_completed_at drives the _analyzed_game_ids_subquery gate: pass a non-None
     datetime to mark the game as fully evaluated by the drain.
     """
     game = Game(
@@ -146,11 +145,11 @@ async def _seed_game_flaw(
 ) -> None:
     """Insert a game_flaws row directly (bypasses classifier).
 
-    D-02 migration: EXISTS filter now reads game_flaws rows, not positions.
+    The EXISTS filter reads game_flaws rows, not positions.
 
-    Quick 260620-pza: optional tactic-motif columns (raw DB ints) so tests can
-    exercise the tactic EXISTS threaded into query_filtered_games. Since SEED-061
-    apply_game_filters gates the tactic EXISTS on confidence (>= _TACTIC_CHIP_CONFIDENCE_MIN),
+    Optional tactic-motif columns (raw DB ints) so tests can
+    exercise the tactic EXISTS threaded into query_filtered_games.
+    apply_game_filters gates the tactic EXISTS on confidence (>= MIN_TACTIC_CHIP_CONFIDENCE),
     matching the chip/flaw builders, so callers must set confidence to match.
     """
     await bulk_insert_game_flaws(
@@ -205,7 +204,7 @@ async def _matching_game_ids(
 
 
 class TestExistsFilter:
-    """The user-scoped EXISTS flaw-severity filter reads game_flaws table (D-02)."""
+    """The user-scoped EXISTS flaw-severity filter reads game_flaws table."""
 
     @pytest.mark.asyncio
     async def test_exists_filter_selects_game_with_flaw_excludes_clean(
@@ -213,7 +212,7 @@ class TestExistsFilter:
     ) -> None:
         """A game with a game_flaws blunder row is selected; a clean game is not.
 
-        D-02 migration: the EXISTS filter reads game_flaws directly (not the
+        The EXISTS filter reads game_flaws directly (not the
         window-scan). The user-scoping is enforced via game_flaws.user_id.
         """
         # Game A: has a game_flaws blunder row.
@@ -234,7 +233,7 @@ class TestExistsFilter:
         """EXISTS is user-scoped: another user's game_flaws rows do not satisfy the filter.
 
         The game belongs to user 99999; user 99998 has no flaw row for it. The EXISTS
-        predicate is always scoped to game_flaws.user_id == the querying user_id (T-108-07).
+        predicate is always scoped to game_flaws.user_id == the querying user_id.
         """
         game = await _seed_game(db_session, user_id=99999, user_color="white")
         # Seed a blunder row for user 99999 only.
@@ -252,8 +251,8 @@ class TestExistsFilter:
     ) -> None:
         """severity=["mistake"] matches games with mistake rows only (set-membership).
 
-        Phase 108 changed severity filtering from a "mistake or worse" MIN threshold to
-        exact set-membership: severity=["mistake"] selects mistakes only, NOT blunders.
+        Severity filtering is exact set-membership, not a "mistake or worse" MIN
+        threshold: severity=["mistake"] selects mistakes only, NOT blunders.
         """
         # Game A: mistake row (severity=1).
         game_a = await _seed_game(db_session, user_color="white")
@@ -273,7 +272,7 @@ class TestExistsFilter:
 
 
 # ---------------------------------------------------------------------------
-# TestQueryFilteredGames (-k query_filtered_games) — paginated archive (106-02)
+# TestQueryFilteredGames (-k query_filtered_games) — paginated archive
 # ---------------------------------------------------------------------------
 
 
@@ -282,7 +281,7 @@ class TestQueryFilteredGames:
 
     @pytest.mark.asyncio
     async def test_severity_filter_narrows_to_blunder_games(self, db_session: AsyncSession) -> None:
-        """severity=["blunder"] returns only games with a game_flaws blunder row (D-02)."""
+        """severity=["blunder"] returns only games with a game_flaws blunder row."""
         # Game A: has a blunder flaw row in game_flaws.
         game_a = await _seed_game(db_session, user_color="white")
         await _seed_game_flaw(db_session, game=game_a, ply=2, severity=2)  # blunder
@@ -329,7 +328,7 @@ class TestQueryFilteredGames:
 
     @pytest.mark.asyncio
     async def test_tactic_family_filter_narrows_games(self, db_session: AsyncSession) -> None:
-        """Quick 260620-pza: tactic_families=["fork"] returns only games with a
+        """tactic_families=["fork"] returns only games with a
         fork-motif flaw (the tactic EXISTS threaded into query_filtered_games)."""
         from app.services.tactic_detector import TacticMotifInt
 
@@ -380,7 +379,7 @@ class TestQueryFilteredGames:
 
     @pytest.mark.asyncio
     async def test_tactic_orientation_filter_narrows_games(self, db_session: AsyncSession) -> None:
-        """Quick 260620-pza: orientation='missed' matches only games whose fork is in
+        """orientation='missed' matches only games whose fork is in
         the MISSED column, not the ALLOWED column."""
         from app.services.tactic_detector import TacticMotifInt
 
@@ -429,7 +428,7 @@ class TestQueryFilteredGames:
     async def test_depth_filter_narrows_games_without_family(
         self, db_session: AsyncSession
     ) -> None:
-        """Quick 260621-sm8 follow-up: a depth range with NO family selected restricts games.
+        """A depth range with NO family selected restricts games.
 
         Regression for the "5130 of 5138 regardless of depth" bug — the Games-tab
         tactic EXISTS was gated on a selected family, so a depth-only filter added
@@ -490,7 +489,7 @@ class TestQueryFilteredGames:
     async def test_orientation_filter_narrows_games_without_family(
         self, db_session: AsyncSession
     ) -> None:
-        """Quick 260621-sm8 follow-up: orientation alone (no family) restricts games.
+        """Orientation alone (no family) restricts games.
 
         orientation='missed' with no family must return only games that have a
         missed tactic, excluding allowed-only and non-tactic games.
@@ -542,7 +541,7 @@ class TestQueryFilteredGames:
 
     @pytest.mark.asyncio
     async def test_default_filter_returns_all_games(self, db_session: AsyncSession) -> None:
-        """Quick 260621-sm8 follow-up: default tactic state adds NO row restriction.
+        """The default tactic state adds NO row restriction.
 
         With no family, orientation='either', and the full depth range, non-tactic
         games must still appear (regression guard that the EXISTS gate stays off at
@@ -589,10 +588,10 @@ class TestQueryFilteredGames:
     async def test_tactic_filter_excludes_opponent_only_tactic(
         self, db_session: AsyncSession
     ) -> None:
-        """SEED-060: the Games-tab tactic filter must NOT flag a game whose only
+        """The Games-tab tactic filter must NOT flag a game whose only
         family-X tactic belongs to the OPPONENT.
 
-        Since Phase 113, game_flaws holds both sides' flaws (player attributed via
+        game_flaws holds both sides' flaws (player attributed via
         ply parity vs user_color). For a white user, an ODD ply is the black mover =
         opponent. A game with only an opponent fork must be excluded by the
         player_only_gate, mirroring flaw_exists_from_table's behavior.
@@ -645,14 +644,14 @@ class TestQueryFilteredGames:
     async def test_tactic_filter_excludes_below_confidence_tactic(
         self, db_session: AsyncSession
     ) -> None:
-        """SEED-061: the Games-tab tactic filter must NOT flag a game whose only
+        """The Games-tab tactic filter must NOT flag a game whose only
         family-X tactic is below the chip-display confidence threshold (70).
 
-        Chip display is gated at _TACTIC_CHIP_CONFIDENCE_MIN, so a game matched on a
+        Chip display is gated at MIN_TACTIC_CHIP_CONFIDENCE, so a game matched on a
         sub-threshold fork would show no fork chip — a visible inconsistency. The
         filter now gates on confidence to match build_flaw_filter_clauses.
         """
-        from app.repositories.library_repository import _TACTIC_CHIP_CONFIDENCE_MIN
+        from app.repositories.library_repository import MIN_TACTIC_CHIP_CONFIDENCE
         from app.services.tactic_detector import TacticMotifInt
 
         user_id = 99999
@@ -663,7 +662,7 @@ class TestQueryFilteredGames:
             game=game_high,
             ply=2,
             allowed_tactic_motif=int(TacticMotifInt.FORK),
-            allowed_tactic_confidence=_TACTIC_CHIP_CONFIDENCE_MIN,
+            allowed_tactic_confidence=MIN_TACTIC_CHIP_CONFIDENCE,
             allowed_tactic_depth=0,
         )
         # Game L: LOW-confidence fork (below threshold) — excluded.
@@ -673,7 +672,7 @@ class TestQueryFilteredGames:
             game=game_low,
             ply=2,
             allowed_tactic_motif=int(TacticMotifInt.FORK),
-            allowed_tactic_confidence=_TACTIC_CHIP_CONFIDENCE_MIN - 1,
+            allowed_tactic_confidence=MIN_TACTIC_CHIP_CONFIDENCE - 1,
             allowed_tactic_depth=0,
         )
 
@@ -805,12 +804,12 @@ class TestAnalyzedDenominator:
 
     @pytest.mark.asyncio
     async def test_short_fully_analyzed_game_is_analyzed(self, db_session: AsyncSession) -> None:
-        """Regression (260615-rb1 / 260617-pu4): a short fully-analyzed game is counted.
+        """Regression: a short fully-analyzed game is counted.
 
         The old per-ply coverage recompute excluded short games: 7 movable plies /
         (COUNT(*)-1 = 7) = 1.0 passes, but the predecessor bug (COUNT(*) = 8 denominator)
         gave 7/8 = 0.875 < 0.90. Both are superseded: the gate is now the authoritative
-        games.full_evals_completed_at column (quick-task 260617-pu4), set by the eval
+        games.full_evals_completed_at column, set by the eval
         drain only when the kernel is satisfied. A game with full_evals_completed_at IS
         NOT NULL is analyzed regardless of raw position counts or ply length.
         """
@@ -841,7 +840,7 @@ class TestAnalyzedDenominator:
     async def test_tactic_filter_orientation_either_includes_missed_only_game(
         self, db_session: AsyncSession
     ) -> None:
-        """SEED-062: the tactic-comparison gate narrows the population on "either".
+        """The tactic-comparison gate narrows the population on "either".
 
         A game whose only fork is in the MISSED column must be in the population when
         the gate uses tactic_filter_orientation="either" (the basis the dual-orientation
@@ -1025,14 +1024,14 @@ def _flaw_row(
 
 
 # ---------------------------------------------------------------------------
-# TestPlayerOnlyGate — D-04 player-only gate on query_flaws (R2)
+# TestPlayerOnlyGate — player-only gate on query_flaws
 # ---------------------------------------------------------------------------
 
 
 class TestPlayerOnlyGate:
-    """query_flaws returns only player flaws after both-sides materialization (D-04, R2).
+    """query_flaws returns only player flaws after both-sides materialization.
 
-    After Phase 113 Plan 01, game_flaws contains rows for BOTH the player and
+    game_flaws contains rows for BOTH the player and
     the opponent. query_flaws is the Flaws-subtab list reader; it must return
     only the player's flaws so opponent blunders do not appear as flaw cards.
 
@@ -1116,14 +1115,14 @@ class TestPlayerOnlyGate:
 
 
 # ---------------------------------------------------------------------------
-# TestPageFlawsPlayerOnly — D-04 player-only gate on fetch_page_game_flaws (R3)
+# TestPageFlawsPlayerOnly — player-only gate on fetch_page_game_flaws
 # ---------------------------------------------------------------------------
 
 
 class TestPageFlawsPlayerOnly:
-    """fetch_page_game_flaws returns only player GameFlaw rows per game (D-04, R3).
+    """fetch_page_game_flaws returns only player GameFlaw rows per game.
 
-    After Phase 113 Plan 01, game_flaws contains rows for BOTH the player and
+    game_flaws contains rows for BOTH the player and
     the opponent. fetch_page_game_flaws feeds chip/M+B building on the Games-tab
     cards; it must return only player rows so chips and counts are accurate.
     """
@@ -1182,7 +1181,7 @@ _ = func
 
 
 # ---------------------------------------------------------------------------
-# TestEvalJoin (Phase 112-01): regression guard + schema check
+# TestEvalJoin: regression guard + schema check
 # ---------------------------------------------------------------------------
 
 
@@ -1196,7 +1195,7 @@ async def _seed_game_flaw_with_es(
 ) -> None:
     """Insert a game_flaws row for eval-join regression tests.
 
-    Phase 112 (D-07): es_before/es_after/move_san are no longer stored in game_flaws;
+    es_before/es_after/move_san are no longer stored in game_flaws;
     they are sourced at query time via a game_positions join. The test verifies that
     the join reproduces the correct eval values from the seeded game_positions rows.
     """
@@ -1221,7 +1220,7 @@ async def _seed_game_flaw_with_es(
 
 
 class TestEvalJoinReproducesEs:
-    """Phase 112 Pitfall 1 regression guard: game_positions join has correct ply offset.
+    """Regression guard: game_positions join has correct ply offset.
 
     Verifies that the two aliased LEFT JOINs on game_positions (PositionAt at ply=N,
     PositionBefore at ply=N-1) return the eval values the kernel uses for es_before/es_after.
@@ -1235,7 +1234,7 @@ class TestEvalJoinReproducesEs:
         Seed: flaw at ply=2 (white mover per kernel parity: even=white).
           - positions[1].eval_cp = +100  (eval_before in flaws_service terms: positions[N-1])
           - positions[2].eval_cp = -50   (eval_after: positions[N])
-        ES values computed directly from seeded evals (Phase 112: no longer stored):
+        ES values computed directly from seeded evals (not stored):
           - es_before = eval_cp_to_expected_score(+100, "white") ≈ 0.591
           - es_after  = eval_cp_to_expected_score(-50, "white")  ≈ 0.454
         The test asserts abs(computed_from_join - computed_from_seed) < 1e-6 for both.
@@ -1427,7 +1426,7 @@ class TestEvalJoinReproducesEs:
 
 
 class TestFlawsEndpointSchema:
-    """Phase 112-01 Task 2: FlawListItem carries new fields, drops ES fields."""
+    """FlawListItem carries eval and best_move fields, and no ES fields."""
 
     @pytest.mark.asyncio
     async def test_flaws_endpoint_schema(self, db_session: AsyncSession) -> None:
@@ -1486,7 +1485,7 @@ class TestFlawsEndpointSchema:
         assert our_flaw.move_san is not None, "move_san must be join-sourced and non-None"
         assert our_flaw.eval_cp_after is not None, "eval_cp_after must be set from game_positions"
         assert our_flaw.eval_cp_before is not None, "eval_cp_before must be set from game_positions"
-        # best_move surfaces from the PositionAt (ply=N) join (quick-260618-oqw).
+        # best_move surfaces from the PositionAt (ply=N) join.
         assert our_flaw.best_move == "e2e4", "best_move must come from game_positions at ply=N"
 
         # Ratings (sourced from Game; Game was seeded without explicit ratings → None is valid)
@@ -1498,7 +1497,7 @@ class TestFlawsEndpointSchema:
         assert hasattr(our_flaw, "eval_mate_before"), "FlawListItem must have eval_mate_before"
         assert hasattr(our_flaw, "eval_mate_after"), "FlawListItem must have eval_mate_after"
 
-        # Schema assertions: ES fields must NOT be present (dropped in Task 2)
+        # Schema assertions: ES fields must NOT be present
         assert not hasattr(our_flaw, "es_before"), "FlawListItem must NOT have es_before"
         assert not hasattr(our_flaw, "es_after"), "FlawListItem must NOT have es_after"
 
@@ -1598,7 +1597,7 @@ class TestFetchPageActiveEvalStatus:
 
 
 # ---------------------------------------------------------------------------
-# Phase 128 Plan 03 (Task 2 TDD) — orientation tests for filter + chip read
+# Orientation tests for filter + chip read
 # ---------------------------------------------------------------------------
 
 
@@ -1631,17 +1630,12 @@ def _compile_flaw_filter_sql(tactic_families: list[str], orientation: str | None
 
 
 class TestTacticOrientationBuildFlawFilterClauses:
-    """build_flaw_filter_clauses orientation param selects the correct column (D-09).
-
-    Phase 128 Task 2 TDD RED: these tests expect an orientation parameter on
-    build_flaw_filter_clauses that does not exist yet — they will fail with a
-    TypeError until the GREEN implementation lands.
-    """
+    """build_flaw_filter_clauses orientation param selects the correct column."""
 
     def test_default_orientation_references_both_columns(self) -> None:
         """orientation unspecified (default = 'either') → clause references both columns.
 
-        Quick 260621-sm8: default changed from 'allowed' to 'either' so callers
+        Default changed from 'allowed' to 'either' so callers
         that don't pass an orientation param (e.g. flaw_exists_from_table) still
         get the all-inclusive 'either' behaviour rather than orientation-filtering.
         """
@@ -1666,7 +1660,7 @@ class TestTacticOrientationBuildFlawFilterClauses:
     def test_missed_orientation_references_missed_column(self) -> None:
         """orientation='missed' → clause references missed_tactic_motif.
 
-        The FAMILY_TO_MOTIF_INTS expansion is identical (D-09); only the column
+        The FAMILY_TO_MOTIF_INTS expansion is identical; only the column
         switches.
         """
         sql = _compile_flaw_filter_sql(["fork"], orientation="missed")
@@ -1704,14 +1698,14 @@ class TestTacticOrientationBuildFlawFilterClauses:
         # Expect 1 definition + comment references + usages in query logic.
         # The important thing: FAMILY_TO_MOTIF_INTS should NOT appear N times as separate
         # per-orientation dicts. The exact count is flexible; just verify it's not doubled.
-        # Phase 129 Plan 01 raised the upper bound from 8 to 15 (added _depth_in_range +
-        # _tactic_orientation_pairs helpers with docstring + code references — not duplication).
+        # The upper bound of 15 allows for the _depth_in_range + _tactic_orientation_pairs
+        # helpers' docstring + code references — not duplication.
         assert count >= 2, "FAMILY_TO_MOTIF_INTS must appear at least twice (def + usage)"
         assert count <= 15, f"FAMILY_TO_MOTIF_INTS appears {count} times — possible duplication"
 
 
 # ---------------------------------------------------------------------------
-# Phase 129 Plan 01 (Task 1 TDD RED) — depth + either tests for build_flaw_filter_clauses
+# Depth + either tests for build_flaw_filter_clauses
 # ---------------------------------------------------------------------------
 
 
@@ -1750,12 +1744,7 @@ def _compile_flaw_filter_sql_129(
 
 
 class TestTacticDepthAndEitherBuildFlawFilterClauses:
-    """build_flaw_filter_clauses depth + either tests (Phase 129 D-05/D-08).
-
-    Phase 129 Task 1 TDD RED: these tests expect max_tactic_depth kwarg and
-    orientation='either' support that do not yet exist. They will fail with
-    TypeError or assertion errors until the GREEN implementation lands.
-    """
+    """build_flaw_filter_clauses depth + either tests."""
 
     def test_either_references_both_motif_columns(self) -> None:
         """orientation='either' → clause includes BOTH missed and allowed motif columns."""
@@ -1802,13 +1791,13 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
         )
 
     def test_mate_exemption_removed_when_depth_set(self) -> None:
-        """Quick 260620-l5k: mates now obey the range — NO depth-exemption OR.
+        """Mates now obey the range — NO depth-exemption OR.
 
-        The Phase 129 D-04 mate exemption was removed, so a bounded depth filter
+        There is no mate exemption, so a bounded depth filter
         references the motif column ONCE (the primary family filter) — not twice.
         """
         sql = _compile_flaw_filter_sql_129(["fork"], orientation="allowed", max_tactic_depth=3)
-        # Quick 260621-qz9: the allowed column is decision-anchored (+1), so the
+        # The allowed column is decision-anchored (+1), so the
         # upper bound now compiles as "allowed_tactic_depth + <param> <=".
         assert "allowed_tactic_depth +" in sql and "<=" in sql
         # The mate exemption was the ONLY OR in a single-orientation depth clause
@@ -1818,9 +1807,9 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
         )
 
     def test_min_depth_bound_references_depth_column(self) -> None:
-        """Quick 260620-l5k: min_tactic_depth=2 → a >= lower-bound predicate is added.
+        """min_tactic_depth=2 → a >= lower-bound predicate is added.
 
-        Quick 260621-qz9: the allowed column carries the decision-anchored +1 offset,
+        The allowed column carries the decision-anchored +1 offset,
         so both bounds compile as "allowed_tactic_depth + <param>" comparisons.
         """
         sql = _compile_flaw_filter_sql_129(
@@ -1834,7 +1823,7 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
         )
 
     def test_allowed_depth_is_decision_anchored_offset_missed_is_not(self) -> None:
-        """Quick 260621-qz9: allowed depth column is shifted +1; missed is bare.
+        """Allowed depth column is shifted +1; missed is bare.
 
         The allowed_tactic PV (opponent refutation) starts one ply after the shared
         decision board, so its raw 0-based index is compared as raw+1 to land on the
@@ -1868,7 +1857,7 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
         )
 
     def test_confidence_gate_preserved_on_either(self) -> None:
-        """Flaws-list site DOES gate confidence (Pitfall 3) even for 'either'."""
+        """Flaws-list site DOES gate confidence even for 'either'."""
         sql = _compile_flaw_filter_sql_129(["fork"], orientation="either")
         assert "tactic_confidence" in sql, (
             f"build_flaw_filter_clauses must gate confidence for either; got: {sql}"
@@ -1876,14 +1865,14 @@ class TestTacticDepthAndEitherBuildFlawFilterClauses:
 
 
 # ---------------------------------------------------------------------------
-# TestDecidedLostSuppression (Quick 260626-bdt)
+# TestDecidedLostSuppression
 # ---------------------------------------------------------------------------
 
 
 class TestDecidedLostSuppression:
     """Decided-lost tactic suppression: flaws from positions already lost for the
     mover have their tactic-motif tag + depth suppressed on the Flaws and Games
-    surfaces.  The flaw still exists and counts in severity totals (Quick 260626-bdt).
+    surfaces.  The flaw still exists and counts in severity totals.
     """
 
     # ------------------------------------------------------------------
@@ -2447,7 +2436,7 @@ class TestDecidedLostSuppression:
 
 
 # ---------------------------------------------------------------------------
-# Phase 175 Plan 01 (FILT-01) — has_gem / has_great filter (-k best_move_exists)
+# has_gem / has_great filter (-k best_move_exists)
 # ---------------------------------------------------------------------------
 
 # Distinct user IDs so parallel -n auto runs cannot cross-contaminate with
@@ -2518,9 +2507,9 @@ async def _matching_best_move_ids(
 
 
 class TestBestMoveExistsFromTable:
-    """has_gem / has_great filter (FILT-01) — correlated EXISTS over
+    """has_gem / has_great filter — correlated EXISTS over
     game_best_moves via best_move_exists_from_table, composed through
-    apply_game_filters (D-04/D-05/D-05a)."""
+    apply_game_filters."""
 
     async def _ensure_users(self, session: AsyncSession) -> None:
         from tests.conftest import ensure_test_user
@@ -2533,7 +2522,7 @@ class TestBestMoveExistsFromTable:
         self, db_session: AsyncSession
     ) -> None:
         """A game where the USER played a gem move matches has_gem=True; a game
-        where only the OPPONENT played a gem move does NOT (D-04 player-parity
+        where only the OPPONENT played a gem move does NOT (player-parity
         scoping) — proves the filter reads the player's own plies only."""
         await self._ensure_users(db_session)
 
@@ -2556,7 +2545,7 @@ class TestBestMoveExistsFromTable:
         self, db_session: AsyncSession
     ) -> None:
         """has_gem=True AND has_great=True returns games with a gem OR a great
-        (union semantics), never the intersection (D-05)."""
+        (union semantics), never the intersection."""
         await self._ensure_users(db_session)
 
         game_gem = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
@@ -2584,7 +2573,7 @@ class TestBestMoveExistsFromTable:
     async def test_best_move_exists_composes_with_color_filter(
         self, db_session: AsyncSession
     ) -> None:
-        """has_gem composes with a simultaneous color filter (D-05a) — a black
+        """has_gem composes with a simultaneous color filter — a black
         user's own gem is excluded once color=white is added, proving the EXISTS
         is ANDed onto the statement rather than replacing it."""
         await self._ensure_users(db_session)
@@ -2615,7 +2604,7 @@ class TestBestMoveExistsFromTable:
     async def test_best_move_exists_guard_suppresses_divergent_lichess_gem(
         self, db_session: AsyncSession
     ) -> None:
-        """Imported-eval divergence guard (Quick 260717-gmg) end-to-end through the
+        """Imported-eval divergence guard end-to-end through the
         EXISTS filter: for a lichess-eval game, a gem candidate whose game_positions
         eval_cp (lichess's post-move %eval) is far worse than our best_cp is dropped
         from has_gem; an otherwise-identical game whose position eval agrees stays.
@@ -2665,8 +2654,8 @@ class TestBestMoveExistsFromTable:
 
     @pytest.mark.asyncio
     async def test_best_move_exists_cross_user_isolation(self, db_session: AsyncSession) -> None:
-        """User A's has_gem query never surfaces user B's game (IDOR backstop,
-        T-175-01) — game_best_moves has no user_id column, so isolation must
+        """User A's has_gem query never surfaces user B's game (IDOR backstop) —
+        game_best_moves has no user_id column, so isolation must
         come entirely from the Game.id correlation to the user-scoped outer
         query, not from a user_id filter on the candidate table itself."""
         await self._ensure_users(db_session)

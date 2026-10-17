@@ -1,7 +1,7 @@
-"""Schemas for the push router (Phase 201, PUSH-01/PUSH-03).
+"""Schemas for the push router.
 
 No request schema carries a `user_id` field -- the owner is always
-`current_active_user.id` (V4/IDOR guard, T-201-03).
+`current_active_user.id` (V4/IDOR guard).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ class PushSubscribeRequest(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def _require_https(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        """ASVS V5 / T-201-01 (SSRF): the backend later POSTs to this URL."""
+        """ASVS V5 (SSRF): the backend later POSTs to this URL."""
         if value.scheme != "https":
             raise ValueError("endpoint must use https")
         return value
@@ -50,7 +50,7 @@ class VapidPublicKeyResponse(BaseModel):
 
 
 class DevTriggerReminderResponse(BaseModel):
-    """Response for POST /push/dev/trigger-reminder (REMIND-08, D-17)."""
+    """Response for POST /push/dev/trigger-reminder."""
 
     attempted: int
     pruned: int

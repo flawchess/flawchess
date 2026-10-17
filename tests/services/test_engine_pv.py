@@ -1,4 +1,4 @@
-"""Tests for evaluate_nodes_with_pv PV capture (Phase 117 EVAL-04).
+"""Tests for evaluate_nodes_with_pv PV capture.
 
 TDD RED tests: verify the PV extractors and evaluate_nodes_with_pv function.
 """
@@ -49,7 +49,7 @@ class TestPvToBestMove:
         assert result == "e2e4", f"Expected 'e2e4' (first move), got {result!r}"
 
     def test_promotion_move_returns_5char_uci(self) -> None:
-        """Promotion moves return 5-char UCI (D-117-03: varchar(5) covers promotions)."""
+        """Promotion moves return 5-char UCI (varchar(5) covers promotions)."""
         move = chess.Move.from_uci("e7e8q")
         result = _pv_to_best_move({"pv": [move]})  # type: ignore[arg-type]
         assert result == "e7e8q", f"Expected 'e7e8q', got {result!r}"
@@ -100,5 +100,5 @@ class TestPvToUciString:
         assert result == "e2e4 e7e5", f"Expected 2-move truncation, got {result!r}"
 
     def test_pv_cap_plies_is_12(self) -> None:
-        """PV_CAP_PLIES constant is 12 (D-117-02: ~12-ply cap)."""
+        """PV_CAP_PLIES constant is 12 (~12-ply cap)."""
         assert PV_CAP_PLIES == 12, f"Expected PV_CAP_PLIES=12, got {PV_CAP_PLIES}"

@@ -1,11 +1,11 @@
 /**
- * One-sentence definitions for each TacticMotif string (Phase 126).
+ * One-sentence definitions for each TacticMotif string.
  *
  * Keys match the TacticMotif Literal strings in app/services/tactic_detector.py.
  * The backend enum has 29 members; en-passant, under-promotion, and promotion are
- * surfaced as "Advanced" chip families (promotion added when D-09 was reversed —
- * perfect-precision residual motif, sibling of under-promotion). self-interference
- * (14) and clearance (15, suppressed Phase 221 plan 06 D-07) stay family-less.
+ * surfaced as "Advanced" chip families (promotion is a perfect-precision residual
+ * motif, sibling of under-promotion). self-interference (14) and clearance (15,
+ * suppressed) stay family-less.
  * Used by TacticMotifChip popover bodies.
  *
  * Copy guidelines: WHAT the motif is, no jargon, no em-dashes, no p-values.
@@ -29,26 +29,24 @@ export const TACTIC_MOTIF_DEFINITIONS: Record<string, string> = {
   'double-bishop-mate': 'Two bishops on adjacent diagonals deliver checkmate while the king is cut off.',
   'dovetail-mate': 'A queen delivers checkmate to a king whose only escape squares are blocked by its own pieces in a dovetail pattern.',
   mate: 'A checkmate pattern that does not fit a specific named category.',
-  // Synthetic family-level key used only by the filter-panel legend (Quick 260620-onv):
+  // Synthetic family-level key used only by the filter-panel legend:
   // groups every named-mate motif under one "checkmate" row instead of listing them.
   checkmate: 'The opponent\'s king is attacked and has no legal move to escape capture.',
   'hanging-piece': 'An undefended piece can be captured for free.',
-  // The `combinations` family was dropped in Phase 129, so these 8 motifs no longer map to a
-  // family and never render a chip. Retained only as the raw-string fallback source for any
-  // TACTIC_MOTIF_DEFINITIONS[motif] lookup; safe to delete once that fallback is gone.
   sacrifice: 'A piece or pawn is given up deliberately to gain a positional or tactical advantage.',
   deflection: 'An opponent\'s piece is lured or forced away from a critical square it was defending.',
   attraction: 'An opponent\'s piece is drawn onto a square where it becomes vulnerable to a follow-up tactic.',
   intermezzo: 'An in-between move is played before completing an expected sequence, often gaining tempo.',
   interference: 'A piece is placed on a square that disrupts the coordination between two of the opponent\'s pieces.',
+  // self-interference has no family and renders no chip.
   'self-interference': 'One of the opponent\'s own pieces blocks another, creating a weakness that can be exploited.',
-  // clearance REMOVED (Phase 221 plan 06, D-07 suppression) — the real-game
-  // keep/suppress bar measured real_share=0.667 with only 3 of 16 surviving
-  // rows, below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
+  // No clearance entry: it is suppressed (the real-game keep/suppress bar measured
+  // real_share=0.667 with only 3 of 16 surviving rows, below both
+  // REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar).
   // tacticMotifDefinition() falls back to the raw motif string for any
   // still-persisted "clearance" row until the prod retag clears int 15.
   'capturing-defender': 'The piece defending a key square or piece is captured to remove that protection.',
-  // Move-type families (Quick 260623): en-passant + under-promotion surfaced as Advanced chips.
+  // Move-type families: en-passant + under-promotion surfaced as Advanced chips.
   'en-passant': 'A pawn captures an enemy pawn that has just advanced two squares, as if it had moved only one.',
   'under-promotion': 'A pawn promotes to a knight, bishop, or rook instead of a queen to deliver a specific tactic.',
   promotion: 'A pawn reaches the back rank and promotes to a queen, often deciding the game.',

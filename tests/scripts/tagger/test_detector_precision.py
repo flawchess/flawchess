@@ -1,4 +1,4 @@
-"""Precision/recall harness for the Phase 127 tactic-motif detector (SC#2/D-08).
+"""Precision/recall harness for the tactic-motif detector.
 
 Scores `detect_tactic_motif` against the committed CC0 lichess puzzle fixtures
 (fixtures/tagger/detector_fixture_train.csv and detector_fixture_test.csv).
@@ -11,42 +11,42 @@ self-improvement loop optimizes. The held-out TEST set is scored and printed
 train-beats-test gap surfaces overfitting in CI output without blocking. Both sets
 come from a deterministic PuzzleId-hash split (no leakage).
 
-Precision gate (D-08): `assert precision_train[motif] >= PRECISION_FLOOR[motif]` for
+Precision gate: `assert precision_train[motif] >= PRECISION_FLOOR[motif]` for
 each shipped (non-suppressed) motif. The test FAILS if train precision drops below
 the floor — this blocks a CI merge if the detector regresses. Recall is printed but
 never asserted (under-tagging is acceptable; false positives are not).
 
 These numbers supersede the self-labeled fixtures in
 `tests/services/test_tactic_detector.py` as the authoritative precision/recall
-source (D-12 / SC#5). The fast-guard tests in that file remain as per-commit
-regression guards (see Task 2 note in 127-03-PLAN.md).
+source. The fast-guard tests in that file remain as per-commit
+regression guards.
 
-CC0 / AGPL boundary (SC#4 / D-11):
+CC0 / AGPL boundary:
   The puzzle data in the fixture CSVs is CC0 / Public Domain from
   database.lichess.org. The puzzle labels were produced by lichess-puzzler's
   tagger/cook.py (AGPL-3.0). We use only the published CC0 dataset; cook.py
-  is neither vendored nor ported here. The Phase 124 detector was built from
+  is neither vendored nor ported here. The detector was built from
   plain-English pseudocode, independent of cook.py.
 
-Precision multi-label credit (D-10):
+Precision multi-label credit:
   A detection is a true positive when the detected motif's lichess theme set
   (from MOTIF_TO_THEMES in motif_theme_map.py) intersects the puzzle's Themes.
   A single puzzle can carry multiple themes; intersection credit handles this.
 
-Depth-vs-Rating correlation (D-06):
+Depth-vs-Rating correlation:
   Pearson correlation between tactic_depth and puzzle Rating for rows where we
   detected a motif correctly. Reported as a first-class output. A correlation
-  near 0 indicates depth is not tracking puzzle difficulty; the Phase 129 depth
+  near 0 indicates depth is not tracking puzzle difficulty; the depth
   filter presets rely on this relationship.
 
-Unvalidated motifs (D-10 / UNVALIDATED_MOTIFS):
+Unvalidated motifs (UNVALIDATED_MOTIFS):
   Motifs with no confirmed lichess theme equivalent are printed as 'unvalidated'
   in the output table. Their precision cannot be measured against the CC0 set.
 
-Suppressed motifs (D-09 / SUPPRESSED_MOTIFS):
+Suppressed motifs (SUPPRESSED_MOTIFS):
   Motifs excluded from the floor assertion: either they never fire (NaN precision)
   or have zero precision. Tier-3 suppressed motifs are filtered at query time via
-  the `_TACTIC_CHIP_CONFIDENCE_MIN` lever in library_repository.py.
+  the `MIN_TACTIC_CHIP_CONFIDENCE` lever in library_repository.py.
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def _compute_metrics(
 
             if has_theme and we_detected:
                 tp_count[motif_str] += 1
-                # Track depth-vs-Rating for correct detections (D-06)
+                # Track depth-vs-Rating for correct detections
                 if depth is not None:
                     depth_rating_pairs.append((depth, row["rating"]))
             elif has_theme and not we_detected:
@@ -139,7 +139,7 @@ def _recall(tp: int, fn: int) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Real-game scoring (TAGFIX-07 / D-13)
+# Real-game scoring
 #
 # Different bucket semantics from the puzzle harness above — there is NO
 # false-negative column. A suppressed `incidental`/`wrong` row is a WIN, not a
@@ -328,7 +328,7 @@ def _print_set_table(
             f"{floor_str:>8}  {status}"
         )
 
-    # Depth-vs-Rating correlation (D-06 first-class output)
+    # Depth-vs-Rating correlation (first-class output)
     print()
     if len(depth_rating_pairs) >= 2:
         try:
@@ -361,7 +361,7 @@ def test_detector_precision_and_recall(
 
     Prints a per-motif table for each set, the depth-vs-Rating correlation, and a
     train->test precision delta (the overfit signal). Asserts PRECISION_FLOOR only
-    against the TRAIN set per D-08; recall is printed but never asserted.
+    against the TRAIN set; recall is printed but never asserted.
     """
     prec_train, floor_failures = _print_set_table(
         "TRAIN", detector_fixture_train, assert_floors=True
@@ -394,7 +394,7 @@ def test_detector_precision_and_recall(
         print(f"  {motif}")
     print("=" * 80)
 
-    # --- Precision floor assertions (D-08 gate, TRAIN only) ---
+    # --- Precision floor assertions (gate, TRAIN only) ---
     if floor_failures:
         failure_text = "\n".join(floor_failures)
         pytest.fail(
@@ -404,17 +404,17 @@ def test_detector_precision_and_recall(
 
 
 # ---------------------------------------------------------------------------
-# Real-game fixture schema (TAGFIX-07 / D-13)
+# Real-game fixture schema
 # ---------------------------------------------------------------------------
 
 
 def test_realgame_fixture_schema(realgame_fixture: list[RealGameRow]) -> None:
     """The committed real-game CSV loads, its header matches REALGAME_CSV_HEADER
     exactly (a positive equality — a stray column cannot silently slip in), no
-    user-identifying column name is present (T-221-01), every motif int decodes,
-    every row's board is built the SAME way production builds it post-D-09 (a
+    user-identifying column name is present, every motif int decodes,
+    every row's board is built the SAME way production builds it (a
     one-move stack, never the stackless fallback), and every oversampled motif
-    (D-13 stratification) has at least one sampled row.
+    has at least one sampled row.
     """
     assert realgame_fixture, "fixtures/tagger/realgame_tags.csv must be non-empty"
 
@@ -450,11 +450,11 @@ def test_realgame_fixture_schema(realgame_fixture: list[RealGameRow]) -> None:
 
 
 def test_realgame_real_share_floor(realgame_fixture: list[RealGameRow]) -> None:
-    """TAGFIX-07: score the real-game fixture with the SAME scorer
+    """Score the real-game fixture with the SAME scorer
     `scripts/tactic_tagger_report.py` imports (they can never disagree), print
     the per-motif table, prove the no-double-count invariant `surviving +
     suppressed == before_total` for every motif, and assert the
-    `REALGAME_REAL_SHARE_FLOOR` never-regress gate (D-13). A motif with a floor
+    `REALGAME_REAL_SHARE_FLOOR` never-regress gate. A motif with a floor
     entry but zero surviving rows fails as NO-ROWS rather than passing
     vacuously; a motif with no floor entry is reported but never gated.
     """

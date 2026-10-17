@@ -1,7 +1,7 @@
 import type { AxiosError } from 'axios';
 
 /**
- * Phase 65 response envelope types. Consumed by useEndgameInsights hook
+ * Response envelope types. Consumed by useEndgameInsights hook
  * and EndgameInsightsBlock component. Literal unions mirror
  * app/schemas/insights.py exactly — any divergence breaks the contract.
  */
@@ -34,18 +34,18 @@ export interface InsightsGenerateState {
 }
 
 export interface EndgameInsightsReport {
-  /** v49 (238 UAT): 1-2 sentence takeaway, the quoted header of the Insights block. */
+  /** 1-2 sentence takeaway, the quoted header of the Insights block. */
   summary: string;
-  /** v9: Player profile paragraph (~3-5 sentences). Always populated. */
+  /** Player profile paragraph (~3-5 sentences). Always populated. */
   player_profile: string;
   /**
    * Natural-language overview (1-2 paragraphs, <= 150 words).
-   * BETA-02: empty string when INSIGHTS_HIDE_OVERVIEW=true (per-section insights still render).
+   * Empty string when INSIGHTS_HIDE_OVERVIEW=true (per-section insights still render).
    */
   overview: string;
-  /** v9: 2-4 short bullet recommendations grounded in weak/typical metrics. */
+  /** 2-4 short bullet recommendations grounded in weak/typical metrics. */
   recommendations: string[];
-  /** Min 1, max 4 section insights. See Phase 65 D-19. */
+  /** Min 1, max 4 section insights. */
   sections: SectionInsight[];
   /** FE does not display to end users; available for debug. */
   model_used: string;
@@ -64,9 +64,8 @@ export interface InsightsErrorResponse {
 
 export type InsightsAxiosError = AxiosError<InsightsErrorResponse>;
 
-// ─── Phase 71 — Opening Insights ──────────────────────────────────────────
+// ─── Opening Insights ──────────────────────────────────────────
 // Hand-mirrored from app/schemas/opening_insights.py.
-// entry_san_sequence added by Phase 71 backend amendment (Plan 01, D-13).
 
 export interface OpeningInsightFinding {
   color: 'white' | 'black';
@@ -89,7 +88,7 @@ export interface OpeningInsightFinding {
   p_value: number;
   ci_low: number;
   ci_high: number;
-  // MG-entry eval fields (quick task 260506-u2b — parity with OpeningWDL Phase 80)
+  // MG-entry eval fields (parity with OpeningWDL)
   avg_eval_pawns?: number | null;
   eval_ci_low_pawns?: number | null;
   eval_ci_high_pawns?: number | null;
@@ -99,7 +98,7 @@ export interface OpeningInsightFinding {
   // MAX(games.played_at) across all games visiting this (entry, candidate)
   // transition. ISO 8601 string; null when contributing games all have NULL
   // played_at. Drives the OpeningFindingCard score-confidence popover's
-  // "Last played: <relative>" line (quick task 260508-r61).
+  // "Last played: <relative>" line.
   last_played_at?: string | null;
 }
 

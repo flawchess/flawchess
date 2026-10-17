@@ -1,15 +1,15 @@
-"""Tests for app/services/insights_llm.py — Phase 65 orchestration service.
+"""Tests for app/services/insights_llm.py — orchestration service.
 
 Covers:
-- LLM-01: Agent returns validated EndgameInsightsReport via TestModel.
-- LLM-02: Startup validation (UserError on empty model, ValueError on bad provider).
-- INS-04: Cache key = (findings_hash, prompt_version, model).
-- INS-05: 3-miss rate-limit boundary, tier-2 soft-fail, window rollover.
-- INS-06: Overview always populated in log; hidden only in response when flag set.
+- Agent returns validated EndgameInsightsReport via TestModel.
+- Startup validation (UserError on empty model, ValueError on bad provider).
+- Cache key = (findings_hash, prompt_version, model).
+- 3-miss rate-limit boundary, tier-2 soft-fail, window rollover.
+- Overview always populated in log; hidden only in response when flag set.
 
-No real provider calls — all agent calls use TestModel or FunctionModel per D-38/D-39.
-Rate-limit seeding uses fresh_test_user + own-session pattern (mirrors Plan 04 tests).
-compute_findings is monkeypatched for all orchestration tests to avoid DB-heavy Phase 63.
+No real provider calls — all agent calls use TestModel or FunctionModel.
+Rate-limit seeding uses fresh_test_user + own-session pattern.
+compute_findings is monkeypatched for all orchestration tests to avoid DB-heavy computation.
 """
 
 import asyncio
@@ -187,31 +187,30 @@ class TestStartupValidation:
 
 
 class TestPromptVersionAndBody:
-    """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
+    """Regression tests for the prompt version and the prompt file body.
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v30 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION changes whenever the prompt does, so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
-    - The UAT-pass emitter-shape documentation describes the THREE-summary +
+    - The emitter-shape documentation describes the THREE-summary +
       THREE-series score_timeline shape keyed on distinct metrics
       (endgame_score_timeline, non_endgame_score_timeline, score_gap) with weekly granularity
       and the `[n=<N> for every point]` disclosure for constant-N series.
-    - Phase 82 (D-22, D-23, D-24): new glossary entries for entry_eval_pawns and endgame_score,
+    - New glossary entries for entry_eval_pawns and endgame_score,
       renamed glossary entries to endgame_score_timeline / non_endgame_score_timeline,
       new ### Subsection: endgame_start_vs_end block, updated mapping table.
-    - Phase 83 (D-17, D-18, D-20): new glossary entry for entry_expected_score
+    - New glossary entry for entry_expected_score
       (UI label "Achievable score"), extended endgame_start_vs_end subsection
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
         assert insights_llm._PROMPT_VERSION == "endgame_v49"
 
     def test_prompt_file_glossary_has_entry_expected_score(self) -> None:
-        """Phase 83 D-17: glossary entry must be present with required framing."""
+        """Glossary entry must be present with required framing."""
         from pathlib import Path
 
         prompt_path = (
@@ -220,36 +219,36 @@ class TestPromptVersionAndBody:
         body = prompt_path.read_text(encoding="utf-8")
         assert "entry_expected_score" in body
         assert "Achievable Score" in body
-        # D-10 forbidden words must NOT appear in user-facing narration guidance.
+        # Forbidden words must NOT appear in user-facing narration guidance.
         # "underperformance" is allowed ONLY inside an explicit forbidden-words list.
         # Every occurrence in the prompt must be preceded on the same line by the
-        # word "Forbidden" (D-10 framing) — narration guidance never uses the term.
+        # word "Forbidden" — narration guidance never uses the term.
         for line in body.splitlines():
             if "underperformance" in line.lower():
                 assert "forbidden" in line.lower(), (
                     f"`underperformance` must only appear in forbidden-words lists. "
                     f"Offending line: {line!r}"
                 )
-        # Cohort band citation to the Plan 4 benchmark report
+        # Cohort band citation to the benchmark report
         assert "benchmarks-2026-05-11.md" in body
         # Lichess sigmoid derivation reference
         assert "0.00368208" in body
 
     def test_prompt_file_subsection_has_worked_example_narrations(self) -> None:
-        """Phase 83 D-18: extended subsection block has the worked examples."""
+        """Extended subsection block has the worked examples."""
         from pathlib import Path
 
         prompt_path = (
             Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
         )
         body = prompt_path.read_text(encoding="utf-8")
-        # The two example narrations from CONTEXT.md D-18 must be present verbatim.
-        # Phase: "engine baseline" wording was reworded to the 2300+-peer-average
+        # The two example narrations must be present verbatim.
+        # The "engine baseline" wording was reworded to the 2300+-peer-average
         # framing (commit 93c092c2) — the pinned string follows the current copy.
         assert "From positions like yours, a 2300+ player averages 58%" in body
         assert (
             "Entry Eval Score 49%, you scored 52%" in body
-        )  # Phase 102: vocab audit renamed "Achievable" → "Entry Eval Score"
+        )  # Vocab audit renamed "Achievable" → "Entry Eval Score"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -274,8 +273,8 @@ class TestPromptVersionAndBody:
 
         # Positive invariants — renamed id + v14 emitter-shape documentation present.
         assert "score_timeline" in body
-        # Phase 82 D-01/D-02: renamed to _timeline variants in the line-125 paragraph.
-        # Phase 238 (D-04): the three blocks are emitted per time control.
+        # Renamed to _timeline variants in the line-125 paragraph.
+        # The three blocks are emitted per time control.
         assert "[summary endgame_score_timeline | time_control=<tc>]" in body
         assert "[summary non_endgame_score_timeline | time_control=<tc>]" in body
         assert "[summary score_gap | time_control=<tc>]" in body
@@ -303,7 +302,7 @@ class TestPromptVersionAndBody:
         )
 
     def test_prompt_contains_endgame_start_vs_end_subsection(self) -> None:
-        """Phase 82 (D-23): new ### Subsection: endgame_start_vs_end block is present."""
+        """New ### Subsection: endgame_start_vs_end block is present."""
         from pathlib import Path
 
         body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
@@ -314,7 +313,7 @@ class TestPromptVersionAndBody:
         assert "setup → execution" in body  # → character
 
     def test_prompt_glossary_contains_entry_eval_pawns(self) -> None:
-        """Phase 82 (D-22): entry_eval_pawns glossary entry is present."""
+        """entry_eval_pawns glossary entry is present."""
         from pathlib import Path
 
         body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
@@ -324,7 +323,7 @@ class TestPromptVersionAndBody:
         assert "**entry_eval_pawns**" in body
 
     def test_prompt_glossary_renames_score_timeline_metrics(self) -> None:
-        """Phase 82 (D-22): glossary entries renamed to _timeline variants."""
+        """Glossary entries renamed to _timeline variants."""
         from pathlib import Path
 
         body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
@@ -334,7 +333,7 @@ class TestPromptVersionAndBody:
         assert "**non_endgame_score_timeline**" in body
 
     def test_prompt_mapping_table_includes_endgame_start_vs_end_row(self) -> None:
-        """Phase 82 (D-24): endgame_start_vs_end row present in mapping table under overall."""
+        """endgame_start_vs_end row present in mapping table under overall."""
         from pathlib import Path
 
         body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
@@ -353,7 +352,7 @@ class TestPromptVersionAndBody:
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
     def test_prompt_glossary_defines_endgame_type_score_gap(self) -> None:
-        """Phase 87.1 Plan 04 / CONTEXT D-10: glossary entry for the new metric.
+        """Glossary entry for the new metric.
 
         Glossary uses the FULL form "Endgame Type Score Gap"; narration rule
         instructs the LLM to use "Score Gap" in card-context references and
@@ -374,7 +373,7 @@ class TestPromptVersionAndBody:
         # Sigmoid-bias caveat in glossary entry (Lichess sigmoid).
         assert "Lichess" in body and "sigmoid" in body
         # Forbidden internal coinages must NOT appear as user-facing tokens.
-        # ΔES / delta_es / dES are forbidden in narration per CONTEXT D-10.
+        # ΔES / delta_es / dES are forbidden in narration.
         # Allow them ONLY inside an explicit forbidden-words list (line prefixed
         # by "Forbidden" or "Incorrect").
         for token in ("ΔES", "delta_es"):
@@ -388,7 +387,7 @@ class TestPromptVersionAndBody:
                     ), f"{token!r} appears outside a forbidden-words list. Offending line: {line!r}"
 
     def test_endgame_insights_prompt_carries_score_gap_bucket_glossary(self) -> None:
-        """Phase 87.2 Plan 04: endgame_insights.md contains the Section 2 Score Gap family block.
+        """endgame_insights.md contains the Section 2 Score Gap family block.
 
         Asserts the required glossary strings per PLAN.md Task 2 acceptance criteria.
         """
@@ -404,7 +403,7 @@ class TestPromptVersionAndBody:
         assert "Parity Score Gap" in body
         assert "Recovery Score Gap" in body
         assert "Skill Score Gap" in body
-        # Equal-weighted mean (D-01 documented in glossary).
+        # Equal-weighted mean (documented in glossary).
         assert "equal-weighted mean" in body
         # Sigmoid caveat (Lichess expected-score sigmoid).
         assert "Lichess expected-score sigmoid" in body
@@ -412,12 +411,12 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 238 (D-04): _PROMPT_VERSION is endgame_v49 (v48 ranked sample + v49 summary)."""
+        """_PROMPT_VERSION is endgame_v49 (v48 ranked sample + v49 summary)."""
         assert insights_llm._PROMPT_VERSION == "endgame_v49"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
-    """Phase 102 UAT (2026-06-02): per-(class × TC) Score Gap block in the LLM payload.
+    """Per-(class × TC) Score Gap block in the LLM payload.
 
     The metric `endgame_type_achievable_score_gap` is emitted as a
     SubsectionFinding per (endgame class × time control) under the per-TC
@@ -566,7 +565,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert "ci_high=" not in block_text
 
     def test_gap_payload_field_name_uses_internal_identifier(self) -> None:
-        """D-02 / D-10: payload field name preserves grep-ability with achievable_score_gap.
+        """Payload field name preserves grep-ability with achievable_score_gap.
 
         The MetricId literal in the SubsectionFinding is
         `endgame_type_achievable_score_gap` (NOT `score_gap` or
@@ -588,7 +587,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert "[summary type_score_gap" not in prompt
 
     def test_gap_inline_band_dispatches_per_class_tc(self) -> None:
-        """Phase 102 UAT: inline band must come from PER_CLASS_TC_GAUGE_ZONES (per-(class × TC)),
+        """Inline band must come from PER_CLASS_TC_GAUGE_ZONES (per-(class × TC)),
         NOT the pooled PER_CLASS_GAUGE_ZONES band. Sanity check below pins the rook/blitz
         calibration so a future band change forces the test (and the rendered constant)
         to be updated together.
@@ -611,7 +610,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert bands.achievable_score_gap == (-0.05, 0.05)
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
-        """v14 (260424-pc6 C): when every point's `n` is equal, the series block
+        """When every point's `n` is equal, the series block
         emits a single `[n=<N> for every point]` disclosure line after the
         header and drops the per-point `(n=N)` suffix from every bucket row.
         """
@@ -646,7 +645,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert "2026-02-02: +55" in rendered
 
     def test_variable_n_series_keeps_per_point_suffix(self) -> None:
-        """v14 (260424-pc6 C): when per-point `n` varies, the disclosure
+        """When per-point `n` varies, the disclosure
         shortcut must NOT fire — every bucket keeps its own `(n=<N>)` tag
         so the LLM can still reason about per-bucket sample weight.
         """
@@ -688,11 +687,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
 class TestGoldenUserPrompt:
     """Byte-level oracle for `_assemble_user_prompt`'s full rendered output.
 
-    Phase 214 Plan 07: prior tests only assert on substrings of the prompt,
+    Prior tests only assert on substrings of the prompt,
     which cannot catch a reordered section, a dropped blank line, or a
     filter stage applied one position too early/late. This golden closes
     that gap with whole-string equality against a file captured from
-    pre-refactor code (before `_apply_a2_filter` and its siblings were
+    pre-refactor code (before `_visible_findings` and its siblings were
     extracted from `_assemble_user_prompt`/`_retained_series_for_summary`/
     `_render_series_block`/`_render_subsection_block`).
 
@@ -838,12 +837,12 @@ class TestGoldenUserPrompt:
         """Whole-string equality against `tests/services/golden/insights_user_prompt.txt`.
 
         The golden was captured from pre-refactor code (before
-        `_apply_a2_filter`/`_apply_c2_filter`/`_apply_c3_filter`/`_apply_c5_filter`/
-        `_apply_c6_filter` existed) and is never regenerated to match a
+        `_visible_findings`/`_drop_points_covered_by_last_3mo`/`_activity_gap_marker`/
+        `_should_emit_series_block`/`_cap_all_time_points` existed) and is never regenerated to match a
         post-refactor output -- if this fails, the split changed the emitted
         prompt and the split (not the golden) must be fixed.
 
-        Regenerated deliberately in Phase 238 (D-04): ranked-sample population, per-TC overall findings, no filter block.
+        The golden reflects the ranked-sample population: per-TC overall findings, no filter block.
         """
         from pathlib import Path
 
@@ -861,8 +860,8 @@ class TestGoldenUserPrompt:
 class TestPromptAssembly:
     def test_user_prompt_shape(self) -> None:
         non_timeline = SubsectionFinding(
-            # Phase 102 UAT: score_gap scalar now lives in the dedicated
-            # `score_gap` subsection (the `overall` subsection was retired).
+            # The score_gap scalar lives in the dedicated
+            # `score_gap` subsection.
             subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
@@ -877,8 +876,7 @@ class TestPromptAssembly:
             dimension=None,
             series=None,
         )
-        # Phase 68 (260424-pc6): score_timeline emits THREE findings per
-        # window — one per metric. Phase 82 D-01/D-02: renamed to
+        # score_timeline emits THREE findings per window — one per metric:
         # endgame_score_timeline / non_endgame_score_timeline / score_gap.
         # No `part` dim; each metric id is the unique key.
         timeline_endgame = SubsectionFinding(
@@ -946,8 +944,7 @@ class TestPromptAssembly:
         assert "Flags:" not in prompt
         assert "### Subsection: score_gap" in prompt
         assert "### Subsection: score_timeline" in prompt
-        # Phase 68 (v14) / Phase 82 D-01/D-02 rename: three series blocks (one
-        # per metric), all pinned to weekly.
+        # Three series blocks (one per metric), all pinned to weekly.
         assert "[series endgame_score_timeline, last_3mo, weekly]" in prompt
         assert "[series non_endgame_score_timeline, last_3mo, weekly]" in prompt
         assert "[series score_gap, last_3mo, weekly]" in prompt
@@ -958,18 +955,18 @@ class TestPromptAssembly:
         assert "2026-01-13" in prompt
 
     def test_endgame_start_vs_end_findings_render_in_prompt(self) -> None:
-        """Phase 82 (D-23): findings on subsection `endgame_start_vs_end` must appear
+        """Findings on subsection `endgame_start_vs_end` must appear
         in the assembled user prompt under section `overall`, between the `overall`
         scalar block and the `score_timeline` block. Regression for the missing
         `_SECTION_LAYOUT` entry that caused the new findings to be silently dropped.
 
         Also asserts the rendered SCALE for both metrics:
         - entry_eval_pawns is in PAWNS — value 0.46 must render as "+0.46", band as
-          "(typical -0.60 to +0.60)". The prompt glossary (D-22) explicitly says
+          "(typical -0.60 to +0.60)". The prompt glossary explicitly says
           "Render as signed one-decimal value with the unit 'pawns' ... Do NOT
-          convert to centipawns." Phase 82 initially shipped with the metric
-          missing from `_NON_FRACTIONAL_METRICS`, which scaled values by 100×
-          and corrupted every prompt.
+          convert to centipawns." If the metric is missing from
+          `_NON_FRACTIONAL_METRICS`, values get scaled by 100×
+          and corrupt every prompt.
         - endgame_score is on the 0-100 percent scale — value 0.58 must render
           as "+58", band as "(typical +45 to +55)".
         """
@@ -1028,7 +1025,7 @@ class TestPromptAssembly:
         assert "(typical +45 to +55)" in prompt
 
     def test_endgame_start_vs_end_renders_only_populated_tile(self) -> None:
-        """Phase 82 (D-17, WR-01): asymmetric tile case — `entry_eval_pawns` gated
+        """Asymmetric tile case — `entry_eval_pawns` gated
         out (n_eval < 10, e.g. Stockfish backfill incomplete) but `endgame_score`
         populated. The subsection header must render with exactly one [summary]
         block (the populated one); the missing tile must NOT appear, and the
@@ -1079,7 +1076,7 @@ class TestPromptAssembly:
         assert "[summary entry_eval_pawns]" not in prompt
 
     def test_format_zone_bounds_skips_no_op_timeline_metrics(self) -> None:
-        """Phase 82 (WR-03): the no-op `[0, 1]` band on the renamed timeline
+        """The no-op `[0, 1]` band on the renamed timeline
         metrics must NOT render an inline `(typical ...)` tag — that would put
         a meaningless `(typical +0 to +100)` next to every score-timeline finding.
         Direct unit test on the skip-list mechanism so a future rename of either
@@ -1095,7 +1092,7 @@ class TestPromptAssembly:
         )
 
     def test_format_zone_bounds_renders_for_endgame_score(self) -> None:
-        """Phase 82 (WR-03): the repurposed `endgame_score` (in subsection
+        """The repurposed `endgame_score` (in subsection
         endgame_start_vs_end) DOES have a calibrated [0.45, 0.55] band; the
         skip-list must NOT mute it. Negative pair to the timeline test above.
         """
@@ -1106,7 +1103,7 @@ class TestPromptAssembly:
         assert "+55" in result
 
     def test_format_zone_bounds_renders_pawns_with_decimals(self) -> None:
-        """Phase 82 (CR-01): `entry_eval_pawns` band must render as decimal
+        """`entry_eval_pawns` band must render as decimal
         pawns, not centipawns. Pins the precision plumbing introduced alongside
         `_NON_FRACTIONAL_METRICS`.
         """
@@ -1121,7 +1118,7 @@ class TestPromptAssembly:
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
 
-        Per 260422-tnb B2: _SYSTEM_PROMPT at module load = file contents + a
+        _SYSTEM_PROMPT at module load = file contents + a
         deterministic `## Zone thresholds` appendix sourced from ZONE_REGISTRY
         and BUCKETED_ZONE_REGISTRY. The appendix is appended so the file
         content must be a strict prefix.
@@ -1137,7 +1134,7 @@ class TestPromptAssembly:
         assert len(_SYSTEM_PROMPT) > len(file_content)
 
     def test_assemble_user_prompt_drops_nan_findings(self) -> None:
-        """A2 (260422-tnb): NaN values and thin empty findings are filtered out."""
+        """A2: NaN values and thin empty findings are filtered out."""
         normal = SubsectionFinding(
             subsection_id="score_gap",
             parent_subsection_id=None,
@@ -1181,11 +1178,11 @@ class TestPromptAssembly:
         assert not [line for line in prompt.splitlines() if line.startswith("- ")]
 
     def test_assemble_user_prompt_groups_by_subsection(self) -> None:
-        """C1 (260422-tnb): multiple findings under one subsection share a single header."""
+        """C1: multiple findings under one subsection share a single header."""
         from typing import cast
         from app.schemas.insights import MetricId
 
-        # Phase 102 UAT: metrics_elo is per-TC — findings live under
+        # metrics_elo is per-TC — findings live under
         # endgame_metrics_<tc> and carry a time_control dimension.
         def _em(metric: str, value: float) -> SubsectionFinding:
             return SubsectionFinding(
@@ -1219,7 +1216,7 @@ class TestPromptAssembly:
         assert prompt.count("[summary recovery_save_pct | time_control=blitz]") == 1
 
     def test_assemble_user_prompt_filters_sparse_series_points(self) -> None:
-        """A4 (260422-tnb): series points with n < MIN_BUCKET_N (=3) are dropped."""
+        """A4: series points with n < MIN_BUCKET_N (=3) are dropped."""
         timeline = SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
@@ -1254,15 +1251,8 @@ class TestPromptAssembly:
         assert "2026-02-16" not in prompt
         assert "(n=2)" not in prompt
 
-    # Phase 88.1 (Plan 09, REVIEW.md WR-06): three tests removed alongside the
-    # _format_time_pressure_chart_block / _SKIPPED_SUBSECTIONS / time_pressure_chart
-    # plumbing deletion. The old assertions covered:
-    #   - test_assemble_user_prompt_skips_time_pressure_vs_performance_subsection_finding
-    #   - test_assemble_user_prompt_renders_time_pressure_chart_block
-    #   - test_assemble_user_prompt_omits_chart_block_when_empty
-
     def test_assemble_user_prompt_renders_overall_wdl_chart_block(self) -> None:
-        """The endgame-vs-non-endgame WDL block is rendered per ranked TC (Phase 238)."""
+        """The endgame-vs-non-endgame WDL block is rendered per ranked TC."""
         ranked_tc = make_ranked_tc("blitz", endgame=(120, 40, 80), non_endgame=(300, 50, 350))
         tab = EndgameTabFindings(
             as_of=datetime.datetime.now(datetime.UTC),
@@ -1301,7 +1291,7 @@ class TestPromptAssembly:
         assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
 
     def test_overall_wdl_block_is_one_table_per_ranked_tc(self) -> None:
-        """Phase 238 (D-04, D-00h): one `overall_wdl` table per ranked TC, never pooled."""
+        """One `overall_wdl` table per ranked TC, never pooled."""
         tab = EndgameTabFindings(
             as_of=datetime.datetime.now(datetime.UTC),
             findings=[],
@@ -1326,7 +1316,7 @@ class TestPromptAssembly:
         assert "Total games in scope: 1060" in prompt
 
     def test_user_prompt_has_no_filter_or_scoping_block(self) -> None:
-        """Phase 238 (D-04): no filters exist, so the prompt carries no filter block and no
+        """No filters exist, so the prompt carries no filter block and no
         scoping caveat, whatever the findings are."""
         tab = EndgameTabFindings(
             as_of=datetime.datetime.now(datetime.UTC),
@@ -1341,7 +1331,7 @@ class TestPromptAssembly:
         assert not hasattr(insights_llm, "_format_filters_for_prompt")
 
     def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
-        """Phase 102 UAT: per-TC WDL table leads each `endgame_type_<tc>` subsection,
+        """Per-TC WDL table leads each `endgame_type_<tc>` subsection,
         sorted by total descending. Built from type_categories_by_tc (per-(class × TC)).
         The opp_score_pct + score_pct_diff columns are dropped (score_pct above 50
         already means outscoring). Rows below the 10-game floor are skipped.
@@ -1356,7 +1346,7 @@ class TestPromptAssembly:
             recov_wins = int(n_recov * recov_pct / 100 * 0.6)
             recov_draws = int(n_recov * recov_pct / 100 * 0.4)
             recov_losses = n_recov - recov_wins - recov_draws
-            # Phase 84 mirror-identity opponent baselines (gated on mirror bucket >= 10).
+            # Mirror-identity opponent baselines (gated on mirror bucket >= 10).
             opp_conv = round(recov_losses / n_recov * 100, 1) if n_recov >= 10 else None
             opp_recov = round((conv_losses + 0) / n_conv * 100, 1) if n_conv >= 10 else None
             return ConversionRecoveryStats(
@@ -1492,7 +1482,7 @@ class TestPromptAssembly:
             recovery_saves=6,
             recovery_wins=4,
             recovery_draws=2,
-            # Phase 84 mirror-identity opponent baselines.
+            # Mirror-identity opponent baselines.
             opponent_conversion_pct=70.0,  # recovery_losses(14)/recovery_games(20)*100
             opponent_conversion_games=20,
             opponent_recovery_pct=33.3,  # (conversion_losses(10)+conversion_draws(0))/conversion_games(30)*100
@@ -1556,9 +1546,9 @@ class TestPromptAssembly:
         (conversion_win_pct) registry paths. The inline shorthand lets the LLM
         judge proximity to a zone edge without consulting the global appendix.
 
-        Phase 102 UAT: the former net_timeout_rate case was dropped — the
-        page-level time_pressure_at_entry subsection is retired, so that metric
-        no longer renders as a zoned [summary] bullet.
+        net_timeout_rate is not covered here: the page-level time_pressure_at_entry
+        subsection no longer exists, so that metric does not render as a zoned
+        [summary] bullet.
         """
         from typing import cast
 
@@ -1579,7 +1569,7 @@ class TestPromptAssembly:
             dimension=None,
             series=None,
         )
-        # Phase 102 UAT: conversion_win_pct is now a per-TC metric whose band
+        # conversion_win_pct is a per-TC metric whose band
         # comes from TC_METRIC_BANDS via the time_control dimension (blitz conv
         # band = 0.667..0.769 → +67 to +77).
         bucketed = SubsectionFinding(
@@ -1602,7 +1592,7 @@ class TestPromptAssembly:
 
         # v7 whole-number scale: score_gap band is -10 to +10.
         assert "weak (typical -10 to +10)" in prompt
-        # Phase 102 UAT: per-TC blitz conversion band is +67 to +77 (TC_METRIC_BANDS).
+        # Per-TC blitz conversion band is +67 to +77 (TC_METRIC_BANDS).
         assert "weak (typical +67 to +77)" in prompt
         assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.
 
@@ -1612,8 +1602,7 @@ class TestPromptAssembly:
         Previously (v5 C4) the scalar was dropped when the chart rendered, leaving
         only the score_timeline subsection's bullet — but that bullet's
         `value` is the latest weekly bucket of the rolling timeline, mislabeled
-        as `(all_time)`. v9 kept both. Phase 102 UAT: the scalar moved from the
-        retired `overall` subsection into the dedicated `score_gap` subsection;
+        as `(all_time)`. The scalar lives in the dedicated `score_gap` subsection;
         the chart still shows the WDL decomposition, and the scalar reports the
         all-time aggregate that exactly matches the chart math
         (endgame.score_pct - non_endgame.score_pct).
@@ -1657,9 +1646,7 @@ class TestPromptAssembly:
         overclaiming a 12-month window as "long-term". Older history beyond
         36 months is still trimmed to keep tokens bounded.
 
-        Phase 88.1 (Plan 09): repointed from clock_diff_timeline to
-        endgame_elo_timeline after the former subsection was retired alongside
-        the cohort layer (REVIEW.md WR-06). endgame_elo_timeline is also
+        Uses endgame_elo_timeline, which is also
         monthly-for-all_time so the bucket-cap semantics are identical.
         """
         # 40 consecutive monthly buckets ending 2025-10: 2022-07 .. 2025-10.
@@ -1709,7 +1696,7 @@ class TestPromptAssembly:
         assert len(series_lines) == 36
 
     def test_score_timeline_emits_three_summaries_three_series_deterministic_order(self) -> None:
-        """Phase 68 v14 (260424-pc6): score_timeline subsection emits THREE [summary] + THREE [series] blocks.
+        """score_timeline subsection emits THREE [summary] + THREE [series] blocks.
 
         One finding per distinct metric (endgame_score, non_endgame_score,
         score_gap). No `part=` dim tag — each metric id is unique. Order:
@@ -1797,7 +1784,7 @@ class TestPromptAssembly:
         timeline_chunk = prompt[timeline_start:]
 
         # Exactly three [summary <metric>] blocks, one per metric, no dim tag.
-        # Phase 82 D-01/D-02: renamed to endgame_score_timeline / non_endgame_score_timeline.
+        # Renamed to endgame_score_timeline / non_endgame_score_timeline.
         assert timeline_chunk.count("[summary endgame_score_timeline]") == 1
         assert timeline_chunk.count("[summary non_endgame_score_timeline]") == 1
         assert timeline_chunk.count("[summary score_gap]") == 1
@@ -1948,15 +1935,13 @@ class TestV6Enrichments:
     def test_trend_emitted_on_summary_window_line(self) -> None:
         """v10: `trend=improving` rides the [summary] window line, not a separate tag.
 
-        Phase 68 dropped the score_gap_timeline suppression carve-out, so
-        every timeline subsection emits a [summary] block now. This test
+        Every timeline subsection emits a [summary] block (score_gap_timeline has no
+        suppression carve-out). This test
         verifies that timeseries [summary] lines carry `trend=` / `std=`
         fields (the same format score_timeline now also emits for each
         per-part finding).
 
-        Phase 88.1 (Plan 09): repointed from clock_diff_timeline to
-        endgame_elo_timeline after the former subsection was retired
-        alongside the cohort layer (REVIEW.md WR-06).
+        Uses endgame_elo_timeline.
         """
         series = [
             TimePoint(bucket_start=f"2026-01-{day:02d}", value=v, n=30)
@@ -2045,17 +2030,14 @@ class TestV6Enrichments:
         assert "[asymmetry type=rook tc=blitz] conversion=80 strong, recovery=18 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
-    # Phase 88.1 (Plan 09, REVIEW.md WR-06): test_low_time_gap_line_emitted_in_time_pressure_chart
-    # removed alongside _low_time_gap_line + _format_time_pressure_chart_block deletion.
-
     def test_summary_emitted_for_paired_windows(self) -> None:
         """Paired all_time + last_3mo scalars fold into one [summary] block with a within-noise shift.
 
-        Phase 87.4 (D-05): the original fixture used metric=``endgame_skill``
+        The original fixture used metric=``endgame_skill``
         which was retired. Repointed to ``win_rate`` which has the same
         [0.45, 0.55] zone band shape so the summary / shift / within-noise
-        assertions retain their semantics. Phase 102 UAT: the retired aggregate
-        ``endgame_metrics`` subsection is no longer in _SECTION_LAYOUT, so the
+        assertions retain their semantics. The aggregate
+        ``endgame_metrics`` subsection is not in _SECTION_LAYOUT, so the
         fixture now lives under a per-TC ``endgame_metrics_blitz`` subsection
         (win_rate is dimensionless, so the paired-window fold is unchanged).
         """
@@ -2165,7 +2147,7 @@ class TestV6Enrichments:
         assert "over 3 months" not in prompt
 
     def test_endgame_elo_summary_emitted_before_gap_summary(self) -> None:
-        """Phase 87.5 D-06 restore: `[summary endgame_elo | ...]`
+        """`[summary endgame_elo | ...]`
         precedes `[summary endgame_elo_gap | ...]`.
 
         The Endgame ELO Timeline chart's headline value is the absolute
@@ -2245,9 +2227,7 @@ class TestV6Enrichments:
     def test_payload_summary_includes_all_time_window(self) -> None:
         """v11: payload summary spells out the all-time series window bounds.
 
-        Phase 88.1 (Plan 09): repointed from clock_diff_timeline to
-        endgame_elo_timeline after the former subsection was retired
-        alongside the cohort layer (REVIEW.md WR-06). endgame_elo_timeline
+        Uses endgame_elo_timeline, which
         is also monthly-for-all_time so the window-bounds assertion is
         unchanged.
         """
@@ -2337,7 +2317,7 @@ class TestSparseHistoryFixes:
         assert any(bs in prompt for bs in recent_buckets)
 
     def test_c5_is_scoped_per_time_control(self) -> None:
-        """BE-WR-02: one TC's retained all_time series must not suppress another TC's
+        """One TC's retained all_time series must not suppress another TC's
         last_3mo series.
 
         score_timeline is per time control (dimension time_control=<tc>). Blitz has
@@ -2560,7 +2540,7 @@ class TestHappyPath:
 
 
 class TestMetadataOverride:
-    """260422-tnb A3: server-side override of model_used + prompt_version."""
+    """Server-side override of model_used + prompt_version."""
 
     @pytest.mark.asyncio
     async def test_generate_insights_overrides_model_used_and_prompt_version(
@@ -2613,7 +2593,6 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
         assert response.report.prompt_version == "endgame_v49"
 
         # Log row's response_json also carries the overridden values (the override
@@ -2652,7 +2631,7 @@ class TestCacheBehavior:
     ) -> None:
         """A seeded cache row (error=None) causes the next call to return cache_hit.
 
-        Note: the cache key is now structural (260425-dxh): the lookup runs via
+        Note: the cache key is now structural: the lookup runs via
         get_latest_successful_log_for_user on (user_id, prompt_version, model,
         opponent_strength) — findings_hash is no longer part of the key. The
         test provider "test" is unknown to genai-prices, so any row written by
@@ -2763,7 +2742,7 @@ class TestCacheBehavior:
 
 
 class TestStructuralCacheInvalidation:
-    """Tests for the 260425-dxh structural cache:
+    """Tests for the structural cache:
     (user_id, prompt_version, model, opponent_strength) + import freshness + 30d TTL.
     """
 
@@ -3393,14 +3372,14 @@ class TestHideOverview:
 
 
 # ---------------------------------------------------------------------------
-# TestSection2ScoreGapFindings — Phase 87.2 Plan 04
+# TestSection2ScoreGapFindings
 # ---------------------------------------------------------------------------
 
 
 class TestSection2ScoreGapFindings:
-    """Phase 87.2: 4 new ΔES Score Gap findings emitted by _findings_endgame_metrics.
+    """4 new ΔES Score Gap findings emitted by _findings_endgame_metrics.
 
-    D-09 (RESEARCH-corrected ADDITIVE): the 4 new score_gap_{conv,parity,recov,skill}
+    The 4 new score_gap_{conv,parity,recov,skill}
     findings are emitted ALONGSIDE the existing rate findings, not replacing them.
 
     Wire shape: (mean, n, zone, neutral_band). No p_value / verdict per memory
@@ -3422,17 +3401,17 @@ class TestSection2ScoreGapFindings:
         parity_n: "int | None" = 15,
         recov_mean: "float | None" = 0.04,
         recov_n: "int | None" = 15,
-        # Phase 87.4 (D-05): skill_mean / skill_n kwargs retained on the
+        # skill_mean / skill_n kwargs retained on the
         # builder signature for source-compat with the deleted-feature tests
         # below, but ignored at construction time — the underlying schema
         # fields were dropped.
         skill_mean: "float | None" = None,
         skill_n: "int | None" = None,
     ) -> "Any":
-        del skill_mean, skill_n  # Phase 87.4 D-05: no longer fed into the schema.
+        del skill_mean, skill_n  # No longer fed into the schema.
         from typing import cast
 
-        # Phase 238: findings come from the ranked per-TC metrics. One TC carries the
+        # Findings come from the ranked per-TC metrics. One TC carries the
         # conv/parity/recov rates and ΔES means; each bucket's n doubles as its gap n.
         return make_ranked_tc(
             cast("Any", tc),
@@ -3449,8 +3428,8 @@ class TestSection2ScoreGapFindings:
         )
 
     def test_score_gap_findings_full_cohort(self) -> None:
-        """Full cohort (each bucket n >= 10): 3 ΔES findings emitted (Phase 87.4
-        D-05 drops the retired "skill" bucket).
+        """Full cohort (each bucket n >= 10): 3 ΔES findings emitted (the retired
+        "skill" bucket is dropped).
 
         Asserts: 3 findings with correct metric_ids; value matches per-bucket mean;
         zone is dispatched via assign_zone; sample_size matches per-bucket n;
@@ -3506,7 +3485,7 @@ class TestSection2ScoreGapFindings:
         for f in delta_es_findings:
             assert f.is_headline_eligible is True, f"{f.metric}: expected is_headline_eligible=True"
 
-        # Phase 102 UAT: findings now carry a per-TC dimension so render-time
+        # Findings carry a per-TC dimension so render-time
         # percentile lookup is keyed by time control (metric_id still encodes
         # the conv/parity/recov bucket).
         for f in delta_es_findings:
@@ -3517,7 +3496,7 @@ class TestSection2ScoreGapFindings:
     def test_score_gap_findings_sparse_cohort(self) -> None:
         """Sparse cohort (each bucket n < 10): 3 findings emitted, is_headline_eligible False.
 
-        Phase 87.4 (D-05): skill bucket retired — expected count drops from 4 to 3.
+        Skill bucket retired — expected count drops from 4 to 3.
         """
         from app.services.insights_service import _findings_endgame_metrics
 
@@ -3554,7 +3533,7 @@ class TestSection2ScoreGapFindings:
     def test_score_gap_findings_empty_cohort(self) -> None:
         """Empty cohort (each bucket mean=None, n=0): 3 findings with value=NaN, is_headline_eligible=False.
 
-        Phase 87.4 (D-05): skill bucket retired.
+        Skill bucket retired.
         """
         import math
 
@@ -3592,7 +3571,7 @@ class TestSection2ScoreGapFindings:
             assert f.zone in {"weak", "typical", "strong"}
 
     def test_score_gap_findings_skill_metric_absent(self) -> None:
-        """Phase 87.4 (D-05): the score_gap_skill finding was retired
+        """The score_gap_skill finding was retired
         end-to-end. Regression guard against re-emitting it.
         """
         from app.services.insights_service import _findings_endgame_metrics
@@ -3604,9 +3583,9 @@ class TestSection2ScoreGapFindings:
         assert skill_findings == [], "score_gap_skill must not be emitted post-Phase 87.4 D-05"
 
     def test_existing_rate_findings_preserved(self) -> None:
-        """D-09 ADDITIVE: per-bucket rate findings survive alongside ΔES findings.
+        """Per-bucket rate findings survive alongside ΔES findings.
 
-        Phase 87.4 (D-05): the aggregate endgame_skill rate finding was retired
+        The aggregate endgame_skill rate finding was retired
         end-to-end; only the per-bucket rate findings (conversion_win_pct /
         parity_score_pct / recovery_save_pct) survive.
         """
@@ -3623,33 +3602,30 @@ class TestSection2ScoreGapFindings:
         findings = _findings_endgame_metrics(response, window="all_time")
 
         metric_ids = {f.metric for f in findings}
-        # Phase 87.4 (D-05): aggregate endgame_skill finding retired — must be absent.
+        # Aggregate endgame_skill finding retired — must be absent.
         assert "endgame_skill" not in metric_ids
         assert "conversion_win_pct" in metric_ids, "conversion_win_pct finding missing"
         assert "parity_score_pct" in metric_ids, "parity_score_pct finding missing"
         assert "recovery_save_pct" in metric_ids, "recovery_save_pct finding missing"
-        # New ΔES findings present (Phase 87.4 D-05: skill bucket retired).
+        # New ΔES findings present (the skill bucket is retired).
         assert "score_gap_conv" in metric_ids
         assert "score_gap_parity" in metric_ids
         assert "score_gap_recov" in metric_ids
         assert "score_gap_skill" not in metric_ids
-        # Total: 3 rate + 3 ΔES = 6 (Phase 87.4 D-05 drops aggregate skill +
-        # the score_gap_skill ΔES bucket).
+        # Total: 3 rate + 3 ΔES = 6 (no aggregate skill finding and no
+        # score_gap_skill ΔES bucket).
         assert len(findings) == 6, f"Expected 6 findings (3 rate + 3 ΔES), got {len(findings)}"
 
 
-class TestPhase874PromptVersion:
-    """Phase 87.5 Plan 03: _PROMPT_VERSION bumped to endgame_v33 with the
-    Endgame ELO Timeline rebuild changelog blob prepended at the FRONT of the
-    inline append-only comment.
-    """
+class TestPromptVersionPinned:
+    """Guards for _PROMPT_VERSION, _NON_FRACTIONAL_METRICS and the Skill-free payload module."""
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
+        """The pinned prompt version."""
         assert insights_llm._PROMPT_VERSION == "endgame_v49"
 
     def test_non_fractional_metrics_renamed(self) -> None:
-        """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
+        """_NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
         assert "endgame_elo_gap" in insights_llm._NON_FRACTIONAL_METRICS, (
             "endgame_elo_gap must be registered as non-fractional (Elo points)"
         )
@@ -3658,9 +3634,9 @@ class TestPhase874PromptVersion:
         )
 
     def test_no_endgame_skill_payload_field(self) -> None:
-        """D-05 (Plan 03 scope): the LLM payload module source contains no
-        Skill-keyed quoted string literals after Phase 87.4. Plan 01 already
-        removed the upstream Skill data via insights_service; this regression
+        """The LLM payload module source contains no
+        Skill-keyed quoted string literals. The upstream Skill data is already
+        removed via insights_service; this regression
         guard catches re-introducing a hardcoded reference here.
         """
         import inspect as _inspect
@@ -3681,23 +3657,19 @@ class TestPhase874PromptVersion:
 
 
 # ---------------------------------------------------------------------------
-# TestPhase876LLMPayloadExtension — Phase 87.6 PR-direct rebuild assertions.
+# TestNonEndgameEloPayloadExtension — PR-direct rebuild assertions.
 # ---------------------------------------------------------------------------
 
 
-class TestPhase876LLMPayloadExtension:
-    """Phase 87.6: guards for the non_endgame_elo payload extension + v34 prompt.
-
-    RED gate: these tests fail until Task 2 extends the prompt, bumps the version,
-    and wires the non_endgame_elo renderer.
-    """
+class TestNonEndgameEloPayloadExtension:
+    """Guards for the non_endgame_elo payload extension and its prompt version."""
 
     def test_prompt_version_is_endgame_v39(self) -> None:
-        """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
+        """The pinned prompt version."""
         assert insights_llm._PROMPT_VERSION == "endgame_v49"
 
     def test_prompt_prose_includes_non_endgame_elo_sentence_pattern(self) -> None:
-        """Phase 87.6: the canonical 'Your Endgame ELO sits at X, vs Y' sentence skeleton
+        """The canonical 'Your Endgame ELO sits at X, vs Y' sentence skeleton
         must be present verbatim in the prompt file so future drift surfaces as a test failure.
         """
         from pathlib import Path
@@ -3712,7 +3684,7 @@ class TestPhase876LLMPayloadExtension:
         )
 
     def test_prompt_glossary_has_non_endgame_elo_entry(self) -> None:
-        """Phase 87.6: glossary entry for non_endgame_elo must exist with the exact header."""
+        """Glossary entry for non_endgame_elo must exist with the exact header."""
         from pathlib import Path
 
         prompt_path = (
@@ -3724,7 +3696,7 @@ class TestPhase876LLMPayloadExtension:
         )
 
     def test_endgame_elo_timeline_emits_three_summary_blocks(self) -> None:
-        """Phase 87.6: the subsection renderer emits THREE summary blocks per combo.
+        """The subsection renderer emits THREE summary blocks per combo.
 
         1. [summary endgame_elo | platform=..., time_control=...]
         2. [summary non_endgame_elo | platform=..., time_control=...]
@@ -3797,9 +3769,9 @@ class TestPhase876LLMPayloadExtension:
 
 
 # ---------------------------------------------------------------------------
-# TestTimePressureScoreGapChartBlock — Phase 102 (Plan 01): new chart block
+# TestTimePressureScoreGapChartBlock — chart block
 # helper _format_time_pressure_score_gap_chart_block renders 5-quintile per-TC
-# Score-Gap-by-time table from EndgameTabFindings.ranked_tcs (Phase 238).
+# Score-Gap-by-time table from EndgameTabFindings.ranked_tcs.
 # ---------------------------------------------------------------------------
 
 
@@ -3850,7 +3822,7 @@ def _gate_unmet_quintiles() -> "list[Any]":
 def _findings_with_ranked_time_pressure(
     cards_data: list[tuple[str, bool]],
 ) -> EndgameTabFindings:
-    """Build EndgameTabFindings whose ranked_tcs carry a pressure curve per TC (Phase 238)."""
+    """Build EndgameTabFindings whose ranked_tcs carry a pressure curve per TC."""
     from typing import cast
 
     ranked_tcs = [
@@ -3871,7 +3843,7 @@ def _findings_with_ranked_time_pressure(
 
 
 class TestTimePressureScoreGapChartBlock:
-    """Phase 102 (Plan 01): _format_time_pressure_score_gap_chart_block (ranked, Phase 238)."""
+    """_format_time_pressure_score_gap_chart_block (ranked)."""
 
     def test_returns_empty_when_no_ranked_tcs(self) -> None:
         """No ranked TC → empty block."""
@@ -3917,7 +3889,7 @@ class TestTimePressureScoreGapChartBlock:
     def test_emits_exactly_4_quintile_data_rows_when_all_gate_met(self) -> None:
         """With all 5 quintiles gate-met, exactly 4 data rows (Q0-Q3) are emitted per TC.
 
-        Phase 102 UAT (2026-06-02): Q4 (80-100% clock = min pressure) is dropped
+        Q4 (80-100% clock = min pressure) is dropped
         from the payload to match the UI chart — only Q0-Q3 render.
         """
         from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
@@ -4012,7 +3984,7 @@ class TestTimePressureScoreGapChartBlock:
     def test_aggregate_lines_render_clock_gap_and_net_flag_rate(self) -> None:
         """Below the quintile table, Clock Gap + Net Flag Rate aggregate lines render.
 
-        Phase 102 UAT: even with no percentile records, the frequency-of-pressure
+        Even with no percentile records, the frequency-of-pressure
         metrics render from the TC's ranked value with a no-percentile note.
         """
         from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
@@ -4056,7 +4028,7 @@ class TestTimePressureScoreGapChartBlock:
         assert "higher is better): value=-9% (no peer percentile yet)" in text
 
     def test_aggregate_line_omitted_for_below_floor_value(self) -> None:
-        """BE-WR-01: a below_floor / pending cell's ungated value is never narrated.
+        """A below_floor / pending cell's ungated value is never narrated.
 
         A time-pressure score gap is computable from one pressured game per side, so
         without the status gate a 2-games-per-side value reached the prompt.
@@ -4131,9 +4103,9 @@ class TestTimePressureScoreGapChartBlock:
 
 
 # ---------------------------------------------------------------------------
-# TestPercentileAnnotation — Phase 102 (Plan 01): pctl= annotation in summary
+# TestPercentileAnnotation — pctl= annotation in summary
 # window lines when per_tc_metric_percentiles is populated on EndgameTabFindings.
-# Phase 238 (D-04): every record is per TC; the page-level lookup is gone.
+# Every record is per TC; the page-level lookup is gone.
 # ---------------------------------------------------------------------------
 
 
@@ -4148,9 +4120,9 @@ def _make_score_gap_finding(
     from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
 
     return SubsectionFinding(
-        # Phase 102 UAT: score_gap now lives in the dedicated `score_gap`
-        # subsection (the `overall` subsection is no longer in _SECTION_LAYOUT).
-        # Phase 238: emitted per time control.
+        # score_gap lives in the dedicated `score_gap`
+        # subsection (the `overall` subsection is not in _SECTION_LAYOUT).
+        # Emitted per time control.
         subsection_id=cast(SubsectionId, "score_gap"),
         parent_subsection_id=None,
         window=cast(Window, window),
@@ -4189,13 +4161,13 @@ def _make_pctl_record(
 
 
 class TestPercentileAnnotation:
-    """Phase 102 (Plan 01 + Plan 04): pctl= annotation in summary lines (D-03, D-05)."""
+    """pctl= annotation in summary lines."""
 
     def test_pctl_annotation_present_when_metric_in_per_tc_percentiles(self) -> None:
         """A finding whose "{metric}:{tc}" key is in per_tc_metric_percentiles renders a
         pctl= token.
 
-        D-05: cohort framing 'vs ~{anchor}-rated {tc} peers' when anchor present on record.
+        Cohort framing 'vs ~{anchor}-rated {tc} peers' when anchor present on record.
         """
         from app.schemas.insights import RatingAnchorContext
 
@@ -4205,7 +4177,7 @@ class TestPercentileAnnotation:
             as_of=datetime.datetime.now(datetime.UTC),
             findings=[finding],
             per_tc_metric_percentiles={"score_gap:blitz": rec},
-            # Phase 102 (Plan 05): cohort_anchors requires RatingAnchorContext.
+            # cohort_anchors requires RatingAnchorContext.
             cohort_anchors={
                 "blitz": RatingAnchorContext(
                     anchor_rating=1500, n_chesscom_games=0, n_lichess_games=200
@@ -4261,7 +4233,7 @@ class TestPercentileAnnotation:
         assert "pctl=" not in prompt
 
     def test_page_level_lookup_no_longer_exists(self) -> None:
-        """Phase 238 (D-04): there is no page-level percentile record; a bare metric key
+        """There is no page-level percentile record; a bare metric key
         (no ':tc') and a dimension-less finding never resolve."""
         rec = _make_pctl_record(percentile=40.0, tc="blitz")
         per_tc: dict[str, MetricPercentileRecord] = {"score_gap:blitz": rec, "score_gap": rec}
@@ -4272,9 +4244,8 @@ class TestPercentileAnnotation:
     def test_zone_typical_finding_with_extreme_percentile_still_emitted(self) -> None:
         """The finding must still be emitted even with extreme percentile.
 
-        (Previously D-04 gate rule: zone was the sole emission gate. Now
-        the prompt teaches zone OR extreme-pctl as the narration gate,
-        but emission itself is never suppressed by zone status alone.)
+        The prompt teaches zone OR extreme-pctl as the narration gate,
+        but emission itself is never suppressed by zone status alone.
         """
         finding = _make_score_gap_finding(zone="typical", value=0.02)
         findings = EndgameTabFindings(
@@ -4283,7 +4254,7 @@ class TestPercentileAnnotation:
             per_tc_metric_percentiles={
                 "score_gap:blitz": _make_pctl_record(5.0, tc="blitz")
             },  # extreme percentile
-            # Phase 102 (Plan 05): cohort_anchors now requires RatingAnchorContext.
+            # cohort_anchors now requires RatingAnchorContext.
             cohort_anchors=None,
             findings_hash="a" * 64,
         )
@@ -4296,7 +4267,7 @@ class TestPercentileAnnotation:
         assert "pctl=5" in prompt, "pctl= token should appear as metadata on the emitted finding"
 
     def test_enriched_pctl_token_carries_n_games_and_value(self) -> None:
-        """Phase 102 (Plan 04): enriched pctl= token includes n_games and value."""
+        """Enriched pctl= token includes n_games and value."""
         finding = _make_score_gap_finding(zone="weak", value=-0.09)
         rec = _make_pctl_record(percentile=18.0, value=-9.0, n_games=312, anchor=1480, tc="blitz")
         findings = EndgameTabFindings(
@@ -4312,13 +4283,13 @@ class TestPercentileAnnotation:
         assert "vs ~1480-rated blitz peers" in prompt
 
     def test_per_tc_pctl_via_dim_key(self) -> None:
-        """Phase 102 (Plan 04): per-TC metric percentile rendered via per_tc_metric_percentiles
+        """Per-TC metric percentile rendered via per_tc_metric_percentiles
         when the finding has a time_control dimension.
         """
         from typing import cast
         from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
 
-        # Phase 102 UAT: score_gap_conv lives under the per-TC subsection and
+        # score_gap_conv lives under the per-TC subsection and
         # carries a time_control dimension (the per_tc lookup key is derived from
         # metric + time_control).
         conv_finding = SubsectionFinding(
@@ -4346,7 +4317,7 @@ class TestPercentileAnnotation:
         assert "vs ~1480-rated blitz peers" in prompt
 
     def test_recovery_naming_bridge(self) -> None:
-        """Phase 102 (Plan 04): 'recovery_score_gap:blitz' and 'score_gap_recov:blitz'
+        """'recovery_score_gap:blitz' and 'score_gap_recov:blitz'
         both resolve to the same MetricPercentileRecord via the bridge alias.
         """
 
@@ -4368,7 +4339,7 @@ class TestPercentileAnnotation:
         assert found_2.percentile == 25.0
 
     def test_class_scoped_finding_does_not_resolve_tc_aggregate_pctl(self) -> None:
-        """Phase 102 UAT fix: an Endgame Type (per-class × TC) finding must NOT pick
+        """An Endgame Type (per-class × TC) finding must NOT pick
         up the per-TC AGGREGATE percentile.
 
         The per-class type findings share the conversion_win_pct / recovery_save_pct
@@ -4397,7 +4368,7 @@ class TestPercentileAnnotation:
 
 
 # ---------------------------------------------------------------------------
-# Phase 102 UAT: per-TC recovery-pattern / asymmetry hints count all_time only
+# Per-TC recovery-pattern / asymmetry hints count all_time only
 # ---------------------------------------------------------------------------
 
 
@@ -4484,12 +4455,12 @@ class TestPerTcTypeHintWindowScoping:
 
 
 # ---------------------------------------------------------------------------
-# Phase 102 (Plan 05): Rating-basis block tests
+# Rating-basis block tests
 # ---------------------------------------------------------------------------
 
 
 class TestRatingBasisBlock:
-    """Phase 102 (Plan 05): _format_rating_basis_block renders per-TC Lichess-equivalent framing."""
+    """_format_rating_basis_block renders per-TC Lichess-equivalent framing."""
 
     def _make_cc_heavy_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
         """Pure chess.com anchor — n_lichess_games == 0."""
@@ -4614,7 +4585,7 @@ class TestRatingBasisBlock:
         assert "lichess median ~1620 (native)" in prompt
 
     def test_prompt_teaches_lichess_equivalent_framing(self) -> None:
-        """The prompt file contains the D-05a Lichess-equivalent teaching."""
+        """The prompt file contains the Lichess-equivalent teaching."""
         from pathlib import Path
 
         prompt_path = (
@@ -4632,7 +4603,7 @@ class TestRatingBasisBlock:
         )
 
     def test_version_is_endgame_v39(self) -> None:
-        """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
+        """The pinned prompt version."""
         from app.services import insights_llm
 
         assert insights_llm._PROMPT_VERSION == "endgame_v49"

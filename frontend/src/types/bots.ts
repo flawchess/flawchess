@@ -1,17 +1,16 @@
 /**
- * Wire types for POST /bots/games (Phase 167, STORE-01..07; frontend call
- * site added in Phase 170 Plan 02, RESUME-02). Mirrors
- * `app/schemas/bots.py`'s `StoreBotGameRequest`/`StoreBotGameResponse`
- * field-for-field (six request fields, snake_case on the wire).
+ * Wire types for POST /bots/games. Mirrors `app/schemas/bots.py`'s
+ * `StoreBotGameRequest`/`StoreBotGameResponse` field-for-field (snake_case on
+ * the wire).
  */
 
 /** Request body for `POST /bots/games`. */
 export interface StoreBotGameRequest {
-  /** Client-minted UUID (Phase 170 D-11), stable across a resume. Canonicalized
+  /** Client-minted UUID, stable across a resume. Canonicalized
    * server-side via `uuid.UUID(...)`, but any RFC-4122 textual variant is accepted. */
   game_uuid: string;
   /** The finished game's PGN — must carry a `[%clk h:mm:ss]` comment for every
-   * ply, both colors (server's STORE-02 presence gate). */
+   * ply, both colors (the server rejects a PGN without them). */
   pgn: string;
   /** Which color the human played. A closed set — never a bare `string`
    * (CLAUDE.md type-safety rule; mirrors the backend `Color` type). */
@@ -25,22 +24,19 @@ export interface StoreBotGameRequest {
    * `[TimeControl]` header. This is NOT the lichess minutes-display preset
    * (`"5+3"`).
    *
-   * The server feeds this straight into `parse_time_control()`
-   * (`app/services/store_bot_game_service.py:76`), which expects base-seconds.
-   * Sending a minutes-display string like `"5+3"` would parse as base=5s ->
-   * estimated 5 + 3*40 = 125s -> BULLET, silently mis-bucketing the game and
-   * picking the wrong rating anchor. Corrected 2026-07-13 by 170-RESEARCH.md
-   * against the shipped, currently-passing test suite — CONTEXT.md's original
-   * D-14 text stated the opposite and is superseded; see the ⚠ CORRECTED note
-   * on D-14 in `.planning/phases/170-localstorage-resume/170-CONTEXT.md`.
+   * The server feeds this straight into `parse_time_control()` (in
+   * `store_bot_game`, `app/services/store_bot_game_service.py`), which expects
+   * base-seconds. Sending a minutes-display string like `"5+3"` would parse as
+   * base=5s -> estimated 5 + 3*40 = 125s -> BULLET, silently mis-bucketing the
+   * game and picking the wrong rating anchor.
    */
   tc_preset: string;
   /** The persona pinned for this game, or `null` for a Custom-mode game with
-   * no persona (Phase 185, PERS-05). Optional on the wire — mirrors the
+   * no persona. Optional on the wire — mirrors the
    * backend `StoreBotGameRequest.persona_id`'s `default=None`. */
   persona_id: string | null;
   /** The persona's display name (e.g. "Ziggy the Wasp"), or `null` for a
-   * Custom-mode game with no persona (quick-260722-ucc). Client-supplied like
+   * Custom-mode game with no persona. Client-supplied like
    * `persona_id` — low blast radius, only affects the submitting user's OWN
    * game display. Mirrors the backend `StoreBotGameRequest.persona_name`'s
    * `default=None`. */
@@ -48,7 +44,7 @@ export interface StoreBotGameRequest {
   /** The persona's CALIBRATED ELO (the honest `~label` value the user sees,
    * e.g. 800) — NOT the internal engine dial `bot_elo` (e.g. 1100). `null`
    * for a Custom-mode game, in which case the server falls back to `bot_elo`.
-   * Client-supplied like `persona_id` (quick-260722-ucc). Mirrors the backend
+   * Client-supplied like `persona_id`. Mirrors the backend
    * `StoreBotGameRequest.bot_rating`'s `default=None`. */
   bot_rating: number | null;
 }
@@ -62,7 +58,7 @@ export interface StoreBotGameResponse {
 }
 
 /**
- * Response body for `GET /bots/persona-wins` (Phase 185). A per-persona-id
+ * Response body for `GET /bots/persona-wins`. A per-persona-id
  * map of RAW (uncapped) win counts for the authenticated user — the frontend
  * applies the `Math.min(wins, MAX_DISPLAY_STARS)` display cap at render time
  * (`PersonaCard.tsx`), not here.

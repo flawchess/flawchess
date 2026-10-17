@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Privacy.test.tsx — Phase 233 D-09: the Privacy page must disclose the Train
+ * Privacy.test.tsx — the Privacy page must disclose the Train
  * per-puzzle telemetry (timing, solution engagement, device class).
  */
 import { afterEach, describe, expect, it } from 'vitest';
@@ -11,7 +11,7 @@ import { PrivacyPage } from '@/pages/Privacy';
 
 afterEach(cleanup);
 
-describe('PrivacyPage Train telemetry disclosure (D-09)', () => {
+describe('PrivacyPage Train telemetry disclosure', () => {
   it('names the device class and that hidden time is not counted', () => {
     render(
       <MemoryRouter>

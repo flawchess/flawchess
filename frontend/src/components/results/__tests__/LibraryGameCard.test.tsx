@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * LibraryGameCard tactic-chip tests — Quick 260620-pza.
+ * LibraryGameCard tactic-chip tests.
  *
  * The Games-tab card now surfaces BOTH tactic orientations: a flaw's
  * allowed_tactic_motif and missed_tactic_motif render as SEPARATE chips with the
@@ -25,7 +25,7 @@ vi.mock('@/components/ui/tooltip', () => ({
 }));
 
 // Shared flaw filter store stub. Mutable (via vi.hoisted) so a test can activate a
-// context-tag or tactic filter and assert the card's behavior (Quick 260702-mnd: the
+// context-tag or tactic filter and assert the card's behavior (the
 // filter now only selects games — it never hides a chip — but it DOES drive the
 // depth-aware active-filter ring, so tacticFamilies/tacticOrientation/tacticDepthMin/
 // tacticDepthMax must be present with their real defaults for that logic to run).
@@ -54,16 +54,16 @@ vi.mock('@/hooks/useFlawFilterStore', () => ({
 }));
 
 // Stub the heavy eval chart + lazy board so the card renders cheaply in jsdom. The
-// chart stub exposes a button that fires onHoverPlyChange so the platform-link tests
+// chart stub exposes a button that fires onActivePlyChange so the platform-link tests
 // can simulate scrubbing the slider to a given ply.
 const scrubCtl = vi.hoisted(() => ({ ply: 0 }));
 vi.mock('@/components/library/EvalChart', () => ({
   EvalChart: ({
-    onHoverPlyChange,
+    onActivePlyChange,
     commandedPly,
     commandSeq,
   }: {
-    onHoverPlyChange?: (p: number | null) => void;
+    onActivePlyChange?: (p: number | null) => void;
     commandedPly?: number | null;
     commandSeq?: number;
   }) => (
@@ -71,9 +71,9 @@ vi.mock('@/components/library/EvalChart', () => ({
       <button
         type="button"
         data-testid="stub-eval-chart"
-        onClick={() => onHoverPlyChange?.(scrubCtl.ply)}
+        onClick={() => onActivePlyChange?.(scrubCtl.ply)}
       />
-      {/* Exposes the imperative scrub command (Phase 175 Plan 06 gem/great cycling
+      {/* Exposes the imperative scrub command (gem/great cycling
           tests) so a click on a badge/chip can be asserted end-to-end. */}
       <span data-testid="stub-eval-chart-command">{`${commandedPly ?? 'null'}:${commandSeq ?? 0}`}</span>
     </div>
@@ -113,8 +113,8 @@ import type { GameFlawCard, FlawMarker } from '@/types/library';
 
 /**
  * Wraps any element in a MemoryRouter (useNavigate) + a fresh QueryClientProvider
- * (NoAnalysisState's useTier1Enqueue calls useQueryClient — needed by the D-07
- * unanalyzed-game test added in Plan 03).
+ * (NoAnalysisState's useTier1Enqueue calls useQueryClient — needed by the
+ * unanalyzed-game test).
  */
 function renderCard(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -250,8 +250,8 @@ describe('LibraryGameCard tactic chips (missed vs allowed)', () => {
   });
 });
 
-describe('LibraryGameCard tactic chips show regardless of active context filter (Quick 260702-mnd)', () => {
-  // Reverses the pre-260702-mnd behavior: an active context-tag filter (e.g. low-clock)
+describe('LibraryGameCard tactic chips show regardless of active context filter', () => {
+  // An active context-tag filter (e.g. low-clock)
   // only selects WHICH games appear — it must never hide a tactic chip on a card that
   // is already shown. Both markers below render their fork chip even though one fails
   // the active low-clock filter.
@@ -298,7 +298,7 @@ describe('LibraryGameCard tactic chips show regardless of active context filter 
   });
 });
 
-describe('LibraryGameCard tactic chip active-filter ring is depth-aware (Quick 260702-mnd, D-2)', () => {
+describe('LibraryGameCard tactic chip active-filter ring is depth-aware', () => {
   // Both chips below render (filters never hide content), but only the in-range chip
   // should carry the active-filter ring class. ACTIVE_FILTER_RING_CLASS applies a
   // ring-2 utility class to the chip's className when its slot fully matches the
@@ -383,7 +383,7 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
 
   it('links to the game (no ply fragment) at the resting position', () => {
     renderCard(<LibraryGameCard game={multiPlyGame()} />);
-    // hoverPly is null until the chart reports, and the resting ply equals the last
+    // scrubPly is null until the chart reports, and the resting ply equals the last
     // eval'd ply, so the header opens the game itself (white → no /black suffix).
     const link = screen.getAllByTestId(`game-card-link-${GAME_ID}`)[0];
     expect(link?.getAttribute('href')).toBe('https://lichess.org/abc');
@@ -407,10 +407,10 @@ describe('LibraryGameCard platform link follows the eval-chart scrub', () => {
   });
 });
 
-describe('LibraryGameCard MoveStats (Phase 179 Plan 03)', () => {
+describe('LibraryGameCard MoveStats', () => {
   // makeGame sets user_color: 'white', so even plies (0, 2, 4) are the USER's moves
   // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, and
-  // D-08 deliberately surfaces BOTH sides' tiers on this surface (reversing the old
+  // The card deliberately surfaces BOTH sides' tiers on this surface (reversing the old
   // user-only GemGreatBadge filter). User: gem@0, great@2, gem@4. Opponent: gem@1,
   // great@3.
   function gemGreatGame(): GameFlawCard {
@@ -432,22 +432,22 @@ describe('LibraryGameCard MoveStats (Phase 179 Plan 03)', () => {
     expect(screen.getAllByTestId(`move-stats-cell-great-white-${GAME_ID}`)[0]!.textContent).toBe('0');
   });
 
-  it('shows BOTH the user gem count and the opponent gem count (D-08)', () => {
+  it('shows BOTH the user gem count and the opponent gem count', () => {
     renderCard(<LibraryGameCard game={gemGreatGame()} />);
     // User (white) gems: ply 0 and ply 4 → 2.
     expect(screen.getAllByTestId(`move-stats-cell-gem-white-${GAME_ID}`)[0]!.textContent).toBe('2');
-    // Opponent (black) gem: ply 1 → 1, now surfaced too (D-08 reverses the old
+    // Opponent (black) gem: ply 1 → 1, surfaced too (unlike the old
     // user-only GemGreatBadge filter).
     expect(screen.getAllByTestId(`move-stats-cell-gem-black-${GAME_ID}`)[0]!.textContent).toBe('1');
   });
 
-  it('shows BOTH the user great count and the opponent great count (D-08)', () => {
+  it('shows BOTH the user great count and the opponent great count', () => {
     renderCard(<LibraryGameCard game={gemGreatGame()} />);
     expect(screen.getAllByTestId(`move-stats-cell-great-white-${GAME_ID}`)[0]!.textContent).toBe('1');
     expect(screen.getAllByTestId(`move-stats-cell-great-black-${GAME_ID}`)[0]!.textContent).toBe('1');
   });
 
-  it('cycling a non-zero cell jumps/advances/wraps; a different cell resets; a zero cell is inert (D-09)', () => {
+  it('cycling a non-zero cell jumps/advances/wraps; a different cell resets; a zero cell is inert', () => {
     renderCard(<LibraryGameCard game={gemGreatGame()} />);
     const gemWhiteCell = screen.getAllByTestId(`move-stats-cell-gem-white-${GAME_ID}`)[0]!;
     expect(gemWhiteCell.tagName).toBe('BUTTON');
@@ -474,7 +474,7 @@ describe('LibraryGameCard MoveStats (Phase 179 Plan 03)', () => {
   });
 });
 
-describe('LibraryGameCard MoveStats filter ring is user-scoped (D-10)', () => {
+describe('LibraryGameCard MoveStats filter ring is user-scoped', () => {
   // user_color 'white'. ply 2 (even) = user blunder; ply 3 (odd) = opponent blunder.
   function twoSidedBlunderGame(): GameFlawCard {
     return makeGame([
@@ -503,7 +503,7 @@ describe('LibraryGameCard MoveStats filter ring is user-scoped (D-10)', () => {
   });
 });
 
-describe('LibraryGameCard mobile MoveStats collapse (D-06) and unanalyzed pill (D-07)', () => {
+describe('LibraryGameCard mobile MoveStats collapse and unanalyzed pill', () => {
   it('collapsed default shows the accuracy strip + the compact summary row + the chevron toggle; expand reveals the 7-row table', () => {
     const game: GameFlawCard = {
       ...makeGame([marker({ ply: 2, severity: 'blunder', is_user: true })]),
@@ -513,7 +513,7 @@ describe('LibraryGameCard mobile MoveStats collapse (D-06) and unanalyzed pill (
     // Accuracy strip always renders.
     expect(screen.getAllByTestId(`move-stats-accuracy-white-${GAME_ID}`).length).toBeGreaterThan(0);
     // Collapsed (mobile): the compact 8-column summary row renders, including a
-    // per-category cell (UAT 179 — replaces the old severity-badge row).
+    // per-category cell (replaces the old severity-badge row).
     expect(screen.getAllByTestId(`move-stats-compact-${GAME_ID}`).length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(`move-stats-compact-cell-blunder-${GAME_ID}`).length).toBeGreaterThan(0);
     // The card (with its accuracy header) stays visible; only the 7-row table is
@@ -528,7 +528,7 @@ describe('LibraryGameCard mobile MoveStats collapse (D-06) and unanalyzed pill (
     expect((tableCardAfter as HTMLElement).hidden).toBe(false);
   });
 
-  it('an unanalyzed game shows only the analyze pill — no MoveStats strip or table (D-07)', () => {
+  it('an unanalyzed game shows only the analyze pill — no MoveStats strip or table', () => {
     const game: GameFlawCard = {
       ...makeGame([]),
       analysis_state: 'no_engine_analysis',
@@ -589,7 +589,7 @@ describe('LibraryGameCard miniboard corner tier badge (both players)', () => {
   });
 });
 
-describe('LibraryGameCard feature-event tracking (Phase 229 D-12)', () => {
+describe('LibraryGameCard feature-event tracking', () => {
   const track = vi.fn();
 
   beforeEach(() => {
@@ -603,7 +603,7 @@ describe('LibraryGameCard feature-event tracking (Phase 229 D-12)', () => {
     window.history.pushState({}, '', '/');
   });
 
-  /** The game id must never leave the browser (D-04, T-229-18). */
+  /** The game id must never leave the browser. */
   function expectNoGameId() {
     expect(JSON.stringify(track.mock.calls)).not.toContain(String(GAME_ID));
   }

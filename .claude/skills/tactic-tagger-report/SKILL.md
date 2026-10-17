@@ -121,7 +121,7 @@ shrink across two iterations, stop and report it as needing a redesign rather th
   intentionally flat. They are NOT the natural lichess-population difficulty of each tactic; say
   so if the user reads them as population difficulty.
 - **`suppressed` motifs** are excluded from the floor gate and query-suppressed via the
-  `_TACTIC_CHIP_CONFIDENCE_MIN` lever (they have zero or only-false-positive precision). They
+  `MIN_TACTIC_CHIP_CONFIDENCE` lever (they have zero or only-false-positive precision). They
   still appear in the table for completeness.
 - The script is the source of the numbers — never hand-transcribe the table from a prior run;
   re-run it so the report reflects the current detector.

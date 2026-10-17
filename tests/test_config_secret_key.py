@@ -1,4 +1,4 @@
-"""Tests for the SECRET_KEY fail-closed startup guard (code-review 2026-07-02, #1.2).
+"""Tests for the SECRET_KEY fail-closed startup guard.
 
 assert_secret_key_configured() must abort a non-development boot when the default
 placeholder SECRET_KEY is still in use, but leave development (and any environment with

@@ -1,0 +1,13 @@
+old	new	kind	absent_paths	ref	canon_paths
+matchingInsights	insights	identifier	frontend/src	INVENTORY §5 useEndgameInsightsState.ts:81 (D-09)	frontend/src/components/endgames/useEndgameInsightsState.ts,frontend/src/components/endgames/EndgameStatsTab.tsx
+sectionBySection	insightBySection	identifier	frontend/src	INVENTORY §5 useEndgameInsightsState.ts:85 (D-09)	frontend/src/components/endgames/useEndgameInsightsState.ts,frontend/src/components/endgames/EndgameStatsTab.tsx
+hasRendered	hasInsights	identifier	frontend/src	INVENTORY §5 EndgameInsightsBlock.tsx:50 (D-09)	frontend/src/components/insights/EndgameInsightsBlock.tsx
+rendered	insights	identifier	-	INVENTORY §5 EndgameInsightsBlock.tsx:50 (D-09; generic name, canon-scoped)	frontend/src/components/endgames/EndgameStatsTab.tsx,frontend/src/components/insights/EndgameInsightsBlock.tsx,frontend/src/components/insights/__tests__/EndgameInsightsBlock.test.tsx
+mutation	generateState	identifier	-	INVENTORY §5 EndgameInsightsBlock.tsx:52 (D-09; generic name, canon-scoped)	frontend/src/components/endgames/EndgameStatsTab.tsx,frontend/src/components/insights/EndgameInsightsBlock.tsx,frontend/src/components/insights/__tests__/EndgameInsightsBlock.test.tsx
+vsEngineValue	achievableScoreGapValue	identifier	frontend/src	INVENTORY §5 TypeTable.tsx:183	frontend/src/components/endgames/stats/TypeTable.tsx
+VS_ENGINE_DOMAIN	ACHIEVABLE_SCORE_GAP_DOMAIN	identifier	frontend/src	INVENTORY §5 TypeTable.tsx:183	frontend/src/components/endgames/stats/TypeTable.tsx
+window	windowSize	identifier	-	INVENTORY §5 EndgameScoreOverTimeChart.tsx:57 (prop only; global window and data-window stay; canon-scoped)	frontend/src/components/charts/EndgameScoreOverTimeChart.tsx,frontend/src/components/endgames/stats/OverallSection.tsx,frontend/src/components/charts/__tests__/EndgameScoreOverTimeChart.test.tsx,frontend/src/components/endgames/EndgameStatsTab.test.tsx
+barChartData	chartDataWithVolume	identifier	frontend/src	INVENTORY §5 EndgameEloTimelineSection.tsx:261	frontend/src/components/charts/EndgameEloTimelineSection.tsx
+MIN_PERCENT	PERCENTILE_DISPLAY_MIN	identifier	frontend/src/components/endgames	INVENTORY §5 rankedMetrics.ts:16 (hooks/useEngineAssets.ts MIN_PERCENT is unrelated and stays)	frontend/src/components/endgames/stats/rankedMetrics.ts
+MAX_PERCENT	PERCENTILE_DISPLAY_MAX	identifier	frontend/src/components/endgames	INVENTORY §5 rankedMetrics.ts:16 (hooks/useEngineAssets.ts MAX_PERCENT is unrelated and stays)	frontend/src/components/endgames/stats/rankedMetrics.ts
+frontend/src/components/library/analysisCoverageCopy.tsx	frontend/src/components/library/analysisCoverageCopy.ts	file	frontend/src	INVENTORY §5 analysisCoverageCopy.tsx:1 (no JSX; imports extension-less)	

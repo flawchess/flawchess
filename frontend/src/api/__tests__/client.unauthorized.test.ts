@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * 401 interceptor (quick 260926-9bg): only a request that carried a token is
+ * 401 interceptor: only a request that carried a token is
  * an expired session. A signed-out visitor's tokenless 401 must not
  * hard-redirect to /login (it would override the home-page landing).
  */

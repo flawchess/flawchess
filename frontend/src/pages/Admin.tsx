@@ -7,7 +7,7 @@ import { SentryTestButtons } from '@/components/admin/SentryTestButtons';
 import { TrainReminderTestCard } from '@/components/admin/TrainReminderTestCard';
 
 /**
- * Admin page — superuser-only (D-16, D-18, D-19).
+ * Admin page — superuser-only.
  *
  * Route guard in App.tsx (<SuperuserRoute>) is the authoritative check; this
  * page-level guard is defense-in-depth for the case where a non-superuser
@@ -42,7 +42,7 @@ export function AdminPage() {
       </section>
 
       {/* Local-dev only: POST /push/dev/trigger-reminder 404s outside
-          ENVIRONMENT=development (D-17), so rendering this in prod would only
+          ENVIRONMENT=development, so rendering this in prod would only
           ever produce a failing button. `import.meta.env.DEV` is a
           compile-time constant, so the section is tree-shaken from the
           production bundle entirely (same gate as TrainDevClock). */}

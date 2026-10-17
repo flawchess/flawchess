@@ -1,7 +1,6 @@
 /**
- * FeedbackAskBubble: Phase 234 (SEED-191 #2/#4/#5/#6/#7). Hilda asks an
- * engaged user for an idea, on every surface that hosts the milestone ask
- * (Import now; Train landing and Bots roster in plan 04). D-05: built only
+ * FeedbackAskBubble: Hilda asks an engaged user for an idea, on every surface
+ * that hosts the milestone ask (Import, Train landing and Bots roster). Built only
  * from the existing `TrainBotBubble` and the `SignupAskActions` button shape,
  * no new visual component or style.
  *
@@ -68,7 +67,7 @@ export function FeedbackAskBubble({
   const { mutate } = useFeedbackAsk();
 
   // An API call, not an Umami event (frontend/CLAUDE.md forbids trackFeature on
-  // mount). A view counts only when the bubble actually renders (SEED-191 #7),
+  // mount). A view counts only when the bubble actually renders,
   // never on profile fetch. StrictMode's double mount and remounts are
   // harmless: the server dedupes views per UTC day.
   useEffect(() => {
@@ -76,11 +75,11 @@ export function FeedbackAskBubble({
   }, [mutate]);
 
   // Why these two events exist although the ask state lives in the database
-  // (FBASK-10, frontend/CLAUDE.md "track only what the browser knows"): the
+  // (frontend/CLAUDE.md "track only what the browser knows"): the
   // event's page names the surface ('library' for /library/import, 'train',
   // 'bots'), which users.prompt_state never stores, and a round-2 view
   // overwrites round 1's snooze fields in place, so the round-1 click history
-  // survives only in Umami. No day count, round or free value is sent (D-04).
+  // survives only in Umami. No day count, round or free value is sent.
   const handleLater = (): void => {
     trackFeature('action', { target: 'feedback-ask-later' });
     mutate('snooze');

@@ -17,17 +17,11 @@ interface GameControlsProps {
 }
 
 /**
- * Resign control row for the bot-game board (Phase 169 Plan 05; reduced to
- * Resign-only in Phase 223 BOTVOICE-05 — D-10/D-12/SC7 removed the
- * user-side Offer draw button (with its cooldown tooltip) and the in-game
- * mute toggle from every breakpoint. Phase 223 UAT then retired the
- * account-menu sounds switch too: sounds always play for now, and a proper
- * disable option is a later phase (`sounds.ts` keeps the mute plumbing for
- * it). On mobile this component isn't rendered at all — the exact same
- * Resign trigger + dialog moved into `BotGameMobileBar`, reusing the same
- * three testids.
+ * Resign control row for the bot-game board (desktop only; on mobile
+ * `BotGameMobileBar` renders the same trigger and confirm dialog with the
+ * same three testids).
  *
- * Resign keeps its two-step D-04 confirmation via the existing `Dialog`
+ * Resign uses a two-step confirmation via the existing `Dialog`
  * primitive (the trigger stays brand-outline; only the actual confirm action
  * is destructive-colored, per CLAUDE.md's primary/secondary button rule).
  */

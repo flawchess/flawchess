@@ -12,12 +12,12 @@ interface NoAnalysisStateProps {
   /**
    * Callback to set the local in-flight state in the parent card.
    * Called with true optimistically on click (before server confirm), enabling the
-   * pulsing pill on THIS card only (D-118-11 — localized, not a global spinner).
+   * pulsing pill on THIS card only (localized, not a global spinner).
    * Called with false on enqueue error to roll back the optimistic state.
    */
   onInFlightChange?: (inFlight: boolean) => void;
   /**
-   * Active eval-job status from the library-games payload (260615-q1x).
+   * Active eval-job status from the library-games payload.
    * 'pending'  → queued but not yet leased by a worker.
    * 'leased'   → actively being evaluated by a worker.
    * null       → no active job (unqueued or already analyzed).
@@ -32,19 +32,19 @@ interface NoAnalysisStateProps {
 /**
  * Per-game "No Analysis" affordance rendered when a game has no engine analysis.
  *
- * Branches (D-118-07/11/13):
+ * Branches:
  * - isAnalyzed: returns null (no affordance needed — caller only renders for unanalyzed games).
  * - !isAnalyzed && (isInFlight || activeEvalStatus): pulsing pill ("Pending…" or "Analyzing…").
  * - !isAnalyzed && !isInFlight && !activeEvalStatus: "Analyze" button (tier-1 enqueue).
  *
- * Guests see the same "Analyze" button as authenticated users (QUEUE-08 guest gate
- * opened for tier-1). The coverage badge CTA promotes signup for automatic all-games
+ * Guests see the same "Analyze" button as authenticated users (the guest gate is
+ * open for tier-1 enqueue). The coverage badge CTA promotes signup for automatic all-games
  * analysis as a separate, higher-level prompt.
  *
  * The in-flight state is localized — only the specific card the user clicked shows
  * the pulsing state, never a global spinner across the archive.
  *
- * Pill label (260615-q1x):
+ * Pill label:
  * - "Analyzing…" when activeEvalStatus === 'leased' (worker actively running).
  * - "Pending…"   when isInFlight (optimistic) or activeEvalStatus === 'pending'.
  */
@@ -58,7 +58,7 @@ export function NoAnalysisState({
   const tier1Mutation = useTier1Enqueue(gameId);
 
   // Belt-and-suspenders: caller only renders this for no_engine_analysis games,
-  // but return null when already analyzed (e.g. lichess-eval games, D-118-07).
+  // but return null when already analyzed (e.g. lichess-eval games).
   if (isAnalyzed) return null;
 
   // Show the pulsing pill when: optimistic click is in-flight OR the server-side

@@ -1,21 +1,14 @@
 """Postgres ENUM label introspection test for benchmark_metric.
 
-Phase 94.1 Plan 01 Wave 0 (initial 4-value set).
-Phase 94.3 Plan 04 (CONTEXT.md D-7): widened to 16 values — the original 4
-Phase 94.x score-gap metrics plus 12 per-(metric × TC) time-pressure metrics
-({time_pressure_score_gap, clock_gap, net_flag_rate} × {bullet, blitz, rapid,
-classical}).
-
-Phase 99 Plan 02: widened to 20 values — the 8 Phase 94.4 family-level values
-plus 12 per-(rate metric × TC) values ({conversion_rate, parity_rate,
-recovery_rate} × {bullet, blitz, rapid, classical}).
+The ENUM holds the 8 family-level values plus 12 per-(rate metric × TC)
+values ({conversion_rate, parity_rate, recovery_rate} × {bullet, blitz, rapid,
+classical}) and 3 bare rate family names, 23 labels in total.
 
 Asserts that after migrations, the ``benchmark_metric`` Postgres ENUM type
 contains EXACTLY the expected labels in alphabetical order.
 
-This test catches:
-- Pitfall 3 (RESEARCH 94.1): ENUM rejects valid values if labels drift
-- T-94.1-02 (threat model): ENUM enforces the locked metric set at DB layer
+This test catches ENUM labels drifting from the locked metric set, which
+the ENUM enforces at the DB layer.
 
 Guarded by ``pytest.importorskip`` + ``_migration_present()`` so CI stays
 green until the migrations land.
@@ -31,7 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 # ---------------------------------------------------------------------------
-# Guard 1 — skip module until Plan 04 creates the model
+# Guard 1 — skip module when the model is absent
 # ---------------------------------------------------------------------------
 
 pytest.importorskip(
@@ -59,17 +52,16 @@ def _migration_present() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Expected ENUM labels (from D-05 / CONTEXT.md and Phase 94.3 CONTEXT.md D-7)
+# Expected ENUM labels
 # ---------------------------------------------------------------------------
 
 # Alphabetically sorted (the ORDER BY enumlabel query returns them this way).
-# Phase 94.4 D-13 (Plan 05a migration 1945ae56aa20): ENUM collapses from 16
-# to 8 family-level values — TC dimensionality moved into the new
-# user_benchmark_percentiles.time_control_bucket PK column. Recovery Score
-# Gap is rescued (D-05a) and joins the ENUM as ``recovery_score_gap``.
-# Phase 99 Plan 02 (migration 3981239fd391): 12 new TC-suffixed rate values
-# added ({conversion_rate, parity_rate, recovery_rate} × {bullet, blitz,
-# rapid, classical}).
+# Migration 1945ae56aa20 collapsed the ENUM from 16 to 8 family-level values —
+# TC dimensionality moved into the user_benchmark_percentiles.time_control_bucket
+# PK column. Recovery Score Gap joins the ENUM as ``recovery_score_gap``.
+# Migration 3981239fd391 added 12 TC-suffixed rate values
+# ({conversion_rate, parity_rate, recovery_rate} × {bullet, blitz, rapid,
+# classical}).
 EXPECTED_ENUM_LABELS: list[str] = [
     "achievable_score_gap",
     "clock_gap",
@@ -116,9 +108,8 @@ async def test_benchmark_metric_enum_has_exactly_four_labels(
 ) -> None:
     """After migrations, benchmark_metric ENUM has exactly the 23 expected labels.
 
-    (Test name retained from Phase 94.1 for git-blame stability; the assertion
-    now covers 8 Phase-94.4 family-level labels + 12 Phase-99 TC-suffixed rate
-    labels + 3 Phase-99 Plan-05 bare family-name labels = 23 total.
+    (The test name is historical; the assertion covers 8 family-level labels +
+    12 TC-suffixed rate labels + 3 bare rate family-name labels = 23 total.
     TC dimensionality for score-gap metrics lives in the
     user_benchmark_percentiles.time_control_bucket PK column; the rate metrics
     use bare family names (conversion_rate, parity_rate, recovery_rate) as the
@@ -132,11 +123,11 @@ async def test_benchmark_metric_enum_has_exactly_four_labels(
 
     Asserts:
     - Exactly 23 labels returned (not more, not fewer)
-    - Labels match the locked Phase 94.4 D-13 + Phase 99 set (including Plan-05 fix)
+    - Labels match the locked set
     - No label drift between the migrations and CdfMetricId Literal in
       global_percentile_cdf.py
 
-    Threat T-94.1-02 mitigation: downstream code that inserts ``metric`` values
+    Downstream code that inserts ``metric`` values
     outside this 23-value set will fail with a Postgres ENUM rejection error,
     not a silent data corruption. This test is the CI-time guard that the ENUM
     contract has not drifted.

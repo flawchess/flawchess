@@ -1,20 +1,19 @@
-"""Train router: session composition (Phase 189).
+"""Train router: sessions, solves, reveal, progress, leaderboard, medals and settings.
 
-Phase 224 (D-01/S-2): Train is open to guest accounts, reversing Phase 189
-D-05. Every handler still scopes strictly by `current_active_user.id` —
-never a client-supplied id (V4/IDOR guard) — so opening the route to guests
-widens WHO can call these handlers, not what any one caller can reach. The
-abuse backstop for guest-created accounts is `guest_create_limiter` in
-`app/core/ip_rate_limiter.py` (5 creates per hour per IP, keyed on the
-Cloudflare-resolved client IP: `Cf-Connecting-Ip` -> leftmost
-`X-Forwarded-For` -> `request.client.host`) plus the one-open-session-per-
-user partial unique index `uq_drill_sessions_user_open`, per Phase 224
-D-09. No Train-specific guest ceiling or filler-only mode is added.
+Train is open to guest accounts. Every handler still scopes strictly by
+`current_active_user.id` — never a client-supplied id (V4/IDOR guard) — so
+opening the route to guests widens WHO can call these handlers, not what any
+one caller can reach. The abuse backstop for guest-created accounts is
+`guest_create_limiter` in `app/core/ip_rate_limiter.py` (5 creates per hour per IP,
+keyed on the Cloudflare-resolved client IP: `Cf-Connecting-Ip` -> leftmost
+`X-Forwarded-For` -> `request.client.host`) plus the one-open-session-per-user
+partial unique index `uq_drill_sessions_user_open`. No Train-specific guest ceiling
+or filler-only mode is added.
 
 Every time-dependent handler takes "now" from the `dev_now_utc` dependency
 rather than calling `datetime.now()` inline, so the dev clock override can
 shift the whole Train calendar (weekday mask, session expiry, due-date
-ladder, streak weeks) without waiting real days. Outside
+ladder, streak days) without waiting real days. Outside
 `ENVIRONMENT == "development"` that dependency IS the real clock — see
 `app/core/dev_clock.py`.
 """
@@ -79,10 +78,10 @@ async def compose_or_resume_session(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> TrainSessionResponse:
-    """Compose a Train session from the user's own qualifying blunders (POOL-01/07).
+    """Compose (or resume) a Train session: the user's SR items plus red herrings and sharp fillers.
 
     The user id always comes from `current_active_user.id` — never from a
-    request body or path parameter (V4/IDOR guard, T-189-01).
+    request body or path parameter (V4/IDOR guard).
     """
     try:
         composed = await train_repository.compose_and_materialize_session(
@@ -96,12 +95,11 @@ async def compose_or_resume_session(
         raise
     puzzles: list[TrainPuzzle] = []
     for p in composed.puzzles:
-        # Phase 192 Plan 02: `ComposedPuzzle.game_id` and `TrainPuzzle.game_id`
-        # are both `int | None` (D-01/D-05) — a herring composed from an
-        # already-orphaned pool row (its source game deleted before this
-        # composition ran) legitimately has `game_id=None` here. No narrowing
-        # needed; the client hides the (n/a) Analyze deep-link for a null
-        # game_id (D-09).
+        # `ComposedPuzzle.game_id` and `TrainPuzzle.game_id` are both
+        # `int | None` — a herring composed from an already-orphaned pool row
+        # (its source game deleted before this composition ran) legitimately
+        # has `game_id=None` here. No narrowing needed; the client hides the
+        # (n/a) Analyze deep-link for a null game_id.
         puzzles.append(
             TrainPuzzle(
                 position=p.position,
@@ -150,10 +148,10 @@ async def solve_puzzle(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> SolveResponse:
-    """Record one puzzle's outcome and advance the interval ladder (POOL-08).
+    """Record one puzzle's outcome and advance the interval ladder.
 
     The user id always comes from `current_active_user.id` — never from a
-    request body or path parameter (V4/IDOR guard, T-189-16), mirroring
+    request body or path parameter (V4/IDOR guard), mirroring
     `app/routers/users.py`'s update handlers.
     """
     try:
@@ -167,13 +165,13 @@ async def solve_puzzle(
             move_quality=body.move_quality,
             now_utc=now_utc,
             # exclude_none keeps unmeasured keys out of the patch so the merge
-            # never writes a JSON null value (D-01).
+            # never writes a JSON null value.
             telemetry=(
                 body.telemetry.model_dump(exclude_none=True) if body.telemetry is not None else None
             ),
-            # Phase 235 (D-14/D-17): the already-validated re-check record, or None.
+            # The already-validated re-check record, or None.
             recheck=body.recheck,
-            # Phase 236 (D-01/D-13): the already-validated phone grade record, or None.
+            # The already-validated phone grade record, or None.
             phone_grade=body.phone_grade,
         )
     except Exception:
@@ -195,8 +193,8 @@ async def solve_puzzle(
         streak=recorded.streak,
         due_date=recorded.due_date,
         session_complete=recorded.session_complete,
-        # Phase 211 (D-01/D-03): the domain VettedMove maps field-by-field
-        # onto its wire twin — only uci/quality cross the wire.
+        # The domain VettedMove maps field-by-field onto its wire twin — only uci/quality
+        # cross the wire.
         vetted_moves=[VettedMove(uci=v.uci, quality=v.quality) for v in recorded.vetted_moves],
         graded_es_before=recorded.graded_es_before,
         graded_es_after=recorded.graded_es_after,
@@ -212,16 +210,16 @@ async def record_puzzle_review(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> None:
-    """Merge one puzzle's review telemetry into the caller's solved row (D-03).
+    """Merge one puzzle's review telemetry into the caller's solved row.
 
-    The client flushes once per puzzle on Next and on page unload (D-03). Bearer
-    auth through `current_active_user` works from a keepalive fetch (D-06). The
+    The client flushes once per puzzle on Next and on page unload. Bearer
+    auth through `current_active_user` works from a keepalive fetch. The
     user id only ever comes from `current_active_user`. A row that is missing,
     unsolved or owned by someone else is a 404 (not 403) so a foreign id is
     indistinguishable from a missing one. No `now_utc` dependency: the durations
     are client-measured, so the unload fetch needs no dev-clock header.
 
-    Phase 236 (D-12): the body may also carry the phone's late grading reading,
+    The body may also carry the phone's late grading reading,
     which is written write-once to its own column and never into telemetry.
     """
     try:
@@ -230,7 +228,7 @@ async def record_puzzle_review(
             user_id=user.id,
             session_id=session_id,
             position=position,
-            # D-12: the phone grade record never enters telemetry; it goes to its
+            # The phone grade record never enters telemetry; it goes to its
             # own column via the separate argument below.
             patch=body.model_dump(exclude_none=True, exclude={"phone_grade"}),
             phone_grade=body.phone_grade,
@@ -281,10 +279,10 @@ async def reveal_puzzle(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> PuzzleRevealResponse:
-    """Return the post-attempt answer key for one puzzle (POOL-10 reveal gate).
+    """Return the post-attempt answer key for one puzzle.
 
-    409 while `solved_at` is still NULL (T-189-17): the answer key, puzzle
-    type, and in-game move are unreachable before the attempt is recorded.
+    409 while `solved_at` is still NULL: the in-game move and the reveal payload
+    are unreachable before the attempt is recorded.
     """
     try:
         result = await train_repository.reveal_for_puzzle(
@@ -317,7 +315,7 @@ async def get_train_progress(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> TrainProgressResponse:
-    """Return the per-day tick snapshot + honest mastered/parked counts (PROG-01/PROG-04).
+    """Return the per-day tick snapshot + honest mastered/parked counts.
 
     This GET legitimately commits: settlement is lazy-on-read, so a
     successful call may advance `train_settings.streak_count`/
@@ -352,7 +350,7 @@ async def get_train_progress(
 async def _finalize_medal_weeks(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> None:
-    """Lazily finalize closed weeks, then commit (Phase 231).
+    """Lazily finalize closed weeks, then commit.
 
     A finalization failure must never fail the board: roll back, report to Sentry and
     let the caller serve this week's board as before.
@@ -373,15 +371,15 @@ async def get_train_leaderboard(
     now_utc: NowUtc,
     session_id: Annotated[int | None, Query(ge=1, le=_SESSION_ID_MAX)] = None,
 ) -> TrainLeaderboardResponse:
-    """Return this week's Points and Accuracy leaderboards for the viewer (Phase 230).
+    """Return this week's Points and Accuracy leaderboards for the viewer.
 
     `session_id` is optional: when given, each board's viewer standing also carries
-    `rank_without_session` (D-12). Only the caller's own session is ever subtracted,
+    `rank_without_session`. Only the caller's own session is ever subtracted,
     so another user's session id changes nothing.
 
-    The viewer id comes only from `current_active_user`. Guests are allowed
-    (Phase 224); visibility is enforced server-side so a hidden user or guest never
-    appears in, or moves a rank on, anyone else's board (D-06/D-13/D-14). The handler
+    The viewer id comes only from `current_active_user`. Guests are allowed;
+    visibility is enforced server-side so a hidden user or guest never
+    appears in, or moves a rank on, anyone else's board. The handler
     commits the lazy medal finalization first (an idempotent, guarded write, like
     GET /progress), then reads.
     """
@@ -415,12 +413,12 @@ async def get_unclaimed_train_medals(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> UnclaimedMedalsResponse:
-    """The caller's medals not yet celebrated, newest week first (Phase 231, D-11).
+    """The caller's medals not yet celebrated, newest week first.
 
     The caller id comes only from `current_active_user`; there is no user parameter and
-    the response carries no ids (T-231-10). The lazy finalizer runs first so a week that
+    the response carries no ids. The lazy finalizer runs first so a week that
     just closed already has its medals here, even if this is the first request of the
-    week. Guests never have snapshot rows (D-01), so their list is empty.
+    week. Guests never have snapshot rows, so their list is empty.
     """
     # Copy the id out before the finalizer: a rollback there expires the request-cached
     # session's User instance, and a later attribute read would lazy-load.
@@ -442,10 +440,10 @@ async def claim_train_medals(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> None:
-    """Mark the shown medals as celebrated (Phase 231, D-13).
+    """Mark the shown medals as celebrated.
 
     The caller id comes only from `current_active_user`; the body carries only
-    (week_start, board) keys, so a foreign or unknown key matches nothing (T-231-09).
+    (week_start, board) keys, so a foreign or unknown key matches nothing.
     Only the posted keys are claimed, never "all unclaimed": a medal finalized between
     the read and the tap stays unclaimed for the next visit. A repeat is a no-op and a
     guest has nothing to claim, both 204. No analytics event: the `celebrated_at` row is
@@ -473,7 +471,7 @@ async def _settings_response(
     """Project a settings row plus the account-level mobile-subscription fact.
 
     Shared by GET/PUT /settings and POST /onboarding/{step} so all three return
-    the identical shape the client `setQueryData`s into one cache (D-12).
+    the identical shape the client `setQueryData`s into one cache.
     """
     return TrainSettingsResponse(
         timezone=settings_row.timezone,
@@ -496,7 +494,7 @@ async def get_train_settings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> TrainSettingsResponse:
-    """Return the user's Train settings, creating the D-06/D-07/D-08 defaults on first touch."""
+    """Return the user's Train settings, creating the defaults on first touch."""
     settings_row = await train_repository.get_or_create_settings(session, user_id=user.id)
     await session.commit()
     return await _settings_response(session, settings_row, user_id=user.id)
@@ -519,21 +517,17 @@ async def update_train_settings(
     handler deliberately does NOT follow `users.py`'s diff-driven-side-effect
     pattern).
 
-    D-18 (Phase 191 Plan 02): this PUT settles every fully-elapsed unsettled
-    week using the OLD `weekday_mask`/timezone BEFORE persisting the new
-    values (`train_repository.upsert_settings`'s settle-before-mutate step),
-    so a user who reschedules after several inactive weeks has those weeks
-    judged by the schedule that was actually in force.
+    This PUT settles every elapsed unsettled scheduled day using the OLD
+    `weekday_mask`/timezone BEFORE persisting the new values
+    (`train_repository.upsert_settings`'s settle-before-mutate step), so a user
+    who reschedules after inactive days has those days judged by the schedule
+    that was in force.
 
-    Phase 201 D-18: this endpoint also round-trips `reminder_enabled`/
-    `reminder_hour`, so the whole reminder configuration is exercisable with
-    curl before Phase 202 builds any UI -- no backend work leaks into that
-    UI phase.
+    This endpoint also round-trips `reminder_enabled`/`reminder_hour`.
 
-    Phase 203 (OFFER-03/D-02): also round-trips `reminder_intent_at`. It is
-    required-but-nullable on `TrainSettingsUpdate` (not defaulted), so a
-    body that omits the key 422s rather than silently clearing a
-    previously-recorded install intent -- the full-replace contract's
+    Also round-trips `reminder_intent_at`. It is required-but-nullable on
+    `TrainSettingsUpdate` (not defaulted), so a body that omits the key 422s rather than
+    silently clearing a previously-recorded install intent -- the full-replace contract's
     loud-failure guarantee.
     """
     settings_row = await train_repository.upsert_settings(
@@ -558,7 +552,7 @@ async def stamp_onboarding_step(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> TrainSettingsResponse:
-    """Record completion of one bot-onboarding step (D-11/D-12, Phase 240 D-09).
+    """Record completion of one bot-onboarding step.
 
     Only a COMPLETED stepper counts: the client calls this once the user
     reaches the stepper's last step, never on an abandoned/partial one — an
@@ -567,12 +561,11 @@ async def stamp_onboarding_step(
     `reveal_tour_N` advances `reveal_tour_stage` to N, forward-only (a replayed
     or out-of-order POST is a no-op). Returns
     the full `TrainSettingsResponse` so the client can `setQueryData` on the
-    shared `['train','settings']` cache without a second fetch (D-12,
-    RESEARCH Finding D).
+    shared `['train','settings']` cache without a second fetch.
 
     `step` arrives as a `Literal` path parameter — FastAPI 422s any value
-    outside `OnboardingStep`'s five names (including the retired Phase 222
-    walkthrough name, D-11) before this body ever runs, so there is no
+    outside `OnboardingStep`'s five names (including the retired
+    walkthrough name) before this body ever runs, so there is no
     hand-rolled validation and no body schema at all.
 
     The user id always comes from `current_active_user.id` — never from a

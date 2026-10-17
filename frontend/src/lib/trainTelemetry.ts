@@ -1,10 +1,10 @@
 /**
- * trainTelemetry.ts — Phase 233 per-puzzle telemetry constants and builders.
+ * trainTelemetry.ts — per-puzzle telemetry constants and builders.
  *
  * The numeric constants mirror app/schemas/train.py and are CI-locked by
  * tests/schemas/test_train_telemetry_parity.py. Keep them plain integer
  * literals (the parity test reads `export const NAME = <digits>;` by regex).
- * Telemetry is a recorded outcome only; it never feeds grading or scoring (D-05).
+ * Telemetry is a recorded outcome only; it never feeds grading or scoring.
  */
 
 import type { ReviewExit, ReviewTelemetry, SolveTelemetry, TelemetryClient } from '@/types/train';
@@ -13,26 +13,26 @@ import type { StopwatchTotals } from '@/lib/visibleStopwatch';
 // Mirrors app/schemas/train.py TELEMETRY_SCHEMA_VERSION, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
-// Phase 237 (D-12): the REVIEW patch is v2 (chips selected / chips total / strip
+// The REVIEW patch is v2 (chips selected / chips total / strip
 // expanded replace the card keys). The solve patch keeps TELEMETRY_SCHEMA_VERSION
-// (1), so the two patches carry separate constants (RESEARCH Pitfall 4). Mirrors
+// (1), so the two patches carry separate constants. Mirrors
 // app/schemas/train.py REVIEW_TELEMETRY_SCHEMA_VERSION, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const REVIEW_TELEMETRY_SCHEMA_VERSION = 2;
 
-// 30 minutes (D-04). Mirrors app/schemas/train.py TELEMETRY_DURATION_CAP_MS, guarded by tests/schemas/test_train_telemetry_parity.py.
+// 30 minutes. Mirrors app/schemas/train.py TELEMETRY_DURATION_CAP_MS, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_DURATION_CAP_MS = 1800000;
 
-// 50 line-stepper clicks (D-14). Mirrors app/schemas/train.py TELEMETRY_LINE_STEPS_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
+// 50 line-stepper clicks. Mirrors app/schemas/train.py TELEMETRY_LINE_STEPS_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_LINE_STEPS_CAP = 50;
 
-// 50 free-play moves (D-14). Mirrors app/schemas/train.py TELEMETRY_EXPLORE_MOVES_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
+// 50 free-play moves. Mirrors app/schemas/train.py TELEMETRY_EXPLORE_MOVES_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_EXPLORE_MOVES_CAP = 50;
 
-// 10 chips (D-12): the reveal chips never exceed this (it also clamps the v2 chip counts). Mirrors app/schemas/train.py TELEMETRY_CARDS_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
+// 10 chips: the reveal chips never exceed this (it also clamps the v2 chip counts). Mirrors app/schemas/train.py TELEMETRY_CARDS_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_CARDS_CAP = 10;
 
 /**
- * Where a user-played free-play move came from (quick 261007-axc): a move played
+ * Where a user-played free-play move came from: a move played
  * on the board by hand (desktop drag or mobile tap-to-move, both reach the
  * board's onPieceDrop) or a click on a Stockfish engine-line move.
  */
@@ -94,26 +94,26 @@ export function noteThinkStarted(sessionId: number, position: number): boolean {
   }
 }
 
-/** The engagement counters of one reveal (D-14): cumulative totals, never deltas. */
+/** The engagement counters of one reveal: cumulative totals, never deltas. */
 export interface ReviewCounters {
   lineSteps: number;
   /** Every user-played free-play move, board and engine-line alike. */
   exploreMoves: number;
-  /** Board moves only (quick 261007-axc), a subset of exploreMoves. */
+  /** Board moves only, a subset of exploreMoves. */
   boardMoves: number;
   analyzeOpened: boolean;
   walkthrough: boolean;
-  /** At least one sideline was forked (D-13): a hand-played move that matches a known line is NOT a fork. */
+  /** At least one sideline was forked: a hand-played move that matches a known line is NOT a fork. */
   forked: boolean;
   /**
-   * Distinct chips selected beyond the default You chip (D-12), by tap or by a
+   * Distinct chips selected beyond the default You chip, by tap or by a
    * line-matching move from the puzzle position. Identity stays client-side,
-   * only the count is sent (T-237-18).
+   * only the count is sent.
    */
   chipKeys: ReadonlySet<string>;
   /** The largest number of chips shown on this reveal (a late game chip raises it). */
   chipsTotal: number;
-  /** The phone verdict strip was opened at least once (D-12). */
+  /** The phone verdict strip was opened at least once. */
   stripExpanded: boolean;
 }
 
@@ -133,7 +133,7 @@ export function buildReviewTelemetry(
     review_ms: clampTelemetryCount(totals.visibleMs, TELEMETRY_DURATION_CAP_MS),
     review_hidden_ms: clampTelemetryCount(totals.hiddenMs, TELEMETRY_DURATION_CAP_MS),
     review_line_steps: clampTelemetryCount(counters.lineSteps, TELEMETRY_LINE_STEPS_CAP),
-    // D-13: explored means forked at least one sideline, not "played any move".
+    // Explored means forked at least one sideline, not "played any move".
     review_explored: counters.forked,
     review_explore_moves: clampTelemetryCount(counters.exploreMoves, TELEMETRY_EXPLORE_MOVES_CAP),
     review_board_moves: clampTelemetryCount(counters.boardMoves, TELEMETRY_EXPLORE_MOVES_CAP),
@@ -178,7 +178,7 @@ function isAbsentOrBoolean(value: unknown): boolean {
   return value === undefined || typeof value === 'boolean';
 }
 
-/** Guards the sessionStorage seed: finite, non-negative numbers only (T-233-15). */
+/** Guards the sessionStorage seed: finite, non-negative numbers only. */
 export function isUsableReviewSnapshot(value: unknown): value is ReviewTelemetrySnapshot {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;

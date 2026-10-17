@@ -1,9 +1,8 @@
 /**
- * trainBotCopy.test.ts — Phase 222 Plan 01 Task 2 (TRAINBOT-01..08).
+ * trainBotCopy.ts unit tests.
  *
  * Pure-module test template (mirrors `trainScore.test.ts`): one case per
- * `<behavior>` bullet plus the boundary cases the plan's acceptance criteria
- * call out by name — the D-15/D-16 return-phrase truth table (status
+ * behavior plus the boundary cases: the return-phrase truth table (status
  * checked BEFORE any date comparison, including the two stale-`due_date`
  * traps for mastered/parked items), the four verdict point buckets, the
  * injected-rng casting picker, and the score-bubble variant selection.
@@ -48,19 +47,19 @@ import type {
   ScoreBubbleInput,
   TourStepId,
   TrainCopyAudience,
-  WalkthroughContext,
+  TourContext,
 } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY, personaForId } from '@/lib/personas/personaRegistry';
 import type { PersonaId } from '@/lib/personas/personaRegistry';
 
-// D-03 (Phase 224): the three audience fixtures every branched-copy test
-// selects between. `HAS_GAMES` is the pre-224 audience — every pre-existing
-// assertion below keeps exercising it, unchanged.
+// The three audience fixtures every branched-copy test selects between.
+// `HAS_GAMES` is the original audience — the older assertions below keep
+// exercising it, unchanged.
 const AUDIENCE_HAS_GAMES: TrainCopyAudience = { hasGames: true, isGuest: false };
 const AUDIENCE_NO_GAMES: TrainCopyAudience = { hasGames: false, isGuest: false };
 const AUDIENCE_NO_GAMES_GUEST: TrainCopyAudience = { hasGames: false, isGuest: true };
-// Quick 261015-pjr: a guest WITH games is its own audience (guest games are
-// never analyzed automatically), no longer folded into HAS_GAMES.
+// A guest WITH games is its own audience (guest games are never analyzed
+// automatically), not folded into HAS_GAMES.
 const AUDIENCE_GUEST_WITH_GAMES: TrainCopyAudience = { hasGames: true, isGuest: true };
 
 describe('pickBot', () => {
@@ -93,7 +92,7 @@ describe('pickBot', () => {
   });
 });
 
-describe('pickPuzzleHost (Phase 237 UAT)', () => {
+describe('pickPuzzleHost', () => {
   const draws = Array.from({ length: 48 }, (_, i) => i / 48);
 
   it('draws from every persona, all three temperaments included', () => {
@@ -190,8 +189,8 @@ describe('LANDING_GREETINGS / landingHost', () => {
     expect(day24).toBe(day0);
   });
 
-  // 223-02: LANDING_ROTATION_EPOCH/LANDING_HOST_IDS were promoted from
-  // module-private to exported so `botGameCopy.ts`'s `rosterHost` can import
+  // LANDING_ROTATION_EPOCH/LANDING_HOST_IDS are exported (not module-private)
+  // so `botGameCopy.ts`'s `rosterHost` can import this SAME epoch and id order
   // this SAME epoch and id order rather than declaring a second copy of
   // either. This is the import-side half of that contract: the primitives
   // are importable, and landingHost's own behavior (already pinned by every
@@ -209,7 +208,7 @@ describe('LANDING_GREETINGS / landingHost', () => {
 });
 
 describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
-  it('promptCopy states the side to move and asks the D-09 vocabulary question', () => {
+  it('promptCopy states the side to move and asks the vocabulary question', () => {
     expect(promptCopy('white')).toContain('white');
     expect(promptCopy('white')).toContain('only one good move, or several');
     expect(promptCopy('black')).toContain('black');
@@ -220,7 +219,7 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
     expect(movePromptCopy('black')).toBe('Now play a move for black.');
   });
 
-  it('movePromptCopy echoes the committed call in the reveal card vocabulary (phase 222 UAT)', () => {
+  it('movePromptCopy echoes the committed call in the reveal card vocabulary', () => {
     expect(movePromptCopy('white', 'critical')).toBe(
       'Your call: only one good move. Now play a move for white.',
     );
@@ -229,7 +228,7 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
     );
   });
 
-  it('GRADING_COPY is the D-22 checking-move line', () => {
+  it('GRADING_COPY is the checking-move line', () => {
     expect(GRADING_COPY).toBe('Checking your move…');
   });
 });
@@ -237,7 +236,7 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
 const SIDES = ['white', 'black'] as const;
 const WARMUP_FLAGS = [false, true] as const;
 
-describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
+describe('introCopy / introSteps (two bubbles)', () => {
   it('is exactly INTRO_STEP_COUNT (2) steps for every side and warm-up flag', () => {
     expect(INTRO_STEP_COUNT).toBe(2);
     for (const side of SIDES) {
@@ -260,7 +259,7 @@ describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
     );
   });
 
-  // Phase 240 UAT: no import or sign-up ask before the first puzzle (it would
+  // No import or sign-up ask before the first puzzle (it would
   // send a new user away); the score screen makes that ask.
   it('the welcome never asks to import or sign up', () => {
     for (const isWarmup of WARMUP_FLAGS) {
@@ -306,7 +305,7 @@ describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
     expect(introCopy(past, 'white', false).copy).toBe(introCopy(1, 'white', false).copy);
   });
 
-  // Plan 06 UAT: no internal scrolling in bubbles, every stepper step must
+  // No internal scrolling in bubbles, every stepper step must
   // fit the calibrated phone budget (see STEPPER_COPY_MAX_CHARS).
   it('every intro step, for every side and warm-up flag, fits the phone copy budget', () => {
     for (const side of SIDES) {
@@ -327,7 +326,7 @@ describe('dropNudgeCopy', () => {
   });
 });
 
-describe('verdictClauseParts / verdictCopy clause / verdictStripLine (Phase 237 D-05/D-06)', () => {
+describe('verdictClauseParts / verdictCopy clause / verdictStripLine', () => {
   // The full vocabulary table: [correct call, tier, isBest, guess label, move label,
   // guess points, move points].
   const TABLE: ReadonlyArray<readonly [boolean, TrainMoveTier, boolean, string, string, 0 | 1, 0 | 1 | 2]> = [
@@ -353,7 +352,7 @@ describe('verdictClauseParts / verdictCopy clause / verdictStripLine (Phase 237 
       expect(verdictCopy(0, correct, tier, isBest, () => 0).clause).toBe(
         `${guessLabel} [+${guessPoints}], ${moveLabel} [+${movePoints}].`,
       );
-      // Phase 240 UAT: the strip drops the article after "but".
+      // The strip drops the article after "but".
       expect(verdictStripLine(correct, tier, isBest)).toBe(
         `${guessLabel}, ${moveLabel.replace(/^but (the|a) /, 'but ')}`,
       );
@@ -442,8 +441,8 @@ describe('verdictCopy', () => {
   });
 });
 
-describe('returnPhrase (D-15/D-16 truth table)', () => {
-  // Phase 240 UAT: a warm-up herring/filler gets no tail. The per-puzzle
+describe('returnPhrase (truth table)', () => {
+  // A warm-up herring/filler gets no tail. The per-puzzle
   // "That one was a warm-up ... your own positions will." line repeated the
   // import/sign-up ask on every warm-up puzzle.
   it('a red_herring source in a warm-up session returns no tail, regardless of due_date', () => {
@@ -468,7 +467,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
     expect(phrase).toBe('');
   });
 
-  // Quick 260915-sht: a red herring is a regular part of every session. A
+  // A red herring is a regular part of every session. A
   // user with plenty of SR items was told a routine herring "was a warm-up"
   // and that "your own positions will" come — warm-up is a SESSION property.
   it.each(['red_herring', 'sharp_filler'] as const)(
@@ -576,8 +575,8 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
   });
 });
 
-describe('reveal tour parts (Phase 240)', () => {
-  const BASE_CTX: WalkthroughContext = {
+describe('reveal tour parts', () => {
+  const BASE_CTX: TourContext = {
     analyzeOpens: 'game',
     isDesktop: false,
   };
@@ -607,16 +606,16 @@ describe('reveal tour parts (Phase 240)', () => {
     expect(desktop.copy).toBe('Your result is in the highlighted box. Proceed with Next when ready.');
     for (const step of [phone, desktop]) {
       expect(step.spotlightTarget).toBe('verdict');
-      // Phase 240 UAT: no move feedback, the verdict box already gives it.
+      // No move feedback, the verdict box already gives it.
       expect(step.copy).not.toMatch(/only one|several/i);
-      // D-05: no scoring sentence; D-19: no em-dash.
+      // No scoring sentence, no em-dash.
       expect(step.copy).not.toMatch(/point/i);
       expect(step.copy).not.toContain('—');
       expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
     }
   });
 
-  it('the Analyze bubble is the D-19 sheet per analyze target and spotlights the Analyze button', () => {
+  it('the Analyze bubble is the per-analyze-target sheet and spotlights the Analyze button', () => {
     const game = tourStepCopy('analyze', { ...BASE_CTX, analyzeOpens: 'game' });
     const position = tourStepCopy('analyze', { ...BASE_CTX, analyzeOpens: 'position' });
     expect(game.copy).toBe(
@@ -660,14 +659,14 @@ describe('reveal tour parts (Phase 240)', () => {
     }
   });
 
-  // D-05, D-19, Phase 237 D-09: over every analyze target and device, no
+  // Over every analyze target and device, no
   // step overruns the budget, uses an em-dash, mentions points or scoring, or
-  // names a surface the reveal does not show. Phase 240 UAT: nor uses wording
+  // names a surface the reveal does not show. Nor uses wording
   // that only fits one device (a lone "tap", hover, swipe, keys, the phone
   // strip or a bar location), except the phone-only result tap hint.
   it('no step, in any context, overruns the budget, has an em-dash, a scoring word, or names a card, Solution button or eval bar', () => {
     const steps: TourStepId[] = ['result', 'chips', 'stepping', 'sidelines', 'understand', 'analyze'];
-    const contexts: WalkthroughContext[] = [];
+    const contexts: TourContext[] = [];
     for (const analyzeOpens of ['game', 'position'] as const) {
       for (const isDesktop of [false, true]) {
         contexts.push({ analyzeOpens, isDesktop });
@@ -695,7 +694,7 @@ describe('reveal tour parts (Phase 240)', () => {
   });
 });
 
-describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
+describe('scoreBubbleCopy', () => {
   const RATIONALE = 'Practice teaches you when to calculate and when a quick good move is enough.';
   const HABIT = 'Reminders build the habit that makes Train work.';
   const ASK = {
@@ -817,7 +816,7 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
     }
   });
 
-  it('UAT 240: a guest warm-up opening skips the warm-up note; a zero-game guest gets no clause', () => {
+  it('a guest warm-up opening skips the warm-up note; a zero-game guest gets no clause', () => {
     const firstNoGames = scoreBubbleCopy({
       ...BASE,
       isWarmup: true,
@@ -865,7 +864,7 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
     }
   });
 
-  // D-17/D-18/D-19: whatever the branch, the bubble is at most two lines and
+  // Whatever the branch, the bubble is at most two lines and
   // never says how many puzzles come back or when.
   it('matrix: at most 2 lines and no returning text in any branch, band, audience and reminder ask', () => {
     const RETURN_TEXT = /come back|comes back|coming back|in \d+ days|next session\./i;
@@ -900,7 +899,7 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
       const { lines } = scoreBubbleCopy(input);
       expect(lines.length).toBeGreaterThanOrEqual(1);
       expect(lines.length).toBeLessThanOrEqual(2);
-      // The guest sign-up ask is a fixed, unchanged line (D-19) that says
+      // The guest sign-up ask is a fixed, unchanged line that says
       // "your own blunders come back": it is not a returning-counts
       // sentence, so it is the one allowed match.
       const checked = lines.filter((line) => line !== GUEST_SIGNUP_ASK_SCORE);
@@ -920,7 +919,7 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
   });
 });
 
-describe('scoreBubbleCopy, D-03/S-3 games-less warm-up audience branch (Phase 224)', () => {
+describe('scoreBubbleCopy, games-less warm-up audience branch', () => {
   const WARM: ScoreBubbleInput = {
     missedCount: 0,
     isFirstCompletedSession: false,
@@ -944,7 +943,7 @@ describe('scoreBubbleCopy, D-03/S-3 games-less warm-up audience branch (Phase 22
     expect(registeredWithGames.lines[1]).toContain('Turn on Remind me');
   });
 
-  it('quick 260926-8p5: a registered zero-game account gets the opener only, no reminder or sign-up line', () => {
+  it('a registered zero-game account gets the opener only, no reminder or sign-up line', () => {
     for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
       const copy = scoreBubbleCopy({ ...WARM, reminderAsk, audience: AUDIENCE_NO_GAMES });
       expect(copy.lines).toHaveLength(1);
@@ -957,7 +956,7 @@ describe('scoreBubbleCopy, D-03/S-3 games-less warm-up audience branch (Phase 22
     expect(copy.lines[0]).toContain('Once your games are analyzed, your own mistakes take over.');
   });
 
-  it('quick 261015-pjr: a guest with games is never told its games will be analyzed', () => {
+  it('a guest with games is never told its games will be analyzed', () => {
     const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_GUEST_WITH_GAMES });
     expect(copy.lines[0]).not.toMatch(NEVER_ANALYZED);
     expect(copy.lines[0]).not.toContain('Once your games are analyzed');
@@ -977,7 +976,7 @@ describe('scoreBubbleCopy, D-03/S-3 games-less warm-up audience branch (Phase 22
     expect(copy.lines[0]).toContain('Import your games');
   });
 
-  it('UAT 240: a zero-game guest opener never repeats the sign-up ask of line 2', () => {
+  it('a zero-game guest opener never repeats the sign-up ask of line 2', () => {
     const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES_GUEST });
     expect(copy.lines[0].toLowerCase()).not.toContain('sign up');
     expect(copy.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);

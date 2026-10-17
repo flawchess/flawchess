@@ -83,4 +83,4 @@ export function MistakeIcon(props: SeverityGlyphIconProps) {
 
 // The inaccuracy "!?" yellow glyph is defined in SEVERITY_GLYPH (lib/severityGlyph)
 // and rendered as an on-board SVG corner marker (boardMarkers). No standalone React
-// component is exported because the move list intentionally omits inaccuracy (D-03).
+// component is exported because the move list intentionally omits inaccuracy.

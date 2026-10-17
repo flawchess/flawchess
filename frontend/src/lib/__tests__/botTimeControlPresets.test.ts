@@ -6,7 +6,7 @@ import {
 } from '../botTimeControlPresets';
 
 describe('TIME_CONTROL_PRESETS', () => {
-  it('has exactly 9 entries (D-14 order: blitz, rapid, classical) — no bullet', () => {
+  it('has exactly 9 entries (order: blitz, rapid, classical) — no bullet', () => {
     expect(TIME_CONTROL_PRESETS).toHaveLength(9);
   });
 
@@ -26,7 +26,7 @@ describe('TIME_CONTROL_PRESETS', () => {
     });
   });
 
-  it('groups presets into blitz/rapid/classical buckets matching D-14', () => {
+  it('groups presets into blitz/rapid/classical buckets', () => {
     const byLabel = Object.fromEntries(TIME_CONTROL_PRESETS.map((p) => [p.label, p.bucket]));
     expect(byLabel['3+0']).toBe('blitz');
     expect(byLabel['3+2']).toBe('blitz');

@@ -1,26 +1,25 @@
 // @vitest-environment jsdom
 /**
- * Bots.test.tsx (Phase 171 Plan 06, V-11 + Plan 07, V-14/V-15) — pins the
- * three-way convergence on the setup screen (D-09/D-11/D-13): a fresh visit
+ * Bots.test.tsx — pins the
+ * three-way convergence on the setup screen: a fresh visit
  * with no snapshot, a Discard from the resume gate, and "New game" from both
  * result surfaces all land on `SetupScreen` — never on an auto-started game.
- * Plan 07 adds the D-21 store-on-finish flow: a finished game POSTs
- * immediately (V-14) and a subsequent `/bots` mount's drain does not re-POST
- * it (V-15, the double-POST regression).
+ * The store-on-finish flow: a finished game POSTs
+ * immediately and a subsequent `/bots` mount's drain does not re-POST
+ * it (the double-POST regression).
  *
  * `useBotGame` is mocked WHOLESALE — the real hook boots a WorkerPool and a
- * Maia queue and has no place in a page test (RESEARCH.md precedent from
+ * Maia queue and has no place in a page test (same approach as
  * useBotGame.test.ts). The mock keeps its own `outcome`/`pgn`/`live` React
  * state so a test can drive them (`fakeGame.setOutcome`, `fakeGame.setPgn`,
  * `fakeGame.confirmLive`) and observe `BotsGame` re-render, without any real
  * engine machinery.
  *
- * `@/hooks/useStoreBotGame` is NOT mocked (Plan 06 had stubbed
- * `useDrainPendingStore` as a no-op — Plan 07 replaces that with the real
- * hook, exercising the actual finish-time-store + mount-drain interaction
- * against a mocked `botsApi.storeGame`, since the whole point of V-15 is
- * that the two store paths interact correctly through the SAME
- * localStorage queue).
+ * `@/hooks/useStoreBotGame` and `useDrainPendingStore` are NOT mocked,
+ * exercising the actual finish-time-store + mount-drain interaction
+ * against a mocked `botsApi.storeGame`, since the whole point of the double-POST
+ * test is that the two store paths interact correctly through the SAME
+ * localStorage queue.
  *
  * `@sentry/react` is mocked (its ESM module namespace is not configurable) —
  * mirrors SetupScreen.test.tsx; `botGameSnapshot.ts` calls
@@ -51,7 +50,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 const ASYNC_UTIL_TIMEOUT_MS = 10000;
 configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 
-// 171-08 (B-1): spy on navigation so the Analyze CTA's URL can be asserted.
+// Spy on navigation so the Analyze CTA's URL can be asserted.
 // `renderBots()` mounts a bare `MemoryRouter` with no `<Routes>`, so there is
 // no route to probe — the navigate() call itself is the only observable.
 // `importOriginal` preserves `MemoryRouter` (imported from this module above).
@@ -74,17 +73,17 @@ import { MAX_STORE_RETRIES } from '@/hooks/useStoreBotGame';
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
-// `botsApi.storeGame` is the D-21 finish-time store's and the D-13 mount
+// `botsApi.storeGame` is the finish-time store's and the mount
 // drain's SHARED HTTP call site — mocking it here (module-level, `importActual`
 // preserving everything else) is what lets both real hooks
 // (`useStoreBotGame`/`useDrainPendingStore`, unmocked) run against the same
 // fake network boundary in the tests below.
 //
-// Quick 260714-rj5: also mock `apiClient.post` — `useTier1EnqueueForGame`
+// Also mock `apiClient.post` — `useTier1EnqueueForGame`
 // (unmocked, real hook) POSTs `/imports/eval/tier1/{id}` through it, and the
 // "one-click tier-1 enqueue" describe block below needs to control/observe
 // that call the same way the store tests control `botsApi.storeGame`.
-// CR-01: `getPersonaWins` is also mocked here (not left as `...actual.botsApi`)
+// `getPersonaWins` is also mocked here (not left as `...actual.botsApi`)
 // so the "store on finish" tests below can assert the win-star cache actually
 // refetches after a successful store, rather than falling through to the
 // real (network-hitting) implementation.
@@ -106,27 +105,27 @@ vi.mock('@/api/client', async () => {
 
 // ─── Controllable fake useBotGame ───────────────────────────────────────────
 
-/** Stable per the fake hook's `gameUuid` — used by Plan 07's store-on-finish
+/** Stable per the fake hook's `gameUuid` — used by the store-on-finish
  * tests to seed/inspect the matching pending-store queue entry. */
 const FAKE_GAME_UUID = 'fake-game-uuid';
 
 interface FakeGameHandle {
   setOutcome: (outcome: BotGameOutcome | null) => void;
-  /** Plan 07: the real hook sets `outcome` and `pgn` together at finish
-   * (`finalizeGame`); tests drive them independently so the D-21 effect's
+  /** The real hook sets `outcome` and `pgn` together at finish
+   * (`finalizeGame`); tests drive them independently so the store-on-finish effect's
    * `game.pgn === null` guard can be exercised deliberately. */
   setPgn: (pgn: string | null) => void;
   newGame: ReturnType<typeof vi.fn>;
   lastSettings: BotGameSettings | null;
-  /** 171-08 (B-1): settable so a test can prove the Analyze CTA's URL
+  /** Settable so a test can prove the Analyze CTA's URL
    * actually carries the played move list, not just the orientation param. */
   moveHistory: string[];
-  /** 171-09 (gap 2): settable so a test can prove the ChessBoard consumer
+  /** Settable so a test can prove the ChessBoard consumer
    * actually reads game.lastMove, not just that the hook exposes it. */
   lastMove: { from: string; to: string } | null;
-  /** Phase 183 Plan 05 (D-07): settable so a test can drive the bot's
+  /** Settable so a test can drive the bot's
    * outgoing draw-offer banner without any real grade-callback machinery. */
-  setBotDrawOffer: (offer: boolean) => void;
+  setBotDrawOfferPending: (offer: boolean) => void;
   acceptBotDraw: ReturnType<typeof vi.fn>;
   declineBotDraw: ReturnType<typeof vi.fn>;
 }
@@ -138,7 +137,7 @@ const fakeGame: FakeGameHandle = {
   lastSettings: null,
   moveHistory: [],
   lastMove: null,
-  setBotDrawOffer: () => {},
+  setBotDrawOfferPending: () => {},
   acceptBotDraw: vi.fn(),
   declineBotDraw: vi.fn(),
 };
@@ -147,17 +146,17 @@ vi.mock('@/hooks/useBotGame', () => ({
   useBotGame: (settings: BotGameSettings, resume?: unknown) => {
     const [outcome, setOutcome] = useState<BotGameOutcome | null>(null);
     const [pgn, setPgn] = useState<string | null>(null);
-    // Mirrors the real hook's D-03 contract: fresh (resume undefined) games
+    // Mirrors the real hook's contract: fresh (resume undefined) games
     // are live from mount; a resumed snapshot starts NOT live until
     // confirmLive() fires — needed here only so `ResumeGate`'s
     // `resume !== null && !game.live` render gate stays honest.
     const [live, setLive] = useState<boolean>(resume === undefined);
-    const [botDrawOffer, setBotDrawOffer] = useState(false);
+    const [botDrawOfferPending, setBotDrawOfferPending] = useState(false);
 
     fakeGame.setOutcome = setOutcome;
     fakeGame.setPgn = setPgn;
     fakeGame.lastSettings = settings;
-    fakeGame.setBotDrawOffer = setBotDrawOffer;
+    fakeGame.setBotDrawOfferPending = setBotDrawOfferPending;
 
     return {
       position: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
@@ -173,7 +172,7 @@ vi.mock('@/hooks/useBotGame', () => ({
       pgn,
       drawOfferPending: false,
       canOfferDraw: true,
-      botDrawOffer,
+      botDrawOfferPending,
       acceptBotDraw: fakeGame.acceptBotDraw,
       declineBotDraw: fakeGame.declineBotDraw,
       gameUuid: FAKE_GAME_UUID,
@@ -185,9 +184,9 @@ vi.mock('@/hooks/useBotGame', () => ({
       resign: vi.fn(),
       offerDraw: vi.fn(),
       newGame: fakeGame.newGame,
-      // Phase 223 (BOTVOICE-01/02): an untyped object literal, so a missing
+      // An untyped object literal, so a missing
       // field here would silently yield `undefined` at runtime rather than
-      // a compile error (RESEARCH Pitfall 12) — added deliberately.
+      // a compile error — added deliberately.
       botLine: null,
     };
   },
@@ -239,23 +238,23 @@ vi.mock('@/hooks/useUserProfile', () => ({
   }),
 }));
 
-// Phase 230 D-16: the real Privacy card needs a QueryClientProvider and the
+// The real Privacy card needs a QueryClientProvider and the
 // useSetLeaderboardHidden export (absent from the factory above); the settings
 // sheet test here only exercises the sound switch.
 vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
   LeaderboardPrivacyCard: () => null,
 }));
 
-// Quick 260723-tqn: the celebration-hold delay is covered by its own
-// dedicated unit test (useWinCelebrationHold.test.ts, fake timers). Mocked
+// The celebration-hold delay is covered by its own
+// dedicated unit test (useResultDialogHold.test.ts, fake timers). Mocked
 // here to `false` (no hold) so this file's existing result-dialog assertions
 // (which use real timers) aren't coupled to the ~1.3s WIN_CELEBRATION_HOLD_MS
 // window.
-vi.mock('@/hooks/useWinCelebrationHold', () => ({
-  useWinCelebrationHold: () => false,
+vi.mock('@/hooks/useResultDialogHold', () => ({
+  useResultDialogHold: () => false,
 }));
 
-// 171-09 (gap 2): a minimal ChessBoard stub exposing the lastMove prop as a
+// A minimal ChessBoard stub exposing the lastMove prop as a
 // data attribute, so the last-move-highlight tests can assert on the wiring
 // boundary without pulling in real react-chessboard rendering. Safe here:
 // this file queries no board internals today (confirmed: zero `square-` /
@@ -272,7 +271,7 @@ vi.mock('@/components/board/ChessBoard', () => ({
 // jsdom shims required by react-chessboard and responsive components
 // (mirrors Analysis.test.tsx / SetupScreen.test.tsx precedent).
 //
-// Phase 223 (BOTVOICE-05): extracted to a named installer, not just an
+// Extracted to a named installer, not just an
 // inline `Object.defineProperty` call, so the desktop-mode describe block
 // below can flip `matches` to `true` for its own tests and restore this
 // file's mobile-reporting default afterward — every other suite in this file
@@ -324,7 +323,7 @@ function axiosError(status: number): Error {
 }
 
 /** Collapses TanStack's default exponential mutation backoff (1s, 2s, 4s…) to
- * a flat 10ms. Load-bearing for the CR-01 test below: with the real backoff a
+ * a flat 10ms. Load-bearing for the unbounded-retry test below: with the real backoff a
  * 4th attempt would only land ~4s after the 3rd, so a "count is frozen" probe
  * a few hundred ms after the 3rd call would pass even for an UNBOUNDED retry
  * loop — the exact bug it exists to catch. At 10ms the same probe spans ~30
@@ -379,8 +378,8 @@ function pendingStoreKeyFor(ownerKey: string | null): string {
   return `${BOT_PENDING_STORE_KEY_PREFIX}${ownerKey ?? 'anon'}`;
 }
 
-/** Phase 183: the default setup view is now `PersonaGrid`, not `SetupScreen`
- * directly (PERS-01/PERS-04) — this helper routes through the Custom entry
+/** The default setup view is now `PersonaGrid`, not `SetupScreen`
+ * directly — this helper routes through the Custom entry
  * first, so every pre-existing SetupScreen-driven test below keeps working
  * unchanged from that point on. */
 async function startFromSetup(colorTestId = 'setup-color-white', tcTestId = 'setup-tc-blitz-5-3') {
@@ -402,18 +401,18 @@ beforeEach(() => {
   fakeGame.declineBotDraw.mockClear();
   navigateSpy.mockClear();
   vi.mocked(botsApi.storeGame).mockReset();
-  // CR-01: a benign default so `useBotPersonaWins`'s mount-time fetch resolves
+  // A benign default so `useBotPersonaWins`'s mount-time fetch resolves
   // rather than hanging — tests that assert on refetch counts override this.
   vi.mocked(botsApi.getPersonaWins).mockReset();
   vi.mocked(botsApi.getPersonaWins).mockResolvedValue({});
-  // A safe default: the D-13 mount-drain effect fires on EVERY BotsPage
-  // mount now that `useDrainPendingStore` is unmocked (Plan 07). Tests that
-  // don't care about the store (e.g. the D-11 setup/discard convergence
+  // A safe default: the mount-drain effect fires on EVERY BotsPage
+  // mount now that `useDrainPendingStore` is unmocked. Tests that
+  // don't care about the store (e.g. the setup/discard convergence
   // suite above) must not have a stray seeded pending-store entry silently
   // consumed by an unconfigured mock resolving `undefined` as if it were a
   // 2xx. Tests that DO care about the store override this explicitly.
   vi.mocked(botsApi.storeGame).mockRejectedValue(axiosError(500));
-  // Quick 260714-rj5: apiClient.post backs useTier1EnqueueForGame's real
+  // apiClient.post backs useTier1EnqueueForGame's real
   // (unmocked) mutation. A benign default resolve — tests that exercise the
   // enqueue path override this explicitly.
   vi.mocked(apiClient.post).mockReset();
@@ -445,7 +444,7 @@ afterEach(() => {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe('Bots — profile fetch failure (WR-08)', () => {
+describe('Bots — profile fetch failure', () => {
   it('renders the error branch and never boots into the shared anon bucket', async () => {
     // A settled-but-failed profile query: isLoading false, data undefined —
     // which used to look exactly like "no profile", so the page booted with
@@ -477,8 +476,8 @@ describe('Bots — profile fetch failure (WR-08)', () => {
   });
 });
 
-describe('Bots — setup/resume/new-game convergence (V-11)', () => {
-  it('renders the persona grid (not SetupScreen) when there is no snapshot (Phase 183, PERS-01)', async () => {
+describe('Bots — setup/resume/new-game convergence', () => {
+  it('renders the persona grid (not SetupScreen) when there is no snapshot', async () => {
     renderBots();
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
@@ -486,7 +485,7 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     expect(screen.queryByTestId('bots-page')).toBeNull();
   });
 
-  it('selecting the Custom entry renders the unchanged SetupScreen (Phase 183, PERS-04)', async () => {
+  it('selecting the Custom entry renders the unchanged SetupScreen', async () => {
     renderBots();
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
@@ -496,7 +495,7 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     expect(screen.queryByTestId('bots-persona-grid')).toBeNull();
   });
 
-  it('selecting a persona opens the detail surface, whose Play routes through the single handleStart entry (Phase 183, PERS-02)', async () => {
+  it('selecting a persona opens the detail surface, whose Play routes through the single handleStart entry', async () => {
     renderBots();
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
@@ -520,7 +519,7 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
 
     expect(fakeGame.lastSettings).not.toBeNull();
     const settings = fakeGame.lastSettings as BotGameSettings;
-    // A concrete color, never 'random' (D-12) — the setup screen resolves
+    // A concrete color, never 'random' — the setup screen resolves
     // it before onStart fires.
     expect(settings.userColor === 'white' || settings.userColor === 'black').toBe(true);
     expect(settings.userColor).toBe('white');
@@ -540,7 +539,7 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     expect(screen.queryByTestId('setup-screen')).toBeNull();
   });
 
-  it('discard falls through to setup, clearing only the snapshot key (170 D-05)', async () => {
+  it('discard falls through to setup, clearing only the snapshot key', async () => {
     const ownerKey = 'user@example.com';
     localStorage.setItem(snapshotKeyFor(ownerKey), JSON.stringify(buildSnapshot()));
     const pendingStoreValue = JSON.stringify([
@@ -554,16 +553,16 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     fireEvent.click(screen.getByTestId('btn-discard'));
     fireEvent.click(screen.getByTestId('btn-discard-confirm'));
 
-    // Falls through to the setup view's default (Phase 183: the persona
+    // Falls through to the setup view's default (the persona
     // grid, not SetupScreen directly).
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
     expect(localStorage.getItem(snapshotKeyFor(ownerKey))).toBeNull();
-    // 170 D-05: discard never touches the pending-store queue.
+    // Discard never touches the pending-store queue.
     expect(localStorage.getItem(pendingStoreKeyFor(ownerKey))).toBe(pendingStoreValue);
   });
 
-  it('new game returns to setup, not an instant restart (D-11)', async () => {
+  it('new game returns to setup, not an instant restart', async () => {
     renderBots();
     await startFromSetup();
 
@@ -574,11 +573,11 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
     fireEvent.click(screen.getByTestId('btn-new-game'));
 
-    // Falls through to the setup view's default (Phase 183: the persona
+    // Falls through to the setup view's default (the persona
     // grid, not SetupScreen directly).
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
-    // The load-bearing negative assertion (D-11): the old wiring called
+    // The load-bearing negative assertion: the old wiring called
     // game.newGame() and restarted in place with the same settings — a test
     // that only checks for the setup view would also pass against that wiring.
     expect(fakeGame.newGame).not.toHaveBeenCalled();
@@ -623,7 +622,7 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
   });
 });
 
-describe('Bots — mobile player rows (Phase 223 UAT: same rows as the analysis board)', () => {
+describe('Bots — mobile player rows (same rows as the analysis board)', () => {
   it('renders the bot row (name + calibrated label) and the user row on mobile for a persona game', async () => {
     renderBots();
 
@@ -669,7 +668,7 @@ describe('Bots — mobile player rows (Phase 223 UAT: same rows as the analysis 
   });
 });
 
-describe('Bots — in-game bubble wiring (Phase 223, BOTVOICE-01/02)', () => {
+describe('Bots — in-game bubble wiring', () => {
   it('renders the bubble with its copy node for a persona game', async () => {
     renderBots();
 
@@ -685,7 +684,7 @@ describe('Bots — in-game bubble wiring (Phase 223, BOTVOICE-01/02)', () => {
   });
 });
 
-describe('Bots — bot draw-offer actions render inside the bubble (Phase 223, BOTVOICE-05, D-12)', () => {
+describe('Bots — bot draw-offer actions render inside the bubble', () => {
   it('renders Accept/Decline inside the bubble for a persona game and both call through to the hook', async () => {
     renderBots();
 
@@ -702,7 +701,7 @@ describe('Bots — bot draw-offer actions render inside the bubble (Phase 223, B
     expect(screen.queryByTestId('btn-decline-bot-draw')).toBeNull();
 
     act(() => {
-      fakeGame.setBotDrawOffer(true);
+      fakeGame.setBotDrawOfferPending(true);
     });
 
     const bubble = screen.getByTestId('bot-game-bubble');
@@ -721,7 +720,7 @@ describe('Bots — bot draw-offer actions render inside the bubble (Phase 223, B
     await startFromSetup();
 
     act(() => {
-      fakeGame.setBotDrawOffer(true);
+      fakeGame.setBotDrawOfferPending(true);
     });
 
     const bubble = screen.getByTestId('bot-game-bubble');
@@ -738,7 +737,7 @@ describe('Bots — bot draw-offer actions render inside the bubble (Phase 223, B
   });
 });
 
-describe('Bots — mobile chrome removed, back arrow wired (Phase 223, BOTVOICE-05, D-10/D-12/SC7)', () => {
+describe('Bots — mobile chrome removed, back arrow wired', () => {
   it('renders no in-page board-control row, resign row, offer-draw button or mute button on mobile', async () => {
     renderBots();
     await startFromSetup();
@@ -752,7 +751,7 @@ describe('Bots — mobile chrome removed, back arrow wired (Phase 223, BOTVOICE-
     expect(screen.queryByTestId('board-btn-resign')).toBeNull();
     expect(screen.queryByTestId('resign-confirm-dialog')).toBeNull();
     // The user-side Offer draw button and the in-game mute toggle are gone
-    // from the tree entirely (D-10/D-12/SC7) — not just hidden on mobile.
+    // from the tree entirely — not just hidden on mobile.
     expect(screen.queryByTestId('board-btn-offer-draw')).toBeNull();
     expect(screen.queryByTestId('board-btn-mute')).toBeNull();
   });
@@ -765,13 +764,13 @@ describe('Bots — mobile chrome removed, back arrow wired (Phase 223, BOTVOICE-
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
-    // Mechanically the same non-instant-restart contract as "New game"
-    // (D-11): the back arrow never calls game.newGame() to restart in place.
+    // Mechanically the same non-instant-restart contract as "New game":
+    // the back arrow never calls game.newGame() to restart in place.
     expect(fakeGame.newGame).not.toHaveBeenCalled();
   });
 });
 
-describe('Bots — mobile settings sheet (Phase 228 D-04)', () => {
+describe('Bots — mobile settings sheet', () => {
   it('opens the settings sheet in place mid-game and the sound switch writes the locked mute key', async () => {
     renderBots();
     await startFromSetup();
@@ -788,7 +787,7 @@ describe('Bots — mobile settings sheet (Phase 228 D-04)', () => {
   });
 });
 
-describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
+describe('Bots — desktop layout', () => {
   beforeEach(() => {
     installMatchMediaStub(true);
   });
@@ -798,7 +797,7 @@ describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
     installMatchMediaStub(false);
   });
 
-  it('renders no settings cogwheel in the desktop layout (D-04: desktop uses the header cogwheel)', async () => {
+  it('renders no settings cogwheel in the desktop layout (desktop uses the header cogwheel)', async () => {
     renderBots();
     await startFromSetup();
 
@@ -815,7 +814,7 @@ describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
     fireEvent.click(screen.getByTestId('btn-persona-play'));
     await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
 
-    // D-11: the honest tilde-prefixed calibrated label, never a
+    // The honest tilde-prefixed calibrated label, never a
     // parenthesised integer — attacker-800's PERSONA_CALIBRATION label.
     const botRow = screen.getByTestId('clock-bot');
     expect(botRow.textContent).toContain('Ziggy the Wasp');
@@ -863,7 +862,7 @@ describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
     await startFromSetup();
 
     act(() => {
-      fakeGame.setBotDrawOffer(true);
+      fakeGame.setBotDrawOfferPending(true);
     });
 
     const bubble = screen.getByTestId('bot-game-bubble');
@@ -885,7 +884,7 @@ describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
   });
 });
 
-describe('Bots — Rematch/New opponent (Phase 183, D-06/D-08)', () => {
+describe('Bots — Rematch/New opponent', () => {
   async function startPersonaGame(): Promise<void> {
     renderBots();
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
@@ -950,7 +949,7 @@ describe('Bots — Rematch/New opponent (Phase 183, D-06/D-08)', () => {
   });
 });
 
-describe('store on finish (D-21)', () => {
+describe('store on finish', () => {
   const OWNER_KEY = 'user@example.com';
   const SAMPLE_PGN = '1. e4 e5 2. Nf3 *';
 
@@ -971,7 +970,7 @@ describe('store on finish (D-21)', () => {
    * no finalize logic), so tests that need a queue entry present AT finish
    * time (not before) call this instead of pre-seeding localStorage — pre-
    * seeding before the game even starts would let the FIRST mount's own
-   * D-13 drain consume it before the game finishes, corrupting the call
+   * mount drain consume it before the game finishes, corrupting the call
    * count this describe block exists to pin. */
   function finishAndEnqueue(gameUuid: string): void {
     act(() => {
@@ -1000,7 +999,7 @@ describe('store on finish (D-21)', () => {
     fakeGame.moveHistory = ['e4', 'e5', 'Nf3'];
   });
 
-  it('POSTs exactly once when outcome transitions null -> finished, with a matching game_uuid (V-14)', async () => {
+  it('POSTs exactly once when outcome transitions null -> finished, with a matching game_uuid', async () => {
     vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
     renderBots();
     await startFromSetup();
@@ -1082,7 +1081,7 @@ describe('store on finish (D-21)', () => {
     expect(botsApi.storeGame).not.toHaveBeenCalled();
   });
 
-  it('finish -> store succeeds -> remount does NOT re-POST (V-15, the double-POST regression)', async () => {
+  it('finish -> store succeeds -> remount does NOT re-POST (the double-POST regression)', async () => {
     vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
 
     const { unmount } = renderBots();
@@ -1097,7 +1096,7 @@ describe('store on finish (D-21)', () => {
     unmount();
     renderBots();
 
-    // The remount's D-13 mount-drain effect runs `useDrainPendingStore`'s
+    // The remount's mount-drain effect runs `useDrainPendingStore`'s
     // `drain()` against an EMPTY queue — total call count stays at 1. Give
     // the drain effect a moment to run before asserting the negative.
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1131,12 +1130,12 @@ describe('store on finish (D-21)', () => {
     await waitFor(() => expect(pendingEntryCount()).toBe(0));
   }, 15000);
 
-  // CR-01 regression (the reason `shouldRetryStore` no longer returns `true`
+  // Regression (the reason `shouldRetryStore` no longer returns `true`
   // unconditionally for a 401): `Bots.tsx` is the predicate's first PRODUCTION
   // call site, so an unbounded 401 retry here meant `POST /bots/games` re-issued
   // forever while the result screen stayed mounted — never settling, so
   // `MutationCache.onError` never reached Sentry and `store.isSuccess` never
-  // flipped. The 401's durable retry is the next mount's drain (D-13), which
+  // flipped. The 401's durable retry is the next mount's drain, which
   // this test also pins by asserting the pending entry SURVIVES.
   it('a 401 finish-time store is BOUNDED (no unbounded retry loop) and leaves the pending entry for the next mount', async () => {
     vi.mocked(botsApi.storeGame).mockRejectedValue(axiosError(401));
@@ -1159,15 +1158,15 @@ describe('store on finish (D-21)', () => {
     await new Promise((resolve) => setTimeout(resolve, MUTATION_RETRY_DELAY_MS * 30));
     expect(botsApi.storeGame).toHaveBeenCalledTimes(MAX_STORE_RETRIES + 1);
 
-    // onSuccess never fired — the entry survives for the D-13 next-visit drain.
+    // onSuccess never fired — the entry survives for the next-visit drain.
     expect(pendingEntryCount()).toBe(1);
   }, 15000);
 
-  // CR-01: without the finish-time store's onSuccess invalidation, this
+  // Without the finish-time store's onSuccess invalidation, this
   // second call never happens — `useBotPersonaWins`'s 5-minute staleTime
   // query instance (mounted once at BotsPage level, never unmounted across
   // this cycle) would keep serving its pre-game win counts.
-  it('invalidates the persona-wins cache after a successful finish-time store, forcing a refetch (CR-01)', async () => {
+  it('invalidates the persona-wins cache after a successful finish-time store, forcing a refetch', async () => {
     vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
     renderBots();
     await startFromSetup();
@@ -1181,16 +1180,16 @@ describe('store on finish (D-21)', () => {
   });
 });
 
-describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {
+describe('Analyze CTA carries the played colour', () => {
   /**
-   * B-1: the JOINING LINE ITSELF. `analysisUrl.test.ts` tests a pure function
+   * The JOINING LINE ITSELF. `analysisUrl.test.ts` tests a pure function
    * that never renders `Bots`; `Analysis.test.tsx` feeds `/analysis?…` URLs
    * in directly and never renders `Bots`. So nothing but THIS test exercises
    * `Bots.tsx`'s free-play fallback branch (storedGameId === null) — the one
    * line that passes `settings.userColor` into `buildAnalysisLineUrl`.
    * Deleting that 2nd arg must turn these red.
    *
-   * Quick 260714-rj5: Analyze is now store-gated (disabled while
+   * Analyze is store-gated (disabled while
    * `analyzeBusy`). The default `beforeEach` mocks `botsApi.storeGame` to
    * reject with a 500, so the store settles as ERRORED after
    * `MAX_STORE_RETRIES` bounded in-flight retries — the free-play fallback
@@ -1233,10 +1232,10 @@ describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {
   });
 });
 
-// Quick 260714-rj5 — one-click Analyze: store confirms -> tier-1 enqueue ->
+// One-click Analyze: store confirms -> tier-1 enqueue ->
 // /analysis?game_id=X. `apiClient.post` (mocked at module level above) backs
 // `useTier1EnqueueForGame`'s real, unmocked mutation.
-describe('Analyze CTA — one-click tier-1 enqueue (Quick 260714-rj5)', () => {
+describe('Analyze CTA — one-click tier-1 enqueue', () => {
   const STORED_GAME_ID = 42;
 
   async function finishGame(): Promise<void> {
@@ -1339,7 +1338,7 @@ describe('Analyze CTA — one-click tier-1 enqueue (Quick 260714-rj5)', () => {
   });
 });
 
-describe('Bot board passes lastMove through to ChessBoard (171 UAT gap 2)', () => {
+describe('Bot board passes lastMove through to ChessBoard', () => {
   it('passes the from/to squares when the hook reports a lastMove', async () => {
     fakeGame.lastMove = { from: 'e2', to: 'e4' };
     renderBots();
@@ -1357,11 +1356,11 @@ describe('Bot board passes lastMove through to ChessBoard (171 UAT gap 2)', () =
   });
 });
 
-describe('BotsGame — bottom-nav clearance (171 UAT gap 3, Task 1)', () => {
+describe('BotsGame — bottom-nav clearance', () => {
   // The clearance is a two-site invariant: SetupScreen's root AND the in-game
   // BotsGame root both need it. SetupScreen's half is pinned in
   // SetupScreen.test.tsx; this is the other half. Without it, dropping pb-20
-  // from Bots.tsx left the whole suite green (found by code review, WR-01).
+  // from Bots.tsx left the whole suite green.
   it('the bots-page root carries pb-20 sm:pb-4 so the fixed bottom nav never occludes the board', async () => {
     renderBots();
     await startFromSetup();

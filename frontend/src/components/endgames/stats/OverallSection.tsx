@@ -159,7 +159,7 @@ function EntryCard({ tcStats }: { tcStats: RankedTcStats }) {
 }
 
 /**
- * The two timelines under the cards (D-03, D-00i): visuals unchanged, series read
+ * The two timelines under the cards: series read
  * from the selected TC's ranked payload. The Score Gap chart hides when its series
  * is empty; the ELO timeline component renders its own empty state.
  */
@@ -170,7 +170,7 @@ function OverallTimelines({ tcStats }: { tcStats: RankedTcStats }) {
         <div className="charcoal-texture rounded-md overflow-hidden">
           <EndgameScoreOverTimeChart
             timeline={tcStats.score_gap_timeline}
-            window={tcStats.score_gap_timeline_window}
+            windowSize={tcStats.score_gap_timeline_window}
           />
         </div>
       )}
@@ -189,7 +189,7 @@ function OverallTimelines({ tcStats }: { tcStats: RankedTcStats }) {
 }
 
 /**
- * Endgame Overall Performance (D-00h): one TC at a time, two cards, every number
+ * Endgame Overall Performance: one TC at a time, two cards, every number
  * from the ranked sample so the big numbers and the percentile describe the same
  * games. The TC comes from the shared selection store.
  */

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * TrainReveal.test.tsx — the reveal panel's presentational coverage: the guess
- * verdict card and its prose, the mastery banner, D-11/D-12 copy, the game
- * footer, the game-move search state reporting, and (Phase 237) the chips row
+ * verdict card and its prose, the mastery banner, the copy, the game
+ * footer, the game-move search state reporting, and the chips row
  * plus the move-list slot that replaced the three line cards. The chip/tree
  * behavior itself is covered by TrainLineChips / TrainMoveTreeList /
  * useTrainRevealTree tests and, end to end, by TrainSolveScreen.test.tsx.
@@ -49,16 +49,16 @@ vi.mock('@/api/client', async () => {
   };
 });
 
-// 190.1 UAT round 4: the line steppers play move sounds — mocked so jsdom
+// The line steppers play move sounds — mocked so jsdom
 // never touches real Audio machinery.
 vi.mock('@/lib/sounds', () => ({
   playSound: vi.fn(),
 }));
 
-// ─── matchMedia stub (Phase 200: useIsDesktop) ─────────────────────────────
+// ─── matchMedia stub (useIsDesktop) ─────────────────────────────
 // Controllable per test (Bots.test.tsx L221 jsdom-shim precedent, with a
 // settable `matches` instead of a fixed `false`) so both the desktop-hover
-// (D-06) and mobile-tap (D-08) paths are exercisable in the same file.
+// and mobile-tap paths are exercisable in the same file.
 let matchMediaMatches = true;
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -94,9 +94,9 @@ function makeVerdict(overrides: Partial<SolveResponse> = {}): SolveResponse {
     correct_move: true,
     move_quality: 'good',
     puzzle_type: 'sharp',
-    // Phase 206 (D-19): defaults to 'sr_item' so pre-existing callers that
+    // Defaults to 'sr_item' so pre-existing callers that
     // only override `puzzle_type` keep exercising the "own game" branch at
-    // all three D-19 sites exactly as before this field existed.
+    // all three own-game sites exactly as before this field existed.
     source: 'sr_item',
     item_status: 'active',
     streak: 1,
@@ -137,7 +137,7 @@ function makeGradeResult(overrides: Partial<GradeResult> = {}): GradeResult {
   };
 }
 
-/** Stub `TrainGradingEngine` (190.1-01) — only `startGameMoveSearch` matters
+/** Stub `TrainGradingEngine` — only `startGameMoveSearch` matters
  * to TrainReveal; the other members are never called from this component. */
 function makeGradingEngine(overrides: Partial<TrainGradingEngine> = {}): TrainGradingEngine {
   return {
@@ -170,7 +170,7 @@ function makeEvalPoint(overrides: Partial<EvalPoint> = {}): EvalPoint {
   };
 }
 
-/** Minimal `GameFlawCard` fixture (Task 2's footer only reads
+/** Minimal `GameFlawCard` fixture (the footer only reads
  * user_color/white_username/black_username/played_at). */
 function makeGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
   return {
@@ -208,7 +208,7 @@ function makeGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
 
 /** The chips the board owner would hand down: the REAL `buildChipGroups` over
  * the same inputs TrainSolveScreen feeds it (TrainReveal itself is presentational
- * about chips since Phase 237). Defaults to a played d4 against the best e4. */
+ * about chips). Defaults to a played d4 against the best e4. */
 function makeChips(overrides: Partial<BuildChipGroupsInput> = {}): ChipGroup[] {
   return buildChipGroups({
     puzzleFen: START_FEN,
@@ -278,7 +278,7 @@ describe('TrainReveal', () => {
     localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfLines);
   });
 
-  // ─── Phase 237 plan 08: the verdict surface (strip on phones, bubble on desktop) ──
+  // ─── The verdict surface (strip on phones, bubble on desktop) ──
 
   it('desktop: the verdict bubble leads the reveal column with the full details visible and no strip', () => {
     renderReveal({ guess: 'critical', isBest: true });
@@ -310,9 +310,9 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Right call, good move');
   });
 
-  // ─── Verdict rows (190.1-03 D-03) ─────────────────────────────────────────
+  // ─── Verdict rows ─────────────────────────────────────────
 
-  // Phase 200 UAT round 3: the ✓/✗ marks became score chips stating the
+  // The ✓/✗ marks are score chips stating the
   // points actually earned (guess: 1 or 0).
   it('verdict-guess row states the spelled-out critical-option wording and a +0 chip for a wrong critical guess', () => {
     renderReveal({ guess: 'critical', verdict: makeVerdict({ correct_guess: false }) });
@@ -330,13 +330,13 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
   });
 
-  // Phase 200 UAT round 3: the chip reads the three-way scoring tier, so an
+  // The chip reads the three-way scoring tier, so an
   // inaccuracy scores +1 — the boolean correct_move could not express that.
-  // Phase 200 UAT round 8: the Your-move box leads the whole panel, above the
+  // The Your-move box leads the whole panel, above the
   // guess card, on both viewports (one component serves both).
-  // ─── Outcome copy — fully retired (Phase 200 UAT round 7) ─────────────────
-  // Round 3 retired the miss sentence; round 7 retired the last one standing,
-  // the herring "You handled this well in the game" line. The guess card's
+  // ─── Outcome copy — fully retired ─────────────────
+  // Neither the miss sentence nor the herring "You handled this well in the
+  // game" line exists any more. The guess card's
   // body now holds the Also fine list or nothing at all.
 
   it('a herring renders no outcome sentence — the herring sentence is retired too', async () => {
@@ -366,15 +366,15 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-outcome-copy')).toBeNull();
   });
 
-  // ─── Flaw fixed banner (PROG-03/D-14, Phase 191 Plan 03 — supersedes the
-  // D-12 plain "Mastered — retired." comeback hint) ─────────────────────────
+  // ─── Flaw fixed banner (replaces the plain "Mastered — retired."
+  // comeback hint) ─────────────────────────
 
   it('item_status "mastered" renders the flaw-fixed banner', () => {
     renderReveal({ verdict: makeVerdict({ item_status: 'mastered', due_date: null }) });
     expect(screen.getByTestId('train-flaw-fixed-banner')).not.toBeNull();
   });
 
-  // Quick 260803-iv6 (Task 2): the banner is the FIRST card in the panel —
+  // The banner is the FIRST card in the panel —
   // above both the Your-move box and the guess card — on a mastered,
   // non-herring verdict. Asserted via `compareDocumentPosition`, not index
   // into a hand-built list, so a reordering elsewhere in the panel can't
@@ -389,7 +389,7 @@ describe('TrainReveal', () => {
     });
     const banner = screen.getByTestId('train-flaw-fixed-banner');
     const yourBox = await waitFor(() => screen.getByTestId('train-line-chips'));
-    // Phase 237 plan 08 (ROADMAP item 6): the verdict bubble (desktop) leads the
+    // The verdict bubble (desktop) leads the
     // column, then the banner, then the chips.
     const verdictSurface = screen.getByTestId('train-verdict-card');
     expect(
@@ -452,7 +452,7 @@ describe('TrainReveal', () => {
     expect(screen.getByText('Flaw fixed!')).not.toBeNull();
   });
 
-  // ─── Chips row + move list slot (Phase 237 D-01..D-03) ─────────────────────
+  // ─── Chips row + move list slot ─────────────────────
 
   it('an empty chips list renders no chip row', async () => {
     revealPuzzle.mockResolvedValue(makeReveal());
@@ -498,10 +498,10 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-move-tree-slot')).toBeNull();
   });
 
-  describe('Phase 237 plan 10 / Phase 240 D-20: reveal tour spotlights and bubble slot', () => {
+  describe('reveal tour spotlights and bubble slot', () => {
     const TREE_SLOT = <div data-testid="train-move-tree-slot" />;
     const renderWithTarget = async (
-      walkthroughTarget: ComponentProps<typeof TrainReveal>['walkthroughTarget'],
+      tourTarget: ComponentProps<typeof TrainReveal>['tourTarget'],
     ): Promise<void> => {
       renderReveal({
         guess: 'critical',
@@ -509,7 +509,7 @@ describe('TrainReveal', () => {
         chips: makeChips(),
         activeChip: 'your',
         treeList: TREE_SLOT,
-        walkthroughTarget,
+        tourTarget,
       });
       await waitFor(() => screen.getByTestId('train-line-chips'));
     };
@@ -520,7 +520,7 @@ describe('TrainReveal', () => {
     const treeSpotlit = (): boolean => spotlit(screen.getByTestId('train-tree-tour-ring'));
     const linesSpotlit = (): boolean => spotlit(screen.getByTestId('train-lines-tour-target'));
 
-    // Phase 240 D-20: the chips row is spotlit as a row, and the active chip keeps
+    // The chips row is spotlit as a row, and the active chip keeps
     // its own selection ring.
     it('chips spotlights the chips row only; the active chip keeps its own ring', async () => {
       await renderWithTarget('chips');
@@ -569,13 +569,13 @@ describe('TrainReveal', () => {
     });
 
     it('on desktop the verdict target spotlights the verdict card', () => {
-      renderReveal({ walkthroughTarget: 'verdict' });
+      renderReveal({ tourTarget: 'verdict' });
       expect(spotlit(screen.getByTestId('train-verdict-card'))).toBe(true);
     });
 
     it('on a phone the verdict target spotlights the strip', () => {
       matchMediaMatches = false;
-      renderReveal({ walkthroughTarget: 'verdict' });
+      renderReveal({ tourTarget: 'verdict' });
       expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(true);
     });
   });
@@ -624,7 +624,7 @@ describe('TrainReveal', () => {
     expect(startGameMoveSearch).not.toHaveBeenCalled();
   });
 
-  it('onGameMoveUciChange reports the resolved game-move UCI, and null on unmount (190.1-04)', async () => {
+  it('onGameMoveUciChange reports the resolved game-move UCI, and null on unmount', async () => {
     revealPuzzle.mockResolvedValue(
       makeReveal({ played_in_game_san: 'e4', played_in_game_move_uci: 'e2e4' }),
     );
@@ -638,7 +638,7 @@ describe('TrainReveal', () => {
     expect(onGameMoveUciChange).toHaveBeenLastCalledWith(null);
   });
 
-  it('onGameMoveLineStateChange reports loading, then the searched line, and idle on unmount (Phase 237)', async () => {
+  it('onGameMoveLineStateChange reports loading, then the searched line, and idle on unmount', async () => {
     revealPuzzle.mockResolvedValue(
       makeReveal({ played_in_game_san: 'e4', played_in_game_move_uci: 'e2e4' }),
     );
@@ -681,7 +681,7 @@ describe('TrainReveal', () => {
     expect(startGameMoveSearch).toHaveBeenCalledWith(START_FEN, 'e2e4');
   });
 
-  it('a game-move search that never settles stays in the loading state, and the verdict rows still render (190.1-01 Task 2)', async () => {
+  it('a game-move search that never settles stays in the loading state, and the verdict rows still render', async () => {
     revealPuzzle.mockResolvedValue(
       makeReveal({ played_in_game_san: 'e4', played_in_game_move_uci: 'e2e4' }),
     );
@@ -694,7 +694,7 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
   });
 
-  it('a rejecting game-move search reports the error state, and the other reveal blocks still render (190.1-01 Task 2)', async () => {
+  it('a rejecting game-move search reports the error state, and the other reveal blocks still render', async () => {
     revealPuzzle.mockResolvedValue(
       makeReveal({ played_in_game_san: 'e4', played_in_game_move_uci: 'e2e4' }),
     );
@@ -702,7 +702,7 @@ describe('TrainReveal', () => {
     // bestLine deliberately distinct from BOTH the played move and the game
     // move ('e2e4') — otherwise the coincidence-merge guard would skip the
     // reveal-time search this test exists to exercise.
-    // bestMoveUci must agree with bestLine: since WR-01 the Best chip reads
+    // bestMoveUci must agree with bestLine: the Best chip reads
     // bestMoveUci, and the default 'e2e4' would coincide with the game move.
     const gradeResult = makeGradeResult({
       bestMoveUci: 'g1f3',
@@ -725,16 +725,16 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('train-chip-game').getAttribute('data-line-status')).toBe('failed');
   });
 
-  // ─── Tactic opt-in (SOLV-06) — REMOVED per 190.1 UAT round 4 ──────────────
+  // ─── Tactic opt-in — removed ──────────────
 
-  it('a tactic-tagged reveal renders NO tactic opt-in trigger (removed, UAT round 4)', async () => {
+  it('a tactic-tagged reveal renders NO tactic opt-in trigger', async () => {
     revealPuzzle.mockResolvedValue(makeReveal({ has_tactic_lines: true }));
     renderReveal();
     await waitFor(() => expect(getGame).toHaveBeenCalled());
     expect(screen.queryByTestId('btn-train-tactic-step')).toBeNull();
   });
 
-  // ─── Sharp filler motif line (Phase 206, D-20) ────────────────────────────
+  // ─── Sharp filler motif line ────────────────────────────
 
   it('a non-null motif renders exactly one Motif row inside the guess card', async () => {
     revealPuzzle.mockResolvedValue(
@@ -768,7 +768,7 @@ describe('TrainReveal', () => {
     expect(motifRow.className).not.toContain('text-xs');
   });
 
-  // ─── Opponent-and-date footer (190.1-03 D-03, Task 2) ─────────────────────
+  // ─── Opponent-and-date footer ─────────────────────
 
   it('the game-card query is disabled while the solve response is absent, and enabled once it is present', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -907,7 +907,7 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-reveal-clock-line')).toBeNull();
   });
 
-  // ─── D-07: herring reveal omits the game info line entirely (Phase 192) ──
+  // ─── Herring reveal omits the game info line entirely ──
 
   it('renders no game footer for a herring reveal', async () => {
     getGame.mockResolvedValue(makeGame());
@@ -940,8 +940,8 @@ describe('TrainReveal', () => {
         streak: null,
       }),
     });
-    // T-192-12: a herring's game query can still reject (game_id non-null,
-    // per D-08 — the in-game move survives independently of the game row's
+    // A herring's game query can still reject (game_id non-null;
+    // the in-game move survives independently of the game row's
     // existence) — the error branch must be gated on the SAME puzzle_type
     // condition as the success branch, not just the success branch.
     await waitFor(() =>
@@ -956,7 +956,7 @@ describe('TrainReveal', () => {
     await waitFor(() => expect(screen.getByTestId('train-reveal-footer')).not.toBeNull());
   });
 
-  // ─── Phase 206 D-19: source === 'sr_item' replaces puzzle_type !== 'herring' ──
+  // ─── The own-game predicate reads source === 'sr_item', not puzzle_type ──
 
   it('a sharp_filler verdict (puzzle_type "sharp", same as a real SR puzzle) suppresses the mastery banner, the game footer, and the own-game guess prose all together', async () => {
     getGame.mockResolvedValue(makeGame());
@@ -987,7 +987,7 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-reveal-footer')).toBeNull();
   });
 
-  it('an sr_item verdict with puzzle_type "sharp" (the exact literal a sharp_filler also carries) still renders all three D-19 sites — proves the predicate reads source, not puzzle_type', async () => {
+  it('an sr_item verdict with puzzle_type "sharp" (the exact literal a sharp_filler also carries) still renders all three own-game sites — proves the predicate reads source, not puzzle_type', async () => {
     getGame.mockResolvedValue(makeGame());
     renderReveal({
       guess: 'several',
@@ -1006,8 +1006,7 @@ describe('TrainReveal', () => {
     await waitFor(() => expect(screen.getByTestId('train-reveal-footer')).not.toBeNull());
   });
 
-  // ─── Also fine, inside the guess card (Phase 200 LEGEND-04/D-02/D-03; UAT
-  // round 6 folded the standalone row into the guess card) ──────────────────
+  // ─── Also fine, inside the guess card ──────────────────
 
   it('renders no Also fine list when alsoFineMoves is empty (the default)', () => {
     renderReveal();
@@ -1025,12 +1024,12 @@ describe('TrainReveal', () => {
     const list = within(card).getByTestId('train-reveal-also-fine');
     expect(list.textContent).toContain('d4');
     expect(list.textContent).toContain('Nf3');
-    // Phase 237: the card is inert (the Also fine arrows stay on the board,
+    // The card is inert (the Also fine arrows stay on the board,
     // dimmed, whichever chip is focused): no button anywhere in it.
     expect(within(card).queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('the guess card keeps the verdict and its score chip in the header, and only the Also fine list in the body (round 7: the herring sentence is gone)', async () => {
+  it('the guess card keeps the verdict and its score chip in the header, and only the Also fine list in the body (the herring sentence is gone)', async () => {
     renderReveal({
       verdict: makeVerdict({
         correct_guess: true,
@@ -1051,7 +1050,7 @@ describe('TrainReveal', () => {
     expect(within(card).getByTestId('train-reveal-also-fine').textContent).toContain('d4');
   });
 
-  // ─── Phase 233 (D-11/D-12): card engagement reaches the telemetry callbacks ──
+  // ─── Card engagement reaches the telemetry callbacks ──
 
   it('TrainReveal refactor: one instance renders verdict null, then a verdict, then null with no hook-order error', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -1100,7 +1099,7 @@ describe('TrainReveal', () => {
     expect(hookOrderErrors).toEqual([]);
   });
 
-  // ─── Guess-feedback prose (Quick 260803-iv6, Task 3) ──────────────────────
+  // ─── Guess-feedback prose ──────────────────────
   // One prose sentence stating what the guess verdict MEANS, in the guess
   // card body above the Also fine line. The six combinations are LOCKED
   // wording — exact string equality, never a substring/regex match.
@@ -1128,7 +1127,7 @@ describe('TrainReveal', () => {
       );
     });
 
-    // The 2026-08-03 fix: a correct `critical` guess no longer claims the user
+    // A correct `critical` guess no longer claims the user
     // PLAYED the critical move — only a `good` move earns the praise clause.
     it('critical + correct + a good move', () => {
       expect(guessFeedbackProse('critical', true, true, 'good', false, null)).toBe(
@@ -1157,7 +1156,7 @@ describe('TrainReveal', () => {
       );
     });
 
-    // The other 2026-08-03 fix: this branch is reachable ONLY on a `soft`
+    // This branch is reachable ONLY on a `soft`
     // puzzle, i.e. one of the user's own blunders — it used to congratulate
     // them ("You handled this fine in your game.") at the exact position where
     // they blundered.
@@ -1167,9 +1166,9 @@ describe('TrainReveal', () => {
       );
     });
 
-    // Phase 235 (D-15): a server-confirmed disagreement outranks every "only
+    // A server-confirmed disagreement outranks every "only
     // one move works" branch, for BOTH guesses and whatever else is true.
-    it('a confirmed disagreement names the key for both guesses, whatever the other inputs (D-15)', () => {
+    it('a confirmed disagreement names the key for both guesses, whatever the other inputs', () => {
       const line = "Qh4 is the engine's first choice, but your move holds up too.";
       expect(guessFeedbackProse('critical', false, true, 'good', true, 'Qh4')).toBe(line);
       expect(guessFeedbackProse('critical', true, true, 'good', true, 'Qh4')).toBe(line);
@@ -1177,7 +1176,7 @@ describe('TrainReveal', () => {
       expect(guessFeedbackProse('several', false, false, 'wrong', true, 'Qh4')).toBe(line);
     });
 
-    it('a disagreement without a key SAN falls through to the existing chain (D-15)', () => {
+    it('a disagreement without a key SAN falls through to the existing chain', () => {
       expect(guessFeedbackProse('critical', true, true, 'good', true, null)).toBe(
         'Right, and you found it: only one move works here.',
       );
@@ -1187,7 +1186,7 @@ describe('TrainReveal', () => {
     });
   });
 
-  it('a server-confirmed disagreement renders the D-15 line naming the key SAN on the guess card (D-15)', () => {
+  it('a server-confirmed disagreement renders the disagreement line naming the key SAN on the guess card', () => {
     renderReveal({
       guess: 'several',
       verdict: makeVerdict({ correct_guess: true, move_quality: 'good', disagreement: true }),
@@ -1197,7 +1196,7 @@ describe('TrainReveal', () => {
     expect(prose.textContent).toBe("d4 is the engine's first choice, but your move holds up too.");
   });
 
-  it('a verdict without the disagreement field keeps the old copy even when a key is known (D-15)', () => {
+  it('a verdict without the disagreement field keeps the old copy even when a key is known', () => {
     renderReveal({
       guess: 'critical',
       verdict: makeVerdict({ correct_guess: true, move_quality: 'good' }),
@@ -1323,7 +1322,7 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
   });
 
-  // Quick 260803-iv6 / Phase 237: the guess card is inert — it never carries a
+  // The guess card is inert — it never carries a
   // cursor-pointer affordance, with or without prose.
   it('a prose-only guess card (no Also fine) carries no cursor-pointer class', () => {
     renderReveal({
@@ -1335,7 +1334,7 @@ describe('TrainReveal', () => {
     expect(card.className).not.toContain('cursor-pointer');
   });
 
-  // ─── Plan 06: free play is gone, so nothing on the reveal is ever swapped out ──
+  // ─── Free play is gone, so nothing on the reveal is ever swapped out ──
 
   it('the guess card, the Also fine list, the chips and the move list slot render together (a sideline forks in place, nothing swaps)', async () => {
     renderReveal({
@@ -1353,10 +1352,10 @@ describe('TrainReveal', () => {
   });
 });
 
-// Phase 236 (D-14/D-15): the instant path opens the reveal on the server verdict
+// The instant path opens the reveal on the server verdict
 // before the phone grade exists. `gradeResult` is null and `instantGrade`
 // carries the key (and, once the anchor settled, the key line).
-describe('instant-path game-move search (Phase 236)', () => {
+describe('instant-path game-move search', () => {
   beforeEach(() => {
     matchMediaMatches = true;
     revealPuzzle.mockReset();
@@ -1372,7 +1371,7 @@ describe('instant-path game-move search (Phase 236)', () => {
   const KEY_LINE: TrainEngineLine = { moves: ['d2d4', 'd7d5'], evalCp: 30, evalMate: null };
   const soft = { puzzle_type: 'soft' as const, move_quality: 'good' as const };
 
-  it('the grade landing with the same best UCI does not re-dispatch the game-move search (RESEARCH Pitfall 5)', async () => {
+  it('the grade landing with the same best UCI does not re-dispatch the game-move search', async () => {
     revealPuzzle.mockResolvedValue(
       makeReveal({ played_in_game_move_uci: 'g1f3', played_in_game_san: 'Nf3' }),
     );
@@ -1436,12 +1435,12 @@ describe('instant-path game-move search (Phase 236)', () => {
   });
 });
 
-// Phase 229 (D-12): feature events reach window.umami.track through the real
-// analytics module. The exploration exit is gone (plan 06) and the first
+// Feature events reach window.umami.track through the real
+// analytics module. The exploration exit is gone and the first
 // sideline fork is tracked by the board owner (TrainSolveScreen); the post-miss
 // Retry re-submits the solve to the backend (useTrainSession
 // retrySolve), so it is DB-known and stays un-evented.
-describe('TrainReveal feature events (Phase 229)', () => {
+describe('TrainReveal feature events', () => {
   const track = vi.fn();
 
   beforeEach(() => {

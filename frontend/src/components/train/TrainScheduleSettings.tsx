@@ -1,81 +1,70 @@
 /**
  * TrainScheduleSettings — the inline, auto-saving weekly schedule block on
- * the Train start screen (SCHD-01, D-09..D-12, 191-UI-SPEC.md E3/E4). No
- * Save button anywhere: every chip/preset change debounces into exactly one
- * `PUT /train/settings` (via `useTrainSettings`), with an inline
- * "Saved"/"Couldn't save. Try again." indicator.
+ * the Train start screen. No Save button anywhere: every chip/slider change
+ * debounces into exactly one `PUT /train/settings` (via `useTrainSettings`),
+ * with an inline "Saved"/"Couldn't save. Try again." indicator.
  *
- * Renders below the Start/Resume CTA (D-13, UI-SPEC Visual Hierarchy) —
- * deliberately quiet, `text-sm` labels, no Save button. 193 UAT round 2
- * boxed it in the app's standard `Card`/`CardHeader` ("Train schedule")
- * alongside `TrainStreakCard`/`TrainStatsCard`, and moved the completed
- * state's "Next session" line in here — it describes the schedule, so it
+ * Renders below the Start/Resume CTA, deliberately quiet, `text-sm` labels.
+ * It is boxed in the app's standard `Card`/`CardHeader` ("Train schedule")
+ * alongside `TrainStreakCard`/`TrainStatsCard`, and the completed state's
+ * "Next session" line lives in here: it describes the schedule, so it
  * belongs with the pickers that determine it rather than floating above
  * them as loose page text.
  *
- * Restyled (191-06 UAT) to match the game filter panel's own pickers
- * exactly, not just approximate them: "Train on" reuses `ToggleChipButton`
- * (FilterPanel's own multi-select "Time control"/"Platform" pattern,
- * extracted to `@/components/ui/toggle-chip-button` so both call sites share
- * one source of truth instead of two copies of the same class strings).
- * "Puzzles per session" is a single-thumb `Slider` (SEED-179, quick
- * 261002-8xb) with its live value at the right of the label row. Both labels
- * use FilterPanel's own `text-sm text-muted-foreground` treatment (not
- * `font-semibold`) so this block reads as part of the same design language,
- * not a bespoke one.
+ * The pickers match the game filter panel's own: "Train on" reuses
+ * `ToggleChipButton` (FilterPanel's multi-select "Time control"/"Platform"
+ * pattern, in `@/components/ui/toggle-chip-button` so both call sites share
+ * one source of truth). "Puzzles per session" is a single-thumb `Slider`
+ * with its live value at the right of the label row. Both labels use
+ * FilterPanel's own `text-sm text-muted-foreground` treatment (not
+ * `font-semibold`) so this block reads as part of the same design language.
  *
- * Phase 202 Plan 02 (PERM-03/PERM-04, D-06..D-13): a third sibling block adds
- * a master "Remind me to train" `Switch` and a 24-hour `Select`. Toggle-OFF
- * and hour changes ride the SAME debounced-draft/`hasEditedRef` machine as
- * the weekday chips and puzzle presets above — one `PUT`, one indicator.
+ * A third sibling block adds a master "Remind me to train" `Switch` and a
+ * 24-hour `Select`. Toggle-OFF and hour changes ride the SAME
+ * debounced-draft/`hasEditedRef` machine as the weekday chips and the
+ * puzzles-per-session slider above — one `PUT`, one indicator.
  * Toggle-ON is a DELIBERATE, DOCUMENTED EXCEPTION to that pattern: writing
  * `reminderEnabled: true` into the draft synchronously (the way every other
  * control does) risks the debounced `PUT` landing before
  * `Notification.requestPermission()`/`PushManager.subscribe()` resolve,
  * persisting `reminder_enabled = true` server-side with no live subscription
- * — the silent-lie state D-06 exists to rule out. So toggle-ON instead calls
- * `ensureDeviceSubscribed()` (the same routine `TrainReminderButton` calls,
- * D-06's "one code path, two entry points") and only writes the draft, and
- * therefore only enters the debounce, on `status === 'subscribed'`. Do not
- * "fix" this into synchronous consistency with the other controls — that
- * reintroduces the exact bug this design avoids.
+ * — a silent-lie state. So toggle-ON instead calls `ensureDeviceSubscribed()`
+ * (the same routine `useTrainReminderSlot` calls: one code path, two entry
+ * points) and only writes the draft, and therefore only enters the debounce,
+ * on `status === 'subscribed'`. Do not "fix" this into synchronous
+ * consistency with the other controls — that reintroduces the exact bug this
+ * design avoids.
  *
- * Phase 203 Plan 03 (HANDOFF-04): a fourth sibling block is the QR handoff's
- * PERMANENT home in this card — never gated on `reminderEnabled`/
- * `showReminderBlock`. It is the one thing in this component that does NOT
- * ride any save/debounce path at all (it is a pure client-side transform, no
- * settings field involved).
+ * A fourth sibling block is the QR handoff's PERMANENT home in this card —
+ * never gated on `reminderEnabled`/`showReminderBlock`. It is the one thing
+ * in this component that does NOT ride any save/debounce path at all (it is a
+ * pure client-side transform, no settings field involved). It is three
+ * mutually exclusive branches on `isMobile`/`isStandalone`/`canInstall` (all
+ * from `useInstallPrompt`): desktop gets the QR, a mobile browser that can
+ * actually install gets a primary "Install FlawChess" button instead, and
+ * everything else (standalone, or mobile with no live `beforeinstallprompt`,
+ * e.g. iOS) renders NOTHING — structural absence rather than a dead button.
+ * A phone showing a QR that asks the user to scan their own screen, or an
+ * installed PWA offering to install itself again, would be nonsense.
+ * `TrainInstallQr` itself only ever mounts on the desktop branch (see that
+ * component's own docstring).
  *
- * UAT item 5 (post-review fix, 203-REVIEW.md): that block WAS unconditional
- * on device platform too, which meant a phone visiting its own Settings page
- * rendered a QR code asking the user to scan their own screen with the same
- * phone, and an already-installed standalone PWA offered to install itself
- * again. It is now three mutually exclusive branches on `isMobile`/
- * `isStandalone`/`canInstall` (all from `useInstallPrompt`): desktop gets the
- * QR (unchanged), a mobile browser that can actually install gets a primary
- * "Install FlawChess" button instead, and everything else (standalone, or
- * mobile with no live `beforeinstallprompt` — e.g. iOS) renders NOTHING —
- * structural absence, this phase's established fail-safe idiom, rather than
- * a dead button. `TrainInstallQr` itself only ever mounts on the desktop
- * branch now, at both its call sites (see that component's own docstring).
+ * Both the reminder block and the phone section are hidden from guest
+ * accounts. `app.repositories.train_reminder_repository`'s fan-out filters
+ * `User.is_guest.is_(False)` — a guest is never sent a reminder no matter
+ * what this card shows — so an enabled toggle or a QR code promising
+ * reminders would be a silent lie (the UI must never promise something the
+ * backend cannot keep). The rule (no reminder slot, QR block or push prompt
+ * for a guest) therefore extends to this landing card, not only the score
+ * screen. `resolveScheduleCardVisibility` is the single place both `isGuest`
+ * terms live.
  *
- * D-13 (Phase 224): both the reminder block and the phone section are hidden
- * from guest accounts. `app.repositories.train_reminder_repository`'s
- * fan-out filters `User.is_guest.is_(False)` — a guest is never sent a
- * reminder no matter what this card shows — so an enabled toggle or a QR
- * code promising reminders would be a silent lie (the Phase 202 D-06 rule:
- * the UI must never promise something the backend cannot keep). S-3's rule
- * (no reminder slot, QR block or push prompt for a guest) therefore extends
- * to this landing card, not only the score screen.
- * `resolveScheduleCardVisibility` is the single place both `isGuest` terms
- * live.
- *
- * SEED-181 (sketch 006 A): the card is set-once configuration that dominated
- * a phone's height, so it now starts COLLAPSED to its header, which doubles as
- * a disclosure button carrying a one-line summary of the draft ("Mo–Fr · 6
- * puzzles · 16:00"). The save indicator and the completed state's "Next
- * session" line stay visible while collapsed; the controls unmount (all draft
- * state lives in this component, so nothing is lost).
+ * The card is set-once configuration that would dominate a phone's height,
+ * so it starts COLLAPSED to its header, which doubles as a disclosure button
+ * carrying a one-line summary of the draft ("Mo–Fr · 6 puzzles · 16:00").
+ * The save indicator and the completed state's "Next session" line stay
+ * visible while collapsed; the controls unmount (all draft state lives in
+ * this component, so nothing is lost).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
@@ -109,11 +98,11 @@ import { cn } from '@/lib/utils';
 export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
 export const TRAIN_SETTINGS_SAVED_INDICATOR_MS = 2000;
 
-/** SEED-179: the 3/6/9/12/15 presets became a 3-30 slider in steps of 3, for
- * users who want to train longer without a second daily session. Every old
- * preset (and the default 6, `DEFAULT_PUZZLES_PER_SESSION`) sits on this grid,
- * so no stored value needs remapping. The backend's `puzzles_per_session`
- * CHECK stays at 1-50 on purpose: raising the max later is this constant only. */
+/** A 3-30 slider in steps of 3, for users who want to train longer without a
+ * second daily session. The default 6 (`DEFAULT_PUZZLES_PER_SESSION`) and the
+ * older 3/6/9/12/15 presets all sit on this grid, so no stored value needs
+ * remapping. The backend's `puzzles_per_session` CHECK stays at 1-50 on
+ * purpose: raising the max later is this constant only. */
 export const PUZZLES_PER_SESSION_MIN = 3;
 export const PUZZLES_PER_SESSION_MAX = 30;
 export const PUZZLES_PER_SESSION_STEP = 3;
@@ -143,10 +132,8 @@ export const WEEKDAY_CHIPS: readonly WeekdayChip[] = [
 interface Draft {
   weekdayMask: number;
   puzzlesPerSession: number;
-  /** Phase 202 (PERM-01..04, D-09). Pass-through only in Plan 01 — no
-   * controls read/write these yet; Plan 02 adds the toggle + hour picker.
-   * Threaded here now so the seed effect, the debounced save's no-op guard,
-   * and the `save()` payload all stay green once those controls land. */
+  /** Edited by ReminderControls; toggle-ON is written only after a
+   * successful subscribe. */
   reminderEnabled: boolean;
   reminderHour: number;
 }
@@ -160,7 +147,7 @@ type IndicatorState = 'idle' | 'saved' | 'error' | 'reminder-error';
 export interface TrainScheduleSettingsProps {
   /**
    * Called after a save actually persists (not on mount, not on a no-op
-   * re-save of the same values). UAT bug fix (191-06): `Train.tsx` composes
+   * re-save of the same values). `Train.tsx` composes
    * the day's session once on page MOUNT — before the user has a chance to
    * edit this component on the same visit (see `useTrainSession.ts`'s
    * module docstring) — and pressing Start/Resume never re-fetches it. An
@@ -179,12 +166,11 @@ export interface TrainScheduleSettingsProps {
    */
   nextSessionDate?: string;
   /**
-   * D-13 (Phase 224): from `useUserProfile().data` via `TrainStartScreen`,
-   * never `useAuth().user` (FLAWCHESS-64). Not yet consumed in this task —
-   * the next task (D-13) hides the reminder block and the phone/QR section
-   * for a guest, since `train_reminder_repository`'s fan-out filters
-   * `User.is_guest.is_(False)` and an enabled toggle would be a promise the
-   * backend never keeps.
+   * From `useUserProfile().data` via `TrainStartScreen`,
+   * never `useAuth().user` (FLAWCHESS-64). Hides the reminder block and the
+   * phone/QR section for a guest: `train_reminder_repository`'s fan-out
+   * filters `User.is_guest.is_(False)`, so an enabled toggle would be a
+   * promise the backend never keeps.
    */
   isGuest: boolean;
 }
@@ -217,13 +203,12 @@ function scheduleSummary(draft: Draft, showReminder: boolean): string {
  * The card shell, shared by the error and populated bodies so a failed
  * settings fetch still reads as the same "Train schedule" box.
  *
- * 193 UAT round 3: the save indicator moved from the BOTTOM of the card body
- * into the header's right slot (the `RightControls` composition the `Card`
- * docstring sanctions). Down there it was a permanently reserved `min-h-5`
- * slot plus the wrapper's own `gap-4` — ~36px of dead space under the last
- * picker in the idle state, which is all the user ever sees. In the header it
- * costs no vertical space at all and still can't shift the layout when it
- * appears.
+ * The save indicator lives in the header's right slot (the `RightControls`
+ * composition the `Card` docstring sanctions), not at the bottom of the card
+ * body: down there it would need a permanently reserved `min-h-5` slot plus
+ * the wrapper's own `gap-4`, ~36px of dead space under the last picker in the
+ * idle state. In the header it costs no vertical space at all and still
+ * can't shift the layout when it appears.
  */
 interface ScheduleCardShellProps {
   indicator: IndicatorState;
@@ -330,17 +315,16 @@ interface ReminderControlsProps {
   disabled: boolean;
   /** True while `ensureDeviceSubscribed()` is in flight for this toggle. */
   subscribing: boolean;
-  /** `deniedNow || capability.permission === 'denied'` (D-11). */
+  /** `deniedNow || capability.permission === 'denied'`. */
   blocked: boolean;
   onToggle: (checked: boolean) => void;
   onHourChange: (hour: number) => void;
 }
 
 /**
- * The PERM-03/PERM-04 master toggle + hour picker, extracted (like
- * `ScheduleCardShell` above) to keep `TrainScheduleSettings`'s own function
- * body inside CLAUDE.md's nesting/LOC limits. Purely presentational — all
- * async orchestration (D-09's toggle-ON exception) lives in the parent.
+ * The master reminder toggle + hour picker, extracted like
+ * `ScheduleCardShell` above. Purely presentational — all async orchestration
+ * (the toggle-ON exception in the module docstring) lives in the parent.
  */
 function ReminderControls({
   draft,
@@ -354,9 +338,7 @@ function ReminderControls({
 
   return (
     <div className="w-full">
-      {/* UAT item 4 (post-review fix): Switch moved to the LEFT of its label
-          per the operator's UAT feedback — this row was the only reminder
-          control in the app with the toggle on the right; every other
+      {/* The Switch sits to the LEFT of its label: every other
           switch/checkbox control in the codebase reads control-then-label. */}
       <div className="flex items-center gap-2">
         <Switch
@@ -406,9 +388,8 @@ interface PuzzlesPerSessionControlProps {
 }
 
 /**
- * SEED-179: the puzzles-per-session slider with its live value in the label
- * row. Extracted like `ReminderControls` to keep `TrainScheduleSettings`
- * inside the complexity cap. Every drag step calls `onChange` (so the label
+ * The puzzles-per-session slider with its live value in the label
+ * row. Extracted like `ReminderControls`. Every drag step calls `onChange` (so the label
  * tracks the thumb); the parent's debounced save collapses a drag into one
  * `PUT`. Always controlled: while loading, the disabled thumb parks at the
  * minimum rather than switching Radix from uncontrolled to controlled.
@@ -464,7 +445,7 @@ function PuzzlesPerSessionControl({
   );
 }
 
-/** D-13 (Phase 224) resolver inputs — the same signals the component already
+/** Resolver inputs — the same signals the component already
  * reads (`usePushCapability`'s resolved/available flags, `useInstallPrompt`'s
  * mobile/standalone/canInstall) plus `isGuest`. */
 interface ScheduleCardVisibilityInput {
@@ -484,14 +465,11 @@ interface ScheduleCardVisibility {
 }
 
 /**
- * D-13 (Phase 224): the four visibility booleans this card renders on,
- * extracted to a module-level function so `TrainScheduleSettings` gains no
- * complexity from the two new `isGuest` terms — the component measures
- * complexity 15 against the un-baselined cap of 15 (frontend/CLAUDE.md
- * forbids widening it), so the branch must live here, not inline.
+ * The four visibility booleans this card renders on, kept in one
+ * module-level function so the guest gate lives in one place.
  *
  * `showReminderBlock` and `showPhoneSection` are each false whenever
- * `isGuest` is true (D-13/S-3): a guest is never sent a reminder
+ * `isGuest` is true: a guest is never sent a reminder
  * (`train_reminder_repository`'s fan-out filter), so neither the toggle nor
  * the phone/QR install ask may render for one. `showQr` and
  * `showMobileInstallButton` are unchanged — they only ever matter once
@@ -505,10 +483,10 @@ function resolveScheduleCardVisibility({
   isStandalone,
   canInstall,
 }: ScheduleCardVisibilityInput): ScheduleCardVisibility {
-  // D-10/D-12: a clean structural absence, not a disabled placeholder, until
+  // A clean structural absence, not a disabled placeholder, until
   // both feature detection and the VAPID-key query have resolved.
   const showReminderBlock = !isGuest && capabilityResolved && capabilityAvailable;
-  // UAT item 5 (post-review fix): three mutually exclusive branches, never
+  // Three mutually exclusive branches, never
   // more than one rendered. `showQr` and `showMobileInstallButton` decide
   // WHICH content fills the "Reminders work better with FlawChess on your
   // phone" section; `showPhoneSection` decides whether the section (heading
@@ -575,9 +553,9 @@ export function TrainScheduleSettings({
         puzzlesPerSession: debouncedDraft.puzzlesPerSession,
         reminderEnabled: debouncedDraft.reminderEnabled,
         reminderHour: debouncedDraft.reminderHour,
-        // Echo the current server value (Phase 203, D-02) — this debounced
+        // Echo the current server value — this debounced
         // weekday/puzzle-count/reminder save never writes a new intent; only
-        // the iOS install-affordance tap (Plan 04) does.
+        // the iOS install-affordance tap does.
         reminderIntentAt: data.reminder_intent_at,
       },
       {
@@ -600,11 +578,11 @@ export function TrainScheduleSettings({
     };
   }, []);
 
-  // D-11: a per-device block never mutates the account-wide reminder_enabled
-  // (see the toggle handler below and the module docstring's D-06 note).
+  // A per-device block never mutates the account-wide reminder_enabled (see
+  // the toggle handler below and the module docstring's toggle-ON note).
   const blocked = deniedNow || capability.permission === 'denied';
 
-  // D-09 — the one deliberate exception to this file's debounced-draft
+  // The one deliberate exception to this file's debounced-draft
   // pattern; see the module docstring for why. Toggle-OFF and hour changes
   // ride the debounce unmodified via the two handlers that follow.
   const handleReminderToggle = (checked: boolean): void => {
@@ -619,7 +597,7 @@ export function TrainScheduleSettings({
     const { vapidPublicKey } = capability;
     if (vapidPublicKey === null) return;
     setSubscribing(true);
-    // CR-01 backstop: `ensureDeviceSubscribed` catches everything internally,
+    // Backstop: `ensureDeviceSubscribed` catches everything internally,
     // but a rejection escaping it would skip `setSubscribing(false)` and leave
     // every control in this card disabled forever.
     void ensureDeviceSubscribed(vapidPublicKey)
@@ -642,8 +620,8 @@ export function TrainScheduleSettings({
           setDeniedNow(true);
           return;
         }
-        if (result.status === 'dismissed') return; // PERM-02: offer stays standing
-        setIndicator('reminder-error'); // 'error' or 'unsupported', D-13
+        if (result.status === 'dismissed') return; // offer stays standing
+        setIndicator('reminder-error'); // 'error' or 'unsupported'
       });
   };
 
@@ -698,7 +676,7 @@ export function TrainScheduleSettings({
       indicator={indicator}
       open={open}
       onToggle={() => {
-        // Phase 229 D-12: only the opening transition counts as a panel open.
+        // Only the opening transition counts as a panel open.
         if (!open) trackFeature('panel-open', { target: 'train-schedule' });
         setOpen((prev) => !prev);
       }}
@@ -707,10 +685,10 @@ export function TrainScheduleSettings({
     >
       <div className="flex w-full flex-col gap-4">
         {/*
-          Restyled (191-06 UAT) to match the game filter panel exactly:
+          Matches the game filter panel exactly:
           - "Train on" mirrors FilterPanel's multi-select "Time control" —
             the hand-rolled ToggleChipButton grid, not the Radix ToggleGroup.
-          - "Puzzles per session" is a full-width Slider (SEED-179).
+          - "Puzzles per session" is a full-width Slider.
           Both labels use FilterPanel's own `text-sm text-muted-foreground`
           (not font-semibold) and sit at the top-left of a full-width block.
         */}
@@ -746,10 +724,9 @@ export function TrainScheduleSettings({
             onHourChange={handleReminderHourChange}
           />
         )}
-        {/* HANDOFF-04: this section's permanent home in the card — never
-            gated on the reminder toggle state or push capability. UAT item 5
-            (post-review fix): IS gated on device platform, unlike before —
-            see the three-branch comment above `showQr`/
+        {/* This section's permanent home in the card — never gated on the
+            reminder toggle state or push capability, but gated on device
+            platform: see the three-branch comment above `showQr`/
             `showMobileInstallButton`/`showPhoneSection`. */}
         {showPhoneSection && (
           <div className="w-full text-center">

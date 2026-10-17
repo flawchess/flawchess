@@ -1,17 +1,17 @@
-"""Tests for Phase 126/129/239 tactic comparison backend (TACCMP-01/02/03, TACUI-01/05/08).
+"""Tests for the tactic comparison backend.
 
 Coverage plan:
 - test_family_mapping_*                      : FAMILY_TO_MOTIF_INTS taxonomy contract (19 families)
 - test_combinations_request_is_noop          : dropped combinations key expands to no motif ints
-- test_fixed_order_per_tc                    : Phase 239 D-00h, D-02 — 38 bullets per TC, fixed order
-- test_per_100_games_unit                    : Phase 239 D-00h — rates/deltas per 100 games
-- test_below_gate_tc_still_lists_bullets    : Phase 239 D-03 — 12 analyzed games, below_gate with 38 bullets
-- test_significance_gate                     : Phase 239 D-14 — 99% CI on the gap excludes 0
-- test_zone_lookup_uses_each_bullets_tc      : Phase 239 D-08/D-11 — registry band per TC, rapid stopgap
-- test_accepted_viable_entries_*             : Phase 239 plan 07 — accepted registry bands reach the API, no monkeypatch
-- test_blob_pending_games_excluded_from_tactic_population : WR-01 — blob-pending analyzed games excluded from tactic, kept in flaw
-- test_blob_pending_games_excluded_from_tactic_population : WR-01 — blob-pending games out of tactic, kept in flaw
-- test_two_user_isolation                    : T-239-08 — each user sees only their own events
+- test_fixed_order_per_tc                    : 38 bullets per TC, fixed order
+- test_per_100_games_unit                    : rates/deltas per 100 games
+- test_below_gate_tc_still_lists_bullets    : 12 analyzed games, below_gate with 38 bullets
+- test_significance_gate                     : 99% CI on the gap excludes 0
+- test_zone_lookup_uses_each_bullets_tc      : registry band per TC, rapid stopgap
+- test_accepted_viable_entries_*             : accepted registry bands reach the API, no monkeypatch
+- test_blob_pending_games_excluded_from_tactic_population : blob-pending analyzed games excluded from tactic, kept in flaw
+- test_blob_pending_games_excluded_from_tactic_population : blob-pending games out of tactic, kept in flaw
+- test_two_user_isolation                    : each user sees only their own events
 - test_zero_event_family_delta_none          : family with no events -> delta=None
 - test_confidence_gate_chip_field            : tactic_motif=None when confidence < threshold
 """
@@ -77,7 +77,7 @@ async def _seed_game(
 async def _seed_analyzed(session: AsyncSession, *, game: "Game", blobs_done: bool = True) -> None:  # type: ignore[name-defined]
     """Mark the game analyzed (both gates — mirrors test_flaw_comparison.py).
 
-    The tactic population is blob-done games only (WR-01), so blobs_completed_at is
+    The tactic population is blob-done games only, so blobs_completed_at is
     set by default; pass blobs_done=False to seed an analyzed game whose tactic blobs
     are still pending.
     """
@@ -105,7 +105,7 @@ async def _seed_flaw(
 ) -> None:
     from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 
-    # Phase 128: tactic_motif/tactic_confidence renamed to allowed_tactic_motif/allowed_tactic_confidence (D-02).
+    # tactic_motif/tactic_confidence renamed to allowed_tactic_motif/allowed_tactic_confidence.
     await bulk_insert_game_flaws(
         session,
         [
@@ -177,21 +177,17 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 1 — FAMILY_TO_MOTIF_INTS assertions (pure unit tests, no DB)
+# FAMILY_TO_MOTIF_INTS assertions (pure unit tests, no DB)
 # ---------------------------------------------------------------------------
 
 
 def test_family_mapping_ten_families() -> None:
     """FAMILY_TO_MOTIF_INTS has 10 canonical + 6 tier-3 + 3 move-type families = 19.
 
-    Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (deflection, intermezzo,
-    interference, clearance, capturing_defender) as filterable families, expanding the
-    taxonomy from 10 to 15. Phase 133 (plan 133-02) added attraction and sacrifice (15 → 17).
-    Quick 260623 added the move-type families en_passant + under_promotion (17 → 19) after
-    they unsuppressed at P=1.000 on the Phase-134 expanded fixture. promotion (28) was then
-    surfaced when D-09 was reversed (19 → 20) — perfect-precision residual move-type motif,
-    sibling of under_promotion. Phase 221 plan 06 (D-07) then REMOVED "clearance" (20 → 19)
-    — the real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
+    The tier-3 families are deflection, intermezzo, interference, capturing_defender,
+    attraction and sacrifice. The move-type families are en_passant, under_promotion
+    and promotion (perfect-precision residual motifs). "clearance" is not mapped:
+    the real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
     surviving rows, below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
@@ -207,17 +203,15 @@ def test_family_mapping_ten_families() -> None:
         "trapped_piece",
         "hanging",
         "mate",
-        # Tier-3 "Advanced" families (Quick 260623-6pd). "clearance" REMOVED
-        # (Phase 221 plan 06, D-07 suppression).
+        # Tier-3 "Advanced" families. "clearance" is not mapped (suppressed).
         "deflection",
         "intermezzo",
         "interference",
         "capturing_defender",
-        # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
+        # attraction + sacrifice unsuppressed
         "attraction",
         "sacrifice",
-        # Move-type families (Quick 260623): en-passant + under-promotion; promotion added
-        # when D-09 was reversed.
+        # Move-type families: en-passant + under-promotion + promotion
         "en_passant",
         "under_promotion",
         "promotion",
@@ -228,10 +222,10 @@ def test_family_mapping_ten_families() -> None:
 def test_family_mapping_excludes_suppressed_tier3() -> None:
     """self-interference (14) and clearance (15) are unmapped among the tier-3 ints.
 
-    attraction (10) and sacrifice (17) were unsuppressed in Phase 133 (plan 133-02) and are
-    now mapped as "Advanced" families. self-interference (14) still has no lichess theme
-    equivalent and 0 TP — it stays unmapped. clearance (15) JOINED it in Phase 221 plan 06
-    (D-07): the real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
+    attraction (10) and sacrifice (17) are unsuppressed and mapped as "Advanced"
+    families. self-interference (14) has no lichess theme
+    equivalent and 0 TP — it stays unmapped. clearance (15) is unmapped too:
+    the real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
     surviving rows, below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
@@ -245,7 +239,7 @@ def test_family_mapping_excludes_suppressed_tier3() -> None:
 
 
 def test_family_mapping_covers_selected_motifs() -> None:
-    """Each new family maps to its correct int(s) (Plan 04 taxonomy contract)."""
+    """Each new family maps to its correct int(s) (taxonomy contract)."""
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     assert FAMILY_TO_MOTIF_INTS["fork"] == [1]
@@ -259,18 +253,18 @@ def test_family_mapping_covers_selected_motifs() -> None:
     assert FAMILY_TO_MOTIF_INTS["trapped_piece"] == [26]
     # Mate set unchanged: ints 7-8, 18-24
     assert set(FAMILY_TO_MOTIF_INTS["mate"]) == {7, 8, 18, 19, 20, 21, 22, 23, 24}
-    # Tier-3 "Advanced" families (Quick 260623-6pd). "clearance" (15) REMOVED
-    # in Phase 221 plan 06 (D-07 suppression) — see test_family_mapping_
+    # Tier-3 "Advanced" families. "clearance" (15) REMOVED
+    # (suppressed) — see test_family_mapping_
     # excludes_suppressed_tier3.
     assert FAMILY_TO_MOTIF_INTS["deflection"] == [9]
     assert FAMILY_TO_MOTIF_INTS["intermezzo"] == [11]
     assert FAMILY_TO_MOTIF_INTS["interference"] == [13]
     assert "clearance" not in FAMILY_TO_MOTIF_INTS
     assert FAMILY_TO_MOTIF_INTS["capturing_defender"] == [16]
-    # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
+    # attraction + sacrifice unsuppressed
     assert FAMILY_TO_MOTIF_INTS["attraction"] == [10]
     assert FAMILY_TO_MOTIF_INTS["sacrifice"] == [17]
-    # Move-type families (Quick 260623): en-passant (27) + under-promotion (29)
+    # Move-type families: en-passant (27) + under-promotion (29)
     assert FAMILY_TO_MOTIF_INTS["en_passant"] == [27]
     assert FAMILY_TO_MOTIF_INTS["under_promotion"] == [29]
 
@@ -283,21 +277,21 @@ def test_family_mapping_fork() -> None:
 
 
 def test_family_mapping_has_nineteen_families() -> None:
-    """The payload is 19 families x 2 sides = 38 bullets per TC (Phase 239 D-00h)."""
+    """The payload is 19 families x 2 sides = 38 bullets per TC."""
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     assert len(FAMILY_TO_MOTIF_INTS) == 19
 
 
 # ---------------------------------------------------------------------------
-# get_tactic_comparison service tests (Phase 239: per TC, per 100 games, fixed order)
+# get_tactic_comparison service tests (per TC, per 100 games, fixed order)
 # ---------------------------------------------------------------------------
 
 
 def test_combinations_request_is_noop() -> None:
     """A request for the dropped 'combinations' family key expands to zero motif ints (no-op).
 
-    T-129-10: unknown/dropped family keys must yield an empty int list so the
+    unknown/dropped family keys must yield an empty int list so the
     EXISTS expansion emits no clause (never a KeyError or unscoped query).
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
@@ -315,7 +309,7 @@ def test_combinations_request_is_noop() -> None:
 
 @pytest.mark.asyncio
 async def test_fixed_order_per_tc(db_session: AsyncSession) -> None:
-    """25 blitz games, one missed fork: tcs == [blitz] with 38 bullets in fixed order (D-00h)."""
+    """25 blitz games, one missed fork: tcs == [blitz] with 38 bullets in fixed order."""
     from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
     from app.services.tactic_delta_zones import TACTIC_FAMILIES, tactic_delta_zone
     from app.services.tactic_detector import TacticMotifInt
@@ -351,11 +345,11 @@ async def test_fixed_order_per_tc(db_session: AsyncSession) -> None:
     assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
     assert fork_missed.you_events == 1
     assert fork_missed.opp_events == 0
-    # 1 event over 25 games: 100 / 25 = 4.0 per 100 games (D-00h).
+    # 1 event over 25 games: 100 / 25 = 4.0 per 100 games.
     assert fork_missed.you_rate == pytest.approx(4.0)
     assert fork_missed.opp_rate == pytest.approx(0.0)
     assert fork_missed.delta == pytest.approx(4.0)
-    # has_zone mirrors the registry (plan 239-07 populated the 9 accepted viable entries).
+    # has_zone mirrors the registry.
     for bullet in blitz.bullets:
         band = tactic_delta_zone(bullet.family, bullet.orientation, "blitz")
         assert bullet.has_zone is (band is not None)
@@ -422,7 +416,7 @@ async def test_zero_event_family_delta_none(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_below_gate_tc_still_lists_bullets(db_session: AsyncSession) -> None:
-    """A TC with 12 analyzed games is listed below_gate with 38 populated bullets (D-03)."""
+    """A TC with 12 analyzed games is listed below_gate with 38 populated bullets."""
     from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
     from app.services.tactic_detector import TacticMotifInt
 
@@ -459,7 +453,7 @@ async def test_below_gate_tc_still_lists_bullets(db_session: AsyncSession) -> No
 async def test_blob_pending_games_excluded_from_tactic_population(
     db_session: AsyncSession,
 ) -> None:
-    """An analyzed game without tactic blobs is not a tactic game (WR-01).
+    """An analyzed game without tactic blobs is not a tactic game.
 
     Tactic motifs are NULL while a flaw blob is pending, so such a game would count as a
     false zero-tactic game. It must be excluded from the tactic analyzed_n and rates but
@@ -504,7 +498,7 @@ async def test_blob_pending_games_excluded_from_tactic_population(
     assert flaw.tcs[0].analyzed_n == blob_done + blob_pending
 
 
-# D-14 significance fixture: 40 analyzed games. One missed fork leaves the 99% CI on the
+# Significance fixture: 40 analyzed games. One missed fork leaves the 99% CI on the
 # per-game gap covering 0; forks in 21 of the 40 games push it clear of 0.
 _SIG_GAMES = 40
 _SIG_FEW_FORKS = 1
@@ -513,7 +507,7 @@ _SIG_MANY_FORKS = 21
 
 @pytest.mark.asyncio
 async def test_significance_gate(db_session: AsyncSession) -> None:
-    """significant is the 99% CI on the gap excluding 0 (D-14, replaces the D-12 count rule)."""
+    """significant is the 99% CI on the gap excluding 0."""
     from app.services.library_service import get_tactic_comparison
     from app.services.tactic_detector import TacticMotifInt
 
@@ -601,7 +595,7 @@ async def test_zone_lookup_uses_each_bullets_tc(
 async def test_accepted_viable_entries_report_the_registry_band_end_to_end(
     db_session: AsyncSession,
 ) -> None:
-    """No monkeypatch: a blitz user's viable bullets carry the accepted rapid band (D-08/D-09/D-11).
+    """No monkeypatch: a blitz user's viable bullets carry the accepted rapid band.
 
     Unviable bullets report has_zone False and a zero-width 0.0 band.
     """
@@ -633,7 +627,7 @@ async def test_accepted_viable_entries_report_the_registry_band_end_to_end(
 
 @pytest.mark.asyncio
 async def test_two_user_isolation(db_session: AsyncSession) -> None:
-    """Each user's response carries only that user's counts (T-239-08)."""
+    """Each user's response carries only that user's counts."""
     from app.services.library_service import get_tactic_comparison
     from app.services.tactic_detector import TacticMotifInt
 
@@ -727,7 +721,7 @@ async def test_confidence_gate_chip_field(db_session: AsyncSession) -> None:
     # Find the low-confidence flaw (ply=2)
     low_conf_flaw = next((f for f in flaws if f.ply == 2), None)
     assert low_conf_flaw is not None
-    # Phase 128 D-07: tactic_motif renamed to allowed_tactic_motif on FlawListItem schema.
+    # tactic_motif renamed to allowed_tactic_motif on FlawListItem schema.
     assert low_conf_flaw.allowed_tactic_motif is None  # below threshold → None
 
     # Find the high-confidence flaw (ply=4)

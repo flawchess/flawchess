@@ -1,16 +1,16 @@
 """Feedback-ask repository: active-day count and the atomic prompt_state transitions.
 
-SEED-191 #8: every state change is ONE guarded ``UPDATE ... RETURNING`` on
+Every state change is ONE guarded ``UPDATE ... RETURNING`` on
 ``users.prompt_state`` (never a Python read-modify-write), so two open tabs cannot
 lose updates; Postgres re-evaluates the WHERE guard after the row lock
 (READ COMMITTED), which is what makes two concurrent same-day views count once.
 
 The transitions are raw ``text()`` statements because the CASE-heavy
-``jsonb_build_object`` logic was verified in exactly this shape against Postgres 18
-(234-RESEARCH.md "Verified transition SQL"). Rules that keep them working:
+``jsonb_build_object`` logic was verified in exactly this shape against Postgres 18.
+Rules that keep them working:
 
 * Every bind is CAST-typed: asyncpg cannot infer the type of an untyped parameter
-  inside ``jsonb_build_object`` (IndeterminateDatatypeError, RESEARCH Pitfall 4).
+  inside ``jsonb_build_object`` (IndeterminateDatatypeError).
   Dates travel as ISO strings (``CAST(:today AS text)``), never as ``date`` objects.
 * Never bind Python ``None`` into the JSONB (it would write a JSON ``null``); every
   extracted value is wrapped in ``coalesce``.

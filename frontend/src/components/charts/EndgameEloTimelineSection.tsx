@@ -1,5 +1,5 @@
 /**
- * Phase 87.6 — Endgame ELO Timeline section.
+ * Endgame ELO Timeline section.
  *
  * Three-line weekly timeline per (platform, time_control) combo plus one
  * signed band per combo:
@@ -8,27 +8,21 @@
  *   - dotted fine stroke: Non-Endgame ELO (actual ELO − spread/2)
  *   - signed band: green when Endgame ELO >= Non-Endgame ELO, red when below
  *
- * Phase 57.1 additions (carried forward):
- *   - Muted volume bars at the bottom ~20% of the chart canvas showing endgame
- *     games per ISO week summed across currently-visible combos.
- *   - Tooltip gains a "Games this week: N (visible combos)" top line.
+ * Also:
+ *   - Muted volume bars at the bottom ~20% of the chart canvas showing all games
+ *     (endgame + non-endgame) per ISO week, summed across currently-visible combos.
+ *   - Tooltip has a "Games this week: N (visible combos)" top line.
  *
- * Phase 87.6 amendment (2026-05-17): the earlier 87.6 per-side FIDE Performance
- * Rating mapping is replaced by a logistic stretch anchored on Actual ELO:
+ * Endgame/Non-Endgame ELO are a logistic stretch anchored on Actual ELO:
  *     spread = 400 · log10((s_E / (1 − s_E)) / (s_N / (1 − s_N)))
  *     endgame_elo     = actual_elo + spread / 2
  *     non_endgame_elo = actual_elo − spread / 2
- * The midpoint property holds exactly: `endgame_elo + non_endgame_elo ==
- * 2 · actual_elo` for every point. UAT against prod showed the PR-direct
- * mapping violated this invariant in ~88% of weekly points.
- * See .planning/notes/endgame-elo-logistic-anchored.md for derivation.
+ * So `endgame_elo + non_endgame_elo == 2 · actual_elo` for every point. Don't map
+ * each side to a performance rating, which breaks that invariant.
  *
- * Recharts UAT pitfall (Phase 68, 260424-pc6): every <Area> and <Line> for
- * the chart must be a DIRECT child of <ComposedChart> (not inside <g> or
- * <React.Fragment>). Recharts' `findAllByType` in `generateCategoricalChart`
- * only inspects direct children's `type.displayName` — wrapping hides them
- * from the scan, so the series never registers with the chart axes and no
- * <path> is emitted. The flatMap contract here guarantees direct children.
+ * Every <Area> and <Line> must be a DIRECT child of <ComposedChart> (not inside
+ * <g> or <React.Fragment>), or the series does not register and no <path>
+ * renders. The flatMap here guarantees direct children.
  */
 
 import { useState, useCallback, useMemo, useEffect, useId } from 'react';
@@ -99,9 +93,8 @@ function getComboLabel(combo_key: string): string {
   return COMBO_LABELS[combo_key as EloComboKey] ?? combo_key;
 }
 
-// 260530-pll: replaced the old active-weeks/top-1-by-games heuristic with a
-// primary-TC heuristic (the TC the user plays most).
-// All combos whose time_control equals the primary TC are visible by default
+// Primary-TC heuristic (the TC the user plays most):
+// all combos whose time_control equals the primary TC are visible by default
 // (both platforms when both were played). Other-TC combos start hidden.
 //
 // Fallback: if computePrimaryTc returns null (no TC clears MIN_GAMES_PER_TC_CARD),
@@ -150,10 +143,10 @@ export function EndgameEloTimelineSection({
   const isMobile = useIsMobile();
   // One Set keyed by combo_key — toggles ALL four chart elements (3 Lines + 1 Area) of
   // a combo as a unit. The hide={isHidden} prop on each element uses the same lookup.
-  // Seeded from `computeDefaultHidden(data.combos)` so rarely-played combos start
-  // hidden; React's "adjust state during render" pattern (below) resets the default
-  // whenever the combo set changes (user picked different filters, new data
-  // arrived). User toggles within a single dataset are preserved because the
+  // Seeded from `computeDefaultHiddenByPrimaryTc(data.combos)` so combos outside the
+  // primary time control start hidden; React's "adjust state during render" pattern
+  // (below) resets the default whenever the combo set changes (user picked
+  // different filters, new data arrived). User toggles within a single dataset are preserved because the
   // signature only changes when the underlying combo list does.
   const comboSignature = useMemo(
     () => (data?.combos ?? []).map((c) => c.combo_key).sort().join('|'),
@@ -235,7 +228,7 @@ export function EndgameEloTimelineSection({
           // per_week_total_games (endgame + non-endgame) drives the volume bars
           // and tooltip count — the chart plots BOTH Endgame ELO and Non-Endgame
           // ELO, so total weekly activity is what feeds both lines. Matches the
-          // Endgame Score Gap over Time chart's bars (UAT 2026-05-17).
+          // Endgame Score Gap over Time chart's bars.
           row[`${combo.combo_key}_per_week_games`] = pt.per_week_total_games;
           row[`${combo.combo_key}_band`] = [
             Math.min(pt.endgame_elo, pt.non_endgame_elo),
@@ -248,17 +241,15 @@ export function EndgameEloTimelineSection({
     });
   }, [allDates, data?.combos]);
 
-  // Volume bars: per-row aggregate of per_week_total_games (endgame +
-  // non-endgame) across currently-visible combos. Recomputes on legend toggle
-  // so hidden combos are excluded from the sum (CONTEXT D-09). Pre-UAT
-  // 2026-05-17 this used per_week_endgame_games and so undercounted the games
-  // feeding the Non-Endgame ELO line; matches the Endgame Score Gap over Time
-  // chart's bars now.
+  // Volume bars: per-row sum of per_week_total_games (endgame + non-endgame) across
+  // visible combos, recomputed on legend toggle so hidden combos are excluded. Both
+  // ELO lines are fed by all weekly games, matching the Endgame Score Gap over Time
+  // bars.
   //
   // Explicit return type keeps the Record<string, ...> index signature alive
   // after the spread — without it TypeScript narrows to `{ per_week_total_visible }`
   // and the tooltip's per-combo lookups lose their typing.
-  const barChartData = useMemo<
+  const chartDataWithVolume = useMemo<
     Array<Record<string, string | number | [number, number] | undefined> & { per_week_total_visible: number }>
   >(() => {
     return chartData.map((row) => {
@@ -273,15 +264,15 @@ export function EndgameEloTimelineSection({
   }, [chartData, data?.combos, hiddenKeys]);
 
   // Bar Y-axis envelope. domain={[0, barMax * 5]} pins the tallest bar to the
-  // bottom 20% of the chart canvas (Pattern 3 in 57.1-RESEARCH.md).
+  // bottom 20% of the chart canvas.
   const barMax = useMemo(() => {
     let m = 0;
-    for (const row of barChartData) {
+    for (const row of chartDataWithVolume) {
       const v = row.per_week_total_visible;
       if (typeof v === 'number' && v > m) m = v;
     }
     return Math.max(m, 1);
-  }, [barChartData]);
+  }, [chartDataWithVolume]);
 
   // Per-combo gradient stops for the signed band. Recomputes when combos change.
   // signedBandGradient is a pure function — O(N) per combo, cached via useMemo.
@@ -301,7 +292,7 @@ export function EndgameEloTimelineSection({
     return out;
   }, [data?.combos]);
 
-  // Phase 87.6 amendment: popover copy follows CLAUDE.md popover minimalism
+  // Popover copy follows CLAUDE.md popover minimalism
   // (WHAT + sign convention only; no jargon, no caveats). Minimum text-sm.
   const infoPopover = (
     <InfoPopover
@@ -425,14 +416,14 @@ export function EndgameEloTimelineSection({
             type="button"
             onClick={() => {
               handleLegendClick(combo.combo_key);
-              // A hidden series becomes shown (on), a shown one hidden (off). No combo key (D-04).
+              // A hidden series becomes shown (on), a shown one hidden (off). No combo key.
               trackFeature('toggle', { target: 'elo-timeline-legend', value: onOff(isHidden) });
             }}
             className={`inline-flex min-w-0 items-center gap-1.5 cursor-pointer ${isHidden ? 'opacity-50 line-through' : ''}`}
             data-testid={`endgame-elo-legend-${combo.combo_key}`}
             aria-pressed={!isHidden}
           >
-            {/* Single bright swatch — all three PR/Actual lines use colors.bright. */}
+            {/* Single bright swatch — all three ELO lines use colors.bright. */}
             <span
               className="h-2 w-2 shrink-0 rounded-[2px]"
               style={{ backgroundColor: colors.bright }}
@@ -464,7 +455,7 @@ export function EndgameEloTimelineSection({
           data-testid="endgame-elo-timeline-chart"
         >
           <ComposedChart
-            data={barChartData}
+            data={chartDataWithVolume}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
             {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
@@ -478,9 +469,9 @@ export function EndgameEloTimelineSection({
               tick={{ fontSize: 12 }}
               width={44}
             />
-            {/* Phase 57.1: hidden right Y-axis dedicated to volume bars.
+            {/* Hidden right Y-axis dedicated to volume bars.
                 domain={[0, barMax * 5]} pins the tallest bar to the bottom 20%
-                of the chart canvas (Pattern 3 in 57.1-RESEARCH.md). */}
+                of the chart canvas. */}
             <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * 5]} />
             <ChartTooltip
               content={({ active, label }) => {
@@ -488,7 +479,7 @@ export function EndgameEloTimelineSection({
                 const visibleCombos = data.combos.filter(
                   (c) => !hiddenKeys.has(c.combo_key),
                 );
-                const dateRow = barChartData.find((r) => r.date === (label as string));
+                const dateRow = chartDataWithVolume.find((r) => r.date === (label as string));
                 if (!dateRow) return null;
                 const perWeekTotal =
                   (dateRow.per_week_total_visible as number | undefined) ?? 0;
@@ -553,9 +544,9 @@ export function EndgameEloTimelineSection({
                 glyph + label per gap in allDates that exceeds INACTIVITY_GAP_THRESHOLD_DAYS.
                 Placed BEFORE <Bar> so annotations sit behind the data series in SVG z-order.
                 Uses yAxisId="elo" (the named ELO axis for this chart — not "value").
-                x must exactly match a value from allDates (Recharts Pitfall 1). */}
+                x must exactly match a value from allDates. */}
             {inactivityGapReferenceLines({ dates: allDates, yAxisId: 'elo' })}
-            {/* Phase 57.1: muted volume bars bound to the hidden bars axis. */}
+            {/* Muted volume bars bound to the hidden bars axis. */}
             <Bar
               yAxisId="bars"
               dataKey="per_week_total_visible"
@@ -587,12 +578,8 @@ export function EndgameEloTimelineSection({
                 );
               })}
             </defs>
-            {/* flatMap (NOT React.Fragment) — Recharts 2.15.x traverses React.Children
-                to discover <Line> and <Area> instances, and Fragment wrappers are
-                historically unreliable inside chart children. A flat array ensures
-                every series element is a direct child of <ComposedChart>.
-                Phase 57.1: every series gains yAxisId="elo" so it binds to the
-                named Elo axis.
+            {/* flatMap, not React.Fragment: every series element must be a direct
+                child of <ComposedChart>. Every series binds to the named "elo" axis.
                 Document order = SVG z-order: Area (band, lowest) → fine Endgame ELO
                 Line → fine Non-Endgame ELO Line → bold Actual ELO Line (top). */}
             {data.combos.flatMap((combo) => {
@@ -613,9 +600,9 @@ export function EndgameEloTimelineSection({
                   isAnimationActive={false}
                   legendType="none"
                 />,
-                // 2. Fine Endgame ELO line (PR on endgame games) — dashed
-                //    UAT 2026-05-17: dashed vs dotted distinguishes the two
-                //    PR lines for users (combo color is shared with Actual ELO).
+                // 2. Fine Endgame ELO line (Actual ELO + spread/2) — dashed
+                //    Dashed vs dotted distinguishes the Endgame and Non-Endgame
+                //    lines (combo color is shared with Actual ELO).
                 <Line
                   yAxisId="elo"
                   key={`${combo.combo_key}_endgame_elo`}
@@ -631,7 +618,7 @@ export function EndgameEloTimelineSection({
                   isAnimationActive={false}
                   legendType="none"
                 />,
-                // 3. Fine Non-Endgame ELO line (PR on non-endgame games) — dotted
+                // 3. Fine Non-Endgame ELO line (Actual ELO − spread/2) — dotted
                 <Line
                   yAxisId="elo"
                   key={`${combo.combo_key}_non_endgame_elo`}

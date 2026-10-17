@@ -1,6 +1,6 @@
 /**
  * maiaWorkerErrors — shared, bounded Sentry classification for Maia Worker
- * failures (quick 260729-sod, FIX 2).
+ * failures.
  *
  * Both `useMaiaEngine.ts` and `maiaQueue.ts` used to do
  * `new Error(\`Maia queue worker error: ${msg.message}\`)` — embedding the raw
@@ -31,10 +31,10 @@ export type MaiaFailureKind = 'oom' | 'load' | 'inference';
 export type MaiaErrorSource = 'maia-worker' | 'maia-queue-worker';
 
 /**
- * SEED-195: how the failing Maia worker was spawned. `webgpu` = WebGPU
+ * How the failing Maia worker was spawned. `webgpu` = WebGPU
  * adapter found; `auto-wasm` = no adapter, straight to wasm;
  * `webgpu-failed-wasm` = pinned to wasm after a WebGPU session failed in this
- * page session; `ios-wasm` = the iOS/iPadOS CPU shape (SEED-158).
+ * page session; `ios-wasm` = the iOS/iPadOS CPU shape.
  */
 export type MaiaSpawnPath = 'webgpu' | 'auto-wasm' | 'webgpu-failed-wasm' | 'ios-wasm';
 
@@ -98,9 +98,9 @@ export function classifyMaiaWorkerError(rawMessage: string): MaiaFailureKind {
 export class MaiaWorkerError extends Error {
   /**
    * The classified bucket, or `'unsupported'` for the WASM-SIMD probe
-   * failure — that one is reported by `EngineReadyGate`'s `unsupported`
-   * capture (which carries the device context) rather than by the host, but
-   * it is reported, so downstream waiters must stay silent for it too.
+   * failure — that one is reported by `engineAssetProgress`'s
+   * `markEngineAssetsUnsupported` (with the device context) rather than by the
+   * host, but it is reported, so downstream waiters must stay silent for it too.
    */
   readonly kind: MaiaFailureKind | 'unsupported';
 
@@ -121,9 +121,8 @@ export function isReportedMaiaWorkerError(reason: unknown): reason is MaiaWorker
 /**
  * Best-effort device snapshot for memory-related failure triage. Read
  * defensively — `navigator.deviceMemory` is missing in Firefox/Safari and this
- * must never throw regardless of which fields a given browser omits. Lived in
- * `EngineReadyGate` until the gate stopped re-reporting worker failures; it
- * now rides on the canonical worker capture so no triage data is lost.
+ * must never throw regardless of which fields a given browser omits. It rides on
+ * the canonical worker capture so no triage data is lost.
  */
 export function readDeviceContext(numThreads?: number | null): Record<string, string | number> {
   const context: Record<string, string | number> = {};
@@ -143,7 +142,7 @@ export function readDeviceContext(numThreads?: number | null): Record<string, st
   } catch {
     // best-effort only
   }
-  // Phase 219 (D-08/D-10): the wasm thread count in effect when a failure
+  // The wasm thread count in effect when a failure
   // fired, alongside hardwareConcurrency above — omitted (not `null`) when
   // the caller has no value, so existing callers (EngineReadyGate.tsx) that
   // never pass this argument keep an unchanged context shape.
@@ -158,9 +157,9 @@ export interface CaptureMaiaWorkerErrorOptions {
   source: MaiaErrorSource;
   /** Active execution provider when known, `null` if the failure fired pre-`ready`. */
   backend: 'webgpu' | 'wasm' | null;
-  /** Phase 219 (D-08/D-10): the wasm thread count in effect when the failure fired, `null`/absent if the failure fired pre-`ready` (never called for `maia-queue-worker`, which does not report this). */
+  /** The wasm thread count in effect when the failure fired, `null`/absent if the failure fired pre-`ready` (never called for `maia-queue-worker`, which does not report this). */
   numThreads?: number | null;
-  /** SEED-195: how the failing worker was spawned, `null`/absent when unknown. */
+  /** How the failing worker was spawned, `null`/absent when unknown. */
   spawnPath?: MaiaSpawnPath | null;
 }
 
@@ -187,7 +186,7 @@ export function captureMaiaWorkerError(
     contexts: {
       maia: { rawMessage },
       engine_device: readDeviceContext(opts.numThreads),
-      // SEED-195: live Stockfish wasm instances at failure time, to test the
+      // Live Stockfish wasm instances at failure time, to test the
       // "per-page wasm budget already spent" theory for the Mac Safari OOM.
       engine_workers: readLiveEngineWorkers(),
     },

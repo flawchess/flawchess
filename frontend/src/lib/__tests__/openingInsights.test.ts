@@ -1,8 +1,8 @@
 /**
  * Tests for openingInsights.ts utilities.
  *
- * Phase 112 (D-04): formatMoveNotation extracted as a shared primitive;
- * formatCandidateMove now delegates to it. Both are tested here.
+ * formatMoveNotation is the shared primitive;
+ * formatCandidateMove delegates to it. Both are tested here.
  */
 
 import { describe, expect, it } from 'vitest';

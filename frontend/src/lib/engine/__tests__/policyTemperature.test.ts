@@ -1,12 +1,12 @@
 /**
- * policyTemperature.ts unit tests (Phase 159 D-06/D-07).
+ * policyTemperature.ts unit tests.
  *
  * Covers:
  * - Direction: T>1 flattens (reduces the top move's share, raises the tail's
  *   share); T<1 sharpens (raises the top move's share).
  * - T=1 identity: applying the transform at the default temperature leaves
  *   the RAW probability values unchanged (the runtime no-op is a caller-side
- *   short-circuit, per Pitfall 1 — this test proves the underlying math is
+ *   short-circuit — this test proves the underlying math is
  *   ALSO a true identity at T=1, independent of that short-circuit).
  * - Renormalization: output always sums to 1 (within floating-point
  *   tolerance) for any positive-mass input, at any temperature.
@@ -33,7 +33,7 @@ function sum(policy: Record<string, number>): number {
 }
 
 describe('DEFAULT_POLICY_TEMPERATURE', () => {
-  it('is exactly 1 (strict equality — Pitfall 7)', () => {
+  it('is exactly 1 (strict equality)', () => {
     expect(DEFAULT_POLICY_TEMPERATURE).toBe(1);
   });
 });

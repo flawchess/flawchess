@@ -1,6 +1,6 @@
 /**
  * trainRevealCache — sessionStorage cache of a solved Train puzzle's full
- * solution state (190.1 UAT round 5).
+ * solution state.
  *
  * Written when the user leaves the reveal via the Analyze deep link, so the
  * browser back button lands on the SAME solved reveal instead of the start
@@ -16,7 +16,7 @@
  * session and drops mismatches. All fields are plain JSON-serializable data
  * (`GradeResult`/`TrainEngineLine` are UCI strings and numbers).
  *
- * Phase 237: the entry also carries the reveal move tree (`revealTree`, UCI
+ * The entry also carries the reveal move tree (`revealTree`, UCI
  * paths) so Back restores the focused chip, the sidelines and the shown node.
  * That field is validated on its own and dropped when malformed.
  */
@@ -39,19 +39,19 @@ export interface CachedTrainReveal {
   sessionId: number;
   puzzle: TrainPuzzle;
   verdict: SolveResponse;
-  /** Phase 222 UAT round 4: the persona that spoke the verdict, so the
+  /** The persona that spoke the verdict, so the
    * restored reveal shows the same bot instead of recasting. Optional: an
    * entry written before this field existed simply recasts. */
   verdictBotId?: PersonaId;
   guess: Guess;
   playedMoveUci: string;
   gradeResult: GradeResult;
-  /** Phase 233: the review totals already flushed for this reveal, so the
+  /** The review totals already flushed for this reveal, so the
    * restored reveal continues ONE review timer from exactly what the row
    * holds. Optional: an entry written before this field existed starts a
    * fresh timer. */
   reviewTelemetry?: ReviewTelemetrySnapshot;
-  /** Phase 237: the focused chip, every sideline and the exact node the board was
+  /** The focused chip, every sideline and the exact node the board was
    * on, as UCI paths (not node ids, which differ across async rebuilds). Optional:
    * an entry written by an older bundle restores at the puzzle position with You
    * focused, and a malformed field is dropped on read (never the whole entry). */
@@ -68,7 +68,7 @@ export function saveTrainRevealCache(cached: CachedTrainReveal): void {
 }
 
 /**
- * Phase 233: rewrite `reviewTelemetry` of the cached reveal, only when it
+ * Rewrite `reviewTelemetry` of the cached reveal, only when it
  * belongs to this (session, position). Update-only, never creates an entry, so
  * a late write can never resurrect a reveal the loop already cleared.
  */
@@ -88,7 +88,7 @@ export function readTrainRevealCache(): CachedTrainReveal | null {
     if (raw === null) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!isCachedTrainReveal(parsed)) return null;
-    // T-237-16: a malformed tree snapshot costs only itself; the rest of the
+    // A malformed tree snapshot costs only itself; the rest of the
     // entry still restores (at the puzzle position with You focused).
     if (parsed.revealTree !== undefined && !isRevealTreeSnapshot(parsed.revealTree)) {
       const stripped: CachedTrainReveal = { ...parsed };
@@ -112,8 +112,8 @@ export function clearTrainRevealCache(): void {
 /** Shallow shape check — enough to reject corrupt/foreign payloads without
  * re-validating every nested field the compiler already typed at write time.
  *
- * SEED-119: `verdict.move_quality` (a string on every post-tiering entry) is
- * checked specifically to reject a pre-SEED-119 cache entry, whose `verdict`
+ * `verdict.move_quality` (a string on every post-tiering entry) is
+ * checked specifically to reject a cache entry written before tiered scoring, whose `verdict`
  * has no `move_quality` field at all — such an entry lands the back button
  * on the start screen, the module's already-documented best-effort fallback.
  * This nested check exists ONLY to catch that one shape drift; it is not a
@@ -158,7 +158,7 @@ function isOptionalCommittedPaths(value: unknown): boolean {
 
 /** Shape + cap check of a persisted tree snapshot. Paths are replayed through
  * chess.js by the tree hook (an illegal move stops the graft), and the snapshot
- * never feeds grading, scoring or the solve POST (T-237-16). */
+ * never feeds grading, scoring or the solve POST. */
 function isRevealTreeSnapshot(value: unknown): value is RevealTreeSnapshot {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;

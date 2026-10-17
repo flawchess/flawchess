@@ -1,9 +1,9 @@
 /**
  * playStyle — pure constants and derivations for the Bots setup screen's
- * play-style control (Phase 171 D-01; reworked to preset-only, quick 260717-lr9).
+ * play-style control (preset-only).
  *
  * The control exposes THREE discrete presets, no slider:
- *   - Human (blend 0): raw Maia policy sample, no search (BOT-02).
+ *   - Human (blend 0): raw Maia policy sample, no search.
  *   - Light (blend 0.05, the default): full MCTS search, softmax over
  *     `practicalScore` at high temperature — a little calculation on top of the
  *     human-like base.
@@ -13,9 +13,8 @@
  * be disentangled into a predictable combined strength, and the engine is not
  * ELO-calibrated yet. So these are named by CALCULATION BEHAVIOR ("Light" /
  * "Deep"), never by rating — three distinct opponents to experiment with, not a
- * strength ladder. Dropping the slider also retires the old D-01 problem of
- * advertising a smooth continuum that the three-way regime dispatch in
- * `selectBotMove` never actually was.
+ * strength ladder. Having no slider also avoids advertising a smooth continuum
+ * that the three-way regime dispatch in `selectBotMove` never actually was.
  *
  * `blend <= 0` runs exactly one Maia policy call with no search; anything `> 0`
  * runs the full MCTS search and softmax-samples at `tau = TAU_MAX * (1 - blend)`.
@@ -32,7 +31,7 @@ export const DEEP_BLEND = 0.5;
  * Valid-range ceiling for a stored blend, NOT a preset. No preset button emits
  * blend 1, but the accepted range must stay `[HUMAN_BLEND, BLEND_MAX]` = `[0, 1]`
  * so legacy stored blobs (the retired Engine preset persisted blend 1.0) still
- * VALIDATE rather than being treated as corruption — see the WR-01 bug note in
+ * VALIDATE rather than being treated as corruption — see the bug-fix note in
  * `botSetupSettings.ts`, where an out-of-range blend silently discards a
  * finished game. Downstream `selectBotMove` still treats blend >= 1 as the
  * deterministic-argmax regime.

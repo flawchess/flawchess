@@ -1,10 +1,10 @@
 """CI-enforced consistency: opening_insights_constants must match
 frontend/src/lib/arrowColor.ts. Catches future score-threshold drift
-between the backend classifier (Phase 75) and the board arrow colors
-(Phase 76). Float values, regex-extracted from arrowColor.ts.
+between the backend classifier and the board arrow colors
+Float values, regex-extracted from arrowColor.ts.
 
-Note: the arrow palette was collapsed from 5 categories to 3 in quick
-task 260504-acl, removing the minor/major distinction on the FE. The
+Note: the arrow palette was collapsed from 5 categories to 3,
+removing the minor/major distinction on the FE. The
 single FE boundary (`SCORE_BOUNDARY`, 0.05) corresponds to the backend
 `OPENING_INSIGHTS_MINOR_EFFECT`. The backend still keeps `MAJOR_EFFECT`
 (0.10) for opening insights classification — that constant is no longer
@@ -19,7 +19,7 @@ import pytest
 _ARROW_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/arrowColor.ts"
 
 # Import lazily so the file is always collectable, but tests skip if the
-# constants module is missing (e.g. during initial Phase 75 Plan 01 mid-flight).
+# constants module is missing (e.g. during initial development).
 try:
     from app.services.opening_insights_constants import (
         OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
@@ -54,14 +54,14 @@ def _extract_int(name: str) -> int:
 
 @pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
 def test_score_pivot_matches_frontend() -> None:
-    """SCORE_PIVOT must match OPENING_INSIGHTS_SCORE_PIVOT (D-13)."""
+    """SCORE_PIVOT must match OPENING_INSIGHTS_SCORE_PIVOT."""
     assert _extract_float("SCORE_PIVOT") == OPENING_INSIGHTS_SCORE_PIVOT
 
 
 @pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
 def test_score_boundary_matches_frontend() -> None:
-    """SCORE_BOUNDARY (FE single-boundary, 260504-acl) must match
-    OPENING_INSIGHTS_MINOR_EFFECT (D-13). The 5-category palette was
+    """SCORE_BOUNDARY (FE single-boundary) must match
+    OPENING_INSIGHTS_MINOR_EFFECT. The 5-category palette was
     collapsed to 3, so the FE no longer carries a separate major-effect
     threshold — the single boundary is the minor-effect value (0.05).
     """
@@ -75,9 +75,9 @@ def test_score_boundary_matches_frontend() -> None:
 
 
 def test_compute_confidence_bucket_is_single_implementation() -> None:
-    """Phase 76 D-22 fallback: structural assertion that
+    """Structural assertion that
     score_confidence.compute_confidence_bucket is the only implementation of the
-    Wilson score-test formula (migrated from trinomial Wald in quick 260507-aw5).
+    Wilson score-test formula (migrated from trinomial Wald).
     The boundary behavior is exercised by tests/services/test_score_confidence.py.
     """
     from app.services import score_confidence
@@ -94,7 +94,7 @@ def test_compute_confidence_bucket_is_single_implementation() -> None:
         "duplicate definition would re-introduce the formula divergence risk."
     )
 
-    # openings_service must import compute_confidence_bucket (the second consumer per D-05/D-06)
+    # openings_service must import compute_confidence_bucket (the second consumer)
     import inspect
 
     from app.services import openings_service

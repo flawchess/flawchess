@@ -1,13 +1,13 @@
 /**
- * One popover per peer-ranked metric (D-00c): a plain WHAT + sign sentence, the
+ * One popover per peer-ranked metric: a plain WHAT + sign sentence, the
  * percentile statement with its disclosures (cohort, recent-games basis, anchor
  * composition), then the statistics (n, 99% CI, p-value) greyed below a separator.
- * An out-of-range percentile that is not significant (239 D-14) adds a could-be-chance line.
- * The Stats tab has no filters, so no filter-independence line (238 UAT). Stats vocabulary appears only in that
- * footer; the prose stays plain (popover copy minimalism).
+ * An out-of-range percentile that is not significant adds a could-be-chance line.
+ * The Stats tab has no filters, so no filter-independence line. Stats vocabulary
+ * appears only in that footer; the prose stays plain (popover copy minimalism).
  *
  * The shell (Search trigger right of the metric name, hover-open delay, Radix Portal
- * content) lives in the shared MetricInfoPopover; 238 UAT: the bar itself is no trigger.
+ * content) lives in the shared MetricInfoPopover; the bar itself is no trigger.
  */
 
 import { MetricInfoPopover } from '@/components/ui/metric-info-popover';

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 239 D-00a, D-00c, D-00h, D-17: the one tactic card of the Tactic motifs section.
+ * The one tactic card of the Tactic motifs section.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -42,7 +42,7 @@ function rowNames(): string[] {
 
 const SHOWN = ['Fork', 'Pin', 'Hanging piece', 'Checkmate'];
 
-describe('MostCommonTacticsCard (D-17)', () => {
+describe('MostCommonTacticsCard', () => {
   it('shows one card titled "Most common tactics"', () => {
     renderCard();
     expect(screen.getAllByTestId('tactic-card')).toHaveLength(1);
@@ -93,14 +93,14 @@ describe('MostCommonTacticsCard (D-17)', () => {
   });
 });
 
-describe('MostCommonTacticsCard cells (D-00a, D-00b, D-00c)', () => {
+describe('MostCommonTacticsCard cells', () => {
   it('shows each side as a gap bar per 100 games with the gap in words', () => {
     renderCard();
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
     expect(text('tactic-cell-fork-allowed-bar-words')).toBe('2.5 fewer');
   });
 
-  it('draws the band only for a banded family-side (D-11)', () => {
+  it('draws the band only for a banded family-side', () => {
     renderCard();
     expect(screen.queryByTestId('tactic-cell-fork-missed-bar-band')).not.toBeNull();
     expect(screen.queryByTestId('tactic-cell-fork-allowed-bar-band')).toBeNull();
@@ -162,7 +162,7 @@ describe('tactic copy helpers', () => {
   });
 });
 
-describe('not-significant and band-less cells (D-11, D-14)', () => {
+describe('not-significant and band-less cells', () => {
   it('gives an out-of-band cell that is not significant a blue dot and no verdict colour', () => {
     renderCard(
       makeTacticTcEntry('rapid', 1841, {
@@ -193,7 +193,7 @@ describe('not-significant and band-less cells (D-11, D-14)', () => {
     expect(text('gap-popover-tactic-fork-missed-tc-rapid-popover')).toContain('Typical gap');
   });
 
-  it('colours a significant band-less cell on significance alone (D-16)', () => {
+  it('colours a significant band-less cell on significance alone', () => {
     renderCard();
     // fork:allowed: 134 vs 180 over 1841 games, 2.5 fewer per 100 games, CI clear of 0.
     expect(screen.getByTestId('tactic-cell-fork-allowed-bar-dot').style.backgroundColor).toBe(
@@ -214,7 +214,7 @@ describe('not-significant and band-less cells (D-11, D-14)', () => {
   });
 });
 
-describe('phone layout and footer (D-00h)', () => {
+describe('phone layout and footer', () => {
   it('shows a desktop-only Missed | Allowed header; cells name motif and your flaw count', () => {
     renderCard();
     const header = screen.getByTestId('tactic-card-header');

@@ -9,7 +9,7 @@ const STRIP_WIDTH = 48;
 const PANEL_WIDTH = 380;
 
 export interface SidebarPanelConfig {
-  /** Panel id; doubles as the analytics panel-open target (Phase 229 D-13). */
+  /** Panel id; doubles as the analytics panel-open target. */
   id: SidebarPanelId;
   label: string;
   icon: ReactNode;
@@ -93,7 +93,7 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
 
   const handleStripClick = (panelId: SidebarPanelId) => {
     onActivePanelChange(activePanel === panelId ? null : panelId);
-    // Discovery signal (D-13): only the opening click fires. Closing via the strip
+    // Discovery signal: only the opening click fires. Closing via the strip
     // and the outside-click close above send nothing.
     if (activePanel !== panelId) trackFeature('panel-open', { target: panelId });
   };
@@ -176,7 +176,7 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
     : `hidden md:flex md:flex-row md:min-h-0 md:flex-1 md:relative ${hasSideContent ? 'md:items-start' : 'md:items-stretch'}`;
 
   // No panels and no side content: nothing for a strip to hold, so render the main
-  // column alone (Endgames Stats tab hides its filter UI, Phase 238 D-02). The column
+  // column alone (Endgames Stats tab hides its filter UI). The column
   // widens by the strip width; no left margin without a strip to separate from.
   if (panels.length === 0 && !hasSideContent) {
     return (

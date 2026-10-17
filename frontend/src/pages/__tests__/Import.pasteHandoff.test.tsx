@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Quick 260826-qdl — Import-tab paste entry point, end-to-end.
+ * Import-tab paste entry point, end-to-end.
  *
  * Proves the full "paste on the Import tab, land on the analysis board" path:
  * button renders below the lichess card, opens the shared PasteModal (no
@@ -89,7 +89,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));
@@ -136,7 +136,7 @@ function renderImport() {
 const VALID_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
 const VALID_PGN = '1. e4 e5 2. Nf3 Nc6 3. Bb5';
 
-describe('Import tab paste entry point (Quick 260826-qdl)', () => {
+describe('Import tab paste entry point', () => {
   it('renders the button below the lichess card with the right name and testid', () => {
     renderImport();
 

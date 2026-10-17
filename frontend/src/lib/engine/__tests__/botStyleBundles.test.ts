@@ -1,12 +1,12 @@
 /**
- * botStyleBundles.ts unit tests (Phase 182, STYLE-01/02/03/04, D-02).
+ * botStyleBundles.ts unit tests.
  *
  * Structural + identity invariants over the 4 shipped style bundles — NOT a
  * re-test of `botStyle.ts`'s pure transforms (already covered by
  * `botStyle.test.ts`) or `styleOpeningLines.ts`'s corpus membership (already
  * covered by `styleOpeningLines.test.ts`). This file only proves the
  * bundles themselves are well-formed data and match their documented
- * per-style identity from `182-CONTEXT.md`.
+ * per-style identity.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -31,7 +31,7 @@ const FEATURE_KEYS = [
   'isRetreat',
 ] as const;
 
-/** Recursively asserts no function-typed field exists anywhere in `style` (D-01/BOT-03). */
+/** Recursively asserts no function-typed field exists anywhere in `style`. */
 function assertNoFunctionFields(style: BotStyleParams): void {
   for (const [key, value] of Object.entries(style)) {
     if (key === 'featureMultipliers') {
@@ -62,7 +62,7 @@ describe('BOT_STYLE_BUNDLES', () => {
     }
   });
 
-  it.each(ALL_STYLES)('%s bundle carries a bookBoost in the D-06 ~20-50 range', (style) => {
+  it.each(ALL_STYLES)('%s bundle carries a bookBoost in the ~20-50 range', (style) => {
     const bundle = BOT_STYLE_BUNDLES[style];
     expect(bundle.bookBoost).toBeGreaterThanOrEqual(20);
     expect(bundle.bookBoost).toBeLessThanOrEqual(50);
@@ -77,28 +77,28 @@ describe('BOT_STYLE_BUNDLES', () => {
     },
   );
 
-  // ─── Identity assertions (182-CONTEXT.md specifics) ────────────────────
+  // ─── Identity assertions ────────────────────
 
-  it('Grinder has positive contempt (avoids draws) and Wall has negative contempt (welcomes them slightly early) — D-09', () => {
+  it('Grinder has positive contempt (avoids draws) and Wall has negative contempt (welcomes them slightly early)', () => {
     expect(GRINDER_STYLE.contempt).toBeGreaterThan(0);
     expect(WALL_STYLE.contempt).toBeLessThan(0);
   });
 
-  it("Attacker's check and capture multipliers are greater than 1 (D-06 identity)", () => {
+  it("Attacker's check and capture multipliers are greater than 1", () => {
     expect(ATTACKER_STYLE.featureMultipliers.isCheck).toBeGreaterThan(1);
     expect(ATTACKER_STYLE.featureMultipliers.isCapture).toBeGreaterThan(1);
   });
 
-  it("Grinder's exchange multiplier is greater than 1 (D-06 identity: trade-happy)", () => {
+  it("Grinder's exchange multiplier is greater than 1 (trade-happy)", () => {
     expect(GRINDER_STYLE.featureMultipliers.isExchange).toBeGreaterThan(1);
   });
 
-  it("Wall's exchange multiplier is greater than 1 and pawn-storm multiplier is less than 1 (D-06 identity: simplifying, never storms)", () => {
+  it("Wall's exchange multiplier is greater than 1 and pawn-storm multiplier is less than 1 (simplifying, never storms)", () => {
     expect(WALL_STYLE.featureMultipliers.isExchange).toBeGreaterThan(1);
     expect(WALL_STYLE.featureMultipliers.isPawnStorm).toBeLessThan(1);
   });
 
-  it('Grinder never resigns early: threshold is far below the other 3 styles\' resign floor (D-08)', () => {
+  it('Grinder never resigns early: threshold is far below the other 3 styles\' resign floor', () => {
     expect(GRINDER_STYLE.threshold).toBeLessThan(ATTACKER_STYLE.threshold);
     expect(GRINDER_STYLE.threshold).toBeLessThan(TRICKSTER_STYLE.threshold);
     expect(GRINDER_STYLE.threshold).toBeLessThan(WALL_STYLE.threshold);

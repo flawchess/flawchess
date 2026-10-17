@@ -5,7 +5,7 @@ transaction per test). Covers:
 - fetch_game_positions_ordered: returns [] for unknown game_id
 - fetch_game_positions_ordered: returns positions sorted by ply ASC even if inserted out of order
 - fetch_game_positions_ordered: user_id ownership guard (different user returns [])
-- flaw_record_to_row: output must not contain es_before/es_after/move_san (Phase 112 D-07)
+- flaw_record_to_row: output must not contain es_before/es_after/move_san
 """
 
 import uuid
@@ -128,7 +128,7 @@ class TestFetchGamePositionsOrdered:
     ) -> None:
         """A different user_id returns [] even though the game_id exists.
 
-        This is the T-105-03 Information Disclosure mitigation: one user cannot
+        This is the Information Disclosure mitigation: one user cannot
         read another user's game positions via the repository.
         """
         game = await _seed_game(db_session, user_id=99999)
@@ -145,20 +145,20 @@ class TestFetchGamePositionsOrdered:
 
 
 # ---------------------------------------------------------------------------
-# TestFlawRecordToRow (Phase 112-01 Task 3)
+# TestFlawRecordToRow
 # ---------------------------------------------------------------------------
 
 
 class TestFlawRecordToRow:
-    """Phase 112 D-07: flaw_record_to_row must not persist es_before/es_after/move_san."""
+    """flaw_record_to_row must not persist es_before/es_after/move_san."""
 
     def test_flaw_record_to_row_omits_dropped_columns(self) -> None:
         """flaw_record_to_row output must not contain es_before, es_after, or move_san.
 
-        Phase 112 (D-07): these three keys were removed from the DB schema; writing
+        These three keys were removed from the DB schema; writing
         them to the row dict would cause an insert failure after the migration.
         The FlawRecord TypedDict still carries them for internal kernel use
-        (Pitfall 6 in 112-CONTEXT.md) — this test guards the write-path.
+        so this test guards the write-path.
         """
         flaw: FlawRecord = {
             "ply": 4,
@@ -169,7 +169,7 @@ class TestFlawRecordToRow:
             "es_before": 0.75,  # still in TypedDict (kernel-internal)
             "es_after": 0.20,  # still in TypedDict (kernel-internal)
             "move_san": "Nxd4",  # still in TypedDict (kernel-internal)
-            # Phase 128: renamed tactic_* → allowed_tactic_* (D-02); added missed_tactic_* (D-01).
+            # Renamed tactic_* → allowed_tactic_*; added missed_tactic_*.
             "allowed_tactic_motif_int": None,
             "allowed_tactic_piece": None,
             "allowed_tactic_confidence": None,
@@ -182,7 +182,7 @@ class TestFlawRecordToRow:
 
         row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
 
-        # These keys must NOT appear in the DB row dict (dropped in Phase 112 D-07)
+        # These keys must NOT appear in the DB row dict (dropped from the DB schema)
         assert "es_before" not in row, (
             "flaw_record_to_row must not write es_before to DB (Phase 112 D-07)"
         )
@@ -193,7 +193,7 @@ class TestFlawRecordToRow:
             "flaw_record_to_row must not write move_san to DB (Phase 112 D-07)"
         )
 
-        # fen must still be present (Pitfall 4: cannot be dropped)
+        # fen must still be present (cannot be dropped)
         assert "fen" in row, "fen must still be present in the DB row dict"
         assert row["fen"] == flaw["fen"]
 
@@ -204,7 +204,7 @@ class TestFlawRecordToRow:
 
 
 class TestFlawRecordToRowTacticMapping:
-    """Phase 128 D-06: flaw_record_to_row must write all 8 tactic columns.
+    """flaw_record_to_row must write all 8 tactic columns.
 
     Verifies that the write-path row dict carries all 8 DB-column keys with
     correct mappings from the renamed/new FlawRecord keys:
@@ -317,7 +317,7 @@ class TestFlawRecordToRowTacticMapping:
             assert row[key] is None, f"Expected row['{key}'] to be None for null tactic"
 
     def test_old_tactic_keys_no_longer_in_row(self) -> None:
-        """The renamed tactic_* keys must not appear in the row dict (Phase 128 D-02).
+        """The renamed tactic_* keys must not appear in the row dict.
 
         Verifies that the pre-Phase-128 tactic_motif / tactic_piece / tactic_confidence /
         tactic_depth DB column names are gone from the write path — writing them would

@@ -12,15 +12,15 @@ import type { MatchSide } from '@/types/api';
 
 export type OpeningsMobileDrawersProps = {
   // Filter drawer
-  filterSidebarOpen: boolean;
-  onFilterSidebarOpenChange: (open: boolean) => void;
+  filterDrawerOpen: boolean;
+  onFilterDrawerOpenChange: (open: boolean) => void;
   localFilters: FilterState;
   setLocalFilters: Dispatch<SetStateAction<FilterState>>;
   onApplyMobileFilters: () => void;
 
   // Bookmark drawer
-  bookmarkSidebarOpen: boolean;
-  onBookmarkSidebarOpenChange: (open: boolean) => void;
+  bookmarkDrawerOpen: boolean;
+  onBookmarkDrawerOpenChange: (open: boolean) => void;
   localBookmarks: PositionBookmarkResponse[];
   onReorderBookmarks: (orderedIds: number[]) => void;
   onLoadBookmark: (bkm: PositionBookmarkResponse) => void;
@@ -38,13 +38,13 @@ export type OpeningsMobileDrawersProps = {
  * files.
  */
 export function OpeningsMobileDrawers({
-  filterSidebarOpen,
-  onFilterSidebarOpenChange,
+  filterDrawerOpen,
+  onFilterDrawerOpenChange,
   localFilters,
   setLocalFilters,
   onApplyMobileFilters,
-  bookmarkSidebarOpen,
-  onBookmarkSidebarOpenChange,
+  bookmarkDrawerOpen,
+  onBookmarkDrawerOpenChange,
   localBookmarks,
   onReorderBookmarks,
   onLoadBookmark,
@@ -56,10 +56,10 @@ export function OpeningsMobileDrawers({
 }: OpeningsMobileDrawersProps) {
   return (
     <>
-      {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
+      {/* Filter drawer */}
       <MobileFilterDrawer
-        open={filterSidebarOpen}
-        onOpenChange={onFilterSidebarOpenChange}
+        open={filterDrawerOpen}
+        onOpenChange={onFilterDrawerOpenChange}
         panel="filters"
         title="Filters"
         contentTestId="drawer-filter-sidebar"
@@ -82,10 +82,10 @@ export function OpeningsMobileDrawers({
         />
       </MobileFilterDrawer>
 
-      {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
+      {/* Bookmark drawer */}
       <MobileFilterDrawer
-        open={bookmarkSidebarOpen}
-        onOpenChange={onBookmarkSidebarOpenChange}
+        open={bookmarkDrawerOpen}
+        onOpenChange={onBookmarkDrawerOpenChange}
         panel="bookmarks"
         title="Opening Bookmarks"
         titleAccessory={

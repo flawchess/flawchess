@@ -26,9 +26,9 @@ interface SettingsSheetProps {
 }
 
 /**
- * Mobile bottom drawer rendering the FULL SettingsPanel (D-06). Controlled, so the
- * mobile More drawer's Settings row can open it after closing itself (228 UAT:
- * settings never navigate, a /settings page lost the puzzle being solved).
+ * Mobile bottom drawer rendering the FULL SettingsPanel. Controlled, so the
+ * mobile More drawer's Settings row can open it after closing itself (settings never
+ * navigate: a /settings page would lose the puzzle being solved).
  */
 export function SettingsSheet({ open, onOpenChange, trigger }: SettingsSheetProps) {
   return (
@@ -38,7 +38,7 @@ export function SettingsSheet({ open, onOpenChange, trigger }: SettingsSheetProp
           useBoardNavigationInput only suppresses arrow-key board stepping
           behind '[role="dialog"][aria-modal="true"]'. Without it, ArrowLeft/Right
           on the Sound switch or Reset button stepped the analysis board behind
-          the open sheet (228 code review WR-02). */}
+          the open sheet. */}
       <DrawerContent data-testid="settings-sheet" aria-modal="true">
         <DrawerHeader className="flex flex-row items-center justify-between">
           <DrawerTitle>Settings</DrawerTitle>
@@ -64,17 +64,17 @@ export function SettingsSheet({ open, onOpenChange, trigger }: SettingsSheetProp
 }
 
 /**
- * Cogwheel trigger plus the settings drawer. Used in the mobile shells that hide
- * the bottom bar: /analysis (D-03) and the bot game (D-04). It never navigates;
+ * Cogwheel trigger plus the settings drawer, used by the mobile header, /analysis,
+ * the bot game and the Train solve screen. It never navigates;
  * changes apply live underneath because the store notifies subscribers.
  */
 export function SettingsSheetButton({ testId, className }: SettingsSheetButtonProps) {
-  // Every open of settings is a deliberate click, so no once option (Phase 229 D-13).
+  // Every open of settings is a deliberate click, so no once option.
   const [open, setOpen] = useTrackedOpen(() => trackFeature('panel-open', { target: 'settings' }));
 
   // DrawerTrigger, not a plain onClick button: vaul/Radix return focus on close only
   // to the trigger they registered, so a bare button left focus on <body> after the
-  // sheet closed (228 code review WR-01, second pass).
+  // sheet closed.
   return (
     <SettingsSheet
       open={open}

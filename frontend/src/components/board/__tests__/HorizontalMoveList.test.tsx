@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * HorizontalMoveList auto-scroll with a scroll tail (SEED-197 UAT): on the
+ * HorizontalMoveList auto-scroll with a scroll tail: on the
  * two-row mobile Train list the live preview after the current move must not
  * sit below the fold.
  */

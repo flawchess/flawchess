@@ -1,7 +1,7 @@
 /**
  * Book (opening-theory) badge icon — a white lucide `BookOpen` icon on a
  * muted slate-blue (`BOOK_GLYPH`) dot, marking a ply within known opening
- * theory (Phase 172, SEED-106 D-08): `opening_ply_count` earns itself twice
+ * theory: `opening_ply_count` earns itself twice
  * — it gates the background gem sweep AND marks theory plies with this
  * badge on every surface gems already render.
  *
@@ -44,7 +44,7 @@ export function BookIcon({
       aria-hidden={ariaHidden}
       role="img"
     >
-      {/* Accessible name (mirrors GemIcon's 163-REVIEW IN-02 fix): aria-hidden
+      {/* Accessible name (mirrors GemIcon): aria-hidden
           defaults to true, but a caller passing false would otherwise expose an
           UNNAMED role="img" to screen readers — the badge conveys meaning only
           via color/shape. */}

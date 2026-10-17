@@ -1,5 +1,5 @@
-"""Dependency-isolation guard for the Maia-3 inference stack (Phase 174, GEMS-06)
-and the Web Push send stack (Phase 201, PUSH-05).
+"""Dependency-isolation guard for the Maia-3 inference stack
+and the Web Push send stack.
 
 The remote-worker image (`Dockerfile.worker`) runs `scripts/remote_eval_worker.py`
 (pure Stockfish, no FastAPI app, no Maia/push code path) and is updated manually by
@@ -18,7 +18,7 @@ These tests prove that invariant WITHOUT building a Docker image:
   that excludes onnxruntime and numpy;
 * the backend's shape (`--group maia-inference`) DOES include onnxruntime==1.29.0;
 * NO third-party web-push package resolves in either shape -- the push crypto is
-  vendored in `app/services/push_crypto.py`, so PUSH-05 is satisfied by absence
+  vendored in `app/services/push_crypto.py`, so the rule is satisfied by absence
   rather than by isolation (see that module's docstring);
 * statically, every isolated package sits ONLY under its own group in
   `pyproject.toml`, never under `[project.dependencies]`;
@@ -46,13 +46,12 @@ WORKER_DOCKERFILE = REPO_ROOT / "Dockerfile.worker"
 INFERENCE_GROUP = "maia-inference"
 # Packages that must stay isolated to the backend (never in the worker image).
 ISOLATED_PACKAGES = ("onnxruntime", "numpy")
-# The exact pin the vendored model is measured against. 1.20.1 was the original
-# pin (>=1.22 segfaulted it at the time, see Plan 01); Phase 218 re-measured 1.29.0
-# clean (218-evidence-onnxruntime-1.29.0-python.txt) and raised the pin. Any bump
-# must re-run scripts/maia_parity_spike.py first, then update this constant.
+# The exact pin the vendored model is measured against (>=1.22 segfaulted it; 1.29.0
+# was re-measured clean). Any bump must re-run scripts/maia_parity_spike.py first,
+# then update this constant.
 ONNXRUNTIME_PIN = "onnxruntime==1.29.0"
 
-# Phase 201 (PUSH-05). The push send stack no longer contains ANY third-party
+# The push send stack contains NO third-party
 # web-push package: `app/services/push_crypto.py` vendors the ~110 lines we need
 # (MIT, from webpush-py 1.0.6) on top of `cryptography` + `pyjwt`, both of which
 # already resolve into the base tree. So the `push` group isolates nothing at the
@@ -62,7 +61,7 @@ ONNXRUNTIME_PIN = "onnxruntime==1.29.0"
 PUSH_GROUP = "push"
 # Third-party web-push / push-vendor packages that must never reappear as a
 # dependency. Re-adding one would undo the vendoring and (for pywebpush) drag
-# `requests` back onto the send path, which PUSH-04 forbids.
+# `requests` back onto the send path, which is forbidden.
 FORBIDDEN_PUSH_PACKAGES = ("webpush", "pywebpush", "py-vapid", "http-ece", "firebase-admin")
 
 # Match a top-level requirements-txt package line like "numpy==2.5.1 \" (ignoring
@@ -200,7 +199,7 @@ def test_remote_eval_worker_imports_no_inference_stack() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 201 (PUSH-05): no third-party web-push package, anywhere.
+# No third-party web-push package, anywhere.
 # ---------------------------------------------------------------------------
 
 

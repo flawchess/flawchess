@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { isDuplicateTouchTap } from '../ChessBoard';
 
-describe('isDuplicateTouchTap (Phase 237 UAT tap-to-select)', () => {
+describe('isDuplicateTouchTap (tap-to-select)', () => {
   const tap = { square: 'e2', at: 1000 };
 
   it('swallows the library echo of the same tap', () => {

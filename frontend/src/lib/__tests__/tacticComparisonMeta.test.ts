@@ -22,7 +22,7 @@ const MATE_MOTIFS = [
 ];
 
 describe('tacticMotifLabel', () => {
-  it('collapses every mate-family motif to "checkmate" (Quick 260620-onv)', () => {
+  it('collapses every mate-family motif to "checkmate"', () => {
     for (const motif of MATE_MOTIFS) {
       expect(tacticMotifLabel(motif)).toBe('checkmate');
     }
@@ -62,7 +62,7 @@ describe('tacticMotifDefinition', () => {
 });
 
 describe('family mapping coverage', () => {
-  it('maps promotion (28) to a family now that D-09 is reversed', () => {
+  it('maps promotion (28) to a family', () => {
     expect(TACTIC_FAMILY_FOR_MOTIF.promotion).toBe('promotion');
     // It must also carry a chip definition so the popover body is not the raw string.
     expect(TACTIC_MOTIF_DEFINITIONS.promotion).toBeTruthy();
@@ -94,7 +94,7 @@ describe('tacticDepthBadge', () => {
     expect(tacticDepthBadge('fork', null, 'missed')).toBeNull();
   });
 
-  // anchored=false (Quick 260628-1t5 DECISION 2): navigable surfaces drop the allowed +1
+  // anchored=false: navigable surfaces drop the allowed +1
   // offset, so an allowed badge reads on the same plain scale as missed.
   it('anchored=false drops the allowed offset (allowed reads like missed)', () => {
     expect(tacticDepthBadge('fork', 0, 'allowed', false)).toBe('1');

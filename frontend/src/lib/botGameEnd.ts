@@ -1,20 +1,16 @@
 /**
  * botGameEnd — chess.js-backed end-condition detection + outcome→result-copy
- * mapping (Phase 169, PLAY-06/PLAY-09).
+ * mapping.
  *
  * Pure, React-free: detectEndCondition wraps chess.js's own end-condition
  * methods (never re-derives repetition/fifty-move/insufficient-material by
  * hand — chess.js already tracks full position history internally for its
  * own isDraw()). resultCopy maps a finished game's outcome to the verbatim
- * UI-SPEC Copywriting Contract strings, from the human player's point of view.
+ * result strings, from the human player's point of view.
  *
  * Timeout and resignation reasons are NOT detected here — those are
- * clock/user-action-driven concepts the game loop (useBotGame, plan 04) sets
+ * clock/user-action-driven concepts the game loop (useBotGame) sets
  * directly; detectEndCondition only ever reads board state via chess.js.
- *
- * D-02/D-03 (169-CONTEXT.md): the bot never offers a draw and never
- * resigns — there is no bot-resign or bot-draw-offer branch anywhere in this
- * module, encoded as the absence of such an outcome on the bot's side.
  */
 
 import type { Chess } from 'chess.js';
@@ -27,7 +23,7 @@ import type { MoverColor } from '@/lib/liveFlaw';
 export type GameEndReason = 'checkmate' | 'draw' | 'timeout' | 'resignation';
 
 /** Specific reason a drawn game ended, for result-copy specificity.
- * 'agreement' covers a mutually-accepted draw offer (D-01), which is not
+ * 'agreement' covers a mutually-accepted draw offer, which is not
  * board-derived and so is never returned by detectEndCondition. */
 export type DrawReason =
   | 'stalemate'
@@ -73,15 +69,14 @@ export function detectEndCondition(chess: Chess): GameEndResult | null {
 }
 
 /**
- * Maps a finished game's outcome to the exact UI-SPEC Copywriting Contract
- * result string, from `userColor`'s point of view. No invented copy — every
- * branch below is a verbatim string from 169-UI-SPEC.md's Copywriting
- * Contract table, EXCEPT the bot-actor substitution added below.
+ * Maps a finished game's outcome to the exact result string, from
+ * `userColor`'s point of view. Every branch below is verbatim copy, EXCEPT
+ * the bot-actor substitution described below.
  *
- * `personaName` (Phase 183, D-06) is optional and additive: when supplied
+ * `personaName` is optional and additive: when supplied
  * (a persona game), it is substituted into the branches where the BOT is the
- * grammatical actor — the bot winning by checkmate/timeout, or (the
- * D-03-unreachable) the bot resigning — e.g. "Riko the Raccoon wins on time"
+ * grammatical actor — the bot winning by checkmate/timeout, or
+ * the bot resigning — e.g. "Riko the Raccoon wins on time"
  * / "Ziggy the Wasp wins — checkmate". Branches where the USER is the actor
  * (the user winning, or the user resigning) and the draw branches (no actor)
  * are UNCHANGED regardless of `personaName` — this stays the single copy
@@ -120,9 +115,8 @@ export function resultCopy(
     if (userWon) return 'You won on time';
     return personaName ? `${personaName} wins on time` : 'You lost on time';
   }
-  // reason === 'resignation'. D-03: the bot never resigns, so a bot-loss
-  // resignation copy never actually occurs — only "You resigned" is reachable
-  // in practice, but the win-side copy is kept for completeness of the copy table.
+  // reason === 'resignation': either side may resign (a styled bot can resign
+  // via wouldBotResign).
   if (userWon) {
     return personaName ? `You won — ${personaName} resigned` : 'You won — the bot resigned';
   }

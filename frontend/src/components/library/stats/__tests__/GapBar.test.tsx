@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Phase 239 D-00a / D-00b / D-11 / D-14 / D-16: the rendered gap bar, words and dot colours. */
+/** The rendered gap bar, words and dot colours. */
 
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -78,7 +78,7 @@ describe('GapBar', () => {
     );
   });
 
-  it('reads "same flaws as your opponents" for a zero gap (IN-03 grammar)', () => {
+  it('reads "same flaws as your opponents" for a zero gap', () => {
     renderBar(cell({ delta: 0 }));
     expect(screen.getByTestId('bar-track').getAttribute('aria-label')).toBe(
       'same flaws as your opponents',
@@ -96,7 +96,7 @@ describe('GapBar', () => {
     expect(screen.getByTestId('bar-band')).toBeTruthy();
   });
 
-  it('draws a better (lower) gap left of the zero tick (D-14 number line)', () => {
+  it('draws a better (lower) gap left of the zero tick (number line)', () => {
     renderBar(cell({ delta: -0.66 }));
     expect(parseFloat(screen.getByTestId('bar-dot').style.left)).toBeLessThan(50);
   });

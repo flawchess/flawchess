@@ -1,14 +1,7 @@
-"""Library (Games-surface) router: HTTP endpoints for the Games subtab.
+"""Library router: thin HTTP layer (validation, service call, response shaping).
 
-Endpoints (mounted under /api/library):
-- GET /games: paginated game archive filterable by a boolean flaw severity,
-  each card carrying per-game B/M/I counts + curated chips (LIBG-08).
-- GET /flaws: paginated flat list of individual flawed positions, one row per
-  flaw, ordered recent-first, with game metadata for the row header (Plan
-  108-05, D-05/D-07/D-08).
-
-Thin HTTP layer only — validation, service call, response shaping. All business
-logic (kernel re-call, counts, chip curation) lives in library_service.
+Business logic lives in library_service, except tactic-lines, which reads
+library_repository directly.
 """
 
 import datetime
@@ -35,16 +28,14 @@ from app.users import current_active_user
 router = APIRouter(prefix="/library", tags=["library"])
 
 # The Games/Flaws filter offers only the mistake/blunder severity tiers
-# (inaccuracies are count-only, never a filter; game_flaws stores M+B only
-# per D-03). Constraining the Query type rejects anything else at the HTTP
-# boundary (T-106-02V, T-108-11).
+# (inaccuracies are count-only, never a filter; game_flaws stores M+B only).
+# Constraining the Query type rejects anything else at the HTTP boundary.
 SeverityFilter = Literal["mistake", "blunder"]
 
 # Tag filter for GET /library/games and /library/flaws — the 7 classification
-# tags plus the 3 phase tags. Phase tags became a first-class filter family in
-# Quick 260612-fow (build_flaw_filter_clauses filters on game_flaws.phase),
-# superseding the earlier display-only decision. FastAPI 422-rejects any value
-# outside this Literal (T-108-11 mitigation).
+# tags plus the 3 phase tags. Phase tags are a first-class filter family
+# (build_flaw_filter_clauses filters on game_flaws.phase). FastAPI 422-rejects
+# any value outside this Literal.
 FlawTagFilter = Literal[
     "miss",
     "lucky",
@@ -58,10 +49,10 @@ FlawTagFilter = Literal[
     "endgame",
 ]
 
-# Orientation filter for GET /library/flaws (Phase 129, TACUI-06/D-07). "either"
-# is OR across both missed_* and allowed_* tactic columns; "missed"/"allowed"
-# select a single orientation. Mirrors TacticOrientation in library_repository.
-# FastAPI 422-rejects any value outside this Literal at the HTTP boundary.
+# Orientation filter for GET /library/flaws. "either" is OR across both missed_* and
+# allowed_* tactic columns; "missed"/"allowed" select a single orientation. Mirrors
+# TacticOrientation in library_repository. FastAPI 422-rejects any value outside this
+# Literal at the HTTP boundary.
 TacticOrientationFilter = Literal["either", "missed", "allowed"]
 
 
@@ -90,25 +81,22 @@ async def get_library_games(
     has_great: bool | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> LibraryGamesResponse:
-    """Return a paginated, flaw-filterable game archive (LIBG-08).
+    """Return a paginated, flaw-filterable game archive.
 
     When `severity` is supplied, only games with >=1 of the user's OWN plies at
     that severity (or worse) are returned. When `tag` is supplied, only games
     containing a SINGLE flaw satisfying ALL selected tag families are returned
-    (OR within family, AND across families — single-flaw EXISTS semantics,
-    SEED-038). When `tactic_family` is supplied (Quick 260620-pza), only games
-    with >=1 flaw whose tactic motif (in the orientation's column, within the
-    depth range) is in the selected families are returned — the same tactic
-    EXISTS the Flaws tab uses. severity, tag and tactic_family combine. Each card
-    carries per-game B/M/I counts and curated chips; chess.com / unanalyzed-
-    lichess games carry analysis_state="no_engine_analysis" with
-    severity_counts=null (never 0/0/0). When `color` is supplied ("white" or
-    "black"), only games played as that color are returned. When `has_gem` /
-    `has_great` is True, only games with >=1 of the user's OWN plies (D-04)
-    classifying as a gem/great best move are returned (FILT-01); both True is a
-    union (gem OR great). `include_pasted` (Phase 208, D-11) is the Library-only
-    opt-in that reveals `platform='pgn'` games, off by default, additive to
-    whatever population this tab already shows.
+    (OR within family, AND across families — single-flaw EXISTS semantics).
+    When `tactic_family` is supplied, only games with >=1 flaw whose tactic motif (in the
+    orientation's column, within the depth range) is in the selected families are returned —
+    the same tactic EXISTS the Flaws tab uses. severity, tag and tactic_family combine. Each
+    card carries per-game B/M/I counts and curated chips; chess.com / unanalyzed- lichess
+    games carry analysis_state="no_engine_analysis" with severity_counts=null (never 0/0/0).
+    When `color` is supplied ("white" or "black"), only games played as that color are
+    returned. When `has_gem` / `has_great` is True, only games with >=1 of the user's OWN
+    plies classifying as a gem/great best move are returned; both True is a union (gem OR
+    great). `include_pasted` is the Library-only opt-in that reveals `platform='pgn'` games,
+    off by default, additive to whatever population this tab already shows.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
@@ -146,18 +134,17 @@ async def get_library_game(
 ) -> GameFlawCard:
     """Return a single GameFlawCard for any game, by id (analysis-page view).
 
-    Quick 260717-agv: intentionally NOT owner-scoped. Any authenticated user may
+    Intentionally NOT owner-scoped. Any authenticated user may
     inspect any game by url (e.g. /analysis?game_id=640125) for opponent scouting
     and game sharing. The current_active_user dependency enforces "logged in";
     the returned data is scoped to the game's owner in the service layer. Returns
     404 only when the game does not exist. game_id is typed int so FastAPI rejects
-    non-integer values with 422 (T-112-05).
+    non-integer values with 422.
 
-    Quick 260702-mnd (D-3): this endpoint no longer accepts severity/tactic
-    filter params. It does no game selection, so the params it used to accept
-    only drove per-slot tactic pruning in the service layer — now removed, the
-    card always shows every valid tactic + context tag regardless of the
-    Games-tab filter.
+    This endpoint accepts no severity/tactic filter params. It does no game
+    selection, so such params would only drive per-slot tactic pruning; the card
+    always shows every valid tactic + context tag regardless of the Games-tab
+    filter.
     """
     card = await library_service.get_library_game(
         session,
@@ -184,7 +171,7 @@ async def get_flaw_stats(
     color: str | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> FlawStatsResponse:
-    """Return the analyzed-game count and per-TC Flaws Timeline (LIBG-09, Phase 239).
+    """Return the analyzed-game count and per-TC Flaws Timeline.
 
     trend_by_tc is one rolling-game trend series per time control (the client picks
     the selected TC's series); analyzed_n is the analyzed-game count of the filtered
@@ -192,7 +179,7 @@ async def get_flaw_stats(
     endpoint used to return are gone: the tiles read /flaw-comparison. Same filter
     set as /games (no pagination). An empty analyzed set returns zeros, never an
     error. When `color` is supplied ("white" or "black"), stats are computed over
-    only games played as that color. `include_pasted` (Phase 208, D-11) is the Library-only
+    only games played as that color. `include_pasted` is the Library-only
     opt-in that reveals `platform='pgn'` games, off by default, additive to
     whatever population this surface already shows.
     """
@@ -231,15 +218,15 @@ async def get_flaw_comparison(
     color: str | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> FlawComparisonResponse:
-    """Return the per-TC you-vs-opponent comparison for the filtered analyzed set (Phase 115, 239).
+    """Return the per-TC you-vs-opponent comparison for the filtered analyzed set.
 
     tcs[] lists every time control the sidebar filter allows that has at least one
-    analyzed game (D-02), each with 12 bullets; below-gate TCs keep their bullets
-    (D-03). The TC switch is client-side: no TC request parameter exists.
+    analyzed game, each with 12 bullets; below-gate TCs keep their bullets
+    The TC switch is client-side: no TC request parameter exists.
 
     user_id is taken exclusively from the authenticated user — never from a
-    request parameter (IDOR prevention, T-115-01 / T-108-10 pattern).
-    `include_pasted` (Phase 208, D-11) is the Library-only opt-in that reveals
+    request parameter (IDOR prevention).
+    `include_pasted` is the Library-only opt-in that reveals
     `platform='pgn'` games, off by default, additive to whatever population
     this surface already shows.
     """
@@ -279,20 +266,20 @@ async def get_tactic_comparison(
     tactic_families: list[str] | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> TacticComparisonResponse:
-    """Per-TC tactic motif you-vs-opponent comparison, per 100 games (Phase 126/129/239).
+    """Per-TC tactic motif you-vs-opponent comparison, per 100 games.
 
-    Phase 239 (D-02/D-03/D-00h): returns `tcs`, one entry per time control that the filters
+    Returns `tcs`, one entry per time control that the filters
     allow and that has at least one analyzed game (bullet..classical order). Each TC carries
     38 bullets (19 families x missed/allowed) in fixed FAMILY_TO_MOTIF_INTS order, missed
     before allowed, also when the TC is below the analyzed-game gate. Rates and gaps are per
     100 games. No ranking or top-N. No query parameter selects a TC (the switch is client-side).
 
     user_id taken exclusively from the authenticated user — never from a
-    request parameter (IDOR prevention, T-126-01).
+    request parameter (IDOR prevention).
     tactic_families: optional multi-select to narrow to specific motif families
-    (e.g. "fork", "skewer"); unknown/dropped keys are silently ignored (T-126-02).
-    Backend is NOT beta-gated per D-01a — frontend gating enforces beta rollout.
-    `include_pasted` (Phase 208, D-11) is the Library-only opt-in that reveals
+    (e.g. "fork", "skewer"); unknown/dropped keys are silently ignored.
+    Backend is NOT beta-gated — frontend gating enforces beta rollout.
+    `include_pasted` is the Library-only opt-in that reveals
     `platform='pgn'` games, off by default, additive to whatever population
     this surface already shows.
     """
@@ -337,25 +324,24 @@ async def get_library_flaws(
     limit: int = Query(default=20, ge=1, le=100),
     include_pasted: bool = Query(default=False),
 ) -> LibraryFlawsResponse:
-    """Return a paginated flat list of individual flawed positions (Plan 108-05).
+    """Return a paginated flat list of individual flawed positions.
 
     One row per flawed position from game_flaws, ordered recent-first
-    (g.played_at DESC, f.ply ASC — D-07), with each row carrying the full
+    (g.played_at DESC, f.ply ASC), with each row carrying the full
     miniboard display payload (fen, move_san from game_positions join, severity,
     tags, before/after eval from game_positions) and game metadata (opponent,
-    ratings, date, result). Phase 112 (D-05/D-07/D-08): es_before/es_after dropped;
-    raw eval + ratings added.
+    ratings, date, result).
 
-    Severity defaults to M+B when omitted (D-08); game_flaws stores M+B only
-    (D-03). Phase tags (opening/middlegame/endgame) in `tag` filter on the
-    game_flaws.phase column (OR within the phase family, Quick 260612-fow).
+    Severity defaults to M+B when omitted; game_flaws stores M+B only. Phase tags
+    (opening/middlegame/endgame) in `tag` filter on the game_flaws.phase column
+    (OR within the phase family).
 
     user_id is taken exclusively from the authenticated user (never from a
-    request parameter) to prevent IDOR (T-108-10). `include_pasted` (Phase 208,
-    D-11) is the Library-only opt-in that reveals `platform='pgn'` games, off
-    by default, additive to whatever population this tab already shows — and,
-    per D-11/D-12, computed from this surface's own default (chess.com/lichess),
-    so it never newly admits flawchess bot games.
+    request parameter) to prevent IDOR. `include_pasted` is the Library-only
+    opt-in that reveals `platform='pgn'` games, off by default, additive to
+    whatever population this tab already shows — and computed from this
+    surface's own default (chess.com/lichess), so it never newly admits
+    flawchess bot games.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
@@ -388,12 +374,12 @@ async def get_tactic_lines(
     game_id: int,
     ply: int,
 ) -> TacticLinesResponse:
-    """PV walk for the TacticLineExplorer (Phase 135, Plan 01).
+    """PV walk for the TacticLineExplorer.
 
     Returns both orientations' SAN move lists, raw 0-based depths, motif strings,
     and the full decision-position FEN for chess.js board initialization.
 
-    Quick 260717-agv: NOT owner-scoped — any authenticated user may expand the
+    NOT owner-scoped — any authenticated user may expand the
     tactic lines of any game they inspect on the analysis page (mirrors
     get_library_game). The current_active_user dependency enforces "logged in".
     game_id uniquely identifies the game (and thus its owner), so the flaw/PV
@@ -401,7 +387,7 @@ async def get_tactic_lines(
     no flaw exists at (game_id, ply).
 
     game_id and ply are typed int so FastAPI auto-422-rejects non-integer values
-    before the handler runs (T-135-02 / T-112-05 pattern).
+    before the handler runs.
     """
     result = await library_repository.fetch_tactic_lines(session, game_id=game_id, ply=ply)
     if result is None:

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * engineSettings.test.ts: Phase 228 store contract. Defaults with empty storage,
- * round trip with subscriber re-render (D-08), tamper-safe reads (T-228-01),
- * invalid writes refused, and reset of all five settings (D-09).
+ * engineSettings.test.ts: store contract. Defaults with empty storage,
+ * round trip with subscriber re-render, tamper-safe reads,
+ * invalid writes refused, and reset of all five settings.
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -105,7 +105,7 @@ describe('resetAllSettings', () => {
   });
 });
 
-describe('useEngineToggles / setEngineToggle (quick 261004-nxn)', () => {
+describe('useEngineToggles / setEngineToggle', () => {
   it('defaults all three engines ON with empty storage', () => {
     const { result } = renderHook(() => useEngineToggles());
     expect(result.current).toEqual({ stockfish: true, maia: true, flawChess: true });

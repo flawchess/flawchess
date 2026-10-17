@@ -1,12 +1,11 @@
-"""Schemas for the milestone feedback ask (SEED-191, Phase 234).
+"""Schemas for the milestone feedback ask.
 
 The ask state lives in ``users.prompt_state`` under ``FEEDBACK_ASK_ID`` and is
 validated by ``FeedbackAskState`` on every read and on every value a guarded
-UPDATE returns (SEED-191 #8: Pydantic instead of a DB CHECK). Eligibility and
-the view/snooze/done lifecycle are SEED-191 #6 and #7.
+UPDATE returns (Pydantic validation instead of a DB CHECK).
 
 ``FeedbackAskView`` deliberately carries no round field: both rounds render the
-same copy (D-02), so the client only needs to know whether the ask is active.
+same copy, so the client only needs to know whether the ask is active.
 """
 
 import datetime
@@ -44,7 +43,7 @@ class FeedbackAskState(BaseModel):
 
 
 class FeedbackAskView(BaseModel):
-    """What the client sees: only whether the ask is active (no round field, D-02)."""
+    """What the client sees: only whether the ask is active (no round field)."""
 
     active: bool
 

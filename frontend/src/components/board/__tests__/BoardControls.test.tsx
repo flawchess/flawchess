@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /**
- * BoardControls unit tests — the opt-in fast-forward render guard
- * (Quick 260831-s4y, D-07).
+ * BoardControls unit tests — the opt-in fast-forward render guard.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -32,7 +31,7 @@ describe('BoardControls', () => {
     cleanup();
   });
 
-  it('renders exactly the four base buttons when onFastForward is omitted (D-07 invariant)', () => {
+  it('renders exactly the four base buttons when onFastForward is omitted', () => {
     renderControls();
     expect(screen.queryByTestId('board-btn-fast-forward')).toBeNull();
     expect(screen.getByTestId('board-btn-reset')).toBeTruthy();
@@ -64,7 +63,7 @@ describe('BoardControls', () => {
   });
 });
 
-// Phase 223 UAT: the mobile /analysis footer renders icon-over-label columns,
+// The mobile /analysis footer renders icon-over-label columns,
 // the same shape as BotGameMobileBar and the main nav.
 describe('BoardControls labels mode', () => {
   afterEach(cleanup);
@@ -96,7 +95,7 @@ describe('BoardControls labels mode', () => {
   });
 });
 
-// Phase 229 D-06/D-12: only the discrete flip tool is tracked, never move stepping.
+// Only the discrete flip tool is tracked, never move stepping.
 describe('BoardControls tracking', () => {
   let track: ReturnType<typeof vi.fn>;
 
@@ -121,7 +120,7 @@ describe('BoardControls tracking', () => {
     expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'flip' });
   });
 
-  it('back, forward, reset and fast-forward send nothing (D-06)', () => {
+  it('back, forward, reset and fast-forward send nothing', () => {
     renderControls({ onFastForward: vi.fn(), canFastForward: true });
     for (const id of ['board-btn-back', 'board-btn-forward', 'board-btn-reset', 'board-btn-fast-forward']) {
       fireEvent.click(screen.getByTestId(id));

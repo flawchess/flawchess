@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Phase 238 validation row D-00a: the percentile bar geometry, band colors and plain-text value. */
+/** The percentile bar geometry, band colors and plain-text value. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -28,7 +28,7 @@ function renderBar(percentile: number | null, significant = true) {
   );
 }
 
-describe('PercentileBar (D-00a)', () => {
+describe('PercentileBar', () => {
   it('shades the 25-75 band', () => {
     renderBar(46);
     const band = screen.getByTestId('bar-band');
@@ -53,7 +53,7 @@ describe('PercentileBar (D-00a)', () => {
   });
 
   it.each([24, 76])(
-    'keeps the dot and ordinal neutral at percentile %i when not significant (239 D-14)',
+    'keeps the dot and ordinal neutral at percentile %i when not significant',
     (percentile) => {
       renderBar(percentile, false);
       expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));

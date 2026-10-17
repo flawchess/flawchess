@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * SeverityBadge vitest suite — covers the quick-260608-ac1 additions:
+ * SeverityBadge vitest suite — covers:
  *
  * 1. "Inacc." abbreviated label
  * 2. Active-filter ring when the severity filter is narrowed to exactly this severity

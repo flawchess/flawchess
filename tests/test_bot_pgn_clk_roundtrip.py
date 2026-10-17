@@ -1,13 +1,12 @@
-"""Phase 169 PGN <-> backend round-trip check (RESEARCH Assumption A1 / Open
-Question 2, PLAY-09).
+"""PGN <-> backend round-trip check for bot games.
 
 Verifies that a PGN built the way frontend/src/lib/botGamePgn.ts builds one --
 lichess-convention {[%clk h:mm:ss]} comments on every ply for BOTH colors, a
 closed-vocabulary [Termination "..."] header, and a valid [Result "..."]
-header -- is accepted end-to-end by the frozen Phase 167 backend validator
+header -- is accepted end-to-end by the backend validator
 (normalize_flawchess_game). This is the guardrail that keeps the PGN "shape"
-this phase's frontend code produces in lock-step with what the backend's
-STORE-02 [%clk]-presence gate + Termination/Result vocabulary check requires,
+the frontend code produces in lock-step with what the backend's
+[%clk]-presence gate + Termination/Result vocabulary check requires,
 without spinning up a browser or the JS toolchain.
 
 Pure unit test, no DB required (mirrors tests/services/test_normalization.py's
@@ -37,13 +36,13 @@ _PHASE_169_SHAPED_PGN = (
 
 
 class TestBotPgnClkRoundtrip:
-    """Resolves RESEARCH Assumption A1: h:mm:ss clocks parse via python-chess's
-    node.clock() and satisfy STORE-02's both-color presence gate end-to-end
+    """h:mm:ss clocks parse via python-chess's node.clock() and satisfy the
+    both-color presence gate end-to-end
     through the real normalize_flawchess_game entry point (not just a bare
     chess.pgn.read_game() smoke check).
     """
 
-    def test_phase_169_shaped_pgn_normalizes(self) -> None:
+    def test_hmmss_clock_pgn_normalizes(self) -> None:
         normalized = normalize_flawchess_game(
             _PHASE_169_SHAPED_PGN,
             _TEST_GAME_UUID,

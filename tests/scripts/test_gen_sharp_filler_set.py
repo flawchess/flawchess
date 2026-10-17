@@ -1,11 +1,11 @@
-"""Tests for scripts.gen_sharp_filler_set (Phase 206, D-12/D-13/D-18).
+"""Tests for scripts.gen_sharp_filler_set.
 
 Pure-logic coverage only — no engine, no database. `select_candidates` reads
 real files but never starts Stockfish or touches Postgres, so its exclusion
-behavior (D-12) is also covered here against tiny, self-contained fixture
+behavior is also covered here against tiny, self-contained fixture
 files (never the real ~26k-row committed fixtures, to keep this file fast).
 The engine-backed `_verify_candidate`/`_fill_motif` pass itself is exercised
-by Task 2's `--dry-run`/real-run acceptance criteria, not by this file.
+by the `--dry-run`/real-run acceptance checks, not by this file.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ class TestSharpnessGate:
         assert passes_sharpness_gate(0.90, 0.10) is True
 
     def test_sharpness_gate_literal_acceptance_example(self) -> None:
-        # From the plan's own acceptance criteria.
+        # Literal example of the sharpness gate.
         assert passes_sharpness_gate(0.60, 0.55) is True
         assert passes_sharpness_gate(0.60, 0.5501) is False
 

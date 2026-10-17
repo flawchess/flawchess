@@ -6,7 +6,7 @@
  * (`handleLine` — the UCI message parser, the highest-risk function in the
  * phase, moved verbatim, same branch order, same string comparisons, same
  * early returns), and the public `grade()` entry point itself
- * (Phase 215-02 extraction from `createWorkerPool()`). Not a React hook —
+ * Not a React hook —
  * plain module, no UI wiring, matching `maiaQueue.ts`'s convention.
  *
  * Every function here takes the pool's shared `PoolState` and cross-stage
@@ -19,8 +19,8 @@
  * watchdog module's own re-arm path calls it. The pool's own types and
  * constants (`enqueue`/`dequeueHighestPriority`/`noLiveSlotRemains`/
  * `sideToMove`/`WORKER_HASH_MB`/`GRADING_WATCHDOG_TIMEOUT_MS`) import from
- * `workerPoolState.ts`, never from the `workerPool.ts` facade (215 code
- * review WR-01) — that facade imports FROM the stage modules, so a stage
+ * `workerPoolState.ts`, never from the `workerPool.ts` facade
+ * — that facade imports FROM the stage modules, so a stage
  * module importing back from it would recreate the cycle this split fixed.
  */
 
@@ -84,7 +84,7 @@ export function dispatchNext(state: PoolState, ops: PoolOps): void {
 /** Handle one UCI line emitted by a pool worker (per-slot line handler). */
 export function handleLine(state: PoolState, ops: PoolOps, slot: PoolWorkerSlot, line: string): void {
   if (line === 'uciok') {
-    // Cap Hash low (Pitfall 1) — shallow searchmoves-restricted grading
+    // Cap Hash low — shallow searchmoves-restricted grading
     // gains nothing from a large hash table, and N workers at default
     // settings multiplies mobile memory pressure for no search-quality gain.
     slot.worker.postMessage(`setoption name Hash value ${WORKER_HASH_MB}`);
@@ -117,7 +117,7 @@ export function handleLine(state: PoolState, ops: PoolOps, slot: PoolWorkerSlot,
     const toWhitePov = (v: number | null): number | null => (v === null ? null : v * whitePovSign);
 
     // Never key by the info line's raw multipv rank field (it reorders
-    // across depths) — key by pv[0], the move itself (SC5).
+    // across depths) — key by pv[0], the move itself.
     slot.accumulator.set(uci, {
       evalCp: toWhitePov(parsed.scoreCp),
       evalMate: toWhitePov(parsed.scoreMate),
@@ -131,8 +131,8 @@ export function handleLine(state: PoolState, ops: PoolOps, slot: PoolWorkerSlot,
     if (slot.stopPending) {
       // Stale bestmove — the terminal response to our own `stop`. Discard
       // (FLAWCHESS-7V guard); the request was already settled elsewhere
-      // (abort path, D-06 watchdog fire) or will be re-dispatched.
-      // This clear is also (quick 260731-s0z, FIX-4) the disarm point for
+      // (abort path, watchdog fire) or will be re-dispatched.
+      // This clear is also the disarm point for
       // the re-armed stop-bestmove watchdog on the healthy path — a
       // `bestmove` landing before STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS clears
       // it here before it can fire.
@@ -148,7 +148,7 @@ export function handleLine(state: PoolState, ops: PoolOps, slot: PoolWorkerSlot,
     slot.state = 'idle';
     slot.current = null;
     if (req) {
-      // Phase 226 D-18/L-2: this is the FIRST of exactly two call sites that
+      // This is the FIRST of exactly two call sites that
       // write to gradeCache — the abort path, stopAll, terminate, and
       // onerror all still settle without writing, which is precisely what
       // keeps a partial grade out of the cache. The second site is
@@ -182,15 +182,14 @@ interface SubmitGradeOptions {
 }
 
 /**
- * Phase 226 D-18: the shared request-submission body behind both `grade()`
+ * The shared request-submission body behind both `grade()`
  * (below, called with `{}` so every existing test sees a byte-identical
  * command stream and resolution timing — no added microtask) and
  * `gradeRoot()`'s per-shard requests (`{ readCache: false, writeCache:
- * false }`). This is a straight extraction of `grade()`'s pre-Plan-226-11
- * body: same guard order (empty candidates, already-aborted signal,
- * cache-read hit, `ensureSpawned`, no-slots, `noLiveSlotRemains`), same
- * settle-wrapper/single-abort-listener rule (Phase 194 WR-02), same
- * `dispatchNext()` call at the end.
+ * false }`). Guard order: empty candidates, already-aborted signal,
+ * cache-read hit, `ensureSpawned`, no-slots, `noLiveSlotRemains`; then the
+ * settle-wrapper/single-abort-listener rule and a final
+ * `dispatchNext()` call.
  */
 function submitGradeRequest(
   state: PoolState,
@@ -202,22 +201,22 @@ function submitGradeRequest(
   options: SubmitGradeOptions,
 ): SubmittedGradeRequest {
   const resolvedGradingDepth = gradingDepth ?? GRADING_ROOT_DEPTH;
-  // WR-05: an empty searchmoves list would make Stockfish search ALL moves
-  // and burn its full movetime budget on the public EngineProviders.grade
-  // surface — fail fast before spawning anything.
+  // An empty searchmoves list would make Stockfish search ALL moves to the
+  // full depth on the public EngineProviders.grade surface; fail fast before
+  // spawning anything.
   if (candidateUcis.length === 0) return { promise: Promise.resolve(new Map()), req: null };
-  // WR-01: a listener added via signal.addEventListener('abort', ...) below
+  // A listener added via signal.addEventListener('abort', ...) below
   // never fires for a signal that is ALREADY aborted at call time — without
   // this guard the search would run to completion unnecessarily.
   if (signal?.aborted) return { promise: Promise.resolve(new Map()), req: null };
 
-  // Phase 226 D-18/L-3: a root-split shard skips the cache read entirely —
+  // A root-split shard skips the cache read entirely —
   // it is asking for a SUBSET of the root's candidates, never the same
   // request the cache was asked about, so a "hit" here would silently
   // short-circuit the shard with a stale/partial answer.
   if (options.readCache !== false) {
-    // INJECT-05: gradeCache.read() is the shipped read gate — this call site
-    // is now IDENTICAL to what a Node harness sharing one createGradeCache()
+    // gradeCache.read() is the shipped read gate — this call site
+    // is IDENTICAL to what a Node harness sharing one createGradeCache()
     // instance across a baseline and an injected mctsSearch pass exercises,
     // so a measured hit rate (via cacheStats()) describes real cache
     // behavior, not a mirror.
@@ -226,10 +225,10 @@ function submitGradeRequest(
   }
 
   ops.ensureSpawned();
-  // WR-03: if every slot construction attempt threw (0 live slots after the
+  // If every slot construction attempt threw (0 live slots after the
   // spawn loop), nothing will ever dispatch a queued request — resolve
   // empty now rather than enqueuing into a queue nothing will service.
-  // Phase 213-08: gated on `!spawnInFlight` — an empty `slots` array DURING
+  // Gated on `!spawnInFlight` — an empty `slots` array DURING
   // the shared-fetch/construction window is expected (nothing has been
   // built yet), not a failure, so this must fall through to the enqueue
   // path below rather than resolving empty. `spawnInFlight` is false again
@@ -238,15 +237,15 @@ function submitGradeRequest(
   if (state.slots.length === 0 && !state.spawnInFlight) {
     return { promise: Promise.resolve(new Map()), req: null };
   }
-  // Bug fix (quick 260731-s0z, FIX-3): the guard above only covers "no slot
+  // Bug fix: the guard above only covers "no slot
   // was ever constructed". Once every constructed slot has since died (via
-  // `worker.onerror`, `fireWatchdog`, or FIX-4's `fireStopWatchdog`), a NEW
+  // `worker.onerror`, `fireWatchdog`, or `fireStopWatchdog`), a NEW
   // request enqueued here was reachable and unrecoverable — `dispatchNext`
   // skips every non-`isReady` slot and `drainPending` only runs at a death
   // TRANSITION, not for a request queued afterward, so `useBotGame.ts`'s
   // signal-less `.grade(fen, [uci])` call hung unconditionally.
   // `noLiveSlotRemains()`'s OWN precondition (`slots.length > 0`) is what
-  // makes this correct during the Phase 213-08 in-flight window too — it is
+  // makes this correct during the spawn-in-flight window too — it is
   // vacuously `false` for the still-empty `slots` array while a spawn is in
   // flight, so this guard does not fire before the guard above has settled
   // that case; it does not rely on the guard above having already
@@ -269,7 +268,7 @@ function submitGradeRequest(
   };
 
   const promise = new Promise<Map<string, MoveGrade>>((resolve) => {
-    // Phase 194 code-review WR-02: `{ once: true }` only self-removes the
+    // `{ once: true }` only self-removes the
     // listener if it FIRES. A request that settles normally would leave its
     // listener (and the `req` closure it captures) attached for the signal's
     // whole lifetime — and mctsSearch threads ONE signal through every grade
@@ -297,7 +296,7 @@ function submitGradeRequest(
         // uses for a superseded search.
         for (const slot of state.slots) {
           if (slot.current === req && slot.state === 'thinking') {
-            // Bug fix (quick 260731-s0z, FIX-4): a bare `clearSlotWatchdog`
+            // Bug fix: a bare `clearSlotWatchdog`
             // here left the slot parked in 'stopping' with no exit if the
             // worker never answers `stop` with a terminating `bestmove` —
             // arm the stop-bestmove watchdog instead so a genuinely hung
@@ -320,7 +319,7 @@ function submitGradeRequest(
   return { promise, req };
 }
 
-/** See `WorkerPool.grade()` (`EngineProviders.grade`, Phase 153/195). */
+/** See `WorkerPool.grade()` (`EngineProviders.grade`). */
 export function grade(
   state: PoolState,
   ops: PoolOps,
@@ -334,7 +333,7 @@ export function grade(
 
 /**
  * Idle, ready, unassigned, alive slot count — the app's live fan-out
- * ceiling for `gradeRoot` (D-08). Deliberately zero whenever anything is
+ * ceiling for `gradeRoot`. Deliberately zero whenever anything is
  * already `pending`: the "the whole pool is idle" premise `gradeRoot`'s
  * fan-out relies on holds only USUALLY, not always (a stopping slot mid-
  * abort, the bot's post-commit one-off `grade()` call, a not-yet-`isReady`
@@ -353,10 +352,10 @@ function countIdleReadySlots(state: PoolState): number {
 }
 
 /**
- * See `WorkerPool.gradeRoot()` (Phase 226 D-18/L-2/L-3/L-4, arm A21S). Splits
+ * See `WorkerPool.gradeRoot()`. Splits
  * the ONE root grade call of a search across every idle, ready slot instead
  * of serializing it through one worker while the rest of the pool sits idle
- * for all of round 1 (SEED-171 item 1).
+ * for all of round 1.
  *
  * Guard prologue is copied verbatim from `grade()` (via `submitGradeRequest`
  * called with default options below the `k`-computation branch) — every
@@ -386,7 +385,7 @@ export function gradeRoot(
   if (k <= 1) return grade(state, ops, fen, candidateUcis, signal, gradingDepth);
 
   const shards = partitionCandidates(candidateUcis, k);
-  // D-18/WR-02 history: exactly ONE listener on the OUTER (search) signal —
+  // Exactly ONE listener on the OUTER (search) signal —
   // every shard request below is submitted against `groupController.signal`
   // instead, never the outer signal directly, so aborting the search cannot
   // accumulate a per-shard listener on it. Detached in the `settledCount`
@@ -414,14 +413,14 @@ export function gradeRoot(
     const finish = (): void => {
       if (outerAbortListener && signal) signal.removeEventListener('abort', outerAbortListener);
       if (groupFailed || signal?.aborted) {
-        // L-2: any shard that did not complete via bestmove (or the outer
+        // Any shard that did not complete via bestmove (or the outer
         // signal aborting the whole group) resolves the WHOLE group empty —
         // never a partial merge.
         resolveGroup(new Map());
         return;
       }
       const merged = mergeShardGrades(candidateUcis, results);
-      // Phase 226 D-18/L-3: the group's ONE success-only merged cache write —
+      // The group's ONE success-only merged cache write —
       // see the paired comment on `handleLine`'s bestmove branch above for
       // why this is exactly the second (and last) `gradeCache.write` site.
       state.gradeCache.write(fen, resolvedGradingDepth, merged);
@@ -433,7 +432,7 @@ export function gradeRoot(
         results[i] = grades;
         settledCount += 1;
         if (!submission.req || submission.req.completed !== true) {
-          // L-2: the first shard to settle without completing marks the
+          // The first shard to settle without completing marks the
           // whole group failed and aborts the group controller — every
           // still-thinking sibling gets `stop` via its own abort listener
           // (submitted against `groupController.signal` above), exactly

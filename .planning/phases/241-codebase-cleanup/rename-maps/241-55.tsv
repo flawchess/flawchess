@@ -1,0 +1,4 @@
+old	new	kind	absent_paths	ref	canon_paths
+_phase80_item_from_metrics	_bookmark_phase_entry_item	identifier	app,tests,scripts	INVENTORY §5 stats_service.py:484	
+_collect_attribution_hashes	_fetch_attribution_context	identifier	app,tests,scripts	INVENTORY §5 opening_insights_service.py:602 (D-07)	
+gc	move_game_count	identifier	app/services/openings_service.py	INVENTORY §5 openings_service.py:548	app/services/openings_service.py

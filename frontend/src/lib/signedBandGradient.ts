@@ -1,23 +1,20 @@
 /**
  * Shared signed-band gradient-stops algorithm.
  *
- * Lifted verbatim from EndgameScoreOverTimeChart.tsx:99-165 (Phase 68 UAT fix
- * for the "first non-zero diff initialises currentColor" rule + the
- * `colorA !== colorB` zero-endpoint handling). See the inline comments in the
+ * Handles the "first non-zero diff initialises currentColor" rule and the
+ * `colorA !== colorB` zero-endpoint handling. See the inline comments in the
  * function body for the two edge cases.
  *
- * Phase 87.6: extracted into this shared helper so both
+ * Shared by both
  * EndgameScoreOverTimeChart and EndgameEloTimelineSection call the same
  * code path. One bug-fix surface for any future crossover edge case.
  *
- * IMPORTANT — Recharts UAT pitfall (Phase 68, 260424-pc6):
+ * IMPORTANT — Recharts pitfall:
  * The <Area> that references this gradient MUST be a direct child of
  * <ComposedChart>. A plain <g> wrapper hides the <Area> from Recharts'
  * `findAllByType` scan in `generateCategoricalChart`, so the area never
  * registers with the chart axes and no <path> is emitted. Do NOT wrap
  * <Area> in <g> or <React.Fragment>.
- *
- * See .planning/notes/endgame-elo-pr-direct-rebuild.md for derivation context.
  */
 
 export interface GradientStop {
@@ -33,11 +30,6 @@ export interface SignedBandRow {
 /**
  * Build the stop sequence for a horizontal `<linearGradient>` that paints a
  * signed band with instant color flips at every sign crossover.
- *
- * Lifted verbatim from `EndgameScoreOverTimeChart.tsx:99-165` (Phase 68 UAT fix
- * for the "first non-zero diff initialises currentColor" rule + the
- * `colorA !== colorB` zero-endpoint handling). See the inline comments in the
- * function body for the two edge cases.
  *
  * @param rows  Row signs in domain order. Length 0 → empty stops.
  * @param _xDomain  [min, max] domain — currently unused (offset = i / (N-1) * 100);

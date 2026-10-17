@@ -1,19 +1,16 @@
 /**
  * useBoardNavigationInput — shared arrow-key + mouse-wheel move browsing for
- * chess boards (Quick 260821-kyz).
+ * chess boards.
  *
- * Extracted from useAnalysisBoard so the Openings board gets identical
- * behavior instead of a second, weaker copy of the guards (the previous
- * Openings handler checked only INPUT/TEXTAREA/SELECT: no defaultPrevented,
- * modifier, contentEditable or modal guard, no container scoping, no
- * repeat throttle, and no wheel support at all).
+ * Shared by the analysis board, the Openings board and the Train reveal so
+ * every board gets the same guards.
  *
  * Two input surfaces:
  * - Keyboard: window-scoped so ArrowLeft/ArrowRight work without first
  *   clicking the board (lichess parity). Six guards, cheapest first, keep it
  *   from hijacking keys that belong elsewhere — see handleKeyDown. A consumer
  *   may also pass `goHome` to bind the Home key (the Train reveal's "back to
- *   the puzzle position", Phase 237); without it Home is left alone.
+ *   the puzzle position"); without it Home is left alone.
  * - Wheel: board-scoped. Wheel down goes forward, wheel up goes back, and the
  *   page never scrolls while the pointer is over the board. Rate limited by
  *   an accumulated-delta threshold plus a time throttle so a trackpad flick
@@ -37,7 +34,7 @@ import type { RefObject } from 'react';
  * is required in addition to `role="dialog"` because Radix popovers (e.g. a hovered
  * info tooltip) also render `role="dialog"` but are never modal — without the
  * aria-modal qualifier this guard would block board navigation behind a hovered
- * popover, which is worse than the click-to-focus bug it exists to fix (D-02).
+ * popover, which is worse than the click-to-focus bug it exists to fix.
  */
 const OPEN_MODAL_SELECTOR = '[role="dialog"][aria-modal="true"][data-state="open"]';
 
@@ -51,9 +48,9 @@ const OPEN_MODAL_SELECTOR = '[role="dialog"][aria-modal="true"][data-state="open
  */
 const KEY_REPEAT_NAV_THROTTLE_MS = 90;
 
-/** Accumulated wheel travel (px) required before one navigation step fires — filters trackpad micro-jitter (D-04). */
+/** Accumulated wheel travel (px) required before one navigation step fires — filters trackpad micro-jitter. */
 const WHEEL_NAV_DELTA_THRESHOLD_PX = 15;
-/** Minimum gap (ms) between two wheel-driven navigation steps, so a momentum flick advances a handful of moves rather than the whole game (D-04). */
+/** Minimum gap (ms) between two wheel-driven navigation steps, so a momentum flick advances a handful of moves rather than the whole game. */
 const WHEEL_NAV_THROTTLE_MS = 90;
 /** WheelEvent.deltaMode value for line-unit deltas (Firefox's default reporting unit). */
 const WHEEL_DELTA_MODE_LINE = 1;
@@ -81,8 +78,8 @@ function wheelDeltaPx(e: WheelEvent): number {
 /**
  * True for surfaces where an arrow key means "move the caret", not "browse the
  * game": form controls plus any contentEditable host. Written without a cast
- * (unlike the older useChessGame.ts / MoveListPanel.tsx precedents) so a
- * non-element target (window, document) can't throw on `.tagName`.
+ * (unlike MoveListPanel.tsx's keydown guard) so a non-element target (window,
+ * document) can't throw on `.tagName`.
  */
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -139,7 +136,7 @@ export function useBoardNavigationInput({
 
   // Window-scoped, guarded keydown handler (ArrowLeft = goBack, ArrowRight =
   // goForward, Home = goHome when provided). Window-scoped rather than
-  // container-scoped (D-01) so arrows work without first clicking the board.
+  // container-scoped so arrows work without first clicking the board.
   // The container refs are read INSIDE the handler, not captured at
   // effect-mount time, because pages swap their mobile and desktop board
   // wrappers without re-running this effect.
@@ -153,7 +150,7 @@ export function useBoardNavigationInput({
       // A modifier is held, so browser shortcuts like Cmd+Left still work.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
-      // No mounted container — how a consumer opts out entirely (D-05).
+      // No mounted container — how a consumer opts out entirely.
       if (!containerRefsRef.current.some((ref) => ref.current)) return;
       if (document.querySelector(OPEN_MODAL_SELECTOR)) return;
 
@@ -183,7 +180,7 @@ export function useBoardNavigationInput({
   }, []);
 
   // Board-scoped, rate-limited wheel handler (wheel up = goBack, wheel down =
-  // goForward, D-03). Registered on `window` with a container.contains(e.target)
+  // goForward). Registered on `window` with a container.contains(e.target)
   // test rather than directly on the container element itself, for the same
   // reason the keydown handler above reads its container refs at event time:
   // a listener bound directly to the container would end up on a detached node
@@ -199,7 +196,7 @@ export function useBoardNavigationInput({
 
       // The board is a navigation surface while hovered, never a scroll
       // surface — prevented unconditionally once we know the pointer is over
-      // it, independent of whether a step fires below (D-03).
+      // it, independent of whether a step fires below.
       e.preventDefault();
 
       accumulatedWheelPxRef.current += wheelDeltaPx(e);

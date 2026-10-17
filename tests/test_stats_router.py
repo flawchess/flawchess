@@ -303,7 +303,7 @@ class TestGetMostPlayedOpenings:
     async def test_most_played_openings_includes_pgn_fen(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """Response openings should include pgn and fen fields per ORT-03."""
+        """Response openings should include pgn and fen fields."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -363,7 +363,7 @@ class TestGetGlobalStatsOpponentFilters:
 
     @pytest.mark.asyncio
     async def test_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
-        """Endpoint should accept opponent_type param without error (D-18)."""
+        """Endpoint should accept opponent_type param without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -409,7 +409,7 @@ class TestGetRatingHistoryOpponentFilters:
 
     @pytest.mark.asyncio
     async def test_rating_history_accepts_opponent_type(self, auth_headers: dict[str, str]) -> None:
-        """Endpoint should accept opponent_type param without error (D-18)."""
+        """Endpoint should accept opponent_type param without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:

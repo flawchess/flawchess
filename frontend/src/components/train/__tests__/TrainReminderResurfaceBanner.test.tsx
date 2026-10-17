@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 /**
- * TrainReminderResurfaceBanner.test.tsx — Phase 203 Plan 04 (OFFER-05/D-16).
  * The banner is self-contained (computes its own mount decision via
  * `useReminderResurface`), so every test here mocks that hook directly
  * rather than assembling the underlying platform signals.
@@ -58,7 +57,7 @@ afterEach(() => {
 });
 
 describe('TrainReminderResurfaceBanner', () => {
-  it('renders nothing when shouldResurface is false (empty per OFFER-05/D-16)', () => {
+  it('renders nothing when shouldResurface is false', () => {
     mockResurface({ shouldResurface: false });
     mockPushCapability();
 
@@ -138,7 +137,7 @@ describe('TrainReminderResurfaceBanner', () => {
     });
   });
 
-  it('a dismissed subscribe prompt leaves the banner standing with no error copy (PERM-02 precedent)', async () => {
+  it('a dismissed subscribe prompt leaves the banner standing with no error copy', async () => {
     mockResurface();
     mockPushCapability();
     vi.mocked(ensureDeviceSubscribed).mockResolvedValue({ status: 'dismissed' });
@@ -176,7 +175,7 @@ describe('TrainReminderResurfaceBanner', () => {
     expect(screen.queryByTestId('resurface-banner')).toBeNull();
   });
 
-  // WR-01 (203-REVIEW.md): these two replace an earlier test that asserted the
+  // These two replace an earlier test that asserted the
   // banner rendered a CTA which errored on tap when push was unavailable. That
   // was the defect, not the contract — an unresolved probe is not a failure,
   // and a CTA that can only ever error is worse than no CTA at all.

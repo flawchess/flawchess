@@ -7,10 +7,10 @@ const READINESS_POLL_INTERVAL_MS = 3_000;
 const READINESS_STALE_TIME_MS = 3_000;
 
 // Laddered decay once tier1 is true and only tier2 is outstanding. tier2 waits
-// out a days-long eval drain (SEED-146), so a fixed 3s cadence for the whole
+// out a days-long eval drain, so a fixed 3s cadence for the whole
 // wait is the unbounded-standing-load problem this backoff exists to fix.
 // Three integer-literal steps, clamping at 5 minutes — no multiplication or
-// Math.pow, so the emitted sequence is exactly assertable (D-05).
+// Math.pow, so the emitted sequence is exactly assertable.
 const READINESS_BACKOFF_LADDER_MS = [15_000, 60_000, 300_000] as const;
 
 // A tab left open for hours must eventually go quiet even while tier2 is

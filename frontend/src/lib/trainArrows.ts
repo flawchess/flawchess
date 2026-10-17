@@ -1,13 +1,12 @@
 /**
  * trainArrows — pure reveal-board overlay builder (arrows + square-corner
- * quality badges) for the Train solve screen (Phase 190.1, D-02; reworked per
- * 190.1 UAT).
+ * quality badges) for the Train solve screen.
  *
- * Color language (190.1 UAT, recolored per Phase 200 D-04/D-05): BLUE always
+ * Color language: BLUE always
  * marks the engine's best move (the app-wide "engine pointer" hue), the
  * user's PLAYED move is colored by its own move quality (good/inaccuracy/
  * mistake/blunder), alternative fine moves — the SERVER's vetted "Also
- * fine" list as of Phase 211 (D-01), no longer the client engine's MultiPV
+ * fine" list, not the client engine's MultiPV
  * ranks — are dark green regardless of whether the server classified them
  * best, good or inaccuracy (a 'best'-quality alternative keeps its blue
  * best-star BADGE, though — the deep engine's endorsement is real
@@ -16,12 +15,11 @@
  * Every arrow additionally gets the matching move-quality badge (the shared
  * SquareMarker corner glyphs) on its target square.
  *
- * Quick 261008-opg reverses Phase 200 D-04/D-05, which drew a played
- * inaccuracy as good so the board would not contradict a verdict that called
- * it correct. Since tiered scoring (SEED-119) an inaccuracy earns 1 move point,
- * not 2, and the verdict says "decent move [+1]", so the green collapse itself
- * became the contradiction. Only the server-vetted "Also fine" alternatives
- * still render inaccuracy as good: they are listed as acceptable moves.
+ * A played inaccuracy is NOT drawn as good: with tiered scoring an inaccuracy
+ * earns 1 move point, not 2, and the verdict says "decent move [+1]", so a
+ * green collapse would contradict the verdict. Only the server-vetted "Also
+ * fine" alternatives render inaccuracy as good: they are listed as acceptable
+ * moves.
  *
  * Extracted into its own module (rather than inlined in TrainSolveScreen) so
  * the puzzle-type-aware arrow selection is unit-testable without rendering a
@@ -62,7 +60,7 @@ import type { FlawSeverity } from '@/types/library';
 export type TrainPuzzleType = 'sharp' | 'soft' | 'herring';
 
 /**
- * Move-quality taxonomy for the reveal board (190.1 UAT). Deliberately the
+ * Move-quality taxonomy for the reveal board. Deliberately the
  * subset of lib/moveQuality.ts's MoveQuality that the grading engine can
  * actually distinguish here — no 'gem'/'great' (those need the Maia overlay,
  * which the Train loop doesn't run).
@@ -70,13 +68,13 @@ export type TrainPuzzleType = 'sharp' | 'soft' | 'herring';
 export type TrainMoveQuality = 'best' | 'good' | FlawSeverity;
 
 /**
- * One server-certified alternative ("Also fine" move). Phase 211 (D-01): the
+ * One server-certified alternative ("Also fine" move). The
  * list is the verdict's `vetted_moves` — soft deep-best + `su`, herring
- * good-band ladder — no longer derived from the client engine's MultiPV mount
+ * good-band ladder — not derived from the client engine's MultiPV mount
  * search. 'good' (drop not even an inaccuracy) and 'inaccuracy' (drop within
- * [INACCURACY_DROP, MISTAKE_DROP), still a correct move by SOLV-03's rule)
+ * [INACCURACY_DROP, MISTAKE_DROP), still a correct move by the scoring rule)
  * are retained because the wire shape mirrors them; the reveal renders both
- * as good (see `buildTrainRevealOverlay`). D-01 amendment (2026-08-16): 'best' marks the
+ * as good (see `buildTrainRevealOverlay`). 'best' marks the
  * deep best move itself, served FIRST on a soft puzzle — usually filtered out
  * below (it coincides with the client's best arrow), but displayable when the
  * two engines disagree, which is exactly the case that used to strand the
@@ -88,7 +86,7 @@ export interface TrainFineMove {
 }
 
 /**
- * Phase 211 (D-06): find the served vetted move whose UCI starts at `from`
+ * Find the served vetted move whose UCI starts at `from`
  * and ends at `to`, or null. The free-play ROOT ply's key lookup — this is
  * the squares-only twin of `uciParser.ts`'s exact-UCI `rankLineForMove`, and
  * it carries forward the contract of the retired squares-only rank matcher
@@ -119,17 +117,15 @@ export function vettedMoveForSquares(
 }
 
 /**
- * Arrow caps, counted in ALTERNATIVES (Phase 200 UAT round 4) — not in total
- * arrows as the original D-02 constants were: the filter runs BEFORE the
- * slice in `buildTrainRevealOverlay`, so the best move and a played
- * alternative never consume a slot. Phase 211 (D-01) split the former shared
- * non-sharp cap into THREE independent per-puzzle-type budgets — the
- * alternatives are now the server's certified list, whose upper bound
- * differs per type, not slices of one client MultiPV array.
+ * Arrow caps, counted in ALTERNATIVES, not in total arrows: the filter runs
+ * BEFORE the slice in `buildTrainRevealOverlay`, so the best move and a played
+ * alternative never consume a slot. There are THREE independent
+ * per-puzzle-type budgets — the alternatives are the server's certified list,
+ * whose upper bound differs per type, not slices of one client MultiPV array.
  */
-/** A sharp puzzle has exactly one right move by definition (D-02), so it
+/** A sharp puzzle has exactly one right move by definition, so it
  * draws NO alternative arrows at all, regardless of how many entries the
- * fine-moves set has. Deliberately kept at zero after the round-4 recount:
+ * fine-moves set has. Deliberately kept at zero:
  * the sharp/soft label comes from the server's deep MultiPV-2 answer key,
  * which outranks the solve loop's 1.5s client search — if the deep key says
  * the runner-up is itself a mistake, green alternatives here would both
@@ -137,16 +133,15 @@ export function vettedMoveForSquares(
  * user just scored on. */
 export const TRAIN_SHARP_ALT_MOVE_ARROWS = 0;
 /** A soft puzzle draws at most ONE green alternative. The served list holds
- * up to TWO entries since the D-01 amendment (2026-08-16) — the deep best
+ * up to TWO entries — the deep best
  * (quality 'best', first) plus the second-best `su` — and when the client's
  * own best arrow coincides with neither (the two engines disagree AND the
  * played move is off-key), both survive the filter below. The cap of 1 then
  * deliberately truncates to the FIRST survivor: the server's best-first
  * order is a documented contract of the vetted list, so the drawn entry is
  * always the STRONGEST new fine move, and a soft board never shows more
- * than one green arrow. Phase 211 (D-01): no longer derived from the
- * retired MultiPV mount-search width; the server list's own shape is the
- * authority. */
+ * than one green arrow. The server list's own shape is the
+ * authority, not a client MultiPV width. */
 export const TRAIN_SOFT_ALT_MOVE_ARROWS = 1;
 /** A red herring's certified list comes from the stored 5-entry ladder
  * (`app/services/train_pool.py` `HERRING_LADDER_SIZE`), whose top entry is
@@ -156,7 +151,7 @@ export const TRAIN_SOFT_ALT_MOVE_ARROWS = 1;
  * length is the authority — this constant is deliberately NOT imported from
  * the backend. */
 export const TRAIN_HERRING_ALT_MOVE_ARROWS = 4;
-/** The TOTAL alternative arrows at a soft puzzle's root (quick 261010-e5l):
+/** The TOTAL alternative arrows at a soft puzzle's root:
  * server-certified alternatives first (still capped by
  * TRAIN_SOFT_ALT_MOVE_ARROWS), live engine lines fill the rest. Deliberately
  * independent of the Stockfish arrows setting (sfArrows), which governs
@@ -168,8 +163,8 @@ export const TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS = 3;
  * flash a move that turns out to be an inaccuracy. 10 equals
  * GRADING_DEPTH_FLOOR in lib/engine/gradingLadder.ts, the shallowest depth the
  * app's own move grading trusts; it sits above EvalBar's depth-8 mate floor and
- * below the depth-12 step gate that quick 261009-por dropped because slow
- * phones never reached it inside the 1500 ms movetime. Kept as its own number
+ * below a depth-12 step gate, which slow phones never reached inside the
+ * 1500 ms movetime. Kept as its own number
  * (not imported) so retuning the bot grading ladder never moves this display
  * gate. Checked on BOTH the top line and the candidate (secondary lines of an
  * iteration can trail the top line by a depth). A device that never reaches it
@@ -197,24 +192,24 @@ export function trainRootMultiPvFloor(puzzleType: TrainPuzzleType): number {
   }
 }
 
-/** Normal engine-arrow width (matches Analysis.tsx's
+/** Normal engine-arrow width (matches useAnalysisBoardArrows.ts's
  * STOCKFISH_ENGINE_ARROW_WIDTH) — used for the green good-move arrows. */
 export const TRAIN_GOOD_MOVE_ARROW_WIDTH = 0.5;
 /** Normal engine-arrow width, same value as TRAIN_GOOD_MOVE_ARROW_WIDTH — a
- * distinct named constant per D-02 (distinct arrow widths), so the
+ * distinct named constant (distinct arrow widths), so the
  * played-move arrow's width can be retuned independently later. */
 export const TRAIN_PLAYED_MOVE_ARROW_WIDTH = 0.5;
 /** Width of the blue best-move arrow — same rationale as the played-move
  * width constant above. */
 export const TRAIN_BEST_MOVE_ARROW_WIDTH = 0.5;
-/** Thinner width for the game-move arrow (matches Analysis.tsx's
+/** Thinner width for the game-move arrow (matches useAnalysisBoardArrows.ts's
  * NEXT_MOVE_ARROW_WIDTH) — reads as a subtle hint layered over the wider
  * quality arrows, same treatment as the analysis board's translucent white
  * next-move arrow. */
 export const TRAIN_GAME_MOVE_ARROW_WIDTH = 0.18;
 
 /** Arrow fill per move quality. 'best' uses the app-wide engine-pointer blue,
- * never a green — the whole point of the 190.1 UAT recolor. */
+ * never a green. */
 const QUALITY_ARROW_COLOR: Record<TrainMoveQuality, string> = {
   best: TRAIN_BEST_MOVE_ARROW,
   good: MOVE_QUALITY_GOOD,
@@ -224,7 +219,7 @@ const QUALITY_ARROW_COLOR: Record<TrainMoveQuality, string> = {
 };
 
 /**
- * Phase 237 UAT: the color of a reveal chip's board arrow, so the chip can show
+ * The color of a reveal chip's board arrow, so the chip can show
  * which arrow it focuses. Mirrors `buildTrainRevealOverlay`: a chip holding the
  * played or best move is drawn in its quality color (blue for best, an unrated
  * played move as good); a game-only chip is the thin white game arrow.
@@ -239,7 +234,7 @@ export function chipArrowColor(
 }
 
 /**
- * Last-move square-highlight color per move quality (190.1 UAT stepping):
+ * Last-move square-highlight color per move quality while stepping:
  * mirrors useGameOverlay's severity mapping (inaccuracy = the shared yellow),
  * plus blue for an engine-best/engine-line move.
  */
@@ -271,11 +266,11 @@ function enginePointerArrows(uci: string | null, layerKey: string): BoardArrow[]
 }
 
 /**
- * On the reveal's move list (190.1 UAT, SEED-197), the PRIMARY arrow on the board
+ * On the reveal's move list, the PRIMARY arrow on the board
  * is a blue pointer for the preview's next move from the shown position, i.e.
  * what the forward button commits (it comes from a Stockfish line, so it reads
- * in the engine hue). Null/absent next move (no preview) draws nothing. `buildTrainStepOverlay` adds the
- * live engine's secondary arrows underneath it.
+ * in the engine hue). Null/absent next move (no preview) draws nothing.
+ * `buildTrainStepOverlay` adds the live engine's secondary arrows underneath it.
  */
 export function buildTrainStepArrows(nextMoveUci: string | null): BoardArrow[] {
   return enginePointerArrows(nextMoveUci, 'step-next');
@@ -288,9 +283,9 @@ function fromToKey(uci: string): string {
 }
 
 /**
- * Quick 261012-a6m D-08: arrows and badges of one engine overlay, built from a
+ * Arrows and badges of one engine overlay, built from a
  * single grade pass. `badges` are precedence-ordered candidates; the caller merges
- * them under any existing square markers with `mergeEngineBadges` (D-03).
+ * them under any existing square markers with `mergeEngineBadges`.
  */
 export interface TrainEngineOverlay {
   arrows: BoardArrow[];
@@ -319,7 +314,7 @@ function drawnLiveRanks(
 }
 
 /**
- * The preview pointer's badge (D-04): solid arrow, so an opaque badge. The star
+ * The preview pointer's badge: solid arrow, so an opaque badge. The star
  * only when the preview IS the live top move; a lower live line grades like a
  * secondary; a preview with no live line gets nothing.
  */
@@ -340,13 +335,13 @@ function previewPointerBadge(
 }
 
 /**
- * Quick 261009-por / SEED-197: a previewed position keeps the preview's blue
+ * A previewed position keeps the preview's blue
  * pointer (its next move, what the forward button commits) AND shows the live reveal engine's other top moves (up to `count`, the
  * Stockfish arrows setting) as translucent secondaries, exactly as many as the
  * free-play board draws off the known lines. The ARROWS have no depth gate (owner
  * call): they settle as the search deepens, the same as off the known lines, and a
  * gate would leave slow phones with no live arrows at all. Only their graded alpha
- * and the badges wait for ENGINE_ARROW_GRADE_MIN_DEPTH (quick 261012-a6m D-02/D-08);
+ * and the badges wait for ENGINE_ARROW_GRADE_MIN_DEPTH;
  * before that they draw in the fixed STOCKFISH_SECONDARY_LINE. The preview pointer is
  * pushed LAST so it paints on top (same-tier stable sort in the board's arrow overlay).
  * `pvLines` is the staleness-guarded list for the shown position (empty until
@@ -354,7 +349,7 @@ function previewPointerBadge(
  * With no preview (`nextMoveUci` null) the live moves draw as secondaries with no
  * primary.
  *
- * Badges (D-04), in precedence order: the preview pointer first (primary arrow alpha, because
+ * Badges, in precedence order: the preview pointer first (primary arrow alpha, because
  * its arrow is solid), then each drawn live rank at its own alpha (rank 0 included:
  * the preview keeps it secondary-drawn, so its star is translucent too).
  */
@@ -393,20 +388,19 @@ export function buildTrainStepOverlay(
 }
 
 /**
- * Phase 200 UAT round 5 / Phase 228 (D-13, D-15): while exploring, the board
+ * While exploring, the board
  * carries the free-play engine's own top moves as blue arrows — exactly what
  * the analysis board shows for its Stockfish engine (same hue, same width).
- * This replaces the original EXPLORE-03 rule of "no arrows at all while
- * exploring": a sideline you cannot see the best answer to is a worse teacher
- * than one you can.
+ * Don't draw "no arrows at all while exploring": a sideline you cannot see
+ * the best answer to is a worse teacher than one you can.
  *
  * The Stockfish arrows setting sets how many live engine arrows draw (`count`,
  * 0-3; 0 draws none). Rank 0 is the solid engine blue, ranks 1..N-1 share the
- * Stockfish translucent color at the SAME width (D-15), pushed in reverse rank
+ * Stockfish translucent color at the SAME width, pushed in reverse rank
  * order so the primary paints on top. The reveal LEGEND arrows (blue best,
- * green also-fine, game-move) are built elsewhere and always draw (D-13).
+ * green also-fine, game-move) are built elsewhere and always draw.
  *
- * Quick 261012-a6m (D-04, D-08): once the lines are deep enough
+ * Once the lines are deep enough
  * (ENGINE_ARROW_GRADE_MIN_DEPTH) ranks 1+ take their graded alpha and every drawn
  * arrow gets a quality badge (rank 0 the best star at the primary arrow alpha, ranks 1+ at the arrow's
  * alpha). `fen` is the shown position (the side-to-move for grading). Before the
@@ -439,7 +433,7 @@ export function buildTrainFreePlayOverlay(
 }
 
 /**
- * While stepping (190.1 UAT round 4): the line's FIRST move keeps its quality
+ * While stepping: the line's FIRST move keeps its quality
  * badge on the target square (the squares are already highlighted in the
  * quality color — the badge is the icon on top). Deeper steps are engine
  * continuations and carry no badge. Null quality (tactic-less/unresolved
@@ -466,7 +460,7 @@ export interface TrainOverlayMove {
 export interface TrainRevealOverlay {
   arrows: BoardArrow[];
   markers: SquareMarker[];
-  /** Phase 200 (LEGEND-04/D-02/D-03) — exactly the alternative fine moves
+  /** Exactly the alternative fine moves
    * actually drawn as green arrows (never the overflow past the puzzle-type
    * arrow cap), for the reveal sidebar's compact "Also fine" row. Derived in
    * the SAME loop that pushes the arrows themselves, so this can never list a
@@ -478,7 +472,7 @@ export interface TrainRevealOverlay {
    * game, so when two candidate moves share a target square only ONE badge
    * survives — and it belongs to the higher-precedence move. Without this map
    * `buildChipFocusOverlay` could only match markers by square, which let a
-   * focused alternative inherit the best move's blue badge (WR-02). Recorded
+   * focused alternative inherit the best move's blue badge. Recorded
    * in the same `pushMarker` call that creates the badge, so the two can
    * never drift. */
   markerOwners: Record<string, string>;
@@ -499,9 +493,9 @@ export function classifyTrainMoveQuality(
   return classifyLiveSeverity(esBefore, esMove) ?? 'good';
 }
 
-/** Phase 211 (D-01): branches on ALL THREE puzzle types explicitly — the old
+/** Branches on ALL THREE puzzle types explicitly — the old
  * two-way sharp/non-sharp shape is exactly what would silently cap a herring
- * at the soft budget now that the two budgets differ (RESEARCH Pitfall 6). */
+ * at the soft budget now that the two budgets differ. */
 function alternativeArrowCap(puzzleType: TrainPuzzleType): number {
   switch (puzzleType) {
     case 'sharp':
@@ -521,7 +515,7 @@ function squaresFromUci(uci: string | null): { startSquare: string; endSquare: s
 }
 
 /**
- * Phase 200 UAT: the SquareMarker corner badge for one move quality, exported
+ * The SquareMarker corner badge for one move quality, exported
  * so the reveal tree (`useTreeMoveGrading`) badges a freely played move with
  * exactly the glyph the reveal board would use for the same quality.
  */
@@ -538,14 +532,14 @@ function markerForQuality(square: string, quality: TrainMoveQuality): SquareMark
 }
 
 /**
- * Builds the reveal board's full overlay (D-02, recolored per 190.1 UAT and
- * Phase 200 D-04/D-05):
+ * Builds the reveal board's full overlay:
  * - a BLUE best-move arrow (the engine's top move) with a 'best' badge
  * - up to `alternativeArrowCap` additional fine-move arrows (soft/herring
  *   only — sharp draws none), always dark green with the 'good' badge, an
  *   inaccuracy-quality alternative included (it is listed as acceptable)
  * - the user's played-move arrow colored by its own quality (inaccuracy is
- *   yellow since quick 261008-opg), with the matching quality badge — merged into the blue arrow when the played move IS the best move
+ *   yellow), with the matching quality badge — merged into the blue arrow
+ *   when the played move IS the best move
  * - a thin white game-move arrow (drawn on top) for the move played in the
  *   game, with its quality badge once known (`quality: null` = no badge yet)
  *
@@ -583,10 +577,10 @@ export function buildTrainRevealOverlay(
 
   // The alternatives actually drawable as green arrows: every fine move that
   // is NOT already drawn as the blue best arrow or the quality-colored played
-  // arrow, capped at the puzzle type's alternative budget. Phase 200 UAT
-  // round 4: the filter runs BEFORE the slice, so the best move (always rank 1
-  // of `fineMoves`) and a played alternative no longer consume alternative
-  // slots — see the cap constants' comment for the bug this fixes.
+  // arrow, capped at the puzzle type's alternative budget. The filter runs
+  // BEFORE the slice, so the best move (always rank 1 of `fineMoves`) and a
+  // played alternative never consume alternative slots — see the cap
+  // constants' comment.
   const alternatives = fineMoves
     .filter((fine) => fine.uci !== bestMoveUci && fine.uci !== playedMove?.uci)
     .slice(0, alternativeArrowCap(puzzleType));
@@ -631,7 +625,7 @@ export function buildTrainRevealOverlay(
   // inaccuracy-quality alternative included. Moves already
   // drawn as the best or played arrow were filtered out when `alternatives`
   // was built. Every pushed arrow gets a matching `alsoFineMoves` entry in
-  // the SAME iteration (Phase 200 LEGEND-04/D-03), so the sidebar row and the
+  // the SAME iteration, so the sidebar row and the
   // board arrows can never drift.
   alternatives.forEach((fine, index) => {
     const squares = squaresFromUci(fine.uci);
@@ -675,7 +669,7 @@ function isScoredLiveLine(line: PvLine): boolean {
 }
 
 /**
- * Quick 261010-e5l: the soft puzzle's live-engine alternatives, drawn at the
+ * The soft puzzle's live-engine alternatives, drawn at the
  * puzzle position next to the server-certified one. Walks the root search's
  * lines 1.. in rank order and keeps those that classify as good (no
  * inaccuracy or worse, mover POV, via the app's own classifyLiveSeverity) once
@@ -690,10 +684,10 @@ function isScoredLiveLine(line: PvLine): boolean {
  * wide translucent arrow under it adds the "also a good move" fact, and under
  * chip focus both arrows match the Game chip by squares and light together.
  *
- * Owner UAT 2026-10-10: live alternatives are presented exactly like the
- * certified ones (green arrow, 'good' badge, listed in the "Also fine" text);
- * the original faint blue, badge-less, unlisted styling made the same "also a
- * good move" fact read as a different kind of move. Sharp draws none (one
+ * Live alternatives are presented exactly like the certified ones (green
+ * arrow, 'good' badge, listed in the "Also fine" text); a faint blue,
+ * badge-less, unlisted styling would make the same "also a good move" fact
+ * read as a different kind of move. Sharp draws none (one
  * right move), herring keeps its own certified ladder.
  *
  * Returns null while the root search is not yet trustworthy (top line
@@ -765,7 +759,7 @@ function withLiveAlternativeBadges(
 }
 
 /**
- * Phase 237 (D-04) — the board-side half of the reveal's chip focus. DIMS a
+ * The board-side half of the reveal's chip focus. DIMS a
  * reveal overlay instead of filtering it: every arrow and quality badge stays
  * on the board, the ones belonging to `activeUcis` are drawn near-opaque, the
  * rest fade to a low opacity ("the other arrows fade to ~20-30%, never
@@ -780,7 +774,7 @@ function withLiveAlternativeBadges(
  * (this deliberately overrides the game arrow's own `onTop` while dimmed).
  *
  * Markers match by badge OWNERSHIP (`markerOwners`), not by end-square
- * membership (WR-02): two candidate moves can share a target square, only the
+ * membership: two candidate moves can share a target square, only the
  * higher-precedence badge survives `pushMarker`, and a focused alternative
  * must not light the best move's badge. An unowned square dims.
  *
@@ -789,7 +783,7 @@ function withLiveAlternativeBadges(
  * `alsoFineMoves` passes through unchanged; `markerOwners` gains only the
  * live alternatives' badges.
  *
- * Quick 261010-e5l: `liveAlternatives` (the soft root's live engine alternatives) are
+ * `liveAlternatives` (the soft root's live engine alternatives) are
  * never chips, same as server alternatives, so like them they dim at the root
  * unless the focused chip's move shares their squares, and each gets the same
  * 'good' badge (`withLiveAlternativeBadges`). They are returned before the

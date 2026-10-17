@@ -1,12 +1,10 @@
 /**
- * TrainRevealActionBar — Phase 237 plan 07 (ROADMAP items 5 and 6): the one
- * action bar of the Train reveal. Rewind (the old Solution, keeps sidelines),
- * back, forward and flip, then Analyze and Next.
+ * TrainRevealActionBar — the one action bar of the Train reveal. Rewind
+ * (keeps sidelines), back, forward and flip, then Analyze and Next.
  *
- * One component, three hosts (RESEARCH Pattern 7): the fixed phone bottom bar
- * (`MobileBottomBar` renders it from the published `mobileBoardControls`
- * payload), and an in-flow instance under the board from `sm` up (tablet and
- * desktop).
+ * One component, two hosts: the fixed phone bottom bar (`MobileBottomBar`
+ * renders it from the published `mobileBoardControls` payload) and an in-flow
+ * instance under the board from `sm` up (tablet and desktop).
  *
  * Analyze is an internal router Link: its analytics event fires from the
  * click handler (`onAnalyzeClick`), never through `data-umami-event`, which
@@ -35,13 +33,13 @@ export interface TrainRevealActionBarProps {
   onAnalyzeClick: () => void;
   onNext: () => void;
   /**
-   * Phase 237 UAT: wrap the board controls in the analysis board's charcoal
+   * Wrap the board controls in the analysis board's charcoal
    * container, as tall as Analyze and Next beside it. The in-flow `sm`-up host
    * sets it; the phone bottom bar instead renders the /analysis mobile footer's
    * icon-over-label columns, with Analyze as one more column.
    */
   framed?: boolean;
-  /** Phase 240 UAT: the reveal tour's Analyze step spotlights the Analyze
+  /** The reveal tour's Analyze step spotlights the Analyze
    * button alone, not the whole bar, in the page flow and the fixed phone bar. */
   spotlightAnalyze?: boolean;
   className?: string;

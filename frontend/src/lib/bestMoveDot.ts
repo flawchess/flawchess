@@ -1,5 +1,5 @@
 /**
- * Gem/great eval-chart dot spec (Phase 175 Plan 06) — a pure function, extracted to
+ * Gem/great eval-chart dot spec — a pure function, extracted to
  * its own module (not EvalChart.tsx, which also exports the `EvalChart` React
  * component) to satisfy react-refresh's component-only-export rule. Mirrors
  * gemGlyph.ts/greatGlyph.ts's own "plain module, not the icon component file"
@@ -47,11 +47,11 @@ export interface BestMoveDotSpec {
  * a gem/great tier (best/good, "neither", or no tier) or has no eval (es == null)
  * — mirrors EvalChart's flaw-dot renderer's invisible <g/> branch. The
  * isRareMoveTier gate is load-bearing: best_move_tier also carries the
- * board/card-only best/good tiers (Quick 260717-rbn), which must NOT paint an
+ * board/card-only best/good tiers, which must NOT paint an
  * eval-chart dot. An empty/null highlight set is a no-op (never dims
  * everything), matching the flaw layer's convention.
  *
- * Bug fix (Phase 175 Plan 06): `best_move_tier` is POSITION-scoped — the backend
+ * Bug fix: `best_move_tier` is POSITION-scoped — the backend
  * stores it for BOTH players' best moves — so without a user filter the dot layer
  * painted the OPPONENT's gems/greats too. When `userColor` is provided, only the
  * user's own plies (mover parity) draw a dot; opponent best-moves are intentionally

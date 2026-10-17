@@ -1,10 +1,10 @@
 /**
- * botSampling.ts unit tests (Phase 166 D-04/D-06/D-11/D-12/D-13/D-14).
+ * botSampling.ts unit tests.
  *
  * Covers:
  * - mulberry32: same seed -> same [0,1) stream on repeated construction;
  *   10000-draw distribution sanity check against a two-move 50/50 policy
- *   lands within a few percent of 50/50 (RESEARCH A1).
+ *   lands within a few percent of 50/50.
  * - samplePolicy: UCI-ascending cumulative-distribution walk, deterministic
  *   under a fixed seed; degenerate `{}`/all-zero policies return `null`,
  *   never throw.
@@ -59,7 +59,7 @@ describe('mulberry32', () => {
     }
   });
 
-  it('samples ~50/50 over 10000 draws from a two-move 50/50 policy (RESEARCH A1)', () => {
+  it('samples ~50/50 over 10000 draws from a two-move 50/50 policy', () => {
     const rng = mulberry32(7);
     const policy = { a1a2: 0.5, b1b2: 0.5 };
     let countA = 0;
@@ -85,16 +85,16 @@ describe('samplePolicy', () => {
     expect(['e2e4', 'd2d4']).toContain(pickedA);
   });
 
-  it('returns null for an empty policy (degenerate, D-13) — never throws', () => {
+  it('returns null for an empty policy (degenerate) — never throws', () => {
     expect(samplePolicy({}, mulberry32(1))).toBeNull();
   });
 
-  it('returns null for an all-zero-weight policy (degenerate, D-13) — never throws', () => {
+  it('returns null for an all-zero-weight policy (degenerate) — never throws', () => {
     expect(samplePolicy({ a1a2: 0, b1b2: 0 }, mulberry32(1))).toBeNull();
   });
 
-  it('returns null for an all-NaN policy (degenerate, D-13) — never silently picks a move', () => {
-    // Regression (WR-01): `total <= 0` is false for NaN, so an all-NaN policy
+  it('returns null for an all-NaN policy (degenerate) — never silently picks a move', () => {
+    // Regression: `total <= 0` is false for NaN, so an all-NaN policy
     // used to fall through to the exhausted-loop clamp and return 'b1b2'.
     expect(samplePolicy({ a1a2: NaN, b1b2: NaN }, mulberry32(1))).toBeNull();
   });
@@ -105,7 +105,7 @@ describe('samplePolicy', () => {
     expect(samplePolicy({ a1a2: 0.5, b1b2: NaN }, () => 0.01)).toBeNull();
   });
 
-  it('returns null for an Infinity-total policy (degenerate, D-13)', () => {
+  it('returns null for an Infinity-total policy (degenerate)', () => {
     expect(samplePolicy({ a1a2: Infinity, b1b2: Infinity }, mulberry32(1))).toBeNull();
   });
 
@@ -138,7 +138,7 @@ describe('sampleRankedLines', () => {
     expect(pickedA).toBe(pickedB);
   });
 
-  it('converges to the highest-practicalScore move at very small tau even when array order disagrees (Pitfall 1)', () => {
+  it('converges to the highest-practicalScore move at very small tau even when array order disagrees', () => {
     // Deliberately NOT sorted by practicalScore: index 0 has the LOWEST
     // score, index 2 (last) has the HIGHEST. If this helper trusted array
     // order or rankScore-style ordering it would favor 'a1a2' or 'b1b2'.
@@ -155,14 +155,14 @@ describe('sampleRankedLines', () => {
     expect(['a1a2', 'b1b2']).toContain(picked);
   });
 
-  it('returns the argmax at tau = 0 (the softmax limit), never the worst move (WR-03)', () => {
+  it('returns the argmax at tau = 0 (the softmax limit), never the worst move', () => {
     // Regression: tau = 0 used to yield exp(NaN) on the max line and ride
     // the NaN hole to the alphabetically-last (here worst) move 'z1z2'.
     const lines = [makeLine('a1a2', 0.99), makeLine('z1z2', 0.01)];
     expect(sampleRankedLines(lines, 0, mulberry32(1))).toBe('a1a2');
   });
 
-  it('returns the argmax at negative tau instead of inverting the softmax (WR-03)', () => {
+  it('returns the argmax at negative tau instead of inverting the softmax', () => {
     // A negative tau flips the exponent sign, concentrating mass on the
     // LOWEST practicalScore — clamp to the argmax limit instead.
     const lines = [makeLine('a1a2', 0.99), makeLine('b1b2', 0.01)];
@@ -177,7 +177,7 @@ describe('argmaxLine', () => {
     expect(argmaxLine([])).toBeNull();
   });
 
-  it('scans for the true max practicalScore, ignoring array order (Pitfall 1/D-06)', () => {
+  it('scans for the true max practicalScore, ignoring array order', () => {
     // Index 0 is NOT the highest-practicalScore line (array is "rankScore"-
     // ordered in spirit, e.g. by findability) — argmaxLine must not trust it.
     const lines = [makeLine('a1a2', 0.3), makeLine('c1c2', 0.95), makeLine('b1b2', 0.6)];
@@ -189,7 +189,7 @@ describe('argmaxLine', () => {
     expect(argmaxLine(lines)).toBe('d2d4');
   });
 
-  it('never latches a NaN practicalScore as best (WR-02)', () => {
+  it('never latches a NaN practicalScore as best', () => {
     // Regression: a first-scanned NaN line used to become `best` via the
     // `best === null` arm and was then unbeatable (all NaN comparisons are
     // false) — the true max must win instead.
@@ -197,7 +197,7 @@ describe('argmaxLine', () => {
     expect(argmaxLine(lines)).toBe('b1b2');
   });
 
-  it('returns null when every practicalScore is non-finite (degenerate, D-13)', () => {
+  it('returns null when every practicalScore is non-finite (degenerate)', () => {
     const lines = [makeLine('a1a2', NaN), makeLine('b1b2', Infinity)];
     expect(argmaxLine(lines)).toBeNull();
   });

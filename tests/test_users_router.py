@@ -39,8 +39,8 @@ async def _register_login_and_get_id(
 ) -> tuple[int, str]:
     """Register a user, login, and return (user_id, access_token).
 
-    Used by BETA-01 tests that need to flip `beta_enabled` via a direct DB
-    UPDATE — matches the "direct DB op only" contract from BETA-01 / T-66-04.
+    Used by tests that need to flip `beta_enabled` via a direct DB
+    UPDATE — matches the "direct DB op only" contract.
     """
     reg = await client.post("/api/auth/register", json={"email": email, "password": password})
     user_id = int(reg.json()["id"])
@@ -190,14 +190,14 @@ class TestProfileUserIsolation:
 
 
 # ---------------------------------------------------------------------------
-# BETA-01: beta_enabled flag round-trip through /users/me/profile
+# beta_enabled flag round-trip through /users/me/profile
 # ---------------------------------------------------------------------------
 
 
 class TestProfileBetaEnabled:
     @pytest.mark.asyncio
     async def test_profile_returns_beta_enabled_default_false(self):
-        """BETA-01: a newly registered user has beta_enabled=False by default."""
+        """A newly registered user has beta_enabled=False by default."""
         email = unique_email("beta_default")
         password = "testpassword123"
 
@@ -217,7 +217,7 @@ class TestProfileBetaEnabled:
 
     @pytest.mark.asyncio
     async def test_profile_returns_beta_enabled_true_after_db_flip(self):
-        """BETA-01: direct DB UPDATE is the only way to enable the flag — verified by round-trip."""
+        """Direct DB UPDATE is the only way to enable the flag — verified by round-trip."""
         from sqlalchemy import update
 
         from app.core.database import async_session_maker
@@ -230,7 +230,7 @@ class TestProfileBetaEnabled:
         ) as client:
             user_id, token = await _register_login_and_get_id(client, email, password)
 
-            # Flip beta_enabled via direct DB op (the only legitimate path per BETA-01).
+            # Flip beta_enabled via direct DB op (the only legitimate path).
             async with async_session_maker() as session:
                 await session.execute(
                     update(User).where(User.id == user_id).values(beta_enabled=True)
@@ -247,7 +247,7 @@ class TestProfileBetaEnabled:
 
     @pytest.mark.asyncio
     async def test_user_profile_update_does_not_change_beta_enabled(self):
-        """Threat T-66-02: UserProfileUpdate must not include beta_enabled.
+        """UserProfileUpdate must not include beta_enabled.
 
         PUT /users/me/profile with a payload carrying beta_enabled=false leaves the
         DB-flipped True value unchanged because Pydantic v2 silently drops unknown
@@ -266,7 +266,7 @@ class TestProfileBetaEnabled:
             user_id, token = await _register_login_and_get_id(client, email, password)
             headers = {"Authorization": f"Bearer {token}"}
 
-            # Set the flag via direct DB op (the only legitimate path per BETA-01).
+            # Set the flag via direct DB op (the only legitimate path).
             async with async_session_maker() as session:
                 await session.execute(
                     update(User).where(User.id == user_id).values(beta_enabled=True)
@@ -290,7 +290,7 @@ class TestProfileBetaEnabled:
 
 
 # ---------------------------------------------------------------------------
-# Phase 230 D-16: leaderboard_hidden round-trip through /users/me/profile
+# leaderboard_hidden round-trip through /users/me/profile
 # ---------------------------------------------------------------------------
 
 
@@ -380,8 +380,7 @@ class TestProfileLeaderboardHidden:
 
 
 # ---------------------------------------------------------------------------
-# Quick 260811-u11 (SEED-147): current_strength, replacing
-# lichess_blitz_equivalent_rating (P-01)
+# current_strength
 # ---------------------------------------------------------------------------
 
 
@@ -409,7 +408,7 @@ class TestProfileCurrentStrength:
 
     @pytest.mark.asyncio
     async def test_profile_falls_back_to_blitz_anchor_when_no_qualifying_games(self):
-        """D-07: blitz anchor only, no games -> {rating, source: rating_anchor, rung: null}."""
+        """Blitz anchor only, no games -> {rating, source: rating_anchor, rung: null}."""
         from app.core.database import async_session_maker
         from app.repositories.user_rating_anchors_repository import upsert_anchor
 
@@ -450,7 +449,7 @@ class TestProfileCurrentStrength:
     @pytest.mark.asyncio
     async def test_profile_returns_null_when_only_non_blitz_anchors_and_no_games(self):
         """A user with only rapid/classical anchors (no blitz), no games -> None -- the
-        blitz-bucket-only semantic is deliberate, not a bug (D-07)."""
+        blitz-bucket-only semantic is deliberate, not a bug."""
         from app.core.database import async_session_maker
         from app.repositories.user_rating_anchors_repository import upsert_anchor
 
@@ -624,14 +623,14 @@ class TestProfileCurrentStrength:
 
 
 # ---------------------------------------------------------------------------
-# Phase 186 Plan 01 (IMPORT-01): GET/PATCH /users/me/import-settings
+# GET/PATCH /users/me/import-settings
 # ---------------------------------------------------------------------------
 
 
 class TestGetImportSettings:
     @pytest.mark.asyncio
     async def test_import_settings_defaults_for_new_user(self):
-        """D-16: a user with no settings row gets app-layer defaults on first GET
+        """A user with no settings row gets app-layer defaults on first GET
         (bullet=false, blitz/rapid/classical=true, cap=1000) -- create-on-first-touch,
         same code path for guests and registered users.
         """
@@ -663,7 +662,7 @@ class TestImportSettingsImportedCounts:
         """GET returns imported_counts matching ALL of the authenticated user's
         games -- including post-signup ones -- not just the pre-anchor backlog.
 
-        UAT follow-up to Plan 03: the chips must read as an honest breakdown of
+        The chips must read as an honest breakdown of
         the total game count. The seeded set includes a post-anchor rapid game;
         the old pre-anchor backlog count would have reported rapid:1, this must
         report rapid:2.
@@ -747,7 +746,7 @@ class TestImportSettingsImportedCounts:
 class TestPatchImportSettings:
     @pytest.mark.asyncio
     async def test_import_settings_patch_then_get_roundtrip(self):
-        """D-09 persistence contract: PATCH persists and a subsequent GET returns
+        """Persistence contract: PATCH persists and a subsequent GET returns
         exactly those values for that user only.
         """
         email = unique_email("import_settings_roundtrip")
@@ -935,7 +934,7 @@ class TestPatchImportSettingsCursorReset:
 class TestImportSettingsUserIsolation:
     @pytest.mark.asyncio
     async def test_import_settings_cannot_read_or_write_another_users(self):
-        """T-186-01: a GET/PATCH can never read or write another user's settings."""
+        """A GET/PATCH can never read or write another user's settings."""
         email_a = unique_email("import_settings_iso_a")
         email_b = unique_email("import_settings_iso_b")
         password = "testpassword123"

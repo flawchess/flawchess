@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useBotGame unit tests (Phase 169 Plan 04, amended by Plan 09's gap closure).
+ * useBotGame unit tests.
  *
  * `selectBotMove`, `createDeadlineSearch`, `wouldBotAcceptDraw`, the provider
  * factories (`createWorkerPool`/`createMaiaQueue`), and `@/lib/sounds` are
@@ -9,50 +9,50 @@
  * `vi.useFakeTimers({ now: 0 })` + `advanceTimersByTimeAsync` — no real
  * setTimeout waits.
  *
- * Behaviors verified (RESEARCH.md's exact `-t` filter tokens):
- * 1. "turn-gate" (PLAY-03) — attemptMove rejects an off-turn move and an
+ * Behaviors verified (each group name is the `-t` filter token):
+ * 1. "turn-gate" — attemptMove rejects an off-turn move and an
  *    off-live-position move; accepts a legal user move, applying the
  *    Fischer increment.
- * 2. "pacing" (PLAY-04/05, D-15) — the bot's clock ticks down in real time
+ * 2. "pacing" — the bot's clock ticks down in real time
  *    during its think, and the eventual debit is the REAL elapsed wall-clock
- *    time of the turn (the honest-clock model this plan restores — a clamp
+ *    time of the turn (the honest-clock model — a clamp
  *    keeping the bot's clock artificially positive is the SUPERSEDED model
- *    the pre-gap-closure suite asserted).
- * 3. "end-conditions" (PLAY-06) — checkmate (with correct winner),
+ *    an earlier suite asserted).
+ * 3. "end-conditions" — checkmate (with correct winner),
  *    threefold repetition, and flag-on-time all produce the right outcome.
  *    (Stalemate/fifty-move/insufficient-material detection itself is
  *    exhaustively fixture-tested against chess.js directly in
- *    botGameEnd.test.ts — Plan 02; this suite only needs to prove the single
+ *    botGameEnd.test.ts; this suite only needs to prove the single
  *    detectEndCondition call site wires through correctly, which the
  *    checkmate + threefold cases already demonstrate for both the decisive
  *    and non-decisive shapes.)
- * 4. "resign-draw" (PLAY-07) — resign() ends with 'resignation'; offerDraw()
- *    is blocked by the D-04 cooldown after a decline; a queens-off position
+ * 4. "resign-draw" — resign() ends with 'resignation'; offerDraw()
+ *    is blocked by the draw-offer cooldown after a decline; a queens-off position
  *    satisfying wouldBotAcceptDraw's gate yields a 'draw'/'agreement' outcome.
- * 5. "pgn-export" (PLAY-09) — the finished PGN carries {[%clk ...]} for both
+ * 5. "pgn-export" — the finished PGN carries {[%clk ...]} for both
  *    colors and the correct [Termination]/[Result] headers.
- * 6. "bot-clock" (D-15/D-16/D-18, amended SC1) — a bot whose think outlasts
+ * 6. "bot-clock" — a bot whose think outlasts
  *    its remaining clock flags a timeout LOSS for the bot (winner = user);
- *    the D-16 think deadline is wired into selectBotMove's deps.search via
- *    createDeadlineSearch, using the reused D-18 node floor
- *    (BOT_MIN_SEARCH_NODES), never a smaller ad-hoc number. Plan 10 gap
- *    closure (CR-02) adds two commit-path flag tests, constructed via
+ *    the think deadline is wired into selectBotMove's deps.search via
+ *    createDeadlineSearch, using the shared node floor
+ *    (BOT_MIN_SEARCH_NODES), never a smaller ad-hoc number. Two
+ *    commit-path flag tests are constructed via
  *    `vi.setSystemTime` so the 100 ms tick provably cannot be the detector:
  *    a bot search resolving after its clock has run out (bot flags, no move
  *    commits), and a user move attempted after their own clock has run out
  *    (commitMove is shared, so the same enforcement applies to the user).
- * 7. "cancel" (D-17) — a cancel (resign) during the bot's think discards the
+ * 7. "cancel" — a cancel (resign) during the bot's think discards the
  *    turn even if the mocked search later resolves.
- * 8. "hidden-tab" (D-20/WR-02, amended SC2) — hidden-tab time during the
+ * 8. "hidden-tab" — hidden-tab time during the
  *    bot's think is excluded from its COMMITTED debit; a move committing
  *    while the tab is still hidden can never produce a future-dated anchor
- *    (phantom time) on resume. Plan 10 gap closure (CR-01) adds a test
- *    asserting on the DEBIT itself (not just the anchor) for a bot move
- *    resolving WHILE STILL HIDDEN, plus two tests proving the 100 ms tick
+ *    (phantom time) on resume. One test
+ *    asserts on the DEBIT itself (not just the anchor) for a bot move
+ *    resolving WHILE STILL HIDDEN, and two tests prove the 100 ms tick
  *    cannot flag either side purely from hidden wall-clock time.
- * 9. "finalize-idempotency" (WR-03) — a stale draw-accept resolving after a
+ * 9. "finalize-idempotency" — a stale draw-accept resolving after a
  *    bot move has already delivered checkmate cannot overwrite the outcome.
- * 10. "resume-seed" (Phase 170 D-10/D-09) — a `BotGameSnapshot` passed as the
+ * 10. "resume-seed" — a `BotGameSnapshot` passed as the
  *     hook's `resume` argument seeds `hasLeftBook`, `hasFiredLowTime`,
  *     `movesSinceLastDecline`, `moveHistory`/`position`/`viewedPly`/
  *     `liveGamePly` (opens LIVE, not scrolled back), `activeColor` (move-count
@@ -60,54 +60,47 @@
  *     assertion (mutation-test discipline: reverting any one seed individually
  *     must turn a specific test red, per project memory
  *     feedback_mutation_test_gap_closures).
- * 11. "no-away-time" (Phase 170 D-01/D-02) — the restored clock bases equal
+ * 11. "no-away-time" — the restored clock bases equal
  *     the snapshot's bases exactly at mount, even hours of real wall-clock
  *     time after `savedAt`, and stay frozen until `confirmLive()`.
- * 12. "stable-uuid" (Phase 170 D-11) — a resumed hook's `gameUuid` equals
+ * 12. "stable-uuid" — a resumed hook's `gameUuid` equals
  *     `resume.gameUuid`; a fresh hook mints a fresh `crypto.randomUUID()`;
  *     `newGame()` re-mints it to a different value.
- * 13. "prewarm-gate" (Phase 170 D-03) — a resumed hook mounts with
+ * 13. "prewarm-gate" — a resumed hook mounts with
  *     `live: false`: the provider bring-up effect (`pool.warm()`/
  *     `queue.warm()`) still fires immediately (unconditional), but the
  *     turn-anchor/clock-tick/bot-turn-trigger effects wait for
  *     `confirmLive()` — zero `selectBotMove` calls and a frozen clock before
  *     it, exactly one call and a ticking clock after. A fresh hook is
  *     `live: true` from mount, unchanged.
- * 14. "snapshot-write" (Phase 170 D-01, Plan 04) — `commitMove` writes a
+ * 14. "snapshot-write" — `commitMove` writes a
  *     snapshot after every committed move; `readSnapshot(ownerKey)`'s PGN
- *     history and clock bases match the hook's own state. Plan 04 REVERT
- *     PROOF #3: removing the write turns this red.
- * 15. "hide-fold" (Phase 170 D-01/D-02, Plan 04) — a `visibilitychange`
+ *     history and clock bases match the hook's own state. Removing the write
+ *     turns this red.
+ * 15. "hide-fold" — a `visibilitychange`
  *     (hidden) or `pagehide` event writes a snapshot with the fold applied:
  *     40s into the USER's turn bills those 40s into the persisted base; the
  *     same hide during the BOT's turn bills nothing (both bases unchanged).
  *     `clockBaseRef` itself is never mutated by the write (proven via a
- *     follow-up commit's debit, not doubled). Plan 04 REVERT PROOF #1/#2.
- * 16. "finalize-enqueue" (Phase 170 D-12/SC2, Plan 04) — `finalizeGame`
+ *     follow-up commit's debit, not doubled).
+ * 16. "finalize-enqueue" — `finalizeGame`
  *     enqueues exactly one pending-store entry (checkmate/resign/timeout)
  *     and clears the in-progress snapshot; a stale second `finalizeGame`
- *     call (WR-03) does not add a second entry. Plan 04 REVERT PROOF #5.
- * 17. "store-once" (Phase 170 SC2, Plan 04) — an unfinished game's
+ *     call does not add a second entry.
+ * 17. "store-once" — an unfinished game's
  *     `listPendingStore(ownerKey)` stays EMPTY even after a tab-hide and an
- *     unmount; only `finalizeGame` ever enqueues. Plan 04 REVERT PROOF #4.
- * 18. "newgame-pending-store" (Phase 170 D-12, Plan 04) — `newGame()` clears
+ *     unmount; only `finalizeGame` ever enqueues.
+ * 18. "newgame-pending-store" — `newGame()` clears
  *     the in-progress snapshot but leaves an existing pending-store entry
  *     untouched.
- * 19. "engine-ready-gate" (Phase 213 D-04/D-05, G-213-19b) — a FRESH mount (no
+ * 19. "engine-ready-gate" — a FRESH mount (no
  *     resume) whose required engine assets are a cache-miss starts
  *     `live: false` and flips true only after `confirmLive()`; the SAME
  *     fresh mount starts `live: true` immediately once BOTH seen-flags are
- *     already written (D-04). Separately, `pool.warm()` (Stockfish) and
+ *     already written. Separately, `pool.warm()` (Stockfish) and
  *     `queue.warm()` (Maia) in the `[]`-deps bring-up effect both fire
- *     unconditionally, at every blend (G-213-19b, supersedes D-03/D-06's
+ *     unconditionally, at every blend (no
  *     blend-0 skip).
- *
- * NOTE: the "Plan 04 REVERT PROOF #N" labels above are Plan 04's OWN
- * numbering (Task 1: #1-#3, Task 2: #4-#5) — distinct from the pre-existing
- * "REVERT PROOF #4"/"#5" labels inside the "prewarm-gate" describe block
- * above, which are Plan 03's own numbering for a different pair of
- * mechanisms. Both sets of labels are correct within their own plan's
- * SUMMARY.md; do not conflate them.
  *
  * Scripted move sequences (verified via a direct chess.js run before writing
  * these tests, not hand-derived from memory):
@@ -130,9 +123,9 @@ vi.mock('@/lib/engine/selectBotMove', () => ({
   selectBotMove: (...args: unknown[]) => mockSelectBotMove(...args),
 }));
 
-// D-16 wiring spy — `selectBotMove` itself stays mocked above (so the real
-// wrapper never runs here; its cut/floor/cancel BEHAVIOR is covered by plan
-// 08's deadlineSearch.test.ts), but we still need the REAL BOT_MIN_SEARCH_NODES
+// Deadline wiring spy — `selectBotMove` itself stays mocked above (so the real
+// wrapper never runs here; its cut/floor/cancel BEHAVIOR is covered by
+// deadlineSearch.test.ts), but we still need the REAL BOT_MIN_SEARCH_NODES
 // export for assertions, so this is a passthrough-with-spy, not a full mock.
 const mockCreateDeadlineSearch = vi.fn(() => vi.fn());
 vi.mock('@/lib/engine/deadlineSearch', async (importOriginal) => {
@@ -144,7 +137,7 @@ vi.mock('@/lib/engine/deadlineSearch', async (importOriginal) => {
   };
 });
 
-// D-01 accept-gate override — defaults to the REAL wouldBotAcceptDraw (so
+// Accept-gate override — defaults to the REAL wouldBotAcceptDraw (so
 // the existing queens-off/cooldown tests are unaffected); Test G sets
 // `acceptDrawOverride.value = true` to force the accept branch regardless of
 // the real board/score, since the Fool's-mate script never satisfies the
@@ -189,9 +182,9 @@ vi.mock('@/lib/engine/maiaQueue', () => ({
   createMaiaQueue: () => mockCreateMaiaQueue(),
 }));
 
-// 169.5: the ECO prefix set is stubbed with a small SYNTHETIC fixture
+// The ECO prefix set is stubbed with a small SYNTHETIC fixture
 // (PREFIX_SET below) — deterministic and offline. The REAL 3,641-line corpus
-// is already covered by plan 01's whole-corpus parity test; re-reading it here
+// is already covered by the whole-corpus parity test; re-reading it here
 // would make these tests depend on a network fetch.
 const mockLoadOpeningPrefixSet = vi.fn();
 vi.mock('@/lib/openings', () => ({
@@ -222,7 +215,7 @@ vi.mock('@/lib/sounds', () => ({
   unlockAudio: () => mockUnlockAudio(),
 }));
 
-// Quick 260723-tqn: mocked so a human-win test doesn't invoke the real
+// Mocked so a human-win test doesn't invoke the real
 // canvas-confetti (no canvas 2D context in jsdom) and to keep confetti-firing
 // independently assertable from the outcome sound.
 const mockFireWinConfetti = vi.fn();
@@ -271,8 +264,8 @@ const DEFAULT_SETTINGS: BotGameSettings = {
 };
 
 /**
- * 169.5 — the synthetic ECO prefix set, in the same space-joined-SAN key form
- * plan 01's real `loadOpeningPrefixSet()` produces. Covers every prefix the
+ * The synthetic ECO prefix set, in the same space-joined-SAN key form
+ * the real `loadOpeningPrefixSet()` produces. Covers every prefix the
  * scripted games below walk, including the queens-off Caro-Kann line (note the
  * `+` on `Qxd1+` — chess.js SAN carries the check suffix, and so does the real
  * corpus).
@@ -316,10 +309,10 @@ const FAKE_SEARCH_MS = 6_000;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Phase 170 — builds a resume fixture by playing a REAL chess.js game and
+ * Builds a resume fixture by playing a REAL chess.js game and
  * annotating every ply with the SAME `annotateClock` call shape production's
  * `commitMove` uses (mirrors `botGameSnapshot.test.ts`'s `buildAnnotatedGame`
- * precedent, Plan 01) — never a hand-typed PGN string, so the fixture
+ * precedent) — never a hand-typed PGN string, so the fixture
  * exercises the real produce->consume path through `restoreChess`/`loadPgn`.
  * `sans` defaults to 4 plies (white to move next); pass a 3-ply list for a
  * bot-to-move (black) fixture.
@@ -367,8 +360,8 @@ async function advance(ms: number): Promise<void> {
 
 /** Flips jsdom's `document.visibilityState` and dispatches the
  * `visibilitychange` event `useBotGame`'s hidden-tab-pause effect listens
- * for (D-20/WR-02 tests) — jsdom does not implement tab visibility itself,
- * so the property must be redefined per 169-RESEARCH.md's documented
+ * for the hidden-tab tests — jsdom does not implement tab visibility itself,
+ * so the property must be redefined per the documented
  * technique. */
 function setHidden(hidden: boolean): void {
   Object.defineProperty(document, 'visibilityState', {
@@ -383,19 +376,19 @@ function setHidden(hidden: boolean): void {
 describe('useBotGame', () => {
   beforeEach(() => {
     localStorage.clear();
-    // Phase 213: engineAssetProgress.ts is a module-level singleton, separate
+    // engineAssetProgress.ts is a module-level singleton, separate
     // from localStorage.clear() above — without this reset, a blend<=0 test
     // in the new "engine-ready-gate" describe block below would leak its
     // 'maia-model' done/ready state into whichever test runs next in this file.
     resetEngineAssetsForTests();
-    // Phase 213-03: DEFAULT_SETTINGS.blend (0.5) is > HUMAN_BLEND, so once
-    // Task 3 switches the blend>0 gate on, EVERY test in this file that
+    // DEFAULT_SETTINGS.blend (0.5) is > HUMAN_BLEND, so once
+    // the blend>0 gate is on, EVERY test in this file that
     // mounts with DEFAULT_SETTINGS is gated unless all engine assets are
     // already "seen". Prime all three here so `live` starts true by default
-    // everywhere in this file, matching this suite's pre-Phase-213-03
-    // behavior — the `engine-ready-gate` describe block below resets back to
+    // everywhere in this file, matching this suite's ungated
+    // behavior; the `engine-ready-gate` describe block below resets back to
     // a genuinely clean slate (its own nested `beforeEach`) to exercise the
-    // gate itself. Phase 213-09 (G-213-35) adds 'ort-runtime' as a third
+    // gate itself. 'ort-runtime' is a third
     // required asset — without priming it here too, `engineGateRequired()`
     // stays true for every test in this file, since it now checks all three.
     markEngineAssetReady('maia-model');
@@ -494,7 +487,7 @@ describe('useBotGame', () => {
     });
   });
 
-  describe('last-move highlight (171 UAT gap 2)', () => {
+  describe('last-move highlight', () => {
     it('is null at the start of a fresh game', () => {
       const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
       expect(result.current.lastMove).toBeNull();
@@ -589,7 +582,7 @@ describe('useBotGame', () => {
   });
 
   describe('pacing', () => {
-    it('ticks the bot clock down in real time during a long think, and debits the REAL elapsed time on commit (D-15 honest clock)', async () => {
+    it('ticks the bot clock down in real time during a long think, and debits the REAL elapsed time on commit (honest clock)', async () => {
       mockSelectBotMove.mockImplementation(
         () => new Promise((resolve) => setTimeout(() => resolve('e7e5'), 8000)),
       );
@@ -600,7 +593,7 @@ describe('useBotGame', () => {
       });
 
       // Partway through the bot's think — the clock has visibly ticked down,
-      // isBotThinking reflects the real in-flight promise (Pitfall 3).
+      // isBotThinking reflects the real in-flight promise.
       await advance(4000);
       expect(result.current.isBotThinking).toBe(true);
       expect(result.current.blackClockMs).toBeLessThan(300_000);
@@ -611,7 +604,7 @@ describe('useBotGame', () => {
       await advance(6000);
       expect(result.current.isBotThinking).toBe(false);
       expect(result.current.moveHistory).toEqual(['e4', 'e5']);
-      // D-15: the debit is the REAL elapsed wall-clock time of the ~8s
+      // The debit is the REAL elapsed wall-clock time of the ~8s
       // think (plus effect-dispatch/scheduling slack), not a synthetic
       // fraction-of-remaining schedule — a band around 8-10s proves the
       // honest-clock model, distinct from the old synthetic formula
@@ -678,7 +671,7 @@ describe('useBotGame', () => {
     });
   });
 
-  describe('bot clock (D-15/D-16/D-18, amended SC1)', () => {
+  describe('bot clock', () => {
     it('bot flags on time: a think longer than its remaining clock produces a timeout LOSS for the bot, winner = user', async () => {
       const LOW_BASE_SECONDS = 2; // 2000ms — the bot's whole clock
       // Never resolves within the window — the bot's clock alone decides.
@@ -699,7 +692,7 @@ describe('useBotGame', () => {
       expect(result.current.moveHistory).toEqual(['e4']); // bot's move never committed
     });
 
-    it('wires the D-16 think deadline into deps.search via createDeadlineSearch, using the D-18 node floor, and a resolved (deadline-cut) search still commits', async () => {
+    it('wires the think deadline into deps.search via createDeadlineSearch, using the shared node floor, and a resolved (deadline-cut) search still commits', async () => {
       mockSelectBotMove.mockResolvedValueOnce('e7e5');
       const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
 
@@ -726,7 +719,7 @@ describe('useBotGame', () => {
 
     it('the node floor stays BOT_MIN_SEARCH_NODES even when the bot is low on time — never configured smaller under a tight deadline', async () => {
       mockSelectBotMove.mockResolvedValueOnce('e7e5');
-      const LOW_BASE_SECONDS = 3; // 3000ms — yields a small D-16 deadline
+      const LOW_BASE_SECONDS = 3; // 3000ms — yields a small think deadline
       const { result } = renderHook(() =>
         useBotGame({ ...DEFAULT_SETTINGS, baseSeconds: LOW_BASE_SECONDS }),
       );
@@ -759,7 +752,7 @@ describe('useBotGame', () => {
       act(() => {
         result.current.attemptMove('e2', 'e4');
       });
-      // Clears the D-16 reveal-delay floor (clamped to the ~1500ms deadline
+      // Clears the reveal-delay floor (clamped to the ~1500ms deadline
       // at this clock/increment: 3000/30 + 2000*0.7 = 1500) — black is left
       // with ~1400ms remaining, not yet flagged.
       await advance(1600);
@@ -800,7 +793,7 @@ describe('useBotGame', () => {
     });
   });
 
-  describe('cancel (D-17)', () => {
+  describe('cancel', () => {
     it('a cancel during the bot think (resign) discards the turn even after the search later resolves', async () => {
       let resolveSearch: ((uci: string) => void) | undefined;
       mockSelectBotMove.mockImplementation(
@@ -832,14 +825,14 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── ABORT-02 (Phase 194): all four abort sites reach WorkerPool.grade ────
+  // ─── all four abort sites reach WorkerPool.grade ────
   //
   // `selectBotMove`/`createDeadlineSearch` stay fully mocked in this suite
   // (see the module-header note on `mockCreateDeadlineSearch` above) — this
   // file never exercises the real mctsSearch/dispatchExpansion wiring; that
-  // signal-forwarding proof lives in mctsSearch.test.ts's own ABORT-01 test
+  // signal-forwarding proof lives in mctsSearch.test.ts's own abort test
   // (reference-identity assertion on providers.grade's 3rd argument) and
-  // workerPool.test.ts's ABORT-02 cases (what WorkerPool.grade's abort
+  // workerPool.test.ts's abort cases (what WorkerPool.grade's abort
   // listener actually does). What THIS suite proves is the one link neither
   // of those files can see: that `useBotGame`'s four `abortControllerRef`
   // sites actually abort the SAME signal object that reaches `deps.grade`
@@ -848,7 +841,7 @@ describe('useBotGame', () => {
   // forwards straight to `deps.grade` with the signal it was given, standing
   // in for "whatever selectBotMove/mctsSearch eventually does with it" —
   // proven for real elsewhere, not re-proven here.
-  describe('ABORT-02 (Phase 194): four abort sites stop in-flight Stockfish work', () => {
+  describe('four abort sites stop in-flight Stockfish work', () => {
     /** Bot-plays-first settings — mounting starts a bot think immediately. */
     const BOT_AS_WHITE: BotGameSettings = { ...DEFAULT_SETTINGS, userColor: 'black' };
 
@@ -966,7 +959,7 @@ describe('useBotGame', () => {
     });
   });
 
-  describe('hidden-tab time (D-20/WR-02, amended SC2)', () => {
+  describe('hidden-tab time', () => {
     it('hidden-tab time during the bot think is not charged to its committed debit', async () => {
       let resolveSearch: ((uci: string) => void) | undefined;
       mockSelectBotMove.mockImplementation(
@@ -995,13 +988,13 @@ describe('useBotGame', () => {
       expect(result.current.moveHistory).toEqual(['e4', 'e5']);
       const debited = 300_000 - result.current.blackClockMs; // incrementSeconds=0
       // Only the ~2000ms VISIBLE interval is charged — the 5000ms hidden
-      // interval must not reach the committed debit. A pre-D-20-fix dispatch
+      // interval must not reach the committed debit. A dispatch
       // -time snapshot would charge the FULL ~7000ms+ elapsed instead.
       expect(debited).toBeGreaterThan(0);
       expect(debited).toBeLessThan(3000);
     });
 
-    it('a bot move committed while the tab is still hidden cannot produce a future-dated anchor on resume (WR-02) — no phantom time credited', async () => {
+    it('a bot move committed while the tab is still hidden cannot produce a future-dated anchor on resume — no phantom time credited', async () => {
       let resolveSearch: ((uci: string) => void) | undefined;
       mockSelectBotMove.mockImplementation(
         () =>
@@ -1157,7 +1150,7 @@ describe('useBotGame', () => {
       expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'black' });
     });
 
-    it('offerDraw() is blocked by the D-04 cooldown immediately after a decline', async () => {
+    it('offerDraw() is blocked by the draw-offer cooldown immediately after a decline', async () => {
       const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
 
       // Early in the game (no queens off, moveNumber low) the accept-gate is
@@ -1234,7 +1227,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── book (169.5, PLAY-11) ────────────────────────────────────────────────
+  // ─── book ────────────────────────────────────────────────
 
   describe('book', () => {
     /** Bot is WHITE, so it moves on mount and its book turn needs no user move first. */
@@ -1250,7 +1243,7 @@ describe('useBotGame', () => {
       // The bot really did move — and from the book.
       expect(result.current.moveHistory).toHaveLength(1);
       expect(BOOK_SANS).toContain(result.current.moveHistory[0]);
-      // SC1, literally: no search, and no Stockfish leaf eval either (the
+      // Literally: no search, and no Stockfish leaf eval either (the
       // post-commit draw-accept grade is suppressed on book plies).
       expect(mockSelectBotMove).not.toHaveBeenCalled();
       expect(mockGrade).not.toHaveBeenCalled();
@@ -1318,7 +1311,7 @@ describe('useBotGame', () => {
     });
 
     it('prewarm on mount: both engines spawn during the book window', () => {
-      // SC5. No timers advanced, no move made — the spawn happens on mount.
+      // No timers advanced, no move made — the spawn happens on mount.
       // Revert-check: delete pool.warm()/queue.warm() from the provider
       // bring-up effect and this goes red.
       renderHook(() => useBotGame(BOT_AS_WHITE));
@@ -1483,7 +1476,7 @@ describe('useBotGame', () => {
     });
   });
 
-  describe('finalize idempotency (WR-03)', () => {
+  describe('finalize idempotency', () => {
     it('a stale draw-accept resolving after a bot move already delivered checkmate does not overwrite the outcome', async () => {
       // Forces the accept branch regardless of the real board/score — the
       // Fool's-mate script keeps queens on the board and the move number
@@ -1494,8 +1487,8 @@ describe('useBotGame', () => {
       const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
 
       // Captured BEFORE the checkmate lands — simulates an async
-      // continuation (or a stale closure under rapid updates, per
-      // 169-REVIEW.md WR-03) that still believes the game is in progress:
+      // continuation (or a stale closure under rapid updates)
+      // that still believes the game is in progress:
       // this closure's own `outcome` check reads null, bypassing offerDraw's
       // OWN (pre-existing, correctly-fresh) guard.
       const staleOfferDraw = result.current.offerDraw;
@@ -1545,7 +1538,7 @@ describe('useBotGame', () => {
 
       const clkMatches = pgn.match(/\{\[%clk \d+:\d{2}:\d{2}\]\}/g) ?? [];
       // One [%clk] comment per ply (2 white + 2 black) — proves both colors
-      // are annotated, not just one (STORE-02's per-color presence gate).
+      // are annotated, not just one (the per-color presence gate).
       expect(clkMatches.length).toBe(4);
 
       expect(pgn).toContain('[Termination "checkmate"]');
@@ -1553,7 +1546,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── resume-seed (Phase 170 D-10/D-09) ───────────────────────────────────
+  // ─── resume-seed ───────────────────────────────────
 
   describe('resume-seed', () => {
     it('hasLeftBook seed survives a resume — the bot searches instead of consulting the book on its next turn', async () => {
@@ -1573,7 +1566,7 @@ describe('useBotGame', () => {
       expect(mockPolicy).not.toHaveBeenCalled(); // resolveBookMove never consulted
       expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
       expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
-      // REVERT PROOF #1 (record in SUMMARY): drop the hasLeftBookRef resume
+      // Mutation check: drop the hasLeftBookRef resume
       // seed (back to `useRef(false)`) and this goes RED — mockPolicy IS
       // called (the book gets consulted) and moveHistory ends with a
       // BOOK_POLICY-sampled move instead of 'Nc6'.
@@ -1584,7 +1577,7 @@ describe('useBotGame', () => {
       const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
 
       expect(result.current.canOfferDraw).toBe(false);
-      // REVERT PROOF #2 (record in SUMMARY): drop the movesSinceLastDecline
+      // Mutation check: drop the movesSinceLastDecline
       // resume seed (back to `useState(DRAW_OFFER_COOLDOWN_MOVES)`) and this
       // goes RED — canOfferDraw becomes true on a resumed game whose cooldown
       // should still be active.
@@ -1620,7 +1613,7 @@ describe('useBotGame', () => {
 
       expect(mockPlaySound).toHaveBeenCalledWith('low-time');
       second.unmount();
-      // REVERT PROOF #3 (record in SUMMARY): drop the hasFiredLowTimeRef
+      // Mutation check: drop the hasFiredLowTimeRef
       // resume seed (back to `useRef(false)`) and the FIRST assertion above
       // goes RED — the sound fires again on a resumed game that already
       // played it once.
@@ -1670,7 +1663,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── no-away-time (Phase 170 D-01/D-02) ──────────────────────────────────
+  // ─── no-away-time ──────────────────────────────────
 
   describe('no-away-time', () => {
     it('clock bases equal the snapshot exactly at mount, even hours of real wall-clock time after savedAt', () => {
@@ -1694,7 +1687,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── stable-uuid (Phase 170 D-11) ────────────────────────────────────────
+  // ─── stable-uuid ────────────────────────────────────────
 
   describe('stable-uuid', () => {
     it('a resumed hook keeps resume.gameUuid; a fresh hook mints a fresh crypto.randomUUID(); newGame() re-mints', () => {
@@ -1715,7 +1708,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── prewarm-gate (Phase 170 D-03) ───────────────────────────────────────
+  // ─── prewarm-gate ───────────────────────────────────────
 
   describe('prewarm-gate', () => {
     it('a bot-to-move resume runs zero searches and freezes the bot clock before confirmLive(); exactly one search and a live clock after', async () => {
@@ -1735,18 +1728,18 @@ describe('useBotGame', () => {
 
       expect(mockSelectBotMove).toHaveBeenCalledTimes(1);
       expect(result.current.moveHistory).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
-      // REVERT PROOF #4 (record in SUMMARY): remove `if (!live) return;` from
+      // Mutation check: remove `if (!live) return;` from
       // the bot-turn-trigger effect and the "zero calls before confirm"
       // assertion goes RED.
     });
 
-    it('the providers warm BEFORE confirmLive() on a resumed mount — D-03 mechanism 1 is deliberately NOT gated', () => {
+    it('the providers warm BEFORE confirmLive() on a resumed mount — this warm-up is deliberately NOT gated', () => {
       const resume = buildResumeSnapshot({}, ['e4', 'e5', 'Nf3']);
       renderHook(() => useBotGame(DEFAULT_SETTINGS, resume));
 
       expect(mockPoolWarm).toHaveBeenCalledTimes(1);
       expect(mockQueueWarm).toHaveBeenCalledTimes(1);
-      // REVERT PROOF #5 (record in SUMMARY): ADD `if (!live) return;` to the
+      // Mutation check: ADD `if (!live) return;` to the
       // provider bring-up effect and this goes RED.
     });
 
@@ -1783,7 +1776,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── snapshot-write (Phase 170 D-01, Plan 04) ────────────────────────────
+  // ─── snapshot-write ────────────────────────────
 
   describe('snapshot-write', () => {
     const OWNER_KEY = 'snapshot-write-owner';
@@ -1834,7 +1827,7 @@ describe('useBotGame', () => {
       expect(readSnapshot(OWNER_KEY)).toBeNull(); // nothing written on mount alone
 
       // `attemptMove` has no `live` guard of its own (that gating lives in
-      // the UI layer, Plan 05) — a move applied while still dormant DOES
+      // the UI layer) — a move applied while still dormant DOES
       // commit, so this genuinely exercises commitMove's own `if (live &&
       // ...)` guard as the real backstop, not a vacuous "nothing happened".
       act(() => {
@@ -1845,12 +1838,12 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── hide-fold (Phase 170 D-01/D-02, Plan 04) ────────────────────────────
+  // ─── hide-fold ────────────────────────────
 
   describe('hide-fold', () => {
     const OWNER_KEY = 'hide-fold-owner';
 
-    it("D-01: bills the user's 40s of in-turn think time into the persisted white base on hide; the bot's base is unchanged", async () => {
+    it("bills the user's 40s of in-turn think time into the persisted white base on hide; the bot's base is unchanged", async () => {
       renderHook(() => useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY)); // userColor: white
 
       await advance(40_000); // 40s into the user's (white's) turn
@@ -1864,7 +1857,7 @@ describe('useBotGame', () => {
       expect(snap!.blackClockMs).toBe(300_000); // bot's base — untouched
     });
 
-    it("D-02: does NOT fold on the bot's turn — both bases are written unmodified, as of the bot's last commit", async () => {
+    it("does NOT fold on the bot's turn — both bases are written unmodified, as of the bot's last commit", async () => {
       const settings: BotGameSettings = { ...DEFAULT_SETTINGS, userColor: 'black' };
       renderHook(() => useBotGame(settings, undefined, OWNER_KEY)); // bot is white, moves first
 
@@ -1938,14 +1931,14 @@ describe('useBotGame', () => {
       const debited = 300_000 - result.current.whiteClockMs;
       expect(debited).toBeGreaterThanOrEqual(40_000);
       expect(debited).toBeLessThan(45_000); // NOT ~80_000 (a doubled debit)
-      // Plan 04 REVERT PROOF #2 (record in SUMMARY): make the hide-time
+      // Mutation check: make the hide-time
       // write mutate `clockBaseRef.current` directly instead of passing a
       // copy from `foldClockBasesForSnapshot` — this assertion goes RED
       // (debited jumps to ~80_000).
     });
   });
 
-  // ─── finalize-enqueue (Phase 170 D-12/SC2, Plan 04) ──────────────────────
+  // ─── finalize-enqueue ──────────────────────
 
   describe('finalize-enqueue', () => {
     const OWNER_KEY = 'finalize-enqueue-owner';
@@ -2014,7 +2007,7 @@ describe('useBotGame', () => {
       const entries = listPendingStore(OWNER_KEY);
       expect(entries).toHaveLength(1);
       expect(readSnapshot(OWNER_KEY)).toBeNull();
-      // Plan 04 REVERT PROOF #5 (record in SUMMARY): remove the
+      // Mutation check: remove the
       // `clearSnapshot` call from `finalizeGame` — the
       // `readSnapshot(OWNER_KEY)).toBeNull()` assertion above (and in the
       // checkmate/resign tests above) goes RED.
@@ -2057,13 +2050,13 @@ describe('useBotGame', () => {
       expect(readSnapshot(OWNER_KEY)).toBeNull();
     });
 
-    it('WR-03: a second finalizeGame call (stale draw-accept after checkmate) does not add a second queue entry', async () => {
+    it('a second finalizeGame call (stale draw-accept after checkmate) does not add a second queue entry', async () => {
       acceptDrawOverride.value = true;
       mockSelectBotMove.mockResolvedValueOnce('e7e5').mockResolvedValueOnce('d8h4');
       const { result } = renderHook(() =>
         useBotGame(DEFAULT_SETTINGS, undefined, OWNER_KEY),
       );
-      const staleOfferDraw = result.current.offerDraw; // captured before checkmate (WR-03 pattern)
+      const staleOfferDraw = result.current.offerDraw; // captured before checkmate
 
       act(() => {
         result.current.attemptMove('f2', 'f3');
@@ -2086,7 +2079,7 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── store-once (Phase 170 SC2, Plan 04) ─────────────────────────────────
+  // ─── store-once ─────────────────────────────────
 
   describe('store-once', () => {
     const OWNER_KEY = 'store-once-owner';
@@ -2109,13 +2102,13 @@ describe('useBotGame', () => {
       unmount();
 
       expect(listPendingStore(OWNER_KEY)).toEqual([]);
-      // Plan 04 REVERT PROOF #4 (record in SUMMARY): move the
+      // Mutation check: move the
       // `enqueuePendingStore` call from `finalizeGame` into `commitMove` —
       // this assertion goes RED (the unfinished game gets queued).
     });
   });
 
-  // ─── newgame-pending-store (Phase 170 D-12, Plan 04) ─────────────────────
+  // ─── newgame-pending-store ─────────────────────
 
   describe('newgame-pending-store', () => {
     const OWNER_KEY = 'newgame-pending-store-owner';
@@ -2147,10 +2140,10 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── styled resign wiring (Phase 182, STYLE-02) ──────────────────────────
+  // ─── styled resign wiring ──────────────────────────
   //
   // Proves the HOOK wiring (not the pure wouldBotResign predicate, which is
-  // 182-02's job): the consecutiveLowScoreTurnsRef hysteresis counter
+  // covered separately): the consecutiveLowScoreTurnsRef hysteresis counter
   // increments only on a FRESH at/below-threshold grade and resets
   // otherwise, finalizeGame fires with reason:'resignation' exactly once
   // the counter reaches settings.style.hysteresisFloor past
@@ -2168,7 +2161,7 @@ describe('useBotGame', () => {
   // any resign there, regardless of score) to get the game position past
   // RESIGN_MIN_FULLMOVE; rounds 18+ carry each test's actual assertions.
 
-  describe('styled resign wiring (STYLE-02)', () => {
+  describe('styled resign wiring', () => {
     const RESIGN_TEST_ROUNDS: [white: string, black: string][] = [
       ['g1f3', 'g8h6'],
       ['f3g1', 'h6g8'],
@@ -2311,7 +2304,7 @@ describe('useBotGame', () => {
       setGrade(LOSING_GRADE);
       // Same two consecutive low grades past RESIGN_MIN_FULLMOVE that make
       // the styled test above resign — the resign branch is unreachable
-      // without settings.style (D-03), so the game just continues.
+      // without settings.style, so the game just continues.
       await playRound(result, RESIGN_TEST_ROUNDS[18]!);
       expect(result.current.outcome).toBeNull();
       await playRound(result, RESIGN_TEST_ROUNDS[19]!);
@@ -2320,11 +2313,11 @@ describe('useBotGame', () => {
       expect(result.current.outcome).toBeNull();
     });
 
-    it('a stale pool.grade() continuation resolving after newGame() does not mutate resign state for the new game (CR-02)', async () => {
+    it('a stale pool.grade() continuation resolving after newGame() does not mutate resign state for the new game', async () => {
       // Game A: the bot's post-commit grade call is deliberately left
       // pending (its resolve function is captured, not invoked) —
       // simulating a real Web Worker RPC that outlives the turn it was
-      // issued for, per 182-REVIEW.md CR-01's failure sequence.
+      // issued for.
       let resolveStaleGrade: ((map: Map<string, MoveGrade>) => void) | undefined;
       mockGrade.mockImplementationOnce(
         () =>
@@ -2354,7 +2347,7 @@ describe('useBotGame', () => {
       expect(result.current.outcome).toBeNull();
 
       // The STALE game-A grade finally resolves — a losing score for
-      // game A's mover. Without the CR-02 staleness guard, this stale
+      // game A's mover. Without the staleness guard, this stale
       // continuation would push consecutiveLowScoreTurnsRef to 2 (at
       // game B's hysteresisFloor) and evaluate wouldBotResign against
       // game B's CURRENT (already past-RESIGN_MIN_FULLMOVE) board,
@@ -2375,11 +2368,11 @@ describe('useBotGame', () => {
     });
   });
 
-  // ─── bot's own outgoing draw offer (Phase 183, D-07) ─────────────────────
+  // ─── bot's own outgoing draw offer ─────────────────────
   //
-  // 215-03 Task 3 two-way mutation proof: applyDrawOfferUpdate
+  // Two-way mutation proof: applyDrawOfferUpdate
   // (useBotGameDrawOffer.ts) left the pre-existing suite fully green when
-  // mutated to a no-op — no test anywhere asserted `botDrawOffer` becomes
+  // mutated to a no-op — no test anywhere asserted `botDrawOfferPending` becomes
   // true. This block closes that gap. `wouldBotOfferDraw` requires
   // `chess.moveNumber() >= BOT_DRAW_OFFER_MIN_FULLMOVE` (30) AND
   // `movesSinceOwnOffer >= BOT_DRAW_OFFER_COOLDOWN_MOVES` (6), so the resume
@@ -2387,7 +2380,7 @@ describe('useBotGame', () => {
   // reaching moveNumber 30, and the test then plays 7 further rounds — the
   // 7th is the first whose `movesSinceOwnOffer` check (0-indexed, bumped
   // once per bot turn) reads 6.
-  describe("bot's own outgoing draw offer (D-07)", () => {
+  describe("bot's own outgoing draw offer", () => {
     /** Near-equal for BOTH colors (evalCp 0) — inside BOT_DRAW_OFFER_SCORE_BAND
      * (0.05) of the contempt-0 drawValue (0.5), and safely above
      * DRAW_OFFER_STYLE.threshold (0.3) so the resign check never fires. */
@@ -2454,7 +2447,7 @@ describe('useBotGame', () => {
       await advance(2000);
     }
 
-    it('raises botDrawOffer once moveNumber >= 30 AND movesSinceOwnOffer >= 6 both hold, not before', async () => {
+    it('raises botDrawOfferPending once moveNumber >= 30 AND movesSinceOwnOffer >= 6 both hold, not before', async () => {
       const resume = buildResumeSnapshot({ hasLeftBook: true }, SANS_TO_MOVE_30);
       setNeutralGrade();
       const { result } = renderHook(() => useBotGame(DRAW_OFFER_SETTINGS, resume));
@@ -2469,17 +2462,17 @@ describe('useBotGame', () => {
       // throughout.
       for (let r = 0; r < 6; r++) {
         await playDrawOfferRound(result, DRAW_OFFER_ROUNDS[r]!);
-        expect(result.current.botDrawOffer).toBe(false);
+        expect(result.current.botDrawOfferPending).toBe(false);
       }
 
       // Round 7: movesSinceOwnOffer's pre-increment read is 6 — the cooldown
       // has cleared, moveNumber is still >= 30, and the score is still
       // near-equal. The bot raises its own outgoing draw offer.
       await playDrawOfferRound(result, DRAW_OFFER_ROUNDS[6]!);
-      expect(result.current.botDrawOffer).toBe(true);
-      // REVERT PROOF (215-03-SUMMARY.md mutation record): replace
+      expect(result.current.botDrawOfferPending).toBe(true);
+      // Mutation check: replace
       // applyDrawOfferUpdate's body (useBotGameDrawOffer.ts) with a no-op
-      // and this assertion goes RED — botDrawOffer stays false forever,
+      // and this assertion goes RED — botDrawOfferPending stays false forever,
       // proving this test genuinely exercises that function.
     });
 
@@ -2494,19 +2487,19 @@ describe('useBotGame', () => {
       for (const round of DRAW_OFFER_ROUNDS) {
         await playDrawOfferRound(result, round);
       }
-      expect(result.current.botDrawOffer).toBe(true);
+      expect(result.current.botDrawOfferPending).toBe(true);
 
       act(() => {
         result.current.acceptBotDraw();
       });
 
       expect(result.current.outcome).toEqual({ reason: 'draw', drawReason: 'agreement' });
-      expect(result.current.botDrawOffer).toBe(false);
+      expect(result.current.botDrawOfferPending).toBe(false);
     });
   });
 
-  // ─── engine-ready-gate (Phase 213-01/213-06, D-04/D-05, G-213-19b) ─────────
-  // G-213-19b (supersedes Phase 213-03's per-persona D-06 switch-on): the gate
+  // ─── engine-ready-gate ─────────
+  // The gate
   // and both warm() call sites are now UNCONDITIONAL — every persona is gated
   // on, and warms, BOTH maia-model and stockfish-wasm. BLEND_0_SETTINGS and
   // BLEND_POSITIVE_SETTINGS are kept only to prove the "at ANY blend" claim,
@@ -2536,7 +2529,7 @@ describe('useBotGame', () => {
       expect(result.current.live).toBe(true);
     });
 
-    it('a fresh blend-0 mount stays live:false when only maia-model has been seen — G-213-19b requires BOTH assets, not a blend-0 subset', () => {
+    it('a fresh blend-0 mount stays live:false when only maia-model has been seen — the gate requires BOTH assets, not a blend-0 subset', () => {
       markEngineAssetReady('maia-model');
 
       const { result } = renderHook(() => useBotGame(BLEND_0_SETTINGS));
@@ -2544,7 +2537,7 @@ describe('useBotGame', () => {
       expect(result.current.live).toBe(false);
     });
 
-    it('a fresh blend-0 mount starts live:true immediately once ALL THREE seen-flags are already written (D-04, Phase 213-09 adds ort-runtime)', () => {
+    it('a fresh blend-0 mount starts live:true immediately once ALL THREE seen-flags are already written (ort-runtime is the third flag)', () => {
       markEngineAssetReady('maia-model');
       markEngineAssetReady('stockfish-wasm');
       markEngineAssetReady('ort-runtime');
@@ -2572,16 +2565,16 @@ describe('useBotGame', () => {
       expect(result.current.live).toBe(true);
     });
 
-    it('a fresh mount at ANY blend calls pool.warm() exactly once and queue.warm() exactly once — Stockfish is now warmed at every rung (G-213-19b, supersedes D-03/D-06)', () => {
+    it('a fresh mount at ANY blend calls pool.warm() exactly once and queue.warm() exactly once — Stockfish is now warmed at every rung (no blend-0 skip)', () => {
       renderHook(() => useBotGame(BLEND_0_SETTINGS));
 
       expect(mockPoolWarm).toHaveBeenCalledTimes(1);
       expect(mockQueueWarm).toHaveBeenCalledTimes(1);
     });
 
-    // ─── Phase 213-04 D-15: retryEngineWarm() — the manual Retry seam ────────
+    // ─── retryEngineWarm() — the manual Retry seam ────────
 
-    it('retryEngineWarm() calls BOTH queue.warm() and pool.warm() exactly once, regardless of blend (G-213-19b)', () => {
+    it('retryEngineWarm() calls BOTH queue.warm() and pool.warm() exactly once, regardless of blend', () => {
       const { result } = renderHook(() => useBotGame(BLEND_0_SETTINGS));
       mockQueueWarm.mockClear();
       mockPoolWarm.mockClear();

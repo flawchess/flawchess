@@ -9,17 +9,15 @@ from app.models.base import Base
 
 # Tier meanings (no magic numbers in consumers — use these constants):
 #   TIER_EXPLICIT = 1       — explicit user request (highest priority)
-#   (tier 2 was an automatic recency window; its only enqueue path was removed
-#   in Phase 118, and Phase 149-04 removed the then-callerless tier-2 constant.
-#   The `tier` column and its ORDER BY tier ASC claim SQL are tier-agnostic
-#   and unaffected — a future tier-2 use would just need a new constant, no
-#   schema change.)
+#   (tier 2 is unused: it was an automatic recency window with no enqueue path
+#   left, so there is no tier-2 constant. The `tier` column and its
+#   ORDER BY tier ASC claim SQL are tier-agnostic and unaffected — a future
+#   tier-2 use would just need a new constant, no schema change.)
 #   TIER_IDLE_BACKLOG = 3   — idle-backlog drain
 #   TIER_BLOB_BACKFILL = 4  — spare-capacity flaw-blob backfill
-#   TIER_BESTMOVE_BACKFILL = 5 — spare-capacity best-move backfill (Phase 176
-#   BACK-01, lowest priority; added ahead of the Plan-01 Task 4 lottery rung so
-#   the Task 3 drain/guardrail tests can reference it without a forward
-#   dependency — ClaimedJob.tier is inert downstream, see eval_queue_service.py)
+#   TIER_BESTMOVE_BACKFILL = 5 — spare-capacity best-move backfill (lowest
+#   priority; the drain routes this tier to the minimal candidate-only path,
+#   see eval_drain.py)
 TIER_EXPLICIT: int = 1
 TIER_IDLE_BACKLOG: int = 3
 TIER_BLOB_BACKFILL: int = 4
@@ -27,7 +25,7 @@ TIER_BESTMOVE_BACKFILL: int = 5
 
 
 class EvalJob(Base):
-    """Priority queue / lease table for the full-ply eval drain (QUEUE-01, QUEUE-06).
+    """Priority queue / lease table for the full-ply eval drain.
 
     Tier ordering: 1 (explicit request) > 3 (idle backlog) [tier 2 unused, see
     the TIER_* constants comment above].
@@ -36,7 +34,6 @@ class EvalJob(Base):
 
     The partial unique index uq_eval_jobs_game_active enforces at most one active
     (pending or leased) job per game, while allowing re-enqueue after completion.
-    RESEARCH Open Question 1 / Pitfall 6.
     """
 
     __tablename__ = "eval_jobs"
@@ -51,7 +48,7 @@ class EvalJob(Base):
             unique=True,
             postgresql_where=sa.text("status IN ('pending', 'leased')"),
         ),
-        # Pick index: tier-ordered, per-user, recency-ordered (QUEUE-01 / QUEUE-02).
+        # Pick index: tier-ordered, per-user, recency-ordered.
         Index(
             "ix_eval_jobs_pick",
             "tier",
@@ -69,10 +66,10 @@ class EvalJob(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
-    # Tier 1=explicit, 2=auto-window, 3=idle-backlog (see TIER_* constants above)
+    # Tier value; see the TIER_* constants above.
     tier: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
-    # QUEUE-08: guest users are never enqueued — user_id references a real account.
+    # Guests may enqueue tier-1 jobs for their own games; automatic tiers never pick guests.
     # CASCADE: deleted user's queued jobs vanish automatically (no orphan rows).
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True

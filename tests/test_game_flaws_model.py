@@ -1,7 +1,7 @@
-"""Integration tests for the GameFlaw ORM model (Phase 108 Plan 01).
+"""Integration tests for the GameFlaw ORM model.
 
-Wave 0 model round-trip test for downstream plans. Tests the GameFlaw table
-created by the SEED-038 migration: insert/read, composite PK uniqueness,
+Model round-trip test. Tests the GameFlaw table
+created by the game_flaws migration: insert/read, composite PK uniqueness,
 and CASCADE delete on both game_id and user_id FKs.
 
 Coverage:
@@ -68,7 +68,7 @@ async def _seed_game(
 def _make_flaw_row(game: Game, ply: int = 10) -> GameFlaw:
     """Return an unsaved GameFlaw instance with representative column values.
 
-    Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws.
+    es_before, es_after, move_san removed from game_flaws.
     Only fen is kept as denormalized display data (game_positions has no FEN column).
     """
     return GameFlaw(
@@ -120,7 +120,7 @@ class TestGameFlawRoundTrip:
         assert row.is_reversed is True
         assert row.is_squandered is True
         assert "rnbqkb1r" in row.fen  # board_fen prefix
-        # Phase 112 (D-07): es_before, es_after, move_san dropped — sourced via join
+        # es_before, es_after, move_san dropped — sourced via join
         assert not hasattr(row, "es_before"), "GameFlaw must not have es_before after Phase 112"
         assert not hasattr(row, "es_after"), "GameFlaw must not have es_after after Phase 112"
         assert not hasattr(row, "move_san"), "GameFlaw must not have move_san after Phase 112"
@@ -218,21 +218,21 @@ class TestGameFlawCascadeDelete:
 
 
 # ---------------------------------------------------------------------------
-# TestDeferredBlobLeak (Phase 141 — D-02c regression)
+# TestDeferredBlobLeak
 # ---------------------------------------------------------------------------
 
 
 class TestDeferredBlobLeak:
     """Regression guard: allowed_pv_lines / missed_pv_lines must not load on stats scans.
 
-    D-02 structural guard: both columns are declared `deferred=True` on GameFlaw.
+    Structural guard: both columns are declared `deferred=True` on GameFlaw.
     This class verifies two properties:
 
     1. Unloaded-attribute proof: a representative stats-style `select(GameFlaw)` does
        NOT load the blob columns.  The inspection API is used because an implicit async
        deferred access would raise MissingGreenlet (the fail-loud signal for a real leak).
 
-    2. undefer() round-trip proof: the Phase 143 opt-in path loads the blobs without
+    2. undefer() round-trip proof: the opt-in path loads the blobs without
        error when `undefer()` is requested explicitly.
 
     3. Compiled-SQL check (no session): the default `select(GameFlaw)` SQL statement
@@ -288,7 +288,7 @@ class TestDeferredBlobLeak:
 
     @pytest.mark.asyncio
     async def test_undefer_round_trip_loads_both_blob_attrs(self, db_session: AsyncSession) -> None:
-        """undefer() opt-in (Phase 143 path) loads both blob attrs without error.
+        """undefer() opt-in loads both blob attrs without error.
 
         Both columns are NULL on a freshly seeded row — the assertion is that loading
         succeeds (no MissingGreenlet / attribute error) and returns None (the expected

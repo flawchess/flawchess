@@ -10,7 +10,7 @@ validation (scored but never used to tune detectors or set floors). Both files a
 produced by scripts/select_tagger_fixtures.py with a deterministic PuzzleId-hash
 split, so a puzzle never leaks across the two sets.
 
-CC0/AGPL boundary (SC#4, D-11): the puzzle data is CC0 / Public Domain
+CC0/AGPL boundary: the puzzle data is CC0 / Public Domain
 (database.lichess.org). The puzzle labels were produced by
 lichess-puzzler/tagger/cook.py (AGPL-3.0). We use only the published CC0
 dataset; cook.py is neither vendored nor ported here.
@@ -110,8 +110,8 @@ def detector_fixture_test() -> list[PuzzleRow]:
 
 
 # ---------------------------------------------------------------------------
-# Real-game fixture (TAGFIX-07 / D-13) — a hand-labelled sample of prod tags,
-# sampled BEFORE any detector/gate predicate in Phase 221 changed, so the
+# Real-game fixture — a hand-labelled sample of prod tags,
+# sampled BEFORE the detector/gate predicate changes it guards, so the
 # before/after real-share comparison is scored on identical inputs. Committed at
 # fixtures/tagger/realgame_tags.csv. See scripts/research/sample_realgame_tags.py
 # for the sampler that produced it and REALGAME_CSV_HEADER for the column contract.
@@ -121,7 +121,7 @@ RealGameLabel = Literal["real", "incidental", "wrong"]
 
 _REALGAME_PATH = _FIXTURE_DIR / "realgame_tags.csv"
 
-# T-221-01: the committed real-game CSV must never carry a user-identifying column.
+# The committed real-game CSV must never carry a user-identifying column.
 # The schema test asserts none of these names appear in the CSV header.
 REALGAME_USER_IDENTITY_DENYLIST: frozenset[str] = frozenset(
     {"user_id", "username", "player", "player_name", "account_handle", "email"}
@@ -129,7 +129,7 @@ REALGAME_USER_IDENTITY_DENYLIST: frozenset[str] = frozenset(
 
 
 class RealGameRow(TypedDict):
-    """A single row from the committed fixtures/tagger/realgame_tags.csv (TAGFIX-07)."""
+    """A single row from the committed fixtures/tagger/realgame_tags.csv."""
 
     row_id: str  # stable zero-padded ordinal, unique within the file
     game_id: int
@@ -150,7 +150,7 @@ class RealGameRow(TypedDict):
     label: RealGameLabel | None  # None only while unlabelled (task 2 fills every row)
     rationale: str  # one-clause justification for the label; "" while unlabelled
     # Display-only: opens the pre-flaw position on a lichess analysis board for the
-    # D-13 operator review (the sample spans all prod users, so an in-app link only
+    # operator review (the sample spans all prod users, so an in-app link only
     # resolves for rows the reviewer owns). Never read by the board build or any
     # measurement.
     board_url: str
@@ -162,7 +162,7 @@ class RealGameRow(TypedDict):
 
 
 def _load_realgame() -> list[RealGameRow]:
-    """Read the committed real-game fixture CSV. No DB, no network (D-13).
+    """Read the committed real-game fixture CSV. No DB, no network.
 
     A label outside {"real", "incidental", "wrong", ""} raises ValueError naming the
     offending row_id — never a bare str passthrough (CLAUDE.md: no bare `str` for a
@@ -217,13 +217,13 @@ def _require_solver_color(row_id: str, value: str) -> Literal["white", "black"]:
 
 
 def build_realgame_board(row: RealGameRow) -> chess.Board:
-    """Build the detector input board the SAME way production builds it post-D-09.
+    """Build the detector input board the SAME way production builds it.
 
     BOTH orientations push a move onto the board here: the flaw move for "allowed"
     (matching build_detector_board's allowed pass), and the opponent's PRECEDING
-    move for "missed" — after D-09 the missed pass's board_before is built from
+    move for "missed" — the missed pass's board_before is built from
     fen_map[n-1] plus the previous move (positions[n-1].move_san), giving it a
-    one-move stack exactly like the allowed pass. See flaws_service.py's TAGFIX-06
+    one-move stack exactly like the allowed pass. See flaws_service.py's
     board-construction site for the production rule this mirrors.
 
     Falls back to a stackless board (pre_flaw_fen only, no push) if the push is
@@ -240,5 +240,5 @@ def build_realgame_board(row: RealGameRow) -> chess.Board:
 
 @pytest.fixture(scope="session")
 def realgame_fixture() -> list[RealGameRow]:
-    """Session-scoped real-game fixture (TAGFIX-07 / D-13)."""
+    """Session-scoped real-game fixture."""
     return _load_realgame()

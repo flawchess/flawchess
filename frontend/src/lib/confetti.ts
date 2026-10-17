@@ -1,11 +1,11 @@
 /**
- * Bot-win celebration confetti helper (Quick 260723-tqn).
+ * Bot-win celebration confetti helper.
  *
  * Thin wrapper around `canvas-confetti` (an untyped canvas-based one-shot
  * burst renderer, no framework dependency) so `useBotGame`'s `finalizeGame`
  * has a single call site to fire from on a human win. `prefersReducedMotion`
  * guards the call site: reduced-motion users get the outcome sound but no
- * confetti and no result-modal delay (see `useWinCelebrationHold`).
+ * confetti and no result-modal delay (see `useResultDialogHold`).
  */
 
 import confetti from 'canvas-confetti';
@@ -27,11 +27,11 @@ const CONFETTI_SPREAD = 55;
 /** Lifetime of every particle, in canvas-confetti "ticks" (one tick per
  * animation frame). Passed EXPLICITLY rather than left at the library
  * default so the burst's duration is a number this module owns and can
- * export — `useWinCelebrationHold` holds the bot-game result modal closed
+ * export — `useResultDialogHold` holds the bot-game result modal closed
  * for exactly `CONFETTI_DURATION_MS`, and that coupling has to be a shared
- * constant, not a guess. Phase 223 UAT: the previous 1300ms hold was
- * derived from a guess and expired with roughly half the burst still on
- * screen, so the modal covered the board mid-celebration. */
+ * constant, not a guess: a hold derived from a guess (1300ms) expired with
+ * roughly half the burst still on screen, so the modal covered the board
+ * mid-celebration. */
 const CONFETTI_TICKS = 180;
 
 /** Frames per second the ticks above are spent at. Browsers animate

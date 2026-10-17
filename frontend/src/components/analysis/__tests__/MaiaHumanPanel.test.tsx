@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * Phase 151 Plan 06 — MaiaHumanPanel tests.
+ * MaiaHumanPanel tests.
  *
  * Thin composition component: a Card whose header carries the title + info tooltip
  * and whose body holds the MovesByRatingChart. The ELO selector was moved OUT of
- * this card in 155 UAT (it drives both engines), so it is no longer asserted here.
+ * this card (it drives both engines), so it is no longer asserted here.
  * Verifies wiring, not the child components' own behavior (each has its own test
  * suite already).
  */
@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 describe('MaiaHumanPanel', () => {
-  it('renders the chart (ELO selector now lives outside the card, 155 UAT)', () => {
+  it('renders the chart (ELO selector now lives outside the card)', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
@@ -58,11 +58,11 @@ describe('MaiaHumanPanel', () => {
       />,
     );
     expect(screen.getByTestId('moves-by-rating-chart')).toBeTruthy();
-    // The ELO slider was moved out below the card (155 UAT).
+    // The ELO slider was moved out below the card.
     expect(screen.queryByTestId('analysis-elo-selector')).toBeNull();
   });
 
-  it('renders the header title and the info tooltip trigger (UAT quick 260705-bm3)', () => {
+  it('renders the header title and the info tooltip trigger', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
@@ -80,7 +80,7 @@ describe('MaiaHumanPanel', () => {
     expect(screen.getByTestId('maia-info-popover')).toBeTruthy();
   });
 
-  it('no longer renders the removed attribution legal box (UAT quick 260705-bm3)', () => {
+  it('no longer renders the removed attribution legal box', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}
@@ -97,7 +97,7 @@ describe('MaiaHumanPanel', () => {
     expect(screen.queryByTestId('maia-attribution')).toBeNull();
   });
 
-  it('compact mode drops the header but keeps the chart (151.1 UAT)', () => {
+  it('compact mode drops the header but keeps the chart', () => {
     render(
       <MaiaHumanPanel
         selectedElo={1500}

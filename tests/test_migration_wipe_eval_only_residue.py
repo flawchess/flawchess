@@ -1,4 +1,4 @@
-"""Data-correctness test for the Phase 117.2 eval-only residue wipe (SEED-044 follow-up).
+"""Data-correctness test for the eval-only residue wipe.
 
 Seeds three games and runs the migration's gated UPDATE:
   - DENSE engine game (lichess_evals_at NULL, full_evals_completed_at NULL, ~100% eval

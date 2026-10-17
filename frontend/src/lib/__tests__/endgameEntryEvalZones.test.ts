@@ -14,7 +14,7 @@ describe('endgameEntryEvalZones constants', () => {
     expect(ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS).toBe(-0.60);
     expect(ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS).toBe(0.60);
   });
-  it('centers on 0 pawns (D-07 H0)', () => {
+  it('centers on 0 pawns', () => {
     expect(ENDGAME_ENTRY_EVAL_CENTER).toBe(0);
   });
   it('uses ±2.25 pawn axis domain (unchanged)', () => {

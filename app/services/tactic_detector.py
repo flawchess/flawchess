@@ -1,19 +1,18 @@
-"""Tactic-motif detector for Phase 124 (TACDET-01/02/03/04).
+"""Tactic-motif detector.
 
 Pure Python/CPU transform over a stored Stockfish refutation PV.
-No I/O, no DB, no Stockfish calls. Input: board_after_flaw (chess.Board)
+No I/O, no DB, no Stockfish calls. Input: pv_start_board (chess.Board)
 + pv_str (space-joined UCI from game_positions.pv). Output: (motif, piece, confidence, depth).
 
-Encoding follows the EndgameClassInt precedent (endgame_service.py:108):
+Encoding follows the EndgameClassInt precedent (endgame_service.py):
   TacticMotifInt — IntEnum encoding for the tactic_motif SmallInteger column.
   TacticMotif    — Literal type alias for human-readable motif strings.
   _INT_TO_MOTIF / _MOTIF_TO_INT — bidirectional dicts.
 
 Detector function return convention (used by dispatcher in detect_tactic_motif):
-  Phase 127 contract (D-05):
   Core 8 + named-mate detectors: (fired: bool, piece: int | None, depth: int | None)
     depth is the half-move loop index at the point the motif fires (raw ply from flaw_ply+1).
-    piece follows D-12 per-motif semantics.
+    piece semantics are per motif (see each detector's docstring).
   Tier-3 detectors: (fired: bool, piece: int | None, confidence: int, depth: int | None)
     confidence is 0-100 graded (count-of-conditions / total * 100).
     depth is the half-move loop index when the motif fires.
@@ -21,7 +20,7 @@ Detector function return convention (used by dispatcher in detect_tactic_motif):
   Dispatcher detect_tactic_motif: (motif_int, piece, confidence, depth) — 4-tuple throughout.
   Graded scoring: _grade(met, total) -> int is the single named helper.
 
-Relevance gate (D-01): non-mate detectors that scan the full PV check that the motif
+Relevance gate: non-mate detectors that scan the full PV check that the motif
 fires in a continuation where pov does not lose material vs the starting position, or
 fires on the very first pov move. This eliminates Case-B incidental hits (motif visible
 in a non-forcing continuation after the refutation already won) without killing real
@@ -41,7 +40,7 @@ import chess
 
 # Piece values (cook.py convention): used by fork, skewer, hanging-piece,
 # capturing-defender, and sacrifice detectors.  KING:99 ensures a forking check
-# counts as a high-value fork target (D-08, shared utility port).
+# counts as a high-value fork target.
 _PIECE_VALUES: dict[int, int] = {
     chess.PAWN: 1,
     chess.KNIGHT: 3,
@@ -51,7 +50,7 @@ _PIECE_VALUES: dict[int, int] = {
     chess.KING: 99,
 }
 
-# No-king value table for _is_in_bad_spot's lower-value comparator (Pitfall 4, D-08).
+# No-king value table for _is_in_bad_spot's lower-value comparator.
 # is_in_bad_spot asks "can this piece be profitably captured?" — a king can never be
 # captured, so it must not appear as a valid lower-value attacker in that check.
 # Contrast with fork's victim comparison which uses _PIECE_VALUES (king=99 makes a
@@ -67,7 +66,7 @@ _VALUES_NO_KING: dict[int, int] = {
 # Core detectors fire with this confidence (cook is boolean — no gradations).
 TACTIC_CONFIDENCE_HIGH: int = 100
 
-# Severity gate (D-05): only mistakes and blunders receive motif detection.
+# Severity gate: only mistakes and blunders receive motif detection.
 # Tunable constant — do not hardcode in caller logic.
 TACTIC_MIN_SEVERITY: frozenset[str] = frozenset({"mistake", "blunder"})
 
@@ -79,21 +78,18 @@ _RAY_PIECES: frozenset[int] = frozenset({chess.BISHOP, chess.ROOK, chess.QUEEN})
 # 2 = minor piece (bishop/knight) threshold — queens (9) and rooks (5) are always >= 2.
 MIN_SACRIFICE_DROP: int = 2
 
-# Phase 221 TAGFIX-03/04 (D-06): shared depth cap for detect_sacrifice and
-# detect_clearance ONLY. Both were measured firing deep in non-winning real-game
-# continuations (dev average firing depth 4.78 for sacrifice, 3.73 for clearance,
-# vs 0.00-1.35 for the geometric motifs — reports/tactic-tagger/tactic-tagger-
-# review-2026-09-12.md). Every other tier-3 motif (deflection, attraction,
-# intermezzo, x-ray, interference, capturing-defender) keeps the full-line scan:
-# deflection's deep hits are measured as mostly real. Do not add this cap to a
-# third motif (D-06 scopes it to exactly these two). Unrelated to, and unchanged
-# by, plan 08's retirement of sacrifice's D-05 persistence check (see
-# detect_sacrifice's docstring) — D-06 stays exactly as it was.
+# Shared depth cap for detect_sacrifice and detect_clearance ONLY. Both were
+# measured firing deep in non-winning real-game continuations (dev average firing
+# depth 4.78 for sacrifice, 3.73 for clearance, vs 0.00-1.35 for the geometric
+# motifs; see reports/tactic-tagger/tactic-tagger-review-2026-09-12.md). Every
+# other tier-3 motif (deflection, attraction, intermezzo, x-ray, interference,
+# capturing-defender) keeps the full-line scan: deflection's deep hits are
+# measured as mostly real. Do not add this cap to a third motif.
 SACRIFICE_CLEARANCE_MAX_DEPTH: int = 4
 
 # ---------------------------------------------------------------------------
 # IntEnum encoding (TacticMotifInt) — values must never be reordered.
-# Existing DB rows encode these ints. Per D-02 / D-03.
+# Existing DB rows encode these ints.
 # ---------------------------------------------------------------------------
 
 
@@ -125,10 +121,10 @@ class TacticMotifInt(IntEnum):
     BODEN_MATE = 22
     DOUBLE_BISHOP_MATE = 23
     DOVETAIL_MATE = 24
-    # Phase 128.1-01: new Tier-2 motifs (append-only; preserve existing 1-24).
+    # New Tier-2 motifs (append-only; preserve existing 1-24).
     DISCOVERED_CHECK = 25
     TRAPPED_PIECE = 26
-    # Phase 128.1-02: move-type family (Tier 5, lowest — real tactics always win, D-03/D-04).
+    # Move-type family (Tier 5, lowest: real tactics always win).
     EN_PASSANT = 27
     PROMOTION = 28
     UNDER_PROMOTION = 29
@@ -163,10 +159,9 @@ TacticMotif = Literal[
     "boden-mate",
     "double-bishop-mate",
     "dovetail-mate",
-    # Phase 128.1-01
     "discovered-check",
     "trapped-piece",
-    # Phase 128.1-02: move-type family
+    # Move-type family
     "en-passant",
     "promotion",
     "under-promotion",
@@ -201,10 +196,10 @@ _INT_TO_MOTIF: dict[int, TacticMotif] = {
     22: "boden-mate",
     23: "double-bishop-mate",
     24: "dovetail-mate",
-    # Phase 128.1-01: append-only; existing 1-24 never reordered (T-128.1-02)
+    # Append-only; existing 1-24 never reordered
     25: "discovered-check",
     26: "trapped-piece",
-    # Phase 128.1-02: move-type family (T-128.1-05: append-only, no migration)
+    # Move-type family (append-only, no migration)
     27: "en-passant",
     28: "promotion",
     29: "under-promotion",
@@ -216,7 +211,7 @@ _MOTIF_TO_INT: dict[TacticMotif, int] = {v: k for k, v in _INT_TO_MOTIF.items()}
 # Grouping constants
 # ---------------------------------------------------------------------------
 
-# All 9 named-mate motifs (D-03): fine-grained storage, free coarsening at query time.
+# All 9 named-mate motifs: fine-grained storage, free coarsening at query time.
 # Usage: WHERE tactic_motif IN (MATE_MOTIFS) — no re-detect required.
 MATE_MOTIFS: frozenset[TacticMotif] = frozenset(
     {
@@ -232,11 +227,11 @@ MATE_MOTIFS: frozenset[TacticMotif] = frozenset(
     }
 )
 
-# Move-type family (D-02): en-passant, promotion, and under-promotion are grouped here
+# Move-type family: en-passant, promotion, and under-promotion are grouped here
 # because they are detected from the SHAPE of the refuting move, not from board geometry.
-# They are detected + stored for lichess-theme parity; whether/how to surface them as
-# chips is a Phase 129 decision (D-09). discovered-check and trapped-piece are NOT in
-# this set — they are real tactical geometry.
+# They are detected + stored for lichess-theme parity; which of them surface as
+# chips is decided in the frontend (tacticMotifDefinitions.ts). discovered-check and
+# trapped-piece are NOT in this set: they are real tactical geometry.
 MOVE_TYPE_MOTIFS: frozenset[TacticMotif] = frozenset(
     {
         "en-passant",
@@ -246,22 +241,22 @@ MOVE_TYPE_MOTIFS: frozenset[TacticMotif] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
-# PV-parse helper (Pattern 2 from RESEARCH.md)
+# PV-parse helper
 # ---------------------------------------------------------------------------
 
 
 def _parse_pv(
-    board_after_flaw: chess.Board, pv_str: str
+    pv_start_board: chess.Board, pv_str: str
 ) -> tuple[list[chess.Board], list[chess.Move]]:
     """Parse space-joined UCI PV string into board sequence.
 
-    Returns (boards, moves) where boards[0] = board_after_flaw,
+    Returns (boards, moves) where boards[0] = pv_start_board,
     boards[i+1] = board after moves[i]. Length: len(moves) = len(boards)-1.
 
     Raises ValueError on malformed UCI strings (caller wraps in try/except).
     """
     moves = [chess.Move.from_uci(uci) for uci in pv_str.split()]
-    boards: list[chess.Board] = [board_after_flaw.copy()]
+    boards: list[chess.Board] = [pv_start_board.copy()]
     for move in moves:
         b = boards[-1].copy()
         try:
@@ -290,10 +285,8 @@ def _is_hanging(board: chess.Board, sq: int, color: chess.Color) -> bool:
     Precision-first: strict undefended test (attackers(color, sq) empty).
     A piece is only hanging if it is both attacked and has no defenders.
 
-    NOTE: This helper is NOT ray-aware. It is kept for backward compatibility with
-    consumers that have not yet been migrated to the ray-aware helpers below.
-    Six consumers will migrate in plans 02/03: fork, hanging-piece, skewer, pin,
-    interference, trapped-piece. Fork already uses _is_defended (see detect_fork).
+    NOTE: not ray-aware; only detect_self_interference (undispatched) still uses it.
+    The other detectors use the ray-aware _is_defended.
     """
     attacked_by_opponent = bool(board.attackers(not color, sq))
     defended_by_self = bool(board.attackers(color, sq))
@@ -304,9 +297,6 @@ def _is_defended(board: chess.Board, piece: chess.Piece, sq: int) -> bool:
     """True if piece at sq of piece.color has a direct or X-ray defender.
 
     Reimplemented from cook's util.is_defended pseudocode (AGPL boundary — no source copy).
-    Consumers: fork (victim hanging check), and the six detector sites being migrated
-    in plans 02/03 (hanging-piece, skewer, pin, interference, trapped-piece + this plan's
-    fork rewire).
 
     Direct defense: board.attackers(piece.color, sq) is non-empty.
     X-ray defense: any opponent ray attacker (Q/R/B) is removed via board.copy(stack=False)
@@ -331,12 +321,12 @@ def _is_in_bad_spot(board: chess.Board, sq: int) -> bool:
     """True if the piece at sq is attacked AND (hanging or capturable by a lower non-king).
 
     Reimplemented from cook's util.is_in_bad_spot pseudocode (AGPL boundary — no source copy).
-    Uses _VALUES_NO_KING for the lower-value comparator (Pitfall 4, D-08): a king cannot
+    Uses _VALUES_NO_KING for the lower-value comparator: a king cannot
     be profitably captured, so it must not register as a valid lower-value attacker here.
 
     Used as:
     - A PRUNE in detect_fork: skip a fork candidate if the forker lands in a bad spot.
-    - An ACCEPT in detect_skewer: require is_in_bad_spot on the capture square (plan 02/03).
+    - An ACCEPT in detect_skewer: require is_in_bad_spot on the capture square.
     """
     piece = board.piece_at(sq)
     if piece is None:
@@ -377,7 +367,7 @@ def _grade(met: int, total: int) -> int:
 
 # ---------------------------------------------------------------------------
 # Core 8 detectors
-# Each returns (bool, piece_int_or_None) per the module convention.
+# Each returns (fired, piece, depth).
 # ---------------------------------------------------------------------------
 
 
@@ -386,7 +376,7 @@ def detect_fork(
 ) -> tuple[bool, int | None, int | None]:
     """Fork: a pov move attacks 2+ opponent pieces that are each higher-value or loose.
 
-    Rebuilt to cook's exact relational predicate (D-09/D-10, plan 02 — no source copy):
+    Cook's exact relational predicate (no source copy):
     scan pov moves EXCEPT the last (`range(0, len(moves) - 2, 2)` — cook's [:-1] equiv);
     moved piece is not a king; PRUNE if forker lands in a bad spot (`_is_in_bad_spot`);
     count victims via `board_after.attacks(dest)`, SKIPPING pawn victims; victim qualifies
@@ -395,19 +385,19 @@ def detect_fork(
     the hanging victim is not itself defending the fork square); fire if victims ≥ 2.
 
     Returns (fired, forking_piece_type, depth) on detection.
-    tactic_piece = the forking piece type (D-12).
+    tactic_piece = the forking piece type.
     depth = loop index i (half-moves from flaw_ply+1) when the fork fires.
 
-    Bug fix (Phase 221 TAGFIX-05 fix 2, D-12): the D-01 "relevance gate" (skip a fork
+    Bug fix: the "relevance gate" (skip a fork
     at depth i>0 when material at the end of the line is below material at the start)
     is NOT part of cook's predicate. The oracle comparison (scripts/research/
     oracle_compare.py, review report §4) measured it costing 130 detections for ZERO
     precision change — all 130 were sac-then-mate lines cook itself tags as fork. The
     gate is removed; do not reintroduce it as a future "precision-first" deviation.
 
-    Note on last-move exclusion: cook scans [:-1] (excludes the last pov move). This
-    aligns with the Phase-124 interpretation — the last pov move is excluded because
-    cook's logic cannot verify whether the fork is meaningful without a following line.
+    Note on last-move exclusion: cook scans [:-1] (excludes the last pov move). The
+    last pov move is excluded because cook's logic cannot verify whether the fork is
+    meaningful without a following line.
     """
     # Cook scans [:-1] (all pov moves except the last) — equivalent to range(0, len-2, 2)
     # when pov moves are at even indices. If len(moves) < 2, no pov moves to scan.
@@ -445,7 +435,7 @@ def detect_fork(
             # Victim qualifies if higher-value than forker (KING=99 makes forking checks count)
             # OR (hanging AND not an attacker of the fork square — the "not attacker" clause)
             is_higher_value = target_val > mover_val
-            # Cook gap 3 (hanging victim): ray-aware _is_defended (D-08)
+            # Cook gap 3 (hanging victim): ray-aware _is_defended
             is_hanging_victim = not _is_defended(board_after, target, sq)
             # Cook gap 4: hanging victim must not be defending the fork square itself
             is_not_defending_fork = sq not in fork_sq_attackers
@@ -464,7 +454,7 @@ def detect_hanging_piece(
     """Hanging piece: pov's first move captures an undefended non-pawn.
 
     Returns (fired, victim_piece_type, depth) on detection.
-    tactic_piece = the victim (D-12).
+    tactic_piece = the victim.
     depth = 0 (always fires on the first pov move, if at all).
     """
     if not moves:
@@ -488,7 +478,7 @@ def detect_hanging_piece(
 
     # Target must be hanging on the board before capture. cook's util.is_hanging is
     # ray-aware (`not is_defended`) — a piece defended only through a friendly ray is
-    # NOT hanging. Our prior non-ray-aware `_is_hanging` over-fired on such pieces.
+    # NOT hanging. Don't use the non-ray-aware `_is_hanging` here: it over-fires on such pieces.
     if _is_defended(board_before, target, to_square):
         return False, None, None
 
@@ -496,14 +486,13 @@ def detect_hanging_piece(
     # its move stack) landed on our capture square AND captured a piece of value >= the piece
     # we are now capturing, this is a recapture of an equal/greater trade, NOT a hanging piece.
     # boards[0].move_stack carries the flaw move in production (board_after_flaw = board_before
-    # + push(flaw_move)) and in the gate (rebuilt the same way). Phase 221 TAGFIX-06 (D-09/D-10):
-    # after D-09 the MISSED pass also carries a one-move stack (the opponent's previous move,
-    # from _build_missed_board_with_stack) — the exclusion now applies in BOTH orientations,
-    # which is cook's actual behaviour and parity with the allowed pass. Consequence: 33 of 302
-    # dev missed hanging-piece rows that were plain recaptures now become NULL. This is NOT a
-    # new branch here — a genuinely stackless board (a legacy row, or a missed flaw whose stack
-    # build degraded per _build_missed_board_with_stack's documented fallbacks) still correctly
-    # skips the exclusion, exactly as before.
+    # + push(flaw_move)) and in the gate (rebuilt the same way). The MISSED pass also
+    # carries a one-move stack (the opponent's previous move, from
+    # _build_missed_board_with_stack), so the exclusion applies in BOTH orientations,
+    # which is cook's actual behaviour and parity with the allowed pass. A genuinely
+    # stackless board (a legacy row, or a missed flaw whose stack build degraded per
+    # _build_missed_board_with_stack's documented fallbacks) still correctly skips the
+    # exclusion.
     if board_before.move_stack:
         flaw_move = board_before.peek()
         if flaw_move.to_square == to_square:
@@ -538,7 +527,7 @@ def _pin_prevents_attack(
     where that pov piece is worth more than the pinned piece OR is hanging.
     This fires when the pin prevents the opponent from executing a threatened capture.
 
-    Pitfall 7: board.pin(color, sq) is called with the PINNED piece's color.
+    board.pin(color, sq) is called with the PINNED piece's color.
     """
     pinned_piece = board.piece_at(pinned_sq)
     if pinned_piece is None:
@@ -597,10 +586,10 @@ def _pin_prevents_escape(
         # cook second branch: the pinned piece is hanging, does NOT itself defend by
         # attacking the attacker (if it attacks the attacker back, capturing is a real
         # defence so the pin is not trapping it), AND a pseudo-legal escape off the pin
-        # line EXISTS — meaning the pin is precisely what prevents that escape. The prior
-        # implementation omitted the "pinned not attacking attacker" guard, firing on
-        # incidental pins where the pinned piece attacked its own pinner (the dominant
-        # pin false-positive source, e.g. a pawn pinned by the queen it also attacks).
+        # line EXISTS — meaning the pin is precisely what prevents that escape. Keep the
+        # "pinned not attacking attacker" guard: without it incidental pins fire where the
+        # pinned piece attacks its own pinner (the dominant pin false-positive source,
+        # e.g. a pawn pinned by the queen it also attacks).
         if (
             pinned_is_hanging
             and pinned_sq not in board.attackers(not pov, attacker_sq)
@@ -618,9 +607,9 @@ def detect_pin(
 ) -> tuple[bool, int | None, int | None]:
     """Pin: a line piece constrains an opponent piece via either pin sub-test.
 
-    Rebuilt to cook's two-sub-test port (D-09/D-10, plan 02 — no source copy):
+    Cook's two-sub-test port (no source copy):
     For each board position in the PV, scan every opponent piece; use `board.pin(color, sq)`
-    with the PINNED piece's color (Pitfall 7). If pin_ray != BB_ALL (piece is pinned), find
+    with the PINNED piece's color. If pin_ray != BB_ALL (piece is pinned), find
     the pov pinner and apply both cook sub-tests:
 
     1. `pin_prevents_attack`: pinned piece threatens a pov piece OUTSIDE the pin line
@@ -628,19 +617,15 @@ def detect_pin(
     2. `pin_prevents_escape`: a pov attacker INSIDE the pin line attacks the pinned piece;
        meaningful if pinned > attacker value, or pinned is hanging and can't escape.
 
-    Replaces the old `_pin_wins_material` relevance gate (direct-capture accept / replacement
-    guard reject) with cook's structural criteria — precision lift from 0.44 to measured value.
+    Only scan boards that follow a POV (refuting/winning side) move: the ODD board
+    indices. boards[0] is pov-to-move, so pov's moves land on boards[1], boards[3], ...;
+    those are the positions where a pin pov just CREATED exists. cook.py checks pins on
+    exactly these nodes, not on every position. Scanning the pov-to-move boards (even
+    indices) too fires on pre-existing / incidental structural pins (and pins inside
+    opponent forcing lines: attraction, deflection, sacrifice) as false positives.
 
-    Phase 131 precision fix (pin 0.819 -> ~0.95 TEST): only scan boards that follow a POV
-    (refuting/winning side) move — the ODD board indices. boards[0] is pov-to-move, so pov's
-    moves land on boards[1], boards[3], ... — those are the positions where a pin pov just
-    CREATED exists. cook.py checks pins on exactly these nodes, not on every position. The old
-    `enumerate(boards)` also scanned pov-to-move boards (even indices), where pre-existing /
-    incidental structural pins (and pins inside opponent forcing lines: attraction, deflection,
-    sacrifice) fired as false positives — isolated precision 0.477 -> 0.947 on TEST, recall ~1.0.
-
-    tactic_piece = the pinner piece type (D-12).
-    depth = max(0, k-1) where k is board index (SEED-057 IN-01 / Pitfall 6); k is always odd
+    tactic_piece = the pinner piece type.
+    depth = max(0, k-1) where k is board index; k is always odd
     here so depth is even (0, 2, 4, ...).
     """
     # Only POV-move result boards (odd indices). boards[0] is pov-to-move (no pin created yet).
@@ -650,7 +635,7 @@ def detect_pin(
             piece = board.piece_at(sq)
             if piece is None or piece.color == pov:
                 continue
-            # board.pin(color, sq) with the PINNED piece's color (Pitfall 7)
+            # board.pin(color, sq) with the PINNED piece's color
             # Returns BB_ALL when the piece is NOT pinned; any other value = pinned
             pin_ray = chess.SquareSet(board.pin(piece.color, sq))
             if board.pin(piece.color, sq) == chess.BB_ALL:
@@ -674,7 +659,7 @@ def detect_pin(
             if _pin_prevents_attack(board, sq, pin_ray, pov) or _pin_prevents_escape(
                 board, sq, pin_ray, pov
             ):
-                # SEED-057 (IN-01): k is board index; depth should be move index.
+                # k is board index; depth should be move index.
                 # Board k follows move k-1. Clamp to 0 for k==0.
                 return True, pinner_type, max(0, k - 1)
 
@@ -687,7 +672,7 @@ def detect_skewer(
     """Skewer: a ray piece captures through a high-value opponent piece that moved across
     the skewer line in the prior opponent move, exposing a lower-value piece behind.
 
-    Rebuilt to cook's exact relational predicate (D-09/D-10, plan 02 — no source copy):
+    Cook's exact relational predicate (no source copy):
     scan pov moves from the 2nd (`range(2, len(moves), 2)`) — the first pov move lacks
     a preceding pov move context so can't be a relational skewer.  For each pov capture
     with a ray piece (Q/R/B) that is not checkmate:
@@ -699,10 +684,10 @@ def detect_skewer(
         piece was in front — king=99 so a forking check also qualifies)
         AND `_is_in_bad_spot(board_before, capture_square)` (the piece we capture is loose)
 
-    tactic_piece = the skewering ray piece (D-12).
-    depth = k (loop index, half-moves from flaw_ply+1) per Pitfall 6 / SEED-057 convention.
+    tactic_piece = the skewering ray piece.
+    depth = k (loop index, half-moves from flaw_ply+1).
 
-    No D-01 gate: skewer is a structural motif common in equalizing continuations.
+    No relevance gate: skewer is a structural motif common in equalizing continuations.
     """
     for k in range(2, len(moves), 2):  # pov's 2nd+ moves (index convention: cook [1::2][1:])
         move = moves[k]
@@ -760,9 +745,9 @@ def detect_double_check(
 ) -> tuple[bool, None, int | None]:
     """Double check: pov delivers a move resulting in 2+ checkers.
 
-    Returns (fired, None, depth) — D-12: piece is NULL for double-check.
-    depth = i - 1 (the pov move index that delivered the double check),
-    per Pitfall 7: board index i means move i-1 was the last move.
+    Returns (fired, None, depth); the piece is NULL for double-check.
+    depth = i - 1 (the pov move index that delivered the double check):
+    board index i means move i-1 was the last move.
     """
     for i in range(1, len(boards)):
         board = boards[i]
@@ -771,7 +756,7 @@ def detect_double_check(
             continue
         # It's now opponent's turn; check if opponent is in double check
         if board.turn == (not pov) and len(list(board.checkers())) >= 2:
-            return True, None, i - 1  # depth = move index (per Pitfall 7)
+            return True, None, i - 1  # depth = move index
 
     return False, None, None
 
@@ -784,21 +769,20 @@ def detect_discovered_check(
 
     Returns (fired, unveiled_checker_piece_type, depth) where depth = 0 (discovered
     check always fires on the first pov move).
-    tactic_piece = the piece that delivers the discovered check (D-12).
+    tactic_piece = the piece that delivers the discovered check.
 
-    D-03 split rationale: this is Sub-case 1 lifted out of detect_discovered_attack so
-    that a discovering move that gives check tags as 'discovered-check' (int 25), not
-    'discovered-attack' (int 6).  The more-specific subtype wins — the same pattern used
-    by named-mate subtypes that short-circuit before generic mate.  discovered-check is
-    ranked above discovered-attack in _GEOMETRIC_REGISTRY (lower list index = higher
+    Split out of detect_discovered_attack so that a discovering move that gives check
+    tags as 'discovered-check' (int 25), not 'discovered-attack' (int 6).  The
+    more-specific subtype wins — the same pattern used by named-mate subtypes that
+    short-circuit before generic mate.  discovered-check is ranked above discovered-attack in _GEOMETRIC_REGISTRY (lower list index = higher
     priority) so the dispatcher returns discovered-check when both would fire on the
     same PV at the same depth.
 
-    Cook-faithful scan (Quick 260623): cook.discovered_check scans EVERY pov move
+    Cook-faithful scan: cook.discovered_check scans EVERY pov move
     (`mainline[1::2]`), not just the first — a discovered check can be delivered on a
     later pov move. We scan the same set and return the FIRST discovered check as depth=k
     so the depth-primary dispatcher keeps shallower tactics winning. The first-pov-move
-    case still returns depth 0 (unchanged behavior).
+    case returns depth 0.
     """
     for k in _solver_move_indices(len(moves)):
         board_after = boards[k + 1]
@@ -824,9 +808,9 @@ def detect_discovered_attack(
 ) -> tuple[bool, int | None, int | None]:
     """Discovered attack: an earlier pov move vacated a between-square, unmasking a capture.
 
-    Rebuilt to cook's exact relational predicate (D-09/D-10, plan 02 — no source copy):
+    Cook's exact relational predicate (no source copy):
     scan pov moves from the 2nd (`range(2, len(moves), 2)`) to keep the loop starting
-    at index 2 (Pitfall 1 — discovered-check owns the first pov move, depth 0).
+    at index 2 (discovered-check owns the first pov move, depth 0).
     For each pov capture at index k:
       - compute `between = chess.SquareSet.between(move.from_square, move.to_square)`
       - let `op = moves[k-1]` — if `op.to_square == capture_square`: short-circuit to
@@ -839,12 +823,11 @@ def detect_discovered_attack(
 
     Returns (fired, unveiled_attacker_piece_type, depth).
     tactic_piece = the capturing piece (the piece now attacking on the unblocked ray).
-    depth = k (half-moves from flaw_ply+1, per Pitfall 6 / SEED-057 convention).
+    depth = k (half-moves from flaw_ply+1).
 
-    D-03 note: Sub-case 1 (first pov move gives discovered check) was split out into
-    detect_discovered_check (int 25) which fires at depth 0.  This function handles
-    only sub-case 2 (deeper captures). Loop starts at k=2, not k=0, so discovered-check
-    positions are never re-claimed here (Pitfall 1 guard).
+    Note: the first-pov-move case (a discovered check) belongs to detect_discovered_check
+    (int 25), which fires at depth 0. This function handles only deeper captures. Loop
+    starts at k=2, not k=0, so discovered-check positions are never re-claimed here.
     """
     if len(moves) < 3 or len(boards) < 4:
         # Need at least 3 moves: prev pov (k-2), op (k-1), this pov capture (k=2)
@@ -860,15 +843,14 @@ def detect_discovered_attack(
         if captured_piece is None or captured_piece.color == pov:
             continue
 
-        # Opponent's prior move going to capture_sq means recapture — short-circuit the
-        # WHOLE predicate to not-fired (Phase 221 TAGFIX-05 fix 4, D-12). cook short-
-        # circuits the entire discovered-attack check on a recapture; the prior port's
-        # `continue` only skipped this pov-move index and kept scanning later indices,
-        # so a later index could still fire on the same PV. The oracle comparison
-        # (scripts/research/oracle_compare.py, review report §4) measured this costing
-        # roughly 16 false positives. Anchor by FUNCTION, not by string: the visually
-        # identical guard inside detect_skewer (above) is correct as a `continue` there
-        # and must NOT be changed.
+        # Opponent's prior move going to capture_sq means recapture: short-circuit the
+        # WHOLE predicate to not-fired. cook short-circuits the entire discovered-attack
+        # check on a recapture; a `continue` would only skip this pov-move index and keep
+        # scanning later indices, so a later index could still fire on the same PV (the
+        # oracle comparison, scripts/research/oracle_compare.py, measured that as roughly
+        # 16 false positives). Anchor by FUNCTION, not by string: the visually identical
+        # guard inside detect_skewer (above) is correct as a `continue` there and must
+        # NOT be changed.
         op = moves[k - 1]
         if op.to_square == capture_sq:
             return False, None, None
@@ -877,7 +859,7 @@ def detect_discovered_attack(
         prev = moves[k - 2]
 
         # Castling cannot unblock a ray geometrically.
-        # Bug-fix (131-REVIEW WR-01): is_castling() is board-state-aware — it checks the
+        # Bug-fix: is_castling() is board-state-aware — it checks the
         # king still sits on prev.from_square. board_before (boards[k]) is two half-moves
         # AFTER prev was played, so the castled king has already vacated e1/e8 and the
         # guard silently never fired. Use boards[k-2] (the state before prev) to detect it.
@@ -903,18 +885,13 @@ def detect_discovered_attack(
         if capturer is None or capturer.color != pov:
             continue
 
-        # Depth = k (Phase 221 TAGFIX-05 fix 5, D-11): k is a pov MOVE index
-        # (range(2, len(moves), 2)) exactly like detect_skewer's return, not a BOARD
-        # index like detect_pin's (where a -1 IS correct). The prior port's
-        # `max(0, k - 1)` (131-REVIEW WR-02) stored depth one ply too shallow vs this
-        # function's own docstring ("depth = k"). Accepted consequences of this fix:
-        # same-k forks/skewers now beat discovered-attack on the (tier, rank) dispatch
-        # tiebreak because the depth-primary key is equal; the UI difficulty
-        # presentation shifts one ply deeper; and the full prod retag removes every
-        # odd stored depth for motif 6 (discovered-attack). Exactly one fast-guard
-        # fixture flips motif under this change (re-labelled to fork, see
-        # _FORK_FIXTURES); every other discovered-attack fixture only shifts depth by
-        # one, not motif.
+        # Depth = k: k is a pov MOVE index (range(2, len(moves), 2)) exactly like
+        # detect_skewer's return, not a BOARD index like detect_pin's (where a -1 IS
+        # correct). `max(0, k - 1)` would store depth one ply too shallow vs this
+        # function's own docstring ("depth = k"). Consequences: same-k forks/skewers
+        # beat discovered-attack on the (tier, rank) dispatch tiebreak because the
+        # depth-primary key is equal, and every stored depth for motif 6
+        # (discovered-attack) is even.
         return True, capturer.piece_type, k
 
     return False, None, None
@@ -924,8 +901,8 @@ def _piece_is_trapped(board: chess.Board, sq: int, pov: chess.Color) -> bool:
     """Return True if the opponent piece at sq is trapped on the given board.
 
     Reimplemented from cook's util.is_trapped prose (AGPL boundary — no source
-    copy from cook.py/util.py). Reuses _is_in_bad_spot and _piece_value (the
-    existing faithful cook ports at L318 and L270).
+    copy from cook.py/util.py). Reuses the faithful cook ports _is_in_bad_spot and
+    _piece_value.
 
     All of the following must hold:
     1. The board is NOT in check and the piece is NOT pinned (immobility from
@@ -940,14 +917,13 @@ def _piece_is_trapped(board: chess.Board, sq: int, pov: chess.Color) -> bool:
           new square → NOT trapped (safe square found).
     5. If no escape avoided a bad spot and none captured equal/greater → trapped.
 
-    Bug fix (Phase 221 TAGFIX-05 fix 3, D-12): the piece with an EMPTY escape set
-    (fully blocked, not technically pinned but no legal escapes) now falls through
-    to Gate 5 and returns True, matching cook (an immobile attacked non-pawn/
-    non-king piece IS trapped). The prior "Empty-escape-set exclusion" early
-    `return False` here was a precision-first deviation NOT present in cook; the
-    oracle comparison (scripts/research/oracle_compare.py, review report §4)
-    measured reverting it as +107 detections with ZERO new false positives. Do
-    not reintroduce the exclusion as a future "precision-first" deviation.
+    A piece with an EMPTY escape set (fully blocked, not technically pinned but no
+    legal escapes) falls through to Gate 5 and returns True, matching cook (an
+    immobile attacked non-pawn/non-king piece IS trapped). An early `return False`
+    for the empty set would be a precision-first deviation NOT present in cook; the
+    oracle comparison (scripts/research/oracle_compare.py) measured that exclusion
+    as costing 107 detections with ZERO false positives avoided. Do not reintroduce
+    it as a future "precision-first" deviation.
 
     Helper extracted from detect_trapped_piece to keep nesting depth <= 3 (CLAUDE.md).
     """
@@ -999,7 +975,7 @@ def detect_trapped_piece(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
     """Trapped piece: reimplemented from cook's trapped_piece driver + util.is_trapped
-    prose (Phase 134 Plan 02; AGPL boundary — no source copy from cook.py/util.py).
+    prose (AGPL boundary — no source copy from cook.py/util.py).
 
     Cook's driver anchors to the SOLUTION CAPTURE CHAIN (the dominant precision fix):
     instead of scanning every opponent non-pawn piece on every board, walk pov's moves
@@ -1012,10 +988,9 @@ def detect_trapped_piece(
         opponent move) at the square-of-interest.
       - If trapped → fire.
 
-    This eliminates the dominant FP source from v3: the old code scanned ALL opponent
-    non-pawn pieces on every pov-result board, inventing trapped judgments on pieces
-    nowhere near the capture chain (153 FP at P 0.000 on 28 TRAIN rows; Plan 134 target
-    is meaningful improvement on the ~1065-row expanded fixture).
+    Don't scan ALL opponent non-pawn pieces on every pov-result board: that invents
+    trapped judgments on pieces nowhere near the capture chain (the dominant false
+    positive source).
 
     Returns (fired, victim_piece_type, depth) where depth is the board index k at
     which the trapped piece is detected (0 = after pov's first move; cook's driver
@@ -1065,7 +1040,7 @@ def detect_back_rank_mate(
     """Back-rank mate: checkmate with the opponent king boxed on its back rank by
     its OWN pieces, with at least one pov checker on the back rank.
 
-    cook's three-gate logic (D-09, D-10 from prose — no source copy):
+    cook's three-gate logic (from prose, no source copy):
       1. board is checkmate AND opponent king is on its back rank.
       2. Own-blocker test: build the king's three forward squares (straight + two
          diagonals, clipped at the a/h files).  Each forward square MUST hold a
@@ -1075,13 +1050,13 @@ def detect_back_rank_mate(
          where forward squares are empty or controlled by pov).
       3. At least one checker must sit on the back rank itself.
 
-    Relative-rank arithmetic (Pitfall 3):
+    Relative-rank arithmetic:
       pov=WHITE → opponent=BLACK, black king on rank 7, forward = king - 8.
       pov=BLACK → opponent=WHITE, white king on rank 0, forward = king + 8.
 
     Returns (fired, mating_piece_type, depth) on detection.
-    tactic_piece = the mating piece (D-12).
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    tactic_piece = the mating piece.
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate():
         return False, None, None
@@ -1147,8 +1122,8 @@ def detect_generic_mate(
     """Generic mate: final board is checkmate (no named subtype matched).
 
     Returns (fired, mating_piece_type, depth) on detection.
-    tactic_piece = the last-moved (mating) piece (D-12).
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    tactic_piece = the last-moved (mating) piece.
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate():
         return False, None, None
@@ -1167,7 +1142,7 @@ def detect_generic_mate(
 # ---------------------------------------------------------------------------
 # Named-mate subtype detectors
 # Each requires boards[-1].is_checkmate() as a precondition.
-# Each returns (bool, mating_piece_type_or_None).
+# Each returns (fired, mating_piece_type, depth).
 # ---------------------------------------------------------------------------
 
 
@@ -1177,7 +1152,7 @@ def detect_smothered_mate(
     """Smothered mate: knight delivers checkmate; opponent king is surrounded by own pieces.
 
     Returns (fired, chess.KNIGHT, depth) on detection.
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate() or not moves:
         return False, None, None
@@ -1206,7 +1181,7 @@ def detect_anastasia_mate(
     boards: list[chess.Board], moves: list[chess.Move], pov: chess.Color
 ) -> tuple[bool, int | None, int | None]:
     """Anastasia mate: queen/rook on the king's edge file traps the king, with an
-    opponent blocker at king+1 center and a pov knight at king+3 center (cook D-10).
+    opponent blocker at king+1 center and a pov knight at king+3 center (cook).
 
     cook geometry (file-normalized, from prose — no source copy):
       - King on a- or h-file but not a corner.
@@ -1216,12 +1191,12 @@ def detect_anastasia_mate(
         blocker one square toward center (king+offset) and pov has a knight three
         squares toward center (king+3*offset).
 
-    Named constants for the blocker and knight offsets (Pitfall 3 / CLAUDE.md):
+    Named constants for the blocker and knight offsets:
       _ANASTASIA_BLOCKER_OFFSET = 1   (steps toward center from normalized king)
       _ANASTASIA_KNIGHT_OFFSET = 3    (steps toward center for the blocking knight)
 
     Returns (fired, mating_piece_type, depth) on detection.
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate() or not moves:
         return False, None, None
@@ -1277,22 +1252,21 @@ def detect_hook_mate(
     """Hook mate: rook adjacent to king, defended by a pov knight ALSO adjacent to king,
     and that knight is defended by a pov pawn (the classic rook←knight←pawn chain).
 
-    cook geometry (D-10, from prose — no source copy):
+    cook geometry (from prose, no source copy):
       - Mating move is a rook.
       - Rook is adjacent to the king (Chebyshev distance 1).
       - A pov knight defends the rook AND is itself adjacent to the king
         (Chebyshev distance 1 from king — this is the "hook" in hook-mate).
       - A pov pawn defends that knight.
 
-    The critical constraint missing from the prior implementation was the
-    knight-adjacent-to-king check: cook requires the defender knight to be within
-    Chebyshev distance 1 of the king, not merely any pov knight that attacks the
-    rook. Without this, arabian-mate positions (king in corner h8/h1 with f6/f3
-    knight) were false-positives because the non-adjacent knight still attacked the
-    rook square via knight-move geometry (Pitfall 8 — multi-piece chain).
+    Critical constraint: cook requires the defender knight to be within Chebyshev
+    distance 1 of the king, not merely any pov knight that attacks the rook. Don't
+    relax it: arabian-mate positions (king in corner h8/h1 with f6/f3 knight) would
+    then match, because the non-adjacent knight still attacks the rook square via
+    knight-move geometry.
 
     Returns (fired, chess.ROOK, depth) on detection.
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate() or not moves:
         return False, None, None
@@ -1342,15 +1316,15 @@ def detect_arabian_mate(
 ) -> tuple[bool, int | None, int | None]:
     """Arabian mate: king in corner, rook adjacent, knight covers remaining escape squares.
 
-    Cook-faithful geometry (Phase 133 cook arabian-mate port): a pov knight attacks
-    the rook's landing square AND is exactly (rank_diff==2, file_diff==2) from the
-    king. Previously our code checked BB_KNIGHT_ATTACKS[king_sq] (hypothetical knight
-    on the king's square), which missed the canonical f6 knight in the h8-king / g8-rook
-    pattern (f6 is not in BB_KNIGHT_ATTACKS[h8]). Cook instead iterates actual pov
-    attackers of the rook square and checks the (2,2) rank/file distance from the king.
+    Cook-faithful geometry: a pov knight attacks the rook's landing square AND is
+    exactly (rank_diff==2, file_diff==2) from the king. Don't check
+    BB_KNIGHT_ATTACKS[king_sq] (a hypothetical knight on the king's square): it misses
+    the canonical f6 knight in the h8-king / g8-rook pattern (f6 is not in
+    BB_KNIGHT_ATTACKS[h8]). Cook iterates the actual pov attackers of the rook square
+    and checks the (2,2) rank/file distance from the king.
 
     Returns (fired, chess.ROOK, depth) on detection.
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate() or not moves:
         return False, None, None
@@ -1396,21 +1370,19 @@ def detect_boden_or_double_bishop_mate(
 ) -> tuple[TacticMotif | None, int | None, int | None]:
     """Boden or double-bishop mate: two bishops deliver checkmate.
 
-    Cook-faithful check (Phase 133 cook boden-mate port): for every square within
-    distance < 2 from the opponent king (king + its 8 neighbours), ALL pov attackers
-    of that square must be bishops. Previously our code required both bishops to
-    directly attack the king's square, which failed the canonical boden pattern
-    (e.g. king=c1, bishop=a3 attacks c1, bishop=g6 does NOT attack c1 — only one
-    direct check, so the old filter returned None).
+    Cook-faithful check: for every square within distance < 2 from the opponent king
+    (king + its 8 neighbours), ALL pov attackers of that square must be bishops. Don't
+    require both bishops to attack the king's square directly: the canonical boden
+    pattern (e.g. king=c1, bishop=a3 attacks c1, bishop=g6 does NOT attack c1) has only
+    one direct check.
 
-    Boden vs double-bishop file test (D-12, cook-verified 2026-09-12): cook's own rule
-    is the asymmetric `(bishop_squares[0] left-of-king-file) == (bishop_squares[1]
-    right-of-king-file)`, evaluated over python-chess's ascending-square-index
-    ordering of the two bishops — not a symmetric "opposite sides" test. See the
-    inline comment at the file-test below for the verified failure mode of the prior
-    symmetric port.
+    Boden vs double-bishop file test: cook's own rule is the asymmetric
+    `(bishop_squares[0] left-of-king-file) == (bishop_squares[1] right-of-king-file)`,
+    evaluated over python-chess's ascending-square-index ordering of the two bishops,
+    not a symmetric "opposite sides" test. See the inline comment at the file-test
+    below for why a symmetric port is wrong.
     Returns (motif_string_or_None, chess.BISHOP, depth).
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate():
         return None, None, None
@@ -1440,25 +1412,16 @@ def detect_boden_or_double_bishop_mate(
     b2_file = chess.square_file(pov_bishops[1])
     depth = len(moves) - 1
 
-    # Bug fix (Phase 221 TAGFIX-05 fix 6, D-12): cook's actual file relation is
-    # asymmetric, not a symmetric "opposite sides" XOR of two `<` comparisons. cook
-    # tests (bishop_squares[0] LEFT of the king's file) == (bishop_squares[1] RIGHT
-    # of the king's file) — bishop_squares is python-chess's own SquareSet iteration
-    # order (ascending square index), identical between cook and this port. The prior
-    # `(b1_file < king_file) != (b2_file < king_file)` was WRONG only in the specific
-    # case where the SECOND bishop (by ascending square index) sits ON the king's
-    # file: there, `b2_file < king_file` is False the same as "strictly right", so
-    # the old XOR silently treated on-file as right-of-file for that bishop only,
+    # Bug fix: cook's actual file relation is asymmetric, not a symmetric "opposite
+    # sides" XOR of two `<` comparisons. cook tests (bishop_squares[0] LEFT of the
+    # king's file) == (bishop_squares[1] RIGHT of the king's file); bishop_squares is
+    # python-chess's own SquareSet iteration order (ascending square index), identical
+    # between cook and this port. A symmetric `(b1_file < king_file) != (b2_file <
+    # king_file)` is WRONG when the SECOND bishop (by ascending square index) sits ON
+    # the king's file: there, `b2_file < king_file` is False the same as "strictly
+    # right", so the XOR would treat on-file as right-of-file for that bishop only,
     # while cook's `> king_file` correctly excludes on-file from "right". Verified
-    # against `scripts/research/oracle_compare.py` (2026-09-12): the fixture-wide
-    # divergence is dominated by a much larger, unrelated gap (our detector returns
-    # no motif at all on 174 cook-bodenMate rows and 510 cook-doubleBishopMate rows,
-    # vs. cook — see the Phase 221 Plan 02 SUMMARY "Boden/double-bishop oracle
-    # finding"); this asymmetric-file fix corrects exactly the 1 row where BOTH
-    # detectors already fire but disagree on which of the two bucket, and is
-    # deliberately NOT an attempt to close the larger firing gap (out of scope for
-    # TAGFIX-05; both motifs map to the same `mate` family so nothing user-facing
-    # depends on the larger gap being closed here).
+    # against `scripts/research/oracle_compare.py`.
     b1_left_of_king = b1_file < king_file
     b2_right_of_king = b2_file > king_file
     if b1_left_of_king == b2_right_of_king:
@@ -1473,15 +1436,13 @@ def detect_dovetail_mate(
     """Dovetail (cozio) mate: queen diagonally adjacent to king; each escape square
     is either unattacked or queen-covered-and-empty; king not on edge.
 
-    Cook-faithful predicate (Phase 133 cook dovetail-mate port, fixes inverted adjacency):
-    Bug A — previous code REJECTED when queen was adjacent to king (inverted condition).
-             Cook REQUIRES the queen to be diagonally adjacent (distance==1).
-    Bug B — previous code had no same-file/same-rank guard. FP example: king=f6,
-             queen=h6 (same rank, distance 2) — our code accepted it, cook rejects it.
-    The escape-square loop (cook cond 4) was also missing entirely.
+    Cook-faithful predicate: the queen must be diagonally adjacent to the king (distance
+    1, not on the same file or rank; e.g. king f6 / queen h6 is not a dovetail); each
+    escape square is unattacked, or covered only by the queen and empty; king not on
+    the edge. Do not invert the adjacency test: that tags every non-dovetail queen mate.
 
     Returns (fired, chess.QUEEN, depth) on detection.
-    depth = len(moves) - 1 (mates fire at boards[-1], per Pitfall 4).
+    depth = len(moves) - 1 (mates fire at boards[-1]).
     """
     if not boards[-1].is_checkmate() or not moves:
         return False, None, None
@@ -1547,7 +1508,7 @@ def detect_dovetail_mate(
 
 # ---------------------------------------------------------------------------
 # Tier-3 detectors (3+ ply lookback, graded confidence)
-# Each returns (bool, piece_int_or_None, confidence_int) where confidence is 0-100.
+# Each returns (fired, piece, confidence, depth) where confidence is 0-100.
 # ---------------------------------------------------------------------------
 
 
@@ -1556,18 +1517,17 @@ def _deflection_fires_at(
 ) -> int | None:
     """Cook's 11-condition AND-chain for deflection at pov move index k.
 
-    Phase 132 D-01: rewritten from cook.py plain-English pseudocode (AGPL boundary —
-    no cook.py source reproduced). See 132-RESEARCH.md §1 for the full predicate.
+    Rewritten from cook.py plain-English pseudocode (AGPL boundary —
+    no cook.py source reproduced).
 
     Returns captured.piece_type if all 11 conditions hold, else None.
 
-    Index convention (from tactic-tagger-cook-alignment.md):
+    Index convention:
       moves[k]   = this pov move (even k >= 2)
       moves[k-1] = prev_op_move  (opponent move just before)
       moves[k-2] = prev_player_move  (prior pov move)
       boards[k]  = board BEFORE this pov move  (capture target visible here)
-      boards[k-1] = board BEFORE this pov move but AFTER opponent's last move
-                    = after prior pov move, before opponent move
+      boards[k-1] = after the prior pov move, before the opponent's last move
       boards[k-2] = board BEFORE prior pov move  ("grandpa.board()" in cook)
     """
     move = moves[k]
@@ -1576,7 +1536,7 @@ def _deflection_fires_at(
 
     # Condition 1: capture OR promotion.
     is_promotion = move.promotion is not None
-    captured = board_k.piece_at(move.to_square)  # Pitfall 6: check board BEFORE move
+    captured = board_k.piece_at(move.to_square)  # Check board BEFORE move
     is_capture = captured is not None
     if not is_capture and not is_promotion:
         return None
@@ -1586,7 +1546,7 @@ def _deflection_fires_at(
     square = move.to_square
 
     # Condition 2: capturing piece must be >= captured in value. cook uses king_values here
-    # (king=99), NOT plain values — a prior port wrongly used _VALUES_NO_KING.
+    # (king=99), NOT plain values: don't use _VALUES_NO_KING here.
     capturing_pt = board_after.piece_type_at(square)
     if capturing_pt is None:
         return None
@@ -1617,18 +1577,17 @@ def _deflection_fires_at(
     if not (prev_op_move.to_square == prev_player_move.to_square or grandpa_board.is_check()):
         return None
 
-    # Condition 10 (Phase 221 TAGFIX-05 fix 1, D-12): cook's single OR, both disjuncts
-    # read grandpa.board() (boards[k-1]), not the init board — the prior port's use of
-    # grandpa_board here was already correct and stays correct. Disjunct A: the capture
-    # square is reachable from the deflected piece's ORIGINAL square. Disjunct B: the pov
-    # move is a promotion whose destination shares a file with orig_sq AND whose origin
-    # square is itself reachable from orig_sq. The prior port used an if/elif that
-    # required BOTH same_file AND pov_attacks_from_init only on the promotion branch and
-    # never checked disjunct A for promotions at all — the oracle comparison
-    # (scripts/research/oracle_compare.py, review report §4) measured restoring the OR
-    # as roughly +297 detections with zero new false positives. A line satisfying both
-    # disjuncts still yields exactly one deflection candidate (this is a single guard,
-    # not two separate returns).
+    # Condition 10: cook's single OR; both disjuncts read grandpa.board() (boards[k-1]),
+    # not the init board. Disjunct A: the capture square is reachable from the deflected
+    # piece's ORIGINAL square. Disjunct B: the pov move is a promotion whose destination
+    # shares a file with orig_sq AND whose origin square is itself reachable from
+    # orig_sq. Keep it one OR: an if/elif that requires BOTH same_file AND
+    # pov_attacks_from_init on the promotion branch and never checks disjunct A for
+    # promotions loses detections (the oracle comparison,
+    # scripts/research/oracle_compare.py, measured the OR as roughly +297 detections
+    # with zero new false positives). A line satisfying both disjuncts still yields
+    # exactly one deflection candidate (this is a single guard, not two separate
+    # returns).
     orig_sq = prev_op_move.from_square
     same_file = chess.square_file(square) == chess.square_file(orig_sq)
     pov_attacks_from_init = move.from_square in grandpa_board.attacks(orig_sq)
@@ -1650,11 +1609,11 @@ def detect_deflection(
 ) -> tuple[bool, int | None, int, int | None]:
     """Deflection: opponent piece forced away from defending a target.
 
-    Rewritten to cook's exact 11-condition AND-chain (Phase 132 D-01).
+    Rewritten to cook's exact 11-condition AND-chain.
     No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
 
     Returns (fired, target_piece_type, confidence, depth) on detection.
-    tactic_piece = the deflected/target piece (D-12).
+    tactic_piece = the deflected/target piece.
     depth = k (pov move index when the deflection-exploiting capture fires).
     """
     for k in range(2, len(moves), 2):
@@ -1670,8 +1629,7 @@ def _attraction_fires_at(
 ) -> int | None:
     """Check cook's exact AND-chain for attraction at pov move index k.
 
-    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py
-    source). See 132-RESEARCH.md §4 for the full predicate and index mapping.
+    Reimplemented from cook.py pseudocode (AGPL boundary — no cook.py source).
 
     Returns the attracted piece type (int) if all conditions hold, else None.
     No _grade voting — cook's predicate is boolean (all conditions or nothing).
@@ -1683,7 +1641,6 @@ def _attraction_fires_at(
       moves[k+4] = pov captures on the attracted square (queen/rook branch only)
       boards[k+1] = board BEFORE opponent captures (read attracted piece here)
       boards[k+3] = board AFTER pov's follow-up (read pov's attackers here)
-      off-by-one: boards[k+2] should be boards[k+3]; fixed in Phase 133.
     """
     pov_dest = moves[k].to_square
     if k + 2 >= len(moves):
@@ -1695,7 +1652,7 @@ def _attraction_fires_at(
         return None
 
     # Attracted piece: the piece that MADE the opponent's move, from boards[k+1]
-    # (board BEFORE the opponent move, i.e. after pov's lure — Pitfall 6).
+    # (board BEFORE the opponent move, i.e. after pov's lure).
     attracted = boards[k + 1].piece_at(opp_move.from_square)
     if attracted is None or attracted.color == pov:
         return None
@@ -1709,8 +1666,8 @@ def _attraction_fires_at(
     # Conditions 7+8: pov's next move (k+2) lands on a square from which it attacks
     # the attracted square. boards[k+3] is the board AFTER pov's follow-up move
     # (pov's piece has now arrived on its destination, so it appears in attackers).
-    # Phase 133: fixed off-by-one — was boards[k+2] (before pov's follow-up, so pov's
-    # piece was still on origin and never in attackers); now boards[k+3] (after follow-up).
+    # Use boards[k+3], not boards[k+2]: the latter is before pov's follow-up, so pov's
+    # piece is still on its origin square and never in attackers.
     board_k3 = boards[k + 3]
     next_pov_move = moves[k + 2]
     if next_pov_move.to_square not in board_k3.attackers(pov, attracted_to_sq):
@@ -1734,12 +1691,12 @@ def detect_attraction(
 ) -> tuple[bool, int | None, int, int | None]:
     """Attraction: pov lures a high-value opponent piece to a vulnerable square.
 
-    Rewritten to cook's exact AND-chain (Phase 132 D-01).
+    Rewritten to cook's exact AND-chain.
     No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
-    See 132-RESEARCH.md §4 for the full predicate (AGPL boundary — no cook.py source).
+    AGPL boundary: no cook.py source.
 
     Returns (fired, attracted_piece_type, confidence, depth) on detection.
-    tactic_piece = the attracted piece type (D-12).
+    tactic_piece = the attracted piece type.
     depth = k (pov move index of the lure that attracts the opponent).
 
     Cook's sequence: pov moves to square X (lure), opponent captures on X (attracted),
@@ -1772,9 +1729,9 @@ def detect_intermezzo(
 
     Reimplemented to cook's EXACT control flow (AGPL boundary — no cook.py source). cook
     iterates pov capture moves (moves[2], moves[4], ...) and, at the FIRST one that passes the
-    two outer guards, RETURNS the inner zwischenzug condition (early-exit). The prior port
-    omitted the early-exit (fired on any qualifying k) and used the wrong attacker board, which
-    over-fired on capturing-defender lines.
+    two outer guards, RETURNS the inner zwischenzug condition (early-exit). Don't drop the
+    early-exit (firing on any qualifying k) or use another attacker board: both over-fire on
+    capturing-defender lines.
 
     Index convention (node = moves[k], the delayed recapture, even k >= 2):
       moves[k]    = pov's delayed recapture at capture_square
@@ -1784,7 +1741,7 @@ def detect_intermezzo(
       prev_op     = moves[k-3] (k >= 4) OR the FLAW move (k == 2, via boards[0].move_stack):
                     the opponent's original capture at capture_square
 
-    Returns (fired, None, confidence, depth). tactic_piece None (D-12 ambiguous); depth = k.
+    Returns (fired, None, confidence, depth). tactic_piece None (ambiguous); depth = k.
     """
     for k in range(2, len(moves), 2):
         if k >= len(boards) or k - 1 < 0:
@@ -1835,8 +1792,7 @@ def _x_ray_fires_at(
 ) -> bool:
     """Check cook's exact AND-chain for x-ray at pov move index k.
 
-    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py
-    source). See 132-RESEARCH.md §6 for the full predicate and index mapping.
+    Reimplemented from cook.py pseudocode (AGPL boundary — no cook.py source).
 
     Returns True if all conditions hold, else False.
     No _grade voting — cook's predicate is boolean.
@@ -1849,15 +1805,15 @@ def _x_ray_fires_at(
       moves[k]   = pov's x-ray recapture at X — even k >= 2
       moves[k-1] = opponent's recapture at X (NOT a king)
       moves[k-2] = pov's FIRST capture at X
-      boards[k]  = board BEFORE pov's x-ray capture (capture check board — Pitfall 6)
+      boards[k]  = board BEFORE pov's x-ray capture (capture check board)
     """
     target_sq = moves[k].to_square
 
-    # Condition 1: this pov move is a capture (Pitfall 6 — check BEFORE the move).
+    # Condition 1: this pov move is a capture (check BEFORE the move).
     if boards[k].piece_at(target_sq) is None:
         return False
 
-    # Condition 6 (Pitfall 4 — FIRST guard): three-same-square.
+    # Condition 6 (FIRST guard): three-same-square.
     # All three captures must be on the same square X.
     if moves[k - 2].to_square != target_sq or moves[k - 1].to_square != target_sq:
         return False
@@ -1881,12 +1837,12 @@ def detect_x_ray(
 ) -> tuple[bool, None, int, int | None]:
     """X-ray: pov attacks through an intermediate piece traded off.
 
-    Rewritten to cook's exact three-same-square AND-chain (Phase 132 D-01/D-03).
+    Rewritten to cook's exact three-same-square AND-chain.
     No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
-    See 132-RESEARCH.md §6 for the full predicate (AGPL boundary — no cook.py source).
+    AGPL boundary: no cook.py source.
 
     Returns (fired, None, confidence, depth) on detection.
-    tactic_piece = None (D-12 ambiguous).
+    tactic_piece = None (ambiguous).
     depth = k (pov move index when the x-ray capture fires).
 
     Cook's pattern: pov captures at X (moves[k-2]), opponent recaptures at X (moves[k-1],
@@ -1894,17 +1850,13 @@ def detect_x_ray(
     (before recapturing) must lie on the ray between pov's current piece and X — the
     x-ray "shines through" the exchange to recapture.
 
-    D-03 cutoff: if 0 TP on TRAIN after the full port (range(2, len, 2)), the
-    PV-divergence ceiling is confirmed and x-ray is suppressed. Restrict to k<=6
-    (range(2, 8, 2)) only if full scan yields partial TP; if still 0, suppress.
-
     Index convention:
       moves[k]   = pov's x-ray recapture at X — even k >= 2
       moves[k-2] = pov's first capture at X
       moves[k-1] = opponent's recapture at X (not a king)
       boards[k]  = board BEFORE pov's x-ray capture
     """
-    # Full scan per D-03: try range(2, len(moves), 2) first.
+    # Full scan over every even k >= 2.
     for k in range(2, len(moves), 2):
         if _x_ray_fires_at(boards, moves, pov, k):
             return True, None, TACTIC_CONFIDENCE_HIGH, k
@@ -1912,10 +1864,6 @@ def detect_x_ray(
     return False, None, 0, None
 
 
-# DO NOT EDIT — interference regression lock (Phase 132, 0.986 TEST; dispatch-cascade
-# from attraction tightening caused 2 new FPs but the logic itself is unchanged/correct).
-# Any cleanup or refactoring risks breaking the interference precision floor. See
-# RESEARCH.md Pitfall 8 and 132-04-SUMMARY.md for the dispatch-cascade explanation.
 def _interference_ray_defender(
     init_board: chess.Board, victim_color: chess.Color, square: int
 ) -> int | None:
@@ -1944,10 +1892,10 @@ def detect_interference(
     - `self_interference` (OPPONENT piece): init = boards[k-1]; the interfering move is the
       opponent's last move (moves[k-1]).
 
-    The prior port did a single non-ray-aware self_interference-shaped check and over-fired
-    (deflection/skewer false positives); it also missed the player-piece variant's recall.
+    Don't collapse this into a single non-ray-aware self_interference-shaped check: it
+    over-fires (deflection/skewer false positives) and misses the player-piece variant.
 
-    Returns (fired, None, confidence, depth). tactic_piece None (D-12); depth = k.
+    Returns (fired, None, confidence, depth). tactic_piece None; depth = k.
     """
     for k in range(2, len(moves), 2):  # pov's captures, from the 2nd pov move
         prev_board = boards[k]  # cook node.parent.board() (before pov's capture)
@@ -1980,7 +1928,7 @@ def detect_self_interference(
     """Self-interference: opponent's OWN piece blocks its own defender's ray.
 
     Returns (fired, None, confidence, depth) on detection.
-    tactic_piece = None (D-12 ambiguous).
+    tactic_piece = None (ambiguous).
     depth = k (pov move index when the self-interference-exploiting capture fires).
     """
     for k in range(2, len(moves), 2):
@@ -2027,7 +1975,7 @@ def detect_self_interference(
 def _clearance_prior_move_is_valid(
     prev_move: chess.Move, move: chess.Move, init_board: chess.Board
 ) -> bool:
-    """Conditions 3-5 plus D-07's vacating-piece restriction (Phase 221 TAGFIX-04):
+    """Conditions 3-5 plus the vacating-piece restriction:
     the prior pov move must be eligible to have set up this clearance.
 
     Not a promotion, and its destination square doesn't collide with either endpoint
@@ -2035,9 +1983,9 @@ def _clearance_prior_move_is_valid(
     clearance target or origin, breaking the "square vacated -> another piece uses
     it" geometry this motif requires).
 
-    D-07 addition: the vacating (prior pov) move must not have been a king or pawn
-    move — a dev hand review found 9 of 12 sampled clearance tags were king
-    retreats, pawn pushes, or piece shuffles, not real clearances. Read from
+    Vacating-piece restriction: the vacating (prior pov) move must not have been a king
+    or pawn move, since king retreats, pawn pushes and piece shuffles are not real
+    clearances. Read from
     `init_board` (boards[k-2], the board BEFORE the prior pov move, where the
     vacating piece still stands) via `piece_type_at`, which returns None for an
     empty square; None is treated as "not a king or pawn move" so an impossible
@@ -2060,10 +2008,9 @@ def _clearance_check_move_is_valid(
 ) -> bool:
     """Condition 7 (cook): if the clearing move gives check, the opponent's LAST
     move (the one just before this pov move — cook's moved_piece_type(node.parent))
-    must NOT have been a king move. Extracted (not a D-07 addition) to keep
-    detect_clearance's branching readable now that D-07 adds a further
-    condition. The prior port wrongly inspected the opponent's FUTURE response,
-    over-firing on discovered-attack/check lines.
+    must NOT have been a king move. Extracted to keep detect_clearance's branching
+    readable. Don't inspect the opponent's FUTURE response: that over-fires on
+    discovered-attack/check lines.
     """
     if not board_after.is_check():
         return True
@@ -2072,7 +2019,7 @@ def _clearance_check_move_is_valid(
 
 
 def _clearance_line_is_used(board_after: chess.Board, dest: chess.Square, pov: chess.Color) -> bool:
-    """Condition 10 (D-07, Phase 221 TAGFIX-04): the clearing move must actually
+    """Condition 10: the clearing move must actually
     USE the newly-opened line, not just open it.
 
     Fires True when the clearing move gives check, OR when the ray piece now
@@ -2082,7 +2029,7 @@ def _clearance_line_is_used(board_after: chess.Board, dest: chess.Square, pov: c
     test — never hand-roll a fresh `board.attackers(...)` check). Mirrors
     detect_fork's victim loop so the two predicates stay stylistically identical.
 
-    Must accept the three CONTEXT worked examples: `Na6+ Ka8 [Qc7]` and
+    Must accept the three worked examples: `Na6+ Ka8 [Qc7]` and
     `Rc8->g8+ ... [c8=Q]` via the check branch; the third via the
     higher-value-or-hanging branch. Must reject: `Kh1->g2 ... [Rh1]`,
     `f6->f5 ... [Rf6]`, `Bh8 ... [Qf6]` — quiet moves that open a line without
@@ -2111,23 +2058,22 @@ def detect_clearance(
 ) -> tuple[bool, None, int, int | None]:
     """Clearance: pov vacates a square so another piece can use the line.
 
-    Rewritten to cook's 9-condition AND-chain (Phase 132 D-01), strengthened by
-    three Phase 221 TAGFIX-04 additions (D-06/D-07): the vacating move must not
-    be a king or pawn move (condition 3-5's helper), the clearing move must
-    actually USE the newly-opened line (condition 10, `_clearance_line_is_used`),
-    and the scan caps at SACRIFICE_CLEARANCE_MAX_DEPTH (shared with
-    detect_sacrifice, D-06). No _grade voting — returns TACTIC_CONFIDENCE_HIGH
-    when the AND-chain fires. See 132-RESEARCH.md §2 for cook's original 9
-    conditions (AGPL boundary — no cook.py source).
+    Rewritten to cook's 9-condition AND-chain, strengthened by three additions: the
+    vacating move must not be a king or pawn move (condition 3-5's helper), the
+    clearing move must actually USE the newly-opened line (condition 10,
+    `_clearance_line_is_used`), and the scan caps at SACRIFICE_CLEARANCE_MAX_DEPTH
+    (shared with detect_sacrifice). No _grade voting — returns TACTIC_CONFIDENCE_HIGH
+    when the AND-chain fires. AGPL boundary: no cook.py source.
 
-    D-07 motivation: a dev hand review found 9 of 12 sampled clearance tags were
-    king retreats, pawn pushes, or piece shuffles — not real clearances. This
-    motif's survival past this phase is contingent on a real-game real-share bar
-    of 0.8 (measured in a later task, decided in plan 06); a reader who later
-    finds `clearance` in SUPPRESSED_MOTIFS should look there for why.
+    The additions exist because a dev hand review found 9 of 12 sampled clearance tags
+    were king retreats, pawn pushes, or piece shuffles, not real clearances.
+
+    Not dispatched: removed from _TIER3_REGISTRY after failing the 0.8 real-game bar
+    (see the registry comment). Kept because persisted rows carry int 15 and for
+    direct unit calls.
 
     Returns (fired, None, confidence, depth) on detection.
-    tactic_piece = None (D-12 ambiguous).
+    tactic_piece = None (ambiguous).
     depth = k (pov move index of the clearance move itself).
 
     Index convention:
@@ -2140,7 +2086,7 @@ def detect_clearance(
       boards[k-1] = board AFTER prior pov move / before opp move
     """
     for k in range(2, len(moves), 2):
-        if k > SACRIFICE_CLEARANCE_MAX_DEPTH:  # Condition 12 (D-06): shared depth cap
+        if k > SACRIFICE_CLEARANCE_MAX_DEPTH:  # Condition 12: shared depth cap
             break
         move = moves[k]
         board_before = boards[k]
@@ -2159,7 +2105,7 @@ def detect_clearance(
         if moved_piece.piece_type not in _RAY_PIECES:
             continue
 
-        # Conditions 3-5 (+ D-07 vacating-piece restriction) require the prior pov
+        # Conditions 3-5 (+ vacating-piece restriction) require the prior pov
         # move: not a promotion, its destination doesn't collide with either
         # endpoint of the clearing move, and it wasn't a king or pawn move.
         prev_move = moves[k - 2]
@@ -2197,7 +2143,7 @@ def detect_clearance(
         if not (dest_was_empty or prior_piece_bad):
             continue
 
-        # Condition 10 (D-07): the clearing move must actually USE the newly-opened
+        # Condition 10: the clearing move must actually USE the newly-opened
         # line — gives check, or attacks a higher-value or hanging opponent piece.
         if not _clearance_line_is_used(board_after, move.to_square, pov):
             continue
@@ -2213,8 +2159,7 @@ def _capturing_defender_fires_at(
 ) -> int | None:
     """Check cook's exact AND-chain for capturing-defender at pov move index k.
 
-    Reimplemented from cook.py pseudocode (Phase 132 D-01, AGPL boundary — no cook.py source).
-    See 132-RESEARCH.md §3 for the full predicate and "In our index terms" definitive mapping.
+    Reimplemented from cook.py pseudocode (AGPL boundary — no cook.py source).
 
     Returns the captured piece type (int) if all conditions hold, else None.
 
@@ -2240,7 +2185,7 @@ def _capturing_defender_fires_at(
         return None
 
     # Condition 4: captured piece is equal or lower value than captor (not capturing up).
-    # Use _VALUES_NO_KING (Pitfall 3 — cook uses `values` not `king_values`).
+    # Use _VALUES_NO_KING (cook uses `values` not `king_values`).
     captured_val = _VALUES_NO_KING.get(captured.piece_type, 0)
     captor_val = _VALUES_NO_KING.get(captor_piece.piece_type, 0)
     if captured_val > captor_val:
@@ -2263,8 +2208,8 @@ def _capturing_defender_fires_at(
     # Condition 7a: the board AFTER the prior pov move (cook's prev.board() = boards[k-1])
     # was NOT in check. This is the dominant capturing-defender false-positive guard: an
     # intermezzo line (opp captures, we play a CHECKING zwischenzug, opp must respond, we
-    # recapture) leaves the opponent in check after our prior move — cook declines, but
-    # the prior implementation omitted this board and fired, tagging intermezzo puzzles.
+    # recapture) leaves the opponent in check after our prior move — cook declines;
+    # omitting this board would fire and tag intermezzo puzzles.
     if boards[k - 1].is_check():
         return None
 
@@ -2297,12 +2242,12 @@ def detect_capturing_defender(
 ) -> tuple[bool, int | None, int, int | None]:
     """Capturing defender: pov captures a piece that was defending the real target.
 
-    Rewritten to cook's exact 9-condition AND-chain (Phase 132 D-01).
+    Rewritten to cook's exact 9-condition AND-chain.
     No _grade voting — returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
-    See 132-RESEARCH.md §3 for the full predicate (AGPL boundary — no cook.py source).
+    AGPL boundary: no cook.py source.
 
     Returns (fired, captured_defender_piece_type, confidence, depth) on detection.
-    tactic_piece = the captured defender (D-12).
+    tactic_piece = the captured defender.
     depth = k (pov move index when the capturing-defender capture fires).
 
     Index convention:
@@ -2324,64 +2269,52 @@ def detect_sacrifice(
 ) -> tuple[bool, int | None, int, int | None]:
     """Sacrifice: pov ends up ≥MIN_SACRIFICE_DROP points below the starting material after
     at least the 2nd pov move, within the shared depth cap, and no opponent move is a
-    promotion (cook §7 AND-chain + D-06).
+    promotion (cook §7 AND-chain).
 
     Cook's predicate (lines ~184-191): `_material_diff(boards[k+1], pov) - initial <= -2`
     for k in range(2, len(moves), 2), where initial = `_material_diff(boards[0], pov)`.
     Promotion guard: none of the opponent's moves (odd indices) may be promotions.
 
-    D-06 (shared with detect_clearance): the scan stops once k exceeds
-    SACRIFICE_CLEARANCE_MAX_DEPTH — a `break`, not a `continue`, since k only grows.
+    The scan stops once k exceeds SACRIFICE_CLEARANCE_MAX_DEPTH (shared with
+    detect_clearance): a `break`, not a `continue`, since k only grows.
 
-    Phase 221 plan 08 (gap closure, TAGFIX-03 amendment): D-05's persistence check
-    (require the deficit to still hold at boards[k+3], the board after the NEXT pov
-    move, or the line to end first) is RETIRED. It was added in plan 05 to drop the
-    delayed-recapture / zwischenzug shape (32% of cook's own labelled sacrifice
-    puzzles per the review report), but the 221-D13-SPOTCHECK.md operator review
-    found it also drops GENUINE sacrifices whose material recovers because the
-    sacrifice worked (rows 0064, 0133 in the committed real-game sample,
-    realgame_tags.csv: Nxd6 and gxf8=Q+ are the tactic's own follow-ups, not
-    unrelated recaptures). Task 1 of
-    plan 08 measured, on the real-game fixture, that no board-derivable rule
-    separates the two populations:
+    No persistence check. Don't require the deficit to still hold at boards[k+3] (the
+    board after the NEXT pov move, or the line to end first) to drop the
+    delayed-recapture / zwischenzug shape: it also drops GENUINE sacrifices whose
+    material recovers because the sacrifice worked (Nxd6 and gxf8=Q+ are the tactic's
+    own follow-ups, not unrelated recaptures). No board-derivable rule separates the
+    two populations on the real-game fixture:
       - "recovery overshoots the entry baseline" (boards[k+3] ends up above initial,
-        not merely back to even) also fires on row 0134 — confirmed NOT a real
-        sacrifice (White never offers material; Black simply captures a knight then
-        a rook) — a false accept.
+        not merely back to even) also fires on a confirmed non-sacrifice (White never
+        offers material; Black simply captures a knight then a rook).
       - "deficit depth" (how far the material swings down) does not separate them
-        either: row 0134 reaches the same minimum deficit (-3) as the genuine row
-        0064.
+        either: that non-sacrifice reaches the same minimum deficit (-3) as the genuine
+        one.
       - "the opponent chose to accept" (a quiet pov move offered material, the
-        opponent's very next move captured it) matches row 0064's shape (Ndb5 offers,
-        cxb5 accepts) but NOT row 0133's (both of pov's early moves in that line are
-        captures, not quiet offers) — rejecting a confirmed-real row is exactly the
-        failure this amendment exists to prevent.
+        opponent's very next move captured it) matches one genuine row's shape (Ndb5
+        offers, cxb5 accepts) but NOT the other's (both of pov's early moves in that
+        line are captures, not quiet offers), so it rejects a confirmed-real row.
     Distinguishing a compensated sacrifice from a delayed recapture is fundamentally
     an EVALUATION question (does the resulting position have real value, not just
     material?), and `detect_sacrifice` has no eval access by design (eval lives in
-    forcing_line_gate.py, D-01) — plumbing one in is out of this plan's scope. D-01's
-    own per-tier winning floor (already shipped, TAGFIX-01) independently carries the
-    "is this line actually good for the solver" question at classification time: of
-    the 7 real-game rows the now-retired persistence rule dropped beyond cook's own
-    predicate, D-01's floor alone would have kept exactly the 3 genuine/plausible
-    sacrifices (0064 +264cp, 0128 mate-in-7, 0133 +453cp) and rejected the other 4
-    (three deep-losing lines plus row 0134 at 197cp, just under the +200 floor) — so
-    reverting this predicate to cook's unguarded form does not reopen the
-    delayed-recapture problem in practice; D-01 continues to carry it. See the
-    divergence block above the `sacrifice` PRECISION_FLOOR entry in
+    forcing_line_gate.py). The per-tier winning floor (see the winning-floor map below
+    the tier registries) carries the "is this line actually good for the solver"
+    question at classification time and rejects the deep-losing lines, so cook's
+    unguarded predicate does not reopen the delayed-recapture problem in practice. See
+    the divergence block above the `sacrifice` PRECISION_FLOOR entry in
     tests/scripts/tagger/precision_floors.py for the full measurement and the numbers.
 
-    D-08: there is exactly one detect_sacrifice, taking no orientation parameter;
+    There is exactly one detect_sacrifice, taking no orientation parameter;
     both orientations reach it through the same dispatcher, so the depth-cap rule
     applies identically regardless of which side is pov.
 
     No _grade voting — cook's predicate is boolean (all conditions or nothing).
     Returns TACTIC_CONFIDENCE_HIGH when the AND-chain fires.
 
-    Note (D-02): sacrifice is a co-tag that rarely wins single-winner dispatch (geometric
+    Note: sacrifice is a co-tag that rarely wins single-winner dispatch (geometric
     and depth-primary motifs pre-empt it). Expected to remain suppressed post-port.
     """
-    # Promotion guard (Pitfall 7): check OPPONENT moves (odd indices), not pov moves.
+    # Promotion guard: check OPPONENT moves (odd indices), not pov moves.
     if any(m.promotion for m in moves[1::2]):
         return False, None, 0, None
 
@@ -2389,7 +2322,7 @@ def detect_sacrifice(
 
     # Scan from the 2nd pov move onward (k=2, 4, 6, ...): cook scans diffs[1::2][1:].
     for k in range(2, len(moves), 2):
-        if k > SACRIFICE_CLEARANCE_MAX_DEPTH:  # D-06: shared depth cap
+        if k > SACRIFICE_CLEARANCE_MAX_DEPTH:  # Shared depth cap
             break
         if k + 1 >= len(boards):
             break
@@ -2401,16 +2334,16 @@ def detect_sacrifice(
 
 
 # ---------------------------------------------------------------------------
-# Phase 128.1-02: Move-type detectors (Tier 5 — the new lowest tier, D-03/D-04)
+# Move-type detectors (Tier 5, the lowest tier)
 # ---------------------------------------------------------------------------
-# Move-type motifs fire ONLY when no real tactic fires — real tactics always win (D-04).
+# Move-type motifs fire ONLY when no real tactic fires — real tactics always win.
 # The move-type tier has a strictly greater tier number (5) than hanging-piece (4), so
 # any real tactic candidate beats any move-type candidate in the dispatcher sort.
 #
 # Detection is purely on the shape of moves[0] (the refuting move); no material gate
 # is applied (en-passant captures and pawn promotions are trivially identifiable from
 # the move structure).  These are expected to populate sparsely in practice — the ONLY
-# PVs where move-type fires are those where nothing else in tiers 1-4 fired (D-02).
+# PVs where move-type fires are those where nothing else in tiers 1-4 fired.
 
 
 def _solver_move_indices(n_moves: int) -> range:
@@ -2451,7 +2384,7 @@ def detect_promotion(
     promotion can occur on a later pov move, not just the first. Returns the index of the
     FIRST queen promotion as depth (depth-primary dispatch keeps real tactics winning).
 
-    D-01 dominance: a non-queen promotion fires detect_under_promotion and NOT this
+    Dominance: a non-queen promotion fires detect_under_promotion and NOT this
     function — under-promotion is ranked BEFORE promotion in _MOVE_TYPE_REGISTRY and its
     condition (promotion not None AND != QUEEN) is disjoint from this one (== QUEEN). When
     both detectors fire at the same depth on the same line, the equal-depth (tier, rank)
@@ -2475,7 +2408,7 @@ def detect_under_promotion(
     promotion (the lone "under" mate) and the scan STOPS there; otherwise any non-queen
     promotion fires. Returns the index of the firing move as depth.
 
-    D-01 dominance: under-promotion DOMINATES promotion (ranked BEFORE detect_promotion in
+    Dominance: under-promotion DOMINATES promotion (ranked BEFORE detect_promotion in
     _MOVE_TYPE_REGISTRY), so when a pov move is a non-queen promotion, under-promotion is
     returned, NEVER promotion.
 
@@ -2496,14 +2429,15 @@ def detect_under_promotion(
 
 
 # ---------------------------------------------------------------------------
-# D-07 priority dispatcher — detect_tactic_motif
+# Priority dispatcher — detect_tactic_motif
 # ---------------------------------------------------------------------------
 
-# Ordered registry for the D-07 priority order.
-# Intra-tier order within tiers 2-3 is provisional (D-08) — reorder here without
+# Ordered registry for the priority order.
+# Intra-tier order within tiers 2-3 is provisional — reorder here without
 # touching detector bodies.
 
-# Type aliases for detector function signatures (Phase 127: all detectors now 3- or 4-tuple with depth)
+# Type aliases for detector function signatures (all detectors return a 3- or 4-tuple
+# ending in depth)
 _BoolPieceFn = Callable[
     [list[chess.Board], list[chess.Move], chess.Color], tuple[bool, int | None, int | None]
 ]
@@ -2511,7 +2445,7 @@ _Tier3Fn = Callable[
     [list[chess.Board], list[chess.Move], chess.Color], tuple[bool, int | None, int, int | None]
 ]
 
-# Tier 1: named-mate subtypes in priority order (A3: provisional intra-mate order)
+# Tier 1: named-mate subtypes in priority order (provisional intra-mate order)
 _NAMED_MATE_REGISTRY: list[tuple[TacticMotif, int]] = [
     ("smothered-mate", TacticMotifInt.SMOTHERED_MATE),
     ("anastasia-mate", TacticMotifInt.ANASTASIA_MATE),
@@ -2529,21 +2463,21 @@ _NAMED_MATE_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
     "dovetail-mate": detect_dovetail_mate,
 }
 
-# Tier 2: geometric material-winners (D-07, provisional D-08 intra-tier order)
+# Tier 2: geometric material-winners (provisional intra-tier order)
 # Intra-tier rank = enumerate index (lower = higher priority per _sort_key).
-# discovered-check (rank 3) is placed ABOVE discovered-attack (rank 4) so a
-# discovering move that gives check tags as discovered-check, not discovered-attack
-# (D-03 dominance).  trapped-piece (rank 5) sits after the discovery motifs;
-# D-03 tier-level dominance over hanging-piece (Tier 4) is satisfied by tier number
-# alone — no intra-tier constraint on trapped-piece (D-05).
+# discovered-check (rank 4) is placed ABOVE discovered-attack (rank 5) so a
+# discovering move that gives check tags as discovered-check, not discovered-attack.
+# trapped-piece (rank 6) sits after the discovery motifs; its dominance over
+# hanging-piece (Tier 4) is satisfied by tier number alone — no intra-tier
+# constraint on trapped-piece.
 _GEOMETRIC_REGISTRY: list[tuple[TacticMotif, int]] = [
     ("fork", TacticMotifInt.FORK),  # rank 0
     ("skewer", TacticMotifInt.SKEWER),  # rank 1
     ("pin", TacticMotifInt.PIN),  # rank 2
     ("double-check", TacticMotifInt.DOUBLE_CHECK),  # rank 3 — check motifs together
-    ("discovered-check", TacticMotifInt.DISCOVERED_CHECK),  # rank 4 — D-03: above discovered-attack
+    ("discovered-check", TacticMotifInt.DISCOVERED_CHECK),  # rank 4 — above discovered-attack
     ("discovered-attack", TacticMotifInt.DISCOVERED_ATTACK),  # rank 5
-    ("trapped-piece", TacticMotifInt.TRAPPED_PIECE),  # rank 6 — D-05 discretion
+    ("trapped-piece", TacticMotifInt.TRAPPED_PIECE),  # rank 6
 ]
 
 _GEOMETRIC_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
@@ -2556,32 +2490,30 @@ _GEOMETRIC_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
     "trapped-piece": detect_trapped_piece,
 }
 
-# Tier 3: fuzzy detectors (D-07 order, provisional D-08)
+# Tier 3: fuzzy detectors (provisional intra-tier order)
 #
-# Phase 221 TAGFIX-05 fix 7 (D-12): the ("self-interference", SELF_INTERFERENCE)
-# tuple was REMOVED from this registry. The dispatcher (_dispatch_tier_candidates
-# below) builds its candidate list by iterating this REGISTRY only, so removing
-# the tuple is what makes int 14 permanently undispatchable — no PV can ever win
-# dispatch as self-interference again. The motif has no lichess theme equivalent
-# and zero measured true positives (it could still win dispatch and persist an
-# invisible tag no chip surface renders). Do NOT restore this tuple: TacticMotifInt.
-# SELF_INTERFERENCE (14), _INT_TO_MOTIF[14], _MOTIF_TO_INT["self-interference"] and
-# detect_self_interference all stay — persisted prod rows carry int 14 until the
-# full retag clears them, and three existing tests
-# (test_all_29_motifs_encoded, test_suppressed_motifs_documented_and_storable,
+# The ("self-interference", SELF_INTERFERENCE) tuple is NOT in this registry. The
+# dispatcher (_collect_non_mate_candidates below) builds its candidate list by
+# iterating this REGISTRY only, so leaving the tuple out is what makes int 14
+# permanently undispatchable — no PV can win dispatch as self-interference. The motif
+# has no lichess theme equivalent and zero measured true positives (it could still
+# win dispatch and persist an invisible tag no chip surface renders). Do NOT restore
+# this tuple: TacticMotifInt.SELF_INTERFERENCE (14), _INT_TO_MOTIF[14],
+# _MOTIF_TO_INT["self-interference"] and detect_self_interference all stay —
+# persisted rows carry int 14 until a full retag clears them, and three existing
+# tests (test_all_29_motifs_encoded, test_suppressed_motifs_documented_and_storable,
 # test_family_mapping_excludes_suppressed_tier3) pin the encoding.
 #
-# Phase 221 plan 06 (2026-09-12, D-07): ("clearance", TacticMotifInt.CLEARANCE) is
-# ALSO removed from this registry — the D-07 keep/suppress bar measured real-game
-# real_share=0.667 with only 3 of 16 sampled rows surviving the strengthened
-# predicate (both below REALGAME_MIN_ROWS_FOR_FLOOR=8 and below the 0.80 keep bar;
-# see tests/scripts/tagger/precision_floors.py's SUPPRESSED_MOTIFS entry for the
-# full record). Removing the tuple is what makes "the retag clears rows" true: the
-# dispatcher iterates this registry, so with the tuple gone no PV can ever produce
-# int 15 again, and the full prod retag (TAGFIX-09) overwrites every persisted 15.
+# ("clearance", TacticMotifInt.CLEARANCE) is likewise NOT in this registry: it failed
+# the keep/suppress bar (real-game real_share=0.667 with only 3 of 16 sampled rows
+# surviving the strengthened predicate, both below REALGAME_MIN_ROWS_FOR_FLOOR=8 and
+# below the 0.80 keep bar; see tests/scripts/tagger/precision_floors.py's
+# SUPPRESSED_MOTIFS entry for the full record). Leaving the tuple out is what makes
+# "the retag clears rows" true: the dispatcher iterates this registry, so no PV can
+# produce int 15, and a full retag overwrites every persisted 15.
 # Do NOT restore this tuple: TacticMotifInt.CLEARANCE (15), _INT_TO_MOTIF[15],
-# _MOTIF_TO_INT["clearance"] and detect_clearance all stay — persisted prod rows
-# carry int 15 until the full retag clears them.
+# _MOTIF_TO_INT["clearance"] and detect_clearance all stay — persisted rows carry
+# int 15 until a full retag clears them.
 _TIER3_REGISTRY: list[tuple[TacticMotif, int]] = [
     ("deflection", TacticMotifInt.DEFLECTION),
     ("attraction", TacticMotifInt.ATTRACTION),
@@ -2598,30 +2530,28 @@ _TIER3_DETECTOR_FNS: dict[TacticMotif, _Tier3Fn] = {
     "intermezzo": detect_intermezzo,
     "x-ray": detect_x_ray,
     "interference": detect_interference,
-    # Retained for direct unit calls only (Phase 221 TAGFIX-05 fix 7, D-12; and
-    # plan 06, D-07, for clearance) — the dispatcher iterates _TIER3_REGISTRY,
-    # never this dict's keys directly against a motif not present in the
-    # registry, so both entries are inert through dispatch now that their
-    # registry tuples are gone.
+    # Retained for direct unit calls only — the dispatcher iterates _TIER3_REGISTRY,
+    # never this dict's keys directly against a motif not present in the registry,
+    # so both entries are inert through dispatch.
     "self-interference": detect_self_interference,
     "clearance": detect_clearance,
     "capturing-defender": detect_capturing_defender,
     "sacrifice": detect_sacrifice,
 }
 
-# Tier 5: move-type family (D-03/D-04 — new LOWEST tier below hanging-piece Tier 4).
+# Tier 5: move-type family (the LOWEST tier, below hanging-piece Tier 4).
 # Real tactics (tiers 1-4) always win. Move-type only fires on the residual positions
 # where no real motif fired. This is EXPECTED and NOT a bug — sparse population is
-# the correct behavior (D-02 posture: move-type is the lowest-priority catch for
-# positions whose refuting move happens to be a special move type).
+# the correct behavior (move-type is the lowest-priority catch for positions whose
+# refuting move happens to be a special move type).
 #
 # Intra-tier order: under-promotion (rank 0) before promotion (rank 1) so that a
-# non-queen promotion is NEVER tagged as "promotion" (D-01 under-promotion dominance).
+# non-queen promotion is NEVER tagged as "promotion" (under-promotion dominance).
 # en-passant is rank 2 (independent; no dominance relationship with promotions).
-TIER_MOVE_TYPE = 5  # strictly greater than Tier 4 (hanging-piece) — D-04 real-tactic-wins
+TIER_MOVE_TYPE = 5  # strictly greater than Tier 4 (hanging-piece): real tactics win
 
 _MOVE_TYPE_REGISTRY: list[tuple[TacticMotif, int]] = [
-    ("under-promotion", TacticMotifInt.UNDER_PROMOTION),  # rank 0 — D-01: dominates promotion
+    ("under-promotion", TacticMotifInt.UNDER_PROMOTION),  # rank 0 — dominates promotion
     ("promotion", TacticMotifInt.PROMOTION),  # rank 1
     ("en-passant", TacticMotifInt.EN_PASSANT),  # rank 2
 ]
@@ -2633,17 +2563,15 @@ _MOVE_TYPE_DETECTOR_FNS: dict[TacticMotif, _BoolPieceFn] = {
 }
 
 # ---------------------------------------------------------------------------
-# Per-tier winning-floor map (Phase 221 TAGFIX-01, D-01) — DERIVED from the
-# registries above so it cannot drift from the dispatcher's tiers. This is the
-# gate's (forcing_line_gate.py) only import from this module (cycle-free: this
-# module imports nothing app-internal; the gate importing floor_cp_for_motif
-# from here, rather than the map living in the gate and importing the three
-# private *_REGISTRY names from here, is what D-01's "next to the dispatcher's
-# tier registry" placement requires).
+# Per-tier winning-floor map — DERIVED from the registries above so it cannot drift
+# from the dispatcher's tiers. This is the gate's (forcing_line_gate.py) only import
+# from this module (cycle-free: this module imports nothing app-internal; the gate
+# imports floor_cp_for_motif from here, rather than the map living in the gate and
+# importing the three private *_REGISTRY names from here).
 # ---------------------------------------------------------------------------
 
 # +200cp solver-perspective floor for tier-3 (deflection, attraction, intermezzo,
-# x-ray, interference, clearance, capturing-defender, sacrifice) and tier-5
+# x-ray, interference, capturing-defender, sacrifice) and tier-5
 # move-type motifs (promotion, under-promotion, en-passant) at the firing node.
 # This is conceptually the SAME constant as forcing_line_gate.STILL_WINNING_FLOOR_CP
 # (both are lichess-puzzler's cook_advantage Cp(200) floor) but plays a different
@@ -2655,19 +2583,17 @@ FIRING_FLOOR_TIER3_CP: int = 200
 
 # 0cp ("not losing") floor for tier-1/2 geometric motifs (hanging-piece, fork,
 # pin, skewer, double-check, discovered-check, discovered-attack, trapped-piece).
-# D-01 rationale: a fork that wins a piece while still behind is coachable; a
-# "sacrifice" or "clearance" fired while losing never is.
+# Rationale: a fork that wins a piece while still behind is coachable; a
+# "sacrifice" fired while losing never is.
 FIRING_FLOOR_GEOMETRIC_CP: int = 0
 
-# Derived from the tier registries, not re-listed by motif name (D-01: "next to
-# the registry so it cannot drift"). hanging-piece is Tier 4 and belongs to no
-# registry (_collect_non_mate_candidates calls detect_hanging_piece directly,
-# not via a registry loop) — D-01 lists it with the geometric group, so it is
-# appended by hand for exactly that reason. int 14 (self-interference) and
-# int 15 (clearance) are absent from this map entirely: plan 02 (D-12) removed
-# self-interference from _TIER3_REGISTRY and plan 06 (D-07) removed clearance,
-# so the derivation below simply never sees either — the derived map behaving
-# correctly, not an omission.
+# Derived from the tier registries, not re-listed by motif name, so it cannot drift.
+# hanging-piece is Tier 4 and belongs to no registry (_collect_non_mate_candidates
+# calls detect_hanging_piece directly, not via a registry loop); it belongs with the
+# geometric group, so it is appended by hand for exactly that reason. int 14
+# (self-interference) and int 15 (clearance) are absent from this map entirely:
+# neither is in _TIER3_REGISTRY, so the derivation below never sees either — the
+# derived map behaving correctly, not an omission.
 _MOTIF_FLOOR_CP: dict[int, int] = {
     **{int(motif_int): FIRING_FLOOR_GEOMETRIC_CP for _, motif_int in _GEOMETRIC_REGISTRY},
     int(TacticMotifInt.HANGING_PIECE): FIRING_FLOOR_GEOMETRIC_CP,
@@ -2681,7 +2607,7 @@ _MATE_MOTIF_INTS: frozenset[int] = frozenset(_MOTIF_TO_INT[m] for m in MATE_MOTI
 
 
 def floor_cp_for_motif(motif_int: int | None) -> int | None:
-    """Return the per-tier solver-perspective winning floor for a motif (D-01).
+    """Return the per-tier solver-perspective winning floor for a motif.
 
     Returns None for None, for a mate-motif int, and for an unknown int — all
     three mean "no floor applies" (the gate skips the winning-floor check for
@@ -2701,23 +2627,23 @@ def _dispatch_mate_tier(
     pov: chess.Color,
     has_forced_mate: bool,
 ) -> tuple[int, int | None, int, int | None] | None:
-    """Tier 1: mate subtypes (D-03 dominance -- always checked first, always wins).
+    """Tier 1: mate subtypes (always checked first, always wins).
 
     Mates never enter the non-mate candidate pool (Tiers 2-5); this tier
     short-circuits `detect_tactic_motif` immediately when it fires.
 
     Returns:
         (tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth) when a mate
-        subtype fires, or None when mate detection is ineligible (D-06) or no mate
+        subtype fires, or None when mate detection is ineligible or no mate
         detector fires -- signalling the caller to fall through to the non-mate tiers.
     """
-    # D-06: mate branch eligibility. boards[-1].is_checkmate() is the fast path for
+    # Mate branch eligibility. boards[-1].is_checkmate() is the fast path for
     # complete PVs; has_forced_mate=True is the fallback for Stockfish-reported mates
     # whose PV is truncated before the mating position.
     if not (boards[-1].is_checkmate() or has_forced_mate):
         return None
 
-    # Named-mate subtypes in priority order (A3)
+    # Named-mate subtypes in priority order
     for motif_str, motif_int in _NAMED_MATE_REGISTRY:
         fn = _NAMED_MATE_DETECTOR_FNS[motif_str]
         fired, piece, depth = fn(boards, moves, pov)
@@ -2739,12 +2665,12 @@ def _dispatch_mate_tier(
     if gm_fired:
         return TacticMotifInt.MATE, gm_piece, TACTIC_CONFIDENCE_HIGH, gm_depth
 
-    # BUGFIX (Phase 148, D-01): has_forced_mate=True means Stockfish reported a
+    # BUGFIX: has_forced_mate=True means Stockfish reported a
     # genuine eval_mate score, but every per-detector mate function above (and
     # detect_generic_mate) bails out via `if not boards[-1].is_checkmate()` when
     # the PV is capped at PV_CAP_PLIES (engine.py) before reaching the mating
-    # position — so a real, deep forced mate previously fell through to Tier 2+
-    # untagged (no-op). Named-mate geometry cannot be verified on a truncated
+    # position — so without this branch a real, deep forced mate would fall
+    # through to Tier 2+ untagged (no-op). Named-mate geometry cannot be verified on a truncated
     # line, so tag the generic fallback only — do NOT suppress a real mate.
     # `moves` is guaranteed non-empty here (checked by the caller before this
     # function is invoked).
@@ -2767,7 +2693,7 @@ def _collect_non_mate_candidates(
     moves: list[chess.Move],
     pov: chess.Color,
 ) -> list[_Candidate]:
-    """Tiers 2-5: collect every non-mate motif firing on this PV (D-05).
+    """Tiers 2-5: collect every non-mate motif firing on this PV.
 
     Tier 5 (move-type) only runs when tiers 2-4 produced no candidates -- move-type
     is a fallback for positions where no real tactic fired, never a competitor
@@ -2791,7 +2717,7 @@ def _collect_non_mate_candidates(
         if fired:
             candidates.append((TIER3, rank_offset, piece, confidence, depth, int(motif_int)))
 
-    # Tier 4: hanging-piece (catch-all, D-07)
+    # Tier 4: hanging-piece (catch-all)
     TIER4 = 4
     hp_fired, hp_piece, hp_depth = detect_hanging_piece(boards, moves, pov)
     if hp_fired:
@@ -2806,15 +2732,15 @@ def _collect_non_mate_candidates(
             )
         )
 
-    # Tier 5: move-type family (D-03/D-04 — lowest tier; real tactics in tiers 1-4 always win).
+    # Tier 5: move-type family (lowest tier; real tactics in tiers 1-4 always win).
     # Move-type fires only on the RESIDUAL positions where NO real motif fired (the
     # candidate pool from tiers 2-4 is empty; mates already short-circuited above). This is
-    # enforced structurally, not via the depth-primary tiebreak: the whole-line scan (Quick
-    # 260623) can place a promotion/en-passant at a shallow ply, and without this guard a
+    # enforced structurally, not via the depth-primary tiebreak: the whole-line scan
+    # can place a promotion/en-passant at a shallow ply, and without this guard a
     # depth-2 promotion would out-rank a depth-6 real tactic and steal a more-instructive
     # chip. A move-type chip is a fallback, never a winner over a genuine tactic.
     # Under-promotion (rank 0) is ranked before promotion (rank 1) so that a non-queen
-    # promotion can NEVER be tagged as "promotion" (D-01 dominance).
+    # promotion can NEVER be tagged as "promotion" (dominance).
     if not candidates:
         for rank, (motif_str, motif_int) in enumerate(_MOVE_TYPE_REGISTRY):
             fn = _MOVE_TYPE_DETECTOR_FNS[motif_str]
@@ -2828,16 +2754,16 @@ def _collect_non_mate_candidates(
 
 
 def _select_shallowest_candidate(candidates: list[_Candidate]) -> _Candidate | None:
-    """Depth-primary winner selection with a (tier, rank) tiebreak (D-05/D-07).
+    """Depth-primary winner selection with a (tier, rank) tiebreak.
 
     Shallowest tactic wins. Equal-depth ties break by (tier, rank) — preserving
     existing priority order. Consequence: hanging-piece (Tier 4, depth 0) beats a
     fork (Tier 2, depth 2) because depth 0 < depth 2. A fork (Tier 2) at depth 0
     beats hanging-piece (Tier 4) at depth 0 via tier tiebreak (2 < 4) — this is
-    correct (D-07): when the fork IS at depth 0, it is equally shallow and more
-    specific. Tier-3 motifs at depth 0 can beat Tier-2 at depth 2 (D-05 is
-    intentional); they are suppressed at query time via _TACTIC_CHIP_CONFIDENCE_MIN
-    so this has no user-facing impact. None depth sorts last (treated as infinity).
+    correct: when the fork IS at depth 0, it is equally shallow and more
+    specific. Tier-3 motifs at depth 0 can beat Tier-2 at depth 2 (intentional); they
+    are suppressed at query time via MIN_TACTIC_CHIP_CONFIDENCE so this has no
+    user-facing impact. None depth sorts last (treated as infinity).
     """
     if not candidates:
         return None
@@ -2850,62 +2776,63 @@ def _select_shallowest_candidate(candidates: list[_Candidate]) -> _Candidate | N
 
 
 def detect_tactic_motif(
-    board_after_flaw: chess.Board,
+    pv_start_board: chess.Board,
     pv_str: str,
     has_forced_mate: bool = False,
 ) -> tuple[int | None, int | None, int | None, int | None]:
-    """Detect the highest-priority tactic motif from the refutation PV (D-07/D-02).
+    """Detect the highest-priority tactic motif from the refutation PV.
 
     Args:
-        board_after_flaw: Position immediately after the flawed move was played.
-                          board_after_flaw.turn is the refuting side (pov).
+        pv_start_board: Position pv_str starts from (the board after the flawed move on the
+                        allowed pass, the pre-flaw board on the missed pass).
+                        pv_start_board.turn is the refuting side (pov).
         pv_str: Space-joined UCI refutation line from game_positions.pv.
         has_forced_mate: When True, the mate branch runs even when boards[-1].is_checkmate()
                          is False. Required when Stockfish reports a mate-in-N score but the
                          PV is truncated at PV_CAP_PLIES (~12) so the final board is not yet
                          checkmate. The stored Stockfish score (eval_mate) is the authoritative
-                         gate (D-06); is_checkmate() is preserved as the fast path when the
+                         gate; is_checkmate() is preserved as the fast path when the
                          PV is short enough to show the final mating position.
 
     Returns:
         (tactic_motif_int, tactic_piece, tactic_confidence, tactic_depth) where:
         - tactic_motif_int: TacticMotifInt value or None if no detector fired.
-        - tactic_piece: chess.PieceType int (1-6) or None (per-motif semantic D-12).
+        - tactic_piece: chess.PieceType int (1-6) or None (per-motif semantics).
         - tactic_confidence: 0-100 or None when tactic_motif_int is None.
-        - tactic_depth: raw half-move ply index from flaw_ply+1 (D-04), or None.
-          Caveat (Phase 148 truncated-mate fallback): when `has_forced_mate=True` and
+        - tactic_depth: raw half-move ply index from flaw_ply+1, or None.
+          Caveat (truncated-mate fallback): when `has_forced_mate=True` and
           the PV was capped before reaching mate, this is the last-displayed-ply
           approximation (len(moves)-1), not the true (unknown) mating ply — so it is
           systematically shallower than a fully-resolved mate's depth.
 
-    Dispatch strategy (D-02): mates (Tier 1) short-circuit and always win (D-03/D-07).
-    All non-mate detectors run and collect firings; the SHALLOWEST motif wins (depth primary,
-    D-05); equal depth breaks by priority tier/rank so exactly one motif is returned.
+    Dispatch strategy: mates (Tier 1) short-circuit and always win.
+    All non-mate detectors run and collect firings; the SHALLOWEST motif wins (depth primary);
+    equal depth breaks by priority tier/rank so exactly one motif is returned.
     Hanging-piece (Tier 4, depth 0) beats a fork (Tier 2, depth 2) because depth dominates.
 
     Safe: malformed/None/empty pv_str returns (None, None, None, None) without raising.
     """
-    # Guard: T-124-03 / T-127-01 — malformed or empty PV must never raise (threat register)
+    # Guard: malformed or empty PV must never raise
     if not pv_str:
         return None, None, None, None
 
     try:
-        boards, moves = _parse_pv(board_after_flaw, pv_str)
+        boards, moves = _parse_pv(pv_start_board, pv_str)
     except ValueError:
         return None, None, None, None
 
     if not moves:
         return None, None, None, None
 
-    pov = board_after_flaw.turn
+    pov = pv_start_board.turn
 
-    # --- Tier 1: mate subtypes (D-03 dominance — always checked first, always wins) ---
+    # --- Tier 1: mate subtypes (always checked first, always wins) ---
     # Mates never enter the candidate pool; they short-circuit the dispatcher immediately.
     mate_result = _dispatch_mate_tier(boards, moves, pov, has_forced_mate)
     if mate_result is not None:
         return mate_result
 
-    # --- Collect all non-mate firings, then pick the winner (D-05: depth-primary) ---
+    # --- Collect all non-mate firings, then pick the winner (depth-primary) ---
     candidates = _collect_non_mate_candidates(boards, moves, pov)
     winner = _select_shallowest_candidate(candidates)
     if winner is None:

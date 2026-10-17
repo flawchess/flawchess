@@ -32,9 +32,8 @@ CACHE_TTL_SECONDS: Final[int] = 300
 # results are cached, so concurrency here would only add load on the database.
 _POOL_SIZE = 1
 
-# The key space is no longer four preset range keys but every (range_key,
-# start, end) a caller can name, so StatsCache bounds how many payloads stay
-# resident, evicting the oldest entry once a fresh build would exceed this.
+# The key space is every (range_key, start, end) a caller can name, so
+# StatsCache evicts the oldest entry once a fresh build would exceed this.
 _MAX_ENTRIES: Final[int] = 16
 
 
@@ -119,9 +118,8 @@ class StatsCache:
     windows are both requested cold at the same instant, which this
     manual-refresh, superuser-only page essentially never does.
 
-    The key space used to be the four preset `RangeKey` values; a `start`/
-    `end` pair (Quick 260920-frk) turns it into every distinct date pair a
-    caller can name, so `_MAX_ENTRIES` bounds how many payloads stay resident.
+    `start`/`end` make the key space every distinct date pair a caller can
+    name, so `_MAX_ENTRIES` bounds how many payloads stay resident.
     """
 
     def __init__(self, engine: AsyncEngine, ttl_seconds: int) -> None:
@@ -157,8 +155,8 @@ class StatsCache:
 
     def _evict_oldest(self) -> None:
         """Drop the oldest entries (by fetched_at) until the cache is within
-        `_MAX_ENTRIES`. Bounds resident payloads now that the key space is
-        every date pair a caller can name, not just four preset keys."""
+        `_MAX_ENTRIES`. Bounds resident payloads, since the key space is
+        every date pair a caller can name."""
         while len(self._entries) > _MAX_ENTRIES:
             oldest_key = min(self._entries, key=lambda key: self._entries[key][1])
             del self._entries[oldest_key]

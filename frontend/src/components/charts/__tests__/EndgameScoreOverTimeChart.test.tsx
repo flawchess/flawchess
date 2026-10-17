@@ -150,7 +150,7 @@ const GRADUAL_CROSSOVER_FIXTURE: ScoreGapTimelinePoint[] = [
   makePoint('2025-01-27', 0.45, 0.50),
 ];
 
-// Bug 260424: first bucket rounds to endgame == non_endgame (diff=0), then
+// First bucket rounds to endgame == non_endgame (diff=0), then
 // every subsequent bucket is firmly negative. Before the fix the gradient
 // stayed green across the whole series because `colorFor(0)` is green and
 // `dA * dB < 0` missed the zero-to-negative transition.
@@ -163,14 +163,14 @@ const ZERO_START_NEGATIVE_FIXTURE: ScoreGapTimelinePoint[] = [
 
 describe('EndgameScoreOverTimeChart', () => {
   it('renders container and title', () => {
-    render(<EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />);
+    render(<EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} windowSize={100} />);
     expect(screen.getByTestId('endgame-score-timeline-chart')).toBeTruthy();
     expect(screen.getByText('Endgame Score Gap over Time')).toBeTruthy();
   });
 
   it('renders a single shaded band layer and gradient carries both colors for mixed-sign fixture', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} windowSize={100} />,
     );
     expect(queryBand(container)).not.toBeNull();
     const colors = gradientStopColors(container);
@@ -180,7 +180,7 @@ describe('EndgameScoreOverTimeChart', () => {
 
   it('gradient has only the leads color when endgame leads throughout', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} windowSize={100} />,
     );
     expect(queryBand(container)).not.toBeNull();
     const colors = gradientStopColors(container);
@@ -190,7 +190,7 @@ describe('EndgameScoreOverTimeChart', () => {
 
   it('gradient has only the trails color when endgame trails throughout', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={ENDGAME_TRAILS_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={ENDGAME_TRAILS_FIXTURE} windowSize={100} />,
     );
     expect(queryBand(container)).not.toBeNull();
     const colors = gradientStopColors(container);
@@ -200,7 +200,7 @@ describe('EndgameScoreOverTimeChart', () => {
 
   it('gradient emits instant-flip stop pair at the crossover (no unshaded gap)', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={GRADUAL_CROSSOVER_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={GRADUAL_CROSSOVER_FIXTURE} windowSize={100} />,
     );
     // An "instant flip" is two consecutive stops at the same offset with
     // different colors. That is the mechanism that closes the previous
@@ -225,7 +225,7 @@ describe('EndgameScoreOverTimeChart', () => {
     // never produced a <path>. Tests passed on the <g> wrapper alone. This
     // test fails fast if that regression ever returns.
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} windowSize={100} />,
     );
     const bandLayer = queryBand(container);
     expect(bandLayer).not.toBeNull();
@@ -233,13 +233,13 @@ describe('EndgameScoreOverTimeChart', () => {
   });
 
   it('renders legend entries for both series', () => {
-    render(<EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />);
+    render(<EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} windowSize={100} />);
     expect(screen.getByTestId('chart-legend-endgame')).toBeTruthy();
     expect(screen.getByTestId('chart-legend-non-endgame')).toBeTruthy();
   });
 
   it('renders the info popover with shading-explanation sentence and without legacy caveat', async () => {
-    render(<EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} window={100} />);
+    render(<EndgameScoreOverTimeChart timeline={MIXED_SIGN_FIXTURE} windowSize={100} />);
     // Radix Popover only mounts Portal content when open. The trigger listens
     // for pointer events; mousedown+pointerdown+click drives the open state.
     const trigger = screen.getByTestId('score-timeline-info');
@@ -258,9 +258,9 @@ describe('EndgameScoreOverTimeChart', () => {
     ).toBeNull();
   });
 
-  it('gradient is red throughout when first bucket diff rounds to zero and rest are negative (bug 260424)', () => {
+  it('gradient is red throughout when first bucket diff rounds to zero and rest are negative', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={ZERO_START_NEGATIVE_FIXTURE} window={100} />,
+      <EndgameScoreOverTimeChart timeline={ZERO_START_NEGATIVE_FIXTURE} windowSize={100} />,
     );
     expect(queryBand(container)).not.toBeNull();
     const stops = gradientStops(container);
@@ -278,7 +278,7 @@ describe('EndgameScoreOverTimeChart', () => {
 
   it('returns null when timeline is empty', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={[]} window={100} />,
+      <EndgameScoreOverTimeChart timeline={[]} windowSize={100} />,
     );
     expect(container.querySelector('[data-testid="endgame-score-timeline-chart"]')).toBeNull();
   });
@@ -303,7 +303,7 @@ describe('inactivity gap annotations', () => {
 
   it('renders inactivity-gap-label testid for a timeline with a >90-day gap', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} window={100} />,
+      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} windowSize={100} />,
     );
     // The gap between points 2 and 3 (121 days) exceeds the 90-day threshold.
     // The shared helper renders data-testid="inactivity-gap-label" for each gap.
@@ -312,14 +312,14 @@ describe('inactivity gap annotations', () => {
 
   it('renders inactivity-gap-glyph (Palmtree) for a timeline with a >90-day gap', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} window={100} />,
+      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} windowSize={100} />,
     );
     expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
   });
 
   it('renders no inactivity-gap annotation when all consecutive dates are 7 days apart', () => {
     const { container } = render(
-      <EndgameScoreOverTimeChart timeline={TIMELINE_NO_GAP} window={100} />,
+      <EndgameScoreOverTimeChart timeline={TIMELINE_NO_GAP} windowSize={100} />,
     );
     expect(container.querySelector('[data-testid="inactivity-gap-label"]')).toBeNull();
     expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).toBeNull();

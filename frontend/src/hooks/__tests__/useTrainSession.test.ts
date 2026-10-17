@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * useTrainSession.test.ts — 190.1-04 (D-04) coverage: `sessionSolvedCount`,
+ * useTrainSession.test.ts — coverage of `sessionSolvedCount`,
  * the session score's denominator. Computed as the session response's
  * `solved_results.length` plus the size of the internally tracked
  * solved-positions set, updating on exactly the same tick as `sessionScore`
  * (the solve mutation's success path) — never `currentIndex`.
  *
- * 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): `sessionScore` and
+ * `sessionScore` and
  * `sessionSolvedCount` both now seed from `solved_results` on the session
  * response — server data, not a device-local localStorage tally.
  */
@@ -101,7 +101,7 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
-describe('useTrainSession — sessionSolvedCount (190.1-04 D-04)', () => {
+describe('useTrainSession — sessionSolvedCount', () => {
   beforeEach(() => {
     vi.mocked(trainApi.composeOrResumeSession).mockReset();
     vi.mocked(trainApi.solvePuzzle).mockReset();
@@ -121,7 +121,7 @@ describe('useTrainSession — sessionSolvedCount (190.1-04 D-04)', () => {
   });
 
   it('seeds sessionScore and sessionSolvedCount from solved_results, not a device-local tally', async () => {
-    // 260728-tgc regression coverage: with no localStorage read anywhere in
+    // Regression coverage: with no localStorage read anywhere in
     // the hook, this is server data only. Three entries, each 1 (correct
     // guess) + 2 (good move) = 3 points -> total 9.
     vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(
@@ -170,7 +170,7 @@ describe('useTrainSession — sessionSolvedCount (190.1-04 D-04)', () => {
     });
     expect(result.current.sessionSolvedCount).toBe(1);
     // Updates on the SAME tick as sessionScore (both in the solve mutation's
-    // success path), never derived from currentIndex. SEED-119: correct
+    // success path), never derived from currentIndex. Correct
     // guess (1) + good move (2) = 3.
     expect(result.current.sessionScore).toBe(3);
   });
@@ -191,13 +191,13 @@ describe('useTrainSession — sessionSolvedCount (190.1-04 D-04)', () => {
 });
 
 /**
- * Phase 222 (D-17/D-18, RESEARCH Finding C): `solvedOutcomes`, the score
+ * `solvedOutcomes`, the score
  * screen's sole source for "what returns and when" — seeded from
  * `solved_results` on compose/resume, appended live from each solve's
  * `SolveResponse`. Required because `solved_results` is EMPTY for a session
- * composed and completed in one sitting (§Finding C).
+ * composed and completed in one sitting.
  */
-describe('useTrainSession — solvedOutcomes accumulator (Phase 222 D-17/D-18)', () => {
+describe('useTrainSession — solvedOutcomes accumulator', () => {
   beforeEach(() => {
     vi.mocked(trainApi.composeOrResumeSession).mockReset();
     vi.mocked(trainApi.solvePuzzle).mockReset();
@@ -245,7 +245,7 @@ describe('useTrainSession — solvedOutcomes accumulator (Phase 222 D-17/D-18)',
 
   it('seeds solvedOutcomes from solved_results on a completed-session resume, without duplicating the seed against the live append', async () => {
     // A fresh compose against a COMPLETED session returns populated
-    // solved_results via _resume_session (RESEARCH Open Question 4) — the
+    // solved_results via _resume_session — the
     // seed path must not double-count against anything the live append
     // would otherwise add (nothing does here, since no solvePuzzle call
     // follows the resume).
@@ -292,7 +292,7 @@ describe('useTrainSession — solvedOutcomes accumulator (Phase 222 D-17/D-18)',
 });
 
 /**
- * 193 UAT: every solve moves the nav badge. Server-side `waiting_count` is
+ * Every solve moves the nav badge. Server-side `waiting_count` is
  * `puzzle_count - solved_count` (get_waiting_puzzle_count branch 1), so it
  * decreases by one per solve and hits 0 on the last one — which is also the
  * tick that flips the session row to 'completed' and settles the
@@ -302,7 +302,7 @@ describe('useTrainSession — solvedOutcomes accumulator (Phase 222 D-17/D-18)',
  * `session_complete` alone froze the counter at its start-of-session value
  * until the final puzzle, then jumped it straight to 0.
  */
-describe('useTrainSession — progress invalidation on every solve (193 UAT)', () => {
+describe('useTrainSession — progress invalidation on every solve', () => {
   beforeEach(() => {
     vi.mocked(trainApi.composeOrResumeSession).mockReset();
     vi.mocked(trainApi.solvePuzzle).mockReset();

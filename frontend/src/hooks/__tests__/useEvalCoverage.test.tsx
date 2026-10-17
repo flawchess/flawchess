@@ -29,8 +29,8 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
-// Spy on window.location.reload to assert it is never called (Phase 96 Plan 03,
-// Constraint 4 / SC-5: auto-reload has been removed from useEvalCoverage).
+// Spy on window.location.reload to assert it is never called (auto-reload
+// has been removed from useEvalCoverage).
 const reloadSpy = vi.fn();
 const originalLocation = window.location;
 beforeEach(() => {
@@ -151,7 +151,7 @@ describe('useEvalCoverage', () => {
 
     // Before fetch resolves: defaults must prevent flashing the caveat
     expect(result.current.pct).toBe(100);
-    expect(result.current.isPending).toBe(false);
+    expect(result.current.hasPendingEvals).toBe(false);
     expect(result.current.pendingCount).toBe(0);
     expect(result.current.totalCount).toBe(0);
   });
@@ -189,9 +189,9 @@ describe('useEvalCoverage', () => {
     expect(result.current.analyzedCount).toBe(0);
   });
 
-  it('does NOT call window.location.reload after a pending→done transition (Phase 96 Constraint 4)', async () => {
+  it('does NOT call window.location.reload after a pending→done transition', async () => {
     // Simulate: first fetch returns pending=50%, then resolves to 100%.
-    // Auto-reload was removed in Phase 96 Plan 03; reactive reveal via
+    // Auto-reload was removed; reactive reveal via
     // useReadiness.tier2 replaces the forced full-page reload.
     let callCount = 0;
     vi.mocked(apiClient.get).mockImplementation(() => {

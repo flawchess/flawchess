@@ -46,8 +46,8 @@ vi.mock('@/components/charts/MiniBulletChart', () => ({
   ),
 }));
 
-vi.mock('@/components/insights/BulletConfidencePopover', () => ({
-  BulletConfidencePopover: ({ testId }: { testId?: string }) => (
+vi.mock('@/components/insights/EvalConfidencePopover', () => ({
+  EvalConfidencePopover: ({ testId }: { testId?: string }) => (
     <button type="button" data-testid={testId}>?</button>
   ),
 }));

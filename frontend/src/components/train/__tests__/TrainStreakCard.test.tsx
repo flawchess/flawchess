@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * TrainStreakCard.test.tsx — the Train landing's streak hero (SEED-181):
+ * TrainStreakCard.test.tsx — the Train landing's streak hero:
  * the streak inside a 3-layer flame, the 0-7 buffer as snowflake freezes, the
  * weekly tally, the optional Start/Resume slot, and the one-shot arrival
  * animations driven by the per-device last-seen snapshot.

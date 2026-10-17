@@ -4,37 +4,37 @@ import {
   arrowSortKey,
   DARK_GREEN,
   DARK_RED,
-  DARK_BLUE,
+  NEUTRAL_ARROW_COLOR,
 } from './arrowColor';
 
-describe('getArrowColor (3-zone score palette, low-data → blue)', () => {
+describe('getArrowColor (3-zone score palette, low-data → neutral grey)', () => {
   describe('low-data fallback', () => {
-    it('returns DARK_BLUE when gameCount < MIN_GAMES_FOR_COLOR (10), regardless of score', () => {
-      expect(getArrowColor(0.65, 9, 'high')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.30, 9, 'high')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.50, 9, 'high')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.99, 5, 'high')).toBe(DARK_BLUE);
+    it('returns NEUTRAL_ARROW_COLOR when gameCount < MIN_GAMES_FOR_COLOR (10), regardless of score', () => {
+      expect(getArrowColor(0.65, 9, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.30, 9, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.50, 9, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.99, 5, 'high')).toBe(NEUTRAL_ARROW_COLOR);
     });
   });
 
   describe('low-confidence fallback', () => {
-    it('returns DARK_BLUE when confidence is "low", regardless of score or sample size', () => {
-      expect(getArrowColor(0.65, 20, 'low')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.30, 20, 'low')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.80, 100, 'low')).toBe(DARK_BLUE);
+    it('returns NEUTRAL_ARROW_COLOR when confidence is "low", regardless of score or sample size', () => {
+      expect(getArrowColor(0.65, 20, 'low')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.30, 20, 'low')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.80, 100, 'low')).toBe(NEUTRAL_ARROW_COLOR);
     });
   });
 
   describe('reliable + neutral (0.45..0.55) zone', () => {
-    it('returns DARK_BLUE at exact pivot 0.50', () => {
-      expect(getArrowColor(0.50, 20, 'high')).toBe(DARK_BLUE);
+    it('returns NEUTRAL_ARROW_COLOR at exact pivot 0.50', () => {
+      expect(getArrowColor(0.50, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
     });
 
-    it('returns DARK_BLUE just above 0.45 and just below 0.55', () => {
-      expect(getArrowColor(0.451, 20, 'high')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.499, 20, 'high')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.501, 20, 'high')).toBe(DARK_BLUE);
-      expect(getArrowColor(0.549, 20, 'high')).toBe(DARK_BLUE);
+    it('returns NEUTRAL_ARROW_COLOR just above 0.45 and just below 0.55', () => {
+      expect(getArrowColor(0.451, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.499, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.501, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.549, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
     });
   });
 
@@ -64,7 +64,7 @@ describe('getArrowColor (3-zone score palette, low-data → blue)', () => {
     it('returns the score-zone color when confidence is "medium" and sample is reliable', () => {
       expect(getArrowColor(0.60, 20, 'medium')).toBe(DARK_GREEN);
       expect(getArrowColor(0.40, 20, 'medium')).toBe(DARK_RED);
-      expect(getArrowColor(0.50, 20, 'medium')).toBe(DARK_BLUE);
+      expect(getArrowColor(0.50, 20, 'medium')).toBe(NEUTRAL_ARROW_COLOR);
     });
   });
 });
@@ -78,8 +78,8 @@ describe('arrowSortKey', () => {
     expect(arrowSortKey(DARK_RED)).toBe(1);
   });
 
-  it('returns 2 for DARK_BLUE', () => {
-    expect(arrowSortKey(DARK_BLUE)).toBe(2);
+  it('returns 2 for NEUTRAL_ARROW_COLOR', () => {
+    expect(arrowSortKey(NEUTRAL_ARROW_COLOR)).toBe(2);
   });
 
   it('returns 3 for unknown color string (fallback)', () => {
@@ -95,15 +95,15 @@ describe('arrowSortKey', () => {
     expect(arrowSortKey(getArrowColor(0.20, 20, 'high'))).toBe(1);
   });
 
-  it('blue color from getArrowColor (in-between) has sort key 2', () => {
+  it('neutral color from getArrowColor (in-between) has sort key 2', () => {
     expect(arrowSortKey(getArrowColor(0.50, 20, 'high'))).toBe(2);
   });
 
-  it('blue color from getArrowColor (low-data) has sort key 2', () => {
+  it('neutral color from getArrowColor (low-data) has sort key 2', () => {
     expect(arrowSortKey(getArrowColor(0.65, 9, 'high'))).toBe(2);
   });
 
-  it('blue color from getArrowColor (low-confidence) has sort key 2', () => {
+  it('neutral color from getArrowColor (low-confidence) has sort key 2', () => {
     expect(arrowSortKey(getArrowColor(0.65, 100, 'low'))).toBe(2);
   });
 });

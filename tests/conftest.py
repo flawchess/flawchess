@@ -36,13 +36,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import settings
 from app.models.user import User
 
-# Phase 61: expose the seeded_user fixture without requiring test modules to
+# Expose the seeded_user fixture without requiring test modules to
 # import it by name (import + parameter-name pytest fixture use triggers
 # ruff F811 "redefined unused import" otherwise).
 pytest_plugins = ["tests.seed_fixtures"]
 
 # ---------------------------------------------------------------------------
-# Per-run database isolation — Phase 100
+# Per-run database isolation
 #
 # OVERVIEW
 # --------
@@ -57,8 +57,8 @@ pytest_plugins = ["tests.seed_fixtures"]
 #     The refresh is serialized across concurrent runs by
 #     pg_advisory_lock(_TEMPLATE_ADVISORY_LOCK_KEY): only the first run that
 #     acquires the advisory lock performs the drop+remigrate; the others block
-#     on the lock and then re-check drift after acquiring it (Pitfall 4 in
-#     RESEARCH.md) so they skip the refresh and proceed directly to cloning.
+#     on the lock and then re-check drift after acquiring it, so they skip the
+#     refresh and proceed directly to cloning.
 #
 # (c) Killed runs self-heal: a DROP DATABASE IF EXISTS before each CREATE
 #     DATABASE acts as a stale-DB reaper — residue from a previously killed
@@ -82,14 +82,14 @@ _TEMPLATE_DB_NAME: str = "flawchess_test_template"
 # underscore; must start with a letter or underscore; <=63 bytes).  DB names
 # cannot be parameter-bound in DDL, so they are interpolated as raw SQL
 # identifiers — this guard ensures an explicit TEST_DB_NAME override cannot
-# carry a statement-injection payload (threat model T-100-01 / review WR-02).
+# carry a statement-injection payload.
 _DB_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
 def _get_run_db_name() -> str:
     """Derive the per-run / per-worker database name.
 
-    Priority order (CONTEXT.md Claude's Discretion):
+    Priority order:
       1. TEST_DB_NAME env var — explicit override
       2. PYTEST_XDIST_WORKER env var — set by pytest-xdist to "gw0", "gw1", …
       3. os.getpid() fallback for serial (non-xdist) runs
@@ -98,7 +98,7 @@ def _get_run_db_name() -> str:
     DB names derive only from trusted sources (fixed prefix + xdist-set env
     var / PID / dev-controlled env var) — never from user/request input.
     The dev-controlled TEST_DB_NAME override is validated as a PostgreSQL
-    identifier before it is interpolated into DDL (threat model T-100-01).
+    identifier before it is interpolated into DDL.
     """
     explicit = os.environ.get("TEST_DB_NAME")
     if explicit:
@@ -135,12 +135,12 @@ def _run_alembic_upgrade(template_url: str, original_url: str) -> None:
     _ensure_template_fresh loop would raise RuntimeError; calling it from the
     sync test_engine fixture (the previous approach) released the advisory lock
     before migration finished, letting a concurrent worker drop the half-migrated
-    template (review CR-01).  Threading keeps the migration inside the locked
+    template.  Threading keeps the migration inside the locked
     critical section.
 
     MANDATORY: patch settings.DATABASE_URL because alembic/env.py overwrites
-    AlembicConfig's sqlalchemy.url from settings.DATABASE_URL at load time
-    (RESEARCH Pitfall 1).  Restored in finally.
+    AlembicConfig's sqlalchemy.url from settings.DATABASE_URL at load time.
+    Restored in finally.
     """
     settings.DATABASE_URL = template_url
     try:
@@ -174,9 +174,9 @@ async def _ensure_template_fresh(maint_dsn: str) -> None:
     The advisory lock serializes concurrent refreshes cluster-wide: only the
     first run performs the drop+recreate+migrate; the others block on the lock,
     then re-check drift after acquiring it and find the template already up to
-    date (Pitfall 4 re-check).
+    date.
 
-    CR-01 fix: the Alembic migration runs INSIDE the lock (via asyncio.to_thread
+    The Alembic migration runs INSIDE the lock (via asyncio.to_thread
     so Alembic's internal asyncio.run() gets a clean worker-thread loop).  The
     previous approach returned the template URL and migrated in the sync caller
     AFTER this coroutine closed its lock-holding connection — that released the
@@ -185,7 +185,7 @@ async def _ensure_template_fresh(maint_dsn: str) -> None:
     Holding the lock across the migration closes that race.
 
     asyncpg connections are autocommit by default — no BEGIN is injected, so
-    CREATE DATABASE / DROP DATABASE work natively (RESEARCH Pattern 1).
+    CREATE DATABASE / DROP DATABASE work natively.
     """
     head = _alembic_head()
     original_url = settings.DATABASE_URL
@@ -198,7 +198,7 @@ async def _ensure_template_fresh(maint_dsn: str) -> None:
         await admin.execute(f"SELECT pg_advisory_lock({_TEMPLATE_ADVISORY_LOCK_KEY})")
         try:
             # Re-check AFTER acquiring the lock — a concurrent run may have
-            # already refreshed the template while we were waiting (Pitfall 4).
+            # already refreshed the template while we were waiting.
             tmpl_exists = await admin.fetchval(
                 "SELECT 1 FROM pg_database WHERE datname = $1", _TEMPLATE_DB_NAME
             )
@@ -222,7 +222,7 @@ async def _ensure_template_fresh(maint_dsn: str) -> None:
 
             if not tmpl_exists or tmpl_version != head:
                 # Terminate lingering connections to the template before DROP
-                # (RESEARCH Pitfall 3 / Pattern 5 — ObjectInUseError otherwise).
+                # (ObjectInUseError otherwise).
                 await admin.execute(
                     """SELECT pg_terminate_backend(pid) FROM pg_stat_activity
                        WHERE datname = $1 AND pid <> pg_backend_pid()""",
@@ -230,7 +230,7 @@ async def _ensure_template_fresh(maint_dsn: str) -> None:
                 )
                 await admin.execute(f"DROP DATABASE IF EXISTS {_TEMPLATE_DB_NAME}")
                 await admin.execute(f"CREATE DATABASE {_TEMPLATE_DB_NAME} TEMPLATE template1")
-                # Migrate INSIDE the lock (CR-01).  asyncio.to_thread gives
+                # Migrate INSIDE the lock.  asyncio.to_thread gives
                 # Alembic's env.py asyncio.run() a fresh loop while the
                 # lock-holding `admin` connection stays open in this loop.
                 await asyncio.to_thread(_run_alembic_upgrade, template_url, original_url)
@@ -244,7 +244,7 @@ async def _create_run_db(maint_dsn: str, run_db_name: str) -> None:
     """Drop any stale run DB then clone a fresh one from the template.
 
     The DROP DATABASE IF EXISTS is the stale-DB reaper — it cleans up residue
-    from killed pytest runs so they self-heal on the next invocation (SC-2).
+    from killed pytest runs so they self-heal on the next invocation.
     asyncpg autocommit ensures both DDL statements run outside a transaction.
     """
     admin = await asyncpg.connect(maint_dsn)
@@ -262,8 +262,7 @@ async def _drop_run_db(maint_dsn: str, run_db_name: str) -> None:
     Called AFTER engine.sync_engine.dispose() to close the SQLAlchemy pool.
     Uses WITH (FORCE) (PostgreSQL 14+) to terminate any residual connections
     that survived the pool dispose — e.g. async connections from session-scoped
-    pytest-asyncio fixtures that outlive the sync test_engine teardown point
-    (RESEARCH Assumption A3 / Pitfall 2).
+    pytest-asyncio fixtures that outlive the sync test_engine teardown point.
     """
     admin = await asyncpg.connect(maint_dsn)
     try:
@@ -279,7 +278,7 @@ def _quiet_connection_lost(loop: asyncio.AbstractEventLoop, context: dict[str, o
     which server-side terminates any asyncpg connection still attached to it —
     e.g. the per-run engine's pool connections (sync dispose doesn't send a
     graceful Terminate) or a session-scoped fixture connection that outlived
-    dispose (RESEARCH Assumption A3).  asyncpg raises
+    dispose.  asyncpg raises
     ConnectionError('unexpected connection_lost() call') into that connection's
     orphaned waiter future; with nothing awaiting it, asyncio's default handler
     logs it to stderr at loop close.  The drop is intentional and the session
@@ -316,21 +315,21 @@ def test_engine():
     Setup:
       1. Ensure flawchess_test_template is up to date with Alembic head
          (advisory-lock-guarded refresh; re-checked after lock acquisition).
-      2. DROP DATABASE IF EXISTS the per-run DB (stale reaper — SC-2 self-heal
+      2. DROP DATABASE IF EXISTS the per-run DB (stale reaper, self-heal
          for killed runs) then CREATE DATABASE <run_db> TEMPLATE <template>.
       3. Patch settings.DATABASE_URL to the per-run DB URL so all code that
          opens its own sessions (on_after_login, LastActivityMiddleware, etc.)
          also hits the per-run DB.
       4. Yield the async engine.
 
-    Teardown ordering is STRICT (RESEARCH Pitfall 2):
+    Teardown ordering is STRICT:
       - engine.sync_engine.dispose() FIRST (releases SQLAlchemy pool connections)
       - DROP DATABASE IF EXISTS <run_db> (fails if connections are still open)
       - Restore settings.DATABASE_URL
 
     asyncpg DDL runs via asyncio.run() throwaway loops — asyncpg pools are
     event-loop-bound so each DDL block uses its own short-lived loop
-    (RESEARCH Pattern 7, same pattern used by the old per-session table-wipe).
+    (same pattern used by the old per-session table-wipe).
     """
     original_url = settings.DATABASE_URL
     run_db_name = _get_run_db_name()
@@ -338,7 +337,7 @@ def test_engine():
 
     # Ensure the template DB exists and is at Alembic head.  The advisory-lock-
     # guarded refresh (drop + recreate + migrate) all happens inside
-    # _ensure_template_fresh under the lock (CR-01) — the migration no longer
+    # _ensure_template_fresh under the lock — the migration no longer
     # leaks out into this sync fixture.
     asyncio.run(_ensure_template_fresh(maint))
 
@@ -361,8 +360,8 @@ def test_engine():
         yield engine
     finally:
         # Teardown: dispose engine BEFORE drop (open connections block DROP
-        # DATABASE — RESEARCH Pitfall 2).  Wrapped so settings.DATABASE_URL is
-        # always restored even if dispose/drop raises (review IN-01).
+        # DATABASE).  Wrapped so settings.DATABASE_URL is
+        # always restored even if dispose/drop raises.
         try:
             engine.sync_engine.dispose()
             asyncio.run(_drop_run_db(maint, run_db_name))
@@ -392,12 +391,12 @@ def override_get_async_session(test_engine):
 
     # Patch async_session_maker everywhere it's imported, so non-DI code
     # (e.g. UserManager.on_after_login, LastActivityMiddleware, create_llm_log's
-    # D-02 own-session write path, enqueue_tier1_game) also uses the test DB.
+    # own-session write path, enqueue_tier1_game) also uses the test DB.
     original_db_session_maker = db_module.async_session_maker
     original_users_session_maker = users_module.async_session_maker
     original_activity_session_maker = activity_module.async_session_maker
     original_llm_log_repo_session_maker = llm_log_repo_module.async_session_maker
-    # Phase 118: enqueue_tier1_game opens its own session via async_session_maker
+    # enqueue_tier1_game opens its own session via async_session_maker
     # captured at module import time.  Patch the service module binding so enqueue
     # calls during router tests hit the test DB.
     original_eval_queue_session_maker = eval_queue_module.async_session_maker
@@ -417,7 +416,7 @@ def override_get_async_session(test_engine):
             await session.commit()
 
     fastapi_app.dependency_overrides[get_async_session] = _test_session_generator
-    # Phase 216: /api/health probes the DB through the ``get_engine`` dependency
+    # /api/health probes the DB through the ``get_engine`` dependency
     # (its own bounded connection, not the request session), so it must be routed
     # to the per-run test engine too. Without this, any test that touches
     # /api/health outside tests/test_health.py hits the app's configured engine,
@@ -461,9 +460,9 @@ def reset_in_process_rate_limiters() -> None:
     """Clear the in-process sliding-window limiters before every test.
 
     `guest_create_limiter` (per-IP), `feedback_limiter` (per-user), and
-    `reset_password_limiter` (per-email, Phase 207) are all module-level
+    `reset_password_limiter` (per-email) are all module-level
     singletons that persist for the whole process. Under serial execution
-    (CI, D-02) every test shares one process and one ASGI test-client IP, so
+    (CI) every test shares one process and one ASGI test-client IP, so
     guest-create / feedback / reset-password calls accumulate across unrelated
     tests until the limit trips and an endpoint returns 429 instead of its
     success body (e.g. KeyError: 'access_token'). Under xdist each worker is a
@@ -531,14 +530,14 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 async def fresh_test_user(test_engine) -> AsyncGenerator[User, None]:
     """A committed User that survives outside the db_session rollback scope.
 
-    Required because create_llm_log (Phase 64 D-02) opens its OWN async session
+    Required because create_llm_log opens its OWN async session
     via async_session_maker() and commits independently — the rollback-scoped
     db_session fixture cannot observe its writes, and rows inserted against a
     user_id FK must point at a user that actually exists in the DB, not one
     that will disappear at transaction rollback.
 
     On teardown, the user is deleted (not rolled back). ON DELETE CASCADE on
-    llm_logs.user_id (Phase 64 migration) removes any log rows created during
+    llm_logs.user_id removes any log rows created during
     the test in the same teardown step.
     """
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -558,7 +557,7 @@ async def fresh_test_user(test_engine) -> AsyncGenerator[User, None]:
 
 @pytest_asyncio.fixture(scope="session")
 async def engine_started():
-    """Start Stockfish once per pytest session (D-02).
+    """Start Stockfish once per pytest session.
 
     Session-scoped so the UCI process is shared across all engine wrapper tests
     instead of restarting per test. Skips silently if the resolved Stockfish

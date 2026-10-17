@@ -6,7 +6,7 @@ import type {
   InsightsAxiosError,
 } from '@/types/insights';
 
-// One cached report per user (D-04): it does not depend on any page filter, so the key
+// One cached report per user: it does not depend on any page filter, so the key
 // is constant. App.tsx invalidates the ['endgame-insights'] prefix on import completion
 // (a refetch only; the server never drops an existing report after an import).
 const CACHED_ENDGAME_INSIGHTS_KEY = ['endgame-insights', 'cached'] as const;
@@ -18,13 +18,13 @@ const ENDGAME_INSIGHTS_MUTATION_KEY = ['endgame-insights', 'generate'] as const;
 /**
  * POST /api/insights/endgame — generate LLM-produced Endgame Insights report.
  *
- * Sends no query parameters: the report is filter-free (D-04), so Generate never
+ * Sends no query parameters: the report is filter-free, so Generate never
  * reads or resets the page filters.
  *
  * On success the result is written into the cached-report query, which is the single
- * source of truth for the rendered report. Phase 238 review (FE-WR-01): the result used
- * to live in component state only, so a Stats-tab remount fell back to the stale
- * pre-Generate cache entry and the freshly generated report vanished.
+ * source of truth for the rendered report. Don't keep the result in component
+ * state: a Stats-tab remount would fall back to the stale pre-Generate cache
+ * entry and the freshly generated report would vanish.
  *
  * Error capture: global MutationCache.onError in lib/queryClient.ts handles Sentry.
  * Do NOT add Sentry.captureException in consumers of this hook.
@@ -49,7 +49,7 @@ export function useEndgameInsights() {
  * Returns null on 404 (no cache row) so callers can render the empty state
  * silently. Other axios errors propagate. The endpoint never invokes the LLM
  * and never consumes rate-limit budget, so it is safe to fire on every page
- * mount. Takes no filters and uses one constant query key (D-04).
+ * mount. Takes no filters and uses one constant query key.
  */
 export function useCachedEndgameInsights() {
   return useQuery<EndgameInsightsResponse | null>({

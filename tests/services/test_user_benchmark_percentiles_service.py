@@ -1,16 +1,14 @@
 """Unit + real-DB tests for user_benchmark_percentiles_service.
 
-Phase 94.4 Plan 05b rewrites the service to consume the cohort CDF artifact
+The service consumes the cohort CDF artifact
 (``COHORT_PERCENTILE_CDF`` via ``interpolate_cohort_percentile``) and the
-per-(user, TC) median rating anchor (``user_rating_anchors``). The post-94.3
-``STAGE_B_METRICS`` 12-tuple retires; Stage B now iterates the 10-tuple
-``STAGE_B_METRIC_FAMILIES`` × the user's above-floor TCs (7 Phase-94.4
-families + 3 Phase-99 raw-rate families).
+per-(user, TC) median rating anchor (``user_rating_anchors``). Stage B
+iterates the 10-tuple ``STAGE_B_METRIC_FAMILIES`` × the user's above-floor
+TCs (7 core families + 3 raw-rate families).
 
-Phase 94.4 Plan 10 (D-12 Reversal Amendment) replaces T1-T4/T10 (Lichess-
-precedence schema) with B1-B7 (blended-anchor schema).
+The anchor tests (B1-B7) cover the blended-anchor schema.
 
-Mock test coverage (T5-T9 — unchanged from Plan 05b):
+Mock test coverage (T5-T9):
 
   T5.  Stage A computes score_gap percentile ONLY for TCs where an anchor exists.
   T6.  Stage B fans out across STAGE_B_METRIC_FAMILIES (10-tuple) × anchored TCs.
@@ -18,7 +16,7 @@ Mock test coverage (T5-T9 — unchanged from Plan 05b):
   T8.  Suppressed cohort-CDF cell still upserts with ``percentile=None``.
   T9.  Sentry ``capture_exception`` fires on a metric-compute failure.
 
-Real-DB test coverage (B1-B7 — blended anchor, Plan 10):
+Real-DB test coverage (B1-B7 — blended anchor):
 
   B1.  Mixed-platform user: blended anchor between per-platform medians;
        n_chesscom_games, n_lichess_games, both native medians populated.
@@ -77,12 +75,12 @@ _OPP_RATING_OFFSET: int = 30  # within ±100 equal-footing tolerance
 
 
 def test_stage_a_metric_is_score_gap() -> None:
-    """Plan 05b: STAGE_A_METRIC stays ``score_gap`` (eval-independent)."""
+    """STAGE_A_METRIC stays ``score_gap`` (eval-independent)."""
     assert STAGE_A_METRIC == "score_gap"
 
 
 def test_stage_b_metric_families_is_10_tuple() -> None:
-    """STAGE_B_METRIC_FAMILIES is the 10-tuple (7 Phase-94.4 + 3 Phase-99 rate families)."""
+    """STAGE_B_METRIC_FAMILIES is the 10-tuple (7 core + 3 raw-rate families)."""
     assert isinstance(STAGE_B_METRIC_FAMILIES, tuple)
     assert len(STAGE_B_METRIC_FAMILIES) == 10
     assert STAGE_B_METRIC_FAMILIES == (
@@ -93,7 +91,7 @@ def test_stage_b_metric_families_is_10_tuple() -> None:
         "time_pressure_score_gap",
         "clock_gap",
         "net_flag_rate",
-        # Phase 99: raw-rate families
+        # Raw-rate families
         "conversion_rate",
         "parity_rate",
         "recovery_rate",
@@ -106,7 +104,7 @@ def test_stage_b_metric_families_excludes_score_gap() -> None:
 
 
 def test_legacy_stage_b_metrics_constant_removed() -> None:
-    """Plan 05b retires the post-94.3 12-tuple ``STAGE_B_METRICS`` constant.
+    """The 12-tuple ``STAGE_B_METRICS`` constant is retired.
 
     Acceptance criterion: ``grep STAGE_B_METRICS\\b`` returns 0 hits in the
     service. Mirror the criterion at the Python level.
@@ -157,7 +155,7 @@ def _make_anchor_row(
     chesscom_median_native: int | None = None,
     lichess_median_native: int | None = 1700,
 ) -> Any:
-    """Construct a RatingAnchorRow with sensible defaults (blended schema, Plan 09/10)."""
+    """Construct a RatingAnchorRow with sensible defaults (blended schema)."""
     from app.repositories.user_rating_anchors_repository import RatingAnchorRow
 
     return RatingAnchorRow(
@@ -193,7 +191,7 @@ async def test_compute_stage_a_score_gap_only_runs_for_anchored_tcs(
     ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
-    # Phase 99.1: load_cohort_cells is now called once per import inside
+    # load_cohort_cells is now called once per import inside
     # compute_stage_a. Mock it to return an empty cohort dict (tests only
     # care that the per-TC upsert loop runs the right number of times).
     load_mock_a = AsyncMock(return_value={})
@@ -223,7 +221,7 @@ async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
 
     Setup: 2 anchored TCs (bullet, blitz). Expected:
       len(STAGE_B_METRIC_FAMILIES) × 2 = 10 × 2 = 20 upsert calls
-      (Phase 99 added 3 rate families, extending 7-tuple → 10-tuple).
+      (Three rate families extend the 7-tuple to a 10-tuple).
     """
     fake_maker = _FakeSessionMaker()
     test_user_id = 99501
@@ -244,7 +242,7 @@ async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
     ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
-    # Phase 99.1: load_cohort_cells is now called once per import inside
+    # load_cohort_cells is now called once per import inside
     # compute_stage_b. Mock it to return an empty cohort dict (tests only
     # care that the per-(family, TC) upsert loop runs the right number of times).
     load_mock_b = AsyncMock(return_value={})
@@ -485,7 +483,7 @@ def _make_game_for_anchor_test(
         base_seconds = 1800
 
     # chess.com Daily games are bucketed `classical` by the import pipeline
-    # but their time_control_str starts with "1/" (RESEARCH Pitfall 11).
+    # but their time_control_str starts with "1/".
     if is_chesscom_daily:
         tc_str = "1/86400"
     else:
@@ -545,9 +543,7 @@ async def _seed_anchor_games(
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Real-DB tests for compute_anchors_for_user (B1-B7).
-# D-12 Reversal Amendment — blended anchor (Plan 10).
-#
-# Replaces T1-T4/T10 (Lichess-precedence schema) which are retired.
+# Blended anchor.
 # B6 (regression check) verifies that old schema fields no longer exist.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -558,7 +554,7 @@ _N_MIXED_GAMES: int = 50  # per platform; well above 30-floor
 _N_PURE_GAMES: int = 100
 _N_PURE_CHESSCOM: int = 100
 # Native chess.com BULLET rating for the pure-chess.com bullet anchor test.
-# Post quick-260529-js1 the conversion is keyed on native chess.com ratings for
+# The conversion is keyed on native chess.com ratings for
 # the bucket's source TC, so this is treated as a native bullet rating (inverted
 # via Table 1's bullet column, then chained to lichess-equivalent).
 _USER_RATING_BULLET: int = 1800
@@ -568,7 +564,7 @@ _BELOW_FLOOR_GAMES: int = 5  # pooled 5+5=10 < 30
 async def test_b1_mixed_platform_user_blended_anchor(test_engine) -> None:  # noqa: ANN001
     """B1: Mixed-platform user → blended anchor between per-platform medians.
 
-    D-12 Reversal Amendment: 50 chess.com blitz @ 2200 + 50 lichess blitz @
+    Blended anchor: 50 chess.com blitz @ 2200 + 50 lichess blitz @
     1900. The blended anchor must be between 1900 and the converted chess.com
     2200, n_chesscom_games=50, n_lichess_games=50, chesscom_median_native=2200,
     lichess_median_native=1900.
@@ -668,7 +664,7 @@ async def test_b3_pure_chesscom_user_anchor(test_engine) -> None:  # noqa: ANN00
     """B3: Pure-chess.com user → chesscom_median_native populated, lichess_median_native None.
 
     anchor_rating is the lichess-equivalent of the chess.com median via the
-    nearest-anchor lookup. Post quick-260529-js1 the lookup is keyed on NATIVE
+    nearest-anchor lookup. The lookup is keyed on NATIVE
     chess.com ratings for the bucket's source TC (bullet here), so the expected
     value is the nearest-anchor pick on the composed bullet grid (which the SQL
     LATERAL join mirrors via ORDER BY ABS(anchor - rating) LIMIT 1) — NOT the old
@@ -801,7 +797,7 @@ def test_b6_legacy_assertion_retirement() -> None:
     """B6: No test references old schema fields (source_platform, chesscom_raw_rating,
     _user_has_lichess_games_in_tc, _compute_median_anchor_for_platform).
 
-    These symbols are deleted in Plan 10. Verified at import time.
+    These symbols are deleted. Verified at import time.
     """
     assert not hasattr(svc, "_user_has_lichess_games_in_tc"), (
         "_user_has_lichess_games_in_tc must not exist on the service module"

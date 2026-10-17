@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * LibraryGameCard "Pasted" badge tests — Phase 208 (D-13, PASTE-05/09).
+ * LibraryGameCard "Pasted" badge tests.
  *
  * A platform='pgn' game gets a text "Pasted" badge in the platform slot
  * (frontend/src/components/results/LibraryGameCard.tsx's platformIconAndLink
@@ -110,7 +110,7 @@ function makeGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
   };
 }
 
-describe('LibraryGameCard "Pasted" badge (Phase 208, D-13)', () => {
+describe('LibraryGameCard "Pasted" badge', () => {
   it('renders the Pasted badge with the text "Pasted" for a platform=pgn game', () => {
     renderCard(
       <LibraryGameCard game={makeGame({ platform: 'pgn', platform_url: null })} />,

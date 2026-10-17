@@ -1,4 +1,4 @@
-"""Unit tests for the shared `_SlidingWindowRateLimiter` (F-17/SEED-161).
+"""Unit tests for the shared `_SlidingWindowRateLimiter`.
 
 Exercises the shared class directly, on a fresh instance per test rather than
 any module-level singleton, so no test leaks state into another. Time is

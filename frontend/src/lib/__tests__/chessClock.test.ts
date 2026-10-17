@@ -1,19 +1,18 @@
 /**
- * chessClock.ts unit tests (Phase 169 Plan 01, amended Plan 08 gap closure).
+ * chessClock.ts unit tests.
  *
  * All functions under test are pure and synchronous, so no fake timers or DOM
  * are needed — every "elapsed"/"pause"/"deadline" scenario is driven by
  * explicit millisecond inputs rather than real Date.now()/setInterval calls,
- * matching how useBotGame (plan 04, amended plan 09) actually calls these
+ * matching how useBotGame actually calls these
  * helpers with its own wall-clock anchors.
  *
- * Behaviors verified (RESEARCH.md Validation Architecture test map, amended
- * by 169-CONTEXT.md's 2026-07-13 Decision Amendments):
- * - PLAY-03: Fischer increment application
- * - PLAY-04: wall-clock elapsed delta + visibility-pause anchor shift
- * - D-15/D-16: the bot's clock is honest (no synthetic debit, no never-flag
+ * Behaviors verified:
+ * - Fischer increment application
+ * - wall-clock elapsed delta + visibility-pause anchor shift
+ * - the bot's clock is honest (no synthetic debit, no never-flag
  *   clamp) and `computeThinkDeadlineMs` derives its per-move think deadline
- * - D-07: low-time tenths display formatting
+ * - low-time tenths display formatting
  */
 
 import { describe, it, expect } from 'vitest';
@@ -35,7 +34,7 @@ import {
   BOT_THINK_DEADLINE_MAX_MS,
 } from '../chessClock';
 
-describe('applyIncrementMs (PLAY-03 Fischer increment)', () => {
+describe('applyIncrementMs (Fischer increment)', () => {
   it('adds the increment exactly to the mover remaining time', () => {
     expect(applyIncrementMs(5000, 2000)).toBe(7000);
   });
@@ -45,7 +44,7 @@ describe('applyIncrementMs (PLAY-03 Fischer increment)', () => {
   });
 });
 
-describe('computeElapsedMs (PLAY-04 wall-clock delta)', () => {
+describe('computeElapsedMs (wall-clock delta)', () => {
   it('returns now - anchor regardless of how many ticks elapsed', () => {
     // No setInterval involved at all — a caller could have "ticked" any
     // number of times between anchor and now, the result only depends on
@@ -58,7 +57,7 @@ describe('computeElapsedMs (PLAY-04 wall-clock delta)', () => {
   });
 });
 
-describe('visibility pause (PLAY-04)', () => {
+describe('visibility pause', () => {
   it('charges zero time for a 60s hidden interval', () => {
     const turnStartedAt = 1_000_000;
     const hiddenForMs = 60_000;
@@ -85,8 +84,8 @@ describe('visibility pause (PLAY-04)', () => {
   });
 });
 
-describe('computeThinkDeadlineMs (D-16 per-move think deadline)', () => {
-  it('at a full 5+3 clock, comfortably exceeds the 168.5-04 measured ~5.4s median search', () => {
+describe('computeThinkDeadlineMs (per-move think deadline)', () => {
+  it('at a full 5+3 clock, comfortably exceeds the measured ~5.4s median search', () => {
     const MEASURED_MEDIAN_SEARCH_MS = 5400;
     expect(computeThinkDeadlineMs(300_000, 3_000)).toBeGreaterThan(MEASURED_MEDIAN_SEARCH_MS);
   });
@@ -125,7 +124,7 @@ describe('computeThinkDeadlineMs (D-16 per-move think deadline)', () => {
   });
 });
 
-describe('computeRevealDelayMs (D-03 reveal-delay floor)', () => {
+describe('computeRevealDelayMs (reveal-delay floor)', () => {
   it('returns the minimum when rng returns 0', () => {
     expect(computeRevealDelayMs(() => 0)).toBe(REVEAL_DELAY_MIN_MS);
   });
@@ -140,7 +139,7 @@ describe('computeRevealDelayMs (D-03 reveal-delay floor)', () => {
   });
 });
 
-describe('computeChargeableElapsedMs (D-20 in-progress pause)', () => {
+describe('computeChargeableElapsedMs (in-progress pause)', () => {
   it('returns now - anchor when the tab is visible (pausedAtMs === null)', () => {
     expect(computeChargeableElapsedMs(1000, null, 33000)).toBe(32000);
   });
@@ -177,7 +176,7 @@ describe('computeChargeableElapsedMs (D-20 in-progress pause)', () => {
   });
 });
 
-describe('hasFlaggedOnDebit (D-15 honest flag)', () => {
+describe('hasFlaggedOnDebit (honest flag)', () => {
   it('flags when the debit exceeds the remaining time', () => {
     expect(hasFlaggedOnDebit(3000, 6600)).toBe(true);
   });
@@ -191,20 +190,20 @@ describe('hasFlaggedOnDebit (D-15 honest flag)', () => {
   });
 });
 
-describe('fold (Phase 170 D-01/D-02 leave/resume clock-fold asymmetry)', () => {
-  it('D-01: folds the elapsed think time into the active base when the user is on move (white)', () => {
+describe('fold (leave/resume clock-fold asymmetry)', () => {
+  it('folds the elapsed think time into the active base when the user is on move (white)', () => {
     const bases = { white: 300_000, black: 300_000 };
     const folded = foldClockBasesForSnapshot(bases, 'white', 'white', 40_000);
     expect(folded).toEqual({ white: 260_000, black: 300_000 });
   });
 
-  it('D-01: folds only the active base when the user is on move as black', () => {
+  it('folds only the active base when the user is on move as black', () => {
     const bases = { white: 300_000, black: 300_000 };
     const folded = foldClockBasesForSnapshot(bases, 'black', 'black', 5_000);
     expect(folded).toEqual({ white: 300_000, black: 295_000 });
   });
 
-  it("D-02: does NOT fold on the bot's turn — the bot's interrupted think is refunded, base written as of its last commit", () => {
+  it("does NOT fold on the bot's turn — the bot's interrupted think is refunded, base written as of its last commit", () => {
     const bases = { white: 300_000, black: 300_000 };
     const folded = foldClockBasesForSnapshot(bases, 'black', 'white', 40_000);
     expect(folded).toEqual({ white: 300_000, black: 300_000 });
@@ -230,7 +229,7 @@ describe('fold (Phase 170 D-01/D-02 leave/resume clock-fold asymmetry)', () => {
   });
 });
 
-describe('isLowTime / formatClockLabel (D-07 low-time tenths display)', () => {
+describe('isLowTime / formatClockLabel (low-time tenths display)', () => {
   it('is not low-time exactly at the threshold (strict less-than)', () => {
     expect(isLowTime(LOW_TIME_THRESHOLD_MS)).toBe(false);
     expect(isLowTime(LOW_TIME_THRESHOLD_MS - 1)).toBe(true);

@@ -1,11 +1,11 @@
-"""Tests for app.services.push_send (Phase 201, PUSH-02/PUSH-04, T-201-02).
+"""Tests for app.services.push_send.
 
 Coverage:
 - Status-branch table (one test per status, mirrors test_chesscom_client.py's
   granularity): 201/200 -> no prune, no Sentry; 404/410 -> prune, WARNING log
-  + exactly one `sentry_sdk.capture_message` at `level="info"` (SEED-138) and
+  + exactly one `sentry_sdk.capture_message` at `level="info"` and
   zero `capture_exception` calls, whose message carries no status-code digits
-  and no endpoint PATH (host is deliberately included, SEED-138 D-02);
+  and no endpoint PATH (host is deliberately included);
   400/401/403/413/429/500/503 -> no prune, exactly one Sentry
   `capture_exception` call whose message carries no status-code digits (the
   code lives in set_context only).
@@ -13,20 +13,20 @@ Coverage:
   exception escapes.
 - test_no_key_leak_* : neither error branch ever leaks the configured VAPID
   private key into a captured exception, its str()/repr(), or any
-  `sentry_sdk.set_context` value (T-201-02).
+  `sentry_sdk.set_context` value.
 - send_to_user: fan-out counts, idempotent pruning across two calls, and the
   zero-result short-circuit when VAPID is unconfigured.
-- Phase 204 D-01/D-02: the `ttl` header carries a caller-supplied
+- The `ttl` header carries a caller-supplied
   `ttl_seconds` value, and defaults to a non-zero module constant when
   omitted (never the old hardcoded "0").
-- SEED-138: the prune capture is downgraded to `level="info"` via
+- The prune capture is downgraded to `level="info"` via
   `capture_message` (never `capture_exception`), and its context carries
   `push_host` (endpoint host only) plus the device's `user_agent`/`user_id`
   read from the subscription row before it is deleted.
 
 Uses dependency injection for `send_to_subscription`'s `client` parameter
-(the signature already takes it -- cleaner than patching `httpx.AsyncClient`,
-per 201-PATTERNS.md Pattern 4) and patches `httpx.AsyncClient.post` for
+(the signature already takes it -- cleaner than patching `httpx.AsyncClient`)
+and patches `httpx.AsyncClient.post` for
 `send_to_user`, which builds its own client internally and is never driven
 through an outer ASGI-transport client in this file.
 """
@@ -60,8 +60,8 @@ _ENDPOINT = "https://fcm.googleapis.com/fcm/send/status-branch-endpoint"
 _PAYLOAD: dict[str, object] = {"title": "Time to train", "body": "Day 1 is waiting."}
 
 # Statuses that mean "the push service will never accept this endpoint again"
-# (PUSH-02) -- everything else is either a bug in our own request (4xx) or
-# transient (429/5xx), per D-04.
+# -- everything else is either a bug in our own request (4xx) or
+# transient (429/5xx).
 _PRUNE_STATUSES = (404, 410)
 _SUCCESS_STATUSES = (200, 201)
 _ERROR_STATUSES = (400, 401, 403, 413, 429, 500, 503)
@@ -140,7 +140,7 @@ async def test_send_to_subscription_status_404_prunes_and_captures() -> None:
             client, endpoint=_ENDPOINT, p256dh=p256dh, auth=auth, payload=_PAYLOAD
         )
     assert should_prune is True
-    # SEED-138: prune is graded info via capture_message, never capture_exception.
+    # Prune is graded info via capture_message, never capture_exception.
     assert mock_capture_message.call_count == 1
     assert mock_capture_message.call_args.kwargs["level"] == "info"
     assert mock_capture_exception.call_count == 0
@@ -159,7 +159,7 @@ async def test_send_to_subscription_status_410_prunes_and_captures() -> None:
             client, endpoint=_ENDPOINT, p256dh=p256dh, auth=auth, payload=_PAYLOAD
         )
     assert should_prune is True
-    # SEED-138: prune is graded info via capture_message, never capture_exception.
+    # Prune is graded info via capture_message, never capture_exception.
     assert mock_capture_message.call_count == 1
     assert mock_capture_message.call_args.kwargs["level"] == "info"
     assert mock_capture_exception.call_count == 0
@@ -190,7 +190,7 @@ async def _assert_prune_status_captures_no_digits(status_code: int) -> None:
         )
     assert should_prune is True
     assert mock_capture.call_count == 1
-    # SEED-138: the captured payload is now a plain string positional
+    # The captured payload is now a plain string positional
     # argument (capture_message), not an exception object. Mirrors
     # _assert_error_status_captures_once: the status code must never appear
     # in the message itself -- it lives only in sentry_sdk.set_context
@@ -219,8 +219,8 @@ async def _assert_prune_status_leaks_no_endpoint(
     client = _mock_client(status_code)
     # The endpoint's full PATH -- not just its last segment (rsplit would
     # have missed a partial leak of an earlier path component) -- because
-    # SEED-138 deliberately starts sending the endpoint's HOST in the
-    # context (push_host, D-02). A host-only value is safe (it is not the
+    # we deliberately send the endpoint's HOST in the
+    # context (push_host). A host-only value is safe (it is not the
     # bearer capability) and must NOT trip this assertion; only the path is
     # forbidden.
     endpoint_path = urlsplit(_ENDPOINT).path
@@ -268,7 +268,7 @@ async def test_send_to_subscription_status_410_leaks_no_endpoint(
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("vapid_keypair")
 async def test_send_to_subscription_prune_context_carries_endpoint_host() -> None:
-    """SEED-138 D-02: `push_host` in the prune context equals the endpoint's
+    """`push_host` in the prune context equals the endpoint's
     host -- sent deliberately, unlike the forbidden endpoint path."""
     p256dh, auth = _fresh_subscription_keys()
     client = _mock_client(410)
@@ -353,7 +353,7 @@ async def test_send_to_subscription_transport_error_captures_once_no_escape() ->
 
 
 # ---------------------------------------------------------------------------
-# T-201-02: no key material ever reaches Sentry
+# no key material ever reaches Sentry
 # ---------------------------------------------------------------------------
 
 
@@ -418,7 +418,7 @@ async def test_no_key_leak_on_transport_error_branch(monkeypatch: pytest.MonkeyP
 
 
 # ---------------------------------------------------------------------------
-# Phase 204 D-01/D-02: ttl_seconds threading through send_to_subscription
+# ttl_seconds threading through send_to_subscription
 # ---------------------------------------------------------------------------
 
 
@@ -473,7 +473,7 @@ async def test_send_to_user_fan_out_prunes_only_the_410_not_the_500(
 ) -> None:
     """3 subscriptions: 201 (delivered), 410 (prune), 500 (transient, leave alone).
 
-    Proves both halves of PUSH-02's prune contract in one fan-out: the 410
+    Proves both halves of the prune contract in one fan-out: the 410
     response deletes exactly its row, and the 500 response deletes none.
     """
     user = User(email="push-fanout@example.com", hashed_password="fakehash")
@@ -516,7 +516,7 @@ async def test_send_to_user_prune_is_idempotent_across_two_calls(
     assert first.pruned == 1
 
     # Second pass: the subscription is already gone, so nothing is attempted
-    # and nothing raises -- this IS the idempotency contract (PUSH-02).
+    # and nothing raises -- this IS the idempotency contract.
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post_2:
         second = await push_send.send_to_user(db_session, user_id=user.id, payload=_PAYLOAD)
 
@@ -530,7 +530,7 @@ async def test_send_to_user_prune_is_idempotent_across_two_calls(
 async def test_send_to_user_prune_context_carries_real_user_agent_and_user_id(
     db_session: AsyncSession,
 ) -> None:
-    """SEED-138: `user_agent`/`user_id` must be read from the row while it is
+    """`user_agent`/`user_id` must be read from the row while it is
     still in hand -- `send_to_user` deletes it moments later. Driven through
     the real DB-backed fan-out (not a unit-level default) so this proves the
     ACTUAL stored user_agent lands in the context, not a placeholder."""
@@ -558,8 +558,8 @@ async def test_send_to_user_prune_context_carries_real_user_agent_and_user_id(
 @pytest.mark.asyncio
 async def test_list_subscriptions_surfaces_stored_user_agent(db_session: AsyncSession) -> None:
     """push_repository.list_subscriptions must project user_agent -- without
-    it, send_to_user has nothing to thread through to the prune context
-    (SEED-138); the row is deleted moments after it is read."""
+    it, send_to_user has nothing to thread through to the prune context; the
+    row is deleted moments after it is read."""
     distinctive_user_agent = "SEED-138-repository-probe/1.0"
     user = User(email="push-repo-user-agent@example.com", hashed_password="fakehash")
     db_session.add(user)
@@ -593,13 +593,13 @@ async def test_send_to_user_unconfigured_returns_zero_result(
     # /api/auth/register elsewhere in the suite (those commit outside this
     # fixture's rollback scope). tests/routers/test_push.py owns
     # "push-unconfigured@example.com"; under serial CI collection the two
-    # would hit ix_users_email. See CLAUDE.md: CI runs serially (D-02).
+    # would hit ix_users_email. See CLAUDE.md: CI runs serially.
     user = User(email="push-send-unconfigured@example.com", hashed_password="fakehash")
     db_session.add(user)
     await db_session.flush()
     await _seed_subscriptions(db_session, user_id=user.id, count=2)
 
-    # Force the D-03 unconfigured state rather than inheriting it from the
+    # Force the unconfigured state rather than inheriting it from the
     # machine's `.env` -- otherwise this passes only where push is NOT set up,
     # i.e. it goes red on any machine configured to actually exercise push.
     monkeypatch.setattr(config_settings, "VAPID_PRIVATE_KEY", "")
@@ -615,13 +615,13 @@ async def test_send_to_user_unconfigured_returns_zero_result(
 
 
 # ---------------------------------------------------------------------------
-# PUSH-04 evidence: requests never enters the push send code path (Task 3)
+# requests never enters the push send code path
 # ---------------------------------------------------------------------------
 
 
 def test_push_send_module_never_imports_requests_at_runtime() -> None:
     """Importing app.services.push_send in a clean interpreter never loads
-    the `requests` module -- the real PUSH-04 contract. `requests` IS present
+    the `requests` module -- the real contract. `requests` IS present
     in the resolved dependency tree (pulled in transitively by
     pydantic-ai-slim[google] -> google-genai -> google-auth[requests]), so
     asserting its absence from the tree would be false; the contract this

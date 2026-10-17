@@ -1,0 +1,31 @@
+# Plan 241-45 ledger: INVENTORY section 6 rows located in scopes/241-45.txt
+INV-L1052: APPLIED CustomRangePopover.tsx value prop doc now says in-progress (pending) range committed by FilterPanel when the popover closes; re-verified against FilterPanel pendingCustomRange state
+INV-L1053: APPLIED ImportFilterCard.tsx JSDoc moved from above SAVE_ERROR_COPY to directly above ImportFilterCard(); D-08/D-09/D-16 tags dropped
+INV-L1082: APPLIED FilterPanel.tsx resetFilterState and FILTER_DOT_FIELDS docs say `color` is the Openings board color (not "Played-as"); FILTER_DOT_FIELDS list still contains playedAs and excludes color, re-verified
+INV-L1083: APPLIED FilterPanel.tsx GLOBAL RESET comment says `color` (the Openings board color) is preserved
+INV-L1084: APPLIED FilterPanel.tsx areFiltersEqual doc now cites FILTER_DOT_FIELDS for the modified dot instead of GlobalStats-only usage
+INV-L1085: APPLIED FilterPanel.tsx NativeGamesHint docblock lost the cyclomatic-complexity extraction rationale
+INV-L1086: APPLIED FlawFilterControl.tsx tacticFamilies and showTacticFilter docs say both Library tabs set showTacticFilter (re-verified in GamesTab.tsx and FlawsTab.tsx)
+INV-L1087: APPLIED FlawFilterControl.tsx orientation doc says it renders below TacticDepthFilter (render order re-verified)
+INV-L1088: APPLIED FlawFilterControl.tsx tacticDepth doc says default High (full range); re-verified DEPTH_DEFAULT_PRESET = 'high' in lib/tacticDepth.ts
+INV-L1089: APPLIED FlawFilterControl.tsx TagFilterButton doc says definitions come from the family TagLegend popover, not per-button tooltips
+INV-L1090: APPLIED FlawFilterControl.tsx component docblock bullet order is now Tactic Depth then Orientation (matches render order)
+INV-L1091: APPLIED FlawFilterControl.tsx docblock says severity pills use SEV_* colors and tag families FAM_* colors
+INV-L1092: APPLIED FlawFilterControl.tsx comment above the showTactics alias deleted; alias kept as is
+INV-L1093: APPLIED FlawFilterControl.tsx first (stale) tactic-motif comment block deleted, second block kept without the "Gated to the Flaws tab" clause
+INV-L1094: APPLIED FlawFilterControl.tsx Context-section comment says it renders on both Library tabs
+INV-L1095: APPLIED CustomRangeDrawer.tsx header says desktop edits a pending range and commits when the popover closes
+INV-L1096: APPLIED CustomRangeDrawer.tsx comment now points at the prevValueKey block (there is no useRef)
+INV-L1097: APPLIED LibraryFilterPanel.tsx showFlawFilter prop doc and the inner comment say both Library tabs pass false and host FlawFilterControl themselves; dead showFlawFilter branch left untouched (INVENTORY 7.1 #36)
+INV-L1131: APPLIED FilterPanel.tsx NativeGamesHint comment reworded as "text-sm is the floor for UI copy (frontend/CLAUDE.md); the text-xs tooltip exception does not apply to a static disclosure line" (the row marks it M, a wording fix rather than deletion)
+INV-L1132: APPLIED FlawFilterControl.tsx severity section comment lost "Was previously inside the Context collapsible" and the Quick tag
+INV-L1133: APPLIED FlawFilterControl.tsx SeverityFilterButton doc dropped "Replaces the old neutral rectangular toggle"
+INV-L1134: APPLIED LibraryFilterPanel.tsx "D-01: the boolean severity toggle is removed" line deleted
+INV-L1051: APPLIED EvalCoverageHeader.tsx docblock says it is mounted per page (Import, Library Stats, Openings, Endgames) above the page content; re-verified with grep: Import.tsx, GlobalStats.tsx, Openings.tsx, Endgames.tsx mount it, ProtectedLayout does not
+INV-L1080: APPLIED FeedbackAskBubble.tsx header lists the hosting surfaces without the plan reference; re-verified: Import.tsx, TrainStartScreen.tsx and PersonaGrid.tsx render it
+INV-L1081: APPLIED SettingsSheetButton.tsx docblock lists the mobile header, /analysis, the bot game and the Train solve screen; re-verified with grep of <SettingsSheetButton in App.tsx, BotGameMobileLayout.tsx, TrainSolveScreen.tsx
+INV-L1098: APPLIED no-human-rated-games-state.tsx prop doc now says callers need no `?? 0` (eslint-complexity rationale deleted)
+INV-L1118: APPLIED ui/drawer.tsx @knipignore line and the plan tag removed; knip passes without it (allow/241-45.tsv entry)
+INV-L1126: APPLIED ImpersonationSelector.tsx comment is now a rule: do not route to /openings, it is locked for users with no imported games
+INV-L1127: APPLIED SentryTestButtons.tsx "Moved from GlobalStats.tsx" comment deleted
+INV-L1136: APPLIED ui/form-card.tsx comment now reads "Named FormCard because ui/card.tsx owns `Card`; visuals are stock shadcn."

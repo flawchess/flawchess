@@ -1,15 +1,15 @@
 /**
- * Mobile custom-range nested drawer (Phase 92 Plan 05 — D-06/D-07/D-08/D-17).
+ * Mobile custom-range nested drawer.
  *
  * Renders a `DrawerNested` (vaul NestedRoot) layered over the FilterPanel drawer
  * with a single-month range Calendar and an explicit Apply CTA.
  *
  * Mobile UX differs from desktop in one critical way:
- * - Desktop (CustomRangePopover): commits the range on every Calendar click and
- *   auto-closes when both bounds are set (D-05).
+ * - Desktop (CustomRangePopover): edits a pending range and commits it when the
+ *   popover closes.
  * - Mobile (this component): maintains a local `localRange` state; the parent
- *   receives the committed range ONLY when the user taps Apply (D-07). Backdrop
- *   dismiss silently discards the in-progress selection (D-08) because vaul's
+ *   receives the committed range ONLY when the user taps Apply. Backdrop
+ *   dismiss silently discards the in-progress selection because vaul's
  *   default `onOpenChange(false)` from an outside tap never calls `onChange`.
  */
 
@@ -30,7 +30,7 @@ import {
 import { Button } from '@/components/ui/button';
 
 // Stable string key for a committed range. Used to detect parent-driven
-// resets in the derive-state-during-render pattern (see useRef block below).
+// resets in the derive-state-during-render pattern (see the prevValueKey block below).
 // Comparing on `getTime()` rather than Date reference ensures memoised preset
 // ranges with identical timestamps don't trigger spurious local resets.
 function serializeRangeKey(
@@ -58,7 +58,7 @@ export function CustomRangeDrawer({
   onOpenChange,
 }: CustomRangeDrawerProps) {
   // localRange is the in-progress selection; it is NOT committed to the parent
-  // until the user taps Apply. Backdrop dismiss (D-08) discards it by design
+  // until the user taps Apply. Backdrop dismiss discards it by design
   // because we never call onChange from the backdrop path.
   // Convert FilterState.customRange to DateRange: `from` must be present (even if undefined).
   const [localRange, setLocalRange] = useState<DateRange | undefined>(
@@ -84,7 +84,7 @@ export function CustomRangeDrawer({
   // We track the previously-seen committed value via useState and reset
   // localRange when the bounds' getTime() (or null-ness) change. Comparing on
   // getTime() rather than reference means memoised preset ranges with the same
-  // timestamps don't trigger spurious resets. D-08 backdrop-dismiss semantics
+  // timestamps don't trigger spurious resets. Backdrop-dismiss semantics
   // are preserved because we only reset on a *committed* value change, not on
   // every Calendar keystroke.
   const [prevValueKey, setPrevValueKey] = useState<string>(serializeRangeKey(value));
@@ -99,7 +99,7 @@ export function CustomRangeDrawer({
   };
 
   const handleApply = () => {
-    // Commit to parent and close (D-07).
+    // Commit to parent and close.
     // Convert DateRange back to FilterState.customRange shape.
     const committed: { from?: Date; to?: Date } | null = localRange
       ? { from: localRange.from, to: localRange.to }
@@ -146,7 +146,7 @@ export function CustomRangeDrawer({
         </div>
 
         {/*
-          Apply CTA (D-07): primary action, disabled until at least a `from`
+          Apply CTA: primary action, disabled until at least a `from`
           bound is set. Clear unsets the in-progress calendar selection without
           closing the drawer; user must Apply (or backdrop-dismiss) to leave.
         */}

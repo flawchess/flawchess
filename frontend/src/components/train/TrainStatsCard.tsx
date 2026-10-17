@@ -1,12 +1,10 @@
 /**
  * TrainStatsCard — the drill-pool numbers on the Train landing screen, as a
- * row of stat tiles (SEED-181, sketch 006 A: the streak hero above carries the
- * page's one big moment, so the pool reads as a quick glance underneath it).
+ * row of stat tiles (the streak hero above carries the page's one big
+ * moment, so the pool reads as a quick glance underneath it).
  *
- * History: 193 UAT round 2 gave mastered/parked their own card ("Puzzle
- * pool") rather than sharing the streak row; round 3 gave both terms an
- * `InfoPopover` — "mastered" and "parked" are Train's SR vocabulary and are
- * defined nowhere else on the page. The popovers stay on the tile labels.
+ * "Mastered" and "parked" are Train's SR vocabulary and are defined nowhere
+ * else on the page, so each tile label carries an `InfoPopover`.
  *
  * `todayScore` is only passed by the 'completed' landing state (the session
  * is over and there IS a score to report) — every other state renders
@@ -95,7 +93,7 @@ export function TrainStatsCard({ todayScore }: TrainStatsCardProps): ReactElemen
       {todayScore !== undefined && (
         <StatTile
           // The label says "Points": with "Puzzles per session" on the same
-          // screen, a bare "0/9" reads as a puzzle count (193 UAT round 2).
+          // screen, a bare "0/9" reads as a puzzle count.
           value={`${todayScore.total}/${todayScore.max}`}
           label="Points today"
           testId="train-stats-today-score"

@@ -73,13 +73,13 @@ export interface WDLStats {
   win_pct: number;
   draw_pct: number;
   loss_pct: number;
-  // Score and confidence fields — mirrors backend WDLStats (quick task 260504-ttq)
+  // Score and confidence fields — mirrors backend WDLStats
   score: number;
   confidence: 'low' | 'medium' | 'high';
   p_value: number;
   ci_low: number;
   ci_high: number;
-  // MG-entry eval fields (quick task 260508-f9o). Optional because the
+  // MG-entry eval fields. Optional because the
   // position + filter combo may have no MG-entry rows; the Moves-tab
   // "Results played as" section renders an em-dash in that case.
   // NextMovesResponse.position_stats reuses this shape; the next-moves
@@ -94,7 +94,7 @@ export interface WDLStats {
   // MAX(games.played_at) across the games contributing to these stats. ISO
   // 8601 string from FastAPI; null when no contributing game has a populated
   // played_at. Drives the "Last played: <relative>" line in the WDL
-  // confidence tooltip (quick task 260508-r61).
+  // confidence tooltip.
   last_played_at?: string | null;
 }
 
@@ -124,7 +124,7 @@ export interface OpeningsResponse {
   matched_count: number;
   offset: number;
   limit: number;
-  // Per-color engine-asymmetry baseline in pawns (quick task 260508-f9o).
+  // Per-color engine-asymmetry baseline in pawns.
   // Rendered as a small reference tick on the MG-entry bullet chart in the
   // Moves-tab "Results played as" section. Resolved server-side from the
   // request's color field (BLACK when 'black', else WHITE).
@@ -150,7 +150,7 @@ export interface NextMoveEntry {
   p_value: number;
   // MAX(games.played_at) across all games where the user played this candidate
   // move from the queried position. Drives the "Last played: <relative>" line
-  // in the move-explorer Score popover (quick task 260508-r61). ISO 8601
+  // in the move-explorer Score popover. ISO 8601
   // string; null when contributing games all have NULL played_at.
   last_played_at?: string | null;
 }
@@ -174,7 +174,7 @@ export interface ImportStartedResponse {
   status: string;
 }
 
-// SURGE-04/D-03 (Phase 209): 'queued' matches backend ImportJobStatusLiteral
+// 'queued' matches backend ImportJobStatusLiteral
 // value-for-value (app/schemas/imports.py). It is in-memory only on the
 // backend — never persisted — but flows through the same wire field, so it
 // belongs in the same union here.
@@ -187,9 +187,9 @@ export interface ImportStatusResponse {
   status: ImportJobStatus;
   games_fetched: number;
   games_imported: number;
-  /** Error message if status is 'error' */
+  /** Error message if status is 'failed' */
   error: string | null;
-  /** Count of other users currently importing from the same platform (D-23) */
+  /** Count of other users currently importing from the same platform */
   other_importers: number;
 }
 
@@ -198,7 +198,6 @@ export interface EvalCoverageResponse {
   total_count: number;
   pct_complete: number;  // 0–100, rounded
   analyzed_count: number;   // games where is_analyzed = true (white_blunders IS NOT NULL)
-  // in_flight_count removed in Phase 119-03 (tier-3 derived picks have no eval_jobs rows)
 }
 
 export interface EnqueueTier1Response {
@@ -206,9 +205,8 @@ export interface EnqueueTier1Response {
   game_id: number;
 }
 
-// Phase 208 (PASTE-04/06/07): POST /imports/paste request/response. Platform
-// stays 'chess.com' | 'lichess' (D-14) — this is a separate, dedicated
-// request/response pair, not a widening of Platform.
+// POST /imports/paste request/response. Platform stays 'chess.com' | 'lichess':
+// this is a separate, dedicated request/response pair, not a widening of Platform.
 export interface SavePastedGameRequest {
   pgn: string;
   user_color: 'white' | 'black';

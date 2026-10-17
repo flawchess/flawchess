@@ -1,25 +1,24 @@
-"""Current-strength estimate for opponent matching (Quick 260811-u11, SEED-147).
+"""Current-strength estimate for opponent matching.
 
 There are two distinct rating quantities in this codebase and they must
 stay distinct:
 
-  - The ``user_rating_anchors`` career-median anchor (36-month window,
-    Phase 94.4/167) answers "how does this user compare over the long run" --
+  - The ``user_rating_anchors`` career-median anchor (36-month window)
+    answers "how does this user compare over the long run" --
     it is the join key into the benchmark cohort CDF for the percentile chip,
-    and is read here ONLY as the D-07 fallback (never recomputed).
+    and is read here ONLY as the fallback (never recomputed).
   - The current-strength estimate this module computes answers "who should
     I play right now" -- a 90-day / 20-game-median estimate on whichever
     (platform, TC) rung the user has actually been playing most recently.
 
-CONTEXT (260811-u11-CONTEXT.md, "Cross-platform disagreement is an
-artifact"): once every rung is normalized to the Lichess-blitz scale via
-``normalize_to_lichess_blitz``, cross-platform "disagreement" all but
+Cross-platform disagreement is an artifact: once every rung is normalized
+to the Lichess-blitz scale via ``normalize_to_lichess_blitz``, cross-platform "disagreement" all but
 vanishes (39 points apart, not the ~400 a naive native-rating comparison
 suggests). That is why there is no platform/TC *preference* ladder here --
 recency is the only ordering signal, with a native-Lichess-blitz tiebreak
 because that rung carries zero conversion error.
 
-UI DEFAULT ONLY (BOT-03): the value resolved here seeds the Bots page's
+UI DEFAULT ONLY: the value resolved here seeds the Bots page's
 PersonaGrid rating line, the custom-bot ELO default, and the analysis
 board's free-play ELO default. It must never be fed into a bot's move
 selection.
@@ -39,26 +38,25 @@ from app.repositories.user_rating_anchors_repository import RatingAnchorRow
 from app.schemas.users import CurrentStrengthResponse, CurrentStrengthRung
 from app.services.chesscom_to_lichess import normalize_to_lichess_blitz
 
-# D-01: a rung is eligible only with >=20 qualifying games in the last 90
-# days. Rationale (CONTEXT): for prod user 3 this cleanly separates the real
+# A rung is eligible only with >=20 qualifying games in the last 90
+# days. Rationale: for prod user 3 this cleanly separates the real
 # rungs (chess.com blitz 317, lichess blitz 152, lichess rapid 75) from a
 # noise rung (chess.com rapid 11).
 WINDOW_DAYS = 90
 MIN_QUALIFYING_GAMES = 20
 
-# D-02: the estimator is the median of the last 20 qualifying games on the
-# selected rung. Rationale (CONTEXT): user 3's last-100 rating range was
+# The estimator is the median of the last 20 qualifying games on the
+# selected rung. Rationale: user 3's last-100 rating range was
 # 1482-1567, so a single most-recent sample carries ~±40 of noise; a
 # 20-game median damps that while still reacting to a climb within ~20
 # games.
 MEDIAN_SAMPLE_SIZE = 20
 
-# P-02 (revised 2026-08-11 against real prod data): a native Lichess-blitz
-# rung wins over a more-recent rung when it is within this many days of the
-# leader's most recent game -- because a native-blitz rung IS the target
+# A native Lichess-blitz rung wins over a more-recent rung when it is within
+# this many days of the leader's most recent game -- because a native-blitz rung IS the target
 # scale and so carries zero conversion error.
 #
-# There is deliberately NO point-gap condition. The original P-02 also
+# There is deliberately NO point-gap condition. An earlier version also
 # required the two normalized estimates to agree within 50 points, which was
 # backwards: it made the tiebreak fire exactly when the choice did not
 # matter (the rungs agree) and abstain exactly when it did (they disagree).
@@ -69,8 +67,8 @@ MEDIAN_SAMPLE_SIZE = 20
 # off for this user, which argues FOR the native rung, not against it.
 #
 # The lag bound stays: it is what keeps a genuinely stale native rung from
-# beating a currently-played one. The threshold is a Claude's-discretion
-# pick (CONTEXT), not from the seed.
+# beating a currently-played one. The threshold is a judgment
+# call, not a measured value.
 NATIVE_BLITZ_TIEBREAK_MAX_LAG_DAYS = 7
 
 
@@ -103,11 +101,10 @@ def _is_native_lichess_blitz(rung: RecentRungRow) -> bool:
 def _anchor_fallback(
     anchors: dict[TimeControlBucket, RatingAnchorRow],
 ) -> CurrentStrengthResponse | None:
-    """D-07 fallback: the blitz-bucket anchor, or None.
+    """Fallback: the blitz-bucket anchor, or None.
 
     A user with only rapid/classical anchors correctly gets None here -- the
-    blitz-bucket-only semantic is deliberate, carried over from the helper
-    this module replaces (``_lichess_blitz_equivalent_rating``).
+    blitz-bucket-only semantic is deliberate.
     """
     blitz_anchor = anchors.get("blitz")
     if blitz_anchor is None:
@@ -121,7 +118,7 @@ def resolve_current_strength(
     rungs: Sequence[RecentRungRow],
     anchors: dict[TimeControlBucket, RatingAnchorRow],
 ) -> CurrentStrengthResponse | None:
-    """Pure selection policy (D-01 through D-03, D-07, P-02) over pre-fetched rows.
+    """Pure selection policy over pre-fetched rows.
 
     Args:
         rungs: Every (platform, TC) rung the user has games in within the
@@ -133,7 +130,7 @@ def resolve_current_strength(
 
     Returns:
         A recent-games-sourced estimate when at least one rung passes the
-        floor and converts; otherwise the D-07 anchor fallback; otherwise
+        floor and converts; otherwise the anchor fallback; otherwise
         None (guest / newly registered user with neither).
     """
     survivors = [rung for rung in rungs if rung.n_games >= MIN_QUALIFYING_GAMES]

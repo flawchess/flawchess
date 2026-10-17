@@ -5,8 +5,6 @@
  * "5 minutes ago", "3 days ago", "2 years ago"). The companion
  * `formatAbsoluteDate` helper renders a localized full timestamp suitable for
  * the title attribute (hover reveals the precise date).
- *
- * Quick task 260508-r61.
  */
 
 // Threshold under which we render "Just now" rather than counting individual

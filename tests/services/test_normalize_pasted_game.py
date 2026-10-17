@@ -1,8 +1,7 @@
-"""Unit tests for the Phase 208 pasted-PGN normalization helpers.
+"""Unit tests for the pasted-PGN normalization helpers.
 
 Covers canonical_root_fen, pasted_game_identity_hash, parse_pgn_played_at
-(Task 2, D-16) and normalize_pasted_game (Task 3) — no DB required, pure
-unit tests, one test per <behavior> bullet in 208-02-PLAN.md.
+and normalize_pasted_game — no DB required, pure unit tests.
 """
 
 import datetime
@@ -25,7 +24,7 @@ from app.services.normalization import (
 _STANDARD_ROOT_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 # Same standard root, but with an en-passant field and different counters —
-# D-16's canonicalization must strip these so both roots hash identically.
+# The canonicalization must strip these so both roots hash identically.
 _STANDARD_ROOT_FEN_WITH_EP_AND_COUNTERS = (
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e3 7 42"
 )
@@ -54,7 +53,7 @@ def _root_fen_and_sans(pgn_text: str) -> tuple[str, list[str]]:
     return root_fen, sans
 
 
-# Same movetext, wildly different header spellings (D-16's corpus evidence:
+# Same movetext, wildly different header spellings (corpus evidence:
 # one player spelled twelve ways across White/Black/Event/Site/Date/Result).
 _PGN_HEADER_VARIANT_A = (
     '[White "Noël, Studer"]\n[Black "Some Opponent"]\n[Event "Club Ch"]\n'
@@ -120,7 +119,7 @@ class TestParsePgnPlayedAt:
 _TEST_USER_ID = 42
 
 # Plain movetext, no [%clk] anywhere — the clock gate normalize_flawchess_game
-# enforces must be absent from normalize_pasted_game (D-07).
+# enforces must be absent from normalize_pasted_game.
 _PGN_CLOCKLESS_PLAIN = '[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 1-0\n'
 
 # Scholar's mate, but [Result] is "*" (a common broadcast/incomplete-header
@@ -131,13 +130,13 @@ _PGN_RESULT_STAR_CHECKMATE = '[Result "*"]\n\n1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. 
 _PGN_RESULT_STAR_NON_TERMINAL = '[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *\n'
 
 # A crafted, unrecognized [Termination] header far longer than
-# games.termination_raw's String(50) bound (CR-02's exact reproduction).
+# games.termination_raw's String(50) bound.
 _PGN_OVERSIZED_TERMINATION_HEADER = (
     '[Result "1-0"]\n' + f'[Termination "{"A" * 60}"]\n\n'
     "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0\n"
 )
 
-# A [SetUp]/[FEN] Black-to-move root (WR-02) — the mainline SAN and the hash
+# A [SetUp]/[FEN] Black-to-move root — the mainline SAN and the hash
 # must be computed from this root, not from the standard start.
 _BLACK_TO_MOVE_ROOT_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1"
 _PGN_BLACK_TO_MOVE_ROOT = (
@@ -171,11 +170,11 @@ def _build_long_pgn(num_plies: int) -> str:
 class TestNormalizePastedGame:
     def test_clockless_plain_movetext_normalizes(self) -> None:
         """The [%clk]-for-both-colors gate normalize_flawchess_game enforces
-        is absent — a pasted PGN is untimed by definition (D-07)."""
+        is absent — a pasted PGN is untimed by definition."""
         result = normalize_pasted_game(_PGN_CLOCKLESS_PLAIN, _TEST_USER_ID, "white")
         assert result is not None
 
-    def test_returned_fields_match_d07_and_hash_contract(self) -> None:
+    def test_returned_fields_match_pasted_game_and_hash_contract(self) -> None:
         result = normalize_pasted_game(_PGN_CLOCKLESS_PLAIN, _TEST_USER_ID, "white")
         assert result is not None
         assert result.platform == "pgn"

@@ -1,0 +1,5 @@
+old	new	kind	absent_paths	ref	canon_paths
+live	liveEval	identifier	-	INVENTORY s5 hooks/useTrainRevealTree.ts:412	frontend/src/hooks/useTrainRevealTree.ts
+blueSquares	followingBestSquares	identifier	frontend/src/hooks/useGameOverlay.ts	INVENTORY s5 hooks/useGameOverlay.ts:217	frontend/src/hooks/useGameOverlay.ts
+ENGINE_PATH	MAIA_WORKER_PATH	identifier	frontend/src/lib/engine/maiaWorkerHost.ts,frontend/src/lib/engine/__tests__/maiaWorkerHost.test.ts,frontend/src/lib/engine/__tests__/maiaQueue.test.ts	INVENTORY s5 lib/engine/maiaWorkerHost.ts:81 (D-07)	frontend/src/lib/engine/maiaWorkerHost.ts,frontend/src/lib/engine/__tests__/maiaWorkerHost.test.ts,frontend/src/lib/engine/__tests__/maiaQueue.test.ts
+DARK_BLUE	NEUTRAL_ARROW_COLOR	identifier	frontend/src	INVENTORY s5 lib/arrowColor.ts:34	

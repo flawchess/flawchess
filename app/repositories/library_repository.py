@@ -1,16 +1,15 @@
-"""Library (Games-surface) repository — Phase 106 (SEED-036, LIBG-08/09).
+"""Library (Games-surface) repository.
 
-Phase 108 D-02 migration: the window-scan EXISTS flaw filter is replaced by a
-direct `game_flaws` table lookup. The shared predicate builder
-`build_flaw_filter_clauses` produces the family-aware WHERE clauses (OR within
-family, AND across families per SEED-038); `flaw_exists_from_table` wraps them
-in a correlated EXISTS for the Games tab. The same predicate builder is reused
-by the Flaws SELECT path (Plan 108-05) so cross-tab filter unification is
-enforced in code, not convention.
+The Games-surface flaw filter is a direct `game_flaws` table lookup. The shared
+predicate builder `build_flaw_filter_clauses` produces the family-aware WHERE
+clauses (OR within family, AND across families); `flaw_exists_from_table` wraps
+them in a correlated EXISTS for the Games tab. The same predicate builder is
+reused by the Flaws SELECT path (`query_flaws`) so cross-tab filter unification
+is enforced in code, not convention.
 
 All user input crosses into SQL via bound parameters (user_id, severity, tag
 values from `_SEVERITY_INT` / `_TEMPO_INT` dict lookups); no f-string
-interpolation of user input (T-108-06).
+interpolation of user input.
 """
 
 import datetime
@@ -57,30 +56,29 @@ from app.services.tactic_detector import (
 )
 
 # ---------------------------------------------------------------------------
-# Phase 128 Plan 03 (D-07/D-09) — tactic orientation closed enum.
-# Phase 129 Plan 01 (D-08) — widened to 3-value Literal; "either" is OR across
-# both missed_* and allowed_* column sets.
-# Imported by query_utils (lazy import) and library_service so both filter
-# sites and the service layer share the same type alias.
+# Tactic orientation closed enum. "either" is OR across both missed_* and
+# allowed_* column sets.
+# Imported by library_service; query_utils and routers/library.py restate the
+# same Literal.
 # ---------------------------------------------------------------------------
 TacticOrientation = Literal["either", "missed", "allowed"]
 
 # ---------------------------------------------------------------------------
-# Phase 126 — Tactic chip confidence threshold (TACUI-01, D-09).
-# Imported by library_service so the same value gates the comparison repo fn
-# (MIN_TACTIC_CHIP_CONFIDENCE in service imports this constant).
+# Tactic chip confidence threshold.
+# Imported by library_service (and, through it, the benchmark scripts) so the same
+# value gates the comparison repo fn.
 # Defined here because query_flaws uses it at the repository layer when building
 # FlawListItem rows without going through the service layer.
 # ---------------------------------------------------------------------------
-_TACTIC_CHIP_CONFIDENCE_MIN: int = 70  # 0-100 scale matching tactic_confidence column
+MIN_TACTIC_CHIP_CONFIDENCE: int = 70  # 0-100 scale matching tactic_confidence column
 
-# Domain constants for the tactic depth range (Quick 260621-sm8).
+# Domain constants for the tactic depth range.
 # These mirror DEPTH_MIN / DEPTH_MAX in frontend/src/lib/tacticDepth.ts and are
 # used by _tactic_controls_active to detect the "full-range = no depth filter" state.
 _TACTIC_DEPTH_FULL_MIN: int = 0
 _TACTIC_DEPTH_FULL_MAX: int = 11
 
-# Decision-anchored depth offset for the ALLOWED orientation (Quick 260621-qz9).
+# Decision-anchored depth offset for the ALLOWED orientation.
 # missed_tactic_depth and allowed_tactic_depth both store the RAW 0-based detector
 # loop index within their own PV. The missed PV starts at the decision board
 # (flaw_ply); the allowed PV is the opponent's refutation, which starts one ply
@@ -89,35 +87,30 @@ _TACTIC_DEPTH_FULL_MAX: int = 11
 # tactic at raw depth d sits one ply deeper than a missed tactic at the same raw
 # d. So the allowed column is shifted by +1 at read time to put both orientations
 # on one decision-anchored difficulty scale. Mirrors ALLOWED_DECISION_DEPTH_OFFSET
-# in frontend/src/lib/tacticDepth.ts. No DB change / backfill (Option A).
+# in frontend/src/lib/tacticDepth.ts. No DB change or backfill.
 ALLOWED_DECISION_DEPTH_OFFSET: int = 1
 
 # ---------------------------------------------------------------------------
-# Phase 129 Plan 04 — tactic motif family → int mapping (10-family taxonomy, G-01).
+# Tactic motif family → int mapping.
 # Maps each family key to the TacticMotifInt values belonging to that family.
-# These 10 keys are the cross-stack contract mirrored string-for-string by the
-# frontend TacticFamily union (plan 129-05).
+# These keys are the cross-stack contract mirrored string-for-string by the
+# frontend TacticFamily union.
 #
-# Taxonomy decisions (129-UAT RESOLVED DECISIONS):
-# - Each Tier-2 real-geometry motif is its own standalone family (no more merged
-#   pin_skewer or discovery buckets).
-# - The old "combinations" family (DEFLECTION..SACRIFICE, ints 9-17) is dropped
-#   entirely — those motif ints belong to no family and are excluded from every
-#   family chip/grid/EXISTS expansion. Existing game_flaws rows that carry those
-#   ints are unaffected in the DB; they simply stop appearing on family surfaces.
-# - The "x_ray" family is standalone (previously merged with pin/skewer).
-# - "discovered_check" (int 25) and "trapped_piece" (int 26) are now first-class
-#   families. The trapped_piece detector is currently suppressed in the tagger,
-#   so that chip will typically be empty — tracked separately, not a bug.
-# - "mate" int set is UNCHANGED (ints 7-8, 18-24); _depth_ok reads this key.
-# - Move-type motifs: en-passant (27), under-promotion (29), and promotion (28) are
-#   now first-class families (unsuppressed at P=1.000 on the expanded fixture — they
-#   fire at TACTIC_CONFIDENCE_HIGH=100 so they pass the chip lever). promotion (28) was
-#   surfaced when D-09 was reversed (perfect-precision residual, sibling of under-promotion).
+# Taxonomy:
+# - Each real-geometry motif is its own standalone family (no merged pin_skewer
+#   or discovery buckets); x_ray, discovered_check (25) and trapped_piece (26)
+#   are first-class families.
+# - Motif ints not listed under any family (self-interference 14, clearance 15,
+#   suppressed, see precision_floors.SUPPRESSED_MOTIFS) are excluded from every
+#   family chip/grid/EXISTS surface; their rows stay in the DB and their ints stay
+#   decodable.
+# - "mate" int set: ints 7-8, 18-24.
+# - Move-type motifs: en-passant (27), under-promotion (29), and promotion (28)
+#   are first-class families (P=1.000 on the expanded fixture; they fire at
+#   TACTIC_CONFIDENCE_HIGH=100 so they pass the chip lever).
 #
-# No DB migration and no data backfill required: game_flaws stores raw motif INTs
-# (SmallInteger); families are a query-time grouping only. Re-mapping family→ints
-# re-groups existing rows automatically.
+# game_flaws stores raw motif INTs (SmallInteger); families are a query-time
+# grouping only. Re-mapping family→ints re-groups existing rows automatically.
 #
 # Imported by apply_game_filters() (query_utils.py) via lazy import to avoid
 # a query_utils→library_repository circular import.
@@ -130,12 +123,6 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     "skewer": [
         int(TacticMotifInt.SKEWER),
     ],
-    # pin: cook two-sub-test port achieved 0.819 TEST precision in Phase 131-02.
-    # Below the 0.90 ship bar (D-02/D-11); added to SUPPRESSED_MOTIFS in precision_floors.py.
-    # Kept in FAMILY_TO_MOTIF_INTS to preserve the 10-family G-01 contract (Plan 04).
-    # "Pin" chips will surface in family queries at 0.819 precision until a future phase
-    # achieves >0.90 TEST. The tactic_confidence lever cannot suppress confidence=100 Tier-2
-    # motifs; removing from this dict would require updating test_family_mapping_ten_families.
     "pin": [
         int(TacticMotifInt.PIN),
     ],
@@ -168,13 +155,9 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
         int(TacticMotifInt.DOUBLE_BISHOP_MATE),
         int(TacticMotifInt.DOVETAIL_MATE),
     ],
-    # Tier-3 "Advanced" families (Quick 260623-6pd). Phase 132 cook-aligned AND-chain
-    # rewrites lifted these motifs over the 0.90 TEST ship bar; their detectors fire at
-    # TACTIC_CONFIDENCE_HIGH (100) so they pass the _TACTIC_CHIP_CONFIDENCE_MIN lever.
-    # Surfaced here so they are filterable + counted in the comparison grid, mirroring the
-    # frontend "advanced" TACTIC_GROUPS section. Phase 133 added attraction (10) and
-    # sacrifice (17) as families. self-interference (14) and clearance (15,
-    # suppressed plan 06 D-07) remain unmapped.
+    # Tier-3 "Advanced" families. Their detectors fire at TACTIC_CONFIDENCE_HIGH (100)
+    # so they pass the MIN_TACTIC_CHIP_CONFIDENCE lever. Filterable and counted in the
+    # comparison grid, mirroring the frontend "advanced" TACTIC_GROUPS section.
     "deflection": [
         int(TacticMotifInt.DEFLECTION),
     ],
@@ -184,32 +167,19 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     "interference": [
         int(TacticMotifInt.INTERFERENCE),
     ],
-    # Phase 221 plan 06 (2026-09-12, D-07): "clearance" family REMOVED — the
-    # real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
-    # surviving rows (below REALGAME_MIN_ROWS_FOR_FLOOR=8 and the 0.80 keep
-    # bar). See tests/scripts/tagger/precision_floors.py's SUPPRESSED_MOTIFS
-    # entry for the full record. int 15 (TacticMotifInt.CLEARANCE) remains
-    # encodable/decodable/storable for existing persisted rows; it simply maps
-    # to no family now, same as self-interference (14).
     "capturing_defender": [
         int(TacticMotifInt.CAPTURING_DEFENDER),
     ],
-    # Phase 133 (plan 133-02): attraction and sacrifice unsuppressed and given families.
-    # self-interference (14) remains unmapped (no lichess theme equivalent, 0 TP).
-    # clearance (15) also unmapped as of plan 06 (D-07 suppression, see above).
     "attraction": [
         int(TacticMotifInt.ATTRACTION),
     ],
     "sacrifice": [
         int(TacticMotifInt.SACRIFICE),
     ],
-    # Move-type families (Quick 260623): en-passant + under-promotion + promotion.
-    # All fire only at Tier 5 (residual, when no real tactic wins) but at P=1.000 on
-    # the expanded fixture. Surfaced behind the "Advanced" filter group. promotion (28)
-    # surfaced when D-09 was reversed (perfect-precision, sibling of under-promotion;
-    # the "allowed" orientation = "you let the opponent queen" is an instructive endgame
-    # mistake). self-interference (14) and clearance (15, suppressed plan 06
-    # D-07) are the two unmapped tier-3 ints.
+    # Move-type families: en-passant + under-promotion + promotion. All fire only at
+    # Tier 5 (residual, when no real tactic wins) but at P=1.000 on the expanded
+    # fixture. Surfaced behind the "Advanced" filter group. The "allowed" orientation
+    # of promotion = "you let the opponent queen", an instructive endgame mistake.
     "en_passant": [
         int(TacticMotifInt.EN_PASSANT),
     ],
@@ -222,13 +192,13 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 128 Plan 03 (D-09) — orientation → (motif_col, confidence_col) resolver.
+# orientation → (motif_col, confidence_col) resolver.
 # Returns the pair of ORM column attributes for the requested orientation.
-# Both orientations share FAMILY_TO_MOTIF_INTS and _TACTIC_CHIP_CONFIDENCE_MIN
-# unchanged (D-09). The resolved columns are used at both filter sites and the
-# chip-read path so the orientation switch is a single conditional, not duplicated
-# filter / read logic. orientation is a closed Literal enum — never raw
-# column-name interpolation from caller input (T-128-05).
+# Both orientations share FAMILY_TO_MOTIF_INTS and MIN_TACTIC_CHIP_CONFIDENCE.
+# The resolved columns are used at both filter sites and the chip-read path so the
+# orientation switch is a single conditional, not duplicated filter / read logic.
+# orientation is a closed Literal enum — never raw column-name interpolation from
+# caller input.
 # ---------------------------------------------------------------------------
 
 
@@ -254,18 +224,17 @@ def _tactic_orientation_pairs(
 ) -> list[tuple[Any, Any, Any, int]]:
     """Return list of (motif_col, conf_col, depth_col, depth_offset) tuples.
 
-    Phase 129 Plan 01 (D-05/D-08): shared resolver for depth-aware + either-aware
-    filter sites. Returns:
+    Shared resolver for depth-aware + either-aware filter sites. Returns:
       "missed"  → [(missed_tactic_motif, missed_tactic_confidence, missed_tactic_depth, 0)]
       "allowed" → [(allowed_tactic_motif, allowed_tactic_confidence, allowed_tactic_depth, +1)]
       "either"  → both tuples (missed first, then allowed)
 
-    Quick 260621-qz9: each tuple carries the decision-anchored depth offset for its
-    orientation — 0 for missed, ALLOWED_DECISION_DEPTH_OFFSET for allowed — so the
-    depth-range filter compares both orientations on one decision-anchored scale.
+    Each tuple carries the decision-anchored depth offset for its orientation
+    (0 for missed, ALLOWED_DECISION_DEPTH_OFFSET for allowed), so the depth-range
+    filter compares both orientations on one decision-anchored scale.
 
     Column selection is a pure Python branch; caller input is a closed Literal
-    enum — never string interpolation (T-128-05 / T-129-01).
+    enum — never string interpolation.
     """
     missed = (
         GameFlaw.missed_tactic_motif,
@@ -283,7 +252,7 @@ def _tactic_orientation_pairs(
         return [missed]
     if orientation == "allowed":
         return [allowed]
-    # "either" — OR across both column sets (D-08)
+    # "either" — OR across both column sets
     return [missed, allowed]
 
 
@@ -295,23 +264,19 @@ def _depth_in_range(
 ) -> Any:
     """Return a SQLAlchemy boolean clause bounding *depth_col* to an inclusive range.
 
-    Quick 260620-l5k (Phase 130): the depth filter is now a two-handle RANGE in
-    depth units (0-based ply, 0..11) instead of a single max cap. Returns:
+    Bounds depth to an inclusive range in 0-based ply (0..11). Returns:
         (depth_col + offset >= min_tactic_depth) AND (depth_col + offset <= max_tactic_depth)
     with each bound optional (None on a side = unbounded that side; both None =
-    literal-true, no filter).
+    literal-true, no filter). Mates obey the range like every other tactic, so a
+    narrow range never leaks deep mates.
 
-    Quick 260621-qz9: *depth_offset* is the per-orientation decision-anchored
-    shift (0 for missed, ALLOWED_DECISION_DEPTH_OFFSET for allowed). The allowed
+    *depth_offset* is the per-orientation decision-anchored shift (0 for missed,
+    ALLOWED_DECISION_DEPTH_OFFSET for allowed). The allowed
     column stores the raw 0-based index within the opponent's refutation PV, which
     starts one ply after the shared decision board; adding the offset puts allowed
     and missed depths on the same decision-anchored scale so a range filter treats
     equal-difficulty tactics equally. The column is shifted (not the bounds) so the
     expression reads naturally and a 0 offset compiles to the bare column.
-
-    The Phase 129 D-04 mate exemption was REMOVED here (Quick 260620-l5k, user
-    decision "bound mates too"): forced mates now obey the depth range like every
-    other tactic, so a narrow range no longer leaks deep mates.
     """
     anchored = depth_col + depth_offset if depth_offset else depth_col
     bounds: list[Any] = []
@@ -338,10 +303,8 @@ def _tactic_controls_active(
     full-range endpoints). When all three controls are at defaults the caller should add
     NO tactic clause so non-tactic flaws are included.
 
-    Quick 260621-sm8: previously depth+orientation predicates were gated inside
-    `if tactic_families:`, making them silent no-ops when no family was selected.
-    This helper is the single gating predicate so orientation and depth are
-    independently meaningful.
+    This helper is the single gating predicate: orientation and depth activate the
+    filter on their own; do not gate them on a family selection.
     """
     families_active = len(tactic_families) > 0
     orientation_active = tactic_orientation != "either"
@@ -375,18 +338,19 @@ def tactic_slot_visible(
     1. The slot's orientation_kind is in scope under tactic_orientation
        (missed in scope when orientation is "either" or "missed";
         allowed in scope when orientation is "either" or "allowed").
-    2. Confidence is not None and >= _TACTIC_CHIP_CONFIDENCE_MIN.
+    2. Confidence is not None and >= MIN_TACTIC_CHIP_CONFIDENCE.
     3. Motif family: no families selected OR the slot's motif int is in the
        union of FAMILY_TO_MOTIF_INTS for the selected families.
     4. Depth range: full range (= no depth filter) OR (depth + offset) is in
        [min_tactic_depth, max_tactic_depth] (inclusive, using the same +1
        decision-anchored offset as _depth_in_range for the allowed slot).
 
-    Used at BOTH serialization sites (_query_flaws and _build_card) so the
+    Used at BOTH serialization sites (_build_flaw_item and
+    library_service._build_tactic_by_ply_entry) so the
     confidence/family/depth/offset logic is never duplicated. The SQL row
     predicate in build_flaw_filter_clauses must agree with this Python predicate
     on "slot matches" — both rely on the same FAMILY_TO_MOTIF_INTS,
-    _TACTIC_CHIP_CONFIDENCE_MIN, ALLOWED_DECISION_DEPTH_OFFSET, and _depth_in_range
+    MIN_TACTIC_CHIP_CONFIDENCE, ALLOWED_DECISION_DEPTH_OFFSET, and _depth_in_range
     semantics. If either is changed, update the other.
 
     Args:
@@ -411,7 +375,7 @@ def tactic_slot_visible(
         return False
 
     # 2. Confidence gate (subsumes the existing confidence >= 70 gate).
-    if confidence is None or confidence < _TACTIC_CHIP_CONFIDENCE_MIN:
+    if confidence is None or confidence < MIN_TACTIC_CHIP_CONFIDENCE:
         return False
 
     # 3. Family match (skip when no families selected — all motifs pass).
@@ -441,7 +405,7 @@ def tactic_slot_visible(
 
 # ---------------------------------------------------------------------------
 # Inverse encoding maps — reconstruct tags from game_flaws integer columns
-# (D-02 migration: chips built from stored rows, not kernel re-call)
+# (chips are built from stored rows, not by re-running the kernel)
 # ---------------------------------------------------------------------------
 
 # int → FlawTag string (reverse of _SEVERITY_INT / _TEMPO_INT / _PHASE_INT).
@@ -547,20 +511,17 @@ def _build_tactic_clause(
 ) -> ColumnElement[bool] | None:
     """Build the tactic-family WHERE clause for build_flaw_filter_clauses, or None.
 
-    Extracted verbatim from build_flaw_filter_clauses (Phase 214 Plan 04) -- this is
-    the one family block substantial enough to name on its own; the other four
-    (severity/tempo/opportunity/impact/phase) stay inline there as 3-8 line blocks.
+    This is the one family block substantial enough to name on its own; the other
+    five (severity/tempo/opportunity/impact/phase) stay inline in
+    build_flaw_filter_clauses as 3-8 line blocks.
 
-    Quick 260621-sm8 refactor: depth and orientation are independently meaningful
-    even without a family selection.
+    Depth and orientation are independently meaningful even without a family
+    selection. Don't nest the depth/orientation predicates inside
+    `if tactic_families:`: they would silently do nothing unless a family chip was
+    also active.
 
-    BUG FIXED (260621-sm8): previously depth+orientation predicates were nested
-    inside `if tactic_families:`, making them silent no-ops when no family was
-    selected. The filter claimed to restrict by depth/orientation but did nothing
-    unless a family chip was also active.
-
-    New logic: when ANY tactic control is active (family, orientation, or depth),
-    emit an OR-of-in-scope-slots row clause. Each in-scope slot (per the
+    When ANY tactic control is active (family, orientation, or depth), emit an
+    OR-of-in-scope-slots row clause. Each in-scope slot (per the
     orientation parameter) contributes: (family-match, if families selected) AND
     (confidence >= threshold) AND (depth-in-range, if depth not full-range). When
     all controls are at defaults (_tactic_controls_active returns False), this
@@ -568,7 +529,7 @@ def _build_tactic_clause(
 
     The SQL predicate here and tactic_slot_visible (the Python display predicate
     used at serialization time) must agree: same FAMILY_TO_MOTIF_INTS, same
-    _TACTIC_CHIP_CONFIDENCE_MIN, same _depth_in_range offset semantics. See
+    MIN_TACTIC_CHIP_CONFIDENCE, same _depth_in_range offset semantics. See
     tactic_slot_visible's docstring for the authoritative slot-match definition.
 
     Args:
@@ -591,7 +552,7 @@ def _build_tactic_clause(
     # Pass resolved (known) families as the families parameter so unknown-only
     # selections don't trigger a tactic clause when orientation and depth are
     # also at defaults. If orientation or depth are active, the clause is still
-    # emitted (orientation/depth work independently -- Quick 260621-sm8 fix).
+    # emitted (orientation/depth work independently).
     resolved_families: Sequence[str] = [
         fam for fam in tactic_families if fam in FAMILY_TO_MOTIF_INTS
     ]
@@ -604,7 +565,7 @@ def _build_tactic_clause(
     # Each branch: (family-match, if families) & confidence_gate & depth_ok (if active).
     pair_branches = []
     for motif_col, conf_col, depth_col, depth_offset in _tactic_orientation_pairs(orientation):
-        branch: ColumnElement[bool] = conf_col >= _TACTIC_CHIP_CONFIDENCE_MIN
+        branch: ColumnElement[bool] = conf_col >= MIN_TACTIC_CHIP_CONFIDENCE
         if motif_ints:
             branch = motif_col.in_(motif_ints) & branch
         branch = branch & _depth_in_range(
@@ -630,16 +591,16 @@ def build_flaw_filter_clauses(
     max_tactic_depth: int | None = None,
     decided_lost: ColumnElement[bool] | None = None,
 ) -> list[ColumnElement[bool]]:
-    """Return WHERE clauses filtering game_flaws rows (SEED-038 family-aware logic).
+    """Return WHERE clauses filtering game_flaws rows (family-aware logic).
 
     OR within family, AND across families: each returned clause covers one family;
     the caller ANDs all clauses together. Phase tags (opening/middlegame/endgame)
-    are a filter family too (Quick 260612-fow) — set-membership on the denormalized
+    are a filter family too — set-membership on the denormalized
     game_flaws.phase column.
 
     Encoding maps (_SEVERITY_INT / _TEMPO_INT) are imported from
-    game_flaws_repository — single source of truth, no duplication (SEED-038 /
-    CLAUDE.md §Shared Query Filters).
+    game_flaws_repository — single source of truth, no duplication (CLAUDE.md
+    §Shared Query Filters).
 
     Args:
         severity: Subset of ["mistake", "blunder"]. Set-membership: ["mistake"]
@@ -650,22 +611,20 @@ def build_flaw_filter_clauses(
               filter. Includes the phase family (opening/middlegame/endgame).
         tactic_families: Tactic motif families to filter on. Empty = no tactic
                   filter. Expands via FAMILY_TO_MOTIF_INTS; unknown keys = no-op.
-        orientation: Which tactic column set to filter on (Phase 128/129).
-                  "either" (default) → OR across both column sets (Phase 129 D-08).
+        orientation: Which tactic column set to filter on.
+                  "either" (default) → OR across both column sets.
                     When all controls are at defaults, "either" + empty families + full
                     depth range produces _tactic_controls_active=False and NO clause.
                   "missed"  → missed_tactic_motif  + missed_tactic_confidence.
                   "allowed" → allowed_tactic_motif + allowed_tactic_confidence.
-                  FAMILY_TO_MOTIF_INTS and _TACTIC_CHIP_CONFIDENCE_MIN are reused
-                  unchanged for all orientations. Orientation is a closed
-                  Literal enum — never raw column-name interpolation (T-128-05/T-129-01).
-                  Quick 260621-sm8: default changed from "allowed" to "either" so
-                  callers that pass no tactic params (e.g. flaw_exists_from_table)
-                  still emit no tactic clause.
+                  FAMILY_TO_MOTIF_INTS and MIN_TACTIC_CHIP_CONFIDENCE are shared
+                  by all orientations. Orientation is a closed
+                  Literal enum — never raw column-name interpolation.
+                  The neutral "either" default means callers that pass no tactic
+                  params (e.g. flaw_exists_from_table) emit no tactic clause.
         min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds (0-based
-                  ply) on the active orientation's depth column (Quick 260620-l5k /
-                  Phase 130). Each side optional; None = unbounded that side. Mates
-                  obey the range too (the Phase 129 D-04 exemption was removed).
+                  ply) on the active orientation's depth column. Each side optional;
+                  None = unbounded that side. Mates obey the range too.
         decided_lost: Optional SQL boolean expression (from decided_lost_sql) for
                   the pre-move decided-lost predicate. When non-None, ANDs
                   NOT(decided_lost) onto the assembled tactic clause only — severity,
@@ -682,7 +641,7 @@ def build_flaw_filter_clauses(
     # Severity filter — set membership. The UI exposes Blunders/Mistakes as
     # independent toggles, so ["mistake"] must match mistakes ONLY (not "mistakes or
     # worse"). A prior MIN-threshold (severity >= min) leaked blunders into a
-    # mistakes-only selection. game_flaws stores only mistake(1)/blunder(2) (D-03).
+    # mistakes-only selection. game_flaws stores only mistake(1)/blunder(2).
     if severity:
         clauses.append(GameFlaw.severity.in_([_SEVERITY_INT[s] for s in severity]))
 
@@ -713,15 +672,14 @@ def build_flaw_filter_clauses(
 
     # Phase family: OR within {opening, middlegame, endgame}. Each flaw carries
     # exactly one phase (denormalized game_flaws.phase 0/1/2), so set-membership
-    # on the typed column is the predicate. Phase filtering is now a first-class
-    # filter family (Quick 260612-fow) — superseding the earlier display-only
-    # decision (RESEARCH Pitfall 5).
+    # on the typed column is the predicate. Phase is a first-class filter family,
+    # not display-only.
     phase_tags = [t for t in tags if t in {"opening", "middlegame", "endgame"}]
     if phase_tags:
         clauses.append(GameFlaw.phase.in_([_PHASE_INT[t] for t in phase_tags]))
 
-    # Tactic filter (Quick 260621-sm8 refactor): depth and orientation are now
-    # independently meaningful even without a family selection. See
+    # Tactic filter: depth and orientation are independently meaningful even
+    # without a family selection. See
     # _build_tactic_clause's docstring for the full family/orientation/depth/
     # decided-lost semantics; this call site only appends its result when active.
     tactic_clause = _build_tactic_clause(
@@ -744,20 +702,19 @@ def flaw_exists_from_table(
 ) -> ColumnElement[bool]:
     """Correlated EXISTS: True iff the game has >=1 flaw row satisfying the filter.
 
-    game_flaws-backed EXISTS (replaces the Phase 106 window-scan EXISTS after
-    D-02 migration). Scopes to the authenticated user and the outer Game.id so
-    cross-user leaks are impossible (T-108-07).
+    game_flaws-backed EXISTS. Scopes to the authenticated user and the outer
+    Game.id so cross-user leaks are impossible.
 
     Returns true() when no filter family is active (severity, tags, AND tactics
-    all empty/default) — no filter = match all games. This mirrors the Phase 106
-    None sentinel: callers that pass no filter see no restriction added.
+    all empty/default) — no filter = match all games, so callers that pass no
+    filter see no restriction added.
 
     All filter families (severity, context tags, AND tactic motif/orientation/depth)
     are ANDed onto the SAME game_flaws row via build_flaw_filter_clauses. This is the
     single-row AND semantics the Flaws list uses (query_flaws): a game matches only
     when ONE flaw satisfies every selected condition together — e.g. a flaw that is
     BOTH a depth-1-2 fork AND low-clock, not a fork flaw plus a separate low-clock
-    flaw (Quick 260621 Games-tab tactic+context AND fix).
+    flaw.
 
     Args:
         user_id: The authenticated user's ID — always included in the EXISTS
@@ -771,8 +728,8 @@ def flaw_exists_from_table(
     """
     # Decided-lost suppression: LEFT JOIN the pre-move position (ply N-1) inside the
     # EXISTS so the SQL gate has access to eval_cp/eval_mate. LEFT JOIN so ply 0/1
-    # flaws (no prior position) keep null eval → fail open (T-bdt-01: join is user-
-    # scoped + game-correlated, no cross-user rows can attach).
+    # flaws (no prior position) keep null eval → fail open (the join is user-scoped
+    # + game-correlated, so no cross-user rows can attach).
     # LATERAL rather than a plain outerjoin on `ply == GameFlaw.ply - 1` for the
     # same planner reason as query_flaws — see _flaw_position_lateral. Here the
     # bad shape cost ~7.8s on a Games-tab page load with a tactic filter active
@@ -793,9 +750,9 @@ def flaw_exists_from_table(
     if not clauses:
         # No filter — match all games (caller decides whether to add to statement)
         return true()
-    # D-04: player-only gate — after Phase 113 game_flaws contains both sides;
-    # the EXISTS filter for the Games tab must only match player flaws so an
-    # opponent-only flaw does not falsely flag a game into the Flaw filter (R1/R6).
+    # Player-only gate: game_flaws contains both sides, and the EXISTS filter for the
+    # Games tab must only match player flaws so an opponent-only flaw does not
+    # falsely flag a game into the Flaw filter.
     # Game.id is the outer correlating column (correlated EXISTS pattern).
     return exists(
         select(GameFlaw.ply)
@@ -803,7 +760,7 @@ def flaw_exists_from_table(
         .where(
             GameFlaw.game_id == Game.id,
             GameFlaw.user_id == user_id,
-            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate
+            player_only_gate(GameFlaw.ply, Game.user_color),  # player gate
             *clauses,
         )
     )
@@ -811,16 +768,16 @@ def flaw_exists_from_table(
 
 def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> ColumnElement[bool]:
     """Correlated EXISTS: True iff the game has >=1 of the USER's OWN plies
-    (D-04 player-parity scoping) whose stored game_best_moves candidate row
+    (player-parity scoping) whose stored game_best_moves candidate row
     classifies into one of `tiers` ('gem'/'great') via the SAME
     best_move_tier_sql/classify_best_move classifier the board consumes
-    (D-03b) — board and filter agree by construction, one retune surface.
+    — board and filter agree by construction, one retune surface.
 
     game_best_moves has NO user_id column (candidacy is position-scoped, not
     user-scoped — see GameBestMove's model docstring). IDOR safety therefore
     comes ENTIRELY from the `GameBestMove.game_id == Game.id` correlation to
-    an already user-scoped outer query (T-175-01) plus player_only_gate
-    (D-04a) — never from a user_id filter here, because none exists on this
+    an already user-scoped outer query plus player_only_gate
+    — never from a user_id filter here, because none exists on this
     table. Callers MUST NOT issue this EXISTS without that outer correlation.
 
     Mover color for the classifier is always Game.user_color: only rows that
@@ -838,11 +795,11 @@ def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> Col
     """
     if not tiers:
         return true()
-    # Imported-eval divergence guard (Quick 260717-gmg): correlate the candidate
-    # ply's game_positions row (PK game_id+user_id+ply) so best_move_tier_sql can
-    # compare our best_cp against lichess's authoritative post-move %eval and drop
-    # a spurious badge — the SQL twin of the board's classify_best_move guard, so
-    # filter and board stay consistent (D-03b).
+    # Imported-eval divergence guard: correlate the candidate ply's game_positions
+    # row (PK game_id+user_id+ply) so best_move_tier_sql can compare our best_cp
+    # against lichess's authoritative post-move %eval and drop a spurious badge —
+    # the SQL twin of the board's classify_best_move guard, so filter and board
+    # stay consistent.
     GuardPos = aliased(GamePosition, name="best_move_guard_pos")  # noqa: N806
     tier_expr = best_move_tier_sql(
         GameBestMove.maia_prob,
@@ -870,7 +827,7 @@ def best_move_exists_from_table(tiers: Sequence[Literal["gem", "great"]]) -> Col
         )
         .where(
             GameBestMove.game_id == Game.id,
-            player_only_gate(GameBestMove.ply, Game.user_color),  # D-04a player gate
+            player_only_gate(GameBestMove.ply, Game.user_color),  # player gate
             tier_expr.in_(tiers),
         )
     )
@@ -881,8 +838,8 @@ def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
 
     Order: opportunity (miss, lucky) → impact (reversed, squandered)
     → tempo → phase (opening/middlegame/endgame). The Flaws subtab surfaces the
-    phase tag in the per-flaw tag list (Quick 260612-fow); the Games-card chips
-    are curated separately (`_curate_chips_from_rows`) and still omit phase.
+    phase tag in the per-flaw tag list; the Games-card chips are curated
+    separately (`_curate_chips_from_rows`) and omit phase.
 
     The deterministic order mirrors _CHIP_ORDER in library_service, with the phase
     tag appended last.
@@ -921,7 +878,7 @@ def _compute_move_seconds(
 
     Mirrors flaws_service._move_time (source of truth for the formula): same-side
     clock is two plies back — PositionTwoBefore (ply=N-2), not PositionBefore
-    (ply=N-1) which is the opponent's clock (Pitfall 2 in RESEARCH).
+    (ply=N-1) which is the opponent's clock.
 
     Formula: prev_same_side_clock - clock_after_move + increment
     (increment is added when the move is completed, so clock_after already
@@ -931,7 +888,7 @@ def _compute_move_seconds(
     - either position is absent (LEFT JOIN null — ply < 2 or no clock data),
     - either clock_seconds is null (chess.com — no %clk),
     - increment cannot be parsed from time_control_str,
-    - computed value is negative (corrupt/inconsistent clock data — WR-05).
+    - computed value is negative (corrupt/inconsistent clock data).
     """
     if pos_at is None or pos_two_before is None:
         return None
@@ -963,11 +920,11 @@ def _build_flaw_item(
     """Build one FlawListItem from a query_flaws result row.
 
     Extracted from the query_flaws comprehension to host the per-row
-    decided_lost local (computed once, passed to all 6 tactic_slot_visible
+    decided_lost local (computed once, passed to both tactic_slot_visible
     calls) while keeping each helper call readable (CLAUDE.md §keep functions
-    shallow; not inlining is_decided_lost six times).
+    shallow).
 
-    Quick 260626-bdt: decided_lost is computed from the pre-move position eval
+    decided_lost is computed from the pre-move position eval
     (pos_before.eval_cp / eval_mate) and the mover color (user_color == "white"
     for player flaws, since all rows are player-gated). When True the tactic tag
     + depth are suppressed (slot returns None) while severity and all other fields
@@ -1110,30 +1067,31 @@ async def query_flaws(
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[FlawListItem], int]:
-    """Paginated SELECT f.* FROM game_flaws JOIN games for the Flaws subtab (Plan 108-05).
+    """Paginated SELECT f.* FROM game_flaws JOIN games for the Flaws subtab.
 
-    Phase 112 (D-05/D-08): extended with two aliased game_positions outer-joins to
-    source move_san, eval_cp/eval_mate before and after the flaw:
+    Joins three game_positions LATERAL aliases (ply N, N-1, N-2; see
+    _flaw_position_lateral) for move_san, eval before/after and move_seconds:
       - PositionAt  (alias for ply=N): move_san + eval-after fields
       - PositionBefore (alias for ply=N-1): eval-before fields
+      - PositionTwoBefore (alias for ply=N-2): same-side clock for move_seconds
     LEFT JOIN ensures no crash when ply=0/1 has no prior position.
 
     Reuses build_flaw_filter_clauses (shared with the Games EXISTS filter) so
-    cross-tab filter unification is enforced in code (SEED-038).
+    cross-tab filter unification is enforced in code.
 
-    Ordered recent-first: g.played_at DESC NULLS LAST, f.ply ASC (D-07).
-    User-scoped via GameFlaw.user_id == user_id (T-108-10 IDOR mitigation).
+    Ordered recent-first: g.played_at DESC NULLS LAST, f.ply ASC.
+    User-scoped via GameFlaw.user_id == user_id (IDOR mitigation).
     Never exposes *_hash columns (CLAUDE.md V5).
 
     Args:
         session: AsyncSession for DB access.
         user_id: The authenticated user's ID — always scopes the query (IDOR).
         severity: Severity tiers to include. Empty = no severity filter.
-        tags: FlawTag values to filter on (phase tags produce no clause).
+        tags: FlawTag values to filter on (phase tags filter on game_flaws.phase).
         time_control / platform / rated / opponent_type / from_date / to_date /
           color: Game-metadata filters (threaded through apply_game_filters).
         offset: Pagination offset (>= 0).
-        limit: Page size (1..100, default 20 per D-08).
+        limit: Page size (1..100, default 20).
 
     Returns:
         (flaws, matched_count) where matched_count is the total before pagination.
@@ -1157,13 +1115,13 @@ async def query_flaws(
         decided_lost=dl_sql,
     )
 
-    # Three aliases for game_positions (Phase 112, D-08; extended 260610-vru):
+    # Three aliases for game_positions:
     # PositionAt:        ply=N   → move_san + eval-after + clock_seconds (mover's remaining clock)
     # PositionBefore:    ply=N-1 → eval-before (position BEFORE the flawed move; also used
     #                              for the decided-lost SQL gate declared above)
     # PositionTwoBefore: ply=N-2 → same-side previous clock for move_seconds computation
-    #   (Pitfall 2 from flaws_service._move_time: same-side clock is two plies back, not one)
-    # User-scoped on all joins (T-112-02: no cross-user position rows can attach).
+    #   (as in flaws_service._move_time: same-side clock is two plies back, not one)
+    # User-scoped on all joins (no cross-user position rows can attach).
     # NOTE: PositionBefore and PositionTwoBefore are declared above (before flaw_clauses)
     # so dl_sql can reference the same alias objects. Only PositionAt is declared here.
     PositionAt = _flaw_position_lateral("pos_at", GameFlaw.ply)  # noqa: N806
@@ -1191,9 +1149,9 @@ async def query_flaws(
         .outerjoin(PositionTwoBefore, true())
         .where(
             GameFlaw.user_id == user_id,
-            # D-04: player-only gate — after Phase 113 game_flaws contains both sides;
-            # the Flaws-subtab list must only show player flaws so opponent blunders do
-            # not appear as flaw cards. Game is already joined above (R2 gate).
+            # Player-only gate: game_flaws contains both sides, and the Flaws-subtab
+            # list must only show player flaws so opponent blunders do not appear as
+            # flaw cards. Game is already joined above.
             player_only_gate(GameFlaw.ply, Game.user_color),
             *flaw_clauses,
         )
@@ -1214,9 +1172,9 @@ async def query_flaws(
         to_date=to_date,
         color=color,
         user_id=user_id,
-        # SEED-163 2b: the Flaws tab is a Library surface, so flawchess/pgn rows
-        # must stay reachable regardless of the new Human+Rated analytics
-        # defaults (they are always rated=False / bot-flagged).
+        # The Flaws tab is a Library surface, so flawchess/pgn rows must stay
+        # reachable regardless of the Human+Rated analytics defaults (they are
+        # always rated=False / bot-flagged).
         native_games_bypass_opponent_and_rated=True,
     )
     base_stmt = base_stmt.where(GameFlaw.game_id.in_(game_filter_stmt))
@@ -1228,7 +1186,7 @@ async def query_flaws(
     if matched_count == 0:
         return [], 0
 
-    # Paginate, ordered recent-first (D-07).
+    # Paginate, ordered recent-first.
     paged_stmt = (
         base_stmt.order_by(Game.played_at.desc().nulls_last(), GameFlaw.ply.asc())
         .offset(offset)
@@ -1262,24 +1220,24 @@ async def fetch_page_game_flaws(
 
     Returns a dict mapping game_id -> list[GameFlaw] (may be empty for an
     analyzed-but-flawless game or a game with no game_flaws rows yet).
-    User-scoped via GameFlaw.user_id == user_id (T-108-08 mitigation).
+    User-scoped via GameFlaw.user_id == user_id.
 
     Single query for the whole page (no N+1 per-game call). The caller groups
     by game_id in Python, reconstructing chips and M+B counts from the rows.
     """
     if not game_ids:
         return {}
-    # D-04: player-only gate — after Phase 113 game_flaws contains both sides;
-    # fetch_page_game_flaws feeds chip/M+B building on Games-tab cards so it must
-    # return only player rows. Game JOIN is added here to bring user_color into
-    # scope for player_only_gate (R3 gate).
+    # Player-only gate: game_flaws contains both sides, and fetch_page_game_flaws
+    # feeds chip/M+B building on Games-tab cards so it must return only player
+    # rows. Game JOIN is added here to bring user_color into scope for
+    # player_only_gate.
     stmt = (
         select(GameFlaw)
         .join(Game, Game.id == GameFlaw.game_id)
         .where(
             GameFlaw.user_id == user_id,
             GameFlaw.game_id.in_(game_ids),
-            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate
+            player_only_gate(GameFlaw.ply, Game.user_color),  # player gate
         )
     )
     rows = list((await session.execute(stmt)).scalars().all())
@@ -1299,7 +1257,7 @@ async def fetch_page_game_flaws_both_colors(
     WARNING: This ungated both-color variant exists SOLELY to populate eval-chart
     tactic tooltips for opponent plies. It MUST NOT feed severity counts, curated
     chips, the Games-tab EXISTS filter, or any stats — those stay on the
-    player-gated fetch_page_game_flaws. See Quick 260628-u7d.
+    player-gated fetch_page_game_flaws.
 
     Identical in shape/return type to fetch_page_game_flaws but omits the
     player_only_gate and the Game JOIN (the JOIN existed only to bring user_color
@@ -1327,14 +1285,14 @@ async def fetch_page_eval_positions(
     """Batch-load GamePosition rows for the given games, grouped by game_id.
 
     Plain user-scoped id-list fetch — this function has NO analyzed-ness
-    predicate of its own (Quick 260714-rj5). Callers decide which game_ids to
-    pass: get_library_games still scopes to its analyzed subset (payload-blowup
-    guard for the list endpoint), while get_library_game (single-game path) may
-    now pass an unanalyzed game_id so an unanalyzed game can still carry its
-    move list. Selects full ORM objects so _run_all_moves_pass and _build_tags
-    can consume them unchanged. Ordered by game_id, ply ASC for sequential
-    grouping. User-scoped via GamePosition.user_id (IDOR mitigation — T-109-01,
-    same pattern as fetch_page_game_flaws / T-108-08).
+    predicate of its own. Callers decide which game_ids to pass:
+    get_library_games scopes to its analyzed subset (payload-blowup guard for the
+    list endpoint), while get_library_game (single-game path) may pass an
+    unanalyzed game_id so an unanalyzed game can still carry its move list.
+    Selects full ORM objects so _run_all_moves_pass and _build_tags can consume
+    them unchanged. Ordered by game_id, ply ASC for sequential grouping.
+    User-scoped via GamePosition.user_id (IDOR mitigation, same pattern as
+    fetch_page_game_flaws).
     """
     if not game_ids:
         return {}
@@ -1358,7 +1316,7 @@ async def fetch_page_best_moves(
     game_ids: Sequence[int],
 ) -> dict[int, dict[int, GameBestMove]]:
     """Batch-load GameBestMove candidate rows for the given games, grouped by
-    game_id then ply (Phase 175, BOARD-01).
+    game_id then ply.
 
     NO user_id scoping — game_best_moves has no user_id column (candidacy is a
     property of the position, not the user; see app/models/game_best_move.py).
@@ -1389,10 +1347,8 @@ async def fetch_page_analyzed_set(
     """Return the subset of game_ids where full_evals_completed_at IS NOT NULL.
 
     Used in _build_card to determine analysis_state for each page game without
-    a per-game position load. Replaces the per-game count_game_severities
-    analysis_state check after D-02 migration. The gate is now the authoritative
-    games.full_evals_completed_at column (reversal of the old per-ply coverage
-    recompute — see _analyzed_game_ids_subquery docstring).
+    a per-game position load. The gate is games.full_evals_completed_at (see
+    _analyzed_game_ids_subquery).
     """
     if not game_ids:
         return frozenset()
@@ -1418,8 +1374,8 @@ async def fetch_page_active_eval_status(
     game_id. Mirrors the shape/early-return of fetch_page_analyzed_set.
 
     Security: game_ids come from the already user-scoped query_filtered_games /
-    owner-checked get_library_game — no cross-user game_ids reach this query
-    (T-q1x-01 mitigated). The IN-filter restricts to the two active statuses so
+    owner-checked get_library_game — no cross-user game_ids reach this query.
+    The IN-filter restricts to the two active statuses so
     no completed/failed job leaks.
 
     Args:
@@ -1461,9 +1417,9 @@ async def fetch_flaw_trend_rows(
 ) -> list[Any]:
     """Per-game oracle blunder/mistake/inaccuracy counts + ply_count for the trend chart.
 
-    Phase 239 D-00k: each row also carries its time_control_bucket (tc) so the service
-    can build one series per time control. Games with a NULL bucket cannot be placed on
-    the TC switch and are excluded (Pitfall 8).
+    Each row also carries its time_control_bucket (tc) so the service can build one
+    series per time control. Games with a NULL bucket cannot be placed on the TC
+    switch and are excluded.
 
     Reads the games-table oracle columns (white_/black_blunders/mistakes/inaccuracies,
     picked by user_color) directly — NOT game_flaws. _compute_flaw_trend turns these
@@ -1539,12 +1495,10 @@ def _filtered_games_base(
     opponent_gap_max: int | None,
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
-    # Quick 260621-sm8 follow-up: neutral default "either" (was "allowed"). The
-    # tactic EXISTS is now gated on _tactic_controls_active (orientation alone can
-    # activate it), so an "allowed" default would make count_filtered_and_analyzed
-    # wrongly filter the coverage/comparison denominators when no tactic filter is
-    # set. No caller relies on the old "allowed" default (all family-narrowing
-    # callers pass orientation explicitly).
+    # Default "either" is neutral: the tactic EXISTS activates on orientation alone
+    # (_tactic_controls_active), so any other default would silently filter the
+    # coverage/comparison denominators (count_filtered_and_analyzed) when no tactic
+    # filter is set.
     tactic_orientation: TacticOrientation = "either",
 ) -> Select[tuple[int]]:
     """Build the filtered `SELECT Game.id` base shared by the archive + stats paths.
@@ -1553,13 +1507,13 @@ def _filtered_games_base(
     flaw-severity EXISTS) is composed, so query_filtered_games,
     count_filtered_and_analyzed and the comparison fetches stay in lockstep on what
     "the filtered set" means. user_id is threaded into both the base WHERE and
-    the EXISTS scope (T-106-02AC / T-106-03AC).
+    the EXISTS scope.
 
-    Phase 126 (D-06): tactic_families narrows to games containing a tactic flaw
+    tactic_families narrows to games containing a tactic flaw
     in one of the selected families (routed through apply_game_filters).
 
-    SEED-062: tactic_orientation selects which column set the tactic_families
-    narrowing matches on (default "allowed"). The tactic-comparison endpoint
+    tactic_orientation selects which column set the tactic_families
+    narrowing matches on (default "either"). The tactic-comparison endpoint
     passes "either" so the population includes games whose only family-X tactic
     was missed-only, matching its dual-orientation grid.
     """
@@ -1611,20 +1565,20 @@ async def query_filtered_games(
     Mirrors endgame_repository.query_endgame_games' paginated-archive shape, but
     drops the endgame-span subquery — the base select is simply the user's games,
     with the flaw EXISTS applied via apply_game_filters when severities and/or
-    tags are supplied (LIBG-08, SEED-038). flaw_tags restricts to games with a
+    tags are supplied. flaw_tags restricts to games with a
     single flaw satisfying ALL selected tag families (OR within family, AND
-    across families). tactic_families (Quick 260620-pza) restricts to games with
+    across families). tactic_families restricts to games with
     ≥1 flaw whose tactic motif (in the orientation's column, within the depth
     range) is in the selected families — the same tactic EXISTS the Flaws tab
-    uses, just threaded to the Games tab. has_gem / has_great (FILT-01) restrict
+    uses, just threaded to the Games tab. has_gem / has_great restrict
     to games with >=1 of the user's OWN plies classifying as that tier via the
-    SAME classifier the board uses (D-04/D-05a) — union semantics when both are
+    SAME classifier the board uses — union semantics when both are
     set. When all of flaw_severity / flaw_tags / tactic_families / has_gem /
     has_great are None/empty/False the query is a plain filtered archive (no EXISTS).
 
     Returns (page_games, matched_count) where matched_count reflects ALL matching
     games before offset/limit. Ordered played_at DESC nulls last. The user_id is
-    threaded into both the base WHERE and the EXISTS scope (T-106-02AC).
+    threaded into both the base WHERE and the EXISTS scope.
     """
     base_stmt = select(Game).where(Game.user_id == user_id)
     base_stmt = apply_game_filters(
@@ -1647,9 +1601,9 @@ async def query_filtered_games(
         user_id=user_id,
         has_gem=has_gem,
         has_great=has_great,
-        # SEED-163 2b: the Library Games tab is the one surface that must keep
-        # showing flawchess/pgn rows under the new Human+Rated analytics
-        # defaults (they are always rated=False / bot-flagged).
+        # The Library Games tab is the one surface that must keep showing
+        # flawchess/pgn rows under the Human+Rated analytics defaults (they are
+        # always rated=False / bot-flagged).
         native_games_bypass_opponent_and_rated=True,
     )
 
@@ -1668,21 +1622,15 @@ async def query_filtered_games(
 def _analyzed_game_ids_subquery(user_id: int) -> Subquery:
     """Indexed games-table lookup: game_ids where full_evals_completed_at IS NOT NULL.
 
-    REVERSAL (quick-task 260617-pu4): the previous implementation was a per-game
-    coverage aggregate over game_positions (SUM(has_eval) / (COUNT(*)-1) >=
-    EVAL_COVERAGE_MIN, grouped by game_id). That GROUP BY / HAVING full-scanned the
-    user's entire game_positions partition on every call — 409k rows for the largest
-    prod user — causing 135s avg / 49-min max fetch_stats_aggregates latency under an
-    eval-drain (prod finding 2026-06-17).
+    Uses games.full_evals_completed_at, not a per-ply coverage aggregate over
+    game_positions: the aggregate full-scanned the user's entire game_positions
+    partition on every call (135s avg on prod under an eval-drain) and over-excluded
+    short fully-analyzed games whose terminal ply has no eval (~0.17% divergence).
 
-    That coverage formula was already materialized by the eval-drain into
-    games.full_evals_completed_at, so we can replace the cold-page partition scan with
-    a single indexed games lookup. This is strictly cheaper (PK index, no aggregate)
-    and also MORE correct: the per-ply recompute (COUNT(*)-1 denominator introduced in
-    260615-rb1) still over-excluded short fully-analyzed games whose terminal position
-    had no eval, causing ~0.17% divergence. full_evals_completed_at is set by the drain
-    only when the kernel itself is satisfied, so it is the definitive source of truth.
-    The (COUNT-1) denominator narrative in 260615-rb1 no longer applies to this path.
+    The eval-drain already materializes the coverage decision into
+    games.full_evals_completed_at, and sets it only when the kernel itself is
+    satisfied, so this is a single indexed games lookup (PK index, no aggregate) and
+    the definitive source of truth.
     """
     return (
         select(Game.id.label("game_id"))
@@ -1706,12 +1654,11 @@ async def count_filtered_and_analyzed(
     opponent_gap_max: int | None = None,
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
-    # Quick 260621-sm8 follow-up: neutral default "either" (was "allowed") — see
-    # _filtered_games_base. Prevents the analyzed/coverage counts from being
-    # silently tactic-filtered when no tactic control is set.
+    # Default "either" is neutral (see _filtered_games_base): the analyzed/coverage
+    # counts must not be silently tactic-filtered when no tactic control is set.
     tactic_filter_orientation: TacticOrientation = "either",
 ) -> tuple[int, int]:
-    """Return (total_n, analyzed_n) over the filtered Games-surface set (LIBG-09).
+    """Return (total_n, analyzed_n) over the filtered Games-surface set.
 
     total_n   = count of games matching the filter set.
     analyzed_n = subset that is all-ply eval-complete, i.e. present in
@@ -1795,23 +1742,23 @@ async def count_analyzed_by_tc(
     require_tactic_blobs: bool = False,
     analyzed_only: bool = True,
 ) -> dict[str, int]:
-    """Return {time_control_bucket: analyzed game count} over the filtered set (Phase 239 D-02).
+    """Return {time_control_bucket: analyzed game count} over the filtered set.
 
     Same population as count_filtered_and_analyzed's analyzed_n (the filtered base
     intersected with _analyzed_game_ids_subquery), split by Game.time_control_bucket.
     The sidebar time-control filter is already applied by apply_game_filters inside
-    _filtered_games_base, so "TCs allowed by the filter" (D-02) falls out for free.
+    _filtered_games_base, so "TCs allowed by the filter" falls out for free.
     Games with a NULL time_control_bucket (some pasted PGNs) cannot be placed on the
-    TC switch and are excluded (Pitfall 8). Only buckets with a positive count are
+    TC switch and are excluded. Only buckets with a positive count are
     returned. The tactic keywords exist so the tactic comparison can reuse this
     function unchanged. User-scoped.
 
     The population carries the same ply_count gate as the fetch_flaw_comparison /
     fetch_tactic_comparison anchors (NOT NULL and > 0), so analyzed_n, below_gate and the
-    offered TCs agree with the rows that get aggregated (WR-03).
+    offered TCs agree with the rows that get aggregated.
 
-    require_tactic_blobs additionally restricts to games whose tactic blobs are done
-    (WR-01); only the tactic path sets it. The flaw comparison leaves it False.
+    require_tactic_blobs additionally restricts to games whose tactic blobs are done;
+    only the tactic path sets it. The flaw comparison leaves it False.
 
     analyzed_only=False drops the analyzed restriction and counts every filtered game of
     the TC, the coverage denominator of the "1,768 of 1,790 rapid games analyzed" line.
@@ -1836,7 +1783,7 @@ async def count_analyzed_by_tc(
         Game.user_id == user_id,
         Game.id.in_(select(base_subq.c.id)),
         Game.time_control_bucket.isnot(None),
-        # WR-03: same ply_count gate as the fetch anchors. Without it a TC whose
+        # Same ply_count gate as the fetch anchors. Without it a TC whose
         # analyzed games all have NULL/0 ply_count (pasted PGNs) was offered above the
         # gate while the aggregation dropped every one of its games, rendering
         # all-zero bars.
@@ -1847,7 +1794,7 @@ async def count_analyzed_by_tc(
         analyzed_subq = _analyzed_game_ids_subquery(user_id)
         predicates.append(Game.id.in_(select(analyzed_subq.c.game_id)))
     if require_tactic_blobs:
-        # WR-01: tactic motifs are suppressed to NULL while a flaw blob is pending, so a
+        # Tactic motifs are suppressed to NULL while a flaw blob is pending, so a
         # blob-pending analyzed game would count as a false zero-tactic game and dilute
         # the gap. Matches the section 5 calibration basis (chapter5.py _base_games_cte).
         predicates.append(Game.blobs_completed_at.isnot(None))
@@ -1861,7 +1808,7 @@ async def count_analyzed_by_tc(
 
 
 # ---------------------------------------------------------------------------
-# Quick 261014-pb9 — tempo x phase crossed COUNT FILTER columns
+# tempo x phase crossed COUNT FILTER columns
 # ---------------------------------------------------------------------------
 
 TempoPhaseSide = Literal["player", "opp"]
@@ -1884,7 +1831,7 @@ def tempo_phase_count_label(
 ) -> str:
     """Column label of one crossed COUNT FILTER column, e.g. player_hasty_x_middlegame.
 
-    Built only from Literal constants, never request input, so T-108-06 still holds.
+    Built only from Literal constants, never request input.
     The repository emits and the service reads labels through this one helper.
     """
     return f"{side}_{tempo}_x_{phase}"
@@ -1932,18 +1879,17 @@ async def fetch_flaw_comparison(
     """Per-game player/opp counts for the 12 metrics over the analyzed+filtered set.
 
     LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws so games
-    with zero flaws contribute a zero-delta row (§5 all-analyzed-games basis,
-    Pitfall 1 / FLAWCMP-01).
+    with zero flaws contribute a zero-delta row (all-analyzed-games basis).
     Returns one row per (game_id, tc, user_moves) with 42 COUNT columns (12 player +
-    12 opp marginals, plus 18 crossed tempo x phase columns). The tc column (Phase 239 D-02) lets the service bucket rows per time
-    control in Python; games with a NULL time_control_bucket are excluded.
-    Python aggregates mean + CI per metric.
+    12 opp marginals, plus 18 crossed tempo x phase columns). The tc column lets the
+    service bucket rows per time control in Python; games with a NULL
+    time_control_bucket are excluded. Python aggregates mean + CI per metric.
 
-    Pitfall 2 (divide-by-zero): games with ply_count IS NULL or ply_count = 0
+    Divide-by-zero guard: games with ply_count IS NULL or ply_count = 0
     are excluded at the anchor level — _analyzed_game_ids_subquery does NOT
     filter ply_count. Use func.count(GameFlaw.ply) NOT func.count() so absent
     LEFT-JOIN rows (NULL ply) are not counted. Use is_opponent_expr from
-    query_utils — never inline ply % 2 math (CONTEXT D-01, Pitfall 3).
+    query_utils — never inline ply % 2 math.
     """
     base_filtered_subq = _filtered_games_base(
         user_id,
@@ -1959,7 +1905,7 @@ async def fetch_flaw_comparison(
         color=color,
     ).subquery("filtered_fc")
 
-    # Anchor: analyzed+filtered games with valid ply_count (Pitfall 2 — divide-by-zero guard)
+    # Anchor: analyzed+filtered games with valid ply_count (divide-by-zero guard)
     anchor_subq = (
         select(
             Game.id.label("game_id"),
@@ -1980,7 +1926,7 @@ async def fetch_flaw_comparison(
             Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
             Game.ply_count.isnot(None),
             Game.ply_count > 0,
-            # Phase 239 Pitfall 8: a NULL bucket cannot be placed on the TC switch.
+            # A NULL bucket cannot be placed on the TC switch.
             Game.time_control_bucket.isnot(None),
         )
         .subquery("anchor")
@@ -2155,7 +2101,7 @@ async def fetch_flaw_comparison(
                 GameFlaw.is_squandered.is_(True),
             )
             .label("opp_squandered"),
-            # --- Crossed tempo x phase family (quick 261014-pb9) ---
+            # --- Crossed tempo x phase family ---
             *_tempo_phase_count_columns(anchor_subq.c.user_color),
         )
         .outerjoin(
@@ -2189,7 +2135,7 @@ async def fetch_tactic_comparison(
     opponent_gap_max: int | None,
     color: str | None,
     tactic_families: Sequence[str] | None = None,
-    tactic_confidence_min: int = _TACTIC_CHIP_CONFIDENCE_MIN,
+    tactic_confidence_min: int = MIN_TACTIC_CHIP_CONFIDENCE,
     orientation: TacticOrientation = "allowed",
     tactic_filter_orientation: TacticOrientation = "allowed",
 ) -> list[Any]:
@@ -2198,21 +2144,21 @@ async def fetch_tactic_comparison(
     LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws (orientation
     tactic_motif IS NOT NULL AND tactic_confidence >= tactic_confidence_min) so games with
     zero qualifying tactic flaws contribute a zero-count row.
-    Phase 128 D-09: orientation selects the column set (allowed/missed) for both the
+    Orientation selects the column set (allowed/missed) for both the
     LEFT JOIN gate and the COUNT FILTER predicates.
 
-    SEED-062: orientation drives ONLY the COUNT column set; tactic_filter_orientation
+    Orientation drives ONLY the COUNT column set; tactic_filter_orientation
     drives the tactic_families narrowing of the base game population. The comparison
     grid shows both orientations, so the service passes tactic_filter_orientation=
     "either" for both the missed and allowed fetches — both bullet populations then
     share one basis (games with a family-X tactic in either column) and match the
-    gate's analyzed_n denominator, instead of inheriting the "allowed"-only default.
+    gate's analyzed_n denominator.
 
-    Returns one row per game_id with a `tc` column (Game.time_control_bucket, Phase 239
-    D-02: the service buckets one fetch per TC) and 38 COUNT columns (19 families ×
+    Returns one row per game_id with a `tc` column (Game.time_control_bucket; the
+    service buckets one fetch per TC) and 38 COUNT columns (19 families ×
     player/opp). Python aggregates mean + CI per family in the service layer.
 
-    Uses is_opponent_expr from query_utils — never inline ply % 2 (CONTEXT D-01, Pitfall 3).
+    Uses is_opponent_expr from query_utils — never inline ply % 2.
     """
     base_filtered_subq = _filtered_games_base(
         user_id,
@@ -2230,7 +2176,7 @@ async def fetch_tactic_comparison(
         tactic_orientation=tactic_filter_orientation,
     ).subquery("filtered_tc")
 
-    # Anchor: analyzed+filtered games with valid ply_count (Pitfall 2 — divide-by-zero guard)
+    # Anchor: analyzed+filtered games with valid ply_count (divide-by-zero guard)
     anchor_subq = (
         select(
             Game.id.label("game_id"),
@@ -2243,9 +2189,9 @@ async def fetch_tactic_comparison(
             Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
             Game.ply_count.isnot(None),
             Game.ply_count > 0,
-            # Phase 239 D-02: games without a bucket cannot be placed on the TC switch.
+            # Games without a bucket cannot be placed on the TC switch.
             Game.time_control_bucket.isnot(None),
-            # WR-01: blob-pending games have NULL tactic motifs, so they would enter as
+            # Blob-pending games have NULL tactic motifs, so they would enter as
             # false zero-tactic rows and dilute the gap toward "typical". Restrict to
             # blobs_completed_at IS NOT NULL, the basis the tactic zones were calibrated
             # on (scripts/benchmarks/chapter5.py _base_games_cte).
@@ -2257,9 +2203,9 @@ async def fetch_tactic_comparison(
     # Build 38 COUNT columns (19 families × player/opp).
     # orientation_tactic_motif IS NOT NULL AND orientation_tactic_confidence >= threshold
     # gates the LEFT JOIN so only qualifying (confident enough) tactic events are counted.
-    # Phase 128 D-09: _tactic_cols resolves the column pair from orientation (closed enum).
+    # _tactic_cols resolves the column pair from orientation (closed enum).
     # func.count(GameFlaw.ply) (not func.count()) ensures NULL ply from LEFT JOIN miss = 0.
-    # is_opponent_expr — never inline ply % 2 (CONTEXT D-01, Pitfall 3).
+    # is_opponent_expr — never inline ply % 2.
     motif_col, conf_col = _tactic_cols(orientation)
     count_cols = []
     for family, motif_ints in FAMILY_TO_MOTIF_INTS.items():
@@ -2296,7 +2242,7 @@ async def fetch_tactic_comparison(
 
 
 # ---------------------------------------------------------------------------
-# Phase 135 — Tactic Line Explorer: PV→SAN helpers + fetch_tactic_lines()
+# Tactic Line Explorer: PV→SAN helpers + fetch_tactic_lines()
 # ---------------------------------------------------------------------------
 
 
@@ -2306,11 +2252,7 @@ def pv_to_san_list(board: chess.Board, pv: str | None) -> list[str] | None:
     Walks each UCI move from `board`, returning SAN for each position visited.
     Returns None when pv is falsy (NULL/empty) or unparseable.
     ValueError from _parse_pv (bad UCI) is an expected/graceful case — do NOT
-    capture_exception (CLAUDE.md: skip expected exceptions; T-135-04 accept).
-
-    Public (190-02): this walk was previously module-private; promoted so
-    `app.repositories.train_repository`'s reveal path can reuse this exact
-    walk for `PuzzleRevealResponse.pv` rather than re-deriving a second one.
+    capture_exception (CLAUDE.md: skip expected exceptions).
     """
     if not pv:
         return None
@@ -2327,12 +2269,12 @@ async def fetch_tactic_lines(
     game_id: int,
     ply: int,
 ) -> TacticLinesResponse | None:
-    """Fetch and convert the PV walk data for the TacticLineExplorer (Phase 135).
+    """Fetch and convert the PV walk data for the TacticLineExplorer.
 
     Returns None when there is no game_flaws row for (game_id, ply) — the caller
     raises 404.
 
-    Quick 260717-agv: NOT owner-scoped. game_id is globally unique (games.id PK)
+    NOT owner-scoped. game_id is globally unique (games.id PK)
     and determines the owner, so (game_id, ply) resolves the owner's flaw without
     a requester filter — any authenticated user inspecting the game on the
     analysis page may expand its tactic lines (mirrors get_library_game).
@@ -2341,21 +2283,20 @@ async def fetch_tactic_lines(
     game_positions at ply and ply+1 for the two PV strings. Sequential awaits —
     NEVER asyncio.gather on one AsyncSession (CLAUDE.md constraint).
 
-    PV anchoring (Research Finding 2):
+    PV anchoring:
     - Missed PV: from board_before (decision board, no flaw move pushed).
     - Allowed PV: from board_after_flaw (flaw move pushed), then prepend the
-      flaw move SAN so allowed_moves[0] is the red error move (Pitfall 3).
+      flaw move SAN so allowed_moves[0] is the red error move.
 
     FEN returned as a full FEN (with side-to-move from ply parity) so chess.js
-    can initialize the board without client-side ply arithmetic (Pitfall 2).
+    can initialize the board without client-side ply arithmetic.
 
     Raw 0-based depths are returned as-is; the +1 display offset and the
     ALLOWED_DECISION_DEPTH_OFFSET are applied client-side via
-    toDisplayDepthForOrientation() in frontend/src/lib/tacticDepth.ts
-    (Research Finding 2).
+    toDisplayDepthForOrientation() in frontend/src/lib/tacticDepth.ts.
     """
     # 1. Fetch the flaw row. game_id uniquely determines the owner, so no
-    # user_id filter is needed (Quick 260717-agv: cross-user analysis view).
+    # user_id filter is needed (any authenticated user may open the analysis view).
     flaw_q = await session.execute(
         select(GameFlaw).where(
             GameFlaw.game_id == game_id,
@@ -2384,12 +2325,12 @@ async def fetch_tactic_lines(
 
     # 3. Reconstruct the decision board from board_fen() + ply parity.
     # game_flaws.fen stores board_fen() (piece-placement only, no side-to-move).
-    # Same logic as _detect_tactic_for_flaw in flaws_service.py:445-446.
+    # Same logic as flaws_service._detect_tactic_for_flaw.
     board_before = chess.Board(flaw.fen)
     board_before.turn = chess.WHITE if ply % 2 == 0 else chess.BLACK
 
     # 4. Convert missed PV from decision board (board_before, no flaw move pushed).
-    # Full PV (no truncation, Phase 135 UAT) — show every move the engine returned.
+    # Full PV (no truncation) — show every move the engine returned.
     missed_pv = pos_n.pv if pos_n is not None else None
     missed_sans = pv_to_san_list(board_before.copy(), missed_pv)
 
@@ -2426,7 +2367,7 @@ async def fetch_tactic_lines(
     # allowed_moves prepends the flaw move at index 0 (the red error move), so the
     # opponent-refutation punchline sits one index DEEPER in allowed_moves than its
     # raw detector depth. Shift +1 so the SAN ladder highlights the refutation move
-    # (at flaw_ply+1), not the flaw move itself (Phase 135 UAT). missed_moves has no
+    # (at flaw_ply+1), not the flaw move itself. missed_moves has no
     # prepend, so missed_tactic_ply_index stays equal to the raw depth.
     allowed_ply_index: int | None = (
         flaw.allowed_tactic_depth + 1 if flaw.allowed_tactic_depth is not None else None

@@ -4,7 +4,7 @@ Verifies:
 1. CLI argument parsing (--user-id, --all, --yes, mutual exclusion).
 2. Re-import pipeline flow (delete + create job + run_import called).
 3. Eval extraction from %eval PGN annotations — confirms the extraction logic
-   that the import pipeline (plan 28-02) uses to populate eval_cp/eval_mate.
+   that the import pipeline uses to populate eval_cp/eval_mate.
 """
 
 import datetime
@@ -114,7 +114,7 @@ class TestParseArgs:
 class TestEvalExtraction:
     """Tests for eval extraction from lichess %eval PGN annotations.
 
-    This verifies the eval extraction logic that the import pipeline (plan 28-02)
+    This verifies the eval extraction logic that the import pipeline
     wires into _flush_batch. python-chess exposes node.eval() which returns a
     PovScore — we test that it correctly parses centipawn and mate values.
 
@@ -180,7 +180,7 @@ class TestEvalExtraction:
     def test_eval_extraction_logic_per_position_row(self):
         """Validate the per-position eval_cp/eval_mate row assembly logic.
 
-        Mirrors what _flush_batch in import_service.py (plan 28-02) does:
+        Mirrors what _flush_batch in import_service.py does:
         - Iterates over mainline nodes
         - Calls node.eval() at each ply
         - Stores eval_cp / eval_mate on the position dict
@@ -191,7 +191,7 @@ class TestEvalExtraction:
         assert game is not None
 
         nodes = list(game.mainline())
-        # Simulate the position row assembly loop (identical to what plan 28-02 implements)
+        # Simulate the position row assembly loop (identical to what _flush_batch implements)
         evals: list[tuple[int | None, int | None]] = []
 
         for node in nodes:

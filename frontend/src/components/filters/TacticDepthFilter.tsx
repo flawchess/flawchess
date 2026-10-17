@@ -1,6 +1,4 @@
 /**
- * TacticDepthFilter — Quick 260620-l5k (Phase 130).
- *
  * Two-handle RANGE filter over tactic depth (0-based ply, domain 0..11). The
  * slider domain IS the API/DB domain — no full-move ↔ half-ply conversion.
  * min === max (e.g. 0..0) is selectable. Presentation is delegated to the
@@ -49,8 +47,8 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
     [onChange],
   );
 
-  // Tracked on commit (Radix onValueCommit), never per drag step (Phase 229
-  // Pitfall 2), and debounced to one event per adjustment burst because Radix also
+  // Tracked on commit (Radix onValueCommit), never per drag step, and
+  // debounced to one event per adjustment burst because Radix also
   // commits on every keyboard step. Only the matching preset or 'custom' is sent,
   // never the bounds.
   const handleSliderCommit = useCallback(

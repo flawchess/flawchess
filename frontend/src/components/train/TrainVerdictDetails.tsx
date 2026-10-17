@@ -1,12 +1,11 @@
 /**
- * TrainVerdictDetails — Phase 237 plan 08 (D-07): the full verdict feedback
- * body, shared by the desktop verdict bubble and the phone strip's expansion.
+ * TrainVerdictDetails — the full verdict feedback body, shared by the desktop
+ * verdict card and the phone strip's expansion.
  *
  * In order: the bot verdict (opener, clause with its point pills, look-closer
  * line, return tail), the Your-call feedback (call label, guess prose,
- * motif) and the "Also fine, e.g. ..." list. Nothing the old bubble and Your-call
- * card showed is dropped, and there are no buttons here: Analyze and Next live in
- * the reveal action bar.
+ * motif) and the "Also fine, e.g. ..." list. There are no buttons here:
+ * Analyze and Next live in the reveal action bar.
  *
  * Also home of `TrainScoreChip`, the "+N" pill shared with the strip and the
  * points flash over the board.
@@ -21,18 +20,18 @@ import type { Guess } from '@/lib/trainGuessLabels';
 import type { SolveResponse } from '@/types/train';
 
 /**
- * Phase 200 UAT round 3: the reveal's score chip. It always states what the
- * line actually SCORED (guess: 0 or 1; move: 0, 1 for an inaccuracy, or 2), so
- * the reveal and the "Points: +N" flash over the board add up to the same total.
- * Green whenever anything was earned, red at zero. Phase 222 (D-23): shared by
- * the verdict clause's inline guess/move pills, the same "+N" scoring language.
+ * The reveal's score chip. It always states what the line actually SCORED
+ * (guess: 0 or 1; move: 0, 1 for an inaccuracy, or 2), so the reveal and the
+ * "Points: +N" flash over the board add up to the same total. Green whenever
+ * anything was earned, red at zero. Shared by the verdict clause's inline
+ * guess/move pills, the same "+N" scoring language.
  */
 export function TrainScoreChip({ points, testid }: { points: number; testid: string }): ReactElement {
   return (
     <span
       // rounded-full + slightly wider padding: the same pill shape as the
-      // "Points: +N" flash over the board (Phase 200 UAT round 3), so the two
-      // surfaces read as the same scoring language.
+      // "Points: +N" flash over the board, so the two surfaces read as the
+      // same scoring language.
       className="shrink-0 rounded-full px-2 py-0.5 text-sm font-semibold text-white"
       style={{ backgroundColor: points > 0 ? TRAIN_VERDICT_CORRECT : TRAIN_VERDICT_INCORRECT }}
       data-testid={testid}
@@ -58,7 +57,7 @@ export interface TrainVerdictDetailsProps {
   /** Comma-joined SAN of the alternative fine moves; '' hides the line. */
   alsoFineSanList: string;
   /**
-   * Phase 237 UAT: the desktop card floats the bot avatar here, so the verdict
+   * The desktop card floats the bot avatar here, so the verdict
    * paragraph wraps to its right while the Your-call block below the separator
    * keeps the full width. The phone strip shows its avatar in the header line.
    */
@@ -67,11 +66,11 @@ export interface TrainVerdictDetailsProps {
 
 /**
  * The verdict paragraph: opener + clause with inline pills + optional
- * look-closer line (0-1 pts) + the D-15/D-16 return tail.
+ * look-closer line (0-1 pts) + the return tail.
  *
- * RESEARCH Pitfall 7: a `trainRevealCache` entry written by a pre-206 bundle
+ * A `trainRevealCache` entry written by an older bundle
  * restores a verdict without `source` at runtime despite the TS type calling
- * it required. Per D-16, a return tail can only be trusted once the item's
+ * it required. A return tail can only be trusted once the item's
  * SOURCE is known (herring/filler never return; sr_item's tail depends on
  * item_status/due_date) — so a missing `source` renders no return tail at
  * all, the one nullish default at this consumption site, rather than
@@ -97,7 +96,7 @@ function VerdictParagraph({
           session_date: sessionDate,
           expires_on: expiresOn,
         });
-  // D-16: a mastered/parked/herring/filler item's tail explains WHY it won't
+  // A mastered/parked/herring/filler item's tail explains WHY it won't
   // return — it is not itself a return promise. `train-bot-return-tail`
   // (the testid a future date-check UI could key off) is reserved for the
   // two genuine promises (next-session / in-N-days); the terminal variants
@@ -161,8 +160,8 @@ export function TrainVerdictDetails({
         />
       </div>
       <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="train-verdict-guess">
-        {/* Phase 237 UAT: no score chip on this line, the verdict clause's guess
-            pill above already states the call's points. */}
+        {/* No score chip on this line, the verdict clause's guess pill above
+            already states the call's points. */}
         <p className="font-semibold">Your call: {guess !== null ? GUESS_CALL_LABELS[guess] : ''}</p>
         {guessProse !== null && (
           <p className="text-sm" data-testid="train-verdict-guess-prose">

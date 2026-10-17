@@ -11,32 +11,31 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.models.game import Game
 
 # ---------------------------------------------------------------------------
-# Ply-parity convention (single source — CONTEXT D-01, Phase 113)
+# Ply-parity convention (single source)
 # ---------------------------------------------------------------------------
 # Even ply → white mover; odd ply → black mover.
-# This mirrors _run_all_moves_pass in flaws_service.py (line ~227):
+# This mirrors _run_all_moves_pass in flaws_service.py:
 #     mover = "white" if n % 2 == 0 else "black"
-# A prior off-by-one bug lived here (see CONTEXT D-01 / RESEARCH Pitfall 1).
+# A prior off-by-one bug lived here, hence the single source.
 # Do NOT scatter ply % 2 math across query sites — always use is_opponent_expr.
 _PLY_EVEN_MOVER_WHITE = 0  # ply % 2 == 0 means white moved
 
 # ---------------------------------------------------------------------------
-# Default platform exclusion (single source — CONTEXT D-02, Phase 167; extended
-# Phase 208 D-05/D-11)
+# Default platform exclusion (single source)
 # ---------------------------------------------------------------------------
 # Flawchess bot-practice games must stay invisible to every default analytics
-# population (STORE-07) while remaining reachable by any caller that passes an
+# population while remaining reachable by any caller that passes an
 # explicit platform list including "flawchess" (e.g. library_service's
-# get_library_games opt-in, D-03). This is the ONE central seam — do not
+# get_library_games opt-in). This is the ONE central seam — do not
 # scatter per-router platform checks.
 #
-# Phase 208 (PASTE-05): a pasted PGN (platform="pgn") is excluded for the same
-# reason and the same way. Pasted games are frequently NOT the user's own — a
+# A pasted PGN (platform="pgn") is excluded for the same reason and the same
+# way. Pasted games are frequently NOT the user's own — a
 # broadcast game, a friend's PGN, a scouted opponent — so they must never
 # reach an analytics population. A pasted game that genuinely IS the user's
 # own doesn't count either: import it from the platform it was actually
-# played on. Unlike "flawchess", "pgn" has no default opt-in anywhere
-# (D-11/D-12) — the Library's "Pasted" filter chip opts back in by passing an
+# played on. Unlike "flawchess", "pgn" has no default opt-in anywhere; the
+# Library's "Pasted" filter chip opts back in by passing an
 # explicit `platform=["pgn"]` list, which the existing `platform is not None`
 # branch below already honors with no new plumbing.
 DEFAULT_EXCLUDED_PLATFORMS = ("flawchess", "pgn")
@@ -49,8 +48,8 @@ DEFAULT_EXCLUDED_PLATFORMS = ("flawchess", "pgn")
 # enforces this invariant by comparing typing.get_args(Platform) against the
 # union of the two tuples.
 #
-# Quick 260811-u11: AnalyticsPlatform is the type-level twin of the tuple
-# below, derived via get_args() so the two are structurally impossible to
+# AnalyticsPlatform is the type-level twin of the tuple below, derived via
+# get_args() so the two are structurally impossible to
 # drift apart (rather than merely documented as agreeing). Exported for
 # current_strength_repository / current_strength_service to import and cast
 # a raw platform string once apply_game_filters(platform=None) has already
@@ -81,7 +80,7 @@ def is_opponent_expr(
 
     Single source of the ply-parity convention. Unit-tested for all 4
     (ply parity × user_color) combinations (TestIsOpponentExpr). A prior
-    off-by-one bug lived here — see CONTEXT D-01 / RESEARCH Pitfall 1.
+    off-by-one bug lived here.
 
     Args:
         ply_col: A column or literal expression resolving to the ply integer.
@@ -136,7 +135,7 @@ def player_only_gate(
 ) -> ColumnElement[bool]:
     """Convenience inverse of is_opponent_expr — True when the mover is the PLAYER.
 
-    Use at read-gating call sites (D-04) so intent reads as 'player only'
+    Use at read-gating call sites so intent reads as 'player only'
     rather than a negation. Equivalent to ~is_opponent_expr(...).
 
     Args:
@@ -151,7 +150,7 @@ def player_only_gate(
 
 
 def game_ids_any_predicate(column: Any, game_ids: Sequence[int]) -> ColumnElement[bool]:
-    """``column = ANY(:ids)`` against ONE bound ``int[]`` parameter (Phase 238).
+    """``column = ANY(:ids)`` against ONE bound ``int[]`` parameter.
 
     Used by the on-read ranked Endgame Stats path to restrict a statement (or an
     inner aggregation subquery) to the ranked-sample game ids. Deliberately NOT an
@@ -177,9 +176,9 @@ def apply_game_filters(
     to_date: datetime.date | None,
     color: str | None = None,
     *,
-    # SEED-163 2b: keyword-only, default-False so every existing caller keeps
-    # today's behavior unchanged; only library_repository's two Library-surface
-    # query functions set it True.
+    # Keyword-only, default-False so every existing caller keeps today's behavior
+    # unchanged; only library_repository's two Library-surface query functions
+    # (query_flaws, query_filtered_games) set it True.
     native_games_bypass_opponent_and_rated: bool = False,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -187,17 +186,16 @@ def apply_game_filters(
     flaw_tags: Sequence[str] | None = None,
     tactic_families: Sequence[str] | None = None,
     user_id: int | None = None,
-    # Quick 260621-sm8 follow-up: neutral default is "either" (was "allowed"). With
-    # the tactic EXISTS now gated on _tactic_controls_active (orientation alone can
-    # activate it), an "allowed" default would make every non-tactic caller
-    # (endgame/openings/stats, which pass no orientation) wrongly filter to games
-    # with an allowed tactic. "either" matches build_flaw_filter_clauses' default.
+    # Default "either" is neutral: the tactic EXISTS activates on orientation alone
+    # (_tactic_controls_active), so any other default would silently filter every
+    # non-tactic caller (endgame/openings/stats pass no orientation) to games with
+    # a tactic. "either" matches build_flaw_filter_clauses' default.
     orientation: Literal["either", "missed", "allowed"] = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
     has_gem: bool | None = None,
     has_great: bool | None = None,
-    # Phase 238: keyword-only, default None = unchanged behavior for every existing
+    # Keyword-only, default None = unchanged behavior for every existing
     # caller. Only the on-read ranked Endgame Stats path sets it, to restrict a
     # statement to the ranked-sample game ids (alongside neutral other filters).
     game_ids: Sequence[int] | None = None,
@@ -209,9 +207,8 @@ def apply_game_filters(
         time_control: Filter by time control buckets (bullet, blitz, rapid, classical).
         platform: Filter by platform (chess.com, lichess). None = default
                  population, which excludes DEFAULT_EXCLUDED_PLATFORMS
-                 ("flawchess", "pgn") — D-02 (Phase 167, STORE-07) and D-05
-                 (Phase 208, PASTE-05). Pass an explicit list including
-                 "flawchess" or "pgn" to opt in (D-03 / D-11/D-12).
+                 ("flawchess", "pgn"). Pass an explicit list including
+                 "flawchess" or "pgn" to opt in.
                  ANALYTICS_INCLUDED_PLATFORMS is the explicit-list equivalent
                  of the `platform is None` default: passing
                  `platform=list(ANALYTICS_INCLUDED_PLATFORMS)` returns the
@@ -240,8 +237,8 @@ def apply_game_filters(
                  defaults would otherwise hide a game the user just finished
                  from the only place it is browsable. Those rows remain
                  governed by the Platform filter and, for "pgn", by the
-                 Library "pasted" control (D-14). This extends Phase 167
-                 D-03's "always here" guarantee from the platform axis to the
+                 Library "pasted" control. This extends the "always here"
+                 guarantee for flawchess games from the platform axis to the
                  opponent/rated axes. Default False = today's behavior.
         opponent_gap_min: Lower bound (inclusive) on opponent_rating - user_rating.
                          None = unbounded below.
@@ -252,51 +249,51 @@ def apply_game_filters(
                          listed values (set membership / IN, not a min-threshold; e.g.
                          ["mistake"] matches mistakes only, not blunders). None (default)
                          leaves the statement unchanged — all existing callers are unaffected.
-                         Requires user_id (T-108-07: EXISTS must be user-scoped).
+                         Requires user_id (the EXISTS must be user-scoped).
         flaw_tags: When set (e.g. ["low-clock", "reversed"]), additionally
                          restrict to games containing a SINGLE flaw satisfying ALL
-                         selected tag families (single-flaw EXISTS semantics, SEED-038).
-                         OR within family, AND across families. Phase tags are ignored.
+                         selected tag families (single-flaw EXISTS semantics).
+                         OR within family, AND across families (phase tags filter on
+                         game_flaws.phase).
                          None (default) leaves the statement unchanged.
-                         Requires user_id when either flaw_severity or flaw_tags is set.
+                         Requires user_id when any flaw or tactic filter is active
+                         (flaw_severity, flaw_tags, or a non-default tactic control).
         tactic_families: When set (e.g. ["fork", "skewer"]), restrict to games
                          containing >=1 flaw whose tactic motif int (in the orientation's
                          column) is in the union of FAMILY_TO_MOTIF_INTS values for the
                          selected families. Unknown family keys yield no ints (no-op),
-                         never raw SQL (T-126-02). None (default) leaves the statement
+                         never raw SQL. None (default) leaves the statement
                          unchanged. Uses lazy import of FAMILY_TO_MOTIF_INTS from
-                         library_repository to avoid a circular import (Phase 126 D-06).
-        user_id: The authenticated user's id — required when flaw_severity or
-                         flaw_tags is set, to scope the EXISTS subquery's game_flaws read
-                         (T-108-07). Ignored otherwise.
-        orientation: Which tactic column set to query (Phase 128/129).
-                         "either" (default) → OR across both column sets — the neutral
-                         default (Quick 260621-sm8; was "allowed", changed so non-tactic
-                         callers don't accidentally filter once the tactic EXISTS is
-                         gated on _tactic_controls_active).
+                         library_repository to avoid a circular import.
+        user_id: The authenticated user's id — required when any flaw or tactic
+                         filter is active (flaw_severity, flaw_tags, or a non-default
+                         tactic control), to scope the EXISTS subquery's game_flaws
+                         read. Ignored otherwise.
+        orientation: Which tactic column set to query.
+                         "either" (default) → OR across both column sets. The default
+                         is neutral: the tactic EXISTS activates on orientation alone
+                         (_tactic_controls_active), so any other default would silently
+                         filter non-tactic callers.
                          "allowed" → allowed_tactic_motif only.
                          "missed"  → missed_tactic_motif only.
-                         FAMILY_TO_MOTIF_INTS is reused unchanged for all orientations.
+                         FAMILY_TO_MOTIF_INTS is shared by all orientations.
                          Orientation is a closed Literal enum — never raw column-name
-                         interpolation (T-128-05/T-129-01).
+                         interpolation.
         min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds (0-based
-                         ply) on the active orientation's depth column (Quick
-                         260620-l5k / Phase 130). Each side optional; None = unbounded
-                         that side. Mates obey the range too (the Phase 129 D-04
-                         exemption was removed). Note: this site does NOT gate on
-                         confidence (Pitfall 3 preserved).
+                         ply) on the active orientation's depth column. Each side
+                         optional; None = unbounded that side. Mates obey the range
+                         too.
         has_gem: When True, restrict to games containing >=1 of the USER's own
-                         plies (D-04 player-parity scoping) whose stored
+                         plies (player-parity scoping) whose stored
                          game_best_moves candidate classifies as 'gem' via the
                          SAME classifier the board uses (best_move_tier_sql /
-                         classify_best_move, GEMS-07/D-03b). None/False = no
+                         classify_best_move). None/False = no
                          gem filter. Composed via a single correlated EXISTS
-                         (best_move_exists_from_table) — never a parallel path
-                         (D-05a, FILT-01).
+                         (best_move_exists_from_table) — never a parallel path.
         has_great: Same as has_gem for the 'great' tier. has_gem=True AND
                          has_great=True is a UNION (gem OR great on the single
-                         EXISTS), mirroring the flaw-family EXISTS union (D-05).
-        game_ids: Phase 238. When set, restrict to ``Game.id = ANY(:ids)`` (one bound
+                         EXISTS), mirroring the flaw-family EXISTS union.
+        game_ids: When set, restrict to ``Game.id = ANY(:ids)`` (one bound
                          int[] parameter; see ``game_ids_any_predicate``). None (default)
                          leaves the statement unchanged. Internal keyword: routers must
                          never expose it.
@@ -310,7 +307,7 @@ def apply_game_filters(
         comparison uses the server's session timezone (UTC in production), which
         is correct for UTC-normalised timestamps. Games close to midnight in
         non-UTC timezones may straddle the boundary by up to ~24 h — this is an
-        accepted trade-off per D-16 (no client_timezone param to avoid scope creep).
+        accepted trade-off (no client_timezone param, to avoid scope creep).
 
     Returns:
         The statement with WHERE clauses appended.
@@ -320,13 +317,12 @@ def apply_game_filters(
     if platform is not None:
         stmt = stmt.where(Game.platform.in_(platform))
     else:
-        # D-02 (Phase 167): default population (no explicit platform filter)
+        # Default population (no explicit platform filter)
         # excludes flawchess bot-practice games from every analytics surface,
-        # including the opponent_type='bot' explicit-filter case (STORE-07,
-        # RESEARCH Pitfall 1). Callers that want flawchess must pass it
+        # including the opponent_type='bot' explicit-filter case. Callers that want flawchess must pass it
         # explicitly in `platform` (e.g. library_service.get_library_games).
         stmt = stmt.where(Game.platform.notin_(DEFAULT_EXCLUDED_PLATFORMS))
-    # SEED-163 2b: opponent_type and rated are composed into ONE predicate (rather
+    # opponent_type and rated are composed into ONE predicate (rather
     # than independent .where() calls) so native_games_bypass_opponent_and_rated
     # can wrap the whole thing in a platform-exemption OR. When the flag is False
     # the AND of active conditions is equivalent to the old one-where-per-predicate
@@ -341,7 +337,7 @@ def apply_game_filters(
     if opponent_rated_conditions:
         combined_condition = and_(*opponent_rated_conditions)
         if native_games_bypass_opponent_and_rated:
-            # Library-only exemption (SEED-163 2b): flawchess/pgn rows are stored
+            # Library-only exemption: flawchess/pgn rows are stored
             # rated=False (and flawchess is_computer_game=True), so a Human+Rated
             # default would otherwise hide a game from the only surface that
             # browses it. The Platform filter above still governs these rows.
@@ -350,7 +346,7 @@ def apply_game_filters(
             )
         else:
             stmt = stmt.where(combined_condition)
-    # D-10: apply date bounds only when set. to_date is shifted +1 day so the
+    # Apply date bounds only when set. to_date is shifted +1 day so the
     # comparison ``played_at < to_date + 1 day`` covers the full to_date day.
     if from_date is not None:
         stmt = stmt.where(Game.played_at >= from_date)
@@ -380,12 +376,12 @@ def apply_game_filters(
     # list onto one row, the same single-row AND semantics the Flaws list uses
     # (query_flaws).
     #
-    # BUG FIXED (Quick 260621): previously this emitted TWO separate correlated
-    # EXISTS — one for severity/context tags, one for tactics — so a game matched
-    # when one flaw was a depth-1-2 fork and a DIFFERENT flaw was low-clock. The
-    # tactic and context filters were ANDed at the game level, not the flaw-row
-    # level, diverging from the Flaws tab. A single EXISTS over the full clause list
-    # restores the expected "one flaw is BOTH a fork AND low-clock" semantics.
+    # Don't emit TWO separate correlated EXISTS (one for severity/context tags, one
+    # for tactics): a game would match when one flaw was a depth-1-2 fork and a
+    # DIFFERENT flaw was low-clock, because the tactic and context filters would be
+    # ANDed at the game level, not the flaw-row level, diverging from the Flaws tab.
+    # A single EXISTS over the full clause list gives the expected "one flaw is BOTH
+    # a fork AND low-clock" semantics.
     #
     # Lazy import avoids a query_utils <-> library_repository import cycle
     # (mirrors endgame_repository's in-function import pattern).
@@ -399,7 +395,7 @@ def apply_game_filters(
 
     # The tactic EXISTS must apply whenever ANY tactic control is active (family,
     # orientation, OR depth) — mirroring build_flaw_filter_clauses for the Flaws
-    # list. resolved_families drop unknown keys (no-op, T-126-02), so an unknown-only
+    # list. resolved_families drop unknown keys (no-op), so an unknown-only
     # selection with default orientation/depth does not trigger a filter.
     families_seq: Sequence[str] = tactic_families or ()
     resolved_families: Sequence[str] = [fam for fam in families_seq if fam in FAMILY_TO_MOTIF_INTS]
@@ -409,7 +405,7 @@ def apply_game_filters(
     if flaw_severity or flaw_tags or tactic_active:
         if user_id is None:
             # Message intentionally omits variable values to preserve Sentry grouping
-            # (T-108-07: scoping requires an authenticated user_id).
+            # (scoping requires an authenticated user_id).
             raise ValueError("flaw/tactic filter requires user_id for EXISTS scoping")
         # Callers pass validated Literal values; cast narrows Sequence[str].
         severities = cast(Sequence[FlawSeverity], flaw_severity or [])
@@ -428,7 +424,7 @@ def apply_game_filters(
         # real EXISTS predicate here (not true()).
         stmt = stmt.where(exists_pred)
 
-    # has_gem / has_great (FILT-01, D-04/D-05/D-05a): a single correlated EXISTS
+    # has_gem / has_great: a single correlated EXISTS
     # composed alongside (not replacing) the flaw/tactic EXISTS above — both
     # booleans build ONE tiers list so has_gem=True AND has_great=True is a
     # UNION (gem OR great on the same row-set), never an intersection.

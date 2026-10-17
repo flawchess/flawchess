@@ -1,11 +1,11 @@
-"""Tests for users_with_zero_pending repository helper (WR-01 fix, Phase 94.1-12).
+"""Tests for users_with_no_pending_evals_or_imports repository helper.
 
 Locks the single-query contract: the aggregated helper MUST issue exactly ONE
 SQL statement, and its return set MUST match a per-user count_pending_evals loop.
 
-Phase 94.1 Plan 13 (gap-closure): extends the helper with an active-import gate.
-Users with pending/in_progress import_jobs are excluded even when their pending-eval
-count is zero. Test 7 below pins this contract.
+The helper also carries an active-import gate: users with pending/in_progress
+import_jobs are excluded even when their pending-eval count is zero. Test 7 below
+pins this contract.
 
 Data isolation: all tests use the rollback-scoped ``db_session`` fixture from
 ``tests/conftest.py`` — no committed rows leak between tests.
@@ -25,7 +25,7 @@ from app.models.game import Game
 from app.models.import_job import ImportJob
 from app.repositories.game_repository import (
     count_pending_evals,
-    users_with_zero_pending,
+    users_with_no_pending_evals_or_imports,
 )
 
 # Test constants — no magic numbers
@@ -36,7 +36,7 @@ _USER_NO_GAMES_ID: int = 99703
 _MIXED_COHORT_BASE_ID: int = 99800  # 5 users at 99800..99804
 _MIXED_COHORT_SIZE: int = 5
 
-# Additional users for Plan 13 Stage B gate tests (Test 7)
+# Additional users for the Stage B gate tests (Test 7)
 _IMPORT_GATE_USER_A_ID: int = 99710  # zero pending evals + no active import → returned
 _IMPORT_GATE_USER_B_ID: int = 99711  # zero pending evals + in_progress import → excluded
 _IMPORT_GATE_USER_C_ID: int = 99712  # zero pending evals + pending import → excluded
@@ -121,8 +121,8 @@ async def _ensure_test_users(db_session: AsyncSession) -> None:
 
 
 async def test_empty_input_returns_empty_list(db_session: AsyncSession) -> None:
-    """users_with_zero_pending(session, []) returns [] without issuing SQL."""
-    result = await users_with_zero_pending(db_session, [])
+    """users_with_no_pending_evals_or_imports(session, []) returns [] without issuing SQL."""
+    result = await users_with_no_pending_evals_or_imports(db_session, [])
     assert result == []
 
 
@@ -137,7 +137,9 @@ async def test_all_users_have_zero_pending(db_session: AsyncSession) -> None:
         await _seed_game(db_session, uid, evals_completed=True)
         await _seed_game(db_session, uid, evals_completed=True)
 
-    result = await users_with_zero_pending(db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID])
+    result = await users_with_no_pending_evals_or_imports(
+        db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID]
+    )
     assert set(result) == {_USER_A_ID, _USER_B_ID, _USER_C_ID}
 
 
@@ -157,7 +159,9 @@ async def test_mixed_pending_counts(db_session: AsyncSession) -> None:
     await _seed_game(db_session, _USER_C_ID, evals_completed=False)
     await _seed_game(db_session, _USER_C_ID, evals_completed=True)
 
-    result = await users_with_zero_pending(db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID])
+    result = await users_with_no_pending_evals_or_imports(
+        db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID]
+    )
     assert set(result) == {_USER_A_ID}
 
 
@@ -169,7 +173,7 @@ async def test_mixed_pending_counts(db_session: AsyncSession) -> None:
 async def test_user_with_zero_games_returns_user(db_session: AsyncSession) -> None:
     """A user with NO games at all has zero pending by definition; LEFT JOIN keeps them."""
     # No seed for _USER_NO_GAMES_ID — user exists but owns no games.
-    result = await users_with_zero_pending(db_session, [_USER_NO_GAMES_ID])
+    result = await users_with_no_pending_evals_or_imports(db_session, [_USER_NO_GAMES_ID])
     assert result == [_USER_NO_GAMES_ID]
 
 
@@ -181,7 +185,7 @@ async def test_user_with_zero_games_returns_user(db_session: AsyncSession) -> No
 async def test_aggregate_matches_per_user_loop(db_session: AsyncSession) -> None:
     """Regression: aggregated helper return set equals the per-user count_pending_evals loop.
 
-    This is the contract the WR-01 fix must preserve. Seed a mixed cohort of 5
+    This is the contract the single-query rewrite must preserve. Seed a mixed cohort of 5
     users with a deterministic mix of 0 / 1 / many pending, then verify the
     aggregated result equals the set of uids with count_pending_evals == 0.
     """
@@ -201,7 +205,7 @@ async def test_aggregate_matches_per_user_loop(db_session: AsyncSession) -> None
     for _ in range(3):
         await _seed_game(db_session, uids[4], evals_completed=True)
 
-    aggregated = set(await users_with_zero_pending(db_session, uids))
+    aggregated = set(await users_with_no_pending_evals_or_imports(db_session, uids))
 
     per_user_zero: set[int] = set()
     for uid in uids:
@@ -218,10 +222,10 @@ async def test_aggregate_matches_per_user_loop(db_session: AsyncSession) -> None
 # ---------------------------------------------------------------------------
 
 
-async def test_users_with_zero_pending_issues_single_query(
+async def test_users_with_no_pending_evals_or_imports_issues_single_query(
     db_session: AsyncSession,
 ) -> None:
-    """Lock the WR-01 contract: helper issues exactly ONE SQL statement.
+    """Lock the single-query contract: helper issues exactly ONE SQL statement.
 
     Attaches a SQLAlchemy ``before_cursor_execute`` event listener to the
     underlying sync engine of the async connection, calls the helper, and
@@ -244,7 +248,9 @@ async def test_users_with_zero_pending_issues_single_query(
 
     sa_event.listen(sync_engine, "before_cursor_execute", _on_exec)
     try:
-        result = await users_with_zero_pending(db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID])
+        result = await users_with_no_pending_evals_or_imports(
+            db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID]
+        )
     finally:
         sa_event.remove(sync_engine, "before_cursor_execute", _on_exec)
 
@@ -257,7 +263,7 @@ async def test_users_with_zero_pending_issues_single_query(
 
 
 # ---------------------------------------------------------------------------
-# Test 7 — Plan 13 Stage B gate: users with active imports are excluded
+# Test 7 — Stage B gate: users with active imports are excluded
 # ---------------------------------------------------------------------------
 
 
@@ -283,7 +289,7 @@ async def _seed_import_job(
 async def test_users_with_active_imports_are_excluded_from_stage_b(
     db_session: AsyncSession,
 ) -> None:
-    """Plan 13 Stage B gate: users with pending/in_progress imports are excluded.
+    """Stage B gate: users with pending/in_progress imports are excluded.
 
     Seeds 4 users, all with zero pending evals:
     - User A: zero pending evals + NO active import → returned (should fire Stage B)
@@ -291,7 +297,7 @@ async def test_users_with_active_imports_are_excluded_from_stage_b(
     - User C: zero pending evals + pending import → excluded (Stage B deferred)
     - User D: zero pending evals + completed import → returned (completed = no longer active)
 
-    This pins the Plan 13 correctness requirement: Stage B must NOT fire for users
+    This pins the correctness requirement: Stage B must NOT fire for users
     mid-import, even when their pending-eval count is zero. Without this gate,
     Stage B fires multiple times as eval batches drain, producing transient
     intermediate values visible on the chip.
@@ -311,7 +317,7 @@ async def test_users_with_active_imports_are_excluded_from_stage_b(
     await _seed_import_job(db_session, _IMPORT_GATE_USER_C_ID, status="pending")
     await _seed_import_job(db_session, _IMPORT_GATE_USER_D_ID, status="completed")
 
-    result = await users_with_zero_pending(
+    result = await users_with_no_pending_evals_or_imports(
         db_session,
         [
             _IMPORT_GATE_USER_A_ID,

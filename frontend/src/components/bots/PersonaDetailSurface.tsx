@@ -1,17 +1,16 @@
 /**
  * PersonaDetailSurface — the persona detail dialog opened from `PersonaGrid`
- * (Phase 183, PERS-02). Shows the persona's avatar, name, DISPLAY-ONLY tilde
+ * Shows the persona's avatar, name, DISPLAY-ONLY tilde
  * ELO label + style name, full bio, and reused color/TC chip controls
  * (`SetupScreen`'s exact markup + `CHIP_*` classes) defaulting to the
  * persisted last-used values. Tapping Play resolves those two controls into
  * a fully-pinned `BotGameSettings` (botElo/blend/style/personaId all pinned
- * by the persona, never a separate strength picker — Pitfall 3) and calls
+ * by the persona, never a separate strength picker) and calls
  * `onStart` exactly once, the SAME entry `SetupScreen`'s Start button calls.
  *
  * Mirrors `GameResultDialog.tsx`'s Dialog shell. Uses the DialogContent
- * default vertical centering on all breakpoints — the previous
- * `top-[30%] sm:top-1/2` mobile anchor pushed this (tall) dialog off the
- * top of small screens.
+ * default vertical centering on all breakpoints: a `top-[30%] sm:top-1/2`
+ * mobile anchor would push this (tall) dialog off the top of small screens.
  */
 
 import { useEffect, useState } from 'react';
@@ -107,7 +106,7 @@ function PersonaTcBucketGroup({
               data-testid={personaTcTestId(preset.label)}
               aria-pressed={isActive}
               onClick={() => {
-                // Phase 229 D-12: re-picking the active preset is not a change.
+                // Re-picking the active preset is not a change.
                 if (!isActive) trackFeature('option-change', { target: 'bot-tc', value: preset.label });
                 onSelect(preset.label);
               }}
@@ -183,9 +182,9 @@ export function PersonaDetailSurface({
     const baseSeconds = preset?.baseSeconds ?? 600;
     const incrementSeconds = preset?.incrementSeconds ?? 0;
 
-    // D-12 (mirrors SetupScreen.tsx's handleStart): an unresolved 'random'
-    // preference must NEVER reach `useBotGame` — resolved to a concrete
-    // color HERE, before `onStart` fires.
+    // Mirrors SetupScreen.tsx's buildSettings: an unresolved 'random'
+    // preference must never reach `useBotGame`, so it is resolved to a
+    // concrete color here, before `onStart` fires.
     const userColor: MoverColor =
       colorPreference === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : colorPreference;
 
@@ -223,10 +222,10 @@ export function PersonaDetailSurface({
             <div className="flex flex-col gap-1">
               <DialogTitle>{persona.name}</DialogTitle>
               {/* Display-only ELO/style text — never an EloSelector/
-                  PlayStyleControl (Pitfall 3): this surface has no strength
-                  picker. The calibrated label (Phase 184 CAL-05) pairs with a
-                  D-08 disclosure popover as supplementary hover/tap detail,
-                  never replacing the visible label. */}
+                  PlayStyleControl: this surface has no strength picker.
+                  The calibrated label pairs with a disclosure popover as
+                  supplementary hover/tap detail, never replacing the
+                  visible label. */}
               <div className="flex items-center gap-1">
                 <p className="text-sm text-muted-foreground" data-testid="persona-detail-meta">
                   {`${persona.style} · ${persona.calibratedLabel}`}

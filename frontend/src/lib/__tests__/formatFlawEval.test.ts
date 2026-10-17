@@ -1,8 +1,8 @@
 /**
- * Tests for formatFlawEval utility (Phase 112, SC-6).
+ * Tests for formatFlawEval utility.
  *
  * Key invariants:
- * - White-POV → user-POV negation: black's eval is negated (Pitfall 3)
+ * - White-POV → user-POV negation: black's eval is negated
  * - Mate sign: user_color='black' + eval_mate=3 → "#-3" (white mates = bad for black user)
  * - cp formatting: signed 1-decimal pawns via formatSignedEvalPawns
  * - null → em-dash "—"
@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { formatFlawEval, mateAtPly } from '../formatFlawEval';
 
 describe('formatFlawEval', () => {
-  describe('user-POV negation (SC-6)', () => {
+  describe('user-POV negation', () => {
     it('for user_color=black, eval_cp_before=-300 renders "+3.0" (negated)', () => {
       const result = formatFlawEval(-300, null, null, null, 'black');
       expect(result).toContain('+3.0');
@@ -35,7 +35,7 @@ describe('formatFlawEval', () => {
     });
   });
 
-  describe('mate sign (SC-6)', () => {
+  describe('mate sign', () => {
     it('for user_color=black, eval_mate_before=3 (white mates) renders "#-3"', () => {
       const result = formatFlawEval(null, 3, null, null, 'black');
       expect(result).toContain('#-3');
@@ -82,7 +82,7 @@ describe('formatFlawEval', () => {
     });
   });
 
-  describe('mateAtPly (Phase 135 UAT — mate count tracks the selected ply)', () => {
+  describe('mateAtPly (mate count tracks the selected ply)', () => {
     // White mates in 3, white to move at the anchor: delivers on ply 2*3-1 = 5.
     // The count drops only when the mating side moves (every 2 plies).
     it('decrements only on the mating side move when mating side is to move at anchor', () => {

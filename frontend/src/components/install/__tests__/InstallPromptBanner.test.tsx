@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * InstallPromptBanner.test.tsx — Phase 203 Plan 02 (INSTALL-03/06, D-07/D-11).
- * Wave-0 gap: this component had zero automated coverage before this phase.
+ * InstallPromptBanner.test.tsx: route suppression on /train, the handoff
+ * override, and the drawer copy guard.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -48,7 +48,7 @@ describe('InstallPromptBanner', () => {
     expect(screen.getByTestId('install-prompt-android')).not.toBeNull();
   });
 
-  it('renders nothing on /train (D-07 route suppression)', () => {
+  it('renders nothing on /train (route suppression)', () => {
     renderAt('/train');
     expect(screen.queryByTestId('install-prompt-android')).toBeNull();
   });
@@ -58,13 +58,13 @@ describe('InstallPromptBanner', () => {
     expect(screen.queryByTestId('install-prompt-android')).toBeNull();
   });
 
-  it('renders the drawer on /train when the handoff marker is active (D-11 override)', () => {
+  it('renders the drawer on /train when the handoff marker is active (override)', () => {
     sessionStorage.setItem(HANDOFF_MARKER_KEY, '1');
     renderAt('/train');
     expect(screen.getByTestId('install-prompt-android')).not.toBeNull();
   });
 
-  it('the drawer body makes no notification/reminder/alert/push promise (INSTALL-06)', () => {
+  it('the drawer body makes no notification/reminder/alert/push promise', () => {
     renderAt('/openings');
     const drawer = screen.getByTestId('install-prompt-android');
     expect(drawer.textContent ?? '').not.toMatch(/notification|remind|alert|push/i);

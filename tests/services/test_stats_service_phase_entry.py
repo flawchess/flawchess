@@ -1,5 +1,5 @@
 """Service-level integration tests for MG-entry eval fields in
-get_most_played_openings (Plan 02, Task 2).
+get_most_played_openings.
 
 Coverage:
 - MG-entry eval fields populated when phase=1 rows exist
@@ -203,7 +203,7 @@ async def _seed_game_with_phases(
 
 
 class TestGetMostPlayedOpeningsPhaseEntry:
-    """Service-level tests for MG-entry eval + clock-diff fields (Plan 02)."""
+    """Service-level tests for MG-entry eval + clock-diff fields."""
 
     @pytest.mark.asyncio
     async def test_get_most_played_openings_populates_mg_eval_fields(
@@ -406,7 +406,7 @@ class TestGetMostPlayedOpeningsPhaseEntry:
 
     @pytest.mark.asyncio
     async def test_outlier_trim_propagates_to_response(self, db_session: AsyncSession) -> None:
-        """D-08: outlier eval_cp=+2500 excluded; eval_n=2, avg_eval_pawns=0.75."""
+        """Outlier eval_cp=+2500 excluded; eval_n=2, avg_eval_pawns=0.75."""
         uid = _USER_SS_OUTLIER
         opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
         if opening_info is None:

@@ -1,15 +1,14 @@
 // @vitest-environment node
 /**
  * maiaWorkerScript.test.ts — end-to-end sandbox test of the vendored
- * `frontend/public/maia/maia-worker.js` classic Worker script (Phase 213-09,
- * G-213-35).
+ * `frontend/public/maia/maia-worker.js` classic Worker script.
  *
  * `maia-worker.js` is a classic (non-ESM, non-bundled) script served
  * verbatim, so it cannot be `import`ed by Vitest's module graph. This file
  * drives it directly via `node:vm`'s `runInContext` against a sandbox
  * supplying `self`, `fetch`, `importScripts`, `postMessage`, and `console` —
  * the same technique the repo already uses for headless vendored-bundle
- * verification (see 213-09-PLAN.md Task 1's `wasmBinary` gate and the
+ * verification (see the `wasmBinary` gate and the
  * vendored README's "Runtime binary ownership" section).
  *
  * The fake `importScripts` records the requested path and installs a FAKE
@@ -17,7 +16,7 @@
  * `InferenceSession.create` resolving a session whose `run()` returns
  * plausibly-shaped `logits_move`/`logits_value` typed arrays) — this file's
  * job is the WORKER SCRIPT's own message-handling and `ort.env.wasm.*`
- * plumbing, not onnxruntime-web's real behavior (covered by the Task 1
+ * plumbing, not onnxruntime-web's real behavior (covered by the
  * empirical gate and `ortRuntimeSource.test.ts`).
  *
  * Deliberately avoids `instanceof`/`toBeInstanceOf` on any value the worker
@@ -45,7 +44,7 @@ interface CreateCall {
   wasmBinarySnapshot: unknown;
   executionProviders: string[];
   numThreadsAtCreate: number;
-  /** WR-01 (Phase 219 review): `ort.env.wasm.initTimeout` as of create() time. */
+  /** `ort.env.wasm.initTimeout` as of create() time. */
   initTimeoutAtCreate: unknown;
 }
 
@@ -120,7 +119,7 @@ function fakeFetchResponse(): {
   };
 }
 
-/** A completed fetch response carrying real bytes — used by the asset-cache tests below to prove the written body. `declaredLength` lets a test declare a content-length that differs from the delivered bytes (CR-01 truncation shape). */
+/** A completed fetch response carrying real bytes — used by the asset-cache tests below to prove the written body. `declaredLength` lets a test declare a content-length that differs from the delivered bytes (truncation shape). */
 function fakeFetchResponseWithBytes(
   bytes: Uint8Array,
   declaredLength?: number,
@@ -156,11 +155,11 @@ interface SetupSandboxOptions {
   seedModelBytes?: Uint8Array;
   /** Bytes the fetch stub returns on a model fetch — defaults to the pre-existing zero-byte response. */
   modelFetchBytes?: Uint8Array;
-  /** Overrides the content-length the model fetch declares (CR-01: a value larger than modelFetchBytes.length simulates clean-EOF truncation). */
+  /** Overrides the content-length the model fetch declares (a value larger than modelFetchBytes.length simulates clean-EOF truncation). */
   modelFetchDeclaredLength?: number;
-  /** Phase 219 (D-08): installs `self.crossOriginIsolated` — absent/false exercises `chooseWasmThreadCount()`'s fail-safe (returns 1 regardless of core count). */
+  /** Installs `self.crossOriginIsolated` — absent/false exercises `chooseWasmThreadCount()`'s fail-safe (returns 1 regardless of core count). */
   crossOriginIsolated?: boolean;
-  /** Phase 219 (D-08): installs `self.navigator = { hardwareConcurrency }` — omitted entirely (no `navigator` at all) exercises the defensive `self.navigator && ...` read, the same as a `node:vm` sandbox with no navigator global. */
+  /** Installs `self.navigator = { hardwareConcurrency }` — omitted entirely (no `navigator` at all) exercises the defensive `self.navigator && ...` read, the same as a `node:vm` sandbox with no navigator global. */
   hardwareConcurrency?: number;
 }
 
@@ -182,7 +181,7 @@ function setupSandbox(opts: SetupSandboxOptions = {}): SandboxHandle {
   const sandbox: SandboxHandle['sandbox'] = { self: {} };
   sandbox.self = sandbox as unknown as Record<string, unknown>; // `self` in a Worker IS the global scope
   (sandbox as unknown as Record<string, unknown>).console = console;
-  // Phase 219 (D-08): `self.crossOriginIsolated` defaults to `undefined`
+  // `self.crossOriginIsolated` defaults to `undefined`
   // (falsy) — the same "no headers" starting point as every pre-existing
   // test in this file, all of which expect numThreadsAtCreate === 1.
   (sandbox as unknown as Record<string, unknown>).crossOriginIsolated = opts.crossOriginIsolated ?? false;
@@ -288,7 +287,7 @@ describe('maiaWorkerScript — backend: wasm', () => {
 
     // After create() has fully returned and 'ready' has posted, wasmBinary
     // must be cleared — retaining the duplicate buffer past this point is
-    // pure waste on the worker's heap (T-213-09-06).
+    // pure waste on the worker's heap.
     expect(handle.sandbox.ort?.env.wasm.wasmBinary).toBeUndefined();
     expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
@@ -300,8 +299,8 @@ describe('maiaWorkerScript — backend: wasm', () => {
     expect(handle.sandbox.ort?.env.wasm.wasmBinary).toBeUndefined();
   });
 
-  // NOTE (Phase 213-12, D-20): the "prefetched modelBuffer" handoff test
-  // that used to live here (G-213-8) is RETIRED — that mechanism is gone.
+  // NOTE: the "prefetched modelBuffer" handoff test
+  // that used to live here is RETIRED — that mechanism is gone.
   // The equivalent "already-complete progress, zero fetch" behavior is now
   // exercised via CacheStorage instead — see the "asset cache" describe
   // block below (`a populated cache: ZERO fetch calls...`).
@@ -348,7 +347,7 @@ describe('maiaWorkerScript — backend: webgpu', () => {
   });
 });
 
-describe('maiaWorkerScript — chooseWasmThreadCount() (Phase 219, D-08)', () => {
+describe('maiaWorkerScript — chooseWasmThreadCount()', () => {
   it('not cross-origin isolated: 1 thread regardless of core count', async () => {
     const handle = setupSandbox({ crossOriginIsolated: false, hardwareConcurrency: 16 });
     await sendInit(handle, { backend: 'wasm' });
@@ -391,7 +390,7 @@ describe('maiaWorkerScript — chooseWasmThreadCount() (Phase 219, D-08)', () =>
   });
 });
 
-describe('maiaWorkerScript — WR-01 (Phase 219 review): bounded threaded init + forceSingleThread', () => {
+describe('maiaWorkerScript — bounded threaded init + forceSingleThread', () => {
   it('sets ort.env.wasm.initTimeout to a bounded value BEFORE InferenceSession.create(), wasm-only path', async () => {
     const handle = setupSandbox({ crossOriginIsolated: true, hardwareConcurrency: 8 });
     await sendInit(handle, { backend: 'wasm' });
@@ -431,7 +430,7 @@ describe('maiaWorkerScript — WR-01 (Phase 219 review): bounded threaded init +
 });
 
 describe('maiaWorkerScript — backend defaulting', () => {
-  it('an unrecognised backend value falls safe to wasm (D-13 fail-safe-toward-wasm philosophy)', async () => {
+  it('an unrecognised backend value falls safe to wasm (fail-safe-toward-wasm philosophy)', async () => {
     const handle = setupSandbox();
     await sendInit(handle, { backend: 'not-a-real-backend' });
 
@@ -447,7 +446,7 @@ describe('maiaWorkerScript — backend defaulting', () => {
   });
 });
 
-describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37)', () => {
+describe('maiaWorkerScript — asset cache', () => {
   it('a populated cache: ZERO fetch calls, one complete progress event, and ready posted', async () => {
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
     const handle = setupSandbox({ withCaches: true, seedModelBytes: bytes });
@@ -484,9 +483,9 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
     expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
-  it('a model stream ending short of its declared content-length is retried and NEVER written to the cache (CR-01)', async () => {
+  it('a model stream ending short of its declared content-length is retried and NEVER written to the cache', async () => {
     // Clean-EOF truncation: 3 bytes delivered against a declared 5. The
-    // worker must treat this as a failed download (engaging the D-15 retry
+    // worker must treat this as a failed download (engaging the retry
     // loop), and the truncated body must never reach the cache — a cached
     // truncated model would be served back as complete on every later spawn.
     const bytes = new Uint8Array([9, 8, 7]);
@@ -500,7 +499,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
     expect(handle.postMessages.some((m) => m.type === 'ready')).toBe(false);
   });
 
-  it('a model response with no usable content-length resolves but is NOT cached — the next spawn fetches again (CR-01)', async () => {
+  it('a model response with no usable content-length resolves but is NOT cached — the next spawn fetches again', async () => {
     const bytes = new Uint8Array([9, 8, 7]);
     // declaredLength 0 → the worker's Number(...) coercion falls back, so the
     // length is unverifiable: return the bytes, skip the cache write.
@@ -523,7 +522,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
   });
 });
 
-// ─── Asset versioning (quick 260905-rhc) ───────────────────────────────────
+// ─── Asset versioning ───────────────────────────────────
 //
 // Reads the URLs the sandboxed worker ACTUALLY passed to importScripts,
 // fetch, cache.put, and ort.env.wasm.wasmPaths — behavioral evidence, not a
@@ -531,7 +530,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
 
 const TEST_VERSION_QUERY = '?v=42';
 
-describe('maiaWorkerScript — asset versioning (quick 260905-rhc)', () => {
+describe('maiaWorkerScript — asset versioning', () => {
   it('wasm backend: importScripts, the model fetch/cache key, and wasmPaths (wasm-only pair) all carry the version suffix', async () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const handle = setupSandbox({ withCaches: true, modelFetchBytes: bytes });

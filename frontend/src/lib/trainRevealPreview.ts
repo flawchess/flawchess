@@ -1,6 +1,6 @@
 /**
  * trainRevealPreview — the pure model behind the Train reveal's dimmed live
- * engine preview (SEED-197). React-free so it unit-tests without a DOM.
+ * engine preview. React-free so it unit-tests without a DOM.
  *
  * Each chip owns only its first move; everything after it is an ordinary tree
  * node. The preview is the engine continuation shown (dimmed) at the end of the
@@ -20,7 +20,7 @@
  *                seed) whose moves match the committed path down to the leaf.
  * Steps are the legal prefix of that line, clipped to TRAIN_PREVIEW_MAX_PLIES.
  *
- * Minimum length (SEED-197 UAT): Stockfish PVs are often cut short by hash
+ * Minimum length: Stockfish PVs are often cut short by hash
  * cutoffs, worst on the warm hash of a stepped line, so a deep live line can be
  * only 1-2 plies long. A live line shorter than TRAIN_PREVIEW_MIN_PLIES yields to
  * the best fallback (stored, seed, inherited) when that fallback is longer and
@@ -37,15 +37,14 @@ import type { ChipGroup, RoleKey } from '@/lib/trainRevealLines';
 
 /**
  * Most plies the displayed preview shows (about two wrapped token rows on a
- * phone). It caps only the DISPLAYED preview, never committed nodes (SEED-197
- * item 9): the user can keep committing past it.
+ * phone). It caps only the DISPLAYED preview, never committed nodes: the user
+ * can keep committing past it.
  */
 export const TRAIN_PREVIEW_MAX_PLIES = 6;
 
 /**
  * Preview length below which a live line yields to a longer fallback that agrees
- * on its first move (owner UAT: a chip shows its move plus at least five
- * preview plies).
+ * on its first move (a chip shows its move plus at least five preview plies).
  */
 export const TRAIN_PREVIEW_MIN_PLIES = 5;
 
@@ -129,8 +128,8 @@ export interface PreviewAnchorInput {
  * The node the preview hangs off, or null for no preview. A leaf is its own
  * anchor; at the puzzle position the anchor is the active chip's first-move node
  * while that node is a leaf (so the list looks as full as before at open). A node
- * with children has no preview (SEED-197 item 5), and neither does a finished
- * game (checkmate / stalemate / draw, item 9).
+ * with children has no preview, and neither does a finished
+ * game (checkmate / stalemate / draw).
  */
 export function resolvePreviewAnchor({
   nodes,

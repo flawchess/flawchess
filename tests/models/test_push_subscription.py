@@ -1,6 +1,6 @@
-"""DB round-trip + constraint tests for the push_subscriptions table (Phase 201).
+"""DB round-trip + constraint tests for the push_subscriptions table.
 
-Proves the PUSH-01/PUSH-02 must-have truths:
+Proves these must-have truths:
 1. Deleting the owning user CASCADE-deletes every one of that user's
    push_subscriptions rows.
 2. A second row with an `endpoint` that already exists raises an
@@ -38,7 +38,7 @@ async def _seed_user(session: AsyncSession, *, email: str) -> User:
 
 @pytest.mark.asyncio
 async def test_cascade_deletes_subscriptions_on_user_delete(db_session: AsyncSession) -> None:
-    """Deleting the owning user CASCADE-deletes their push_subscriptions rows (PUSH-01)."""
+    """Deleting the owning user CASCADE-deletes their push_subscriptions rows."""
     user = await _seed_user(db_session, email="push-cascade@example.com")
     db_session.add(
         PushSubscription(user_id=user.id, endpoint=_ENDPOINT, p256dh=_P256DH, auth=_AUTH)

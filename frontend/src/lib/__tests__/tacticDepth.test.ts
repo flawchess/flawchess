@@ -1,5 +1,5 @@
 /**
- * tacticDepth.ts unit tests — Quick 260620-l5k (Phase 130).
+ * tacticDepth.ts unit tests.
  *
  * The filter is a two-handle RANGE [min, max] over tactic depth (0-based ply,
  * domain 0..11). The slider domain IS the API/DB domain — no full-move ↔
@@ -39,7 +39,7 @@ describe('named constants', () => {
     expect(DEPTH_STEP).toBe(1);
   });
 
-  it('DEPTH_DEFAULT_PRESET is high (full range — Quick 260621-sm8)', () => {
+  it('DEPTH_DEFAULT_PRESET is high (full range)', () => {
     expect(DEPTH_DEFAULT_PRESET).toBe('high');
   });
 
@@ -49,7 +49,7 @@ describe('named constants', () => {
     expect(PRESET_RANGES.high).toEqual({ min: 0, max: 11 });
   });
 
-  it('DEFAULT_TACTIC_DEPTH_VALUE is the High/full range {0, 11} (Quick 260621-sm8)', () => {
+  it('DEFAULT_TACTIC_DEPTH_VALUE is the High/full range {0, 11}', () => {
     expect(DEFAULT_TACTIC_DEPTH_VALUE).toEqual({ min: 0, max: 11 });
   });
 
@@ -167,7 +167,7 @@ describe('toDisplayDepthForOrientation', () => {
     }
   });
 
-  // anchored=false (Quick 260628-1t5 DECISION 2): on the navigable surfaces the allowed
+  // anchored=false: on the navigable surfaces the allowed
   // +1 decision-anchor offset is dropped, so allowed reads exactly like missed.
   it('anchored=false drops the allowed offset — allowed equals missed (raw + 1)', () => {
     expect(toDisplayDepthForOrientation(0, 'allowed', false)).toBe(1);

@@ -1,5 +1,5 @@
 /**
- * deadlineSearch.ts unit tests (Phase 169 Plan 08 gap closure, D-16/D-17/D-18).
+ * deadlineSearch.ts unit tests.
  *
  * Drives a fully controllable stub `SearchRunner` (fake timers, synthetic
  * `EngineSnapshot`s with controllable `nodesEvaluated`) that mirrors
@@ -10,13 +10,13 @@
  * selectBotMove.test.ts (fabricated providers/deps, no real engine calls).
  *
  * Covers:
- * - Test 1 (D-16 deadline cut): a base search that would run far past the
+ * - Test 1 (deadline cut): a base search that would run far past the
  *   deadline is stopped once the deadline elapses; the wrapper resolves with
  *   the base search's best-so-far snapshot, not a throw and not empty.
- * - Test 2 (D-18 node floor): a deadline that elapses BEFORE the floor is
+ * - Test 2 (node floor): a deadline that elapses BEFORE the floor is
  *   reached does not cut immediately — the cut is armed and only fires once
  *   the floor is crossed.
- * - Test 3 (D-17 cancel propagates immediately): an OUTER abort cuts the
+ * - Test 3 (cancel propagates immediately): an OUTER abort cuts the
  *   search at once, unconditionally, never delayed by the node floor.
  * - Test 4 (fast path): a base search that finishes before the deadline is
  *   unaffected, and the deadline timer is cleared (no leak).
@@ -125,7 +125,7 @@ afterEach(() => {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('createDeadlineSearch', () => {
-  it('cuts the search at the deadline and resolves with the best-so-far snapshot, not a throw (D-16)', async () => {
+  it('cuts the search at the deadline and resolves with the best-so-far snapshot, not a throw', async () => {
     const baseSearch = createStubBaseSearch({ totalNodes: 1000 });
     const wrapped = createDeadlineSearch({ deadlineMs: 350, minNodes: 0, baseSearch });
 
@@ -145,7 +145,7 @@ describe('createDeadlineSearch', () => {
     expect(snapshot.budgetExhausted).toBe(false);
   });
 
-  it('Phase 194 ABORT-02: a deadline cut aborts only the INNER controller — the caller\'s OUTER signal stays unaborted (D-17)', async () => {
+  it('a deadline cut aborts only the INNER controller — the caller\'s OUTER signal stays unaborted', async () => {
     const baseSearch = createStubBaseSearch({ totalNodes: 1000 });
     const wrapped = createDeadlineSearch({ deadlineMs: 350, minNodes: 0, baseSearch });
     const outerController = new AbortController();
@@ -169,7 +169,7 @@ describe('createDeadlineSearch', () => {
     expect(outerController.signal.aborted).toBe(false);
   });
 
-  it('does not cut below the D-18 node floor even though the deadline already elapsed', async () => {
+  it('does not cut below the node floor even though the deadline already elapsed', async () => {
     const FLOOR = 3;
     const baseSearch = createStubBaseSearch({ totalNodes: 1000 });
     const wrapped = createDeadlineSearch({ deadlineMs: 50, minNodes: FLOOR, baseSearch });
@@ -201,7 +201,7 @@ describe('createDeadlineSearch', () => {
     expect(snapshot.nodesEvaluated).toBe(FLOOR);
   });
 
-  it('propagates an outer cancel immediately, never delayed by the node floor (D-17)', async () => {
+  it('propagates an outer cancel immediately, never delayed by the node floor', async () => {
     const UNREACHABLE_FLOOR = 500;
     const baseSearch = createStubBaseSearch({ totalNodes: 1000 });
     const outerController = new AbortController();
@@ -280,7 +280,7 @@ describe('createDeadlineSearch', () => {
     ]);
   });
 
-  it('continuous mode (Phase 227 D-09/D-13): a deadline that cuts mid-search returns the last snapshot before the cut and applies nothing after it', async () => {
+  it('continuous mode: a deadline that cuts mid-search returns the last snapshot before the cut and applies nothing after it', async () => {
     // The REAL mctsSearch under the bot budget with dispatchMode 'continuous'. Grades take GRADE_DELAY_MS of fake
     // time, so at the deadline several expansions are in flight; the floor is already met, so the timer macrotask
     // aborts the inner signal directly and the continuous loop must wake, return and cancel the in-flight work.

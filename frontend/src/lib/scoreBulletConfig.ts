@@ -11,7 +11,7 @@ import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 export const SCORE_BULLET_CENTER = 0.5;
 
 // Neutral zone: +/-5 score points around 0.5, matching the arrow palette's
-// score-zone boundaries (DARK_BLUE band = 0.45..0.55).
+// score-zone boundaries (neutral grey band = 0.45..0.55).
 export const SCORE_BULLET_NEUTRAL_MIN = -0.05;
 export const SCORE_BULLET_NEUTRAL_MAX = 0.05;
 

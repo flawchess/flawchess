@@ -1,22 +1,22 @@
-"""Integration tests for run_full_eval_drain (Phase 116 EVAL-01/03/05/QUEUE-07,
-Phase 117 EVAL-04/EVAL-06/D-117-07/QUEUE-03).
+"""Integration tests for run_full_eval_drain (all-ply collection, dedup lookup,
+completion marker, flaw PV, classify hook, gather-outside-session, yield gate).
 
 Tests cover:
-- EVAL-01: all non-terminal plies collected; terminal position excluded
-- EVAL-01: PGN parse failure returns empty list
-- EVAL-03: dedup returns hit for known parity hash (full_evals_completed_at gated)
-- EVAL-03: dedup ignores depth-15 source (no full_evals_completed_at marker)
-- EVAL-04: best_move populated on every evaluated non-dedup'd ply after drain tick
-- EVAL-04: dedup_best_move transplanted via dedup for opening-region plies (D-117-01)
-- EVAL-04: flaw_pv written ONLY at ply N+1 for FlawRecord at ply N (D-117-02)
-- EVAL-05: full_evals_completed_at set after drain tick
-- EVAL-05: marker set even when engine returns (None, None) holes
-- EVAL-06: classify_hook — game_flaws rows exist after full eval completes
-- EVAL-06: oracle_counts — white/black oracle columns filled and match game_flaws
-- D-117-07: wr02_repointed — lichess_evals_at gates dedup source, not white_blunders
-- QUEUE-03: gather_outside_session — asyncio.gather NOT inside an AsyncSession scope (AST scan)
-- QUEUE-07: yield gate is True when an active ImportJob exists
-- QUEUE-07: yield gate is True when a game has evals_completed_at IS NULL
+- All non-terminal plies collected; terminal position excluded
+- PGN parse failure returns empty list
+- dedup returns hit for known parity hash (full_evals_completed_at gated)
+- dedup ignores depth-15 source (no full_evals_completed_at marker)
+- best_move populated on every evaluated non-dedup'd ply after drain tick
+- dedup_best_move transplanted via dedup for opening-region plies
+- flaw_pv written ONLY at ply N+1 for FlawRecord at ply N
+- full_evals_completed_at set after drain tick
+- marker set even when engine returns (None, None) holes
+- classify_hook — game_flaws rows exist after full eval completes
+- oracle_counts — white/black oracle columns filled and match game_flaws
+- dedup_gate — lichess_evals_at gates dedup source, not white_blunders
+- gather_outside_session — asyncio.gather NOT inside an AsyncSession scope (AST scan)
+- yield gate is True when an active ImportJob exists
+- yield gate is True when a game has evals_completed_at IS NULL
 
 Session patching mirrors test_eval_drain.py: monkeypatch
 app.services.eval_drain.async_session_maker to route drain sessions to the
@@ -44,13 +44,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # ─── Module-level test constants ──────────────────────────────────────────────
 
 _TEST_USER_ID: int = 99200  # unique to this module to avoid FK conflicts
-_TEST_USER_ID_117: int = 99201  # separate range for Phase 117 tests to avoid FK conflicts
+_TEST_USER_ID_117: int = 99201  # separate range to avoid FK conflicts
 # A short PGN ending in checkmate (Scholar's mate in 4 moves = 8 half-moves).
 # The final position IS checkmate; the iterator should never visit it.
 _CHECKMATE_PGN: str = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6?? 4. Qxf7# 1-0"
 # A simple non-terminal PGN used for general tests.
 _SIMPLE_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
-# Quick 260914-w1m / FLAWCHESS-BE: chess.com custom-position roots. The first is one
+# chess.com custom-position roots. The first is one
 # prod's Stockfish died on (16 white pawns); the second is a legal "from position" root.
 _SIXTEEN_PAWNS_PGN: str = (
     '[SetUp "1"]\n'
@@ -64,7 +64,7 @@ _LEGAL_CUSTOM_ROOT_PGN: str = (
 )
 # A minimal PGN with only 2 moves (4 half-moves).
 _TWO_MOVE_PGN: str = "1. e4 e5 *"
-# Quick 260916-g38: a single half-move — ply 0 + terminal donor = exactly two engine targets.
+# A single half-move — ply 0 + terminal donor = exactly two engine targets.
 _ONE_MOVE_PGN: str = "1. e4 *"
 # A 6-half-move PGN (3 moves each, 6 non-terminal positions).
 # Used for oracle/classify/flaw-PV tests where coverage >= 90% is required and
@@ -258,7 +258,7 @@ async def _confirm_cache_row(
     session_maker: async_sessionmaker[AsyncSession],
     full_hash: int,
 ) -> None:
-    """Phase 220 CACHEFIX-08: OPENING_CACHE_BACKFILL_SQL deliberately produces a
+    """OPENING_CACHE_BACKFILL_SQL deliberately produces a
     CANDIDATE row (confirmed=false, one source), never a confirmed one -- a
     single backfill donor is exactly the kind of single-source write the
     two-source confirmation scheme exists to distrust. These gate tests pin
@@ -276,11 +276,11 @@ async def _confirm_cache_row(
         await session.commit()
 
 
-# ─── EVAL-01: all-ply collector ───────────────────────────────────────────────
+# ─── All-ply collector ────────────────────────────────────────────────────────
 
 
 class TestCollectAllPliesExcludesTerminal:
-    """EVAL-01: _collect_full_ply_targets yields one target per non-terminal ply."""
+    """_collect_full_ply_targets yields one target per non-terminal ply."""
 
     def test_collect_all_plies_excludes_terminal(self) -> None:
         """A checkmate PGN: targets == number of half-moves played (terminal excluded).
@@ -334,7 +334,7 @@ class TestCollectAllPliesExcludesTerminal:
         assert targets == [], "Empty PGN (None game) must return []"
 
     def test_collect_invalid_root_returns_no_targets(self) -> None:
-        """Quick 260914-w1m / FLAWCHESS-BE: a chess.com custom-position game whose
+        """A chess.com custom-position game whose
         root no legal game reaches (16 white pawns) yields NO targets, so nothing
         is ever handed to Stockfish (which dies on such boards) and the drain
         stamps the game complete through the no-holes path."""
@@ -373,18 +373,18 @@ class TestCollectAllPliesExcludesTerminal:
         assert targets[0].ply == 2
 
 
-# ─── EVAL-03: dedup lookup ────────────────────────────────────────────────────
+# ─── Dedup lookup ─────────────────────────────────────────────────────────────
 
 
 class TestDedupHitsParity:
-    """EVAL-03: dedup returns parity eval only when source game has full_evals_completed_at set."""
+    """Dedup returns parity eval only when source game has full_evals_completed_at set."""
 
     async def test_dedup_hits_parity_source(
         self,
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """SEED-044 post-move self-join: a position's OWN eval is recovered from the
+        """Post-move self-join: a position's OWN eval is recovered from the
         PRIOR row's post-move eval, and its best_move from the position's own row.
 
         Donor game (full_evals_completed_at set):
@@ -392,7 +392,7 @@ class TestDedupHitsParity:
           ply 5: full_hash=Q, best_move="g1f3" -> best move FROM Q (decision-keyed)
         So _fetch_dedup_evals([Q]) recovers (eval OF Q=42, None, best_move FROM Q="g1f3").
 
-        SEED-053: the gate now lives in OPENING_CACHE_BACKFILL_SQL. We populate the
+        The gate now lives in OPENING_CACHE_BACKFILL_SQL. We populate the
         cache with that SQL first so _fetch_dedup_evals exercises the cache read path
         against rows that genuinely passed the gate.
         """
@@ -437,7 +437,7 @@ class TestDedupHitsParity:
         async with full_drain_session_maker() as session:
             await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
             await session.commit()
-        # Phase 220 CACHEFIX-08: the backfill deliberately produces a candidate
+        # The backfill deliberately produces a candidate
         # (confirmed=false) -- confirm it explicitly so this test still pins the
         # gate's SELECT/JOIN/WHERE predicates rather than the confirmation scheme.
         await _confirm_cache_row(full_drain_session_maker, target_hash)
@@ -450,8 +450,8 @@ class TestDedupHitsParity:
                 "must be recovered by the post-move self-join (EVAL-03 / SEED-044)."
             )
             # (eval OF Q from prior row, eval_mate, best_move FROM Q from Q's own row, pv).
-            # OPENING_CACHE_BACKFILL_SQL does not populate pv (SEED-076 follow-up scope
-            # is _upsert_opening_cache's incremental write path, not the one-time backfill).
+            # OPENING_CACHE_BACKFILL_SQL does not populate pv (the cached pv comes from
+            # _upsert_opening_cache's incremental write path, not the one-time backfill).
             assert result[target_hash] == (42, None, "g1f3", None)
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id])
@@ -464,7 +464,7 @@ class TestDedupHitsParity:
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Phase 220 CACHEFIX-08 reverse of test_dedup_hits_parity_source: a row the
+        """Reverse of test_dedup_hits_parity_source: a row the
         backfill gate inserted and NOBODY confirmed is a candidate
         (confirmed=false), and `_fetch_dedup_evals` must NOT return it -- a
         candidate is invisible to the transplant path until a second,
@@ -534,9 +534,9 @@ class TestDedupHitsParity:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """A game_position row at ply<=20 whose game has only evals_completed_at (no full marker)
-        must NOT be returned by _fetch_dedup_evals (Pitfall 4, D-116-02).
+        must NOT be returned by _fetch_dedup_evals.
 
-        SEED-053: after running OPENING_CACHE_BACKFILL_SQL the target_hash must still be
+        After running OPENING_CACHE_BACKFILL_SQL the target_hash must still be
         absent from the cache — the gate (full_evals_completed_at IS NOT NULL) must
         exclude depth-15 sources at populate time.
         """
@@ -554,7 +554,7 @@ class TestDedupHitsParity:
         target_hash = 0xDEAD_BEEF_0002
         predecessor_hash = 0xDEAD_BEEF_02FF
         # Insert the predecessor too, so the backfill SQL WOULD match if not for the
-        # full_evals_completed_at gate (SEED-044 — the gate is what must exclude it).
+        # full_evals_completed_at gate (the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
@@ -589,16 +589,16 @@ class TestDedupHitsParity:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """A lichess-analyzed game (lichess_evals_at IS NOT NULL) must NOT be a dedup
-        source (WR-02 repointed to D-117-07): its preserved rows are lichess post-move
+        source: its preserved rows are lichess post-move
         evals, which are not position-keyed by full_hash — only engine-written rows
         (lichess_evals_at IS NULL) are safe to transplant.
 
-        D-117-07: the WR-02 gate was repointed from white_blunders IS NULL onto
-        lichess_evals_at IS NULL. After oracle counts are filled for engine games,
+        The gate is lichess_evals_at IS NULL, not white_blunders IS NULL.
+        After flaw counts are filled for engine games,
         white_blunders IS NOT NULL for engine games too — using white_blunders would
         wrongly exclude engine-written sources.
 
-        SEED-053: after running OPENING_CACHE_BACKFILL_SQL the target_hash must still
+        After running OPENING_CACHE_BACKFILL_SQL the target_hash must still
         be absent — the gate (lichess_evals_at IS NULL) must exclude analyzed sources
         at populate time.
         """
@@ -611,12 +611,12 @@ class TestDedupHitsParity:
             full_drain_test_user,
             evals_completed_at=now,
             full_evals_completed_at=now,
-            lichess_evals_at=now,  # D-117-07: this is what marks a lichess-analyzed source
+            lichess_evals_at=now,  # This is what marks a lichess-analyzed source
         )
         target_hash = 0xDEAD_BEEF_0003
         predecessor_hash = 0xDEAD_BEEF_03FF
         # Insert the predecessor too, so the backfill SQL WOULD match if not for the
-        # lichess_evals_at gate (SEED-044 — the gate is what must exclude it).
+        # lichess_evals_at gate (the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
@@ -663,7 +663,7 @@ class TestDedupHitsParity:
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Phase 220 CACHEFIX-12 (SEED-164 diagnosis 3): given two eligible donors for
+        """Given two eligible donors for
         the same full_hash, OPENING_CACHE_BACKFILL_SQL's deterministic ORDER BY picks
         the one whose game has the newest full_evals_completed_at — not an arbitrary
         row a plan-dependent scan happened to visit first.
@@ -753,7 +753,7 @@ class TestDedupHitsParity:
             )
 
 
-# ─── EVAL-05: marker write ────────────────────────────────────────────────────
+# ─── Marker write ─────────────────────────────────────────────────────────────
 
 
 def _patch_drain_for_tick_tests(
@@ -766,13 +766,13 @@ def _patch_drain_for_tick_tests(
     tier: int = 3,
     job_id: int | None = None,
 ) -> Any:
-    """Shared monkeypatching for direct _full_drain_tick tests (WR-07).
+    """Shared monkeypatching for direct _full_drain_tick tests.
 
     Routes drain sessions to the test DB, suppresses Sentry, forces the
     yield gate to False, and mocks claim_eval_job to return a deterministic
     ClaimedJob for the given game_id/user_id.
 
-    Phase 117: _full_drain_tick now calls claim_eval_job (which uses
+    _full_drain_tick now calls claim_eval_job (which uses
     eval_queue_service.async_session_maker internally). We mock claim_eval_job
     directly in the drain module namespace so it doesn't open any sessions.
 
@@ -783,8 +783,8 @@ def _patch_drain_for_tick_tests(
     from app.services.eval_queue_service import ClaimedJob
 
     monkeypatch.setattr(drain_module, "async_session_maker", session_maker)
-    # Phase 150 R7: _build_flaw_multipv2_blobs / _flaw_engine_plies / _classify_with_overlay
-    # etc. moved to eval_apply.py and some open their OWN internal sessions there — that
+    # _build_flaw_multipv2_blobs / _flaw_engine_plies / _classify_with_overlay
+    # etc. live in eval_apply.py and some open their OWN internal sessions there — that
     # module binding must be redirected to the test DB too.
     monkeypatch.setattr(eval_apply_module, "async_session_maker", session_maker)
     monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
@@ -798,7 +798,6 @@ def _patch_drain_for_tick_tests(
     )
     # Mock claim_eval_job to return a ClaimedJob for the seeded game without
     # opening a DB session (avoids dependency on eval_queue_service sessions).
-    # is_analyzed renamed to is_lichess_eval_game (see ClaimedJob docstring).
     claimed = ClaimedJob(
         game_id=game_id,
         user_id=user_id,
@@ -807,7 +806,7 @@ def _patch_drain_for_tick_tests(
         job_id=job_id,
     )
     monkeypatch.setattr(drain_module, "claim_eval_job", AsyncMock(return_value=claimed))
-    # Phase 142 MPV-02: stub _build_flaw_multipv2_blobs so existing tests that only
+    # Stub _build_flaw_multipv2_blobs so existing tests that only
     # mock the main-gather side-effect list are not disrupted by continuation calls.
     # Tests that specifically exercise blobs patch this away or skip _patch_drain.
     monkeypatch.setattr(drain_module, "_build_flaw_multipv2_blobs", AsyncMock(return_value={}))
@@ -815,10 +814,10 @@ def _patch_drain_for_tick_tests(
 
 
 class TestMarkerWrite:
-    """EVAL-05: full_evals_completed_at is set after a drain tick.
+    """full_evals_completed_at is set after a drain tick.
 
-    WR-07: tests call _full_drain_tick() directly — deterministic, no wall-clock
-    sleeps or loop cancellation. Phase 117: claim_eval_job is mocked directly in
+    Tests call _full_drain_tick() directly — deterministic, no wall-clock
+    sleeps or loop cancellation. claim_eval_job is mocked directly in
     the drain module so the tick can run without touching eval_queue_service sessions.
     """
 
@@ -830,7 +829,7 @@ class TestMarkerWrite:
     ) -> None:
         """After one drain tick on a seeded game with no holes, full_evals_completed_at IS NOT NULL.
 
-        Phase 119 SEED-045: the marker is only stamped when failed_ply_count == 0.
+        The marker is only stamped when failed_ply_count == 0.
         Uses _TWO_MOVE_PGN with rows for both plies; all engine calls succeed so
         no post-move holes remain after the tick.
         """
@@ -1012,18 +1011,18 @@ class TestMarkerWrite:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Phase 119 SEED-045: when evaluate_nodes_multipv2 fails for SOME plies and
+        """When evaluate_nodes_multipv2 fails for SOME plies and
         full_eval_attempts + 1 < MAX_EVAL_ATTEMPTS, the marker is NOT set and
         full_eval_attempts is incremented. The partial eval IS written.
 
-        SEED-044 post-move: a row stores the eval of the NEXT position. For
+        Post-move convention: a row stores the eval of the NEXT position. For
         _TWO_MOVE_PGN ("1. e4 e5 *", plies 0,1, terminal ply 2):
           row 0 = pos_eval[1] = ply-1 result (50)  → written
           row 1 = pos_eval[2] = terminal result (None) → NULL hole (non-terminal row!)
 
-        WR-05: this must be a PARTIAL failure — an all-fail game trips the circuit
+        This must be a PARTIAL failure — an all-fail game trips the circuit
         breaker and stays pending (see test_all_fail_keeps_game_pending).
-        Under Phase 119 (SEED-045): partial failure no longer stamps complete;
+        Partial failure does not stamp complete;
         full_eval_attempts increments and the game stays pending for retry.
         """
         from app.models.game import Game
@@ -1118,7 +1117,7 @@ class TestMarkerWrite:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """WR-05 circuit breaker: when EVERY engine call fails, the game must NOT be
+        """Circuit breaker: when EVERY engine call fails, the game must NOT be
         marked complete — an all-fail tick is an engine-pool problem, and marking
         would permanently burn the backlog with all-NULL holes."""
         from app.models.game import Game
@@ -1166,16 +1165,16 @@ class TestMarkerWrite:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── QUEUE-07: gather-outside-session invariant (AST scan) ────────────────────
+# ─── Gather-outside-session invariant (AST scan) ──────────────────────────────
 
 
 class TestGatherOutsideSession:
-    """QUEUE-07: asyncio.gather must NEVER be inside an AsyncSession scope in the full-drain tick.
+    """asyncio.gather must NEVER be inside an AsyncSession scope in the full-drain tick.
 
-    AST scan mirrors the existing test_gather_outside_session in test_eval_drain.py
-    (T-91-08 pattern). Acts as a CI regression guard for the CLAUDE.md hard rule.
-    WR-07: the gather moved from run_full_eval_drain into _full_drain_tick — the
-    scan targets the tick (where the gather actually lives).
+    AST scan mirrors the existing test_gather_outside_session in test_eval_drain.py.
+    Acts as a CI regression guard for the CLAUDE.md hard rule.
+    The gather lives in _full_drain_tick (not run_full_eval_drain), so the
+    scan targets the tick.
     """
 
     def test_gather_outside_session(self) -> None:
@@ -1216,7 +1215,7 @@ class TestGatherOutsideSession:
         )
 
     def test_gather_outside_session_tier4b_minimal_path(self) -> None:
-        """Phase 177 D-05: same AST scan, targeting the new
+        """Same AST scan, targeting the new
         `_tier4b_minimal_drain_tick` (its own asyncio.gather for the targeted
         MultiPV-2 runner-up search must also never run inside an async-with
         session scope)."""
@@ -1256,11 +1255,11 @@ class TestGatherOutsideSession:
         )
 
 
-# ─── QUEUE-07: yield gate ─────────────────────────────────────────────────────
+# ─── Yield gate ───────────────────────────────────────────────────────────────
 
 
 class TestYieldGate:
-    """QUEUE-07: _any_active_import_or_entry_ply_pending gates the full drain."""
+    """_any_active_import_or_entry_ply_pending gates the full drain."""
 
     async def test_yield_gate_active_import(
         self,
@@ -1319,18 +1318,18 @@ class TestYieldGate:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── D-117-07: WR-02 repoint (lichess_evals_at gates dedup) ───────────────────
+# ─── Dedup gate (lichess_evals_at gates dedup) ────────────────────────────────
 
 
-class TestWr02Repointed:
-    """D-117-07: _fetch_dedup_evals gates on lichess_evals_at IS NULL, not white_blunders.
+class TestDedupGatesOnLichessEvalsAt:
+    """_fetch_dedup_evals gates on lichess_evals_at IS NULL, not white_blunders.
 
     After oracle counts are filled for engine games, white_blunders IS NOT NULL for
     engine games too — using white_blunders would wrongly exclude engine sources.
-    The WR-02 gate was repointed onto lichess_evals_at (the reliable discriminator).
+    The gate is lichess_evals_at (the reliable discriminator).
     """
 
-    async def test_wr02_engine_source_included(
+    async def test_dedup_engine_source_included(
         self,
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
@@ -1338,7 +1337,7 @@ class TestWr02Repointed:
         """Engine-written game (lichess_evals_at IS NULL, white_blunders IS NOT NULL)
         must be usable as a dedup source after oracle counts are filled.
 
-        SEED-053: populate the cache via OPENING_CACHE_BACKFILL_SQL first so the
+        Populate the cache via OPENING_CACHE_BACKFILL_SQL first so the
         inclusion assertion exercises the gate at its enforcement site.
         """
         from app.models.game_position import DEDUP_MAX_PLY
@@ -1356,7 +1355,7 @@ class TestWr02Repointed:
         target_hash = 0xDEAD_BEEF_0010
         predecessor_hash = 0xDEAD_BEEF_10FF
         # Predecessor (ply 2) holds the post-move eval of the requested position
-        # (ply 3) — the SEED-044 self-join / backfill SQL recovers it.
+        # (ply 3) — the self-join / backfill SQL recovers it.
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
@@ -1371,7 +1370,7 @@ class TestWr02Repointed:
         async with full_drain_session_maker() as session:
             await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
             await session.commit()
-        # Phase 220 CACHEFIX-08: confirm the seeded candidate -- see
+        # Confirm the seeded candidate -- see
         # _confirm_cache_row's docstring for why.
         await _confirm_cache_row(full_drain_session_maker, target_hash)
         try:
@@ -1388,7 +1387,7 @@ class TestWr02Repointed:
                 full_drain_session_maker, [target_hash, predecessor_hash]
             )
 
-    async def test_wr02_lichess_source_excluded(
+    async def test_dedup_lichess_source_excluded(
         self,
         full_drain_test_user: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
@@ -1396,7 +1395,7 @@ class TestWr02Repointed:
         """Lichess-analyzed game (lichess_evals_at IS NOT NULL, white_blunders IS NULL)
         must NOT be usable as a dedup source.
 
-        SEED-053: after running OPENING_CACHE_BACKFILL_SQL the target_hash must still
+        After running OPENING_CACHE_BACKFILL_SQL the target_hash must still
         be absent — the gate (lichess_evals_at IS NULL) must exclude lichess sources
         at populate time, making the exclusion assertion genuine (not vacuously true).
         """
@@ -1415,7 +1414,7 @@ class TestWr02Repointed:
         target_hash = 0xDEAD_BEEF_0011
         predecessor_hash = 0xDEAD_BEEF_11FF
         # Predecessor present so the backfill SQL WOULD match if not for the
-        # lichess_evals_at gate (SEED-044 — the gate is what must exclude it).
+        # lichess_evals_at gate (the gate is what must exclude it).
         await _insert_game_positions(
             full_drain_session_maker,
             full_drain_test_user,
@@ -1445,11 +1444,11 @@ class TestWr02Repointed:
             )
 
 
-# ─── EVAL-04: best_move populated after drain tick ────────────────────────────
+# ─── best_move populated after drain tick ─────────────────────────────────────
 
 
 class TestBestMove:
-    """EVAL-04: best_move is written for every evaluated non-dedup'd ply."""
+    """best_move is written for every evaluated non-dedup'd ply."""
 
     async def test_best_move_written_after_tick(
         self,
@@ -1458,12 +1457,12 @@ class TestBestMove:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """best_move is populated in game_positions.best_move for every ply the
-        engine evaluated (non-dedup'd) after a drain tick (EVAL-04 / D-117-01).
+        engine evaluated (non-dedup'd) after a drain tick.
 
         _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *" has 6 half-moves → 6
         non-terminal positions (plies 0..5). All 6 plies have DB rows so each row
         gets a valid post-move eval (no holes), ensuring the tick completes and the
-        marker is stamped (Phase 119 SEED-045: stamp only when no holes remain).
+        marker is stamped (stamp only when no holes remain).
         Each ply gets a distinct best_move from the mock.
         """
         from app.models.game_position import GamePosition
@@ -1482,7 +1481,7 @@ class TestBestMove:
         )
 
         # Per-ply best_move for all 6 positions (plies 0..5) + terminal call.
-        # best_move stays decision-ply-keyed under post-move (SEED-044).
+        # best_move stays decision-ply-keyed under post-move.
         # The terminal call (ply 6) provides the post-move eval for row 5; its
         # best_move is unused. All evals succeed so no holes → stamp on first tick.
         best_moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"]
@@ -1539,7 +1538,7 @@ class TestBestMove:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """best_move is transplanted from a dedup source for opening-region plies
-        (ply <= DEDUP_MAX_PLY) without an engine call (EVAL-04 / D-117-01).
+        (ply <= DEDUP_MAX_PLY) without an engine call.
 
         Setup: a parity-source game has a position at ply 2 with full_hash X and
         best_move "g1f3". The target game has a position at the same hash (ply 2,
@@ -1548,7 +1547,7 @@ class TestBestMove:
         PGN: _SIMPLE_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *" (5 half-moves, plies 0..4).
         We use ply 2 for dedup and ply 4 for engine-evaluated (both within PGN range).
 
-        SEED-053: populate the cache via OPENING_CACHE_BACKFILL_SQL before the tick
+        Populate the cache via OPENING_CACHE_BACKFILL_SQL before the tick
         so the dedup hit comes from the cache (its new enforcement site).
         """
         from app.models.game_position import DEDUP_MAX_PLY, GamePosition
@@ -1570,7 +1569,7 @@ class TestBestMove:
             full_drain_test_user_117,
             source_game_id,
             [
-                # SEED-044 self-join: the predecessor row (ply 1) holds the post-move
+                # Self-join: the predecessor row (ply 1) holds the post-move
                 # eval of the dedup position (ply 2); the dedup position's own row
                 # carries the best_move FROM it. The backfill SQL recovers
                 # (eval=30 from ply 1, best_move="g1f3" from ply 2).
@@ -1595,7 +1594,7 @@ class TestBestMove:
         )
         # ply 2 (dedup-eligible), ply 3 (engine-eval donor for row 2's post-move),
         # ply 4 (engine-evaluated for best_move assertion).
-        # Phase 119 SEED-045: rows 2 and 4 each need their post-move eval donor in
+        # Rows 2 and 4 each need their post-move eval donor in
         # pos_eval (i.e. rows for ply 3 and ply 5, or the terminal at ply 5 suffices
         # for row 4). Row 2's post-move eval needs pos_eval[3], so ply 3 must be a target.
         await _insert_game_positions(
@@ -1632,7 +1631,7 @@ class TestBestMove:
         async with full_drain_session_maker() as session:
             await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
             await session.commit()
-        # Phase 220 CACHEFIX-08: confirm the seeded candidate -- see
+        # Confirm the seeded candidate -- see
         # _confirm_cache_row's docstring for why.
         await _confirm_cache_row(full_drain_session_maker, dedup_hash)
 
@@ -1679,10 +1678,10 @@ class TestBestMove:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Phase 220 CACHEFIX-12: a drain tick over a lichess-eval game leaves
+        """A drain tick over a lichess-eval game leaves
         opening_position_eval empty for that game's opening hashes — the tick's own
         dedup-partition comment already states lichess games neither seed nor draw
-        from the cache (SEED-109 item 4); before this fix, dedup_hashes being always
+        from the cache; before this fix, dedup_hashes being always
         [] for a lichess-eval game meant every one of its opening plies landed in
         engine_targets and was unconditionally donated.
 
@@ -1747,14 +1746,14 @@ class TestBestMove:
             await _delete_opening_eval_rows(full_drain_session_maker, target_hashes)
 
 
-# ─── EVAL-04: flaw PV written at ply N+1 (D-117-02) ──────────────────────────
+# ─── Flaw PV written at ply N+1 ───────────────────────────────────
 
 
 def _blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, str]]:
     """Return an engine eval sequence whose POST-MOVE written rows cause exactly ONE
     blunder (white, ply 2) for _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *".
 
-    SEED-044 post-move convention: the drain stores at row k the eval of the position
+    Post-move convention: the drain stores at row k the eval of the position
     AFTER move k = the engine eval of the NEXT position (`_post_move_eval`). The engine
     is called per pre-push position (plies 0..5) PLUS the terminal position (ply 6),
     in that order. So row k's stored eval = engine_result[k + 1]. To reproduce the
@@ -1777,7 +1776,7 @@ def _blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, str]
     Result: exactly one blunder (white at ply 2). PV must be written at ply 3 (the
     refutation board = engine_result_map[3]), nowhere else.
 
-    Phase 142: expanded to 7-tuple (eval_cp, eval_mate, best_move, pv, second_cp,
+    Expanded to 7-tuple (eval_cp, eval_mate, best_move, pv, second_cp,
     second_mate, second_uci) as evaluate_nodes_multipv2 now returns multipv=2 results.
     second_uci="" is the PvNode.su single-legal-move / no-second-move sentinel.
     """
@@ -1811,12 +1810,12 @@ def _blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, str]
 
 
 class TestFlawPv:
-    """EVAL-04 / D-117-02 / SEED-054: game_positions.pv is written at BOTH ply N and ply N+1
+    """game_positions.pv is written at BOTH ply N and ply N+1
     for a flaw at ply N.
 
-    - ply N+1: the refutation line from the position AFTER the flawed move (Pitfall 4,
-      the SEED-039 tactic-motif input).
-    - ply N: the ideal-continuation line from the pre-blunder decision board (SEED-054).
+    - ply N+1: the refutation line from the position AFTER the flawed move (the
+      tactic-motif input).
+    - ply N: the ideal-continuation line from the pre-blunder decision board.
     """
 
     async def test_flaw_pv_written_at_flaw_ply_and_ply_n_plus_one(
@@ -1830,7 +1829,7 @@ class TestFlawPv:
 
         classify_game_flaws emits a FlawRecord for ply 2 (n=2, mover=white).
         The PV for ply 2 (the decision board) comes from engine_result_map[2]; the PV
-        for ply 3 (the refutation board) comes from engine_result_map[3] (SEED-054).
+        for ply 3 (the refutation board) comes from engine_result_map[3].
         Plies 0,1,4,5 must have pv=NULL (pv only written at flaw plies).
         """
         from app.models.game_position import GamePosition
@@ -1871,13 +1870,13 @@ class TestFlawPv:
                 )
                 pv_by_ply = {r[0]: r[1] for r in rows.all()}
 
-            # ply 3 must have the PV from engine_result_map[3] (D-117-02 / Pitfall 4).
+            # ply 3 must have the PV from engine_result_map[3].
             assert pv_by_ply.get(3) is not None, (
                 "game_positions.pv at ply 3 (N+1 for blunder at ply 2) must be set "
                 "— D-117-02 flaw PV write."
             )
             # ply 2 (flaw_ply) must have the ideal-continuation PV from
-            # engine_result_map[2] (SEED-054 Part 2).
+            # engine_result_map[2].
             assert pv_by_ply.get(2) is not None, (
                 "game_positions.pv at ply 2 (flaw_ply) must be set — SEED-054 "
                 "ideal-continuation PV write."
@@ -1897,27 +1896,23 @@ class TestFlawPv:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-117-13 / SEED-054 (adapted for Phase 174-06 Task 1's unified full pass):
-        analyzed lichess games get a flaw PV + best_move at BOTH flaw plies even
-        though every ply already carries a lichess %eval.
+        """Analyzed lichess games get a flaw PV + best_move at BOTH flaw plies even
+        though every ply already carries a lichess %eval (unified full pass).
 
         Regression guard for the prod-observed 0% flaw-PV coverage on analyzed
         lichess games: the is_lichess_eval_game eval-preservation filter used to drop
         every flaw ply before the engine gather, so neither the refutation PV nor the
         better-alternative best_move was captured (lichess supplies %eval but no PV
-        and no best_move). D-117-13/SEED-054 originally fixed this with a targeted
-        pre-classify-and-exempt mechanism ({flaw_ply, flaw_ply + 1} only); Phase
-        174-06 Task 1 retires that whole mechanism in favor of engine-evaluating
-        EVERY ply (SEED-109) — the flaw-PV guarantee this test protects now falls out
+        and no best_move). The unified full pass fixes this by engine-evaluating
+        EVERY ply, so the flaw-PV guarantee this test protects falls out
         of the general full pass rather than a special case.
 
         Setup: all 6 plies carry a pre-existing %eval encoding a white blunder at
         ply 2. Under the unified full pass every one of the 6 plies is
         engine-evaluated (for best_move); the flaw-PV write (a SEPARATE, always-
-        flaw-only mechanism — D-117-02 — unrelated to how many plies got engine
+        flaw-only mechanism, unrelated to how many plies got engine
         calls) still only lands `game_positions.pv` at ply 2 (flaw_ply) and ply 3
-        (flaw_ply + 1). Before D-117-13 the engine was called 0 times (D-117); after
-        D-117-13/before this phase it was called only at the 2 flaw-adjacent plies.
+        (flaw_ply + 1).
         """
         from app.models.game_position import GamePosition
 
@@ -1941,14 +1936,14 @@ class TestFlawPv:
         )
 
         # Both ply 2 (flaw_ply) and ply 3 (flaw_ply + 1) should reach the engine
-        # (SEED-054). Same mock result for each — only the keying matters here.
+        # Same mock result for each — only the keying matters here.
         mock_evaluate = AsyncMock(
             return_value=(-480, None, "g8f6", "g8f6 f1c4 d7d5", None, None, "")
         )
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
 
         # Pre-existing lichess %evals on EVERY ply, encoding a white blunder at ply 2
-        # (30 cp -> -500 cp). Without D-117-13 the is_lichess_eval_game filter would
+        # (30 cp -> -500 cp). A filter that skipped plies with an existing eval would
         # drop all six plies (each has an eval) and no PV would ever be captured.
         cp_by_ply = [20, 30, -500, -480, 60, 30]
         gp_rows = [
@@ -1967,9 +1962,9 @@ class TestFlawPv:
             processed = await drain_module._full_drain_tick()
             assert processed is True, "Tick must report a processed game"
 
-            # Phase 174-06 Task 1: ALL 6 non-terminal plies are now engine-evaluated
-            # (the targets filter + flaw-ply exemption are retired) — not just the 2
-            # flaw-adjacent plies the pre-174-06 filter used to leave visible.
+            # ALL 6 non-terminal plies are engine-evaluated
+            # (no targets filter or flaw-ply exemption) — not just the 2
+            # flaw-adjacent plies.
             assert mock_evaluate.await_count == 6, (
                 "Every non-terminal ply of a lichess-eval game must be "
                 f"engine-evaluated under the unified full pass — got "
@@ -1993,7 +1988,7 @@ class TestFlawPv:
                 "game_positions.pv at ply 3 must be set for an analyzed lichess game "
                 "— D-117-13 flaw-PV fix (lichess provides %eval but no PV)."
             )
-            # SEED-054: pv + best_move at flaw_ply (ply 2) — the better-alternative arrow.
+            # Pv + best_move at flaw_ply (ply 2) — the better-alternative arrow.
             assert by_ply.get(2, (None, None, None))[0] is not None, (
                 "game_positions.pv at ply 2 (flaw_ply) must be set for an analyzed "
                 "lichess game — SEED-054 ideal-continuation PV."
@@ -2002,7 +1997,7 @@ class TestFlawPv:
                 "game_positions.best_move at ply 2 (flaw_ply) must be set for an "
                 "analyzed lichess game — SEED-054 better-alternative arrow."
             )
-            # Preserved lichess %evals are untouched at both flaw plies (D-116-04).
+            # Preserved lichess %evals are untouched at both flaw plies.
             assert by_ply.get(3, (None, None, None))[1] == -480, (
                 "The lichess %eval at flaw_ply + 1 must be preserved, not "
                 "overwritten by the engine eval (D-116-04)."
@@ -2018,7 +2013,7 @@ class TestFlawPv:
                     "SEPARATE mechanism from best_move which is now written at every "
                     "engine-evaluated ply (Phase 174-06)."
                 )
-                # Phase 174-06: best_move IS now populated beyond the flaw-adjacent
+                # best_move IS populated beyond the flaw-adjacent
                 # plies — every ply the unified full pass covers.
                 assert by_ply.get(ply, (None, None, None))[2] == "g8f6", (
                     f"game_positions.best_move at ply {ply} must be set under the "
@@ -2038,15 +2033,15 @@ class TestFlawPv:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Phase 174-06 / SEED-109 item 3: hole-counting parity — a lichess-eval
+        """Hole-counting parity — a lichess-eval
         game whose full pass has exactly one ply's engine call genuinely fail
         (best_move None) must NOT get `full_pv_completed_at` (or
         `full_evals_completed_at`) stamped on that tick, and must be left
-        pending for a bounded retry (SEED-045 Path B), exactly like an engine
-        game's hole. Pre-fix, the `is_lichess_eval_game` branch in
-        `_apply_full_eval_results` never incremented `failed_ply_count`, so this
-        same scenario would have silently stamped complete with a permanent
-        NULL best_move at ply 5 — the exact self-terminating-out-of-the-174-07-
+        pending for a bounded retry, exactly like an engine
+        game's hole. The `is_lichess_eval_game` branch in
+        `_apply_full_eval_results` must increment `failed_ply_count`; otherwise this
+        same scenario would silently stamp complete with a permanent
+        NULL best_move at ply 5 — the exact self-terminating-out-of-the-backfill-
         lottery trap this fix closes.
         """
         from app.models.game import Game
@@ -2157,14 +2152,14 @@ class TestFlawPv:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """SEED-056: a fresh engine game whose flaw_ply + 1 took an opening dedup
+        """A fresh engine game whose flaw_ply + 1 took an opening dedup
         transplant (eval only, NO pv) still gets its refutation pv via the second
         engine pass — so the flaw is taggable instead of being silently un-classifiable.
 
         Setup: engine game (lichess_evals_at NULL), _SIX_PLY_PGN, a white blunder at
         ply 2. The refutation board (ply 3, flaw_ply + 1) is in the opening dedup region
         and its full_hash matches a dedup donor, so the FIRST gather never engine-evaluates
-        it — pre-SEED-056 its pv stayed NULL (registered, un-taggable). After the fix the
+        it — without the recovery pass its pv would stay NULL (registered, un-taggable). The
         drain pre-classifies, detects the pv-less flaw ply, and runs a targeted second
         pass that writes the pv at ply 3.
 
@@ -2206,9 +2201,9 @@ class TestFlawPv:
 
         # Stub the dedup lookup to transplant ONLY ply 3 (eval -500, no pv — dedup never
         # carries a pv through _resolve_full_eval). Every other opening ply falls through
-        # to a real engine call. 4-tuple shape (SEED-076 follow-up added cached pv as the
-        # 4th element); this cache row itself has no pv (None) so it does not change
-        # SEED-056's recovery-pass behavior under test here.
+        # to a real engine call. 4-tuple shape (the 4th element is the cached pv);
+        # this cache row itself has no pv (None) so it does not change
+        # the recovery pass behavior under test here.
         async def _fake_fetch_dedup_evals(
             _session: Any, hashes: Any
         ) -> dict[int, tuple[int | None, int | None, str | None, str | None]]:
@@ -2217,9 +2212,9 @@ class TestFlawPv:
         monkeypatch.setattr(drain_module, "_fetch_dedup_evals", _fake_fetch_dedup_evals)
         mock_evaluate = AsyncMock(side_effect=_eval_for_board)
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
-        # The SEED-056 refutation-pv recovery pass (_fill_engine_game_flaw_pvs) still calls
+        # The refutation-pv recovery pass (_fill_engine_game_flaw_pvs) still calls
         # evaluate_nodes_with_pv (4-tuple), not multipv2 — mock it from the same board-keyed
-        # eval so the ply-3 pv is recovered (Phase 142 left the recovery pass on with_pv).
+        # eval so the ply-3 pv is recovered.
         mock_evaluate_pv = AsyncMock(side_effect=lambda board: _eval_for_board(board)[:4])
         monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_with_pv", mock_evaluate_pv)
 
@@ -2253,7 +2248,7 @@ class TestFlawPv:
                 "Row 2's stored eval must be the transplanted -500 (post-move eval of the "
                 "dedup'd ply 3) — the blunder must come from the dedup path."
             )
-            # SEED-056 core assertion: the refutation pv at ply 3 was recovered by the
+            # Core assertion: the refutation pv at ply 3 was recovered by the
             # second engine pass even though ply 3 was dedup-transplanted in the first.
             assert by_ply.get(3, (None, None))[0] == ply3_pv, (
                 "game_positions.pv at ply 3 (flaw_ply + 1) must be recovered via the "
@@ -2270,13 +2265,13 @@ class TestFlawPv:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── Phase 174-07 / SEED-109 item 2: lichess best-move backfill ───────────────
+# ─── Lichess best-move backfill ───────────────────────────────────────────────
 
 
 class TestLichessBestMoveBackfill:
-    """174-07 Task 2: a lichess-eval backlog game (full_pv_completed_at IS NULL)
+    """A lichess-eval backlog game (full_pv_completed_at IS NULL)
     selected by the broadened residual fallback drains through the unified
-    174-06 full pass, gets game_best_moves coverage, keeps its stored lichess
+    full pass, gets game_best_moves coverage, keeps its stored lichess
     %evals untouched, and exits the backfill predicate afterward
     (self-termination) — all proven end-to-end in one tick.
     """
@@ -2289,13 +2284,13 @@ class TestLichessBestMoveBackfill:
     ) -> None:
         """End-to-end: the REAL claim_eval_job -> _claim_tier3_derived residual
         fallback (not mocked) selects a lichess backlog game, _full_drain_tick
-        drains it, and afterward the game no longer matches the 174-07 backfill
+        drains it, and afterward the game no longer matches the backfill
         predicate.
 
         PGN: "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6 *" — the Italian Game
         main line (plies 0-5) is fully booked (find_opening_ply_count == 6),
         so plies 6 (h3) and 7 (a6) are the only out-of-book candidates. Ply 6
-        is engineered to pass the GEMS-02 inaccuracy gate (played == best,
+        is engineered to pass the inaccuracy gate (played == best,
         wide margin); ply 7 is engineered to fail it (sub-margin) — proving
         the gate stays selective even under the backfill lane.
         """
@@ -2310,7 +2305,7 @@ class TestLichessBestMoveBackfill:
 
         now = datetime.now(timezone.utc)
         # Backlog game: already eval-complete (as a lichess game commonly is at
-        # import) but PV/best-move-incomplete — the exact 174-07 target row.
+        # import) but PV/best-move-incomplete — the exact backfill target row.
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_117,
@@ -2352,7 +2347,7 @@ class TestLichessBestMoveBackfill:
         # 8 non-terminal plies (0-7). Plies 0-5 are the booked Italian Game main
         # line (best_uci given but irrelevant — book_plies excludes them from
         # candidacy regardless of played==best). Ply 6 (h2h3, white) is the
-        # out-of-book played==best candidate with a wide margin (passes GEMS-02,
+        # out-of-book played==best candidate with a wide margin (passes the gate,
         # mirrors test_eval_apply.py's known-good 300/-100 example). Ply 7
         # (a7a6, black) is out-of-book played==best but sub-margin (10/5,
         # mirrors test_eval_apply.py's known-fail example) — must NOT yield a row.
@@ -2431,7 +2426,7 @@ class TestLichessBestMoveBackfill:
 
             # (a) game_best_moves: exactly one row, at ply 6 (the wide-margin
             # out-of-book played==best candidate). Ply 7 (sub-margin) must NOT
-            # produce a row — the GEMS-02 gate stays selective under backfill.
+            # produce a row — the gate stays selective under backfill.
             assert len(bm_rows) == 1, (
                 f"Expected exactly 1 game_best_moves row (ply 6 only); got "
                 f"{len(bm_rows)}: {[(r.ply) for r in bm_rows]}"
@@ -2441,8 +2436,8 @@ class TestLichessBestMoveBackfill:
             assert bm_row.best_cp == 300
             assert bm_row.second_cp == -100
 
-            # (c) self-termination: the 174-07 backfill predicate no longer
-            # matches this game — the exact Task 1 predicate, checked directly
+            # (c) self-termination: the backfill predicate no longer
+            # matches this game — checked directly
             # against this game_id (not via the lottery, to stay deterministic).
             async with full_drain_session_maker() as verify:
                 still_matches = (
@@ -2576,13 +2571,13 @@ class TestLichessBestMoveBackfill:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── Phase 176 BACK-01: tier-4b best-move backfill ───────────────────────────
+# ─── Tier-4b best-move backfill ──────────────────────────────────────────────
 
 
 class TestBestMoveBackfill:
-    """Phase 176 Plan 01 / Phase 177 Plan 03: an engine-side (non-lichess) game
-    claimed by tier-4b drains through the MINIMAL candidate-only path (Phase
-    177 D-05 — fixes the documented `_ = tier` no-op) end-to-end, gets
+    """An engine-side (non-lichess) game
+    claimed by tier-4b drains through the MINIMAL candidate-only path (not the full
+    every-ply pass) end-to-end, gets
     `best_moves_completed_at` stamped (self-termination) — and, the crux, a
     Maia-absent backend never stamps it even when best-move candidate rows
     were otherwise produced (guardrail; mutation-test-style negative
@@ -2594,13 +2589,13 @@ class TestBestMoveBackfill:
     @staticmethod
     def _engine_mock() -> AsyncMock:
         """EXACTLY 2 targeted MultiPV-2 runner-up searches — the minimal
-        drain path (Phase 177 D-05) leases only the out-of-book played==best
+        drain path leases only the out-of-book played==best
         candidate plies (ply 6 h2h3, wide-margin; ply 7 a7a6, sub-margin) via
         `_build_bestmove_lease_positions`, never the other 6 in-book plies +
         terminal eval-donor the old full-pipeline path used to gather. Only
         indices 4/5/6 (second_cp, second_mate, second_uci) are read by the
         minimal path — best_cp/best_mate/best_uci come from the STORED
-        game_positions data (Pitfall 1 inverse-shift reconstruction), not
+        game_positions data (inverse-shift reconstruction), not
         from these mock results, so indices 0-3 are left at None."""
         return AsyncMock(
             side_effect=[
@@ -2635,7 +2630,7 @@ class TestBestMoveBackfill:
             )
             await session.commit()
         # cp_by_ply is the STORED (post-move-shifted) eval_cp per row — row i's
-        # value is the eval OF position i+1 (Pitfall 1 inverse-shift source).
+        # value is the eval OF position i+1 (inverse-shift source).
         # best_move is set ONLY on the two out-of-book rows (6, 7) so
         # _build_bestmove_lease_positions's played==stored-best test nominates
         # exactly those two as candidates (plies 0-5 are in-book and skipped
@@ -2660,7 +2655,7 @@ class TestBestMoveBackfill:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Phase 177 D-05 (the plan's core artifact): a claimed
+        """A claimed
         TIER_BESTMOVE_BACKFILL game runs the MINIMAL candidate-only path —
         writes game_best_moves + stamps best_moves_completed_at, calls
         `evaluate_nodes_multipv2` EXACTLY twice (only the 2 leased candidate
@@ -2896,12 +2891,12 @@ class TestBestMoveBackfill:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-06/OBS-01: when the minimal drain path's own targeted search comes
+        """When the minimal drain path's own targeted search comes
         back with no usable runner-up for a leased candidate ply,
-        `_build_best_move_candidates`'s Pitfall-1 fallback fires a SECOND
+        `_build_best_move_candidates`'s fallback fires a SECOND
         `evaluate_nodes_multipv2` call for that ply and tags the Sentry event
         `source='drain-local'` — queryable apart from the
-        `worker-submit-fallback` regression signal (177-01-SUMMARY.md)."""
+        `worker-submit-fallback` regression signal."""
         from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
         from app.models.game_best_move import GameBestMove
         import app.services.eval_apply as eval_apply_module
@@ -2964,7 +2959,7 @@ class TestBestMoveBackfill:
         # Call 1: the minimal path's OWN targeted search for ply 1 comes back
         # with no usable runner-up (both second_cp and second_uci None) -> ply 1
         # is left OUT of second_best_map -> _build_best_move_candidates's own
-        # Pitfall-1 fallback fires call 2, this time with a real runner-up.
+        # fallback fires call 2, this time with a real runner-up.
         # best_cp (ply 1, mover=black) resolves to eval_of_position[1] = row 0's
         # eval_cp = 0 (white POV, roughly neutral). The runner-up must be
         # clearly WORSE for black — a HIGHER white-POV cp (favors white) — for
@@ -3011,12 +3006,12 @@ class TestBestMoveBackfill:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """GUARDRAIL (the crux, D-01): with maia_engine._session forced to None,
+        """GUARDRAIL (the crux): with maia_engine._session forced to None,
         best_moves_completed_at MUST stay NULL after the drain tick even though
         score_move is mocked to SUCCEED (best_move_rows would be non-empty if
         row-count alone gated the stamp) — proving the stamp is independently
         gated by maia_engine.is_maia_available(), never inferred from row
-        count (RESEARCH Pitfall 1: _build_best_move_candidates returns [] for
+        count (_build_best_move_candidates returns [] for
         BOTH 'Maia ran, zero candidates' AND 'Maia absent', so row count is a
         structurally unsound availability signal). The game stays re-drainable.
 
@@ -3075,11 +3070,11 @@ class TestBestMoveBackfill:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── EVAL-06: classify hook + oracle counts ───────────────────────────────────
+# ─── Classify hook + flaw counts ──────────────────────────────────────────────
 
 
 class TestClassifyHook:
-    """EVAL-06: classify_game_flaws runs automatically after full eval completes.
+    """classify_game_flaws runs automatically after full eval completes.
 
     After a drain tick, game_flaws rows must exist for any game with sufficient
     eval coverage and at least one mistake/blunder.
@@ -3092,7 +3087,7 @@ class TestClassifyHook:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After a drain tick with a blunder at ply 2, game_flaws rows exist
-        for the game (EVAL-06 / _classify_and_fill_oracle hook)."""
+        for the game (_classify_and_fill_oracle hook)."""
         from app.models.game_flaw import GameFlaw
 
         now = datetime.now(timezone.utc)
@@ -3250,13 +3245,13 @@ class TestClassifyHook:
 
 
 class TestLocalDrainBlobsPendingSuppression:
-    """SEED-075: the local in-process drain must pass blobs_pending=True to
+    """The local in-process drain must pass blobs_pending=True to
     _classify_and_fill_oracle, mirroring the atomic go-forward path
     (test_eval_worker_endpoints.py::test_submit_suppresses_cp_flaw_tag_then_blob_submit_self_heals).
 
-    Before the fix the drain defaulted blobs_pending=False and re-minted raw ungated
+    Without the fix the drain defaulted blobs_pending=False and re-minted raw ungated
     cp-based tactic tags for any flaw whose continuation blob was not assembled this
-    pass — the Phase 147 strict-zero violation this seed closes.
+    pass, which violates the rule that raw cp-based tags are never persisted ungated.
     """
 
     async def test_drain_suppresses_cp_flaw_tag_with_no_blob(
@@ -3273,7 +3268,7 @@ class TestLocalDrainBlobsPendingSuppression:
         deterministic HANGING_PIECE motif on the "allowed" orientation, and
         _build_flaw_multipv2_blobs is stubbed to {} by _patch_drain_for_tick_tests so
         the flaw_ply is absent from flaw_pv_blobs (pv_blob is None) — the exact leak
-        condition. With the SEED-075 fix the raw tag is suppressed; without it (default
+        condition. With the fix the raw tag is suppressed; without it (default
         False) allowed_tactic_motif would be persisted non-NULL.
         """
         import app.services.flaws_service as flaws_service_module
@@ -3350,7 +3345,7 @@ class TestLocalDrainBlobsPendingSuppression:
 
 
 class TestOracleCounts:
-    """EVAL-06 / D-117-08: oracle count columns are filled after full eval and match game_flaws."""
+    """Oracle count columns are filled after full eval and match game_flaws."""
 
     async def test_oracle_counts_filled_and_match_game_flaws(
         self,
@@ -3359,7 +3354,7 @@ class TestOracleCounts:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After a drain tick, white/black inaccuracy/mistake/blunder columns on games
-        are filled (D-117-08) and the blunder counts match the game_flaws rows.
+        are filled and the blunder counts match the game_flaws rows.
 
         _blunder_eval_sequence creates one blunder at ply 2 (white's move). So:
           white_blunders = 1, white_mistakes = 0, white_inaccuracies = ? (via count_game_severities)
@@ -3445,7 +3440,7 @@ class TestOracleCounts:
                 f"black_blunders must be 0 (no black blunders in eval sequence), got {black_blunders}"
             )
 
-            # Oracle blunder count must match game_flaws blunder rows for white (D-117-08).
+            # Oracle blunder count must match game_flaws blunder rows for white.
             assert white_blunders == white_blunder_rows, (
                 f"white_blunders ({white_blunders}) must equal game_flaws blunder rows "
                 f"for white ({white_blunder_rows}) — D-117-08 oracle consistency."
@@ -3454,15 +3449,15 @@ class TestOracleCounts:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── Phase 178 Plan 03: live-hook accuracy/ACPL wiring ────────────────────────
+# ─── Live-hook accuracy/ACPL wiring ───────────────────────────────────────────
 
 
 class TestAccuracyAcplHook:
-    """T-178-03-T/T-178-03-I: the live full-eval-completion hook writes the four
-    canonical accuracy/ACPL columns atomically with oracle counts, and correctly
+    """The live full-eval-completion hook writes the four
+    canonical accuracy/ACPL columns atomically with flaw counts, and correctly
     leaves them NULL (never stale/wrong) when the shared compute detects an
     interior eval hole — even though the completion stamp may still be set
-    (D-03: stamp-complete does not imply hole-free)."""
+    (stamp-complete does not imply hole-free)."""
 
     async def test_accuracy_acpl_filled_after_hole_free_drain_tick(
         self,
@@ -3472,7 +3467,7 @@ class TestAccuracyAcplHook:
     ) -> None:
         """After a hole-free drain tick, the four canonical columns are non-NULL,
         in a sane range, and full_evals_completed_at is set in the same committed
-        state (atomicity: both land together, T-178-03-T)."""
+        state (atomicity: both land together)."""
         from app.models.game import Game
 
         now = datetime.now(timezone.utc)
@@ -3543,8 +3538,8 @@ class TestAccuracyAcplHook:
         """Direct call to `_classify_and_fill_oracle` (the seam under test) with an
         interior eval hole at ply 2: the compute's own Complete-Sequence Gate
         returns None, so all four canonical columns stay NULL, while the
-        oracle-count UPDATE still executes and a pre-existing completion stamp is
-        left untouched (D-03 — stamp-complete does not imply hole-free)."""
+        flaw-count UPDATE still executes and a pre-existing completion stamp is
+        left untouched (stamp-complete does not imply hole-free)."""
         import app.services.eval_apply as eval_apply_module
         from app.models.game import Game
 
@@ -3619,12 +3614,12 @@ class TestAccuracyAcplHook:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
-    async def test_seed125_clear_direction_reclassification_nulls_blob_stamp(
+    async def test_clear_direction_reclassification_nulls_blob_stamp(
         self,
         full_drain_test_user_117: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """SEED-125 CLEAR direction: a game already carrying a `blobs_completed_at`
+        """CLEAR direction: a game already carrying a `blobs_completed_at`
         stamp, whose reclassification (`_classify_and_fill_oracle`) inserts a fresh
         NULL-blob flaw ply, has the stamp cleared back to NULL. Uses the same
         stored (post-move) eval-by-ply as `_blunder_eval_sequence`'s docstring —
@@ -3699,12 +3694,12 @@ class TestAccuracyAcplHook:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
-    async def test_seed125_set_direction_refresh_stamps_blob_completed(
+    async def test_set_direction_refresh_stamps_blob_completed(
         self,
         full_drain_test_user_117: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """SEED-125 SET direction: once every flaw ply on a game carries a non-NULL
+        """SET direction: once every flaw ply on a game carries a non-NULL
         `allowed_pv_lines` blob, calling `_refresh_blobs_completed` stamps
         `blobs_completed_at` non-NULL."""
         import app.services.eval_apply as eval_apply_module
@@ -3772,9 +3767,9 @@ class TestAccuracyAcplHook:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── Phase 119 SEED-045: hole-aware completion gate + bounded re-pick ──────────
+# ─── Hole-aware completion gate + bounded re-pick ──────────────────────────────
 
-# Shared user ID for Phase 119 tests (distinct range to avoid FK conflicts).
+# Shared user ID for hole-gate tests (distinct range to avoid FK conflicts).
 _TEST_USER_ID_119: int = 99202
 
 
@@ -3800,7 +3795,7 @@ async def full_drain_test_user_119(
 
 
 class TestHoleAwareCompletionGate:
-    """Phase 119 SEED-045: full_evals_completed_at is withheld while genuine
+    """full_evals_completed_at is withheld while genuine
     non-terminal holes remain, up to MAX_EVAL_ATTEMPTS; the cap stamps anyway
     with one aggregated Sentry event.
 
@@ -4058,7 +4053,7 @@ class TestHoleAwareCompletionGate:
         """After full_eval_attempts reaches MAX_EVAL_ATTEMPTS with a persistent hole,
         the game IS stamped complete and the cap outcome is LOGGED locally — NOT sent to
         Sentry. The cap path is the expected terminal state of the bounded-retry drain
-        (D-116-07), so capturing it per game burned the error quota (was FLAWCHESS-5V);
+        so capturing it per game burned the error quota;
         it was demoted to logger.warning. Sentry must NOT be touched on this path.
 
         Seed game with full_eval_attempts = MAX_EVAL_ATTEMPTS - 1 so the NEXT tick
@@ -4160,7 +4155,7 @@ class TestHoleAwareCompletionGate:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """WR-05 all-fail circuit breaker stays on the existing path and does NOT
+        """All-fail circuit breaker stays on the existing path and does NOT
         increment full_eval_attempts — pool outages must not exhaust the hole budget.
 
         When ALL engine calls fail (simulated dead pool), the existing circuit breaker
@@ -4215,8 +4210,8 @@ class TestHoleAwareCompletionGate:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Quick 260916-g38 / FLAWCHESS-5Q: with exactly ONE engine target, a failed
-        call must NOT trip the WR-05 breaker (no Sentry message) — it is a plain
+        """With exactly ONE engine target, a failed
+        call must NOT trip the all-fail breaker (no Sentry message) — it is a plain
         transient hole: stamp withheld, full_eval_attempts becomes 1, game re-picked.
 
         Reproduces prod game 2494493: a 2-ply game whose plies both dedup-hit the
@@ -4286,8 +4281,8 @@ class TestHoleAwareCompletionGate:
         full_drain_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Quick 260916-g38: FULL_DRAIN_BREAKER_MIN_TARGETS boundary — exactly two
-        failed targets (ply 0 + terminal donor, no dedup) still trip WR-05: one Sentry
+        """FULL_DRAIN_BREAKER_MIN_TARGETS boundary — exactly two
+        failed targets (ply 0 + terminal donor, no dedup) still trip the breaker: one Sentry
         message, no write session, full_eval_attempts stays 0."""
         from app.models.game import Game
         from app.services.eval_drain import FULL_DRAIN_BREAKER_MIN_TARGETS
@@ -4339,11 +4334,11 @@ class TestHoleAwareCompletionGate:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── Phase 119 SEED-045: resweep_holed_games ──────────────────────────────────
+# ─── resweep_holed_games ──────────────────────────────────────────────────────
 
 
 class TestResweepHoledGames:
-    """Phase 119 SEED-045: resweep_holed_games clears completion markers on already-stamped
+    """resweep_holed_games clears completion markers on already-stamped
     engine games that carry non-terminal holes, leaving terminal-only games untouched.
 
     Test fixture setup: games stamped with full_evals_completed_at; game_positions rows
@@ -4360,13 +4355,13 @@ class TestResweepHoledGames:
         """resweep_holed_games() clears full_evals_completed_at on the game with a
         genuine mid-game hole, leaves game-ending-ply and terminal-only games untouched.
 
-        SEED-049 update: the hole definition is now ply < max_ply - 1 (not ply < max_ply).
-        A NULL at ply = max_ply - 1 (the game-ending move ply) is no longer a hole.
+        The hole definition is ply < max_ply - 1 (not ply < max_ply).
+        A NULL at ply = max_ply - 1 (the game-ending move ply) is not a hole.
 
         Game A: 4 rows (plies 0..3). Genuine mid-game hole at ply 1 (< max_ply - 1 = 2).
             → IS swept (real hole).
         Game B: 3 rows (plies 0..2). Only ply 1 = max_ply - 1 = 1 and ply 2 = max_ply
-            are NULL. Under SEED-049 ply 1 is the game-ending-move ply → NOT a hole.
+            are NULL. Ply 1 is the game-ending-move ply → NOT a hole.
             → NOT swept.
         Expected: count=1 (only game A swept); game B's marker untouched.
         """
@@ -4403,7 +4398,7 @@ class TestResweepHoledGames:
         )
 
         # Game B: only the game-ending-move ply (ply 1 = max_ply - 1 = 1) is NULL.
-        # SEED-049: ply = max_ply - 1 is the game-ending move → NOT a hole → NOT swept.
+        # Ply = max_ply - 1 is the game-ending move → NOT a hole → NOT swept.
         game_b_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
@@ -4418,7 +4413,7 @@ class TestResweepHoledGames:
             game_b_id,
             [
                 {"ply": 0, "full_hash": 0xF119_B001, "eval_cp": 50, "eval_mate": None},
-                # ply 1 = max_ply - 1 = 1: game-ending-move ply NULL (SEED-049 false hole)
+                # ply 1 = max_ply - 1 = 1: game-ending-move ply NULL (false hole)
                 {"ply": 1, "full_hash": 0xF119_B002, "eval_cp": None, "eval_mate": None},
                 # ply 2 = max_ply (terminal); NULL → excluded by ply < max_ply - 1
                 {"ply": 2, "full_hash": 0xF119_B003, "eval_cp": None, "eval_mate": None},
@@ -4475,7 +4470,7 @@ class TestResweepHoledGames:
 
         now = datetime.now(timezone.utc)
         # Use a 4-row game so the hole at ply 1 is a genuine mid-game hole
-        # (1 < max_ply - 1 = 3 - 1 = 2 → TRUE). SEED-049 requires ply < max_ply - 1.
+        # (1 < max_ply - 1 = 3 - 1 = 2 → TRUE). The hole predicate requires ply < max_ply - 1.
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
@@ -4530,7 +4525,7 @@ class TestResweepHoledGames:
 
         now = datetime.now(timezone.utc)
         # Use a 4-row game so the hole at ply 1 is a genuine mid-game hole
-        # (1 < max_ply - 1 = 3 - 1 = 2 → TRUE). SEED-049 requires ply < max_ply - 1.
+        # (1 < max_ply - 1 = 3 - 1 = 2 → TRUE). The hole predicate requires ply < max_ply - 1.
         game_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_119,
@@ -4578,7 +4573,7 @@ class TestResweepHoledGames:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── SEED-139 item 5: run_periodic_holed_game_resweep ────────────────────────
+# ─── run_periodic_holed_game_resweep ─────────────────────────────────────────
 
 
 class TestRunPeriodicHoledGameResweep:
@@ -4668,9 +4663,9 @@ class TestRunPeriodicHoledGameResweep:
         )
 
 
-# ─── SEED-049: game-ending ply is not a hole ──────────────────────────────────
+# ─── Game-ending ply is not a hole ────────────────────────────────────────────
 
-# Separate user ID range for SEED-049 tests to avoid FK conflicts.
+# Separate user ID range for the game-ending-ply tests to avoid FK conflicts.
 _TEST_USER_ID_049: int = 99203
 
 
@@ -4695,14 +4690,14 @@ async def full_drain_test_user_049(
     return _TEST_USER_ID_049
 
 
-class TestSeed049GameEndingPly:
-    """SEED-049: the game-ending ply is not an eval hole.
+class TestGameEndingPlyNotAHole:
+    """The game-ending ply is not an eval hole.
 
     Under post-move storage, the row for the game-ending move stores the eval of the
     terminal (game-over) position. That terminal is deliberately unevaluable: the engine
     skip in _collect_full_ply_targets already omits the terminal donor when the final
     board is_game_over(). The false hole this created in failed_ply_count (live drain)
-    and in the resweep predicate is corrected by SEED-049.
+    and in the resweep predicate is corrected.
     """
 
     async def test_checkmate_game_stamps_complete_first_tick(
@@ -4722,7 +4717,7 @@ class TestSeed049GameEndingPly:
             But the final board IS checkmate (is_game_over()), so _collect_full_ply_targets
             skips the terminal donor call. Therefore pos_eval[7] is never set.
           - Ply 6 (4.Qxf7# — the game-ending move): _post_move_eval(pos_eval, 6) = (None,
-            None) because pos_eval[7] is absent. SEED-049 fix: this NULL is NOT a hole —
+            None) because pos_eval[7] is absent. Fix: this NULL is NOT a hole —
             ends_game=True on that target excludes it from failed_ply_count.
 
         Expected: full_evals_completed_at IS NOT NULL, full_eval_attempts == 0,
@@ -4756,7 +4751,7 @@ class TestSeed049GameEndingPly:
         # skips the terminal donor. The engine is called for plies 0..6 only (7 calls).
         # Post-move: row k = pos_eval[k+1]. Row 6's donor (pos_eval[7]) is absent,
         # so _post_move_eval returns (None, None) for ply 6 — the game-ending move.
-        # SEED-049: this must NOT count as a hole (ends_game=True on ply 6 target).
+        # This must NOT count as a hole (ends_game=True on ply 6 target).
         mock_evaluate = AsyncMock(
             side_effect=[
                 (
@@ -4859,7 +4854,7 @@ class TestSeed049GameEndingPly:
         - 1 = 2 - 1 = 1, but _TWO_MOVE_PGN's board is NOT game-over → ends_game=False
         on ply 1 → the NULL IS counted as a genuine hole).
 
-        SEED-049 note: the "*" result means the final board is NOT checkmate/stalemate,
+        The "*" result means the final board is NOT checkmate/stalemate,
         so ends_game remains False on the last real row. The hole at ply 1 is real.
         """
         from app.models.game import Game
@@ -4953,7 +4948,7 @@ class TestSeed049GameEndingPly:
 
         Game E (game-ending-only hole): 3 rows (plies 0, 1, 2). Row at ply 1 = NULL
         (= max_ply - 1 = 2 - 1 = 1). Only the game-ending-move ply is NULL.
-        SEED-049 fix: ply < max_ply - 1 excludes ply 1 → not a hole → NOT swept.
+        Fix: ply < max_ply - 1 excludes ply 1 → not a hole → NOT swept.
 
         Game F (genuine mid-game hole): 3 rows (plies 0, 1, 2). Row at ply 0 = NULL
         (= 0 < max_ply - 1 = 1). This is a real hole → IS swept.
@@ -4966,7 +4961,7 @@ class TestSeed049GameEndingPly:
         now = datetime.now(timezone.utc)
 
         # Game E: only hole is at ply 1 = max_ply(2) - 1 = game-ending-move ply.
-        # SEED-049: ply < max_ply - 1 is FALSE for ply 1 (1 < 1 is False) → not swept.
+        # Ply < max_ply - 1 is FALSE for ply 1 (1 < 1 is False) → not swept.
         game_e_id = await _insert_game(
             full_drain_session_maker,
             full_drain_test_user_049,
@@ -4982,7 +4977,7 @@ class TestSeed049GameEndingPly:
             game_e_id,
             [
                 {"ply": 0, "full_hash": 0xF049_E001, "eval_cp": 50, "eval_mate": None},
-                # ply 1 = max_ply - 1: game-ending-move ply NULL (SEED-049 false hole)
+                # ply 1 = max_ply - 1: game-ending-move ply NULL (false hole)
                 {"ply": 1, "full_hash": 0xF049_E002, "eval_cp": None, "eval_mate": None},
                 # ply 2 = max_ply: the existing terminal exclusion (ply < max_ply)
                 {"ply": 2, "full_hash": 0xF049_E003, "eval_cp": None, "eval_mate": None},
@@ -5029,7 +5024,7 @@ class TestSeed049GameEndingPly:
                 )
                 marker_f = row_f.scalar_one_or_none()
 
-            # Game E (game-ending-only hole): must NOT be swept by SEED-049 fix.
+            # Game E (game-ending-only hole): must NOT be swept.
             assert marker_e is not None, (
                 "Game E (game-ending-move-only hole at ply = max_ply - 1) must NOT be "
                 "re-armed — SEED-049: ply < max_ply - 1 excludes the game-ending move ply"
@@ -5044,7 +5039,7 @@ class TestSeed049GameEndingPly:
             await _delete_games(full_drain_session_maker, [game_e_id, game_f_id])
 
 
-# ─── 260616-jq1: batched write regression (multi-flaw, multi-eval) ────────────
+# ─── Batched write regression (multi-flaw, multi-eval) ────────────────────────
 
 # Shared user ID for the batched-write regression tests.
 _TEST_USER_ID_JQ1: int = 99210
@@ -5084,7 +5079,7 @@ def _two_blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, 
     PV must be written at ply 3 (refutation after white blunder at ply 2)
     and ply 4 (refutation after black blunder at ply 3).
 
-    Phase 142: expanded to 7-tuple; second_uci="" is the no-second-move sentinel.
+    Expanded to 7-tuple; second_uci="" is the no-second-move sentinel.
     """
     return [
         # engine_call[0] (ply 0) — best_move only; eval never stored (no pre-ply-0 row)
@@ -5105,7 +5100,7 @@ def _two_blunder_eval_sequence() -> list[tuple[int, None, str, str, None, None, 
 
 
 class TestBatchedWriteRegression:
-    """260616-jq1 regression: batched eval + flaw-PV writes with multiple rows.
+    """Regression: batched eval + flaw-PV writes with multiple rows.
 
     The single-flaw tests in TestFlawPv exercise the VALUES clause with one row;
     these tests exercise it with MULTIPLE rows to confirm the multi-row batch path.
@@ -5118,15 +5113,15 @@ class TestBatchedWriteRegression:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """After a drain tick on a game with TWO blunders (one white, one black),
-        game_positions.pv is set at flaw plies 2, 3 AND 4 (SEED-054) and NULL elsewhere.
+        game_positions.pv is set at flaw plies 2, 3 AND 4 and NULL elsewhere.
 
         This exercises the multi-row VALUES clause in the batched flaw-PV UPDATE
         (FLAWCHESS-6B) — the existing single-flaw test covers one VALUES row only.
 
         _SIX_PLY_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *" (plies 0..5).
         Two blunders from _two_blunder_eval_sequence:
-          - White blunder at ply 2 → PV at ply 2 (decision, SEED-054) and ply 3 (refutation)
-          - Black blunder at ply 3 → PV at ply 3 (decision, SEED-054) and ply 4 (refutation)
+          - White blunder at ply 2 → PV at ply 2 (decision) and ply 3 (refutation)
+          - Black blunder at ply 3 → PV at ply 3 (decision) and ply 4 (refutation)
         Union of written plies = {2, 3, 4}; plies 0, 1, 5 stay NULL.
         """
         from app.models.game_position import GamePosition
@@ -5186,7 +5181,7 @@ class TestBatchedWriteRegression:
                     f"ply {ply} must have pv=NULL — pv only written at flaw plies "
                     "(ply N and ply N+1; D-117-02 / SEED-054)"
                 )
-            # Sanity: eval_cp rows populated by the batched eval write (Task 1 batch).
+            # Sanity: eval_cp rows populated by the batched eval write.
             # Row 2 = -500 (white blunder), row 3 = 100 (black blunder).
             assert by_ply.get(2, (None, None))[1] == -500, (
                 f"ply 2 eval_cp must be -500 (white blunder), got {by_ply.get(2, (None, None))[1]}"
@@ -5291,7 +5286,7 @@ class TestBatchedWriteRegression:
         full_drain_test_user_jq1: int,
         full_drain_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """WR-01: preserve_existing_evals parity for the lichess-eval branch.
+        """preserve_existing_evals parity for the lichess-eval branch.
 
         A lichess-eval game always re-leases its FULL position set, so an
         already-resolved ply can be re-submitted and transiently re-fail
@@ -5409,8 +5404,8 @@ class TestBatchedWriteRegression:
         game's engine (is_lichess_eval_game=False) branch must not trust a
         pre-existing eval_cp as "already resolved by a prior engine round" when
         that eval_cp actually came from lichess IMPORT (BENCHMARK_HOMOGENIZE_EVAL_SOURCE
-        forces is_lichess_eval_game=False for these games — D-03 — but never
-        clears the imported %eval columns — D-04).
+        forces is_lichess_eval_game=False for these games, but never
+        clears the imported %eval columns).
 
         Ply 0's row already carries eval_cp=999 (the import value, never
         engine-touched) and no best_move. The worker fails to resubmit this
@@ -5460,7 +5455,7 @@ class TestBatchedWriteRegression:
             eval_cp=999,
             eval_mate=None,
         )
-        # Terminal donor at ply 1 (Cases 1/2 only — see _post_move_eval's SEED-044
+        # Terminal donor at ply 1 (Cases 1/2 only — see _post_move_eval's
         # +1 shift): row 0's post-move eval is pos_eval[1]. Omitting a ply=1 target
         # entirely from `targets` also yields (None, None) via _post_move_eval's own
         # default, so Cases 1/2 pass `[target]` alone (no donor needed to prove a
@@ -5485,7 +5480,7 @@ class TestBatchedWriteRegression:
         try:
             # Case 1 (parity, zero blast radius): a REAL engine game (never
             # lichess-sourced, stored_eval_predates_engine defaults False) keeps
-            # today's SEED-076 behavior — the stale-but-genuinely-engine-written
+            # today's behavior — the stale-but-genuinely-engine-written
             # eval_cp is trusted as already-resolved, NOT a fresh hole.
             async with full_drain_session_maker() as session:
                 failed = await eval_drain._apply_full_eval_results(
@@ -5546,7 +5541,7 @@ class TestBatchedWriteRegression:
             await _delete_games(full_drain_session_maker, [game_id])
 
 
-# ─── Phase 142 MPV-02: blob population ────────────────────────────────────────
+# ─── Blob population ──────────────────────────────────────────────────────────
 
 _TEST_USER_ID_142: int = 99211
 
@@ -5573,9 +5568,9 @@ async def full_drain_test_user_142(
 
 
 class TestMultipv2Blobs:
-    """Phase 142 MPV-02: _full_drain_tick populates allowed_pv_lines / missed_pv_lines.
+    """_full_drain_tick populates allowed_pv_lines / missed_pv_lines.
 
-    T-142-02-03: drain integration test proving non-NULL multi-node blobs and the
+    Drain integration test proving non-NULL multi-node blobs and the
     flaw/tactic count invariant (multipv2 pass does not add or remove flaws).
     """
 
@@ -5607,8 +5602,8 @@ class TestMultipv2Blobs:
         import app.services.eval_drain as drain_module
 
         monkeypatch.setattr(drain_module, "async_session_maker", full_drain_session_maker)
-        # Phase 150 R7: _build_flaw_multipv2_blobs (exercised by this test, NOT mocked)
-        # opens its own internal session in eval_apply.py now — redirect that too.
+        # _build_flaw_multipv2_blobs (exercised by this test, NOT mocked)
+        # opens its own internal session in eval_apply.py — redirect that too.
         monkeypatch.setattr(eval_apply_module, "async_session_maker", full_drain_session_maker)
         monkeypatch.setattr(drain_module.sentry_sdk, "capture_exception", lambda *a, **kw: None)
         monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", lambda *a, **kw: None)
@@ -5640,7 +5635,7 @@ class TestMultipv2Blobs:
         # continuation positions the Option-B walk visits) gets a LEGAL multi-move PV.
         # eval_by_ply reproduces the post-move stored sequence [20,30,-500,-480,60,30]
         # → one white blunder at ply 2 (same construction as _blunder_eval_sequence,
-        # but board-keyed like the SEED-056 dedup test's _eval_for_board). A by-call-order
+        # but board-keyed like the dedup test's _eval_for_board). A by-call-order
         # list would emit illegal PVs (e.g. a black move from a white-to-move board), so
         # _walk_pv_boards would stop at node 0 and no multi-node blob could form.
         eval_by_ply = {0: 20, 1: 20, 2: 30, 3: -500, 4: -480, 5: 60, 6: 30}
@@ -5711,7 +5706,7 @@ class TestMultipv2Blobs:
                 f"missed_pv_lines must have at least 1 node (node 0), got {len(missed)}"
             )
             # Multi-node requirement: the PV-walk (Option B) must produce >=2 nodes on at
-            # least one line so the Phase 143 gate's >=2-solver-node path is reachable.
+            # least one line so the gate's >=2-solver-node path is reachable.
             assert max(len(allowed), len(missed)) >= 2, (
                 "at least one blob must have >=2 nodes (PV continuation walked); "
                 f"got allowed={len(allowed)}, missed={len(missed)}"
@@ -5725,7 +5720,7 @@ class TestMultipv2Blobs:
                 assert isinstance(node["su"], str), (
                     "PvNode.su must be a str sentinel (never None — Pitfall 3)"
                 )
-            # SEED-079: the local drain skips odd (defender) continuation engine calls.
+            # The local drain skips odd (defender) continuation engine calls.
             # The mock returns a real cp for EVERY evaluated board, so an all-None odd
             # node proves the defender board was never handed to the engine; even
             # (solver) nodes must carry real evals.
@@ -5746,7 +5741,7 @@ class TestMultipv2Blobs:
 
 
 class TestTier4bMinimalDrainLichessBestCp:
-    """Quick 260719-fsz Task 2: the minimal tier-4b drain (_tier4b_minimal_drain_tick)
+    """The minimal tier-4b drain (_tier4b_minimal_drain_tick)
     must store our-Stockfish best_cp for a LICHESS-eval game, not the stored lichess
     %eval, so the query-time gem/great divergence guard (library_service.py) is
     meaningful. Engine games are unchanged (their stored eval already IS our Stockfish).
@@ -5754,7 +5749,7 @@ class TestTier4bMinimalDrainLichessBestCp:
     Fixture game "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. h3 a6" — the Italian Game main
     line (plies 0-5) is fully booked (find_opening_ply_count == 6), so ply 6 (h2h3,
     white) is the out-of-book, played==stored-best gem candidate (same known-good
-    setup as the 174-07 backfill test above). eval_of_position[6] comes from the
+    setup as the backfill test above). eval_of_position[6] comes from the
     ply-5 row (post-move shift), seeded as a distinct LICHESS value; the mocked fresh
     MultiPV-2 search returns a clearly different Stockfish best cp.
     """

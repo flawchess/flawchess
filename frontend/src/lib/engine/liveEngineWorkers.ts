@@ -1,6 +1,6 @@
 /**
  * liveEngineWorkers — counts the Stockfish Workers alive on this page, for
- * Sentry triage of engine memory failures (SEED-195).
+ * Sentry triage of engine memory failures.
  *
  * Every Stockfish Worker (pool slots, the single analysis engine, both
  * grading hooks) holds its own wasm Memory. The Mac Safari Maia OOM

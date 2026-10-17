@@ -352,7 +352,7 @@ describe('sentryBeforeSend request attachment (FLAWCHESS-64)', () => {
   });
 });
 
-describe('sentryBeforeSend page-URL query scrub (Phase 232 review WR-01)', () => {
+describe('sentryBeforeSend page-URL query scrub', () => {
   // Sentry's HttpContext copies location.href into event.request.url and that
   // URL is not gated by dataCollection, so /reset-password?token=<JWT> would
   // leak the live reset token. sentryBeforeSend must scrub the query string.
@@ -394,7 +394,7 @@ describe('sentryBeforeSend page-URL query scrub (Phase 232 review WR-01)', () =>
     );
   });
 
-  it('scrubs the query string from navigation breadcrumb from/to (gap G-232-3)', async () => {
+  it('scrubs the query string from navigation breadcrumb from/to', async () => {
     const { sentryBeforeSend } = await import('@/instrument');
 
     const event = sentryBeforeSend(
@@ -420,7 +420,7 @@ describe('sentryBeforeSend page-URL query scrub (Phase 232 review WR-01)', () =>
   });
 });
 
-describe('Sentry.init config (FLAWCHESS-24 / SEED-148 items 3)', () => {
+describe('Sentry.init config', () => {
   it('ignoreErrors matches the real prod ServiceWorker-update-failure string', async () => {
     const Sentry = await import('@sentry/react');
     await import('@/instrument');
@@ -462,10 +462,10 @@ describe('Sentry.init config (FLAWCHESS-24 / SEED-148 items 3)', () => {
     expect(denyUrls.some((p) => p.test(beaconUrl))).toBe(true);
   });
 
-  // Phase 232 / D-02: Sentry v11 flipped the dataCollection defaults to collect
+  // Sentry v11 flipped the dataCollection defaults to collect
   // everything (IP, cookies, bodies, headers) and attachStacktrace to true. This
   // pins the v10 behavior so an accidental removal fails here, not silently in prod.
-  it('keeps the v10 privacy baseline under Sentry v11 (dataCollection + attachStacktrace, D-02)', async () => {
+  it('keeps the v10 privacy baseline under Sentry v11 (dataCollection + attachStacktrace)', async () => {
     const Sentry = await import('@sentry/react');
     await import('@/instrument');
 

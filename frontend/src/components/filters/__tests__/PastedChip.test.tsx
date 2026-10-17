@@ -46,7 +46,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('Pasted chip (Phase 208, D-11/D-14)', () => {
+describe('Pasted chip', () => {
   describe('FilterPanel without showPastedChip', () => {
     it('renders no filter-platform-pasted node by default (no showPastedChip prop)', () => {
       render(<FilterPanel filters={DEFAULT_FILTERS} onChange={vi.fn()} visibleFilters={['platform']} />);
@@ -90,7 +90,7 @@ describe('Pasted chip (Phase 208, D-11/D-14)', () => {
       expect(screen.queryByTestId('filter-platform-pasted')).toBeNull();
     });
 
-    // SEED-163 2c: the disclosure hint is gated on the same showPastedChip
+    // The disclosure hint is gated on the same showPastedChip
     // flag as the Pasted chip — absent from a bare FilterPanel.
     it('renders no native-games disclosure hint by default (no showPastedChip prop)', () => {
       render(<FilterPanel filters={DEFAULT_FILTERS} onChange={vi.fn()} visibleFilters={['platform']} />);
@@ -130,7 +130,7 @@ describe('Pasted chip (Phase 208, D-11/D-14)', () => {
       expect(screen.getByTestId('filter-platform-lichess').getAttribute('aria-pressed')).toBe('false');
     });
 
-    // SEED-163 2c: LibraryFilterPanel is the only caller that sets
+    // LibraryFilterPanel is the only caller that sets
     // showPastedChip, so it is the only surface that renders the hint.
     it('renders the native-games disclosure hint with the exact copy', () => {
       render(
@@ -143,7 +143,7 @@ describe('Pasted chip (Phase 208, D-11/D-14)', () => {
     });
   });
 
-  // UAT (Phase 208): the chip used to be a pure add-on, so a user could never
+  // The chip is not a pure add-on: without 'only' mode a user could never
   // see pasted games alone — and since a pasted game sorts by its own
   // historical PGN date, 'with' buries it at the end of the archive.
   describe("reaching and leaving 'only' mode", () => {
@@ -162,7 +162,7 @@ describe('Pasted chip (Phase 208, D-11/D-14)', () => {
       const emitted = clickPlatform(start, 'filter-platform-lichess');
       expect(emitted.pasted).toBe('only');
       // platforms stays null (never an empty match-nothing list) so the shared
-      // state the other pages read is unaffected — D-14 containment.
+      // state the other pages read is unaffected.
       expect(emitted.platforms).toBeNull();
     });
 
@@ -201,7 +201,7 @@ describe('Pasted chip (Phase 208, D-11/D-14)', () => {
       expect(DEFAULT_FILTERS.pasted).toBe('off');
     });
 
-    // SEED-163 2a: analytics default population is Human + Rated.
+    // Analytics default population is Human + Rated.
     it('DEFAULT_FILTERS.rated is true and opponentType is human', () => {
       expect(DEFAULT_FILTERS.rated).toBe(true);
       expect(DEFAULT_FILTERS.opponentType).toBe('human');

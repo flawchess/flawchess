@@ -1,17 +1,14 @@
 // @vitest-environment jsdom
 /**
- * Phase 138 Plan 01 — Analysis page Wave-0 test scaffold.
- *
- * RED in Wave 0: all tests fail with "Cannot find module '../Analysis'" because
- * Analysis.tsx does not exist yet. Plan 02 creates that file and turns these GREEN.
+ * Analysis page tests.
  *
  * Verifies the Analysis page observable behaviors:
- * - Shell renders with required testids (ROUTE-01)
- * - ?line= param seeds a free-play opening main line (ROUTE-02)
- * - Malformed ?line= degrades to standard start without throwing (ROUTE-02 / security)
- * - "Loading engine..." chrome shows while isReady=false, board stays interactive (D-06 / SC#3)
- * - Engine ready hides the loading chrome (D-06)
- * - Phase 155: FlawChess Engine eval-bar precedence (DISPLAY-04) — see the dedicated
+ * - Shell renders with required testids
+ * - ?line= param seeds a free-play opening main line
+ * - Malformed ?line= degrades to standard start without throwing
+ * - "Loading engine..." chrome shows while isReady=false, board stays interactive
+ * - Engine ready hides the loading chrome
+ * - FlawChess Engine eval-bar precedence — see the dedicated
  *   describe block below.
  */
 
@@ -53,7 +50,7 @@ const engineState: {
   depth: number;
   isAnalyzing: boolean;
   isReady: boolean;
-  /** WR-01 (196-REVIEW.md): the FEN `pvLines` currently belongs to. Defaults
+  /** The FEN `pvLines` currently belongs to. Defaults
    *  to `null` so pre-existing tests that never set it exercise the "no
    *  position asserted stale" default; the race-condition regression test
    *  below is the one place that drives this deliberately out of sync with
@@ -69,12 +66,12 @@ const engineState: {
   currentFen: null,
 };
 
-// Phase 228 (D-12/D-14): every `multiPv` the page passed to the free-run engine,
+// Every `multiPv` the page passed to the free-run engine,
 // in call order — the page-level proof that the settings drive search breadth.
 const stockfishMultiPvCalls: number[] = [];
 
 vi.mock('@/hooks/useStockfishEngine', () => ({
-  // WR-01 (196-REVIEW.md): `currentFen` defaults to `null` in engineState so
+  // `currentFen` defaults to `null` in engineState so
   // it must normally mirror whichever `fen` the hook was called with
   // (matches the real hook: currentFen is committed in the SAME effect run
   // as the fen it was reset for, so it is NEVER stale relative to the fen
@@ -91,26 +88,26 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
   },
 }));
 
-// Mock isLowPowerDevice (Phase 172, SEED-106 D-05): useGemSweep.ts's device
+// Mock isLowPowerDevice: useGemSweep.ts's device
 // gate reads navigator.hardwareConcurrency, which jsdom leaves at 0/undefined
 // — isLowPowerDevice() would read this test environment as "low power" and
 // permanently disable the sweep's dedicated instances (enabled: false always)
-// unless pinned deterministically, mirroring 172-04's own useGemSweep.test.ts.
+// unless pinned deterministically, mirroring useGemSweep.test.ts.
 vi.mock('@/lib/engine/workerPool', () => ({
   isLowPowerDevice: () => false,
 }));
 
-// Mock useStockfishGradingEngine (Phase 151.1 Plan 04): jsdom has no real Worker for
+// Mock useStockfishGradingEngine: jsdom has no real Worker for
 // this SECOND classic engine file either. Deterministic gradeMap stub via the
 // mutable gradingState — the grading hook's own behavior is covered by
-// useStockfishGradingEngine.test.ts. Phase 158 Plan 03 (SEED-087 SC2): every
+// useStockfishGradingEngine.test.ts. Every
 // call's options are captured into gradingCalls so tests can assert the
 // shared run's (fen, enabled, candidateSans) across toggle combinations.
 interface GradingMoveGrade {
   evalCp: number | null;
   evalMate: number | null;
   depth: number;
-  /** Retained grading PV (162 UAT card re-source) — optional, mirrors MoveGrade. */
+  /** Retained grading PV — optional, mirrors MoveGrade. */
   pv?: string[];
 }
 const gradingState: { gradeMap: Map<string, GradingMoveGrade>; isGrading: boolean } = {
@@ -121,7 +118,7 @@ const gradingCalls: { fen: string | null; candidateSans: string[]; enabled: bool
 
 // Analysis renders THREE useStockfishGradingEngine instances per commit, in
 // hook order: the shared PRIMARY run (FC∪Maia candidate union for the current
-// position) first, then (Phase 172, SEED-106 D-05) useGemSweep's OWN
+// position) first, then useGemSweep's OWN
 // dedicated instance — called unconditionally every render, always idle
 // (fen: null) unless the sweep has dispatched a candidate — then the
 // on-demand gem parent-grade run LAST (useGemSweep is wired in Analysis.tsx
@@ -132,7 +129,7 @@ const gradingCalls: { fen: string | null; candidateSans: string[]; enabled: bool
 function lastPrimaryGradingCall(): { fen: string | null; candidateSans: string[]; enabled: boolean } | undefined {
   return gradingCalls[gradingCalls.length - 3];
 }
-/** The sweep's OWN dedicated grading instance's most recent call — the D-05
+/** The sweep's OWN dedicated grading instance's most recent call — the
  *  isolation proof's whole reason for existing (the SECOND of the three
  *  calls per commit per the ordering note above). */
 function lastSweepGradingCall(): { fen: string | null; candidateSans: string[]; enabled: boolean } | undefined {
@@ -154,7 +151,7 @@ vi.mock('@/hooks/useStockfishGradingEngine', () => ({
     gradingCalls.push(options);
     return {
       gradeMap: gradingState.gradeMap,
-      // WR-03: the real hook reports which FEN the map belongs to; the mock's
+      // The real hook reports which FEN the map belongs to; the mock's
       // mutable gradeMap is by convention always "for" the position under test,
       // so it belongs to whatever fen Analysis passed in (null when empty).
       gradeMapFen: gradingState.gradeMap.size > 0 ? options.fen : null,
@@ -165,11 +162,11 @@ vi.mock('@/hooks/useStockfishGradingEngine', () => ({
 }));
 
 // Mock useMaiaEngine: jsdom has no real Worker for the classic Maia worker file
-// either (Phase 151 Plan 06). Deterministic curve stub via the mutable maiaState —
+// either. Deterministic curve stub via the mutable maiaState —
 // the Maia surfaces' own behavior is covered by useMaiaEngine.test.ts /
 // MovesByRatingChart.test.tsx. expectedScoreAtSelectedElo drives the Maia bar fill.
 // `perElo` defaults to [] (no move-quality-bar/position-verdict rendering);
-// Phase 162's mirror-image label test overrides it with a single rung so
+// The mirror-image label test overrides it with a single rung so
 // MaiaMoveQualityBar's totalMass > 0 gate lets computePositionVerdict run.
 const maiaState: {
   expectedScoreAtSelectedElo: number | null;
@@ -177,7 +174,7 @@ const maiaState: {
   /** null (the default) mirrors `perElo.length > 0` — the ordinary complete-
    *  ladder case almost every test in this file exercises. A test may
    *  override with an explicit false to simulate a coarse-only (partial)
-   *  result (Phase 219-03, D-12's dedicated invariant test below). */
+   *  result (see the dedicated invariant test below). */
   isLadderComplete: boolean | null;
 } = {
   expectedScoreAtSelectedElo: null,
@@ -185,11 +182,11 @@ const maiaState: {
   isLadderComplete: null,
 };
 
-// Phase 172 (SEED-106 D-05): Analysis renders TWO useMaiaEngine instances per
+// Analysis renders TWO useMaiaEngine instances per
 // commit, in hook order: the live `maia` call first, then useGemSweep's OWN
 // dedicated instance second — called unconditionally every render, always
 // idle (fen: null) unless the sweep has dispatched a candidate. maiaCalls
-// records every call's full options, the mechanism the D-05/SC2 isolation
+// records every call's full options, the mechanism the isolation
 // proof needs ("which instance got which fen").
 const maiaCalls: { fen: string | null; enabled: boolean; selectedElo: number }[] = [];
 function lastLiveMaiaCall(): { fen: string | null; enabled: boolean; selectedElo: number } | undefined {
@@ -204,7 +201,7 @@ vi.mock('@/hooks/useMaiaEngine', () => ({
     maiaCalls.push(options);
     return {
       perElo: maiaState.perElo,
-      // Phase 219-03, D-12: by mock convention, a non-empty `perElo` always
+      // By mock convention, a non-empty `perElo` always
       // represents a COMPLETE ladder (this suite has no coarse/partial
       // fixtures — that split is covered by useMaiaEngine.test.ts /
       // MaiaMoveQualityBar.test.tsx / useGemSweep.test.ts's own dedicated
@@ -214,14 +211,14 @@ vi.mock('@/hooks/useMaiaEngine', () => ({
       wdl: null,
       isReady: false,
       isAnalyzing: false,
-      // WR-03: the real hook reports which FEN the curve belongs to; the mock's
+      // The real hook reports which FEN the curve belongs to; the mock's
       // mutable perElo is by convention always "for" the position under test.
       resultFen: maiaState.perElo.length > 0 ? options.fen : null,
     };
   },
 }));
 
-// Mock useFlawChessEngine (Phase 155): jsdom has no real Worker for the pool this
+// Mock useFlawChessEngine: jsdom has no real Worker for the pool this
 // hook creates either. Deterministic stub via the mutable flawChessState — the
 // hook's own throttle/abort behavior is covered by useFlawChessEngine.test.ts.
 // isReady defaults to true so the FlawChess card's pre-ready skeleton doesn't mask
@@ -239,9 +236,9 @@ const flawChessState: {
   }[];
   isSearching: boolean;
   isReady: boolean;
-  /** Quick 260906-i5e: the running expansion count the card header renders. */
+  /** The running expansion count the card header renders. */
   nodesEvaluated: number;
-  /** WR-01 (196-REVIEW.md): the FEN `rankedLines` currently belongs to.
+  /** The FEN `rankedLines` currently belongs to.
    *  `null` (the default) mirrors whichever `fen` the mocked hook was called
    *  with — see `useStockfishEngine`'s identical mock override above for the
    *  full rationale. */
@@ -254,7 +251,7 @@ const flawChessState: {
   currentFen: null,
 };
 
-// Phase 196 (INJECT-03/04/06): every call's `extraRootMoves` option is
+// Every call's `extraRootMoves` option is
 // captured into flawChessCalls so tests can assert the derived
 // extraRootMoves value/identity across re-renders — mirrors the
 // gradingCalls/lastPrimaryGradingCall idiom above.
@@ -272,7 +269,7 @@ vi.mock('@/hooks/useFlawChessEngine', () => ({
       budgetExhausted: false,
       isSearching: flawChessState.isSearching,
       isReady: flawChessState.isReady,
-      // WR-01 (196-REVIEW.md): mirrors whichever `fen` the hook was called
+      // Mirrors whichever `fen` the hook was called
       // with unless a test explicitly overrides `flawChessState.currentFen`
       // to simulate a stale/lagging reset.
       currentFen: flawChessState.currentFen ?? options.fen,
@@ -281,7 +278,7 @@ vi.mock('@/hooks/useFlawChessEngine', () => ({
 }));
 
 /** Minimal RankedLine-shaped fixture matching flawChessState's element type
- *  (Phase 196) — mirrors FlawChessAgreementVerdict.test.tsx's own `fcLine`. */
+ *  — mirrors FlawChessAgreementVerdict.test.tsx's own `fcLine`. */
 function fcLine(rootMove: string): {
   rootMove: string;
   practicalScore: number;
@@ -308,11 +305,11 @@ vi.mock('@/hooks/useUserProfile', () => ({
 }));
 
 // Mock useTacticLines and useLibraryGame: free-play shell tests have no tactic/game
-// params, so both default to empty stubs — no real network needed. Phase 161 D-04's
+// params, so both default to empty stubs — no real network needed. The
 // tags-relocation test opts into game mode by setting libraryGameState.data before
 // rendering with a `?game_id=` param.
 const libraryGameState: { data: GameFlawCard | undefined } = { data: undefined };
-// Phase 208 CR-01: per-gameId fixtures, so a test can drive a SAME-PAGE game
+// Per-gameId fixtures, so a test can drive a SAME-PAGE game
 // switch (?game_id=1 -> ?game_id=2) the way "Analyze full game" does. Empty by
 // default — when a gameId has no entry the hook falls back to
 // libraryGameState.data, which is exactly the previous single-fixture behavior.
@@ -326,12 +323,11 @@ vi.mock('@/hooks/useLibrary', () => ({
 }));
 
 // Mock useFlawFilterStore: Analysis.tsx calls this unconditionally for tactic
-// visibility, and (Phase 161 D-04 test) SeverityBadge — rendered inside
+// visibility, and (the tags-relocation test) SeverityBadge — rendered inside
 // AnalysisTagsPanel, now exercised for the first time in this file — also calls
 // the hook directly and reads `flawFilter.severity` without a null guard. A
 // realistic DEFAULT_FLAW_FILTER-shaped object (not null) is required for any
-// game-mode render, not just the D-04 test (Rule 3 — the game-mode path was
-// previously unexercised, so this null default worked by chance until now).
+// game-mode render, not just the tags-relocation test.
 vi.mock('@/hooks/useFlawFilterStore', () => ({
   useFlawFilterStore: () => [
     { severity: [], tags: [], tacticFamilies: [], tacticOrientation: 'either', tacticDepthMin: 0, tacticDepthMax: 11 },
@@ -342,7 +338,7 @@ vi.mock('@/hooks/useFlawFilterStore', () => ({
 // NOTE: useAnalysisBoard is NOT mocked — it is pure in-memory and must run for real
 // so ?line= seeding is genuinely exercised.
 
-// Quick 260805-p37: useAnalysisBoard now emits real move sounds, which would
+// useAnalysisBoard emits real move sounds, which would
 // otherwise construct real HTMLAudioElements and call play()/pause() — jsdom
 // doesn't implement either, so every test in this suite would log "Not
 // implemented" virtual-console noise. Mocked the same way the Train suites
@@ -356,7 +352,7 @@ vi.mock('@/lib/sounds', () => ({
 
 // jsdom shims required by react-chessboard and responsive components.
 //
-// `(pointer: coarse)` answers TRUE here on purpose (quick 260901-oxh). It is the
+// `(pointer: coarse)` answers TRUE here on purpose. It is the
 // query ChessBoard's `showAnimations` reads, and jsdom performs no layout — so
 // letting the board animate makes react-chessboard's animation effect throw
 // "Square width not found" (dist/index.esm.js:5317) on every position change.
@@ -390,8 +386,8 @@ if (!('scrollTo' in window) || typeof window.scrollTo !== 'function') {
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
 }
 
-// jsdom has no scrollIntoView implementation. Only reached in game mode (the D-04
-// test below renders game_id=1 for the first time in this file), where
+// jsdom has no scrollIntoView implementation. Only reached in game mode (the
+// tags-relocation test below renders game_id=1 for the first time in this file), where
 // HorizontalMoveList's active-move effect calls it unconditionally.
 if (typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = vi.fn();
@@ -422,35 +418,33 @@ afterEach(() => {
   flawChessCalls.length = 0;
   stockfishMultiPvCalls.length = 0;
   for (const key of Object.values(SETTINGS_STORAGE_KEYS)) localStorage.removeItem(key);
-  // Engine switches persist (quick 261004-nxn): many tests click one off and the
+  // Engine switches persist: many tests click one off and the
   // next test must start with all engines on.
   for (const key of Object.values(ENGINE_TOGGLE_STORAGE_KEYS)) localStorage.removeItem(key);
   libraryGameState.data = undefined;
   libraryGameById.clear();
   resetEngineAssetsForTests();
-  // G-213-34: warm cache is the DEFAULT for every test in this file — the
-  // returning-user state — so none of the 79 pre-existing cases (all written
-  // before the gate existed) suddenly render a modal over the page they
-  // assert against. This writes the localStorage seen flags through the
+  // Warm cache is the DEFAULT for every test in this file — the
+  // returning-user state — so no test suddenly renders a modal over the page it
+  // asserts against. This writes the localStorage seen flags through the
   // real production path (markEngineAssetReady), the same one the gate reads
   // via engineGateRequired(). The dedicated gate describe below opts out
-  // explicitly, clearing localStorage in its own beforeEach. Phase 213-09
-  // (G-213-35) adds 'ort-runtime' as a third required asset — all three must
-  // be primed or engineGateRequired() stays true for every test in this file.
+  // explicitly, clearing localStorage in its own beforeEach. All three required
+  // assets ('ort-runtime' included) must be primed or engineGateRequired()
+  // stays true for every test in this file.
   markEngineAssetReady('maia-model');
   markEngineAssetReady('stockfish-wasm');
   markEngineAssetReady('ort-runtime');
 });
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
-// This import is intentionally RED in Wave 0: Analysis.tsx does not exist yet.
 import AnalysisPage from '../Analysis';
 
 // ── Render helper ──────────────────────────────────────────────────────────────
 function renderAnalysis(initialPath = '/analysis') {
   // QueryClientProvider is required by useTacticLines (TanStack Query).
   // Tactic-mode tests that need real query behavior will supply their own client
-  // via a dedicated test file (Analysis.tactic.test.tsx, Phase 139 Task 3).
+  // via a dedicated test file (Analysis.tactic.test.tsx).
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -466,19 +460,19 @@ function renderAnalysis(initialPath = '/analysis') {
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('Analysis page shell', () => {
-  it('renders shell with required testids (ROUTE-01)', () => {
+  it('renders shell with required testids', () => {
     renderAnalysis();
 
     expect(screen.getByTestId('analysis-page')).toBeTruthy();
     expect(screen.getByTestId('analysis-board')).toBeTruthy();
     expect(screen.getByTestId('analysis-eval-bar')).toBeTruthy();
-    // Phase 155 D-04: the FlawChess Engine is on by default, so its bar takes
+    // The FlawChess Engine is on by default, so its bar takes
     // left-slot precedence over Maia (see the dedicated describe block below
     // for the Maia fallback case).
     expect(screen.getByTestId('analysis-flawchess-eval-bar')).toBeTruthy();
   });
 
-  it('seeds a free-play opening main line from a valid ?line= param (ROUTE-02)', () => {
+  it('seeds a free-play opening main line from a valid ?line= param', () => {
     // 1. e4 e5 2. Nf3 as a UCI line — loadMainLine replays it as the main line
     // and lands the cursor at the end (white to move, 3rd move).
     renderAnalysis('/analysis?line=e2e4,e7e5,g1f3');
@@ -502,16 +496,16 @@ describe('Analysis page shell', () => {
     expect(screen.getByTestId('analysis-page')).toBeTruthy();
   });
 
-  it('shows engine-loading chrome while isReady=false, board stays present (D-06 / SC#3)', () => {
-    // Default engineState has isReady: false — engine is loading. Phase 155 D-04:
-    // the FlawChess Engine suppresses the standalone Stockfish search while it is
-    // enabled (POOL-04 mutual exclusion, default ON), so the Stockfish card's own
+  it('shows engine-loading chrome while isReady=false, board stays present', () => {
+    // Default engineState has isReady: false — engine is loading.
+    // The FlawChess Engine suppresses the standalone Stockfish search while it is
+    // enabled (mutual exclusion, default ON), so the Stockfish card's own
     // loading skeleton only shows once FlawChess is toggled off.
     renderAnalysis();
     fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
 
-    // The loading skeleton must appear in the engine card (Quick 260627-r9g item 3
-    // replaced the "Loading engine…" text with a content-loading animation).
+    // The loading skeleton (a content-loading animation, not "Loading engine…" text)
+    // must appear in the engine card.
     const loading = screen.getByTestId('analysis-engine-loading');
     expect(loading).toBeTruthy();
     expect(loading.getAttribute('aria-busy')).toBe('true');
@@ -519,7 +513,7 @@ describe('Analysis page shell', () => {
     expect(screen.getByTestId('analysis-board')).toBeTruthy();
   });
 
-  it('hides the engine-loading chrome when isReady=true (D-06)', () => {
+  it('hides the engine-loading chrome when isReady=true', () => {
     engineState.isReady = true;
 
     renderAnalysis();
@@ -527,7 +521,7 @@ describe('Analysis page shell', () => {
     expect(screen.queryByTestId('analysis-engine-loading')).toBeNull();
   });
 
-  it('shows the standalone Stockfish top lines in the default state (both switches ON), not a merged placeholder (155 UAT un-merge)', () => {
+  it('shows the standalone Stockfish top lines in the default state (both switches ON), not a merged placeholder', () => {
     // Both engineEnabled and flawChessEnabled default to true — the state every
     // first-time visitor lands in. Post un-merge, the Stockfish search runs
     // independently of the FlawChess Engine, so the card shows its own top-2
@@ -543,7 +537,7 @@ describe('Analysis page shell', () => {
   });
 });
 
-// Phase 229 D-12 group 1: engine on/off switches report through trackFeature.
+// Engine on/off switches report through trackFeature.
 describe('Analysis page: engine toggle tracking', () => {
   let track: ReturnType<typeof vi.fn>;
 
@@ -581,7 +575,7 @@ describe('Analysis page: engine toggle tracking', () => {
   });
 });
 
-describe('Analysis page: persisted engine switches (quick 261004-nxn)', () => {
+describe('Analysis page: persisted engine switches', () => {
   let track: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -600,7 +594,7 @@ describe('Analysis page: persisted engine switches (quick 261004-nxn)', () => {
     renderAnalysis();
     expect(screen.getByTestId('btn-analysis-flawchess-toggle').getAttribute('aria-checked')).toBe('false');
     expect(lastFlawChessCall()?.enabled).toBe(false);
-    // Hydration from storage is not a user action (D-03): no toggle event.
+    // Hydration from storage is not a user action: no toggle event.
     expect(track).not.toHaveBeenCalled();
   });
 
@@ -632,7 +626,7 @@ describe('Analysis page: persisted engine switches (quick 261004-nxn)', () => {
 // in the same render. The default test config (window.matchMedia always
 // `matches: false`, set up top-of-file) yields the DESKTOP layout; the mobile
 // layout is forced the same way `Mobile Stats tab` (above) does it. Used by
-// the gate describe below to prove mobile/desktop parity (G-213-34).
+// the gate describe below to prove mobile/desktop parity.
 
 /** Forces the mobile takeover layout for the duration of a test (mirrors the
  *  `Mobile Stats tab` describe block's own override above). */
@@ -657,7 +651,7 @@ function withMobileLayout(run: () => void): void {
   }
 }
 
-describe('Analysis page: engine readiness gate (G-213-34)', () => {
+describe('Analysis page: engine readiness gate', () => {
   // Undo the outer `afterEach`'s default warm-cache priming (both assets
   // pre-seen) — this describe block exercises the gate predicate itself, so
   // every test here needs explicit, genuinely clean control over cache state
@@ -667,7 +661,7 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
     resetEngineAssetsForTests();
   });
 
-  it('cold cache mounts the gate, with no Start button of any kind (D-18: analysis auto-closes, never a click)', () => {
+  it('cold cache mounts the gate, with no Start button of any kind (analysis auto-closes, never a click)', () => {
     renderAnalysis();
 
     const gate = screen.getByTestId('engine-ready-gate');
@@ -682,7 +676,7 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
   });
 
-  it('D-18: marking all three assets ready closes the gate on its own — no click, no button, ever present', () => {
+  it('marking all three assets ready closes the gate on its own — no click, no button, ever present', () => {
     renderAnalysis();
 
     expect(screen.queryByTestId('btn-engine-start')).toBeNull();
@@ -757,7 +751,7 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
     expect(screen.getByTestId('btn-engine-retry')).toBeTruthy();
   });
 
-  // G-213-34 (supersedes D-12): with the store actually downloading, the
+  // With the store actually downloading, the
   // rendered page contains exactly one progress element in total — the
   // gate's — proving both that the inline per-card readouts are gone AND
   // that the modal's bar is the only progress surface anywhere on the page.
@@ -770,11 +764,11 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
   });
 
-  // ─── Phase 213-10 (G-213-35 third part): Analysis() re-renders only on
+  // ─── Analysis() re-renders only on
   // status transitions, proven by RENDER COUNT — not merely by reading the
   // gate's rendered output, which would pass under the old page-wide
-  // `useEngineAssets` subscription too and prove nothing (see the plan's
-  // revert-check requirement). `Profiler`'s `onRender` fires once per commit
+  // `useEngineAssets` subscription too and prove nothing. `Profiler`'s
+  // `onRender` fires once per commit
   // of the profiled subtree, so it counts actual re-renders anywhere in
   // `<AnalysisPage>` — including `EngineReadyGate`, which independently
   // subscribes to full byte-level progress via its OWN `useEngineAssets`
@@ -803,7 +797,7 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
       markEngineAssetReady('stockfish-wasm');
       markEngineAssetReady('ort-runtime');
     });
-    // D-18: readiness alone closes the analysis gate — no click, no button.
+    // Readiness alone closes the analysis gate — no click, no button.
     expect(screen.queryByTestId('engine-ready-gate')).toBeNull();
 
     // Baseline after the auto-close — only what follows counts, and
@@ -819,7 +813,7 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
     });
     expect(renderCount).toBe(0);
 
-    // resetEngineAssetForRefetch ALWAYS notifies (unconditional, per Task 1)
+    // resetEngineAssetForRefetch ALWAYS notifies
     // but never touches `status` — the store-level notification fires, and
     // Analysis() still must not re-render.
     act(() => {
@@ -835,7 +829,7 @@ describe('Analysis page: engine readiness gate (G-213-34)', () => {
   });
 });
 
-describe('Maia eval bar perspective (151.1 UAT regression)', () => {
+describe('Maia eval bar perspective', () => {
   // Reads the Maia bar's white-share fill height. The white fill is the first
   // absolutely-positioned child div (same convention as EvalBar.test.tsx).
   function maiaWhiteFillPercent(): number {
@@ -849,8 +843,8 @@ describe('Maia eval bar perspective (151.1 UAT regression)', () => {
   // WHITE-relative, so a black-to-move expected score of 0.8 (Black favored) must
   // render as a ~20% white fill — NOT 80% (the pre-fix inverted behavior).
   //
-  // Phase 155 D-04: the FlawChess Engine takes left-slot precedence over Maia
-  // by default, so these pre-155 tests toggle it off first to exercise the Maia
+  // The FlawChess Engine takes left-slot precedence over Maia
+  // by default, so these tests toggle it off first to exercise the Maia
   // bar specifically (the FC-precedence describe block below covers the
   // FC-enabled path).
   it('inverts the expected score to white-POV when Black is to move', () => {
@@ -872,7 +866,7 @@ describe('Maia eval bar perspective (151.1 UAT regression)', () => {
   });
 });
 
-describe('FlawChess Engine card header node count (quick 260906-i5e)', () => {
+describe('FlawChess Engine card header node count', () => {
   it('reads "FlawChess, <elo> ELO, <n> Nodes" while the engine is on and nodes have landed', () => {
     flawChessState.nodesEvaluated = 137;
     renderAnalysis();
@@ -899,9 +893,9 @@ describe('FlawChess Engine card header node count (quick 260906-i5e)', () => {
   });
 });
 
-describe('FlawChess Engine eval-bar precedence (Phase 155)', () => {
-  it('shows the FlawChess eval bar in the left slot when the FlawChess Engine is enabled (DISPLAY-04)', () => {
-    // FlawChess Engine is on by default (D-02) — its bar takes left-slot
+describe('FlawChess Engine eval-bar precedence', () => {
+  it('shows the FlawChess eval bar in the left slot when the FlawChess Engine is enabled', () => {
+    // FlawChess Engine is on by default — its bar takes left-slot
     // precedence over Maia.
     renderAnalysis();
 
@@ -909,7 +903,7 @@ describe('FlawChess Engine eval-bar precedence (Phase 155)', () => {
     expect(screen.queryByTestId('analysis-maia-eval-bar')).toBeNull();
   });
 
-  it('falls back to the Maia eval bar in the left slot once the FlawChess Engine is toggled off (DISPLAY-04)', () => {
+  it('falls back to the Maia eval bar in the left slot once the FlawChess Engine is toggled off', () => {
     renderAnalysis();
 
     fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
@@ -918,7 +912,7 @@ describe('FlawChess Engine eval-bar precedence (Phase 155)', () => {
     expect(screen.queryByTestId('analysis-flawchess-eval-bar')).toBeNull();
   });
 
-  it('renders the FlawChess card above the Maia panel by default (D-01)', () => {
+  it('renders the FlawChess card above the Maia panel by default', () => {
     renderAnalysis();
 
     const flawChessCard = screen.getByTestId('analysis-flawchess-panel');
@@ -931,7 +925,7 @@ describe('FlawChess Engine eval-bar precedence (Phase 155)', () => {
   });
 });
 
-describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
+describe('Grading run gating', () => {
   it('runs the shared grading run whenever EITHER switch is on, and stops only when both are off', () => {
     renderAnalysis();
 
@@ -947,8 +941,8 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
     expect(lastCall?.fen).not.toBeNull();
 
     // (maiaEnabled=false, flawChessEnabled=false) — both off, the run is
-    // disabled; fen/enabled stay paired on the SAME condition (RESEARCH
-    // Pitfall 5 — the worker must never be alive-but-positionless).
+    // disabled; fen/enabled stay paired on the SAME condition (the worker
+    // must never be alive-but-positionless).
     fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
     lastCall = lastPrimaryGradingCall();
     expect(lastCall?.enabled).toBe(false);
@@ -961,7 +955,7 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
     expect(lastCall?.fen).not.toBeNull();
   });
 
-  it('excludes the free run\'s top-2 root SANs from the grading union while it is still analyzing, and includes them once it has committed (Phase 162 D-02/D-09)', () => {
+  it('excludes the free run\'s top-2 root SANs from the grading union while it is still analyzing, and includes them once it has committed', () => {
     // Mid-search: pvLines empty (cleared on FEN change), isAnalyzing true —
     // freeRunCommitted must be false, so the free run contributes nothing.
     engineState.isReady = true;
@@ -992,10 +986,9 @@ describe('Grading run gating (Phase 158, SEED-087 SC2)', () => {
   });
 });
 
-describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
-  it('a move graded by both the free run and the grading run displays the grading value (Phase 162 D-01 grading-first precedence)', () => {
-    // Rule 1 fix: this test previously asserted free-run-first precedence
-    // (Phase 158 SC1). 162-01 flipped buildEvalLookup to grading-first, so a
+describe('Reconciled eval provenance', () => {
+  it('a move graded by both the free run and the grading run displays the grading value (grading-first precedence)', () => {
+    // buildEvalLookup resolves grading-first, so a
     // move graded by BOTH sources must now resolve to the grading (deeper,
     // depth-parity) value, not the free run's shallower placeholder.
     engineState.isReady = true;
@@ -1025,13 +1018,13 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     expect(badge.getAttribute('aria-label')).not.toContain('objectively +3.1');
   });
 
-  it('mirror-image label case: a non-bestSan move with the strictly higher reconciled eval becomes the chart\'s Best, and the free-run bestSan is demoted (Phase 162 D-03)', () => {
-    // Free run's own pick is e4 (bestSan) — the OLD pin this phase replaces.
+  it('mirror-image label case: a non-bestSan move with the strictly higher reconciled eval becomes the chart\'s Best, and the free-run bestSan is demoted', () => {
+    // Free run's own pick is e4 (bestSan).
     engineState.isReady = true;
     engineState.pvLines = [{ moves: ['e2e4'], evalCp: 20, evalMate: null, depth: 18 }];
     // The grading run grades BOTH e4 and Nf3, with Nf3 (NOT the free-run
     // bestSan) resolving to the strictly higher reconciled eval — the exact
-    // mirror-image scenario this phase's reconciledBestUci pin fixes.
+    // mirror-image scenario the reconciledBestUci pin fixes.
     gradingState.gradeMap = new Map([
       ['e4', { evalCp: 20, evalMate: null, depth: 10 }],
       ['Nf3', { evalCp: 300, evalMate: null, depth: 10 }],
@@ -1057,11 +1050,11 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     expect(text).toContain('objectively looser');
   });
 
-  it("the verdict's FC-pick and SF-best evals both resolve through evalLookup, so a stale/inflated raw RankedLine eval never leaks through (SC4)", () => {
+  it("the verdict's FC-pick and SF-best evals both resolve through evalLookup, so a stale/inflated raw RankedLine eval never leaks through", () => {
     engineState.isReady = true;
     engineState.pvLines = [{ moves: ['g1f3'], evalCp: 130, evalMate: null, depth: 18 }];
     // A deliberately inflated raw objectiveEvalCp (999) simulates the "Qc7
-    // +2.8 vs O-O +1.3" bug class this phase fixes — reconciliation must
+    // +2.8 vs O-O +1.3" bug class — reconciliation must
     // replace it with the shared grading run's own value (40) before it ever
     // reaches the verdict, making a FC-pick-exceeds-SF-best reading impossible.
     flawChessState.rankedLines = [
@@ -1075,12 +1068,12 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
         visits: 5,
       },
     ];
-    // Rule 1 fix (Phase 162 D-13): the SF side is now the reconciled global
+    // The SF side is the reconciled global
     // argmax (`reconciledBestUci`), not raw `engine.pvLines[0]` — so the free
     // run's own top pick (Nf3/g1f3) must ALSO be graded here (matching its own
     // eval, 130) for the verdict to still name it as the SF side. Without this
     // second entry, e4 (the only graded candidate) would win the reconciled
-    // argmax instead, which is correct D-12 behavior but not what THIS test
+    // argmax instead, which is correct behavior but not what THIS test
     // (evalLookup resolution, not argmax selection) is proving.
     gradingState.gradeMap = new Map([
       ['e4', { evalCp: 40, evalMate: null, depth: 10 }],
@@ -1095,11 +1088,11 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     expect(sentence.textContent).not.toContain('+10.0');
   });
 
-  it("shows the grading (reconciled) value for the verdict's Stockfish side even when the SAME move is graded differently by the two sources (Phase 162 D-13 provenance)", () => {
-    // RESEARCH Pitfall 1: `stockfishLine` used to be raw `engine.pvLines[0]`,
-    // bypassing evalLookup entirely — a coverage gap even under the OLD
-    // free-run-first precedence, since this call site never went through the
-    // lookup at all. Both sources grade the SAME move (e4): the free run's
+  it("shows the grading (reconciled) value for the verdict's Stockfish side even when the SAME move is graded differently by the two sources", () => {
+    // `stockfishLine` must not be the raw `engine.pvLines[0]`, which would
+    // bypass evalLookup entirely (a coverage gap even under free-run-first
+    // precedence, since that call site would never go through the lookup).
+    // Both sources grade the SAME move (e4): the free run's
     // shallower +2.0, the grading run's deeper (and now authoritative) +0.8.
     engineState.isReady = true;
     engineState.pvLines = [{ moves: ['e2e4'], evalCp: 200, evalMate: null, depth: 18 }];
@@ -1126,8 +1119,8 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     expect(sentence.textContent).not.toContain('+2.0');
   });
 
-  it("the Stockfish card's line 1 IS the reconciled global argmax — with the grading run's own PV — even when the free run never searched that move (162 UAT card re-source, supersedes D-12's accepted edge case)", () => {
-    // The UAT screenshot shape: the free run's own top pick (e4-analog for
+  it("the Stockfish card's line 1 IS the reconciled global argmax — with the grading run's own PV — even when the free run never searched that move", () => {
+    // The shape: the free run's own top pick (e4-analog for
     // Rad1) is outranked by a grading-union candidate (Nf3-analog for Bc1)
     // that never appears in engine.pvLines. Pre-fix the card kept showing the
     // free run's own 2 lines; now it lists the reconciled top-2 so the card,
@@ -1151,12 +1144,12 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
     // The demoted free-run pick is line 2 with ITS reconciled eval.
     expect(screen.getByTestId('engine-line-1-move-0').textContent).toBe('e4');
     expect(screen.getByLabelText('Line 2: +0.2')).toBeTruthy();
-    // Headline depth now describes line 1's own grade (162 UAT supersedes
-    // D-05), not the free run's shallower search.
+    // Headline depth describes line 1's own grade, not the free run's
+    // shallower search.
     expect(screen.getByTestId('analysis-engine-info').textContent).toContain('Depth 22');
   });
 
-  it('the sf-0 board arrow follows the reconciled-argmax square, not the free run\'s own pick, when a Maia/FC-only candidate is the global argmax (D-12)', () => {
+  it('the sf-0 board arrow follows the reconciled-argmax square, not the free run\'s own pick, when a Maia/FC-only candidate is the global argmax', () => {
     // jsdom performs no real layout — clientWidth defaults to 0, which makes
     // ChessBoard's ArrowOverlay compute degenerate (NaN) zero-length SVG
     // paths. Stub a nonzero measured width so the overlay's geometry is real
@@ -1181,7 +1174,7 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
 
       // Grading lands: Nf3 (an FC/Maia-only candidate that never appears in
       // engine.pvLines) resolves to the strictly higher reconciled eval — the
-      // exact D-12 scenario the arrow must follow, not the free run's e4.
+      // exact scenario the arrow must follow, not the free run's e4.
       gradingState.gradeMap = new Map([
         ['e4', { evalCp: 20, evalMate: null, depth: 10 }],
         ['Nf3', { evalCp: 300, evalMate: null, depth: 10 }],
@@ -1196,9 +1189,9 @@ describe('Reconciled eval provenance (Phase 158, SEED-087)', () => {
   });
 });
 
-// Phase 161 (SEED-088), D-04 — structural-only coverage: jsdom performs no real CSS
+// Structural-only coverage: jsdom performs no real CSS
 // layout, so the 100dvh lock / breakpoint switching / board height-aware sizing are
-// HUMAN-UAT only (161-RESEARCH.md Validation Architecture). What IS testable here is
+// manual-verification only. What IS testable here is
 // the JSX reorder itself: AnalysisTagsPanel must render in the RIGHT column, after
 // the engine card and move list, not in its old home under the eval chart.
 function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
@@ -1248,11 +1241,11 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
     ],
     phase_transitions: { middlegame_ply: null, endgame_ply: null },
     moves: ['e4'],
-    // Phase 210 (SEED-042): null = the standard start, which is what every
+    // null = the standard start, which is what every
     // fixture here except the custom-start test below wants.
     initial_fen: null,
     active_eval_status: null,
-    // Phase 172 (SEED-106 D-06): 0 = no known opening prefix — every ply is
+    // 0 = no known opening prefix — every ply is
     // eligible for the sweep/gem cascade by default. Every eval_series entry
     // above also defaults best_move to null, so selectSweepCandidates finds
     // ZERO candidates for the base fixture regardless of this value — tests
@@ -1262,7 +1255,7 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
   };
 }
 
-describe('Settings drive search breadth, grading union and arrows (Phase 228, D-12/D-14/D-15)', () => {
+describe('Settings drive search breadth, grading union and arrows', () => {
   const FIVE_FREE_RUN_LINES = [
     { multipv: 1, moves: ['e2e4'], evalCp: 40, evalMate: null, depth: 18 },
     { multipv: 2, moves: ['d2d4'], evalCp: 30, evalMate: null, depth: 18 },
@@ -1345,7 +1338,7 @@ describe('Settings drive search breadth, grading union and arrows (Phase 228, D-
       const solid = overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`) ?? [];
       // Both grades are depth 10 (the arrow-grade gate), so the translucent arrow takes
       // its graded alpha. Nf3 +300 is the top; e4 +20 drops by at least the blunder
-      // threshold, so it sits at the alpha floor (quick 261012-a6m D-08).
+      // threshold, so it sits at the alpha floor.
       const gradedColor = stockfishSecondaryArrowColor({
         quality: 'blunder',
         alpha: STOCKFISH_SECONDARY_ALPHA_MIN,
@@ -1355,7 +1348,7 @@ describe('Settings drive search breadth, grading union and arrows (Phase 228, D-
       expect(translucent).toHaveLength(1);
       expect(solid[0]?.getAttribute('d')).not.toBe(translucent[0]?.getAttribute('d'));
       // The badge on that arrow carries its alpha (times the board ARROW_OPACITY) as marker group opacity, so
-      // the D-08 alpha reaches ChessBoard on both the arrow and the badge.
+      // the alpha reaches ChessBoard on both the arrow and the badge.
       expect(
         document.querySelectorAll(`g[opacity="${STOCKFISH_SECONDARY_ALPHA_MIN * ARROW_OPACITY}"]`).length,
       ).toBeGreaterThan(0);
@@ -1401,14 +1394,14 @@ describe('Settings drive search breadth, grading union and arrows (Phase 228, D-
   });
 });
 
-describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
-  it('renders the MoveStats section in the right column (after the engine card) and the tags below the eval chart (UAT 179)', () => {
+describe('Analysis desktop layout', () => {
+  it('renders the MoveStats section in the right column (after the engine card) and the tags below the eval chart', () => {
     libraryGameState.data = buildGame();
 
     renderAnalysis('/analysis?game_id=1');
 
     const engineCard = screen.getByTestId('analysis-engine-card');
-    // UAT 179: the right column shows the MoveStats (Accuracies + category table)
+    // The right column shows the MoveStats (Accuracies + category table)
     // section only; the Missed/Allowed/Context tags moved to the board column,
     // below the eval chart (analysis-board-tags).
     const statsSection = screen.getByTestId('analysis-move-stats-section');
@@ -1427,7 +1420,7 @@ describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
     expect(tagsPrecedeEngineCard).toBeTruthy();
   });
 
-  it('carries the desk3col 3-column grid-cols class on the grid row (D-03)', () => {
+  it('carries the desk3col 3-column grid-cols class on the grid row', () => {
     renderAnalysis();
 
     // Traverse from a stable desktop-tree anchor up to the grid row rather than
@@ -1438,12 +1431,12 @@ describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
     expect(gridRow?.className).toContain('desk3col:grid-cols-[360px_1fr_360px]');
   });
 
-  // Phase 215 Plan 05 mutation-proof coverage: useBoardStageSize's measured
+  // Mutation-proof coverage: useBoardStageSize's measured
   // board width is otherwise indistinguishable from a hardcoded 0 in every
-  // OTHER test in this file — jsdom's zero-layout clientWidth (see the D-04
-  // comment above) makes computeBoardSize's own zero-budget guard return 0
+  // OTHER test in this file — jsdom's zero-layout clientWidth (see the
+  // structural-only comment above) makes computeBoardSize's own zero-budget guard return 0
   // regardless of whether the real measurement code runs at all. Stub a
-  // nonzero measured width (mirrors the D-12 arrow test's own clientWidthSpy
+  // nonzero measured width (mirrors the sf-0 arrow test's own clientWidthSpy
   // pattern) so the board's actual pixel size proves the ResizeObserver
   // measurement path — not a mocked/hardcoded value — drives it.
   it('sizes the board from the measured stage width via computeBoardSize (mutation-proof: a hardcoded 0 would fail this)', () => {
@@ -1462,17 +1455,17 @@ describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
   });
 });
 
-// 171-08 (171 UAT gap 1) — free-play `?orientation=` auto-flip. Board squares
+// Free-play `?orientation=` auto-flip. Board squares
 // only render once ChessBoard measures a nonzero width (jsdom performs no
 // real layout) — mirrors the Gem-moves block's own clientWidth stub below.
 //
-// Empirically pinned (once, via a throwaway dump — see plan action): in the
+// Empirically pinned (once, via a throwaway dump): in the
 // UNFLIPPED (white-oriented) default, react-chessboard v5's own squareRenderer
 // emits square-a8 BEFORE square-a1 in DOM order (black's back rank first).
 // So the orientation-independent assertion is: white-oriented => a8 precedes
 // a1 in the DOM (a1BeforeA8 === false); black-oriented (flipped) => a1
 // precedes a8 (a1BeforeA8 === true).
-describe('Board auto-orientation (171 UAT gap 1)', () => {
+describe('Board auto-orientation', () => {
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -1524,15 +1517,15 @@ describe('Board auto-orientation (171 UAT gap 1)', () => {
   });
 });
 
-// Phase 163 Plan 04 (SEED-092) — gem-move detection wiring. Real navigation (board
+// Gem-move detection wiring. Real navigation (board
 // clicks + move-list clicks) drives useAnalysisBoard for real (it is NOT mocked),
 // so these are genuine integration tests of the parent-position caches
 // (maiaCurveByFen/gradeSummaryByFen), the gemCandidate memo, and the gemByNode
 // sticky cache — not just unit coverage of classifyGem itself (that lives in
-// gemMove.test.ts, Plan 01).
-describe('Gem moves (Phase 163, SEED-092)', () => {
+// gemMove.test.ts).
+describe('Gem moves', () => {
   // Board squares only render once ChessBoard measures a nonzero width (jsdom
-  // performs no real layout) — mirrors the D-12 arrow test's own clientWidth stub
+  // performs no real layout) — mirrors the sf-0 arrow test's own clientWidth stub
   // above, scoped per-test here since every test in this block needs it.
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
@@ -1600,7 +1593,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     return tree.querySelector(`circle[fill="${MAIA_ACCENT}"]`) != null;
   }
 
-  // Phase 175 (SEED-108 D-02): the blue "great" SquareMarker renders as a
+  // The blue "great" SquareMarker renders as a
   // GREAT_ACCENT-filled circle inside the board's arrow-overlay SVG
   // (boardMarkers.tsx's SquareMarkerBadge great branch) — mirrors
   // boardGemMarkerPresent exactly, one hue apart.
@@ -1617,7 +1610,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     return tree.querySelector(`circle[fill="${GREAT_ACCENT}"]`) != null;
   }
 
-  it('classifies a freely-played WHITE move as a gem, painting the violet board marker (D-04 white, D-05 free node, squareMarkers assembly)', () => {
+  it('classifies a freely-played WHITE move as a gem, painting the violet board marker (white move, free node, squareMarkers assembly)', () => {
     seedGemGrading('Nf3', 'd4');
 
     renderAnalysis();
@@ -1627,7 +1620,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(moveListGemIconPresent()).toBe(true);
   });
 
-  it('LOAD-BEARING (T-219-13, Phase 219-03 D-12): an 11-rung coarse curve at the PARENT position is never written into maiaCurveByFen, so the same move never classifies as a gem', () => {
+  it('LOAD-BEARING: an 11-rung coarse curve at the PARENT position is never written into maiaCurveByFen, so the same move never classifies as a gem', () => {
     seedGemGrading('Nf3', 'd4');
     // Simulate the coarse-only shape: perElo is non-empty (would have passed
     // the retired `perElo.length === 0` proxy) but isLadderComplete is false.
@@ -1662,13 +1655,13 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
   });
 
   it('gem popover heading names the opponent when the opponent played the gem (unanalyzed-game fallback path — no eval_series)', async () => {
-    // Phase 175 (SEED-108 D-01/Pitfall 3): a game-mode fixture with
+    // A game-mode fixture with
     // eval_series present now routes through the STORED tier instead (see
     // the "Stored gem/great consumption" describe block below), which never
     // calls seedGemGrading/classifyGem. This test keeps proving the
     // live-at-cursor byOpponent framing still works for the ONE game-mode
     // case that genuinely has no stored row to consult: an UNANALYZED game
-    // (eval_series: null) — D-01's documented fallback scenario. Parent =
+    // (eval_series: null) — the documented fallback scenario. Parent =
     // after 1. e4 e5 (White to move); Nf3 (ply 2) is a WHITE move, so with
     // user_color=black the gem was played by the OPPONENT.
     libraryGameState.data = buildGame({
@@ -1693,7 +1686,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(screen.getByText(/At 1500 ELO/)).toBeTruthy();
   });
 
-  it('classifies a freely-played BLACK move as a gem (D-04 both colors)', () => {
+  it('classifies a freely-played BLACK move as a gem (both colors)', () => {
     // A throwaway White move (1. Nc3) reaches a Black-to-move parent position —
     // its own grading/Maia data is irrelevant to the assertion below.
     gradingState.gradeMap = new Map([['Nc3', { evalCp: 0, evalMate: null, depth: 10 }]]);
@@ -1704,7 +1697,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
 
     // Seed the gem setup for the NEW (Black-to-move) parent position, then force a
     // re-render so the FEN-keyed caches pick it up while it is still current
-    // (RESEARCH Pitfall 1: the cache must be populated WHILE the parent is current).
+    // (the cache must be populated WHILE the parent is current).
     seedGemGrading('Nf6', 'h6', { mover: 'black' });
     forceRerenderAtCurrentPosition();
 
@@ -1713,10 +1706,10 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(boardGemMarkerPresent()).toBe(true);
   });
 
-  it('classifies a gem on a MAINLINE game node reached via the move list (D-05 mainline coverage, unanalyzed-game fallback path)', () => {
-    // Phase 175 (SEED-108 D-01/Pitfall 3): an ANALYZED game's mainline gem now
+  it('classifies a gem on a MAINLINE game node reached via the move list (mainline coverage, unanalyzed-game fallback path)', () => {
+    // An ANALYZED game's mainline gem now
     // comes from the stored tier (see the "Stored gem/great consumption"
-    // describe block below) — this test keeps D-05's original coverage
+    // describe block below) — this test keeps the original coverage
     // ("gemActive has no isGameMode/isOnMainLine exclusion") alive for the
     // one game-mode mainline scenario that still legitimately falls back to
     // live detection: an UNANALYZED game (no eval_series/stored rows yet).
@@ -1739,7 +1732,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(boardGemMarkerPresent()).toBe(true);
   });
 
-  // Phase 175 (SEED-108 D-01/D-02b/D-03) — the STORED gem/great consumption
+  // The STORED gem/great consumption
   // proof, nested here to reuse this describe block's clientWidthSpy/helper
   // functions (boardGemMarkerPresent, moveListGemIconPresent, etc.). An
   // analyzed game's mainline now renders gem/great directly from
@@ -1747,7 +1740,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
   // wiring, no live Maia/Stockfish call of any kind — the counterpart to
   // every OTHER test in this outer describe, which covers the live-engine
   // fallback (off-mainline / unanalyzed games) instead.
-  describe('Stored gem/great consumption (Phase 175, SEED-108 D-01/D-02b/D-03)', () => {
+  describe('Stored gem/great consumption', () => {
   // A minimal 3-ply analyzed game (e4 e5 Nf3), overriding the ply-2 EvalPoint
   // with a stored tier. `bestMove` defaults to the UCI of the actually-played
   // Nf3 (g1f3) — classify_best_move only ever stores a row for a ply where
@@ -1827,7 +1820,7 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(lastLiveGemGradingCall()?.fen).toBeNull();
   });
 
-  it('a mainline ply with best_move_tier=null renders NO marker and never triggers a live grade (Pitfall 3 — row-absence is authoritative)', () => {
+  it('a mainline ply with best_move_tier=null renders NO marker and never triggers a live grade (row-absence is authoritative)', () => {
     libraryGameState.data = buildAnalyzedGame({ best_move_tier: null, maia_prob: null });
     // If the stored-null verdict were ever treated as "unknown" instead of
     // "checked, not a gem/great", a live fallback would try to grade this
@@ -1849,9 +1842,9 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
   });
 
   it("the popover shows the stored maia_prob stat and the OPPONENT'S heading when the opponent played the stored gem", async () => {
-    // The analyzed board INTENTIONALLY shows BOTH players' stored gems/greats (Plan 05
-    // feature, confirmed by the user 2026-07-17): the board is a study surface, distinct
-    // from the user-only badges/eval-chart dots/cycling (Plan 06). Nf3 (ply 2) is a WHITE
+    // The analyzed board INTENTIONALLY shows BOTH players' stored gems/greats
+    // (a deliberate feature): the board is a study surface, distinct
+    // from the user-only badges/eval-chart dots/cycling. Nf3 (ply 2) is a WHITE
     // move; user_color=black makes it the OPPONENT'S, so the popover names the opponent.
     libraryGameState.data = buildAnalyzedGame(
       { best_move_tier: 'gem', maia_prob: 0.01 },
@@ -1873,21 +1866,21 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
   });
   });
 
-  // Remaining "Gem moves (Phase 163, SEED-092)" live-fallback coverage
-  // (WR-05/WR-04/D-06/SC3) continues below — mostly free-play renderAnalysis()
-  // (no game_id, never a stored tier). WR-05 still uses a game-mode fixture
-  // with no `best_move_tier` set, so Phase 175's stored gate ALSO suppresses
+  // Remaining "Gem moves" live-fallback coverage
+  // continues below — mostly free-play renderAnalysis()
+  // (no game_id, never a stored tier). The severity-precedence test below still
+  // uses a game-mode fixture with no `best_move_tier` set, so the stored gate ALSO suppresses
   // its gem badge now (in addition to the severity-precedence rule it was
   // written to prove) — its "no gem badge" assertions still hold, though the
   // isolation of "severity alone suppresses it" is weaker than before; the
   // dedicated stored-vs-severity precedence is proven directly in
   // boardMarkers.test.tsx / VariationTree, not required to be re-proven here.
-  it('WR-05: a backend severity badge on the same square suppresses the board gem — one square never renders two badges', () => {
-    // Same mainline setup as the D-05 test above, but the played move (Nf3,
+  it('a backend severity badge on the same square suppresses the board gem — one square never renders two badges', () => {
+    // Same mainline setup as the mainline-gem test above, but the played move (Nf3,
     // ply 2) ALSO carries a backend-precomputed severity marker. The backend
     // (server Stockfish) and the live WASM pass legitimately diverge (eval
     // non-determinism), so both pipelines can flag the same square — the
-    // severity badge wins and the gem yields (163-REVIEW WR-05).
+    // severity badge wins and the gem yields.
     libraryGameState.data = buildGame({
       moves: ['e4', 'e5', 'Nf3'],
       flaw_markers: [
@@ -1918,12 +1911,12 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     const overlay = document.querySelector('[data-testid="arrow-overlay"]');
     expect(overlay?.textContent).toContain('?');
     expect(boardGemMarkerPresent()).toBe(false);
-    // Same rule in the move list (163-VERIFICATION gap): the severity icon wins,
+    // Same rule in the move list: the severity icon wins,
     // the gem icon must not render for that move either.
     expect(moveListGemIconPresent()).toBe(false);
   });
 
-  it('sticky: the move-list gem badge persists after navigating away and back (D-06)', () => {
+  it('sticky: the move-list gem badge persists after navigating away and back', () => {
     seedGemGrading('Nf3', 'd4');
 
     renderAnalysis();
@@ -1946,10 +1939,10 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(boardGemMarkerPresent()).toBe(true);
   });
 
-  it('WR-04: an in-flight (still-streaming) grading pass never seeds the gem cache — no gem badge latches from partial data', () => {
-    // Identical qualifying setup to the D-04 white test above, EXCEPT the
+  it('an in-flight (still-streaming) grading pass never seeds the gem cache — no gem badge latches from partial data', () => {
+    // Identical qualifying setup to the white-move test above, EXCEPT the
     // grading run is still streaming (isGrading=true) — the mid-stream summary
-    // must not be cached, so no gem can classify (163-REVIEW WR-04 completeness
+    // must not be cached, so no gem can classify (completeness
     // gate; the one-way gemByNode latch would otherwise persist a false gem).
     seedGemGrading('Nf3', 'd4');
     gradingState.isGrading = true;
@@ -1961,10 +1954,10 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     expect(moveListGemIconPresent()).toBe(false);
   });
 
-  it('gem resolution is a one-way sticky latch across ELO-slider moves — board and move-list badges both persist once resolved (D-06)', () => {
+  it('gem resolution is a one-way sticky latch across ELO-slider moves — board and move-list badges both persist once resolved', () => {
     // Two rungs at the SAME (parent) position: rare at 1500 (qualifies C1), common
     // at 2600 (would fail C1 for a fresh node). C2 (the parent grade) is untouched
-    // by the ELO change (Pitfall 6). Once the node is RESOLVED as a gem it is a
+    // by the ELO change. Once the node is RESOLVED as a gem it is a
     // one-way latch: raising the ELO does not un-mark it. The board now reads the
     // SAME sticky gemByNode resolution the move list does, so the two can never
     // disagree, and the popover discloses the detection ELO.
@@ -1986,13 +1979,13 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     eloThumb.focus();
     fireEvent.keyDown(eloThumb, { key: 'End' });
 
-    // Both badges persist — the resolution is a one-way sticky latch (D-06); the
+    // Both badges persist — the resolution is a one-way sticky latch; the
     // board no longer re-derives C1 live (it tracks gemByNode, not a live memo).
     expect(boardGemMarkerPresent()).toBe(true);
     expect(moveListGemIconPresent()).toBe(true);
   });
 
-  it('SC3 (Phase 172, SEED-106 D-01): the ELO slider does not change an already-resolved gem\'s stamped rung', async () => {
+  it('the ELO slider does not change an already-resolved gem\'s stamped rung', async () => {
     // Free play, default pinned rung (no gameData/profile) is 1500 — matches
     // seedGemGrading's default single rung below.
     seedGemGrading('Nf3', 'd4');
@@ -2001,18 +1994,18 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
     playMove('g1', 'f3');
     expect(moveListGemIconPresent()).toBe(true);
 
-    // Move the ELO slider to the ladder max (2600) — the D-01 behavior change:
+    // Move the ELO slider to the ladder max (2600):
     // this used to re-derive the gem's rung (nearestByElo against the live
     // selectedElo); it must now do nothing to an already-resolved gem's rung.
     const eloThumb = within(screen.getByTestId('analysis-elo-selector')).getByRole('slider');
     eloThumb.focus();
     fireEvent.keyDown(eloThumb, { key: 'End' });
 
-    // The badge survives the slider change (existing D-06 sticky-latch
+    // The badge survives the slider change (existing sticky-latch
     // guarantee)...
     expect(moveListGemIconPresent()).toBe(true);
 
-    // ...and its STAMPED rung is unchanged — still 1500 (D-01: pinned to the
+    // ...and its STAMPED rung is unchanged — still 1500 (pinned to the
     // mover's own rating-at-game-time, never the live selectedElo).
     const tree = screen.getByTestId('variation-tree-desktop');
     fireEvent.click(within(tree).getByTestId('gem-move-popover'));
@@ -2021,19 +2014,19 @@ describe('Gem moves (Phase 163, SEED-092)', () => {
   });
 });
 
-// Quick 260715-als (WR-04) — a book ply that ALSO carries an inaccuracy-severity
+// A book ply that ALSO carries an inaccuracy-severity
 // flaw must still render its book marker in the variation tree. The move list's
 // resolveMarkerIcon only draws a glyph for blunder/mistake severities (no
 // inaccuracy glyph there, unlike the board's `!?`), so the book fold must not
 // defer to an inaccuracy-only entry — otherwise the ply renders NOTHING. This is
 // a page-level test on purpose: the render side (resolveMarkerIcon) was already
 // correct; the bug was the moveListMarkers fold guard suppressing book:true.
-describe('Book marker on an inaccuracy-severity ply (Quick 260715-als, WR-04)', () => {
+describe('Book marker on an inaccuracy-severity ply', () => {
   it('an inaccuracy-severity book ply still renders the BookIcon in the move list', () => {
     // ply 0 (e4) is the ONLY book ply (opening_ply_count=1) AND carries an
     // inaccuracy with a missed motif — so flawMarkerByNodeId creates a
     // severity:'inaccuracy' entry (line 1289: motif OR blunder/mistake).
-    // Inaccuracy draws no move-list glyph, so without the WR-04 fix the book fold
+    // Inaccuracy draws no move-list glyph, so without the fix the book fold
     // defers to it and the ply is blank — and since it is the sole book ply, the
     // "Opening theory" title vanishes entirely (a clean second book ply would mask
     // the bug by always rendering its own book badge).
@@ -2069,12 +2062,12 @@ describe('Book marker on an inaccuracy-severity ply (Quick 260715-als, WR-04)', 
   });
 });
 
-// Quick 260714-rj5 (Task 2) — live-polling analysis board with an in-place
+// Live-polling analysis board with an in-place
 // pending pill. useLibraryGame itself is mocked (see the module mock above),
 // so these tests drive the pill/moves/no-remount behaviors by mutating the
 // mutable libraryGameState.data between renders and forcing a re-render, the
 // same pattern the "Grading run gating" and Gem-moves blocks above use.
-describe('Live-polling analysis board with an in-place pending pill (Quick 260714-rj5)', () => {
+describe('Live-polling analysis board with an in-place pending pill', () => {
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -2113,7 +2106,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     renderAnalysis('/analysis?game_id=1');
 
     expect(screen.getByTestId('analyzing-1').textContent).toContain('Pending');
-    // Move list renders from gameData.moves (Task 1 fix) — imported-unanalyzed
+    // Move list renders from gameData.moves — imported-unanalyzed
     // dead end no longer shows an empty board.
     expect(screen.getAllByText('e5').length).toBeGreaterThan(0);
     // No real eval chart (slider) yet — the pill occupies the chart's slot instead.
@@ -2137,7 +2130,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     expect(screen.getByTestId('analyzing-1').textContent).toContain('Analyzing');
   });
 
-  it('renders no pill and no Analyze button when active_eval_status is null (unanalyzed, unqueued) — SC4: never dispatches sweep work', () => {
+  it('renders no pill and no Analyze button when active_eval_status is null (unanalyzed, unqueued) — never dispatches sweep work', () => {
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
       severity_counts: null,
@@ -2152,12 +2145,12 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     renderAnalysis('/analysis?game_id=1');
 
     expect(screen.queryByTestId('analyzing-1')).toBeNull();
-    // The Library-page "Analyze" pill (D-03) lives on a different page/component
+    // The Library-page "Analyze" pill lives on a different page/component
     // (NoAnalysisState.tsx) — never rendered on /analysis itself, so this is a
     // no-op assertion here by construction; kept for parity with the pre-172
     // version of this test rather than removed.
     expect(screen.queryByTestId('btn-analyze-game-1')).toBeNull();
-    // SC4 / D-03 (Phase 172, SEED-106): no eval data => no free prefilter =>
+    // No eval data => no free prefilter =>
     // the sweep's own dedicated instances never enable, regardless of how long
     // the page stays mounted — this stays the lazy per-node path, untouched.
     expect(lastSweepMaiaCall()?.enabled).toBe(false);
@@ -2218,7 +2211,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     expect(screen.getByTestId('analysis-eval-chart-slider')).toBeTruthy();
   });
 
-  it('SC7 (Phase 172, SEED-106 D-03), updated for Phase 175 (SEED-108 D-01a): a bot game opened while tier-1 analysis is still running still never arms the sweep once the evals land — the stored path owns the mainline the instant eval_series exists', async () => {
+  it('a bot game opened while tier-1 analysis is still running still never arms the sweep once the evals land — the stored path owns the mainline the instant eval_series exists', async () => {
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
       severity_counts: null,
@@ -2233,13 +2226,13 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     renderAnalysis('/analysis?game_id=1');
 
     // Before the transition: no eval data reaches evalChartReady, so the free
-    // prefilter (D-04) has nothing to work with — the sweep's dedicated
+    // prefilter has nothing to work with — the sweep's dedicated
     // instances stay disabled the entire time the card is mid-analysis.
     expect(lastSweepMaiaCall()?.enabled).toBe(false);
     expect(lastSweepGradingCall()?.enabled).toBe(false);
 
     // The eval job completes: eval_series/moves/opening_ply_count arrive with
-    // a D-04-eligible candidate (best_move === the played move, out of book).
+    // an eligible candidate (best_move === the played move, out of book).
     libraryGameState.data = buildGame({
       analysis_state: 'analyzed',
       moves: ['e4', 'e5'],
@@ -2269,8 +2262,8 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
     });
     forceRerender();
 
-    // Phase 175 (SEED-108 D-01a): the SAME transition that used to arm the
-    // sweep now ALSO flips gameHasStoredBestMoveData true (it mirrors
+    // The SAME transition that used to arm the
+    // sweep ALSO flips gameHasStoredBestMoveData true (it mirrors
     // eval_series readiness) — the sweep's own `!gameHasStoredBestMoveData`
     // gate keeps it permanently disabled from this point on, even though its
     // free-prefilter candidate (e4) still qualifies structurally. Give the
@@ -2281,7 +2274,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
   });
 });
 
-// Quick 260719-dzh — on the mobile takeover layout the Move Stats / accuracy panel
+// On the mobile takeover layout the Move Stats / accuracy panel
 // lives in the "Stats" tab. Regression: the Stats trigger + content used to gate on
 // evalChartReady ONLY, so the tab was ADDED to an already-mounted Radix <Tabs> at the
 // moment evals landed — a post-mount tab insertion that failed to render in place on
@@ -2289,7 +2282,7 @@ describe('Live-polling analysis board with an in-place pending pill (Quick 26071
 // the eval chart had appeared). Fix: gate on (evalChartReady || evalPending) so the tab
 // is present throughout analysis (Analyzing pill first, then the panel), never added
 // late.
-describe('Mobile Stats tab: present during analysis, then the MoveStats panel (quick 260719-dzh)', () => {
+describe('Mobile Stats tab: present during analysis, then the MoveStats panel', () => {
   const origMatchMedia = window.matchMedia;
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
@@ -2383,7 +2376,7 @@ describe('Mobile Stats tab: present during analysis, then the MoveStats panel (q
   // tab, the move-quality icons must appear in place (no manual tab switch). The Moves
   // subtree is keyed on the analysis-ready transition so it remounts exactly when
   // analysis lands, matching the manual tab-switch that previously was the only way to
-  // surface the icons. (Fills the deferred D5 UAT gap from quick 260714-rj5.)
+  // surface the icons.
   it('surfaces move-quality icons on the Moves tab when analysis lands via the live poll', () => {
     libraryGameState.data = buildGame({
       analysis_state: 'no_engine_analysis',
@@ -2430,31 +2423,23 @@ describe('Mobile Stats tab: present during analysis, then the MoveStats panel (q
   });
 });
 
-// Phase 172 (SEED-106 CR-02/D-05) built two LOAD-BEARING page-level proofs
-// here: "the sweep yields to a busy live engine" (CR-02) and "the sweep's
-// dedicated Maia/grading instances never collide with the live path's own
-// instances" (D-05/SC2). Both required the sweep to actually DISPATCH a
-// candidate against a real analyzed-game fixture (eval_series present).
-//
-// Phase 175 (SEED-108 D-01/D-01a) removed that precondition: an analyzed
-// game's `!gameHasStoredBestMoveData` gate now keeps the sweep permanently
-// disabled the instant `eval_series` exists — the exact same fixture shape
-// these two tests needed to arm the sweep. There is consequently no reachable
-// game-mode scenario left in which the sweep dispatches a candidate through
-// Analysis.tsx's real wiring, so the two ORIGINAL tests (their literal
-// "the sweep is armed" / "the sweep is actively mid-cascade" premises) are
-// MOOT — the same "superseded by demotion" treatment D-01a already applies to
-// WR-01/03/05. The underlying invariants they protected are NOT lost:
+// Sweep demotion: an analyzed game's `!gameHasStoredBestMoveData` gate keeps the
+// sweep permanently disabled the instant `eval_series` exists. There is
+// consequently no reachable game-mode scenario in which the sweep dispatches a
+// candidate through Analysis.tsx's real wiring, so tests of "the sweep yields to
+// a busy live engine" and "the sweep's dedicated Maia/grading instances never
+// collide with the live path's own instances" cannot arm the sweep here. The
+// underlying invariants are covered elsewhere:
 //   - the pure yield-to-cursor scheduler decision (`nextSweepDispatch`,
 //     `liveBusy` checked first) is unit-tested directly in gemSweep.test.ts;
 //   - the dedicated (never-shared) Maia/grading instance wiring inside the
 //     hook is unit-tested directly in useGemSweep.test.ts, driving the hook
 //     with `enabled: true` independent of Analysis.tsx's now-permanent gate.
 // What Analysis.tsx CAN still prove — and the two tests below assert — is
-// the NEW invariant: the demotion gate itself holds even when every OTHER
-// precondition for a dispatch (a D-04 candidate, an idle live engine, or a
-// mid-cascade candidate) would otherwise be satisfied.
-describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 172 CR-02/D-05 dispatch proofs)', () => {
+// that the demotion gate itself holds even when every OTHER precondition for
+// a dispatch (an eligible candidate, an idle live engine, or a mid-cascade
+// candidate) would otherwise be satisfied.
+describe('Sweep demotion', () => {
   let clientWidthSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -2465,9 +2450,9 @@ describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 17
     clientWidthSpy.mockRestore();
   });
 
-  it('never dispatches a sweep candidate for an analyzed game even when the live engine is idle and a real D-04 candidate exists (supersedes the CR-02 yield-to-cursor wiring proof)', async () => {
+  it('never dispatches a sweep candidate for an analyzed game even when the live engine is idle and a real candidate exists', async () => {
     // The sweep's would-be candidate is ply 0 (e4), whose parent is the start
-    // FEN — the same fixture shape the old CR-02 test used to arm the sweep.
+    // FEN — the same fixture shape that would otherwise arm the sweep.
     const ROOT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
     libraryGameState.data = buildGame({
@@ -2481,7 +2466,7 @@ describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 17
           eval_mate: null,
           clock_seconds: null,
           move_seconds: null,
-          best_move: 'e2e4', // D-04: matches sanToUci(ROOT_FEN, 'e4') — would be a candidate.
+          best_move: 'e2e4', // matches sanToUci(ROOT_FEN, 'e4') — would be a candidate.
         },
         {
           ply: 1,
@@ -2499,7 +2484,7 @@ describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 17
 
     renderAnalysis('/analysis?game_id=1&ply=1');
 
-    // No live engine busy, a real D-04 candidate exists — every OLD
+    // No live engine busy, a real candidate exists — every
     // precondition for a dispatch is satisfied. The sweep must still be OFF.
     expect(lastSweepMaiaCall()?.enabled).toBe(false);
     expect(lastSweepGradingCall()?.enabled).toBe(false);
@@ -2514,7 +2499,7 @@ describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 17
     expect(lastSweepGradingCall()?.fen).not.toBe(ROOT_FEN);
   });
 
-  it("the sweep's dedicated instances stay idle throughout an analyzed game, while the live per-node instances work normally (supersedes the D-05/SC2 instance-isolation proof)", async () => {
+  it("the sweep's dedicated instances stay idle throughout an analyzed game, while the live per-node instances work normally", async () => {
     const ROOT_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
     libraryGameState.data = buildGame({
@@ -2562,8 +2547,8 @@ describe('Sweep demotion (Phase 175, SEED-108 D-01/D-01a — supersedes Phase 17
   });
 });
 
-describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)', () => {
-  it('stays at the sentinel (stable identity across re-renders) while the free run has not committed (INJECT-04)', () => {
+describe('Analysis-board Stockfish root injection', () => {
+  it('stays at the sentinel (stable identity across re-renders) while the free run has not committed', () => {
     engineState.isReady = true;
     engineState.isAnalyzing = true;
     engineState.pvLines = [];
@@ -2624,7 +2609,7 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     expect(lastFlawChessCall()?.extraRootMoves).toEqual(['e2e4']);
   });
 
-  it('keeps the SAME extraRootMoves reference when engine.pvLines is replaced by a new array with the SAME first moves (restart-storm guard, RESEARCH.md Pitfall 1)', () => {
+  it('keeps the SAME extraRootMoves reference when engine.pvLines is replaced by a new array with the SAME first moves (restart-storm guard)', () => {
     engineState.isReady = true;
     engineState.isAnalyzing = false;
     engineState.pvLines = [
@@ -2708,7 +2693,7 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     expect(lastFlawChessCall()?.extraRootMoves).toEqual(['e2e4']);
   });
 
-  it('resets to the sentinel on FEN change and clears the latch, so a later disagreement on the NEW position injects again (INJECT-04)', () => {
+  it('resets to the sentinel on FEN change and clears the latch, so a later disagreement on the NEW position injects again', () => {
     const clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
 
     engineState.isReady = true;
@@ -2740,7 +2725,7 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     clientWidthSpy.mockRestore();
   });
 
-  // ─── Reset on engine-side disable (quick 260731-s0z, FIX-2) ────────────────
+  // ─── Reset on engine-side disable ────────────────
 
   it('resets extraRootMoves to the sentinel when the Stockfish engine switch is turned off, and keeps it there through a later navigation', () => {
     const clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
@@ -2812,8 +2797,8 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     expect(second).toBe(first);
   });
 
-  it('does NOT commit a spurious latch from a stale previous-position pvLines/rankedLines pairing that is coincidentally ALSO legal in the new position (WR-01, 196-REVIEW.md)', () => {
-    // Reproduces the exact race the code review flagged: this effect can run
+  it('does NOT commit a spurious latch from a stale previous-position pvLines/rankedLines pairing that is coincidentally ALSO legal in the new position', () => {
+    // Reproduces this race: this effect can run
     // in the SAME passive-effect flush as useFlawChessEngine's/
     // useStockfishEngine's OWN FEN-reset effects, whose setState calls only
     // take effect on the NEXT render — so on the render where `position`
@@ -2874,7 +2859,7 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     // and NEITHER d4 nor d5 touched the g1 knight or the e2 pawn — so the
     // STALE 'g1f3'/'e2e4' are (coincidentally) ALSO legal in this brand-new
     // position, despite being computed from an entirely different position's
-    // organic/settled data. Without the WR-01 fix, this is exactly where the
+    // organic/settled data. Without the fix, this is exactly where the
     // spurious latch commits.
     fireEvent.click(screen.getByTestId('square-d7'));
     fireEvent.click(screen.getByTestId('square-d5'));
@@ -2896,11 +2881,11 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     flawChessState.currentFen = null;
     fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
 
-    // With the WR-01 fix: no spurious latch ever committed for the post-1.d4
+    // With the fix: no spurious latch ever committed for the post-1.d4
     // d5 position, so once genuinely-fresh (non-disagreeing) data lands, the
     // effect correctly resets to the sentinel. Without the fix: the stale
     // pairing incorrectly latched ['e2e4', 'g1f3'] the moment the race
-    // manifested above, and the INJECT-04 "exactly once" guarantee then
+    // manifested above, and the "exactly once" guarantee then
     // permanently blocks this effect from ever re-evaluating for that
     // position again — so this assertion would see the stale, wrong value
     // instead of the sentinel.
@@ -2909,12 +2894,12 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     clientWidthSpy.mockRestore();
   });
 
-  it("wires the verdict's lookup to the UNSLICED rankedLines: the practical line populates for a Stockfish pick ranked below the visible top 2 (INJECT-06)", () => {
+  it("wires the verdict's lookup to the UNSLICED rankedLines: the practical line populates for a Stockfish pick ranked below the visible top 2", () => {
     engineState.isReady = true;
     engineState.isAnalyzing = false;
     engineState.pvLines = [{ moves: ['g1f3'], evalCp: 300, evalMate: null, depth: 18 }];
     // The FC top pick (e2e4) gets a real objective eval via the grading map so
-    // the verdict classifier doesn't bail on a null eval (D-06).
+    // the verdict classifier doesn't bail on a null eval.
     gradingState.gradeMap = new Map([['e4', { evalCp: 40, evalMate: null, depth: 10 }]]);
     // 5 organic rankedLines with the Stockfish pick (g1f3 / Nf3) at index 3 —
     // below the default FlawChess line count (2), so `reconciledRankedLines` (the visible top-2)
@@ -2935,11 +2920,11 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
   });
 });
 
-// ── Phase 208 CR-01 regression: same-page game switch reseeds the board ────────
+// ── Regression: same-page game switch reseeds the board ────────
 //
-// D-20 keeps the Paste trigger visible while viewing an existing ?game_id= game,
+// The Paste trigger stays visible while viewing an existing ?game_id= game,
 // and the paste modal's "Analyze full game" persists the pasted game then
-// navigates to the NEW game's ?game_id= URL (D-15) on the SAME mounted page.
+// navigates to the NEW game's ?game_id= URL on the SAME mounted page.
 //
 // The seeding effects used to be guarded by one-shot booleans
 // (`hasLoadedMainLine` / `hasNavigatedToInitialPly`), written when a mounted
@@ -2947,13 +2932,13 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
 // the guard already spent by game A, the game-mode seeding effect early-returned
 // on arrival of game B: the URL, PlayerBar, eval chart and flaw panel all showed
 // game B while the board and move list silently kept showing game A — the
-// "silently wrong position" failure class D-21/SC-3 forbid elsewhere in this
-// phase. The guards are now keyed on `game:<gameId>`.
+// "silently wrong position" failure class. The guards are now keyed on
+// `game:<gameId>`.
 //
 // These tests drive the navigation directly rather than through PasteModal: the
 // defect is in Analysis.tsx's seeding guards, and any same-page game_id change
 // (including browser back/forward between two games) reproduces it.
-describe('Analysis same-page game switch (Phase 208 CR-01)', () => {
+describe('Analysis same-page game switch', () => {
   function NavigateButton({ to }: { to: string }) {
     const navigate = useNavigate();
     return (
@@ -2981,7 +2966,7 @@ describe('Analysis same-page game switch (Phase 208 CR-01)', () => {
     return screen.getByTestId('analysis-variation-tree').textContent ?? '';
   }
 
-  it('reseeds the board when navigating from one game to another (CR-01)', async () => {
+  it('reseeds the board when navigating from one game to another', async () => {
     libraryGameById.set(1, buildGame({ game_id: 1, moves: ['e4'], ply_count: 1 }));
     libraryGameById.set(2, buildGame({ game_id: 2, moves: ['d4', 'd5'], ply_count: 2 }));
 
@@ -2998,7 +2983,7 @@ describe('Analysis same-page game switch (Phase 208 CR-01)', () => {
     expect(moveListText()).not.toContain('e4');
   });
 
-  it('reseeds even when the two games have the same move count (CR-01)', async () => {
+  it('reseeds even when the two games have the same move count', async () => {
     // Same ply_count on both sides: the pre-fix initial-ply effect keyed its
     // dependency on `mainLine.length`, which does not change between two
     // equal-length games, so nothing downstream of the seed re-ran. Guards the
@@ -3017,13 +3002,13 @@ describe('Analysis same-page game switch (Phase 208 CR-01)', () => {
   });
 });
 
-// ── Phase 210 (SEED-042): custom-start games seed from their own root ────────
+// ── Custom-start games seed from their own root ────────
 //
 // Game mode used to call loadMainLine(moves, STARTING_FEN) unconditionally. For a
 // chess.com thematic / custom-position game (or a pasted [SetUp] PGN) those SANs
 // are illegal from the standard start, so chess.js 1.4 threw and the whole
 // /analysis page unmounted through the ErrorBoundary (Sentry FLAWCHESS-96).
-describe('Custom-start games in game mode (Phase 210, SEED-042)', () => {
+describe('Custom-start games in game mode', () => {
   // Evans Gambit thematic position after 4. b4 — Black to move. This is the
   // family of positions behind the production reports.
   const EVANS_GAMBIT_FEN = 'r1bqk1nr/pppp1ppp/2n5/2b1p3/1PB1P3/5N2/P1PP1PPP/RNBQK2R b KQkq b3 0 4';
@@ -3067,8 +3052,8 @@ describe('Custom-start games in game mode (Phase 210, SEED-042)', () => {
   });
 });
 
-// ── Import-tab paste handoff consume (Quick 260826-qdl) ─────────────────────
-describe('Import-tab paste handoff consume (Quick 260826-qdl)', () => {
+// ── Import-tab paste handoff consume ─────────────────────
+describe('Import-tab paste handoff consume', () => {
   afterEach(() => {
     // A leaked handoff must not contaminate the file's other render tests —
     // takePastedGameHandoff() is already destructive on every consume path

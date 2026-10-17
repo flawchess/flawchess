@@ -4,10 +4,9 @@
  * verdict thresholds; a solid overlay bar fills from 0 to the value in the
  * color of the zone it lands in.
  *
- * Used in the Material Breakdown table to visualize each bucket's score
- * relative to the user's overall score. The neutral zone is configurable per
- * row so expectations can shift with material context (e.g. when converting
- * material, the neutral band sits higher than when recovering).
+ * Used for the score-vs-50% and eval bullets on the opening stats, insight
+ * finding and position results cards. The neutral zone is configurable per
+ * call site.
  *
  * Asymmetric `(neutralMin, neutralMax)` tuples are fully supported — the band
  * is allowed to sit entirely on one side of `center`. For example
@@ -52,8 +51,7 @@ interface MiniBulletChartProps {
   domain?: number;
   /** Reference center for the chart. The reference line, neutral-zone shading,
    * bar-from-center fill, and zone-color test are all computed relative to this.
-   * Default 0 (legacy zero-centered behavior — visually identical to the
-   * pre-260504-my2 chart for callers that don't pass `center`). */
+   * Default 0 (zero-centered). */
   center?: number;
   /** Accessible label. Falls back to the signed numeric value. */
   ariaLabel?: string;
@@ -72,9 +70,8 @@ interface MiniBulletChartProps {
   tickPawns?: number;
   /**
    * Controls the fill color of the value bar.
-   * - 'zone' (default): fill uses the zone color (danger/neutral/success) based
-   *   on where the value lands. Preserves current behavior for Endgame consumers
-   *   (EndgamePerformanceSection, EndgameScoreGapSection) — they must not change.
+   * - 'zone' (default): fill uses the zone color the value lands in
+   *   (danger/neutral/success).
    * - 'neutral': fill uses BULLET_BAR_NEUTRAL (light grey). Zone bands still
    *   carry the verdict color; the bar only encodes position. Used on Openings
    *   Stats and Insights cards (Tufte/Few bullet-chart convention).
@@ -83,8 +80,8 @@ interface MiniBulletChartProps {
   /**
    * When true, inverts zone color semantics: values LEFT of the neutral band
    * paint ZONE_SUCCESS (fewer flaws = good); values RIGHT paint ZONE_DANGER.
-   * Used for flaw-delta bullets where negative delta = better performance (D-08).
-   * Default false — preserves all existing callers unchanged.
+   * Used for bullets where a negative delta = better performance (e.g. flaw deltas).
+   * Default false.
    */
   invertColors?: boolean;
 }
@@ -111,7 +108,7 @@ export function MiniBulletChart({
 }: MiniBulletChartProps) {
   // Axis spans [center - domain, center + domain], so the reference line and
   // neutral band sit at the visual middle regardless of `center`. With center=0
-  // this reduces to the legacy [-domain, +domain] mapping.
+  // this reduces to the [-domain, +domain] mapping.
   const axisMin = center - domain;
   const axisMax = center + domain;
   const clamped = Math.max(axisMin, Math.min(axisMax, value));
@@ -145,7 +142,7 @@ export function MiniBulletChart({
   }
 
   // Actual bar fill: neutral grey when barColor='neutral' (Openings cards),
-  // zone color when barColor='zone' (default — Endgame consumers unchanged).
+  // zone color when barColor='zone' (default).
   const valueBarColor = barColor === 'neutral' ? BULLET_BAR_NEUTRAL : fillColor;
 
   // Overlay bar spans from the center to the clamped value.
@@ -166,7 +163,7 @@ export function MiniBulletChart({
       data-testid="mini-bullet-chart"
     >
       {/* Background zones: left | neutral | right
-          invertColors flips left=ZONE_SUCCESS / right=ZONE_DANGER (flaw-delta, D-08) */}
+          invertColors flips left=ZONE_SUCCESS / right=ZONE_DANGER (flaw-delta) */}
       <div className="absolute inset-0 flex">
         <div
           className="h-full"

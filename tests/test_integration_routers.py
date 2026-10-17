@@ -1,11 +1,11 @@
-"""Router-level integration tests (Phase 61).
+"""Router-level integration tests.
 
 Uses the shared seeded_user fixture to prove that the full stack
 HTTP → router → service → repository → DB produces the expected numbers
 for a known deterministic portfolio. Each test asserts exact integers
 against the EXPECTED aggregate dict committed alongside the seed spec.
 
-Phase 92 date-filter boundary tests (TestDateFilterBoundarySemantics) are
+Date-filter boundary tests (TestDateFilterBoundarySemantics) are
 appended at the bottom. They use function-scoped fixtures so each test seeds
 exactly one game at a controlled played_at timestamp, making matched_count
 assertions unambiguous without requiring shared state across tests.
@@ -135,7 +135,7 @@ class TestGlobalStatsRouter:
 
 
 # -----------------------------------------------------------------------------
-# TestEndgamesStatsRouter (Phase 238 D-01: filtered stats for the Games tab)
+# TestEndgamesStatsRouter (filtered stats for the Games tab)
 # -----------------------------------------------------------------------------
 
 
@@ -220,7 +220,7 @@ class TestOpeningsNextMovesRouter:
 
 
 # -----------------------------------------------------------------------------
-# TestDateFilterBoundarySemantics — Phase 92 from_date / to_date boundary tests
+# TestDateFilterBoundarySemantics — from_date / to_date boundary tests
 # -----------------------------------------------------------------------------
 
 
@@ -330,7 +330,7 @@ async def _no_filter_user() -> tuple[dict[str, str], int]:
 
 
 class TestDateFilterBoundarySemantics:
-    """Integration tests for from_date / to_date boundary semantics (Phase 92 D-10).
+    """Integration tests for from_date / to_date boundary semantics.
 
     Boundary contract (apply_game_filters):
       - from_date is INCLUSIVE: played_at >= from_date
@@ -345,7 +345,7 @@ class TestDateFilterBoundarySemantics:
         self,
         _from_date_inclusive_user: tuple[dict[str, str], int],
     ) -> None:
-        """D-10: a game played exactly at from_date midnight UTC must match.
+        """A game played exactly at from_date midnight UTC must match.
 
         Seed: played_at = 2026-03-01 00:00 UTC. Filter: from_date=2026-03-01.
         Expected: matched_count == 1 (inclusive lower bound).
@@ -367,7 +367,7 @@ class TestDateFilterBoundarySemantics:
         self,
         _to_date_end_of_day_user: tuple[dict[str, str], int],
     ) -> None:
-        """D-10: a game played at 23:59 on to_date must still match.
+        """A game played at 23:59 on to_date must still match.
 
         Seed: played_at = 2026-04-01 23:59 UTC. Filter: to_date=2026-04-01.
         Expected: matched_count == 1 (pred is played_at < 2026-04-02 00:00).
@@ -389,7 +389,7 @@ class TestDateFilterBoundarySemantics:
         self,
         _after_to_date_user: tuple[dict[str, str], int],
     ) -> None:
-        """D-10: a game played at midnight of to_date + 1 day must NOT match.
+        """A game played at midnight of to_date + 1 day must NOT match.
 
         Seed: played_at = 2026-04-02 00:00 UTC. Filter: to_date=2026-04-01.
         Expected: matched_count == 0 (2026-04-02 00:00 is not < 2026-04-02 00:00).
@@ -411,7 +411,7 @@ class TestDateFilterBoundarySemantics:
         self,
         _no_filter_user: tuple[dict[str, str], int],
     ) -> None:
-        """D-10: both from_date and to_date omitted means no date filtering.
+        """Both from_date and to_date omitted means no date filtering.
 
         Seed: one game at an arbitrary past date. Filter: neither date param.
         Expected: matched_count == 1 (game is not filtered out).
@@ -433,7 +433,7 @@ class TestDateFilterBoundarySemantics:
         self,
         _no_filter_user: tuple[dict[str, str], int],
     ) -> None:
-        """D-15: POST /openings/positions returns 422 when from_date > to_date.
+        """POST /openings/positions returns 422 when from_date > to_date.
 
         The OpeningsRequest model_validator raises ValueError which FastAPI
         surfaces as HTTP 422. The error detail must mention from_date.
@@ -456,7 +456,7 @@ class TestDateFilterBoundarySemantics:
         self,
         _no_filter_user: tuple[dict[str, str], int],
     ) -> None:
-        """D-15: GET /stats/global returns 422 when from_date > to_date.
+        """GET /stats/global returns 422 when from_date > to_date.
 
         This exercises the inline HTTPException path in app/routers/stats.py
         (Query params, not a Pydantic body) — distinct code path from the

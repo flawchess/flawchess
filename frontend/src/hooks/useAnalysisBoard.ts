@@ -1,13 +1,13 @@
 /**
- * useAnalysisBoard — Branching move-tree hook for the /analysis page (Phase 137).
+ * useAnalysisBoard — Branching move-tree hook for the /analysis page.
  *
  * Divergences from the existing board hooks:
- * - No session-storage persistence (D-01: ephemeral; analysis state lives in URL).
- * - No URL write-back (D-01: read-only entry-point only; URL reading is Analysis.tsx, Phase 138).
+ * - No session-storage persistence (ephemeral; analysis state lives in URL).
+ * - No URL write-back (read-only entry-point only; URL reading is Analysis.tsx).
  * - No Zobrist hashing or opening lookup.
- * - Mid-line moves fork a new child node rather than truncating the main line (BOARD-01).
- * - Stores full FEN per node for O(1) goToNode — no root replay (BOARD-02).
- * - Arrow-key and mouse-wheel move browsing (Quick 260821-kyz) live in the
+ * - Mid-line moves fork a new child node rather than truncating the main line.
+ * - Stores full FEN per node for O(1) goToNode — no root replay.
+ * - Arrow-key and mouse-wheel move browsing live in the
  *   shared useBoardNavigationInput hook, which the Openings board uses too.
  *   containerRef.current === null (a consumer that never attaches it) is
  *   what excludes that consumer from both surfaces.
@@ -42,9 +42,9 @@ export interface AnalysisBoardState {
   mainLine: NodeId[];
   /**
    * Membership set of every node grafted by insertPvLine, across ALL currently
-   * open tactic lines (Quick 260703-kyb: flat siblings, multiple lines can be
+   * open tactic lines (flat siblings, multiple lines can be
    * open at once — this is a union, not a single line). Ephemeral — not
-   * URL-encoded (D-01). Emptied by clearAllSidelines(); individual lines are
+   * URL-encoded. Emptied by clearAllSidelines(); individual lines are
    * removed via deleteSubtree(rootId).
    */
   pvNodeIds: Set<NodeId>;
@@ -71,7 +71,7 @@ export interface AnalysisBoardReturn {
    * goToNode(id, opts?) — the optional second parameter exists for
    * programmatic seeding (URL-driven navigation) and continuous scrubbing
    * (the eval-chart drag), both of which pass `{ silent: true }` to suppress
-   * the landed-move sound (Quick 260805-p37). Omitting it — every UI click
+   * the landed-move sound. Omitting it — every UI click
    * path (move-list, tags-panel cycling, engine-line chip fork navigation)
    * — sounds. Widening from `(id: NodeId) => void` to `(id: NodeId, opts?) =>
    * void` stays assignable to `VariationTree`'s `onNodeClick: (nodeId:
@@ -82,8 +82,7 @@ export interface AnalysisBoardReturn {
   /**
    * goToRoot() — jump to the root position (currentNodeId = null) without
    * altering nodes, mainLine, or rootFen. Used by tactic mode to land the
-   * board at the decision position after loadMainLine seeds the stored PV
-   * (Phase 139, D-5).
+   * board at the decision position after loadMainLine seeds the stored PV.
    */
   goToRoot: () => void;
   loadMainLine: (sans: string[], newRootFen: string) => void;
@@ -105,12 +104,12 @@ export interface AnalysisBoardReturn {
    */
   playUciLine: (uciMoves: string[]) => void;
   /**
-   * graftLine(uciMoves, parentId) — Phase 237: graft a UCI line under `parentId`
+   * graftLine(uciMoves, parentId) — graft a UCI line under `parentId`
    * (null = the root position) in ONE functional setState, reusing any existing
    * child with the same from/to, and NEVER move the board. Mirrors playUciLine's
    * child reuse but is non-navigating and silent, so a line that arrives late
    * (a background search, the game-move search, a restored snapshot) cannot yank
-   * the user off the position they are looking at (RESEARCH Pitfall 1). An
+   * the user off the position they are looking at. An
    * unknown `parentId` is a no-op; an illegal UCI stops the graft at that move.
    */
   graftLine: (uciMoves: readonly string[], parentId: NodeId | null) => void;
@@ -163,10 +162,9 @@ function getLastMove(s: AnalysisBoardState): { from: string; to: string } | null
 }
 
 /**
- * Classify a stored SAN into the move-sound taxonomy `TrainLineStepper.
- * replayLine` already uses: check marker (`+`/`#`) wins, then capture marker
- * (`x`), else a plain move (Quick 260805-p37). No `Chess` instance is needed
- * — chess.js already writes both markers into the SAN it returns from
+ * Classify a stored SAN into the move-sound taxonomy: check marker (`+`/`#`)
+ * wins, then capture marker (`x`), else a plain move. No `Chess` instance is
+ * needed — chess.js already writes both markers into the SAN it returns from
  * `move()`, and this reproduces that same `inCheck / captured / plain`
  * precedence from the string alone. Castling (`O-O`/`O-O-O`) has no
  * dedicated clip in `SOUND_FILES`, so it deliberately falls through to the
@@ -180,9 +178,8 @@ function classifySanSound(san: string): SoundEvent {
 
 /**
  * Walk `id`'s `parentId` chain up to the root, returning the hop count
- * (root/null = 0). The tree analogue of `TrainLineStepper`'s stepper index:
- * a greater depth than the previous landing means the navigation moved
- * forward (Quick 260805-p37). Breaks out on a `parentId` missing from the
+ * (root/null = 0). A greater depth than the previous landing means the
+ * navigation moved forward. Breaks out on a `parentId` missing from the
  * map rather than looping forever.
  */
 function getNodeDepth(nodes: Map<NodeId, MoveNode>, id: NodeId | null): number {
@@ -219,7 +216,7 @@ function findFirstChild(
 /**
  * The child of `parentId` reached by from -> to, if any. The single child search
  * behind makeMove's advance-or-fork, playUciLine's and graftLine's child reuse,
- * and the Train reveal's line-path walk (Phase 237). Promotion piece is NOT part
+ * and the Train reveal's line-path walk. Promotion piece is NOT part
  * of the match: two promotions on the same squares share a node, as before.
  */
 export function findChildBySquares(
@@ -256,22 +253,18 @@ export function useAnalysisBoard(
 
   // Mutable ref synced each render — lets makeMove/isOnMainLine read the latest
   // state synchronously from callbacks without closing over stale values.
-  // (Same stale-closure-safe pattern as useTacticLine lines 99-110.)
   const stateRef = useRef(state);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // ── Move-sound state (Quick 260805-p37) ────────────────────────────────
+  // ── Move-sound state ────────────────────────────────
   // prevNavRef: the previously landed { id, depth }, seeded null so the first
   // effect run (mount) only records a baseline and stays silent.
   const prevNavRef = useRef<{ id: NodeId | null; depth: number } | null>(null);
   // silentNavRef: NAMES the single landing node id whose arrival must not
-  // sound. A ref-held id (not a boolean) is load-bearing: the retired Train free-play hook's
-  // start() calls loadMainLine([], startFen) and playUciLine([...prefixUci,
-  // moveUci]) in ONE React batch, producing ONE commit. A boolean set by
-  // loadMainLine would swallow the grafted move's sound; keying on the id
-  // lets loadMainLine's claim (landing null) miss the commit's actual
-  // landing node, so the first free-play move on the Train solution board
-  // still sounds.
+  // sound. A ref-held id (not a boolean): a silent claim only suppresses the
+  // commit whose landing node it names, so a loadMainLine followed by a
+  // navigating command in the same React batch still sounds the real landing
+  // move. A boolean set by loadMainLine would swallow that move's sound.
   const silentNavRef = useRef<{ id: NodeId | null } | null>(null);
   // unlockedRef: one-shot guard for the iOS/WebKit playback unlock.
   const unlockedRef = useRef(false);
@@ -281,7 +274,7 @@ export function useAnalysisBoard(
   });
 
   /**
-   * One-shot iOS/WebKit playback unlock (Quick 260805-p37). WebKit grants a
+   * One-shot iOS/WebKit playback unlock. WebKit grants a
    * media element playback permission only when `play()` is first called
    * inside a user gesture, and the move sound below is emitted from a
    * passive effect one tick later. Called at the top of every command
@@ -297,16 +290,14 @@ export function useAnalysisBoard(
   }
 
   /**
-   * makeMove(from, to) — input-agnostic move entry point (BOARD-03).
+   * makeMove(from, to) — input-agnostic move entry point.
    * Both drag-drop and click-to-click board input call this.
-   * Board wiring is Phase 138; this hook exposes the entry point only.
    *
    * Advance-or-fork: when the played move already exists as a child of
    * currentNodeId (the next move in the game line or an open sideline), just
    * navigate into it; only a genuinely divergent move forks a new sideline
-   * (UAT quick 260705-mth — previously it always forked, spawning a duplicate
-   * branch even when the move was the existing continuation). Mirrors
-   * playUciLine's child-reuse. The opening board hook truncates on mid-line
+   * (forking unconditionally would spawn a duplicate branch even when the move
+   * is the existing continuation). Mirrors playUciLine's child-reuse. The opening board hook truncates on mid-line
    * moves — this hook advances or forks instead.
    */
   const makeMove = useCallback((from: string, to: string): boolean => {
@@ -344,7 +335,7 @@ export function useAnalysisBoard(
   }, []);
 
   /**
-   * goBack() — retreat to parent; null parent returns to rootFen (BOARD-02).
+   * goBack() — retreat to parent; null parent returns to rootFen.
    * Uses a functional setState updater to always act on the latest state.
    */
   const goBack = useCallback((): void => {
@@ -359,13 +350,13 @@ export function useAnalysisBoard(
 
   /**
    * goForward() — advance to the first child of currentNodeId in insertion
-   * order (lowest id). No-op when the node has no children (BOARD-02).
+   * order (lowest id). No-op when the node has no children.
    *
    * When one or more flaw PV sidelines are grafted and the board is parked at
    * a fork node, prefer the lowest-id child that is IN pvNodeIds (step into an
    * open sideline) — the main-line continuation would otherwise win by lowest
    * id (created earlier by loadMainLine than the grafted PV node), making an
-   * open flaw line feel un-enterable (UAT thl item 4). Falls back to the
+   * open flaw line feel un-enterable. Falls back to the
    * lowest-id child overall when no child is a PV member.
    */
   const goForward = useCallback((): void => {
@@ -388,9 +379,9 @@ export function useAnalysisBoard(
 
   /**
    * goToNode(id, opts?) — O(1) jump: reads nodes.get(id).fen directly, no
-   * replay loop. (BOARD-02 / ARCHITECTURE Pattern 3 lines 208-209.)
+   * replay loop.
    *
-   * `opts?.silent` (Quick 260805-p37) marks the landing id as sound-free —
+   * `opts?.silent` marks the landing id as sound-free —
    * used by Analysis.tsx's URL-seeding effect and the eval-chart scrub
    * callback. Every other caller (a real click) omits it and unlocks
    * playback like the other gesture-driven commands.
@@ -412,19 +403,18 @@ export function useAnalysisBoard(
   }, []);
 
   /**
-   * loadMainLine(sans, newRootFen) — BOARD-04 / D-01 entry-point seeding.
+   * loadMainLine(sans, newRootFen) — entry-point seeding.
    * Replays each SAN onto a fresh Chess(newRootFen), creates one MoveNode per
    * SAN in sequence, and records their IDs into mainLine. Resets the whole tree.
-   * Mirrors useTacticLine's rootFen-start replay (lines 117-136) but builds
-   * a branching tree rather than a flat history array.
+   * Builds a branching tree rather than a flat history array.
    */
   const loadMainLine = useCallback((sans: string[], newRootFen: string): void => {
     const newNodes = new Map<NodeId, MoveNode>();
     const newMainLine: NodeId[] = [];
-    // Phase 210 (SEED-042): `new Chess(fen)` THROWS on an unparseable FEN, and
+    // `new Chess(fen)` THROWS on an unparseable FEN, and
     // this constructor sits outside the per-move guard below — so a bad root
-    // would crash the page exactly like the illegal-SAN bug it fixes. The root
-    // now arrives from games.initial_fen (nullable free-text), so validate it
+    // would crash the page exactly like an illegal SAN would. The root
+    // arrives from games.initial_fen (nullable free-text), so validate it
     // here rather than trusting every present and future writer of that column.
     let chess: Chess;
     try {
@@ -437,11 +427,11 @@ export function useAnalysisBoard(
     let id = 0;
 
     for (const san of sans) {
-      // Phase 210 (SEED-042): chess.js 1.4 move() THROWS on illegal SAN — it does
-      // not return null — so the previous `if (!move) break` was dead code and the
-      // throw escaped into React, unmounting /analysis via the ErrorBoundary
-      // (Sentry FLAWCHESS-96). Reachable whenever the SANs don't belong to this
-      // root, e.g. a custom-start game seeded from the standard position.
+      // chess.js 1.4 move() THROWS on illegal SAN — it does not return null — so
+      // an `if (!move) break` check would be dead code and the throw would
+      // escape into React, unmounting /analysis via the ErrorBoundary (Sentry
+      // FLAWCHESS-96). Reachable whenever the SANs don't belong to this root,
+      // e.g. a custom-start game seeded from the standard position.
       // Keep the legal prefix and stop; a degraded board beats a crashed page.
       let move: ReturnType<typeof chess.move>;
       try {
@@ -460,10 +450,10 @@ export function useAnalysisBoard(
     const lastId = newMainLine[newMainLine.length - 1];
     const landingId = lastId !== undefined ? lastId : null;
     // Seeding a tree from the URL or resetting free play is not a user move
-    // (Quick 260805-p37) — claim silence on the id this call will land on,
+    // — claim silence on the id this call will land on,
     // BEFORE the setState so the emission effect sees the claim on its next
-    // run. the retired Train free-play hook's start() called this with sans=[] (landingId =
-    // null) immediately followed by playUciLine in the SAME React batch; the
+    // run. A caller that does loadMainLine([]) (landingId = null) immediately
+    // followed by playUciLine in the SAME React batch gets one commit; the
     // id-keyed claim lets that stale "land on null" claim miss the batch's
     // actual landing node, so the grafted move still sounds.
     silentNavRef.current = { id: landingId };
@@ -482,9 +472,9 @@ export function useAnalysisBoard(
 
   /**
    * goToRoot() — jump to the root position (currentNodeId = null) without
-   * altering nodes, mainLine, or rootFen. Used by tactic mode (Phase 139,
-   * D-5) to land the board at the decision position after loadMainLine seeds
-   * the stored PV so the user steps forward toward the punchline.
+   * altering nodes, mainLine, or rootFen. Used by tactic mode to land the
+   * board at the decision position after loadMainLine seeds the stored PV so
+   * the user steps forward toward the punchline.
    */
   const goToRoot = useCallback((): void => {
     unlockAudioOnce();
@@ -509,15 +499,15 @@ export function useAnalysisBoard(
    * node map rather than replacing it.
    *
    * After the call: the new node IDs are UNIONED into pvNodeIds (any
-   * previously-open line's ids are preserved — flat siblings, Quick
-   * 260703-kyb), mainLine is untouched, and currentNodeId is parked at
+   * previously-open line's ids are preserved — flat siblings),
+   * mainLine is untouched, and currentNodeId is parked at
    * forkNodeId (not the first PV move). The line's root node is the id equal
    * to prev.nextId at call time.
    */
   const insertPvLine = useCallback((pvSans: string[], forkNodeId: NodeId): void => {
     setState((prev) => {
       const forkNode = prev.nodes.get(forkNodeId);
-      if (!forkNode) return prev; // guard: forkNodeId missing → no-op (T-140-01a)
+      if (!forkNode) return prev; // guard: forkNodeId missing → no-op
 
       const newNodes = new Map(prev.nodes);
       const newPvIds: NodeId[] = [];
@@ -526,12 +516,11 @@ export function useAnalysisBoard(
       let id = prev.nextId;
 
       for (const san of pvSans) {
-        // Phase 210 (SEED-042): same dead guard as loadMainLine — chess.js 1.4
-        // move() throws rather than returning null, so T-140-01a's intent was
-        // never actually implemented. Worse here than there: this loop runs
-        // inside a setState updater, so an escaping throw corrupts React state,
-        // and PV SANs cross a worker boundary (treeCommon.ts:218 documents the
-        // same hazard for the sibling UCI path).
+        // Same guard as loadMainLine: chess.js 1.4 move() throws rather than
+        // returning null. Worse here: this loop runs inside a setState updater,
+        // so an escaping throw corrupts React state, and PV SANs cross a worker
+        // boundary (treeCommon.ts's applyUciMoveFen documents the same hazard
+        // for the sibling UCI path).
         let move: ReturnType<typeof chess.move>;
         try {
           move = chess.move(san);
@@ -563,7 +552,7 @@ export function useAnalysisBoard(
    * from the node map, drop those ids from pvNodeIds, and recover
    * currentNodeId to rootId's parent (the fork parent) if it was inside the
    * deleted subtree. The single delete op behind both the free-move ×
-   * affordance and the tactic chip toggle-off (Quick 260703-kyb).
+   * affordance and the tactic chip toggle-off.
    *
    * Uses a functional setState updater matching the goBack() idiom to always
    * act on the latest state.
@@ -613,8 +602,7 @@ export function useAnalysisBoard(
   /**
    * clearAllSidelines() — remove every node NOT in mainLine, empty pvNodeIds,
    * and recover currentNodeId to its nearest mainLine ancestor (or null at
-   * root). Used by Reset (Quick 260703-kyb — generalizes the old
-   * clearPvLine singleton to every open sideline, free-move or tactic).
+   * root). Used by Reset; clears every open sideline, free-move or tactic.
    */
   const clearAllSidelines = useCallback((): void => {
     setState((prev) => {
@@ -649,8 +637,8 @@ export function useAnalysisBoard(
    *
    * Used by the engine-line move chips: clicking move N in a Stockfish line plays
    * the WHOLE line up to that move from the current anchor, not just the single
-   * clicked move (Quick 260628-shc UAT — the old wiring called makeMove(from, to)
-   * with just the clicked move, skipping all moves before it).
+   * clicked move (calling makeMove(from, to) with just the clicked move would
+   * skip all moves before it).
    *
    * Differences from insertPvLine: it lands on the line's end (not the fork),
    * reuses an existing child when its from/to already matches (so re-clicking the
@@ -701,7 +689,7 @@ export function useAnalysisBoard(
   }, []);
 
   /**
-   * graftLine(uciMoves, parentId) — Phase 237. Mirrors playUciLine's child reuse
+   * graftLine(uciMoves, parentId) — mirrors playUciLine's child reuse
    * but is non-navigating: it never writes currentNodeId, plays no sound and does
    * not unlock audio (it is programmatic, never a gesture). One functional
    * setState because stateRef only syncs after render (L-1/L-7): several grafts
@@ -730,7 +718,7 @@ export function useAnalysisBoard(
             promotion: uci.length > 4 ? uci.slice(4, 5) : 'q',
           });
         } catch {
-          break; // chess.js 1.4 throws on illegal input (Phase 210): keep the legal prefix
+          break; // chess.js 1.4 throws on illegal input: keep the legal prefix
         }
         const existing = findChildBySquares(newNodes, cursor, move.from, move.to);
         if (existing) {
@@ -756,7 +744,7 @@ export function useAnalysisBoard(
   }, []);
 
   /**
-   * Move-sound emission effect (Quick 260805-p37). Fires once per COMMITTED
+   * Move-sound emission effect. Fires once per COMMITTED
    * navigation (currentNodeId/nodes change), never from inside a setState
    * updater — React StrictMode double-invokes updaters in dev and would
    * double-play. Reads the mutable prevNavRef/silentNavRef refs rather than
@@ -777,8 +765,8 @@ export function useAnalysisBoard(
     // A silent claim (loadMainLine or goToNode({ silent: true })) is
     // consumed here. It only suppresses THIS run when its named id matches
     // the actual landing id — a different node landing means the claim is
-    // stale (the retired Train free-play start() same-batch loadMainLine+
-    // playUciLine shape), so evaluation continues instead of bailing.
+    // stale (a same-batch loadMainLine + playUciLine), so evaluation continues
+    // instead of bailing.
     const silent = silentNavRef.current;
     if (silent !== null) {
       silentNavRef.current = null;

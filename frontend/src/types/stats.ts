@@ -30,7 +30,7 @@ export interface GlobalStatsResponse {
 export interface OpeningWDL {
   opening_eco: string;
   opening_name: string;
-  /** Canonical name with "vs. " prefix when the opening is defined by the off-color (PRE-01). */
+  /** Canonical name with "vs. " prefix when the opening is defined by the off-color. */
   display_name: string;
   label: string;
   pgn: string;
@@ -44,7 +44,7 @@ export interface OpeningWDL {
   draw_pct: number;
   loss_pct: number;
 
-  // Phase 80 MG-entry pillar (D-01, D-04, D-08).
+  // MG-entry pillar.
   // avg_eval_pawns is signed user-perspective (positive = user better).
   // eval_n counts games used in the mean (mate-excluded, outlier-trimmed).
   avg_eval_pawns?: number | null;
@@ -56,7 +56,7 @@ export interface OpeningWDL {
   // MAX(games.played_at) across the games visiting this opening's full_hash.
   // ISO 8601 string; null when contributing games all have NULL played_at.
   // Drives the OpeningStatsCard score-confidence popover's "Last played:
-  // <relative>" line (quick task 260508-r61).
+  // <relative>" line.
   last_played_at?: string | null;
 }
 

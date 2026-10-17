@@ -1,7 +1,7 @@
-"""Tests for the tactic zone registry (Phase 239 D-06/D-08/D-09/D-11).
+"""Tests for the tactic zone registry.
 
 Pure unit tests, no DB. Registry values are monkeypatched where a band is needed so the
-tests stay valid after plan 239-07 writes the real section-5 values.
+tests stay valid whatever the real section-5 values are.
 """
 
 from collections.abc import Mapping
@@ -64,7 +64,7 @@ _ACCEPTED_VIABLE: frozenset[tuple[TacticFamily, TacticSide]] = frozenset(
 )
 
 # Accepted bands (per 100 games), identical for rapid and classical.
-# Phase 239 D-15: +-IQR/2 of the accepted quartiles (in the comments), rounded up to 0.01.
+# +-IQR/2 of the accepted quartiles (in the comments), rounded up to 0.01.
 _ACCEPTED_HALF_WIDTHS: dict[tuple[TacticFamily, TacticSide], float] = {
     ("fork", "missed"): 2.17,  # (-2.21, +2.13)
     ("fork", "allowed"): 3.68,  # (-4.12, +3.23)
@@ -124,7 +124,7 @@ def test_unviable_entry_returns_none(
 def test_fast_tcs_read_the_rapid_band(
     monkeypatch: pytest.MonkeyPatch, tc: TimeControlBucket
 ) -> None:
-    """D-08 stopgap: bullet and blitz fall back to the rapid band, silently."""
+    """Stopgap: bullet and blitz fall back to the rapid band, silently."""
     _patch_fork_missed(monkeypatch, {"rapid": _RAPID, "classical": _CLASSICAL})
     assert tactic_delta_zone("fork", "missed", tc) == _RAPID
 

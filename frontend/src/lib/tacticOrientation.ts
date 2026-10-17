@@ -1,7 +1,7 @@
 import type { FlawMarker } from '@/types/library';
 
 /**
- * Tactic orientation to auto-open when the board is deep-linked to a ply (Quick 260702-fog).
+ * Tactic orientation to auto-open when the board is deep-linked to a ply.
  *
  * Mirrors the user-scoping in Analysis.tsx's flawMarkerByNodeId: only the user's own flaw at
  * `ply` counts, and opponent motifs are ignored. Missed takes precedence over allowed when a

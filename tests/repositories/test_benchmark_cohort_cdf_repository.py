@@ -1,7 +1,6 @@
 """Repository tests for benchmark_cohort_cdf_repository: load_cohort_cells.
 
-Phase 99.1 Plan 03 Task 2 -- TDD RED/GREEN tests for the batched prefetch
-loader (D-03/D-04).
+Tests for the batched prefetch loader.
 
 Tests:
 1. test_empty_anchors_returns_empty -- early-return guard for empty anchors

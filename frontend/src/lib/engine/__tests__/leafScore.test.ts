@@ -1,6 +1,5 @@
 /**
- * leafScore unit tests — the Root-Relative Frame Fixture (153-RESEARCH.md
- * "Root-Relative Frame Fixture", Pattern 3 / Pitfall 2).
+ * leafScore unit tests — the root-relative frame fixture.
  *
  * Proves `leafExpectedScore` treats `rootMover` as the driver of the sign
  * frame, NOT the leaf's own side to move: the SAME white-POV eval must

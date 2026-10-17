@@ -1,4 +1,4 @@
-"""Backfill script tests (FILL-01, FILL-02 relaxed). Phase 78 Wave 0.
+"""Backfill script tests.
 
 Tests cover:
 - dry-run: no writes, no engine calls
@@ -27,7 +27,7 @@ from app.repositories.endgame_repository import ENDGAME_PLY_THRESHOLD
 
 # Public API of the script — run_backfill is the callable exposed for testability.
 # CLI is parsed in main(); run_backfill takes explicit kwargs.
-# Phase 188/SEED-115 D-04: script archived to scripts/archive/ (completed backfill).
+# Script archived to scripts/archive/ (completed backfill).
 from scripts.archive.backfill_eval import run_backfill
 
 
@@ -285,7 +285,7 @@ class TestLichessPreservation:
             # The row had eval_cp set → skipped by WHERE eval_cp IS NULL AND eval_mate IS NULL
             assert mock_eval.call_count == 0
 
-            # Original value preserved byte-for-byte (FILL-04 invariant)
+            # Original value preserved byte-for-byte
             async with session_maker() as verify:
                 eval_cp, eval_mate = await _get_entry_eval(verify, game_id, _SPAN_START_PLY)
             assert eval_cp == -42

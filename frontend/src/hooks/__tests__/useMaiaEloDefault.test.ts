@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useMaiaEloDefault unit tests (151-06-PLAN.md Task 1).
+ * useMaiaEloDefault unit tests.
  *
  * Behaviors verified:
  * 1. Game mode, white user, white_rating=1720 -> resolved default 1720 (clamped to ladder bounds).
@@ -34,11 +34,11 @@ function gameData(overrides: Partial<MaiaEloGameData>): MaiaEloGameData {
 }
 
 /**
- * WR-04: `current_strength.rating` is the ONLY rating `MaiaEloProfile` exposes, so
+ * `current_strength.rating` is the ONLY rating `MaiaEloProfile` exposes, so
  * the free-play repoint is enforced by the TYPE rather than by an assertion — the
  * hook cannot see a raw platform rating even if `UserProfile` grows one again. (It
- * carried a `current_rating` field until SEED-147 deleted it, then a plain
- * `lichess_blitz_equivalent_rating` field until this same quick task replaced it
+ * carried a `current_rating` field until it was deleted, then a plain
+ * `lichess_blitz_equivalent_rating` field until it was replaced
  * with `current_strength`. If a raw rating field is reintroduced, widen this
  * factory rather than adding it to `MaiaEloProfile`.)
  */
@@ -238,7 +238,7 @@ describe('useMaiaEloDefault', () => {
     expect(result.current.defaultElo).toBe(1720);
   });
 
-  it('resetToDefault snaps back to the default and re-arms re-derivation (164 UAT)', () => {
+  it('resetToDefault snaps back to the default and re-arms re-derivation', () => {
     const { result, rerender } = renderHook(
       (props: { gd: MaiaEloGameData | undefined }) =>
         useMaiaEloDefault({
@@ -284,13 +284,13 @@ describe('useMaiaEloDefault', () => {
 });
 
 /**
- * Direct-call tests for the exported pure helpers (Phase 172, SEED-106 D-01).
+ * Direct-call tests for the exported pure helpers.
  * These are called directly (not through the hook) because the gem sweep
  * consumes them the same way: pinned to a fixed mover, structurally
  * independent of any slider/selectedElo state.
  */
-describe('deriveRawDefault / clampToLadderBounds (D-01 direct-call exports)', () => {
-  it('D-01: deriveRawDefault(white) returns white_rating_lichess_blitz, falling back to white_rating when null', () => {
+describe('deriveRawDefault / clampToLadderBounds (direct-call exports)', () => {
+  it('deriveRawDefault(white) returns white_rating_lichess_blitz, falling back to white_rating when null', () => {
     const withNormalized = gameData({
       user_color: 'white',
       white_rating: 1720,
@@ -308,7 +308,7 @@ describe('deriveRawDefault / clampToLadderBounds (D-01 direct-call exports)', ()
     expect(deriveRawDefault(true, withoutNormalized, undefined, 'white')).toBe(1720);
   });
 
-  it('D-01: the SAME gameData yields DIFFERENT rungs for white vs black — a gem is a property of the game, not of the view', () => {
+  it('the SAME gameData yields DIFFERENT rungs for white vs black — a gem is a property of the game, not of the view', () => {
     const shared = gameData({
       user_color: 'white',
       white_rating: 1720,
@@ -335,7 +335,7 @@ describe('deriveRawDefault / clampToLadderBounds (D-01 direct-call exports)', ()
     expect(clampToLadderBounds(max + 500)).toBe(max);
   });
 
-  it('D-01 regression: setSelectedElo does NOT perturb deriveRawDefault for a fixed mover — the pinned rung is structurally independent of the slider', () => {
+  it('regression: setSelectedElo does NOT perturb deriveRawDefault for a fixed mover — the pinned rung is structurally independent of the slider', () => {
     const gd = gameData({
       user_color: 'white',
       white_rating: 1720,

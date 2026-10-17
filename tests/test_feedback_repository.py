@@ -3,7 +3,7 @@
 Coverage:
 - TestFeedbackRepository: create_feedback returns row with populated PK,
   rating stored as 1-5 integer (including None case).
-- source round-trip and the ck_feedback_source CHECK backstop (SEED-191 #9).
+- source round-trip and the ck_feedback_source CHECK backstop.
 """
 
 import pytest

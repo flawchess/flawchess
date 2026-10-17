@@ -2,7 +2,7 @@
 const NS="http://www.w3.org/2000/svg";
 const $=s=>document.querySelector(s);
 // Resolve #tip at call time, never at module-evaluation time. Under the React
-// host (frontend/src/pages/ActivityPage.tsx) this script is evaluated before
+// host (frontend/src/pages/activity/ActivityPage.tsx) this script is evaluated before
 // the page markup is mounted, so an eager `const tip=$("#tip")` binds null for
 // the lifetime of the module and every hover throws on `tip.innerHTML`. The
 // standalone page loads this after the markup, which is why the eager form

@@ -1,5 +1,5 @@
 // Curated troll-opening positions, keyed by user-side-only FEN piece-placement.
-// Source: lichess.org/study/cEDAMVBB.pgn (hand-pruned to strict Bongcloud-tier per Phase 77 D-01).
+// Source: lichess.org/study/cEDAMVBB.pgn (hand-pruned to strict Bongcloud-tier).
 // Regenerate with: npx tsx frontend/scripts/curate-troll-openings.ts
 //   then hand-prune the candidate list before pasting into the Set literals below.
 //

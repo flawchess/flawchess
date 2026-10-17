@@ -32,8 +32,8 @@ interface ChessGameState {
   reset: () => void;
   /** Get the hash to send for analysis based on match side and user color */
   getHashForOpenings: (matchSide: MatchSide, color: Color) => string;
-  /** Current opening name from the lichess database, or null */
-  openingName: Opening | null;
+  /** Current opening (eco + name) from the lichess database, or null */
+  opening: Opening | null;
   /** Load a saved sequence of SAN moves onto a fresh board */
   loadMoves: (sans: string[]) => void;
   /**
@@ -141,7 +141,7 @@ export function useChessGame(): ChessGameState {
   const [currentPly, setCurrentPly] = useState<number>(initial.currentPly);
   const [hashes, setHashes] = useState<ZobristHashes>(initial.hashes);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(initial.lastMove);
-  const [openingName, setOpeningName] = useState<Opening | null>(null);
+  const [opening, setOpening] = useState<Opening | null>(null);
 
   // Pre-load openings database on mount
   useEffect(() => {
@@ -156,11 +156,11 @@ export function useChessGame(): ChessGameState {
     const chess = new Chess();
     let fromSq: string | null = null;
     let toSq: string | null = null;
-    // Phase 210 (SEED-042): this loop was fully unguarded, and chess.js 1.4
-    // move() throws on illegal SAN. The history comes from sessionStorage, so a
-    // stale or hand-edited payload (or a line that never belonged to the
-    // standard start) would throw straight through the caller. Stop at the last
-    // legal ply and report that ply, rather than claiming one we never reached.
+    // chess.js 1.4 move() throws on illegal SAN, so this loop is guarded. The
+    // history comes from sessionStorage, so a stale or hand-edited payload (or a
+    // line that never belonged to the standard start) would otherwise throw
+    // straight through the caller. Stop at the last legal ply and report that
+    // ply, rather than claiming one we never reached.
     let replayedPly = 0;
     for (let i = 0; i < ply; i++) {
       try {
@@ -182,7 +182,7 @@ export function useChessGame(): ChessGameState {
 
   const makeMove = useCallback(
     (sourceSquare: string, targetSquare: string): boolean => {
-      // Hard cap: do not allow advancing past the index boundary (SEED-033).
+      // Hard cap: do not allow advancing past the index boundary.
       // Silent rejection snaps the board piece back, same as an illegal move.
       if (currentPly >= MAX_EXPLORER_PLY) return false;
 
@@ -281,9 +281,7 @@ export function useChessGame(): ChessGameState {
   );
 
   // Arrow-key (left = back, right = forward) and mouse-wheel move browsing,
-  // shared with the analysis board. Replaces a weaker local keydown handler
-  // that guarded only INPUT/TEXTAREA/SELECT — no defaultPrevented, modifier,
-  // contentEditable or open-modal guard, and no held-key throttle.
+  // shared with the analysis board (useBoardNavigationInput).
   // Two refs, not one: Openings keeps its desktop and mobile layouts mounted
   // simultaneously and hides one with CSS (`hidden lg:flex` / `lg:hidden`), so
   // a single ref would be claimed by whichever board React attaches last (the
@@ -305,7 +303,7 @@ export function useChessGame(): ChessGameState {
   // Update opening name whenever the viewed ply changes
   useEffect(() => {
     const movesAtPly = moveHistory.slice(0, currentPly);
-    findOpening(movesAtPly).then(setOpeningName);
+    findOpening(movesAtPly).then(setOpening);
   }, [moveHistory, currentPly]);
 
   // Persist board state to sessionStorage so it survives route changes.
@@ -333,7 +331,7 @@ export function useChessGame(): ChessGameState {
     goBack,
     reset,
     getHashForOpenings,
-    openingName,
+    opening,
     loadMoves,
     desktopBoardRef,
     mobileBoardRef,

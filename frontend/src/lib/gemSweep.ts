@@ -1,20 +1,19 @@
 /**
- * gemSweep — pure, worker-free primitives for the background gem sweep
- * (Phase 172, SEED-106 D-04, D-05).
+ * gemSweep — pure, worker-free primitives for the background gem sweep.
  *
  * Two independent pieces live here, both deliberately free of React and
  * Worker imports:
  *
- * 1. `selectSweepCandidates` — the FREE prefilter (D-04). A gem requires C2
+ * 1. `selectSweepCandidates` — the FREE prefilter. A gem requires C2
  *    (played move is the graded best AND beats the runner-up by at least
  *    MISTAKE_DROP), and C2 implies the played move lost ~zero expected score.
  *    So most plies can be eliminated with data the analysis page already
  *    fetches and currently ignores: `EvalPoint.best_move` (the backend's
  *    engine best move FROM that position, UCI). Nothing here calls Maia or
  *    Stockfish — it is pure data filtering. Mirrors the backend's existing
- *    `_hint_flaw_plies` trick (`scripts/remote_eval_worker.py:226`).
+ *    `_hint_flaw_plies` trick in `scripts/remote_eval_worker.py`.
  *
- * 2. `nextSweepDispatch` — the D-05 yield-to-cursor scheduler decision. The
+ * 2. `nextSweepDispatch` — the yield-to-cursor scheduler decision. The
  *    sweep must never starve the live free-run / grading engines for the
  *    position the user is actually looking at. This function is the ONLY
  *    place that decides whether background sweep work may start, and it is
@@ -39,19 +38,18 @@ export interface SweepCandidate {
 }
 
 /**
- * D-04 free prefilter: keep only plies where the played move equals the
+ * Free prefilter: keep only plies where the played move equals the
  * graded best move AND the ply is out of the opening book.
  *
  * `EvalPoint.best_move` is UCI; `moves[i]` is SAN — `sanToUci` converts the
  * played move against its PARENT fen before comparing. A naive string
  * compare (`playedSan === point.best_move`) is a silent no-op, since a SAN
- * string like "Nf3" never equals a UCI string like "g1f3" (RESEARCH Pitfall
- * 2) — this is the SAN/UCI trap, and it has a dedicated regression test.
+ * string like "Nf3" never equals a UCI string like "g1f3" — this is the SAN/UCI trap, and it has a dedicated regression test.
  *
  * Strict equality (not an es-loss band) is deliberate and fails safe: the
  * backend searched deeper than the live grading run, so on disagreement we
  * lose a rare gem rather than invent one. Missing a rare gem is the right
- * way to be wrong (D-04).
+ * way to be wrong.
  */
 export function selectSweepCandidates(
   moves: string[],
@@ -61,7 +59,7 @@ export function selectSweepCandidates(
 ): SweepCandidate[] {
   const candidates: SweepCandidate[] = [];
   for (let i = 0; i < moves.length; i++) {
-    // D-04/D-06/D-08: book plies never enter the cascade — a memorized
+    // Book plies never enter the cascade — a memorized
     // theory move has low Maia probability at low ratings, so C1 alone
     // cannot distinguish preparation from insight.
     if (i < openingPlyCount) continue;
@@ -75,7 +73,7 @@ export function selectSweepCandidates(
     if (parentFen === null) continue;
 
     const playedUci = sanToUci(parentFen, playedSan);
-    if (playedUci === null || playedUci !== point.best_move) continue; // strict, fails safe (D-04)
+    if (playedUci === null || playedUci !== point.best_move) continue; // strict, fails safe
 
     candidates.push({ plyIndex: i, parentFen, playedSan });
   }
@@ -83,7 +81,7 @@ export function selectSweepCandidates(
 }
 
 /**
- * CR-01 gem-marker precedence (Phase 172, SEED-106). The live per-node
+ * Gem-marker precedence. The live per-node
  * resolution (`gemByNode`) is AUTHORITATIVE whenever it has graded a node —
  * INCLUDING an explicit `null` "graded, not a gem" verdict — and the background
  * sweep (`gemByPly`) is a FALLBACK, consulted ONLY when the live path has no
@@ -108,7 +106,7 @@ export function resolveGemVerdict<K, T>(
   return null;
 }
 
-/** Inputs the D-05 scheduler decision reads to decide whether to dispatch. */
+/** Inputs the scheduler decision reads to decide whether to dispatch. */
 export interface SweepDispatchInput {
   /** All candidates that survived the free prefilter for this game, ascending ply order. */
   candidates: SweepCandidate[];
@@ -130,7 +128,7 @@ export type SweepDispatch =
   | { kind: 'dispatch'; candidate: SweepCandidate };
 
 /**
- * D-05 yield-to-cursor scheduler decision. Pure function — no state, no
+ * Yield-to-cursor scheduler decision. Pure function — no state, no
  * side effects — so the invariant that the live position always wins can be
  * proven with a plain unit test instead of mocking a Worker or a hook.
  *
@@ -144,7 +142,7 @@ export type SweepDispatch =
 export function nextSweepDispatch(input: SweepDispatchInput): SweepDispatch {
   const { candidates, resolvedPlyIndices, inFlight, liveBusy, tabHidden, enabled } = input;
 
-  // D-05: the live position always wins. Checked before anything else.
+  // The live position always wins. Checked before anything else.
   if (liveBusy) return { kind: 'idle' };
   if (tabHidden || !enabled) return { kind: 'idle' };
   if (inFlight !== null) return { kind: 'idle' }; // one candidate at a time

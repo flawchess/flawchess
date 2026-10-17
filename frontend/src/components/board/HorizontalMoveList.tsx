@@ -1,14 +1,14 @@
 /**
  * HorizontalMoveList — shared horizontal, wrapping SAN move list.
  *
- * The presentational shell behind both the Openings move list
- * (`board/MoveList.tsx`) and the TacticLineExplorer mobile move list. Renders a
- * fixed-height, horizontally-wrapping box of clickable move chips with
+ * The presentational shell behind the Openings move list
+ * (`board/MoveList.tsx`), the bot-game move list (`bots/MoveListPanel.tsx`) and
+ * the mobile VariationTree. Renders a fixed-height, horizontally-wrapping box of clickable move chips with
  * auto-scroll to the current move and click-to-jump.
  *
  * Per-move decoration (number label, punchline color, dimming, trailing severity
  * glyph) is supplied by the caller via the generic `HorizontalMoveItem` model so
- * the two call sites share layout without coupling their data shapes.
+ * the call sites share layout without coupling their data shapes.
  */
 
 import { useEffect, useRef } from 'react';
@@ -55,9 +55,9 @@ const SCROLL_TAIL_PADDING_PX = 4;
 
 /**
  * Box scrollTop that keeps `active` visible while revealing as much of the run
- * ending at `tail` as fits. SEED-197 UAT: with a plain `nearest` scroll on the
- * two-row mobile Train list, the current move parked on the bottom row and the
- * whole live preview after it sat below the fold.
+ * ending at `tail` as fits. A plain `nearest` scroll on the two-row mobile Train
+ * list would park the current move on the bottom row with the whole live
+ * preview after it below the fold.
  */
 function tailFollowScrollTop(box: HTMLElement, active: HTMLElement, tail: HTMLElement): number {
   const boxTop = box.getBoundingClientRect().top - box.scrollTop;
@@ -79,8 +79,7 @@ interface HorizontalMoveListProps {
    * Override the current-item highlight classes (default: `bg-primary
    * text-primary-foreground hover:bg-primary/90`). Used by callers whose
    * design system reserves a different accent for the active row (e.g. the
-   * bot-game move list's brand-brown live-position highlight, Phase 169
-   * UI-SPEC) without changing the shared default for existing callers.
+   * bot-game move list's brand-brown live-position highlight) without changing the shared default for existing callers.
    */
   activeItemClassName?: string;
 }

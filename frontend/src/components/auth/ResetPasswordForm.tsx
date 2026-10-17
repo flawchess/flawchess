@@ -61,7 +61,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     // is not the server's password-policy definition. The server's 400
     // `reason` is always surfaced below (see the catch branch), so a value
     // this check accepts and the server rejects never produces a silent
-    // no-op (RESET-06/encoding) — the two definitions may disagree without
+    // no-op — the two definitions may disagree without
     // hiding the disagreement from the user.
     if (password.length < MIN_PASSWORD_LENGTH) {
       return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
@@ -75,8 +75,8 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Client checks run first and short-circuit before any request
-    // (RESET-06/ordering). A subsequent server error replaces this error in
+    // Client checks run first and short-circuit before any request.
+    // A subsequent server error replaces this error in
     // the same single `error` slot rather than stacking beside it.
     const clientError = validate();
     if (clientError) {

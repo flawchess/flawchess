@@ -1,9 +1,9 @@
 """ORM for the benchmark_selected_users table (benchmark DB only).
 
-Phase 69 INGEST-02. Holds the per-cell username pool produced by the streaming
-dump scan in scripts/select_benchmark_users.py. Created via Base.metadata.create_all()
-against the benchmark engine -- NOT in the canonical Alembic chain (INFRA-02 isolates
-the canonical schema; benchmark-only tables stay out of dev/prod/test).
+Holds the per-cell username pool produced by the streaming dump scan in
+scripts/select_benchmark_users.py. Created via Base.metadata.create_all()
+against the benchmark engine -- NOT in the canonical Alembic chain
+(benchmark-only tables stay out of dev/prod/test).
 
 The (lichess_username, tc_bucket) compound unique constraint makes re-running
 selection idempotent and lets one user occupy multiple cells (one per TC where
@@ -29,7 +29,7 @@ from app.models.base import Base
 class BenchmarkSelectedUser(Base):
     """A Lichess username selected from a monthly dump for benchmark ingestion.
 
-    rating_bucket: 800/1200/1600/2000/2400 (REQUIREMENTS.md INGEST-02 400-wide grid).
+    rating_bucket: 800/1200/1600/2000/2400 (400-wide grid).
     tc_bucket: bullet/blitz/rapid/classical (canonical FlawChess TC buckets).
     median_elo: median Elo across this player's snapshot-month games.
     eval_game_count: number of snapshot-month games carrying [%eval] annotations.

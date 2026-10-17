@@ -1,8 +1,8 @@
-"""DB round-trip + constraint tests for the game_best_moves table (Phase 174-03).
+"""DB round-trip + constraint tests for the game_best_moves table.
 
 Proves the three must-have truths of the GameBestMove candidate table:
 1. A row inserts and reads back with maia_prob / best_cp / second_cp intact
-   (continuous storage only — no lossy conversion at write time, D-05).
+   (continuous storage only — no lossy conversion at write time).
 2. A duplicate (game_id, ply) insert is rejected by the composite primary key.
 3. Deleting the parent game cascades — the game_best_moves row is gone.
 

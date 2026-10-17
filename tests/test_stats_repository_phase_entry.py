@@ -7,7 +7,7 @@ Coverage:
 - MG-entry eval aggregation (sum, sumsq, n)
 - Color-flip sign convention at SQL level for MG entry
 - Mate-row exclusion from eval mean
-- Outlier trim |eval_cp| >= 2000 enforced in SQL (D-08)
+- Outlier trim |eval_cp| >= 2000 enforced in SQL
 - Partition invariant: eval_n + mate_n + null_eval_n + outlier_n == phase_entry_total
 - Filter consistency: eval_n_mg <= wdl.total
 - Empty hashes guard returns {}
@@ -255,7 +255,7 @@ class TestOpeningPhaseEntryMetrics:
 
     @pytest.mark.asyncio
     async def test_outlier_trim(self, db_session: AsyncSession) -> None:
-        """D-08: |eval_cp| >= 2000 trimmed from eval mean; counted as outlier_n not null_eval_n."""
+        """|eval_cp| >= 2000 trimmed from eval mean; counted as outlier_n not null_eval_n."""
         full_hash_mg = 10_008
         # MG: two normal + one outlier (2500 cp)
         for cp in [50, 100]:

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-// Mock the data module so this test is independent of Plan 02's curated set.
+// Mock the data module so this test is independent of the curated set.
 vi.mock('@/data/trollOpenings', () => ({
   WHITE_TROLL_KEYS: new Set([
     // Bongcloud-style fixture: position after 1.e4 e5 2.Ke2 (white-side-only key)

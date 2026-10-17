@@ -3,7 +3,7 @@ import { sniffPastedInput, MAX_PASTED_INPUT_LENGTH } from './pastedGame';
 
 const VALID_MOVETEXT = '1. e4 e5 2. Nf3 Nc6';
 // Well-formed SAN that is illegal in the position reached (Nh6 has no legal
-// knight on g8->h6 continuation at that point) — D-21's measured semantic-class
+// knight on g8->h6 continuation at that point) — the measured semantic-class
 // throw. chess.js retains ["e4","e5","Nf3","Nc6"] on the thrown instance; the
 // truncation landmine this whole module exists to avoid reading.
 const ILLEGAL_MOVE_PGN = '1. e4 e5 2. Nf3 Nc6 3. Nh6 d6';
@@ -26,7 +26,7 @@ describe('sniffPastedInput', () => {
   it('rejects a PGN whose Nth move is illegal, WITHOUT leaking the parsed prefix', () => {
     const result = sniffPastedInput(ILLEGAL_MOVE_PGN);
     expect(result.kind).toBe('error');
-    // The D-21 landmine assertion: no `sans` field survives onto the result.
+    // The landmine assertion: no `sans` field survives onto the result.
     expect('sans' in result).toBe(false);
   });
 
@@ -101,7 +101,7 @@ describe('sniffPastedInput', () => {
     expect(firstFen).toEqual(secondFen);
   });
 
-  // ── Task 2 (D-02, PASTE-02): ChessBase-style RAVs/NAGs/comments, header ──
+  // ── ChessBase-style RAVs/NAGs/comments, header ──
   // coercion, and non-ASCII round-tripping. chess.js's history() already
   // drops RAVs/NAGs/comments natively (it only follows the mainline
   // variation) — these assert that behavior rather than implement it.

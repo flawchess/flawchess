@@ -1,5 +1,5 @@
-"""Data-correctness test for the Phase 147-02 old-corpus ungated-tactic-tag suppression
-migration (SEED-074, D-03, D-04).
+"""Data-correctness test for the old-corpus ungated-tactic-tag suppression
+migration.
 
 Seeds four `game_flaws` rows covering every carve-out plus a per-orientation
 independence case, runs the migration's gated UPDATE, and asserts only the
@@ -8,8 +8,8 @@ cp-based candidate columns (per orientation) were suppressed:
   - Row 1 (both orientations candidate): NULL blobs on both orientations, joined
     `game_positions.eval_cp` non-NULL, motif set on both -> BOTH suppressed.
   - Row 2 (mate-adjacent): NULL blobs, joined `eval_cp IS NULL` (mate position),
-    motif set on both -> KEPT (both orientations, D-06/Pitfall-2 carve-out).
-  - Row 3 (D-06 sentinel): `pv_lines = '[]'::jsonb` on both orientations (NOT NULL),
+    motif set on both -> KEPT (both orientations, carve-out).
+  - Row 3 ([] sentinel): `pv_lines = '[]'::jsonb` on both orientations (NOT NULL),
     `eval_cp` non-NULL, motif set on both -> KEPT (both orientations).
   - Row 4 (per-orientation independence): `allowed_pv_lines` already populated
     (non-NULL real blob) -> allowed KEPT; `missed_pv_lines` NULL (candidate) ->
@@ -121,7 +121,7 @@ def _add_flaw(
     # DO NOT pass allowed_pv_lines=None / missed_pv_lines=None explicitly — SQLAlchemy
     # serializes Python None to JSONB null (a JSON value), not SQL NULL, so the WHERE
     # allowed_pv_lines IS NULL predicate would never match. Only pass the kwarg when
-    # a non-NULL value (populated blob or the D-06 [] sentinel) is needed; otherwise
+    # a non-NULL value (populated blob or the [] sentinel) is needed; otherwise
     # omit it so the column defaults to true SQL NULL.
     kwargs = {}
     if allowed_pv_lines is not None:
@@ -177,7 +177,7 @@ async def test_suppress_carve_outs_and_idempotency(db_session: AsyncSession) -> 
     _add_position(db_session, game_id=game_id, ply=6, eval_cp=None, eval_mate=5)
     _add_flaw(db_session, game_id=game_id, ply=7)
 
-    # Row 3: D-06 [] sentinel on both orientations (NOT NULL, never matches IS NULL) -> KEPT.
+    # Row 3: [] sentinel on both orientations (NOT NULL, never matches IS NULL) -> KEPT.
     _add_position(db_session, game_id=game_id, ply=8, eval_cp=50, eval_mate=None)
     _add_flaw(db_session, game_id=game_id, ply=9, allowed_pv_lines=[], missed_pv_lines=[])
 

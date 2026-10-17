@@ -1,10 +1,10 @@
-"""Tests for the claim and tally reads of app.repositories.train_medals_repository (Phase 231, plan 02).
+"""Tests for the claim and tally reads of app.repositories.train_medals_repository.
 
 Real-row checks on the rollback-scoped ``db_session`` fixture (no committed rows leak).
 Every test claims the week's marker (`claim_week`) before inserting standings, because
 `train_weekly_standings.week_start` is a foreign key to the marker table.
 
-Reservation (shared with Plan 06's tests/repositories/test_train_medals_finalization.py,
+Reservation (shared with tests/repositories/test_train_medals_finalization.py,
 which holds user ids 93700-93719 and weeks k 0-19 from the same base Monday): this module
 holds user ids 93720-93739 and weeks k 20-39, counted from Monday 2034-01-02. A k is
 never reused in this module.
@@ -101,7 +101,7 @@ async def _celebrated_at(
 async def test_fetch_unclaimed_orders_newest_week_first_and_flags_shared(
     db_session: AsyncSession,
 ) -> None:
-    """D-11 (k=20, 21): newest week first, Points before Accuracy, shared only for the same medal."""
+    """k=20, 21: newest week first, Points before Accuracy, shared only for the same medal."""
     await ensure_test_user(db_session, _USER_A)
     await ensure_test_user(db_session, _USER_B)
     older = await _seed_week(

@@ -1,7 +1,7 @@
-"""Opening eval cache repair audit tables (Phase 220, CACHEFIX-01).
+"""Opening eval cache repair audit tables.
 
-SEED-164 diagnosed `opening_position_eval` (the position-keyed dedup cache) as
-poisoned by the 2026-06-17 `DISTINCT ON` backfill and the first days of the
+`opening_position_eval` (the position-keyed dedup cache) was poisoned by the
+2026-06-17 `DISTINCT ON` backfill and the first days of the
 full-game drain: first-write-wins means a bad early value can never self-heal.
 These four tables are the audit trail for `scripts/opening_cache_repair.py`'s
 resumable, DB-state-driven repair pipeline (`seed -> calibrate -> screen ->
@@ -10,27 +10,19 @@ They are never dropped after the repair completes — they stay as the
 permanent record of what was screened, what was found bad, and what was
 changed.
 
-Assumption Delta (220-01-PLAN.md, OQ4 resolved): `OpeningCacheAudit.status` is
-`Text` + `CheckConstraint`, not `SmallInteger` + a Python `IntEnum`, deviating
-from CLAUDE.md's "high-cardinality tables use SMALLINT backed by an IntEnum"
-rule at 2.57M rows. Reason: the seed and CACHEFIX-01 both lock `TEXT CHECK`;
-the eight status values are operator-facing strings read directly out of
-`psql` during a multi-day prod run; the table is not query-hot (one indexed
-status lookup per pipeline stage, not a per-request read path); and the
-2-byte-per-row saving of SMALLINT is on the order of 5 MB total. Trading that
+`OpeningCacheAudit.status` is `Text` + `CheckConstraint`, not `SmallInteger` +
+a Python `IntEnum`, deviating from CLAUDE.md's "high-cardinality tables use
+SMALLINT backed by an IntEnum" rule at 2.57M rows. Reason: the eight status
+values are operator-facing strings read directly out of `psql` during a
+multi-day prod run; the table is not query-hot (one indexed status lookup per
+pipeline stage, not a per-request read path); and the 2-byte-per-row saving of SMALLINT is on the order of 5 MB total. Trading that
 for readability during a manual, days-long operator run is the right call.
 
-D-01 note: a post-hardening re-audit mode that would set `confirmed` /
-`n_sources` on `opening_position_eval` directly from this script is
-deliberately NOT built in this phase — hardening (hypothetical Release 2)
-ships after the repair, and its migration derives those columns from
-`OpeningCacheAudit.status` instead. If the cache is ever re-screened after
-hardening ships, a future phase adds that re-audit mode; it is only
-documented here, not implemented.
-
-D-02 note: no stage in this phase reads or writes `confirmed` / `n_sources` /
-`source_game_id` on `opening_position_eval` — those columns do not exist
-until a future two-source-confirmation phase.
+The pipeline stages above do not read or write `confirmed` / `n_sources` /
+`source_game_id` on `opening_position_eval`; the cache-provenance migration
+derived them once from `OpeningCacheAudit.status`. The separate operator-run
+`demote` command in `scripts/opening_cache_repair.py` un-confirms rows by
+engine version.
 """
 
 from __future__ import annotations
@@ -129,7 +121,7 @@ class OpeningCacheAudit(Base):
     # was last evaluated by the pipeline — e.g. "Stockfish 18".
     engine_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # D-06 carrier-retry counter: lives in the table (not in memory) so the
+    # Carrier-retry counter: lives in the table (not in memory) so the
     # retry budget survives a kill/resume. Reaches MAX_CARRIERS_PER_HASH before
     # the row is marked hash_mismatch.
     hash_mismatch_attempts: Mapped[int] = mapped_column(
@@ -165,7 +157,7 @@ class OpeningCacheRepairRow(Base):
     new_cp: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     new_mate: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
-    # Pitfall 5: pv is written only at flaw-adjacent plies, so its replacement
+    # `pv` is written only at flaw-adjacent plies, so its replacement
     # counter must be tracked separately from best_move's — a zero pv_replaced
     # count is normal, not a bug, and the report must be able to tell the two
     # counters apart.
@@ -242,7 +234,7 @@ class OpeningCacheRepairProgress(Base):
     """Singleton row (id=1) — the pipeline's stage-gate and resume state.
 
     Every stage's start/finish timestamp lives here so a stage can refuse to
-    run before its predecessor finished (`_stage_gate`, CACHEFIX-02) and so a
+    run before its predecessor finished (`_stage_gate`) and so a
     killed run can resume: `last_game_id_walked` is the `screen` cursor,
     `screen_floor`/`confirm_floor` are the measured noise floors `calibrate`
     writes and `screen`/`confirm` require to be non-NULL before starting.

@@ -1,17 +1,16 @@
 /**
  * engineAssetProgress — a module-level singleton store (`useSyncExternalStore`-
  * shaped, mirrors `useFlawFilterStore.ts`'s pattern) tracking download progress
- * and readiness for every engine asset (Maia model, Stockfish WASM) across the
- * whole app. Outlives any single component (D-07): an in-flight fetch runs in
- * `maia-worker.js`, not in a component, so this store survives unmount and the
- * next mount of `EngineReadyGate` (or any other consumer) sees the CURRENT
- * state immediately rather than restarting from zero.
+ * and readiness for every engine asset (Maia model, Stockfish WASM, ONNX
+ * Runtime binary) across the whole app. Outlives any single component: an
+ * in-flight fetch runs in `maia-worker.js`, not in a component, so this store
+ * survives unmount and the next mount of `EngineReadyGate` (or any other
+ * consumer) sees the CURRENT state immediately rather than restarting from
+ * zero.
  *
- * This phase (213-01) only drives the `'maia-model'` id end to end. Phase
- * 213-03 adds `'stockfish-wasm'` reporting; both ids share this one registry
- * from the start (see 213-01-PLAN.md's "Assumption-delta decision") so the
- * blend-0 case is one variant of the general N-asset shape rather than a
- * special path a second asset has to be bolted onto later.
+ * All three ids (`'maia-model'`, `'stockfish-wasm'`, `'ort-runtime'`) share
+ * this one registry, so each is one member of the general N-asset shape rather
+ * than a special path.
  */
 
 import * as Sentry from '@sentry/react';
@@ -24,18 +23,15 @@ import type { MaiaFailureKind } from '@/lib/maiaWorkerErrors';
 export type EngineAssetId = 'maia-model' | 'stockfish-wasm' | 'ort-runtime';
 
 /**
- * The full status union ships now even though Plan 04 owns the
- * `unsupported`/`failed` transitions and their UI copy — the type must not
- * change under later plans.
+ * The full status union: `unsupported`/`failed` are set by the mutators below
+ * and carry their own UI copy in `EngineReadyGate`.
  */
 export type EngineAssetStatus = 'idle' | 'unsupported' | 'downloading' | 'ready' | 'failed';
 
 /**
- * Why the store reports `'unsupported'`: `'no-wasm-simd'` is the D-13 probe
- * (the device can never run the model). Kept as a union so the Sentry
- * `unsupported_reason` tag and the gate copy stay reason-keyed: SEED-158
- * carried a second member (`'ios-webkit'`, the 2026-09-06 blanket iOS gate)
- * for one day, withdrawn once iOS ran Maia on the CPU wasm backend.
+ * Why the store reports `'unsupported'`: `'no-wasm-simd'` is the WASM-SIMD
+ * probe (the device can never run the model). Kept as a union so the Sentry
+ * `unsupported_reason` tag and the gate copy stay reason-keyed.
  */
 export type EngineUnsupportedReason = 'no-wasm-simd';
 
@@ -50,7 +46,7 @@ export interface EngineAssetsSnapshot {
   /** `noUncheckedIndexedAccess` is on — narrow every read before use. */
   assets: Partial<Record<EngineAssetId, EngineAssetEntry>>;
   /**
-   * Quick 260829-tku: which Maia worker failure bucket caused the current
+   * Which Maia worker failure bucket caused the current
    * `'failed'` status, or `null` when there is no failure (or an unclassified
    * one). This store is engine-generic (it also tracks Stockfish and the ORT
    * runtime), while `MaiaFailureKind` is Maia-specific — the Stockfish pool
@@ -66,7 +62,7 @@ export interface EngineAssetsSnapshot {
 
 /**
  * Raw byte sizes verified live 2026-08-28. Defense-in-depth fallback for a
- * missing/garbage `Content-Length` (213-RESEARCH.md Pitfall 3) — used as the
+ * missing/garbage `Content-Length` — used as the
  * percent denominator before an asset has reported anything, and as the
  * worker-side coercion target when the header itself is untrustworthy.
  */
@@ -74,14 +70,14 @@ export const MAIA_MODEL_BYTES_FALLBACK = 45_683_686;
 export const STOCKFISH_WASM_BYTES_FALLBACK = 7_295_411;
 
 /**
- * Phase 213-09 (G-213-35), re-verified live 2026-09-05 at onnxruntime-web
+ * Re-verified live 2026-09-05 at onnxruntime-web
  * 1.29.0: the onnxruntime-web runtime binary fallback. TWO real sizes exist
  * (13,961,845 wasm-only, 25,749,873 WebGPU/asyncify — `ortRuntimeSource.ts`'s
  * own named constants), and the backend decision isn't known yet at the
  * moment `markEngineAssetPending('ort-runtime')` fires (the adapter probe is
  * itself async, and this placeholder is registered synchronously before it
  * resolves). Deliberately the SMALLER wasm-only figure: most devices lack the
- * WebGPU `shader-f16` feature Task 1's probe requires, so the smaller
+ * WebGPU `shader-f16` feature the adapter probe requires, so the smaller
  * estimate is the representative default, and it self-corrects to the real
  * (`Content-Length`-derived) total the moment the first byte of THIS asset
  * arrives — before that, the placeholder shows 0% regardless of which figure
@@ -98,9 +94,8 @@ export const ENGINE_ASSET_FALLBACK_BYTES: Record<EngineAssetId, number> = {
 };
 
 /**
- * G-213-19b: the required-asset set is now the SAME frozen triple for every
- * session, with no persona/blend input of any kind (Phase 213-09 adds
- * 'ort-runtime' as the third member — G-213-35). Declared once at module
+ * The required-asset set is the SAME frozen triple for every session, with no
+ * persona/blend input of any kind. Declared once at module
  * scope (never a fresh array literal inside `requiredEngineAssets`) so every
  * caller gets the SAME array reference on every call — this referential
  * stability is what lets `EngineReadyGate` drop its `useMemo` wrapper without
@@ -113,7 +108,7 @@ export const ALL_ENGINE_ASSETS: readonly EngineAssetId[] = [
   'ort-runtime',
 ];
 
-/** D-10's asset names shown to the user. */
+/** The asset names shown to the user. */
 export const ENGINE_ASSET_LABEL: Record<EngineAssetId, string> = {
   'maia-model': 'Maia model',
   'stockfish-wasm': 'Stockfish engine',
@@ -126,7 +121,7 @@ export const ENGINE_ASSET_SEEN_KEY_PREFIX = 'flawchess.engineAsset.seen.';
 const SEEN_FLAG_VALUE = '1';
 
 /**
- * Phase 213-10 (G-213-35 third part): the rounded-percent scale/bounds used
+ * The rounded-percent scale/bounds used
  * to decide whether a progress tick is worth a listener notification. Kept
  * as named constants rather than bare `100`/`0` literals (CLAUDE.md).
  */
@@ -138,9 +133,9 @@ const MAX_ROUNDED_PERCENT = 100;
 
 let currentStatus: EngineAssetStatus = 'idle';
 let currentAssets: Partial<Record<EngineAssetId, EngineAssetEntry>> = {};
-/** Quick 260829-tku: the classified kind behind the current `'failed'` status. */
+/** The classified kind behind the current `'failed'` status. */
 let currentFailureKind: MaiaFailureKind | null = null;
-/** Hotfix 2026-09-06 (SEED-158): the gate behind the current `'unsupported'` status. */
+/** The gate behind the current `'unsupported'` status. */
 let currentUnsupportedReason: EngineUnsupportedReason | null = null;
 /**
  * Cached snapshot object — referentially stable between mutations so
@@ -156,7 +151,7 @@ let cachedSnapshot: EngineAssetsSnapshot = {
 const listeners = new Set<() => void>();
 
 /**
- * Phase 213-10 (G-213-35 third part): the last rounded per-asset percent a
+ * The last rounded per-asset percent a
  * listener was actually notified at, keyed by asset id. Used ONLY to decide
  * whether a `reportEngineAssetProgress` call is worth a notification — it
  * never gates the snapshot refresh itself (see `refreshSnapshot` vs
@@ -195,7 +190,7 @@ function notifyListeners(): void {
  * Refresh + notify, unconditionally. Used by every mutator EXCEPT
  * `reportEngineAssetProgress`, which gates the notify half on whether the
  * rounded per-asset percent (or status) actually changed — see that
- * function's own doc comment for why (G-213-35 third part).
+ * function's own doc comment for why.
  */
 function commit(): void {
   refreshSnapshot();
@@ -205,7 +200,7 @@ function commit(): void {
 // ─── Mutators ───────────────────────────────────────────────────────────────
 
 /**
- * Bug fix (CR-02, 213-REVIEW.md): registers `id` as in-flight — an entry
+ * Registers `id` as in-flight — an entry
  * with `loaded: 0, done: false` — the MOMENT its spawn/fetch actually begins,
  * without waiting for the asset's first real `progress` message.
  *
@@ -227,11 +222,10 @@ function commit(): void {
  *
  * Deliberately does nothing beyond registering the placeholder — no-ops if
  * `id` already has an entry, so a later call can never reset real progress
- * (or an already-`done` asset) back to zero. G-213-19b: both providers are
- * now warmed unconditionally for every persona, so both ids are ALWAYS
- * registered before either can finish — the CR-02 concurrent-spawn race this
- * function closes is therefore the ONLY case `allDone` has to handle, not an
- * uncommon one layered on top of a per-persona subset.
+ * (or an already-`done` asset) back to zero. Every provider is warmed
+ * unconditionally for every persona, so all ids are ALWAYS registered before
+ * any can finish — the concurrent-spawn race this function closes is
+ * therefore the ONLY case `allDone` has to handle.
  */
 export function markEngineAssetPending(id: EngineAssetId): void {
   if (currentAssets[id]) return;
@@ -244,20 +238,20 @@ export function markEngineAssetPending(id: EngineAssetId): void {
 
 /**
  * Records progress for `id`. Defensively coerces a non-finite, zero, or
- * negative `total` to the fallback byte count (T-213-01 — a malformed
+ * negative `total` to the fallback byte count (a malformed
  * `Content-Length` must never produce a `NaN`/`Infinity` percent), clamps
  * `loaded` into `[0, safeTotal]`, and keeps `loaded` MONOTONIC per id
  * (`Math.max` against the stored value) so two sources reporting the same
  * asset cannot make the bar go backwards. Sets `status` to `'downloading'`
  * unless it is already `'ready'`.
  *
- * Bug fix (G-213-35 third part, 213-10-PLAN.md): `fetchModelBuffer()` calls
+ * Notifications are gated because `fetchModelBuffer()` calls
  * this once per stream chunk with no threshold — a ~45.7 MB model at typical
- * chunk sizes notified every listener over a thousand times, and
+ * chunk sizes would notify every listener over a thousand times, and
  * `Analysis.tsx`'s page-wide subscription re-rendered the whole 3,600-line
  * board on every one of them. With every byte already transferred, the main
- * thread fell minutes behind a message queue it could not drain, so the
- * gate's own bar sat stuck at a stale percent long after the network tab
+ * thread would fall minutes behind a message queue it could not drain, so the
+ * gate's own bar would sit stuck at a stale percent long after the network tab
  * showed 100%. The STATE update (`currentAssets`/`cachedSnapshot` via
  * `refreshSnapshot()`) stays fully synchronous and unconditional on every
  * call — only the listener NOTIFICATION is gated, on whether the rounded
@@ -283,13 +277,12 @@ export function reportEngineAssetProgress(id: EngineAssetId, loaded: number, tot
     [id]: { loaded: monotonicLoaded, total: safeTotal, done: existing?.done ?? false },
   };
   const previousStatus = currentStatus;
-  // Hotfix 2026-09-06 (SEED-158 follow-up): `'unsupported'` is terminal and
-  // must survive another asset's traffic. On an iOS device the Maia gate
-  // fires first and never registers `maia-model`/`ort-runtime`; Stockfish
-  // (unaffected, `workerPool.ts`) then reports progress here, which used to
-  // flip the status to `'downloading'` — un-suppressing the analysis-page
-  // gate, which then sat at 11% (the Stockfish share) forever because Maia's
-  // assets can never complete. Real prod repro: Chrome on iPhone, /analysis.
+  // `'unsupported'` is terminal and must survive another asset's traffic. On
+  // a gated device the Maia gate fires first and never registers
+  // `maia-model`/`ort-runtime`; Stockfish (unaffected, `workerPool.ts`) then
+  // reports progress here, which would flip the status to `'downloading'` —
+  // un-suppressing the analysis-page gate, which would then sit at 11% (the
+  // Stockfish share) forever because Maia's assets can never complete.
   if (currentStatus !== 'ready' && currentStatus !== 'unsupported') {
     currentStatus = 'downloading';
   }
@@ -324,14 +317,14 @@ export function markEngineAssetReady(id: EngineAssetId): void {
     // visit for this asset", never a crash (mirrors botGameSnapshot.ts).
   }
 
-  // CR-02: this is only correct because every spawn call site now registers
+  // This is only correct because every spawn call site registers
   // its id via `markEngineAssetPending()` BEFORE any real progress/ready
   // message can arrive (see that function's doc comment) — so a
   // still-downloading required asset is guaranteed to already have a
   // `done: false` entry here, rather than being silently absent from
   // `Object.values(currentAssets)` and treated as done by omission.
   const allDone = Object.values(currentAssets).every((entry) => entry?.done);
-  // Hotfix 2026-09-06 (SEED-158 follow-up): same terminal guard as
+  // Same terminal guard as
   // `reportEngineAssetProgress` — on a gated device only Stockfish is ever
   // registered, so `allDone` is trivially true the moment it finishes, and
   // `'ready'` would claim an engine set that can never be ready.
@@ -342,9 +335,9 @@ export function markEngineAssetReady(id: EngineAssetId): void {
 }
 
 /**
- * D-13: the device cannot run any engine asset at all (WASM-SIMD probe
- * failed). Plan 04 owns this state's UI; Task 1 calls it from the
- * `wasmSimd.ts` choke point in `maiaWorkerHost.ts`.
+ * The device cannot run any engine asset at all (WASM-SIMD probe
+ * failed). Called from the `wasmSimd.ts` choke point in
+ * `maiaWorkerHost.ts`; `EngineReadyGate` owns this state's UI.
  */
 export function markEngineAssetsUnsupported(reason: EngineUnsupportedReason): void {
   currentStatus = 'unsupported';
@@ -356,7 +349,7 @@ export function markEngineAssetsUnsupported(reason: EngineUnsupportedReason): vo
 /**
  * Sentry — fixed, variable-free message (grouping rule); device details and
  * the page travel via `contexts`/`tags`, never interpolated into the message.
- * Moved here from `EngineReadyGate` (D-17) on 2026-09-07 (SEED-158).
+ * Captured here rather than in `EngineReadyGate`.
  */
 const SENTRY_MESSAGE_UNSUPPORTED = 'Engine cold start: device cannot run the Maia model';
 /** Named so the `source` tag value is not a bare literal at the call site. */
@@ -365,16 +358,15 @@ const SENTRY_SOURCE_ENGINE_ASSET_STORE = 'engine-asset-store';
 let unsupportedCaptured = false;
 
 /**
- * Bug fix (SEED-158, 2026-09-07): the ONLY `unsupported` capture used to live
- * in `EngineReadyGate`'s D-17 effect, so it fired only while that modal was
- * mounted. On /analysis the modal is suppressed for `unsupported` (it would
- * lock the board out), and on BOTH surfaces `engineGateRequired()` skips the
- * modal entirely once the assets were seen once (a returning device with the
- * model already cached). Result: every iPhone that hit the iOS gate on
- * /analysis, and every returning iPhone on /bots, produced an empty Maia
- * card and an empty FlawChess card with ZERO Sentry events, so the size of
- * the gated population was invisible. The store is the one choke point every
- * gate reason passes through (`maiaWorkerHost.ts`), so the capture lives here.
+ * Don't move this capture into `EngineReadyGate`'s effect: it would fire only
+ * while that modal is mounted. On /analysis the modal is suppressed for
+ * `unsupported` (it would lock the board out), and on BOTH surfaces
+ * `engineGateRequired()` skips the modal entirely once the assets were seen
+ * once (a returning device with the model already cached). A gated device
+ * would then produce an empty Maia card and an empty FlawChess card with ZERO
+ * Sentry events, so the size of the gated population would be invisible. The
+ * store is the one choke point every gate reason passes through
+ * (`maiaWorkerHost.ts`), so the capture lives here.
  */
 function captureUnsupportedOnce(reason: EngineUnsupportedReason): void {
   if (unsupportedCaptured) return;
@@ -402,11 +394,11 @@ function readPathname(): string {
 }
 
 /**
- * A specific asset's download/init failed. Plan 04 owns this state's UI.
+ * A specific asset's download/init failed; `EngineReadyGate` owns this state's UI.
  *
- * Quick 260829-tku: `failureKind` is OPTIONAL so the Stockfish pool and
- * `useStockfishEngine` call sites (which have no Maia-specific classification
- * to offer) keep compiling and keep today's behavior unchanged. When passed,
+ * `failureKind` is OPTIONAL because the Stockfish pool and
+ * `useStockfishEngine` call sites have no Maia-specific classification
+ * to offer. When passed,
  * it records which `MaiaFailureKind` bucket caused the failure so
  * `EngineReadyGate` can pick a matching terminal variant.
  *
@@ -427,9 +419,9 @@ export function markEngineAssetFailed(id: EngineAssetId, failureKind?: MaiaFailu
       done: false,
     },
   };
-  // Hotfix 2026-09-06 (SEED-158 follow-up): the same guard
+  // The same guard
   // `maiaWorkerHost.ts`'s `failAllLeasesAndDropWorker` applies at its call
-  // site, now enforced centrally so a Stockfish-side failure on a gated device
+  // site, enforced centrally so a Stockfish-side failure on a gated device
   // can never downgrade the more specific `'unsupported'` to `'failed'` (which
   // would offer a Retry that cannot help).
   if (currentStatus !== 'unsupported') {
@@ -440,11 +432,11 @@ export function markEngineAssetFailed(id: EngineAssetId, failureKind?: MaiaFailu
 }
 
 /**
- * Bug fix (WR-02, 213-REVIEW.md): resets `id` back to a fresh in-flight
+ * Resets `id` back to a fresh in-flight
  * download (`loaded: 0, done: false`, `total` preserved) WITHOUT touching
  * `status` or any other asset's entry. Distinct from both
  * `markEngineAssetFailed()` (a user-facing terminal failure) and
- * `markEngineAssetsRetrying()` (D-15's manual Retry, which resets EVERY
+ * `markEngineAssetsRetrying()` (the manual Retry, which resets EVERY
  * not-done asset and flips `status` back to `'idle'`): this is the silent
  * mid-session self-heal path — `maiaWorkerHost.ts`'s `respawnPinnedToWasm`
  * (FLAWCHESS-9D), which re-fetches an asset the store may have already
@@ -462,7 +454,7 @@ export function resetEngineAssetForRefetch(id: EngineAssetId): void {
     ...currentAssets,
     [id]: { loaded: 0, total: existing?.total ?? ENGINE_ASSET_FALLBACK_BYTES[id], done: false },
   };
-  // G-213-35 third part: clear the remembered notified percent for this id so
+  // Clear the remembered notified percent for this id so
   // the new pass's first progress report is never swallowed as "unchanged"
   // just because it happens to round to the same percent the OLD pass was
   // last notified at.
@@ -471,12 +463,12 @@ export function resetEngineAssetForRefetch(id: EngineAssetId): void {
 }
 
 /**
- * D-15: called by `EngineReadyGate`'s manual Retry button BEFORE
+ * Called by `EngineReadyGate`'s manual Retry button BEFORE
  * re-triggering `pool.warm()`/`queue.warm()`. Clears a `'failed'` status back
  * to `'idle'` so the gate re-renders in its downloading state on the next
  * progress/ready message.
  *
- * Bug fix (WR-01, 213-REVIEW.md): resets `loaded` back to `0` for every
+ * Resets `loaded` back to `0` for every
  * NOT-yet-`done` entry (an already-`done` asset — e.g. Maia already ready
  * while only Stockfish failed — is left completely untouched, `total`
  * included). A fresh worker respawned after Retry re-fetches its asset
@@ -493,7 +485,7 @@ export function resetEngineAssetForRefetch(id: EngineAssetId): void {
  */
 export function markEngineAssetsRetrying(): void {
   currentStatus = 'idle';
-  // Quick 260829-tku: clear the recorded failure kind so a retried-then-
+  // Clear the recorded failure kind so a retried-then-
   // differently-failed session never shows stale out-of-memory copy.
   currentFailureKind = null;
   currentAssets = Object.fromEntries(
@@ -520,12 +512,11 @@ export function getEngineAssetsSnapshot(): EngineAssetsSnapshot {
 // ─── Gate predicates ────────────────────────────────────────────────────────
 
 /**
- * G-213-19b (supersedes D-06): the required-asset set is unconditional — every
- * session downloads BOTH `maia-model` and `stockfish-wasm`, with no persona or
- * blend input of any kind. The accepted cost is the one D-06 refused: a
- * blend-0 rung now waits for the extra 7.3 MB of Stockfish it can never use
- * (45.7 -> 53.0 MB, ~16% longer). Returns the same `ALL_ENGINE_ASSETS`
- * reference on every call — referential stability, not a fresh array.
+ * The required-asset set is unconditional: every session downloads all of
+ * `ALL_ENGINE_ASSETS` (`maia-model`, `stockfish-wasm`, `ort-runtime`), with no
+ * persona or blend input. A blend-0 rung therefore also waits for Stockfish it
+ * never uses (accepted cost). Returns the same `ALL_ENGINE_ASSETS` reference on
+ * every call — referential stability, not a fresh array.
  */
 export function requiredEngineAssets(): readonly EngineAssetId[] {
   return ALL_ENGINE_ASSETS;
@@ -545,20 +536,21 @@ export function hasSeenEngineAsset(id: EngineAssetId): boolean {
 }
 
 /**
- * D-04's cache-miss gate predicate, evaluated synchronously at mount with NO
- * timer and no elapsed-wait threshold. G-213-19b (supersedes D-06): the
- * required set is `requiredEngineAssets()`'s unconditional pair for EVERY
- * session — returns `true` iff ANY of those two assets is both (a) not
- * `done` in the current snapshot and (b) not present in the localStorage
- * seen flags. A blend-0 rung on a clean cache is therefore gated until the
- * full 53.0 MB bundle has landed, not just Maia's 45.7 MB. A partially-cached
- * device (only one of the two assets seen) is still gated. Stockfish's
+ * The cache-miss gate predicate, evaluated synchronously at mount with NO
+ * timer and no elapsed-wait threshold. The required set is
+ * `requiredEngineAssets()`'s unconditional triple for EVERY session — returns
+ * `true` iff ANY of those assets is both (a) not `done` in the current
+ * snapshot and (b) not present in the localStorage seen flags. A blend-0 rung
+ * on a clean cache is therefore gated until every required asset has landed,
+ * not just Maia's model. A partially-cached device (only some of the assets
+ * seen) is still gated. Stockfish's
  * readiness source is `WorkerPool`'s first `readyok`
  * (`workerPool.ts::markPoolReady`), which marks `stockfish-wasm` ready in
  * this same store.
  *
  * Accepted false-negative: an evicted HTTP cache with the seen-flag still
- * present degrades to today's (pre-Phase-213) behavior — never worse.
+ * present degrades to no gate (the assets load in the background) — never
+ * worse than having no gate at all.
  */
 export function engineGateRequired(): boolean {
   const required = requiredEngineAssets();

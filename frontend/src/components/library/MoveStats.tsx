@@ -19,22 +19,19 @@ import { trackFeature } from '@/lib/analytics';
 import type { GameFlawCard, FlawSeverity } from '@/types/library';
 
 /**
- * MoveStats — shared, presentational two-sided move-classification component
- * (Phase 179 Plan 02, SEED-112). Replaces the two near-identical badge-row
- * implementations in `LibraryGameCard.tsx` and `AnalysisTagsPanel.tsx`
- * (Plan 03 wires this component into both call sites).
+ * MoveStats — shared, presentational two-sided move-classification component,
+ * used by LibraryGameCard and AnalysisTagsPanel.
  *
  * Renders (a) a single-line accuracy strip — "Accuracy" label, player
  * accuracy, opponent accuracy — where each cell's background is the LITERAL board
  * color (white bg = white, dark bg = black) — and (b) a fixed 7-row category table (Gem, Great,
  * Best, Good, Inaccuracy, Mistake, Blunder), each row a per-side count cell.
- * ALL 7 rows always render, even when every count is 0 (D-03) — do NOT port
- * the old `bestMoveBadges` count>0 filter here.
+ * ALL 7 rows always render, even when every count is 0.
  *
  * Counts derive purely from `game.flaw_markers` / `game.eval_series` via
- * `severityCountsBySide` / `tierCountsBySide` (D-05) — `game.severity_counts`
+ * `severityCountsBySide` / `tierCountsBySide` — `game.severity_counts`
  * is never read. Opponent-side positive tiers are included deliberately
- * (D-08) — this is the one surface that reverses the usual `isUserPly`
+ * — this is the one surface that reverses the usual `isUserPly`
  * user-scoping.
  */
 
@@ -143,13 +140,12 @@ function MoveStatsInfo({ gameId }: { gameId?: number }) {
 export interface MoveStatsProps {
   game: GameFlawCard;
   /**
-   * Optional game id (Plan 03) — when provided, every `data-testid` is
+   * Optional game id — when provided, every `data-testid` is
    * suffixed `-${gameId}` so multiple `MoveStats` instances rendered
    * simultaneously on the same page (e.g. the Library games list, one card
    * per game) expose distinct, individually-targetable testids for browser
    * automation (CLAUDE.md testid-uniqueness rule). Omitted entirely when not
-   * provided — preserves the exact plain testids Plan 02's own test suite
-   * asserts against.
+   * provided — keeps the plain testids the component's own tests assert against.
    */
   gameId?: number;
   /** Fires when a non-zero cell is clicked/activated (keyboard Enter/Space). */
@@ -158,7 +154,7 @@ export interface MoveStatsProps {
   onCellHover?: (ref: MoveStatsCellRef | null) => void;
   /** The cell currently selected for cycling (drives the active-cell style). */
   activeRef?: MoveStatsCellRef | null;
-  /** The cell the global flaw filter is emphasizing (D-10, library-only). */
+  /** The cell the global flaw filter is emphasizing (library-only). */
   outlinedRef?: MoveStatsCellRef | null;
   /**
    * Mobile collapsed rendering. The full 7-row two-sided table is hidden
@@ -168,7 +164,7 @@ export interface MoveStatsProps {
    */
   collapsed?: boolean;
   /**
-   * Mobile only (UAT 179): render the single-line, 8-column compact summary
+   * Mobile only: render the single-line, 8-column compact summary
    * row — one `count + icon` cell per category (user-side counts) plus a
    * trailing chevron toggle — in place of the full two-sided table. Tapping a
    * cell cycles the eval chart through that category's moves (via
@@ -203,8 +199,8 @@ export function MoveStats({
   const tierCounts = tierCountsBySide(game.eval_series ?? []);
 
   // The user's own board color, scoping the mobile compact row's counts and
-  // cycling to the user's moves (matches the former collapsed I/M/B badges).
-  // Column order is player-first (SEED-112 pt.2) via playerSide/opponentSide,
+  // cycling to the user's moves.
+  // Column order is player-first via playerSide/opponentSide,
   // but side identity stays color-absolute — do not conflate the two.
   const userSide: MoveStatSide = game.user_color === 'black' ? 'black' : 'white';
 
@@ -323,10 +319,9 @@ export function MoveStats({
       >
         {accuracyStrip}
 
-        {/* Mobile compact summary row (UAT 179): 8 columns spanning the card width
+        {/* Mobile compact summary row: 8 columns spanning the card width
             — one `count + icon` cell per category (user-side counts) plus a
-            trailing chevron toggle. Replaces the old severity-badge row + "Show
-            more" button. */}
+            trailing chevron toggle. */}
         {showCompactRow && (
           <div
             className="grid grid-cols-8 items-center gap-1 p-2"
@@ -379,7 +374,7 @@ export function MoveStats({
               aria-label={collapsed ? 'Expand move stats' : 'Collapse move stats'}
               className="flex items-center justify-center text-muted-foreground hover:text-foreground"
               onClick={() => {
-                // Discovery only: track the expand, never the collapse (D-13).
+                // Discovery only: track the expand, never the collapse.
                 if (collapsed) trackFeature('panel-open', { target: 'move-stats-expand' });
                 onToggleCollapse?.();
               }}
@@ -389,7 +384,7 @@ export function MoveStats({
           </div>
         )}
 
-      {/* Full two-sided category table (UAT 179). Hidden via the native
+      {/* Full two-sided category table. Hidden via the native
           attribute (not unmounted) so the mobile toggle preserves hover/active
           state; the card and its accuracy header stay visible. Shares the strip's
           grid template so each side's count column sits centered under its
@@ -402,7 +397,7 @@ export function MoveStats({
           data-testid={tid('move-stats-table', gameId)}
         >
           {CATEGORY_ORDER.map((category) => {
-            // Rows where neither side has a count are kept (D-03) but dimmed,
+            // Rows where neither side has a count are kept but dimmed,
             // so the table reads as only the rows that actually occurred.
             const bothZero =
               countFor(category, 'white') === 0 && countFor(category, 'black') === 0;

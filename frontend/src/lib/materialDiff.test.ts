@@ -1,5 +1,5 @@
 /**
- * materialDiff.test.ts (Quick 260809-jzz, D-01/D-06) — RED-first coverage for
+ * materialDiff.test.ts: coverage for
  * computeMaterialDiff: per-piece-type net material surplus + point totals,
  * lichess-style (only the leading side carries a numeric total).
  */
@@ -45,7 +45,7 @@ describe('computeMaterialDiff', () => {
     expect(diff.black.points).toBe(0);
   });
 
-  it('gives only the leading side a point total on a mixed imbalance (D-06)', () => {
+  it('gives only the leading side a point total on a mixed imbalance', () => {
     const diff = computeMaterialDiff(MIXED_IMBALANCE_FEN);
     expect(diff.white.surplus).toEqual([{ type: 'r', count: 1 }]);
     expect(diff.white.points).toBe(3);

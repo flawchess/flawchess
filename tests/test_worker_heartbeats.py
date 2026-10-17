@@ -1,11 +1,11 @@
-"""Tests for the worker_heartbeats upsert-on-submit registry (Phase 149 PRUNE-06/04).
+"""Tests for the worker_heartbeats upsert-on-submit registry.
 
 Covers:
 - test_worker_heartbeat_accumulates_across_all_three_submit_lanes: sequential
   entry-submit -> atomic-submit -> flaw-blob-submit from the same worker_id
   accumulates submit_count/evals_submitted; the atomic lane's
   worker_schema_version survives the later flaw-blob-submit (which never sends
-  it) via the repository's coalesce guard (D-03).
+  it) via the repository's coalesce guard.
 - test_worker_heartbeat_null_client_last_ip: request.client is None (no client
   info on the ASGI scope) -> last_ip is stored as NULL, upsert still succeeds.
 
@@ -61,7 +61,7 @@ _DEFAULT_CLIENT_ADDR: tuple[str, int] = ("127.0.0.1", 123)
 
 def _make_client(client: tuple[str, int] | None = _DEFAULT_CLIENT_ADDR) -> httpx.AsyncClient:
     """ASGI test client. Pass client=None to simulate request.client is None
-    (verifies last_ip is stored as NULL rather than crashing — D-06 nullability).
+    (verifies last_ip is stored as NULL rather than crashing).
     """
     transport = httpx.ASGITransport(app=app, client=client)  # ty: ignore[invalid-argument-type]  # httpx types client as non-optional but accepts None at runtime (Starlette Request.client returns None)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
@@ -135,7 +135,7 @@ async def test_worker_heartbeat_accumulates_across_all_three_submit_lanes(
     """Sequential entry-submit -> atomic-submit -> flaw-blob-submit from the same
     worker_id accumulates submit_count/evals_submitted, and worker_schema_version
     (set by atomic-submit) is never clobbered back to NULL by a later lane that
-    doesn't send it (D-03 coalesce guard).
+    doesn't send it (coalesce guard).
     """
     import app.routers.eval_remote as eval_remote_module
 
@@ -292,7 +292,7 @@ async def test_worker_heartbeat_accumulates_across_all_three_submit_lanes(
             "flaw-blob-submit must NOT clobber the atomic lane's worker_schema_version "
             "back to NULL (D-03 coalesce guard)"
         )
-        # 260725-da3: the two hole counters are ATOMIC-LANE-ONLY. Only step 2 was an
+        # The two hole counters are ATOMIC-LANE-ONLY. Only step 2 was an
         # atomic-submit, and it was hole-free, so holes_submitted must still be 0 and
         # plies_leased must count that one lane's evals — never the entry-submit or
         # flaw-blob-submit ones.
@@ -316,7 +316,7 @@ async def test_worker_hole_counters_accumulate_across_atomic_submits(
     eval_worker_test_user: int,
 ) -> None:
     """holes_submitted / plies_leased accumulate across atomic-submits and are moved
-    by NON-cap (Path B) attempts (quick task 260725-da3, FLAWCHESS-8B).
+    by NON-cap attempts (Sentry FLAWCHESS-8B).
 
     Two holed submits then one hole-free submit, all from the same worker_id:
     holes_submitted goes 1 -> 2 -> 2 (accumulator, never last-value, and a clean
@@ -495,7 +495,7 @@ async def test_worker_heartbeat_null_client_last_ip(
 async def test_upsert_worker_heartbeat_oversized_sf_version_never_aborts_caller_session(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """An over-long sf_version (WR-01 code review 2026-07-04) must never abort
+    """An over-long sf_version must never abort
     the caller's write transaction — the heartbeat upsert is passive telemetry
     only, never a gate. Defensive truncation to the model's String(50) column
     width means this never even reaches the savepoint's except branch, but the

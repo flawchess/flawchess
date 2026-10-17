@@ -1,14 +1,14 @@
 /**
- * treeCommon.ts unit tests (Phase 159 Pitfall 2/T-159-07; Phase 182 D-10).
+ * treeCommon.ts unit tests.
  *
  * Covers the `sideMatchesMover` truth table: the four combinations of the
  * `Side` ('w'|'b') and `MoverColor` ('white'|'black') literal-type domains.
- * Dedicated test so the Phase 159 temperature call sites (`mctsSearch.ts`,
+ * Dedicated test so the temperature call sites (`mctsSearch.ts`,
  * `fallbackExpectimax.ts`) can rely on ONE verified comparison instead of
  * two independently hand-rolled inline checks.
  *
  * Also covers `buildSnapshot` → `buildRankedLines`'s `childScoreSpread`
- * field (Phase 182 D-10, STYLE-04): the multi-grandchild spread case, the
+ * field: the multi-grandchild spread case, the
  * 0-child and 1-child null-boundary cases, and a regression check that the
  * pre-existing `RankedLine` fields (`rootMove`, `practicalScore`, `visits`)
  * are computed unchanged alongside the new additive field.
@@ -126,16 +126,16 @@ describe('expandChildPositions parity with applyUciMoveFen + terminalValue (8XN-
   });
 });
 
-// ─── applyRootCandidateHardCap — INJECT-01 exemption (196-01 Task 2) ──────
+// ─── applyRootCandidateHardCap — injected-move exemption ──────
 //
-// This function had zero direct tests before this phase (196-RESEARCH.md
-// grep-confirmed) — a large part of why the hard-cap regression survived.
+// This function once had zero direct tests
+// — a large part of why the hard-cap regression survived.
 // Fixtures use plain `new Map<string, number>([...])` literals with distinct
 // descending probabilities and at least one exact tie pair straddling the
 // cap boundary, so the ascending-UCI tie-break is genuinely exercised, not
 // merely present in the code path.
 
-describe('applyRootCandidateHardCap — INJECT-01 exemption', () => {
+describe('applyRootCandidateHardCap — injected-move exemption', () => {
   // 20 entries, strictly descending except an exact tie between p15/p16 at
   // the cutoff itself (both 0.023) — ascending-UCI tie-break must keep p15
   // (the last KEPT slot) and drop p16 (the first DROPPED slot).
@@ -267,7 +267,7 @@ describe('applyRootCandidateHardCap — INJECT-01 exemption', () => {
     expect([...withOverlapExemption.entries()]).toEqual([...plainCap.entries()]);
   });
 
-  it('two calls with the same inputs produce the same key order (deterministic tie-break, ENGINE-07)', () => {
+  it('two calls with the same inputs produce the same key order (deterministic tie-break)', () => {
     const entries: [string, number][] = [
       ['s01', 0.3],
       ['s02', 0.22],
@@ -299,7 +299,7 @@ describe('applyRootCandidateHardCap — INJECT-01 exemption', () => {
   });
 });
 
-// ─── buildRankedLines childScoreSpread fixtures (Phase 182 D-10) ──────────
+// ─── buildRankedLines childScoreSpread fixtures ──────────
 
 /** Minimal self-referential node type satisfying `SearchTreeNode<N>`. */
 type TestNode = SearchTreeNode<TestNode>;
@@ -341,7 +341,7 @@ function makeRoot(rootChildren: TestNode[]): TestNode {
   return makeNode({ isRoot: true, side: 'w', children });
 }
 
-describe('buildRankedLines childScoreSpread (Phase 182 D-10)', () => {
+describe('buildRankedLines childScoreSpread', () => {
   it('reports the exact max−min spread of a root child’s own grandchild values', () => {
     const child = makeRootChild('e2e4', [0.7, 0.3, 0.5]);
     const root = makeRoot([child]);
@@ -387,7 +387,7 @@ describe('buildRankedLines childScoreSpread (Phase 182 D-10)', () => {
   });
 });
 
-// ─── buildRankedLines lazy modalPath/modalStats (Phase 194 JANK-03) ────────
+// ─── buildRankedLines lazy modalPath/modalStats ────────
 //
 // Non-invocation proofs via `vi.spyOn(modalPathBuilder, 'build')` — see the
 // doc comment on `modalPathBuilder` in treeCommon.ts for why the spy targets
@@ -396,7 +396,7 @@ describe('buildRankedLines childScoreSpread (Phase 182 D-10)', () => {
 // callers of `buildModalPath`'s logic (unchanged by this task); these tests
 // prove WHEN it runs, not what it returns.
 
-describe('buildRankedLines lazy modalPath/modalStats (Phase 194 JANK-03)', () => {
+describe('buildRankedLines lazy modalPath/modalStats', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -499,9 +499,9 @@ describe('buildRankedLines lazy modalPath/modalStats (Phase 194 JANK-03)', () =>
   });
 });
 
-// ─── onSnapshot fire count is unaffected by lazy fields (D-10 regression) ──
+// ─── onSnapshot fire count is unaffected by lazy fields (regression) ──
 
-describe('onSnapshot fire count is unaffected by lazy modalPath/modalStats (Phase 194 D-10)', () => {
+describe('onSnapshot fire count is unaffected by lazy modalPath/modalStats', () => {
   it('fires exactly once per completed backup for a fixed small search, matching budget.maxNodes when the tree is not exhausted early', async () => {
     const FEN = '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1'; // King+pawn ending, White to move, 6 legal moves
     const budget: SearchBudget = { maxNodes: 3, elo: { w: 1500, b: 1500 }, maxPlies: 3, concurrency: 1 };
@@ -532,7 +532,7 @@ describe('onSnapshot fire count is unaffected by lazy modalPath/modalStats (Phas
     );
 
     // Snapshot construction is decoupled from onSnapshot's firing (the point
-    // of the JANK-03 change): the callback fires once per completed backup
+    // of making them lazy): the callback fires once per completed backup
     // regardless of whether any consumer ever reads modalPath/modalStats off
     // the snapshots it was handed.
     expect(finalSnapshot.budgetExhausted).toBe(true);
@@ -541,18 +541,18 @@ describe('onSnapshot fire count is unaffected by lazy modalPath/modalStats (Phas
   });
 });
 
-// ─── cloneRankedLineWith (Phase 194 JANK-03, code-review WR-04) ─────────────
+// ─── cloneRankedLineWith ─────────────
 //
 // The single descriptor-copy helper both `botStyle.ts`'s
 // `applyStyleScoreShaping` and `Analysis.tsx`'s `reconciledRankedLines` memo
 // route through. Code review found the copy hand-rolled at both sites, one of
 // which went a full plan cycle unnoticed — a spread there reads every
 // enumerable property, force-evaluating `modalPath`/`modalStats` and undoing
-// JANK-03 while every value-equality test keeps passing.
+// the laziness while every value-equality test keeps passing.
 //
 // The fixtures below use REAL accessors with call counters. A plain-object
 // fixture would make these pass whether or not the helper preserves laziness.
-describe('cloneRankedLineWith (Phase 194 JANK-03 / code-review WR-04)', () => {
+describe('cloneRankedLineWith', () => {
   function lazyLine(): { line: RankedLine; reads: () => number } {
     let reads = 0;
     const line = {

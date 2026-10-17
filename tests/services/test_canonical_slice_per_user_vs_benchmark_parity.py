@@ -1,12 +1,12 @@
-"""Pooled-shape parity assertions for the live per-TC CTE builders — Phase 94.2 Plan 01.
+"""Pooled-shape parity assertions for the live per-TC CTE builders.
 
-This module replaces the Phase 94.1 SC-7 numerical-parity gate (which
+This module replaces an earlier numerical-parity gate (which
 seeded a test DB, ran both code paths, and asserted ``abs(bm - su) < 1e-9``
-per user_id). The 94.1 test asserted shape via aggregation over the
-per-cell ``per_user`` CTE — that shape is gone in 94.2 (no per-cell rows
+per user_id). That test asserted shape via aggregation over the
+per-cell ``per_user`` CTE — that shape is gone (no per-cell rows
 to aggregate over; ``per_user_values`` already pools to one row per user).
 
-94.2 structural contract (D-10 "drift remains structurally impossible"):
+Structural contract ("drift remains structurally impossible"):
 
 The live per-TC builders (``per_user_cte_score_gap_tc``,
 ``per_user_cte_achievable_tc``, ``per_user_cte_score_gap_bucket_tc``,
@@ -18,18 +18,18 @@ which is composed separately by ``selected_users_cte(source=...)`` and
 concatenated by the consumer.
 
 * Neither rendered fragment contains the per-TC equality predicate
-  ``g.time_control_bucket::text = su.tc_bucket`` — D-5 pools across
+  ``g.time_control_bucket::text = su.tc_bucket`` — the builders pool across
   all TCs the user has played, universally.
 
 The numerical-parity claim is now structurally trivial: identical SQL
 emits identical values. We assert the structural identity via byte-equal
 string comparison after whitespace normalisation.
 
-Phase 94.3 Plan 02 extension: per-(metric × TC) parity assertions guard
-against the per-TC restriction being introduced at the wrong layer
-(RESEARCH §Pitfall 2). If a future refactor "simplifies" by injecting
-``AND g.time_control_bucket = '{tc}'`` at the script (Plan C) or service
-(Plan D) layer instead of inside ``canonical_slice_sql.py``, these
+Per-(metric × TC) parity assertions guard
+against the per-TC restriction being introduced at the wrong layer.
+If a future refactor "simplifies" by injecting
+``AND g.time_control_bucket = '{tc}'`` at the script or
+service layer instead of inside ``canonical_slice_sql.py``, these
 assertions will surface the drift via diverging benchmark vs single_user
 SQL bodies.
 """
@@ -54,7 +54,7 @@ from app.services.canonical_slice_sql import (
 
 _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "single_user")
 
-# Phase 94.3 — 12 per-(metric_family × TC) combinations. Parametrised
+# 12 per-(metric_family × TC) combinations. Parametrised
 # here so the parity assertion is run once per cell.
 _PER_TC_METRIC_FAMILIES: tuple[str, ...] = (
     "time_pressure_score_gap",
@@ -92,7 +92,7 @@ def _call_per_tc_builder(
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.3 Plan 02 — per-(metric × TC) parity assertions (12 cells).
+# per-(metric × TC) parity assertions (12 cells).
 # ---------------------------------------------------------------------------
 
 
@@ -101,11 +101,11 @@ def _call_per_tc_builder(
 def test_pooled_per_tc_cte_body_is_identical_across_sources(
     family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
 ) -> None:
-    """The per-TC pooled CTE body must be byte-identical across sources (RESEARCH §Pitfall 2).
+    """The per-TC pooled CTE body must be byte-identical across sources.
 
     Locating the per-TC restriction inside the shared builder
     (``canonical_slice_sql._recent_capped_per_tc_cte``) makes drift between
-    CDF construction (Plan C) and per-user lookup (Plan D) structurally
+    CDF construction and per-user lookup structurally
     impossible. If a future "simplifying" reviewer moves the
     ``AND g.time_control_bucket = '{tc}'`` predicate to the consumer layer,
     this assertion catches it because the two paths would diverge (the
@@ -127,7 +127,7 @@ def test_pooled_per_tc_cte_body_is_identical_across_sources(
 def test_pooled_per_tc_cte_contains_per_tc_predicate(
     family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
 ) -> None:
-    """Every per-TC builder output must contain the per-TC predicate (D-10 invariant)."""
+    """Every per-TC builder output must contain the per-TC predicate."""
     for source in _SOURCES:
         sql = _call_per_tc_builder(family, tc, source=source)
         assert f"g.time_control_bucket = '{tc}'" in sql, (
@@ -140,7 +140,7 @@ def test_pooled_per_tc_cte_contains_per_tc_predicate(
 def test_pooled_per_tc_cte_emits_per_user_values_with_metric_value_and_n_games(
     family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
 ) -> None:
-    """``per_user_values(metric_value, n_games)`` shape identical on both sources (D-9-amend)."""
+    """``per_user_values(metric_value, n_games)`` shape identical on both sources."""
     bm = _call_per_tc_builder(family, tc, source="benchmark")
     su = _call_per_tc_builder(family, tc, source="single_user")
     for sql, label in ((bm, "benchmark"), (su, "single_user")):
@@ -154,10 +154,9 @@ def test_pooled_per_tc_cte_emits_per_user_values_with_metric_value_and_n_games(
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 03 Task 3 — source-mode parity for the 4 new per-TC ΔES
-# builders. Each new builder is called directly here (not through
-# the dispatcher widening to expose them via the
-# CdfMetricId Literal lands in Plan 04 (atomic-cutover sequence).
+# Source-mode parity for the 4 new per-TC ΔES
+# builders. Each new builder is called directly here, not through
+# the dispatcher.
 # ---------------------------------------------------------------------------
 
 _PLAN_03_NEW_TCS: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = (
@@ -179,9 +178,9 @@ def test_score_gap_tc_pooled_body_byte_identical_across_sources(
 ) -> None:
     """``per_user_cte_score_gap_tc`` emits identical pooled body across sources.
 
-    Source-mode parity for the new Task 2 per-TC builder. The pooled body
+    Source-mode parity for the new per-TC builder. The pooled body
     after the selected_users CTE switch must be byte-identical between
-    benchmark and single_user (D-10 invariant; the cohort difference lives
+    benchmark and single_user (the cohort difference lives
     entirely in ``selected_users_cte``).
 
     Also asserts the recent_capped prelude presence and per_user_values shape
@@ -252,18 +251,18 @@ def test_score_gap_bucket_tc_pooled_body_byte_identical_across_sources(
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 03 Task 3 — regression for existing 94.3 per-TC builders
-# after the Pitfall 1 user_id widening (Task 1). The widening is applied
+# Regression for the existing per-TC builders
+# after the user_id widening. The widening is applied
 # uniformly to both source modes, so parity must continue to hold.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("tc", _PER_TC_TCS)
 @pytest.mark.parametrize("family", _PER_TC_METRIC_FAMILIES)
-def test_existing_94_3_per_tc_pooled_body_byte_identical_after_pitfall_1(
+def test_existing_per_tc_pooled_body_byte_identical_after_user_id_widening(
     family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
 ) -> None:
-    """After the Pitfall 1 widening (Task 1) the 3 existing per-TC builders
+    """After the user_id widening the 3 existing per-TC builders
     must STILL show source-mode parity — the widening is applied equally
     to both source modes (the per_user_values projection is in the shared
     pooled body, not in the cohort-specific preamble).

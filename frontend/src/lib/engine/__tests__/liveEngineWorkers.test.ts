@@ -1,5 +1,5 @@
 /**
- * liveEngineWorkers.ts unit tests (SEED-195): the live Stockfish worker count
+ * liveEngineWorkers.ts unit tests: the live Stockfish worker count
  * attached to Maia failure captures.
  */
 

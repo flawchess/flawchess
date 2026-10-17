@@ -1,16 +1,15 @@
-"""GameBestMove ORM model — best-move candidate table for Gem/Great detection (GEMS-01).
+"""GameBestMove ORM model — best-move candidate table for Gem/Great detection.
 
 Stores one candidate row per out-of-book best-move ply, keyed on the natural
 composite (game_id, ply). Unlike game_flaws, candidacy is a property of the
-*position*, not the user, so there is no user_id in the key (Claude's discretion
-per 174-PATTERNS.md).
+*position*, not the user, so there is no user_id in the key.
 
-Rows are CANDIDATES only (GEMS-01 / D-4): they never carry a stored tier flag or
+Rows are CANDIDATES only: they never carry a stored tier flag or
 any classification column. The Gem vs Great tier is decided at query time from
-the stored continuous values (GEMS-07), which keeps the margins fully retunable
+the stored continuous values, which keeps the margins fully retunable
 with zero re-analysis.
 
-Storage is continuous only (D-05): maia_prob (REAL) plus raw Stockfish
+Storage is continuous only: maia_prob (REAL) plus raw Stockfish
 centipawns/mate as SmallInteger — never a pre-converted expected-score value.
 This mirrors game_positions.eval_cp's raw int-cp convention; the cp->expected-score
 conversion stays query-time.
@@ -41,7 +40,7 @@ class GameBestMove(Base):
     maia_prob: Mapped[float] = mapped_column(REAL, nullable=False)
 
     # Raw Stockfish evals for the best and second-best moves — centipawns/mate as
-    # SmallInteger (D-05). Never a pre-converted expected-score value; the cp->ES
+    # SmallInteger. Never a pre-converted expected-score value; the cp->ES
     # conversion stays query-time, matching game_positions.eval_cp.
     best_cp: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     best_mate: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)

@@ -1,4 +1,4 @@
-"""Numeric acceptance gate for Chapter 1 (SEED-029 Phase A regression oracle).
+"""Numeric acceptance gate for Chapter 1 (regression oracle).
 
 Runs the ported §1 queries against the live benchmark DB (localhost:5433) and
 asserts every value matches `reports/benchmark/benchmarks-latest.md` (2026-05-27

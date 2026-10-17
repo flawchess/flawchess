@@ -15,10 +15,11 @@ interface TimePressureSectionProps {
 }
 
 /**
- * Endgame Time Pressure (D-06, D-00f): for the selected time control, the Clock
+ * Endgame Time Pressure: for the selected time control, the Clock
  * Gap timeline and the score-vs-clock curve (both with one grey typical band, a
- * neutral line and zone-colored dots) plus the three peer-ranked clock metrics. The TC comes from the
- * shared selection store, so one switch drives the whole section.
+ * neutral line and zone-colored dots) plus the three peer-ranked clock metrics.
+ * The TC comes from the shared selection store, so one switch drives the whole
+ * section.
  */
 export function TimePressureSection({ tcs, children }: TimePressureSectionProps) {
   const [selectedTc] = useEndgameStatsTc(tcs);

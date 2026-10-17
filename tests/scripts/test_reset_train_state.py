@@ -56,7 +56,7 @@ async def _seed_settings(db_session, user_id: int) -> None:
 
 @pytest.mark.asyncio
 async def test_reset_clears_streak_snapshot_but_keeps_schedule(fresh_test_user, db_session) -> None:
-    """The default path zeroes the tick snapshot (including the D-06
+    """The default path zeroes the tick snapshot (including the pool-eligibility
     watermark) and leaves the chosen schedule intact."""
     await _seed_settings(db_session, fresh_test_user.id)
 
@@ -72,7 +72,7 @@ async def test_reset_clears_streak_snapshot_but_keeps_schedule(fresh_test_user, 
     assert row.shield_level == 0
     assert row.streak_settled_through is None
     assert row.pool_eligible_since is None
-    # Phase 222 (TRAINBOT-05, D-13) + Phase 240 (D-10): the bot-onboarding
+    # The bot-onboarding
     # "seen" timestamps and the reveal-tour stage reset alongside the tick
     # snapshot, so onboarding UAT is repeatable on dev without bin/reset_db.sh.
     assert row.intro_seen_at is None

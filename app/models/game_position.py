@@ -15,14 +15,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
-# Opening-phase explorer depth cap (SEED-033).
+# Opening-phase explorer depth cap.
 #
 # Value 28: ECO's named-position ceiling is 28 plies; only elite forcing lines
 # (Najdorf Poisoned Pawn, Botvinnik Semi-Slav, Marshall) run deeper, and those
 # live at ply 40-80 so no practical cutoff catches them. FlawChess openings.ply_count
-# max = 36, but 28 covers the full ECO ceiling with headroom. See SEED-033 §2.
+# max = 36, but 28 covers the full ECO ceiling with headroom.
 #
-# COUPLING INVARIANT (SEED-033 §3): this constant MUST equal:
+# COUPLING INVARIANT: this constant MUST equal:
 #   1. The partial-index WHERE predicate on the three Zobrist hash indexes below
 #      (postgresql_where=text(f"ply <= {MAX_EXPLORER_PLY}")).
 #   2. The frontend explorer cap in frontend/src/lib/explorer.ts.
@@ -30,10 +30,10 @@ from app.models.base import Base
 # past the boundary silently miss the partial index.
 MAX_EXPLORER_PLY: int = 28
 
-# Phase 116 EVAL-03 / D-116-02: opening-region boundary for the full-ply drain's
-# cross-user full_hash dedup lookup. Intentionally tighter than MAX_EXPLORER_PLY.
+# Opening-region boundary for the full-ply drain's cross-user full_hash dedup
+# lookup. Intentionally tighter than MAX_EXPLORER_PLY.
 #
-# COUPLING INVARIANT (WR-08): this constant MUST equal:
+# COUPLING INVARIANT: this constant MUST equal:
 #   1. The partial-index WHERE predicate on ix_gp_full_hash_opening below
 #      (postgresql_where=text(f"ply <= {DEDUP_MAX_PLY}")).
 #   2. The drain-side boundary in app/services/eval_drain.py (which imports
@@ -48,11 +48,11 @@ class GamePosition(Base):
     __tablename__ = "game_positions"
     __table_args__ = (
         # Explicit PK in the prod/migration column order (user_id, game_id, ply).
-        # SEED-041 §B2: without this, SQLAlchemy infers PK order from the
+        # Without this, SQLAlchemy infers PK order from the
         # mapped_column declaration order (game_id, user_id, ply), which drifts
         # from prod and any metadata-derived DDL / autogenerate diff.
         PrimaryKeyConstraint("user_id", "game_id", "ply", name="game_positions_pkey"),
-        # SEED-041 §B1: composite FK (game_id, user_id) -> games(id, user_id)
+        # Composite FK (game_id, user_id) -> games(id, user_id)
         # replaces the former per-column FKs (game_id -> games.id,
         # user_id -> users.id). Halves per-row FK trigger work on COPY import and
         # enforces that a position's denormalized user_id matches the owning game.
@@ -63,8 +63,8 @@ class GamePosition(Base):
             ondelete="CASCADE",
             name="game_positions_game_user_fkey",
         ),
-        # Composite indexes for "my pieces only" queries (Phase 3).
-        # Partial WHERE ply <= MAX_EXPLORER_PLY (SEED-033): the explorer is hard-capped
+        # Composite indexes for "my pieces only" queries.
+        # Partial WHERE ply <= MAX_EXPLORER_PLY: the explorer is hard-capped
         # at that depth, so no hash lookup ever targets a position past the boundary —
         # making the win unconditional. Migration: partial_index_hash_columns_at_ply28.
         Index(
@@ -79,13 +79,13 @@ class GamePosition(Base):
             "black_hash",
             postgresql_where=text(f"ply <= {MAX_EXPLORER_PLY}"),
         ),
-        # Covering index for Phase 12 next-moves aggregation queries.
+        # Covering index for next-moves aggregation queries.
         # Also serves (user_id, full_hash) prefix lookups — the narrower
         # ix_gp_user_full_hash was dropped as redundant (prod stats showed
         # this wider index handled the GROUP BY move_san aggregation via
         # index-only scans, while the narrow one's 132 scans/period could
         # safely fall back to the prefix of this index).
-        # Partial WHERE ply <= MAX_EXPLORER_PLY (SEED-033) — same rationale as above.
+        # Partial WHERE ply <= MAX_EXPLORER_PLY — same rationale as above.
         Index(
             "ix_gp_user_full_hash_move_san",
             "user_id",
@@ -96,7 +96,7 @@ class GamePosition(Base):
         # Covering index for endgame GROUP BY queries — enables index-only scans for:
         # 1. Span aggregation: GROUP BY game_id, endgame_class HAVING COUNT(ply) >= threshold
         # 2. Entry-ply eval lookup: array_agg(eval_cp ORDER BY ply)[1], array_agg(eval_mate ORDER BY ply)[1]
-        # INCLUDE(eval_cp, eval_mate) avoids a 5M+ row seq scan for the entry-ply eval lookup (REFAC-02).
+        # INCLUDE(eval_cp, eval_mate) avoids a 5M+ row seq scan for the entry-ply eval lookup.
         Index(
             "ix_gp_user_endgame_game",
             "user_id",
@@ -106,13 +106,12 @@ class GamePosition(Base):
             postgresql_where=text("endgame_class IS NOT NULL"),
             postgresql_include=["eval_cp", "eval_mate"],
         ),
-        # ix_gp_user_game_ply removed in SEED-035 — its (user_id, game_id, ply) key is
-        # absorbed by the composite PK below (the partial ply BETWEEN 0 AND 17 /
-        # INCLUDE(full_hash, move_san) specialization was acceptable to retire).
-        # Phase 116 EVAL-03: cross-user dedup index for opening-region full_hash lookups.
-        # No user_id column — the drain's dedup query is cross-user (D-116-02).
-        # Predicate interpolates DEDUP_MAX_PLY (WR-08 coupling invariant — see the
-        # constant's docstring above); intentionally tighter than MAX_EXPLORER_PLY (28)
+        # No ix_gp_user_game_ply: its (user_id, game_id, ply) key is covered by the
+        # composite PK below.
+        # Cross-user dedup index for opening-region full_hash lookups.
+        # No user_id column — the drain's dedup query is cross-user.
+        # Predicate interpolates DEDUP_MAX_PLY (coupling invariant — see the
+        # constant's comment above); intentionally tighter than MAX_EXPLORER_PLY (28)
         # and distinct from the user-scoped indexes.
         Index(
             "ix_gp_full_hash_opening",
@@ -121,10 +120,10 @@ class GamePosition(Base):
         ),
     )
 
-    # Natural composite PK (SEED-035): (user_id, game_id, ply) replaces the former
-    # surrogate `id` column. The key is provably unique (one row per user/game/half-move).
-    # The SQLAlchemy identity map now keys rows on the 3-tuple instead of a single id.
-    # PK + FK are declared at table level in __table_args__ (SEED-041 §B1/§B2);
+    # Natural composite PK: (user_id, game_id, ply), no surrogate `id` column. The key is
+    # provably unique (one row per user/game/half-move).
+    # The SQLAlchemy identity map keys rows on the 3-tuple.
+    # PK + FK are declared at table level in __table_args__;
     # index=True on game_id keeps ix_game_positions_game_id (backs the cascade).
     game_id: Mapped[int] = mapped_column(nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(nullable=False)  # denormalized for query perf
@@ -144,37 +143,37 @@ class GamePosition(Base):
     # REAL (4 bytes) instead of DOUBLE PRECISION (8 bytes)
     clock_seconds: Mapped[float | None] = mapped_column(REAL, nullable=True)
 
-    # SEED-055: 7 write-only intermediate columns (material_count, material_signature,
-    # material_imbalance, has_opposite_color_bishops, piece_count, backrank_sparse,
-    # mixedness) were dropped — computed at import but never read by a serving query.
+    # No material_count, material_signature, material_imbalance,
+    # has_opposite_color_bishops, piece_count, backrank_sparse or mixedness columns:
+    # they were write-only (computed at import, never read by a serving query).
     # The derived columns below (endgame_class, phase) are still computed in-memory at
     # import time (position_classifier.py) from the same values, then persisted.
 
     # Lichess Divider.scala phase classification: 0=opening, 1=middlegame, 2=endgame.
-    # Nullable column — populated by import-path code from import time forward; existing
-    # rows are populated by scripts/backfill_eval.py (PHASE-FILL-01). Nullability is
-    # transient and closes out post-backfill. PHASE-INV-01: phase=2 ⟺ endgame_class IS NOT NULL.
+    # Nullable: populated at import; historical rows were backfilled once.
+    # Invariant: phase=2 ⟺ endgame_class IS NOT NULL.
     phase: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
-    # Engine analysis: per-move eval from lichess %eval PGN annotations (NULL for chess.com and unanalyzed games)
+    # Per-ply engine eval: lichess %eval for lichess-analyzed games, otherwise our
+    # Stockfish drain. NULL until evaluated.
     eval_cp: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     eval_mate: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
-    # D-117-01 + D-117-03: PV[0] UCI best move for every evaluated position.
+    # PV[0] UCI best move for every evaluated position.
     # 4 chars normal (e.g. "e2e4") / 5 chars promotion (e.g. "e7e8q").
     # Written by the full-ply drain alongside eval_cp/eval_mate (zero extra engine cost).
     # Transplanted via full_hash dedup in the opening region (ply <= DEDUP_MAX_PLY),
     # exactly like eval_cp — safe because best_move is a property of the pre-move position.
     best_move: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
-    # D-117-02: ~12-ply UCI refutation line (space-joined), stored only at the position
-    # AFTER each flawed move (ply = flaw_ply + 1). This is the SEED-039 refutation line
+    # ~12-ply UCI refutation line (space-joined), stored only at the position
+    # AFTER each flawed move (ply = flaw_ply + 1). This is the refutation line
     # consumed by the tactic-motif classifier. NULL for non-flaw positions.
     pv: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Endgame class: SmallInteger IntEnum (1-6), NULL for non-endgame positions.
     # 1=rook, 2=minor_piece, 3=pawn, 4=queen, 5=mixed, 6=pawnless.
     # Computed from material_signature at import time (see endgame_service.classify_endgame_class).
-    # Per D-06: SmallInteger for fastest GROUP BY, 2 bytes per row.
+    # SmallInteger for fastest GROUP BY, 2 bytes per row.
     endgame_class: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
     game: Mapped["Game"] = relationship(back_populates="positions")  # ty: ignore[unresolved-reference]

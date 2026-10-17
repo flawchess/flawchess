@@ -1,25 +1,20 @@
 /**
- * Shared metadata for the tactic-motif family comparison bullets (Phase 126, updated
- * Phase 129; tier-3 Advanced families added Quick 260623-6pd → 15 families; Phase 133
- * plan 133-02 added attraction + sacrifice → 17 families; Quick 260623 added the move-type
- * families en-passant + under-promotion → 19 families; Phase 221 plan 06 (D-07) then
- * REMOVED clearance → 19 families).
+ * Shared metadata for the tactic-motif family comparison bullets (19 families).
  *
  * Single source of truth consumed by MostCommonTacticsCard (the Library Stats tactic card),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
  *
- * Mirrors flawComparisonMeta.ts in structure. The families map the TacticMotif strings
- * (D-08, Phase 129 plan 04 taxonomy redesign). The family taxonomy must remain
- * consistent with the backend FAMILY_TO_MOTIF_INTS mapping in library_repository.py —
- * the keys here are the cross-stack contract (string-for-string).
+ * Mirrors flawComparisonMeta.ts in structure. The families map the TacticMotif strings to
+ * chip families. The family taxonomy must remain consistent with the backend
+ * FAMILY_TO_MOTIF_INTS mapping in library_repository.py — the keys here are the
+ * cross-stack contract (string-for-string).
  *
- * Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (x-ray, deflection,
- * intermezzo, interference, clearance, capturing-defender) under an "Advanced" group.
- * Phase 133 (plan 133-02) added attraction and sacrifice as Advanced families.
- * Phase 221 plan 06 (D-07) suppressed clearance (real-game keep/suppress bar measured
- * real_share=0.667 with only 3 of 16 surviving rows — below both
- * REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar); it belongs to no family now, same
- * as self-interference. Old ?tactic=pin_skewer / discovery / combinations URL params
+ * The "Advanced" group holds the tier-3 motifs (trapped-piece, x-ray, deflection,
+ * intermezzo, interference, capturing-defender, attraction, sacrifice) and the move-type
+ * families (en-passant, under-promotion, promotion). Clearance is suppressed (the real-game
+ * keep/suppress bar measured real_share=0.667 with only 3 of 16 surviving rows — below both
+ * REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar); it belongs to no family, same as
+ * self-interference. Old ?tactic=pin_skewer / discovery / combinations URL params
  * are inert (backend .get(fam, []) no-op; union excludes them).
  */
 
@@ -112,15 +107,13 @@ export type TacticIcon = ComponentType<{
 
 /**
  * The 19 tactic family keys — cross-stack contract with backend FAMILY_TO_MOTIF_INTS.
- * These strings must equal the backend dict keys string-for-string (plan 129-04).
- * Filter display order (mechanism-grouped, Quick 260620-onv; Advanced added 260623-6pd):
+ * These strings must equal the backend dict keys string-for-string.
+ * Filter display order (mechanism-grouped):
  *   Piece Attacks: fork → pin → skewer → hanging
  *   Checkmate, Checks & Discoveries: mate → double_check → discovered_check → discovered_attack
- *   Advanced (tier-3): trapped_piece → x_ray → deflection → intermezzo → interference → capturing_defender → attraction → sacrifice
+ *   Advanced: trapped_piece → x_ray → deflection → intermezzo → interference → capturing_defender → attraction → sacrifice → en_passant → under_promotion → promotion
  *
- * "clearance" REMOVED (Phase 221 plan 06, D-07 suppression) — the real-game keep/
- * suppress bar measured real_share=0.667 with only 3 of 16 surviving rows, below
- * both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
+ * There is no "clearance" family: it is suppressed (see the module comment).
  */
 export type TacticFamily =
   | 'fork'
@@ -133,18 +126,17 @@ export type TacticFamily =
   | 'trapped_piece'
   | 'hanging'
   | 'mate'
-  // Tier-3 "Advanced" families (Quick 260623-6pd)
+  // Tier-3 "Advanced" families
   | 'deflection'
   | 'intermezzo'
   | 'interference'
   | 'capturing_defender'
-  // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
   | 'attraction'
   | 'sacrifice'
-  // Move-type families (Quick 260623): en-passant + under-promotion unsuppressed
+  // Move-type families
   | 'en_passant'
   | 'under_promotion'
-  // promotion (28) surfaced (was hidden under D-09; perfect-precision residual motif)
+  // promotion (28): perfect-precision residual motif
   | 'promotion';
 
 export interface TacticFamilyColors {
@@ -169,10 +161,9 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   intermezzo: { color: TAC_INTERMEZZO, bg: TAC_INTERMEZZO_BG },
   interference: { color: TAC_INTERFERENCE, bg: TAC_INTERFERENCE_BG },
   capturing_defender: { color: TAC_CAPTURING_DEFENDER, bg: TAC_CAPTURING_DEFENDER_BG },
-  // Phase 133 (plan 133-02): attraction + sacrifice
   attraction: { color: TAC_ATTRACTION, bg: TAC_ATTRACTION_BG },
   sacrifice: { color: TAC_SACRIFICE, bg: TAC_SACRIFICE_BG },
-  // Move-type families (Quick 260623): en-passant + under-promotion
+  // Move-type families
   en_passant: { color: TAC_EN_PASSANT, bg: TAC_EN_PASSANT_BG },
   under_promotion: { color: TAC_UNDER_PROMOTION, bg: TAC_UNDER_PROMOTION_BG },
   promotion: { color: TAC_PROMOTION, bg: TAC_PROMOTION_BG },
@@ -193,21 +184,20 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   intermezzo: Shuffle,
   interference: Split,
   capturing_defender: ShieldOff,
-  // Phase 133 (plan 133-02): attraction + sacrifice
   attraction: Magnet,
   sacrifice: Gift,
-  // Move-type families (Quick 260623): en-passant + under-promotion
+  // Move-type families
   en_passant: ArrowLeftRight,
   under_promotion: ArrowDownFromLine,
   promotion: ArrowUpFromLine,
 };
 
-// ─── Mechanism groups (filter panel, Quick 260620-onv) ─────────────────────────
+// ─── Mechanism groups (filter panel) ─────────────────────────────────────────
 
 /**
  * The mechanism-based sections of the tactic-motif filter. Display order matters;
  * chip order within a group follows TACTIC_COMPARISON_FAMILIES array order. The
- * 'advanced' group (tier-3 motifs, Quick 260623-6pd) renders inside a collapsible,
+ * 'advanced' group (tier-3 motifs) renders inside a collapsible,
  * collapsed-by-default section below the others (FlawFilterControl).
  */
 export type TacticGroupKey = 'piece_attacks' | 'discoveries' | 'advanced';
@@ -226,7 +216,7 @@ export const TACTIC_GROUPS: TacticGroupDef[] = [
 ];
 
 /**
- * The families the Library Stats tactic card shows (Phase 239 D-17, UAT): the four most
+ * The families the Library Stats tactic card shows: the four most
  * common, and the only ones whose benchmark typical range is viable on both the missed and
  * the allowed side. The other 15 occur under once per 100 games per player, so their
  * you-vs-opponent gaps were mostly noise. The filter panel still offers all 19.
@@ -248,15 +238,12 @@ export interface TacticFamilyDef {
 }
 
 /**
- * The 19 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
- * tier-3 Advanced group added Quick 260623-6pd; attraction + sacrifice added Phase 133;
- * en-passant + under-promotion added Quick 260623; clearance REMOVED Phase 221 plan 06
- * D-07 — see the TacticFamily union doc comment above).
+ * The 19 tactic families in filter display order (mechanism-grouped).
  * Array order doubles as the chip order within each group — the filter panel groups
  * these by `group` preserving this order, and the Library Stats tactic card renders
- * its rows in exactly this order (never re-sorted by rate). The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
- * library_repository.py (plan 129-04 contract). self-interference and clearance belong
- * to no family (promotion was added here when D-09 was reversed).
+ * its rows in exactly this order (never re-sorted by rate). The motifs arrays mirror the
+ * backend FAMILY_TO_MOTIF_INTS mapping in library_repository.py. self-interference and
+ * clearance belong to no family (see the module comment for clearance).
  */
 export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   // ── Piece Attacks ──
@@ -290,7 +277,7 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   },
   // ── Checkmate, Checks & Discoveries ──
   // Mate leads the group (chip "checkmate"); the legend shows a single "checkmate"
-  // row rather than the nine named-mate motifs (Quick 260620-onv follow-up). Then
+  // row rather than the nine named-mate motifs. Then
   // the checks (double-check, discovered-check), then the pure discovery.
   {
     name: 'Checkmate',
@@ -330,10 +317,10 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'discovered-attack',
     motifs: ['discovered-attack'],
   },
-  // ── Advanced (tier-3, Quick 260623-6pd) ──
-  // Shipped Phase-132 cook-aligned motifs surfaced behind the collapsible "Advanced"
-  // filter section. trapped-piece leads, then x-ray (geometric), then the lure/disruption
-  // motifs. "clearance" REMOVED (Phase 221 plan 06, D-07 suppression).
+  // ── Advanced (tier-3) ──
+  // Cook-aligned motifs surfaced behind the collapsible "Advanced" filter section.
+  // trapped-piece leads, then x-ray (geometric), then the lure/disruption motifs.
+  // There is no clearance family (suppressed, see the module comment).
   {
     name: 'Trapped piece',
     family: 'trapped_piece',
@@ -376,7 +363,7 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'capturing-defender',
     motifs: ['capturing-defender'],
   },
-  // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed, added as Advanced families.
+  // attraction + sacrifice (Advanced).
   {
     name: 'Attraction',
     family: 'attraction',
@@ -391,8 +378,8 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'sacrifice',
     motifs: ['sacrifice'],
   },
-  // Move-type families (Quick 260623): en-passant + under-promotion unsuppressed (P=1.000 on
-  // the Phase-134 fixture). Both fire only at Tier 5 (residual), so these chips are low-volume.
+  // Move-type families: en-passant + under-promotion (P=1.000 on the tagger fixture).
+  // Both fire only at Tier 5 (residual), so these chips are low-volume.
   {
     name: 'En passant',
     family: 'en_passant',
@@ -407,7 +394,7 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'under-promotion',
     motifs: ['under-promotion'],
   },
-  // promotion (28): surfaced (was D-09-hidden). Perfect-precision residual move-type
+  // promotion (28): perfect-precision residual move-type
   // motif — fires only when the winning line queens a pawn and no sharper tactic applies.
   // Sibling of under-promotion; the "allowed" orientation ("you let the opponent queen")
   // is an instructive endgame mistake.
@@ -426,9 +413,10 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
  * Each family's `chipLabel` is also registered as a resolvable key so the
  * filter-panel legend (keyed on chipLabel) resolves icon/color — this is what
  * lets the synthetic "checkmate" label map to the `mate` family even though it
- * is not a backend motif string (Quick 260620-onv). For single-motif families
+ * is not a backend motif string. For single-motif families
  * chipLabel already equals the motif, so the extra key is a harmless no-op.
- * Only self-interference maps to no family now; consumers already guard `family == null`.
+ * Only self-interference (and the suppressed clearance) maps to no family; consumers
+ * already guard `family == null`.
  */
 export const TACTIC_FAMILY_FOR_MOTIF: Record<string, TacticFamily> = Object.fromEntries(
   TACTIC_COMPARISON_FAMILIES.flatMap(({ family, motifs, chipLabel }) =>
@@ -441,7 +429,7 @@ export const TACTIC_FAMILY_FOR_MOTIF: Record<string, TacticFamily> = Object.from
 /**
  * Display label for a tactic motif. Every mate-family motif (back-rank-mate,
  * smothered-mate, …, mate) collapses to a single "checkmate" label — the game and
- * flaw cards do not distinguish named-mate subtypes (Quick 260620-onv). All other
+ * flaw cards do not distinguish named-mate subtypes. All other
  * motifs render as their own kebab string.
  */
 export function tacticMotifLabel(motif: string): string {
@@ -459,7 +447,7 @@ export function tacticMotifDefinition(motif: string): string {
 }
 
 /**
- * Bundled visibility decision for one tactic slot (Quick 260625-qbj). When non-null,
+ * Bundled visibility decision for one tactic slot. When non-null,
  * BOTH the motif chip and the depth badge are allowed to render; when null, NEITHER
  * may. This is the single source of truth that makes a depth number physically unable
  * to leak onto a board without its paired chip — the chip and the depth read from the
@@ -485,7 +473,7 @@ export interface VisibleTactic {
  * the TacticLineExplorer needs this — its API returns BOTH raw lines un-nulled so it must
  * re-filter client-side; the Games/Flaws card surfaces receive server-nulled slots. The
  * confidence gate is intentionally omitted here: the tactic-lines API only returns
- * already-confident tactics (the backend nulls sub-threshold slots, D-09).
+ * already-confident tactics (the backend nulls sub-threshold slots).
  *
  * If this and the backend predicate ever drift, resolveVisibleTactic.test.ts fails.
  */
@@ -521,13 +509,12 @@ function slotPassesFilter(
 
 /**
  * The single predicate deciding whether a tactic slot is shown, returning the paired
- * chip + depth-badge data (or null when hidden). Replaces the former separate
- * `tacticDepthBadge` / `tacticOrientationPasses` / inline depth-label derivations so the
- * chip and the depth number can never diverge (Quick 260625-qbj).
+ * chip + depth-badge data (or null when hidden), so the chip and the depth number can
+ * never diverge (`tacticDepthBadge` delegates to it).
  *
- * Always applies the family guard: family-less motifs (promotion (28), self-interference
- * (14)) surface no chip (TacticMotifChip returns null), so their depth must never paint as
- * a bare number (D-09). When `filter` is supplied (TacticLineExplorer only), additionally
+ * Always applies the family guard: family-less motifs (self-interference, clearance) surface no chip
+ * (TacticMotifChip returns null), so their depth must never paint as
+ * a bare number. When `filter` is supplied (TacticLineExplorer only), additionally
  * applies the live filter via `slotPassesFilter` so the explorer matches the
  * server-filtered Games/Flaws surfaces. Card surfaces pass no filter — their slots are
  * already nulled server-side, so only the family guard runs.
@@ -544,7 +531,7 @@ export function resolveVisibleTactic(
   if (TACTIC_FAMILY_FOR_MOTIF[label] == null) return null;
   // NOTE: `anchored` only changes the DISPLAY depth (depthLabel). The filter predicate
   // (`slotPassesFilter`) is the FE mirror of the backend depth filter and always keeps
-  // the +1 allowed anchor offset, regardless of this flag (Quick 260628-1t5 DECISION 2).
+  // the +1 allowed anchor offset, regardless of this flag.
   if (filter != null && !slotPassesFilter(orientation, motif, depth, filter)) return null;
   return {
     motif,
@@ -569,7 +556,7 @@ export function tacticDepthBadge(
   return resolveVisibleTactic(orientation, motif, depth, undefined, anchored)?.depthLabel ?? null;
 }
 
-// ─── Library Stats tactic card (Phase 239) ─────────────────────────────────────
+// ─── Library Stats tactic card ───────────────────────────────────────────────
 
 /** Adapt one API bullet to the gap-bar view model (the components never see API types). */
 export function tacticBulletToGapCell(b: TacticBullet): GapCell {
@@ -603,7 +590,7 @@ export interface TacticSideCopy {
   noun: string;
 }
 
-/** Per-side popover copy for one tactic family (sketch 010 tacArgs). Says flaws, never events (D-00d). */
+/** Per-side popover copy for one tactic family Says flaws, never events. */
 export function tacticSideCopy(familyName: string, side: TacticSide): TacticSideCopy {
   const name = familyName.toLowerCase();
   const article = indefiniteArticle(name);

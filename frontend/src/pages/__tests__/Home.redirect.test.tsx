@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Regression coverage for the Home redirect rule (Phase 224 S-1, ROADMAP SC 1).
+ * Regression coverage for the Home redirect rule.
  *
  * Every authenticated account, guest or registered, leaves the home CTA for
  * /library/games (has games) or /library/import (zero games) — there is no
@@ -59,7 +59,7 @@ afterEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('HomePage redirect (Phase 224 S-1)', () => {
+describe('HomePage redirect', () => {
   it('zero-game guest resolves to /library/import', () => {
     renderHome({ is_guest: true, chess_com_game_count: 0, lichess_game_count: 0 });
     expect(screen.getByTestId('location').textContent).toBe('/library/import');
@@ -89,7 +89,7 @@ describe('HomePage redirect (Phase 224 S-1)', () => {
   });
 });
 
-describe('HomePage post-auth return path (quick 260926-9bg)', () => {
+describe('HomePage post-auth return path', () => {
   it('stashed /train wins over /library/import for a zero-game signup', () => {
     stashReturnTo('/train');
     renderHome({ is_guest: false, chess_com_game_count: 0, lichess_game_count: 0 });

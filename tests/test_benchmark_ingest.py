@@ -1,10 +1,10 @@
 """Tests for benchmark ingestion pipeline.
 
-Phase 69 unit tests covering:
-- INGEST-06 centipawn convention (Task 02-01)
-- INGEST-01 dump scan parser (Plan 04 will add)
-- INGEST-02 player bucketing (Plan 04 will add)
-- INGEST-04 stub User invariants and outlier skip (Plan 05 will add)
+Unit tests covering:
+- centipawn convention
+- dump scan parser
+- player bucketing
+- stub User invariants and outlier skip
 
 All tests are pure unit tests, no DB, no network. Use unittest.mock for external deps.
 """
@@ -17,14 +17,14 @@ import chess.pgn
 import pytest
 
 
-# --- INGEST-06: centipawn convention -----------------------------------------------
+# --- Centipawn convention -----------------------------------------------
 
 
 def test_centipawn_convention_signed_from_white() -> None:
     """[%eval 2.35] parses to +235 cp; [%eval -0.50] to -50 cp; mate stays in mate field.
 
     Documents the signed-from-White-POV convention used by python-chess and stored in
-    game_positions.eval_cp. This is the INGEST-06 centipawn-convention verification.
+    game_positions.eval_cp. This is the centipawn-convention verification.
     """
     pgn_text = (
         '[Event "Test"]\n'
@@ -56,7 +56,7 @@ def test_centipawn_convention_signed_from_white() -> None:
     assert pov2.white().mate() == 4
 
 
-# --- INGEST-02: per-TC player bucketing ------------------------------------------
+# --- Per-TC player bucketing ------------------------------------------
 
 
 def _stats(elos_by_tc: dict[str, list[int]], eval_count_by_tc: dict[str, int]) -> dict:
@@ -190,7 +190,7 @@ def test_compute_tc_bucket_excludes_correspondence() -> None:
     assert compute_tc_bucket("1800+30") == "classical"
 
 
-# --- INGEST-01: streaming PGN-header parser --------------------------------------
+# --- Streaming PGN-header parser --------------------------------------
 
 
 def test_scan_dump_parser_extracts_headers_and_eval_flag() -> None:
@@ -250,7 +250,7 @@ def test_scan_dump_parser_extracts_headers_and_eval_flag() -> None:
     assert r1["has_eval"] is False
 
 
-# --- INGEST-04: stub User invariants, outlier skip, cell deficit ---------------------
+# --- Stub User invariants, outlier skip, cell deficit ---------------------
 
 
 @pytest.mark.asyncio

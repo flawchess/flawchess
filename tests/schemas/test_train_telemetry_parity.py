@@ -1,7 +1,7 @@
 """CI-enforced parity: app/schemas/train.py telemetry caps must match frontend/src/lib/trainTelemetry.ts.
 
-The frontend clamps durations and stamps the schema version before sending
-(Phase 233 D-04), the server clamps again at the boundary. Change both sides
+The frontend clamps durations and stamps the schema version before sending,
+and the server clamps again at the boundary. Change both sides
 together; this test goes red when they drift. Values are regex-extracted from
 trainTelemetry.ts, so the TS constants must stay plain integer literals
 (`export const NAME = 1800000;`, no type annotation, no arithmetic).

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useLibraryGames hook tests — default-flaw-filter regression (quick-260610-vru).
+ * useLibraryGames hook tests — default-flaw-filter regression.
  *
  * Bug: the default flaw filter (severity = blunder+mistake, no tags) was sent
  * to GET /library/games, where the backend's severity EXISTS excludes every
@@ -92,8 +92,8 @@ describe('useLibraryGames flaw-filter params', () => {
     expect(params.tag).toEqual(['miss']);
   });
 
-  // Quick 260620-pza: tactic filters threaded to the Games tab.
-  // Quick 260621-sm8: depth + orientation are independently meaningful, so they
+  // Tactic filters threaded to the Games tab.
+  // Depth + orientation are independently meaningful, so they
   // are always sent (the all-inclusive default is a backend no-op). Family is sent
   // only when ≥1 is selected. Previously all three were gated behind family, so a
   // depth-only/orientation-only filter never reached the backend (the bug).

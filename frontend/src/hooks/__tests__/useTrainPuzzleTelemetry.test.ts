@@ -11,7 +11,7 @@ import {
   type ReviewTelemetrySnapshot,
 } from '@/lib/trainTelemetry';
 
-// Every flush goes through the one keepalive transport (233 review fix WR-02).
+// Every flush goes through the one keepalive transport.
 // The mock splits it by the body's `exit` so tests can assert the Next path
 // (nextFlush) and the non-Next path (exitFlush) separately.
 const { nextFlush, exitFlush, postReviewKeepalive, updateTrainRevealCacheReview } = vi.hoisted(() => {
@@ -51,7 +51,7 @@ const BASE_PROPS: HookProps = {
 };
 const REVIEW_PROPS: HookProps = { ...BASE_PROPS, hasVerdict: true };
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
-/** The engagement keys of a flush body with no interaction recorded (D-14). */
+/** The engagement keys of a flush body with no interaction recorded. */
 const ZERO_ENGAGEMENT = {
   review_line_steps: 0,
   review_explored: false,
@@ -592,7 +592,7 @@ describe('useTrainPuzzleTelemetry', () => {
     act(() => first.result.current.onLineUserStep());
     act(() => first.result.current.onExploreMove('board', true));
     act(() => first.result.current.onExploreMove('engine-line', true));
-    act(() => first.result.current.markWalkthroughActive());
+    act(() => first.result.current.markTourActive());
     const snapshot = first.result.current.snapshotReviewForAnalyze();
     expect(snapshot).toMatchObject({
       lineSteps: 1,
@@ -623,9 +623,9 @@ describe('useTrainPuzzleTelemetry', () => {
     );
   });
 
-  it('counters: markWalkthroughActive makes review_walkthrough true for that puzzle only', async () => {
+  it('counters: markTourActive makes review_walkthrough true for that puzzle only', async () => {
     const { result, rerender } = mountHook(REVIEW_PROPS);
-    act(() => result.current.markWalkthroughActive());
+    act(() => result.current.markTourActive());
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenLastCalledWith(7, 0, expect.objectContaining({ review_walkthrough: true }));
@@ -730,14 +730,14 @@ describe('useTrainPuzzleTelemetry', () => {
     expect((await nextBody(result)).review_strip_expanded).toBe(true);
   });
 
-  it('fork (D-13): a board move that does not fork leaves review_explored false but is still counted', async () => {
+  it('fork: a board move that does not fork leaves review_explored false but is still counted', async () => {
     const { result } = mountHook(REVIEW_PROPS);
     act(() => result.current.onExploreMove('board', false));
     const body = await nextBody(result);
     expect(body).toMatchObject({ review_explored: false, review_explore_moves: 1, review_board_moves: 1 });
   });
 
-  it('fork (D-13): one forking move among non-forking ones sets review_explored, sticky', async () => {
+  it('fork: one forking move among non-forking ones sets review_explored, sticky', async () => {
     const { result } = mountHook(REVIEW_PROPS);
     act(() => result.current.onExploreMove('board', false));
     act(() => result.current.onExploreMove('engine-line', true));
@@ -804,7 +804,7 @@ describe('useTrainPuzzleTelemetry', () => {
     expect((nextFlush.mock.calls.at(-1)?.[2] as Record<string, unknown>).review_chips_total).toBe(3);
   });
 
-  it('closed set: a flush body has exactly the v2 keys (D-12) and no card keys', async () => {
+  it('closed set: a flush body has exactly the v2 keys and no card keys', async () => {
     const { result } = mountHook(REVIEW_PROPS);
     advance(1000);
     const body = await nextBody(result);
@@ -827,7 +827,7 @@ describe('useTrainPuzzleTelemetry', () => {
     );
   });
 
-  describe('late phone_grade record (Phase 236 D-12)', () => {
+  describe('late phone_grade record', () => {
     const RECORD: PhoneGrade = { v: 1, tier: 'good', key_es: 0.6, played_es: 0.58, key_depth: 10, played_depth: 10 };
 
     it('a record set for the current puzzle rides the Next flush', async () => {
@@ -867,7 +867,7 @@ describe('useTrainPuzzleTelemetry', () => {
       expect(body.phone_grade).toEqual(RECORD);
     });
 
-    it('a record for a puzzle the user already left is ignored (Pitfall 4)', async () => {
+    it('a record for a puzzle the user already left is ignored', async () => {
       const { result, rerender } = mountHook(REVIEW_PROPS);
       rerender({ ...REVIEW_PROPS, position: 1 });
       advance(1000);

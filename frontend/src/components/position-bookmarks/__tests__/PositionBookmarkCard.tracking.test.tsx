@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 229 (D-03, D-04, D-12): the bookmark card's chart toggle and load button
+ * The bookmark card's chart toggle and load button
  * each report one id-free event; the persisted match-side change stays untracked
  * (DB-known). Real analytics module with a window.umami stub.
  */
@@ -15,7 +15,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
 // The mini board is irrelevant here and heavy in jsdom.
-vi.mock('../MiniBoard', () => ({ MiniBoard: () => null }));
+vi.mock('../BookmarkMiniBoard', () => ({ BookmarkMiniBoard: () => null }));
 
 const BOOKMARK_ID = 48213;
 

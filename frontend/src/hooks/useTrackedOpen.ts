@@ -8,7 +8,7 @@ interface UseTrackedOpenOptions {
 
 /**
  * Open/closed state that calls `onOpen` on a false-to-true transition made by
- * the user (hover timer, tap, keyboard), never on mount (Phase 229 D-03).
+ * the user (hover timer, tap, keyboard), never on mount.
  *
  * The callback runs in the setter, outside any state updater: StrictMode
  * double-invokes updaters, which would double-fire a tracking call. The setter
@@ -44,9 +44,9 @@ export function useTrackedOpen(
 }
 
 /**
- * Popover open state that reports `popover-open` once per mounted instance
- * (D-13): hover flicker cannot inflate the count, and it still answers "was
- * this explanation discovered". Both the hover timer and Radix onOpenChange
+ * Popover open state that reports `popover-open` once per mounted instance, so
+ * hover flicker cannot inflate the count and it still answers "was this
+ * explanation discovered". Both the hover timer and Radix onOpenChange
  * route through the returned setter.
  */
 export function useTrackedPopoverOpen(testId: string): readonly [boolean, (next: boolean) => void] {

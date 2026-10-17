@@ -35,7 +35,7 @@ describe('useEndgameInsights', () => {
     vi.mocked(apiClient.get).mockReset();
   });
 
-  it('POSTs to /insights/endgame with no query params (filter-free, D-04)', async () => {
+  it('POSTs to /insights/endgame with no query params (filter-free)', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({
       data: {
         report: {
@@ -57,7 +57,7 @@ describe('useEndgameInsights', () => {
     expect(call).toEqual(['/insights/endgame']);
   });
 
-  it('writes a successful Generate result into the cached-report query (FE-WR-01)', async () => {
+  it('writes a successful Generate result into the cached-report query', async () => {
     const generated = {
       report: {
         overview: 'Fresh overview.',
@@ -100,7 +100,7 @@ describe('useEndgameInsights', () => {
 
     expect(result.current.data).toEqual(cached);
     expect(apiClient.get).toHaveBeenCalledTimes(1);
-    // The GET carries no query params either (D-04).
+    // The GET carries no query params either.
     expect(vi.mocked(apiClient.get).mock.calls[0]).toEqual(['/insights/endgame/cached']);
   });
 

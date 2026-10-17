@@ -41,7 +41,7 @@ export function sideToMoveFromFen(fen: string): MoverColor {
  * Deterministic white-POV eval for a *terminal* position (checkmate or draw), or
  * null while the game is still in progress.
  *
- * Bug fix (Quick 260709-j3k): on a checkmated position the live Stockfish worker
+ * Bug fix: on a checkmated position the live Stockfish worker
  * reports an ambiguous `mate 0` / no score. Downstream that read as the 0.5
  * midpoint — snapping the eval bar to equal and grading the *mating* move as a
  * blunder. The rules already know the answer: the side to move in a checkmate
@@ -68,13 +68,8 @@ export function terminalPositionEval(
 }
 
 /**
- * Convert a white-POV engine eval (cp or mate-in-N) to the mover's expected score
- * in (0, 1). Mate is mapped to ±MATE_CP_EQUIVALENT cp before the sigmoid (Option B),
- * matching the flaw classifier. Returns 0.5 (neutral) when no eval is available.
- */
-/**
- * Convert a 0-1 root-side-to-move expected score (`RankedLine.practicalScore`,
- * Phase 155 D-06) back to a white-POV centipawn value — the algebraic inverse of
+ * Convert a 0-1 root-side-to-move expected score (`RankedLine.practicalScore`)
+ * back to a white-POV centipawn value — the algebraic inverse of
  * evalToExpectedScore: es = 1 / (1 + exp(-K * sign * cp)) => cp = ln(es/(1-es)) / (K * sign).
  * Special-cases the es<=0 / es>=1 mate boundaries to ±MATE_CP_EQUIVALENT (mirroring
  * evalToExpectedScore's own mate-before-sigmoid convention) instead of computing
@@ -89,6 +84,11 @@ export function expectedScoreToWhitePovCp(es: number, rootMover: MoverColor): nu
   return Math.log(es / (1 - es)) / (LICHESS_K * sign);
 }
 
+/**
+ * Convert a white-POV engine eval (cp or mate-in-N) to the mover's expected score
+ * in (0, 1). Mate is mapped to ±MATE_CP_EQUIVALENT cp before the sigmoid,
+ * matching the flaw classifier. Returns 0.5 (neutral) when no eval is available.
+ */
 export function evalToExpectedScore(
   evalCp: number | null,
   evalMate: number | null,

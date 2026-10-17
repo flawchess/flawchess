@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 /**
- * useAnalysisBoard hook tests (Phase 137, Plan 01; extended Phase 140, Plan 01;
- * rewritten to the multi-line flat-sibling contract, Quick 260703-kyb).
+ * useAnalysisBoard hook tests (multi-line flat-sibling contract).
  *
- * Required D-05 behaviors (Phase 137):
+ * Required behaviors:
  * 1. Mid-line fork: a move at a mid-line node creates a child node; mainLine is NOT truncated.
  * 2. Navigation: goBack / goForward / goToNode move currentNodeId and position correctly.
  * 3. O(1) goToNode: position equals the stored FEN, not a root-replay artifact.
  * 4. loadMainLine + isOnMainLine: seeds mainLine IDs in order; true for seeded, false for forked.
  *
- * Quick 260703-kyb — multi-line flat-sibling invariants (replaces the old singleton
+ * Multi-line flat-sibling invariants (replaces the old singleton
  * pvLine/clearPvLine/Level-2 behaviors):
  * 5. insertPvLine unions ids: opening two lines off two different forks leaves both
  *    isOnPvLine-true simultaneously; mainLine stays unmutated.
@@ -19,7 +18,7 @@
  * 8. goForward from a fork still steps into an open sideline (pvNodeIds membership).
  * 9. makeMove off a PV node yields a node with isOnPvLine=false (a free-move sub-fork).
  *
- * Quick 260805-p37 — move-sound emission (one seam covering both the Analysis board
+ * Move-sound emission (one seam covering both the Analysis board
  * and the Train reveal board's sidelines, via useTrainRevealTree's wrap):
  * 10. Landing on a node whose SAN carries a check/mate marker plays 'check'; a capture
  *     marker (no check) plays 'capture'; an ordinary node (including castling) plays 'move'.
@@ -78,7 +77,7 @@ const MOVE_BC4 = { from: 'f1', to: 'c4' } as const;
 // SAN representation for loadMainLine
 const MAIN_LINE_SANS = ['Nf3', 'Nc6', 'Bc4'];
 
-// ─── Quick 260805-p37: move-sound position constants ────────────────────────
+// ─── move-sound position constants ────────────────────────
 // Every sequence below is verified legal by construction: the test itself
 // plays each move via makeMove/loadMainLine rather than pasting an unverified
 // FEN (the sole exception is the universal starting FEN, captured live from
@@ -159,7 +158,7 @@ describe('useAnalysisBoard', () => {
     expect(result.current.mainLine).toEqual(mainLineBefore);
   });
 
-  // ── Behavior 1b: advance-or-fork (quick 260705-mth) ─────────────────────
+  // ── Behavior 1b: advance-or-fork ─────────────────────
 
   it('advance-or-fork: replaying the existing next main-line move advances into it, no new node', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
@@ -320,7 +319,7 @@ describe('useAnalysisBoard', () => {
 
   // ── Behavior 5: goToRoot ────────────────────────────────────────────────
 
-  it('goToRoot: sets currentNodeId to null without clearing nodes or mainLine (Phase 139)', () => {
+  it('goToRoot: sets currentNodeId to null without clearing nodes or mainLine', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
 
     // Seed a mainLine so nodes + mainLine are non-empty
@@ -342,7 +341,7 @@ describe('useAnalysisBoard', () => {
     expect(result.current.nodes.size).toBe(lineLength);
   });
 
-  // ── Quick 260703-kyb Behavior 5: insertPvLine unions ids across lines ──
+  // ── Behavior 5: insertPvLine unions ids across lines ──
 
   it('insertPvLine unions ids: two lines off two different forks are both open simultaneously; mainLine unmutated', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
@@ -407,7 +406,7 @@ describe('useAnalysisBoard', () => {
     expect(result.current.currentNodeId).not.toBe(mainLine[1]);
   });
 
-  // ── Quick 260703-kyb Behavior 6: deleteSubtree removes exactly one line ──
+  // ── Behavior 6: deleteSubtree removes exactly one line ──
 
   it('deleteSubtree removes exactly one open line and recovers currentNodeId to its fork parent; the other line is untouched', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
@@ -477,7 +476,7 @@ describe('useAnalysisBoard', () => {
     expect(result.current.currentNodeId).toBe(mainLineLeaf);
   });
 
-  // ── Quick 260703-kyb Behavior 7: clearAllSidelines strips every non-mainLine node ──
+  // ── Behavior 7: clearAllSidelines strips every non-mainLine node ──
 
   it('clearAllSidelines strips every non-mainLine node, empties pvNodeIds, and recovers currentNodeId to mainLine', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
@@ -519,7 +518,7 @@ describe('useAnalysisBoard', () => {
     expect(result.current.isOnMainLine(result.current.currentNodeId!)).toBe(true);
   });
 
-  // ── Quick 260703-kyb Behavior 9: makeMove off a PV node is a free-move sub-fork ──
+  // ── Behavior 9: makeMove off a PV node is a free-move sub-fork ──
 
   it('makeMove from a PV node creates a node NOT in pvNodeIds (free-move sub-fork, deletable independently)', () => {
     const { result } = renderHook(() => useAnalysisBoard(ROOT_FEN));
@@ -613,7 +612,7 @@ describe('useAnalysisBoard', () => {
     expect(result.current.nodes.get(result.current.currentNodeId!)?.san).toBe('Nc6');
   });
 
-  // ── Quick 260805-p37: move-sound emission ───────────────────────────────
+  // ── move-sound emission ───────────────────────────────
 
   it('mount plays no sound and does not unlock audio', () => {
     renderHook(() => useAnalysisBoard(ROOT_FEN));
@@ -856,7 +855,7 @@ describe('useAnalysisBoard', () => {
     expect(mockUnlockAudio).toHaveBeenCalledTimes(1); // still just once
   });
 
-  // ── Phase 210 (SEED-042, CUSTOM-01): illegal-SAN replay containment ──────
+  // ── illegal-SAN replay containment ──────
   //
   // chess.js 1.4.0's move() THROWS on illegal SAN rather than returning null,
   // so the old `if (!move) break` guards in loadMainLine/insertPvLine were dead
@@ -946,13 +945,13 @@ describe('useAnalysisBoard', () => {
   });
 });
 
-// ─── Phase 237: graftLine — non-navigating, child-reusing line graft ─────────
+// ─── graftLine — non-navigating, child-reusing line graft ─────────
 //
 // The Train reveal pre-loads every chip's line as a root branch and receives
 // later lines (background grade, game-move search, restored snapshot) while the
 // user is already looking at the board, so the graft must never move it.
 
-describe('useAnalysisBoard — graftLine (Phase 237)', () => {
+describe('useAnalysisBoard — graftLine', () => {
   beforeEach(() => {
     mockPlaySound.mockClear();
     mockUnlockAudio.mockClear();
@@ -1072,15 +1071,15 @@ describe('useAnalysisBoard — graftLine (Phase 237)', () => {
   });
 });
 
-// ─── Quick 260821-kyz: window-scoped, guarded arrow-key navigation ──────────
+// ─── window-scoped, guarded arrow-key navigation ──────────
 //
-// D-01: promoted from a container-scoped keydown handler to a window-scoped
+// Promoted from a container-scoped keydown handler to a window-scoped
 // one, so ArrowLeft/ArrowRight work without first clicking the board.
-// D-02: six guards, in order — not an arrow key; already defaultPrevented;
+// Six guards, in order — not an arrow key; already defaultPrevented;
 // a modifier key held; the event target is a typing surface
 // (input/textarea/select/contentEditable); this hook instance has no
 // mounted container (containerRef.current === null — how the Train free-play hook
-// opted out, D-05); an open modal dialog (PasteModal).
+// opted out); an open modal dialog (PasteModal).
 
 describe('useAnalysisBoard — keyboard navigation', () => {
   let board: HTMLDivElement;
@@ -1354,12 +1353,12 @@ describe('useAnalysisBoard — keyboard navigation', () => {
   });
 });
 
-// ─── Quick 260821-kyz: board-scoped mouse-wheel navigation ──────────────────
+// ─── board-scoped mouse-wheel navigation ──────────────────
 //
-// D-03: wheel navigation applies only while the pointer is over the board
+// Wheel navigation applies only while the pointer is over the board
 // container. Wheel down (deltaY > 0) = goForward, wheel up (deltaY < 0) =
 // goBack; preventDefault() over the board so the page never scrolls there.
-// D-04: an accumulated-delta threshold (WHEEL_NAV_DELTA_THRESHOLD_PX = 15)
+// An accumulated-delta threshold (WHEEL_NAV_DELTA_THRESHOLD_PX = 15)
 // plus a time throttle (WHEEL_NAV_THROTTLE_MS = 90) so a single trackpad
 // flick advances a handful of moves, not the whole game.
 

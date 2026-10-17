@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useLibraryGame hook tests (Phase 112, Task 1 RED).
+ * useLibraryGame hook tests.
  *
  * Tests:
  * 1. useLibraryGame(null) — disabled, no fetch fires.
@@ -8,7 +8,7 @@
  * 3. Query key is ['library-game', gameId].
  * 4. refetchOnWindowFocus false — focus event does not trigger a second fetch.
  *
- * Quick 260702-mnd (D-3): the hook no longer accepts a flawFilter param and
+ * The hook no longer accepts a flawFilter param and
  * getGame takes no query params — the single-game card's content is now
  * filter-independent.
  */
@@ -91,7 +91,7 @@ describe('useLibraryGame', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // Quick 260702-mnd: getGame takes only gameId — no filter params exist anymore.
+    // getGame takes only gameId — no filter params exist anymore.
     const call = vi.mocked(libraryApi.getGame).mock.calls[0]!;
     expect(call).toEqual([123]);
   });

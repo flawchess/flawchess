@@ -1,9 +1,9 @@
 """Feedback-ask service: server-decided eligibility and the view/snooze/done lifecycle.
 
-SEED-191 #1 (eligibility: non-guest, >= FEEDBACK_ASK_MIN_ACTIVE_DAYS active days, no
-feedback from any source), #6 (snooze, one re-ask after +FEEDBACK_ASK_REASK_GAP_DAYS
-active days, then never), #7 (a view is at most one per UTC day, the
-FEEDBACK_ASK_MAX_VIEWS-th auto-snoozes), #8 (server-side state, atomic writes).
+Eligibility: non-guest, >= FEEDBACK_ASK_MIN_ACTIVE_DAYS active days, no feedback from
+any source. Snooze: one re-ask after +FEEDBACK_ASK_REASK_GAP_DAYS active days, then
+never. A view is at most one per UTC day, and the FEEDBACK_ASK_MAX_VIEWS-th auto-snoozes.
+The state is server-side, with atomic writes.
 
 The state is only ever written by feedback_ask_repository's guarded single-statement
 UPDATEs; this module decides eligibility (pure ``resolve_feedback_ask``) and routes
@@ -167,11 +167,11 @@ async def apply_feedback_ask_action(
     stale tab get a no-op and the current view, so no 4xx reaches Sentry.
     """
     if user.is_guest or impersonated:
-        return _INACTIVE  # Pitfall 7: nobody answers or burns views on a user's behalf
+        return _INACTIVE  # Nobody answers or burns views on a user's behalf
     today = now_utc.date()
     active_days = await _count_active_days(session, user.id, today)
     has_feedback = await feedback_repository.has_feedback(session, user.id)
-    # WR-02: view and snooze only run inside the eligibility rule (SEED-191 #1); a stale
+    # View and snooze only run inside the eligibility rule; a stale
     # or buggy client could otherwise write ask state for an ineligible user (e.g. a
     # click-snooze at 2 active days would push the re-ask out to 12). done stays
     # unconditional because it only ever shrinks exposure.
@@ -185,7 +185,7 @@ async def apply_feedback_ask_action(
             # No-op: a concurrent tab may have written, so re-read the stored state.
             state = await feedback_ask_repository.get_state(session, user_id=user.id)
     except ValidationError as exc:
-        # WR-01: a corrupt stored state (e.g. an unknown key) made the UPDATE's RETURNING
+        # A corrupt stored state (e.g. an unknown key) made the UPDATE's RETURNING
         # value fail validation, which used to surface as a 500 on this write path. Fail
         # closed like the snapshot path: report to Sentry with context, roll back the
         # already-executed UPDATE so the invalid value is never committed, return inactive.

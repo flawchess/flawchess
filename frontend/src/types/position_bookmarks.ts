@@ -44,9 +44,8 @@ export interface TimeSeriesBookmarkParam {
 
 export interface TimeSeriesRequest {
   bookmarks: TimeSeriesBookmarkParam[];
-  // Optional global filters (D-19 amendment 2026-06-13: date bounds now accepted;
-  // the time-series path date-filters emitted points + WDL totals while warming
-  // the rolling average from pre-window games)
+  // Optional global filters (the time-series path date-filters emitted points +
+  // WDL totals while warming the rolling average from pre-window games)
   time_control?: ('bullet' | 'blitz' | 'rapid' | 'classical')[] | null;
   platform?: ('chess.com' | 'lichess')[] | null;
   rated?: boolean | null;

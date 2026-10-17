@@ -1,4 +1,4 @@
-"""Tests for PER_CLASS_TC_GAUGE_ZONES registry (Phase 98)."""
+"""Tests for PER_CLASS_TC_GAUGE_ZONES registry."""
 
 import pytest
 
@@ -29,7 +29,7 @@ def test_per_class_tc_gauge_zones_all_four_tc_keys() -> None:
 
 def test_per_class_gauge_zones_unchanged_pawnless_present() -> None:
     """PER_CLASS_GAUGE_ZONES is the LLM path's source of truth — must remain
-    unchanged and still include pawnless (D-15)."""
+    unchanged and still include pawnless."""
     assert "pawnless" in PER_CLASS_GAUGE_ZONES
     # Spot-check the rook entry from the pooled bands
     rook = PER_CLASS_GAUGE_ZONES["rook"]
@@ -64,7 +64,7 @@ def test_per_class_tc_band_fields_are_two_floats() -> None:
 @pytest.mark.parametrize("cls", sorted(_VISIBLE_CLASSES))
 def test_per_class_tc_achievable_score_gap_consistent_across_tc(cls: str) -> None:
     """Score Gap TC d ≈ 0.07–0.18 (all collapse). The four ΔES bands per class
-    are near-identical by design (redundancy chosen per D-04/D-14)."""
+    are near-identical by design."""
     from typing import Literal, cast
 
     endgame_class = cast(Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"], cls)

@@ -1,0 +1,6 @@
+old	new	kind	absent_paths	ref	canon_paths
+TrainReminderButton	useTrainReminderSlot	file	frontend/src	§5 components/train/TrainReminderButton.tsx:1	frontend/src/components/train/useTrainReminderSlot.tsx,frontend/src/components/train/__tests__/useTrainReminderSlot.test.tsx,frontend/src/components/train/TrainScoreScreen.tsx,frontend/src/components/train/TrainReminderResurfaceBanner.tsx,frontend/src/components/train/__tests__/TrainScoreScreen.test.tsx
+TrainHeader	TrainLandingHost	identifier	frontend/src	§5 components/train/TrainStartScreen.tsx:232	frontend/src/components/train/TrainStartScreen.tsx
+showResultRow	showReveal	identifier	frontend/src	§5 components/train/TrainSolveScreen.tsx:1418	frontend/src/components/train/TrainSolveScreen.tsx,frontend/src/pages/__tests__/Train.solveLoop.test.tsx
+remaining	secondsRemaining	identifier	-	§5 components/train/TrainLeaderboardCard.tsx:346	frontend/src/components/train/TrainLeaderboardCard.tsx,frontend/src/components/admin/LeaderboardMedalsDemo.tsx,frontend/src/components/train/__tests__/TrainLeaderboardCard.test.tsx
+moveQuality	moveTier	identifier	frontend/src/lib/trainBotCopy.ts	§5 lib/trainBotCopy.ts:403	frontend/src/lib/trainBotCopy.ts

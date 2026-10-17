@@ -1,7 +1,7 @@
 /**
  * positionVerdict — pure, worker-free prose position-evaluation module for the
- * text slot below the Maia move-quality bar (quick 260705-m3z; replaces the
- * static "Hover a segment..." resting-state help text in MaiaMoveQualityBar).
+ * text slot below the Maia move-quality bar (the resting-state
+ * text of MaiaMoveQualityBar).
  *
  * Classifies "how hard is this position to play at the selected ELO" from the
  * summed Maia probability mass of Stockfish-graded mistakes + blunders among
@@ -33,7 +33,7 @@ export type VerdictTier = 'safe' | 'tricky' | 'difficult';
 /**
  * The addressed player's objective standing (winning/losing), classified from the
  * mover-POV eval of the position's objectively best candidate — orthogonal to
- * VerdictTier, which measures DIFFICULTY of play, not standing (quick 260709-o72).
+ * VerdictTier, which measures DIFFICULTY of play, not standing.
  */
 export type StandingBand =
   | 'mate-for-you'
@@ -98,7 +98,7 @@ export const STANDING_DECISIVE_CP = 300;
 /** Mover-POV cp at/above this (below STANDING_DECISIVE_CP) -> 'better' (or 'worse' at/below the negative). */
 export const STANDING_BETTER_CP = 100;
 
-// ─── Standing classification (quick 260709-o72) ────────────────────────────
+// ─── Standing classification ────────────────────────────
 
 /**
  * Classifies the addressed player's objective standing from a white-POV eval,
@@ -159,7 +159,7 @@ interface RankedMove {
   grade: VerdictMoveGrade;
 }
 
-/** shownSans paired with their rung probability + grade, only where a grade already arrived (D-05). */
+/** shownSans paired with their rung probability + grade, only where a grade already arrived. */
 function rankMoves(
   rung: MoveCurvePoint | undefined,
   shownSans: string[],
@@ -218,8 +218,7 @@ function moverPovValue(grade: VerdictMoveGrade, mover: MoverColor): number | nul
 }
 
 /**
- * The objectively best candidate for the standing eval + bestMove (quick
- * 260709-o72): the 'best'-graded move when present, else the candidate with
+ * The objectively best candidate for the standing eval + bestMove: the 'best'-graded move when present, else the candidate with
  * the highest mover-POV eval. Null when no ranked candidate has an eval.
  */
 function pickBestCandidate(ranked: RankedMove[], mover: MoverColor): RankedMove | null {

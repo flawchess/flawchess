@@ -1,6 +1,6 @@
 /**
  * installCooldown — the pure re-offer cadence for the global Android/iOS
- * install drawer (Phase 203, INSTALL-01, D-04/D-05).
+ * install drawer.
  *
  * Replaces the old permanent boolean veto (`localStorage.setItem(KEY, 'true')`,
  * read forever as an absolute dismiss) with a bounded 14-day / 3-attempt
@@ -9,13 +9,13 @@
  * keys are retired, not read as a fallback — a stale truthy value under the
  * old key name must never resurrect a permanent veto.
  *
- * State lives in per-device localStorage (D-05) — an install is inherently
+ * State lives in per-device localStorage — an install is inherently
  * per-device and per-origin, so per-device cadence state is correct here.
  * Only the Train reminder intent (a separate concern) bridges the
  * tab-to-standalone boundary and goes server-side instead.
  */
 
-// D-04: locked values, named constants — never inline literals in the
+// Locked values, named constants — never inline literals in the
 // visibility logic.
 export const INSTALL_COOLDOWN_DAYS = 14;
 export const INSTALL_MAX_ATTEMPTS = 3;

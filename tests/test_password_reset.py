@@ -1,4 +1,4 @@
-"""Integration tests for the self-serve password reset flow (Phase 207).
+"""Integration tests for the self-serve password reset flow.
 
 Tests cover: end-to-end forgot -> reset -> login (Task 1 tracer), rate
 limiting / non-blocking dispatch / Sentry contract (Task 2), and eligibility
@@ -184,11 +184,11 @@ class TestPasswordResetFlow:
             # The router handler returns None with no response_model, which
             # FastAPI's default JSONResponse serializes as the literal `null`
             # (4 bytes), not a truly empty body. Both cases return this same
-            # body — the tuple (202, b"null") is what RESET-02 indistinguishability
+            # body — the tuple (202, b"null") is what indistinguishability
             # is captured against (see TestForgotPasswordIndistinguishability).
             assert forgot_resp.content == b"null"
 
-            # The send is dispatched as a detached task (T-207-02, non-blocking
+            # The send is dispatched as a detached task (non-blocking
             # dispatch) — drain it before reading `recorded`.
             await email_service.drain_pending_sends()
 
@@ -495,7 +495,7 @@ class TestPasswordResetAdjacency:
 
 
 # ---------------------------------------------------------------------------
-# Task 3: eligibility is credential state (RESET-05)
+# Task 3: eligibility is credential state
 # ---------------------------------------------------------------------------
 
 

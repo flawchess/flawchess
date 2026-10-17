@@ -1,0 +1,2 @@
+kind	path	needle	reason
+diff	app/repositories/game_flaws_repository.py	,	ruff format magic trailing comma after FLAW_BLOB_COLUMNS rename lengthened the line (INV 241-53)

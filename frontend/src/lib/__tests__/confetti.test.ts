@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * confetti.ts unit tests (Quick 260723-tqn).
+ * confetti.ts unit tests.
  *
  * Behaviors verified:
  * 1. fireWinConfetti invokes the mocked canvas-confetti default export at

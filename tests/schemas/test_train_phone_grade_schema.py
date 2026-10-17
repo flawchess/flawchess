@@ -1,4 +1,4 @@
-"""Pure Pydantic tests for the Phase 236 phone grade boundary (SEED-193, D-01/D-07)."""
+"""Pure Pydantic tests for the phone grade boundary."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def _without(key: str) -> dict[str, Any]:
 
 
 def test_field_set_is_exactly_the_six_keys() -> None:
-    """D-07: no device or engine hint, the record has exactly these keys."""
+    """No device or engine hint, the record has exactly these keys."""
     assert set(PhoneGrade.model_fields) == {
         "v",
         "tier",
@@ -105,7 +105,7 @@ def test_integer_expected_scores_at_the_bounds_are_accepted(build: Builder) -> N
 def test_malformed_phone_grade_is_dropped_and_the_body_still_validates(
     build: Builder, bad: Any
 ) -> None:
-    """D-01: a malformed record becomes None; the rest of the body is intact."""
+    """A malformed record becomes None; the rest of the body is intact."""
     request = build(bad)
     assert request.phone_grade is None
 
@@ -165,7 +165,7 @@ def test_solve_request_ignores_unknown_keys() -> None:
 
 
 def test_review_patch_excludes_the_phone_grade() -> None:
-    """The router's telemetry patch must not carry the record (D-12)."""
+    """The router's telemetry patch must not carry the record."""
     request: BaseModel = _review(_VALID_PHONE_GRADE)
     patch = request.model_dump(exclude_none=True, exclude={"phone_grade"})
     assert "phone_grade" not in patch

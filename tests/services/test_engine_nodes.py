@@ -1,7 +1,7 @@
-"""Node-budget engine call contract tests (EVAL-02). Phase 116 Wave 0.
+"""Node-budget engine call contract tests.
 
 Tests the evaluate_nodes() module-level function and EnginePool.evaluate_nodes()
-method introduced in Phase 116. The node-budget path uses chess.engine.Limit(nodes=1_000_000)
+method. The node-budget path uses chess.engine.Limit(nodes=1_000_000)
 instead of Limit(depth=15); timeout is 5.0s (_NODES_TIMEOUT_S) rather than 2.0s.
 """
 
@@ -34,12 +34,12 @@ KQ_VS_K_WHITE_WINS = "8/8/8/8/8/8/4Q3/4K2k w - - 0 1"
 DENSE_MIDDLEGAME_FEN = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1"
 
 # ─── Constants (CLAUDE.md: no magic numbers) ──────────────────────────────────
-# Quick 260914-w1m / FLAWCHESS-BE: a chess.com custom-position root Stockfish dies on.
+# A chess.com custom-position root Stockfish dies on.
 SIXTEEN_WHITE_PAWNS_FEN = "rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 EXPECTED_NONE_RESULT: tuple[None, None] = (None, None)
 MOCK_EVAL_CP: int = 150
 MOCK_EVAL_MATE: int = 3
-# Cancellation-safety probe budgets (quick task 260725-da3, ITEM 2 gate).
+# Cancellation-safety probe budgets.
 _CANCEL_PROBE_TIMEOUT_S: float = 0.05  # forces asyncio.wait_for to cancel mid-search
 _REUSE_PROBE_DEPTH: int = 6  # cheap second search on the SAME protocol
 _REUSE_PROBE_TIMEOUT_S: float = 10.0  # generous: a desync would hang, not be slow
@@ -50,7 +50,7 @@ class TestEvaluateNodesPoolUnset:
     """Tests that run unconditionally — no Stockfish binary required.
 
     Mirrors TestEngineNotStarted in test_engine.py. Tests the not-started branch
-    which is independent of binary presence (EVAL-02).
+    which is independent of binary presence.
 
     NOTE: We patch the module-level _pool to None instead of calling stop_engine(),
     so we don't destroy the session-scoped engine_started state for other test classes
@@ -76,14 +76,14 @@ class TestEvaluateNodesWithMock:
     """Unit tests using a mocked UciProtocol to verify Limit and timeout behavior.
 
     These tests verify the exact Limit(nodes=1_000_000) contract without requiring
-    a real Stockfish binary — EVAL-02 compliance tests.
+    a real Stockfish binary.
     """
 
     async def test_evaluate_nodes_uses_limit_nodes(self) -> None:
         """evaluate_nodes() calls protocol.analyse with Limit(nodes=1_000_000).
 
         Records the Limit instance passed to analyse() and asserts nodes=1_000_000
-        is used, NOT depth. This is the EVAL-02 core contract.
+        is used, NOT depth. This is the core contract.
         """
         from app.services.engine import EnginePool, _NODES_BUDGET
 
@@ -133,7 +133,7 @@ class TestEvaluateNodesWithMock:
     async def test_evaluate_nodes_timeout_returns_none_without_restart(self) -> None:
         """evaluate_nodes() returns (None, None) on TimeoutError WITHOUT restarting.
 
-        Contract changed by quick task 260725-da3 (FLAWCHESS-8B): a timeout means
+        A timeout means
         the box is slow, not that the engine is broken, so the worker is kept and
         only its slot is released. Restarting spawned a fresh Stockfish process on
         an already-overloaded machine and amplified one slow position into a block
@@ -216,7 +216,7 @@ class TestEvaluateNodesWithMock:
 
         pool._restart_worker = mock_restart  # ty: ignore[invalid-assignment]
 
-        # Quick task 260902-rmn: an engine crash must reach Sentry — the caller
+        # An engine crash must reach Sentry — the caller
         # only ever sees None, so the restart path was the only witness.
         with patch("app.services.engine.sentry_sdk.capture_exception") as capture:
             result = await pool.evaluate_nodes(chess.Board())
@@ -229,7 +229,7 @@ class TestEvaluateNodesWithMock:
         """An impossible position (16 white pawns) returns (None, None) without
         calling protocol.analyse and without consuming the worker slot.
 
-        Quick task 260914-w1m / FLAWCHESS-BE: Stockfish dies on such boards
+        Stockfish dies on such boards
         (chess.com custom-position games), taking a pool worker with it.
         """
         from app.services.engine import EnginePool
@@ -267,7 +267,7 @@ class TestEvaluateNodesWithMock:
     async def test_restart_worker_spawn_failure_captures_and_marks_slot_dead(self) -> None:
         """A failed respawn returns False, nulls the slot, and reaches Sentry.
 
-        Quick task 260902-rmn: the slot stays permanently dead afterwards (every
+        The slot stays permanently dead afterwards (every
         pickup returns None), which used to be invisible outside a log line.
         """
         from app.services.engine import EnginePool
@@ -347,8 +347,8 @@ class TestEvaluateNodesRealEngine:
     async def test_protocol_reusable_after_cancelled_analyse(self) -> None:
         """A cancelled `analyse()` leaves the UCI protocol usable for the NEXT one.
 
-        This is the correctness gate for quick task 260725-da3 ITEM 2 (skipping
-        `_restart_worker` on `asyncio.TimeoutError`). Keeping a slot after a
+        This is the correctness gate for skipping
+        `_restart_worker` on `asyncio.TimeoutError`. Keeping a slot after a
         timeout is only safe if the cancellation does NOT desync the protocol,
         so this asserts it against the real binary rather than assuming it.
 

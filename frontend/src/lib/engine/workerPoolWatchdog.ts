@@ -1,12 +1,11 @@
 /**
  * workerPoolWatchdog — the host-side fault-detection layer for
- * `workerPool.ts`'s per-slot UCI state machine (D-06, FLAWCHESS-9G, quick
- * 260731-s0z FIX-4): the grading watchdog (a `go` that never answers
+ * `workerPool.ts`'s per-slot UCI state machine (FLAWCHESS-9G): the grading watchdog (a `go` that never answers
  * `bestmove`), the stop-bestmove watchdog (a `stop` that never answers), and
  * the replacement-slot init watchdog (a respawned worker that never
  * completes its UCI handshake). Not a React hook — plain module, no UI
  * wiring, matching `maiaQueue.ts`'s "closure/module-level state, not a
- * hook" convention (Phase 215-02 extraction from `createWorkerPool()`).
+ * hook" convention.
  *
  * Every function here takes the pool's shared `PoolState` and cross-stage
  * `PoolOps` dispatch table as its first two parameters (`workerPoolState.ts`)
@@ -19,8 +18,8 @@
  * why `replaceDeadSlot` (owned by the lifecycle stage, not this module) is
  * only ever reached through `ops`, never imported directly. The pool's own
  * types and constants (the watchdog timeout/re-arm knobs) import from
- * `workerPoolState.ts`, never from the `workerPool.ts` facade (215 code
- * review WR-01) — see that file's header for why.
+ * `workerPoolState.ts`, never from the `workerPool.ts` facade — see that
+ * file's header for why.
  */
 
 import * as Sentry from '@sentry/react';
@@ -65,7 +64,7 @@ export function rearmGradingWatchdog(
 }
 
 /**
- * D-06: fires when a slot's `sendGo` never produced a `bestmove` within
+ * Fires when a slot's `sendGo` never produced a `bestmove` within
  * `GRADING_WATCHDOG_TIMEOUT_MS` — a genuinely hung/wedged worker, not a
  * merely slow position. Three false-positive gates run first and re-arm
  * instead of killing (FLAWCHESS-9G): a fire far past its deadline is page
@@ -115,8 +114,8 @@ export function fireWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlo
   // the desktop-Chrome event that reopened this issue, and by construction
   // it cannot catch either remaining false-positive shape: a moderately
   // throttled background tab (timer fires ~62s, worker never stopped
-  // running) or a genuinely slow `go depth N` under CPU contention (D-05
-  // removed the wall-clock bound, so a sharp position on a loaded machine
+  // running) or a genuinely slow `go depth N` under CPU contention (there
+  // is no wall-clock bound, so a sharp position on a loaded machine
   // may legitimately outlast 60s with 2-4 WASM workers and Maia competing).
   // Both leave the fingerprint a real fault does not: a live `info` stream.
   // Re-arm on that instead — bounded by `MAX_WATCHDOG_LIVENESS_REARMS`, so
@@ -132,7 +131,7 @@ export function fireWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlo
     return;
   }
 
-  // Bug fix (FLAWCHESS-9G, third pass, SEED-180): a hidden tab whose workers
+  // Bug fix (FLAWCHESS-9G, third pass): a hidden tab whose workers
   // are throttled into silence while the host timer still fires on time
   // slips past both gates above (on time, so not suspension; silent, so not
   // liveness). The enriched context showed it in two separate sessions:
@@ -186,14 +185,14 @@ export function fireWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlo
   // means no terminal `bestmove` arrived within the bound; resolving with
   // whatever `info` lines happened to accumulate first would be the same
   // wall-clock-dependent truncation removing `GRADING_MOVETIME_SAFETY_CAP_MS`
-  // exists to eliminate, only rarer and harder to reproduce (D-06).
+  // exists to eliminate, only rarer and harder to reproduce.
   slot.current?.resolve(new Map());
   slot.current = null;
   ops.replaceDeadSlot(slot);
 }
 
 /**
- * Bug fix (quick 260731-s0z, FIX-4): arm the stop-bestmove watchdog on a
+ * Bug fix: arm the stop-bestmove watchdog on a
  * slot we just sent `stop` to, in place of a bare `clearSlotWatchdog`.
  * Reuses `watchdogTimer` rather than adding a second field — the two
  * bounds (`GRADING_WATCHDOG_TIMEOUT_MS` for a "go" that never answers,
@@ -210,7 +209,7 @@ export function armStopWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorker
 }
 
 /**
- * Bug fix (quick 260731-s0z, FIX-4): fires when a slot we sent `stop` to
+ * Bug fix: fires when a slot we sent `stop` to
  * never produces the terminating `bestmove` within
  * `STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS` — the slot was left parked in
  * `'stopping'` forever, permanently lost but never marked `dead`, so it
@@ -218,7 +217,7 @@ export function armStopWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorker
  * rather than sharing a body: the two differ in whether a `stop` still
  * needs sending (it doesn't here — we already sent one) and in the Sentry
  * message; reusing `dead` (instead of a new lifecycle state) is the same
- * choice D-06 already made for `fireWatchdog`. `slot.stopPending` is left
+ * choice `fireWatchdog` makes. `slot.stopPending` is left
  * alone here — `dead` is the dispatch gate, and a late `bestmove` on a
  * dead slot is already harmless (handleLine's stopPending branch would
  * just no-op it).
@@ -240,8 +239,8 @@ export function fireStopWatchdog(_state: PoolState, ops: PoolOps, slot: PoolWork
  * Bound a REPLACEMENT slot's init handshake (see `INIT_WATCHDOG_TIMEOUT_MS`).
  * Reuses `watchdogTimer`: a slot in init is neither `thinking` nor
  * `stopping`, so the field is free, and the `readyok` branch of `handleLine`
- * disarms it — the same field-sharing argument FIX-4 made for the
- * stop-bestmove bound.
+ * disarms it — the same field-sharing argument as for the stop-bestmove
+ * bound.
  */
 export function armInitWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlot): void {
   slot.armedAtMs = Date.now();

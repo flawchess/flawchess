@@ -1,4 +1,4 @@
-"""Pure tests for current_strength_service.resolve_current_strength (Quick 260811-u11, SEED-147).
+"""Pure tests for current_strength_service.resolve_current_strength.
 
 No DB — builds RecentRungRow fixtures directly and calls the pure selection
 function. DB-backed qualifying-games filtering is covered separately by
@@ -51,7 +51,7 @@ def _anchor(rating: int) -> RatingAnchorRow:
 
 
 class TestFloorBoundary:
-    """D-01: exactly the 20th game flips a rung from ignored to selected."""
+    """Exactly the 20th game flips a rung from ignored to selected."""
 
     def test_19_games_is_ignored(self) -> None:
         rung = _rung(
@@ -85,7 +85,7 @@ class TestFloorBoundary:
 
 
 class TestRecencyRanking:
-    """D-03: the rung with the latest latest_played_at wins, absent a tiebreak."""
+    """The rung with the latest latest_played_at wins, absent a tiebreak."""
 
     def test_most_recent_rung_wins(self) -> None:
         rung_a = _rung("chess.com", "blitz", 25, 1400, datetime.datetime(2026, 8, 1, tzinfo=_UTC))
@@ -103,9 +103,9 @@ class TestRecencyRanking:
 
 
 class TestNativeBlitzTiebreak:
-    """D-03/P-02: the CONTEXT-approved worked example, plus the lag negative.
+    """The worked example from the design discussion, plus the lag negative.
 
-    P-02 was revised on 2026-08-11 against real prod data: the tiebreak has
+    The tiebreak was tuned against real prod data: it has
     NO point-gap condition. Only the lag bound can stop it.
     """
 
@@ -128,7 +128,7 @@ class TestNativeBlitzTiebreak:
         assert result.rung.converted is False
 
     def test_wide_point_gap_does_not_block_the_tiebreak(self) -> None:
-        # The revised-P-02 regression. cc's native 700 normalizes hundreds of
+        # The wide-gap regression. cc's native 700 normalizes hundreds of
         # points away from li's 1532 -- under the original 50-point bound the
         # converted rung won. A wide gap is evidence the ChessGoals conversion
         # is off for this user, so the native rung must still win.
@@ -154,7 +154,7 @@ class TestNativeBlitzTiebreak:
         assert result.rung.converted is False
 
     def test_prod_user_3_regression(self) -> None:
-        """The real 2026-08-11 prod snapshot that motivated the P-02 revision.
+        """The real 2026-08-11 prod snapshot that motivated dropping the point-gap bound.
 
         chess.com blitz led on recency by ~8 hours and normalized to 1467;
         native lichess blitz sat at 1554, an 87-point gap that the original
@@ -213,7 +213,7 @@ class TestNativeBlitzTiebreak:
 
 
 class TestFallback:
-    """D-07: falls back to the blitz-bucket anchor when no rung survives."""
+    """Falls back to the blitz-bucket anchor when no rung survives."""
 
     def test_no_qualifying_rung_falls_back_to_blitz_anchor(self) -> None:
         below_floor = _rung(

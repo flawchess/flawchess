@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * PersonaEloDisclosurePopover.test.tsx (Phase 184).
+ * PersonaEloDisclosurePopover.test.tsx.
  *
- * Covers BOTH calibration states of the D-08 disclosure. The provisional
- * state is what ships today (`--bootstrap` fit), and is also asserted through
- * the real surface in PersonaDetailSurface.test.tsx. The measured state is
- * exercised here by mocking `PERSONA_CALIBRATION_MEASURED` to true, so the
- * measured copy and the D-06 ~900 floor line are proven to appear the moment
- * a real sweep is fitted — rather than being discovered broken at that point.
+ * Covers BOTH calibration states of the ELO disclosure by mocking
+ * `PERSONA_CALIBRATION_MEASURED` (false by default, true per test). The
+ * shipped (measured) state is also asserted through the real surface in
+ * PersonaDetailSurface.test.tsx; here the provisional copy and the measured
+ * copy with its ~900 floor line are each pinned independently of the
+ * generated value.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -66,7 +66,7 @@ describe('PersonaEloDisclosurePopover — provisional calibration', () => {
   });
 });
 
-describe('PersonaEloDisclosurePopover — popover-open tracking (Phase 229 D-13)', () => {
+describe('PersonaEloDisclosurePopover — popover-open tracking', () => {
   let track: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -100,7 +100,7 @@ describe('PersonaEloDisclosurePopover — measured calibration', () => {
     expect(content.textContent).not.toContain('provisional');
   });
 
-  it('appends the D-06 ~900 floor acknowledgment for a floor-rung persona', async () => {
+  it('appends the ~900 floor acknowledgment for a floor-rung persona', async () => {
     measured.value = true;
     renderPopover(true);
 

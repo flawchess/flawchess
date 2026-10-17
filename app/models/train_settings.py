@@ -1,10 +1,10 @@
-"""ORM model for train_settings table (Phase 189).
+"""ORM model for train_settings table.
 
-Phase 189 Plan 01 (POOL-04, D-06/D-07/D-08). One settings row per user
-controlling the Train schedule: the D-06 IANA timezone string used for every
+One settings row per user
+controlling the Train schedule: the IANA timezone string used for every
 "session day" boundary computation (`app.services.train_scheduler.local_today`),
-the D-07 weekday bitmask (0 = empty set = "train anytime", the identity case
-for `next_scheduled_day`), and the D-08 puzzles-per-session count.
+the weekday bitmask (0 = empty set = "train anytime", the identity case
+for `next_scheduled_day`), and the puzzles-per-session count.
 
 Mirrors `app/models/user_import_settings.py`'s create-on-first-touch shape
 exactly: PK = `user_id`, no migration-time backfill for new users, defaults
@@ -13,14 +13,12 @@ exactly: PK = `user_id`, no migration-time backfill for new users, defaults
 application layer on first GET/PUT via
 `app.repositories.train_repository.get_or_create_settings`.
 
-Phase 193 (SEED-121) replaced Phase 191's D-18 weekly settled-streak
-snapshot (`flame_state`) with a per-scheduled-day tick + a 0-7 depletable
-shield: `streak_count` (KEPT, re-meaning "completed scheduled-day sessions"
-rather than "settled weeks"), `shield_level` (NEW, replaces `flame_state`),
-`streak_settled_through` (KEPT, re-meaning "the last judged day" rather than
-"the Monday of the last settled week"), and `pool_eligible_since` (NEW, the
-D-06 eligibility watermark — never judge a scheduled day earlier than the
-date the user first had qualifying material). A settled day is frozen
+The streak snapshot is a per-scheduled-day tick + a 0-7 depletable
+streak buffer (the UI's "freezes"): `streak_count` is the number of completed
+scheduled-day sessions, `shield_level` is the buffer, `streak_settled_through`
+is the last judged day, and `pool_eligible_since` is the eligibility watermark
+— never judge a scheduled day earlier than the date the user first had
+qualifying material. A settled day is frozen
 forever — `GET /train/progress` only ever walks days strictly after
 `streak_settled_through`, so a later `weekday_mask`/`timezone` change can
 never re-judge a day that already settled. See
@@ -48,7 +46,7 @@ from app.services.train_scheduler import (
 
 class TrainSettings(Base):
     """One row per user: Train timezone, weekday schedule, session size,
-    and the per-day tick machine's persisted snapshot (Phase 193)."""
+    and the per-day tick machine's persisted snapshot."""
 
     __tablename__ = "train_settings"
     __table_args__ = (
@@ -71,7 +69,7 @@ class TrainSettings(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     timezone: Mapped[str] = mapped_column(Text, nullable=False, server_default="UTC")
-    # 191-06 UAT: defaults changed from 0/12 to 127/6 — see
+    # Defaults are 127/6 — see
     # app.services.train_scheduler.DEFAULT_WEEKDAY_MASK/
     # DEFAULT_PUZZLES_PER_SESSION for the full rationale (both are also the
     # single source of truth the repository/app layer actually applies on
@@ -80,7 +78,7 @@ class TrainSettings(Base):
     puzzles_per_session: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, server_default="6"
     )
-    # Phase 193 per-day tick snapshot. streak_count counts completed
+    # Per-day tick snapshot. streak_count counts completed
     # scheduled-day sessions (never an in-flight/unsettled day — see
     # tick_days). shield_level is a plain SmallInteger + range CHECK (not an
     # IntEnum/TEXT+CHECK): it is a count, not a named state, matching
@@ -88,28 +86,27 @@ class TrainSettings(Base):
     # non-categorical integer. streak_settled_through is the last day this
     # machine has finished judging; NULL means nothing has settled yet (the
     # all-null-equivalent snapshot every pre-existing row gets from the
-    # Phase 193 migration, which is exactly what triggers a full-history
+    # streak-snapshot migration, which is exactly what triggers a full-history
     # replay on first settlement).
     streak_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
     shield_level: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
     streak_settled_through: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
-    # Phase 193 D-06: the eligibility watermark — never judge a scheduled day
+    # The eligibility watermark — never judge a scheduled day
     # earlier than the date the user first had qualifying (drillable)
     # material. NULL means never yet stamped (a brand-new user, or an
-    # existing user with zero drill_items at migration time per the Task 1
-    # hard-reset decision — see the migration's module docstring for the D-05
-    # waiver this implies). Stamped lazily, once, by
+    # existing user with zero drill_items at migration time — see the
+    # migration's module docstring). Stamped lazily, once, by
     # `app.repositories.train_repository._stamp_pool_eligibility`.
     pool_eligible_since: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
-    # Phase 201 (REMIND-01, D-06/D-18). reminder_enabled/reminder_hour are
-    # user-owned configuration exposed through GET/PUT /train/settings
-    # (D-18); reminder_hour is a plain bounded local-hour integer (a count,
+    # reminder_enabled/reminder_hour are
+    # user-owned configuration exposed through GET/PUT /train/settings;
+    # reminder_hour is a plain bounded local-hour integer (a count,
     # not a named state), so SmallInteger + range CHECK per CLAUDE.md, never
     # a native enum -- mirrors shield_level's shape exactly.
-    # reminder_last_sent_on is the D-06 "already sent today" watermark,
+    # reminder_last_sent_on is the "already sent today" watermark,
     # structurally identical to streak_settled_through: compared against
     # train_scheduler.local_today(timezone, now_utc), and written ONLY by
-    # the reminder job's claim UPDATE (plan 201-04) -- never client-writable
+    # the reminder job's claim UPDATE -- never client-writable
     # (it never appears in TrainSettingsUpdate/TrainSettingsResponse or in
     # upsert_settings' ON CONFLICT DO UPDATE set_ dict).
     # The three server_defaults below exist for direct-INSERT parity only;
@@ -120,11 +117,11 @@ class TrainSettings(Base):
     reminder_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     reminder_hour: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="18")
     reminder_last_sent_on: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
-    # Phase 203 (OFFER-03/OFFER-05, D-02/D-15). Opposite access pattern from
+    # Opposite access pattern from
     # reminder_last_sent_on directly above: reminder_intent_at IS
     # client-writable and appears in BOTH TrainSettingsUpdate and
     # TrainSettingsResponse. It is stamped when the user expresses install
-    # intent from the iOS install-affordance tap (D-15) -- an instant, not a
+    # intent from the iOS install-affordance tap -- an instant, not a
     # calendar watermark, so it uses DateTime(timezone=True) rather than
     # Date (mirrors the codebase's nullable-instant convention, e.g.
     # drill_session.py, eval_jobs.py, herring_pool.py -- never a naive
@@ -133,13 +130,12 @@ class TrainSettings(Base):
     reminder_intent_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Phase 222 (TRAINBOT-05, D-11/D-12/D-13) + Phase 240 (D-09/D-10). Server-
-    # side onboarding state for the Train bot steppers. Two first-write-wins
-    # "explanation seen" timestamps (intro_seen_at: guess-bubble intro;
-    # sr_explained_at: first-completed-session SR explanation) plus the Phase
-    # 240 forward-only `reveal_tour_stage` counter (completed reveal-tour parts,
-    # 0..REVEAL_TOUR_STAGE_MAX; it replaced the Phase 222 walkthrough
-    # timestamp, retired by Phase 240). All three are Response-ONLY (D-12): the
+    # Server-side onboarding state for the Train bot steppers. Two
+    # first-write-wins "explanation seen" timestamps (intro_seen_at: guess-bubble
+    # intro; sr_explained_at: first-completed-session SR explanation) plus the
+    # forward-only `reveal_tour_stage` counter (completed reveal-tour parts,
+    # 0..REVEAL_TOUR_STAGE_MAX; it replaced an earlier walkthrough timestamp).
+    # All three are Response-ONLY: the
     # closer access-pattern sibling is reminder_last_sent_on, which is likewise
     # absent from TrainSettingsUpdate. They are written ONLY by
     # POST /train/onboarding/{step} on stepper completion; an abandoned stepper
@@ -147,8 +143,8 @@ class TrainSettings(Base):
     # instants, not calendar watermarks, so DateTime(timezone=True) (mirrors the
     # codebase's nullable-instant convention, never a naive DateTime). The stage
     # is a plain SmallInteger + range CHECK (a count, not a named state),
-    # mirroring shield_level. No backfill for the timestamps (D-13); the Phase
-    # 240 migration backfilled stage 3 for users who had finished the old tour.
+    # mirroring shield_level. No backfill for the timestamps; the stage
+    # migration set stage 3 for users who had finished the old tour.
     intro_seen_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

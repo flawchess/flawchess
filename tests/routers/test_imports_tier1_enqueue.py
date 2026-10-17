@@ -3,11 +3,11 @@
 Covers:
 - test_tier1_enqueue: authenticated non-guest user enqueues an owned game → 200,
   status "enqueued" (or "already_queued" on second call), eval_jobs row exists.
-- test_tier1_idor: game owned by another user → 404, no row inserted (T-118-06).
+- test_tier1_idor: game owned by another user → 404, no row inserted.
 - test_tier1_guest: guest enqueues their own game → 200 "enqueued"; guest on
   another user's game → 404 (T-ey1-01 IDOR guard preserved for guests).
 - test_tier1_second_call: calling twice on the same game returns "already_queued".
-- test_tier1_noninteger_game_id: non-integer path param → FastAPI 422 (T-118-10).
+- test_tier1_noninteger_game_id: non-integer path param → FastAPI 422.
 - test_tier1_requires_auth: no token → 401.
 
 Uses httpx AsyncClient with ASGITransport. Game rows seeded via committed sessions
@@ -182,7 +182,7 @@ async def test_tier1_requires_auth() -> None:
 
 @pytest.mark.asyncio
 async def test_tier1_noninteger_game_id(user_client: tuple[int, str]) -> None:
-    """Non-integer game_id → FastAPI 422 (T-118-10)."""
+    """Non-integer game_id → FastAPI 422."""
     _user_id, token = user_client
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(
@@ -210,7 +210,7 @@ async def test_tier1_enqueue(user_client: tuple[int, str], test_engine) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    # Freshly-seeded game with no competing enqueue source (Phase 118 removed the
+    # Freshly-seeded game with no competing enqueue source (there is no
     # tier-2 auto-enqueue), so the explicit tier-1 request always wins the slot.
     assert body["status"] == "enqueued"
     assert body["game_id"] == game_id
@@ -253,7 +253,7 @@ async def test_tier1_idor(
     other_user_client: tuple[int, str],
     test_engine,
 ) -> None:
-    """T-118-06 IDOR guard: game owned by another user → 404, no row inserted."""
+    """IDOR guard: game owned by another user → 404, no row inserted."""
     owner_id, _owner_token = user_client
     _attacker_id, attacker_token = other_user_client
     headers = {"Authorization": f"Bearer {attacker_token}"}

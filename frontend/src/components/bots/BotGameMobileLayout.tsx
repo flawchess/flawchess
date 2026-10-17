@@ -9,7 +9,7 @@ import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
 export interface BotGameMobileLayoutProps extends BotPlayerRowInputs {
   /** Navigates to the roster WITHOUT clearing the in-progress snapshot — a
    * live game stays in the existing pending store and `ResumeGate` handles
-   * the return (223-CONTEXT discretion note). */
+   * the return. */
   onBackToRoster: () => void;
   bubble: ReactElement;
   board: ReactElement;
@@ -25,35 +25,28 @@ export interface BotGameMobileLayoutProps extends BotPlayerRowInputs {
   onFlip: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
-  /** Caps the stack at the board's width and centers it — exactly the
-   * helper this component replaces (`renderMobileLayout` in `Bots.tsx`). */
+  /** Caps the stack at the board's width and centers it. */
   boardPx: number;
 }
 
 /**
- * BotGameMobileLayout — Phase 223 (BOTVOICE-05, D-10/D-11): replaces the
- * page's old mobile render helper. Top to bottom: a top bar holding a back
+ * BotGameMobileLayout. Top to bottom: a top bar holding a back
  * arrow and, at the far end, a settings cogwheel that opens the settings sheet
- * in place (Phase 228 D-04: sound can be switched off mid-game without
+ * in place (sound can be switched off mid-game without
  * navigating away, which would trigger the ResumeGate overlay on return),
  * the avatar-and-bubble row,
  * then the board flanked by the same two `PlayerBar` rows the desktop layout
- * and the analysis board use (name + rating label left, clock right).
- *
- * Phase 223 UAT: those player rows REPLACE the earlier nameless clock strip
- * (D-11's "no bot identity on mobile" was reversed at UAT — the strips are
- * the same ones the analysis board shows, so the bot's name and calibrated
- * label are on screen on every breakpoint).
+ * and the analysis board use (name + rating label left, clock right), so the
+ * bot's name and calibrated label are on screen on every breakpoint.
  *
  * Publishes the four-action payload itself via
  * `usePublishMobileBoardControls`, so the takeover is scoped to this
  * component's own mount — the store is cleared automatically on unmount
- * when the game ends or the breakpoint flips. This is also what keeps that
- * branch out of `BotsGame`'s own pinned complexity budget.
+ * when the game ends or the breakpoint flips.
  *
  * The in-page shared control row and the game-controls row are NOT rendered
  * here — they are exactly the chrome whose removal buys the board its extra
- * width (RESEARCH Pitfall 5, SC4).
+ * width.
  */
 export function BotGameMobileLayout({
   persona,

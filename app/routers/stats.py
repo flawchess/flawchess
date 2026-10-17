@@ -1,4 +1,6 @@
-"""Stats router: GET /stats/rating-history and GET /stats/global endpoints."""
+"""Stats router: rating history, global WDL, most-played openings and bookmark
+phase-entry metrics.
+"""
 
 import datetime
 from typing import Annotated
@@ -121,7 +123,7 @@ async def get_bookmark_phase_entry_metrics(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> BookmarkPhaseEntryResponse:
-    """Phase 80 fields (avg eval, confidence, clock-diff at MG/EG entry) for arbitrary
+    """Phase-entry fields (avg eval, confidence, clock-diff at MG/EG entry) for arbitrary
     bookmark target_hashes. Body shape allows variable-length hash lists without URL length limits.
     """
     return await stats_service.get_bookmark_phase_entry_metrics(

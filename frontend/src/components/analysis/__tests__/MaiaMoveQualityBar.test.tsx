@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * MaiaMoveQualityBar tests (quick 260705-kfg) — the move-quality bar below the
+ * MaiaMoveQualityBar tests — the move-quality bar below the
  * Human Move Probability chart. Verifies segment rendering by bucket, the
  * hover-to-reveal move list, and the onHoverMovesChange lift used for board
  * arrows. Bucketing math itself is covered in moveQuality.test.ts.
  *
- * Prose-sentence tests (quick 260709-o72) cover the "{standing} — {difficulty}"
+ * Prose-sentence tests cover the "{standing} — {difficulty}"
  * rewrite: the cards must tell the truth about whether the addressed player is
  * winning or losing, not just how hard the position is to play.
  */
@@ -50,7 +50,7 @@ const BANNED_SUBSTRINGS = [
   'keeps things on track',
   'lead to trouble',
   'leads to trouble',
-  // Practical-advice wording retired in quick 260709-t4w — it contradicted the
+  // Practical-advice wording must not return: it contradicted the
   // FlawChess Engine card recommending exactly the move the Maia card warned against.
   'knife-edge',
   'walks into trouble',
@@ -96,7 +96,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('LOAD-BEARING (T-219-14, Phase 219-03 D-12): an 11-rung coarse result (isLadderComplete: false) never reaches the verdict/buckets — the frozen ref stays at its empty starting value', () => {
+  it('LOAD-BEARING: an 11-rung coarse result (isLadderComplete: false) never reaches the verdict/buckets — the frozen ref stays at its empty starting value', () => {
     const { container, rerender } = render(
       <MaiaMoveQualityBar
         perElo={PER_ELO}
@@ -126,7 +126,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(screen.getByTestId('maia-position-verdict')).toBeTruthy();
   });
 
-  it('LOAD-BEARING (CR-01, Phase 219 review): navigating to a new position mid-ladder never renders the PREVIOUS position\'s ladder against the new position\'s candidates', () => {
+  it('LOAD-BEARING: navigating to a new position mid-ladder never renders the PREVIOUS position\'s ladder against the new position\'s candidates', () => {
     const { container, rerender } = render(
       <MaiaMoveQualityBar
         perElo={PER_ELO}
@@ -154,7 +154,7 @@ describe('MaiaMoveQualityBar', () => {
 
     // Position B's coarse pass lands: SAN 'Ra8' is present in BOTH positions
     // but graded/weighted differently ('best' in A, 'blunder' in B), and the
-    // ladder is still incomplete. Before the CR-01 fix, the frozen `useState`
+    // ladder is still incomplete. Before the fix, the frozen `useState`
     // never reset when `isLadderComplete` flipped back to false, so it still
     // held position A's complete ladder here — `bucketMovesByQuality` and
     // `computePositionVerdict` would read B's shownSans/qualityBySan against
@@ -190,14 +190,14 @@ describe('MaiaMoveQualityBar', () => {
     );
 
     // Idle (resting state): prose position verdict, not the old static hint
-    // text (quick 260705-m3z) — all four fixture moves are graded, so
+    // text — all four fixture moves are graded, so
     // computePositionVerdict has something to narrate.
     expect(screen.getByTestId('maia-position-verdict')).toBeTruthy();
 
     fireEvent.mouseEnter(screen.getByTestId('maia-quality-segment-good'));
     const list = screen.getByTestId('maia-quality-hovered-list').textContent ?? '';
     expect(list).toMatch(/Good Moves:/);
-    // Each move now renders as `SAN · eval · pct%` (quick 260708).
+    // Each move renders as `SAN · eval · pct%`.
     expect(list).toMatch(/Ra8 · .+ · 52%/);
     // Blunder moves are NOT listed while hovering the good segment.
     expect(list).not.toMatch(/g4/);
@@ -207,7 +207,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(onHover).toHaveBeenLastCalledWith(null);
   });
 
-  it('falls back to the static help text when no shown move is graded yet (quick 260705-m3z)', () => {
+  it('falls back to the static help text when no shown move is graded yet', () => {
     render(
       <MaiaMoveQualityBar
         perElo={PER_ELO}
@@ -239,7 +239,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(list.indexOf('g4')).toBeLessThan(list.indexOf('Rb1'));
   });
 
-  it('frames the standing clause around "you" by default and "your opponent" on the opponent\'s move (quick 260705-m3z / 260709-o72)', () => {
+  it('frames the standing clause around "you" by default and "your opponent" on the opponent\'s move', () => {
     const { rerender } = render(
       <MaiaMoveQualityBar
         perElo={PER_ELO}
@@ -268,7 +268,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(screen.getByTestId('maia-position-verdict').textContent ?? '').toMatch(/Your opponent is winning/);
   });
 
-  it('opens a prose move popover on hover/focus, showing Maia % + eval (quick 260705-m3z)', () => {
+  it('opens a prose move popover on hover/focus, showing Maia % + eval', () => {
     render(
       <MaiaMoveQualityBar
         perElo={PER_ELO}
@@ -290,7 +290,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(screen.queryByTestId('maia-prose-move-tooltip-g4')).toBeNull();
   });
 
-  it('plays a prose move as a free move when clicked while its popover is open (quick 260705-mth)', () => {
+  it('plays a prose move as a free move when clicked while its popover is open', () => {
     const onPlayMove = vi.fn();
     render(
       <MaiaMoveQualityBar
@@ -312,7 +312,7 @@ describe('MaiaMoveQualityBar', () => {
     expect(onPlayMove).toHaveBeenCalledWith('g4');
   });
 
-  it('the first interaction reveals a prose move without playing it (quick 260705-mth)', () => {
+  it('the first interaction reveals a prose move without playing it', () => {
     const onPlayMove = vi.fn();
     render(
       <MaiaMoveQualityBar
@@ -334,7 +334,7 @@ describe('MaiaMoveQualityBar', () => {
   });
 });
 
-describe('MaiaMoveQualityBar — standing+difficulty prose rewrite (quick 260709-o72)', () => {
+describe('MaiaMoveQualityBar — standing+difficulty prose rewrite', () => {
   it('a dead-lost position (white-POV mate against the addressed player) ALWAYS collapses: "You\'re being mated (-M4) — {bestMove} is the longest resistance."', () => {
     const grades = new Map<string, MoveQualityEval>([
       ['Qxc1', { quality: 'best', evalCp: null, evalMate: 4 }],

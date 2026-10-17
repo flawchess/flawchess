@@ -1,20 +1,19 @@
-"""Tests for `app.services.chesscom_to_lichess` — Phase 94.4 Plan 01.
+"""Tests for `app.services.chesscom_to_lichess`.
 
 Pure-Python lookup module. The two lookup tables (Table 1 `CHESSCOM_INTRA_TC`,
 Table 2 `CHESSCOM_BLITZ_TO_LICHESS`) are the canonical re-fetched ChessGoals
-2025-07 snapshot (RESEARCH Pattern 8b, lines 924-1045), which supersedes the
-earlier Pattern 8 draft. Snapshot is locked at the value level; all assertions
+2025-07 snapshot. Snapshot is locked at the value level; all assertions
 reference exact values from the dict literals shipped in the module.
 
-(Phase 149-04 PRUNE-02: the former Lichess-Blitz-anchored Table 3 and its
-dedicated tests were removed as genuinely dead code — zero callers.)
+(The former Lichess-Blitz-anchored Table 3 and its dedicated tests were
+removed as dead code: zero callers.)
 
 Coverage:
 - Test 1: chess.com Blitz → Lichess Blitz at an exact anchor row (Table 2).
 - Test 2: chess.com Blitz → Lichess Blitz between two anchors (linear interp).
 - Test 3: chess.com Bullet → Lichess Bullet via Table 1 inversion → Table 2.
 - Test 4: chess.com Rapid → Lichess Rapid via Table 1 inversion → Table 2.
-- Test 5: chess.com Daily → Lichess Rapid returns None (Pitfall 2).
+- Test 5: chess.com Daily → Lichess Rapid returns None.
 - Test 6: Below-min anchor (rating < 500) returns None.
 - Test 7: Above-max anchor (rating > 3000 chess.com Blitz) returns None.
 - Tests 8-9: Each chess.com-Blitz USCF/FIDE accessor returns the snapshot
@@ -101,7 +100,7 @@ def test_chesscom_rapid_to_lichess_rapid_via_table_inversion() -> None:
 
 
 # -----------------------------------------------------------------------------
-# Test 5: chess.com Daily → returns None (no published mapping; Pitfall 2).
+# Test 5: chess.com Daily → returns None (no published mapping).
 # -----------------------------------------------------------------------------
 def test_chesscom_daily_returns_none() -> None:
     assert convert_chesscom_to_lichess(1500, "daily", "rapid") is None
@@ -204,7 +203,7 @@ def test_lookup_fide_from_chesscom_blitz_returns_none_in_null_region(
 
 
 # -----------------------------------------------------------------------------
-# composed_chesscom_to_lichess_grid equivalence tests (quick-260529-js1).
+# composed_chesscom_to_lichess_grid equivalence tests.
 #
 # The SQL anchor pipeline (`_chesscom_conversion_values_sql`) used to key its
 # VALUES lookup on chess.com BLITZ anchors and match every game's native rating
@@ -319,7 +318,7 @@ def test_composed_grid_omits_none_converter_rows() -> None:
 
 
 # -----------------------------------------------------------------------------
-# _invert_table2_column tests (Phase 164 Plan 01, Task 1).
+# _invert_table2_column tests.
 #
 # Inverts one of Table 2's Lichess-scale columns (Bullet, Rapid, Classical)
 # back to the chess.com Blitz anchor that produced it. Unlike Table 1's
@@ -348,7 +347,7 @@ def test_invert_table2_column_rapid_mid_range_interpolates() -> None:
 
 def test_invert_table2_column_classical_tie_returns_lowest_anchor() -> None:
     # classical is flat at 1935 across chess.com Blitz anchors 1500/1550/1600
-    # (Pitfall 3) -- the tie resolves to the LOWEST anchor.
+    # so the tie resolves to the LOWEST anchor.
     assert CHESSCOM_BLITZ_TO_LICHESS[1500]["classical"] == 1935
     assert CHESSCOM_BLITZ_TO_LICHESS[1550]["classical"] == 1935
     assert CHESSCOM_BLITZ_TO_LICHESS[1600]["classical"] == 1935
@@ -357,7 +356,7 @@ def test_invert_table2_column_classical_tie_returns_lowest_anchor() -> None:
 
 def test_invert_table2_column_classical_none_gap_returns_none() -> None:
     # chess.com Blitz 2700 -> classical 2500 is the last non-None row; 2800/
-    # 2900/3000 are None (Pitfall 4). A rating above the last non-None value
+    # 2900/3000 are None. A rating above the last non-None value
     # must return None, not raise (the None rows are filtered out first).
     assert CHESSCOM_BLITZ_TO_LICHESS[2700]["classical"] == 2500
     assert CHESSCOM_BLITZ_TO_LICHESS[2800]["classical"] is None
@@ -411,7 +410,7 @@ def test_composed_grid_fixes_rapid_inflation_bug() -> None:
 
 
 # -----------------------------------------------------------------------------
-# normalize_to_lichess_blitz tests (Phase 164 Plan 01, Task 2 — SEED-093).
+# normalize_to_lichess_blitz tests.
 #
 # Dispatches any (platform, source_tc) rating to its Lichess-Blitz equivalent
 # (Maia-3's training scale). chess.com Daily games are correspondence, so

@@ -1,5 +1,5 @@
 /**
- * terminalPositionEval test (Quick 260709-j3k).
+ * terminalPositionEval test.
  *
  * A checkmated position reports an ambiguous `mate 0` from the live engine, which
  * upstream read as the 0.5 midpoint — snapping the eval bar to equal and grading the

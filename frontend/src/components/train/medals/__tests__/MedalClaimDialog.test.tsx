@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * MedalClaimDialog.test.tsx — Phase 231 claim-and-celebrate dialog (D-11..D-13).
+ * MedalClaimDialog.test.tsx — claim-and-celebrate dialog.
  * Sounds and confetti are mocked (same shape as TrainScoreScreen.test.tsx) so
  * the Claim-path order and the mute / reduced-motion gates can be asserted.
  */
@@ -87,7 +87,7 @@ describe('MedalClaimDialog content', () => {
   });
 });
 
-describe('MedalClaimDialog Claim path (D-12, D-13)', () => {
+describe('MedalClaimDialog Claim path', () => {
   it('unlocks audio before the chime, plays it once for three medals, fires confetti, reports the keys', () => {
     const { onClaim, onDismiss } = renderDialog();
     fireEvent.click(screen.getByTestId('btn-train-medal-claim'));
@@ -146,7 +146,7 @@ describe('MedalClaimDialog Claim path (D-12, D-13)', () => {
   });
 });
 
-describe('MedalClaimDialog dismiss path (D-13)', () => {
+describe('MedalClaimDialog dismiss path', () => {
   it('close button: one onDismiss with the keys, no sound, no confetti, no unlock', () => {
     const { onClaim, onDismiss } = renderDialog();
     fireEvent.click(screen.getByTestId('btn-train-medal-dialog-close'));
@@ -179,7 +179,7 @@ describe('MedalClaimDialog dismiss path (D-13)', () => {
   });
 });
 
-describe('MedalClaimDialog medal pop (D-11)', () => {
+describe('MedalClaimDialog medal pop', () => {
   it('each icon wrapper carries animate-medal-pop with a staggered delay', () => {
     renderDialog();
     const delays = [0, 1, 2].map((index) => {

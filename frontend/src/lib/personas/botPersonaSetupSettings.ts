@@ -1,13 +1,13 @@
 /**
  * botPersonaSetupSettings — the persona detail surface's own owner-scoped
- * localStorage key for last-used color/TC preferences (Phase 183, D-05).
+ * localStorage key for last-used color/TC preferences.
  *
  * Mirrors `botSetupSettings.ts`'s control flow VERBATIM (SSR guard ->
  * try/catch -> JSON.parse -> shape validator with range checks -> Sentry-once
  * clearCorrupt -> silent-no-op write) but under a NEW, distinct key prefix —
  * never `botSetupSettings.ts`'s `BOT_SETUP_SETTINGS_KEY_PREFIX` nor
  * `botGameSnapshot.ts`'s snapshot key. Per `botSetupSettings.ts`'s own header
- * note (T-171-04-03): reusing a sibling key means a settings-shaped object
+ * note: reusing a sibling key means a settings-shaped object
  * written there fails ITS validator and gets wrongly Sentry-flagged as
  * corrupt on the next visit — every new owner-scoped settings key must be
  * physically separate, not merely convention-enforced.
@@ -15,7 +15,7 @@
  * The persisted shape here is deliberately narrower than
  * `BotSetupSettings`: ELO/blend/style are pinned by the persona itself
  * (`PERSONA_REGISTRY`) and are NEVER persisted here — only the SESSION
- * preferences the persona detail surface still lets the user pick (D-05):
+ * preferences the persona detail surface still lets the user pick:
  * color and time control.
  */
 
@@ -30,7 +30,7 @@ function personaSetupSettingsKey(ownerKey: string | null | undefined): string {
 
 /**
  * The persona detail surface's own last-used preferences. `colorPreference`
- * mirrors `BotSetupSettings`'s Random-inclusive contract (D-12: Random is
+ * mirrors `BotSetupSettings`'s Random-inclusive contract (Random is
  * resolved to a concrete color at Play time, BEFORE `useBotGame` mounts, so
  * the snapshot/PGN always carry the actual color played).
  */
@@ -42,7 +42,7 @@ export interface BotPersonaSetupSettings {
 /**
  * Shape validator. `colorPreference` is STRICTLY enum-checked (an
  * out-of-enum value is corruption, same discipline as `botSetupSettings.ts`'s
- * WR-01 fix for `botElo`/`blend`). `tcLabel` is intentionally NOT
+ * range check for `botElo`/`blend`). `tcLabel` is intentionally NOT
  * strictly validated here — mirroring `botSetupSettings.ts`'s own TC-field
  * note, an unrecognized label is tolerated at this layer and re-resolved by
  * the caller (`findPresetByLabel(...) ?? DEFAULT_TC_PRESET_LABEL`), since a

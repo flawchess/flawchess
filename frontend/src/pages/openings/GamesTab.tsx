@@ -13,7 +13,7 @@ type GamesTabProps = {
   gamesQuery: UseQueryResult<OpeningsResponse>;
   hasNoGames: boolean;
   filtersMatchNothing: boolean;
-  /** SEED-163 2d: true when the Human+Rated defaults alone emptied the population. */
+  /** True when the Human+Rated defaults alone emptied the population. */
   noHumanRatedGames: boolean;
   gameCount: number | null;
   positionResultsLabel: ReactNode;

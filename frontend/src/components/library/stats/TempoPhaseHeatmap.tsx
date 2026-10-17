@@ -106,7 +106,7 @@ interface TempoPhaseHeatmapProps {
 }
 
 /**
- * The Clock by game phase card (quick 261014-pb9): the three clock tags (columns) crossed
+ * The Clock by game phase card: the three clock tags (columns) crossed
  * with the three game phases (rows). Each cell is the you-minus-opponents gap per 100 of
  * your moves for flaws carrying BOTH tags, worded like the gap bars. Colour follows the gap
  * bars: green (fewer) or red (more) only when the gap is outside the typical range for your

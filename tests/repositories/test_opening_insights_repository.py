@@ -1,12 +1,12 @@
-"""Phase 70 repository SQL contract tests — INSIGHT-CORE-02, INSIGHT-CORE-03, INSIGHT-CORE-04.
+"""Repository SQL contract tests for the opening-insights queries.
 
 Precondition: The composite primary key on game_positions (user_id, game_id, ply)
 must exist in the test database before test_partial_index_predicate_alignment runs.
-SEED-035 replaced the former surrogate-id PK + the separate partial ix_gp_user_game_ply
-index with this natural composite PK (migration f4d88c3659c6); the PK now provides the
-same (user_id, game_id, ply) ordered access path the opening-insights window function
-relies on. Ensure `uv run alembic upgrade head` has been applied. The test will FAIL
-(not skip) if the PK is absent.
+The former surrogate-id PK and the separate partial ix_gp_user_game_ply index
+were replaced by this natural composite PK (migration f4d88c3659c6); the PK
+provides the (user_id, game_id, ply) ordered access path the opening-insights
+window function relies on. Ensure `uv run alembic upgrade head` has been applied.
+The test will FAIL (not skip) if the PK is absent.
 
 All tests use a real PostgreSQL database via the db_session fixture (rolled-back
 transaction per test). The db_session fixture is provided by tests/conftest.py.
@@ -81,8 +81,8 @@ async def _seed_game_with_positions(
     pass `skip_auto_ply0=True`.
 
     Note: the flat query_opening_transitions no longer pre-filters on ply-0 hash
-    (that was the Phase 71 CTE filter). Custom-FEN games pass the SQL and keep
-    contributing to the W/D/L counts; Phase 210 (SEED-042) excludes them from the
+    (that was the old CTE filter). Custom-FEN games pass the SQL and keep
+    contributing to the W/D/L counts; they are excluded from the
     sample-representative aggregate only, keyed on `games.initial_fen`, which
     tests set via the `initial_fen` argument.
     """
@@ -111,7 +111,7 @@ async def _seed_game_with_positions(
 
     seen_ply0 = any(ply == 0 for ply, _, _ in positions)
     if not seen_ply0 and not skip_auto_ply0:
-        # Auto-add a ply=0 row so the Phase 71 CTE filter (has_standard_start)
+        # Auto-add a ply=0 row so the old CTE filter (has_standard_start)
         # accepts the game. move_san=None here would block the partition's
         # array_agg from picking up the first move; use a synthetic move_san
         # that mirrors the next ply so entry_san_sequence stays non-empty for
@@ -185,7 +185,7 @@ def _default_call_args(
 
 
 # ---------------------------------------------------------------------------
-# Task 1 tests: query_opening_transitions
+# Tests: query_opening_transitions
 # ---------------------------------------------------------------------------
 
 
@@ -230,7 +230,7 @@ async def test_entry_ply_lower_bound_0_inclusive(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_entry_ply_upper_bound_16_inclusive(db_session: AsyncSession) -> None:
-    """D-32: entry_ply = 16 is included in transition results (candidate ply=17).
+    """entry_ply = 16 is included in transition results (candidate ply=17).
 
     Seeds 20 loss games with entry at ply=16 and candidate at ply=17.
     Expects exactly 1 row returned.
@@ -268,7 +268,7 @@ async def test_entry_ply_upper_bound_16_inclusive(db_session: AsyncSession) -> N
 async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
     db_session: AsyncSession,
 ) -> None:
-    """D-32: entry_ply=17 means candidate_ply=18 — excluded (outside [4,17]).
+    """entry_ply=17 means candidate_ply=18 — excluded (outside [4,17]).
 
     Seeds 20 games where ONLY positions at ply=17 and ply=18 exist
     (no earlier positions that would form valid transitions at ply 3..16).
@@ -394,7 +394,7 @@ async def test_window_does_not_leak_across_games(
 
 @pytest.mark.asyncio
 async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> None:
-    """Phase 79 evidence-floor bump (n>=20): n=19 excluded, n=20 included.
+    """Evidence floor (n>=20): n=19 excluded, n=20 included.
 
     Seeds two different entry hashes:
     - entry_hash=A with 20 games (score=0.0, all losses): should appear
@@ -452,8 +452,8 @@ async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) -> None:
-    """Phase 75 D-08: HAVING uses score (W + 0.5·D)/N <= 0.45 OR >= 0.55. Strict
-    <=/>= boundaries (D-03): score=0.50 is dropped, score=0.45 / 0.55 surface.
+    """HAVING uses score (W + 0.5·D)/N <= 0.45 OR >= 0.55. Strict
+    <=/>= boundaries: score=0.50 is dropped, score=0.45 / 0.55 surface.
 
     Seeds three scenarios at n=20:
     1. 8W/4D/8L → score=(8+2)/20=0.50: 0 rows — neutral
@@ -620,7 +620,7 @@ async def test_user_color_filter_routes_correct_games(db_session: AsyncSession) 
     """color parameter filters to games where game.user_color matches.
 
     Seeds 20 white-color games (12L/8W → score=0.40 from white's perspective,
-    a major weakness under the Phase 75 score gate).
+    a major weakness under the score gate).
     color="black" should return 0 rows (no black games).
     color="white" should return 1 row.
     """
@@ -679,7 +679,7 @@ async def test_user_color_filter_routes_correct_games(db_session: AsyncSession) 
 
 @pytest.mark.asyncio
 async def test_apply_game_filters_from_date_narrows_results(db_session: AsyncSession) -> None:
-    """INSIGHT-CORE-01: from_date correctly limits the game date window.
+    """from_date correctly limits the game date window.
 
     Seeds 30 games total:
     - 20 recent (within last 7 days)
@@ -767,16 +767,16 @@ async def test_apply_game_filters_from_date_narrows_results(db_session: AsyncSes
 
 @pytest.mark.asyncio
 async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> None:
-    """RESEARCH.md A6: the (user_id, game_id, ply) ordered access path exists for the
+    """The (user_id, game_id, ply) ordered access path exists for the
     opening-insights window function.
 
-    SEED-035 dropped the former partial ix_gp_user_game_ply index and made
-    (user_id, game_id, ply) the natural composite PRIMARY KEY of game_positions.
-    The PK (game_positions_pkey) now provides the same ordered key the window
-    function's PARTITION BY game_id ORDER BY ply relies on, so this test now
-    verifies the PK key list instead of the retired partial index. The
-    partial-predicate (ply BETWEEN 0 AND 17) and INCLUDE(full_hash, move_san)
-    specializations were intentionally retired with the index.
+    (user_id, game_id, ply) is the natural composite PRIMARY KEY of game_positions
+    (it replaced the former partial ix_gp_user_game_ply index).
+    The PK (game_positions_pkey) provides the ordered key the window
+    function's PARTITION BY game_id ORDER BY ply relies on, so this test
+    verifies the PK key list. The partial-predicate (ply BETWEEN 0 AND 17) and
+    INCLUDE(full_hash, move_san) specializations of the old index are not
+    needed.
 
     PRECONDITION: `uv run alembic upgrade head` must have been run against the test DB.
     This test FAILS (not skips) if the composite PK does not exist.
@@ -812,7 +812,7 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
     # Verify the composite PK key columns. On small test datasets PostgreSQL's
     # cost-based planner chooses cheaper indexes (e.g. ix_gp_user_white_hash for
     # ~20 rows); the composite-PK ordered scan is the winning plan at Hikaru-scale
-    # (5.7M rows: 2.0 s → 816 ms, verified 2026-04-26, CONTEXT.md). Here we verify
+    # (5.7M rows: 2.0 s → 816 ms, verified 2026-04-26). Here we verify
     # structural alignment (the key columns + their order), not planner choice.
     index_check = await db_session.execute(
         text("SELECT indexdef FROM pg_indexes WHERE indexname = 'game_positions_pkey'")
@@ -1038,7 +1038,7 @@ async def test_query_transition_prefixes_returns_entry_san_sequence(
 
 
 # ---------------------------------------------------------------------------
-# Phase 71 hotfix: STARTING_POSITION_HASH CTE filter
+# Custom-start games pass the flat query (no STARTING_POSITION_HASH pre-filter)
 # ---------------------------------------------------------------------------
 
 
@@ -1051,7 +1051,7 @@ async def test_non_standard_start_game_passes_flat_query(
     in the Python service layer (opening_insights_service._wrap_transition_row)
     via try/except around board replay.
 
-    The old Phase 71 CTE had an EXISTS predicate that excluded these custom-FEN
+    The old CTE had an EXISTS predicate that excluded these custom-FEN
     games at the SQL level. The flat aggregation intentionally drops that predicate
     to simplify the query shape. The service-layer drop path is tested in
     test_row_wrapping_drops_unreachable_san_and_captures_to_sentry.
@@ -1138,7 +1138,7 @@ async def test_game_without_ply0_row_still_contributes_to_flat_query(
 ) -> None:
     """Flat-query refactor: a game with no ply=0 row is NO LONGER excluded.
 
-    The old Phase 71 CTE had an EXISTS predicate that required a ply-0 row with
+    The old CTE had an EXISTS predicate that required a ply-0 row with
     full_hash == STARTING_POSITION_HASH. The flat aggregation has no such
     predicate — it simply queries ply.between(MIN_ENTRY_PLY, MAX_ENTRY_PLY).
     A game missing ply=0 but having qualifying entries at ply 1..16 will
@@ -1438,7 +1438,7 @@ async def test_query_handles_custom_fen_ply0_gracefully(db_session: AsyncSession
 
 
 # ---------------------------------------------------------------------------
-# Phase 210 (SEED-042): custom-start games must not evict whole transitions
+# Custom-start games must not evict whole transitions
 # ---------------------------------------------------------------------------
 
 
@@ -1541,7 +1541,7 @@ async def test_all_custom_start_group_yields_null_sample_pair(
 ) -> None:
     """When EVERY game in a group is custom-start, the filtered aggregate is NULL.
 
-    Phase 210 (SEED-042) D-03. `MIN(...) FILTER (WHERE initial_fen IS NULL)`
+    `MIN(...) FILTER (WHERE initial_fen IS NULL)`
     evaluates to NULL when the filter excludes every row, and asyncpg surfaces
     that as Python None rather than an empty list. This is the seed's stated
     residual — the group has no replayable SAN path and cannot be rendered — so
@@ -1588,7 +1588,7 @@ async def test_all_custom_start_group_yields_null_sample_pair(
 
 
 # ---------------------------------------------------------------------------
-# Task 2 tests: query_openings_by_hashes
+# Tests: query_openings_by_hashes
 # ---------------------------------------------------------------------------
 
 
@@ -1605,7 +1605,7 @@ async def test_query_openings_by_hashes_empty_input_returns_empty_dict(
 async def test_query_openings_by_hashes_picks_deepest_ply_count(
     db_session: AsyncSession,
 ) -> None:
-    """D-22: when multiple Opening rows share the same full_hash, the one with
+    """When multiple Opening rows share the same full_hash, the one with
     MAX(ply_count) is returned.
 
     Seeds two Opening rows with the same full_hash but different ply_counts (4 and 8).
@@ -1646,7 +1646,7 @@ async def test_query_openings_by_hashes_picks_deepest_ply_count(
 async def test_query_openings_by_hashes_skips_null_full_hash(
     db_session: AsyncSession,
 ) -> None:
-    """RESEARCH.md Pitfall 6: Opening rows with full_hash=NULL are filtered out.
+    """Opening rows with full_hash=NULL are filtered out.
 
     Seeds an Opening with full_hash=NULL and one with a real hash.
     Queries for only the real hash — asserts no error and the NULL-hash row
@@ -1689,7 +1689,7 @@ async def test_query_openings_by_hashes_skips_null_full_hash(
 
 
 # ---------------------------------------------------------------------------
-# TestQueryResultingPositionWdl — Phase 80.1 D-06
+# TestQueryResultingPositionWdl
 # ---------------------------------------------------------------------------
 
 # Unique hashes for query_resulting_position_wdl tests (avoid collision with
@@ -1702,7 +1702,7 @@ RPWDL_UNUSED_HASH = 0xBB05
 
 
 class TestQueryResultingPositionWdl:
-    """Phase 80.1 D-06: query_resulting_position_wdl returns
+    """query_resulting_position_wdl returns
     {resulting_full_hash: (W, D, L)} for the Opening Insights field swap.
 
     The function powers compute_insights' switch from move-played WDL to
@@ -1757,7 +1757,7 @@ class TestQueryResultingPositionWdl:
         )
 
         # Both games visit the resulting position: 1 win + 1 loss.
-        # last_played_at (4th element, quick task 260508-r61) is the MAX of the
+        # last_played_at (4th element) is the MAX of the
         # two seeded games' played_at; we don't pin a specific value here, just
         # assert it's populated (the seed helper always sets played_at).
         assert wdl[RPWDL_RESULT_HASH][:3] == (1, 0, 1)

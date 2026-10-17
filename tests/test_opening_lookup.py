@@ -177,7 +177,7 @@ class TestFindOpening:
 
 
 class TestFindOpeningPlyCount:
-    """Tests for find_opening_ply_count (Phase 172, SEED-106 D-06).
+    """Tests for find_opening_ply_count.
 
     Mirrors TestFindOpening's canonical opening fixtures, but the input is
     already-tokenized SAN (a list[str], not a PGN string) and the return

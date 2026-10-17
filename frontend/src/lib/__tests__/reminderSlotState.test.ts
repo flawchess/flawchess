@@ -1,6 +1,5 @@
 /**
- * reminderSlotState.test.ts — Phase 203 Plan 03, Task 1 (OFFER-01). One test
- * per `<behavior>` bullet from 203-03-PLAN.md, plus an exhaustiveness test.
+ * reminderSlotState.test.ts: one test per behavior, plus an exhaustiveness test.
  * The module under test imports nothing, so no mocking is needed anywhere
  * in this file.
  */

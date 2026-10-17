@@ -12,7 +12,7 @@ const BASE: ShouldRecheckInput = {
   serverGradedUcis: [],
 };
 
-describe('shouldRecheck (D-10, D-19)', () => {
+describe('shouldRecheck', () => {
   it('fires for a sharp keyed puzzle whose off-key, off-runner-up move graded good', () => {
     expect(shouldRecheck(BASE)).toBe(true);
   });
@@ -34,7 +34,7 @@ describe('shouldRecheck (D-10, D-19)', () => {
   });
 });
 
-describe('shouldRecheck: inaccuracy rescue (quick 261008-ob1)', () => {
+describe('shouldRecheck: inaccuracy rescue', () => {
   const INACCURACY: ShouldRecheckInput = { ...BASE, tier: 'inaccuracy' };
 
   it.each([
@@ -55,7 +55,7 @@ describe('shouldRecheck: inaccuracy rescue (quick 261008-ob1)', () => {
   });
 });
 
-describe('shouldRecheck: server-graded moves are never re-checked (Phase 236 D-11)', () => {
+describe('shouldRecheck: server-graded moves are never re-checked', () => {
   it.each([
     ['inaccuracy on a soft puzzle', { puzzleType: 'soft' as const, tier: 'inaccuracy' as const }],
     ['sharp + good', { puzzleType: 'sharp' as const, tier: 'good' as const }],
@@ -71,7 +71,7 @@ describe('shouldRecheck: server-graded moves are never re-checked (Phase 236 D-1
   });
 });
 
-describe('recheckOutcome (D-13)', () => {
+describe('recheckOutcome', () => {
   it('is confirmed for a good tier and resolved for every other tier', () => {
     expect(recheckOutcome('good')).toBe('confirmed');
     const others: TrainMoveTier[] = ['inaccuracy', 'wrong'];
@@ -79,7 +79,7 @@ describe('recheckOutcome (D-13)', () => {
   });
 });
 
-describe('buildRecheckPayload (D-17)', () => {
+describe('buildRecheckPayload', () => {
   it('maps the readings to the snake_case wire keys with schema version 1', () => {
     expect(
       buildRecheckPayload({

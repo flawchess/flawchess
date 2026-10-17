@@ -44,9 +44,9 @@ const PAGE_SIZE = 20;
 // no date/TC/platform restriction, both opponent types, no flaw filter. Module
 // level so the TanStack query key stays stable across renders.
 //
-// SEED-163 2a made DEFAULT_FILTERS narrowing (rated: true, opponentType:
+// DEFAULT_FILTERS is narrowing (rated: true, opponentType:
 // 'human'), so this override must neutralise EVERY narrowing default field,
-// not just opponentType — leaving `rated` at its new true default would
+// not just opponentType — leaving `rated` at its true default would
 // silently turn this "ANY engine-analyzed game" probe into "ANY RATED
 // engine-analyzed game" and show the no-analysis empty state to a user whose
 // analysed games are unrated.
@@ -66,14 +66,13 @@ const NO_FLAW_FILTER: FlawFilterState = { ...DEFAULT_FLAW_FILTER, severity: [], 
  * with showFlawFilter=false) and "Flaw filters" (severity + tags, FlawFilterControl) —
  * + per-flaw miniboard list + Pagination, wiring useLibraryFlaws to the shared stores.
  *
- * URL sync (D-04): on mount, reads ?tag=&severity= from URL and initializes the
+ * URL sync: on mount, reads ?tag=&severity= from URL and initializes the
  * flaw filter store from them (only when params are present). On store change,
  * updates URL via replace-state (no history pollution).
  *
- * Desktop layout: SidebarLayout with two strip panels (game filters + flaw filters),
- * both applying live on change.
- * Mobile layout: two sticky buttons, each opening its own right Drawer; both apply on
- * close (the flaw filter buffers edits in pendingFlawFilter until its drawer closes).
+ * Desktop layout: SidebarLayout with two strip panels (game filters + flaw filters).
+ * Mobile layout: two sticky buttons, each opening its own right Drawer.
+ * Both stage edits and commit on Apply.
  */
 export function FlawsTab() {
   // ── URL sync setup ───────────────────────────────────────────────────────────
@@ -91,7 +90,7 @@ export function FlawsTab() {
   // ── Flaw filter (shared, URL-synced on this tab) ──────────────────────────────
   const [flawFilter, setFlawFilter] = useFlawFilterStore();
 
-  // Mount: read URL params → initialize store (only when URL has params — D-04/OQ3)
+  // Mount: read URL params → initialize store (only when URL has params)
   const didInitFromUrl = useRef(false);
   const initialSearchParams = useRef(searchParams);
   useEffect(() => {
@@ -104,7 +103,7 @@ export function FlawsTab() {
 
     if (urlTags.length > 0 || urlSeverity.length > 0 || urlTactic.length > 0) {
       // Empty severity in the URL = both shown (the default narrowing-off state).
-      // Preserve defaults for fields not present in the URL (Phase 129 additions).
+      // Preserve defaults for fields not present in the URL.
       setFlawFilter((prev) => ({ ...prev, tags: urlTags, severity: urlSeverity, tacticFamilies: urlTactic }));
     }
   }, [setFlawFilter]);
@@ -240,8 +239,8 @@ export function FlawsTab() {
   // Eval coverage — drives NoEngineAnalysisFlawsState CTA props and the
   // EvalCoverageBadge in the match-count row.
   // trackFullAnalysis: keep polling while the background drain works through the
-  // backlog so the "N of M analyzed" badge ticks up live (Phase 118 removed the
-  // tier-2 auto-enqueue, so background work has no in-flight rows to poll on).
+  // backlog so the "N of M analyzed" badge ticks up live (background work has no
+  // in-flight rows to poll on).
   const { analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
     trackFullAnalysis: true,
   });
@@ -250,9 +249,9 @@ export function FlawsTab() {
   // The flaw views don't poll, so once analysis finishes they stay frozen on
   // stale data (empty state or partial list) until a reload. Fire invalidateQueries
   // when analyzedCount increases (prev < current) so a finished analysis flips
-  // the flaw list without a reload. Repointed from inFlightCount >0→0 transition
-  // in Phase 119-03: tier-3 derived picks have no eval_jobs rows, so inFlightCount
-  // was blind to the dominant backlog drain (119-RESEARCH-NOTES.md).
+  // the flaw list without a reload. Keyed on analyzedCount rather than an in-flight
+  // count: tier-3 derived picks have no eval_jobs rows, so an in-flight count
+  // would be blind to the dominant backlog drain.
   const queryClient = useQueryClient();
   // Seed to null (not analyzedCount, which is the hook default 0 before the
   // eval-coverage fetch resolves). Skipping the first observed transition stops

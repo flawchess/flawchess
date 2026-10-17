@@ -1,18 +1,17 @@
 /**
- * botPendingStore — the bounded, owner-scoped finished-bot-game queue
- * (Phase 170, RESUME-02).
+ * botPendingStore — the bounded, owner-scoped finished-bot-game queue.
  *
  * A finished game is enqueued here by `finalizeGame` and POSTed to
- * `/bots/games` on the next `/bots` mount (D-13's drain loop); the entry is
+ * `/bots/games` on the next `/bots` mount (the drain loop); the entry is
  * removed only on a confirmed 2xx. This module is a SIBLING of
  * `botGameSnapshot.ts`, not a dependent — it reuses the same
  * guard/try-catch/owner-scoping shape but lives on a physically SEPARATE
- * localStorage key (D-12): sharing one key with the in-progress snapshot
+ * localStorage key: sharing one key with the in-progress snapshot
  * would mean a failed store followed by a new game silently overwrites and
  * loses the finished game forever. `enqueuePendingStore` is the ONLY
  * function in the codebase that writes a game into this queue — nothing in
- * `botGameSnapshot.ts` can reach this key, which is what makes RESUME-02's
- * "an abandoned game never reaches the server" structural rather than
+ * `botGameSnapshot.ts` can reach this key, which is what makes "an abandoned
+ * game never reaches the server" structural rather than
  * convention-enforced.
  */
 
@@ -22,8 +21,7 @@ export const BOT_PENDING_STORE_KEY_PREFIX = 'flawchess_bot_pending_store:';
 
 /** Bounds localStorage growth if the server is unreachable for a long
  * stretch: 10 finished games is far more than a single browser accumulates
- * between visits, and each entry is ~2 KB (170-RESEARCH.md payload-size
- * measurement). FIFO drop-oldest once exceeded (T-170-03). */
+ * between visits, and each entry is ~2 KB. FIFO drop-oldest once exceeded. */
 export const MAX_PENDING_STORE_ENTRIES = 10;
 
 function pendingStoreKey(ownerKey: string | null | undefined): string {
@@ -64,7 +62,7 @@ function isValidPendingEntry(value: unknown): value is PendingStoreEntry {
  * throw, JSON.parse failure, a non-array value, or an element that is not a
  * well-shaped entry) degrades to `[]` — never a throw. A malformed array as
  * a whole is discarded wholesale rather than partially salvaged, matching
- * the simpler of the two options RESEARCH.md leaves as acceptable. */
+ * the simpler of the two acceptable options. */
 export function listPendingStore(ownerKey: string | null | undefined): PendingStoreEntry[] {
   if (typeof localStorage === 'undefined') return [];
   try {
@@ -89,7 +87,7 @@ function writePendingStore(ownerKey: string | null | undefined, entries: Pending
 
 /** Enqueues a finished game. Idempotent by `gameUuid` (a second finalize of
  * the same game must not queue it twice) and FIFO-bounded at
- * `MAX_PENDING_STORE_ENTRIES` (T-170-03) — the oldest entry is dropped when
+ * `MAX_PENDING_STORE_ENTRIES` — the oldest entry is dropped when
  * the cap is exceeded. Silent no-op on any storage failure. */
 export function enqueuePendingStore(
   ownerKey: string | null | undefined,

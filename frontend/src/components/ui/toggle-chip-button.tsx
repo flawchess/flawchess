@@ -2,7 +2,7 @@
  * ToggleChipButton — the hand-rolled multi-select chip button pattern used by
  * `FilterPanel`'s "Time control" and "Platform" sections (grid layout, plain
  * `<button>`s — deliberately NOT the Radix `ToggleGroup` primitive used for
- * single-select rows like "Played as"). Extracted (191-06 UAT) so the exact
+ * single-select rows like "Played as"). Extracted so the exact
  * class strings live in exactly one place instead of being copy-pasted at
  * every multi-select-chip call site (FilterPanel's own two sections, plus
  * `TrainScheduleSettings`'s weekday picker).

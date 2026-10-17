@@ -1,7 +1,7 @@
 /**
- * materialDiff.ts (Quick 260809-jzz) — lichess-style net material difference,
+ * materialDiff.ts — lichess-style net material difference,
  * computed client-side from a FEN string via chess.js. Compares piece counts
- * PER TYPE (D-01) so trades cancel out and promotions are counted correctly
+ * PER TYPE so trades cancel out and promotions are counted correctly
  * (e.g. two queens vs one nets a queen surplus of 1, not a raw-count miscount).
  * Pure and React-free — consumed by MaterialDisplay via useMemo.
  */
@@ -16,12 +16,12 @@ export interface MaterialSurplusEntry {
 }
 
 export interface MaterialSideDiff {
-  /** Ascending piece-value order (pawn, knight, bishop, rook, queen — D-01). */
+  /** Ascending piece-value order (pawn, knight, bishop, rook, queen). */
   surplus: MaterialSurplusEntry[];
   /**
    * Net point total this side is ahead by. Zero unless this side is strictly
-   * ahead on points — the `+N` number appears only next to the leading side
-   * (D-06), even when the other side also carries a non-empty surplus list.
+   * ahead on points — the `+N` number appears only next to the leading side,
+   * even when the other side also carries a non-empty surplus list.
    */
   points: number;
 }
@@ -31,7 +31,7 @@ export interface MaterialDiff {
   black: MaterialSideDiff;
 }
 
-/** Standard piece values (D-06). No bare numerals in the tally loop below. */
+/** Standard piece values. No bare numerals in the tally loop below. */
 const PIECE_VALUES: Record<MaterialPieceType, number> = {
   p: 1,
   n: 3,
@@ -40,7 +40,7 @@ const PIECE_VALUES: Record<MaterialPieceType, number> = {
   q: 9,
 };
 
-/** Lichess surplus ordering: pawn, knight, bishop, rook, queen (D-01). */
+/** Lichess surplus ordering: pawn, knight, bishop, rook, queen. */
 const PIECE_ORDER: MaterialPieceType[] = ['p', 'n', 'b', 'r', 'q'];
 
 const ZERO_DIFF: MaterialDiff = {
@@ -63,8 +63,7 @@ export function computeMaterialDiff(fen: string): MaterialDiff {
   } catch {
     // The Analysis board can be fed a user-pasted (possibly malformed) FEN;
     // `new Chess(fen)` throws on an unparseable string, which would otherwise
-    // unmount the Analysis tree. Fail closed to the zeroed display instead
-    // (T-260809-jzz-01).
+    // unmount the Analysis tree. Fail closed to the zeroed display instead.
     return ZERO_DIFF;
   }
 

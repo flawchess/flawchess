@@ -1,36 +1,33 @@
 /**
- * findability.ts unit tests (Phase 159 D-01/D-02/D-03; Phase 225
- * D-10a/D-10b/D-10c, SEED-170 item 3).
+ * findability.ts unit tests.
  *
  * Covers:
  * - pRefForElo: monotonically non-increasing across the 600-2600 domain,
- *   clamps to the first/last anchor outside that range. Unchanged by Phase
- *   225 (D-10e — item 3 never touches the findability curve).
- * - rankScore (4-argument, D-10a): exact saturation at pYou >= pRef (factor
+ *   clamps to the first/last anchor outside that range. The fallback-aware
+ *   ranking never touches the findability curve.
+ * - rankScore (4-argument): exact saturation at pYou >= pRef (factor
  *   1, strict equality), the pRef<=0 degenerate guard, the fallback-0
- *   reduction to the pre-Phase-225 formula, and the grid bounds invariant
+ *   reduction to the pre-fallback formula, and the grid bounds invariant
  *   `min(value, fallback) <= rankScore <= value`.
- * - The D-10c clamp: a low-prior move already below V_fallback is never
+ * - The clamp: a low-prior move already below V_fallback is never
  *   promoted — it sorts by its own V regardless of `f`.
  * - rankFallbackValue: normalizes by total prior (a weighted MEAN, not the
  *   raw weighted sum), and returns 0 (not backupExpectation's own 0.5
- *   default) for an all-zero-prior or empty input (D-10b amended).
- * - The two D-03 regression cases, restated for D-10a with V_fallback
- *   pinned by a rule stated BEFORE running (Pitfall 5): a 9%-prior mid-V
+ *   default) for an all-zero-prior or empty input.
+ * - The two regression cases, restated for the 4-argument rankScore with
+ *   V_fallback pinned by a rule stated BEFORE running: a 9%-prior mid-V
  *   move (Qxf2 @600) still beats both a 5%-prior high-V move (Nb5) and a
  *   57%-prior low-V Mistake (Rxf2); an in-chart candidate (@1000) still
  *   beats a ~5%-prior tail move at a V gap where findability wins (0.58 vs
- *   0.60 — narrower than Phase 159's original 0.55 vs 0.60 gap, which flips
- *   under D-10a for any V_fallback above ~0.467 and is the accepted Phase
- *   159 showcase reversal, D-10e; covered instead by the rewritten
- *   mctsSearch/fallbackExpectimax "Phase 159 D-01 findability ranking"
+ *   0.60 — narrower than the original 0.55 vs 0.60 gap, which flips
+ *   under the 4-argument rankScore for any V_fallback above ~0.467 and is
+ *   the accepted showcase reversal; covered instead by the rewritten
+ *   mctsSearch/fallbackExpectimax "findability ranking"
  *   describes).
  *
  * Fixture prior/value pairs approximate the real observed relationships from
- * live 600/1000-ELO analyses (159-CONTEXT.md D-03) — the real FENs were not
- * recovered this session (159-RESEARCH.md Open Question 1); an end-to-end
- * live check against the real positions is deferred to the phase-close UAT
- * checkpoint (159-04's verification).
+ * live 600/1000-ELO analyses; the real FENs were not recovered. An end-to-end
+ * live check against the real positions is deferred to manual verification.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -38,14 +35,14 @@ import { P_REF_ANCHORS, pRefForElo, rankFallbackValue, rankScore } from '../find
 import type { BackupChild } from '../backup';
 
 /**
- * D-10a/Pitfall 5 pinned rule: prior mass NOT attributed to any named
+ * Pinned rule: prior mass NOT attributed to any named
  * candidate in a fixture is valued NEUTRALLY at this constant, stated here
- * BEFORE any test result is computed — so V_fallback in every D-03 fixture
+ * BEFORE any test result is computed — so V_fallback in every regression fixture
  * below is never chosen after seeing whether a case passes or fails.
  */
 const UNLISTED_PRIOR_VALUE = 0.5;
 
-// ─── pRefForElo (Phase 159, unchanged by Phase 225 D-10e) ──────────────────
+// ─── pRefForElo ──────────────────
 
 describe('pRefForElo', () => {
   it('is monotonically non-increasing across the ELO domain', () => {
@@ -74,7 +71,7 @@ describe('pRefForElo', () => {
   });
 });
 
-// ─── rankScore (Phase 225 D-10a: 4-argument, blends toward fallback) ───────
+// ─── rankScore (4-argument, blends toward fallback) ───────
 
 describe('rankScore', () => {
   const PREF = 0.12;
@@ -82,7 +79,7 @@ describe('rankScore', () => {
   const VALUE_GRID = [0.1, 0.5, 0.9];
   const FALLBACK_GRID = [0, 0.3, 0.7];
 
-  it('stays within [min(value, fallback), value] for every combination in the grid (D-10a invariant)', () => {
+  it('stays within [min(value, fallback), value] for every combination in the grid (invariant)', () => {
     for (const pYou of PYOU_GRID) {
       for (const value of VALUE_GRID) {
         for (const fallback of FALLBACK_GRID) {
@@ -108,11 +105,11 @@ describe('rankScore', () => {
     expect(rankScore(0.05, -1, 0.6, 0.9)).toBe(0.6);
   });
 
-  it('reduces to (pYou/pRef) * value when fallback is 0 — the pre-Phase-225 formula (D-10b)', () => {
+  it('reduces to (pYou/pRef) * value when fallback is 0 — the pre-fallback formula', () => {
     expect(rankScore(0.06, 0.12, 0.8, 0)).toBeCloseTo((0.06 / 0.12) * 0.8, 10);
   });
 
-  it('D-10c: clamps a low-prior move already below V_fallback to its own value — never promoted', () => {
+  it('clamps a low-prior move already below V_fallback to its own value — never promoted', () => {
     const fallback = 0.6;
     // Below-fallback move: min(0.2, 0.6) = 0.2, so rankScore = f*0.2 +
     // (1-f)*0.2 = 0.2 regardless of f — sorted by its own (low) V.
@@ -124,12 +121,12 @@ describe('rankScore', () => {
     // Removing the min() clamp would pull lowPriorBelowFallback UP toward
     // fallback (f=0.01/0.12≈0.083 => 0.083*0.2 + 0.917*0.6 ≈ 0.567, ABOVE
     // 0.2), breaking this exact-equality assertion — the mutation check
-    // this test's SUMMARY records.
+    // this test pins.
     expect(lowPriorBelowFallback).toBeLessThan(findableAboveFallback);
   });
 });
 
-// ─── rankFallbackValue (Phase 225 D-10b amended) ───────────────────────────
+// ─── rankFallbackValue ───────────────────────────
 
 describe('rankFallbackValue', () => {
   it('normalizes by total prior — a weighted MEAN, not the raw weighted sum', () => {
@@ -144,7 +141,7 @@ describe('rankFallbackValue', () => {
     expect(result).not.toBeCloseTo(rawSum, 5);
   });
 
-  it('returns 0 (not backupExpectation\'s own 0.5 default) when every prior is 0 — D-10b amended', () => {
+  it('returns 0 (not backupExpectation\'s own 0.5 default) when every prior is 0', () => {
     const children: readonly BackupChild[] = [
       { prior: 0, value: 0.9 },
       { prior: 0, value: 0.1 },
@@ -157,9 +154,9 @@ describe('rankFallbackValue', () => {
   });
 });
 
-// ─── D-03 regression cases (restated for D-10a/D-10e, Pitfall 5) ───────────
+// ─── Regression cases ───────────
 
-describe('D-03 regression cases (restated for D-10a — V_fallback pinned by the stated rule BEFORE running)', () => {
+describe('regression cases (V_fallback pinned by the stated rule BEFORE running)', () => {
   it('@600: Qxf2 (9% prior, Good) beats both Nb5 (5% prior, Best/high-V) and Rxf2 (57% prior, Mistake/low-V)', () => {
     const pRef600 = pRefForElo(600);
 
@@ -192,13 +189,13 @@ describe('D-03 regression cases (restated for D-10a — V_fallback pinned by the
     expect(scoreQxf2).toBeGreaterThan(scoreRxf2);
   });
 
-  it('@1000 restated (D-10e): the in-chart candidate (30% prior, V 0.58, saturated) still beats Qb8 (5% prior, V 0.60)', () => {
-    // The original Phase 159 gap (Qb8 V 0.60 vs an in-chart V 0.55) FLIPS
-    // under D-10a for any V_fallback above ~0.467 (225-RESEARCH.md C-3) —
+  it('@1000 restated: the in-chart candidate (30% prior, V 0.58, saturated) still beats Qb8 (5% prior, V 0.60)', () => {
+    // The original gap (Qb8 V 0.60 vs an in-chart V 0.55) FLIPS
+    // under the 4-argument rankScore for any V_fallback above ~0.467 —
     // which the pinned unlisted-mass-at-0.5 rule produces here (V_fallback
-    // ≈ 0.529) — so that reversal IS the accepted Phase 159 showcase
-    // reversal (D-10e), asserted instead by the rewritten
-    // mctsSearch/fallbackExpectimax "Phase 159 D-01 findability ranking"
+    // ≈ 0.529) — so that reversal IS the accepted showcase
+    // reversal, asserted instead by the rewritten
+    // mctsSearch/fallbackExpectimax "findability ranking"
     // describes. This case is restated at a narrower V gap (0.60 vs 0.58)
     // where findability still wins.
     const pRef1000 = pRefForElo(1000);

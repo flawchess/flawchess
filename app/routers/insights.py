@@ -1,22 +1,21 @@
-"""Insights router: HTTP endpoints for LLM-generated endgame insights.
+"""Insights router: LLM endgame insights and filter-scoped opening insights.
 
 Endpoints (mounted under /api):
 - POST /insights/endgame: returns EndgameInsightsResponse with the LLM report.
 - GET /insights/endgame/cached: the user's latest stored report (never
   invalidated; a 404 means no report exists yet, which triggers the frontend's
   one-time auto-generate).
+- POST /insights/openings: filter-scoped opening insights (no LLM).
 
-The router is deliberately thin per CONTEXT.md D-33: all cache /
-LLM-call / logging logic lives in app.services.insights_llm.generate_insights().
-This router: auth + session dep + one service call + exception-to-HTTP status
-mapping (D-16).
+The router is deliberately thin: all cache / LLM-call / logging logic lives in
+app.services.insights_llm.generate_insights(). This router: auth + session dep + one service
+call + exception-to-HTTP status mapping.
 
-Phase 238 (D-04): the endgame insights are filter-independent. Both endpoints
-declare NO filter parameters (FastAPI ignores undeclared query parameters, so a
-client that still sends the page filters gets the same one-per-user report), and
-the former v8 filter gate (400 filters_not_supported) is gone. The report narrates
-the ranked sample that the Stats tab shows, so there is nothing for a filter to
-scope.
+The endgame insights are filter-independent. Both endpoints declare NO filter parameters
+(FastAPI ignores undeclared query parameters, so a client that still sends the page filters
+gets the same one-per-user report), and the former v8 filter gate (400
+filters_not_supported) is gone. The report narrates the ranked sample that the Stats tab
+shows, so there is nothing for a filter to scope.
 """
 
 from typing import Annotated
@@ -53,7 +52,7 @@ async def get_endgame_insights(
 ) -> EndgameInsightsResponse | JSONResponse:
     """Return the LLM-generated EndgameInsightsReport for the authenticated user.
 
-    Takes no filter parameters (Phase 238 D-04): one report per user, built from
+    Takes no filter parameters: one report per user, built from
     the same ranked sample the Stats tab shows. Undeclared query parameters are
     ignored by FastAPI, so a client that still sends the page filters receives
     the identical response.
@@ -88,12 +87,12 @@ async def get_cached_endgame_insights(
     """Return the user's latest stored report, without invoking the LLM.
 
     Unlike the POST path, the report is never invalidated by a newer import or by
-    age (quick 261012-qiz): the frontend auto-generates only when this returns 404,
+    age: the frontend auto-generates only when this returns 404,
     so only the first report is generated automatically and every later refresh is
     an explicit "Update Insights" click. Consumes no rate-limit budget.
 
-    Takes no filter parameters (Phase 238 D-04); the lookup key is
-    (user_id, prompt_version, model, INSIGHTS_CACHE_OPPONENT_STRENGTH).
+    Takes no filter parameters; the lookup key is (user_id, prompt_version, model,
+    INSIGHTS_CACHE_OPPONENT_STRENGTH).
 
     Returns:
         200: EndgameInsightsResponse(status='cache_hit') with the latest report.
@@ -111,13 +110,13 @@ async def get_opening_insights(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> OpeningInsightsResponse:
-    """Phase 70 (v1.13) opening insights — POST /api/insights/openings.
+    """Opening insights — POST /api/insights/openings.
 
     Authenticated, user-scoped. Returns a four-section
     OpeningInsightsResponse under the active filter set.
 
-    Per CONTEXT.md D-14, every filter reshapes findings (unlike the filter-free
-    endgame insights routes above, Phase 238 D-04).
+    Every filter reshapes findings (unlike the filter-free endgame insights
+    routes above).
     """
     return await compute_insights(
         session=session,

@@ -1,9 +1,8 @@
 /**
  * GemMoveBadge — the move-list gem/great icon with a hover/tap info popover
- * that explains the gem or great-move rule (Phase 163, SEED-092; extended
- * Phase 175, SEED-108 with the `tier` prop rather than a sibling
- * GreatMoveBadge component, to avoid drift between two near-identical badges
- * — PATTERNS.md's recommended approach).
+ * that explains the gem or great-move rule. The `tier` prop covers both
+ * tiers rather than a sibling GreatMoveBadge component, to avoid drift between
+ * two near-identical badges.
  *
  * A gem is a played move that is BOTH the only good move in the position AND
  * one a human at the selected rating almost never finds (Maia policy
@@ -13,9 +12,9 @@
  * two numbers behind THIS badge: the ELO rung it was detected at and the
  * Maia probability of the move at that rung.
  *
- * Copy uses "this level"/the explicit ELO, never "your rating" (163-REVIEW
- * IN-01): the probability is evaluated at the draggable ELO-slider value, which
- * may sit far from the user's own rating.
+ * Copy uses "this level"/the explicit ELO, never "your rating": the probability
+ * is evaluated at the draggable ELO-slider value, which may sit far from the
+ * user's own rating.
  *
  * Reuses the shared `InfoPopover` interaction shell (hover-intent + tap-toggle
  * via Radix) with `GemIcon`/`GreatMoveIcon` as the custom trigger glyph. The

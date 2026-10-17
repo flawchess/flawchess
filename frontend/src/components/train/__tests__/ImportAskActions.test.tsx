@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 /**
- * ImportAskActions.test.tsx — quick task 260926-8p5.
- *
  * The zero-game Train import CTA: an internal link to /library/import whose
  * attribution goes through `trackEvent` (never a `data-umami-event`
  * attribute, which would turn the client-side navigation into a reload).

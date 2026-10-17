@@ -1,7 +1,6 @@
 /**
  * engineEvalLookup — pure, worker-free module that is the single UCI-keyed
- * eval lookup for the whole `/analysis` page (Phase 158, SEED-087; flipped
- * to grading-first precedence in Phase 162, SEED-090).
+ * eval lookup for the whole `/analysis` page, with grading-first precedence.
  *
  * Merges the shared grading run's `gradeMapBySan` (SAN-keyed — see
  * useStockfishGradingEngine.ts's "key by pv[0], multipv is an eval rank, not
@@ -20,8 +19,7 @@
  * normalized upstream.
  *
  * Does NOT read any MCTS pool grade — there is no such parameter. This makes
- * "display a shallow pool grade" impossible by construction (CONTEXT.md
- * LOCKED): a move absent from both the free run and the grading run resolves
+ * "display a shallow pool grade" impossible by construction: a move absent from both the free run and the grading run resolves
  * to `null`, never a pool-derived fallback.
  */
 
@@ -58,7 +56,7 @@ export function buildEvalLookup(
   for (const line of pvLines) {
     const uci = line.moves[0];
     if (uci === undefined || lookup.has(uci)) continue;
-    // `pv` retained (162 UAT) so a free-run entry can render its full move
+    // `pv` retained so a free-run entry can render its full move
     // sequence on the Stockfish card, symmetric with grading entries.
     lookup.set(uci, { evalCp: line.evalCp, evalMate: line.evalMate, depth: line.depth, pv: line.moves });
   }
@@ -88,9 +86,10 @@ export interface ReconciledCandidate {
 }
 
 /**
- * Full reconciled ranking (162 UAT card re-source) — every candidate that
+ * Full reconciled ranking — every candidate that
  * resolves through `evalLookup`, sorted by descending expected score. The
- * Stockfish card's displayed lines are `slice(0, 2)` of this; the canonical
+ * Stockfish card's displayed lines are the leading entries of this (sliced to
+ * the user's Stockfish line count in useAnalysisEngineLines); the canonical
  * argmax (`resolveReconciledBest`) is its head, so card line 1, arrow, chart
  * crown, and verdict agree by construction.
  *
@@ -122,10 +121,10 @@ export function rankReconciledCandidates(
 }
 
 /**
- * Canonical reconciled-best resolver (Phase 162 D-03) — the single argmax
+ * Canonical reconciled-best resolver — the single argmax
  * every downstream display consumer (arrow, verdict, eval bar, labels)
  * threads through instead of re-deriving its own best-move loop over
- * `evalLookup` (the Phase 158 anti-pattern this phase exists to kill).
+ * `evalLookup`.
  *
  * The head of `rankReconciledCandidates` (same skip/tie-break semantics —
  * one ranking, argmax = its first element). Returns `null` when no candidate

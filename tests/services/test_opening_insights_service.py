@@ -1,8 +1,8 @@
-"""Phase 70 service unit tests — INSIGHT-CORE-04, INSIGHT-CORE-05, INSIGHT-CORE-06, INSIGHT-CORE-07.
+"""Service unit tests for compute_insights().
 
 Tests cover the compute_insights() pipeline: classification boundaries,
 severity tiers, deduplication, ranking, caps, attribution, display name
-parity, color optimization, and bookmark isolation (D-18).
+parity, color optimization, and bookmark isolation.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def _make_row(
         w=w,
         d=d,
         l=losses,
-        # Quick task 260508-r61: query_opening_transitions now selects
+        # query_opening_transitions now selects
         # MAX(played_at). The service falls back to it when the resulting-position
         # WDL lookup misses; the fixture default of None mirrors a row whose
         # contributing games all have NULL played_at (rare but valid).
@@ -143,21 +143,21 @@ async def _run_compute(
 ) -> OpeningInsightsResponse:
     """Helper: patch repo functions and run compute_insights.
 
-    Also patches query_opening_phase_entry_metrics_batch (added quick task
-    260506-u2b) to return an empty dict so existing tests are unaffected by
+    Also patches query_opening_phase_entry_metrics_batch
+    to return an empty dict so existing tests are unaffected by
     the new eval-enrichment step.
 
-    Phase 80.1: also patches query_resulting_position_wdl. When pos_wdl is
+    Also patches query_resulting_position_wdl. When pos_wdl is
     None (the default), the mock returns a dict where each row.resulting_full_hash
     maps to (row.w, row.d, row.l, row.last_played_at) — i.e. resulting-position
     WDL == move-played WDL plus the move-played MAX(played_at). This preserves
     existing test expectations because _classify_row, _compute_score,
     compute_confidence_bucket, wilson_bounds, and the OpeningInsightFinding
-    fields all see the same numbers they did pre-Phase 80.1. Tests that need to
+    fields all see the same numbers as before the transposition work. Tests that need to
     drive a divergence between move-played and resulting-position WDL (the new
     transposition tests) pass an explicit pos_wdl mapping.
 
-    Quick task 260508-r61: pos_wdl tuples are now 4-element to carry
+    pos_wdl tuples are now 4-element to carry
     last_played_at through to the OpeningInsightFinding.last_played_at field.
 
     Flat-query refactor: also patches query_transition_prefixes (new helper) and
@@ -168,7 +168,7 @@ async def _run_compute(
         openings_by_hash = {100: _make_opening()}
     if pos_wdl is None:
         # Default: resulting-position WDL == move-played WDL (no transpositions
-        # in fixture). Phase 80.1: existing tests that compute expected score
+        # in fixture). Existing tests that compute expected score
         # from row.w/d/l/n produce the same expected score under the new
         # aggregation because pos == row by default.
         pos_wdl = {
@@ -215,26 +215,26 @@ async def _run_compute(
 
 
 # ---------------------------------------------------------------------------
-# Classification boundary tests (D-03, D-11; Phase 75)
+# Classification boundary tests
 # ---------------------------------------------------------------------------
 
 
 def test_classify_row_neutral_score_046_returns_none() -> None:
-    """D-03 strict <=/>= boundaries: score=0.46 → not a finding (neutral, |delta|<0.05)."""
+    """Strict <=/>= boundaries: score=0.46 → not a finding (neutral, |delta|<0.05)."""
     # n=100, w=40, d=12, l=48 → score = (40 + 6)/100 = 0.46
     row = _make_row(n=100, w=40, d=12, losses=48)
     assert _classify_row(row) is None
 
 
 def test_classify_row_neutral_score_054_returns_none() -> None:
-    """D-03 strict boundary: score=0.54 → not a finding (neutral, |delta|<0.05)."""
+    """Strict boundary: score=0.54 → not a finding (neutral, |delta|<0.05)."""
     # n=100, w=48, d=12, l=40 → score = (48 + 6)/100 = 0.54
     row = _make_row(n=100, w=48, d=12, losses=40)
     assert _classify_row(row) is None
 
 
 def test_classify_row_minor_weakness_at_score_045_exact() -> None:
-    """D-03/D-11: score=0.45 exactly → minor weakness (delta=-0.05, strict <=)."""
+    """score=0.45 exactly → minor weakness (delta=-0.05, strict <=)."""
     # n=20, w=5, d=8, l=7 → score = (5 + 4)/20 = 0.45 exactly
     row = _make_row(n=20, w=5, d=8, losses=7)
     result = _classify_row(row)
@@ -245,7 +245,7 @@ def test_classify_row_minor_weakness_at_score_045_exact() -> None:
 
 
 def test_classify_row_major_weakness_at_score_040_exact() -> None:
-    """D-03/D-11: score=0.40 → major weakness (delta=-0.10, strict <=)."""
+    """score=0.40 → major weakness (delta=-0.10, strict <=)."""
     # n=20, w=4, d=8, l=8 → score = (4 + 4)/20 = 0.40 exactly
     row = _make_row(n=20, w=4, d=8, losses=8)
     result = _classify_row(row)
@@ -256,7 +256,7 @@ def test_classify_row_major_weakness_at_score_040_exact() -> None:
 
 
 def test_classify_row_minor_strength_at_score_055_exact() -> None:
-    """D-03/D-11: score=0.55 → minor strength (delta=+0.05, strict >=)."""
+    """score=0.55 → minor strength (delta=+0.05, strict >=)."""
     # n=20, w=8, d=6, l=6 → score = (8 + 3)/20 = 0.55 exactly
     row = _make_row(n=20, w=8, d=6, losses=6)
     result = _classify_row(row)
@@ -267,7 +267,7 @@ def test_classify_row_minor_strength_at_score_055_exact() -> None:
 
 
 def test_classify_row_major_strength_at_score_060_exact() -> None:
-    """D-03/D-11: score=0.60 → major strength (delta=+0.10, strict >=)."""
+    """score=0.60 → major strength (delta=+0.10, strict >=)."""
     # n=20, w=10, d=4, l=6 → score = (10 + 2)/20 = 0.60 exactly
     row = _make_row(n=20, w=10, d=4, losses=6)
     result = _classify_row(row)
@@ -278,12 +278,12 @@ def test_classify_row_major_strength_at_score_060_exact() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Evidence floor (D-04 / Phase 75 INSIGHT-SCORE-05)
+# Evidence floor
 # ---------------------------------------------------------------------------
 
 
 def test_min_games_floor_constant_is_20() -> None:
-    """Quick 260506: discovery floor raised back from 10 to 20.
+    """Discovery floor raised back from 10 to 20.
 
     Rationale: the SQL pre-filter on score <= 0.45 OR score >= 0.55 selects on
     the same statistic the Wald p-value then tests, so at n in 10..19 the
@@ -301,13 +301,13 @@ def test_classify_row_does_not_filter_below_min_games() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Deduplication (D-21, D-24)
+# Deduplication
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_dedupe_within_section_keeps_deepest_entry() -> None:
-    """D-21, D-24: when two findings share resulting_full_hash in same section,
+    """When two findings share resulting_full_hash in same section,
     keep the one with the deeper (higher ply_count) entry attribution."""
     # Two rows: same resulting_full_hash (999), same section (white weaknesses)
     # but different entry hashes (100 → ply_count=2, 200 → ply_count=6)
@@ -338,7 +338,7 @@ async def test_dedupe_within_section_keeps_deepest_entry() -> None:
 
 @pytest.mark.asyncio
 async def test_cross_color_same_hash_kept_as_two_findings() -> None:
-    """D-21: same resulting_full_hash in white and black sections → both kept."""
+    """Same resulting_full_hash in white and black sections → both kept."""
     # One row classified as weakness for white, one for black
     # same resulting_full_hash across colors
     row_white = _make_row(entry_hash=100, resulting_full_hash=999, n=20, w=2, d=2, losses=16)
@@ -370,7 +370,7 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
         ]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
-        # Phase 80.1: pos WDL == move-played WDL (no transposition in fixture).
+        # Pos WDL == move-played WDL (no transposition in fixture).
         mock_pos_wdl.return_value = {999: (2, 2, 16, None)}
 
         response = await compute_insights(
@@ -386,10 +386,10 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
 
 @pytest.mark.asyncio
 async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
-    """Phase 71 UAT fix: a chain of consecutive weak moves in the same line
+    """A chain of consecutive weak moves in the same line
     collapses to the shortest entry, even when the chain crosses color sections.
 
-    Reproduces the Caro-Kann B10 case reported during UAT:
+    Reproduces the Caro-Kann B10 case:
       - 1.e4 c6 2.Nc3 d5 3.exd5    (white weakness)
       - 1.e4 c6 2.Nc3 d5 3.exd5 cxd5    (black weakness)
       - 1.e4 c6 2.Nc3 d5 3.exd5 cxd5 4.d4    (white weakness)
@@ -464,7 +464,7 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
         ]
         mock_attribution.return_value = {100: opening_a, 200: opening_b, 300: opening_c}
         mock_eval.return_value = {}
-        # Phase 80.1: pos WDL == move-played WDL across all three rows.
+        # Pos WDL == move-played WDL across all three rows.
         mock_pos_wdl.return_value = {
             200: (4, 4, 12, None),
             400: (4, 4, 12, None),
@@ -522,15 +522,15 @@ async def test_continuation_dedupe_keeps_sibling_lines_at_same_depth() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Attribution (D-22, D-23, D-24)
+# Attribution
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_attribution_picks_max_ply_count() -> None:
-    """D-22: when multiple openings share entry_hash, the one with MAX(ply_count) wins.
+    """When multiple openings share entry_hash, the one with MAX(ply_count) wins.
 
-    query_openings_by_hashes already handles this (Plan 70-03). Here we verify
+    query_openings_by_hashes already handles this. Here we verify
     the service uses the returned opening name correctly.
     """
     # The mock already returns deepest opening by ply_count (as the repo does)
@@ -547,7 +547,7 @@ async def test_attribution_picks_max_ply_count() -> None:
 
 @pytest.mark.asyncio
 async def test_finding_includes_entry_san_sequence() -> None:
-    """Phase 71 (D-13): entry_san_sequence is exposed on the wire schema.
+    """entry_san_sequence is exposed on the wire schema.
 
     Asserts:
       - field is a list of str
@@ -566,7 +566,7 @@ async def test_finding_includes_entry_san_sequence() -> None:
     assert len(response.white_weaknesses) == 1
     finding = response.white_weaknesses[0]
 
-    # Phase 71 (D-13): entry_san_sequence is the SAN sequence from the start
+    # entry_san_sequence is the SAN sequence from the start
     # position to the entry position (candidate excluded). With MIN_ENTRY_PLY=0
     # the field may be empty (ply=0 entries: no preceding moves), but the
     # default test fixture seeds 3 plys so this assertion still expects them.
@@ -588,7 +588,7 @@ async def test_finding_includes_entry_san_sequence() -> None:
 
 @pytest.mark.asyncio
 async def test_attribution_lineage_walk_to_parent_hash() -> None:
-    """D-23: when entry_hash has no direct openings match, walk parent lineage.
+    """When entry_hash has no direct openings match, walk parent lineage.
 
     Builds a real SAN sequence ["e4", "c5", "Nf3"], computes the full_hash at
     ply=2 (after "c5") as the 'Sicilian Defense' opening hash, and seeds an
@@ -658,7 +658,7 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             {parent_hash: parent_opening},  # parent pass: Sicilian at ply=2
         ]
         mock_eval.return_value = {}
-        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        # Pos WDL == move-played WDL (no transposition fixture).
         mock_pos_wdl.return_value = {200: (2, 2, 16, None)}
 
         response = await compute_insights(
@@ -673,7 +673,7 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
 
 @pytest.mark.asyncio
 async def test_attribution_drops_finding_when_no_lineage_match() -> None:
-    """Per D-34, findings with no direct match AND no parent ancestor in the
+    """Findings with no direct match AND no parent ancestor in the
     openings table are DROPPED from the response, not surfaced with a sentinel."""
     with (
         patch(
@@ -698,7 +698,7 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
         # Both passes return empty dicts — no attribution possible
         mock_attribution.return_value = {}
         mock_eval.return_value = {}
-        # Phase 80.1: pos WDL == move-played WDL.
+        # Pos WDL == move-played WDL.
         mock_pos_wdl.return_value = {200: (2, 2, 16, None)}
 
         response = await compute_insights(
@@ -713,9 +713,9 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
 
 @pytest.mark.asyncio
 async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
-    """D-23: this test verifies UNNAMED_LINE_* constants exist and are correct.
+    """This test verifies UNNAMED_LINE_* constants exist and are correct.
 
-    Per D-34, unnamed-line findings are dropped in Phase 70 (not surfaced).
+    Unnamed-line findings are dropped (not surfaced).
     The constants are defined for telemetry/future use but not emitted on
     responses. We verify the constants exist with correct values.
     """
@@ -726,7 +726,7 @@ async def test_unnamed_line_fallback_uses_empty_eco_and_sentinel_name() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ranking and caps (D-07, D-02, D-08)
+# Ranking and caps
 # ---------------------------------------------------------------------------
 
 
@@ -738,7 +738,7 @@ def _make_weakness_finding(
 ) -> OpeningInsightFinding:
     """Build a minimal weakness OpeningInsightFinding for ranking-level tests.
 
-    Quick task 260428-v9i: ranking now uses the Wilson 95% score interval, which
+    Ranking now uses the Wilson 95% score interval, which
     is derived from `score` and `n_games` directly (no SE input). Tests therefore
     drive uncertainty via `n_games` rather than synthetic SE values; the SE
     component of the (finding, se) tuple is preserved upstream but ignored by
@@ -802,7 +802,7 @@ def _make_strength_finding(
 
 
 def test_ranking_ignores_confidence_bucket_uses_ci_bound_only() -> None:
-    """Quick task 260428-v9i: confidence bucket is no longer part of the sort
+    """Confidence bucket is no longer part of the sort
     key. A "medium" bucket row can outrank a "high" bucket row if its Wilson
     upper bound is more striking (and vice versa). Bucket is retained as a UI
     badge only.
@@ -831,7 +831,7 @@ def test_ranking_ignores_confidence_bucket_uses_ci_bound_only() -> None:
 
 
 def test_ranking_ci_upper_bound_tiebreak_within_same_confidence_for_weaknesses() -> None:
-    """Quick task 260428-v9i: within a confidence bucket, weaknesses are ranked
+    """Within a confidence bucket, weaknesses are ranked
     by Wilson 95% upper bound ASCENDING — the row whose score is most-confidently
     -below-0.5 sorts first. The fixture is chosen so that the new (Wilson upper)
     and old (|score - 0.5|) rules disagree:
@@ -879,7 +879,7 @@ def test_ranking_small_n_high_effect_does_not_outrank_large_n_moderate_effect_wi
 
 
 def test_ranking_strength_uses_lower_bound() -> None:
-    """Quick task 260428-v9i: strengths sort by Wilson 95% LOWER bound DESCENDING
+    """Strengths sort by Wilson 95% LOWER bound DESCENDING
     (most-confidently-good first). Symmetric to the weakness case.
 
       F1: score=0.60, n_games=10000 -> Wilson lower ~ 0.5904.
@@ -901,7 +901,7 @@ def test_ranking_strength_uses_lower_bound() -> None:
 
 
 def test_ranking_bound_handles_boundary_scores() -> None:
-    """Quick task 260428-v9i: Wilson is well-defined at boundary scores (p=0,
+    """Wilson is well-defined at boundary scores (p=0,
     p=1) — no Wald-style SE=0 degeneracy. The defensive clamp to [0, 1] is kept
     in the implementation for safety, but ordering does not depend on it.
 
@@ -941,7 +941,7 @@ def test_ranking_bound_handles_boundary_scores() -> None:
 
 @pytest.mark.asyncio
 async def test_caps_10_per_color_per_classification() -> None:
-    """D-02, D-08 + Phase 71 UAT: per-section caps applied after sorting: top-10 weaknesses, top-10 strengths."""
+    """Per-section caps applied after sorting: top-10 weaknesses, top-10 strengths."""
     assert WEAKNESS_CAP_PER_COLOR == 10
     assert STRENGTH_CAP_PER_COLOR == 10
 
@@ -1002,13 +1002,13 @@ async def test_caps_10_per_color_per_classification() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 75 D-09: confidence + p_value end-to-end smoke
+# confidence + p_value end-to-end smoke
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_compute_insights_populates_confidence_and_p_value() -> None:
-    """Phase 75 D-09: every finding carries confidence + p_value fields."""
+    """Every finding carries confidence + p_value fields."""
     # Major weakness, n=20: score = (2 + 0.5*2)/20 = 0.15 (delta=-0.35, major).
     # variance = (2 + 0.25*2)/20 - 0.0225 = 0.125 - 0.0225 = 0.1025
     # se = sqrt(0.1025/20) ≈ 0.0716
@@ -1026,13 +1026,13 @@ async def test_compute_insights_populates_confidence_and_p_value() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Color optimization (D-12)
+# Color optimization
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_color_optimization_skips_unused_color_query() -> None:
-    """D-12: when request.color='white', only one SQL call issued; black sections empty."""
+    """When request.color='white', only one SQL call issued; black sections empty."""
     row = _make_row(n=20, w=12, d=4, losses=4)  # strength
     opening = _make_opening(full_hash=100)
 
@@ -1057,7 +1057,7 @@ async def test_color_optimization_skips_unused_color_query() -> None:
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
-        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        # Pos WDL == move-played WDL (no transposition fixture).
         mock_pos_wdl.return_value = {200: (12, 4, 4, None)}
 
         response = await compute_insights(
@@ -1077,13 +1077,13 @@ async def test_color_optimization_skips_unused_color_query() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Display name parity (D-22 / RESEARCH.md Pitfall 4)
+# Display name parity
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> None:
-    """D-22 / Pitfall 4: black-section finding attributed to white-defined opening
+    """Black-section finding attributed to white-defined opening
     (odd ply_count) gets display_name = 'vs. <name>'."""
     # A white-defined opening has odd ply_count (white's move, e.g., ply_count=3 = after white's 2nd move)
     # When it appears in the BLACK section, parity disagrees → prefix "vs. "
@@ -1118,7 +1118,7 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
         ]
         mock_attribution.return_value = {100: white_defined_opening}
         mock_eval.return_value = {}
-        # Phase 80.1: pos WDL == move-played WDL.
+        # Pos WDL == move-played WDL.
         mock_pos_wdl.return_value = {200: (2, 2, 16, None)}
 
         response = await compute_insights(
@@ -1134,12 +1134,12 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
 
 
 # ---------------------------------------------------------------------------
-# Bookmarks isolation (D-18)
+# Bookmarks isolation
 # ---------------------------------------------------------------------------
 
 
 def test_bookmarks_not_consumed_by_algorithm() -> None:
-    """D-18: bookmarks are NOT an algorithmic input; OpeningInsightsRequest has
+    """Bookmarks are NOT an algorithmic input; OpeningInsightsRequest has
     no bookmark field and the service signature does not accept bookmarks."""
     # Verify at the schema level: no bookmark field on request model
     assert "bookmark" not in OpeningInsightsRequest.model_fields
@@ -1154,7 +1154,7 @@ def test_bookmarks_not_consumed_by_algorithm() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 80 MG-entry eval fields on OpeningInsightFinding (quick task 260506-u2b)
+# MG-entry eval fields on OpeningInsightFinding
 # ---------------------------------------------------------------------------
 
 
@@ -1256,7 +1256,7 @@ async def test_compute_insights_eval_fields_populated_when_metrics_present() -> 
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = synthetic_metrics
-        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        # Pos WDL == move-played WDL (no transposition fixture).
         mock_pos_wdl.return_value = {999: (4, 4, 12, None)}
 
         response = await compute_insights(
@@ -1308,7 +1308,7 @@ async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}  # no metrics
-        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        # Pos WDL == move-played WDL (no transposition fixture).
         mock_pos_wdl.return_value = {999: (4, 4, 12, None)}
 
         response = await compute_insights(
@@ -1328,11 +1328,11 @@ async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -
 
 
 # ---------------------------------------------------------------------------
-# Phase 80.1 D-03/D-05: resulting-position WDL drives classification + fields
+# resulting-position WDL drives classification + fields
 # ---------------------------------------------------------------------------
 #
-# Hash namespace 0xDD** is reserved for Phase 80.1 service-level transposition
-# tests (mirrors Plan 02's 0xCC** for openings_service tests). These tests
+# Hash namespace 0xDD** is reserved for service-level transposition
+# tests (mirrors 0xCC** for openings_service tests). These tests
 # drive a divergence between move-played WDL (carried on `row`) and resulting-
 # position WDL (returned by query_resulting_position_wdl) so we can verify
 # that compute_insights classifies, ranks, and populates fields from the
@@ -1343,7 +1343,7 @@ VALIDATOR_HASH = 0xDD03
 
 
 class TestComputeInsightsTranspositionWdl:
-    """Phase 80.1 D-03/D-05: resulting-position WDL drives classification + fields."""
+    """Resulting-position WDL drives classification + fields."""
 
     @pytest.mark.asyncio
     async def test_finding_uses_resulting_position_wdl_when_diverges_from_move_played(
@@ -1426,14 +1426,14 @@ class TestComputeInsightsTranspositionWdl:
 
     @pytest.mark.asyncio
     async def test_pos_wdl_queried_per_color_with_matching_color_filter(self) -> None:
-        """WR-01 regression: query_resulting_position_wdl must be invoked once
+        """Regression: query_resulting_position_wdl must be invoked once
         per color in colors_to_query, scoped to that color's resulting hashes,
         and with color=color (matching query_opening_transitions' explicit
         Game.user_color predicate). The cross-color blended call site
         (color=None) silently inflated/deflated white-section and black-section
         denominators against the click-through Move Explorer view, which IS
         color-filtered. See app/services/opening_insights_service.py header
-        comment near pos_wdl_by_color and 80.1-REVIEW.md WR-01.
+        comment near pos_wdl_by_color.
         """
         # Two rows, same resulting_full_hash but in different color sections.
         # Each color's pos_wdl mock returns a *different* (w, d, l) so we can
@@ -1470,7 +1470,7 @@ class TestComputeInsightsTranspositionWdl:
         async def pos_wdl_side_effect(
             *, session: Any, user_id: int, hash_list: list[int], color: str | None, **_: Any
         ) -> dict[int, tuple[int, int, int, datetime.datetime | None]]:
-            # WR-01: caller must pass a real color literal, never None, when
+            # Caller must pass a real color literal, never None, when
             # called per-color. Assert here so a regression is impossible to
             # mock around.
             assert color in ("white", "black"), (
@@ -1540,7 +1540,7 @@ class TestComputeInsightsTranspositionWdl:
     async def test_pos_wdl_skipped_when_color_has_no_rows(self) -> None:
         """When a color produced zero transition rows (e.g. user has only one
         color active), query_resulting_position_wdl must NOT be invoked for
-        that color — empty hash_list short-circuit retained from pre-WR-01."""
+        that color — empty hash_list short-circuit retained."""
         row_white = _make_row(
             entry_hash=100,
             move_san="e4",
@@ -1604,7 +1604,7 @@ class TestComputeInsightsTranspositionWdl:
         """Pydantic Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE=20) on
         n_games stays satisfied because pos_n is always >= move-played n by
         construction (every move-played game also visits the resulting
-        position). Regression test for Pitfall 3 from RESEARCH.md."""
+        position). Regression test for the pos_n >= move-played n invariant."""
         # Move-played: n=20 (exactly at the gate).
         # Pos WDL: n=25 (transposition adds 5 games via other move orders).
         row = _make_row(
@@ -1646,7 +1646,7 @@ def test_row_wrapping_drops_unreachable_san_and_reports_a_warning() -> None:
     Uses an entry_san_sequence containing "Kd9" — an illegal square coordinate —
     to trigger chess.IllegalMoveError on the first SAN replay step. Verifies:
     - The function returns None (row dropped).
-    - Phase 210 (SEED-042) D-07: reported via capture_message(level="warning"),
+    - Reported via capture_message(level="warning"),
       NOT capture_exception. Modelling a handled drop as an exception escalated a
       non-bug 74 times (FLAWCHESS-5E) and buried the real issues underneath it.
     - sentry_sdk.set_tag was called with ("source", "opening_insights").
@@ -1695,7 +1695,7 @@ def test_row_wrapping_drops_unreachable_san_and_reports_a_warning() -> None:
     # Row must be dropped (None returned)
     assert result is None, f"Expected None for unreachable SAN, got {result!r}"
 
-    # Reported exactly once, at warning level, and NEVER as an exception (D-07).
+    # Reported exactly once, at warning level, and NEVER as an exception.
     assert mock_capture_message.call_count == 1, (
         f"capture_message must be called once, got {mock_capture_message.call_count}"
     )
@@ -1727,7 +1727,7 @@ async def test_attribution_stage_drops_all_custom_group_without_raising() -> Non
     all-custom-start group raised TypeError and failed compute_insights. The NULL
     row is dropped, the standard-start row still resolves.
     """
-    from app.services.opening_insights_service import _collect_attribution_hashes
+    from app.services.opening_insights_service import _fetch_attribution_context
 
     standard_row = SimpleNamespace(
         entry_hash=88001,
@@ -1768,7 +1768,7 @@ async def test_attribution_stage_drops_all_custom_group_without_raising() -> Non
         ),
         patch("app.services.opening_insights_service.sentry_sdk"),
     ):
-        ctx = await _collect_attribution_hashes(
+        ctx = await _fetch_attribution_context(
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
@@ -1785,7 +1785,7 @@ def test_row_wrapping_drops_all_custom_group_without_raising() -> None:
     """A group in which EVERY game is custom-start yields a NULL sample_pair, and
     _wrap_transition_row drops it cleanly rather than raising.
 
-    Phase 210 (SEED-042) D-03 / landmine 4. The sample aggregate is now
+    The sample aggregate is now
     `MIN(...) FILTER (WHERE games.initial_fen IS NULL)`, which PostgreSQL
     evaluates to NULL when the filter excludes every row in the group. asyncpg
     surfaces that as Python None (NOT an empty list), and the pre-existing code

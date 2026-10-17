@@ -1,6 +1,5 @@
 /**
- * mctsSearch.ts — D-08 permanent round-fill regression test (SEED-170 item
- * 2, CONTEXT.md D-06/D-08).
+ * mctsSearch.ts — permanent round-fill regression test.
  *
  * `selectPath` used to give up on the WHOLE dispatch round the moment a
  * single non-root node had zero selectable children (every child pending or
@@ -17,18 +16,17 @@
  * `Promise.all` resolves). The run length of consecutive `policy()` calls
  * between `onSnapshot` events is therefore exactly one round's dispatch
  * size — deterministic and independent of the event loop, needing zero
- * production instrumentation (225-RESEARCH.md "Round counting in D-08").
+ * production instrumentation.
  *
  * Fixture: italian-opening FEN, 50 nodes, concurrency 4, 8 plies — the exact
- * shape the throwaway probe measured this phase (225-RESEARCH.md "D-08
- * permanent round-fill test"): pre-fix, the flat root round is followed by
+ * shape a throwaway probe measured: pre-fix, the flat root round is followed by
  * mostly 1-2-node rounds instead of full 4-node rounds (37 rounds for the
  * one-candidate shape, 20 for the two-candidate shape, instead of 14).
  *
- * Mutation check (D-08, project mutation-test rule): reverting the fix
+ * Mutation check (project mutation-test rule): reverting the fix
  * (restoring `selectPath`'s unconditional `return null` on an empty
  * candidate list at ANY node, and the pre-fix fill-loop `break`) must make
- * these tests fail. Recorded in 225-04-SUMMARY.md, never left as a
+ * these tests fail. The revert is run for real, never left as a
  * grep/symbol-presence claim.
  */
 
@@ -39,7 +37,7 @@ import type { EngineProviders, EngineSnapshot, MoveGrade, SearchBudget } from '.
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
-/** Italian opening, White to move — the root FEN for every D-08 round-fill case. */
+/** Italian opening, White to move — the root FEN for every round-fill case. */
 const ROUND_FILL_ROOT_FEN = 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4';
 const ROUND_FILL_MAX_NODES = 50;
 const ROUND_FILL_CONCURRENCY = 4;
@@ -135,7 +133,7 @@ function roundSizesFromEvents(events: ('P' | 'S')[]): number[] {
 /**
  * Like `makePeakedPolicy` but peaks EVERY fen, including the root — a
  * genuine single-chain tree (no branching anywhere), used only by the
- * T-225-07 fully-blocked-termination case below. `makePeakedPolicy` keeps
+ * fully-blocked-termination case below. `makePeakedPolicy` keeps
  * the root flat deliberately (its own doc comment); this variant is the one
  * place that shape is wrong on purpose.
  */
@@ -155,7 +153,7 @@ function makeFullyPeakedPolicy(peaks: number[], events: ('P' | 'S')[]): EnginePr
   };
 }
 
-/** Wraps an async fabricated provider fn with an artificial, deliberately jittered resolution delay (copied from mctsSearch.test.ts's ENGINE-07 concurrency=2 pattern). */
+/** Wraps an async fabricated provider fn with an artificial, deliberately jittered resolution delay (copied from mctsSearch.test.ts's concurrency=2 pattern). */
 function withJitter<Args extends unknown[], Result>(
   fn: (...args: Args) => Promise<Result>,
   jitterMsSequence: number[],
@@ -170,9 +168,9 @@ function withJitter<Args extends unknown[], Result>(
   };
 }
 
-// ─── D-08 round fill ─────────────────────────────────────────────────────────
+// ─── Round fill ─────────────────────────────────────────────────────────
 
-describe('mctsSearch — D-08 round fill', () => {
+describe('mctsSearch — round fill', () => {
   it.each([
     ['one-candidate (92%)', ONE_CANDIDATE_PEAKS],
     ['two-candidate (55%/37%)', TWO_CANDIDATE_PEAKS],
@@ -198,7 +196,7 @@ describe('mctsSearch — D-08 round fill', () => {
     expect(rounds.reduce((sum, size) => sum + size, 0)).toBe(snapshot.nodesEvaluated);
   });
 
-  it('produces toEqual final snapshots and toEqual onSnapshot sequences at concurrency 2 under two different resolution jitters (D-06 determinism scope)', async () => {
+  it('produces toEqual final snapshots and toEqual onSnapshot sequences at concurrency 2 under two different resolution jitters (determinism scope)', async () => {
     const budgetC2: SearchBudget = { ...ROUND_FILL_BUDGET, concurrency: 2 };
 
     const providersA: EngineProviders = {
@@ -227,7 +225,7 @@ describe('mctsSearch — D-08 round fill', () => {
       freshSignal(),
     );
 
-    // Guard against a degenerate fixture (CR-01): at least one value must
+    // Guard against a degenerate fixture: at least one value must
     // differ from the 0.5 neutral score, or the equality assertions below
     // prove nothing.
     expect(resultA.rankedLines.some((l) => l.practicalScore !== 0.5)).toBe(true);
@@ -236,7 +234,7 @@ describe('mctsSearch — D-08 round fill', () => {
     expect(snapshotsA.length).toBeGreaterThan(0);
   });
 
-  it('resolves with round size 1 every round on a fully single-chain tree (T-225-07 fully-blocked-round termination)', async () => {
+  it('resolves with round size 1 every round on a fully single-chain tree (fully-blocked-round termination)', async () => {
     const events: ('P' | 'S')[] = [];
     const providers: EngineProviders = {
       policy: makeFullyPeakedPolicy(ONE_CANDIDATE_PEAKS, events),
@@ -253,8 +251,8 @@ describe('mctsSearch — D-08 round fill', () => {
     const rounds = roundSizesFromEvents(events);
     // Depths 0..maxPlies-1 are each exactly one expansion event (one
     // policy() call, one nodesEvaluated increment); the depth===maxPlies
-    // child is discovered ALREADY CLOSED by selectPath itself (a WR-05 dead
-    // end — terminal/depth-capped nodes never call policy(), D-09), so the
+    // child is discovered ALREADY CLOSED by selectPath itself (a dead
+    // end — terminal/depth-capped nodes never call policy()), so the
     // chain's expandable length is exactly maxPlies, not maxPlies + 1.
     const CHAIN_EXPANDABLE_LENGTH = ROUND_FILL_MAX_PLIES;
 

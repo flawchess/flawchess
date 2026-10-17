@@ -7,7 +7,7 @@ interface EndgamesProcessingStateProps {
 
 /**
  * Whole-page locked state for Endgames while Stockfish eval is still in
- * progress. Used for both first-import and incremental import (D-01/D-02) —
+ * progress. Used for both first-import and incremental import —
  * one component, one message. No CTA button; the page reveals reactively when
  * tier2 flips to true.
  */

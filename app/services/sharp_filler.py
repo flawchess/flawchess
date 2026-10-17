@@ -1,13 +1,13 @@
-"""Static sharp-puzzle filler set for Train (Phase 206, D-10/D-14).
+"""Static sharp-puzzle filler set for Train.
 
 A committed CC0 lichess puzzle set loaded once at import time into a
 module-level constant, mirroring `app.services.opening_lookup`'s
 committed-data-file -> module-level-constant shape. No DB table, no seeding
-script, no per-environment sync (D-10) — the referent is a file, which is
+script, no per-environment sync — the referent is a file, which is
 why `DrillSolve.sharp_puzzle_id` carries no `ForeignKey`.
 
-Serve-order contract (D-14), a literal mirror of `train_pool.herring_stmt`'s
-documented exhaustion contract (`app/services/train_pool.py:683-686`):
+Serve-order contract, a literal mirror of `train_pool.herring_stmt`'s
+documented exhaustion contract:
 
     Exhaustion contract: `pick_sharp_fillers` filters `SHARP_SET` to ids not
     yet served to this user. When that filtered list is empty (every id has
@@ -38,7 +38,7 @@ SHARP_FILLER_DATA_PATH: Path = (
 
 @dataclass(frozen=True)
 class SharpPuzzle:
-    """One row of the committed sharp-filler data file (D-10)."""
+    """One row of the committed sharp-filler data file."""
 
     puzzle_id: str
     fen: str
@@ -54,10 +54,9 @@ class SharpPuzzle:
 def _load_sharp_set(path: Path = SHARP_FILLER_DATA_PATH) -> tuple[SharpPuzzle, ...]:
     """Parse the committed sharp-filler CSV into a stable-ordered tuple.
 
-    Fails closed (T-206-03): a missing file or a file with zero data rows
+    Fails closed: a missing file or a file with zero data rows
     raises `RuntimeError` rather than silently yielding an empty set — an
-    empty `SHARP_SET` would degrade composition back to today's all-herring
-    session with no signal, the exact defect this phase removes. Lines
+    empty `SHARP_SET` would silently degrade sessions to all-herring. Lines
     starting with `#` (the append-only-contract header comment) are skipped
     before the CSV header row.
 
@@ -67,7 +66,7 @@ def _load_sharp_set(path: Path = SHARP_FILLER_DATA_PATH) -> tuple[SharpPuzzle, .
 
     Returns:
         A tuple of `SharpPuzzle`, sorted ascending by `puzzle_id` (a total,
-        stable order — D-14).
+        stable order).
 
     Raises:
         RuntimeError: the file is missing, unreadable, or parses to zero
@@ -105,18 +104,19 @@ SHARP_SET_BY_ID: dict[str, SharpPuzzle] = {p.puzzle_id: p for p in SHARP_SET}
 
 
 def sharp_filler_available() -> bool:
-    """True when the sharp set has at least one puzzle. Consumed by plan 03's
-    warm-up-label eligibility check."""
+    """True when the sharp set has at least one puzzle. Consumed by
+    train_repository's pool-eligibility check, so a filler-only session still counts
+    as having material."""
     return len(SHARP_SET) > 0
 
 
 def served_sharp_ids_stmt(user_id: int) -> Select[tuple[str | None]]:
     """`sharp_puzzle_id` values already served to `user_id` as a `SHARP_FILLER`
-    (D-14's exclusion source — the sharp-set analog of `herring_stmt`'s
-    `exclude_served` clause, `app/services/train_pool.py:731-740`).
+    (the exclusion source — the sharp-set analog of `herring_stmt`'s
+    `exclude_served` clause).
 
     Args:
-        user_id: Authenticated user's internal PK (V4: never client-supplied
+        user_id: Authenticated user's internal PK (never client-supplied
             — callers must source this from `current_active_user.id`).
 
     Returns:
@@ -129,12 +129,10 @@ def served_sharp_ids_stmt(user_id: int) -> Select[tuple[str | None]]:
 
 
 def pick_sharp_fillers(served_ids: set[str], *, limit: int) -> list[SharpPuzzle]:
-    """D-14's pure selector: deterministic order, exclude served, repeat on
+    """Pure selector: deterministic order, exclude served, repeat on
     exhaustion.
 
-    Exhaustion contract (unchanged from `pick_sharp_fillers`'s own docstring
-    above — copied here per `herring_stmt`'s discipline of keeping the
-    fallback documented with the selector, not duplicated at call sites):
+    Exhaustion contract (same as the module docstring):
     filter `SHARP_SET` to ids not in `served_ids`; if that filtered list is
     empty, fall back to the full unfiltered `SHARP_SET` (repeats allowed).
 

@@ -1,4 +1,4 @@
-"""DB-free assertions on the benchmarks §5 SQL shape and metric list (Phase 239-01).
+"""DB-free assertions on the benchmarks §5 SQL shape and metric list.
 
 The numeric diff gate (tests/scripts/benchmarks/test_chapter5_diff.py) needs the benchmark DB
 and is excluded from normal pytest runs by pyproject addopts. This file is deliberately NOT

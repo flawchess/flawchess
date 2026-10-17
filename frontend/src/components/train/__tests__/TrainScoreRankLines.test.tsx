@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * TrainScoreRankLines.test.tsx — Phase 230 score-screen rank lines (D-11, D-12).
+ * TrainScoreRankLines.test.tsx — score-screen rank lines.
  *
  * Spies on the real axios instance (`apiClient.get`) so client.ts, the hook and
  * the component are exercised together; wire fixtures mirror app/schemas/train.py.
@@ -100,8 +100,8 @@ describe('TrainScoreRankLines (public viewer)', () => {
   });
 });
 
-describe('TrainScoreRankLines variants (D-17, D-18, D-19)', () => {
-  it('a guest reads "You\'d be #N" and the lines hold no button (D-17)', async () => {
+describe('TrainScoreRankLines variants', () => {
+  it('a guest reads "You\'d be #N" and the lines hold no button', async () => {
     respondWith(
       makeResponse({ viewer: makeViewer({ rank: 7, rank_without_session: 9, visibility: 'guest' }) }),
     );
@@ -132,7 +132,7 @@ describe('TrainScoreRankLines variants (D-17, D-18, D-19)', () => {
     });
   });
 
-  it('a worse Accuracy rank shows the plain rank, never a down delta (D-18)', async () => {
+  it('a worse Accuracy rank shows the plain rank, never a down delta', async () => {
     respondWith(
       makeResponse(
         { viewer: makeViewer({ rank: 2, rank_without_session: 3 }) },
@@ -146,7 +146,7 @@ describe('TrainScoreRankLines variants (D-17, D-18, D-19)', () => {
     expect(screen.getByTestId('train-score-rank-lines').textContent?.toLowerCase()).not.toContain('down');
   });
 
-  it('a viewer with Points but no Accuracy entry gets the not-entered line (D-19)', async () => {
+  it('a viewer with Points but no Accuracy entry gets the not-entered line', async () => {
     respondWith(makeResponse({ viewer: makeViewer({ rank: 2, rank_without_session: 3 }) }));
     renderLines(42);
     await waitFor(() => {

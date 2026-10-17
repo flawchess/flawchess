@@ -124,7 +124,7 @@ class TestFetchChesscomGames:
     async def test_malformed_game_skipped_and_continues(self):
         """A malformed game (missing the 'white' key -> KeyError in normalize)
         is skipped; the remaining good games are still yielded and one Sentry
-        capture is recorded for the bad game (item 4, Phase 148)."""
+        capture is recorded for the bad game."""
         good1 = _make_game(uuid="game-uuid-1")
         malformed = _make_game(uuid="game-uuid-bad")
         del malformed["white"]
@@ -188,7 +188,7 @@ class TestFetchChesscomGames:
     @pytest.mark.asyncio
     async def test_404_with_internal_error_body_and_player_200_falls_back_to_enumeration(self):
         """404 with ambiguous internal-error body, player endpoint returns 200 (user exists).
-        Should NOT raise — instead falls back to month enumeration (260425-lwz).
+        Should NOT raise — instead falls back to month enumeration.
         Player has no 'joined' field, so enumeration starts at 2007-01. 'now' is
         patched to (2007, 1) to keep the test fast (only one month synthesized, which 404s).
         """
@@ -503,9 +503,9 @@ class TestFetchChesscomGames:
         permanent client error meaning the archive is gone, not a transient failure
         that risks data loss for the rest of the import.
 
-        D-05: also asserts the skip is REPORTED via on_archive_skipped, not just
+        Also asserts the skip is REPORTED via on_archive_skipped, not just
         silently dropped — distinguishes "skipped and remembered" from "skipped
-        and forgotten" (results == [] alone stays true under a broken D-03 fix)."""
+        and forgotten" (results == [] alone stays true under a broken fix)."""
         archives_resp = _make_response(
             {"archives": ["https://api.chess.com/pub/player/testuser/games/2024/03"]}
         )
@@ -531,7 +531,7 @@ class TestFetchChesscomGames:
 
     @pytest.mark.asyncio
     async def test_404_on_archive_skip_reports_sentry_context_before_message(self):
-        """D-02: a skipped archive attaches an 'import' Sentry context carrying
+        """A skipped archive attaches an 'import' Sentry context carrying
         archive_url, status, user_id and platform BEFORE capture_message fires,
         and the capture_message text stays the literal 'chess.com archive
         skipped' with zero interpolated variables so FLAWCHESS-39 keeps its
@@ -583,7 +583,7 @@ class TestFetchChesscomGames:
 
     @pytest.mark.asyncio
     async def test_forward_skip_reports_month_and_still_yields_later_games(self):
-        """D-03 forward: a 404'd month fires on_archive_skipped exactly once with
+        """Forward: a 404'd month fires on_archive_skipped exactly once with
         its (year, month) and the walk still yields games from a later month."""
         archives_resp = _make_response(
             {
@@ -616,9 +616,9 @@ class TestFetchChesscomGames:
 
     @pytest.mark.asyncio
     async def test_forward_empty_200_month_is_not_a_skip(self):
-        """D-03 forward: a 200 with an empty games array is NOT a skip — Pitfall 1
-        must not be reintroduced as an infinite re-fetch loop for legitimately
-        empty months."""
+        """Forward: a 200 with an empty games array is NOT a skip; treating it as
+        one would reintroduce an infinite re-fetch loop for legitimately empty
+        months."""
         archives_resp = _make_response(
             {
                 "archives": [
@@ -693,7 +693,7 @@ class TestFetchChesscomGames:
                     pass
 
     # -----------------------------------------------------------------------
-    # Month-enumeration fallback (260425-lwz)
+    # Month-enumeration fallback
     # -----------------------------------------------------------------------
 
     @pytest.mark.asyncio
@@ -932,7 +932,7 @@ class TestFetchChesscomGames:
 
 
 # ---------------------------------------------------------------------------
-# fetch_chesscom_games_backward (Phase 186 Plan 02, IMPORT-03, D-06/D-07)
+# fetch_chesscom_games_backward
 # ---------------------------------------------------------------------------
 
 
@@ -954,7 +954,7 @@ class TestFetchChesscomGamesBackward:
     @pytest.mark.asyncio
     async def test_backward_visits_archives_newest_to_oldest(self):
         """With should_stop always False and joined at 2024-01, the backward walk
-        visits 2024/03, 2024/02, 2024/01 in that order (newest -> oldest, D-06)."""
+        visits 2024/03, 2024/02, 2024/01 in that order (newest -> oldest)."""
         joined_ts = int(datetime(2024, 1, 15, tzinfo=timezone.utc).timestamp())
         joined_resp = _make_response({"joined": joined_ts})
         march_resp = _make_response({"games": [_make_game(uuid="march-game")]})
@@ -987,7 +987,7 @@ class TestFetchChesscomGamesBackward:
     @pytest.mark.asyncio
     async def test_backward_on_month_attempted_fires_for_zero_match_month(self):
         """A month whose archive yields zero games still fires on_month_attempted
-        (Pitfall 1 -- persist attempts, not stored rows, or Sync would re-fetch
+        (persist attempts, not stored rows, or Sync would re-fetch
         the same empty period forever)."""
         joined_ts = int(datetime(2024, 2, 1, tzinfo=timezone.utc).timestamp())
         joined_resp = _make_response({"joined": joined_ts})
@@ -1018,7 +1018,7 @@ class TestFetchChesscomGamesBackward:
 
     @pytest.mark.asyncio
     async def test_backward_skip_freezes_cursor_but_keeps_walking_older_months(self):
-        """D-03 backward (load-bearing): a 404'd month stops on_month_attempted from
+        """Backward (load-bearing): a 404'd month stops on_month_attempted from
         firing for that month AND every older month in this same walk, so the
         persisted cursor cannot move past the skip -- but the walk itself keeps
         fetching and yielding games from older months within the run."""
@@ -1058,7 +1058,7 @@ class TestFetchChesscomGamesBackward:
     @pytest.mark.asyncio
     async def test_backward_should_stop_halts_before_next_month_fetch(self):
         """should_stop() returning True after the first month halts the walk
-        before the second (older) month is fetched (D-07, month granularity)."""
+        before the second (older) month is fetched (month granularity)."""
         joined_ts = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
         joined_resp = _make_response({"joined": joined_ts})
         march_resp = _make_response({"games": [_make_game(uuid="march-game")]})

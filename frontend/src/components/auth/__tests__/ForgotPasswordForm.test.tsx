@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * ForgotPasswordForm.test.tsx (Phase 207 Plan 02, Task 1).
+ * ForgotPasswordForm.test.tsx.
  *
  * @sentry/react and sonner are mocked — their ESM module namespaces aren't
  * configurable for spying, and we assert exact call counts on both.
  *
  * apiClient is mocked at module level so these are true unit tests of the
  * component's branching logic, independent of the real backend (proven end
- * to end already by 207-01-SUMMARY.md's integration suite).
+ * to end already by the integration suite).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';

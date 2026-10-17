@@ -54,13 +54,11 @@ router.include_router(
     tags=["auth"],
 )
 
-# Password reset (forgot-password / reset-password) — Phase 207, RESET-01.
+# Password reset (forgot-password / reset-password).
 # FastAPIUsers.get_reset_password_router() (the bound instance method) takes
 # NO arguments — it already closes over self.get_user_manager internally and
-# delegates to the module-level get_reset_password_router(get_user_manager).
-# Deviation from RESEARCH/PATTERNS, which assumed the instance method forwards
-# get_user_manager positionally like get_register_router's schema args do;
-# verified against the installed fastapi-users==15.0.5 source (Rule 1/3 fix).
+# delegates to the module-level get_reset_password_router(get_user_manager)
+# (verified against fastapi-users 15.0.5).
 router.include_router(
     fastapi_users.get_reset_password_router(),
     prefix="/auth",
@@ -359,9 +357,10 @@ async def google_callback(
 ) -> RedirectResponse:
     """Handle Google OAuth callback, issue JWT, and redirect to frontend.
 
-    Exchanges the authorization code manually using BACKEND_URL instead of
-    request.url_for() — the latter builds wrong URLs behind reverse proxies
-    even with X-Forwarded headers, causing redirect_uri mismatch errors.
+    Exchanges the authorization code with an explicit redirect_uri built from the
+    resolved backend base (BACKEND_URL or an allowlisted tunnel origin) instead of
+    request.url_for(), which builds wrong URLs behind reverse proxies even with
+    X-Forwarded headers, causing redirect_uri mismatch errors.
     """
     if error is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth error: {error}")
@@ -416,7 +415,7 @@ async def create_guest(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> GuestCreateResponse:
-    """Create an anonymous guest user and return a 30-day Bearer JWT."""
+    """Create an anonymous guest user and return a 365-day Bearer JWT."""
     client_ip = request.client.host if request.client else "unknown"
     if not guest_create_limiter.is_allowed(client_ip):
         raise HTTPException(
@@ -431,7 +430,7 @@ async def create_guest(
 async def refresh_guest_token(
     user: Annotated[User, Depends(current_active_user)],
 ) -> GuestRefreshResponse:
-    """Issue a fresh 30-day JWT for the authenticated guest, extending their session expiry."""
+    """Issue a fresh 365-day JWT for the authenticated guest, extending their session expiry."""
     if not user.is_guest:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -565,7 +564,7 @@ async def google_callback_promote(
 
     account_id, account_email = _google_identity(token)
 
-    # Bug fix (quick 261016-fwd): this used to promote unconditionally and answer an
+    # Bug fix: this used to promote unconditionally and answer an
     # existing Google identity with EMAIL_ALREADY_REGISTERED. That lockout (2026-06-23)
     # is why the SPA only started promotion behind a one-shot intent flag, and that flag
     # was lost when a guest logged out first or retried an abandoned Google screen, so
@@ -585,7 +584,7 @@ async def google_callback_promote(
         )
 
     try:
-        _updated_user, jwt_token = await guest_service.promote_guest_with_google(
+        promoted_user, jwt_token = await guest_service.promote_guest_with_google(
             session,
             guest_user,
             account_id=account_id,
@@ -609,7 +608,7 @@ async def google_callback_promote(
 
     # Update last_login on the same session (promotion already committed it)
     await session.execute(
-        sa_update(User).where(User.id == _updated_user.id).values(last_login=func.now())
+        sa_update(User).where(User.id == promoted_user.id).values(last_login=func.now())
     )
     await session.commit()
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * TrainStatsCard.test.tsx — coverage for the drill-pool statistics card
- * (193 UAT round 2; mastered/parked split out of the old TrainProgressRow,
+ * (mastered/parked split out of the old TrainProgressRow,
  * plus the completed state's "Scored today" row). Mocks `@/api/client` the
  * way TrainStreakCard.test.tsx does.
  */
@@ -82,13 +82,13 @@ describe('TrainStatsCard', () => {
     await waitFor(() => {
       expect(screen.getByTestId('train-stats-mastered')).not.toBeNull();
     });
-    // SEED-181: tiles instead of a headed card; the region keeps the name.
+    // Tiles instead of a headed card; the region keeps the name.
     expect(screen.getByRole('region', { name: 'Puzzle pool' })).not.toBeNull();
     expect(screen.getByTestId('train-stats-mastered').textContent).toBe('5Mastered');
     expect(screen.getByTestId('train-stats-parked').textContent).toBe('2Parked');
   });
 
-  describe('jargon popovers (193 UAT round 3)', () => {
+  describe('jargon popovers', () => {
     it('both SR terms carry an info trigger — neither is defined anywhere else on the page', async () => {
       vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
       renderWithClient();

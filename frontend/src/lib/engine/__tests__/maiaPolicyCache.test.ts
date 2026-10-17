@@ -1,6 +1,6 @@
 /**
  * maiaPolicyCache.ts unit tests — the shared, module-scoped, LRU `fen|elo`
- * policy cache (Phase 194 CACHE-01/02/05).
+ * policy cache.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -166,7 +166,7 @@ describe('maiaPolicyCache', () => {
     });
   });
 
-  // ─── Pending registry (quick 260906-gu2) ────────────────────────────────
+  // ─── Pending registry ────────────────────────────────
 
   it('getPendingPolicy is undefined until a producer marks the key pending', () => {
     expect(getPendingPolicy(FEN, 1500)).toBeUndefined();
@@ -219,7 +219,7 @@ describe('maiaPolicyCache', () => {
   });
 
   it(
-    'LRU (CACHE-01/02): filling to exactly MAIA_POLICY_CACHE_MAX evicts nothing; reading an entry then forcing one eviction spares it and evicts a never-read entry — fails under FIFO',
+    'LRU: filling to exactly MAIA_POLICY_CACHE_MAX evicts nothing; reading an entry then forcing one eviction spares it and evicts a never-read entry — fails under FIFO',
     () => {
       for (let i = 0; i < MAIA_POLICY_CACHE_MAX; i++) {
         setCachedPolicy(fenVariant(i), 1500, { e2e4: i });
@@ -247,7 +247,7 @@ describe('maiaPolicyCache', () => {
   );
 
   it(
-    'LRU (CACHE-02): a WRITE to an already-present key counts as a use — re-setting an entry spares it from the next eviction (fails when setCachedPolicy omits the delete-then-reinsert touch)',
+    'LRU: a WRITE to an already-present key counts as a use — re-setting an entry spares it from the next eviction (fails when setCachedPolicy omits the delete-then-reinsert touch)',
     () => {
       for (let i = 0; i < MAIA_POLICY_CACHE_MAX; i++) {
         setCachedPolicy(fenVariant(i), 1500, { e2e4: i });

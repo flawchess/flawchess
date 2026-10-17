@@ -1,13 +1,7 @@
 """Integration tests for the remote eval worker protocol endpoints.
 
-Phase 149-03 PRUNE-01: the original Gen-1 POST /lease + POST /submit pair and
-their tests (including TestTier1Claiming) have been deleted — the fleet fully
-migrated to the atomic (versioned) /atomic-lease + /atomic-submit pair. See
-TestAtomicLeaseEndpoint / TestAtomicSubmitEndpoint for the equivalent coverage
-(job_id -> eval_jobs stamping and the lichess-eval-game release+204 branch were
-explicitly ported before the Gen-1 tests were removed — 149-RESEARCH.md
-Pitfall 1). This module now covers /entry-lease, /entry-submit, /atomic-lease,
-/atomic-submit, and /flaw-blob-lease, /flaw-blob-submit.
+This module covers /entry-lease, /entry-submit, /atomic-lease, /atomic-submit,
+and /flaw-blob-lease, /flaw-blob-submit.
 
 Session patching: monkeypatch app.routers.eval_remote.async_session_maker to route
 the router's own sessions to the per-run test DB (eval_drain / eval_queue_service
@@ -144,7 +138,7 @@ async def _insert_game_positions(
 
     Each dict: {"ply": int, "full_hash": int, "eval_cp": int|None, "eval_mate": int|None,
                 "phase": int (optional, default 0), "best_move": str|None (optional,
-                the row's OWN un-shifted best_move — Phase 177 tier-4b tests)}.
+                the row's OWN un-shifted best_move — tier-4b tests)}.
 
     For entry-ply target collection, at least one row needs phase=1 (midgame) to produce
     a middlegame_entry target. Pass phase=1 in the row dict when needed.
@@ -241,7 +235,7 @@ async def _get_game_best_moves_completed_at(
     session_maker: async_sessionmaker[AsyncSession],
     game_id: int,
 ) -> datetime | None:
-    """Fetch Game.best_moves_completed_at (Phase 177 tier-4b completion stamp)."""
+    """Fetch Game.best_moves_completed_at (tier-4b completion stamp)."""
     from app.models.game import Game
 
     async with session_maker() as session:
@@ -255,7 +249,7 @@ async def _count_game_best_moves(
     session_maker: async_sessionmaker[AsyncSession],
     game_id: int,
 ) -> int:
-    """Count game_best_moves rows for a game (Phase 177 tier-4b)."""
+    """Count game_best_moves rows for a game (tier-4b)."""
     from app.models.game_best_move import GameBestMove
 
     async with session_maker() as session:
@@ -269,7 +263,7 @@ async def _get_best_cp_by_ply(
     session_maker: async_sessionmaker[AsyncSession],
     game_id: int,
 ) -> dict[int, int | None]:
-    """Return {ply: best_cp} for a game's game_best_moves rows (Quick 260719-fsz)."""
+    """Return {ply: best_cp} for a game's game_best_moves rows."""
     from app.models.game_best_move import GameBestMove
 
     async with session_maker() as session:
@@ -321,7 +315,7 @@ def _patch_router_session(
     The router's own sessions (probe, claim, read) use async_session_maker imported
     into the router module. The entry-ply endpoints also call _load_pgns_for_games and
     _collect_eval_targets_from_db which open sessions via eval_drain.async_session_maker,
-    so that module binding must also be redirected to the test DB. Phase 150 R7: several
+    so that module binding must also be redirected to the test DB. Several
     shared-write-path primitives (_derive_atomic_sentinel_lines, _build_flaw_multipv2_blobs,
     _build_flaw_blob_lease_positions, apply_full_eval's helpers) moved to eval_apply.py and
     open their OWN internal sessions there, so that module binding must be redirected too.
@@ -333,13 +327,6 @@ def _patch_router_session(
     monkeypatch.setattr(eval_remote_module, "async_session_maker", session_maker)
     monkeypatch.setattr(eval_drain_module, "async_session_maker", session_maker)
     monkeypatch.setattr(eval_apply_module, "async_session_maker", session_maker)
-
-
-# Phase 149-03 PRUNE-01: the Gen-1 /lease auth/queue and /submit auth/version-gate
-# /write-path test blocks (test_lease_requires_operator_token through
-# test_submit_idempotent) have been deleted — /lease and /submit no longer exist.
-# /atomic-lease + /atomic-submit (TestAtomicLeaseEndpoint / TestAtomicSubmitEndpoint
-# below) carry the equivalent auth/version-gate/write-path coverage for the live lane.
 
 
 # ─── Tier-1 claiming: helpers ─────────────────────────────────────────────────
@@ -389,23 +376,11 @@ async def _seed_eval_job(
     return job_id
 
 
-# ─── Tier-1 claiming: tests ───────────────────────────────────────────────────
-# Phase 149-03 PRUNE-01: TestTier1Claiming (Gen-1 /lease + /submit only) has been
-# deleted — its job_id -> eval_jobs stamping and lichess-eval-game release
-# coverage was ported to TestAtomicSubmitEndpoint / TestAtomicLeaseEndpoint
-# (test_atomic_submit_with_job_id_stamps_eval_jobs and friends, see
-# 149-RESEARCH.md Pitfall 1) BEFORE this class was removed. The one method that
-# was NOT Gen-1-specific (a worker-script constant, not a /lease or /submit
-# behavior) is relocated below rather than deleted.
-
-
 def test_default_idle_sleep_is_one_second() -> None:
-    """DEFAULT_IDLE_SLEEP constant must be 1.0 (lowered from 5.0 in Phase 121).
+    """DEFAULT_IDLE_SLEEP constant must be 1.0.
 
     Only the empty-queue / 204 path sleeps; the busy path is a tight loop. This
-    constant controls idle-pickup latency for every lane (D-06 ladder), not just
-    the deleted Gen-1 pair — relocated out of TestTier1Claiming (Phase 149-03
-    PRUNE-01) rather than deleted with it.
+    constant controls idle-pickup latency for every lane.
     """
     import scripts.remote_eval_worker as remote_eval_worker
 
@@ -414,8 +389,8 @@ def test_default_idle_sleep_is_one_second() -> None:
     )
 
 
-# ─── Phase 123 lease-claim tests ─────────────────────────────────────────────
-# SEED-051 D-3/D-4: _claim_entry_eval_games SKIP-LOCKED LIFO correctness.
+# ─── Lease-claim tests ─────────────────────────────────────────────
+# _claim_entry_eval_games SKIP-LOCKED LIFO correctness.
 # Tests: partition (disjoint), LIFO ordering, TTL reclaim + future-lease exclusion,
 # leased_by population.  All four drive the helper directly (no HTTP needed).
 
@@ -432,8 +407,6 @@ async def test_lease_partition(
     suffice because the first claim stamps entry_eval_lease_expiry in the future,
     making those rows invisible to the second claim's predicate — same partition
     guarantee as concurrent SKIP LOCKED.
-
-    SEED-051 D-3 / validation matrix row 123-02-02.
     """
     from app.services.eval_drain import ENTRY_LEASE_BATCH_SIZE, _claim_entry_eval_games
 
@@ -478,8 +451,6 @@ async def test_lease_lifo(
     Inserts 5 pending games sequentially (auto-increment IDs are monotonically
     increasing), then claims 3 of them.  The returned IDs must be the 3 largest
     (most recently inserted), confirming ORDER BY id DESC.
-
-    SEED-051 D-3 (LIFO ordering) / RESEARCH §Architecture Diagram.
     """
     from app.services.eval_drain import _claim_entry_eval_games
 
@@ -515,8 +486,6 @@ async def test_lease_reclaim(
     1. Insert two pending games.
     2. Manually set game A's lease to the past (expired) and game B's to the future.
     3. Assert only game A is returned by a new claim (TTL reclaim); game B is skipped.
-
-    SEED-051 D-4 (TTL reclaim) / PATTERNS.md lease_reclaim shape.
     """
     from app.services.eval_drain import _claim_entry_eval_games
 
@@ -569,10 +538,7 @@ async def test_leased_by_set(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """After a claim, the leased games' entry_eval_leased_by equals the worker_id passed.
-
-    SEED-051 D-9 / CONTEXT D-09 (observability column).
-    """
+    """After a claim, the leased games' entry_eval_leased_by equals the worker_id passed."""
     from app.services.eval_drain import _claim_entry_eval_games
 
     game_id = await _insert_game(
@@ -602,13 +568,13 @@ async def test_leased_by_set(
         await _delete_games(eval_worker_session_maker, [game_id])
 
 
-# ─── Phase 123 entry-lease HTTP endpoint tests ────────────────────────────────
-# Tests for POST /eval/remote/entry-lease and /entry-submit (SEED-051 D-07).
+# ─── Entry-lease HTTP endpoint tests ────────────────────────────────
+# Tests for POST /eval/remote/entry-lease and /entry-submit.
 
 
 @pytest.mark.asyncio
 async def test_entry_lease_auth_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing operator token → 403 (fail-closed, T-123-01 / T-123-auth)."""
+    """Missing operator token → 403 (fail-closed)."""
     monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
     async with _make_client() as client:
         response = await client.post(_ENTRY_LEASE_URL)
@@ -617,7 +583,7 @@ async def test_entry_lease_auth_missing_token(monkeypatch: pytest.MonkeyPatch) -
 
 @pytest.mark.asyncio
 async def test_entry_lease_auth_wrong_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Wrong operator token → 401 (T-123-auth)."""
+    """Wrong operator token → 401."""
     monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
     async with _make_client() as client:
         response = await client.post(_ENTRY_LEASE_URL, headers={"X-Operator-Token": "wrong-token"})
@@ -630,7 +596,7 @@ async def test_entry_lease_gate_below_threshold(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """Backlog exactly THRESHOLD-1 pending games → 204 (D-5 gate, Pitfall 6).
+    """Backlog exactly THRESHOLD-1 pending games → 204 (backlog gate).
 
     The existence probe fires at OFFSET = THRESHOLD - 1 (0-indexed). With exactly
     THRESHOLD-1 games, the probe returns no row → 204 (too shallow for remote workers).
@@ -667,7 +633,7 @@ async def test_entry_lease_gate_at_threshold(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """Backlog exactly THRESHOLD pending games → 200 (D-5 gate boundary, Pitfall 6).
+    """Backlog exactly THRESHOLD pending games → 200 (backlog gate boundary).
 
     The 300th row is at OFFSET 299 (0-indexed). With exactly THRESHOLD games,
     the probe finds a row → gate passes → workers get a batch.
@@ -769,18 +735,15 @@ async def test_entry_lease_returns_positions(
         await _delete_games(eval_worker_session_maker, game_ids)
 
 
-# ─── Phase 212 BENCHLANE-02/D-09 (212-07): entry-ply lane selection gate ──────
-# The fifth lottery lane, found ungated during 212-06's aborted smoke drain
-# (docs/benchmark-lane-runbook.md §8, .planning/phases/212-benchmark-full-game-
-# analysis-lane/212-06-CHECKPOINT-RECORD.md). Mirrors
+# ─── Entry-ply lane selection gate ──────
+# The fifth lottery lane. Mirrors
 # tests/services/test_eval_queue.py::TestBenchmarkSelectionGate's byte-identity +
 # narrowing + empty-table pattern, applied to the entry-ply probe
 # (_entry_lease_backlog_probe_sql) and canonical claim (_entry_claim_sql).
 
-# Frozen pre-212-07 (git HEAD~1, i.e. the commit immediately before Task 1's
-# edit) baselines -- captured from app/routers/eval_remote.py and
-# app/services/eval_entry.py via `git show`, never copy-pasted from the
-# post-change builder output. Direct `==` comparisons only (D-10 point 1):
+# Frozen baselines of the ungated builders -- captured from app/routers/eval_remote.py and
+# app/services/eval_entry.py via `git show` before the gate was added, never copy-pasted
+# from the post-change builder output. Direct `==` comparisons only:
 # an empty _selection_gate_clause()-equivalent that renders as a stray space,
 # a newline, or a bare truthy conjunct rather than nothing at all must fail
 # these, not merely a "looks equivalent" whitespace-normalized check.
@@ -813,7 +776,7 @@ async def _create_benchmark_selection_table(test_engine: object) -> None:
     """Create the benchmark_selection table in the test DB if it doesn't exist yet.
 
     Mirrors tests/services/test_eval_queue.py::test_benchmark_selection_gate_on_narrows_tier3's
-    targeted create_all (INFRA-02: benchmark-only tables stay out of the canonical
+    targeted create_all (benchmark-only tables stay out of the canonical
     Alembic chain, so the test DB never has this table unless a test creates it).
     """
     from typing import cast
@@ -834,7 +797,7 @@ async def _create_benchmark_selection_table(test_engine: object) -> None:
 
 
 class TestEntryLeaseSelectionGate:
-    """D-09/D-10 for the entry-ply lane (212-07 Tasks 1+2): the fifth lottery
+    """Selection gating for the entry-ply lane: the fifth lottery
     lane, gated in lock-step at its probe (_entry_lease_backlog_probe_sql) and
     its canonical claim (_entry_claim_sql), shared by /entry-lease and the
     in-process server-pool drain (_pick_pending_game_ids)."""
@@ -851,8 +814,8 @@ class TestEntryLeaseSelectionGate:
         only — the unselected pending game is never leased.
 
         The real ENTRY_LEASE_BACKLOG_THRESHOLD (300) is itself part of the
-        gated predicate once the gate is on (D-5's probe and the claim share
-        the identical WHERE, WR-03) — so the probe's existence check would
+        gated predicate once the gate is on (the probe and the claim share
+        the identical WHERE) — so the probe's existence check would
         need 300 SELECTED rows to pass at the production threshold. That
         depth requirement is already covered by test_entry_lease_gate_at_threshold
         / test_entry_lease_gate_below_threshold above; this test's job is
@@ -925,7 +888,7 @@ class TestEntryLeaseSelectionGate:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Gate off, _entry_lease_backlog_probe_sql() is byte-identical (direct
-        `==`) to the pre-212-07 (git HEAD~1) inline literal.
+        `==`) to the pre-gate inline literal.
 
         What breaks this: an empty selection_gate_clause() rendering as a
         trailing space, a stray newline, or a bare truthy conjunct (e.g.
@@ -944,7 +907,7 @@ class TestEntryLeaseSelectionGate:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Gate off, _entry_claim_sql() is byte-identical (direct `==`) to the
-        pre-212-07 (git HEAD~1) inline literal.
+        pre-gate inline literal.
 
         What breaks this: an empty selection_gate_clause() rendering as a
         trailing space, a stray newline, or a bare truthy conjunct (e.g.
@@ -966,7 +929,7 @@ class TestEntryLeaseSelectionGate:
         """Gate on: the selection fragment appears in BOTH builders' output, and
         the shared lease-expiry predicate line is present in both.
 
-        WR-03 regression net: a future edit that gates one of the two
+        Regression net: a future edit that gates one of the two
         (probe, claim) and not the other would let the probe pass while the
         claim returns nothing, burning a claim transaction per worker cycle
         near the tail of the backlog.
@@ -1003,7 +966,7 @@ class TestEntryLeaseSelectionGate:
     ) -> None:
         """Gate on, benchmark_selection created but empty, pending backlog well
         past ENTRY_LEASE_BACKLOG_THRESHOLD: /entry-lease returns 204 rather than
-        an ungated fallthrough to the wider backlog (D-09)."""
+        an ungated fallthrough to the wider backlog."""
         from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
 
         await _create_benchmark_selection_table(test_engine)
@@ -1100,7 +1063,7 @@ class TestEntryLeaseSelectionGate:
         server-pool drain's picker, app/services/eval_drain.py) with the router
         session patched: only selected ids are returned.
 
-        This pins the in-process consumer D-11 makes mandatory on the
+        This pins the in-process consumer that is mandatory on the
         benchmark instance — without it, a future refactor giving the
         server-pool drain its own claim would silently reopen the leak on the
         one instance where automatic draining is mandatory.
@@ -1224,7 +1187,7 @@ class TestEntryLeaseSelectionGate:
 
 @pytest.mark.asyncio
 async def test_entry_submit_auth_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing operator token → 403 (T-123-01)."""
+    """Missing operator token → 403."""
     monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
     payload = {"sf_version": "Stockfish 18", "evals": []}
     async with _make_client() as client:
@@ -1234,7 +1197,7 @@ async def test_entry_submit_auth_missing_token(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.asyncio
 async def test_entry_submit_sf_version_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """EXPECTED_SF_VERSION set, wrong version in body → 422 (T-123-07)."""
+    """EXPECTED_SF_VERSION set, wrong version in body → 422."""
     monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
     monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "Stockfish 18")
     payload = {"sf_version": "Stockfish 17", "evals": []}
@@ -1256,8 +1219,8 @@ async def test_entry_submit_no_shift(
     """Entry-submit writes eval at the EXACT submitted ply — NO +1 post-move shift.
 
     The inverse of test_submit_applies_post_move_shift (which verifies the +1 shift
-    for full-ply /submit). Entry-ply uses _apply_eval_results (no shift); the worker
-    submits at ply N and the server must store at row ply=N (Pitfall 1).
+    for full-ply /submit). Entry-ply uses _apply_entry_eval_results (no shift); the worker
+    submits at ply N and the server must store at row ply=N.
 
     For _TWO_MOVE_PGN "1. e4 e5 *": ply 0 is the middlegame entry (first half-move).
     Submit eval_cp=77 at ply=0 → row ply=0 must store eval_cp=77 (not shifted to ply=-1).
@@ -1343,7 +1306,7 @@ async def test_entry_submit_stamps_evals_completed_at(
 ) -> None:
     """After entry-submit, evals_completed_at IS NOT NULL for the submitted game.
 
-    The completion stamp is the permanent lease release (D-01): once stamped,
+    The completion stamp is the permanent lease release: once stamped,
     the game exits the queue (evals_completed_at IS NULL predicate no longer matches).
     """
     from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
@@ -1410,7 +1373,7 @@ async def test_entry_submit_stamps_full_leased_set_including_zero_target_games(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """CR-01 regression: a leased game that yields ZERO eval targets is still stamped.
+    """Regression: a leased game that yields ZERO eval targets is still stamped.
 
     Before the fix, entry-submit stamped evals_completed_at ONLY for games present in
     the worker's submission body. A leased game with no derivable targets (e.g. an
@@ -1454,7 +1417,7 @@ async def test_entry_submit_stamps_full_leased_set_including_zero_target_games(
     assert lease_resp.status_code == 200, lease_resp.text
 
     # Find a padding game that was actually leased to this (default) worker but produced
-    # no positions in the lease response — that is the zero-target game CR-01 is about.
+    # no positions in the lease response — that is the zero-target game under test.
     leased_position_game_ids = {p["game_id"] for p in lease_resp.json()["positions"]}
     leased_zero_target_pad_id: int | None = None
     for pid in pad_ids:
@@ -1484,7 +1447,7 @@ async def test_entry_submit_stamps_full_leased_set_including_zero_target_games(
             )
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
-        # CR-01 key assertion: the leased zero-target padding game (never submitted) is
+        # Key assertion: the leased zero-target padding game (never submitted) is
         # stamped complete, so it cannot be re-leased — the livelock is broken.
         pad_completed_at = await _get_game_evals_completed_at(
             eval_worker_session_maker, leased_zero_target_pad_id
@@ -1504,7 +1467,7 @@ async def test_entry_submit_excludes_expired_lease(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """D-05 (Phase 148 item 5): entry-submit excludes a leased-but-expired game.
+    """Entry-submit excludes a leased-but-expired game.
 
     Two games leased to the SAME worker_id (default X-Worker-Id-less
     "remote-worker" label) — one with a PAST entry_eval_lease_expiry, one with
@@ -1647,14 +1610,7 @@ async def test_entry_submit_idempotent(
         await _delete_games(eval_worker_session_maker, [game_id, *pad_ids])
 
 
-# Phase 149-03 PRUNE-01: test_scope_explicit_returns_only_tier1_2 /
-# test_scope_idle_skips_tier1_2 / test_scope_absent_is_bundled (/lease?scope=
-# param, Gen-1-specific) deleted — the scope param concept lives on identically
-# on /atomic-lease (atomic_lease_eval_game passes scope straight through to the
-# same claim_eval_job(), mirroring the deleted lease_eval_game's call site).
-
-
-# ─── Phase 123 X-Worker-Id header tests ──────────────────────────────────────
+# ─── X-Worker-Id header tests ──────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -1710,7 +1666,7 @@ async def test_worker_id_absent_falls_back_to_remote_worker_on_entry_lease(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """Absent X-Worker-Id header → entry_eval_leased_by = 'remote-worker' (D-10 fallback)."""
+    """Absent X-Worker-Id header → entry_eval_leased_by = 'remote-worker' (fallback)."""
     from app.services.eval_drain import ENTRY_LEASE_BACKLOG_THRESHOLD
 
     monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -1748,14 +1704,7 @@ async def test_worker_id_absent_falls_back_to_remote_worker_on_entry_lease(
         await _delete_games(eval_worker_session_maker, game_ids)
 
 
-# Phase 149-03 PRUNE-01: test_worker_id_header_populates_leased_by_on_full_lease /
-# test_worker_id_absent_falls_back_to_remote_worker_on_full_lease (/lease-only)
-# deleted — worker_id_label is a shared dependency exercised identically by the
-# kept entry-lease variants above; /atomic-lease calls claim_eval_job(worker_id=
-# worker_id, ...) the same way the deleted lease_eval_game did.
-
-
-# ─── Phase 142 MPV-02: SubmitEval second-best fields + blob tests ─────────────
+# ─── SubmitEval second-best fields + blob tests ─────────────
 
 # 6-ply game for blob tests (same structure as drain test _SIX_PLY_PGN).
 _SIX_PLY_PGN_142: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *"
@@ -1777,34 +1726,13 @@ _BLUNDER_SUBMIT_EVALS_142: list[dict[str, object]] = [
 ]
 
 
-# Phase 149 WR-02 (code review 2026-07-04): test_submit_eval_accepts_second_best_fields
-# and test_submit_eval_schema_phase146_no_second_best_fields (both exercised the
-# now-deleted Gen-1 SubmitEval schema in isolation) deleted along with the
-# schema class itself. Equivalent coverage of the same second_cp/second_mate/
-# second_uci removal lives on the live AtomicSubmitEval schema (Phase 147),
-# which never carried those fields to begin with.
-
-
-# Phase 149-03 PRUNE-01: TestMultipv2BlobsRemote (Phase 142 MPV-02 / Phase 146
-# D-03 /submit blob-null behavior, all 3 methods /submit-only) deleted — moot
-# once /submit no longer exists. The equivalent /atomic-submit coverage lives
-# in TestAtomicSubmitEndpoint (test_atomic_submit_missing_blob_writes_null_tag
-# and test_atomic_submit_gates_tactic_tag_and_stamps_both_markers).
-
-
-# Phase 149-03 PRUNE-01: test_submit_phase146_build_blob_not_called and
-# test_submit_phase146_blobs_null_both_markers_stamped (/submit-only) deleted —
-# moot once /submit no longer exists. Equivalent atomic-lane coverage lives in
-# TestAtomicSubmitEndpoint.
-
-
-# ─── Phase 145 SHIP-01: FlawBlob lease/submit schema tests ───────────────────
+# ─── FlawBlob lease/submit schema tests ───────────────────
 
 _FLAW_BLOB_LEASE_URL = "/api/eval/remote/flaw-blob-lease"
 
 
 def test_flaw_blob_schema_lease_position() -> None:
-    """FlawBlobLeasePosition holds token + fen (D-04 schema, Task 1)."""
+    """FlawBlobLeasePosition holds token + fen."""
     from app.schemas.eval_remote import FlawBlobLeasePosition
 
     pos = FlawBlobLeasePosition(
@@ -1815,7 +1743,7 @@ def test_flaw_blob_schema_lease_position() -> None:
 
 
 def test_flaw_blob_schema_lease_response() -> None:
-    """FlawBlobLeaseResponse holds game_id, positions, leased_at (D-04 schema)."""
+    """FlawBlobLeaseResponse holds game_id, positions, leased_at."""
     from datetime import datetime, timezone
 
     from app.schemas.eval_remote import FlawBlobLeasePosition, FlawBlobLeaseResponse
@@ -1829,7 +1757,7 @@ def test_flaw_blob_schema_lease_response() -> None:
 
 
 def test_flaw_blob_schema_submit_eval_fields() -> None:
-    """FlawBlobSubmitEval holds all required fields; second_uci=None allowed (D-04 Pitfall 3)."""
+    """FlawBlobSubmitEval holds all required fields; second_uci=None allowed."""
     from app.schemas.eval_remote import FlawBlobSubmitEval
 
     ev = FlawBlobSubmitEval(
@@ -1891,7 +1819,7 @@ def test_flaw_blob_schema_submit_request_max_length() -> None:
 
 
 def test_flaw_blob_schema_submit_response() -> None:
-    """FlawBlobSubmitResponse holds game_id + blobs_written (D-04 schema)."""
+    """FlawBlobSubmitResponse holds game_id + blobs_written."""
     from app.schemas.eval_remote import FlawBlobSubmitResponse
 
     resp = FlawBlobSubmitResponse(game_id=7, blobs_written=3)
@@ -1899,7 +1827,7 @@ def test_flaw_blob_schema_submit_response() -> None:
     assert resp.blobs_written == 3
 
 
-# ─── Phase 177 PROTO-01/PROTO-03: protocol v2 schema tests ───────────────────
+# ─── Protocol v2 schema tests ───────────────────
 
 
 def test_lease_position_move_uci_defaults_none() -> None:
@@ -1951,7 +1879,7 @@ def test_atomic_submit_request_second_best_defaults_empty() -> None:
     assert req.second_best == []
 
 
-# ─── Phase 145 Plan 03: POST /eval/remote/flaw-blob-lease endpoint tests ────
+# ─── POST /eval/remote/flaw-blob-lease endpoint tests ────
 
 # PGN for flaw-blob-lease endpoint tests: 6-half-move game.
 # Flaw at ply=2 (e5 position). Missed PV walks from ply=2, allowed from ply=3.
@@ -2013,7 +1941,7 @@ async def _insert_game_position_pv(
 
 
 class TestFlawBlobLeaseEndpoint:
-    """Phase 145 Plan 03: POST /eval/remote/flaw-blob-lease endpoint.
+    """POST /eval/remote/flaw-blob-lease endpoint.
 
     Tests:
     - blob_lease_empty_queue_returns_204: no tier-4 pick → 204
@@ -2022,10 +1950,7 @@ class TestFlawBlobLeaseEndpoint:
     - blob_lease_token_parses_correctly: tokens parse to (flaw_ply, line, node_k)
     - blob_lease_all_sentinel_game_no_loop: all-sentinel game → 204 (sentinels written, no loop)
     - blob_lease_over_cap_sentinels_all_null_blob_flaws: >MAX_SUBMIT_EVALS lease positions →
-      204 (not 500), every NULL-blob flaw ply sentineled, existing tactic tags unchanged (SEED-073)
-
-    Phase 149-03 PRUNE-01: the isolation-proof test verifying the (now-deleted) Gen-1
-    /submit endpoint was unaffected by this lease has itself been removed.
+      204 (not 500), every NULL-blob flaw ply sentineled, existing tactic tags unchanged
     """
 
     @pytest.mark.asyncio
@@ -2180,7 +2105,7 @@ class TestFlawBlobLeaseEndpoint:
                 assert node_k_str.isdigit(), f"node_k must be int: {pos['token']!r}"
                 assert int(flaw_ply_str) == 2, f"flaw_ply must be 2 for this test: {pos['token']!r}"
 
-            # SEED-079: only even (solver) node_k are leased — defender nodes skipped.
+            # Only even (solver) node_k are leased — defender nodes skipped.
             # Missed line: 2-move PV → walk nodes 0,1,2 → even tokens k=0,2.
             missed_ks = sorted(
                 int(p["token"].split(":")[2]) for p in positions if ":missed:" in p["token"]
@@ -2201,7 +2126,7 @@ class TestFlawBlobLeaseEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """All-sentinel game: endpoint writes [] sentinels, returns 204 (forward progress, T-145-07)."""
+        """All-sentinel game: endpoint writes [] sentinels, returns 204 (forward progress)."""
         import app.routers.eval_remote as eval_remote_module
 
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -2271,7 +2196,7 @@ class TestFlawBlobLeaseEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """SEED-073: >MAX_SUBMIT_EVALS lease positions → 204 (not 500).
+        """>MAX_SUBMIT_EVALS lease positions → 204 (not 500).
 
         Fat games used to raise a Pydantic ValidationError when FlawBlobLeaseResponse
         (positions max_length=MAX_SUBMIT_EVALS) was constructed with an oversized list,
@@ -2383,14 +2308,14 @@ class TestFlawBlobLeaseEndpoint:
             await _delete_games(eval_worker_session_maker, [game_id])
 
 
-# ─── Phase 147 Plan 04 Task 2: POST /eval/remote/atomic-lease (SEED-074 Part B) ──
+# ─── POST /eval/remote/atomic-lease ──
 
 _ATOMIC_LEASE_URL = "/api/eval/remote/atomic-lease"
 _ATOMIC_SUBMIT_URL = "/api/eval/remote/atomic-submit"
 
 
 class TestAtomicLeaseEndpoint:
-    """Tests for the NEW /atomic-lease endpoint (D-02 — does not touch /lease).
+    """Tests for the /atomic-lease endpoint.
 
     - test_atomic_lease_requires_operator_token: empty server token → 403.
     - test_atomic_lease_wrong_operator_token: configured token, wrong header → 401.
@@ -2398,20 +2323,18 @@ class TestAtomicLeaseEndpoint:
     - test_atomic_lease_returns_positions: eligible game → 200, well-formed
       AtomicLeaseResponse (FEN-per-ply positions, exactly one is_terminal=True).
     - test_atomic_lease_over_cap_releases_job_and_returns_204: >MAX_SUBMIT_EVALS
-      lease positions → 204, not 500 (147-03/SEED-073 over-cap sentinel pattern);
+      lease positions → 204, not 500 (over-cap sentinel pattern);
       a held tier-1/2 job is released back to 'pending' instead of staying leased.
     - test_atomic_lease_lichess_eval_game_returns_full_positions: is_lichess_eval_game=True
       claim → 200 with is_lichess_eval_game=True and every ply leased, not the
-      near-empty lease the SEED-076 redundancy filter would otherwise produce
-      (Phase 174-06/SEED-109 — replaces the retired 204-defer test the Gen-1 lane
-      used to port here per 149-RESEARCH.md Pitfall 1).
+      near-empty lease the redundancy filter would otherwise produce.
     """
 
     @pytest.mark.asyncio
     async def test_atomic_lease_requires_operator_token(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Empty server EVAL_OPERATOR_TOKEN → 403 (fail-closed per T-120-01)."""
+        """Empty server EVAL_OPERATOR_TOKEN → 403 (fail-closed)."""
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", "")
         async with _make_client() as client:
             response = await client.post(_ATOMIC_LEASE_URL)
@@ -2543,7 +2466,7 @@ class TestAtomicLeaseEndpoint:
 
         A real chess game essentially never reaches MAX_SUBMIT_EVALS (1024) plies,
         so _build_lease_positions is monkeypatched to return an oversized list
-        (mirroring how 147-03's flaw-blob-lease over-cap test simulates a fat
+        (mirroring how the flaw-blob-lease over-cap test simulates a fat
         game). The held tier-1 job must be released back to 'pending' rather than
         left stuck 'leased' — asserted via a spied release_job.
         """
@@ -2605,17 +2528,15 @@ class TestAtomicLeaseEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Phase 174-06 (SEED-109): lichess-eval games are NO LONGER deferred at
-        /atomic-lease — replaces the retired test_atomic_lease_lichess_eval_game_releases_lease
-        (the D-4/v1-scope 204 skip it ported from the Gen-1 lane is gone; they now
-        lease and submit like any other game).
+        """Lichess-eval games are not deferred at /atomic-lease; they lease and
+        submit like any other game.
 
         Every game_positions row already carries a %eval (the defining lichess-eval
-        shape). Asserts the lease is NOT collapsed to near-nothing by the SEED-076
+        shape). Asserts the lease is NOT collapsed to near-nothing by the
         incremental-redundancy filter, which would otherwise treat every already-
         eval'd row as "a worker already resolved this" — a premise that does not
         hold for lichess-eval games, whose %evals came from import, never an
-        engine call (`_build_lease_positions`'s Phase 174-06 docstring).
+        engine call (`_build_lease_positions`'s docstring).
         """
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         _patch_router_session(monkeypatch, eval_worker_session_maker)
@@ -2696,10 +2617,10 @@ class TestAtomicLeaseEndpoint:
         of the sibling test above, but with the flag forced False the way
         claim_eval_job actually reports it under homogenization.
 
-        Before the fix, `_build_lease_positions`'s SEED-076 bypass read only
+        Before the fix, `_build_lease_positions`'s redundancy-filter bypass read only
         `is_lichess_eval_game` (False here), so `_lease_position_redundant`
         treated every already-%eval'd row as "a worker already resolved this" and
-        collapsed the lease to a single position — reproducing 212-08's measured
+        collapsed the lease to a single position — reproducing the measured
         defect (avg 1.0 best_move cells regardless of game length) at the unit
         level, with no live fleet needed. The fix threads
         derive_raw_lichess_eval_game (homogenization-INVARIANT) through as a
@@ -2763,7 +2684,7 @@ class TestAtomicLeaseEndpoint:
             assert body["is_lichess_eval_game"] is False
 
             positions = body["positions"]
-            # All 4 real plies leased (no SEED-076 redundancy omission) PLUS the
+            # All 4 real plies leased (no redundancy omission) PLUS the
             # terminal eval-donor (include_terminal=not is_lichess_eval_game=True
             # under homogenization — mirrors an engine game's shape, unlike the
             # non-homogenized sibling test above which omits the terminal donor).
@@ -2784,11 +2705,11 @@ class TestAtomicLeaseEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Phase 177 PROTO-01/S-03: a v1 worker (worker_schema_version=1, or the
+        """A v1 worker (worker_schema_version=1, or the
         param omitted entirely) gets 204 no-work on the WHOLE atomic lane — for
         BOTH scope=explicit and scope=idle — even with an eligible game present
         and claim_eval_job mocked to succeed. The gate fires BEFORE any claim
-        attempt (Pitfall 4), asserted via claim_eval_job never being awaited.
+        attempt, asserted via claim_eval_job never being awaited.
         """
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         _patch_router_session(monkeypatch, eval_worker_session_maker)
@@ -2845,7 +2766,7 @@ class TestAtomicLeaseEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Phase 177 PROTO-01: a v2 lease of a game with a played mainline returns
+        """A v2 lease of a game with a played mainline returns
         positions whose move_uci equals the played UCI at each non-terminal ply
         (None for the terminal donor)."""
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -2905,15 +2826,15 @@ class TestAtomicLeaseEndpoint:
 
 
 class TestAtomicSubmitEndpoint:
-    """Tests for the NEW /atomic-submit endpoint (Phase 147 SEED-074 Part B, D-01/D-02).
+    """Tests for the /atomic-submit endpoint.
 
     - test_atomic_submit_gates_tactic_tag_and_stamps_both_markers: a real forcing
       blob submitted for the server-classified flaw -> the GATED tag is persisted
       AND both completion markers are stamped, atomically, in one call.
-    - test_atomic_submit_lichess_eval_game_produces_best_move_candidate_row
-      (Phase 174-06/SEED-109): a lichess-eval game's atomic-submit — no
+    - test_atomic_submit_lichess_eval_game_produces_best_move_candidate_row:
+      a lichess-eval game's atomic-submit — no
       second-best in the payload (remote worker is MultiPV-1) — produces a
-      GameBestMove row for its out-of-book played==best ply via the Pitfall-1
+      GameBestMove row for its out-of-book played==best ply via the
       targeted backend fallback, while the stored lichess %evals stay untouched.
     - test_atomic_submit_missing_blob_writes_null_tag: a walkable flaw with zero
       submitted blob_nodes -> the tag is suppressed to NULL (Part A net), completion
@@ -2922,24 +2843,22 @@ class TestAtomicSubmitEndpoint:
     - test_atomic_submit_drops_blob_for_non_flaw_ply: a blob token for an in-range
       ply the server does not classify as a flaw -> silently dropped, no error.
     - test_atomic_submit_foreign_token_rejected: a token whose flaw_ply falls
-      outside the game's ply range -> 422, nothing persisted (T-147-02 tamper guard).
+      outside the game's ply range -> 422, nothing persisted.
     - test_atomic_submit_over_cap_payload_rejected_by_schema: an evals list beyond
       MAX_SUBMIT_EVALS -> Pydantic 422 before the handler runs, so no write is ever
-      attempted (the over-cap game itself is already sentineled at /atomic-lease,
-      147-04; this covers the submit side's own structural cap as defense-in-depth).
-    - test_atomic_submit_holed_batch_under_cap_leaves_pending (CR-01, Path B): a
+      attempted (the over-cap game itself is already sentineled at /atomic-lease;
+      this covers the submit side's own structural cap as defense-in-depth).
+    - test_atomic_submit_holed_batch_under_cap_leaves_pending (Path B): a
       NULL-hole engine-game ply on the first attempt must NOT stamp either
       completion marker, must increment full_eval_attempts, and must NOT signal
-      flaw completion (IN-01).
-    - test_atomic_submit_holed_batch_at_cap_stamps_with_sentry_warning (CR-01,
-      Path C): the same hole, but full_eval_attempts is already at
+      flaw completion.
+    - test_atomic_submit_holed_batch_at_cap_stamps_with_sentry_warning (Path C):
+      the same hole, but full_eval_attempts is already at
       MAX_EVAL_ATTEMPTS - 1 -> stamps anyway, emits one aggregated Sentry warning,
       and DOES signal flaw completion.
     - test_atomic_submit_with_job_id_stamps_eval_jobs / _late_job_id_is_noop /
-      _without_job_id_does_not_touch_eval_jobs: port TestTier1Claiming's job_id ->
-      eval_jobs completion-stamping coverage to the atomic lane (Phase 149-03 Task
-      1, 149-RESEARCH.md Pitfall 1) before the Gen-1 /lease+/submit pair and its
-      tests are deleted in Task 2/3.
+      _without_job_id_does_not_touch_eval_jobs: job_id -> eval_jobs completion-stamping
+      coverage on the atomic lane.
     """
 
     @pytest.mark.asyncio
@@ -3072,8 +2991,8 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Phase 174-06 (SEED-109): a lichess-eval game's /atomic-submit produces a
-        GameBestMove row for its out-of-book played==best ply via the Pitfall-1
+        """A lichess-eval game's /atomic-submit produces a
+        GameBestMove row for its out-of-book played==best ply via the
         targeted backend fallback (the worker's own pass is MultiPV-1, so
         second_best_map is None — `_build_best_move_candidates` docstring), while
         the stored lichess %evals stay byte-identical (never shifted/overwritten).
@@ -3130,7 +3049,7 @@ class TestAtomicSubmitEndpoint:
             await rating_session.commit()
 
         # Every ply carries a best_move matching the played move (no holes); ply 7
-        # is the out-of-book played==best candidate, scored via the Pitfall-1
+        # is the out-of-book played==best candidate, scored via the targeted
         # fallback (no second_cp/mate submitted — remote lane is MultiPV-1).
         payload = {
             "game_id": game_id,
@@ -3214,7 +3133,7 @@ class TestAtomicSubmitEndpoint:
         so the same PV strings walk the same boards) so the flaw_ply key ends up
         entirely absent from the assembled blob_map (neither submitted nor
         sentineled) — the specific condition that triggers the blobs_pending=True
-        suppression net rather than a D-06 structural sentinel.
+        suppression net rather than a structural sentinel.
         """
         import app.services.flaws_service as flaws_service_module
         from app.models.game import Game
@@ -3312,16 +3231,16 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """CR-01 (147-REVIEW.md, Path B): a NULL-hole engine-game ply on the first
+        """Path B: a NULL-hole engine-game ply on the first
         attempt must NOT stamp either completion marker and must NOT signal flaw
-        completion (IN-01) — mirrors /submit's SEED-045 bounded-retry invariant
+        completion — keeps the bounded-retry invariant
         instead of unconditionally stamping complete with a gap.
 
         The hole is engineered by nulling the terminal eval (ply=6) of
         _BLUNDER_SUBMIT_EVALS_142: row 5 = pos_eval[6] = None on a non-terminal
         row (the game is not over) -> failed_ply_count == 1.
 
-        SEED-139: all 6 game_positions rows start NULL (6 prior holes) and this
+        All 6 game_positions rows start NULL (6 prior holes) and this
         submit fills 5 of them (rows 0-4), leaving 1 residual — a progress-making
         submit, so it is charge-free (Path B'): full_eval_attempts stays 0.
         """
@@ -3416,18 +3335,17 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """CR-01 (147-REVIEW.md, Path C): the same hole as the Path B test, but
+        """Path C: the same hole as the Path B test, but
         full_eval_attempts is already at MAX_EVAL_ATTEMPTS - 1 -> the NEXT attempt
-        reaches the cap, stamps anyway (D-116-07 no-loop invariant), emits exactly
+        reaches the cap, stamps anyway (no-loop invariant), emits exactly
         one aggregated logger.warning carrying game_id/hole_count/attempts/worker_id,
-        and DOES signal flaw completion (stamp_complete=True gates IN-01 the other
-        way).
+        and DOES signal flaw completion (stamp_complete=True).
 
-        260803: also a regression guard that this cap path stays OUT of Sentry — it
+        Also a regression guard that this cap path stays OUT of Sentry — it
         fired ~30x/hour in production for an expected outcome (FLAWCHESS-8B), so the
         capture_message spy must stay empty.
 
-        SEED-139: rows 0-4 are pre-seeded with the post-move eval this submit would
+        Rows 0-4 are pre-seeded with the post-move eval this submit would
         write (row p = pos_eval[p + 1] = _BLUNDER_SUBMIT_EVALS_142[p + 1]), leaving
         row 5 NULL to match the nulled terminal eval below. Prior holes = 1
         (row 5), residual = 1 -> a genuine no-progress round, so Path C must still
@@ -3567,7 +3485,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """SEED-139 item 3, Path B (no progress): a submit whose residual hole
+        """Path B (no progress): a submit whose residual hole
         count EQUALS the prior hole count (the game was already at this state) must
         still charge an attempt and leave the game pending — the charge-free carve-
         out (Path B') is strictly for a submit that REDUCES the hole count.
@@ -3662,7 +3580,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """SEED-139 D-03 termination proof, exercised end-to-end on ONE game: submit
+        """Termination proof, exercised end-to-end on ONE game: submit
         1 fills 5 of 6 holes (charge-free, Path B', attempts stays 0), then submit 2
         re-submits the IDENTICAL residual hole (no progress, Path B, attempts -> 1).
         Proves the charge-free carve-out does not defeat the bounded-retry budget —
@@ -3750,7 +3668,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """SEED-139 item 3: a progress-making submit at
+        """A progress-making submit at
         full_eval_attempts=MAX_EVAL_ATTEMPTS - 1 must NOT stamp complete and must
         NOT increment full_eval_attempts — Path C must not fire on a submit that
         reduced the hole count, even one attempt away from the cap.
@@ -3927,7 +3845,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """A token whose flaw_ply falls outside the game's ply range -> 422, nothing
-        persisted (T-147-02 tamper guard, mirrors _apply_flaw_blob_submit's T-145-09
+        persisted (tamper guard, mirrors _apply_flaw_blob_submit's foreign-token
         precedent, whose own test uses an equally out-of-range flaw_ply=99).
         """
         from app.models.game import Game
@@ -4006,7 +3924,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Phase 177 T-177-01: a second_best entry whose ply falls outside the
+        """A second_best entry whose ply falls outside the
         game's ply range (0 <= ply < game_length) -> 422, no game_best_moves rows
         written (mirrors test_atomic_submit_foreign_token_rejected's blob-node
         precedent, using an equally out-of-range ply == game_length)."""
@@ -4089,7 +4007,7 @@ class TestAtomicSubmitEndpoint:
         """An evals list beyond MAX_SUBMIT_EVALS is rejected by Pydantic validation
         before the handler runs, so an over-cap payload can never reach a partial
         write. The primary defense is /atomic-lease's own over-cap sentinel
-        (147-04 — an over-cap game is never even issued a lease); this covers
+        (an over-cap game is never even issued a lease); this covers
         /atomic-submit's own structural cap as defense-in-depth for a worker that
         posts directly without going through /atomic-lease.
         """
@@ -4146,12 +4064,9 @@ class TestAtomicSubmitEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """A real leased job_id on /atomic-submit stamps eval_jobs.status='completed'
-        with completed_at set (ports Gen-1's test_submit_with_job_id_stamps_eval_jobs
-        — Phase 149-03 Task 1, 149-RESEARCH.md Pitfall 1).
+        with completed_at set.
 
-        _apply_atomic_submit's eval_jobs stamp logic (WHERE status='leased' guard) is
-        identical to _apply_submit's — this is the atomic-lane replacement so the
-        coverage survives Gen-1's deletion.
+        _apply_atomic_submit's eval_jobs stamp is guarded by WHERE status='leased'.
         """
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
@@ -4217,8 +4132,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """A late/stale job_id (already completed or re-leased) is a no-op, not a
-        corruption (ports Gen-1's test_late_submit_does_not_corrupt_eval_jobs —
-        Phase 149-03 Task 1, 149-RESEARCH.md Pitfall 1).
+        corruption.
 
         Seeds an eval_jobs row with status='completed' (simulates a race where the
         lease expired and another worker already completed the job). The
@@ -4291,9 +4205,7 @@ class TestAtomicSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """job_id=None (tier-3 pick) never touches eval_jobs (ports Gen-1's
-        test_submit_without_job_id_does_not_touch_eval_jobs — Phase 149-03 Task 1,
-        149-RESEARCH.md Pitfall 1).
+        """job_id=None (tier-3 pick) never touches eval_jobs.
 
         Seeds a separate eval_jobs row (status='leased') unrelated to the game being
         submitted, then submits with job_id=None. Verifies the seeded row is
@@ -4466,24 +4378,24 @@ class TestAtomicSubmitEndpoint:
             await _delete_games(eval_worker_session_maker, [game_id])
 
 
-# ─── Phase 145 Plan 04 Task 1: blob assembly from worker results (TDD RED) ───
+# ─── Blob assembly from worker results ───
 
 
 class TestBlobAssemblyHelper:
-    """Unit tests for _assemble_flaw_blobs_from_submit (pure CPU helper, Task 1).
+    """Unit tests for _assemble_flaw_blobs_from_submit (pure CPU helper).
 
     Tests:
     - test_blob_assembly_full_sequence_assembles_pvnodes: k=0..N sequence with
-      second_uci=None→"" conversion (Pitfall 3).
+      second_uci=None→"" conversion.
     - test_blob_assembly_sentinel_line_returns_empty: (flaw_ply, line) in sentinel_lines → [].
     - test_blob_assembly_missing_node0_returns_empty: no k=0 result → [].
     - test_blob_assembly_missed_allowed_stay_distinct: "10:missed:2" and "10:allowed:2"
-      stay distinct (Pitfall 5 — all three token components are used as index key).
+      stay distinct (all three token components are used as index key).
     """
 
     def test_blob_assembly_full_sequence_assembles_pvnodes(self) -> None:
-        """Even-k sequence assembles a full-index PvNode list with odd placeholders (SEED-079);
-        second_uci=None maps to su='' (Pitfall 3)."""
+        """Even-k sequence assembles a full-index PvNode list with odd placeholders;
+        second_uci=None maps to su=''."""
         from app.schemas.eval_remote import FlawBlobSubmitEval
         from app.services.eval_drain import _assemble_flaw_blobs_from_submit
 
@@ -4494,7 +4406,7 @@ class TestBlobAssemblyHelper:
                 best_mate=None,
                 second_cp=50,
                 second_mate=None,
-                second_uci=None,  # None on the wire → su="" in PvNode (Pitfall 3)
+                second_uci=None,  # None on the wire → su="" in PvNode
             ),
             FlawBlobSubmitEval(
                 token="10:missed:2",
@@ -4510,7 +4422,7 @@ class TestBlobAssemblyHelper:
         assert 10 in blob_map, "flaw_ply=10 must appear in blob_map"
         allowed_blob, missed_blob = blob_map[10]
         # missed: even nodes k=0, k=2 submitted → 3-element list with an odd placeholder
-        # at index 1 (SEED-079 slim blob keeps the gate's solver-node indices aligned).
+        # at index 1 (slim blob keeps the gate's solver-node indices aligned).
         assert len(missed_blob) == 3, f"Expected 3 missed nodes, got {len(missed_blob)}"
         assert missed_blob[0]["b"] == 150
         assert missed_blob[0]["su"] == "", "None second_uci must map to '' (Pitfall 3)"
@@ -4523,7 +4435,7 @@ class TestBlobAssemblyHelper:
         assert allowed_blob == [], "No allowed tokens submitted → blob should be []"
 
     def test_blob_assembly_sentinel_line_returns_empty(self) -> None:
-        """Line in sentinel_lines gets [] regardless of submitted evals (D-06 sentinel write)."""
+        """Line in sentinel_lines gets [] regardless of submitted evals."""
         from app.schemas.eval_remote import FlawBlobSubmitEval
         from app.services.eval_drain import _assemble_flaw_blobs_from_submit
 
@@ -4568,7 +4480,7 @@ class TestBlobAssemblyHelper:
         assert missed_blob == [], "Missing node-0 → no blob sequence can be built → []"
 
     def test_blob_assembly_missed_allowed_stay_distinct(self) -> None:
-        """Tokens '10:missed:0' and '10:allowed:0' are distinct keys (Pitfall 5 — all 3 components)."""
+        """Tokens '10:missed:0' and '10:allowed:0' are distinct keys (all 3 components)."""
         from app.schemas.eval_remote import FlawBlobSubmitEval
         from app.services.eval_drain import _assemble_flaw_blobs_from_submit
 
@@ -4603,27 +4515,23 @@ class TestBlobAssemblyHelper:
         assert allowed_blob[0]["su"] == "d2d4"
 
 
-# ─── Phase 145 Plan 04 Task 2: /flaw-blob-submit endpoint tests (TDD RED) ────
+# ─── /flaw-blob-submit endpoint tests ────
 
 _FLAW_BLOB_SUBMIT_URL = "/api/eval/remote/flaw-blob-submit"
 
 
 class TestFlawBlobSubmitEndpoint:
-    """Phase 145 Plan 04 Task 2: POST /eval/remote/flaw-blob-submit endpoint.
+    """POST /eval/remote/flaw-blob-submit endpoint.
 
     Tests:
     - test_blob_submit_requires_operator_token: missing/wrong token → 403/401.
     - test_blob_submit_game_not_found: unknown game_id → 404.
     - test_blob_submit_roundtrip_writes_blobs: lease→submit writes blobs + tactic tags.
     - test_blob_submit_sentinel_line_gets_empty_blob: NULL-PV allowed line gets [],
-      submitted missed line gets real blob (mixed-game sentinel D-06).
-    - test_blob_submit_foreign_token_rejected: token not from lease → 422 (T-145-09).
+      submitted missed line gets real blob (mixed-game sentinel).
+    - test_blob_submit_foreign_token_rejected: token not from lease → 422.
     - test_blob_submit_idempotent: second submit of same game → 200, blobs_written=0
-      (no NULL-blob flaws remain → no-op D-03 idempotency).
-
-    Phase 149-03 PRUNE-01: the isolation-proof test verifying the (now-deleted) Gen-1
-    submit endpoint's response shape was unaffected by this endpoint has itself been
-    removed.
+      (no NULL-blob flaws remain → no-op).
     """
 
     @pytest.mark.asyncio
@@ -4675,7 +4583,7 @@ class TestFlawBlobSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Lease→submit roundtrip writes non-NULL blobs and updates tactic tag columns (D-07)."""
+        """Lease→submit roundtrip writes non-NULL blobs and updates tactic tag columns."""
         import app.routers.eval_remote as eval_remote_module
         from app.models.game_flaw import GameFlaw
 
@@ -4760,7 +4668,7 @@ class TestFlawBlobSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Mixed game: allowed line with NULL PV gets sentinel [], missed (walkable) gets real blob (D-06)."""
+        """Mixed game: allowed line with NULL PV gets sentinel [], missed (walkable) gets real blob."""
         import app.routers.eval_remote as eval_remote_module
         from app.models.game_flaw import GameFlaw
 
@@ -4853,7 +4761,7 @@ class TestFlawBlobSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Token not in the current lease set → 422 (T-145-09: foreign-token injection blocked)."""
+        """Token not in the current lease set → 422."""
         import app.routers.eval_remote as eval_remote_module
 
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -4909,7 +4817,7 @@ class TestFlawBlobSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Double-submit is idempotent: second submit of same game → 200, blobs_written=0 (D-03)."""
+        """Double-submit is idempotent: second submit of same game → 200, blobs_written=0."""
         import app.routers.eval_remote as eval_remote_module
 
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -4992,7 +4900,7 @@ class TestFlawBlobSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """D-04 (SEED-164 / FLAWCHESS-8D): a concurrent rederive DELETE landing
+        """A concurrent rederive DELETE landing
         between the submit's read and write phases must not resurrect the
         removed flaw or 500 -- the advisory lock's in-lock re-read filters
         BOTH write payloads (blob_map, tactic updates) down to plies still
@@ -5113,7 +5021,7 @@ class TestFlawBlobSubmitEndpoint:
             await _delete_games(eval_worker_session_maker, [game_id])
 
 
-# ─── SEED-076: cache-aware incremental lease + blob-preserving classify ────────
+# ─── Cache-aware incremental lease + blob-preserving classify ────────
 #
 # Root cause (FLAWCHESS-8B): a weak remote worker times out on high-branching
 # opening positions, submits partial evals; the atomic path passed dedup_map={}
@@ -5162,7 +5070,7 @@ async def _insert_opening_cache(
 ) -> None:
     """Insert opening_position_eval rows: (full_hash, eval_cp, eval_mate, best_move).
 
-    Phase 220 CACHEFIX-08: defaults confirmed=True (n_sources=2) -- every
+    Defaults confirmed=True (n_sources=2) -- every
     pre-existing caller of this helper assumes the row is immediately usable
     for transplant/lease-omission, i.e. an already-established two-source cache
     entry. Pass confirmed=False to seed a still-unconfirmed candidate (the
@@ -5191,10 +5099,10 @@ async def _insert_opening_cache_with_pv(
     confirmed: bool = True,
 ) -> None:
     """Insert opening_position_eval rows incl. pv: (full_hash, eval_cp, eval_mate,
-    best_move, pv). SEED-076 follow-up: pv-bearing variant of _insert_opening_cache
+    best_move, pv). Pv-bearing variant of _insert_opening_cache
     for tests exercising the pv-gated lease omission / merge mechanism.
 
-    Phase 220 CACHEFIX-08: defaults confirmed=True -- see _insert_opening_cache's
+    Defaults confirmed=True -- see _insert_opening_cache's
     docstring for why."""
     from app.models.opening_position_eval import OpeningPositionEval
 
@@ -5230,7 +5138,7 @@ async def _delete_opening_cache(
 
 
 def test_build_lease_positions_incremental_omits_already_evald() -> None:
-    """SEED-076: a ply whose DB row (row Q-1, post-move shift) already has an eval is
+    """A ply whose DB row (row Q-1, post-move shift) already has an eval is
     omitted from the re-lease; the terminal donor and genuine holes are kept."""
     from app.routers.eval_remote import _build_lease_positions
 
@@ -5252,7 +5160,7 @@ def test_build_lease_positions_incremental_omits_already_evald() -> None:
 
 
 def test_build_lease_positions_cache_aware_omits_cached_opening() -> None:
-    """SEED-076: an opening position whose full_hash is in the cache is omitted (the
+    """An opening position whose full_hash is in the cache is omitted (the
     submit dedup_map fills it server-side)."""
     from app.routers.eval_remote import _build_lease_positions
 
@@ -5266,8 +5174,8 @@ def test_build_lease_positions_cache_aware_omits_cached_opening() -> None:
 
 
 def test_build_lease_positions_terminal_kept_when_all_rows_filled() -> None:
-    """SEED-076: even with every real row already eval'd, the terminal donor survives
-    the incremental filter (SEED-044 pitfall 3)."""
+    """Even with every real row already eval'd, the terminal donor survives
+    the incremental filter."""
     from app.routers.eval_remote import _build_lease_positions
 
     gp_rows: list[tuple[int, int, int | None, int | None]] = [
@@ -5279,7 +5187,7 @@ def test_build_lease_positions_terminal_kept_when_all_rows_filled() -> None:
 
 
 def test_build_lease_positions_empty_filter_falls_back_to_full_list() -> None:
-    """SEED-076 safety net: a board-over game with every position redundant must not
+    """Safety net: a board-over game with every position redundant must not
     yield an empty lease (which would starve the game of the dedup-triggering submit)."""
     from app.routers.eval_remote import _build_lease_positions
 
@@ -5300,7 +5208,7 @@ async def test_atomic_submit_fills_cached_opening_hole_server_side(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """SEED-076 (req a): a partial submit missing a cached opening ply is filled
+    """A partial submit missing a cached opening ply is filled
     server-side from opening_position_eval — no worker round-trip — and the game
     reaches Path A (no permanent hole)."""
     from app.routers.eval_remote import _apply_atomic_submit
@@ -5345,10 +5253,10 @@ async def test_atomic_submit_uncached_hole_bounded_by_path_c(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """SEED-076 (req b): a genuinely-uncached residual hole stays bounded by Path C —
+    """A genuinely-uncached residual hole stays bounded by Path C —
     stamped complete after MAX_EVAL_ATTEMPTS, never re-leased forever.
 
-    SEED-139: rows 1-5 are pre-seeded with the post-move eval this submit would
+    Rows 1-5 are pre-seeded with the post-move eval this submit would
     write (row p = pos_eval[p + 1] = _BLUNDER_SUBMIT_EVALS_142[p + 1]), leaving
     row 0 NULL to match the omitted ply=1 submit entry below. Prior holes = 1
     (row 0), residual = 1 -> a genuine no-progress round, so Path C still fires.
@@ -5403,7 +5311,7 @@ async def test_atomic_submit_preserve_guard_omitted_evald_ply_not_hole(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """SEED-076: an already-eval'd ply dropped from the incremental re-lease (worker
+    """An already-eval'd ply dropped from the incremental re-lease (worker
     does not resend it) is NOT counted as a hole — the game still reaches Path A."""
     from app.routers.eval_remote import _apply_atomic_submit
 
@@ -5440,7 +5348,7 @@ async def test_atomic_retry_preserves_existing_flaw_blobs_and_tags(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """SEED-076: a sparse atomic retry (no fresh blob for an already-done flaw) must NOT
+    """A sparse atomic retry (no fresh blob for an already-done flaw) must NOT
     wipe its allowed/missed PV-line blobs + tactic tags via classify's delete-then-insert."""
     from app.models.game_flaw import GameFlaw
     from app.routers.eval_remote import _apply_atomic_submit
@@ -5570,14 +5478,14 @@ async def test_atomic_retry_snapshotted_ply_no_longer_flaw_does_not_raise(
             )
             await s.commit()
 
-        # CACHEFIX-12 (220-02): attempt 1's submit now ALSO seeds the opening cache
+        # Attempt 1's submit now ALSO seeds the opening cache
         # for this game's own opening plies. _resolve_full_eval's dedup-hit-wins
         # priority (pre-existing, unchanged here) would otherwise resurrect attempt
         # 1's blunder-era eval for the SAME position on attempt 2's dedup_map fetch,
         # masking this test's actual concern (StaleDataError in blob restore) behind
         # an unrelated cache-vs-fresh-resubmit interaction. Clear it so attempt 2's
         # FLAT evals genuinely take effect, isolating this regression test from the
-        # cache-write behavior CACHEFIX-12 adds.
+        # cache-write behavior the submit's cache write adds.
         await _delete_opening_cache(eval_worker_session_maker, [base + p for p in range(6)])
 
         # Attempt 2: FLAT evals → reclassify drops the ply-2 flaw. Pre-fix this raised
@@ -5602,10 +5510,10 @@ async def test_atomic_retry_snapshotted_ply_no_longer_flaw_does_not_raise(
         await _delete_opening_cache(eval_worker_session_maker, [base + p for p in range(6)])
 
 
-# ─── SEED-076 follow-up: cache the pv alongside the eval (Task 3) ─────────────
+# ─── Cache the pv alongside the eval ─────────────
 #
-# Fix: opening_position_eval gained a nullable pv column (Task 1) and
-# _fetch_dedup_evals/_upsert_opening_cache now carry it (Task 2). These tests cover
+# opening_position_eval carries a nullable pv column, which
+# _fetch_dedup_evals/_upsert_opening_cache pass through. These tests cover
 # the submit-side merge + pv-gated lease omission:
 #   - _fetch_cached_opening_hashes only omits a cached opening when its cache row
 #     has a real pv (a pv-less row must still be leased to the worker).
@@ -5621,7 +5529,7 @@ async def test_fetch_cached_opening_hashes_gates_on_pv_presence(
     monkeypatch: pytest.MonkeyPatch,
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """SEED-076 follow-up: a cache row WITH pv is omittable from the lease; a cache row
+    """A cache row WITH pv is omittable from the lease; a cache row
     WITHOUT pv is NOT (the worker must still evaluate it fresh to get a pv)."""
     from app.routers.eval_remote import _fetch_cached_opening_hashes
 
@@ -5655,7 +5563,7 @@ async def test_fetch_cached_opening_hashes_confirmed_only(
     monkeypatch: pytest.MonkeyPatch,
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Phase 220 CACHEFIX-08 (T-220-18): a CANDIDATE cache row (confirmed=false,
+    """A CANDIDATE cache row (confirmed=false,
     even with a real pv) must NOT be omitted from the lease — its ply still
     carries an engine target until a second, independent source confirms it.
     `_fetch_cached_opening_hashes` delegates to `_fetch_dedup_evals`, so this
@@ -5701,11 +5609,11 @@ async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """SEED-076 follow-up (req a): a cached opening ply omitted from a partial atomic
+    """A cached opening ply omitted from a partial atomic
     submit still gets its pv merged into engine_result_map — game_positions.pv at the
     flaw-adjacent ply matches the cached pv, the flaw's PV lines are NOT []-sentineled
     (left NULL / still fillable), and _build_flaw_blob_lease_positions walks a real,
-    non-empty lease for it instead of a D-06 sentinel.
+    non-empty lease for it instead of a sentinel.
 
     Uses _SIX_PLY_PGN_142 / _BLUNDER_SUBMIT_EVALS_142 (blunder at ply 2, flaw_ply=2):
     missed line starts at ply 2 (the flaw's own board), allowed line at ply 3.
@@ -5770,7 +5678,7 @@ async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
         assert missed_lines != [], "missed_pv_lines must NOT be []-sentineled"
 
         # _build_flaw_blob_lease_positions must find a real, walkable lease for the
-        # flaw (not a D-06 sentinel) — proving the merged pv reached game_positions.pv
+        # flaw (not a sentinel) — proving the merged pv reached game_positions.pv
         # for BOTH lines and is walkable.
         positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
         assert (2, "missed") not in sentinel_lines, "missed line must not be sentineled"
@@ -5785,7 +5693,7 @@ async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
 async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_existing_pv(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """SEED-076 follow-up (req c): _upsert_opening_cache's self-heal backfills pv onto
+    """_upsert_opening_cache's self-heal backfills pv onto
     a pv-less existing row without touching eval_cp/eval_mate/best_move, and leaves an
     existing non-NULL pv untouched (first-write-wins for pv too, once set)."""
     import chess
@@ -5822,9 +5730,9 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
     try:
         async with eval_worker_session_maker() as session:
             # source_game_id=1 differs from both rows' pre-existing (unset/NULL)
-            # source, but both are pre-seeded confirmed=True -- Phase 220
-            # CACHEFIX-08 makes a confirmed row immutable except the pv self-heal
-            # under test here, regardless of the incoming game's source.
+            # source, but both are pre-seeded confirmed=True -- a confirmed row is
+            # immutable except the pv self-heal under test here, regardless of the
+            # incoming game's source.
             await _upsert_opening_cache(session, [t_a, t_b], engine_result_map, 1)
             await session.commit()
 
@@ -5853,12 +5761,12 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
         await _delete_opening_cache(eval_worker_session_maker, [hash_pv_less, hash_pv_bearing])
 
 
-# ─── CACHEFIX-12 (Phase 220-02): remote-worker submit writes the opening cache ─
+# ─── Remote-worker submit writes the opening cache ─
 #
 # The atomic-submit lane now populates opening_position_eval through the SAME
 # shared _upsert_opening_cache the drain tick uses (one function, two call
-# sites), via a `_cache_targets` list built from a pre-merge snapshot of the
-# plies the worker itself evaluated (`_worker_evaluated_plies`). These tests
+# sites), via a `cache_targets` list built from a pre-merge snapshot of the
+# plies the worker itself evaluated (`worker_evaluated_plies`). These tests
 # cover: a submit writes the cache, a second game's lease shrinks as a result,
 # a dedup-sourced ply never round-trips back into the cache, and a lichess-eval
 # game writes no cache row at all.
@@ -5892,7 +5800,7 @@ async def test_submit_writes_cache(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """CACHEFIX-12: an accepted atomic submit for a game with non-terminal opening
+    """An accepted atomic submit for a game with non-terminal opening
     plies leaves one opening_position_eval row per distinct opening hash the
     worker evaluated, written through _upsert_opening_cache (the tick's own
     write function)."""
@@ -5939,13 +5847,13 @@ async def test_lease_shrinks_after_submit(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """CACHEFIX-12: a second game whose game_positions reach a hash the first
+    """A second game whose game_positions reach a hash the first
     submit cached (with a pv) gets it back from _fetch_cached_opening_hashes,
     so _lease_position_redundant drops that position from its lease.
 
-    Phase 220 CACHEFIX-08: a single submit's write is a CANDIDATE (one source),
+    A single submit's write is a CANDIDATE (one source),
     invisible to the lease-omit path until a second, independent source agrees.
-    This test's point is the submit-writes-the-cache mechanism (CACHEFIX-12),
+    This test's point is the submit-writes-the-cache mechanism,
     not the confirmation scheme (covered by test_fetch_cached_opening_hashes_
     confirmed_only), so it explicitly confirms the resulting row before
     asserting the lease-omission behavior."""
@@ -5984,7 +5892,7 @@ async def test_lease_shrinks_after_submit(
         )
         assert resp.failed_ply_count == 0
 
-        # Phase 220 CACHEFIX-08: the submit's own write is only a candidate.
+        # The submit's own write is only a candidate.
         # Confirm it explicitly so the lease-omission assertion below still
         # exercises the mechanism this test is actually about.
         async with eval_worker_session_maker() as session:
@@ -6024,7 +5932,7 @@ async def test_submit_no_self_write(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """CACHEFIX-12 (Pitfall 2): a ply the worker did NOT evaluate — whose value the
+    """A ply the worker did NOT evaluate — whose value the
     dedup merge injected into engine_result_map — must not round-trip back into
     the cache. Seed a cache row, submit a game whose opening ply is a dedup hit
     (omitted by the worker), and assert the cache row is byte-identical and no
@@ -6081,7 +5989,7 @@ async def test_submit_lichess_game_no_cache_write(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
     eval_worker_test_user: int,
 ) -> None:
-    """CACHEFIX-12: a submit for a lichess-eval game writes no opening cache row,
+    """A submit for a lichess-eval game writes no opening cache row,
     matching the provenance rule already enforced for the backfill/tick lanes."""
     from app.routers.eval_remote import _apply_atomic_submit
 
@@ -6125,7 +6033,7 @@ async def test_submit_lichess_game_no_cache_write(
         await _delete_opening_cache(eval_worker_session_maker, hashes)
 
 
-# ─── Phase 177 BACK-02/03: tier-4b bestmove-lease/submit endpoint tests ──────
+# ─── Tier-4b bestmove-lease/submit endpoint tests ──────
 
 _BESTMOVE_LEASE_URL = "/api/eval/remote/bestmove-lease"
 _BESTMOVE_SUBMIT_URL = "/api/eval/remote/bestmove-submit"
@@ -6137,7 +6045,7 @@ _BESTMOVE_PGN: str = "1. a4 a5 2. h4 h5 *"
 
 
 class TestBestMoveLeaseEndpoint:
-    """Phase 177 Task 2: POST /eval/remote/bestmove-lease.
+    """POST /eval/remote/bestmove-lease.
 
     Tests:
     - bestmove_lease_requires_operator_token: missing/wrong token -> 403/401
@@ -6147,7 +6055,7 @@ class TestBestMoveLeaseEndpoint:
     - bestmove_lease_candidate_plies: server-recomputed candidate set matches the
       out-of-book/played==best/usable-eval reconstruction
     - bestmove_lease_zero_candidates_stamps_completed: a picked game with zero
-      candidates stamps best_moves_completed_at directly (Pitfall 2 forward progress)
+      candidates stamps best_moves_completed_at directly (forward progress)
     """
 
     @pytest.mark.asyncio
@@ -6172,7 +6080,7 @@ class TestBestMoveLeaseEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """BEST_MOVE_BACKFILL_ENABLED=False -> 204 before any DB round-trip
-        (D-04 single switch)."""
+        (single switch)."""
         import app.routers.eval_remote as eval_remote_module
 
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -6278,7 +6186,7 @@ class TestBestMoveLeaseEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """A picked game with zero candidate plies (no GamePosition rows at all)
-        stamps best_moves_completed_at directly and returns 204 (Pitfall 2 forward
+        stamps best_moves_completed_at directly and returns 204 (forward
         progress -- the ES lottery must never re-draw it)."""
         import app.routers.eval_remote as eval_remote_module
 
@@ -6366,20 +6274,20 @@ async def _seed_bestmove_submit_game(
 
 
 class TestBestMoveSubmitEndpoint:
-    """Phase 177 Task 3: POST /eval/remote/bestmove-submit.
+    """POST /eval/remote/bestmove-submit.
 
     Tests:
     - bestmove_submit_sf_version_mismatch: version gate -> 422
     - bestmove_submit_game_not_found: -> 404
     - bestmove_submit_minimal_write_no_reclassify: writes ONLY game_best_moves +
       stamps best_moves_completed_at; apply_full_eval/_classify_and_fill_oracle
-      are never called (structural isolation, T-177-07)
+      are never called (structural isolation)
     - bestmove_submit_out_of_range_ply_422: a submitted ply outside [0, game_length)
-      -> 422, no write (T-177-05)
+      -> 422, no write
     - bestmove_submit_foreign_ply_dropped: an in-range, non-candidate ply's
-      second-best is silently dropped -> no row for that ply, still 200 (T-177-06)
+      second-best is silently dropped -> no row for that ply, still 200
     - bestmove_submit_existing_flaws_unchanged: game_flaws rows are byte-identical
-      before/after (T-177-07)
+      before/after
     """
 
     @pytest.mark.asyncio
@@ -6433,7 +6341,7 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """A submit writes a game_best_moves row + stamps best_moves_completed_at,
-        and does NOT call apply_full_eval / _classify_and_fill_oracle (S-06/T-177-07)."""
+        and does NOT call apply_full_eval / _classify_and_fill_oracle."""
         import app.services.eval_apply as eval_apply_module
         from app.services import maia_engine
 
@@ -6441,7 +6349,7 @@ class TestBestMoveSubmitEndpoint:
         monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
         _patch_router_session(monkeypatch, eval_worker_session_maker)
         monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
-        # 177-REVIEW CR-01 fix: the stamp is now gated on maia_engine.is_maia_available(),
+        # The stamp is gated on maia_engine.is_maia_available(),
         # so this positive-path test must mark Maia present (sentinel session object),
         # mirroring test_full_drain_tick_tier4b_minimal_path in test_full_eval_drain.py.
         monkeypatch.setattr(maia_engine, "_session", object())
@@ -6495,7 +6403,7 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Quick 260719-fsz (new worker, Option B): for a LICHESS game the stored
+        """New worker: for a LICHESS game the stored
         eval_cp is lichess %eval, so the worker's submitted fresh best_cp must be
         used for the game_best_moves row (NOT the stored 300)."""
         import app.services.eval_apply as eval_apply_module
@@ -6548,7 +6456,7 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Quick 260719-fsz (old worker, transition fallback): a pre-260719-fsz worker
+        """Old worker (transition fallback): a worker
         omits best_cp, so for a LICHESS game the server re-searches the candidate ply
         and stores the FRESH Stockfish best_cp (275), never the stored lichess eval (300)."""
         import app.services.eval_apply as eval_apply_module
@@ -6598,9 +6506,9 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """Quick 260719-fsz: an ENGINE game's stored eval already IS our Stockfish, so
+        """An ENGINE game's stored eval already IS our Stockfish, so
         it keeps the stored best_cp (300) and ignores any submitted best_cp — byte-identical
-        to pre-260719-fsz behavior (the is_lichess_eval_game guard)."""
+        to the old worker's behavior (the is_lichess_eval_game guard)."""
         import app.services.eval_apply as eval_apply_module
         from app.services import maia_engine
 
@@ -6653,7 +6561,7 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_session_maker: async_sessionmaker[AsyncSession],
         eval_worker_test_user: int,
     ) -> None:
-        """GUARDRAIL (177-REVIEW CR-01): with maia_engine._session forced to
+        """GUARDRAIL: with maia_engine._session forced to
         None, best_moves_completed_at MUST stay NULL after a submit even
         though score_move is mocked to SUCCEED (rows_written would be
         non-zero if row-count alone gated the stamp) -- proving the stamp is
@@ -6716,7 +6624,7 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """A submitted ply outside [0, game_length) is rejected 422 before any
-        write (T-177-05)."""
+        write."""
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
         monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
         _patch_router_session(monkeypatch, eval_worker_session_maker)
@@ -6756,7 +6664,7 @@ class TestBestMoveSubmitEndpoint:
     ) -> None:
         """An in-range ply that is NOT a real candidate (ply 3: played != stored
         best) is silently dropped -- no row for it, and the request still
-        succeeds (T-177-06, mirrors the second_best guard precedent)."""
+        succeeds (mirrors the second_best guard precedent)."""
         import app.services.eval_apply as eval_apply_module
 
         monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
@@ -6764,7 +6672,7 @@ class TestBestMoveSubmitEndpoint:
         _patch_router_session(monkeypatch, eval_worker_session_maker)
         monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.1)
         # Ply 2 IS a real candidate with no submitted runner-up, so
-        # _build_best_move_candidates fires its Pitfall-1 fallback for it. With a
+        # _build_best_move_candidates fires its targeted fallback for it. With a
         # warm global Stockfish pool (earlier tests in a serial full-suite run) the
         # real engine call succeeded and legitimately wrote a ply-2 row, flipping
         # rows_written to 1 — an order-dependent failure. Stub the fallback to
@@ -6809,7 +6717,7 @@ class TestBestMoveSubmitEndpoint:
         eval_worker_test_user: int,
     ) -> None:
         """Existing game_flaws rows are byte-identical before/after a bestmove
-        submit -- game_flaws is never read or written here (T-177-07)."""
+        submit -- game_flaws is never read or written here."""
         import app.services.eval_apply as eval_apply_module
         from app.models.game_flaw import GameFlaw
 

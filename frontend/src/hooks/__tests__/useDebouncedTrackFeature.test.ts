@@ -63,7 +63,7 @@ describe('useDebouncedTrackFeature', () => {
     expect(track.mock.calls[0]?.[1]).toMatchObject({ page: 'analysis' });
   });
 
-  it('never sends from an excluded route (D-14 at the captured path)', () => {
+  it('never sends from an excluded route (at the captured path)', () => {
     window.history.pushState({}, '', '/admin');
     const { result, unmount } = renderHook(() => useDebouncedTrackFeature('option-change'));
     act(() => result.current({ target: 'elo', value: '1600' }));

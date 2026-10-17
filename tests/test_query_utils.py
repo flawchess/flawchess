@@ -1,4 +1,4 @@
-"""Unit tests for apply_game_filters date predicates (Phase 92 D-10).
+"""Unit tests for apply_game_filters date predicates.
 
 Tests verify that the from_date / to_date parameters produce the correct
 SQL WHERE clauses: from_date uses >= and to_date uses < with a +1-day shift
@@ -8,7 +8,7 @@ These tests are INTENTIONALLY written before the signature change (TDD RED):
 they call apply_game_filters with from_date= / to_date= keyword args that
 do not yet exist, so they will fail with a TypeError until Task 2 lands.
 
-Phase 128 Plan 03 (Task 2 TDD RED): orientation dimension tests for apply_game_filters.
+Orientation dimension tests for apply_game_filters.
 Tests assert that orientation="missed" produces EXISTS referencing missed_tactic_motif
 and orientation="allowed" (default) references allowed_tactic_motif.
 """
@@ -105,7 +105,7 @@ def test_apply_game_filters_to_only() -> None:
 def test_apply_game_filters_date_range() -> None:
     """Both bounds set — both predicates appear; upper bound is shifted +1 day.
 
-    D-10: the upper bound uses ``<  to_date + 1 day`` so that to_date itself
+    The upper bound uses ``<  to_date + 1 day`` so that to_date itself
     is inclusive (covers up to end-of-day in UTC without timezone math).
     """
     stmt = select(Game)
@@ -134,7 +134,7 @@ def test_apply_game_filters_date_range() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 175 Plan 01 (FILT-01) — has_gem / has_great composition (D-04/D-05/D-05a)
+# has_gem / has_great composition
 # ---------------------------------------------------------------------------
 
 
@@ -186,7 +186,7 @@ def test_apply_game_filters_has_gem_false_is_a_no_filter() -> None:
 
 def test_apply_game_filters_has_gem_composes_with_flaw_and_metadata_filters() -> None:
     """has_gem composes alongside (not replacing) time_control/color/rated and the
-    flaw EXISTS (D-05a) — both EXISTS clauses must be present simultaneously,
+    flaw EXISTS — both EXISTS clauses must be present simultaneously,
     never a parallel/exclusive filter path.
     """
     stmt = select(Game)
@@ -212,16 +212,16 @@ def test_apply_game_filters_has_gem_composes_with_flaw_and_metadata_filters() ->
 
 
 # ---------------------------------------------------------------------------
-# Phase 128 Plan 03 (Task 2 TDD) — orientation dimension tests (D-09)
+# Orientation dimension tests
 # ---------------------------------------------------------------------------
 
 
 class TestTacticOrientationFilter:
     """orientation param in apply_game_filters selects the correct column set.
 
-    Phase 128 D-09: orientation selects the matching column pair at both filter
+    Orientation selects the matching column pair at both filter
     sites. Unknown-family keys still yield no ints (no-op). Orientation is a
-    closed Literal enum — never raw column-name interpolation (T-128-05).
+    closed Literal enum — never raw column-name interpolation.
     """
 
     _BASE_FAMILIES = ["fork"]  # single known family to get a non-empty motif int set
@@ -254,8 +254,8 @@ class TestTacticOrientationFilter:
     def test_default_orientation_references_both_columns(self) -> None:
         """orientation unspecified (default) → EXISTS uses BOTH column sets.
 
-        Quick 260621-sm8 follow-up: the neutral default is now "either" (was
-        "allowed"), matching build_flaw_filter_clauses. An "allowed" default would
+        The neutral default is "either" (not "allowed"), matching build_flaw_filter_clauses.
+        An "allowed" default would
         make non-tactic callers (which omit orientation) wrongly filter once the
         tactic EXISTS is gated on _tactic_controls_active.
         """
@@ -281,7 +281,7 @@ class TestTacticOrientationFilter:
         """orientation='missed' → EXISTS uses missed_tactic_motif.
 
         The same FAMILY_TO_MOTIF_INTS expansion and EXISTS structure is used;
-        only the column name changes (D-09).
+        only the column name changes.
         """
         sql = self._stmt_sql(orientation="missed")
         assert "missed_tactic_motif" in sql, (
@@ -292,7 +292,7 @@ class TestTacticOrientationFilter:
         )
 
     def test_unknown_family_is_noop_for_both_orientations(self) -> None:
-        """Unknown family keys → no EXISTS clause added (no-op, T-126-02 preserved)."""
+        """Unknown family keys → no EXISTS clause added (no-op)."""
         for orientation in ("allowed", "missed"):
             stmt = select(Game.id).where(Game.user_id == 1)
             stmt = apply_game_filters(
@@ -321,17 +321,17 @@ class TestTacticOrientationFilter:
 
 
 # ---------------------------------------------------------------------------
-# Phase 129 Plan 01 (Task 1 TDD RED) — depth + either tests for apply_game_filters
+# depth + either tests for apply_game_filters
 # ---------------------------------------------------------------------------
 
 
 class TestTacticDepthAndEitherFilter:
     """max_tactic_depth + orientation='either' in apply_game_filters.
 
-    Phase 129 D-05/D-08: depth bound on the active orientation's depth column;
+    Depth bound on the active orientation's depth column;
     'either' = OR across both missed_* and allowed_* column sets.
     These tests target apply_game_filters (Games-EXISTS site). The site now gates
-    on confidence too (SEED-061); these depth/either tests are confidence-agnostic
+    on confidence too; these depth/either tests are confidence-agnostic
     because the compiled fixture uses high-confidence rows.
     """
 
@@ -407,21 +407,21 @@ class TestTacticDepthAndEitherFilter:
         )
 
     def test_mate_exemption_removed_when_depth_set(self) -> None:
-        """Quick 260620-l5k: mates obey the depth range — no exemption OR at the Games site.
+        """Mates obey the depth range — no exemption OR at the Games site.
 
-        The Phase 129 D-04 exemption was removed, so a bounded depth filter references
+        There is no depth exemption, so a bounded depth filter references
         the motif column ONCE (primary family filter), with a plain range predicate.
-        Quick 260626-bdt: the decided-lost NOT(…) clause adds OR inside its own scope;
+        The decided-lost NOT(…) clause adds OR inside its own scope;
         those are unrelated to the depth predicate and are expected.
         """
         sql = self._stmt_sql(orientation="allowed", max_tactic_depth=3)
-        # Quick 260621-qz9: allowed column is decision-anchored (+1), so the depth
+        # Allowed column is decision-anchored (+1), so the depth
         # predicate compiles as "allowed_tactic_depth + <param> <=".
         assert "allowed_tactic_depth +" in sql and "<=" in sql  # depth predicate is present
         # The old mate exemption was an OR that let mates bypass the depth bound:
         # "(allowed_tactic_depth <= N OR eval_mate IS NOT NULL)". Verify that pattern
         # is gone by checking the depth predicate's local AND-term contains no OR.
-        # Quick 260626-bdt: the NOT(decided_lost) clause appended after the depth term
+        # The NOT(decided_lost) clause appended after the depth term
         # contains its own OR — those are inside a NOT(...) wrapper and do NOT appear
         # between "allowed_tactic_depth" and the next " AND " separator.
         depth_ctx = sql[sql.find("allowed_tactic_depth") :]
@@ -431,9 +431,9 @@ class TestTacticDepthAndEitherFilter:
         )
 
     def test_min_depth_bound_references_depth_column(self) -> None:
-        """Quick 260620-l5k: min_tactic_depth adds a >= lower-bound predicate.
+        """min_tactic_depth adds a >= lower-bound predicate.
 
-        Quick 260621-qz9: the allowed column carries the decision-anchored +1 offset,
+        The allowed column carries the decision-anchored +1 offset,
         so both bounds compile as "allowed_tactic_depth + <param>" comparisons.
         """
         sql = self._stmt_sql(orientation="allowed", min_tactic_depth=2, max_tactic_depth=5)
@@ -445,7 +445,7 @@ class TestTacticDepthAndEitherFilter:
         )
 
     def test_allowed_depth_decision_anchored_missed_not(self) -> None:
-        """Quick 260621-qz9: the Games-EXISTS site offsets allowed depth by +1; missed bare."""
+        """The Games-EXISTS site offsets allowed depth by +1; missed bare."""
         allowed_sql = self._stmt_sql(orientation="allowed", min_tactic_depth=2, max_tactic_depth=5)
         assert "allowed_tactic_depth +" in allowed_sql, (
             f"allowed orientation must offset the depth column (+1); got: {allowed_sql}"
@@ -469,9 +469,9 @@ class TestTacticDepthAndEitherFilter:
         )
 
     def test_confidence_gate_present_in_exists_site(self) -> None:
-        """Games-EXISTS site (apply_game_filters) MUST gate on confidence (SEED-061).
+        """Games-EXISTS site (apply_game_filters) MUST gate on confidence.
 
-        Reverses the Phase 129 "Pitfall 3" asymmetry: confidence is now gated at
+        Confidence is gated at
         both the Games-EXISTS and the Flaws list (build_flaw_filter_clauses), so a
         game cannot match a tactic-family filter on a below-threshold tactic that
         would never render a chip.

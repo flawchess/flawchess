@@ -1,10 +1,10 @@
-"""Repository for the push_subscriptions table (Phase 201, PUSH-01/PUSH-02).
+"""Repository for the push_subscriptions table.
 
-V4 Information Disclosure mitigation: every function requires `user_id` as a
-keyword-only argument. Callers MUST pass the authenticated user's ID (from the
-FastAPI-Users `current_active_user` dependency); never accept `user_id` as a
-query/path parameter from the client. Mirrors
-`app/repositories/train_repository.py`.
+Every user-facing function requires `user_id` as a keyword-only argument (the
+prune path `delete_subscription_by_id` is keyed by row id). Callers MUST pass
+the authenticated user's ID (from the FastAPI-Users `current_active_user`
+dependency); never accept `user_id` as a query/path parameter from the client.
+Mirrors `app/repositories/train_repository.py`.
 
 No business logic here, no `httpx`, no config reads -- pure CRUD over
 push_subscriptions.
@@ -21,10 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.push_subscription import PushSubscription
 
 
-#: Phase 222 UAT round 5: the device-class regex the frontend's
-#: `useInstallPrompt.isMobile` uses, applied server-side (case-insensitive) to
-#: the stored User-Agent so the desktop score screen can learn whether the
-#: ACCOUNT already has reminders on a phone — a fact no single device knows.
+#: The device-class regex the frontend's `isMobileUserAgent`
+#: (`lib/deviceClass.ts`) uses, applied server-side (case-insensitive) to the
+#: stored User-Agent so the desktop score screen can learn whether the ACCOUNT
+#: already has reminders on a phone — a fact no single device knows.
 MOBILE_USER_AGENT_PATTERN = "Android|iPhone|iPad|iPod"
 
 
@@ -51,7 +51,7 @@ async def upsert_subscription(
     """Insert a new subscription, or update an existing one in place by endpoint.
 
     A browser returns the SAME endpoint URL on re-subscribe, so `endpoint` is
-    the natural key (PUSH-01) -- a re-subscribe from the same browser (e.g.
+    the natural key -- a re-subscribe from the same browser (e.g.
     after a browser reinstall rotated its push keys) updates the existing row
     rather than raising on the unique constraint, and also re-claims the
     endpoint for the calling user if it had somehow been orphaned to another.
@@ -162,7 +162,7 @@ async def delete_subscription_by_endpoint(
 
 
 async def delete_subscription_by_id(session: AsyncSession, *, subscription_id: int) -> None:
-    """Delete one subscription by id -- the prune-on-410/404 path (PUSH-02).
+    """Delete one subscription by id -- the prune-on-410/404 path.
 
     A delete of an already-deleted id is a no-op, which is what makes pruning
     idempotent under two concurrent send passes over the same dead endpoint.

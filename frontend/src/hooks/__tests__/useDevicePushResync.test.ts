@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * useDevicePushResync.test.ts — Phase 204 Plan 01. Task 1 covers only the
- * tracer slice (the happy path and the PERM-01 negative); the full
- * fail-safe/suppression matrix and the cadence proof are Task 2.
+ * useDevicePushResync.test.ts — the first blocks cover only the
+ * tracer slice (the happy path and the no-permission-prompt negative); the full
+ * fail-safe/suppression matrix and the cadence proof follow.
  *
  * The cadence guard (`hasResyncedThisPageLoad`) is module-scoped by design
- * (D-09), so every test in this file MUST start from a fresh module instance
+ * so every test in this file MUST start from a fresh module instance
  * — otherwise test 2 onward would silently see a guard already burned by
  * test 1. `beforeEach` calls `vi.resetModules()` and re-imports the hook
  * dynamically.
@@ -66,7 +66,7 @@ function mockPushCapability(vapidPublicKey: string | null): void {
 }
 
 /** `stubBrowserGlobals` style from `frontend/src/lib/__tests__/push.test.ts:40-70` —
- * used ONLY to prove the PERM-01 negative (these globals must never be
+ * used ONLY to prove the no-permission-prompt negative (these globals must never be
  * touched by the passive resync path). */
 function stubBrowserGlobals(): { requestPermission: ReturnType<typeof vi.fn>; subscribe: ReturnType<typeof vi.fn> } {
   const requestPermission = vi.fn().mockResolvedValue('granted');
@@ -125,7 +125,7 @@ describe('useDevicePushResync — tracer', () => {
     expect(pushLib.resyncExistingSubscription).toHaveBeenCalledWith(fakeSubscription);
   });
 
-  it('PERM-01: the same happy path never touches requestPermission or pushManager.subscribe', async () => {
+  it('the same happy path never touches requestPermission or pushManager.subscribe', async () => {
     const { requestPermission, subscribe } = stubBrowserGlobals();
     mockTrainSettings(BASE_SETTINGS);
     mockPushCapability(VAPID_KEY);
@@ -152,13 +152,13 @@ describe('useDevicePushResync — tracer', () => {
 });
 
 /**
- * Task 2: every negative signal in D-08 suppresses the resync, and every
- * one of them also proves PERM-01's negative (requestPermission/subscribe
+ * Every negative signal suppresses the resync, and every
+ * one of them also proves the no-permission-prompt negative (requestPermission/subscribe
  * stay untouched) — a suppressed re-sync obviously never approaches those
  * APIs, but asserting it directly keeps the invariant load-bearing rather
  * than incidental.
  */
-describe('useDevicePushResync — fail-safe suppression matrix (D-05/D-08/D-09)', () => {
+describe('useDevicePushResync — fail-safe suppression matrix', () => {
   it('enabled: false -> zero resync calls', async () => {
     const { requestPermission, subscribe } = stubBrowserGlobals();
     mockTrainSettings(undefined);
@@ -227,7 +227,7 @@ describe('useDevicePushResync — fail-safe suppression matrix (D-05/D-08/D-09)'
     expect(subscribe).toHaveBeenCalledTimes(0);
   });
 
-  it('subscriptionKeyMatches returns false (D-05: detect only) -> zero resync calls and unsubscribe is never called', async () => {
+  it('subscriptionKeyMatches returns false (detect only) -> zero resync calls and unsubscribe is never called', async () => {
     const { requestPermission, subscribe } = stubBrowserGlobals();
     mockTrainSettings(BASE_SETTINGS);
     mockPushCapability(VAPID_KEY);
@@ -245,7 +245,7 @@ describe('useDevicePushResync — fail-safe suppression matrix (D-05/D-08/D-09)'
   });
 });
 
-describe('useDevicePushResync — cadence (D-09: at most one attempt per page load)', () => {
+describe('useDevicePushResync — cadence (at most one attempt per page load)', () => {
   it('an unmount followed by a fresh mount inside the same module instance produces exactly one resync attempt in total', async () => {
     mockTrainSettings(BASE_SETTINGS);
     mockPushCapability(VAPID_KEY);

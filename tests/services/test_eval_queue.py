@@ -1,12 +1,12 @@
-"""Wave 0 queue tests — QUEUE-01/02/05/06/08 (Phase 117 Plan 02).
+"""Eval queue tests (claim_eval_job tiers, round-robin, lease expiry, guest exclusion).
 
 Tests cover:
-- QUEUE-01 / tier_priority:  tier-1 job is picked before tier-3-eligible games
-- QUEUE-02 / round_robin:    two users alternate claim (oldest-pending-first)
-- QUEUE-02 / tc_ordering:    classical picked before bullet within the same user
-- QUEUE-05 / tier3_derived:  game with no eval_jobs row is returned by claim_eval_job
-- QUEUE-06 / lease_expiry:   expired lease requeued to pending, claimable again
-- QUEUE-08 / guest_exclusion: guest tier-1 enqueue allowed + worker drain; tier-3 still excluded
+- tier_priority:   tier-1 job is picked before tier-3-eligible games
+- round_robin:     two users alternate claim (oldest-pending-first)
+- tc_ordering:     classical picked before bullet within the same user
+- tier3_derived:   game with no eval_jobs row is returned by claim_eval_job
+- lease_expiry:    expired lease requeued to pending, claimable again
+- guest_exclusion: guest tier-1 enqueue allowed + worker drain; tier-3 still excluded
 
 Session patching mirrors test_full_eval_drain.py: monkeypatch
 app.services.eval_queue_service.async_session_maker to the test DB session maker.
@@ -205,11 +205,11 @@ async def _delete_eval_jobs(
         await session.commit()
 
 
-# ─── QUEUE-01: tier priority ──────────────────────────────────────────────────
+# ─── Tier priority ────────────────────────────────────────────────────────────
 
 
 class TestTierPriority:
-    """QUEUE-01: tier-1 job is claimed before tier-3-eligible games."""
+    """tier-1 job is claimed before tier-3-eligible games."""
 
     async def test_tier_priority(
         self,
@@ -248,11 +248,11 @@ class TestTierPriority:
             await _delete_games(queue_session_maker, [t1_game_id, t3_game_id])
 
 
-# ─── QUEUE-02: round-robin ────────────────────────────────────────────────────
+# ─── Round-robin ──────────────────────────────────────────────────────────────
 
 
 class TestRoundRobin:
-    """QUEUE-02: two users alternate claims (oldest-pending-first round-robin)."""
+    """Two users alternate claims (oldest-pending-first round-robin)."""
 
     async def test_round_robin(
         self,
@@ -317,11 +317,11 @@ class TestRoundRobin:
             await _delete_games(queue_session_maker, [game_a_id, game_b_id])
 
 
-# ─── QUEUE-02: TC ordering ────────────────────────────────────────────────────
+# ─── TC ordering ──────────────────────────────────────────────────────────────
 
 
 class TestTcOrdering:
-    """QUEUE-02: within a user, classical is picked before bullet (D-117-04)."""
+    """Within a user, classical is picked before bullet."""
 
     async def test_tc_ordering(
         self,
@@ -373,11 +373,11 @@ class TestTcOrdering:
             await _delete_games(queue_session_maker, [bullet_game_id, classical_game_id])
 
 
-# ─── QUEUE-05: tier-3 derived pick ───────────────────────────────────────────
+# ─── Tier-3 derived pick ─────────────────────────────────────────────────────
 
 
 class TestTier3Derived:
-    """QUEUE-05: tier-3 pick returns a game with no eval_jobs row."""
+    """tier-3 pick returns a game with no eval_jobs row."""
 
     async def test_tier3_derived(
         self,
@@ -437,11 +437,11 @@ class TestTier3Derived:
             await _delete_games(queue_session_maker, [game_id])
 
 
-# ─── QUEUE-06: lease expiry / requeue ────────────────────────────────────────
+# ─── Lease expiry / requeue ──────────────────────────────────────────────────
 
 
 class TestLeaseExpiry:
-    """QUEUE-06: expired lease is requeued to pending and re-claimable."""
+    """Expired lease is requeued to pending and re-claimable."""
 
     async def test_lease_expiry(
         self,
@@ -508,11 +508,11 @@ class TestLeaseExpiry:
             await _delete_games(queue_session_maker, [game_id])
 
 
-# ─── QUEUE-08: guest exclusion ───────────────────────────────────────────────
+# ─── Guest exclusion ─────────────────────────────────────────────────────────
 
 
 class TestGuestExclusion:
-    """QUEUE-08: tier-1 explicit guest enqueue is allowed; tier-3 bulk stays guest-excluded.
+    """tier-1 explicit guest enqueue is allowed; tier-3 bulk stays guest-excluded.
 
     A guest may enqueue their own game for on-demand tier-1 analysis via
     enqueue_tier1_game, and the worker can drain that job via _claim_queued_job
@@ -527,7 +527,7 @@ class TestGuestExclusion:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """(a) Tier-3 derived pick must never return a guest's game (unchanged).
-        (b) enqueue_tier1_game must return True for a guest's own game (QUEUE-08 opened).
+        (b) enqueue_tier1_game must return True for a guest's own game.
         (c) The resulting tier-1 job must be claimable by the worker via _claim_queued_job.
         """
         import app.services.eval_queue_service as svc
@@ -591,7 +591,7 @@ class TestGuestExclusion:
             await _delete_games(queue_session_maker, [guest_game_id])
 
 
-# ─── D-118-04: tier-3 ordering test fixtures ─────────────────────────────────
+# ─── Tier-3 ordering test fixtures ───────────────────────────────────────────
 
 # Unique user IDs for queue-ordering tests — range 99210–99219 reserved.
 _TEST_USER_TIER2_ID: int = 99210
@@ -650,9 +650,9 @@ async def tier2_test_users(
 
 
 class TestTier3Lottery:
-    """SEED-046: _claim_tier3_derived recency-weighted ES lottery.
+    """_claim_tier3_derived recency-weighted ES lottery.
 
-    Replaces the old D-118-04 deterministic 'active user first' ordering with a
+    Replaces the old deterministic 'active user first' ordering with a
     probabilistic weighted lottery. Tests assert distribution properties, not
     strict ordering.
     """
@@ -803,13 +803,13 @@ class TestTier3Lottery:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """260723-j6g unified contract: a non-guest user owning BOTH a needs-engine
+        """Unified contract: a non-guest user owning BOTH a needs-engine
         game and a lichess-eval-pv-incomplete game has BOTH games participate in the
         SAME unified lottery — the lichess-eval game no longer starves behind the
         needs-engine game for the same user.
 
         Replaces the old test_tier3_never_picks_lichess_while_engine_candidate_exists,
-        which encoded the now-superseded 174-07/SEED-109 precedence (lichess-eval
+        which encoded the now-superseded precedence (lichess-eval
         games NEVER picked while a needs-engine game exists). Asserts a distribution
         (both counts > 0), not strict ordering — the lottery is probabilistic
         (mirrors test_tier3_recency_weighting's style).
@@ -882,7 +882,7 @@ class TestTier3Lottery:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Core starvation-fix proof (260723-j6g, prod 2026-07-23 motivation): two
+        """Core starvation-fix proof (prod 2026-07-23 motivation): two
         EQUALLY-RECENT non-guest users, user_a owning a needs-engine game and user_b
         owning a lichess-eval-pv-incomplete game. Over ~200 draws, user_b's
         lichess-eval game is picked with frequency > 0 — it no longer starves behind
@@ -962,7 +962,7 @@ class TestTier3Lottery:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Behavior preserved under the unified lottery (260723-j6g): when the ONLY
+        """Behavior preserved under the unified lottery: when the ONLY
         candidate is a PV-backfill-only lichess game (lichess_evals_at IS NOT NULL),
         the unified Step-1/Step-2 draw still returns it — there is no longer a
         separate "residual tier", but a lone lichess-eval candidate still wins by
@@ -1009,11 +1009,11 @@ class TestTier3Lottery:
         finally:
             await _delete_games(queue_session_maker, [pv_only_game])
 
-    # ─── Phase 174-07 / SEED-109 item 2: lichess-eval predicate broadened ──────
+    # ─── Lichess-eval predicate broadened ──────────────────────────────────────
     # full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL, strict
     # superset population (backfills the ~43k lichess-eval backlog that's
     # already eval-complete but PV/best-move-incomplete). This predicate is now
-    # branch (b) of the 260723-j6g unified lottery, not a separate residual
+    # branch (b) of the unified lottery, not a separate residual
     # lane — these tests still verify the predicate's own boundaries, which the
     # unified draw preserves unchanged.
 
@@ -1027,7 +1027,7 @@ class TestTier3Lottery:
         full_evals_completed_at-stamped (the backlog case the OLD predicate missed)
         as long as full_pv_completed_at IS NULL.
 
-        This is the core proof of the 174-07 broadening: under the pre-174-07
+        This is the core proof of the broadening: under the old
         predicate (full_evals_completed_at IS NULL) this exact row would NEVER
         have been selected by the residual fallback.
         """
@@ -1138,8 +1138,8 @@ class TestTier3Lottery:
     ) -> None:
         """Scope guard: the broadened predicate stays lichess-eval-only. An ENGINE
         game (lichess_evals_at IS NULL) that is eval-complete but PV-incomplete
-        (a pre-Phase-117-analyzed row) must NOT be picked by the residual
-        fallback — it is not the 174-07 backfill's target population."""
+        (an earlier-analyzed row) must NOT be picked by the residual
+        fallback — it is not the backfill's target population."""
         import app.services.eval_queue_service as svc
         from app.models.user import User
 
@@ -1338,11 +1338,10 @@ class TestTier3Lottery:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Quick 260719-fsz Population A: a guest's lichess-eval backlog game
-        (full_pv NULL, lichess_evals set) IS now picked by the residual fallback —
-        a deliberate scoped reversal of QUEUE-08 for THIS lichess-eval lane only.
-        (Previously test_residual_fallback_excludes_guest_backlog_game asserted the
-        opposite; the guest EXISTS clause was dropped from the residual game_where.)"""
+        """A guest's lichess-eval backlog game
+        (full_pv NULL, lichess_evals set) IS picked by the residual fallback —
+        a deliberate scoped exception to the guest exclusion for THIS lichess-eval lane only.
+        (The guest EXISTS clause is not part of the residual game_where.)"""
         import app.services.eval_queue_service as svc
         from app.models.user import User
 
@@ -1390,7 +1389,7 @@ class TestTier3Lottery:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A guest user with a backlog is never selected by the lottery (QUEUE-08)."""
+        """A guest user with a backlog is never selected by the lottery."""
         import app.services.eval_queue_service as svc
         from app.models.user import User
 
@@ -1462,11 +1461,11 @@ class TestTier3Lottery:
             await _delete_games(queue_session_maker, [game_id])
 
 
-# ─── D-7: weighted-random within-user game pick spread tests ──────────────────
+# ─── Weighted-random within-user game pick spread tests ──────────────────
 
 
 class TestTier3GamePickSpread:
-    """D-7 (SEED-048): _claim_tier3_derived Step-2 uses ES weighted-random game pick.
+    """D-7: _claim_tier3_derived Step-2 uses ES weighted-random game pick.
 
     Verifies that the within-user game pick is no longer deterministic: multiple
     workers landing on the same user will usually get different games, cutting
@@ -1762,9 +1761,9 @@ async def _insert_game_flaw(
 
 
 class TestTier4BlobBackfill:
-    """Phase 145 Plan 02: tier-4 spare-capacity flaw-blob backfill lottery.
+    """tier-4 spare-capacity flaw-blob backfill lottery.
 
-    SEED-125: the predicate is now `games.blobs_completed_at` (games-only, no
+    The predicate is now `games.blobs_completed_at` (games-only, no
     `game_flaws` JOIN/EXISTS) — see `_claim_tier4_blob`'s docstring.
 
     Tests cover:
@@ -1772,7 +1771,7 @@ class TestTier4BlobBackfill:
       with an unset blob stamp
     - tier4_returns_none_empty_queue: a set blob stamp excludes the game (writes
       the blob then calls _refresh_blobs_completed exactly as production does)
-    - tier4_excludes_guests: guest-owned games are never returned (QUEUE-08)
+    - tier4_excludes_guests: guest-owned games are never returned
     - tier4_excludes_unanalyzed: games without full_evals_completed_at are excluded
     - tier4_blobbed_game_excluded: fully-blobbed + stamped game stops matching the
       predicate (idempotency), proven via the real _refresh_blobs_completed call
@@ -1825,7 +1824,7 @@ class TestTier4BlobBackfill:
     ) -> None:
         """_claim_tier4_blob returns None (or skips this game) once its blob stamp is set.
 
-        SEED-125: the predicate now reads `games.blobs_completed_at`, not the flaw rows
+        The predicate now reads `games.blobs_completed_at`, not the flaw rows
         directly. A written blob alone no longer excludes the game — the STAMP does — so
         this realigns to the real lifecycle: write the blob, call
         `_refresh_blobs_completed` exactly as production does, then assert not picked.
@@ -1873,7 +1872,7 @@ class TestTier4BlobBackfill:
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Guest-owned games with NULL-blob flaws are never returned (QUEUE-08)."""
+        """Guest-owned games with NULL-blob flaws are never returned."""
         from app.services.eval_queue_service import _claim_tier4_blob
 
         guest_id = tier4_test_users["guest"]
@@ -1937,8 +1936,8 @@ class TestTier4BlobBackfill:
 
         Simulates the full blob-write lifecycle: insert game + flaw with NULL blob,
         verify it is picked, then set allowed_pv_lines to a non-NULL value, call
-        `_refresh_blobs_completed` exactly as production does (SEED-125: the predicate
-        now reads the stamp, not the flaw rows directly), and verify the game is no
+        `_refresh_blobs_completed` exactly as production does (the predicate
+        reads the stamp, not the flaw rows directly), and verify the game is no
         longer returned.
         """
         from sqlalchemy import update as sa_update2
@@ -1964,8 +1963,8 @@ class TestTier4BlobBackfill:
             assert result is not None, "Before blob write, game with NULL flaw must be returned"
             assert result[0] == game_id, f"Expected game {game_id}; got {result[0]}"
 
-            # Phase 2: write the blob and refresh the stamp (simulate the Plan-03
-            # handler completing the write + SEED-125's _refresh_blobs_completed call).
+            # Phase 2: write the blob and refresh the stamp (simulate the
+            # handler completing the write + the _refresh_blobs_completed call).
             written_blob: list[dict[str, object]] = [
                 {"b": 50, "bm": None, "s": 20, "sm": None, "su": "d2d4"}
             ]
@@ -1996,7 +1995,7 @@ class TestTier4BlobBackfill:
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """SEED-125: a stamped game is never picked, even if a NULL-blob flaw row exists.
+        """A stamped game is never picked, even if a NULL-blob flaw row exists.
 
         Pins the predicate to `games.blobs_completed_at` — it fails if Stage 1 or
         Stage 2 still consults `game_flaws` (a game_flaws-consulting predicate would
@@ -2032,7 +2031,7 @@ class TestTier4BlobBackfill:
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """SEED-125: an analyzed game with NO flaw rows at all is a valid candidate.
+        """An analyzed game with NO flaw rows at all is a valid candidate.
 
         This was NOT true under the old game_flaws-EXISTS predicate (a game with zero
         flaw rows could never match an EXISTS-over-game_flaws check). It documents the
@@ -2214,7 +2213,7 @@ class TestTier4BlobBackfill:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """SEED-072: scope="idle" must NOT fall through to tier-4.
+        """scope="idle" must NOT fall through to tier-4.
 
         With tier-3 mocked empty and a tier-4-eligible NULL-blob game present,
         claim_eval_job(scope="idle") returns None (→ HTTP 204) so the remote worker
@@ -2275,29 +2274,29 @@ class TestTier4BlobBackfill:
             await _delete_games(queue_session_maker, [game_id2])
 
 
-# ─── Phase 176 BACK-01: tier-4b best-move backfill lottery ───────────────────
+# ─── Tier-4b best-move backfill lottery ──────────────────────────────────────
 
 
 class TestTier4bBestMoveBackfill:
-    """Phase 176 Plan 01: tier-4b spare-capacity best-move backfill lottery.
+    """tier-4b spare-capacity best-move backfill lottery.
 
     Tests cover:
     - null_pick_on_empty_pool: _claim_tier4_bestmove returns None with no candidates
     - picks_eligible_game: a PV-complete, best-move-incomplete, non-guest game is returned
     - includes_guest_orphan: a guest full_pv-set best_moves-NULL game IS picked so guest
-      orphans self-heal (Quick 260719-fsz B2, include_guests=True). tier-3/tier-4-blob
+      orphans self-heal (include_guests=True). tier-3/tier-4-blob
       still exclude guests (proven elsewhere).
     - excludes_pv_incomplete: games without full_pv_completed_at are excluded (this also
       keeps tier-4b disjoint from the residual's full_pv-NULL population)
     - excludes_already_stamped: games with best_moves_completed_at set are excluded
-      (D-01 self-termination)
+      (self-termination)
     - includes_lichess_eval_orphan: a lichess-eval game with full_pv set / best_moves NULL
-      IS now picked (Quick 260719-fsz B — the `lichess_evals_at IS NULL` clause was dropped;
+      IS picked (there is no `lichess_evals_at IS NULL` clause;
       lanes stay disjoint on full_pv_completed_at)
     - dispatch_via_claim: claim_eval_job returns a TIER_BESTMOVE_BACKFILL job only
       after tier-3 AND tier-4-blob both return None
     - gated_off: BEST_MOVE_BACKFILL_ENABLED=False suppresses the rung even when
-      EVAL_AUTO_DRAIN_ENABLED=True (D-05 independent gate)
+      EVAL_AUTO_DRAIN_ENABLED=True (independent gate)
     - claimed_job_fields: tier/is_lichess_eval_game/job_id are correct by construction
 
     Every non-guest Game inserted is removed in a finally: await _delete_games(...)
@@ -2361,9 +2360,9 @@ class TestTier4bBestMoveBackfill:
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Quick 260719-fsz Population B2: a guest's full_pv-set, best_moves-NULL game
+        """A guest's full_pv-set, best_moves-NULL game
         IS picked by tier-4b so guest orphans self-heal (include_guests=True on the
-        Stage-1 user pick). Previously test_excludes_guests asserted the opposite.
+        Stage-1 user pick).
         Note: tier-3 needs-engine + tier-4-blob still exclude guests — that shared
         default is proven by test_tier3_guest_excluded_from_lottery /
         test_tier4_excludes_guests."""
@@ -2426,7 +2425,7 @@ class TestTier4bBestMoveBackfill:
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """A game with best_moves_completed_at already set is excluded (D-01 self-termination)."""
+        """A game with best_moves_completed_at already set is excluded (self-termination)."""
         from app.services.eval_queue_service import _claim_tier4_bestmove
 
         user_id = tier4_test_users["user"]
@@ -2457,13 +2456,12 @@ class TestTier4bBestMoveBackfill:
         tier4_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Quick 260719-fsz Population B: a lichess-eval game with full_pv_completed_at
+        """A lichess-eval game with full_pv_completed_at
         SET and best_moves_completed_at NULL (an orphan, e.g. best-move pass skipped
-        during a Maia-down window) IS now picked by tier-4b. The former
-        `AND lichess_evals_at IS NULL` clause was dropped from both stages; the two
+        during a Maia-down window) IS picked by tier-4b. There is no
+        `AND lichess_evals_at IS NULL` clause in either stage; the two
         lanes stay disjoint on full_pv_completed_at (residual takes full_pv NULL, this
-        lane takes full_pv NOT NULL), so no D-03 contention. Previously
-        test_excludes_lichess_eval asserted the opposite."""
+        lane takes full_pv NOT NULL), so there is no contention."""
         from app.services.eval_queue_service import _claim_tier4_bestmove
 
         user_id = tier4_test_users["user"]
@@ -2548,7 +2546,7 @@ class TestTier4bBestMoveBackfill:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """With BEST_MOVE_BACKFILL_ENABLED=False (default) but EVAL_AUTO_DRAIN_ENABLED=True,
-        claim_eval_job does NOT return a best-move job — D-05 independent gate."""
+        claim_eval_job does NOT return a best-move job — independent gate."""
         import app.services.eval_queue_service as svc
 
         monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
@@ -2591,9 +2589,8 @@ class TestTier4bBestMoveBackfill:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """ClaimedJob for a tier-4b NON-lichess game has tier=TIER_BESTMOVE_BACKFILL,
-        is_lichess_eval_game=False, and job_id=None. (Quick 260719-fsz: the flag is now
-        resolved from the game row rather than hardcoded — see test_claimed_job_lichess_flag
-        for the lichess case.)"""
+        is_lichess_eval_game=False, and job_id=None. (The flag is resolved from the game
+        row rather than hardcoded — see test_claimed_job_lichess_flag for the lichess case.)"""
         import app.services.eval_queue_service as svc
         from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
 
@@ -2642,10 +2639,9 @@ class TestTier4bBestMoveBackfill:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Quick 260719-fsz honesty fix: for a tier-4b lichess-eval orphan the ClaimedJob
-        resolves is_lichess_eval_game=True from the game row (the old hardcoded False +
-        "excluded by construction" comment is no longer true now that tier-4b admits
-        lichess-eval games)."""
+        """For a tier-4b lichess-eval orphan the ClaimedJob
+        resolves is_lichess_eval_game=True from the game row (tier-4b admits
+        lichess-eval games, so a hardcoded False would be wrong)."""
         import app.services.eval_queue_service as svc
 
         monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
@@ -2684,13 +2680,13 @@ class TestTier4bBestMoveBackfill:
             await _delete_games(queue_session_maker, [game_id])
 
 
-# ─── Quick 260729-a86: Step-1 distributed-OR predicate shape ─────────────────
+# ─── Tier-3 Step-1 distributed-OR predicate shape ────────────────────────────
 
 
 class TestTier3Step1PredicateShape:
-    """Quick 260729-a86: pins the rewritten Step-1 predicate (two correlated
+    """Pins the rewritten Step-1 predicate (two correlated
     EXISTS with the guest guard as an outer conjunct of branch (a)) and the
-    tier-4 blob/bestmove byte-identity invariant (T-a86-01 / T-a86-03).
+    tier-4 blob/bestmove byte-identity invariant.
 
     Byte-identity assertions use exact `==` against literals derived from the
     pre-change (HEAD) `_es_weighted_user_pick` f-string template — never from
@@ -2703,7 +2699,7 @@ class TestTier3Step1PredicateShape:
     async def test_tier4_blob_call_site_byte_identical_to_head(self) -> None:
         """_es_weighted_user_pick's candidate_exists_sql branch, invoked with
         _claim_tier4_blob's exact argument set, emits SQL string-equal to the
-        pre-260729-a86 HEAD template."""
+        pre-rewrite HEAD template."""
         import math
         import typing
 
@@ -2784,7 +2780,7 @@ class TestTier3Step1PredicateShape:
     async def test_tier4_bestmove_call_site_byte_identical_to_head(self) -> None:
         """_es_weighted_user_pick's candidate_exists_sql branch, invoked with
         _claim_tier4_bestmove's exact argument set (include_guests=True), emits
-        SQL string-equal to the pre-260729-a86 HEAD template."""
+        pre-rewrite HEAD template."""
         import math
         import typing
 
@@ -2860,7 +2856,7 @@ class TestTier3Step1PredicateShape:
         """Step 1 MUST keep both branches as SEPARATE correlated EXISTS with the
         guest guard as an outer conjunct of branch (a).
 
-        This is the only test that protects the 260729-a86 fix. Collapsing the two
+        This is the only test that protects the Step-1 two-EXISTS fix. Collapsing the two
         EXISTS back into one containing an OR is semantically identical — every
         behavior test in this class passes either way, and so does the whole
         module — but it costs prod 360 ms / 71,612 buffers per call instead of
@@ -3153,20 +3149,20 @@ class TestTier3Step1PredicateShape:
             await _delete_games(queue_session_maker, [complete_game])
 
 
-# ─── Phase 212 BENCHLANE-02/D-09/D-10: benchmark selection gate ──────────────
+# ─── Benchmark selection gate ────────────────────────────────────────────────
 
 
 class TestBenchmarkSelectionGate:
-    """D-10: gate inertness proven two ways -- byte-identical predicate when
+    """Gate inertness proven two ways -- byte-identical predicate when
     off, and the narrowing actually bites when on.
 
-    Phase 212-02 (D-09) extended these byte-identity pins from tier-3 alone to
-    all FOUR lottery predicate sites the worker fleet can reach:
-    _claim_tier3_derived (Step 1 + Step 2, pinned in 212-01),
+    The byte-identity pins cover all FOUR lottery predicate sites the worker
+    fleet can reach:
+    _claim_tier3_derived (Step 1 + Step 2),
     _claim_tier4_blob (Stage 1 + Stage 2), and _claim_tier4_bestmove
     (Stage 1 + Stage 2). A refactor that reformats any one of these six
     predicate strings -- even one that preserves semantics -- is exactly the
-    failure this class exists to catch (SC2): the byte-identity assertions
+    failure this class exists to catch: the byte-identity assertions
     below are direct `==` comparisons against frozen literals, not
     normalized-whitespace equality, so a stray space or reordered clause
     fails loudly rather than passing a "looks equivalent" review.
@@ -3211,7 +3207,7 @@ class TestBenchmarkSelectionGate:
         result = await svc._claim_tier3_derived(typing.cast(AsyncSession, _UnusedSession()))
         assert result is None, "Step 2's fake returns None -> race short-circuit"
 
-        # Frozen pre-gate baseline (Quick 260729-a86 HEAD template) — never
+        # Frozen pre-gate baseline — never
         # copy-pasted from post-change output.
         expected_step1 = """
             (u.is_guest = false AND EXISTS (
@@ -3346,7 +3342,7 @@ class TestBenchmarkSelectionGate:
     ) -> None:
         """With BENCHMARK_SELECTION_GATE_ENABLED=False, _claim_tier4_blob's
         Stage 1 candidate_exists_sql and Stage 2 game_where_sql are
-        byte-identical to the pre-gate (SEED-125) baseline."""
+        byte-identical to the pre-gate baseline."""
         import typing
 
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -3374,7 +3370,7 @@ class TestBenchmarkSelectionGate:
         result = await svc._claim_tier4_blob(typing.cast(AsyncSession, _UnusedSession()))
         assert result is None, "Stage 2's fake returns None -> None short-circuit"
 
-        # Frozen pre-gate baseline (SEED-125 games-only predicate) — never
+        # Frozen pre-gate baseline (games-only predicate) — never
         # copy-pasted from post-change output.
         expected_stage1 = """
                 SELECT 1 FROM games g
@@ -3401,7 +3397,7 @@ class TestBenchmarkSelectionGate:
     ) -> None:
         """With BENCHMARK_SELECTION_GATE_ENABLED=False, _claim_tier4_bestmove's
         Stage 1 candidate_exists_sql and Stage 2 game_where_sql are
-        byte-identical to the pre-gate (Phase 176 / Quick 260719-fsz) baseline."""
+        byte-identical to the pre-gate baseline."""
         import typing
 
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -3708,7 +3704,7 @@ class TestBenchmarkSelectionGate:
     ) -> None:
         """A game selected under tc_tranche='rapid' is claimable even while a
         different tranche is nominally "in flight" — the gate predicate keys
-        only on bs.game_id = g.id and carries no tc_tranche filter (D-09).
+        only on bs.game_id = g.id and carries no tc_tranche filter.
         This pins the deliberate no-tranche-filter decision so a future
         reader does not "fix" it into a tranche-scoped predicate and quietly
         break cross-tranche resumes."""

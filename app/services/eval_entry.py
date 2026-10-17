@@ -1,30 +1,28 @@
-"""Entry-ply (import-time) cold-drain lane helpers (Phase 150 R7 / WRITE-04 Task 2).
+"""Entry-ply (import-time) lane helpers: depth-15, no-shift collection/write/classify
+primitives.
 
-Physically relocated from app/services/eval_drain.py (Phase 91 / SEED-023's
-"lifted from import_service.py" cold-drain helpers). Completes the R7 3-way
-split: eval_apply.py holds the shared write path, eval_entry.py holds the
-entry-ply (depth-15, no-shift) collection/write/classify primitives, and
-eval_drain.py retains full-lane orchestration (run_eval_drain, _full_drain_tick,
-run_full_eval_drain, resweep_holed_games) plus the two entry-lease functions
-that open their own internal DB sessions (_pick_pending_game_ids,
-_load_pgns_for_games -- kept local per the note in eval_drain.py, both
-consumed exclusively by run_eval_drain there).
+eval_apply.py holds the shared write path, eval_entry.py holds the entry-ply
+primitives, and eval_drain.py holds the drain orchestration (run_eval_drain,
+_full_drain_tick, run_full_eval_drain, resweep_holed_games) plus the two
+entry-lease functions that open their own internal DB sessions
+(_pick_pending_game_ids, _load_pgns_for_games -- kept local per the note in
+eval_drain.py, both consumed exclusively by run_eval_drain there).
 
 Consumed by:
     - app/routers/eval_remote.py::entry_submit_eval (the remote-worker
       entry-submit endpoint)
     - app/services/import_service.py (hot-lane Stage 5c covered-game gate via
       _collect_midgame_eval_targets / _collect_endgame_span_eval_targets)
-    - app/services/eval_drain.py::run_eval_drain (the entry-ply cold-drain
+    - app/services/eval_drain.py::run_eval_drain (the entry-ply drain
       coroutine, which imports these back -- see that module's own docstring)
 
 None of the functions in this module open their own AsyncSession -- every
 async function here takes `session: AsyncSession` as an explicit parameter
-from the caller. This is a deliberate design property (not incidental): it
-means moving this module carries zero risk to existing test session-patching
-(`monkeypatch.setattr(<module>, "async_session_maker", ...)`) fixtures, since
-there is no async_session_maker binding in this module for any test to have
-needed to patch in the first place.
+from the caller. This is a deliberate design property (not incidental):
+there is no async_session_maker binding in this module, so no test
+session-patching fixture
+(`monkeypatch.setattr(<module>, "async_session_maker", ...)`) ever needs to
+patch one here.
 """
 
 import io
@@ -53,11 +51,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
-class _EvalTarget:
-    """One row scheduled for engine evaluation in the cold-drain eval pass.
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
+class _EntryPlyEvalTarget:
+    """One row scheduled for engine evaluation in the entry-ply eval pass.
 
     Collected up-front across all games in a drain batch so the per-eval
     asyncio.gather() can fan out to every Stockfish worker in the module-level
@@ -85,8 +80,8 @@ class _TargetSpec:
 def _collect_target_specs(plies_list: Sequence[PlyData]) -> list[_TargetSpec]:
     """Pure: derive the (ply, eval_kind, endgame_class) tuples that need eval.
 
-    Skips plies where lichess %eval already populated eval_cp or eval_mate
-    (T-78-17). At most one middlegame entry per game (D-79-08). Endgame spans
+    Skips plies where lichess %eval already populated eval_cp or eval_mate.
+    At most one middlegame entry per game. Endgame spans
     are split into contiguous-ply islands per class; each island contributes
     one entry ply.
     """
@@ -116,7 +111,7 @@ def _collect_target_specs(plies_list: Sequence[PlyData]) -> list[_TargetSpec]:
         for island in _split_into_contiguous_islands(pds):
             span_pd = island[0]
             if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
-                # T-78-17 lichess preservation: do not overwrite.
+                # Lichess %eval preservation: do not overwrite.
                 continue
             specs.append(
                 _TargetSpec(
@@ -166,25 +161,22 @@ def _collect_eval_targets_per_game(
     g_id: int,
     pgn_text: str,
     plies_list: Sequence[PlyData],
-) -> list[_EvalTarget]:
-    """Per-game single-walk target builder (Quick 260521-d6o).
+) -> list[_EntryPlyEvalTarget]:
+    """Per-game single-walk target builder.
 
-    Replaces the previous N-parse pattern where each midgame + endgame span
-    entry triggered its own PGN parse and mainline walk per target ply.
-    The new path:
+    One PGN parse and one mainline walk per game, however many targets it has:
 
       1. Derive every target ply up front from PlyData alone (no parsing).
-      2. If no targets, return [] WITHOUT touching the PGN — cold drain
-         covered-game gate goes through zero parses.
+      2. If no targets, return [] WITHOUT touching the PGN — the covered-game
+         gate goes through zero parses.
       3. Otherwise parse the PGN once and walk the mainline once, snapshotting
          `board.copy()` at each target ply (early-break when all targets are
          filled).
-      4. Assemble _EvalTarget rows. Midgame entry first (matches the previous
-         collector ordering — midgame helper output, then endgame helper
-         output), then endgame targets in ply-ascending order.
+      4. Assemble _EntryPlyEvalTarget rows: midgame entry first, then endgame targets
+         in ply-ascending order.
 
     Targets whose ply was unreachable (game ended early) are silently dropped
-    — no Sentry, matching the previous best-effort semantics for short games.
+    — no Sentry (short games are expected).
     """
     specs = _collect_target_specs(plies_list)
     if not specs:
@@ -194,14 +186,14 @@ def _collect_eval_targets_per_game(
     if not snapshots:
         return []
 
-    midgame_targets: list[_EvalTarget] = []
-    endgame_targets: list[_EvalTarget] = []
+    midgame_targets: list[_EntryPlyEvalTarget] = []
+    endgame_targets: list[_EntryPlyEvalTarget] = []
     for spec in specs:
         board = snapshots.get(spec.ply)
         if board is None:
             # Mainline ended before this target ply — silently skip (no Sentry).
             continue
-        target = _EvalTarget(
+        target = _EntryPlyEvalTarget(
             game_id=g_id,
             ply=spec.ply,
             eval_kind=spec.eval_kind,
@@ -219,23 +211,21 @@ def _collect_eval_targets_per_game(
 
 def _collect_midgame_eval_targets(
     game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
-) -> list[_EvalTarget]:
-    """Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
+) -> list[_EntryPlyEvalTarget]:
+    """Middlegame entry eval — MIN(ply) where phase == 1.
 
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-
-    Quick 260521-d6o: now a thin filter over the single-walk per-game helper.
+    A thin filter over the single-walk per-game helper.
     The hot-lane Stage 5c covered-game gate in import_service.py still imports
     and calls this with single-game tuples; the signature is preserved. When
     both collectors are called back-to-back on the same `game_eval_data`, each
     invocation does its own single mainline walk per game — the production
-    cold-drain path in `_collect_eval_targets_from_db` therefore calls
+    entry-ply path in `_collect_eval_targets_from_db` therefore calls
     `_collect_eval_targets_per_game` directly to avoid the double walk.
 
-    Skips plies where lichess %eval already populated the row (T-78-17).
-    At most one middlegame entry per game (D-79-08).
+    Skips plies where lichess %eval already populated the row.
+    At most one middlegame entry per game.
     """
-    targets: list[_EvalTarget] = []
+    targets: list[_EntryPlyEvalTarget] = []
     for g_id, pgn_text, plies_list in game_eval_data:
         all_targets = _collect_eval_targets_per_game(g_id, pgn_text, plies_list)
         targets.extend(t for t in all_targets if t.eval_kind == "middlegame_entry")
@@ -244,19 +234,17 @@ def _collect_midgame_eval_targets(
 
 def _collect_endgame_span_eval_targets(
     game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
-) -> list[_EvalTarget]:
-    """Phase 78 per-class endgame span entry collection.
+) -> list[_EntryPlyEvalTarget]:
+    """Per-class endgame span entry collection.
 
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-
-    Quick 260521-d6o: now a thin filter over the single-walk per-game helper.
+    A thin filter over the single-walk per-game helper.
     Same signature-preservation note as `_collect_midgame_eval_targets`.
     Each contiguous run of the same endgame_class within a game is its own
     span; a class=1 → class=2 → class=1 sequence yields two class=1 entry
     evals, not one. Skips plies where lichess %eval already populated the
-    row (T-78-17).
+    row.
     """
-    targets: list[_EvalTarget] = []
+    targets: list[_EntryPlyEvalTarget] = []
     for g_id, pgn_text, plies_list in game_eval_data:
         all_targets = _collect_eval_targets_per_game(g_id, pgn_text, plies_list)
         targets.extend(t for t in all_targets if t.eval_kind == "endgame_span_entry")
@@ -265,8 +253,6 @@ def _collect_endgame_span_eval_targets(
 
 def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]]:
     """Split per-class plies into contiguous runs ("islands").
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
 
     A new island starts whenever the ply gap to the previous entry is > 1
     — i.e. the class was interrupted by a non-class ply. plies_list is
@@ -289,18 +275,17 @@ async def _batch_update_entry_eval_rows(
     session: AsyncSession,
     rows: list[tuple[int, int, int | None, int | None, int | None]],
 ) -> None:
-    """Emit ONE batched UPDATE for entry-ply / cold-drain eval rows (SEED-052).
+    """Emit ONE batched UPDATE for entry-ply eval rows.
 
     Each row carries (game_id, ply, eval_cp, eval_mate, endgame_class). Mirrors the
     full-ply batched-write helpers (_batch_update_eval_rows) but for the entry-ply
-    lane (_apply_eval_results), which differs in three ways:
+    lane (_apply_entry_eval_results), which differs in three ways:
     - rows span MULTIPLE games in a drain batch, so game_id lives in the VALUES tuple
       (not a single :game_id param) and the WHERE matches on v.game_id;
     - only eval_cp/eval_mate are written (no best_move);
-    - the optional endgame_class disambiguation is preserved per-row via
+    - the optional endgame_class disambiguation is applied per-row via
       (v.endgame_class IS NULL OR game_positions.endgame_class = v.endgame_class) —
-      exactly the pre-batch semantics where the endgame_class predicate was only added
-      when target.endgame_class was not None (defensive: current schema has at most one
+      NULL means no endgame_class predicate (defensive: current schema has at most one
       row per (game_id, ply)).
 
     Uses CAST() instead of :: cast syntax: asyncpg rewrites named params to $N before
@@ -339,28 +324,25 @@ async def _batch_update_entry_eval_rows(
     await session.execute(sql, params)
 
 
-async def _apply_eval_results(
+async def _apply_entry_eval_results(
     session: AsyncSession,
-    eval_targets: Sequence[_EvalTarget],
+    eval_targets: Sequence[_EntryPlyEvalTarget],
     eval_results: Sequence[tuple[int | None, int | None]],
 ) -> tuple[int, int]:
     """Apply engine eval results to GamePosition rows via one batched UPDATE.
 
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
-
-    SEED-052: the per-row update(GamePosition) loop became a single batched
-    UPDATE … FROM (VALUES …) round-trip (mirrors the full-ply lane's 260616-jq1 /
-    FLAWCHESS-6B fix). One Python pass classifies rows (counting + Sentry on the
+    Writes through a single batched
+    UPDATE … FROM (VALUES …) round-trip (as the full-ply lane does; FLAWCHESS-6B).
+    One Python pass classifies rows (counting + Sentry on the
     (None, None) skips, collecting write-rows); _batch_update_entry_eval_rows then
     emits the single UPDATE. The batched UPDATE runs sequentially against the
     shared, caller-owned session (CLAUDE.md hard rule: AsyncSession is not safe
     under asyncio.gather) and lands in its transaction.
 
     When engine returns (None, None), the row is skipped (eval_cp/eval_mate
-    stays NULL permanently per D-09). The game is still marked
+    stays NULL permanently). The game is still marked
     evals_completed_at = NOW() by _mark_evals_completed so it is never
-    re-picked (D-09 / R-02 — no permanent retry loop).
+    re-picked (no permanent retry loop).
 
     Returns (eval_calls_made, eval_calls_failed).
     """
@@ -370,11 +352,11 @@ async def _apply_eval_results(
     for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
         eval_calls_made += 1
         if eval_cp is None and eval_mate is None:
-            # D-09: engine error / timeout — skip row, continue drain. One position's engine
-            # returning nothing is expected operational churn (the row is re-picked on a
-            # later tick), not a bug. Log locally instead of a Sentry event: capturing every
-            # failed position flooded Sentry and burned the error quota (was FLAWCHESS-5A)
-            # for zero actionable signal.
+            # Engine error / timeout — skip row, continue drain. One position's engine
+            # returning nothing is expected operational churn (the row stays NULL; the
+            # game is still marked complete), not a bug. Log locally instead of a Sentry
+            # event: capturing every failed position floods Sentry and burns the error
+            # quota (FLAWCHESS-5A) for zero actionable signal.
             eval_calls_failed += 1
             logger.warning(
                 "eval_drain: engine returned None tuple (game_id=%s ply=%s eval_kind=%s "
@@ -397,18 +379,18 @@ async def _apply_eval_results(
 
 
 # ---------------------------------------------------------------------------
-# Cold-drain helpers: pick / load / mark
+# Entry-ply lane helpers: claim / mark / collect / classify
 # ---------------------------------------------------------------------------
 
 
 def _entry_claim_sql() -> str:
     """Return the entry-ply canonical claim UPDATE statement, gated when the flag is on.
 
-    Phase 212 BENCHLANE-02/D-09 (212-07): extracted from _claim_entry_eval_games
+    Kept separate from _claim_entry_eval_games
     so the byte-identity and narrowing proofs in tests/test_eval_worker_endpoints.py
     can import and assert on this statement directly, mirroring the tier-3/tier-4
     byte-identity technique in tests/services/test_eval_queue.py. Gate-off output
-    is byte-identical to the pre-212-07 inline literal -- no alias, no reformatting,
+    is the plain claim literal -- no alias, no reformatting,
     only the {gate} suffix ever changes.
 
     The gate is applied inside the candidate subquery's WHERE (the lease-expiry
@@ -416,7 +398,7 @@ def _entry_claim_sql() -> str:
     the outer UPDATE target -- matching every other lottery/claim site's pattern
     of gating the candidate predicate, not the write target.
 
-    WR-03 lock-step: this predicate MUST stay identical to
+    Lock-step: this predicate MUST stay identical to
     _entry_lease_backlog_probe_sql's (app/routers/eval_remote.py) so a probe that
     passes still implies a claimable row exists. If you change one, change both.
     """
@@ -443,19 +425,19 @@ async def _claim_entry_eval_games(
     """Atomically claim up to batch_size pending entry-ply games (LIFO id DESC) and
     stamp their lease. Returns the list of claimed game IDs.
 
-    Shared by _pick_pending_game_ids (server pool, D-01) and /entry-lease (remote
-    workers, D-05/D-07). This is the ONE canonical claim — do not write a second copy.
-    Phase 212 BENCHLANE-02/D-09 (212-07): also the one edit that gates both of
+    Shared by _pick_pending_game_ids (server pool) and /entry-lease (remote
+    workers). This is the ONE canonical claim — do not write a second copy.
+    Also the one edit that gates both of
     those consumers against benchmark_selection when the gate is on.
 
-    SEED-051 D-3 shape: UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED) RETURNING.
+    Shape: UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED) RETURNING.
     Mirrors _claim_queued_job (eval_queue_service.py) in both bound-param discipline
     (every value bound as :param, never f-string-interpolated — project Security rule)
     and TTL idiom (:ttl || ' seconds')::interval / str(ttl_seconds).
 
     Lease ends naturally: _mark_evals_completed stamps evals_completed_at = now() which
     removes the game from the predicate permanently. A crashed claimer's batch is
-    reclaimed when entry_eval_lease_expiry < now() (TTL reclaim, D-04).
+    reclaimed when entry_eval_lease_expiry < now() (TTL reclaim).
     """
     result = await session.execute(
         sa.text(_entry_claim_sql()),
@@ -471,8 +453,8 @@ async def _mark_evals_completed(session: AsyncSession, game_ids: Sequence[int]) 
     import_service.py) to emit invariant SQL (no unique-SQL cache growth).
 
     Idempotent: calling twice simply re-stamps evals_completed_at with a newer
-    timestamp. All *limit* games are marked regardless of whether they had any
-    eval targets — engine (None, None) counts as "evaluated" per D-09 / R-02.
+    timestamp. All `game_ids` are marked regardless of whether they had any
+    eval targets — engine (None, None) counts as "evaluated".
     """
     now_ts = datetime.now(timezone.utc)
     # ty: __table__ is typed as FromClause on declarative base, but is a Table at runtime.
@@ -489,16 +471,16 @@ async def _collect_eval_targets_from_db(
     session: AsyncSession,
     game_ids: Sequence[int],
     pgn_map: dict[int, str],
-) -> list[_EvalTarget]:
+) -> list[_EntryPlyEvalTarget]:
     """Load GamePosition metadata for game_ids and derive eval targets.
 
     Loads (game_id, ply, phase, endgame_class, eval_cp, eval_mate) from
     GamePosition rows, then calls the single-walk per-game target builder.
 
-    This is the correct cold-drain path: it avoids re-running process_game_pgn
+    This is the entry-ply drain path: it avoids re-running process_game_pgn
     and uses the stored phase/endgame_class from the DB.
 
-    Quick 260521-d6o: calls `_collect_eval_targets_per_game` directly (one
+    Calls `_collect_eval_targets_per_game` directly (one
     PGN parse + one mainline walk per game) instead of routing through the
     two public wrappers (which would walk the mainline twice).
     """
@@ -538,7 +520,7 @@ async def _collect_eval_targets_from_db(
         }
         game_plies[gid].append(ply_data)
 
-    targets: list[_EvalTarget] = []
+    targets: list[_EntryPlyEvalTarget] = []
     for gid, plies in game_plies.items():
         if gid not in pgn_map:
             continue
@@ -552,20 +534,21 @@ async def _classify_and_insert_flaws(
 ) -> None:
     """Classify game_flaws for a batch of just-evaluated games and bulk-insert.
 
-    Called in the cold-lane write session AFTER _apply_eval_results and BEFORE
+    Called in the entry-ply write session AFTER _apply_entry_eval_results and BEFORE
     _mark_evals_completed — so eval_cp is committed before classification reads
-    it, and flaw rows commit atomically with the eval results (Pitfall 2 guard).
+    it, and flaw rows commit atomically with the eval results.
 
     SEQUENTIAL loop — AsyncSession is not safe for concurrent use from multiple
-    coroutines (CLAUDE.md hard rule). The drain batch size is _DRAIN_BATCH_SIZE
-    (10 games), producing ~1-5 M+B flaw rows each (~50 rows max) — well within
+    coroutines (CLAUDE.md hard rule). Batches are at most _DRAIN_BATCH_SIZE (10)
+    games from the in-process drain or ENTRY_LEASE_BATCH_SIZE (50) from the remote
+    entry-submit path (both in eval_drain.py), a few M+B flaw rows each — well within
     the memory envelope. No asyncio.gather on this session.
 
     Skips GameNotAnalyzed games silently (chess.com / low eval coverage).
-    Per-game classify errors are Sentry-captured and the loop continues (T-108-04:
-    one bad game must not abort the whole drain batch).
+    Per-game classify errors are Sentry-captured and the loop continues (one bad
+    game must not abort the whole drain batch).
 
-    D-10: reuses classify_game_flaws (the single classification kernel) and
+    Reuses classify_game_flaws (the single classification kernel) and
     flaw_record_to_row (the single FlawRecord→row mapping) so the materialized
     table never drifts from the live kernel.
     """
@@ -576,7 +559,7 @@ async def _classify_and_insert_flaws(
     # one SELECT per game inside the loop (Sentry flagged the per-game query as N+1 on
     # /api/eval/remote/entry-submit). Group by game_id in Python. The composite FK
     # (game_id, user_id) -> games(id, user_id) guarantees a position's user_id matches
-    # its owning game, so filtering on game_id alone preserves the T-108-05 user-scope
+    # its owning game, so filtering on game_id alone preserves the user-scope
     # guard. ORDER BY game_id, ply keeps each game's positions in ply-ASC order, which
     # classify_game_flaws requires.
     positions_by_game: dict[int, list[GamePosition]] = defaultdict(list)
@@ -610,7 +593,7 @@ async def _classify_and_insert_flaws(
             await bulk_insert_game_flaws(session, rows)
 
         except Exception as exc:
-            # T-108-04: per-game errors must not abort the whole drain batch.
+            # Per-game errors must not abort the whole drain batch.
             # Never embed variables in the message (CLAUDE.md Sentry rule).
             sentry_sdk.set_context(
                 "game_flaws",

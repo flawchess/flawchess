@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * MaterialDisplay.test.tsx (Quick 260809-jzz, D-04/D-06) — icon+number
+ * MaterialDisplay.test.tsx — icon+number
  * rendering per side, mobile-hidden icon group, and the malformed-FEN
- * fail-closed path (T-260809-jzz-01).
+ * fail-closed path.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -11,12 +11,12 @@ import { MaterialDisplay } from '../MaterialDisplay';
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 // Black's queen removed — White up a queen (9 points).
 const WHITE_UP_QUEEN_FEN = 'rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-// White up a rook, Black up two pawns (D-06: only White carries a number).
+// White up a rook, Black up two pawns (only White carries a number).
 const MIXED_IMBALANCE_FEN = '1nbqkbnr/pppppppp/8/8/8/8/PPPPPP2/RNBQKBNR w - - 0 1';
 const MALFORMED_FEN = 'not-a-fen-at-all';
 
 describe('MaterialDisplay', () => {
-  // Phase 223 UAT: the mobile-only pawn glyph labels the bare "+N" at the
+  // The mobile-only pawn glyph labels the bare "+N" at the
   // breakpoint where the per-piece surplus icons are hidden.
   it('renders a mobile-only pawn glyph alongside the point total', () => {
     render(<MaterialDisplay fen={WHITE_UP_QUEEN_FEN} side="white" />);
@@ -43,7 +43,7 @@ describe('MaterialDisplay', () => {
     expect(screen.queryByTestId('material-black')).toBeNull();
   });
 
-  it('gives White +3 and Black icons-only (no number) on a mixed imbalance (D-06)', () => {
+  it('gives White +3 and Black icons-only (no number) on a mixed imbalance', () => {
     render(<MaterialDisplay fen={MIXED_IMBALANCE_FEN} side="white" />);
     render(<MaterialDisplay fen={MIXED_IMBALANCE_FEN} side="black" />);
     expect(screen.getByTestId('material-white').textContent).toContain('+3');
@@ -51,7 +51,7 @@ describe('MaterialDisplay', () => {
     expect(blackText).not.toMatch(/\+\d/);
   });
 
-  it('hides the icon group below the sm breakpoint and keeps the number outside it (D-04)', () => {
+  it('hides the icon group below the sm breakpoint and keeps the number outside it', () => {
     render(<MaterialDisplay fen={MIXED_IMBALANCE_FEN} side="white" />);
     const container = screen.getByTestId('material-white');
     const iconGroup = screen.getByTestId('material-white-icons');

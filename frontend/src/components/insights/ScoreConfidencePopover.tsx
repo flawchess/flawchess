@@ -3,7 +3,7 @@ import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { WdlConfidenceTooltip } from './WdlConfidenceTooltip';
+import { ScoreConfidenceTooltip } from './ScoreConfidenceTooltip';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
@@ -19,15 +19,14 @@ interface ScoreConfidencePopoverProps {
   /**
    * MAX(games.played_at) (ISO 8601). When present, the inner tooltip renders
    * a "Last played: <relative>" paragraph; null/undefined omits the line.
-   * Quick task 260508-r61.
    */
   lastPlayedAt?: string | null;
 }
 
 // Hover- and tap-activated popover for the current-position score-vs-50%
 // bullet chart confidence details. Trigger is a Search (magnifying-glass) icon
-// so the bullet stays interaction-free. Mirrors BulletConfidencePopover but renders
-// WdlConfidenceTooltip instead of EvalConfidenceTooltip.
+// so the bullet stays interaction-free. Mirrors EvalConfidencePopover but renders
+// ScoreConfidenceTooltip instead of EvalConfidenceTooltip.
 export function ScoreConfidencePopover({
   level,
   pValue,
@@ -84,7 +83,7 @@ export function ScoreConfidencePopover({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <WdlConfidenceTooltip
+          <ScoreConfidenceTooltip
             level={level}
             pValue={pValue}
             score={score}

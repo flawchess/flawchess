@@ -1,57 +1,57 @@
-"""Priority queue service for the full-ply eval drain (QUEUE-01/02/05/06/08).
+"""Priority queue service for the full-ply eval drain.
 
-Tiered pick (tier 2 is fully retired — Phase 118 removed its only enqueue
-source, Phase 149-04 removed the then-callerless TIER_2 constant):
-  Tier 1 (TIER_EXPLICIT)      — explicit user request
-  Tier 3 (TIER_IDLE_BACKLOG)  — idle backlog (derived pick, no eval_jobs row)
+Tiered pick (tier 2 is unused: it had no enqueue source left, so there is no
+tier-2 constant):
+  Tier 1  (TIER_EXPLICIT)          — explicit user request
+  Tier 3  (TIER_IDLE_BACKLOG)      — idle backlog (derived pick, no eval_jobs row)
+  Tier 4  (TIER_BLOB_BACKFILL)     — flaw-blob backfill lottery (spare capacity)
+  Tier 4b (TIER_BESTMOVE_BACKFILL) — best-move backfill lottery (spare capacity)
+Priority is tier-1 > tier-3 > tier-4 > tier-4b.
 
 Tier-1 uses SELECT FOR UPDATE OF … SKIP LOCKED against the eval_jobs table for
-a lock-safe, serialized claim contract (QUEUE-06 / SEED-012 D-8); the claim SQL
-is tier-agnostic (`ORDER BY tier ASC`) so it would transparently pick up a
-future tier-2 row without any code changes.
+a lock-safe, serialized claim contract; the claim SQL is tier-agnostic
+(`ORDER BY tier ASC`) so it would transparently pick up a future tier-2 row
+without any code changes.
 
 Tier-3 is a *derived* pick via a SINGLE Efraimidis–Spirakis recency-weighted
-lottery over candidate users. Quick 260723-j6g unified the population: a
-candidate user is anyone with EITHER a needs-engine game (full_evals_completed_at
-IS NULL AND lichess_evals_at IS NULL, non-guest only) OR a lichess-eval-pv-
-incomplete game (full_pv_completed_at IS NULL AND lichess_evals_at IS NOT NULL,
-any user incl. guests). No rows are pre-populated in eval_jobs for the backlog.
-This keeps the queue table lean (~558k backlog games never pre-inserted) while
-providing fast catch-up for returning users (SEED-046).
+lottery over candidate users. A candidate user is anyone with EITHER a
+needs-engine game (full_evals_completed_at IS NULL AND lichess_evals_at IS NULL,
+non-guest only) OR a lichess-eval-pv-incomplete game (full_pv_completed_at IS
+NULL AND lichess_evals_at IS NOT NULL, any user incl. guests). No rows are
+pre-populated in eval_jobs for the backlog. This keeps the queue table lean
+(~558k backlog games never pre-inserted) while providing fast catch-up for
+returning users.
 
-DELIBERATE PRECEDENCE CHANGE (260723-j6g, supersedes 174-07/SEED-109): prior to
-this quick, the lichess-eval population ran ONLY as a residual fallback — it was
-drawn only when NO needs-engine candidate existed anywhere. Verified against prod
-2026-07-23: user 235's 63.5k-game needs-engine import (~5 days to drain) was
-starving user 28's 3 returning lichess-eval games, because the residual lane never
-got a turn while ANY needs-engine game existed for ANY user. The τ½=1d
-recency-weighted user lottery exists precisely so a returning user wins a fair
-share of draws against a mass importer — but the lichess-eval population never
-entered that lottery. Folding it into the SAME unified Step-1/Step-2 draw fixes
-this: lichess-eval games now compete on equal footing with needs-engine games,
-weighted by the same recency lottery, instead of only draining when the
-needs-engine backlog is globally empty. There is no more residual fallback lane.
+No residual fallback lane (deliberate): lichess-eval-pv-incomplete games compete
+in the SAME recency-weighted user lottery as needs-engine games. Do not
+reintroduce a lane that drains them only when no needs-engine candidate exists
+anywhere. A mass importer's needs-engine backlog (observed on prod: one user's
+63.5k-game import, ~5 days to drain) would starve returning users' lichess-eval
+games, because that lane never gets a turn while ANY needs-engine game exists for
+ANY user. The τ½=1d recency-weighted user lottery exists precisely so a returning
+user wins a fair share of draws against a mass importer.
 
-Tier 4b (TIER_BESTMOVE_BACKFILL, Phase 176 BACK-01) is a separate spare-capacity
-lottery ordered after tier-4 blob backfill in the bundled scope=None path: it
-picks a PV-complete, best-move-incomplete, non-lichess-eval, non-guest game
-(the engine-side sibling of the 174-07 residual fallback above) and requires
-BOTH EVAL_AUTO_DRAIN_ENABLED and the dedicated BEST_MOVE_BACKFILL_ENABLED gate
-(D-05) — best-move backfill is backend-only (Maia inference cannot run on the
-remote worker fleet) so it needs an independent kill-switch.
+Tier 4b (TIER_BESTMOVE_BACKFILL) is a separate spare-capacity lottery ordered
+after tier-4 blob backfill in the bundled scope=None path: it picks a
+PV-complete, best-move-incomplete game (lichess-eval and guest games included,
+so orphans self-heal) and requires BOTH EVAL_AUTO_DRAIN_ENABLED and the
+dedicated BEST_MOVE_BACKFILL_ENABLED gate — best-move backfill is backend-only
+(Maia inference cannot run on the remote worker fleet) so it needs an
+independent kill-switch.
 
 Lease TTL:
   LEASE_TTL_SECONDS = 120
-  Derivation: tier-1 fan-out ≈ 10s (all plies via pool, spike-003); tier-2/3
+  Derivation: tier-1 fan-out ≈ 10s (all plies via pool); tier-3
   per-worker worst case ≈ 60 plies × 0.98 s/ply ≈ 59s. 2× the slow case → 120s.
 
-Security (RESEARCH §Security V5):
+Security:
   All worker_id / TTL / τ / floor values are bound as :params — never interpolated
   into the sa.text CTE string. No f-string is used inside sa.text calls.
 
-QUEUE-08 (guest exclusion):
-  Every claim path JOINs the users table and filters NOT users.is_guest.
-  enqueue_tier1_game also refuses to enqueue a guest's game (no-op).
+Guest handling:
+  Guests are excluded from the needs-engine tier-3 branch and from tier-4 blob
+  backfill. They are admitted for their own tier-1 jobs, the tier-3 lichess-eval
+  branch (b), and tier-4b. enqueue_tier1_game lets a guest enqueue their own game.
 """
 
 from __future__ import annotations
@@ -82,25 +82,25 @@ from app.services.eval_utils import derive_is_lichess_eval_game, selection_gate_
 
 # ─── Module-level constants (no magic numbers) ────────────────────────────────
 
-# 2× the slowest tier-2/3 per-worker game: ~60 plies × 0.98 s/ply ≈ 59s.
+# 2× the slowest tier-3 per-worker game: ~60 plies × 0.98 s/ply ≈ 59s.
 # Tier-1 fan-out across the full pool: ~60 plies / 6 workers × 0.98 s ≈ 10s.
 # 120s covers both tiers with a comfortable safety margin.
 LEASE_TTL_SECONDS: int = 120
 
 # Default worker identity for the server-side engine pool.
-# Future browser workers will supply their own identity (SEED-012 D-8).
+# Remote workers pass their own worker_id.
 WORKER_ID_SERVER_POOL: str = "server-pool"
 
 # Status literals (Literal type keeps ty + mypy happy; DB stores varchar(20))
 EvalJobStatus = Literal["pending", "leased", "completed", "failed"]
 
-# ─── SEED-046: recency-weighted tier-3 lottery constants ─────────────────────
+# ─── Recency-weighted tier-3 lottery constants ───────────────────────────────
 
 # Recency half-life for the ES user lottery. τ½ = 1d → a returning user
 # (last_activity ≈ now, weight ≈ 1.0) wins ~30–40% of draws even against
 # 1–2 currently-recent users; badge ticks roughly every ~25s at the ~10s
 # tier-3 claim cadence. PROD TUNING: raise to 2–3d for broader idle sharing at
-# the cost of less immediate return-burst responsiveness. (SEED-046 / RESEARCH-NOTES)
+# the cost of less immediate return-burst responsiveness.
 RECENCY_HALF_LIFE_DAYS: float = 1.0
 
 # Anti-starvation floor for the ES key weight. The weight formula is
@@ -108,14 +108,13 @@ RECENCY_HALF_LIFE_DAYS: float = 1.0
 # in -ln(random())/weight). At floor=0.005 with ~59 non-guest users the total
 # floor mass ≈ 0.30, so a lone returner keeps ~65–70% share. Keep ≤ 0.01.
 # PROD TUNING: do NOT raise above 0.01 — larger floor swamps the recency signal.
-# (SEED-046 / RESEARCH-NOTES τ/floor recommendation)
 WEIGHT_FLOOR: float = 0.005
 
-# ─── Tier-4 blob-backfill ES lottery constants (replaces Phase 146 D-01 window) ──
+# ─── Tier-4 blob-backfill ES lottery constants ───────────────────────────────
 # Two-stage lottery mirroring the tier-3 constants above (see _claim_tier4_blob):
 # Stage 1 picks a non-guest user weighted by last_activity recency; Stage 2 picks
 # that user's NULL-blob analyzed game weighted by full_evals_completed_at recency.
-# The floor terms are the anti-starvation fix (SEED-072 fairness): every pending-
+# The floor terms are the anti-starvation fix (fairness): every pending-
 # blob user/game combination gets non-zero draw mass, so an old analyzed corpus
 # (e.g. user 28's ~5k games) drains instead of only the freshly-analyzed trickle.
 # Independently tunable from the tier-3 constants, though currently seeded from
@@ -133,7 +132,7 @@ TIER4_USER_WEIGHT_FLOOR: float = 0.005
 
 # Tier-4 Stage 2 game-pick recency half-life. Seeded from GAME_RECENCY_HALF_LIFE_DAYS.
 # PROD TUNING: lower for tighter recency preference; raise for broader spread
-# across old games (mirrors the tier-3 GAME_RECENCY_HALF_LIFE_DAYS comment above).
+# across old games (mirrors the GAME_RECENCY_HALF_LIFE_DAYS comment below).
 TIER4_GAME_RECENCY_HALF_LIFE_DAYS: float = 30.0
 
 # Tier-4 Stage 2 game-pick anti-starvation floor — the core fix this constants
@@ -142,13 +141,14 @@ TIER4_GAME_RECENCY_HALF_LIFE_DAYS: float = 30.0
 # full_evals_completed_at DESC had probability zero). Seeded from GAME_WEIGHT_FLOOR.
 TIER4_GAME_WEIGHT_FLOOR: float = 0.01
 
-# ─── D-7: game-level weighted-random pick constants ───────────────────────────
-# Applied in Step 2 and the residual fallback of _claim_tier3_derived (see D-7
-# in SEED-048-headless-remote-eval-worker for rationale).
+# ─── Game-level weighted-random pick constants ────────────────────────────────
+# Applied in _claim_tier3_derived's Step 2 game pick; GAME_TC_WEIGHTS is also
+# reused by the _claim_tier4_blob and _claim_tier4_bestmove game picks.
 
 # Per-TC-bucket weight multiplier for game priority. Higher multiplier → game
 # appears more often in ES draws. Ordering mirrors the deterministic TC priority
-# from QUEUE-02 (classical first, other last) so priority intent is preserved
+# from the tier-1 claim's TC ordering (classical first, other last) so priority
+# intent is preserved
 # while spreading picks across games within the same TC bucket.
 GAME_TC_WEIGHTS: dict[str, float] = {
     "classical": 8.0,
@@ -182,12 +182,11 @@ class ClaimedJob:
     job_id is None for tier-3 derived picks (no eval_jobs row exists for the
     backlog; the drain marks full_evals_completed_at directly).
 
-    is_lichess_eval_game is derived from Game.lichess_evals_at IS NOT NULL
-    (D-117-07): True means the game already has lichess %evals → preserve them;
-    the drain should skip plies with existing evals (D-116-04 repointed by
-    D-117-07). This field name makes the lichess-gate explicit and avoids
-    confusion with the source-agnostic flaw-coverage property on Game
-    (see RESEARCH-NOTES §Opportunistic cleanup).
+    is_lichess_eval_game is derived from Game.lichess_evals_at IS NOT NULL:
+    True means the game already has lichess %evals → the write path preserves
+    them and writes only best_move/PV. This field name makes the lichess-gate
+    explicit and avoids confusion with the source-agnostic flaw-coverage
+    property on Game.
     """
 
     game_id: int
@@ -231,15 +230,15 @@ async def _claim_queued_job(
 
     Returns (job_id, game_id, user_id, tier, is_lichess_eval_game) or None when empty.
 
-    The SKIP LOCKED CTE is the canonical PostgreSQL job-queue primitive (RESEARCH §3).
+    The SKIP LOCKED CTE is the canonical PostgreSQL job-queue primitive.
     All bound values (:worker_id, :ttl) are parameterized — no string interpolation.
 
     Within a tier:
-      - Oldest-pending user first (round-robin approximation via MIN(created_at), QUEUE-02)
-      - Within a user: classical > rapid > blitz > bullet > other (D-117-04)
+      - Oldest-pending user first (round-robin approximation via MIN(created_at))
+      - Within a user: classical > rapid > blitz > bullet > other
       - Within a TC bucket: most-recent game first (played_at DESC)
 
-    Guest exclusion: JOIN users + NOT is_guest filter (QUEUE-08); guests are
+    Guest exclusion: JOIN users + NOT is_guest filter; guests are
     excluded EXCEPT for their own explicit tier-1 jobs (OR ej.tier = 1).
     """
     result = await session.execute(
@@ -285,8 +284,8 @@ async def _claim_queued_job(
     user_id: int = row[2]
     tier: int = row[3]
 
-    # Resolve is_lichess_eval_game (D-117-07): lichess_evals_at IS NOT NULL.
-    # Phase 212 D-03: routed through the single derivation point so
+    # Resolve is_lichess_eval_game: lichess_evals_at IS NOT NULL.
+    # Routed through the single derivation point so
     # BENCHMARK_HOMOGENIZE_EVAL_SOURCE can force this False everywhere.
     game_result = await session.execute(select(Game.lichess_evals_at).where(Game.id == game_id))
     lichess_evals_at = game_result.scalar_one_or_none()
@@ -295,12 +294,12 @@ async def _claim_queued_job(
     return job_id, game_id, user_id, tier, is_lichess_eval_game
 
 
-# Phase 212 BENCHLANE-02/D-09/D-10: benchmark full-game-analysis lane selection
-# gate. BENCHMARK_SELECTION_GATE_SQL_TEMPLATE / selection_gate_clause() moved to
-# app/services/eval_utils.py by 212-07 (see that module's docstring for why) --
-# the three call sites below (Step 1/2 of _claim_tier3_derived, Stage 1/2 of
-# _claim_tier4_blob, Stage 1/2 of _claim_tier4_bestmove) keep interpolating the
-# fragment they get back exactly as before; only the import site moved.
+# Benchmark full-game-analysis lane selection gate.
+# BENCHMARK_SELECTION_GATE_SQL_TEMPLATE / selection_gate_clause() live in
+# app/services/eval_utils.py (see that module's docstring for why) -- the three
+# call sites below (Step 1/2 of _claim_tier3_derived, Stage 1/2 of
+# _claim_tier4_blob, Stage 1/2 of _claim_tier4_bestmove) interpolate the
+# fragment they get back.
 # Keys ONLY on bs.game_id = g.id -- deliberately no tc_tranche filter, because
 # tranche sequencing is achieved by populating benchmark_selection one tranche
 # at a time (scripts/benchmark_lane.py select), and a tranche filter here would
@@ -310,14 +309,14 @@ async def _claim_queued_job(
 async def assert_benchmark_selection_gate_ready() -> None:
     """Fail closed if the benchmark selection gate is enabled but its table is missing.
 
-    Mirrors the assert_secret_key_configured() deploy-blocker pattern (CR #1.2,
-    app/core/config.py): called from the app lifespan at startup -- NOT at import
+    Mirrors the assert_secret_key_configured() deploy-blocker pattern
+    (app/core/config.py): called from the app lifespan at startup -- NOT at import
     time -- so scripts/ and Alembic, which import ``settings`` but never claim
     work, are unaffected. Returns immediately when
     BENCHMARK_SELECTION_GATE_ENABLED is False, opening no database session at
     all, so dev, CI, and prod (where the flag is always off) pay nothing.
 
-    Failing closed is the point (D-10 point 3): a gate-on instance with no
+    Failing closed is the point: a gate-on instance with no
     benchmark_selection table would otherwise raise UndefinedTable on every
     claim for hours while looking merely idle from the outside, rather than
     aborting loudly at startup before the engine pool is even built.
@@ -350,7 +349,7 @@ async def _es_weighted_user_pick(
     floor: float,
     include_guests: bool = False,
 ) -> int | None:
-    """Generic Efraimidis–Spirakis weighted user pick (WRITE-06).
+    """Generic Efraimidis–Spirakis weighted user pick.
 
     Shared building block behind _claim_tier3_derived's Step 1, _claim_tier4_blob's
     Stage 1, and _claim_tier4_bestmove's Stage 1 — the acquisition shape (candidate
@@ -382,11 +381,11 @@ async def _es_weighted_user_pick(
     hardcoded SQL fragments authored by the call sites below (never derived from
     request/user input) — composing query SHAPE from these fixed strings carries
     no injection surface. All variable VALUES (tau_seconds, floor) are bound via
-    the sa.text params dict — never f-string-interpolated (QUEUE-08).
+    the sa.text params dict — never f-string-interpolated.
 
     include_guests (default False) applies ONLY to the candidate_exists_sql branch,
-    keeping the QUEUE-08 guest exclusion for the tier-4-blob Stage-1 caller. It is
-    passed True ONLY by _claim_tier4_bestmove (Quick 260719-fsz) so guest full_pv-set
+    keeping the guest exclusion for the tier-4-blob Stage-1 caller. It is
+    passed True ONLY by _claim_tier4_bestmove so guest full_pv-set
     best_moves-NULL games self-heal through the minimal best-move lane; the guest
     clause is composed from fixed in-code literals (no request/user input), so
     toggling it introduces no injection surface.
@@ -443,10 +442,10 @@ async def _es_weighted_game_pick(
     tc_weights: dict[str, float],
     extra_params: dict[str, Any] | None = None,
 ) -> int | None:
-    """Generic Efraimidis–Spirakis weighted game pick (WRITE-06).
+    """Generic Efraimidis–Spirakis weighted game pick.
 
-    Shared building block behind _claim_tier3_derived's Step 2 AND residual
-    fallback, and _claim_tier4_blob's Stage 2 — all three share the identical
+    Shared building block behind the game-pick stage of _claim_tier3_derived,
+    _claim_tier4_blob and _claim_tier4_bestmove — all three share the identical
     TC-multiplier CASE block (tc_weights, e.g. GAME_TC_WEIGHTS) and ES key
     shape; only the WHERE predicate and which recency column anchors the
     decay differ per call site.
@@ -459,7 +458,7 @@ async def _es_weighted_game_pick(
     authored by the call sites below (never derived from request/user input);
     game_where_sql may reference bound params (e.g. :picked_user) supplied via
     extra_params. All numeric weight values (and any extra_params) are bound
-    via the sa.text params dict — never f-string-interpolated (QUEUE-08).
+    via the sa.text params dict — never f-string-interpolated.
 
     Returns the picked game_id, or None when no candidate game matches.
     """
@@ -508,26 +507,24 @@ async def _claim_tier3_derived(
 ) -> tuple[int, int, bool] | None:
     """Derive a tier-3 pick using ONE unified recency-weighted Efraimidis–Spirakis
     user lottery over the needs-engine ∪ lichess-eval-pv-incomplete population
-    (260723-j6g — see the module docstring's DELIBERATE PRECEDENCE CHANGE note).
+    (see the module docstring's "No residual fallback lane" note).
 
-    Two steps in a single session (no locking — see Phase 118 note below), both
-    built on the shared _es_weighted_user_pick / _es_weighted_game_pick building
-    blocks (WRITE-06). There is no residual fallback lane — the population that
-    used to run there is folded directly into Step 1/Step 2 below.
+    Two steps in a single session (no locking — see the double-claim note below),
+    both built on the shared _es_weighted_user_pick / _es_weighted_game_pick
+    building blocks. There is no residual fallback lane — the lichess-eval
+    population is folded directly into Step 1/Step 2 below.
 
-    Step 1 — UNIFIED WEIGHTED USER PICK (SEED-046, unified 260723-j6g; query-shape
-    rewrite Quick 260729-a86):
+    Step 1 — UNIFIED WEIGHTED USER PICK:
       Candidate users = users with at least one game matching EITHER branch of
       the union:
         (a) needs-engine: full_evals_completed_at IS NULL AND lichess_evals_at
-            IS NULL, guarded by u.is_guest = false (QUEUE-08 — guests never
-            qualify via this branch); backed by the
-            ix_games_needs_engine_full_evals partial index (migration 119-01).
+            IS NULL, guarded by u.is_guest = false (guests never qualify via
+            this branch); backed by the ix_games_needs_engine_full_evals
+            partial index.
         (b) lichess-eval-pv-incomplete: full_pv_completed_at IS NULL AND
             lichess_evals_at IS NOT NULL, unguarded so guests DO qualify via
-            this branch (the same guest-eligible lane the old residual fallback
-            ran, Quick 260719-fsz); backed by the
-            ix_games_lichess_pv_backfill_pending partial index (174-07).
+            this branch; backed by the ix_games_lichess_pv_backfill_pending
+            partial index.
       _es_weighted_user_pick is called with candidate_where_sql supplying the
       whole distributed-OR predicate as TWO correlated EXISTS subqueries —
       branch (a)'s `u.is_guest = false` guard sits as an OUTER conjunct of that
@@ -545,7 +542,7 @@ async def _claim_tier3_derived(
       floor), τ = RECENCY_HALF_LIFE_DAYS / ln(2) converted to seconds. weight is
       always > 0 (guards div-by-zero in the ES key).
 
-    Step 2 — UNIFIED WEIGHTED GAME PICK FOR PICKED USER (D-7, unified 260723-j6g):
+    Step 2 — UNIFIED WEIGHTED GAME PICK FOR PICKED USER:
       Within the chosen user, pick a game via the SAME union predicate as Step 1,
       scoped to g.user_id = :picked_user — game_weight = tc_multiplier *
       (exp(-Δt_played / τ_game) + GAME_WEIGHT_FLOOR). The needs-engine branch is
@@ -555,47 +552,44 @@ async def _claim_tier3_derived(
       the lichess-eval branch is unguarded. tc_multiplier comes from
       GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 > bullet=1 > other=0.5),
       τ_game derives from GAME_RECENCY_HALF_LIFE_DAYS, and Δt_played is seconds
-      since played_at (NULL coalesced to epoch-0). This preserves D-7 (three
-      workers landing on the same user usually pick different games; D-4
-      residual-duplicate acceptance still stands). Both callers benefit: the
-      in-process server pool and the 120-02 HTTP lease endpoint both reach this
-      via claim_eval_job / direct call — no caller change needed.
+      since played_at (NULL coalesced to epoch-0). The weighted pick spreads
+      concurrent workers: three workers landing on the same user usually pick
+      different games, and the residual duplicates are accepted (see the
+      double-claim note below). The in-process server pool and the remote lease
+      endpoint both reach this via claim_eval_job.
 
       After Step 2 returns a game_id, is_lichess_eval_game is derived PER-GAME
       via a PK-indexed lookup (`select(Game.lichess_evals_at).where(Game.id ==
       game_id)`) rather than assumed from which branch "should" have matched —
-      this is more robust than branch-tagging and matches how the tier-1/2 and
+      this is more robust than branch-tagging and matches how the tier-1 and
       tier-4b paths already resolve the flag elsewhere in this module.
 
       If Step 1 returns None (no candidate anywhere) → return None. If Step 2
       returns None (a race: the picked user's matching games drained between
       Step 1 and Step 2) → return None; the next tick re-draws. There is
       deliberately NO fallback lane here — reintroducing one would resurrect
-      the precedence bug this quick fixes.
+      the starvation described in the module docstring.
 
-    This replaces the old D-118-04 last_activity DESC winner-take-all ordering and
-    drops the dead lichess_evals_at tiebreaker (live prod bug: it was the LAST ORDER
-    key and played_at broke ties first, so lichess games were picked at full engine
-    cost despite the needs-engine predicate above saying to skip them — ~70%
-    throughput waste on user 28; see RESEARCH-NOTES §Live prod bug). It further
-    replaces the 174-07/SEED-109 residual-fallback precedence (lichess-eval games
-    only drawn when the needs-engine backlog is globally empty) with the unified
-    single-lottery precedence described above (260723-j6g).
+    Do not go back to a last_activity DESC winner-take-all ordering with a
+    lichess_evals_at tiebreaker: the tiebreaker was the LAST ORDER key and
+    played_at broke ties first, so lichess games were picked at full engine cost
+    despite the needs-engine predicate saying to skip them (~70% throughput
+    waste observed for one user).
 
-    Guest asymmetry (QUEUE-08, Quick 260719-fsz) is preserved. In Step 1 branch
-    (a) now carries the guard as an outer conjunct (`u.is_guest = false AND
-    EXISTS (...)`) rather than a condition inside the EXISTS; Step 2 keeps its
-    own `EXISTS (... u.is_guest = false)` form unchanged (see Step 2 docstring
-    above). The behavioral contract is unchanged either way: guests qualify
-    ONLY via branch (b), never branch (a), in both steps.
+    Guest asymmetry: in Step 1 branch (a) carries the guard as an outer
+    conjunct (`u.is_guest = false AND EXISTS (...)`) rather than a condition
+    inside the EXISTS; Step 2 uses its own `EXISTS (... u.is_guest = false)`
+    form (see Step 2 above). Either way guests qualify ONLY via branch (b),
+    never branch (a), in both steps.
 
     Returns (game_id, user_id, is_lichess_eval_game) or None when nothing to process.
 
     Note: plain SELECT with no locking — two concurrent workers can pick the same game
     (double-claim). Duplicate work is idempotent (ON CONFLICT DO NOTHING for flaws,
-    idempotent oracle UPDATE) but wastes engine calls. D-7 only REDUCES collisions;
-    the ephemeral TTL-lease escalation (D-4 "later") remains the deferred zero-
-    collision endgame. Add FOR UPDATE SKIP LOCKED when multi-worker leasing is added.
+    idempotent oracle UPDATE) but wastes engine calls. The weighted game pick only
+    REDUCES collisions. FOR UPDATE SKIP LOCKED alone would not remove them: this
+    pick has no persisted lease row to lock, so a zero-collision pick would need
+    an ephemeral TTL lease.
 
     Security: τ_seconds, floor_val, game τ and multipliers, and :picked_user are
     all bound as :params — no f-string-interpolated VALUES anywhere (see
@@ -606,8 +600,8 @@ async def _claim_tier3_derived(
     Index note (no migration needed — the query SHAPE is the load-bearing part):
     both partial indexes already exist on games(user_id) and are unchanged —
     ix_games_needs_engine_full_evals (needs-engine) and
-    ix_games_lichess_pv_backfill_pending (lichess-eval-pv-incomplete, 174-07).
-    Prior to Quick 260729-a86, Step 1 expressed both branches inside a SINGLE
+    ix_games_lichess_pv_backfill_pending (lichess-eval-pv-incomplete).
+    An earlier form of Step 1 expressed both branches inside a SINGLE
     EXISTS containing an OR; that forced a bitmap-or plus a full heap fetch of
     every matching game row, because `u.is_guest` had to be evaluated in a join
     filter rather than as a per-user index probe. Measured on prod 2026-07-29:
@@ -630,14 +624,14 @@ async def _claim_tier3_derived(
     tau_seconds: float = RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_val: float = WEIGHT_FLOOR
 
-    # Game-level ES constants (D-7). τ_game converts GAME_RECENCY_HALF_LIFE_DAYS
+    # Game-level ES constants. τ_game converts GAME_RECENCY_HALF_LIFE_DAYS
     # to seconds exactly as the user τ above. All values bound as :params below.
     tau_game_seconds: float = GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     game_floor: float = GAME_WEIGHT_FLOOR
 
-    # Phase 212 BENCHLANE-02/D-09: benchmark selection gate, read once per call.
-    # "" when BENCHMARK_SELECTION_GATE_ENABLED is off -- the byte-identity
-    # requirement (D-10 point 1) means every interpolation site below must
+    # Benchmark selection gate, read once per call.
+    # "" when BENCHMARK_SELECTION_GATE_ENABLED is off -- byte-identity with the
+    # ungated SQL means every interpolation site below must
     # render the gate suffix as a NO-OP (no extra whitespace/newline) in that
     # case, so each site conditionally prefixes a single space only when
     # _gate is non-empty rather than unconditionally inserting {_gate} on its
@@ -645,13 +639,12 @@ async def _claim_tier3_derived(
     _gate = selection_gate_clause()
 
     # Step 1: unified ES weighted user pick over the needs-engine ∪ lichess-eval-
-    # pv-incomplete union (260723-j6g), rewritten (260729-a86) as two correlated
-    # EXISTS with the guest guard distributed onto branch (a) as an outer
-    # conjunct — see the Step 1 / Index note docstrings above for the measured
-    # prod query-plan rationale. candidate_where_sql supplies the WHOLE
-    # predicate (including the guest guard), so include_guests is not passed —
-    # it only applies to _es_weighted_user_pick's other (candidate_exists_sql)
-    # branch.
+    # pv-incomplete union, written as two correlated EXISTS with the guest guard
+    # distributed onto branch (a) as an outer conjunct — see the Step 1 / Index
+    # note docstrings above for the measured prod query-plan rationale.
+    # candidate_where_sql supplies the WHOLE predicate (including the guest
+    # guard), so include_guests is not passed — it only applies to
+    # _es_weighted_user_pick's other (candidate_exists_sql) branch.
     picked_user_id = await _es_weighted_user_pick(
         session,
         candidate_where_sql=f"""
@@ -701,14 +694,14 @@ async def _claim_tier3_derived(
     )
     if game_id is None:
         # Race: the picked user's matching games drained between Step 1 and
-        # Step 2. No fallback lane — the next tick re-draws (260723-j6g).
+        # Step 2. No fallback lane — the next tick re-draws.
         return None
 
     # Derive is_lichess_eval_game PER-GAME (not per-branch) via a trivial
-    # PK-indexed lookup, mirroring how the tier-1/2 and tier-4b paths resolve
-    # the same flag elsewhere in this module. Phase 212 D-03: routed through
-    # the single derivation point (this is the tier-3 lane the benchmark
-    # selection gate drives, so it is load-bearing for the whole phase).
+    # PK-indexed lookup, mirroring how the tier-1 and tier-4b paths resolve
+    # the same flag elsewhere in this module. Routed through the single
+    # derivation point (this is the tier-3 lane the benchmark selection gate
+    # drives, so the eval-source homogenizing flag must take effect here).
     lichess_result = await session.execute(select(Game.lichess_evals_at).where(Game.id == game_id))
     is_lichess_eval_game = derive_is_lichess_eval_game(lichess_result.scalar_one_or_none())
 
@@ -723,14 +716,14 @@ async def _claim_tier4_blob(
     Two-stage Efraimidis-Spirakis (ES) weighted lottery mirroring _claim_tier3_derived's
     two-step pattern, built on the same shared _es_weighted_user_pick /
     _es_weighted_game_pick building blocks (see their docstrings for the general
-    ES-key derivation; WRITE-06). Both stages run sequentially in the same session —
+    ES-key derivation). Both stages run sequentially in the same session —
     no asyncio.gather (AsyncSession is not safe for concurrent coroutine use) and no
     locking, mirroring tier-3's plain-SELECT shape.
 
-    SEED-125: both stages read the games-only predicate
+    Both stages read the games-only predicate
     `full_evals_completed_at IS NOT NULL AND blobs_completed_at IS NULL` — no
-    `game_flaws` JOIN/EXISTS. Prior to this, Stage 1's candidate check semi-joined
-    the whole games/game_flaws corpus (`EXISTS (SELECT 1 FROM games g JOIN
+    `game_flaws` JOIN/EXISTS. Do not reintroduce one: an earlier Stage 1 candidate
+    check semi-joined the whole games/game_flaws corpus (`EXISTS (SELECT 1 FROM games g JOIN
     game_flaws gf ...)`), which measured 84.8% of all prod DB time (504h over 33
     days, 2.5M calls at 727ms avg): the planner had to materialize the semi-join
     and probe `games` tens of thousands of times per call. Prod EXPLAIN ANALYZE of
@@ -742,16 +735,15 @@ async def _claim_tier4_blob(
     is against `games` alone (backed by ix_games_blob_backfill_pending). Both
     predicates below MUST read `full_evals_completed_at IS NOT NULL AND
     blobs_completed_at IS NULL` in exactly that clause form so the partial index
-    matches (174-07 alembic drift lesson).
+    matches (and Alembic does not report index drift).
 
-    The column's correctness now depends entirely on `_refresh_blobs_completed`
+    The column's correctness depends entirely on `_refresh_blobs_completed`
     (app/services/eval_apply.py) running on every blob-write and reclassification
     path — see its docstring for the bidirectional (set + clear) invariant. The
-    "never re-selected once complete" property that used to be read live off the
-    flaw rows is now carried by the stamp instead; the /flaw-blob-lease and
-    /flaw-blob-submit backstop call sites (the all-sentinel/forward-progress
-    branch and the idempotency gate) are what keep a missed stamp from becoming
-    an infinite re-pick (the SEED-073 failure mode).
+    "never re-selected once complete" property is carried by the stamp; the
+    /flaw-blob-lease and /flaw-blob-submit backstop call sites (the
+    all-sentinel/forward-progress branch and the idempotency gate) are what keep a
+    missed stamp from becoming an infinite re-pick.
 
     Stage 1 — WEIGHTED USER PICK:
       Candidate users = non-guest users with at least one game pending a blob
@@ -770,29 +762,29 @@ async def _claim_tier4_blob(
       cannot occur here — gated by the WHERE clause), τ_g =
       TIER4_GAME_RECENCY_HALF_LIFE_DAYS / ln(2) in seconds.
 
-    This replaces the Phase 146 D-01 top-N recency-window CTE: that mechanism was a
-    hard cutoff (game #51 by full_evals_completed_at DESC had probability zero), so an
-    old analyzed corpus (e.g. user 28's ~5k games) never drained while a trickle of
-    freshly-analyzed games kept refilling the window. The floor terms here give every
-    pending-blob game across the whole corpus non-zero draw mass so the whole backlog
-    drains, while the recency weighting keeps freshly-analyzed games dominant on most
-    draws (SEED-072 fairness fix).
+    This is deliberately NOT a top-N recency window: a hard cutoff (game #51 by
+    full_evals_completed_at DESC had probability zero) meant an old analyzed corpus
+    (e.g. user 28's ~5k games) never drained while a trickle of freshly-analyzed
+    games kept refilling the window. The floor terms here give every pending-blob
+    game across the whole corpus non-zero draw mass so the whole backlog drains,
+    while the recency weighting keeps freshly-analyzed games dominant on most
+    draws (fairness).
 
     Returns (game_id, user_id) or None when no backfill-eligible game remains (either
     stage returning no row is a None-guard fall-through, mirroring _claim_tier3_derived's
     None-guard shape).
 
     No eval_jobs row is created — this is a table-less, idempotent-by-construction lottery.
-    Once a game's blobs_completed_at is stamped (all flaw blobs, or D-06 sentinels,
+    Once a game's blobs_completed_at is stamped (all flaw blobs, or sentinels,
     written) the game stops matching the predicate and is never re-selected.
 
-    is_lichess_eval_game is NOT resolved here — it is determined later in the Plan-03 lease
-    handler, which has the full game context needed to route the blob write correctly
-    (RESEARCH Pitfall 6). This function returns only the (game_id, user_id) pair.
+    is_lichess_eval_game is NOT resolved here — it is determined later in the
+    /flaw-blob-lease handler, which has the full game context needed to route the blob
+    write correctly. This function returns only the (game_id, user_id) pair.
 
     Security: :tau_u, :floor_u, :picked_user, :tau_g, :floor_g, and the :tc_* TC
     multipliers are all bound via the sa.text params dict — never f-string-interpolated
-    (QUEUE-08 convention, mirrors tier-3's rule above).
+    (mirrors tier-3's rule above).
     """
     # Convert half-lives (days) to decay constants τ in seconds — same conversion
     # used by _claim_tier3_derived above: τ = τ½ / ln2; weight = exp(-Δt/τ) + floor.
@@ -801,13 +793,13 @@ async def _claim_tier4_blob(
     tau_g_seconds: float = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_g: float = TIER4_GAME_WEIGHT_FLOOR
 
-    # Phase 212 BENCHLANE-02/D-09: benchmark selection gate, read once per call.
+    # Benchmark selection gate, read once per call.
     # "" when BENCHMARK_SELECTION_GATE_ENABLED is off -- see the byte-identity
     # note on _claim_tier3_derived's identical _gate assignment above.
     _gate = selection_gate_clause()
 
     # Stage 1: ES weighted user pick over users with a blob-pending analyzed game.
-    # SEED-125: games-only predicate, backed by ix_games_blob_backfill_pending.
+    # Games-only predicate, backed by ix_games_blob_backfill_pending.
     picked_user_id = await _es_weighted_user_pick(
         session,
         candidate_exists_sql=f"""
@@ -825,7 +817,7 @@ async def _claim_tier4_blob(
 
     # Stage 2: ES weighted game pick for the picked user — full_evals_completed_at
     # recency AND TC priority (longer TCs first), mirroring tier-3's game pick.
-    # SEED-125: games-only predicate, same form as Stage 1 above.
+    # Games-only predicate, same form as Stage 1 above.
     game_id = await _es_weighted_game_pick(
         session,
         game_where_sql=(
@@ -849,33 +841,30 @@ async def _claim_tier4_bestmove(
     session: AsyncSession,
 ) -> tuple[int, int] | None:
     """Tier-4b spare-capacity lottery: pick one PV-complete game still missing
-    its best-move pass (Phase 176 BACK-01, D-01/D-02/D-03).
+    its best-move pass.
 
     Near-verbatim copy of _claim_tier4_blob's two-stage ES weighted (user ->
     game) lottery, same plain-SELECT/no-lock shape, reusing the same
     TIER4_*_HALF_LIFE_DAYS / TIER4_*_WEIGHT_FLOOR constants and GAME_TC_WEIGHTS
-    (no new tunables — Claude's discretion per CONTEXT.md, "reusing tier-4's is
-    the likely default").
+    (no new tunables).
 
     Predicate (identical in BOTH the Stage-1 EXISTS-subquery and the Stage-2
     WHERE): full_pv_completed_at IS NOT NULL AND best_moves_completed_at IS
-    NULL. Quick 260719-fsz DROPPED the former `lichess_evals_at IS NULL` clause
-    so lichess-eval games whose best-move pass never landed (full_pv stamped but
-    best_moves NULL — e.g. orphaned during a Maia-down window) self-heal here
-    rather than falling in a permanent coverage hole. This does NOT reintroduce
-    the D-03 contention with 174-07's residual fallback: the residual takes only
-    full_pv_completed_at IS NULL games while this lane takes only
-    full_pv_completed_at IS NOT NULL games, so the two lanes stay DISJOINT on
-    full_pv_completed_at (a game matches at most one). include_guests=True on the
-    Stage-1 user pick lets guest orphans self-heal too (B2); tier-3 needs-engine
-    and tier-4-blob keep excluding guests.
+    NULL. There is no `lichess_evals_at IS NULL` clause, so lichess-eval games
+    whose best-move pass never landed (full_pv stamped but best_moves NULL — e.g.
+    orphaned during a Maia-down window) self-heal here rather than falling in a
+    permanent coverage hole. This lane is disjoint from tier-3's lichess-eval
+    branch (b) on full_pv_completed_at: (b) takes IS NULL, this lane takes IS NOT
+    NULL (a game matches at most one). include_guests=True on the Stage-1 user
+    pick lets guest orphans self-heal too; tier-3 needs-engine and tier-4-blob
+    keep excluding guests.
 
     Stage 2's recency anchor is g.full_pv_completed_at (the column this
     predicate gates on — the event that made the game eligible), mirroring
     _claim_tier4_blob's anchor-on-eligibility-column pattern.
 
     Returns (game_id, user_id) or None when no eligible game remains. Once a
-    game's best-move pass stamps best_moves_completed_at (Phase 176 D-01) it
+    game's best-move pass stamps best_moves_completed_at it
     stops matching this predicate and is never re-selected (self-termination).
 
     No eval_jobs row is created — table-less, idempotent-by-construction
@@ -883,20 +872,20 @@ async def _claim_tier4_bestmove(
 
     Security: all numeric lottery VALUES (tau, floor, tc weights, :picked_user)
     are bound via the sa.text params dict inside _es_weighted_user_pick /
-    _es_weighted_game_pick — never f-string-interpolated (QUEUE-08 convention).
+    _es_weighted_game_pick — never f-string-interpolated.
     """
     tau_u_seconds: float = TIER4_USER_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_u: float = TIER4_USER_WEIGHT_FLOOR
     tau_g_seconds: float = TIER4_GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     floor_g: float = TIER4_GAME_WEIGHT_FLOOR
 
-    # Phase 212 BENCHLANE-02/D-09: benchmark selection gate, read once per call.
+    # Benchmark selection gate, read once per call.
     # "" when BENCHMARK_SELECTION_GATE_ENABLED is off -- see the byte-identity
     # note on _claim_tier3_derived's identical _gate assignment above.
     _gate = selection_gate_clause()
 
     # Stage 1: ES weighted user pick over users with an eligible best-move-pending game.
-    # include_guests=True so guest orphans (full_pv set, best_moves NULL) self-heal (B2).
+    # include_guests=True so guest orphans (full_pv set, best_moves NULL) self-heal.
     picked_user_id = await _es_weighted_user_pick(
         session,
         candidate_exists_sql=f"""
@@ -941,31 +930,27 @@ async def claim_eval_job(
     worker_id: str = WORKER_ID_SERVER_POOL,
     scope: Literal["explicit", "idle"] | None = None,
 ) -> ClaimedJob | None:
-    """Claim the next eval job — tier-1 > tier-3 > tier-4 (derived).
+    """Claim the next eval job — tier-1 > tier-3 > tier-4 > tier-4b.
 
     Session discipline: opens its own short session, commits, closes.
     The SKIP LOCKED lock is released immediately on commit — never held
-    across the engine gather (Pitfall 1 in RESEARCH §Common Pitfalls).
+    across the engine gather.
 
-    D-05 scope param (Phase 123 SEED-051):
-      None     → bundled tier-1>3>4 behavior (backward-compat for un-updated workers).
+    Scope param:
+      None     → bundled tier-1>3>4>4b behavior (backward-compat for un-updated workers).
       "explicit" → tier-1 only (_claim_queued_job); return None if empty (skip tier-3/4).
       "idle"   → tier-3 only (still gated by EVAL_AUTO_DRAIN_ENABLED).
 
     Tier-4 (TIER_BLOB_BACKFILL) fires only after tier-1/3 fall through AND only
-    under EVAL_AUTO_DRAIN_ENABLED — spare-capacity flaw-blob backfill (Phase 145).
+    under EVAL_AUTO_DRAIN_ENABLED — spare-capacity flaw-blob backfill.
 
-    SEED-072: tier-4 is NOT served through the idle lease scope — it returns None (→ 204)
+    Tier-4 is NOT served through the idle lease scope — it returns None (→ 204)
     once tier-3 is empty, so remote workers fall through to their dedicated rung-4
     `/flaw-blob-lease` (→ `_claim_tier4_blob` → MultiPV-2 continuation → `/flaw-blob-submit`).
 
-    Doc correction (2026-07-28): this paragraph used to justify that gate by claiming the
-    `/submit` path "writes no blob" because `_apply_submit` forces `blob_map={}`. That is
-    no longer true — Phase 149-03 PRUNE-01 DELETED the Gen-1 `/lease` + `/submit` pair and
-    `_apply_submit` outright, and the atomic lane that replaced them DOES write blobs
-    inline: the worker submits `body.blob_nodes`, which `_assemble_flaw_blobs_from_submit`
-    reassembles into the `blob_map` passed to `apply_full_eval` (app/routers/eval_remote.py).
-    So there are three live blob write paths, not one: the atomic submit (bulk of volume),
+    Three live paths write blobs: the atomic submit (bulk of volume: the worker submits
+    `body.blob_nodes`, which `_assemble_flaw_blobs_from_submit` reassembles into the
+    `blob_map` passed to `apply_full_eval` in app/routers/eval_remote.py),
     `/flaw-blob-submit` (this tier-4 rung), and the in-process drain.
 
     The gate itself still stands, but for an EFFICIENCY reason rather than a correctness
@@ -973,13 +958,13 @@ async def claim_eval_job(
     just to fill the residual flaw plies the original submit left NULL, whereas
     `/flaw-blob-lease` evaluates only the continuation FENs. The bundled `scope=None` path
     below keeps tier-4 for its sole consumer, the in-process server-pool drain
-    (eval_drain.run_one_full_eval_tick), which writes blobs via the MultiPV-2 pass
+    (eval_drain._full_drain_tick), which writes blobs via the MultiPV-2 pass
     (_build_flaw_multipv2_blobs).
 
     Returns ClaimedJob or None when there is nothing to process.
     """
-    # scope="idle" → skip tier-1/2 entirely; go straight to tier-3.
-    # Tier-4 is intentionally NOT reached here (SEED-072); an empty tier-3 returns
+    # scope="idle" → skip tier-1 entirely; go straight to tier-3.
+    # Tier-4 is intentionally NOT reached here; an empty tier-3 returns
     # None → 204 so the remote worker drains tier-4 via /flaw-blob-lease instead.
     if scope == "idle":
         if not settings.EVAL_AUTO_DRAIN_ENABLED:
@@ -1017,15 +1002,15 @@ async def claim_eval_job(
             job_id=job_id,
         )
 
-    # scope="explicit" → tier-1/2 only; do NOT fall through to tier-3/4.
+    # scope="explicit" → tier-1 only; do NOT fall through to tier-3/4.
     if scope == "explicit":
         return None
 
     # scope is None → bundled flow: fall through to tier-3 derived pick (idle backlog),
     # unless automatic eval is disabled via EVAL_AUTO_DRAIN_ENABLED (e.g. dev, to
     # avoid pinning every local core on the hundreds-of-thousands-game backlog).
-    # Tier-1 explicit jobs above are never gated; tier-2 has no enqueue source
-    # (Phase 118) so only the tier-3/4 idle drain below is gated by this flag.
+    # Tier-1 explicit jobs above are never gated; only the tier-3/4 idle drain
+    # below is gated by this flag.
     if not settings.EVAL_AUTO_DRAIN_ENABLED:
         return None
 
@@ -1044,20 +1029,19 @@ async def claim_eval_job(
         )
 
     # Tier-3 empty → fall through to tier-4 blob-backfill spare-capacity lottery.
-    # Same EVAL_AUTO_DRAIN_ENABLED gate (already checked above); live tier-1/2/3
-    # work always preempts tier-4 (D-02).
-    # SEED-072: retained here (unlike the idle scope) because the only bundled-path
-    # consumer is the in-process server-pool drain (eval_drain.run_one_full_eval_tick),
-    # which writes blobs via the MultiPV-2 pass — not the broken `/submit` path.
+    # Same EVAL_AUTO_DRAIN_ENABLED gate (already checked above); live tier-1/3
+    # work always preempts tier-4.
+    # Retained here (unlike the idle scope) because the only bundled-path
+    # consumer is the in-process server-pool drain (eval_drain._full_drain_tick),
+    # which writes blobs via the MultiPV-2 pass.
     async with async_session_maker() as session:
         blob_pick = await _claim_tier4_blob(session)
 
     if blob_pick is None:
-        # Tier-4 blob empty -> try tier-4b best-move backfill (Phase 176
-        # BACK-01, D-02/D-05). EVAL_AUTO_DRAIN_ENABLED is already True at this
-        # point (checked above); only the dedicated gate needs checking here,
-        # BEFORE the DB round-trip (avoids two wasted queries per idle tick
-        # when disabled).
+        # Tier-4 blob empty -> try tier-4b best-move backfill.
+        # EVAL_AUTO_DRAIN_ENABLED is already True at this point (checked above);
+        # only the dedicated gate needs checking here, BEFORE the DB round-trip
+        # (avoids two wasted queries per idle tick when disabled).
         if not settings.BEST_MOVE_BACKFILL_ENABLED:
             return None
         async with async_session_maker() as session:
@@ -1065,12 +1049,11 @@ async def claim_eval_job(
             if bestmove_pick is None:
                 return None
             game_id4b, user_id4b = bestmove_pick
-            # Quick 260719-fsz: tier-4b now admits lichess-eval games, so the
-            # old "False by construction" is no longer true — resolve the flag
-            # from the game row (same PK lookup the tier-1/2 path uses). The
-            # minimal drain re-derives this itself, so this field is
-            # observability-only here, but a stale False would be a landmine.
-            # Phase 212 D-03: routed through the single derivation point.
+            # Tier-4b admits lichess-eval games, so the flag is not False by
+            # construction — resolve it from the game row (same PK lookup the
+            # tier-1 path uses). The minimal drain re-derives this itself, so
+            # this field is observability-only here, but a stale False would be
+            # a landmine. Routed through the single derivation point.
             lichess_at_4b = await session.execute(
                 select(Game.lichess_evals_at).where(Game.id == game_id4b)
             )
@@ -1088,8 +1071,8 @@ async def claim_eval_job(
         game_id=game_id4,
         user_id=user_id4,
         tier=TIER_BLOB_BACKFILL,
-        is_lichess_eval_game=False,  # resolved in Plan-03 lease handler (Pitfall 6)
-        job_id=None,  # table-less lottery, no eval_jobs row (D-03)
+        is_lichess_eval_game=False,  # resolved in the /flaw-blob-lease handler
+        job_id=None,  # table-less lottery, no eval_jobs row
     )
 
 
@@ -1119,12 +1102,9 @@ async def release_job(job_id: int) -> None:
 
     Used by the remote lease handler (`/atomic-lease`) when it claims a tier-1
     job it cannot hand a real lease payload to — currently only the
-    over-cap sentinel path (a lease that would exceed MAX_SUBMIT_EVALS positions,
-    147-03/SEED-073). Without this the row would sit 'leased' for the full
-    LEASE_TTL_SECONDS before the stale-lease sweep frees it, stalling the very
-    click-to-pickup latency Phase 121 improves. (Historical: Phase 121 also used
-    this for a lichess-eval-game 204-defer path; that path was retired in Phase
-    174-06/SEED-109 — lichess-eval games now lease and submit like any other game.)
+    over-cap sentinel path (a lease that would exceed MAX_SUBMIT_EVALS positions).
+    Without this the row would sit 'leased' for the full LEASE_TTL_SECONDS before
+    the stale-lease sweep frees it, stalling click-to-pickup latency.
 
     Short session; guarded WHERE status='leased' so it is a no-op if the lease was
     already swept/completed/re-claimed (cannot disturb an unrelated job state).
@@ -1163,7 +1143,7 @@ async def enqueue_tier1_game(game_id: int, user_id: int) -> bool:
     in any active status is silently skipped.
 
     Tier-1 is an explicit per-game request that a guest may make for their own
-    game (QUEUE-08 guest gate opened for tier-1). Only a missing user row
+    game (the guest exclusion does not apply to tier-1). Only a missing user row
     (deleted between game load and this call) returns False — no Sentry, not a bug.
 
     Returns False only when the user row is missing or the game is already queued.
@@ -1191,7 +1171,7 @@ async def enqueue_tier1_game(game_id: int, user_id: int) -> bool:
             # WHERE status IN ('pending', 'leased'). The index_where must match
             # the partial index predicate so PostgreSQL resolves the conflict target.
             # Completed/failed jobs DO allow re-enqueue (not covered by the partial
-            # index). See RESEARCH Pitfall 6 / eval_jobs.py model comments.
+            # index). See the eval_jobs.py model comments.
             .on_conflict_do_nothing(
                 index_elements=["game_id"],
                 index_where=sa.text("status IN ('pending', 'leased')"),

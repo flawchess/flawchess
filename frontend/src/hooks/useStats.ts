@@ -50,7 +50,7 @@ export function useMostPlayedOpenings(filters?: {
 }) {
   // Spread DEFAULT_FILTERS as the base (rather than listing every FilterState key
   // by hand) so this construction can never drift from FilterState's shape as new
-  // fields are added — the Library-only Pasted-chip field (D-14) stays at its
+  // fields are added — the Library-only Pasted-chip field stays at its
   // default without being named here; this hook never surfaces that chip.
   const resolvedFilters: FilterState = {
     ...DEFAULT_FILTERS,
@@ -63,19 +63,19 @@ export function useMostPlayedOpenings(filters?: {
     opponentStrength: filters?.opponentStrength ?? ANY_RANGE,
   };
   const dateParams = dateRangeToWireParams(resolveDateRange(resolvedFilters));
-  const timeControl = filters?.timeControls ?? null;
-  const platform = filters?.platforms ?? null;
+  const timeControls = filters?.timeControls ?? null;
+  const platforms = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
   const opponentType = filters?.opponentType ?? 'both';
   const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
 
   return useQuery({
-    queryKey: ['mostPlayedOpenings', dateParams.from_date ?? null, dateParams.to_date ?? null, timeControl, platform, rated, opponentType, opponentStrength.min, opponentStrength.max],
+    queryKey: ['mostPlayedOpenings', dateParams.from_date ?? null, dateParams.to_date ?? null, timeControls, platforms, rated, opponentType, opponentStrength.min, opponentStrength.max],
     queryFn: () => statsApi.getMostPlayedOpenings({
       from_date: dateParams.from_date,
       to_date: dateParams.to_date,
-      time_control: timeControl,
-      platform: platform,
+      time_control: timeControls,
+      platform: platforms,
       rated: rated,
       opponent_type: opponentType,
       opponent_strength: opponentStrength,
@@ -97,7 +97,7 @@ export function useBookmarkPhaseEntryMetrics(
 ) {
   // Resolve from the full FilterState shape needed by resolveDateRange. Spread
   // DEFAULT_FILTERS as the base (see useMostPlayedOpenings above) so the
-  // Library-only Pasted-chip field (D-14) stays at its default without being
+  // Library-only Pasted-chip field stays at its default without being
   // named here.
   const resolvedFilters: FilterState = {
     ...DEFAULT_FILTERS,

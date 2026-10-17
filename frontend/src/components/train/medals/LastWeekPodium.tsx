@@ -1,14 +1,13 @@
 /**
- * LastWeekPodium — the "Last week:" line at the top of each leaderboard tab
- * (Phase 231, D-07, D-08, D-09). Lists every server-sent podium entry (ties
- * included, server order gold to bronze) as a medal icon plus the name, and
- * wraps on narrow screens. Renders nothing when there is no podium: no empty
+ * LastWeekPodium — the "Last week:" line at the top of each leaderboard tab.
+ * Lists every server-sent podium entry (ties included, server order gold to
+ * bronze) as a medal icon plus the name, and wraps on narrow screens. Renders nothing when there is no podium: no empty
  * state and no older-week fallback. The viewer's own entry (server-set
  * `is_viewer`) is semibold so a medal finisher spots themselves, since the
- * "You finished #N" line is suppressed for medals (D-03; quick 261006-75v).
+ * "You finished #N" line is suppressed for medals.
  *
  * Presentational only. Names are other users' self-typed platform usernames,
- * so they only ever render as React text children (T-230-08, T-231-14).
+ * so they only ever render as React text children.
  */
 import type { ReactElement } from 'react';
 import { MedalIcon } from '@/components/train/medals/MedalIcon';

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * TrainFlawFixedBanner.test.tsx — Phase 191 Plan 03 Task 2 coverage
- * (PROG-03, D-14, UI-SPEC E7): the "Flaw fixed!" mastery banner and its FEN
+ * TrainFlawFixedBanner.test.tsx — the "Flaw fixed!" mastery banner and its FEN
  * degradation — a malformed or empty FEN must never suppress the
- * celebration text, only the position thumbnail (T-191-10).
+ * celebration text, only the position thumbnail.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';

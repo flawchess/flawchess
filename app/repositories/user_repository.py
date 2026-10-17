@@ -28,8 +28,8 @@ async def get_profile(session: AsyncSession, user_id: int) -> User:
 async def get_created_at(session: AsyncSession, user_id: int) -> datetime:
     """Return the user's account-creation timestamp.
 
-    Phase 186 Plan 02 (IMPORT-02/IMPORT-03, D-02): this is the per-user import
-    backlog anchor -- the forward pass never fetches before it (Pitfall 2) and
+    This is the per-user import
+    backlog anchor -- the forward pass never fetches before it and
     the backward pass's per-(platform, TC) budget query is scoped to games
     played before it. Uses ``AsyncSession.get()`` (PK lookup) rather than
     ``get_profile``'s full SELECT -- this is called once per import job and
@@ -99,7 +99,7 @@ async def update_platform_username(
 
 
 async def stamp_first_import_started_at(session: AsyncSession, user_id: int, now: datetime) -> None:
-    """First-write-wins stamp of the user's first-ever import start (QTE-02).
+    """First-write-wins stamp of the user's first-ever import start.
 
     The ``IS NULL`` predicate in the WHERE clause is what makes this
     first-write-wins -- a later call for the same user is a no-op UPDATE
@@ -157,7 +157,7 @@ async def record_first_touch(
 
 
 async def stamp_games_purged_at(session: AsyncSession, user_id: int, now: datetime) -> None:
-    """Unconditionally stamp when this user's games/import_jobs were purged (QTE-02).
+    """Unconditionally stamp when this user's games/import_jobs were purged.
 
     Called from the same transaction as the games/import_jobs delete at both
     purge sites (guest_cleanup_service._purge_guest and DELETE /api/games),

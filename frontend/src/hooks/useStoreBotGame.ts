@@ -1,8 +1,7 @@
 /**
- * useStoreBotGame — the frontend's first call site of the shipped Phase 167
- * `POST /bots/games` endpoint, and the pending-store drain loop that decides
- * — per HTTP outcome — whether a queued finished game survives to the next
- * page visit (Phase 170 Plan 02, RESUME-02).
+ * useStoreBotGame — the frontend's call site of the `POST /bots/games`
+ * endpoint, and the pending-store drain loop that decides — per HTTP outcome
+ * — whether a queued finished game survives to the next page visit.
  *
  * `useDrainPendingStore` is the ONLY consumer of `botPendingStore.removePendingStore`
  * — the queue entry's life is decided in exactly one place.
@@ -35,17 +34,16 @@ const STATUS_UNPROCESSABLE = 422;
 
 /**
  * Pure mapper from a queued entry to the wire request. Extracted so the
- * `tc_preset` invariant (base-SECONDS, D-14 corrected) is directly unit
- * testable without mounting a hook.
+ * `tc_preset` invariant (base-SECONDS) is directly unit testable without
+ * mounting a hook.
  */
 export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
-  // quick-260722-ucc: re-derive the persona's name + calibrated ELO from
-  // settings.personaId at store time — robust for old queued localStorage
-  // entries (nothing new is persisted into the queue schema, matching Phase
-  // 185's Pitfall-3 note below). `personaForId` returns undefined for a
-  // Custom-mode game (no personaId) or an unrecognized/removed id, both of
-  // which fall back to null (the server then falls back to "FlawChess Bot" /
-  // the raw bot_elo).
+  // Re-derive the persona's name + calibrated ELO from settings.personaId at
+  // store time — robust for old queued localStorage entries (nothing new is
+  // persisted into the queue schema, see the persona_id note below).
+  // `personaForId` returns undefined for a Custom-mode game (no personaId) or
+  // an unrecognized/removed id, both of which fall back to null (the server
+  // then falls back to "FlawChess Bot" / the raw bot_elo).
   const persona = personaForId(entry.settings.personaId);
 
   return {
@@ -55,11 +53,11 @@ export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
     bot_elo: entry.settings.botElo,
     play_style_blend: entry.settings.blend,
     tc_preset: toBackendTcStr(entry.settings.baseSeconds, entry.settings.incrementSeconds),
-    // Phase 185: persist which persona (if any) the user played. `?? null`
-    // covers both a Custom-mode game (no personaId at all) and old queued
-    // localStorage entries minted before this field existed — do NOT tighten
+    // Persist which persona (if any) the user played. `?? null` covers both a
+    // Custom-mode game (no personaId at all) and old queued localStorage
+    // entries minted before this field existed — do NOT tighten
     // isValidPendingEntry/isValidSettingsShape to require personaId, they
-    // must still round-trip (Pitfall 3).
+    // must still round-trip.
     persona_id: entry.settings.personaId ?? null,
     persona_name: persona?.name ?? null,
     bot_rating: persona ? personaCalibratedElo(persona) : null,
@@ -67,24 +65,22 @@ export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
 }
 
 /**
- * In-flight retry predicate for a single `mutate()` call (D-13). Extracted
- * as a pure, directly-testable function — mirrors `toStoreRequest`'s
- * testability rationale. 422 (invalid PGN) never retries; EVERY other failure
- * (401, network, 5xx) gets a BOUNDED retry.
+ * In-flight retry predicate for a single `mutate()` call. Extracted as a
+ * pure, directly-testable function — mirrors `toStoreRequest`'s testability
+ * rationale. 422 (invalid PGN) never retries; EVERY other failure (401,
+ * network, 5xx) gets a BOUNDED retry.
  *
- * Bug fix (Phase 171 code review, CR-01): this predicate used to return `true`
- * UNCONDITIONALLY for a 401, with no `failureCount` bound. TanStack Query
- * treats an always-true `retry` predicate as an unbounded retry loop, so once
- * Phase 171 gave the hook its first component call site (`Bots.tsx`'s D-21
- * finish-time store), a finished game POSTed with an expired/absent token
- * would re-issue `POST /bots/games` forever (~every 30s, `retryDelay`'s cap)
- * for as long as the result screen stayed mounted. Worse, the mutation never
- * settled as errored, so the global `MutationCache.onError` never fired
- * (nothing reached Sentry) and `isSuccess` never flipped (the user saw no
- * signal at all). An unbounded in-flight retry also bought nothing: the
- * pending-store queue + next-visit drain IS the "retry once authenticated"
- * mechanism (D-13), and it is durable across reloads, which an in-flight loop
- * is not.
+ * Don't return `true` unconditionally for a 401 (no `failureCount` bound):
+ * TanStack Query treats an always-true `retry` predicate as an unbounded retry
+ * loop, so a finished game POSTed with an expired/absent token (from
+ * `Bots.tsx`'s finish-time store) would re-issue `POST /bots/games` forever
+ * (~every 30s, `retryDelay`'s cap) for as long as the result screen stayed
+ * mounted. Worse, the mutation would never settle as errored, so the global
+ * `MutationCache.onError` never fires (nothing reaches Sentry) and
+ * `isSuccess` never flips (the user sees no signal at all). An unbounded
+ * in-flight retry also buys nothing: the pending-store queue + next-visit
+ * drain IS the "retry once authenticated" mechanism, and it is durable across
+ * reloads, which an in-flight loop is not.
  *
  * This predicate only governs in-flight retries of ONE `mutate()` call —
  * whether a queue entry survives to the NEXT page visit is the drain loop's
@@ -135,19 +131,16 @@ export function useStoreBotGame(): UseMutationResult<
  *
  * Uses its own `useMutation` — deliberately WITHOUT `shouldRetryStore` —
  * rather than `useStoreBotGame()`. The drain's real "retry" IS the next
- * `/bots` mount (D-13), so exactly ONE attempt per entry per drain is what we
- * want; the predicate's bounded in-flight retries would just multiply the
- * HTTP calls of a drain pass (up to `MAX_STORE_RETRIES + 1` per entry) while
- * a whole queue is being walked, for no durability gain. (Before CR-01 this
- * paragraph read "`shouldRetryStore` retries a 401 forever, which would hang
- * this loop" — that unbounded 401 branch is gone, so the reason to keep the
- * predicate out of the drain is now cost, not a hang.)
+ * `/bots` mount, so exactly ONE attempt per entry per drain is what we want;
+ * the predicate's bounded in-flight retries would just multiply the HTTP
+ * calls of a drain pass (up to `MAX_STORE_RETRIES + 1` per entry) while a
+ * whole queue is being walked, for no durability gain.
  *
- * CR-01 fix: invalidates `BOT_PERSONA_WINS_QUERY_KEY` once, after the drain
- * loop finishes, if AT LEAST ONE entry stored successfully (2xx). A queued/
- * offline game that drains successfully on a later `/bots` mount should also
- * refresh the win stars shown on that same mount — without this, a persona
- * win stored only via the drain (never via the finish-time store, e.g. an
+ * Invalidates `BOT_PERSONA_WINS_QUERY_KEY` once, after the drain loop
+ * finishes, if AT LEAST ONE entry stored successfully (2xx). A queued/offline
+ * game that drains successfully on a later `/bots` mount should also refresh
+ * the win stars shown on that same mount — without this, a persona win
+ * stored only via the drain (never via the finish-time store, e.g. an
  * offline finish) would never invalidate the cache at all.
  */
 export function useDrainPendingStore(ownerKey: string | null | undefined): {

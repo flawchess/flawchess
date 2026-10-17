@@ -1,26 +1,25 @@
 /**
  * TrainLeaderboardCard — the one "This week" card on the Train landing
- * (Phase 230, D-07, D-08): a Points | Accuracy tab toggle (the choice is
- * remembered in localStorage, D-09), the top 5 plus the viewer's own row
- * (highlighted) and its neighbours with a gap marker between the two (and a
- * trailing one when lower ranks are cut), one
- * viewer hint line under the board, a "Not yet qualified (20+ puzzles)" divider
- * before the first unranked (tentative) Accuracy row, and for guests a "Sign up
- * to claim your spot" nudge (D-14). Each row's puzzle count is a Puzzle icon
- * plus the number, and an info popover next to the title explains what each
- * board rewards (quick 261006-75v).
+ * with a Points | Accuracy tab toggle (the choice is remembered in
+ * localStorage), the top 5 plus the viewer's own row (highlighted) and its
+ * neighbours with a gap marker between the two (and a trailing one when lower
+ * ranks are cut), one viewer hint line under the board, a "Not yet qualified
+ * (20+ puzzles)" divider before the first unranked (tentative) Accuracy row,
+ * and for guests a "Sign up to claim your spot" nudge. Each row's puzzle count
+ * is a Puzzle icon plus the number, and an info popover next to the title
+ * explains what each board rewards.
  *
- * Phase 231 adds the "Last week:" podium above each board and a lifetime medal
- * tally in every row's name block.
+ * Each board has the "Last week:" podium above it and a lifetime medal tally
+ * in every row's name block.
  *
  * `TrainLeaderboardCard` is the thin container, self-contained apart from
  * `isGuest`: it calls `useTrainLeaderboard()` itself, exactly like
  * `TrainStatsCard` calls `useTrainProgress()`, and owns the countdown, tab
  * state and the Umami tab-switch. `TrainLeaderboardCardView` renders the whole
  * card from props, so the admin "Leaderboard medals demo" shows production
- * markup from fixtures. Names are
- * other users' self-typed platform usernames, so they only ever render as
- * React text children (never HTML, never an href/src; T-230-08).
+ * markup from fixtures. Names are other users' self-typed platform usernames,
+ * so they only ever render as React text children (never HTML, never an
+ * href/src).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -62,7 +61,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { LeaderboardBoardKind, LeaderboardRow, TrainLeaderboardResponse } from '@/types/train';
 
-/** Umami `tab-switch` target per board; a fixed map, so nothing user-derived is ever sent (T-230-09). */
+/** Umami `tab-switch` target per board; a fixed map, so nothing user-derived is ever sent. */
 const LEADERBOARD_TAB_TARGET: Record<LeaderboardBoardKind, LeaderboardTabId> = {
   points: 'leaderboard-points',
   accuracy: 'leaderboard-accuracy',
@@ -130,7 +129,7 @@ function LeaderboardRowItem({
         <span className="w-9 shrink-0 tabular-nums">
           {row.rank === null ? '' : `#${row.rank}`}
         </span>
-        {/* IN-02 (phase 230 review): only the name truncates. The privacy cue is
+        {/* Only the name truncates. The privacy cue is
             its own nowrap item and wraps below the name when the row is too
             narrow, instead of being the first text cut off. */}
         <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1">
@@ -239,7 +238,7 @@ function LeaderboardHint({
           {hint.text}
         </p>
       )}
-      {/* D-03: a separate line below this week's hint, never replacing it. */}
+      {/* A separate line below this week's hint, never replacing it. */}
       {finalRank !== null && (
         <p
           data-testid="train-leaderboard-last-week-finish"
@@ -287,14 +286,14 @@ function LeaderboardGuestCta(): ReactElement {
 }
 
 /**
- * Seconds to the week's deadline (D-02), or null before data arrives.
+ * Seconds to the week's deadline, or null before data arrives.
  *
  * Derived from the server's `seconds_remaining` minus the time since the
  * fetch (`dataUpdatedAt`). The clock is only read inside the interval
  * callback (react-hooks purity: no clock reads during render); until the
  * first tick `nowMs` is null and the fetch time stands in for "now". At zero
  * the leaderboard query is invalidated once per `week_end`, so the board rolls
- * over at the Monday reset. WR-03 fix: a single shot could land just before the
+ * over at the Monday reset. A single shot could land just before the
  * server's reset and leave last week stuck on "ending now", so while a fresh
  * response still carries the old `week_end` at zero, retry after
  * ROLLOVER_RETRY_MS, capped at ROLLOVER_MAX_RETRIES (never an unbounded loop).
@@ -343,7 +342,7 @@ export interface TrainLeaderboardCardViewProps {
   isPending: boolean;
   isError: boolean;
   /** Seconds to the deadline, or null before data arrives (header countdown). */
-  remaining: number | null;
+  secondsRemaining: number | null;
   tab: LeaderboardBoardKind;
   onTabChange: (value: string) => void;
   isGuest: boolean;
@@ -351,15 +350,15 @@ export interface TrainLeaderboardCardViewProps {
 
 /**
  * The whole card rendered from props: no fetching, no query client, no
- * analytics beyond the header InfoPopover's own popover-open (Phase 231;
- * trackFeature drops events on /admin). The admin "Leaderboard medals demo" renders this with
- * fixture data so it shows production markup.
+ * analytics beyond the header InfoPopover's own popover-open (trackFeature
+ * drops events on /admin). The admin "Leaderboard medals demo" renders this
+ * with fixture data so it shows production markup.
  */
 export function TrainLeaderboardCardView({
   data,
   isPending,
   isError,
-  remaining,
+  secondsRemaining,
   tab,
   onTabChange,
   isGuest,
@@ -384,9 +383,9 @@ export function TrainLeaderboardCardView({
             </div>
           </InfoPopover>
         </div>
-        {remaining !== null && (
+        {secondsRemaining !== null && (
           <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
-            {formatCountdown(remaining)}
+            {formatCountdown(secondsRemaining)}
           </span>
         )}
       </div>
@@ -432,7 +431,7 @@ export function TrainLeaderboardCard({ isGuest }: TrainLeaderboardCardProps): Re
       data={data}
       isPending={isPending}
       isError={isError}
-      remaining={remaining}
+      secondsRemaining={remaining}
       tab={tab}
       onTabChange={handleTabChange}
       isGuest={isGuest}

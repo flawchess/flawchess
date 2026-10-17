@@ -61,7 +61,7 @@ function formatTcLabel(baseSeconds: number, incrementSeconds: number): string {
 
 /**
  * "just now" / "N minutes ago" / "N hours ago" / "N days ago", with correct
- * singular/plural. D-06: a snapshot never expires — the age is shown so a
+ * singular/plural. A snapshot never expires — the age is shown so a
  * stale game is obvious and the USER decides. No TTL, no auto-drop.
  */
 function formatRelativeAge(savedAt: number, now: number): string {
@@ -84,13 +84,12 @@ function formatRelativeAge(savedAt: number, now: number): string {
 }
 
 /**
- * The "Resume game?" overlay (Phase 170 D-04). Renders as a non-dismissible
+ * The "Resume game?" overlay. Renders as a non-dismissible
  * `Dialog` (no close affordance, `onOpenChange` ignores close attempts) over
  * the already-restored board, so the user recognizes the game and explicitly
  * chooses Resume or Discard — nothing starts until they do. Discard opens a
- * confirmation first (D-05, mirroring `GameControls`' resign-confirm
- * verbatim): discarding an in-progress game is irreversible and leaves no
- * server trace anywhere (SC2).
+ * confirmation first (mirroring `GameControls`' resign-confirm): discarding
+ * an in-progress game is irreversible and leaves no server trace anywhere.
  */
 export function ResumeGate({
   snapshot,
@@ -102,7 +101,7 @@ export function ResumeGate({
   // react-hooks/purity: Date.now() is impure — read it once via a lazy
   // initializer rather than directly during render. The gate is a
   // short-lived overlay, so a single mount-time snapshot of "now" is
-  // sufficient (no live-ticking age display is required by D-06).
+  // sufficient (no live-ticking age display is needed).
   const [now] = useState(() => Date.now());
 
   const tcLabel = formatTcLabel(snapshot.settings.baseSeconds, snapshot.settings.incrementSeconds);
@@ -112,14 +111,14 @@ export function ResumeGate({
   const handleConfirmDiscard = (): void => {
     setDiscardConfirmOpen(false);
     onDiscard();
-    // Phase 229: only the confirmed discard is tracked (the first Discard click
+    // Only the confirmed discard is tracked (the first Discard click
     // just opens the confirm). Discard clears a localStorage snapshot, no backend write.
     trackFeature('action', { target: 'bot-discard' });
   };
 
   const handleResume = (): void => {
     onResume();
-    // Phase 229: resume only flips local state (useBotGame.confirmLive), no backend write.
+    // Resume only flips local state (useBotGame.confirmLive), no backend write.
     trackFeature('action', { target: 'bot-resume' });
   };
 

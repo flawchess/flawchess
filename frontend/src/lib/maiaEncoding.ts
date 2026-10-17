@@ -1,20 +1,18 @@
 /**
  * maiaEncoding.ts — original MIT glue for the Maia-3 ("Chessformer") ONNX model:
  * board->tensor encoding, legal-move policy masking + softmax, expected-score, and
- * the ELO-ladder input mechanism (MAIA-03).
+ * the ELO-ladder input mechanism.
  *
  * This module is NOT derived from CSSLab's AGPL-licensed reference client source
  * (`maia-platform-frontend`'s `MaiaEngineContext`/encoding utilities). It is written
- * from scratch against the CONFIRMED tensor contract recorded in
- * `.planning/phases/151-maia-in-the-browser-all-position-surfaces/151-MAIA-CONTRACT.md`,
- * which was produced by loading the real `maia3_simplified.onnx` and inspecting its
- * declared I/O + running real inference (Plan 151-01). See that file for the full
- * evidence trail; the load-bearing facts are summarized in the comments below.
+ * from scratch against the tensor contract confirmed by loading the real
+ * `maia3_simplified.onnx`, inspecting its declared I/O and running real inference;
+ * the load-bearing facts are summarized in the comments below.
  */
 
 import { Chess } from 'chess.js';
 
-// ─── Board encoding constants (CONTRACT §a) ────────────────────────────────────
+// ─── Board encoding constants ─────────────────────────────────────────────────
 
 /** 8x8 board, one token per square. */
 export const NUM_SQUARES = 64;
@@ -23,17 +21,17 @@ export const NUM_SQUARES = 64;
 export const PLANES_PER_SQUARE = 12;
 
 /**
- * Confirmed 12-plane order (CONTRACT §a): white P,N,B,R,Q,K (indices 0-5),
+ * Confirmed 12-plane order: white P,N,B,R,Q,K (indices 0-5),
  * black p,n,b,r,q,k (indices 6-11).
  */
 const PIECE_PLANE_ORDER = ['P', 'N', 'B', 'R', 'Q', 'K', 'p', 'n', 'b', 'r', 'q', 'k'] as const;
 
-// ─── ELO ladder (CONTRACT §c; range widened per UAT quick 260705-bm3) ────────────
+// ─── ELO ladder ───────────────────────────────────────────────────────────────
 
 /**
  * Lower bound of the ELO ladder. maiachess.com presents the full 600–2600 human
- * range, so we match it (UAT quick 260705-bm3). NOTE: Plan 151-01 behaviorally
- * validated the model only across 1100–2000 (monotonically rising draw-rate sweep);
+ * range, so we match it. NOTE: the model was behaviorally
+ * validated only across 1100–2000 (monotonically rising draw-rate sweep);
  * 600–1000 are extrapolation BELOW that validated band — kept because Maia-3 takes a
  * continuous ELO input and maiachess.com itself displays this range.
  */
@@ -41,7 +39,7 @@ const MAIA_ELO_LADDER_MIN = 600;
 
 /**
  * Upper bound of the ELO ladder. See MIN: 2100–2600 are extrapolation ABOVE the
- * 151-01-validated 1100–2000 band, matching maiachess.com's displayed range.
+ * validated 1100–2000 band, matching maiachess.com's displayed range.
  */
 const MAIA_ELO_LADDER_MAX = 2600;
 
@@ -50,17 +48,17 @@ const MAIA_ELO_LADDER_STEP = 100;
 
 /**
  * The ELO ladder: 600..2600 in steps of 100 (21 rungs), matching maiachess.com's
- * presented range (UAT quick 260705-bm3). The behaviorally-validated sub-band is
- * 1100..2000 (151-MAIA-CONTRACT.md §c / Plan 151-01); the ends are extrapolation.
+ * presented range. The behaviorally-validated sub-band is
+ * 1100..2000; the ends are extrapolation.
  */
 export const MAIA_ELO_LADDER: readonly number[] = Array.from(
   { length: (MAIA_ELO_LADDER_MAX - MAIA_ELO_LADDER_MIN) / MAIA_ELO_LADDER_STEP + 1 },
   (_, i) => MAIA_ELO_LADDER_MIN + i * MAIA_ELO_LADDER_STEP,
 );
 
-// ─── Policy vocabulary (CONTRACT §d) ────────────────────────────────────────────
+// ─── Policy vocabulary ────────────────────────────────────────────────────────
 
-/** Total flat policy-logit vocabulary size, confirmed by real inference (CONTRACT §d). */
+/** Total flat policy-logit vocabulary size, confirmed by real inference. */
 export const POLICY_VOCAB_SIZE = 4352;
 
 /** Base (non-underpromotion) move-index space: every (from, to) square pair. */
@@ -75,15 +73,14 @@ const BASE_VOCAB_SIZE = NUM_SQUARES * NUM_SQUARES; // 4096
  * underpromotion, keyed by destination + piece only" (origin is unambiguous from
  * board state: exactly one pawn can reach a given back-rank square in one move).
  *
- * ASSUMPTION (flagged, not silently guessed): the CONTRACT confirms the vocab SIZE
+ * ASSUMPTION (flagged, not silently guessed): inference confirmed the vocab SIZE
  * (4352) and the general key scheme ("from+to+promotion"), but not CSSLab's literal
  * index ORDER for `all_moves_maia3.json` — reconstructing their exact enumeration
- * order without copying their AGPL data file is the phase's acknowledged open risk
- * (151-MAIA-CONTRACT.md §d: "Wave 2 must ship our own vocabulary/index table").
+ * order without copying their AGPL data file is an acknowledged open risk, so this
+ * module ships its own vocabulary/index table.
  * This scheme is deterministic and internally consistent (round-trips correctly
- * inside this module), but its alignment with the REAL model's index order is
- * unverified until VALID-01's real-ONNX cross-check (Plan 151-06) — see
- * 151-04-SUMMARY.md "Known Limitations" for the explicit follow-up.
+ * inside this module), but its alignment with the REAL model's index order was
+ * never verified by a real-ONNX cross-check.
  */
 const UNDERPROMOTION_PIECE_LANES = ['q', 'r', 'b', 'n'] as const;
 type PromotionPiece = (typeof UNDERPROMOTION_PIECE_LANES)[number];
@@ -97,10 +94,10 @@ export interface WdlVector {
   loss: number;
 }
 
-// ─── Square indexing (CONTRACT §a) ──────────────────────────────────────────────
+// ─── Square indexing ──────────────────────────────────────────────────────────
 
 /**
- * Maps an algebraic square (e.g. "e4") to the CONTRACT's confirmed token index:
+ * Maps an algebraic square (e.g. "e4") to the model's confirmed token index:
  * `s = row*8 + file`, `row = rank - 1` (a1 = 0, h8 = 63).
  */
 export function squareIndex(square: string): number {
@@ -116,7 +113,7 @@ const NUM_SQUARES_PER_SIDE = 8;
 /**
  * Mirrors a square vertically (rank r -> rank 9-r), keeping the file unchanged.
  * Used to translate a real-board move into the mover's-POV frame the model expects
- * when Black is to move (CONTRACT §a: "if Black to move, mirror the FEN first").
+ * when Black is to move (the FEN is mirrored first).
  */
 function mirrorSquare(square: string): string {
   const file = square[0];
@@ -127,7 +124,7 @@ function mirrorSquare(square: string): string {
 /**
  * Mirrors a FEN piece-placement field: flips ranks top-to-bottom and swaps piece
  * colors (uppercase<->lowercase), so the side to move is always presented as "White"
- * moving up the board (CONTRACT §a, confirmed via the CSSLab reference client's
+ * moving up the board (confirmed via the CSSLab reference client's
  * `preprocessMaia3` behavior — architecture only, no source copied).
  */
 function mirrorPiecePlacement(piecePlacement: string): string {
@@ -138,7 +135,7 @@ function mirrorPiecePlacement(piecePlacement: string): string {
     .join('/');
 }
 
-// ─── Board -> tensor encoding (CONTRACT §a) ─────────────────────────────────────
+// ─── Board -> tensor encoding ─────────────────────────────────────────────────
 
 /**
  * Encodes a single piece-placement field into the flat (64 * 12) token tensor,
@@ -170,9 +167,9 @@ function encodePiecePlacement(piecePlacement: string): Float32Array {
 /**
  * Encodes a FEN into the Maia-3 `tokens[64,12]` input tensor (flat, no batch dim —
  * caller/worker stacks per-ELO copies into the batch). Mirrors the board to the
- * mover's POV when Black is to move (CONTRACT §a). `historyFens` is accepted for
- * API-forward-compatibility but ignored: the confirmed contract is n=0 history
- * ("simplified" export carries no history planes — CONTRACT §a).
+ * mover's POV when Black is to move. `historyFens` is accepted for
+ * API-forward-compatibility but ignored: the model takes n=0 history
+ * ("simplified" export carries no history planes).
  */
 export function encodeBoard(fen: string, historyFens?: string[]): Float32Array {
   // Accepted for API-forward-compatibility with a future non-simplified export;
@@ -187,12 +184,12 @@ export function encodeBoard(fen: string, historyFens?: string[]): Float32Array {
   return encodePiecePlacement(framed);
 }
 
-// ─── ELO input (CONTRACT §b) ────────────────────────────────────────────────────
+// ─── ELO input ────────────────────────────────────────────────────────────────
 
 /**
- * Maps a ladder ELO value to the CONTRACT's confirmed ELO input form: a raw
- * continuous float scalar fed directly as `elo_self`/`elo_oppo` (CONTRACT §b —
- * Assumption A1 CONFIRMED, no caller-side embedding). Kept as a named function
+ * Maps a ladder ELO value to the model's confirmed ELO input form: a raw
+ * continuous float scalar fed directly as `elo_self`/`elo_oppo` (no caller-side
+ * embedding). Kept as a named function
  * (rather than passing `elo` straight through at call sites) so the single
  * confirmed mechanism has one place to change if the model's ELO input contract
  * is ever revised.
@@ -201,11 +198,11 @@ export function eloToInput(elo: number): number {
   return elo;
 }
 
-// ─── Policy vocabulary index (CONTRACT §d) ──────────────────────────────────────
+// ─── Policy vocabulary index ──────────────────────────────────────────────────
 
 /**
  * Computes the flat policy-vocab index for a move, keyed by `from + to + promotion`
- * (CONTRACT §d). Queen promotions (the default) share the base from*64+to lane with
+ * Queen promotions (the default) share the base from*64+to lane with
  * non-promoting moves — a pawn reaching the back rank always promotes, so `to` alone
  * disambiguates it. Underpromotions (r/b/n) use a reserved lane keyed by destination
  * + piece only (origin is unambiguous from board state). See UNDERPROMOTION_PIECE_LANES
@@ -221,16 +218,16 @@ function moveVocabIndex(from: string, to: string, promotion?: string): number {
   return BASE_VOCAB_SIZE + toIdx * UNDERPROMOTION_PIECE_LANES.length + laneIdx;
 }
 
-// ─── Legal-move masking + softmax (MAIA-03) ─────────────────────────────────────
+// ─── Legal-move masking + softmax ─────────────────────────────────────
 
 /**
  * Numerically-stable softmax over raw per-move scores — the SAME arithmetic
  * (max, `exp(s - max)`, sum reduced in array order, `e/sum` guarded against a
  * zero sum) `maskAndSoftmax`, `maskAndSoftmaxUci`, and `softmaxPolicyByContext`
- * (quick 260731-s0z FIX-7) all share. Extracted so all three functions stay
+ * all share. Extracted so all three functions stay
  * byte-identical in arithmetic by construction rather than by hand-copied
  * duplication; the operation ORDER is load-bearing (that's what makes the
- * FIX-7 parity tests meaningful) and must never change without re-verifying
+ * parity tests meaningful) and must never change without re-verifying
  * every caller's parity tests.
  */
 function softmaxOverScores(scores: number[]): number[] {
@@ -246,7 +243,7 @@ function softmaxOverScores(scores: number[]): number[] {
  * per-legal-move probability distribution keyed by SAN. Illegal moves are never
  * present in the output (only chess.js-enumerated legal moves are read from the
  * policy tensor). Mirrors from/to squares into the model's frame when Black is to
- * move (CONTRACT §d "mirror caveat") before indexing into `policy`.
+ * move before indexing into `policy`.
  */
 export function maskAndSoftmax(policy: Float32Array, fen: string): Record<string, number> {
   const chess = new Chess(fen);
@@ -269,7 +266,7 @@ export function maskAndSoftmax(policy: Float32Array, fen: string): Record<string
   return probabilities;
 }
 
-// ─── Single-pass UCI-keyed policy conversion (JANK-01) ──────────────────────────
+// ─── Single-pass UCI-keyed policy conversion ──────────────────────────
 
 /**
  * Shape of the move objects chess.js's private `_moves({legal:true})` returns
@@ -295,7 +292,7 @@ function algebraicFromIndex(square: number): string {
 }
 
 /**
- * Single-pass UCI-keyed counterpart to `maskAndSoftmax` above (JANK-01).
+ * Single-pass UCI-keyed counterpart to `maskAndSoftmax` above.
  * Reads chess.js's private `_moves({legal:true})` ONCE and builds UCI keys
  * directly from each internal move's numeric `from`/`to`/`promotion` fields —
  * never constructing a `Move` object (whose constructor re-runs full
@@ -304,12 +301,12 @@ function algebraicFromIndex(square: number): string {
  * unchanged for `useMaiaEngine.ts`'s Moves-by-Rating chart; this function
  * exists because `maiaQueue.ts`'s hot path only ever needs UCI keys, and the
  * previous per-SAN `sanToUci` replay (`sanToSquares.ts`) was the real O(n²)
- * main-thread cost (JANK-01/194-RESEARCH.md Pattern 1). A `chess.js` version
+ * main-thread cost. A `chess.js` version
  * bump that changes `_moves`'s internal move-object shape or the
  * promotion-lane enumeration order is guarded by the parity test in
  * `maiaEncoding.test.ts`'s `describe('maskAndSoftmaxUci', ...)` block, which
  * pins this function's output key-for-key and value-for-value against
- * `maskAndSoftmax` + `sanToUci` (JANK-02).
+ * `maskAndSoftmax` + `sanToUci`.
  */
 export function maskAndSoftmaxUci(policy: Float32Array, fen: string): Record<string, number> {
   const chess = new Chess(fen);
@@ -341,7 +338,7 @@ export function maskAndSoftmaxUci(policy: Float32Array, fen: string): Record<str
   return probabilities;
 }
 
-// ─── Rung-invariant policy move context (quick 260731-s0z, FIX-7) ──────────────
+// ─── Rung-invariant policy move context ───────────────────────────────────────
 
 /**
  * Rung-invariant per-move context for one FEN: the flat policy-vocab index,
@@ -423,14 +420,14 @@ export function softmaxPolicyByContext(
   return { san, uci };
 }
 
-// ─── Expected score (CONTRACT §e, D-04) ─────────────────────────────────────────
+// ─── Expected score ───────────────────────────────────────────────────────────
 
-/** Weight applied to a draw when collapsing WDL to a single expected-score fill (D-04). */
+/** Weight applied to a draw when collapsing WDL to a single expected-score fill. */
 const DRAW_WEIGHT = 0.5;
 
 /**
  * Collapses a WDL probability vector into a single expected-score fraction
- * (0..1), used by the Maia eval bar (D-04: single expected-score fill, not a
+ * (0..1), used by the Maia eval bar (a single expected-score fill, not a
  * 3-segment W/D/L stack).
  */
 export function expectedScore(wdl: WdlVector): number {
@@ -439,9 +436,9 @@ export function expectedScore(wdl: WdlVector): number {
 
 /**
  * Softmaxes the raw `logits_value` output into a normalized WDL probability
- * vector. Confirmed logit order (CONTRACT §e): index 0 = Loss, 1 = Draw, 2 = Win
+ * vector. Confirmed logit order: index 0 = Loss, 1 = Draw, 2 = Win
  * — NOT W/D/L. Numerically stable (subtracts the max before exponentiating), same
- * technique as `maskAndSoftmax`. Used by `useMaiaEngine` (Task 3) to turn the
+ * technique as `maskAndSoftmax`. Used by `useMaiaEngine` to turn the
  * worker's raw per-ELO WDL logits into the vector `expectedScore` consumes.
  */
 export function softmaxWdl(logits: ArrayLike<number>): WdlVector {

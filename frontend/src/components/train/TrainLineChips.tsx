@@ -1,19 +1,19 @@
 /**
- * TrainLineChips — the reveal's chips row (Phase 237, D-01/D-02).
+ * TrainLineChips — the reveal's chips row.
  *
  * One semantic button per chip, keyed on the PRIMARY role (`train-chip-your` /
  * `-best` / `-game`), never on SAN, so no move text leaks into automation hooks.
  * Roles whose first move coincides arrive already merged from `buildChipGroups`
  * ("Move = Best"). Tapping a chip calls `onSelect(chip.key)`; the active chip
  * carries `aria-pressed="true"`, the brand ring and a brand fill, and each chip
- * shows a small arrow in its board arrow's color (Phase 237 UAT: the row reads
- * as a selector tied to the board's arrows).
+ * shows a small arrow in its board arrow's color (the row reads as a
+ * selector tied to the board's arrows).
  */
 
 import type { ReactElement } from 'react';
 import { ArrowUpRight, Loader2 } from 'lucide-react';
 
-import { formatScore } from '@/components/analysis/EngineLines';
+import { formatEval } from '@/components/analysis/EngineLines';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { BEST_MOVE_ARROW } from '@/lib/theme';
 import { chipArrowColor } from '@/lib/trainArrows';
@@ -28,8 +28,8 @@ interface TrainLineChipsProps {
   sanOnlyGameMove: string | null;
 }
 
-/** The chip's eval slot: a spinner while its line loads, nothing once it failed
- * (Phase 236 D-14/D-15), else the engine eval pill. */
+/** The chip's eval slot: a spinner while its line loads, nothing once it
+ * failed, else the engine eval pill. */
 function ChipEval({ chip, testid }: { chip: ChipGroup; testid: string }): ReactElement | null {
   if (chip.pending === 'loading') {
     return (
@@ -42,12 +42,12 @@ function ChipEval({ chip, testid }: { chip: ChipGroup; testid: string }): ReactE
     );
   }
   if (chip.pending === 'failed' || chip.line === null) return null;
-  // WR-01: a restored Analyze stand-in grade carries an eval-less empty line;
-  // formatScore(null, null) would render a permanent "…" pill, so hide it.
+  // A restored Analyze stand-in grade carries an eval-less empty line;
+  // formatEval(null, null) would render a permanent "…" pill, so hide it.
   if (chip.line.evalCp === null && chip.line.evalMate === null) return null;
-  // SEED-197: the pill is the FROZEN graded reading of the chip's line. The move
-  // list's dimmed preview carries its own live eval pill, so label this one.
-  const score = formatScore(chip.line.evalCp, chip.line.evalMate);
+  // The pill is the frozen graded reading of the chip's line, labelled so it is
+  // not mistaken for the Stockfish row's live eval.
+  const score = formatEval(chip.line.evalCp, chip.line.evalMate);
   return (
     <span
       className="rounded px-1.5 py-0.5 text-sm font-semibold text-white"
@@ -55,7 +55,7 @@ function ChipEval({ chip, testid }: { chip: ChipGroup; testid: string }): ReactE
       data-testid={`${testid}-eval`}
       title="Graded eval"
     >
-      {/* IN-05: `title` never shows on touch and `aria-label` on a role-less span is
+      {/* `title` never shows on touch and `aria-label` on a role-less span is
           not announced reliably (ARIA prohibits naming a generic role), so the label
           is real visually hidden text that every screen reader reads. */}
       <span className="sr-only">Graded eval </span>
@@ -83,9 +83,9 @@ function LineChip({
       data-line-status={chip.pending ?? undefined}
       aria-pressed={active}
       onClick={() => onSelect(chip.key)}
-      // Phase 237 UAT: the chips did not read as tappable. Same hover cue as the
-      // move list's FlawChip (pointer, lift, brightened background), and the
-      // active chip is filled, not just ringed, so it reads as the selection.
+      // Same hover cue as the move list's FlawChip (pointer, lift, brightened
+      // background) so the chips read as tappable, and the active chip is
+      // filled, not just ringed, so it reads as the selection.
       className={cn(
         'flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-md border px-2 py-1.5 text-left text-sm',
         'transition-all hover:-translate-y-px',
@@ -110,7 +110,7 @@ function LineChip({
           data-testid={`${testid}-arrow`}
         />
       </span>
-      {/* Phase 237 UAT: eval before the move, like the Stockfish lines. */}
+      {/* Eval before the move, like the Stockfish lines. */}
       <span className="flex min-w-0 items-center gap-1.5">
         <ChipEval chip={chip} testid={testid} />
         <span className="font-mono" data-testid={`${testid}-san`}>
@@ -132,7 +132,7 @@ export function TrainLineChips({
       role="group"
       aria-label="Lines"
       data-testid="train-line-chips"
-      // Phase 240 D-20: the tour spotlights this row through the wrapper
+      // The tour spotlights this row through the wrapper
       // carrying data-tour-target="chips" (TrainReveal); the active chip keeps
       // its own selection ring below.
       className="grid grid-flow-col auto-cols-fr gap-2"

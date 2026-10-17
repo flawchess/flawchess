@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 validation rows D-06 / D-00f: the Time Pressure section follows the
+ * The Time Pressure section follows the
  * synced TC switch, shows the clock timeline and the score-vs-clock curve from the
  * selected TC's ranked data, and carries three percentile rows.
  */
@@ -105,7 +105,7 @@ describe('TimePressureSection', () => {
         <TimePressureSection tcs={[BLITZ, RAPID]} />
       </>,
     );
-    // Rapid has more ranked games, so it is the D-12 default.
+    // Rapid has more ranked games, so it is the default.
     expect(byId(container, 'mock-pressure-curve').getAttribute('data-tc')).toBe('rapid');
     fireEvent.click(byId(container, 'tc-switch-endgame-stats-blitz'));
     expect(byId(container, 'mock-pressure-curve').getAttribute('data-tc')).toBe('blitz');

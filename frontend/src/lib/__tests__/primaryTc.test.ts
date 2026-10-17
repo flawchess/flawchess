@@ -1,7 +1,7 @@
 /**
- * Phase 98: Unit tests for the computePrimaryTc shared utility.
+ * Unit tests for the computePrimaryTc shared utility.
  *
- * Covers D-09/D-10 behaviour:
+ * Covers:
  * - argmax picks the time-weighted TC (games × NOMINAL_DURATION).
  * - TCs below the minGames floor are excluded from the argmax.
  * - Returns null when all TCs are below the floor.

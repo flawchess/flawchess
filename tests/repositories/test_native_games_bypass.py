@@ -1,6 +1,6 @@
-"""Red-if-removed proof: the Library opponent/rated bypass flag (SEED-163 2b).
+"""Red-if-removed proof: the Library opponent/rated bypass flag.
 
-Phase 260905-p0t. This test asserts through the real seam (apply_game_filters'
+This test asserts through the real seam (apply_game_filters'
 native_games_bypass_opponent_and_rated flag), not against DEFAULT_EXCLUDED_PLATFORMS
 directly — reverting the OR wrapper in query_utils.apply_game_filters must make
 case 2 below fail. A symbol-presence check does not satisfy this contract.

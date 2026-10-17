@@ -1,4 +1,4 @@
-"""Tests for scripts/backfill_accuracy_acpl.py (Phase 178 Plan 04).
+"""Tests for scripts/backfill_accuracy_acpl.py.
 
 Covers the plan's two acceptance scenarios via a single `run_backfill` call
 against an injected session_maker (no real engine/`--db` target is created,
@@ -101,7 +101,7 @@ async def _insert_positions(
     rows: list[dict[str, Any]],
 ) -> None:
     """Insert GamePosition rows carrying eval_cp/eval_mate exactly as stored
-    (post-move-shifted, SEED-044). Each dict: {"ply", "eval_cp", "eval_mate"}."""
+    (post-move-shifted). Each dict: {"ply", "eval_cp", "eval_mate"}."""
     async with session_maker() as session:
         for r in rows:
             session.add(
@@ -141,7 +141,7 @@ async def _fetch_accuracy_acpl(
 
 
 class TestBackfillFillsCompleteGameAndHonorsHoleGate:
-    """D-06: the backfill fills canonical columns for a complete game and
+    """The backfill fills canonical columns for a complete game and
     respects the Complete-Sequence Gate on a holed game."""
 
     async def test_run_backfill(

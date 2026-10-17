@@ -1,8 +1,7 @@
 /**
  * Good-move badge icon — a white checkmark on a light-green (`MOVE_QUALITY_GOOD`)
- * dot, marking a "good move" (Phase 179 Plan 02, D-04, quick 260717-rbn's
- * `best_move_tier === 'good'`): the mover-POV expected-score drop is below
- * `INACCURACY_DROP`, out of book, not best/gem/great.
+ * dot, marking a "good move" (`best_move_tier === 'good'`): the mover-POV
+ * expected-score drop is below `INACCURACY_DROP`, out of book, not best/gem/great.
  *
  * A checkmark on light green, paired with `BestMoveIcon`'s star on dark green
  * — the star/check + dark/light-green pairing mirrors chess.com's Best/Good and
@@ -35,7 +34,7 @@ export function GoodMoveIcon({
       aria-hidden={ariaHidden}
       role="img"
     >
-      {/* Accessible name (mirrors GemIcon's 163-REVIEW IN-02 fix). */}
+      {/* Accessible name (mirrors GemIcon). */}
       <title>Good move</title>
       <circle cx="12" cy="12" r="11" fill={MOVE_QUALITY_GOOD} />
       <polyline

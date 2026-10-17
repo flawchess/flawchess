@@ -204,11 +204,11 @@ async def test_bulk_insert_positions_rollback_atomicity(test_engine) -> None:  #
         await ensure_test_user(setup_session, user_id)
         await setup_session.commit()
 
-    # WR-04 fix: clean up the committed test user in a finally block so the
+    # Clean up the committed test user in a finally block so the
     # session-scoped test_engine doesn't leak user_id=2003 across the rest
     # of the pytest session. The other tests in this file use the
     # rollback-wrapped db_session fixture and auto-clean, but this test
-    # bypasses that wrapper (per D-7) to exercise real rollback semantics.
+    # bypasses that wrapper to exercise real rollback semantics.
     try:
         try:
             async with session_maker() as session:

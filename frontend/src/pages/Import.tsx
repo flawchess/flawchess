@@ -43,9 +43,9 @@ import { ANALYSIS_PATH, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 // queries while an import is active. Matched to the eval-coverage self-poll (3s)
 // so the banner's rescue invalidation fires at the same cadence — the self-poll
 // can briefly stop when pct_complete momentarily hits 100 (helper workers keep
-// evals in lockstep), and this is the backstop that resumes it. Lowered from 5s
-// (quick 260616-rm6) to halve the worst-case Quick Scan stall window.
-const GAME_COUNT_REFRESH_INTERVAL_MS = 3000;
+// evals in lockstep), and this is the backstop that resumes it. The short
+// cadence bounds the worst-case Quick Scan stall window.
+const ACTIVE_IMPORT_REFRESH_INTERVAL_MS = 3000;
 const MIN_GAMES_FOR_RELIABLE_STATS = 1000;
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -69,11 +69,11 @@ function formatLastSync(iso: string | null): string | null {
 }
 
 /**
- * Per-(platform, TC) chip row (D-11/D-12): one chip per currently-selected TC,
- * showing "{icon} {count}" where count is the total imported games in that TC (UAT
- * follow-up to Plan 03 — the chips now read as an honest breakdown of the header's
- * total game count, not just the cap-eligible pre-signup backlog, which silently
- * omitted post-signup games). Icon instead of label, no cap denominator — compact
+ * Per-(platform, TC) chip row: one chip per currently-selected TC,
+ * showing "{icon} {count}" where count is the total imported games in that TC (the
+ * chips read as an honest breakdown of the header's total game count, not just the
+ * cap-eligible pre-signup backlog, which would silently omit post-signup games).
+ * Icon instead of label, no cap denominator — compact
  * mobile display; the cap itself stays visible in the Import filters card. Deselected
  * TCs render no chip at all — no dimmed placeholder. A chip at or over the cap uses
  * text-foreground/font-semibold (reads as "well-populated", never destructive/red);
@@ -81,7 +81,7 @@ function formatLastSync(iso: string | null): string | null {
  * grandfathered account keeps games imported before the cap existed). The TC name is
  * kept as sr-only text so the icon-only chip stays screen-reader legible.
  *
- * Untimed games (clock-less chess.com bot/coach games, D-15) always import and
+ * Untimed games (clock-less chess.com bot/coach games) always import and
  * count against no budget, so they get a trailing infinity chip — shown only
  * when the count is nonzero — so the chips still sum to the header's total.
  */
@@ -131,13 +131,13 @@ function BudgetChipRow({
 }
 
 /**
- * Which bot bubble the Import page shows (224 UAT round 1: the sign-up CTA was
- * "too early" on a fresh account). Before the first COMPLETED import (either
+ * Which bot bubble the Import page shows. A sign-up CTA on a fresh account
+ * would be too early. Before the first COMPLETED import (either
  * platform's last_sync_at, i.e. the last completed import job) every account,
  * guest or registered, gets the welcome bubble. After it, guests get the
  * sign-up ask and registered accounts the same tab tour without the ask.
  *
- * Deliberately NOT `hasImportedGames` (D-03): that flips as soon as the first
+ * Deliberately NOT `hasImportedGames`: that flips as soon as the first
  * game lands, mid-import, while the profile refetches on the 3s import tick.
  * The ask should appear once the import has finished, same signal the
  * "First Sync" info alert below already keys off.
@@ -160,11 +160,10 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
 
   const isDone = data?.status === 'completed';
   const isError = data?.status === 'failed';
-  // SURGE-04/D-03 (Phase 209): a queued job is not done and not failed, so it
-  // stays "active" -- keeps the indeterminate progress bar animating and the
-  // polling running, which is exactly the "not silently stalled" signal D-03
-  // requires. No separate colour or badge; the existing muted-text treatment
-  // applies to the queued label too.
+  // A queued job is not done and not failed, so it stays "active": that keeps
+  // the indeterminate progress bar animating and the polling running, which is
+  // the "not silently stalled" signal. No separate colour or badge; the
+  // existing muted-text treatment applies to the queued label too.
   const isQueued = data?.status === 'queued';
   const isActive = !!data && !isDone && !isError;
 
@@ -197,17 +196,17 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
       // no new backend infra — so it's fine to piggy-back on the 3s import tick.
       queryClient.invalidateQueries({ queryKey: IMPORT_SETTINGS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
-      // Phase 96: also invalidate the readiness query so the import page reacts
+      // Also invalidate the readiness query so the import page reacts
       // to tier transitions (Tier 1 CTA and analyzing-endgames state) alongside
       // eval-coverage and endgameOverview.
       queryClient.invalidateQueries({ queryKey: ['imports', 'readiness'] });
-      // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
+      // Bug fix: the percentile background tasks (Stage A on
       // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
       // asynchronously. Without invalidating the endgame overview the 30s
       // queryClient staleTime serves the stale pre-import response and the
       // percentile badges only appear after a hard refresh.
       queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
-    }, GAME_COUNT_REFRESH_INTERVAL_MS);
+    }, ACTIVE_IMPORT_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isActive, queryClient]);
 
@@ -230,14 +229,7 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
 
   const canDismiss = isDone || isError;
 
-  // Phase 96 Constraint 3: the hot-import "done" copy must not over-claim completion
-  // by saying "Imported N games" — Stockfish eval and percentile computation still
-  // run after the import job finishes. Use a neutral status message instead.
-  // SURGE-04/D-03: a bare queued label with NO queue position, NO queue
-  // depth, and NO ETA -- the full position/ETA feature is explicitly
-  // deferred (209-CONTEXT.md D-01/D-03). A comma replaces the dash from the
-  // CONTEXT.md illustration since rendering is Claude's Discretion here and
-  // CLAUDE.md asks for sparing em-dashes in UI copy; the content is identical.
+  // The queued label carries no queue position, depth or ETA.
   const progressText = isDone
     ? (data.games_imported === 0 ? 'No new games found since last sync' : `${data.games_imported} games imported.`)
     : isError
@@ -285,7 +277,7 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
 
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
   const { data: profile, isLoading: profileLoading } = useUserProfile();
-  // Phase 234 (SEED-191): non-null while Hilda's milestone feedback ask is active.
+  // Non-null while Hilda's milestone feedback ask is active.
   const feedbackAskDaysValue = feedbackAskDays(profile);
   // ImportFilterCard (mounted below) surfaces the CLAUDE.md-mandated isError copy
   // for this same query — only need the data here, for the per-platform budget chips.
@@ -294,9 +286,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Quick 260826-qdl: the Import-tab paste entry point, mounting the SAME
-  // PasteModal the analysis board's PGN/FEN button opens (no second modal
-  // component). Load hands off through sessionStorage (see
+  // The Import-tab paste entry point, mounting the SAME PasteModal the
+  // analysis board's PGN/FEN button opens (no second modal component). Load
+  // hands off through sessionStorage (see
   // pastedGameHandoff.ts); "Analyze full game" needs no handoff at all — it
   // navigates straight to the saved game's /analysis?game_id=N, mirroring
   // Analysis.tsx::handlePasteSaved.
@@ -346,7 +338,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   // ── Sync handler ────────────────────────────────────────────────────────────
 
   const handleSync = async (platform: 'chess.com' | 'lichess') => {
-    // D-02: normalize a typed-then-Enter'd profile URL too, since Enter fires
+    // Normalize a typed-then-Enter'd profile URL too, since Enter fires
     // before blur.
     const username =
       platform === 'chess.com'
@@ -401,13 +393,13 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       // the import-settings query — invalidate so the chips drop to 0 without
       // a page reload.
       queryClient.invalidateQueries({ queryKey: IMPORT_SETTINGS_QUERY_KEY });
-      // Bug fix (quick 260611): Library queries cache for 5 minutes — drop
+      // Bug fix: Library queries cache for 5 minutes — drop
       // them so the Games/Flaws tabs empty out immediately after delete-all.
       queryClient.invalidateQueries({ queryKey: ['library-games'] });
       queryClient.invalidateQueries({ queryKey: ['library-game'] });
       queryClient.invalidateQueries({ queryKey: ['library-flaws'] });
       queryClient.invalidateQueries({ queryKey: ['library-flaw-stats'] });
-      // Bug fix (Phase 94.1-11): delete-all-games leaves the percentile rows
+      // Bug fix: delete-all-games leaves the percentile rows
       // until the next import, but the endgame overview must drop the chip
       // immediately. Invalidate so the FE refetches and renders the empty state.
       queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
@@ -428,7 +420,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     onJobDismissed(jobId);
   };
 
-  // ── Paste modal handlers (Quick 260826-qdl) ─────────────────────────────────
+  // ── Paste modal handlers ─────────────────────────────────
 
   const handlePasteLoad = (result: PasteParseResult, userColor: 'white' | 'black') => {
     if (result.kind !== 'fen' && result.kind !== 'pgn') return;
@@ -444,13 +436,13 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
 
   return (
-    // Top gap matches the bot game page (`py-2 sm:py-4` in Bots.tsx), 224 UAT
-    // round 2. LibraryPage's TabsContent already adds mt-1 (mobile) / mt-4
+    // Top gap matches the bot game page (`py-2 sm:py-4` in Bots.tsx).
+    // LibraryPage's TabsContent already adds mt-1 (mobile) / mt-4
     // (desktop) above this element, so: phones 4+4 = 8px, desktop 16+0 = 16px.
     // The bottom keeps the page's original 24px.
     <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 pt-1 pb-6 md:pt-0 md:px-6 space-y-8">
       <EvalCoverageHeader />
-      {/* D-03: the ask wins on Import whenever it is active and replaces both the
+      {/* The ask wins on Import whenever it is active and replaces both the
           welcome and the explore variant (guests are never eligible, so the
           signup-ask variant is unaffected). */}
       {profile &&
@@ -585,13 +577,13 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             </CardBody>
           </Card>
 
-          {/* 224 UAT round 1: the filters card sits BELOW the two platform
+          {/* The filters card sits BELOW the two platform
               cards it governs, so a first-time visitor sees the sync inputs
               first. The info alert's "see Import filters above" still holds. */}
           <ImportFilterCard />
 
           {/* TRAIN_BUTTON_CLASS: 48px touch height on phones, compact desktop
-              default above `sm` (224 UAT round 1). */}
+              default above `sm`. */}
           <Button
             variant="brand-outline"
             className={cn('w-full', TRAIN_BUTTON_CLASS)}
@@ -614,10 +606,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             </p>
         )}
         <p>
-          {/* Bug fix (WR-01, code-review 186): Phase 186 made the first sync's
-              pre-signup backlog capped (see Import filters above), so "imports
-              all your games" is no longer accurate for any account whose real
-              history exceeds the cap or excludes a deselected time control. */}
+          {/* Bug fix: the first sync's pre-signup backlog is capped (see Import
+              filters above), so "imports all your games" is inaccurate for any
+              account whose real history exceeds the cap or excludes a deselected
+              time control. */}
           <strong className="text-foreground">First Sync:</strong> imports your recent games, plus a bounded amount of older history (see Import filters above). Later syncs only fetch new games since the last import.
         </p>
       </Alert>

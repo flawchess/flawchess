@@ -1,7 +1,7 @@
 /**
  * playerPovEval — the single shared formatter that re-signs a white-POV
  * Stockfish eval (cp/mate) to the addressed player's ("mover's") frame, for
- * the Maia and FlawChess `/analysis` card prose (quick 260709-o72). A
+ * the Maia and FlawChess `/analysis` card prose. A
  * black-mover mate-for-white position must read "-M4" (being mated), not the
  * raw white-POV "M4" — the bug the two prose surfaces both had before this
  * task.

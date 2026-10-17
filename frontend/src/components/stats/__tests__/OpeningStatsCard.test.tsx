@@ -47,8 +47,8 @@ vi.mock('@/components/charts/MiniBulletChart', () => ({
   ),
 }));
 
-vi.mock('@/components/insights/BulletConfidencePopover', () => ({
-  BulletConfidencePopover: ({ testId }: { testId?: string }) => (
+vi.mock('@/components/insights/EvalConfidencePopover', () => ({
+  EvalConfidencePopover: ({ testId }: { testId?: string }) => (
     <button type="button" data-testid={testId}>?</button>
   ),
 }));
@@ -189,7 +189,7 @@ describe('OpeningStatsCard — Moves and Games links', () => {
   });
 });
 
-describe('OpeningStatsCard — per-row confidence dimming (260603-pgv)', () => {
+describe('OpeningStatsCard — per-row confidence dimming', () => {
   // Per-row dimming replaced the old whole-card "<20 games" opacity dim. The
   // Score row dims when computeScoreConfidence(...) is 'low'; the Eval row dims
   // when the literal eval_confidence field is 'low'. The card root never dims.
@@ -239,7 +239,7 @@ describe('OpeningStatsCard — per-row confidence dimming (260603-pgv)', () => {
   });
 });
 
-describe('OpeningStatsCard — border-left color (score-zone, 260507-t4r)', () => {
+describe('OpeningStatsCard — border-left color (score-zone)', () => {
   // Test S1a: Reliable score (total >= MIN_GAMES_FOR_RELIABLE_STATS) uses score-zone color
   // Full-height left spine: reliable cards carry the score-zone accent on the card root (whole left edge, header included); unreliable cards have no spine.
   it('S1a: total >= MIN_GAMES_FOR_RELIABLE_STATS uses scoreZoneColor(derivedScore)', () => {
@@ -288,7 +288,7 @@ describe('OpeningStatsCard — border-left color (score-zone, 260507-t4r)', () =
   });
 });
 
-describe('OpeningStatsCard — score bullet row (260507-t4r)', () => {
+describe('OpeningStatsCard — score bullet row', () => {
   // Test S2: Card renders three rows in fixed order: WDL, Score bullet, Eval bullet
   it('S2: renders WDL, score-bullet, and eval-bullet testids in that DOM order', () => {
     const opening = makeOpening({
@@ -349,7 +349,7 @@ describe('OpeningStatsCard — score bullet row (260507-t4r)', () => {
   });
 });
 
-describe('OpeningStatsCard — zero-match empty state (260613-bst)', () => {
+describe('OpeningStatsCard — zero-match empty state', () => {
   // When the recency filter yields no matching games, the WDL bar is replaced
   // with "No matching games" and the games count shows "—" (em dash).
   it('shows "No matching games" and "—" for games count when total === 0', () => {

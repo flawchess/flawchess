@@ -1,6 +1,6 @@
 /**
- * Shared fixtures for the Library Stats tests (Phase 239): per-TC flaw-comparison payload
- * entries modelled on the sketch 010 dev data.
+ * Shared fixtures for the Library Stats tests: per-TC flaw-comparison payload
+ * entries modelled on the dev data.
  */
 
 import { TEMPO_PHASE_PHASES, TEMPO_PHASE_TEMPOS } from '@/lib/flawComparisonMeta';
@@ -113,7 +113,7 @@ export function makeTcEntry(tc: TimeControlBucket, options: TcEntryOptions): Fla
   };
 }
 
-/** Sketch 010: blitz blunders 5.46 vs 6.12 (gap -0.66), rapid blunders 5.22 vs 5.83 (gap -0.61). */
+/** Blitz blunders 5.46 vs 6.12 (gap -0.66), rapid blunders 5.22 vs 5.83 (gap -0.61). */
 export const BLITZ_ENTRY = makeTcEntry('blitz', {
   analyzedN: 1000,
   blunder: { player_rate: 5.4569, opp_rate: 6.1176, delta: -0.6607, player_events: 1916, opp_events: 1982 },
@@ -126,7 +126,7 @@ export const RAPID_ENTRY = makeTcEntry('rapid', {
   mistake: { player_rate: 6.4, opp_rate: 6.9, delta: -0.5 },
 });
 
-/** One sketch row: gap and a symmetric benchmark band (D-15); flaw counts default to a normal sample. */
+/** One row: gap and a symmetric benchmark band; flaw counts default to a normal sample. */
 function sketchRow(delta: number, bandHalfWidth: number): Partial<FlawBullet> {
   return {
     delta,
@@ -138,7 +138,7 @@ function sketchRow(delta: number, bandHalfWidth: number): Partial<FlawBullet> {
 }
 
 /**
- * Sketch 010 rapid context-tag rows (gap, benchmark band): better hasty, opening,
+ * Rapid context-tag rows (gap, benchmark band): better hasty, opening,
  * middlegame; worse low_clock, squandered, unrushed, reversed; typical endgame, miss, lucky.
  */
 export const SKETCH_RAPID_ENTRY = makeTcEntry('rapid', {
@@ -217,7 +217,7 @@ export function makeTacticBullet(
     zone_lo: zone ? zone[0] : 0,
     zone_hi: zone ? zone[1] : 0,
     has_zone: zone !== undefined,
-    // Mirrors the backend D-14 gate on the fixture CI (delta +- 1): it excludes 0.
+    // Mirrors the backend significance gate on the fixture CI (delta +- 1): it excludes 0.
     significant: delta !== null && Math.abs(delta) > 1,
   };
 }
@@ -248,7 +248,7 @@ export function makeTacticTcEntry(
   };
 }
 
-/** Sketch 010 rapid: fork missed 84 vs 44, allowed 134 vs 180 (4.56 vs 2.39 and 7.28 vs 9.78 per 100 games). */
+/** Rapid: fork missed 84 vs 44, allowed 134 vs 180 (4.56 vs 2.39 and 7.28 vs 9.78 per 100 games). */
 export const SKETCH_RAPID_TACTIC_OVERRIDES: TacticOverrides = {
   'fork:missed': { you: 84, opp: 44, zone: [-0.7, 0.7] },
   'fork:allowed': { you: 134, opp: 180 },

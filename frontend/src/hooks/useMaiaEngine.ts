@@ -6,18 +6,17 @@
  * tab-hide pause) — the *protocol* differs (structured `{fen, eloInputs}`
  * messages, not UCI text), but the state-machine shape transfers directly.
  *
- * MAIA-04: full per-ELO curve + WDL computed for a known FEN, ELO ladder =
- *          maiachess.com's 600-2600 step 100 (UAT quick 260705-bm3; validated
- *          sub-band 1100-2000 per 151-MAIA-CONTRACT.md §c).
- * MAIA-05: ephemeral, board-session-scoped FIFO cache (no persistence).
- * SURF-05: live recompute on every FEN change, no server round-trip.
+ * Full per-ELO curve + WDL computed for a known FEN, ELO ladder =
+ * maiachess.com's 600-2600 step 100 (validated sub-band 1100-2000).
+ * Ephemeral, board-session-scoped FIFO cache (no persistence).
+ * Live recompute on every FEN change, no server round-trip.
  *
- * Two-phase ladder + next-ply prefetch (quick 260906-gu2), now split into a
- * coarse pass and a fill pass (Phase 219-03, D-11). On the wasm backend one
+ * Two-phase ladder + next-ply prefetch, split into a
+ * coarse pass and a fill pass. On the wasm backend one
  * Maia forward pass costs ~200 ms PER RUNG (batching amortizes nothing on a
- * single thread), so the 21-rung ladder took ~4 s during which the chart
- * stayed blank and the FlawChess Engine's root `policy()` call (same shared
- * worker, lower priority) waited behind it. The hook now runs a small
+ * single thread), so a 21-rung ladder in one request takes ~4 s, during which
+ * the chart stays blank and the FlawChess Engine's root `policy()` call (same
+ * shared worker, lower priority) waits behind it. The hook runs a small
  * pipeline per position, one request in flight at a time, re-planned on
  * every completion / input change (`planNextRequest`):
  *
@@ -33,12 +32,11 @@
  *   3b. a FILL pass — the remaining ladder rungs, landing the last few
  *       minutes/refinements the coarse pass didn't cover.
  *
- * `perElo` is now ASCENDING-AND-POSSIBLY-PARTIAL: every present rung is real,
+ * `perElo` is ASCENDING-AND-POSSIBLY-PARTIAL: every present rung is real,
  * but the array may hold 11 rungs (coarse-only) or 21 (complete). The single
- * source of truth for "all 21 have landed" is the new `isLadderComplete`
+ * source of truth for "all 21 have landed" is the `isLadderComplete`
  * flag — NEVER `perElo.length` and NEVER `resultFen` equality, both of which
- * were only ever accidentally equivalent to completeness under the old
- * all-or-nothing contract. Every consumer that needs a stable, complete
+ * hold while the ladder is still partial. Every consumer that needs a stable, complete
  * ladder (the position verdict, gem/great classification, the gem sweep, the
  * `maiaCurveByFen` retention cache) reads `isLadderComplete` and waits for it;
  * the chart and its candidate-selection paint from whatever is present.
@@ -50,15 +48,13 @@
  * maskAndSoftmax/expectedScore/softmaxWdl are single-sourced from maiaEncoding.ts
  * (the worker returns RAW policy/WDL logits only — see maia-worker.js header).
  *
- * Worker ownership (quick 260729-sod, FIX 3): this hook no longer constructs
- * or terminates a Worker directly — it acquires a lease from the shared
+ * Worker ownership: this hook does not construct
+ * or terminate a Worker directly — it acquires a lease from the shared
  * `maiaWorkerHost` singleton, which owns spawn/respawn/death and guarantees
  * every `analyze()` promise settles. This hook keeps its OWN single-in-flight
  * "drop and re-plan" discipline ABOVE the host — that discipline is NOT
  * something the host enforces, since other leases (e.g. `maiaQueue`) need
  * every request answered.
- *
- * Architecture: 151-RESEARCH.md Pattern 1; Confirmed contract: 151-MAIA-CONTRACT.md
  */
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
@@ -80,7 +76,7 @@ import { failPolicyPending, markPolicyPending, setCachedPolicy } from '../lib/en
 /** Rapid-step debounce window (ms) — mirrors useStockfishEngine's RAPID_STEP_DEBOUNCE_MS. */
 const RAPID_STEP_DEBOUNCE_MS = 150;
 
-/** Ephemeral inference cache cap — mirrors Analysis.tsx's LIVE_EVAL_CACHE_MAX pattern (MAIA-05). */
+/** Ephemeral inference cache cap — mirrors LIVE_EVAL_CACHE_MAX in lib/gemMove. */
 const MAIA_CACHE_MAX = 256;
 
 /**
@@ -93,20 +89,17 @@ const MAIA_CACHE_MAX = 256;
 const WDL_RUNG_TOLERANCE_ELO = 50;
 
 /**
- * Dev-only pipeline phase timing (D-15 measurement harness, Phase 219-01).
- * `useMaiaEngine.ts` module header describes the three-phase pipeline this
- * instruments: the exact selected-ELO rung on the live position, the same
- * exact rung on the prefetch position, and the remaining-ladder request.
- * These numbers feed the reference-box readings recorded per plan against
- * `219-MEASUREMENTS.md`'s targets — build once here, reuse in 219-02/219-03.
+ * Dev-only pipeline phase timing. The module header describes the pipeline this
+ * instruments: the exact selected-ELO rung on the live position, the exact rung
+ * on the prefetch position, the coarse ladder pass and the fill ladder pass.
+ * The logged numbers are for reference-box measurement of each stage.
  */
 const MAIA_TIMING_LOG_PREFIX = '[maia-timing]';
 
 /**
- * Phase labels for `logMaiaPhaseTiming` — one per pipeline stage (D-15).
- * `coarse`/`fill` (Phase 219-03) replace the old single `ladder` label so the
- * first-paint number (coarse) can be measured separately from the
- * full-ladder number (fill lands last).
+ * Phase labels for `logMaiaPhaseTiming` — one per pipeline stage.
+ * `coarse` and `fill` are separate labels so the first-paint number (coarse)
+ * can be measured separately from the full-ladder number (fill lands last).
  */
 const MAIA_TIMING_PHASE_EXACT_RUNG = 'exact rung';
 const MAIA_TIMING_PHASE_PREFETCH = 'prefetch';
@@ -140,7 +133,7 @@ export interface UseMaiaEngineOptions {
   /** ELO used to pick the "you are here" rung for wdl/expectedScoreAtSelectedElo. */
   selectedElo: number;
   /**
-   * Lease priority on the shared Maia worker host (quick 260729-sod, FIX 3):
+   * Lease priority on the shared Maia worker host:
    * `true` (default) jumps queued background requests (the live chart must
    * never be starved behind the FlawChess Engine's MCTS policy calls or the
    * gem sweep) but never preempts whatever inference is already in flight.
@@ -156,9 +149,9 @@ export interface UseMaiaEngineOptions {
    */
   prefetchFen?: string | null;
   /**
-   * `true` skips the exact-rung phase and the prefetch, requesting the plain
-   * ladder in one batch as before quick 260906-gu2. For consumers that only
-   * ever read `perElo` (the gem sweep) — their cost and results stay identical.
+   * `true` skips the exact-rung phase and the prefetch; the ladder still arrives
+   * in the coarse then fill passes. For consumers that only read a complete
+   * `perElo` (the gem sweep).
    */
   ladderOnly?: boolean;
 }
@@ -171,8 +164,8 @@ export interface MoveCurvePoint {
 
 export interface UseMaiaEngineState {
   /**
-   * Per-ELO curve — chart input (SURF-01). Ascending by `elo`, no duplicate
-   * rungs, but may be PARTIAL (Phase 219-03, D-12): `[]` until the coarse
+   * Per-ELO curve — chart input. Ascending by `elo`, no duplicate
+   * rungs, but may be PARTIAL: `[]` until the coarse
    * pass lands, 11 rungs after coarse, 21 once `isLadderComplete` is true.
    * The chart and shown-candidate selection paint from whatever is present;
    * any consumer that needs the full ladder must read `isLadderComplete`
@@ -180,10 +173,10 @@ export interface UseMaiaEngineState {
    */
   perElo: MoveCurvePoint[];
   /**
-   * True once every `MAIA_ELO_LADDER` rung has landed for the CURRENT result
-   * (Phase 219-03, D-12) — the single source of truth for ladder
+   * True once every `MAIA_ELO_LADDER` rung has landed for the CURRENT result;
+   * the single source of truth for ladder
    * completeness. Never derive this from `perElo.length` or from `resultFen`
-   * equality; both are now legitimately non-empty/matching while the ladder
+   * equality; both are legitimately non-empty/matching while the ladder
    * is still partial.
    */
   isLadderComplete: boolean;
@@ -196,22 +189,22 @@ export interface UseMaiaEngineState {
   /** True while a (non-cached) inference for the CURRENT fen is in flight (a prefetch does not count). */
   isAnalyzing: boolean;
   /**
-   * CR-03 (Phase 172, SEED-106): true once the shared worker host reports this
+   * True once the shared worker host reports this
    * lease `onFatal` — worker death (async script-load failure, or a pre-ready
    * init error) that leaves the worker dead. Lets a consumer (the background
    * gem sweep) abandon an in-flight request stuck on a worker that will never
    * report `ready` again. NOT fired for a transparent webgpu-unavailable
-   * respawn (quick 260729-sod, FIX 1) — the host handles that on its own.
+   * respawn — the host handles that on its own.
    */
   hasFailed: boolean;
   /**
    * The FEN `perElo`/`wdl` actually belong to; null while no result is held.
-   * Bug fix (163-REVIEW WR-03): this hook clears `latestResult` in an effect
+   * Bug fix: this hook clears `latestResult` in an effect
    * keyed on `fen`, i.e. one commit AFTER the caller's `fen` prop changes — so
    * on the navigation commit `perElo` still holds the PREVIOUS position's
    * curve. Callers writing per-FEN caches must key/guard on `resultFen`, never
    * on their own current position. `resultFen` matching is NOT proof the
-   * ladder is complete (Phase 219-03, D-12 retired that proxy) — a consumer
+   * ladder is complete — a consumer
    * needing the full ladder must read `isLadderComplete` as well.
    */
   resultFen: string | null;
@@ -226,11 +219,11 @@ interface MaiaRung {
 
 /** Everything inferred so far for one FEN — board-session scoped. */
 interface MaiaResult {
-  /** The FEN this inference was computed for (WR-03 — see `resultFen`). */
+  /** The FEN this inference was computed for (see `resultFen`). */
   fen: string;
   /** Every rung inferred so far, keyed by ELO — ladder rungs plus any exact selected-ELO rung. */
   rungs: Map<number, MaiaRung>;
-  /** Ladder rungs ascending — may be PARTIAL (Phase 219-03, D-12); see `isLadderComplete`. */
+  /** Ladder rungs ascending — may be PARTIAL; see `isLadderComplete`. */
   ladder: MoveCurvePoint[];
   /** True iff every `MAIA_ELO_LADDER` rung is present in `rungs` — computed once per merge. */
   isLadderComplete: boolean;
@@ -242,20 +235,20 @@ interface PlannedRequest {
   elos: number[];
   /** True when `fen` is the live position (drives `isAnalyzing`); false for a prefetch. */
   live: boolean;
-  /** Pipeline phase label for dev-only timing (D-15 measurement harness). */
+  /** Pipeline phase label for dev-only timing. */
   phase: MaiaTimingPhase;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Coarse-pass rung stride (D-11): every 2nd ladder rung — named per CLAUDE.md
+ * Coarse-pass rung stride: every 2nd ladder rung — named per CLAUDE.md
  * no-magic-numbers.
  */
 const COARSE_PASS_STRIDE = 2;
 
 /**
- * The coarse target set for phase 3a (D-11): every rung at an even ladder
+ * The coarse target set for phase 3a: every rung at an even ladder
  * index, UNION the exact `selectedElo` rung whenever it is itself a ladder
  * value. Filtering `MAIA_ELO_LADDER` itself (rather than concatenating and
  * sorting) gives ascending order and duplicate-freedom by construction — a
@@ -268,9 +261,8 @@ function coarseLadderElos(selectedElo: number): number[] {
 
 /**
  * True only when every `MAIA_ELO_LADDER` rung is present in the accumulator
- * map (Phase 219-03, D-12) — the sole completeness derivation. Replaces the
- * retired `result.ladder.length > 0` proxy, which broke the moment the
- * ladder could be non-empty-but-partial.
+ * map — the sole completeness derivation. Don't use a
+ * `result.ladder.length > 0` proxy: it breaks once the ladder can be non-empty-but-partial.
  */
 function computeIsLadderComplete(rungs: Map<number, MaiaRung>): boolean {
   return MAIA_ELO_LADDER.every((elo) => rungs.has(elo));
@@ -291,10 +283,10 @@ function hasRung(result: MaiaResult | undefined, elo: number): boolean {
 
 /**
  * The pipeline planner (module header): exact live rung → exact prefetch rung
- * → coarse ladder pass → fill ladder pass (D-11). Pure so the ordering is
+ * → coarse ladder pass → fill ladder pass. Pure so the ordering is
  * unit-testable; returns null once nothing is left to do for the live
- * position. Applied uniformly on the `ladderOnly` path too (RESEARCH Open
- * Question 1) — a second round trip is negligible against inference time,
+ * position. Applied uniformly on the `ladderOnly` path too — a second round
+ * trip is negligible against inference time,
  * and a `ladderOnly`-conditioned branch here is not worth its cost.
  */
 function planNextRequest(
@@ -329,14 +321,13 @@ function planNextRequest(
 /**
  * Folds one worker result into the per-FEN accumulator, returning a NEW
  * object (React identity). Also write-throughs the shared `fen|elo` policy
- * cache (`maiaPolicyCache.ts`, Phase 194 CACHE-05) with a UCI-keyed
+ * cache (`maiaPolicyCache.ts`) with a UCI-keyed
  * distribution per inferred rung — which is also what settles the pending
  * entries `issue()` registered, so an engine `policy()` awaiting this exact
  * `(fen, elo)` resolves from here without a second forward pass. Keyed on the
- * RESULT's own `msg.fen`, never the hook's current `fen` prop (163-REVIEW
- * WR-03).
+ * RESULT's own `msg.fen`, never the hook's current `fen` prop.
  *
- * Bug fix (quick 260731-s0z, FIX-7): this used to call both `maskAndSoftmax`
+ * Bug fix: this used to call both `maskAndSoftmax`
  * and `maskAndSoftmaxUci` per ELO rung — 21 rungs means 42 `new Chess(fen)`
  * constructions and 42 full legal-move generations for ONE FEN whose
  * legal-move set, vocab indices, and UCI/SAN keys are rung-INVARIANT; only
@@ -368,7 +359,7 @@ function mergeMaiaResult(existing: MaiaResult | undefined, msg: MaiaAnalyzeResul
 
 /**
  * The ladder view over `rungs` — ascending, PARTIAL until every rung is
- * present (Phase 219-03, D-12; never bails out early to `[]`). Re-keyed on
+ * present (never bails out early to `[]`). Re-keyed on
  * completeness rather than non-emptiness for the stable-reference
  * optimisation: when the PREVIOUS result was already complete, this merge is
  * a redundant continuation (e.g. a cache re-hit), so returning its array
@@ -415,7 +406,7 @@ export function useMaiaEngine({
   /** The request we are currently waiting on (null when nothing is in flight). */
   const inFlightRef = useRef<PlannedRequest | null>(null);
 
-  /** Ephemeral, board-session-scoped FIFO cache (MAIA-05) — no persistence. */
+  /** Ephemeral, board-session-scoped FIFO cache — no persistence. */
   const cacheRef = useRef<Map<string, MaiaResult>>(new Map());
 
   /** Timestamp of the last input change, for the adaptive debounce (mirrors useStockfishEngine). */
@@ -534,8 +525,8 @@ export function useMaiaEngine({
   // ─── Pump: plan and issue the next request, if any ─────────────────────────
 
   /**
-   * Paused while the tab is hidden (D-04-adjacent tab-hide pause pattern,
-   * mirrors useStockfishEngine's visibilitychange handling).
+   * Paused while the tab is hidden (mirrors useStockfishEngine's
+   * visibilitychange handling).
    */
   const pump = useCallback(() => {
     const lease = leaseRef.current;
@@ -595,7 +586,7 @@ export function useMaiaEngine({
     return () => clearTimeout(timer);
   }, [fen, prefetchFen, selectedElo]);
 
-  // ─── Worker lease lifecycle (quick 260729-sod, FIX 3) ──────────────────────
+  // ─── Worker lease lifecycle ────────────────────────────────────────────────
 
   useEffect(() => {
     if (!enabled) return;
@@ -604,7 +595,7 @@ export function useMaiaEngine({
     const lease = acquireMaiaWorker({
       source: 'maia-worker',
       priority,
-      // CR-03 (Phase 172, SEED-106): worker death (async script-load failure,
+      // Worker death (async script-load failure,
       // or a pre-ready init error) — NOT fired for a transparent
       // webgpu-unavailable respawn, which the host handles on its own and
       // this hook never observes as a state transition.
@@ -636,7 +627,7 @@ export function useMaiaEngine({
       disposed = true;
       lease.release();
       leaseRef.current = null;
-      // Bug fix (quick 260731-s0z, FIX-1): this cleanup used to only null the
+      // Bug fix: this cleanup used to only null the
       // lease, leaving the in-flight marker/isAnalyzing/isReady set. The
       // in-flight request's own rejection handler above bails at the
       // `leaseRef.current !== lease` check BEFORE it clears the marker, so it

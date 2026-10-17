@@ -10,7 +10,7 @@ import { FeedbackModal } from './FeedbackModal';
  * feedback submissions were zero over months, and the floating button competed
  * with the MobileBottomBar and board controls for bottom-edge space.
  *
- * Positioning / z-index per UI-SPEC ladder:
+ * Positioning / z-index ladder:
  * - z-20: below install banner (z-30), overlays (z-50)
  * - Safe-area inset via tailwindcss-safe-area pb-safe for iPad PWA home indicator
  *
@@ -45,7 +45,7 @@ export function FeedbackButton() {
         <Button
           // Brand-brown primary so the floating trigger reads as the high-emphasis CTA
           variant="default"
-          // h-11 meets the 44px touch target (D-02); the visible label makes the
+          // h-11 meets the 44px touch target; the visible label makes the
           // icon's purpose obvious, which the bare icon did not
           className="h-11 px-4"
           aria-label="Send feedback"

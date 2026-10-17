@@ -49,7 +49,7 @@ describe('dedupeArrowsByMove', () => {
   });
 
   it('keeps two arrows on the same from→to when they have distinct layerKey values', () => {
-    // The FlawChess Engine + Stockfish concentric-arrow case (D-06): when both
+    // The FlawChess Engine + Stockfish concentric-arrow case: when both
     // engines agree on the same move, both arrows must survive dedupe instead
     // of collapsing to one, so they render as nested concentric arrows.
     const fc = arrow('e2', 'e4', { color: 'amber', layerKey: 'fc-0' });

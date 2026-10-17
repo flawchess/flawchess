@@ -1,4 +1,4 @@
-"""Unit tests for app.services.train_leaderboard (Phase 230, plans 01 and 02). DB-free.
+"""Unit tests for app.services.train_leaderboard. DB-free.
 
 Every test builds WeeklyAggregate / SolveTotals values directly. Test names carry a
 rule token (window, display_name, accuracy_percent, qualify, rank, slice,
@@ -52,8 +52,8 @@ def _agg(
     *,
     points: int = 0,
     puzzles: int = 1,
-    nf_points: int | None = None,
-    nf_puzzles: int | None = None,
+    non_filler_points: int | None = None,
+    non_filler_puzzles: int | None = None,
     name: str | None = None,
     chess_com: str | None = None,
     is_guest: bool = False,
@@ -65,8 +65,8 @@ def _agg(
         totals=SolveTotals(
             points=points,
             puzzles=puzzles,
-            nf_points=points if nf_points is None else nf_points,
-            nf_puzzles=puzzles if nf_puzzles is None else nf_puzzles,
+            non_filler_points=points if non_filler_points is None else non_filler_points,
+            non_filler_puzzles=puzzles if non_filler_puzzles is None else non_filler_puzzles,
         ),
         lichess_username=name if name is not None else f"user{user_id:02d}",
         chess_com_username=chess_com,
@@ -138,7 +138,7 @@ def test_window_seconds_remaining_counts_down_to_the_deadline() -> None:
 
 
 def test_window_seconds_remaining_rounds_up_inside_the_last_second() -> None:
-    # WR-03: truncating to 0 here let the client roll over before the server's reset.
+    # Truncating to 0 here let the client roll over before the server's reset.
     now = datetime.datetime(2031, 1, 12, 23, 59, 59, 500_000, tzinfo=UTC)
     start, end = week_window(now)
     board = build_leaderboard(
@@ -178,13 +178,13 @@ def test_display_name_precedence_and_blank_handling(
 
 
 @pytest.mark.parametrize(
-    ("nf_points", "nf_puzzles", "expected"),
+    ("non_filler_points", "non_filler_puzzles", "expected"),
     [(20, 9, 74), (27, 9, 100), (0, 5, 0), (5, 0, None)],
 )
 def test_accuracy_percent_is_a_floored_integer(
-    nf_points: int, nf_puzzles: int, expected: int | None
+    non_filler_points: int, non_filler_puzzles: int, expected: int | None
 ) -> None:
-    assert accuracy_percent(nf_points, nf_puzzles) == expected
+    assert accuracy_percent(non_filler_points, non_filler_puzzles) == expected
 
 
 # --- qualify ----------------------------------------------------------------
@@ -209,7 +209,7 @@ def test_qualify_at_the_minimum_is_no_longer_tentative() -> None:
 
 
 def test_qualify_filler_only_user_has_no_accuracy_entry_but_a_points_row() -> None:
-    filler_only = _agg(1, points=9, puzzles=3, nf_points=0, nf_puzzles=0)
+    filler_only = _agg(1, points=9, puzzles=3, non_filler_points=0, non_filler_puzzles=0)
     accuracy = _accuracy([filler_only], viewer_id=1)
     points = _points([filler_only], viewer_id=1)
     assert accuracy.viewer is None
@@ -220,7 +220,7 @@ def test_qualify_filler_only_user_has_no_accuracy_entry_but_a_points_row() -> No
 
 
 def test_qualify_counts_only_non_filler_puzzles_on_the_accuracy_board() -> None:
-    mixed = _agg(1, points=30, puzzles=10, nf_points=6, nf_puzzles=2)
+    mixed = _agg(1, points=30, puzzles=10, non_filler_points=6, non_filler_puzzles=2)
     row = _accuracy([mixed], viewer_id=1).rows[0]
     assert (row.value, row.puzzles) == (100, 2)
     assert _points([mixed], viewer_id=1).rows[0].puzzles == 10
@@ -456,17 +456,20 @@ def test_guest_visibility_wins_over_hidden_and_public_is_the_default() -> None:
     assert resolve_viewer_visibility(is_guest=False, leaderboard_hidden=False) == "public"
 
 
-# --- without_session (D-12 / D-18) -------------------------------------------
+# --- without_session -------------------------------------------
 
 
 def _contribution(
-    points: int, puzzles: int, nf_points: int | None = None, nf_puzzles: int | None = None
+    points: int,
+    puzzles: int,
+    non_filler_points: int | None = None,
+    non_filler_puzzles: int | None = None,
 ) -> SolveTotals:
     return SolveTotals(
         points=points,
         puzzles=puzzles,
-        nf_points=points if nf_points is None else nf_points,
-        nf_puzzles=puzzles if nf_puzzles is None else nf_puzzles,
+        non_filler_points=points if non_filler_points is None else non_filler_points,
+        non_filler_puzzles=puzzles if non_filler_puzzles is None else non_filler_puzzles,
     )
 
 
@@ -515,17 +518,19 @@ def test_without_session_is_none_when_the_session_was_everything_or_absent() -> 
 
 
 def test_without_session_viewer_without_an_entry_has_no_standing() -> None:
-    # A filler-only viewer has a Points entry but no Accuracy entry (D-19).
+    # A filler-only viewer has a Points entry but no Accuracy entry.
     aggs = [
         _agg(1, points=20, puzzles=5, name="alpha"),
-        _agg(2, points=6, puzzles=2, nf_points=0, nf_puzzles=0, name="me"),
+        _agg(2, points=6, puzzles=2, non_filler_points=0, non_filler_puzzles=0, name="me"),
     ]
     board = build_board(
         "accuracy",
         aggs,
         viewer_id=2,
         viewer_visibility="public",
-        session_contribution=_contribution(points=6, puzzles=2, nf_points=0, nf_puzzles=0),
+        session_contribution=_contribution(
+            points=6, puzzles=2, non_filler_points=0, non_filler_puzzles=0
+        ),
     )
     assert board.viewer is None
 
@@ -574,12 +579,12 @@ def test_without_session_hidden_viewer_counts_only_visible_others() -> None:
 
 
 def test_totals_without_subtracts_each_field_and_clamps_at_zero() -> None:
-    total = SolveTotals(points=10, puzzles=4, nf_points=8, nf_puzzles=3)
+    total = SolveTotals(points=10, puzzles=4, non_filler_points=8, non_filler_puzzles=3)
     assert totals_without(total, SolveTotals(3, 1, 2, 1)) == SolveTotals(7, 3, 6, 2)
     assert totals_without(total, SolveTotals(99, 99, 99, 99)) == SolveTotals(0, 0, 0, 0)
 
 
-# --- tier (quick 261004-8rt: qualified first, tentative unranked below) -------
+# --- tier (qualified first, tentative unranked below) -------
 
 
 def test_tier_qualified_user_outranks_tentative_users_at_a_higher_percent() -> None:
@@ -735,7 +740,7 @@ def test_tier_guest_and_hidden_viewers_sit_in_the_tentative_section(visibility: 
     assert [r.name for r in other.rows] == ["qualified", "public_tentative"]
 
 
-# --- final_standings and medal_for (Phase 231) ----------------------------------
+# --- final_standings and medal_for ----------------------------------
 
 
 def _points_aggs(values: list[int]) -> list[WeeklyAggregate]:
@@ -839,7 +844,7 @@ def test_medal_for_a_zero_value_never_earns_a_medal(rank: int) -> None:
     assert medal_for(rank, 0) is None
 
 
-# --- last_week, podium, viewer_final_rank (Phase 231) ----------------------------
+# --- last_week, podium, viewer_final_rank ----------------------------
 
 _PREV_WEEK = datetime.date(2033, 1, 3)
 
@@ -1087,5 +1092,5 @@ def test_visible_keys_includes_the_hidden_viewer_but_never_another_hidden_or_gue
 def test_visible_keys_is_empty_when_nobody_is_on_the_board() -> None:
     assert visible_keys("points", [], viewer_id=1) == []
     # Filler-only users have no Accuracy entry.
-    filler_only = [_agg(1, points=10, puzzles=3, nf_points=0, nf_puzzles=0)]
+    filler_only = [_agg(1, points=10, puzzles=3, non_filler_points=0, non_filler_puzzles=0)]
     assert visible_keys("accuracy", filler_only, viewer_id=1) == []

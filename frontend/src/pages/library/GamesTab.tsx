@@ -66,7 +66,7 @@ const ANALYZE_INFLIGHT_TIMEOUT_MS = 120_000;
  * State management:
  * - appliedFilters: drives useLibraryGames (committed store value).
  * - pendingFilters: tracks game-metadata draft edits.
- * - flawFilter: shared cross-tab committed state from useFlawFilterStore (D-04).
+ * - flawFilter: shared cross-tab committed state from useFlawFilterStore.
  * - pendingFlawFilter: Tags panel draft (both desktop and mobile).
  * - offset: page state, reset to 0 on any Apply.
  */
@@ -80,7 +80,7 @@ export function GamesTab() {
     setPendingFilters(appliedFilters);
   }, [appliedFilters]);
 
-  // ── Flaw filter (shared cross-tab state — D-04) ───────────────────────────────
+  // ── Flaw filter (shared cross-tab state) ───────────────────────────────
   const [flawFilter, setFlawFilter] = useFlawFilterStore();
 
   // Pending flaw filter draft — shared buffer for desktop Tags panel and mobile drawer.
@@ -189,17 +189,17 @@ export function GamesTab() {
   // Poll eval-coverage so the badge and games list update when analysis completes.
   // trackFullAnalysis: keep polling while the background drain works through the
   // backlog so the "N of M analyzed" badge ticks up live (no tier-2 in-flight rows
-  // exist for background work — Phase 118 removed the auto-enqueue).
+  // exist for background work).
   const { analyzedCount, totalCount, isError: isCoverageError } = useEvalCoverage({
     trackFullAnalysis: true,
   });
 
-  // Tier-1 "Analyzing…" state lifted out of the cards (Option A). Owning the set
+  // Tier-1 "Analyzing…" state lifted out of the cards. Owning the set
   // here lets us keep the games-list poll alive until an on-demand analyze lands —
   // the global eval-coverage poll backs off after a stall (~15s) which is shorter
   // than a single-game eval (~20s), so a card relying on it alone could pulse
-  // forever (the eval-coverage hook has no per-job in-flight signal since Phase
-  // 119-03 removed in_flight_count). A per-game timeout backstops failed/lost jobs.
+  // forever (the eval-coverage hook has no per-job in-flight signal). A per-game
+  // timeout backstops failed/lost jobs.
   const [inFlightIds, setInFlightIds] = useState<ReadonlySet<number>>(() => new Set());
   const inFlightTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -253,11 +253,11 @@ export function GamesTab() {
     PAGE_SIZE,
     // Poll the games list while full analysis is incomplete so cards flip from
     // "Analyzing…" to the analyzed view within a few seconds, no page reload.
-    // Repointed from inFlightCount > 0 to analyzedCount < totalCount in Phase
-    // 119-03: tier-3 derived picks have no eval_jobs rows, so inFlightCount was
-    // blind to the dominant backlog drain (119-RESEARCH-NOTES.md). Also poll while
-    // any on-demand analyze is in flight (Option A) so its card flips reliably even
-    // when the eval-coverage poll has already backed off.
+    // Keyed on analyzedCount < totalCount rather than an in-flight count: tier-3
+    // derived picks have no eval_jobs rows, so an in-flight count would be blind
+    // to the dominant backlog drain. Also poll while any on-demand analyze is in
+    // flight so its card flips reliably even when the eval-coverage poll has
+    // already backed off.
     analyzedCount < totalCount || inFlightIds.size > 0 ? LIBRARY_GAMES_POLL_INTERVAL_MS : 0,
   );
 
@@ -265,8 +265,9 @@ export function GamesTab() {
   // per-game pill only clears once analysis_state flips to 'analyzed', which
   // needs one more refetch after analyzedCount rises. Fire invalidateQueries on
   // the analyzedCount increase (prev < current) so a finished analysis flips the
-  // card without a reload. Repointed from inFlightCount >0→0 transition in Phase
-  // 119-03 (same rationale: inFlightCount was blind to tier-3 backlog).
+  // card without a reload. Keyed on the analyzedCount increase rather than an
+  // in-flight count for the same reason: an in-flight count is blind to tier-3
+  // backlog.
   const queryClient = useQueryClient();
   // Seed to null (not analyzedCount, which is the hook default 0 before the
   // eval-coverage fetch resolves). Skipping the first observed transition stops
@@ -289,8 +290,8 @@ export function GamesTab() {
 
   // ── Derived state for empty-state decisions ───────────────────────────────────
   // Bug fix: this used to be totalImported alone. The profile's chess.com+lichess
-  // sum is an IMPORT-GATE quantity (App.tsx IMPORT_EXEMPT_ROUTES / Phase 208 D-10 —
-  // a bot or pasted game must not unlock the import-gated nav), so it omits
+  // sum is an IMPORT-GATE quantity (App.tsx IMPORT_EXEMPT_ROUTES: a bot or
+  // pasted game must not unlock the import-gated nav), so it omits
   // platform='flawchess' bot games and platform='pgn' pasted games. Using it as a
   // game total made a user whose only games are bot games see "No games imported
   // yet" rendered ABOVE their populated game list. eval-coverage's totalCount is

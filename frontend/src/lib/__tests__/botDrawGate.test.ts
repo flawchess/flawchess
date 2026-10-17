@@ -51,7 +51,7 @@ describe('wouldBotAcceptDraw', () => {
   });
 
   it('declines on the not-yet-evaluated sentinel even with queens off the board', () => {
-    // Phase 169.5. The point of this case is precisely that it is QUEENS-OFF:
+    // The point of this case is precisely that it is QUEENS-OFF:
     // the endgame gate is wide open and a 0.5 score would be accepted here
     // (see the 'accepts a near-equal score once queens are off' case above,
     // same FEN). Only the null sentinel — the bot has evaluated nothing this
@@ -62,15 +62,15 @@ describe('wouldBotAcceptDraw', () => {
     expect(wouldBotAcceptDraw(null, chess)).toBe(false);
   });
 
-  describe('contempt (D-09, Phase 182)', () => {
-    it('with contempt omitted, is identical to the pre-182 (no-contempt) behavior', () => {
+  describe('contempt', () => {
+    it('with contempt omitted, is identical to the no-contempt behavior', () => {
       const chess = new Chess('4k3/8/8/8/8/8/8/4K3 w - - 0 1'); // queens off
       expect(wouldBotAcceptDraw(0.5, chess)).toBe(wouldBotAcceptDraw(0.5, chess, 0));
       expect(wouldBotAcceptDraw(0.5, chess, 0)).toBe(true);
     });
 
     it('positive contempt (Grinder-like) refuses a level position a neutral (contempt=0) bot would accept', () => {
-      // CR-01 (182-REVIEW.md): asserts the DOCUMENTED behavioral intent, not
+      // Asserts the DOCUMENTED behavioral intent, not
       // the formula — a positive-contempt style (e.g. Grinder, 0.15) "wants
       // meaningfully more than dead-equal before accepting," so it must keep
       // playing on a dead-equal (0.5) score that a neutral bot would accept.
@@ -87,7 +87,7 @@ describe('wouldBotAcceptDraw', () => {
     });
 
     it('negative contempt (Wall-like) accepts a mildly-worse position a neutral (contempt=0) bot would decline', () => {
-      // CR-01 (182-REVIEW.md): a negative-contempt style (e.g. Wall, -0.08)
+      // A negative-contempt style (e.g. Wall, -0.08)
       // "welcomes an early draw a bit more readily than dead-equal," so it
       // must accept even a mildly-worse-than-equal position.
       const chess = new Chess('4k3/8/8/8/8/8/8/4K3 w - - 0 1'); // queens off
@@ -107,7 +107,7 @@ describe('wouldBotAcceptDraw', () => {
   });
 });
 
-describe('wouldBotResign (D-07/D-08, Phase 182)', () => {
+describe('wouldBotResign', () => {
   const RESIGN_THRESHOLD = 0.1;
 
   function pastMinMoveChess(): Chess {
@@ -162,7 +162,7 @@ describe('wouldBotResign (D-07/D-08, Phase 182)', () => {
   });
 });
 
-describe('wouldBotOfferDraw (D-07, Phase 183, Plan 02)', () => {
+describe('wouldBotOfferDraw', () => {
   function pastMinMoveChess(): Chess {
     // queens still on the board — proves the fullmove floor alone gates offers
     // past the opening, no separate endgame/queens-off branch like wouldBotAcceptDraw.
@@ -198,7 +198,7 @@ describe('wouldBotOfferDraw (D-07, Phase 183, Plan 02)', () => {
     expect(wouldBotOfferDraw(0.9, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(false);
   });
 
-  describe('contempt shifts the offer target (mirrors wouldBotAcceptDraw D-09)', () => {
+  describe('contempt shifts the offer target (mirrors wouldBotAcceptDraw)', () => {
     it('positive contempt (Grinder-like) refuses a dead-equal score a neutral bot would offer', () => {
       const chess = pastMinMoveChess();
       expect(wouldBotOfferDraw(0.5, chess, 0, BOT_DRAW_OFFER_COOLDOWN_MOVES)).toBe(true); // neutral baseline

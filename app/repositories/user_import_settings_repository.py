@@ -1,9 +1,9 @@
 """Repository for user_import_settings: get / UPSERT / get-or-create.
 
-Phase 186 Plan 01 (IMPORT-01). Implements the read/write path for the
-per-user import-settings row (TC toggles + backlog game cap, D-01/D-02) that
-both the settings API (GET/PATCH /users/me/import-settings) and the
-forward-pass import filter (`import_service.py`) consume.
+Implements the read/write path for the per-user import-settings row (TC
+toggles + backlog game cap) that both the settings API (GET/PATCH
+/users/me/import-settings) and the forward-pass import filter
+(`import_service.py`) consume.
 
 V4 Information Disclosure mitigation: every function requires `user_id` as a
 keyword-only argument. Callers MUST pass the authenticated user's ID (from
@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_import_settings import UserImportSettings
 
-# Per-(platform, TC) backlog budget (D-01). Mirrors the DB
+# Per-(platform, TC) backlog budget. Mirrors the DB
 # `ck_user_import_settings_cap` CHECK constraint and the API's
 # `ImportSettingsResponse`/`ImportSettingsUpdate` Literal (CLAUDE.md V5 rule:
 # never bare int for a fixed-value-set field).
@@ -34,10 +34,9 @@ GameCap = Literal[1000, 3000, 5000]
 class ImportSettingsRow:
     """Internal dataclass for a single user_import_settings row.
 
-    Frozen (immutable) per CLAUDE.md internal-structured-data rule. Only the
-    columns this plan reads/writes are exposed here (TC toggles + cap); the
-    backfill-cursor columns are reserved for Plan 02 and are not surfaced
-    through this dataclass yet.
+    Frozen (immutable) per CLAUDE.md internal-structured-data rule. Exposes the
+    TC toggles + cap only; the backfill cursors are read and written through the
+    dedicated *_backfill_cursor functions below.
     """
 
     tc_bullet: bool
@@ -47,9 +46,9 @@ class ImportSettingsRow:
     game_cap: GameCap
 
 
-# App-layer defaults for a brand-new user's first GET/PATCH (D-16: one code
+# App-layer defaults for a brand-new user's first GET/PATCH (one code
 # path for guests and registered users -- no guest-specific branch). Existing
-# users at migration time get the DIFFERENT grandfathered values (D-13) via
+# users at migration time get the DIFFERENT grandfathered values via
 # the migration's one-time INSERT ... SELECT, never through this constant.
 DEFAULT_IMPORT_SETTINGS = ImportSettingsRow(
     tc_bullet=False,
@@ -60,7 +59,7 @@ DEFAULT_IMPORT_SETTINGS = ImportSettingsRow(
 )
 
 
-def _import_scope_expanded(previous: ImportSettingsRow, updated: ImportSettingsRow) -> bool:
+def import_scope_expanded(previous: ImportSettingsRow, updated: ImportSettingsRow) -> bool:
     """True when the new import settings want MORE backlog than the old ones.
 
     Scope expands when any TC bucket flips off->on or the cap increases --
@@ -69,9 +68,8 @@ def _import_scope_expanded(previous: ImportSettingsRow, updated: ImportSettingsR
     comment). Pure preference reshuffles, narrowing, or no-op saves never
     reset progress.
 
-    Moved here from app/routers/users.py (quick 260724-gnd) so both the PATCH
-    endpoint and import_service.run_import's end-of-run scope re-check share
-    ONE implementation instead of two copies drifting apart.
+    Shared by the PATCH endpoint and import_service.run_import's end-of-run
+    scope re-check.
     """
     tc_enabled = any(
         getattr(updated, field) and not getattr(previous, field)
@@ -124,10 +122,10 @@ async def upsert_settings(
     session (the `get_async_session` FastAPI dependency auto-commits after
     the route handler returns).
 
-    Only the TC toggles + game_cap are written here -- the reserved
-    backfill-cursor columns (chesscom_backfill_oldest_year/month,
-    lichess_backfill_oldest_ms) are left untouched on conflict and default to
-    NULL on insert (Plan 02 owns writing them).
+    Only the TC toggles + game_cap are written here -- the backfill-cursor
+    columns (chesscom_backfill_oldest_year/month, lichess_backfill_oldest_ms)
+    are left untouched on conflict and default to NULL on insert; the
+    *_backfill_cursor functions write them.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -165,7 +163,7 @@ async def upsert_settings(
 
 
 async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> ImportSettingsRow:
-    """Return the user's settings, creating a default row on first touch (D-16).
+    """Return the user's settings, creating a default row on first touch.
 
     GET /users/me/import-settings and the import-service forward-pass filter
     both call this so a user with no settings row yet always sees a
@@ -195,9 +193,9 @@ async def get_chesscom_backfill_cursor(
 ) -> tuple[int, int] | None:
     """Return the persisted chess.com backward-walk cursor, or None.
 
-    Phase 186 Plan 02 (IMPORT-03). The cursor is the (year, month) of the
-    oldest archive month already ATTEMPTED by a previous backward walk (not
-    necessarily one that yielded stored games -- 186-RESEARCH.md Pitfall 1).
+    The cursor is the (year, month) of the oldest archive month already
+    ATTEMPTED by a previous backward walk (not necessarily one that yielded
+    stored games).
     None means no backward walk has run yet for this user (or the settings
     row does not exist yet), so the walk starts at the current month.
 
@@ -222,8 +220,8 @@ async def update_chesscom_backfill_cursor(
 ) -> None:
     """Persist the chess.com backward-walk cursor after an attempted month.
 
-    Phase 186 Plan 02 (IMPORT-03, Pitfall 1). Called after EVERY attempted
-    archive month, not just ones that yielded stored games -- the caller is
+    Called after EVERY attempted archive month, not just ones that yielded
+    stored games -- the caller is
     responsible for calling this incrementally (mirrors the per-batch
     progress-persistence pattern in `import_service._flush_batch_with_progress`).
     Caller commits.
@@ -244,8 +242,8 @@ async def update_chesscom_backfill_cursor(
 async def get_lichess_backfill_cursor(session: AsyncSession, *, user_id: int) -> int | None:
     """Return the persisted lichess backward-walk `until` cursor (ms), or None.
 
-    Phase 186 Plan 02 (IMPORT-03). None means no backward walk has run yet
-    for this user (or the settings row does not exist yet), so the walk
+    None means no backward walk has run yet for this user (or the settings
+    row does not exist yet), so the walk
     starts unbounded (most-recent pre-anchor games first).
 
     Args:
@@ -265,9 +263,8 @@ async def update_lichess_backfill_cursor(
 ) -> None:
     """Persist the lichess backward-walk `until` cursor after a fetched chunk.
 
-    Phase 186 Plan 02 (IMPORT-03, Pitfall 1). Called after every fetched
-    backward chunk with the oldest game's `played_at` in that chunk. Caller
-    commits.
+    Called after every fetched backward chunk with the oldest game's
+    `played_at` in that chunk. Caller commits.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -284,14 +281,12 @@ async def update_lichess_backfill_cursor(
 async def reset_backfill_cursors(session: AsyncSession, *, user_id: int) -> None:
     """NULL all three backward-walk cursor columns for a user.
 
-    Phase 186 Plan 02 (IMPORT-03, Pitfall 4). Called by `delete_all_games` so a
-    post-delete resync backfills the fresh account's full budget instead of
-    resuming from a stale cursor, and by the import-settings PATCH when the
-    scope expands (UAT 186: a TC turned on or the cap raised -- the old cursor
-    has already walked past games the new scope wants). Deliberately leaves
-    the TC toggles and game_cap PREFERENCE columns untouched -- only the
-    progress cursors reset.
-    Caller commits.
+    Called by `delete_all_games` so a post-delete resync backfills the fresh
+    account's full budget instead of resuming from a stale cursor, and by the
+    import-settings PATCH when the scope expands (a TC turned on or the cap
+    raised -- the old cursor has already walked past games the new scope
+    wants). Deliberately leaves the TC toggles and game_cap PREFERENCE columns
+    untouched -- only the progress cursors reset. Caller commits.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -312,7 +307,7 @@ __all__ = [
     "DEFAULT_IMPORT_SETTINGS",
     "GameCap",
     "ImportSettingsRow",
-    "_import_scope_expanded",
+    "import_scope_expanded",
     "get_chesscom_backfill_cursor",
     "get_lichess_backfill_cursor",
     "get_or_create_settings",

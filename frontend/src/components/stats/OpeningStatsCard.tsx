@@ -5,7 +5,7 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { EvalCpuPlaceholder } from './EvalCpuPlaceholder';
 import { useReadiness } from '@/hooks/useReadiness';
@@ -39,7 +39,7 @@ interface OpeningStatsCardProps {
   color: 'white' | 'black';
   /** Globally unique index for data-testid scoping (matches OpeningFindingCard convention). */
   idx: number;
-  /** Reserved for future per-section namespacing; today every card uses the same prefix. */
+  /** Per-section testid prefix (e.g. 'bookmarks-white-card', 'mpo-black-card'). */
   testIdPrefix: string;
   /** Routes to the Move Explorer for this opening (mirrors OpeningFindingCard's onFindingClick). */
   onOpenMoves: (opening: OpeningWDL, color: 'white' | 'black') => void;
@@ -78,14 +78,14 @@ export function OpeningStatsCard({
   const derivedScore = scoreStats.score;
 
   // Border color uses the score zone (reliability-gated). Eval loses the border
-  // but keeps its bullet row, Cpu icon, and eval-text color — plenty of signal.
-  // When total < MIN_GAMES_FOR_RELIABLE_STATS, a transparent border avoids
-  // painting a misleading score zone on a sparse row (260507-t4r D4).
+  // but keeps its bullet row, Cpu icon, and eval-text color. Below
+  // MIN_GAMES_FOR_RELIABLE_STATS the card gets no accent spine, so a sparse row
+  // paints no score zone.
   const isReliableScore = opening.total >= MIN_GAMES_FOR_RELIABLE_STATS;
   const scoreZoneHex = scoreZoneColor(derivedScore);
   const borderLeftColor = isReliableScore ? scoreZoneHex : 'transparent';
 
-  // Quick task 260508-dcp: separate gate for the Score % FONT color.
+  // Separate gate for the Score % FONT color.
   // Font reads in zone color only when the confidence bucket is 'medium' or
   // 'high' (n>=10 + p below the medium threshold; current threshold is
   // p<0.05) AND the zone is colored (red/green, not the in-between band).
@@ -101,20 +101,18 @@ export function OpeningStatsCard({
     isConfident(opening.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
-  // Per-row dimming (260603-pgv): fade only the stat row whose confidence is
-  // low, instead of the whole card. Eval dims only when an eval value exists
-  // (the placeholder / no-eval "—" cases are never dimmed).
+  // Per-row dimming: fade only the stat row whose confidence is low. Eval dims
+  // only when an eval value exists (the placeholder / no-eval "—" cases are never
+  // dimmed).
   const dimScoreRow = !isConfident(scoreStats.confidence);
   const dimEvalRow = hasMgEval && !isConfident(opening.eval_confidence);
 
   // Full-height left spine on the card root (see OpeningFindingCard). Reliable
   // cards get the score-zone accent down the whole left edge (Card accentColor);
   // unreliable cards (n < MIN_GAMES) get no spine — the uniform 1px border stays,
-  // avoiding a 4px transparent gap and any color signal on sparse data. The
-  // whole-card opacity dim was removed in 260603-pgv (per-row dimming replaces it).
+  // avoiding a 4px transparent gap and any color signal on sparse data.
 
-  // Phase 80 MG eval text — signed pawns to one decimal (e.g. "+2.1"), zone color
-  // anchored at 0 cp. Mirrors MostPlayedOpeningsTable lines 78-87.
+  // MG eval text: signed pawns to one decimal (e.g. "+2.1"), zone color anchored at 0 cp.
   const mgEvalTextContent = hasMgEval ? (
     <span
       className="font-semibold inline-flex items-center gap-0.3"
@@ -238,7 +236,7 @@ export function OpeningStatsCard({
             <span className="text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
-              <BulletConfidencePopover
+              <EvalConfidencePopover
                 level={opening.eval_confidence}
                 pValue={opening.eval_p_value}
                 gameCount={opening.eval_n}

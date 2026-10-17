@@ -9,7 +9,7 @@ import {
 } from '../openingStatsZones';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
-describe('openingStatsZones — MG-entry calibration (D-07 / 260504-my2)', () => {
+describe('openingStatsZones — MG-entry calibration', () => {
   it('EVAL_NEUTRAL_MIN_PAWNS equals -0.30', () => {
     expect(EVAL_NEUTRAL_MIN_PAWNS).toBe(-0.30);
   });
@@ -28,7 +28,7 @@ describe('openingStatsZones — MG-entry calibration (D-07 / 260504-my2)', () =>
   });
 });
 
-describe('openingStatsZones — baseline pawn fallbacks (symmetric, 260504-rvh)', () => {
+describe('openingStatsZones — baseline pawn fallbacks (symmetric)', () => {
   it('EVAL_BASELINE_PAWNS_WHITE equals +0.25', () => {
     expect(EVAL_BASELINE_PAWNS_WHITE).toBe(0.25);
   });
@@ -40,7 +40,7 @@ describe('openingStatsZones — baseline pawn fallbacks (symmetric, 260504-rvh)'
   });
 });
 
-describe('evalZoneColor — zero-centered (260504-rvh)', () => {
+describe('evalZoneColor — zero-centered', () => {
   it('value within ±0.30 returns ZONE_NEUTRAL', () => {
     expect(evalZoneColor(0)).toBe(ZONE_NEUTRAL);
     expect(evalZoneColor(0.10)).toBe(ZONE_NEUTRAL);
@@ -66,7 +66,7 @@ describe('evalZoneColor — zero-centered (260504-rvh)', () => {
   });
 
   it('white engine baseline (+0.25) sits in the neutral zone (within ±0.30 of 0)', () => {
-    // Per 260504-rvh + symmetric recalibration: the per-color baseline is now
+    // After the symmetric recalibration, the per-color baseline is now
     // ±0.25, which falls inside the ±0.30 neutral zone. A user sitting exactly
     // at the typical asymmetry reads as engine-balanced-ish, not as a signal.
     expect(evalZoneColor(EVAL_BASELINE_PAWNS_WHITE)).toBe(ZONE_NEUTRAL);

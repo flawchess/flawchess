@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * botPendingStore.ts unit tests (Phase 170 Plan 01).
+ * botPendingStore.ts unit tests.
  *
- * jsdom supplies a real `localStorage`. Behaviors verified (170-01-PLAN.md's
- * `-t` filter tokens):
- * - "store-once" (SC2 structural invariant): an in-progress snapshot
+ * jsdom supplies a real `localStorage`. Behaviors verified (by describe-block
+ * name):
+ * - "store-once" (structural invariant): an in-progress snapshot
  *   written and cleared leaves the pending-store queue and its localStorage
  *   key entirely untouched — an unfinished game has no path into the queue.
- * - "cap" (T-170-03): FIFO drop-oldest once MAX_PENDING_STORE_ENTRIES is
+ * - "cap": FIFO drop-oldest once MAX_PENDING_STORE_ENTRIES is
  *   exceeded.
  * - idempotent enqueue, per-owner scoping, removal, and corruption/storage
  *   failure degradation.
@@ -79,7 +79,7 @@ describe('basic queue operations', () => {
   });
 });
 
-describe('cap (T-170-03 bounded FIFO queue)', () => {
+describe('cap (bounded FIFO queue)', () => {
   it('enqueuing MAX_PENDING_STORE_ENTRIES + 1 distinct games leaves exactly the cap, oldest dropped', () => {
     for (let i = 0; i < MAX_PENDING_STORE_ENTRIES + 1; i++) {
       enqueuePendingStore('a@example.com', buildEntry({ gameUuid: `game-${i}` }));
@@ -92,7 +92,7 @@ describe('cap (T-170-03 bounded FIFO queue)', () => {
   });
 });
 
-describe('store-once (SC2 structural invariant, D-12 separate key)', () => {
+describe('store-once (structural invariant, separate key)', () => {
   it('an in-progress snapshot written and cleared leaves the pending-store queue and its key untouched', () => {
     writeSnapshot('a@example.com', {
       version: 1,
@@ -120,7 +120,7 @@ describe('store-once (SC2 structural invariant, D-12 separate key)', () => {
     expect(localStorage.getItem(`${BOT_PENDING_STORE_KEY_PREFIX}a@example.com`)).not.toBeNull();
   });
 
-  it('D-12 rationale, made concrete: a pending entry survives starting a brand-new in-progress game for the same owner', () => {
+  it('separate keys, made concrete: a pending entry survives starting a brand-new in-progress game for the same owner', () => {
     // A finished game is enqueued (as finalizeGame would do)...
     enqueuePendingStore('a@example.com', buildEntry({ gameUuid: 'finished-game' }));
     // ...then the user starts a fresh game, which writes a new in-progress

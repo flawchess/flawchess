@@ -1,4 +1,4 @@
-"""Tests for the Train reminder scheduler (Phase 201, REMIND-02..07).
+"""Tests for the Train reminder scheduler.
 
 Covers:
 - TestListReminderCandidateUserIds / TestClaimReminderDay /
@@ -113,7 +113,7 @@ class TestListReminderCandidateUserIds:
     async def test_guest_excluded_even_with_reminder_enabled_forced_true(
         self, db_session: AsyncSession
     ) -> None:
-        """REMIND-07: a guest can never appear in the candidate set, even when
+        """A guest can never appear in the candidate set, even when
         reminder_enabled is forced True directly at the DB layer, bypassing
         the /train/* 403 gate entirely."""
         await ensure_test_user(db_session, _USER_ID)
@@ -130,7 +130,7 @@ class TestListReminderCandidateUserIds:
     async def test_includes_user_whose_reminder_last_sent_on_equals_current_date(
         self, db_session: AsyncSession
     ) -> None:
-        """No SQL-side date predicate (D-16): the query returns this user
+        """No SQL-side date predicate: the query returns this user
         regardless of what reminder_last_sent_on holds -- the per-user claim
         UPDATE is the real guard, not this scan."""
         await ensure_test_user(db_session, _USER_ID)
@@ -229,7 +229,7 @@ class TestClaimReminderDay:
 
 
 class TestReleaseReminderClaim:
-    """release_reminder_claim: Phase 204 D3/D-13/D-14. Mirrors TestClaimReminderDay's shape."""
+    """release_reminder_claim: Mirrors TestClaimReminderDay's shape."""
 
     async def test_releases_when_equal_to_today(self, db_session: AsyncSession) -> None:
         await ensure_test_user(db_session, _USER_ID)
@@ -255,7 +255,7 @@ class TestReleaseReminderClaim:
         assert row is None
 
     async def test_does_not_release_when_earlier_date(self, db_session: AsyncSession) -> None:
-        """D-14 guard: stands in for 'a second ticker already claimed a later
+        """Guard: stands in for 'a second ticker already claimed a later
         day' -- the release must never touch a claim it did not itself make
         this tick."""
         earlier = _TODAY - datetime.timedelta(days=1)
@@ -725,7 +725,7 @@ class TestFanOut:
 
 
 class TestClaimReleaseOnTotalNonDelivery:
-    """Phase 204 D3/D-13/D-14/D-15: step 8 of `_process_candidate`. Mirrors
+    """Step 8 of `_process_candidate`. Mirrors
     TestFanOut's real-encryption/real-post harness."""
 
     async def test_all_subscriptions_pruned_releases_the_claim(
@@ -775,7 +775,7 @@ class TestClaimReleaseOnTotalNonDelivery:
     async def test_raising_send_to_user_does_not_release_the_claim(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        """The D-07 invariant demonstration (ROADMAP criterion 5): a crash
+        """Invariant demonstration: a crash
         mid-fan-out must leave the claim standing. Patches
         `push_send.send_to_user` itself (NOT `httpx.AsyncClient.post`) --
         `send_to_user` already isolates per-subscription failures internally,
@@ -815,7 +815,7 @@ class TestSettleBeforeCopy:
     async def test_stale_streak_is_settled_before_copy_is_built(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        """D-12: a stale streak_count=5 with shield_level=1 and two elapsed
+        """A stale streak_count=5 with shield_level=1 and two elapsed
         missed scheduled days settles to 0 before the copy is built -- the
         notification must report the SETTLED count (0 + 1), never the stale
         stored one (5 + 1)."""
@@ -913,7 +913,7 @@ class TestFailureIsolation:
 
 
 class TestTickSummaryLog:
-    """SEED-135 D1: the per-tick summary escalates to WARNING when pruned or
+    """The per-tick summary escalates to WARNING when pruned or
     failed is non-zero, since app-level INFO is filtered out of prod docker
     logs. One call site, one format string -- the message shape (everything
     but the counts) must be byte-identical at both levels."""

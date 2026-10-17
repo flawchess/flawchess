@@ -9,14 +9,13 @@ import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
 // The helper is extracted to openingsBoardLayout.ts (separate from the React component
 // file per react-refresh/only-export-components ESLint rule) so the logic is
 // unit-testable without coupling to the page's data layer.
-// See Phase 80 PLAN 04 §action step 4 (fallback: helper extraction).
 
 afterEach(() => {
   cleanup();
 });
 
 describe('Openings board container className', () => {
-  it('board container has lg:hidden when activeTab is stats (D-03)', () => {
+  it('board container has lg:hidden when activeTab is stats', () => {
     const className = getBoardContainerClassName('stats');
     expect(className).toMatch(/lg:hidden/);
   });
@@ -48,7 +47,7 @@ describe('Openings board container className', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Score bullet sub-tree tests (quick task 260504-ttq)
+// Score bullet sub-tree tests
 //
 // Full-page render of Openings requires mocking 15+ hooks. Instead, we
 // test the score bullet sub-tree components directly: ScoreConfidencePopover
@@ -65,7 +64,7 @@ import {
 } from '@/lib/scoreBulletConfig';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 
-describe('ScoreConfidencePopover trigger (score bullet, 260504-ttq)', () => {
+describe('ScoreConfidencePopover trigger (score bullet)', () => {
   it('renders trigger with expected testid and aria-label', () => {
     render(
       <ScoreConfidencePopover
@@ -97,7 +96,7 @@ describe('ScoreConfidencePopover trigger (score bullet, 260504-ttq)', () => {
   });
 });
 
-describe('MiniBulletChart score-domain configuration (260504-ttq)', () => {
+describe('MiniBulletChart score-domain configuration', () => {
   it('renders with score-domain constants and CI whisker', () => {
     render(
       <MiniBulletChart
@@ -132,7 +131,7 @@ describe('MiniBulletChart score-domain configuration (260504-ttq)', () => {
   });
 });
 
-describe('Score bullet isUnreliable opacity logic (260504-ttq)', () => {
+describe('Score bullet isUnreliable opacity logic', () => {
   it('total < MIN_GAMES_FOR_RELIABLE_STATS triggers UNRELIABLE_OPACITY', () => {
     // The moveExplorerContent IIFE applies opacity when stats.total < MIN_GAMES_FOR_RELIABLE_STATS.
     // Verify the constants are consistent with the spec (threshold=10, opacity=0.5).
@@ -147,25 +146,25 @@ describe('Score bullet isUnreliable opacity logic (260504-ttq)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Eval bullet sub-tree tests (quick task 260508-f9o)
+// Eval bullet sub-tree tests
 //
 // Same pattern as the score-bullet tests above: full-page render of Openings
 // requires mocking 15+ hooks, so we cover the eval row's key sub-trees
-// (MiniBulletChart with eval domain + BulletConfidencePopover trigger) and
+// (MiniBulletChart with eval domain + EvalConfidencePopover trigger) and
 // the hasMgEval gate logic in isolation.
 // ---------------------------------------------------------------------------
 
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
 } from '@/lib/openingStatsZones';
 
-describe('BulletConfidencePopover trigger (eval bullet, 260508-f9o)', () => {
+describe('EvalConfidencePopover trigger (eval bullet)', () => {
   it('renders trigger with expected testid', () => {
     render(
-      <BulletConfidencePopover
+      <EvalConfidencePopover
         level="medium"
         pValue={0.04}
         gameCount={25}
@@ -180,7 +179,7 @@ describe('BulletConfidencePopover trigger (eval bullet, 260508-f9o)', () => {
   });
 });
 
-describe('MiniBulletChart eval-domain configuration (260508-f9o)', () => {
+describe('MiniBulletChart eval-domain configuration', () => {
   it('renders the eval bullet with tickPawns and CI whisker', () => {
     render(
       <MiniBulletChart
@@ -200,7 +199,7 @@ describe('MiniBulletChart eval-domain configuration (260508-f9o)', () => {
   });
 });
 
-describe('hasMgEval gate logic (260508-f9o)', () => {
+describe('hasMgEval gate logic', () => {
   // The wdl-moves-position section renders the eval bullet only when
   // eval_n > 0 AND avg_eval_pawns is non-null. The gate is asserted in
   // isolation here; the section itself sits inside a full-page render that

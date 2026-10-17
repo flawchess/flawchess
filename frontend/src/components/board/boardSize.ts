@@ -1,39 +1,36 @@
 /**
  * Board size computation shared by ChessBoard's ResizeObserver-driven effect.
  *
- * D-08: the board shrinks with available width/height, floors at
- * BOARD_MIN_WIDTH (~30% smaller than today's default), and never grows past
- * BOARD_MAX_WIDTH (today's existing size). Extracted into a pure function so
- * the clamp/zero-guard logic is unit-testable without mounting react-chessboard
- * or mocking ResizeObserver (Phase 161, SEED-088).
+ * The board shrinks with available width/height, floors at BOARD_MIN_WIDTH under
+ * height pressure, and never grows past the caller's maxWidth. Extracted into a
+ * pure function so the clamp/zero-guard logic is unit-testable without mounting
+ * react-chessboard or mocking ResizeObserver.
  */
 
-/** D-08 floor — the board never shrinks below this even on a very short viewport. */
+/** Floor — the board never shrinks below this even on a very short viewport. */
 export const BOARD_MIN_WIDTH = 420;
-/** D-08 ceiling for the /analysis board — Analysis.tsx passes this as its
- * `maxWidth` prop (and derives layout widths from it). Since Phase 190 UAT
- * (600px Train board) the ceiling inside `computeBoardSize` is the caller's
- * own `maxWidth`, not this constant. */
+/** Ceiling for the /analysis board — Analysis.tsx passes this as its
+ * `maxWidth` prop (and derives layout widths from it). The ceiling inside
+ * `computeBoardSize` is the caller's own `maxWidth`, not this constant. */
 export const BOARD_MAX_WIDTH = 540;
 
 /** Horizontal space the two flanking eval bars + their `gap-2` gutters consume in the
- *  desktop analysis board row: 2×(w-5 bar = 20px) + 2×(gap-2 = 8px). Hoisted here (215
- *  code review WR-04) so `useBoardStageSize.ts` (subtracts it from the stage width to
- *  compute `boardWidth`) and `Analysis.tsx`/`AnalysisBoardStage.tsx` (add it back to that
- *  `boardWidth` for the board group's `maxWidth`) share one bound — the two used to be
- *  independent copies that could silently disagree and clip the eval bars again. */
+ *  desktop analysis board row: 2×(w-5 bar = 20px) + 2×(gap-2 = 8px). Shared so
+ *  `useBoardStageSize.ts` (subtracts it from the stage width to compute `boardWidth`) and
+ *  `Analysis.tsx`/`AnalysisBoardStage.tsx` (add it back to that `boardWidth` for the board
+ *  group's `maxWidth`) use one bound: independent copies could silently disagree and clip
+ *  the eval bars. */
 export const BOARD_EVAL_BARS_ALLOWANCE_PX = 56;
 
 /** Per-side horizontal slack (px) left between the analysis board group and its center
- *  track, so the EvalChart slider's thumb overhang doesn't get clipped (Phase 161 UAT).
- *  Hoisted here (215 code review WR-04) — see `BOARD_EVAL_BARS_ALLOWANCE_PX`'s doc comment
- *  for why this lives alongside it instead of as a private per-file copy. */
+ *  track, so the EvalChart slider's thumb overhang doesn't get clipped.
+ *  Lives next to `BOARD_EVAL_BARS_ALLOWANCE_PX` (see its doc comment) instead of as a
+ *  private per-file copy. */
 export const EVAL_SLIDER_SLACK_PX = 12;
 
-/** Desktop-only analysis board-size reduction (UAT 179): draws the board 20px smaller
- *  than its natural fit. Hoisted here (215 code review WR-04) — see
- *  `BOARD_EVAL_BARS_ALLOWANCE_PX`'s doc comment for why this lives alongside it instead of
- *  as a private per-file copy. */
+/** Desktop-only analysis board-size reduction: draws the board 20px smaller than its
+ *  natural fit. Lives next to `BOARD_EVAL_BARS_ALLOWANCE_PX` (see its doc comment)
+ *  instead of as a private per-file copy. */
 export const DESKTOP_BOARD_SIZE_REDUCTION_PX = 20;
 
 /**
@@ -48,17 +45,14 @@ export const DESKTOP_BOARD_SIZE_REDUCTION_PX = 20;
  */
 export function computeBoardSize(widthBudget: number, heightBudget: number, maxWidth: number): number {
   if (widthBudget <= 0 || heightBudget <= 0) return 0;
-  // The BOARD_MIN_WIDTH floor guards against HEIGHT pressure ONLY (D-08: "the board
-  // never shrinks below this even on a very short viewport"). It must NOT clamp the
-  // width budget: a container narrower than the floor (the 400px Openings mini-board,
-  // a <420px phone) must still size to its container, exactly as before this helper
-  // existed. Applying Math.max across the whole min() pinned every width-driven,
-  // heightBudget=Infinity caller to a fixed 420px and overflowed those containers
-  // (Phase 161 code review CR-01).
-  // The ceiling is caller-controlled: every ChessBoard caller passes an explicit
-  // maxWidth (default 400, Bots 400, Analysis BOARD_MAX_WIDTH=540, Train 600).
-  // The old extra Math.min(maxWidth, BOARD_MAX_WIDTH) clamp silently capped the
-  // Phase 190 Train board's 600px request at 540 — removed (UAT feedback).
+  // The BOARD_MIN_WIDTH floor guards against HEIGHT pressure ONLY (the board never
+  // shrinks below it even on a very short viewport). It must NOT clamp the width
+  // budget: a container narrower than the floor (the 400px Openings board, a <420px
+  // phone) must still size to its container. Applying Math.max across the whole
+  // min() would pin every width-driven, heightBudget=Infinity caller to a fixed
+  // 420px and overflow those containers.
+  // The ceiling is the caller's maxWidth (default 400). Don't also clamp to
+  // BOARD_MAX_WIDTH: that capped the larger Train board.
   const heightFloored = Math.max(BOARD_MIN_WIDTH, heightBudget);
   return Math.min(widthBudget, maxWidth, heightFloored);
 }

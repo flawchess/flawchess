@@ -1,4 +1,4 @@
-"""Tests for the SURGE-04/D-03 global import-concurrency cap (Phase 209 Plan 02).
+"""Tests for the global import-concurrency cap.
 
 Covers the cap+1 queuing transition, the QUEUED-state duplicate-import guard,
 QUEUED visibility on the active-job surfaces, and the wire-schema literal.
@@ -65,7 +65,7 @@ class TestImportConcurrencyCap:
         IN_PROGRESS; job 2, launched while job 1 still holds the slot, stays
         QUEUED. Releasing job 1 lets job 2 proceed to IN_PROGRESS. Peak
         concurrent IN_PROGRESS entries in _jobs never exceeds the patched
-        limit (SURGE-04, boundary edge, D-03).
+        limit (boundary edge).
         """
         job1_id = create_job(user_id=9201, platform="chess.com", username="alice")
         job2_id = create_job(user_id=9202, platform="chess.com", username="bob")
@@ -128,7 +128,7 @@ class TestImportConcurrencyCap:
     async def test_queued_job_blocks_a_duplicate_import_for_the_same_user_and_platform(self):
         """A QUEUED JobState makes find_active_job(user_id, platform) return it,
         so POST /imports for the same user+platform is still blocked while
-        queued (SURGE-04, RESEARCH Pattern 3)."""
+        queued."""
         job_id = create_job(user_id=9301, platform="lichess", username="carol")
         import_service._jobs[job_id].status = JobStatus.QUEUED
 
@@ -141,7 +141,7 @@ class TestImportConcurrencyCap:
     async def test_queued_job_is_visible_on_active_surfaces(self):
         """find_active_jobs_for_user includes a QUEUED job for its own user,
         and count_active_platform_jobs counts a QUEUED job belonging to
-        another user (SURGE-04, D-03)."""
+        another user."""
         own_job_id = create_job(user_id=9401, platform="chess.com", username="dave")
         import_service._jobs[own_job_id].status = JobStatus.QUEUED
 

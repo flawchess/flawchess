@@ -1,0 +1,5 @@
+old	new	kind	absent_paths	ref	canon_paths
+FLAW_BLOB_COLUMNS	FLAW_BLOB_AND_TACTIC_COLUMNS	identifier	app tests scripts docs .claude	INV-5	
+_out_of_book_ply_count	_book_ply_count	identifier	app tests scripts docs .claude	INV-5	
+refresh_game_oracle_counts	refresh_game_flaw_counts_and_accuracy	identifier	app tests scripts docs .claude	INV-5	
+user_color_col	mover_color_col	identifier	app/services/best_move_candidates.py	INV-5	app/services/best_move_candidates.py

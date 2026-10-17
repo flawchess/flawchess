@@ -1,15 +1,15 @@
-"""Tests for the weekly medal snapshot repository and lazy finalizer (Phase 231, Plan 06).
+"""Tests for the weekly medal snapshot repository and lazy finalizer.
 
-Database-level proofs for Plan 01's guarantees: concurrent finalizers write one marker
+Database-level proofs of the finalizer's guarantees: concurrent finalizers write one marker
 and no duplicate rows, a repeat finalization is a no-op, an empty week is remembered,
 the last-week read returns what the board needs, and deleting a user erases the stored
 name through the trigger.
 
-User ids 93700-93719 are reserved for this module (93720-93739 belong to Plan 02's
-tests/repositories/test_train_medals_repository.py).
+User ids 93700-93719 are reserved for this module (93720-93739 belong to the
+tests/repositories/test_train_medals_repository.py module).
 
 Isolation rule: finalization state is global, so every test owns ISO weeks counted from
-Monday 2034-01-02 plus k weeks (this module k 0-19, Plan 02's module k 20-39). A k is
+Monday 2034-01-02 plus k weeks (this module k 0-19, the other module k 20-39). A k is
 never reused. Every test except the concurrency test runs on the rollback-scoped
 ``db_session``; the concurrency test commits and cleans up after itself.
 
@@ -171,7 +171,7 @@ async def test_fetch_last_week_rows_returns_medal_rows_and_the_viewer_row(
 ) -> None:
     """Medal rows plus the viewer's own non-medal row; never a stranger's non-medal row.
 
-    Each row carries the user's CURRENT leaderboard_hidden (read live, the D-04 / D-09
+    Each row carries the user's CURRENT leaderboard_hidden (read live, the
     masking input): hiding the silver medallist after finalization shows up on read.
     """
     week = _week(4)
@@ -307,7 +307,7 @@ async def test_concurrent_finalizers_write_one_marker_and_no_duplicates(
 ) -> None:
     """Two finalizers racing on separate sessions: one wins the week, no duplicate rows.
 
-    The marker's primary-key insert is the only lock (RESEARCH Open Question 2): the
+    The marker's primary-key insert is the only lock: the
     second claimer blocks until the first commits, then gets no row and skips the week.
     """
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

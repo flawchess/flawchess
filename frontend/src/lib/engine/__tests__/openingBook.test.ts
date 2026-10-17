@@ -1,23 +1,23 @@
 /**
- * openingBook.ts unit tests (Phase 169.5, PLAY-11 — SC2/SC3/SC4).
+ * openingBook.ts unit tests.
  *
  * Pure unit tests — no mocks, no providers, no `chess.js` Worker anything.
  * `legalMoves` fixtures are either plain `{san, lan}` literals or the real
  * `chess.js` `.moves({ verbose: true })` output; `prefixSet` fixtures are
  * small hand-written `Set<string>` literals (the real 3,641-line corpus is
- * covered by plan 01's `openings.test.ts` — not re-read here).
+ * covered by `openings.test.ts` — not re-read here).
  *
  * Covers:
  * - `getBookCandidates`: prefix-filtered legal moves, start position + a
  *   mid-history case.
- * - `exit`: the ply cap (`>=` boundary), the RAW-policy floor (Pitfall 3
- *   guard — the case a post-renormalization floor check cannot catch), and
+ * - `exit`: the ply cap (`>=` boundary), the RAW-policy floor (the case a
+ *   post-renormalization floor check cannot catch), and
  *   empty candidates.
- * - `variety` (SC3, non-inferable #2): 400 seeded `mulberry32` draws whose
+ * - `variety` (variety): 400 seeded `mulberry32` draws whose
  *   empirical frequency TRACKS the stubbed policy weights, not just "≥2
  *   distinct moves" (a uniform-over-candidates bug would also pass that
  *   weaker check).
- * - `weighting seam` (D-06): a custom `BookWeightingFn` is load-bearing on
+ * - `weighting seam`: a custom `BookWeightingFn` is load-bearing on
  *   the SAMPLE, but never bypasses the RAW-policy exit rule.
  */
 
@@ -88,7 +88,7 @@ describe('exit', () => {
     );
   });
 
-  it('returns null when the single book candidate is below BOOK_POLICY_FLOOR on the RAW policy (Pitfall 3 guard)', () => {
+  it('returns null when the single book candidate is below BOOK_POLICY_FLOOR on the RAW policy', () => {
     // Exactly ONE book candidate (e2e4), below the floor. A second, non-book
     // legal move (d2d4) carries the remaining raw-policy mass, so an
     // implementation that mistakenly checks the floor against the
@@ -125,7 +125,7 @@ describe('exit', () => {
   });
 });
 
-// ─── variety (SC3) ───────────────────────────────────────────────────────
+// ─── variety ───────────────────────────────────────────────────────
 
 describe('variety', () => {
   // Deliberately UNEQUAL stubbed weights (mirrors the plan's own example).
@@ -174,7 +174,7 @@ describe('variety', () => {
   });
 });
 
-// ─── weighting seam (D-06) ───────────────────────────────────────────────
+// ─── weighting seam ───────────────────────────────────────────────
 
 describe('weighting seam', () => {
   it('a custom BookWeightingFn is load-bearing on the sample', () => {
@@ -213,9 +213,9 @@ describe('weighting seam', () => {
   });
 });
 
-// ─── styled weighting: floor-check-before-weighting regression (Phase 182, Pitfall 1) ─
+// ─── styled weighting: floor-check-before-weighting regression ─
 
-describe('styled weighting (Phase 182, STYLE-01) — floor check still runs before weighting', () => {
+describe('styled weighting — floor check still runs before weighting', () => {
   it('a real styleBookWeighting boost does NOT rescue a sole candidate whose RAW policy is below BOOK_POLICY_FLOOR', () => {
     const legalMoves = [
       { san: 'e4', lan: 'e2e4' },

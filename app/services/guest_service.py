@@ -1,7 +1,7 @@
 """Guest user creation and token refresh service.
 
 Provides functions to create anonymous guest accounts and issue/refresh
-their 30-day JWT tokens. Guest accounts have sentinel emails in the form
+their 365-day JWT tokens. Guest accounts have sentinel emails in the form
 `guest_<uuid>@guest.local` and are marked with `is_guest=True`.
 """
 
@@ -34,7 +34,7 @@ async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
     - is_active=True, is_verified=True so the JWT is accepted by current_active_user
     - is_guest=True to distinguish from registered users
 
-    Returns a (User, token) tuple where token is a 30-day Bearer JWT.
+    Returns a (User, token) tuple where token is a 365-day Bearer JWT.
     """
     email = f"guest_{uuid4().hex}{_GUEST_EMAIL_DOMAIN}"
     user = User(
@@ -55,7 +55,7 @@ async def create_guest_user(session: AsyncSession) -> tuple[User, str]:
 
 
 async def refresh_guest_token(user: User) -> str:
-    """Issue a fresh 30-day JWT for a guest user.
+    """Issue a fresh 365-day JWT for a guest user.
 
     Raises ValueError if the user is not a guest — callers must check is_guest
     before calling this function (or catch the error for a 403 response).
@@ -78,7 +78,7 @@ async def promote_guest_with_password(
     Updates the user row: sets is_guest=False, is_verified=False,
     promoted_at=now(), bumps token_version (revoking the guest JWT), stores the new
     email and an argon2id-hashed password.
-    Issues a standard 7-day JWT via auth_backend (not the guest 30-day
+    Issues a standard 7-day JWT via auth_backend (not the guest 365-day
     strategy).
 
     Raises:
@@ -103,7 +103,7 @@ async def promote_guest_with_password(
     if result.unique().scalar_one_or_none() is not None:
         raise UserAlreadyExists()
 
-    # SURGE-02 (Phase 209): the measured 65.9ms argon2id hash previously ran
+    # The measured 65.9ms argon2id hash previously ran
     # synchronously on the single event loop, freezing every other request for
     # its duration. Moving it to a worker thread lets other requests proceed
     # while this one hashes. The algorithm and cost parameters are unchanged —
@@ -117,7 +117,7 @@ async def promote_guest_with_password(
             email=email,
             hashed_password=hashed_password,
             is_guest=False,
-            # Promotion can now start from any persisted guest_token (quick 261016-fwd),
+            # Promotion can now start from any persisted guest_token,
             # so the long-lived (365-day) guest JWT must stop authenticating the
             # now-registered account. The refresh below gives the returned JWT the new
             # version.
@@ -144,7 +144,7 @@ async def promote_guest_with_password(
     # for callers (and tests) to read directly.
     await session.refresh(updated)
 
-    # Issue a standard 7-day JWT (not the guest 30-day strategy)
+    # Issue a standard 7-day JWT (not the 365-day guest strategy)
     strategy = auth_backend.get_strategy()
     token: str = await strategy.write_token(updated)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
 
@@ -230,7 +230,7 @@ async def promote_guest_with_google(
     # for callers (and tests) to read directly.
     await session.refresh(updated)
 
-    # Issue a standard 7-day JWT (not the guest 30-day strategy)
+    # Issue a standard 7-day JWT (not the 365-day guest strategy)
     strategy = auth_backend.get_strategy()
     token: str = await strategy.write_token(updated)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
 

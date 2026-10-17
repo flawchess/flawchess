@@ -1,6 +1,6 @@
 /**
- * LeaderboardMedalsDemo — admin-only playground for the weekly Train medals
- * (Phase 231). Client-only fixtures, no backend, so it works in dev and prod.
+ * LeaderboardMedalsDemo — admin-only playground for the weekly Train medals.
+ * Client-only fixtures, no backend, so it works in dev and prod.
  *
  * It renders the production TrainLeaderboardCardView and MedalClaimDialog
  * through their props, so what the demo shows is what users get. The claim
@@ -118,7 +118,7 @@ export function LeaderboardMedalsDemo(): ReactElement {
           data={boardScenario.data}
           isPending={false}
           isError={false}
-          remaining={DEMO_REMAINING_SECONDS}
+          secondsRemaining={DEMO_REMAINING_SECONDS}
           tab={tab}
           onTabChange={(value) => {
             if (value !== '') setTab(parseLeaderboardTab(value));

@@ -51,7 +51,7 @@ function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChart
 
 export function GlobalStatsCharts({ byTimeControl, byColor, enabledTimeControls }: GlobalStatsChartsProps) {
   // Gate by-TC rows on the enabled filter: drop rows whose label (title-cased by
-  // the backend, e.g. "Bullet") is not in the lowercase filter values (#260606-jvg).
+  // the backend, e.g. "Bullet") is not in the lowercase filter values.
   const filteredByTimeControl = enabledTimeControls != null
     ? byTimeControl.filter((cat) => enabledTimeControls.includes(cat.label.toLowerCase() as TimeControl))
     : byTimeControl;

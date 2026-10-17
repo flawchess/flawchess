@@ -69,19 +69,18 @@ class WDLStats(BaseModel):
     draw_pct: float
     loss_pct: float
     # Score and confidence fields — computed via compute_confidence_bucket
-    # (same Wilson score-test formula as per-move pipeline). Added in quick
-    # task 260504-ttq; migrated Wald → Wilson in quick task 260507-aw5.
+    # (same Wilson score-test formula as per-move pipeline).
     score: float
     confidence: Literal["low", "medium", "high"]
     p_value: float
     ci_low: float
     ci_high: float
     # MAX(games.played_at) across the games contributing to these stats. Drives
-    # the "Last played: <relative>" line in the WDL confidence tooltip (quick
-    # task 260508-r61). None when no contributing game has a populated
+    # the "Last played: <relative>" line in the WDL confidence tooltip. None
+    # when no contributing game has a populated
     # played_at — the FE omits the line entirely in that case.
     last_played_at: datetime.datetime | None = None
-    # MG-entry eval fields (quick task 260508-f9o). Mirror the OpeningWDL
+    # MG-entry eval fields. Mirror the OpeningWDL
     # shape from app/schemas/stats.py so the Openings → Moves "Results played
     # as" section can render the same WDL + Score + Eval three-pillar layout
     # used by the Stats and Insights tabs. Optional because the position +
@@ -152,8 +151,8 @@ class TimeSeriesBookmarkParam(BaseModel):
 class TimeSeriesRequest(BaseModel):
     """Request body for POST /openings/time-series.
 
-    The time-series endpoint accepts optional from_date/to_date bounds
-    (D-19 amendment, 2026-06-13). When present, only TimeSeriesPoints whose
+    The time-series endpoint accepts optional from_date/to_date bounds.
+    When present, only TimeSeriesPoints whose
     played_at falls within [from_date, to_date] are emitted, and WDL totals
     count only in-window games. The rolling average is still warmed from games
     before the window start — full chronological history is loaded so trailing
@@ -173,8 +172,7 @@ class TimeSeriesRequest(BaseModel):
     opponent_type: Literal["human", "bot", "both"] = "human"
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
-    # D-19 amendment (2026-06-13): resolved date bounds for windowed emission.
-    # The recency PRESET stays removed (D-19); only resolved date bounds are added.
+    # Resolved date bounds for windowed emission (no recency preset).
     from_date: datetime.date | None = None
     to_date: datetime.date | None = None
 
@@ -208,7 +206,7 @@ class BookmarkTimeSeries(BaseModel):
     total_losses: int
     total_games: int
     # MAX(games.played_at) across in-window games visiting this bookmark's
-    # target_hash (D-19 amendment: date-windowed when from_date/to_date are set).
+    # target_hash (date-windowed when from_date/to_date are set).
     # Drives the bookmark card score-confidence popover's "Last played: <relative>" line.
     last_played_at: datetime.datetime | None = None
 
@@ -276,9 +274,7 @@ class NextMoveEntry(BaseModel):
     result_hash: str  # BigInt as string for JS safety (full_hash of resulting position)
     result_fen: str  # board FEN of resulting position (piece placement only)
     transposition_count: int
-    score: float = Field(
-        ge=0.0, le=1.0
-    )  # (W + 0.5*D)/n; canonical classification metric (Phase 75 D-09, Phase 76 D-13)
+    score: float = Field(ge=0.0, le=1.0)  # (W + 0.5*D)/n; canonical classification metric
     confidence: Literal[
         "low", "medium", "high"
     ]  # Two-sided Wilson score-test p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (shared via score_confidence.py)
@@ -287,7 +283,7 @@ class NextMoveEntry(BaseModel):
     )  # Two-sided Wilson score-test p-value on H0: score = 0.50 (null SE = 0.5/sqrt(n))
     # MAX(games.played_at) across all games where the user played this candidate
     # move from the queried position. Surfaces the "Last played: <relative>"
-    # line in the move-explorer Score popover (quick task 260508-r61). None
+    # line in the move-explorer Score popover. None
     # when every contributing game has a NULL played_at (rare).
     last_played_at: datetime.datetime | None = None
 

@@ -41,10 +41,9 @@ export function useImportSettings() {
 }
 
 /**
- * Auto-save PATCH for import settings (D-09 — no Save button, no dirty state).
+ * Auto-save PATCH for import settings (no Save button, no dirty state).
  * Optimistically writes the new settings into the ['import-settings'] cache so
- * toggles feel instant; rolls back to the pre-mutation snapshot on error
- * (UI-SPEC error backstop). Manual apiClient calls are covered by the global
+ * toggles feel instant; rolls back to the pre-mutation snapshot on error. Manual apiClient calls are covered by the global
  * TanStack Query MutationCache.onError handler per CLAUDE.md — no duplicate
  * Sentry.captureException here.
  */

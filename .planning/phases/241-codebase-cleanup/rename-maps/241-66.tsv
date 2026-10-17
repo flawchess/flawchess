@@ -1,0 +1,5 @@
+old	new	kind	absent_paths	ref	canon_paths
+_import_scope_expanded	import_scope_expanded	identifier	app tests scripts docs .claude	X1	
+users_with_zero_pending	users_with_no_pending_evals_or_imports	identifier	app tests scripts docs .claude	X3	
+nf_points	non_filler_points	identifier	app tests scripts	X5	
+nf_puzzles	non_filler_puzzles	identifier	app tests scripts	X5	

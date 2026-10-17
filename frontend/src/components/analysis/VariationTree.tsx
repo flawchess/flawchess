@@ -1,15 +1,14 @@
 /**
- * VariationTree — responsive move list for the analysis board (Phase 137 Plan 03).
+ * VariationTree — responsive move list for the analysis board.
  *
  * Renders the main game line plus every open sideline as a FLAT sibling block —
- * one indent level, no recursive nesting, no promote-to-mainline (Quick
- * 260703-kyb: replaces the old Level-1/Level-2 singleton-PV nesting model).
+ * one indent level, no recursive nesting, no promote-to-mainline.
  * A sideline is either a tactic line (its root is in pvNodeIds — closes via its
  * chip) or a free-move line (closes via a per-line × delete affordance). Multiple
  * lines off different forks — or multiple sub-forks off the same line — all
  * render simultaneously as separate flat blocks.
  *
- * Responsive split (D-02): mobile extends HorizontalMoveList (horizontal chips
+ * Responsive split: mobile extends HorizontalMoveList (horizontal chips
  * with each sideline inline in single parentheses); desktop uses a vertical
  * paired N. white black list with indented sibling blocks.
  * Split is Tailwind dual-DOM (sm:hidden / hidden sm:block) — no media-query hook.
@@ -46,7 +45,7 @@ import {
 import type { FlawSeverity } from '@/types/library';
 import { trackFeature } from '@/lib/analytics';
 
-// Subtle zebra stripe for the desktop move list (Quick 260627-r9g item 2). A faint
+// Subtle zebra stripe for the desktop move list. A faint
 // light wash on odd rows; not a semantic color, so a Tailwind opacity utility is fine.
 const ZEBRA_ROW_BG = 'bg-foreground/[0.03]';
 /** Zebra background for a 0-based row index (odd rows striped). */
@@ -56,10 +55,8 @@ function zebraBg(rowIdx: number): string {
 
 /**
  * Icon + visibility for a flaw entry's move-list marker. Precedence chain
- * `severity > gem/great > best/good > book` (163-REVIEW WR-05; extended Phase
- * 172,
- * SEED-106 D-08; extended Phase 175, SEED-108 with great sitting alongside
- * gem in the same tier). Severity wins over gem/great: within the live
+ * `severity > gem/great > best/good > book` (great sits alongside gem in the
+ * same tier). Severity wins over gem/great: within the live
  * pipeline they are mutually exclusive by construction, but a BACKEND
  * severity (server Stockfish) and the live WASM gem/great can legitimately
  * disagree on the same move — one move never renders two badges, and the
@@ -67,7 +64,7 @@ function zebraBg(rowIdx: number): string {
  * of the chain: a book move can still be an inaccuracy (ECO includes plenty
  * of dubious gambits), and in that case the user needs to see the flaw, not
  * the reassurance that it was theory. Gem/great-vs-book never actually
- * arises in production — D-04 skips book plies before they can be
+ * arises in production — book plies are skipped before they can be
  * classified — but the chain is stated in full so the ordering is
  * unambiguous.
  */
@@ -89,17 +86,13 @@ function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
   if (flaw?.great) {
     return { show: true, Icon: GreatMoveIcon, isGem: false, isGreat: true };
   }
-  // Phase 200 UAT: the positive non-Maia tiers, set only by Train's free-play
+  // The positive non-Maia tiers, set only by Train's free-play
   // move list (`useTreeMoveGrading`). The Analysis page never populates them, so
   // its own markers are unchanged. They sit BELOW gem/great deliberately: a
   // surface that has Maia available should still say "gem", and a surface that
   // does not (Train) simply labels the same move `best`.
   if (flaw?.best) return { show: true, Icon: BestMoveIcon, isGem: false, isGreat: false };
   if (flaw?.good) return { show: true, Icon: GoodMoveIcon, isGem: false, isGreat: false };
-  // IN-01 (172-deferred-review-findings.md): the `isBook` field this function
-  // used to also return was never read by any caller (MoveListMarker below
-  // only destructures show/Icon/isGem/isGreat) — dropped as dead output
-  // rather than carried forward again.
   if (flaw?.book) return { show: true, Icon: BookIcon, isGem: false, isGreat: false };
   return { show: false, Icon: MistakeIcon, isGem: false, isGreat: false };
 }
@@ -195,7 +188,7 @@ export interface FlawMarkerEntry {
   allowedDepth: number | null;
   severity?: FlawSeverity;
   /**
-   * True when this node's arrival move is a "gem" (Phase 163, SEED-092) — renders
+   * True when this node's arrival move is a "gem" — renders
    * GemIcon instead of the severity glyph. Mutually exclusive with `severity` by
    * construction (classifyGem requires the clear best move, never a blunder/mistake).
    */
@@ -217,8 +210,7 @@ export interface FlawMarkerEntry {
    */
   gemByOpponent?: boolean;
   /**
-   * True when this node's arrival move is a "great" move (Phase 175,
-   * SEED-108) — renders GreatMoveIcon instead of the severity glyph. Mutually
+   * True when this node's arrival move is a "great" move — renders GreatMoveIcon instead of the severity glyph. Mutually
    * exclusive with `severity`/`gem` by construction (classifyGreat requires
    * the clear best move, never a blunder/mistake, and the (GEM_MAIA_MAX_PROB,
    * GREAT_MAIA_MAX_PROB] band excludes any maia_prob that would also qualify
@@ -244,38 +236,37 @@ export interface FlawMarkerEntry {
    */
   greatByOpponent?: boolean;
   /**
-   * True when this node's ply is within `opening_ply_count` (Phase 172,
-   * SEED-106 D-08) — set at the `Analysis.tsx` call site that builds
+   * True when this node's ply is within `opening_ply_count` — set at the `Analysis.tsx` call site that builds
    * `moveListMarkers`. Lowest precedence in `severity > gem/great > book`:
    * severity, gem, and great all override it.
    */
   book?: boolean;
   /**
-   * Phase 200 UAT: this node's arrival move is the engine's own best move —
+   * This node's arrival move is the engine's own best move —
    * renders `BestMoveIcon`. Set only by Train's free-play move list, which
    * runs no Maia and therefore labels what the Analysis page would call a gem
    * or a great move simply "best". The Analysis page never sets this.
    */
   best?: boolean;
   /**
-   * Phase 200 UAT: this node's arrival move is clean but not the best move —
-   * renders `GoodMoveIcon`. Same Train-only provenance as `best`.
+   * This node's arrival move is clean but not the best move —
+   * renders `GoodMoveIcon`. Set only by Train, like `best`.
    */
   good?: boolean;
   /** FlawMarker.ply — passed to onPvChipClick for the useTacticLines fetch key
    *  (this node's own flaw — allowed chip + severity glyph). */
   ply: number;
   /**
-   * Flaw ply for the MISSED chip when it is shown one ply before its flaw
-   * (Quick w8k item 5): the decision node hosts the missed tactic that belongs to
-   * the flaw at this ply. Defaults to `ply` when the missed tactic is the node's own.
+   * Flaw ply for the MISSED chip when it is shown one ply before its flaw: the
+   * decision node hosts the missed tactic that belongs to the flaw at this ply.
+   * Defaults to `ply` when the missed tactic is the node's own.
    */
   missedPly?: number;
 }
 
 /**
- * A dimmed, never-stored continuation rendered at the end of a branch (SEED-197,
- * Train reveal). The tokens follow the node `anchorId`, which must be a leaf: at
+ * A dimmed, never-stored continuation rendered at the end of a branch (Train
+ * reveal). The tokens follow the node `anchorId`, which must be a leaf: at
  * the end of the main line, or inside that sideline's parentheses. A tap on
  * token `i` calls `onTokenClick(i)`; preview tokens are never the current move.
  */
@@ -294,7 +285,7 @@ export interface VariationTreeProps {
   currentNodeId: NodeId | null;
   /** Game ply of rootFen, for move-number labels. Default 0. */
   rootPly?: number;
-  /** Called with the node id when a move chip is clicked. Wired to goToNode in Phase 138. */
+  /** Called with the node id when a move chip is clicked. */
   onNodeClick: (nodeId: NodeId) => void;
   /** Height override passed to the mobile HorizontalMoveList. */
   heightClass?: string;
@@ -307,7 +298,7 @@ export interface VariationTreeProps {
    */
   decorations?: Map<NodeId, string>;
 
-  // ── Flat sibling lines + flaw chips (Quick 260703-kyb) ───────────────────────
+  // ── Flat sibling lines + flaw chips ───────────────────────
 
   /**
    * Membership set of every node belonging to a currently OPEN tactic line
@@ -317,9 +308,8 @@ export interface VariationTreeProps {
    */
   pvNodeIds?: Set<NodeId>;
   /**
-   * Flaw marker data keyed by mainLine node id. Only nodes that have at least one
-   * tactic motif (missed/allowed) or a non-inaccuracy severity receive an entry.
-   * Built by Analysis.tsx from gameData.flaw_markers.
+   * Marker data keyed by node id (tactic chips, severity, gem/great/best/good/book).
+   * Built by Analysis.tsx (flaw markers plus live grades) and by the Train reveal tree.
    */
   flawMarkerByNodeId?: Map<NodeId, FlawMarkerEntry>;
   /**
@@ -348,16 +338,16 @@ export interface VariationTreeProps {
    * strip on mobile, vertical paired list on desktop. `'vertical'` forces the vertical
    * paired list at every width (used in the mobile analysis Moves tab so the move list
    * fills the available vertical space instead of collapsing to a single horizontal row).
-   * `'wrap'` (Phase 237 Train reveal list) forces the wrapping numbered token list with
+   * `'wrap'` (the Train reveal list) forces the wrapping numbered token list with
    * inline sidelines at every width, so the reveal's compact list looks the same on desktop.
    */
   variant?: 'responsive' | 'vertical' | 'wrap';
   /**
    * Game-mode ply the board first lands on (the URL `ply` param, defaulting to 0 — or the
    * tactic fork ply when the entry ply auto-opens a tactic line: decision board `ply-1` for
-   * missed, flaw ply for allowed, Quick 260702-fog). When set, the desktop move list aligns
+   * missed, flaw ply for allowed). When set, the desktop move list aligns
    * the move at this ply to the TOP of the scroller on first open instead of minimal-
-   * scrolling it to the bottom (Quick 260628-qta UAT). Omitted / null in free play, where
+   * scrolling it to the bottom. Omitted / null in free play, where
    * the initial-align is skipped.
    */
   initialPly?: number | null;
@@ -371,8 +361,8 @@ export interface VariationTreeProps {
    */
   topAlignSeq?: number;
   /**
-   * Dimmed preview continuation (SEED-197). Honored only by the wrap/MobileTree
-   * renderer; Train is the only caller. DesktopTree ignores it and the Analysis
+   * Dimmed preview continuation. Honored only by the WrapTree
+   * renderer; Train is the only caller. VerticalTree ignores it and the Analysis
    * callers pass nothing, so their output is unchanged.
    */
   preview?: VariationTreePreview;
@@ -380,7 +370,7 @@ export interface VariationTreeProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** A single flat sibling sideline block (Quick 260703-kyb — one indent level only). */
+/** A single flat sibling sideline block (one indent level only). */
 interface SiblingBlock {
   /** The block's first node id (a graft target for insertPvLine / a free fork's own id). */
   rootId: NodeId;
@@ -449,7 +439,7 @@ function blockStartPly(
 
 /**
  * Enumerate every sideline as a flat SiblingBlock — one indent level, no
- * recursive nesting (Quick 260703-kyb).
+ * recursive nesting.
  *
  * A non-mainLine node is a BRANCH ROOT iff its parent is on mainLine (or is the
  * true root), OR its parent is off mainLine AND it is NOT that parent's
@@ -581,11 +571,11 @@ interface FlawChipProps {
 
 /**
  * Render a missed or allowed flaw pill chip for a mainLine move-list row.
- * Sibling to the SAN <button>, NOT nested inside it (D-02).
+ * Sibling to the SAN <button>, NOT nested inside it.
  * Loading: spinner on chip while pvFetchPending for this node.
  * Error: error text next to the chip when pvFetchError for this node.
  *
- * Hover affordance (Quick 260628): mirrors the Games-card TacticMotifChip — pointer
+ * Hover affordance: mirrors the Games-card TacticMotifChip — pointer
  * cursor, lift, and brightened background on hover so the chip reads as clickable.
  */
 function FlawChip({
@@ -599,18 +589,18 @@ function FlawChip({
   pvFetchError,
   onPvChipClick,
 }: FlawChipProps): ReactNode {
-  // Quick 260703-kyb: multiple chips read active via key membership (flat siblings),
+  // Multiple chips read active via key membership (flat siblings),
   // not a node/orientation singleton match.
   const isActive = activePvKeys?.has(`${ply}:${orientation}`) ?? false;
   const isMissed = orientation === 'missed';
   const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
   const bg = isMissed ? TAC_MISSED_BG : TAC_ALLOWED_BG;
   const border = isMissed ? TAC_MISSED_BORDER : TAC_ALLOWED_BORDER;
-  // UAT 260627: show the motif name + depth (e.g. "checkmate 4", "hanging-piece 2")
+  // Show the motif name + depth (e.g. "checkmate 4", "hanging-piece 2")
   // instead of the orientation word. Mate-family motifs collapse to "checkmate";
   // depth uses the same orientation-anchored display offset as the board badges.
   const motifLabel = tacticMotifLabel(motif);
-  // anchored=false (Quick 260628-1t5 DECISION 2): the move list is a navigable surface,
+  // anchored=false: the move list is a navigable surface,
   // so the allowed +1 decision-anchor offset is dropped here (allowed reads like missed).
   const depthLabel = tacticDepthBadge(motif, depth, orientation, false);
   const label = depthLabel != null ? `${motifLabel} ${depthLabel}` : motifLabel;
@@ -713,7 +703,7 @@ function previewTokenLabel(startPly: number, index: number): string | null {
 }
 
 /**
- * The preview as dimmed move-list items (SEED-197). Token testids are index-based
+ * The preview as dimmed move-list items. Token testids are index-based
  * (never SAN). `closing` (the sideline's ")" and x) rides on the LAST token's
  * `after` slot, outside the move button.
  */
@@ -748,8 +738,8 @@ function previewToItems(
  * Convert a single flat sibling block into chip items, wrapped in single
  * parentheses: the FIRST chip's numberLabel gets a leading "(", the LAST chip's
  * trailing gets the severity glyph, a closing ")", and — for a free-move block
- * only — the × delete affordance (Quick 260703-kyb — flat siblings, one paren
- * level, no Level-2 double-paren case).
+ * only — the × delete affordance (flat siblings: one paren level, no
+ * double-paren case).
  */
 function siblingBlockToChips(
   block: SiblingBlock,
@@ -805,7 +795,7 @@ function siblingBlockToChips(
   return items;
 }
 
-function MobileTree({
+function WrapTree({
   nodes,
   mainLine,
   currentNodeId,
@@ -851,8 +841,8 @@ function MobileTree({
     const isWhite = plyOffset % 2 === 0;
     const label = isWhite ? moveLabel(rootPlyVal, idx) : null;
 
-    // Severity marker for blunders/mistakes (mobile parity — D-02). Shown regardless
-    // of a tactic chip on the move (UAT thl item 3); mobile renders no inline chip, so
+    // Severity marker for blunders/mistakes (mobile parity). Shown regardless
+    // of a tactic chip on the move; mobile renders no inline chip, so
     // the glyph is the only flaw cue here.
     const flaw = flawMarkerByNodeId?.get(nodeId);
 
@@ -888,7 +878,7 @@ function MobileTree({
 
 // ─── Desktop sub-component ───────────────────────────────────────────────────
 
-function DesktopTree({
+function VerticalTree({
   nodes,
   mainLine,
   currentNodeId,
@@ -923,8 +913,8 @@ function DesktopTree({
   const didInitialAlign = useRef(false);
 
   // Scroll the active node into view whenever currentNodeId changes. On the FIRST settle
-  // at the game's initial ply, align it to the TOP of the scroller (Quick 260628-qta UAT:
-  // the selected move should sit at the top, not the bottom). loadMainLine first parks
+  // at the game's initial ply, align it to the TOP of the scroller (the
+  // selected move should sit at the top, not the bottom). loadMainLine first parks
   // currentNodeId at the game's LAST node before the board navigates to initialPly, so the
   // top-align is held until currentNodeId actually reaches initialNodeId — otherwise the
   // transient last node scrolls first and the initial ply lands via minimal-scroll at the
@@ -950,8 +940,8 @@ function DesktopTree({
       // remount (mobile tab switch back to Moves after cycling tags) has no such transient —
       // currentNodeId is already the user's actual position — so fall through and top-align
       // to it instead of waiting forever for an initialNodeId settle that never comes.
-      // (Quick 260702-nm8 follow-up. Edge case: a remount while genuinely parked on the last
-      // node is indistinguishable from the transient and won't auto-scroll — acceptable.)
+      // (Edge case: a remount while genuinely parked on the last node is
+      // indistinguishable from the transient and won't auto-scroll — acceptable.)
       if (currentNodeId !== initialNodeId && currentNodeId === lastNodeId && initialNodeId !== lastNodeId) {
         return;
       }
@@ -978,7 +968,7 @@ function DesktopTree({
   const mainRows = buildDesktopRows(mainLine, rootPlyVal);
 
   // Flat sibling blocks — one per open sideline (tactic or free-move), grouped by
-  // the mainLine row they attach to (Quick 260703-kyb).
+  // the mainLine row they attach to.
   const blocks = buildSiblingBlocks(nodes, mainLine, resolvedPvNodeIds);
   const blocksByRow = new Map<number, SiblingBlock[]>();
   for (const block of blocks) {
@@ -1009,13 +999,13 @@ function DesktopTree({
     // Severity glyph source: main-line nodes use their flaw entry; sideline/free nodes read
     // the same map (moveListMarkers) for ANY node, not only the current one — so the live
     // blunder/mistake glyph persists on every explored sideline move instead of vanishing when
-    // the user steps forward (Quick 260628-r5v UAT). The variation entries come from the
+    // the user steps forward. The variation entries come from the
     // per-node live-flaw cache merged in by Analysis.tsx.
     const severityFlaw = flaw ?? flawMarkerByNodeId?.get(nodeId);
     // Show the blunder/mistake/gem glyph whenever it warrants one, even when a tactic
-    // chip is also present (UAT thl item 3 — icon + chip read as complementary).
+    // chip is also present (icon + chip read as complementary).
 
-    // Tactic chips render on their OWN line below the move (Quick w8k item 3), so the
+    // Tactic chips render on their OWN line below the move, so the
     // move text stays scannable and the pills don't crowd the SAN.
     return (
       <span className="inline-flex flex-col items-start gap-1">
@@ -1041,9 +1031,9 @@ function DesktopTree({
               annotation (e.g. "Qh4 ??"). */}
           <MoveListMarker flaw={severityFlaw} className="h-4 w-4 inline-block shrink-0" />
         </span>
-        {/* Tactic pill chips on a new line below the move (Quick w8k item 3). Extra
+        {/* Tactic pill chips on a new line below the move. Extra
             vertical gap + bottom padding keep stacked chips from crowding each other
-            and the next row (Quick 260628). */}
+            and the next row. */}
         {hasTacticChip && (flaw.missedMotif != null || flaw.allowedMotif != null) && (
           <span className="inline-flex items-center flex-wrap gap-1 pb-1">
             {flaw.missedMotif != null && (
@@ -1053,7 +1043,7 @@ function DesktopTree({
                 motif={flaw.missedMotif}
                 orientation="missed"
                 // The missed chip's fetch/fork ply is its flaw's ply, even though the
-                // chip is rendered on the decision node one ply earlier (item 5).
+                // chip is rendered on the decision node one ply earlier.
                 ply={flaw.missedPly ?? flaw.ply}
                 depth={flaw.missedDepth}
                 activePvKeys={activePvKeys}
@@ -1106,7 +1096,7 @@ function DesktopTree({
     );
   };
 
-  // Render one flat sibling block (Quick 260703-kyb): a header (branch label +
+  // Render one flat sibling block: a header (branch label +
   // × delete for a free-move block) followed by its move rows. Kept as a
   // separate helper (not inlined in the JSX below) to keep the return block's
   // logic LOC in check (CLAUDE.md function-size limits).
@@ -1118,7 +1108,7 @@ function DesktopTree({
       <div
         key={block.rootId}
         data-testid={block.isTactic ? 'variation-pv-section' : 'variation-freemove-section'}
-        // The whole sideline inherits the fork row's zebra band (item 2).
+        // The whole sideline inherits the fork row's zebra band.
         className={cn('ml-8 border-l-2 border-muted/40 pl-2', rowBg)}
       >
         {showHeader && (
@@ -1155,15 +1145,11 @@ function DesktopTree({
       data-testid="variation-tree-desktop"
       aria-label="Move list"
       role="navigation"
-      // Absolute-fill the `relative` flex parent so the move list NEVER inflates the
-      // outer row's intrinsic height (Quick w8k item 2 — the 4th alignment attempt).
-      // Root cause measured in-browser: the outer row is lg:items-stretch and the left
-      // board column (board + eval chart) is SHORTER than the right column; a
-      // max-h/mb-capped flex-grow list still reports its content height as the row's
-      // intrinsic height, so items-stretch stretched the left column past the eval
-      // slider (42px dead space) while the controls pinned to the true bottom. Taking
-      // the scroller out of flow (absolute inset-0) lets the board column drive the row
-      // height, so the controls bottom-align with the eval-chart slider — no magic px.
+      // Absolute-fill the `relative` flex parent so the move list never inflates the
+      // outer row's intrinsic height: a flex-grow list still reports its content
+      // height as the row's intrinsic height, so under `items-stretch` it would stretch
+      // the board column. Out of flow (absolute inset-0), the board column drives the
+      // row height.
       // pl-2 indents the move rows off the card's left edge (scrollbar stays flush right).
       className="absolute inset-0 overflow-y-auto thin-scrollbar pl-2"
     >
@@ -1187,10 +1173,10 @@ function DesktopTree({
  * sideline as a flat sibling block. Click any node to call onNodeClick(nodeId)
  * (→ goToNode).
  *
- * Quick 260703-kyb: pvNodeIds/flawMarkerByNodeId/onPvChipClick/activePvKeys/
+ * pvNodeIds/flawMarkerByNodeId/onPvChipClick/activePvKeys/
  * onDeleteLine enable inline tactic chip expansion and free-move × deletion —
- * one indent level only, no recursive nesting, no promote-to-mainline. All new
- * props are optional so existing callers require no changes.
+ * one indent level only, no recursive nesting, no promote-to-mainline. All of
+ * these props are optional.
  */
 export function VariationTree(props: VariationTreeProps) {
   // `variant='vertical'` forces the paired vertical list at every width (mobile
@@ -1203,11 +1189,11 @@ export function VariationTree(props: VariationTreeProps) {
         role="navigation"
         className="relative flex min-h-0 flex-1 flex-col"
       >
-        <DesktopTree {...props} />
+        <VerticalTree {...props} />
       </div>
     );
   }
-  // `variant='wrap'` (Phase 237 Train reveal list) forces the wrapping mobile renderer
+  // `variant='wrap'` (the Train reveal list) forces the wrapping mobile renderer
   // at every width: numbered tokens, inline sidelines, a delete x per free sideline.
   if (props.variant === 'wrap') {
     return (
@@ -1217,7 +1203,7 @@ export function VariationTree(props: VariationTreeProps) {
         role="navigation"
         className="flex min-h-0 flex-1 flex-col"
       >
-        <MobileTree {...props} />
+        <WrapTree {...props} />
       </div>
     );
   }
@@ -1230,13 +1216,12 @@ export function VariationTree(props: VariationTreeProps) {
     >
       {/* Mobile path — HorizontalMoveList with variation inline in parentheses */}
       <div className="sm:hidden">
-        <MobileTree {...props} />
+        <WrapTree {...props} />
       </div>
-      {/* Desktop path — vertical paired N. white black list, fills the column so the
-          board controls below it bottom-align with the eval-chart slider. `relative`
-          so DesktopTree's absolute-fill scroller anchors here (Quick w8k item 2). */}
+      {/* Desktop path: vertical paired list, filling the column. `relative` so the
+          absolute-fill scroller anchors here. */}
       <div className="relative hidden min-h-0 flex-1 sm:flex sm:flex-col">
-        <DesktopTree {...props} />
+        <VerticalTree {...props} />
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 """Unit tests for the in-memory Stage-B compute registry.
 
-Quick 260529-015 Task 1 — covers mark/clear/is_computing semantics:
+Covers mark/clear/is_computing semantics:
 idempotency, harmless no-op clear, and per-uid independence.
 
 The registry is plain module-level state (a ``set[int]``), so these tests

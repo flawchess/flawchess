@@ -1,5 +1,5 @@
 /**
- * gradingLadder.ts unit tests (LADDER-01/02/05).
+ * gradingLadder.ts unit tests.
  *
  * Pure-function/table-driven — no MockWorker needed, this module has zero
  * DOM/Worker dependencies.
@@ -26,12 +26,12 @@ describe('gradingDepthForTreeDepth', () => {
     expect(gradingDepthForTreeDepth(GRADING_DEPTH_LADDER.length + 25)).toBe(GRADING_DEPTH_FLOOR);
   });
 
-  it('index 0 returns GRADING_ROOT_DEPTH (D-02 pinned root rung)', () => {
+  it('index 0 returns GRADING_ROOT_DEPTH (pinned root rung)', () => {
     expect(gradingDepthForTreeDepth(0)).toBe(GRADING_ROOT_DEPTH);
   });
 });
 
-describe('the shipped ladder table (LADDER-02)', () => {
+describe('the shipped ladder table', () => {
   // These two assertions are what make mctsSearch.test.ts's distinct-rung
   // check meaningful rather than incidental: they fail loudly if a later edit
   // flattens the table, which no type check, lint rule, or knip pass detects.
@@ -40,7 +40,7 @@ describe('the shipped ladder table (LADDER-02)', () => {
     expect(distinct.size).toBeGreaterThan(1);
   });
 
-  it('pins the root rung at 14 (D-02 — root was never a variable in the A/B)', () => {
+  it('pins the root rung at 14 (the root was never a variable in the A/B)', () => {
     expect(GRADING_DEPTH_LADDER[0]).toBe(14);
   });
 });

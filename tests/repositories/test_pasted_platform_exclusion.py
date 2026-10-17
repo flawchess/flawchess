@@ -1,10 +1,10 @@
-"""Red-if-removed proof: platform='pgn' is excluded through apply_game_filters (SC-5).
+"""Red-if-removed proof: platform='pgn' is excluded through apply_game_filters.
 
-Phase 208 (PASTE-05). This test asserts through the real seam
+This test asserts through the real seam
 (apply_game_filters), not against the DEFAULT_EXCLUDED_PLATFORMS constant
 directly — reverting the tuple to ("flawchess",) must make this test fail.
 A symbol-presence check (e.g. `assert "pgn" in DEFAULT_EXCLUDED_PLATFORMS`)
-does not satisfy SC-5; this file is the end-to-end proof.
+does not satisfy this contract; this file is the end-to-end proof.
 
 Data isolation: uses the rollback-scoped ``db_session`` fixture (mirrors
 tests/repositories/test_query_utils.py) — nothing is committed, so the
@@ -88,7 +88,7 @@ class TestPastedPlatformExclusion:
     ) -> None:
         """Explicit platform=list(ANALYTICS_INCLUDED_PLATFORMS) == platform=None.
 
-        Pins the equivalence Plan 04's Library "Pasted" opt-in chip depends on.
+        Pins the equivalence the Library "Pasted" opt-in chip depends on.
         """
         ids = await _seed_three_platforms(db_session)
 

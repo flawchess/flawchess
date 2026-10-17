@@ -31,10 +31,10 @@ interface FlawTileProps {
 }
 
 /**
- * One headline tile (D-00e): the player's rate big in the severity colour, the opponents'
- * rate under it, then the gap bar with its Search popover (D-00a to D-00c). Below the
- * analyzed-games gate the numbers stay and the bar slot reads the gate line (D-03).
- * The verdict follows the same 99% significance gate as every other gap (D-14).
+ * One headline tile: the player's rate big in the severity colour, the opponents'
+ * rate under it, then the gap bar with its Search popover. Below the
+ * analyzed-games gate the numbers stay and the bar slot reads the gate line.
+ * The verdict follows the same 99% significance gate as every other gap.
  */
 function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
   const bullet = tcStats.bullets.find((b) => b.tag === metric);
@@ -105,7 +105,7 @@ interface FlawTilesProps {
   analyzedGate: number;
 }
 
-/** The Blunders and Mistakes tiles of the Flaw Stats section (no Inaccuracies tile, D-00e). */
+/** The Blunders and Mistakes tiles of the Flaw Stats section (no Inaccuracies tile). */
 export function FlawTiles({ tcStats, analyzedGate }: FlawTilesProps) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" data-testid="flaw-tiles">

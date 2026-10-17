@@ -1,20 +1,20 @@
-"""Fixture-driven precision tests for the Phase 124 tactic-motif detector (TACDET-03).
+"""Fixture-driven precision tests for the tactic-motif detector.
 
-FIXTURE PROVENANCE (D-09): every positive fixture is a REAL prod mistake/blunder
+FIXTURE PROVENANCE: every positive fixture is a REAL prod mistake/blunder
 position sampled from the dev DB (game_flaws joined to game_positions.pv at
 flaw_ply+1), bucketed by the detector and CONFIRMED BY HUMAN INSPECTION. The shared
 hard-negative set is real quiet/positional prod errors whose refutation contains no
 tactic. NONE of these fixtures are derived from cook.py output (the AGPL reference) —
 sourcing is our own prod data + the detector under test; labels are confirmed by
-inspection. See .planning/phases/124-schema-tactic-detector/124-RESEARCH.md.
+inspection.
 
-FIXTURE FORMAT (Claude's discretion per RESEARCH §Fixture format): each positive is
+FIXTURE FORMAT: each positive is
 `(fen_after_flaw, pv_uci, expected_motif)`. We store the FEN *after* the flawed move
 (the detector's actual input) rather than (fen_before, move_san) — this removes the
-SAN-reparse failure mode (RESEARCH Pitfall 6) and is exactly what detect_tactic_motif
+SAN-reparse failure mode and is exactly what detect_tactic_motif
 consumes. Hard-negatives are `(fen_after_flaw, pv_uci)` and must return None.
 
-CIRCULAR FIXTURE WARNING (D-12 / SC#5 — Phase 127):
+CIRCULAR FIXTURE WARNING:
   These fixtures are detector-bucketed (circular): positions were labelled by running
   the same detector under test, then confirmed by inspection. This means the precision
   bars here measure the detector's self-consistency, NOT its agreement with an
@@ -22,25 +22,25 @@ CIRCULAR FIXTURE WARNING (D-12 / SC#5 — Phase 127):
   detector that consistently mis-classifies will still appear to pass if its errors
   are stable across runs.
 
-  The AUTHORITATIVE precision/recall numbers for the Phase 127 detector now come from
+  The AUTHORITATIVE precision/recall numbers for the detector now come from
   the independent lichess CC0 puzzle harness at:
       tests/scripts/tagger/test_detector_precision.py
   That harness scores against 4368 stratified CC0 puzzles (database.lichess.org)
-  with per-motif floors set from measured numbers (D-09). It is the CI precision gate.
+  with per-motif floors set from measured numbers. It is the CI precision gate.
 
   These tests REMAIN as fast per-commit signature/regression guards (they run in the
   default pytest suite and catch signature changes, PV-parsing errors, and obvious
   mis-classifications) but their precision bars are NO LONGER the authoritative trust
-  source (D-12). Do not lower these bars to pass a regressed detector; investigate the
+  source. Do not lower these bars to pass a regressed detector; investigate the
   regression in the CC0 harness instead.
 
-D-10 TIERED PRECISION BARS (precision-first; recall NOT gated):
+TIERED PRECISION BARS (precision-first; recall NOT gated):
   Core 8     >= CORE_PRECISION_BAR  (0.90)
   tier-3 + named-mate >= TIER3_PRECISION_BAR (0.95)
 A motif that cannot reach >=10 hand-confirmed prod fixtures is QUERY-SUPPRESSED
-(_QUERY_SUPPRESSED_MOTIFS) — its detector still STORES the motif int (D-11); the
-bar is recorded but not enforced (xfail) until validated in a later phase (Q-011).
-This is the documented Q-011 risk carry-forward, NOT a silently-lowered bar.
+(_QUERY_SUPPRESSED_MOTIFS) — its detector still STORES the motif int; the
+bar is recorded but not enforced (xfail) until the motif is validated.
+This is a documented carry-forward, NOT a silently-lowered bar.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ from app.services.tactic_detector import (
     detect_trapped_piece,
 )
 
-# D-10 precision bars (named constants — never lower these to pass a flaky detector).
+# Precision bars (named constants — never lower these to pass a flaky detector).
 CORE_PRECISION_BAR = 0.90
 TIER3_PRECISION_BAR = 0.95
 
@@ -88,28 +88,28 @@ _CORE_MOTIFS: frozenset[TacticMotif] = frozenset(
 )
 
 # Motifs that lack >=10 hand-confirmed prod fixtures and are therefore query-suppressed
-# (stored per D-11, surfaced suppressed until per-motif validation — Q-011 / RESEARCH OQ2).
+# (stored, but surfaced as suppressed until per-motif validation).
 _QUERY_SUPPRESSED_MOTIFS: frozenset[TacticMotif] = frozenset(
     {
-        # Phase 133 Plan 02 changes:
-        # - attraction REMOVED: now fires as dispatch winner (654 TRAIN TPs); appears in
+        # Notes on this set:
+        # - attraction is NOT suppressed: it fires as dispatch winner (654 TRAIN TPs); appears in
         #   reclassified fixture positions in _FORK_FIXTURES etc. above.
-        # - dovetail-mate ADDED: cook port's strict queen-adjacent-to-king diagonal check
+        # - dovetail-mate is suppressed: cook port's strict queen-adjacent-to-king diagonal check
         #   makes old fixtures dispatch as 'mate' instead; still tracked in _DOVETAIL_MATE_FIXTURES
         #   for documentation but those fixtures now return 'mate'.
-        # - sacrifice, arabian-mate, boden-mate KEPT: unsuppressed in precision_floors
+        # - sacrifice, arabian-mate, boden-mate stay suppressed: unsuppressed in precision_floors
         #   (TRAIN precision 1.000) but no prod fixture positions available yet; fixture-level
-        #   suppression stays until Q-011 produces verified dispatch-winner positions.
-        "dovetail-mate",  # Phase 133 Plan 02: cook port strict; TRAIN positions fire as 'mate'
+        #   suppression stays until verified dispatch-winner positions exist.
+        "dovetail-mate",  # Cook port strict; TRAIN positions fire as 'mate'
         "double-check",  # Core 8, but only 1 prod occurrence in the dev sample
         "interference",  # 1 prod occurrence
         "smothered-mate",  # 2 prod occurrences
         "self-interference",  # 0 prod occurrences in dev sample
-        "sacrifice",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
-        "arabian-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
-        "boden-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
+        "sacrifice",  # Unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
+        "arabian-mate",  # Unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
+        "boden-mate",  # Unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
         "double-bishop-mate",  # 0 prod occurrences
-        # Phase 221 plan 06 (D-07): clearance moved validated -> suppressed. The D-07
+        # Clearance is suppressed. The
         # real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
         # surviving rows (below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep
         # bar), so "clearance" was removed from _TIER3_REGISTRY and can never win
@@ -122,73 +122,73 @@ _QUERY_SUPPRESSED_MOTIFS: frozenset[TacticMotif] = frozenset(
 # === Per-motif positive fixtures (real prod flaws, hand-confirmed) ===
 
 _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Rebuilt in Phase 131 Plan 02 from CC0 lichess puzzle fixtures where the new
+    # Built from CC0 lichess puzzle fixtures where the
     # cook fork predicate (is_in_bad_spot forker prune + skip pawn victims +
     # hanging-victim not-an-attacker clause + scan all pov moves except the last)
     # correctly fires as TP.
-    # Phase 133 Plan 02: most fork fixtures reclassified as attraction. The Phase 133-01
+    # Most fork fixtures reclassified as attraction. The
     # attraction fix (boards[k+3] off-by-one) now correctly fires attraction at depth 0
     # on positions where the pov's first move lures an opponent piece that is then attacked.
-    # Attraction at depth 0 beats fork at depth 2+ per depth-primary dispatch (D-05).
+    # Attraction at depth 0 beats fork at depth 2+ per depth-primary dispatch.
     # These positions are genuine attraction patterns; the fork label reflected a broken
-    # attraction detector, not ground truth. Reclassified per the Phase 131 precedent.
+    # attraction detector, not ground truth.
     (
-        # Reclassified Phase 133: attraction fires at depth 0 (rook to e2 lures White king,
+        # Reclassified: attraction fires at depth 0 (rook to e2 lures White king,
         # then bishop attacks king on e2). Fork at depth 2 is correct but loses dispatch.
         "6k1/5p1p/R3b1p1/8/8/5PP1/1r2BK1P/8 b - - 0 28",
         "b2e2 f2e2 e6c4 e2f2 c4a6",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0 (queen to g1 lures White king).
+        # Reclassified: attraction fires at depth 0 (queen to g1 lures White king).
         "r2r2k1/p1p5/8/4p1Np/1P3p1P/1R3P2/P5P1/2Bq2QK b - - 0 25",
         "d1g1 h1g1 d8d1 g1f2 d1c1",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/6pk/1p2p2p/4Pn2/1P6/3Q3P/5qP1/5R1K b - - 9 39",
         "f2f1 d3f1 f5g3 h1g1 g3f1",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "2k3rr/pbppqp2/1p2p3/4b3/1PP1B1pp/P3P3/2QB1PPP/2R2RK1 w - - 1 17",
         "e4b7 c8b7 c2e4 b7b8 e4e5",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "4r1k1/pBp2ppp/8/2b5/3n4/3P4/PPP3Pn/R1BKR3 b - - 1 18",
         "e8e1 d1e1 d4c2 e1d2 c2a1",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "2r3k1/pRr4p/6p1/5pQ1/4pP2/8/q4P1P/5R1K w - - 4 33",
         "b7c7 c8c7 g5d8 g8g7 d8c7",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/1p2p2p/3q2pk/8/3PpQ2/6nP/PP4P1/5RK1 b - - 6 32",
         "d6f4 f1f4 g3e2 g1f2 e2f4",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "3R4/1r1P2k1/5p1p/3n1Pp1/8/8/5K1P/8 w - - 1 51",
         "d8g8 g7g8 d7d8q g8g7 d8d5",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "4r3/kp3p2/p1r4p/P1bp2p1/5nP1/1Q3P2/7P/2R2B1K w - - 3 39",
         "c1c5 c6c5 b3b6 a7a8 b6c5",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "5r2/5Pkp/5qp1/4N3/1P3Q2/7P/6PK/8 w - - 1 51",
         "f4f6 g7f6 e5d7 f6f7 d7f8",
         "attraction",
@@ -199,15 +199,15 @@ _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "fork",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/2p5/3p2k1/1b1P3p/p2qQ2P/6P1/PP6/1K2R3 b - - 3 36",
         "d4e4 e1e4 b5d3 b1a1 d3e4",
         "attraction",
     ),
     (
-        # Reclassified in Phase 131 Plan 02: the new strict cook discovered-attack
+        # Reclassified: the strict cook discovered-attack
         # predicate (prev.from_square in between) no longer fires here; capturing-defender
-        # won dispatch at depth 4. Reclassified again in Phase 132 Plan 03: the new cook
+        # won dispatch at depth 4. Reclassified again: the cook
         # capturing-defender AND-chain (init-board defender test) no longer fires here
         # either; position replaced with a verified CC0 TP where capturing-defender fires.
         "r2q3r/p1ppbk1p/1p3np1/1P1b4/8/P2QPP2/1BPP2PP/RN2K2R w KQ - 0 17",
@@ -215,9 +215,8 @@ _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "capturing-defender",
     ),
     (
-        # Not a fork: reclassified in Phase 131 Plan 02 to "clearance"; reclassified
-        # in Phase 132 Plan 02 to "intermezzo" (old voting predicate). Reclassified
-        # again in Phase 132 Plan 03: the new cook intermezzo AND-chain (zwischenzug
+        # Not a fork: reclassified to "clearance", then to "intermezzo" (old voting
+        # predicate). Reclassified again: the cook intermezzo AND-chain (zwischenzug
         # signature) no longer fires here; position replaced with a verified CC0 TP.
         "7r/1bqr1ppp/p4nk1/8/N2Rp3/8/PPP1Q1PP/3R3K w - - 0 23",
         "d4d7 f6d7 e2g4 g6f6 d1d7",
@@ -230,11 +229,11 @@ _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "hanging-piece",
     ),
     (
-        # Phase 221 TAGFIX-05 fix 2 (D-12): behavioral proof that the removed D-01
-        # relevance gate is gone. White sacs the rook for a pawn (Rxa7), black
+        # Behavioral proof that no material-trend relevance gate exists. White sacs
+        # the rook for a pawn (Rxa7), black
         # recaptures (Rxa7), so material at the END of the line (-11) is BELOW
-        # material at the START (-7) — the deleted gate would have `continue`d at
-        # i=2 and this line would NOT have fired before this fix. Nc6 now forks the
+        # material at the START (-7) — such a gate would have `continue`d at
+        # i=2 and this line would NOT fire. Nc6 forks the
         # undefended queen (d8) and rook (a7) at i=2 (depth>0) regardless of the
         # overall material trend, matching cook (no such gate exists there).
         "r2q3k/p7/8/4N3/8/8/8/R5K1 w - - 0 1",
@@ -242,11 +241,11 @@ _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "fork",
     ),
     (
-        # Reclassified Phase 221 TAGFIX-05 fix 5 (D-11): discovered-attack now returns
+        # Reclassified: discovered-attack now returns
         # depth k (the pov move index), not k-1. At equal depth the dispatch tiebreak
         # falls to (tier, rank), and fork's Tier 2 rank 0 beats discovered-attack's
-        # Tier 2 rank 5 — this is the one hand-confirmed WR-02 fixture the D-11
-        # rationale comment warned would flip. Was discovered-attack at depth 1
+        # Tier 2 rank 5 — this is the one hand-confirmed fixture that flips.
+        # Was discovered-attack at depth 1
         # (k-1); now fork at depth 2 (k). Moved from _DISCOVERED_ATTACK_FIXTURES.
         "8/2r3pk/1p4n1/1Pb3Pp/p4P2/P3N1P1/1BP4K/4R3 b - - 0 33",
         "c5e3 e1e3 c7c2 h2h3 c2b2",
@@ -275,7 +274,7 @@ _HANGING_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "d8d6 h4g5 g8h8 e1a1 d6a6 g5f4 g6e4 a4a5 e4c6 b3d1 h5h4 b2b3",
         "hanging-piece",
     ),
-    # Replaced (Phase 134 cook material-maintenance gate): the prior fixture here won a
+    # Replaced (cook material-maintenance gate): the prior fixture here won a
     # knight then equalised material by board 3, so cook's hanging_piece now correctly
     # declines it (it is a sacrifice). Swapped for a genuine hanging-piece puzzle (CC0
     # lichess zCx91) where dxe6 wins a piece and the material is kept.
@@ -311,7 +310,7 @@ _HANGING_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Rebuilt in Phase 131 Plan 02 from CC0 lichess puzzle fixtures where the new
+    # Built from CC0 lichess puzzle fixtures where the
     # cook pin predicate (pin_prevents_attack + pin_prevents_escape two-sub-test port)
     # correctly fires as TP.
     ("7k/1pQ3b1/p2p1np1/3Pp2p/4P2q/1P4NP/P4BPK/8 b - - 3 33", "f6g4 h2g1 g4f2 g1f2 h4f4", "pin"),
@@ -347,8 +346,8 @@ _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "pin",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0 (rook to e3 lures White rook,
-        # then bishop forks). Phase 133-01 attraction fix wins dispatch over pin at depth 4.
+        # Reclassified: attraction fires at depth 0 (rook to e3 lures White rook,
+        # then bishop forks). The attraction fix wins dispatch over pin at depth 4.
         "4r1k1/5pbp/p5p1/2N5/5Pb1/1P1rB1P1/P4K1P/2R1R3 b - - 4 29",
         "d3e3 e1e3 g7d4 c1c4 d4e3",
         "attraction",
@@ -359,13 +358,13 @@ _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "pin",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "2k1r3/1p4bp/p2B4/2P1Nbp1/3R1P2/1P6/P6P/2K5 b - - 0 28",
         "g5f4 d4f4 g7h6 e5f7 h6f4",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/pkp5/1pbbp1r1/5P1p/8/1P2R1BP/2PR2PK/8 b - - 0 31",
         "g6g3 e3g3 h5h4 d2d6 h4g3 h2g3 c7d6",
         "attraction",
@@ -376,7 +375,7 @@ _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "c8d7 b1d2 e6d5 a1b1 b2f6 b1b7 d7c6 b7b1 h7h5 h2h4 f6g6 f1e1",
         "hanging-piece",
     ),
-    # Phase 221 TAGFIX-04 (D-07): the "not a pin: clearance fires instead" fixture
+    # The "not a pin: clearance fires instead" fixture
     # that used to live here was moved to _HARD_NEGATIVES — the clearance
     # strengthening (vacating-piece restriction / line-is-used) now correctly
     # rejects it, so nothing fires at all (still proves pin doesn't wrongly win,
@@ -384,48 +383,48 @@ _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _SKEWER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Rebuilt for cook's relational predicate (plan 02): scan pov moves from 2nd+;
+    # Rebuilt for cook's relational predicate: scan pov moves from 2nd+;
     # capture with ray piece; op.from_square in between(from, to); is_in_bad_spot accept.
-    # All 12 entries are TP fixtures from the CC0 precision harness (plan 02 measured).
-    # Phase 133 Plan 02: skewer fixtures 0-5 and 7 reclassified as attraction. The
-    # Phase 133-01 attraction fix now fires at depth 0 for these positions; depth-primary
-    # dispatch promotes attraction over skewer (D-05).
+    # All 12 entries are TP fixtures from the CC0 precision harness.
+    # Skewer fixtures 0-5 and 7 reclassified as attraction. The
+    # attraction fix now fires at depth 0 for these positions; depth-primary
+    # dispatch promotes attraction over skewer.
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "6k1/r7/1r1RK2R/8/8/6P1/7P/8 b - - 12 36",
         "b6d6 e6d6 a7a6 d6d5 a6h6",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "4r3/7p/8/1R2r3/1Kpk4/P1R4P/1P6/8 b - - 0 43",
         "e5b5 b4b5 e8b8 b5c6 b8b2",
         "attraction",
     ),
     (
-        # Reclassified in Phase 132 Plan 03: new cook capturing-defender AND-chain
+        # Reclassified: new cook capturing-defender AND-chain
         # (init-board defender test) now wins dispatch before skewer. Position replaced
         # with a verified CC0 TP where skewer fires as dispatch winner.
-        # Reclassified Phase 133: attraction fires at depth 0 (overrides the Phase 132 skewer CC0 TP).
+        # Reclassified: attraction fires at depth 0 (overrides the skewer CC0 TP).
         "8/1q1krR2/3p4/2p5/8/4P2P/7K/6R1 w - - 1 42",
         "f7e7 d7e7 g1g7 e7e6 g7b7",
         "attraction",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. Now reclassified Phase 133:
+        # Replaced — sacrifice dispatch collision. Now reclassified:
         # attraction fires at depth 4 (still beats skewer's dispatch depth).
         "7r/2p1kp2/p1pp4/4pB2/2P2Pp1/1P2P1P1/P6r/2R2RK1 b - - 1 28",
         "h2h1 g1f2 h8h2 f2e1 h1f1 e1f1 h2h1 f1e2 h1c1",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "4rk1r/ppR4p/2pp2p1/2n5/8/2P1R3/P4PPP/6K1 w - - 2 29",
         "e3e8 f8e8 c7c8 e8f7 c8h8",
         "attraction",
     ),
     (
-        # Phase 132 Plan 04: replaced. Now reclassified Phase 133: attraction fires at depth 0.
+        # Replaced. Now reclassified: attraction fires at depth 0.
         "r3r3/3p1kpp/4pn2/2B5/1PP1bP2/q1QB4/P2K2PP/R3R3 b - - 4 28",
         "a3c3 d2c3 a8a3 c3b2 a3d3",
         "attraction",
@@ -436,8 +435,8 @@ _SKEWER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "skewer",
     ),
     (
-        # Reclassified in Phase 132 Plan 03: different CC0 TP.
-        # Now reclassified Phase 133: attraction fires at depth 4.
+        # Reclassified: different CC0 TP.
+        # Now reclassified: attraction fires at depth 4.
         "7r/p2B1p2/k7/P2p4/3Pp3/4P1P1/7r/1R3RK1 b - - 3 37",
         "h2h1 g1f2 h8h2 f2e1 h1f1 e1f1 h2h1 f1g2 h1b1",
         "attraction",
@@ -468,22 +467,22 @@ _SKEWER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _DISCOVERED_ATTACK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Rebuilt for cook's relational predicate (plan 02): scan pov moves from 2nd+;
+    # Rebuilt for cook's relational predicate: scan pov moves from 2nd+;
     # require prev.from_square in between(from, capture_sq); recapture short-circuit.
-    # All 12 entries are TP fixtures from the CC0 precision harness (plan 02 measured).
+    # All 12 entries are TP fixtures from the CC0 precision harness.
     (
         "3r4/r2N1k2/3R2pp/1pP2p2/8/P7/1P4PP/6K1 w - - 12 35",
         "d7e5 f7e8 d6d8 e8d8 e5c6 d8c8 c6a7",
         "discovered-attack",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/pb3k1p/1p2pb2/8/3BPP2/8/P4KBP/8 w - - 1 28",
         "d4f6 f7f6 e4e5 f6f5 g2b7",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "2rqr1kb/pp3p2/4b1pB/3np1P1/3nN3/5P2/PP5Q/1K1R1BNR w - - 1 21",
         "h6f8 g8f8 h2h8 f8e7 h8e5 d8c7 e5c7 d5c7 d1d4",
         "attraction",
@@ -531,7 +530,7 @@ _DISCOVERED_ATTACK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _BACK_RANK_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 131-03: all 13 replaced with CC0 TPs from the precision harness
+    # All 13 replaced with CC0 TPs from the precision harness
     # (old fixtures passed the broken detector but not cook's own-blocker gate).
     (
         "4R1rk/p1p2prp/3p1Q2/3P4/2P5/1P4P1/q4P1P/4b1K1 w - - 0 27",
@@ -633,107 +632,107 @@ _MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 132 Plan 02: all fixtures replaced with cook-style deflection TPs from the
+    # All fixtures replaced with cook-style deflection TPs from the
     # CC0 training corpus. The prior set was labeled by the old 3-of-5 voting detector
-    # and does not satisfy cook's 11-condition AND-chain (see 132-02-SUMMARY.md).
-    # Phase 133 Plan 02: ALL 15 deflection fixtures reclassified. 14 now dispatch as
-    # attraction (Phase 133-01 fix makes attraction fire at depth 0 on positions where the
+    # and does not satisfy cook's 11-condition AND-chain.
+    # ALL 15 deflection fixtures reclassified. 14 now dispatch as
+    # attraction (the attraction fix makes attraction fire at depth 0 on positions where the
     # pov's first move lures an opponent piece; depth-primary dispatch wins over deflection).
-    # The remaining 1 was already reclassified as skewer in Phase 131 Plan 02.
+    # The remaining 1 was already reclassified as skewer.
     # The deflection detector (162 TRAIN TP, 0 FP, TRAIN precision 1.000) is correct and
     # passes the CC0 harness; these are dispatch-order reclassifications, not precision issues.
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "6k1/p4pq1/bp2p1p1/2p1P1Q1/4rP2/P7/1P4PR/3K4 w - - 8 36",
         "g5d8 g7f8 h2h8 g8h8 d8f8",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "2R5/pp3rk1/6q1/3pP2p/3P2p1/5Pp1/P1Q4P/6K1 w - - 0 33",
         "c8g8 g7g8 c2g6",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "4r3/8/pkq3Q1/1p2b1p1/2np2P1/7P/R2N1P2/3K4 w - - 6 46",
         "a2a6 b6a6 g6c6",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "6k1/pp3q2/4p1r1/3p2Q1/PP2p3/2P3P1/5PK1/7R w - - 7 34",
         "g5d8 f7f8 h1h8 g8h8 d8f8",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "8/1p1R4/p4r1k/5q2/3Q4/2P2rP1/PP3P2/6K1 w - - 0 42",
         "d4h4 f5h5 d7h7 h6h7 h4h5",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "1k6/1rq2p2/RpQ1p1p1/1Pp1P3/2Pp3p/3P4/8/7K w - - 4 43",
         "c6e8 c7c8 a6a8 b8a8 e8c8",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "r1r3k1/7p/4p1p1/1R2P3/5R2/1P1N4/1PPKQ1qP/8 b - - 4 34",
         "c8c2 d2c2 g2e2",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "8/6k1/2p1p1p1/3qP1P1/Pp3P2/1P3Q2/2P1R1K1/3r4 b - - 5 53",
         "d1g1 g2f2 g1f1 f2f1 d5f3",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "7k/1p5p/p2p2q1/P1pP4/2Nb1PQ1/6K1/1P1Br3/5R2 b - - 4 40",
         "e2g2 g3g2 g6g4",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "5k2/4qp1p/2r5/2n5/3P1Q2/K6P/P7/6R1 w - - 4 41",
         "f4b8 e7e8 g1g8 f8g8 b8e8",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/1p2qkpp/1P3p2/P7/5p2/3pQ1RP/4b1PK/r7 w - - 0 39",
         "g3g7 f7g7 e3e7",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "6k1/1p3pp1/p3p2p/3qP3/5P2/P1P2QP1/1P2R1KP/3r4 b - - 6 29",
         "d1g1 g2f2 g1f1 f2f1 d5f3",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "2k2b2/2r2p1r/pq2b2p/1p3pp1/1P6/1NP2Q2/1P3RPP/3R1K2 w - - 7 29",
         "f3a8 b6b8 d1d8 c8d8 a8b8",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "3Q1rk1/1pP2pp1/2q5/p4P1R/8/1b5P/6P1/7K w - - 0 31",
         "h5h8 g8h8 d8f8",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/7B/5p1P/4p3/1k1bP1P1/p4P2/2P2r2/1K5R b - - 0 32",
         "a3a2 b1a2 f2c2 a2b1 c2b2",
         "attraction",
     ),
     (
-        # Reclassified in Phase 131 Plan 02: the new cook skewer predicate (op.from in
+        # Reclassified: the new cook skewer predicate (op.from in
         # between + is_in_bad_spot) now fires here at depth 4 with higher priority than
         # deflection. The position has a genuine skewer by cook's definition.
         "8/p5pp/P7/1Pp3P1/2P4P/r3k3/2K5/6R1 w - - 1 2",
@@ -741,7 +740,7 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "skewer",
     ),
     (
-        # Phase 221 TAGFIX-05 fix 1 (D-12): condition 10's promotion disjunct. The pov
+        # Condition 10's promotion disjunct. The pov
         # promotion b2b1q shares its file with orig_sq (b3, the deflected rook's origin)
         # AND move.from_square (b2) is reachable from b3 — the promotion disjunct fires
         # even though the capture square b1 is NOT in grandpa_board.attacks(b3). CC0
@@ -751,10 +750,10 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "deflection",
     ),
     (
-        # Phase 221 TAGFIX-05 fix 1 (D-12): condition 10's attacks disjunct, a
+        # Condition 10's attacks disjunct, a
         # non-promotion pov move where the capture square (f2) IS in
         # grandpa_board.attacks(orig_sq) — the other side of the OR. CC0 puzzle 9WsPX
-        # (TRAIN). Unaffected by the fix (non-promotion moves always used this branch),
+        # (TRAIN). Non-promotion moves always use this branch,
         # kept as a named regression fixture so the OR's two disjuncts both have
         # explicit coverage.
         "rn1q1rk1/ppp2ppp/1b2p3/4P3/1P3Pn1/2P2NP1/PB2Q2P/3RKB1R b K - 2 15",
@@ -764,26 +763,26 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _ATTRACTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 132 Plan 04: cook AND-chain port applied (RESEARCH.md §4). Result: 0 TP on
-    # TRAIN at full port — D-03 PV-divergence cutoff fires (see 132-04-SUMMARY.md).
+    # Cook AND-chain port applied: 0 TP on
+    # TRAIN at full port — the PV-divergence cutoff fires.
     # Attraction requires a 4-move sequence (lure → opp captures → pov attacks → pov
     # later captures) that rarely survives the Stockfish PV depth limit. All 13 prior
     # fixtures were FPs under the old voting detector and do not satisfy cook's AND-chain.
-    # Phase 133 Plan 01: off-by-one bug fixed (boards[k+3] was boards[k+1]). This allows
+    # Off-by-one bug fixed (boards[k+3] was boards[k+1]). This allows
     # attraction to fire at depth 0 for many positions. 654 TRAIN TPs found; precision 1.000.
-    # Phase 133 Plan 02: attraction unsuppressed. Positions that now dispatch as attraction
+    # Attraction unsuppressed. Positions that now dispatch as attraction
     # are reclassified in their respective motif fixture lists (fork, pin, skewer, deflection,
     # clearance, capturing-defender, discovered-attack). No standalone fixtures added here;
     # the CC0 precision harness (test_detector_precision.py) is the authoritative gate.
 ]
 
 _CLEARANCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 132 Plan 02: all fixtures replaced with cook-style clearance TPs from the
+    # All fixtures replaced with cook-style clearance TPs from the
     # CC0 training corpus. The prior set was labeled by the old 3-of-5 voting detector
-    # and most do not satisfy cook's 9-condition AND-chain (see 132-02-SUMMARY.md).
-    # Phase 133 Plan 02: fixtures 0, 1, 3 reclassified as attraction.
+    # and most do not satisfy cook's 9-condition AND-chain.
+    # Fixtures 0, 1, 3 reclassified as attraction.
     #
-    # Phase 221 plan 06 (D-07): clearance was SUPPRESSED (removed from _TIER3_REGISTRY)
+    # Clearance was SUPPRESSED (removed from _TIER3_REGISTRY)
     # after the real-game keep/suppress bar measured real_share=0.667 with only 3 of
     # 16 surviving rows. It can never win full dispatch again, so every remaining row
     # below that used to expect "clearance" was individually re-run through
@@ -793,30 +792,30 @@ _CLEARANCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     # used to live here — see TestClearanceContextWorkedExamples below, which now
     # verifies them via the standalone predicate instead of full dispatch.
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "3rr1k1/b3q1pp/p7/1p1pp3/1P5Q/P4RBP/2P2PP1/5RK1 w - - 4 31",
         "h4e7 e8e7 g3h4 d8e8 h4e7",
         "attraction",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. Now reclassified
-        # Phase 133: attraction fires at depth 0.
+        # Replaced — sacrifice dispatch collision. Now reclassified:
+        # attraction fires at depth 0.
         "6k1/R7/4P1pp/7P/6K1/6P1/p7/r7 b - - 0 43",
         "g6h5 g4h5 a1h1 h5g6 a2a1q a7a1 h1a1",
         "attraction",
     ),
-    # Phase 221 TAGFIX-04 (D-07): the pawn-vacating-move fixture that used to fire
+    # The pawn-vacating-move fixture that used to fire
     # clearance at depth 2 here ("2k5/2p5/..." — the vacating pawn e3e2) is no
     # longer a clearance positive: condition A correctly rejects the pawn-vacating
     # k=2 candidate, and the position doesn't satisfy the remaining conditions at
-    # k=4 either. Removed as a clearance fixture (D-07 acts as designed).
+    # k=4 either. Removed as a clearance fixture (the intended behavior).
     (
-        # Reclassified Phase 133: attraction fires at depth 2.
+        # Reclassified: attraction fires at depth 2.
         "r2q2k1/2p2p1p/p1n3p1/3N1b2/1p1P4/4QN2/PP3PPP/4R1K1 w - - 1 24",
         "e3h6 f7f6 e1e8 d8e8 d5f6 g8f7 f6e8",
         "attraction",
     ),
-    # Phase 221 plan 06 (D-07 suppression): the four positions below used to fire
+    # The four positions below used to fire
     # "clearance" and were removed rather than relabeled — re-run through
     # detect_tactic_motif after clearance's registry removal, all four now return
     # None (nothing else in the position dispatches either). Verified individually,
@@ -826,27 +825,26 @@ _CLEARANCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     #   "5rk1/ppn2qb1/2p1p3/2P2rRp/3PQP2/1P2P2P/PB2B2K/R7 b - - 2 27" / "f5g5 f4g5 f7f2"
     #   "rn5k/4q1p1/p3b2p/2ppbB1Q/P7/2P5/1P4PP/R4RK1 w - - 0 24" / "f5e6 e7e6 f1f8"
     (
-        # Reclassified Phase 221 plan 06 (D-07 suppression): the position genuinely
+        # Reclassified: the position genuinely
         # fires "pin" via full dispatch now that clearance can no longer claim it
         # (verified: detect_tactic_motif returns TacticMotifInt.PIN at depth 4).
         "1Q2nk2/2q1bpp1/2P4p/p2pp3/P7/7P/5PP1/1R4K1 w - - 2 32",
         "b8c7 e8c7 b1b8 c7e8 c6c7",
         "pin",
     ),
-    # Phase 221 TAGFIX-04 (D-07): the "b6b7 f3b3 a6b6" fixture removed here also had
+    # The "b6b7 f3b3 a6b6" fixture removed here also had
     # a pawn-vacating k=2 candidate (b6b7), rejected by condition A.
-    # Removed (Phase 134 cook material-maintenance gate): the former hanging-piece
+    # Removed (cook material-maintenance gate): the former hanging-piece
     # cross-check here (Rxb8 winning a rook) drops material 7->6 after black's zwischenzug
     # by board 3, so cook's hanging_piece now correctly declines it — it is no longer a
     # clean hanging-piece grab. The gate cut zero true positives on the CC0 fixture.
 ]
 
-# Phase 221 TAGFIX-04 (D-07), moved out of _CLEARANCE_FIXTURES in plan 06 (D-07
-# suppression): the three CONTEXT ACCEPT worked examples, synthetic "material lab"
-# positions (hand-verified, not real games — see 221-05 SUMMARY for the verification
-# log). Now that "clearance" can never win full dispatch, these are scored via the
+# The three ACCEPT worked examples (moved out of _CLEARANCE_FIXTURES): synthetic "material lab"
+# positions, hand-verified, not real games. Now that "clearance" can never win full dispatch,
+# these are scored via the
 # STANDALONE detect_clearance predicate in TestClearanceContextWorkedExamples below
-# rather than via detect_tactic_motif — the predicate's own accept logic (D-07) is
+# rather than via detect_tactic_motif — the predicate's own accept logic is
 # unchanged by the registry removal, only its reachability through the dispatcher is.
 # The three REJECT rows stay in _CLEARANCE_NEGATIVES (still correctly asserted via
 # full dispatch: detect_tactic_motif must return None either way). All six share one
@@ -875,22 +873,22 @@ _CLEARANCE_ACCEPT_STANDALONE: list[tuple[str, str]] = [
     ),
 ]
 
-# Phase 221 TAGFIX-04 (D-07): the three CONTEXT reject examples. Synthetic
+# The three reject worked examples. Synthetic
 # positions sharing the ACCEPT fixtures' geometry above, each isolating exactly
 # one rejection clause. Scored via detect_tactic_motif (must return None, not
 # just "not clearance") in TestClearanceContextWorkedExamples below — kept
 # separate from _HARD_NEGATIVES (which is real quiet prod errors) since these
-# are purpose-built to isolate D-07's clauses.
+# are purpose-built to isolate the rejection clauses.
 _CLEARANCE_NEGATIVES: list[tuple[str, str]] = [
     (
         # CONTEXT "Kh1->g2 ... [Rh1]" analog: the KING itself vacates a3 —
-        # condition A (D-07) rejects a king-vacating move outright.
+        # condition A rejects a king-vacating move outright.
         "7k/8/8/3n4/8/K7/8/R7 w - - 0 1",
         "a3b4 d5e3 a1a7",
     ),
     (
         # CONTEXT "f6->f5 ... [Rf6]" analog: a PAWN vacates a3 — condition A
-        # (D-07) rejects a pawn-vacating move outright.
+        # rejects a pawn-vacating move outright.
         "7k/8/8/3n4/8/P7/7K/R7 w - - 0 1",
         "a3a4 d5e3 a1a7",
     ),
@@ -905,12 +903,12 @@ _CLEARANCE_NEGATIVES: list[tuple[str, str]] = [
 ]
 
 _X_RAY_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 132 Plan 04: all old fixtures replaced with verified CC0 TPs from the
+    # All old fixtures replaced with verified CC0 TPs from the
     # TRAIN precision harness. The old fixtures were labeled by the old 3-condition
-    # voting predicate and do not satisfy cook's three-same-square AND-chain (Pitfall 4
-    # from RESEARCH.md — all three of moves[k-2].to == moves[k-1].to == moves[k].to
+    # voting predicate and do not satisfy cook's three-same-square AND-chain (all three of
+    # moves[k-2].to == moves[k-1].to == moves[k].to
     # are required). All entries below are confirmed TPs: cook AND-chain fires AND
-    # dispatch winner = x-ray. (Phase 132 D-01/D-03, cook AND-chain three-same-square)
+    # dispatch winner = x-ray.
     (
         "2kr1r2/pp6/2pq2p1/3p1nPp/P4Qb1/2NP4/1PP1NRB1/1R5K b - - 1 23",
         "f5g3 f4g3 d6g3 e2g3 f8f2",
@@ -979,7 +977,7 @@ _X_RAY_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 132 Plan 03: all old fixtures replaced with verified CC0 TPs from the
+    # All old fixtures replaced with verified CC0 TPs from the
     # TRAIN precision harness. The old fixtures were chosen under the loose 3-condition
     # voting predicate (same-square-2-moves-ago + check + non-recapture) and do not
     # satisfy cook's strict AND-chain (opponent non-attacker gate, moves[k-3] original
@@ -999,7 +997,7 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "intermezzo",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
+        # Replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
         "2r2rk1/1b2Rpp1/p1N2n1p/1p4q1/3N4/1P3Q1P/1PP2PP1/R5K1 b - - 4 20",
         "b7c6 d4c6 g5c5 a1a6 c8c6 a6c6 c5e7",
         "intermezzo",
@@ -1010,7 +1008,7 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "intermezzo",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
+        # Replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
         "3r1r2/3q1pbk/pp4pp/8/2P1R3/3n2B1/PP1RQPPP/5BK1 b - - 2 24",
         "d3c1 d2d7 c1e2 e4e2 d8d7",
         "intermezzo",
@@ -1021,7 +1019,7 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "intermezzo",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
+        # Replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
         "3r3k/1pp3p1/p3Q2p/4n3/3qNr2/7P/PP3PP1/3RR1K1 b - - 2 23",
         "f4e4 d1d4 e4e1 g1h2 d8d4 e6c8 h8h7",
         "intermezzo",
@@ -1032,44 +1030,44 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "intermezzo",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
+        # Replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
         "1br2rk1/p2n1ppp/3qpB2/Np5b/1P6/P3PN1P/4BPP1/2RQ1RK1 b - - 0 17",
         "c8c1 d1d6 c1f1 g1f1 b8d6",
         "intermezzo",
     ),
     (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
+        # Replaced — sacrifice dispatch collision. CC0 TP from TRAIN.
         "r4r2/p1bkn1p1/1q1Np2p/1P1pPp2/2bP4/2N1B3/5PPP/3QR1K1 w - - 1 28",
         "c3a4 c7d6 a4b6 a7b6 e5d6",
         "intermezzo",
     ),
-    # Phase 221 TAGFIX-04 (D-07): the "clearance fires at depth 2 before intermezzo"
+    # The "clearance fires at depth 2 before intermezzo"
     # cross-motif regression fixture that used to live here was moved to
     # _HARD_NEGATIVES — the clearance strengthening now correctly rejects it, so
     # nothing fires (still proves intermezzo doesn't wrongly win this position).
 ]
 
 _CAPTURING_DEFENDER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 132 Plan 03: all old fixtures replaced with verified CC0 TPs from the
+    # All old fixtures replaced with verified CC0 TPs from the
     # TRAIN precision harness. The old fixtures were chosen under the loose met>=2
     # voting predicate and do not satisfy cook's strict 9-condition AND-chain (init-board
     # defender test, value-gate, hanging check, prev-op not-recapture, etc.). All 10
     # below are confirmed TPs: cook AND-chain fires AND dispatch winner = capturing-defender.
-    # Phase 133 Plan 02: fixtures 0, 1, 2 reclassified as attraction.
+    # Fixtures 0, 1, 2 reclassified as attraction.
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "r1q3k1/pp3ppp/2bQ4/5P1N/3P4/P1P5/4rRPP/R5K1 b - - 6 25",
         "e2f2 g1f2 c8f5",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "8/1pb1nk1p/5pp1/2Pp4/1P3P2/7P/r2BB1P1/2R1K3 b - - 0 29",
         "a2d2 e1d2 c7f4 d2d1 f4c1",
         "attraction",
     ),
     (
-        # Reclassified Phase 133: attraction fires at depth 0.
+        # Reclassified: attraction fires at depth 0.
         "r4rk1/pp1qppb1/7p/4nQpN/3P4/4B3/P4PPP/R4RK1 w - - 2 20",
         "h5g7 g8g7 f5e5",
         "attraction",
@@ -1112,7 +1110,7 @@ _CAPTURING_DEFENDER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _ANASTASIA_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 131-03: all replaced with CC0 TPs from the precision harness
+    # All replaced with CC0 TPs from the precision harness
     # (old fixtures passed the loose knight check but not cook's king+1/king+3 geometry).
     ("5rk1/5pp1/2N1n1p1/8/1p1pR3/1P6/r5PP/3R2K1 w - - 0 34", "c6e7 g8h7 e4h4", "anastasia-mate"),
     ("1kbQ4/p1p4p/2q5/8/4N1p1/3P4/PPP1nPPK/R4R2 b - - 0 22", "c6h6 d8h4 h6h4", "anastasia-mate"),
@@ -1138,8 +1136,8 @@ _ANASTASIA_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _DOVETAIL_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 133 Plan 02: ALL 13 dovetail-mate fixtures reclassified as 'mate'.
-    # The cook port (Phase 133-01) correctly implemented cook's strict predicate:
+    # ALL 13 dovetail-mate fixtures reclassified as 'mate'.
+    # The cook port correctly implements cook's strict predicate:
     # queen must be adjacent to king AND on the diagonal; this is stricter than
     # the old voting detector. Production dovetail-mate fixtures from the TRAIN corpus
     # (which satisfy cook's AND-chain) pass; these old training fixtures do not satisfy
@@ -1180,7 +1178,7 @@ _DOVETAIL_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "mate",
     ),
     (
-        # Reclassified Phase 133: dovetail-mate cook port more strict; fires as 'mate'.
+        # Reclassified: dovetail-mate cook port more strict; fires as 'mate'.
         "7q/6k1/4pN1p/5QpP/p1P5/1r4P1/5P2/6K1 w - - 0 2",
         "f5g6 g7f8 g6e8 f8g7 e8e7",
         "mate",
@@ -1196,13 +1194,13 @@ _DOVETAIL_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "mate",
     ),
     (
-        # Reclassified Phase 133: dovetail-mate cook port more strict; fires as 'mate'.
+        # Reclassified: dovetail-mate cook port more strict; fires as 'mate'.
         "r4r2/1pp3pk/p2p4/3Np3/2B1P3/3PPnqb/PPP1K3/R2Q3R b - - 1 1",
         "g3g2",
         "mate",
     ),
     (
-        # Reclassified Phase 133: dovetail-mate cook port more strict; fires as 'mate'.
+        # Reclassified: dovetail-mate cook port more strict; fires as 'mate'.
         "3R4/4k1pp/p4pq1/2p3r1/4b3/P5QP/1P3PP1/6K1 w - - 1 2",
         "g3d6 e7f7 d6d7",
         "mate",
@@ -1215,7 +1213,7 @@ _DOVETAIL_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 _HOOK_MATE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
-    # Phase 131-03: first 2 fixtures replaced with CC0 TPs (old fixtures had knight at
+    # First 2 fixtures replaced with CC0 TPs (old fixtures had knight at
     # Chebyshev distance 2 from king, which fails cook's rook←knight←pawn chain constraint).
     ("4RNk1/p5p1/2p4p/3n1P2/1Pq5/8/P5PP/6K1 w - - 0 33", "f8g6 g8f7 e8f8", "hook-mate"),
     ("r5k1/1p4pp/3p3b/3Pp3/2P1N1RP/np4R1/1P3P2/K7 b - - 1 31", "a3c2 a1b1 a8a1", "hook-mate"),
@@ -1243,7 +1241,7 @@ _DOUBLE_CHECK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 
 _INTERFERENCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
-        # Reclassified Phase 221 plan 06 (D-07 suppression): this position used to
+        # Reclassified: this position used to
         # dispatch as "clearance" (winning the tiebreak over interference); now that
         # clearance can never win dispatch, it genuinely fires "interference"
         # (verified: detect_tactic_motif returns TacticMotifInt.INTERFERENCE at
@@ -1299,10 +1297,10 @@ _HARD_NEGATIVES: list[tuple[str, str]] = [
     ),
     ("r7/pp1k1ppp/8/3p4/1b6/2B2n1P/PP3P2/R2K3R b - - 1 1", "b4c3"),
     ("3r4/pp3pkp/2p2pp1/8/1QP3P1/1P5P/P2q1P2/4R1K1 w - - 1 2", "b4d2"),
-    # Phase 221 TAGFIX-04 (D-07): these two moved here from _PIN_FIXTURES /
+    # These two moved here from _PIN_FIXTURES /
     # _INTERMEZZO_FIXTURES respectively. Both used to fire as "clearance" (a
     # cross-motif regression guard proving pin/intermezzo didn't wrongly win);
-    # the D-07 strengthening (vacating-piece restriction / line-is-used) now
+    # the strengthening (vacating-piece restriction / line-is-used) now
     # correctly rejects clearance on both, and nothing else wins — still a
     # valid guard that pin/intermezzo doesn't wrongly fire, now via None.
     (
@@ -1321,12 +1319,12 @@ _HARD_NEGATIVES: list[tuple[str, str]] = [
         "8/5k2/7P/8/2p1p1R1/2P1K1P1/2b5/8 b - - 1 1",
         "c2a4 h6h7 a4d7 g4g8 d7f5 h7h8q f7e6 g3g4 e6d6 g4f5 d6c7",
     ),
-    # Phase 132 Plan 04: this hard negative removed. Cook's sacrifice predicate fires at
+    # This hard negative removed. Cook's sacrifice predicate fires at
     # k=2 because white sacrifices the rook (h4h5 captures bishop, black king recaptures)
     # and is temporarily down 2 material. The promotion at k=4 (h7h8q) recovers the
     # material, but cook's simple diff-at-k+1 doesn't look ahead to the promotion.
     # This is a known limitation of the cook §7 predicate (no lookahead for pov promotions).
-    # Sacrifice is suppressed at query time via _TACTIC_CHIP_CONFIDENCE_MIN, so this FP
+    # Sacrifice is suppressed at query time via MIN_TACTIC_CHIP_CONFIDENCE, so this FP
     # has no user-visible impact. The position is correctly tagged sacrifice+promotion in
     # a multi-label system — it fires here under the cook AND-chain.
     # ("8/8/6kP/7b/2p4R/2P1K1P1/8/8 w - - 1 2",
@@ -1354,14 +1352,14 @@ _HARD_NEGATIVES: list[tuple[str, str]] = [
     ("Q2r2k1/5p1p/6p1/8/3p1P2/3n4/7P/R5K1 b - - 0 1", "d8a8"),
 ]
 
-# A real checkmate line where detect_fork also fires — proves mate dominance (D-07).
+# A real checkmate line where detect_fork also fires — proves mate dominance.
 _MATE_PLUS_FORK: tuple[str, str] = (
     "3r4/pb3pk1/1p6/2p1R1P1/8/1Pp1K1P1/P2r1P1N/R7 b - - 1 1",
     "d8d3 e3f4 d2f2 h2f3 d3f3 f4g4 b7c8 e5e6 c8e6 g4h4 f2h2",
 )
 
 # ---------------------------------------------------------------------------
-# Phase 128.1 Plan 01: new Tier-2 motifs
+# new Tier-2 motifs
 # ---------------------------------------------------------------------------
 
 # Positive fixtures for discovered-check (int 25).
@@ -1431,8 +1429,8 @@ _DISCOVERED_CHECK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "f2e4 g3f2 e4f2",
         "discovered-check",
     ),
-    # Reclassified from _DISCOVERED_ATTACK_FIXTURES in Phase 128.1 Plan 01: d4d3
-    # is a pawn move that reveals the black queen on c5 giving check — D-03 split.
+    # Reclassified from _DISCOVERED_ATTACK_FIXTURES: d4d3
+    # is a pawn move that reveals the black queen on c5 giving check.
     (
         "3r1rk1/p3n1pp/4p3/2q5/3pQP2/1P3N1P/P5P1/3R1RK1 b - - 1 1",
         "d4d3",
@@ -1440,7 +1438,7 @@ _DISCOVERED_CHECK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     ),
 ]
 
-# Positive fixtures for trapped-piece (int 26). Phase 134 Plan 02: rewritten to
+# Positive fixtures for trapped-piece (int 26). Rewritten to
 # mirror cook's capture-chain-anchored is_trapped predicate (AGPL boundary — no source
 # copy from cook.py; sourced from CC0 lichess TRAIN fixtures validated against the new
 # cook predicate). FEN is board-after-flaw (the detector's actual input).
@@ -1452,7 +1450,7 @@ _DISCOVERED_CHECK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 # every legal escape either lands in a bad spot or captures an equal/greater piece.
 #
 # All entries below verified: detect_trapped_piece fires AND detect_tactic_motif
-# returns "trapped-piece" as the dispatch winner (Phase 134 Plan 02 precision measure).
+# returns "trapped-piece" as the dispatch winner.
 _TRAPPED_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     # F1: rook capture chain — white captures black rook on d3 at k=2;
     # rook on d3 in_bad_spot + no safe escape before preceding opp move e8e4.
@@ -1530,15 +1528,15 @@ _TRAPPED_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "e8e4 e1e4 g6h5",
         "trapped-piece",
     ),
-    # F13 (kept from Plan 128.1): white rook on b1 is trapped before b2b3; black
+    # F13: white rook on b1 is trapped before b2b3; black
     # bishop a2 captures it. Cook-faithful: k=2, opp move b2b3 ≠ b1, sq_interest=b1.
     (
         "r3k2N/ppp3pp/3bbn2/8/4p3/8/PPnN1PPP/1RB2RK1 b q - 1 1",
         "e6a2 b2b3 a2b1 d2b1 d6b4 f1d1 c7c5 c1b2 c2d4 g1f1 e8e7 b2d4",
         "trapped-piece",
     ),
-    # Dispatch order guard (Phase 128.1): hanging-piece (Tier 4, depth 0) beats
-    # trapped-piece (Tier 2, depth 4) because depth is the primary sort key (D-05).
+    # Dispatch order guard: hanging-piece (Tier 4, depth 0) beats
+    # trapped-piece (Tier 2, depth 4) because depth is the primary sort key.
     (
         "1r2r1k1/p4ppp/8/6P1/2R2P2/1n5P/PP3P2/1K2BB1R b - - 0 26",
         "e8e1 b1c2 e1c1 c2d3 b8d8",
@@ -1547,11 +1545,11 @@ _TRAPPED_PIECE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Phase 128.1 Plan 02: move-type family (Tier 5 — en-passant, promotion, under-promotion)
+# move-type family (Tier 5 — en-passant, promotion, under-promotion)
 # ---------------------------------------------------------------------------
-# Move-type motifs fire ONLY when no real tactic fires (D-03/D-04 lowest tier).
+# Move-type motifs fire ONLY when no real tactic fires (lowest tier).
 # These fixtures use simple clean positions where no real tactic pre-empts the
-# move-type tag. Fixture counts are thin by design (D-08 sparsity caveat) — they
+# move-type tag. Fixture counts are thin by design (sparse move-type samples) — they
 # are placed in _MOVE_TYPE_FIXTURE_SETS, NOT in _VALIDATED_FIXTURE_SETS, to
 # exempt them from the >=10 richness rule (test_validated_motifs_have_enough_fixtures).
 
@@ -1572,7 +1570,7 @@ _PROMOTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     ("8/6P1/8/8/8/8/8/k1K5 w - - 0 1", "g7g8q", "promotion"),
     ("8/3P4/8/8/8/8/8/k1K5 w - - 0 1", "d7d8q", "promotion"),
     ("6k1/6P1/6K1/8/8/8/8/8 w - - 0 1", "g7g8q", "promotion"),
-    # Quick 260623 whole-line scan: the queen promotion is the SECOND pov move (the first pov
+    # Whole-line scan: the queen promotion is the SECOND pov move (the first pov
     # move pushes the pawn to the 7th, opponent shuffles its king, then the pawn promotes).
     # detect_promotion must scan all solver moves, not just moves[0], to tag this.
     ("8/8/6P1/8/8/8/k7/2K5 w - - 0 1", "g6g7 a2a3 g7g8q", "promotion"),
@@ -1580,7 +1578,7 @@ _PROMOTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 
 _UNDER_PROMOTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     # Non-queen promotions where no real tactic fires.
-    # (D-01 dominance: under-promotion MUST tag here, never "promotion")
+    # (dominance: under-promotion MUST tag here, never "promotion")
     ("8/6P1/8/8/8/8/8/k1K5 w - - 0 1", "g7g8n", "under-promotion"),
     ("8/6P1/8/8/8/8/8/k1K5 w - - 0 1", "g7g8r", "under-promotion"),
     ("8/6P1/8/8/8/8/8/k1K5 w - - 0 1", "g7g8b", "under-promotion"),
@@ -1589,7 +1587,7 @@ _UNDER_PROMOTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 
 # Move-type fixture sets: checked by test_positives_fire_expected_motif and
 # the partition-completeness assert, but EXEMPT from the >=10 richness rule
-# (D-08 sparsity caveat explicitly accepts thin move-type samples).
+# (thin move-type samples are explicitly accepted).
 _MOVE_TYPE_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
     _EN_PASSANT_FIXTURES,
     _PROMOTION_FIXTURES,
@@ -1615,33 +1613,30 @@ _VALIDATED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
     _CAPTURING_DEFENDER_FIXTURES,
     _ANASTASIA_MATE_FIXTURES,
     _HOOK_MATE_FIXTURES,
-    _DISCOVERED_CHECK_FIXTURES,  # Plan 128.1-01
-    _TRAPPED_PIECE_FIXTURES,  # Plan 128.1-01
-    # Phase 133 Plan 02: attraction unsuppressed (654 TRAIN TPs, precision 1.000). Attraction
+    _DISCOVERED_CHECK_FIXTURES,
+    _TRAPPED_PIECE_FIXTURES,
+    # Attraction unsuppressed (654 TRAIN TPs, precision 1.000). Attraction
     # now fires as dispatch winner for many positions previously classified as fork/pin/skewer/
-    # deflection/clearance/capturing-defender/discovered-attack (depth-primary dispatch D-05).
+    # deflection/clearance/capturing-defender/discovered-attack (depth-primary dispatch).
     # Those reclassified fixtures are tracked in their respective lists above with a
-    # "Reclassified Phase 133" comment. The standalone list is empty (no new fixture
+    # "Reclassified" comment. The standalone list is empty (no new fixture
     # positions added) but is included so the partition check covers the motif.
     _ATTRACTION_FIXTURES,
 ]
-# Phase 132 Plan 04: attraction moved from _VALIDATED to _SUPPRESSED. Cook AND-chain port
-# produced 0 TP on TRAIN (D-03 PV-divergence cutoff fires). Attraction requires a 4-move
-# lure+capture+attack+follow-up sequence that rarely survives the Stockfish PV depth limit.
-# Phase 133 Plan 02: dovetail-mate moved from _VALIDATED to _SUPPRESSED. Cook port's strict
+# Dovetail-mate is in _SUPPRESSED: cook port's strict
 # queen-adjacent-to-king diagonal check means the existing TRAIN fixtures fire as generic
 # 'mate' (the positions don't satisfy cook's adjacency+diagonal constraint). The detector
-# still stores DOVETAIL_MATE int when the cook AND-chain fires (D-11); this suppresses
+# still stores DOVETAIL_MATE int when the cook AND-chain fires; this suppresses
 # only the query/reporting layer. Sacrifice, arabian-mate, boden-mate: unsuppressed in
 # precision_floors (TRAIN 1.000) but kept in the suppressed fixture partition because no
 # dispatch-winner positions are available yet (pre-empted by hanging-piece/mate in TRAIN).
-# Phase 221 plan 06 (D-07): clearance moved validated -> suppressed (real-game keep/
+# Clearance is suppressed (real-game keep/
 # suppress bar measured real_share=0.667 with only 3 of 16 surviving rows). Its
 # remaining rows now fire as attraction/pin/None via full dispatch — see _CLEARANCE_
-# FIXTURES' own comments; the D-07 accept logic is separately proven via the
+# FIXTURES' own comments; the accept logic is separately proven via the
 # standalone predicate in TestClearanceContextWorkedExamples.
 _SUPPRESSED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
-    _DOVETAIL_MATE_FIXTURES,  # Phase 133: cook port strict; TRAIN positions dispatch as 'mate'
+    _DOVETAIL_MATE_FIXTURES,  # Cook port strict; TRAIN positions dispatch as 'mate'
     _DOUBLE_CHECK_FIXTURES,
     _INTERFERENCE_FIXTURES,
     _SMOTHERED_MATE_FIXTURES,
@@ -1650,7 +1645,7 @@ _SUPPRESSED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
     _ARABIAN_MATE_FIXTURES,
     _BODEN_MATE_FIXTURES,
     _DOUBLE_BISHOP_MATE_FIXTURES,
-    _CLEARANCE_FIXTURES,  # Phase 221 plan 06 (D-07): moved from validated
+    _CLEARANCE_FIXTURES,  # Moved from validated
 ]
 _VALIDATED_IDS: list[str] = [
     "fork",
@@ -1666,26 +1661,26 @@ _VALIDATED_IDS: list[str] = [
     "capturing-defender",
     "anastasia-mate",
     "hook-mate",
-    "discovered-check",  # Plan 128.1-01
-    "trapped-piece",  # Plan 128.1-01
-    "attraction",  # Phase 133 Plan 02: unsuppressed; fixtures are reclassified positions above
+    "discovered-check",
+    "trapped-piece",
+    "attraction",  # Unsuppressed; fixtures are reclassified positions above
 ]
 _SUPPRESSED_IDS: list[str] = [
-    "dovetail-mate",  # Phase 133 Plan 02: cook port strict; positions fire as generic 'mate'
+    "dovetail-mate",  # Cook port strict; positions fire as generic 'mate'
     "double-check",
     "interference",
     "smothered-mate",
     "self-interference",
-    "sacrifice",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
-    "arabian-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
-    "boden-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
+    "sacrifice",  # Unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
+    "arabian-mate",  # Unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
+    "boden-mate",  # Unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
     "double-bishop-mate",
-    "clearance",  # Phase 221 plan 06 (D-07): moved from validated
+    "clearance",  # Moved from validated
 ]
 
 
 def _bar_for(motif: TacticMotif) -> float:
-    """The D-10 precision bar that applies to a motif."""
+    """The precision bar that applies to a motif."""
     return CORE_PRECISION_BAR if motif in _CORE_MOTIFS else TIER3_PRECISION_BAR
 
 
@@ -1697,7 +1692,7 @@ def _run_fixtures(
     Returns [(predicted_motif_or_None, expected_motif), ...]. Maps the detector's
     int output back to a motif string via _INT_TO_MOTIF for comparison.
 
-    Phase 127: detect_tactic_motif now returns a 4-tuple (motif_int, piece, confidence, depth).
+    detect_tactic_motif now returns a 4-tuple (motif_int, piece, confidence, depth).
     """
     results: list[tuple[TacticMotif | None, TacticMotif]] = []
     for fen, pv, expected in fixtures:
@@ -1723,7 +1718,7 @@ def _compute_precision(
     FP: a fixture (positive of any motif, or a hard-negative) where the detector
         predicts `motif` but the expected label is NOT `motif`.
     A missed positive (expected `motif`, predicted other/None) is a False Negative —
-    it does NOT lower precision (recall is not gated, D-10).
+    it does NOT lower precision (recall is not gated).
 
     Returns (precision, tp, fp). Precision is 1.0 when TP+FP == 0 (no claims made).
     """
@@ -1757,20 +1752,18 @@ class TestTacticMotifInt:
             assert _MOTIF_TO_INT[motif] == member.value
 
     def test_all_29_motifs_encoded(self) -> None:
-        # Plan 128.1-01 adds discovered-check (25) and trapped-piece (26).
-        # Plan 128.1-02 adds en-passant (27), promotion (28), under-promotion (29).
+        # Includes discovered-check (25) and trapped-piece (26),
+        # en-passant (27), promotion (28), under-promotion (29).
         assert len(_INT_TO_MOTIF) == 29
         assert len(_MOTIF_TO_INT) == 29
 
     def test_tier3_registry_excludes_undispatchable_motifs(self) -> None:
-        """Phase 221 TAGFIX-05 fix 7 (D-12) + plan 06 (D-07): int 14
+        """Int 14
         (self-interference) and int 15 (clearance) can never win dispatch,
         while every storage path for both ints stays fully intact.
 
-        Renamed from test_tier3_registry_excludes_self_interference (D-12) to
-        cover the now-two-member undispatchable set after clearance's D-07
-        suppression. Both halves of the "remove from dispatch, keep for
-        storage" contract are asserted in ONE test, on the registry contents
+        Both halves of the "remove from dispatch, keep for storage" contract
+        are asserted in ONE test, on the registry contents
         rather than file text:
         - _TIER3_REGISTRY (the dispatcher's ONLY iteration source, per
           _dispatch_tier_candidates) contains neither SELF_INTERFERENCE nor
@@ -1827,19 +1820,19 @@ def test_positives_fire_expected_motif(
 def test_validated_motifs_have_enough_fixtures() -> None:
     """Validated motifs carry >=10 hand-confirmed positives (fixture richness).
 
-    Move-type motifs are EXEMPT from this rule (D-08 sparsity caveat): en-passant,
+    Move-type motifs are EXEMPT from this rule (sparse fixtures): en-passant,
     promotion, and under-promotion have naturally thin fixture counts in the CC0 puzzle
     set (12/176/4 TRAIN labels respectively), and their precision is ~100% by
     construction (trivial move-shape detection). They are tracked in
     _MOVE_TYPE_FIXTURE_SETS, not _VALIDATED_FIXTURE_SETS.
 
-    Phase 133 note: _ATTRACTION_FIXTURES is empty (standalone) but the motif appears in
+    Note: _ATTRACTION_FIXTURES is empty (standalone) but the motif appears in
     reclassified positions in fork/pin/skewer/deflection/clearance/capturing-defender.
     Validated per-list richness check is skipped for empty fixture sets.
     """
     for fixtures in _VALIDATED_FIXTURE_SETS:
         if not fixtures:
-            continue  # Phase 133: attraction fixtures are inline-reclassified; list is empty
+            continue  # Attraction fixtures are inline-reclassified; list is empty
         motif = fixtures[0][2]
         assert len(fixtures) >= 10, f"{motif} has only {len(fixtures)} fixtures"
 
@@ -1860,7 +1853,7 @@ class TestHardNegatives:
 
 
 # ---------------------------------------------------------------------------
-# D-10 precision bars (the accuracy gate — TACDET-03, milestone risk Q-011).
+# Precision bars (the accuracy gate).
 # ---------------------------------------------------------------------------
 
 
@@ -1872,9 +1865,9 @@ class TestHardNegatives:
 def test_precision_bar_validated(
     fixtures: list[tuple[str, str, TacticMotif]],
 ) -> None:
-    """Validated motifs meet their D-10 bar over (positives + hard-negatives).
+    """Validated motifs meet their precision bar over (positives + hard-negatives).
 
-    Phase 133 note: _ATTRACTION_FIXTURES is empty (standalone) but the motif is validated
+    Note: _ATTRACTION_FIXTURES is empty (standalone) but the motif is validated
     via reclassified positions in fork/pin/skewer/etc. The precision gate for attraction is
     enforced by test_detector_precision.py (the CC0 TRAIN harness).
     """
@@ -1895,17 +1888,17 @@ def test_suppressed_motifs_documented_and_storable(
     fixtures: list[tuple[str, str, TacticMotif]],
 ) -> None:
     """Query-suppressed motifs: bar NOT enforced, but the detector still STORES the
-    motif (D-11 — suppression is a query-time decision, never a detect-time NULL).
+    motif (suppression is a query-time decision, never a detect-time NULL).
 
     For motifs with >=1 prod fixture we prove the dispatcher returns a non-None int.
     For zero-data motifs we assert the motif is structurally storable (encodable +
-    in the dispatcher's registry), which is the D-11 guarantee.
+    in the dispatcher's registry), which is the storability guarantee.
     """
     # The fixture list can be empty (zero-data motif), so resolve the motif from
     # the _SUPPRESSED_FIXTURE_SETS ordering rather than from fixtures[0].
     idx = _SUPPRESSED_FIXTURE_SETS.index(fixtures)
     suppressed_order: list[TacticMotif] = [
-        # Phase 133 Plan 02: dovetail-mate moved from validated to suppressed (cook port
+        # Dovetail-mate is suppressed (cook port
         # stricter queen-adjacent-to-king check makes TRAIN fixtures dispatch as 'mate').
         # Sacrifice, arabian-mate, boden-mate: unsuppressed in precision_floors but no
         # dispatch-winner prod fixtures available yet; fixture suppression retained.
@@ -1918,7 +1911,7 @@ def test_suppressed_motifs_documented_and_storable(
         "arabian-mate",
         "boden-mate",
         "double-bishop-mate",
-        "clearance",  # Phase 221 plan 06 (D-07): moved from validated
+        "clearance",  # Moved from validated
     ]
     motif: TacticMotif = suppressed_order[idx]
     assert motif in _QUERY_SUPPRESSED_MOTIFS
@@ -1937,11 +1930,11 @@ def test_suppressed_set_matches_validated_partition() -> None:
 
     Partition: validated ∪ suppressed ∪ move_type == set(_INT_TO_MOTIF.values()).
     No motif may be silently dropped. Move-type motifs are exempt from the
-    >=10 fixture richness rule (D-08 sparsity caveat) but MUST appear in one partition.
+    >=10 fixture richness rule (sparse fixtures) but MUST appear in one partition.
 
-    Phase 133 note: the _VALIDATED_IDS list is the authoritative source for the
+    Note: the _VALIDATED_IDS list is the authoritative source for the
     validated motif set rather than the first fixture's label. After the attraction
-    fix (Plan 01) many position fixtures from fork/skewer/deflection etc. now dispatch
+    fix many position fixtures from fork/skewer/deflection etc. now dispatch
     as 'attraction' at depth 0, so the first-fixture shortcut would miss the original
     motif name. _VALIDATED_IDS must be kept in sync with _VALIDATED_FIXTURE_SETS.
     """
@@ -1960,7 +1953,7 @@ def test_suppressed_set_matches_validated_partition() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Priority order (D-07): mate dominates; hanging-piece is the catch-all (last).
+# Priority order: mate dominates; hanging-piece is the catch-all (last).
 # ---------------------------------------------------------------------------
 
 
@@ -1982,15 +1975,15 @@ class TestPriorityOrder:
 
     def test_hanging_piece_is_catch_all_last(self) -> None:
         """hanging-piece fixtures resolve to hanging-piece — nothing higher pre-empted,
-        proving it sits at the bottom of the priority chain (D-07)."""
+        proving it sits at the bottom of the priority chain."""
         for predicted, _expected in _run_fixtures(_HANGING_PIECE_FIXTURES):
             assert predicted == "hanging-piece"
 
     def test_discovered_check_dominates_discovered_attack(self) -> None:
-        """D-03: discovered-check (Tier 2, lower index) beats discovered-attack on the
+        """Discovered-check (Tier 2, lower index) beats discovered-attack on the
         same PV — the discovering move that gives check tags as discovered-check."""
         # This fixture is a discovered check: pov's first move reveals a check from
-        # another pov piece.  Before Plan 128.1-01, detect_discovered_attack would fire
+        # another pov piece.  Before the discovered-check split, detect_discovered_attack would fire
         # here (Sub-case 1).  After the split, discovered-check must win instead.
         fen = "1r6/2pkP3/3P4/4P2p/3R2p1/4R3/1p5r/5K2 w - - 1 47"
         pv = "d6c7 d7c7 e3c3"
@@ -2001,12 +1994,12 @@ class TestPriorityOrder:
         )
 
     def test_depth_primary_hanging_beats_deeper_trapped(self) -> None:
-        """D-05/D-07: hanging-piece (Tier 4, depth 0) beats trapped-piece (Tier 2, depth 4)
+        """Hanging-piece (Tier 4, depth 0) beats trapped-piece (Tier 2, depth 4)
         because depth is the primary sort key — shallowest tactic wins.
 
-        Previously (tier-primary dispatch) trapped-piece would win because Tier 2 < Tier 4.
-        Under D-05 depth-primary dispatch, depth 0 < depth 4, so hanging-piece wins.
-        This is correct per D-07: missing an en-prise piece is the root-cause error.
+        Under tier-primary dispatch trapped-piece would win because Tier 2 < Tier 4;
+        under depth-primary dispatch, depth 0 < depth 4, so hanging-piece wins.
+        This is the intended order: missing an en-prise piece is the root-cause error.
 
         Position: black pov plays Rxe1 (rook captures undefended White Bishop on e1),
         hanging-piece fires at depth 0. Deeper in the PV, the white bishop on f1 becomes
@@ -2022,7 +2015,7 @@ class TestPriorityOrder:
         )
 
     def test_under_promotion_dominates_promotion(self) -> None:
-        """D-01: under-promotion (non-queen) NEVER tags as 'promotion'.
+        """Under-promotion (non-queen) NEVER tags as 'promotion'.
 
         When moves[0] promotes to a knight, the dispatcher must return 'under-promotion'
         (Tier 5, rank 0) and NEVER 'promotion' (Tier 5, rank 1). Under-promotion is
@@ -2038,7 +2031,7 @@ class TestPriorityOrder:
         )
 
     def test_real_tactic_beats_promotion_motif(self) -> None:
-        """D-04: a fork that happens to involve a promotion returns the real tactic,
+        """A fork that happens to involve a promotion returns the real tactic,
         not a move-type tag — move-type is the lowest tier and loses to any real tactic.
 
         Position: the refuting move is a queen promotion that also forks two pieces.
@@ -2061,14 +2054,14 @@ class TestPriorityOrder:
         )
 
     def test_depth_primary_dispatch(self) -> None:
-        """D-05/D-07: depth is the primary dispatch key (Phase 131 Plan 01 Task 2).
+        """Depth is the primary dispatch key.
 
         Case 1 — shallowest wins: hanging-piece at depth 0 beats fork at depth 0 and
         trapped-piece at depth 4. When two motifs fire, the one at lesser depth wins;
         equal-depth ties break by tier then rank.
 
         Case 2 — equal-depth tiebreak: fork (Tier 2) and hanging-piece (Tier 4) both
-        fire at depth 0 — fork wins via tier tiebreak (2 < 4). This is correct per D-07:
+        fire at depth 0 — fork wins via tier tiebreak (2 < 4). This is the intended order:
         when the fork IS at depth 0, it is equally shallow and more specific than the
         hanging capture.
         """
@@ -2106,12 +2099,12 @@ class TestPriorityOrder:
         assert depth_2 == 0, f"Case 2: expected depth 0, got {depth_2}"
 
 
-# NOTE (D-10, precision-first): this suite intentionally asserts ONLY precision +
+# NOTE (precision-first): this suite intentionally asserts ONLY precision +
 # detector determinism. It NEVER gates recall ("found N of M tactics") — a missed
 # detection is an accepted False Negative, never a test failure.
 
 
-# === Workstream B: missed dest-square gate (D-03 / D-04) ===
+# === Missed dest-square gate ===
 #
 # These fixtures validate the call-site gate in _detect_tactic_for_flaw (flaws_service.py):
 # when the flaw move's destination square equals the best line's first-move destination
@@ -2120,7 +2113,7 @@ class TestPriorityOrder:
 # moved away entirely, so normal detection proceeds.
 #
 # These tests call _detect_tactic_for_flaw directly with hand-built (flaw_move, best_line)
-# fixtures (D-04) — NOT the CC0 puzzle harness, which has no concept of "the move the
+# fixtures — NOT the CC0 puzzle harness, which has no concept of "the move the
 # player actually played".
 #
 # Test fixtures use SimpleNamespace to satisfy the positions[n].move_san / eval_mate
@@ -2128,20 +2121,20 @@ class TestPriorityOrder:
 
 
 def test_missed_dest_sq_gate() -> None:
-    """D-03 / D-04: suppress missed tactic when flaw dest == best-line first-move dest.
+    """Suppress missed tactic when flaw dest == best-line first-move dest.
 
     Scenario: White Rook on d5 captures the undefended Black Rook on e5 (the flaw move
     — right target, wrong piece type).  The best line was Nxe5 (Knight f3 captures e5 for
     a stronger result).  Both flaw move and best PV first move go to e5, so the player
     demonstrably SAW the piece.  The missed-tactic tag should be SUPPRESSED.
 
-    This test FAILS before Task 2 (the gate does not yet exist) because
-    _detect_tactic_for_flaw returns the hanging-piece motif instead of (None, None, None, None).
+    Without the gate, _detect_tactic_for_flaw would return the hanging-piece motif
+    instead of (None, None, None, None).
 
     Edge case included: a non-capture flaw move (King to g2) that goes to a different square
     is the non-suppression path; see test_missed_no_suppression for that case.  Here we also
     verify the suppression holds even when the flaw move SAN is not a recapture of a piece
-    owned by the opponent (the dest-square equality criterion is the ONLY criterion, D-03).
+    owned by the opponent (the dest-square equality criterion is the ONLY criterion).
     """
     from types import SimpleNamespace
 
@@ -2184,7 +2177,7 @@ def test_missed_dest_sq_gate() -> None:
 
 
 def test_missed_no_suppression() -> None:
-    """D-03 / D-04: normal detection proceeds when flaw dest != best-line first-move dest.
+    """Normal detection proceeds when flaw dest != best-line first-move dest.
 
     Scenario: White Knight on f3 can capture the undefended Black Rook on e5 (the missed
     tactic).  Instead the player played Nd4 (Knight to d4) — a completely different square.
@@ -2231,9 +2224,9 @@ def test_missed_no_suppression() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 148 D-01: has_forced_mate truncated-mate fallback (Bug A).
+# has_forced_mate truncated-mate fallback.
 #
-# BUGFIX (Phase 148): has_forced_mate=True signals Stockfish reported a genuine
+# BUGFIX: has_forced_mate=True signals Stockfish reported a genuine
 # eval_mate score, but every per-detector mate function bails via
 # `if not boards[-1].is_checkmate()` when the PV is capped at PV_CAP_PLIES=12
 # before reaching the mating position — so a real, deep forced mate previously
@@ -2250,11 +2243,11 @@ _TRUNCATED_MATE_PV = "c4c3 g6g5 d5d4 g5g4 d4d3 g4g3 d3d2 g3g7 a8c8 g7d7 d2e2 d7e
 
 
 class TestHasForcedMateFallback:
-    """D-01: truncated forced-mate PV tags generic MATE only when the flag is set."""
+    """Truncated forced-mate PV tags generic MATE only when the flag is set."""
 
     def test_truncated_mate_with_flag_tags_mate(self) -> None:
         """has_forced_mate=True on a truncated (non-checkmate-terminal) PV must
-        tag the generic MATE motif instead of falling through untagged (Bug A)."""
+        tag the generic MATE motif instead of falling through untagged."""
         from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH
 
         board = chess.Board(_TRUNCATED_MATE_FEN)
@@ -2287,8 +2280,8 @@ class TestHasForcedMateFallback:
 
 
 # ---------------------------------------------------------------------------
-# Phase 132 Plan 04: cook AND-chain behavioral assertions for attraction,
-# x-ray, and sacrifice (TDD RED gate — Phase 132 D-01/D-02/D-03).
+# cook AND-chain behavioral assertions for attraction,
+# x-ray, and sacrifice.
 #
 # These tests specifically verify that the new cook-aligned AND-chains:
 #   1. Return TACTIC_CONFIDENCE_HIGH=100 when they fire (not _grade(met, n)).
@@ -2296,12 +2289,12 @@ class TestHasForcedMateFallback:
 #   3. Use the correct index for sacrifice's promotion guard (moves[1::2]).
 #
 # Tests are designed to FAIL with the old voting detectors and PASS after
-# the cook AND-chain rewrites (Phase 132 D-01, AGPL boundary — RESEARCH.md §4/§6/§7).
+# the cook AND-chain rewrites (AGPL boundary).
 # ---------------------------------------------------------------------------
 
 
 class TestAttractionCookAndChain:
-    """Behavioral tests for cook's exact attraction AND-chain (RESEARCH.md §4)."""
+    """Behavioral tests for cook's exact attraction AND-chain."""
 
     def test_old_fp_position_no_longer_fires(self) -> None:
         """Old voting-based FP: attraction voted True but cook AND-chain must return False.
@@ -2395,7 +2388,7 @@ class TestAttractionCookAndChain:
 
 
 class TestXRayCookAndChain:
-    """Behavioral tests for cook's exact x-ray AND-chain (RESEARCH.md §6)."""
+    """Behavioral tests for cook's exact x-ray AND-chain."""
 
     def test_three_same_square_required(self) -> None:
         """Old voting FP: x-ray fired without moves[k-2].to == moves[k-1].to == moves[k].to.
@@ -2405,7 +2398,7 @@ class TestXRayCookAndChain:
 
         The old detector used: cond1 (same square as k-1) + cond2 (prior attack) + cond3
         (between geometry). It does NOT require moves[k-2].to_square == moves[k].to_square.
-        Cook's AND-chain REQUIRES all three captures at the same square (Pitfall 4).
+        Cook's AND-chain REQUIRES all three captures at the same square.
 
         This test verifies: when moves[k-2].to_square != moves[k].to_square, x-ray must
         not fire, even if the other geometry conditions are satisfied.
@@ -2459,7 +2452,7 @@ class TestXRayCookAndChain:
         from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, _parse_pv, detect_x_ray
 
         # Use the first existing fixture — if it fires after the port, check confidence.
-        # If it doesn't fire (D-03 cutoff), skip the assertion.
+        # If it doesn't fire (PV-divergence cutoff), skip the assertion.
         fen = "r1br2k1/p1b2pp1/1pp2q1p/2pPp3/4P3/5NNP/PPP2PP1/R2Q1RK1 w - - 0 2"
         pv_str = "c2c4 c6d5 c4d5 c8d7 a2a4 a7a6 b2b3 b6b5 d1e2 c7d6 f1b1 d8c8"
         board = chess.Board(fen)
@@ -2474,10 +2467,10 @@ class TestXRayCookAndChain:
 
 
 class TestSacrificeCookAndChain:
-    """Behavioral tests for cook's exact sacrifice AND-chain (RESEARCH.md §7)."""
+    """Behavioral tests for cook's exact sacrifice AND-chain."""
 
     def test_promotion_guard_indexes_opponent_moves(self) -> None:
-        """Sacrifice promotion guard must check moves[1::2] (OPPONENT moves, Pitfall 7).
+        """Sacrifice promotion guard must check moves[1::2] (OPPONENT moves).
 
         The old detector may check pov moves or use different indexing. Cook's predicate
         uses moves[1::2] (odd indices = opponent's moves) for the promotion guard:
@@ -2551,13 +2544,10 @@ class TestSacrificeCookAndChain:
 
 
 # ---------------------------------------------------------------------------
-# Phase 221 TAGFIX-03 (D-06/D-08): sacrifice depth cap + gate-boundary behavioral
-# tests. D-05 (the boards[k+3] persistence check plan 05 added on top of the
-# gate below) was RETIRED in plan 08 — see detect_sacrifice's docstring for the
-# full measurement. The fixtures below were originally written to demonstrate
-# D-05 rejecting a recovered deficit; they are KEPT and REPURPOSED to instead
-# pin the plan-08 behavior change (recovery no longer matters at all), because
-# they are exactly the fixtures that prove the retirement took effect.
+# sacrifice depth cap + gate-boundary behavioral tests. detect_sacrifice has no
+# boards[k+3] persistence check (see its docstring for the measurement showing it
+# dropped genuine sacrifices). Several fixtures below keep a deficit that recovers
+# after the gate point, to pin that recovery no longer matters at all.
 #
 # All fixtures below share one "material lab" geometry so each scenario is a
 # minimal, hand-verified synthetic position (not a real game) that isolates
@@ -2568,22 +2558,20 @@ class TestSacrificeCookAndChain:
 #   undefended "bait" pieces placed on that file one at a time (nearest first).
 # Every FEN/PV pair was verified with a standalone script calling _parse_pv +
 # detect_sacrifice directly and printing _material_diff at every board index
-# before being transcribed here (see 221-05 SUMMARY for the verification log).
+# before being transcribed here.
 # ---------------------------------------------------------------------------
 
 
 class TestSacrificePersistenceAndDepthCap:
-    """D-06 shared depth cap and gate-boundary behavioral tests. D-05's
-    persistence check (boards[k+3]) is retired as of plan 08 — see the
+    """Shared depth cap and gate-boundary behavioral tests. The
+    persistence check (boards[k+3]) does not exist — see the
     module comment above and detect_sacrifice's docstring."""
 
-    def test_deficit_recovered_at_k_plus_3_still_fires_after_d05_retirement(self) -> None:
-        """Plan 08: this fixture used to prove D-05 REJECTED a deficit that meets
-        the gate at k=2 (boards[3] diff=-2) but recovers to -1 by boards[5] (the
-        next pov move). D-05 is retired (221-D13-SPOTCHECK.md: it also dropped
-        genuine sacrifices whose recovery IS the point of the tactic), so this
-        exact recovering line now FIRES — the outer gate alone decides, and
-        what happens after k+1 is no longer read at all.
+    def test_deficit_recovered_at_k_plus_3_still_fires(self) -> None:
+        """A deficit that meets the gate at k=2 (boards[3] diff=-2) but recovers
+        to -1 by boards[5] (the next pov move) still FIRES: a persistence check
+        would drop genuine sacrifices whose recovery IS the point of the tactic.
+        The outer gate alone decides, and what happens after k+1 is not read at all.
         """
         from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH
 
@@ -2601,7 +2589,7 @@ class TestSacrificePersistenceAndDepthCap:
         """Same gate (boards[3] diff=-2 at k=2), fires at depth 2 regardless of
         what boards[5] later shows (White plays a non-recapturing filler here;
         the previous test uses a recapturing filler instead — both now fire
-        identically, which is exactly the point of retiring D-05).
+        identically, as the absence of a persistence check requires).
         """
         from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH
 
@@ -2618,8 +2606,8 @@ class TestSacrificePersistenceAndDepthCap:
     def test_line_ends_before_persistence_board_exists_fires(self) -> None:
         """The line ends immediately after the sacrificing move (3 moves,
         boards[5] does not exist) -> fires at depth 2, same gate as the two
-        tests above (boards[3] diff=-2). Unaffected by D-05's retirement — this
-        case was always accepted (nothing to check past the end of the line).
+        tests above (boards[3] diff=-2). Nothing exists past the end of the line, so this
+        case is accepted trivially.
         """
         fen = "q3k3/R7/B7/P7/7p/7p/7b/1K5R w - - 0 1"
         pv = "b1b2 a8a7 h1h2"
@@ -2641,7 +2629,7 @@ class TestSacrificePersistenceAndDepthCap:
         assert not fired
 
     def test_depth_cap_fires_at_k_equals_4(self) -> None:
-        """D-06: the first (and only) deficit is met at k=4, within the
+        """The first (and only) deficit is met at k=4, within the
         SACRIFICE_CLEARANCE_MAX_DEPTH cap, and the line ends there -> fires at
         depth 4. k=2's own gate never meets the threshold (no capture has
         happened yet at that point), proving the scan proceeds past an
@@ -2657,7 +2645,7 @@ class TestSacrificePersistenceAndDepthCap:
         assert depth is not None and depth <= SACRIFICE_CLEARANCE_MAX_DEPTH
 
     def test_depth_cap_blocks_first_deficit_met_at_k_equals_6(self) -> None:
-        """D-06: the first deficit would be met at k=6 (SACRIFICE_CLEARANCE_MAX_DEPTH
+        """The first deficit would be met at k=6 (SACRIFICE_CLEARANCE_MAX_DEPTH
         + 2), but the scan `break`s once k exceeds the cap (4), so boards[7] is
         never even read -> does not fire, even though an uncapped scan would find
         a real sacrifice there.
@@ -2684,7 +2672,7 @@ class TestSacrificePersistenceAndDepthCap:
         assert [b.fen() for b in boards] == boards_fens_before
 
     def test_no_orientation_parameter_on_detect_sacrifice(self) -> None:
-        """D-08: one predicate, no orientation parameter — both allowed and missed
+        """One predicate, no orientation parameter — both allowed and missed
         orientations reach the same detect_sacrifice through the dispatcher.
         """
         import inspect
@@ -2694,31 +2682,27 @@ class TestSacrificePersistenceAndDepthCap:
 
 
 # ---------------------------------------------------------------------------
-# Phase 221 plan 08 (gap closure, D-13 operator spot-check): regression pins
-# for the two real-game rows the operator confirmed are genuine sacrifices
-# that D-05's literal boards[k+3] persistence rule (shipped in plans 05/06)
-# wrongly drops. Built from fixtures/tagger/realgame_tags.csv rows 0064 and
-# 0133 via pre_flaw_fen + push_move_uci + pv -- the SAME construction
+# Regression pins for the two real-game rows (operator spot-check) confirmed to be
+# genuine sacrifices that a literal boards[k+3] persistence rule wrongly drops.
+# Built from fixtures/tagger/realgame_tags.csv rows 0064 and 0133 via
+# pre_flaw_fen + push_move_uci + pv -- the SAME construction
 # tests/scripts/tagger/conftest.py::build_realgame_board uses, so these mirror
-# production board construction exactly (not a bare chess.Board(fen)). Both
-# assertions are RED at this commit: the persistence rule cannot distinguish
-# "material returned because the sacrifice worked" (these two rows) from a
-# plain delayed recapture, and drops both. The task 2 replacement
-# discriminator is what turns them green; that is the point of pinning them
-# here first, in their own commit.
+# production board construction exactly (not a bare chess.Board(fen)). A
+# persistence rule cannot distinguish "material returned because the sacrifice
+# worked" (these two rows) from a plain delayed recapture, and would drop both.
 # ---------------------------------------------------------------------------
 
 
 class TestSacrificeRealGameSpotCheckRegressions:
-    """221-D13-SPOTCHECK.md operator verdicts: rows 0064 and 0133 ARE real
+    """Operator verdicts: rows 0064 and 0133 ARE real
     sacrifices; the rule dropping them is the defect, not the labels."""
 
     def test_row_0064_knight_sac_recovering_via_nxd6_fires(self) -> None:
         """realgame_tags.csv row 0064 (allowed, game 1060871 ply 23): White sacs
         a knight (Ndb5/cxb5/Nxb5, k=2, deficit -2) and recovers to +1 relative
         to entry at k+3 via Nxd6 -- the sac's own follow-up, not an unrelated
-        recapture (eval_at_firing +264cp). Operator verdict: real sacrifice
-        (221-D13-SPOTCHECK.md); the rule dropping it is the defect."""
+        recapture (eval_at_firing +264cp). Operator verdict: real sacrifice;
+        the rule dropping it is the defect."""
         fen = "r1b1k2r/ppq2ppp/2pb1n2/4n3/3NPB2/1BN5/PPP3PP/R2Q1R1K b kq - 10 12"
         board = chess.Board(fen)
         board.push(chess.Move.from_uci("e8g8"))
@@ -2736,7 +2720,7 @@ class TestSacrificeRealGameSpotCheckRegressions:
         material (exf6/Bxd3/fxg7, k=2, deficit -3) and recovers to +10 relative
         to entry at k+3 via gxf8=Q+ -- again the sac's own point, not an
         unrelated recapture (eval_at_firing +453cp). Operator verdict: real
-        sacrifice (221-D13-SPOTCHECK.md); the rule dropping it is the defect."""
+        sacrifice; the rule dropping it is the defect."""
         fen = "r1b1qrk1/2pp1pbp/1p3np1/p3P1B1/8/P1NQ1N2/1PP2PPP/R3R1K1 b - - 0 13"
         board = chess.Board(fen)
         board.push(chess.Move.from_uci("c8a6"))
@@ -2751,15 +2735,15 @@ class TestSacrificeRealGameSpotCheckRegressions:
 
 
 # ---------------------------------------------------------------------------
-# Phase 221 TAGFIX-04 (D-06/D-07): clearance strengthening — vacating-piece
+# clearance strengthening — vacating-piece
 # restriction, the "line is used" clause, and the shared depth cap.
 # ---------------------------------------------------------------------------
 
 
 class TestClearanceContextWorkedExamples:
-    """The six CONTEXT worked examples: three ACCEPT rows live in
+    """The six worked examples: three ACCEPT rows live in
     _CLEARANCE_ACCEPT_STANDALONE, scored via the STANDALONE detect_clearance
-    predicate (Phase 221 plan 06, D-07 suppression — "clearance" can never win
+    predicate ("clearance" can never win
     full dispatch anymore, so detect_tactic_motif is no longer a valid probe for
     these); the three REJECT rows live in _CLEARANCE_NEGATIVES and are still
     scored via full dispatch (detect_tactic_motif must return None either way).
@@ -2776,9 +2760,9 @@ class TestClearanceContextWorkedExamples:
             )
 
     def test_clearance_accepts_fire_via_standalone_predicate(self) -> None:
-        """D-07's accept logic is unchanged by the registry removal — only its
+        """The accept logic is unchanged by the registry removal — only its
         reachability through detect_tactic_motif is. Proves detect_clearance
-        itself (not the dispatcher) still fires on all three CONTEXT accepts.
+        itself (not the dispatcher) still fires on all three ACCEPT examples.
         """
         assert len(_CLEARANCE_ACCEPT_STANDALONE) == 3
         for fen, pv in _CLEARANCE_ACCEPT_STANDALONE:
@@ -2790,7 +2774,7 @@ class TestClearanceContextWorkedExamples:
 
 
 class TestClearancePriorMoveValidVacatingPiece:
-    """Direct unit tests for _clearance_prior_move_is_valid's D-07 vacating-piece
+    """Direct unit tests for _clearance_prior_move_is_valid's vacating-piece
     restriction (condition A): a king or pawn vacating move is rejected; any
     other piece type is accepted (all else equal).
     """
@@ -2824,7 +2808,7 @@ class TestClearancePriorMoveValidVacatingPiece:
 
 
 class TestClearanceLineIsUsed:
-    """Direct unit tests for _clearance_line_is_used (condition 10, D-07)."""
+    """Direct unit tests for _clearance_line_is_used (condition 10)."""
 
     def test_checking_move_accepted(self) -> None:
         board = chess.Board("k7/8/8/8/8/8/7K/R7 w - - 0 1")
@@ -2874,7 +2858,7 @@ class TestClearanceLineIsUsed:
 
 
 class TestClearanceDepthCap:
-    """D-06: the shared depth cap, applied to detect_clearance the same way as
+    """The shared depth cap, applied to detect_clearance the same way as
     detect_sacrifice — fires at k=4, capped out before k=6.
     """
 
@@ -2900,7 +2884,7 @@ class TestClearanceDepthCap:
         """Behavioural proof the cap did not leak: an existing intermezzo fixture
         that fires at depth 6 (beyond SACRIFICE_CLEARANCE_MAX_DEPTH=4) still
         fires — the full-line scan is intact for a tier-3 motif OTHER than
-        sacrifice and clearance (D-06 scopes the cap to exactly those two)."""
+        sacrifice and clearance (the cap is scoped to exactly those two)."""
         fen = "r1r5/pp4pp/2npbk2/3qp3/8/2QP1P2/PPP1N2P/RNB1K1R1 b Q - 2 15"
         pv = "c6d4 c1g5 f6f7 e2d4 c8c3 b1c3 d5d4"
         board = chess.Board(fen)
@@ -2916,8 +2900,7 @@ ACCEPT1_CLEARANCE_FEN_PV = ("8/7k/8/3n4/8/N7/7K/R7 w - - 0 1", "a3b5 d5e3 a1a7")
 
 
 # ---------------------------------------------------------------------------
-# Phase 134 Plan 02: cook-predicate behavioral tests for detect_trapped_piece
-# (TDD RED gate — Phase 134 D-EXP-01/02/03).
+# cook-predicate behavioral tests for detect_trapped_piece
 #
 # These tests verify the new capture-chain-anchored cook is_trapped predicate:
 #   1. Non-incidental non-firing: a piece that satisfies old escape logic but is
@@ -2925,15 +2908,14 @@ ACCEPT1_CLEARANCE_FEN_PV = ("8/7k/8/3n4/8/N7/7K/R7 w - - 0 1", "a3b5 d5e3 a1a7")
 #   2. In-check gate: board in check → NOT trapped.
 #   3. Pawn/king exclusion: pawns and kings never fire.
 #   4. Escape refutation: a piece with a safe escape is NOT trapped.
-#   5. Empty-escape-set choice (Open Q 2): no legal moves → NOT trapped
-#      (precision-first deviation from cook; cook would fire here).
+#   5. Empty escape set: no legal moves → trapped (matches cook).
 #
 # Tests call detect_trapped_piece directly via _parse_pv, independent of dispatch.
 # ---------------------------------------------------------------------------
 
 
 class TestTrappedPieceCookPredicate:
-    """Behavioral guards for the Phase 134 cook-predicate rewrite of detect_trapped_piece."""
+    """Behavioral guards for the cook-predicate rewrite of detect_trapped_piece."""
 
     def test_non_incidental_piece_not_in_capture_chain_does_not_fire(self) -> None:
         """Non-incidental non-firing: a piece that passes the old escape-all-lose
@@ -2995,7 +2977,7 @@ class TestTrappedPieceCookPredicate:
         )
 
     def test_empty_escape_set_fires_trapped(self) -> None:
-        """Behavioral proof of Phase 221 TAGFIX-05 fix 3 (D-12): a piece with NO legal
+        """Behavioral proof: a piece with NO legal
         moves at all (fully blocked by its own side, not technically pinned) IS
         considered trapped, matching cook. Direct `_piece_is_trapped` unit call (not a
         source inspection).
@@ -3004,9 +2986,9 @@ class TestTrappedPieceCookPredicate:
         b8 and its own pawn on b6 (both diagonals from a7 are blocked one square out),
         attacked down the open a-file by the white rook on a1, undefended, unpinned,
         not in check. `escape_moves` is empty, so this exercises exactly the fallthrough
-        path the prior "Empty-escape-set exclusion" early `return False` used to
-        short-circuit. Before this fix, `_piece_is_trapped` returned False here; the
-        Gate-5 fallthrough (all escapes lose or none exist) now returns True.
+        path that an early `return False` on an empty escape set would short-circuit.
+        `_piece_is_trapped` must return True here: the Gate-5 fallthrough (all escapes
+        lose or none exist) applies.
         """
         fen = "1n2k3/b7/1p6/8/8/8/8/R5K1 b - - 0 1"
         board = chess.Board(fen)
@@ -3157,21 +3139,21 @@ class TestTrappedPieceCookPredicate:
         )
 
 
-class TestDiscoveredAttackD11PortFixes:
-    """Behavioral guards for Phase 221 TAGFIX-05 fixes 4-5 (D-11/D-12): the
+class TestDiscoveredAttackRecaptureAndDepth:
+    """Behavioral guards for the discovered-attack port fixes: the
     recapture guard returns (not continues) and depth is k (not k-1). Direct
     `detect_discovered_attack` unit calls, not source inspection.
     """
 
     def test_recapture_short_circuits_whole_predicate(self) -> None:
-        """Behavioral proof of fix 4 (D-12): a recapture at an EARLY pov move index
+        """Behavioral proof: a recapture at an EARLY pov move index
         must short-circuit the WHOLE predicate to not-fired, not just skip that one
         index. CC0 puzzle hAPAT (TRAIN): at k=2, the opponent's prior move (c2c1)
         lands on the same square as pov's capture (c1) — a recapture. A LATER pov
         move (k=6, d8d5xd5) satisfies every other discovered-attack condition and
-        is exactly what the old `continue` fired on, distinguishing return from
-        continue (nothing else does). Before this fix, the old `continue` skipped
-        k=2 and scanned onward, firing at k=6; after the fix the recapture at k=2
+        is exactly what a `continue` would fire on, distinguishing return from
+        continue (nothing else does). With `continue`, k=2 would be skipped and the
+        scan would go onward and fire at k=6; instead the recapture at k=2
         returns not-fired immediately and k=6 is never reached.
         """
         fen = "2kr4/ppr5/q2b2Rp/3Q1p2/5P2/2B5/PPR2P1P/1K6 b - - 0 30"
@@ -3190,8 +3172,7 @@ class TestDiscoveredAttackD11PortFixes:
 
     def test_recapture_guard_untouched_in_skewer(self) -> None:
         """Sibling guard: the visually identical `if op.to_square == capture_sq:
-        continue` inside detect_skewer (Phase 221 TAGFIX-05 fix 4, D-12 anchor-by-
-        function note) must remain a `continue`, not a `return`. Uses an existing
+        continue` inside detect_skewer must remain a `continue`, not a `return`. Uses an existing
         skewer fixture with a recapture-guard-adjacent line to confirm skewer's
         own behavior (precision 1.000 on both splits) is unaffected by the
         discovered-attack fix.
@@ -3203,11 +3184,10 @@ class TestDiscoveredAttackD11PortFixes:
         assert _INT_TO_MOTIF[motif_int] == expected == "skewer"
 
     def test_depth_equals_pov_move_index_k(self) -> None:
-        """Behavioral proof of fix 5 (D-11): the returned depth equals the pov move
+        """Behavioral proof: the returned depth equals the pov move
         index k (an EVEN number from range(2, len(moves), 2)), not k-1. CC0 puzzle
-        kwRAz... (TRAIN row reused from _DISCOVERED_ATTACK_FIXTURES): before this
-        fix, this line returned depth 1 (max(0, k-1) with k=2); after the fix it
-        returns depth 2 (k itself), matching detect_skewer's own depth convention.
+        kwRAz... (TRAIN row reused from _DISCOVERED_ATTACK_FIXTURES): depth is
+        2 (k itself, not max(0, k-1) = 1), matching detect_skewer's own depth convention.
         """
         fen = "3r4/r2N1k2/3R2pp/1pP2p2/8/P7/1P4PP/6K1 w - - 12 35"
         pv = "d7e5 f7e8 d6d8 e8d8 e5c6 d8c8 c6a7"

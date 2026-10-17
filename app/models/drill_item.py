@@ -1,14 +1,13 @@
-"""ORM model for drill_items — per-(user, flaw) spaced-repetition state (Phase 189).
+"""ORM model for drill_items — per-(user, flaw) spaced-repetition state.
 
-Phase 189 Plan 01 (POOL-01/POOL-04/POOL-05/POOL-06). One row per (user, game,
-ply) that has entered the Train drill pool: an interval-ladder "streak" state
-machine tracks progress toward MASTERED (3 spaced-correct solves, POOL-05) or
-PARKED (two doors — POOL-06: 3 never-correct fails; SEED-154: 6 lifetime
-fails regardless of ever_correct); `due_date` drives session composition
-(POOL-04, snapped to a scheduled session day by
+One row per (user, game, ply) that has entered the Train drill pool: an
+interval-ladder "streak" state machine tracks progress toward MASTERED (3
+spaced-correct solves) or PARKED (two doors: 3 never-correct fails, or 6
+lifetime fails regardless of ever_correct); `due_date` drives session
+composition (snapped to a scheduled session day by
 `app.services.train_scheduler.next_scheduled_day`).
 
-Anchoring (D-02, LOCKED — do not "fix" this to FK `game_flaws`):
+Anchoring (LOCKED — do not "fix" this to FK `game_flaws`):
   `drill_items` FKs to `games(id) ON DELETE CASCADE` only, with PLAIN
   `(game_id, ply)` reference columns — there is NO ForeignKeyConstraint to
   `game_flaws`. Rationale: `_classify_and_fill_oracle` (app/services/
@@ -22,7 +21,7 @@ Anchoring (D-02, LOCKED — do not "fix" this to FK `game_flaws`):
   tolerates a missing match (lazy eviction at composition time, never a
   DELETE from this table).
 
-Grading-critical fields (D-01, LOCKED): `best_move`, `pv`, and the sharp/soft
+Grading-critical fields (LOCKED): `best_move`, `pv`, and the sharp/soft
 classification derived from `game_flaws.missed_pv_lines` are NEVER snapshotted
 onto this table — they are always live-joined from `game_positions`/
 `game_flaws` at composition/serve time. Do not add a cached copy of them here.
@@ -49,7 +48,7 @@ from app.models.base import Base
 
 
 class DrillStatus(IntEnum):
-    """SR lifecycle state for a drill_items row (POOL-04/05/06)."""
+    """SR lifecycle state for a drill_items row."""
 
     ACTIVE = 0
     MASTERED = 1
@@ -60,7 +59,7 @@ class DrillItem(Base):
     """One row per (user, game, ply) qualifying own-blunder pool entry.
 
     Composite PK `(user_id, game_id, ply)` mirrors `game_flaws`' own PK shape
-    (see module docstring for the D-02 anchoring rationale).
+    (see module docstring for the anchoring rationale).
     """
 
     __tablename__ = "drill_items"
@@ -75,7 +74,7 @@ class DrillItem(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    # D-02: FK to games(id) only, NOT to game_flaws. (game_id, ply) are plain
+    # FK to games(id) only, NOT to game_flaws. (game_id, ply) are plain
     # reference columns resolved via a serve-time join — never cascaded from
     # game_flaws. See module docstring.
     game_id: Mapped[int] = mapped_column(

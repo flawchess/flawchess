@@ -1,10 +1,10 @@
-"""Tests for Phase 116 Alembic migration: full_evals_completed_at column + indexes + backfill.
+"""Tests for the full_evals_completed_at Alembic migration: column + indexes + backfill.
 
 Regression suite for the migration that adds:
-- `games.full_evals_completed_at TIMESTAMPTZ NULL` (EVAL-05 / D-116-05)
+- `games.full_evals_completed_at TIMESTAMPTZ NULL`
 - partial index `ix_games_full_evals_pending ON games(id) WHERE full_evals_completed_at IS NULL`
-- partial index `ix_gp_full_hash_opening ON game_positions(full_hash) WHERE ply <= 20` (EVAL-03)
-- verified backfill (D-116-06): marks games where every non-terminal ply has eval coverage
+- partial index `ix_gp_full_hash_opening ON game_positions(full_hash) WHERE ply <= 20`
+- verified backfill: marks games where every non-terminal ply has eval coverage
 
 Structure mirrors test_migration_91_evals_completed_at.py: each test drives Alembic via
 asyncio.to_thread, runs against this run's private per-run database (flawchess_test_<pid|worker>),
@@ -30,9 +30,9 @@ GAMES_INDEX_NAME: str = "ix_games_full_evals_pending"
 GP_INDEX_NAME: str = "ix_gp_full_hash_opening"
 TARGET_REVISION: str = "head"
 BASE_REVISION: str = "07994baf3b15"  # down_revision of our migration
-# The Phase 116 migration itself (where the full_evals_completed_at backfill runs).
+# The full_evals_completed_at migration itself (where the backfill runs).
 # Backfill-result assertions target this revision, NOT head — a later migration
-# (Phase 117.1 / SEED-044 clean-slate) legitimately clears the marker for engine
+# (the eval-convention clean-slate) legitimately clears the marker for engine
 # games, which would otherwise undo the backfill before the assertion at head.
 PHASE_116_REVISION: str = "20260612120000"
 
@@ -173,7 +173,7 @@ async def _insert_game_position(
     """Insert a minimal game_positions row.
 
     move_san is required (no default): the backfill anti-join uses
-    `move_san IS NOT NULL` as the non-terminal marker (CR-01), so every
+    `move_san IS NOT NULL` as the non-terminal marker, so every
     fixture row must state explicitly whether it models a non-terminal ply
     (move_san set) or the terminal-position row (move_san None — the import
     pipeline appends one such row, with NULL evals, to EVERY game).
@@ -261,9 +261,9 @@ async def test_migration_adds_column_and_indexes(test_engine) -> None:
 
 
 async def test_backfill_marks_fully_covered_game(test_engine) -> None:
-    """D-116-06: a game whose every non-terminal ply has eval coverage is marked.
+    """A game whose every non-terminal ply has eval coverage is marked.
 
-    The fixture mirrors real process_game_pgn output (CR-01 regression guard):
+    The fixture mirrors real process_game_pgn output (regression guard):
     every imported game carries a terminal-position row with move_san IS NULL
     and eval_cp/eval_mate NULL. The backfill must NOT let that row disqualify
     the game — only non-terminal (move_san IS NOT NULL) rows count.
@@ -295,8 +295,8 @@ async def test_backfill_marks_fully_covered_game(test_engine) -> None:
         test_engine, test_user_id, game_id, ply=2, eval_cp=None, eval_mate=None, move_san=None
     )
 
-    # Upgrade to the Phase 116 migration — triggers the backfill. Assert here, NOT at
-    # head: the Phase 117.1 clean-slate migration (SEED-044) clears the marker for
+    # Upgrade to the full_evals_completed_at migration — triggers the backfill. Assert
+    # here, NOT at head: the eval-convention clean-slate migration clears the marker for
     # engine games (lichess_evals_at IS NULL), which this fixture is.
     await _run_upgrade(PHASE_116_REVISION)
 
@@ -311,11 +311,11 @@ async def test_backfill_marks_fully_covered_game(test_engine) -> None:
 
 
 async def test_backfill_skips_game_with_null_eval(test_engine) -> None:
-    """D-116-06: a game with a NULL-eval NON-TERMINAL ply is NOT marked.
+    """A game with a NULL-eval NON-TERMINAL ply is NOT marked.
 
     The uncovered ply carries move_san (non-terminal) so it legitimately
     disqualifies the game; the terminal row is also present so the fixture
-    matches real import-pipeline output (CR-01 regression guard).
+    matches real import-pipeline output (regression guard).
 
     Strategy:
     1. Downgrade to base.

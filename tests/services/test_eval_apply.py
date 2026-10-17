@@ -1,17 +1,17 @@
-"""Tests for the Phase 174 GEMS-03 best-move candidate builder in eval_apply.
+"""Tests for the best-move candidate builder in eval_apply.
 
-Covers the three cases the plan calls out:
+Covers the three cases:
   1. Candidate gate — an out-of-book played==best ply with a >= INACCURACY_DROP
      expected-score margin yields a row; a sub-margin ply, an in-book ply, and a
      played!=best ply each yield nothing.
-  2. Pitfall-1 fallback — a played==best out-of-book ply whose second-best is MISSING
+  2. Missing-second-best fallback — a played==best out-of-book ply whose second-best is MISSING
      (the remote-worker MultiPV-1 lane) triggers a targeted, backend-owned
      evaluate_nodes_multipv2 call and still produces a row.
   3. Idempotency — re-running the upsert over the same (game_id, ply) updates in place
      rather than duplicating.
 
 The gate + fallback plumbing runs in the default no-group suite: `score_move` is
-monkeypatched to a fixed probability (no onnxruntime needed) and the Pitfall-1 Stockfish
+monkeypatched to a fixed probability (no onnxruntime needed) and the Stockfish
 fallback is monkeypatched to a fixed 7-tuple (no real engine needed).
 """
 
@@ -170,7 +170,7 @@ def _target(
 
     Pass `board` explicitly (a REAL board reflecting the actual position at
     `ply`, with a correctly-populated `move_stack`) for a test that exercises
-    book-depth detection: `_contiguous_san_prefix` (CR-01 fix, 174-06) derives
+    book-depth detection: `_contiguous_san_prefix` derives
     the book-depth prefix from the deepest target's `board.move_stack`, not
     from a bare default board.
     """
@@ -215,7 +215,7 @@ class TestContiguousSanPrefix:
 
 
 class TestCandidateGate:
-    """GEMS-02/03: out-of-book AND played==best AND ES margin >= INACCURACY_DROP."""
+    """Out-of-book AND played==best AND ES margin >= INACCURACY_DROP."""
 
     async def test_out_of_book_played_best_yields_row(
         self,
@@ -254,7 +254,7 @@ class TestCandidateGate:
         ea_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch,
     ) -> None:
-        """SEED-172 item 1: score_move (~150 ms of ONNX inference per call) must run
+        """score_move (~150 ms of ONNX inference per call) must run
         in a worker thread, not on the event loop thread, or it stalls every other
         request on the API process."""
         monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
@@ -313,10 +313,10 @@ class TestCandidateGate:
         monkeypatch,
     ) -> None:
         """A played==best ply INSIDE the opening book (ply < find_opening_ply_count)
-        is excluded — book theory is not a gem (D-04).
+        is excluded — book theory is not a gem.
 
         Boards are REAL, sequentially-played positions (not the bare default board
-        `_target` otherwise uses) because the CR-01 book-depth fix derives the
+        `_target` otherwise uses) because the book-depth fix derives the
         prefix from the deepest target's `board.move_stack` — a bare board would
         report an empty stack and silently mis-detect book depth."""
         monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
@@ -345,15 +345,15 @@ class TestCandidateGate:
         finally:
             await _delete_game(ea_session_maker, game_id)
 
-    async def test_sparse_targets_book_depth_not_collapsed_cr01(
+    async def test_sparse_targets_book_depth_not_collapsed(
         self,
         ea_user: int,
         ea_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch,
     ) -> None:
-        """CR-01 regression guard: a sparse `targets` list missing plies 0-2 (the
-        historical local-drain lichess-eval call-site shape, before Phase 174-06
-        Task 1 retired that filter) must NOT collapse book depth to 0.
+        """Regression guard: a sparse `targets` list missing plies 0-2 (the
+        historical local-drain lichess-eval call-site shape, from before the
+        every-ply full pass) must NOT collapse book depth to 0.
 
         Real game: 1. e4 e5 2. Nf3 Nc6 3. Bb5 (Ruy Lopez, book depth 5). `targets`
         only contains plies 3 (Nc6) and 4 (Bb5) — plies 0-2 are absent entirely, not
@@ -440,10 +440,10 @@ class TestCandidateGate:
             await _delete_game(ea_session_maker, game_id)
 
 
-# ─── 2. Pitfall-1 fallback (remote-worker MultiPV-1 lane) ───────────────────────
+# ─── 2. Missing-second-best fallback (remote-worker MultiPV-1 lane) ──────────────
 
 
-class TestPitfall1Fallback:
+class TestMissingSecondBestFallback:
     """A played==best out-of-book ply with NO second-best (second_best_map is None,
     the remote-worker lane) triggers a targeted backend evaluate_nodes_multipv2 call."""
 
@@ -512,7 +512,7 @@ class TestPitfall1Fallback:
         ea_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch,
     ) -> None:
-        """Phase 177 PROTO-03: a second_best_map covering ALL candidate plies (the
+        """A second_best_map covering ALL candidate plies (the
         v2-worker submit shape) means the builder runs ZERO fallback Stockfish
         searches, across multiple candidate plies in the same call."""
         monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
@@ -552,7 +552,7 @@ class TestPitfall1Fallback:
         ea_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch,
     ) -> None:
-        """Phase 177 D-06/OBS-01: when the Pitfall-1 fallback fires, the caller's
+        """When the missing-second-best fallback fires, the caller's
         `source` label is recorded as a Sentry tag under the key "source" — so a
         worker-submit-path fallback is queryable independent of the expected
         drain-local fallback noise."""
@@ -596,7 +596,7 @@ class TestPitfall1Fallback:
 
 class TestUpsertIdempotency:
     """Re-running the builder over the same game upserts on (game_id, ply), not
-    duplicates (T-174-12)."""
+    duplicates."""
 
     async def test_upsert_updates_in_place(
         self,
@@ -655,7 +655,7 @@ class TestUpsertIdempotency:
             await _delete_game(ea_session_maker, game_id)
 
 
-# ─── 4. Phase 177 BACK-02: tier-4b lease-position reconstruction ────────────────
+# ─── 4. Tier-4b lease-position reconstruction ───────────────────────────────────
 
 
 async def _insert_game_positions(
@@ -665,7 +665,7 @@ async def _insert_game_positions(
     rows: list[dict[str, Any]],
 ) -> None:
     """Insert GamePosition rows carrying `best_move` (un-shifted, decision-keyed)
-    and `eval_cp`/`eval_mate` (post-move shifted, SEED-044) exactly as stored,
+    and `eval_cp`/`eval_mate` (post-move shifted) exactly as stored,
     for the tier-4b reconstruction tests below. Each dict: {"ply", "full_hash",
     "best_move", "eval_cp", "eval_mate"}."""
     from app.models.game_position import GamePosition
@@ -689,19 +689,19 @@ async def _insert_game_positions(
 
 
 class TestEvalOfPositionMap:
-    """Pitfall 1: `_eval_of_position_map` inverts `_post_move_eval`'s +1 forward
+    """`_eval_of_position_map` inverts `_post_move_eval`'s +1 forward
     shift — pure, no DB/session needed."""
 
     def test_inverts_post_move_shift(self) -> None:
         # Row ply=0's stored eval is "eval of position 1"; row ply=1's stored
-        # eval is "eval of position 2" (SEED-044 post-move convention).
+        # eval is "eval of position 2" (post-move convention).
         gp_rows = [(0, 100, None), (1, -50, None)]
         result = _eval_of_position_map(gp_rows)
         assert result == {1: (100, None), 2: (-50, None)}
 
     def test_ply_zero_resolves_to_none_none_no_crash(self) -> None:
         """No row -1 exists, so key 0 is never populated — callers MUST read via
-        .get(ply, (None, None)), never index directly (Pitfall 1)."""
+        .get(ply, (None, None)), never index directly."""
         gp_rows = [(0, 100, None), (1, -50, None)]
         result = _eval_of_position_map(gp_rows)
         assert 0 not in result
@@ -712,9 +712,9 @@ class TestEvalOfPositionMap:
 
 
 class TestBestMoveLeasePositions:
-    """`_build_bestmove_lease_positions` (Task 1, BACK-02): server-recomputed
+    """`_build_bestmove_lease_positions`: server-recomputed
     tier-4b candidate-ply FENs from already-stored full-pass data — no engine
-    calls (S-05).
+    calls.
 
     Fixture game: "1. a4 a5 2. h4 h5" -- find_opening_ply_count(['a4','a5','h4'])
     == 2 (verified against the real openings.tsv data), so plies 0-1 are book and
@@ -762,7 +762,7 @@ class TestBestMoveLeasePositions:
         monkeypatch,
     ) -> None:
         """A candidate ply whose (ply - 1) row is absent from the DB has no
-        resolvable eval_of_position -- excluded via the Pitfall-1 None guard,
+        resolvable eval_of_position -- excluded via the None guard,
         without raising."""
         monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
 
@@ -811,7 +811,7 @@ class TestBestMoveLeasePositions:
         assert positions == []
 
 
-# ─── Homogenization (Phase 212 BENCHLANE-05, D-03) ──────────────────────────
+# ─── Homogenization ──────────────────────────
 #
 # Proves the homogenized write path -- driven through the PRODUCTION submit
 # entry point app.routers.eval_remote._apply_atomic_submit, never a copy of
@@ -823,7 +823,7 @@ class TestBestMoveLeasePositions:
 # assertion cannot pass by coincidence.
 
 _HOMOGENIZATION_STORED_EVAL_CP: int = 999
-# Post-move shift (SEED-044): row `ply`'s eval_cp = the submitted eval at
+# Post-move shift: row `ply`'s eval_cp = the submitted eval at
 # index ply+1. Matches _BLUNDER_SUBMIT_EVALS_142's own documented mapping.
 _HOMOGENIZATION_EXPECTED_ENGINE_EVAL_CP_BY_PLY: dict[int, int] = {
     0: 20,
@@ -889,12 +889,12 @@ async def _run_homogenization_submit(
 
 
 class TestHomogenization:
-    """Phase 212 BENCHLANE-05 (D-03): BENCHMARK_HOMOGENIZE_EVAL_SOURCE forces
+    """BENCHMARK_HOMOGENIZE_EVAL_SOURCE forces
     the drain write path to store our engine's eval_cp instead of preserving
     a lichess-eval game's stored value, restores the terminal eval donor,
     enables opening dedup, and classifies game_flaws from the engine values --
     while games.lichess_evals_at itself stays byte-identical in both flag
-    states (D-04's §6 selection-marker guarantee)."""
+    states (selection-marker guarantee)."""
 
     async def test_homogenization_off_preserves_lichess_eval_cp(
         self,
@@ -1047,7 +1047,7 @@ class TestHomogenization:
         ea_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-04's guarantee is load-bearing for §6: re-read the game after the
+        """The selection-marker guarantee is load-bearing: re-read the game after the
         write in BOTH flag states and assert the timestamp is byte-identical
         to what it was before -- this is the assertion that fails loudly if a
         future change starts clearing it. Two separate games (one per flag
@@ -1074,7 +1074,7 @@ class TestHomogenization:
                 await _delete_games_homogenization(ea_session_maker, [game_id])
 
 
-# ─── Same-game write lock (260825-v8g, FLAWCHESS-9F / FLAWCHESS-8G) ────────────
+# ─── Same-game write lock ──────────────────────────────────────────────────────
 
 # Duration constants (CLAUDE.md: no magic numbers). The probe deadline's only job
 # is to bound the pg_locks poll loop -- correctness of the assertions comes from
@@ -1127,7 +1127,7 @@ async def _apply_full_eval_lock_probe(
             flaw_pv_blobs=None,
             current_attempts=0,
             source="remote_eval_worker",
-            on_path_c_capacity_reached=lambda *_args: None,
+            on_attempt_cap_reached=lambda *_args: None,
         )
         await session.commit()
 
@@ -1153,7 +1153,7 @@ async def _advisory_waiter_row_visible(session: AsyncSession, lock_key: int) -> 
 
 
 class TestSameGameWriteLock:
-    """260825-v8g (FLAWCHESS-9F / FLAWCHESS-8G): apply_full_eval takes a
+    """apply_full_eval takes a
     transaction-scoped pg_advisory_xact_lock keyed on game_id as the FIRST
     statement of its body, serializing same-game writers across both live write
     lanes (the router's _apply_atomic_submit and the drain's _full_drain_tick,

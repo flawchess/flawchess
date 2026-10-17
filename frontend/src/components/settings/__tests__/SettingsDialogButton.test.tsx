@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 /**
  * SettingsDialogButton.test.tsx: the desktop settings modal opens the full panel,
- * closes on Escape, and hands keyboard focus back to the cogwheel (228 code review
- * WR-01, second pass: a plain onClick button left focus on <body>).
+ * closes on Escape, and hands keyboard focus back to the cogwheel (a plain onClick button left focus on <body>).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsDialogButton } from '@/components/settings/SettingsDialogButton';
 
-// Phase 230 D-16: the real card needs a QueryClientProvider; this suite renders the panel bare.
+// The real card needs a QueryClientProvider; this suite renders the panel bare.
 vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
   LeaderboardPrivacyCard: () => null,
 }));

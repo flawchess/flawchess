@@ -1,39 +1,38 @@
 /**
  * styleOpeningLines — curated per-style, per-color opening-book SAN-prefix
- * lines (Phase 182, STYLE-01, D-05).
+ * lines.
  *
- * Purpose: the bot's opening book (`openingBook.ts`, Phase 169.5) tests
+ * Purpose: the bot's opening book (`openingBook.ts`) tests
  * candidate legal moves for book membership via a joined move-history
  * prefix key (`[...history, candidateSan].join(' ')`). This module supplies
- * the per-style "menu" of prefixes that Plan 04's `styleBookWeighting`
- * boosts within that existing seam (D-04: a persona re-weights what is on
+ * the per-style "menu" of prefixes that `botStyle.ts`'s `styleBookWeighting`
+ * boosts within that existing seam (a style re-weights what is on
  * the menu, it never changes the menu or the exit rules).
  *
  * Every curated string uses the SAME normalized shape `openings.ts` builds
  * its `prefixSet` keys in: space-joined SAN tokens with move numbers
  * stripped (e.g. the Bongcloud prefix is `e4 e5 Ke2`), sourced from the real
  * ECO corpus at `frontend/public/openings.tsv`. A curated string that is not
- * a genuine prefix of some line in that corpus can never be booked (D-05) —
+ * a genuine prefix of some line in that corpus can never be booked —
  * `__tests__/styleOpeningLines.test.ts` proves every entry below is a member
  * of the real `loadOpeningPrefixSet()` output.
  *
  * Split by color mirrors `frontend/src/data/trollOpenings.ts`'s
- * `WHITE_TROLL_KEYS`/`BLACK_TROLL_KEYS` convention (RESEARCH.md Open
- * Question #3): a style line curated as "White plays the London" only
+ * `WHITE_TROLL_KEYS`/`BLACK_TROLL_KEYS` convention: a style line curated
+ * as "White plays the London" only
  * applies when the bot is White. `styleLinesFor(style, side)` picks the
- * correct set from `chess.turn()` at the caller's call site (Plan 04/07).
+ * correct set from `chess.turn()` at the caller's call site (`hooks/useBotGameEngineDispatch.ts`).
  *
  * This is pure exported data — no chess.js, no I/O, no React. Lists are kept
  * modest (first ~8 plies) but recognizable: the goal is a perceptible
- * early-game identity (SEED-098's cheapest lever), not exhaustive coverage.
- * User reviews these lists during UAT per D-05.
+ * early-game identity (the cheapest lever), not exhaustive coverage.
  */
 
 import type { Side } from './types';
 
-/** The 4 named bot playstyles this phase ships (D-02). No style names leak
- * into the engine transforms themselves (D-01) — this union exists only to
- * key curated data and bundle lookups (Plan 03/05). */
+/** The 4 named bot playstyles. No style names leak
+ * into the engine transforms themselves — this union exists only to
+ * key curated data and bundle lookups. */
 export type Style = 'Attacker' | 'Trickster' | 'Grinder' | 'Wall';
 
 // ─── Attacker — gambits / attacking systems ────────────────────────────────
@@ -66,7 +65,7 @@ export const ATTACKER_BLACK_LINES: ReadonlySet<string> = new Set([
 // comments (Bongcloud, Hammerschlag, Halloween, Sodium, Napoleon, Grob,
 // Barnes, Borg) plus a couple of additional swindle/trap defenses, split by
 // which color plays the characteristic move. `trollOpenings.ts` stores
-// user-side FEN keys, not SAN lines — these are freshly curated (D-05).
+// user-side FEN keys, not SAN lines — these are freshly curated.
 
 /** White-side Trickster lines: Bongcloud Attack, Barnes Opening:
  * Hammerschlag, Four Knights: Halloween Gambit, Sodium Attack, King's Pawn
@@ -114,7 +113,7 @@ export const GRINDER_BLACK_LINES: ReadonlySet<string> = new Set([
 // ─── Wall — system openings ─────────────────────────────────────────────────
 // White plays a fixed setup (London/Colle) largely independent of Black's
 // reply; Black mirrors the defensive-system identity with Caro-Kann-type
-// solidity and the Stonewall Dutch structure (D-05 explicitly names both).
+// solidity and the Stonewall Dutch structure.
 
 /** White-side Wall lines: London System (vs ...Nf6/...e6 and vs ...d5),
  * Colle System (vs ...d5/...Nf6). */
@@ -150,12 +149,12 @@ const STYLE_LINES: Record<Style, { white: ReadonlySet<string>; black: ReadonlySe
 /**
  * Returns the curated SAN-prefix set for `style` on the given `side`.
  *
- * Mirrors `trollOpenings.ts`'s WHITE/BLACK split (RESEARCH.md Open Question
- * #3): callers pick the color that matches whose turn it is to move.
+ * Mirrors `trollOpenings.ts`'s WHITE/BLACK split: callers pick the color
+ * that matches whose turn it is to move.
  * Defensively never returns `undefined` — a style/color pairing with no
  * curated lines (or, at runtime, an unrecognized style value slipping past
  * TypeScript via an external cast) resolves to an empty `ReadonlySet`
- * (STYLE-01 empty edge), so callers can always safely iterate/`.has()` the
+ * so callers can always safely iterate/`.has()` the
  * result without an extra null check.
  */
 export function styleLinesFor(style: Style, side: Side): ReadonlySet<string> {

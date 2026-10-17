@@ -1,4 +1,4 @@
-"""Unit tests for select_tagger_fixtures._stratified_sample (D-EXP-02 Option B).
+"""Unit tests for select_tagger_fixtures._stratified_sample.
 
 Tests verify:
   (a) --oversample-motifs raises the target motif's sample count.
@@ -150,7 +150,7 @@ def test_oversample_raises_target_motif_count() -> None:
 def test_control_motif_selection_unchanged_after_oversample() -> None:
     """Control motif's selected PuzzleIds are identical with and without oversample.
 
-    This proves the per-motif RNG re-seed (Pitfall 1 mitigation): raising the cap
+    This proves the per-motif RNG re-seed: raising the cap
     for the target motif does NOT change which PuzzleIds are drawn for an unrelated
     control motif that shares no candidates with the target.
     """

@@ -1,5 +1,5 @@
 /**
- * Metadata for the Library Stats you-vs-opponents views (Phase 239, sketch 010 round 5).
+ * Metadata for the Library Stats you-vs-opponents views.
  *
  * Holds FLAW_GAP_META (label, hint, definition, noun for the 12 gap metrics),
  * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
@@ -9,8 +9,7 @@
  * filter panel.
  *
  * Read by the Library Stats tiles (FlawTiles), the context-tag cards,
- * and FlawFilterControl (FlawIcon only). The Phase 115 comparison-grid metadata (family
- * colours, per-tag icons, confidence/significance helpers) was retired with the grid.
+ * and FlawFilterControl (FlawIcon only).
  *
  * Definitions reuse TAG_DEFINITIONS (the Game / Flaw card tag tooltips) wherever a gap
  * metric maps onto a FlawTag; blunder and mistake carry their own threshold sentence.
@@ -50,11 +49,11 @@ const LOW_CLOCK_PERCENT = Math.round(TIME_PRESSURE_CLOCK_FRACTION * PERCENT_POIN
 
 export interface FlawGapMeta {
   label: string;
-  /** The one-line plain hint under a row label (sketch META). */
+  /** The one-line plain hint under a row label. */
   hint: string;
-  /** The popover's first sentence, from the tag definitions (D-00c). */
+  /** The popover's first sentence, from the tag definitions. */
   definition: string;
-  /** Plural noun for the popover counts (D-00d: flaws, never events). */
+  /** Plural noun for the popover counts (flaws, never events). */
   noun: string;
 }
 
@@ -127,7 +126,7 @@ export const FLAW_GAP_META: Record<FlawDeltaMetric, FlawGapMeta> = {
   },
 };
 
-// ─── You vs. your opponents: the four context-tag cards (D-00f) ─────────────────
+// ─── You vs. your opponents: the four context-tag cards ─────────────────────────
 
 export type ContextTagCardKey = 'clock' | 'phase' | 'opponent_errors' | 'lost_advantages';
 
@@ -137,7 +136,7 @@ export type ContextTagMetric = Exclude<FlawDeltaMetric, 'blunder' | 'mistake'>;
 export interface ContextTagCardDef {
   key: ContextTagCardKey;
   title: string;
-  /** Muted one-liner next to the title (sketch 010 GROUPS). */
+  /** Muted one-liner next to the title. */
   subtitle: string;
   metrics: readonly ContextTagMetric[];
 }

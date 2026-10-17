@@ -1,5 +1,5 @@
 /**
- * Clock-context line for the Train reveal (quick 261015-s05): "Played after 13s,
+ * Clock-context line for the Train reveal: "Played after 13s,
  * with 3:56 left." Tells the solver the clock situation they made the flawed move in.
  *
  * Both inputs come from `GameFlawCard.eval_series` (the point at the puzzle's flaw

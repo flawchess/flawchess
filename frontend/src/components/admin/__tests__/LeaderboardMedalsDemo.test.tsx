@@ -92,7 +92,7 @@ describe('LeaderboardMedalsDemo scenarios', () => {
     );
   });
 
-  it('shows the second hint line when the viewer finished #12 last week (D-03)', () => {
+  it('shows the second hint line when the viewer finished #12 last week', () => {
     render(<LeaderboardMedalsDemo />);
     clickBoard('finished-12');
     expect(screen.getByTestId('train-leaderboard-pass-target')).toBeTruthy();

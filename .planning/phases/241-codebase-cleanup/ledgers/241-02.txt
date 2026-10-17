@@ -1,0 +1,6 @@
+# Plan 241-02 ledger: INVENTORY section 6 rows located in scopes/241-02.txt
+INV-L341: DEFERRED to 241-52 (lands with the is_allowed rename per INVENTORY §5; the tag comment at ip_rate_limiter.py:34 was cleaned here, the class/module docstring rewrite waits for the key rename)
+INV-L353: APPLIED config.py EVAL_AUTO_DRAIN_ENABLED comment now names tier-3 plus the tier-4/4b backfills on the bundled claim path (re-verified against eval_queue_service.claim_eval_job)
+INV-L354: APPLIED primary clause (reset_password_rate_limiter.py module docstring); the secondary clause about app/users.py:203 belongs to 241-07, which owns that file
+INV-L393: APPLIED config.py db_url_for_target comment no longer lists backfill_eval (script now lives under scripts/archive/; reindex_table and gen_benchmarks still use it)
+INV-L407: APPLIED config.py BEST_MOVE_BACKFILL_ENABLED last sentence deleted

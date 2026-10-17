@@ -1,9 +1,9 @@
-"""Repository for the on-read ranked Endgame Stats sample (Phase 238).
+"""Repository for the on-read ranked Endgame Stats sample.
 
 Executes the canonical ranked-games SQL (``ranked_games_sql``) for one user and
 one time control. The SQL composes the unchanged Stage A/B prelude
 (``selected_users`` + ``recent_capped``), so the returned games are exactly the
-games the persisted percentiles rank (D-07).
+games the persisted percentiles rank.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ class RankedGameRow:
 
     ``user_elo`` is the user's rating at game time (the canonical slice requires
     both ratings non-null). ``eval_pending`` is True while the game's entry evals
-    are not yet completed (D-11 "analyzing" state).
+    are not yet completed (the "analyzing" state).
     """
 
     game_id: int

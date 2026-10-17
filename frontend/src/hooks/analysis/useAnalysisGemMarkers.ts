@@ -1,52 +1,37 @@
 /**
  * useAnalysisGemMarkers — the move-list/board gem-marker RESOLUTION cluster
- * of `Analysis()` (Phase 215 Plan 05, second of three hooks that clear the
- * remaining arrow-level complexity breaches — see 215-04-SUMMARY.md for the
- * state this plan builds on, and `useAnalysisBoardArrows.ts`'s header for the
- * first).
+ * of `Analysis()` (see `useAnalysisBoardArrows.ts`'s header for the sibling
+ * hook that consumes `resolveMarkerFor`).
  *
  * Owns `flawMarkerByNodeId`, `resolveMarkerFor` and `moveListMarkers` — the
  * `Map<NodeId, FlawMarkerEntry>` `VariationTree` and the move list consume,
  * plus the on-demand "parent grade completed, RESOLVE the node" effect that
- * stamps `gemByNode`. WHY a separate hook: `moveListMarkers` (cyclomatic 27,
- * cognitive 18 at the phase base) is the highest-complexity function in the
- * file outside a component body, and the resolution effect beside it is
- * cyclomatic 19 — together the two worst arrow-level breaches after
- * `boardSquareMarkers` (215-05 Task 1).
+ * stamps `gemByNode`. WHY a separate hook: `moveListMarkers` and the
+ * resolution effect beside it are the highest-complexity functions in the
+ * file outside a component body, so they live apart from the page component.
  *
- * SCOPE DEVIATION from the plan's literal field list (mirrors the precedent
- * 215-04-SUMMARY.md documents twice — "URL-params-before-gameData",
- * "unionSans-before-grading" — for the identical reason: a real data-flow
- * ordering constraint, not a preference). The plan's action text also names
- * `storedTierByPly`, `storedBestGoodByPly`, `sweepArmedForGame` + its
- * `armedGameId` effect, `fenAtPly`, `sweepCandidates`, `pinnedEloForPly`,
- * `parentGemCandidateSans` and `fastForwardStopPlies` as part of this
- * cluster. Every one of those stays LOCAL to `Analysis.tsx` instead, because
- * each feeds — or gates — a hook call that must stay in the component at a
- * FIXED, EARLIER render position than this hook can occupy:
+ * Several values stay in `Analysis.tsx` because each feeds, or gates, a hook
+ * call that must run at a FIXED, EARLIER render position than this hook can
+ * occupy:
  *
- * - `storedTierByPly`/`storedBestGoodByPly`/`sweepArmedForGame`/
+ * - `storedGemGreatByPly`/`storedBestGoodByPly`/`sweepArmedForGame`/
  *   `gameHasStoredBestMoveData` are already consumed as options by
- *   `useAnalysisEngineLines` (215-04, called well before this hook can be —
- *   this hook needs `gemGrading`/`sweep`, both declared after it).
+ *   `useAnalysisEngineLines`, which is called well before this hook can be
+ *   (this hook needs `gemGrading`/`sweep`, both declared after it).
  * - `fenAtPly`/`sweepCandidates`/`pinnedEloForPly`/`sweepUserColor` feed the
  *   component's own background gem-sweep hook call (`sweep`) as its
  *   `candidates`/`pinnedEloForPly`/`userColor` options — that call cannot
- *   move into this hook (file header rule: no engine instantiation in here),
- *   so its inputs cannot either.
+ *   move into this hook (no engine instantiation in here), so its inputs
+ *   cannot either.
  * - `parentGemCandidateSans` feeds the component's second grading-engine
  *   hook call (`gemGrading`) as its `candidateSans` option — same
  *   constraint.
- * - `fastForwardStopPlies` was named by the plan's line-proximity read but is
- *   NOT actually part of this cluster's data flow (nothing here reads it) —
- *   it exists purely to feed the component's own fast-forward hook call and
- *   is excluded from this hook's options entirely, not merely kept local.
  *
- * Ownership boundary (unchanged from the plan): this hook instantiates no
- * engine of its own. `gemGrading` (the second grading-engine hook's result)
+ * Ownership boundary: this hook instantiates no engine of its own.
+ * `gemGrading` (the second grading-engine hook's result)
  * and `sweepGemByPly` (the background gem-sweep hook's `gemByPly` result)
  * are already-resolved values threaded in as options — this file imports no
- * engine hook (grep-provable: neither engine hook's module path appears
+ * engine hook (neither engine hook's module path appears
  * below; `GemGradingState`/`GemDetail` are local structural types narrowed
  * to only the fields this hook reads, deliberately not importing the full
  * engine-state type). `gemByNode`/`setGemByNode` — the sticky per-node
@@ -54,19 +39,12 @@
  * `useState` in `Analysis.tsx` rather than inside this hook, because
  * `needParentGemGrade` (which gates `gemGrading`'s very existence, so must
  * also stay local) reads `gemByNode.has(currentNodeId)` BEFORE this hook can
- * run; the setter is threaded in exactly like a caller-owned ref would be
- * (215-04's "raw refs returned across a hook boundary" pattern, mirrored here
- * for a setState function instead).
+ * run; the setter is threaded in exactly like a caller-owned ref would be.
  *
- * `NO_GAME_PLY` below is a private, intentionally duplicated copy of
- * `Analysis.tsx`'s module-level constant of the same name (which does not
- * move — it has other readers this plan's scope does not touch). This
- * mirrors the existing precedent `useAnalysisRouteSeeding.ts` and
- * `useAnalysisBoardArrows.ts` document: "hooks must not depend on page-level
- * modules." `LIVE_EVAL_CACHE_MAX` is NOT a private copy (215 code review
- * WR-04): it and `Analysis.tsx`'s own FIFO caches share one bound, hoisted
- * to `lib/gemMove.ts` (already imported below for `classifyGem`/
- * `summarizeForGem`) so the two files cannot silently diverge.
+ * `NO_GAME_PLY` (-1) marks a free-variation node with no game ply; this hook
+ * is its only reader. `LIVE_EVAL_CACHE_MAX` is shared with `Analysis.tsx`'s own
+ * FIFO caches through `lib/gemMove.ts` (already imported below for
+ * `classifyGem`/`summarizeForGem`) so the two files cannot silently diverge.
  */
 
 import { useCallback, useEffect, useMemo } from 'react';
@@ -82,19 +60,18 @@ import { classifyGem, summarizeForGem, LIVE_EVAL_CACHE_MAX } from '@/lib/gemMove
 import { nearestByElo, type MoveGrade } from '@/lib/moveQuality';
 import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
 
-/** Private duplicate of `Analysis.tsx`'s `NO_GAME_PLY` — see this file's header. */
+/** `ply` of a move-list entry for a free-variation node, which has no game ply. */
 const NO_GAME_PLY = -1;
 
 /**
- * The numbers behind a detected gem, surfaced in the move-list gem popover —
- * mirrors `Analysis.tsx`'s own private `GemDetail` type (which does not move
- * — `gemByNode`'s `useState` stays local, see file header).
+ * The numbers behind a detected gem, surfaced in the move-list gem popover.
+ * `gemByNode`'s `useState` lives in `Analysis.tsx` (see file header).
  */
 type GemDetail = { maiaProbability: number; elo: number; byOpponent: boolean };
 
 /**
- * A resolved gem OR great marker for a (nodeId, ply) pair — mirrors
- * `Analysis.tsx`'s own private `ResolvedMarker` type.
+ * A resolved gem OR great marker for a (nodeId, ply) pair (the
+ * `resolveMarkerFor` return shape).
  */
 type ResolvedMarker = {
   tier: 'gem' | 'great';
@@ -138,7 +115,7 @@ function resolveGemDetailForNode(
   const mover = sideToMoveFromFen(parentFen);
   const { bestSan, bestEs, secondBestEs } = summarizeForGem(gradeBySan, mover);
   const parentCurve = maiaCurveByFen.get(parentFen);
-  // Phase 172 (SEED-106 D-01): pinned to the MOVER's own rating-at-game-time —
+  // Pinned to the MOVER's own rating-at-game-time —
   // `mover` above is already "whoever actually made this move", the same
   // variable byOpponent (below) uses. The stamped GemDetail.elo reports this
   // pinned rung (the popover's "At N ELO" line), never the live ELO slider.
@@ -190,7 +167,7 @@ export interface UseAnalysisGemMarkersOptions {
 
   // ── Stored backend tier (Analysis.tsx-local — see file header for why it
   // stays put) ───────────────────────────────────────────────────────────
-  storedTierByPly: Map<number, { tier: 'gem' | 'great'; maiaProb: number }>;
+  storedGemGreatByPly: Map<number, { tier: 'gem' | 'great'; maiaProb: number }>;
   gameHasStoredBestMoveData: boolean;
 
   // ── Pure helpers, Analysis.tsx-local (feed the local `sweep`/`gemGrading`
@@ -228,7 +205,7 @@ function hasNoMoveListMarkerWork(
   showCurrentLive: boolean,
   gemByNodeSize: number,
   sweepGemByPlySize: number,
-  storedTierByPlySize: number,
+  storedGemGreatByPlySize: number,
   openingPlyCount: number,
 ): boolean {
   return (
@@ -236,31 +213,31 @@ function hasNoMoveListMarkerWork(
     !showCurrentLive &&
     gemByNodeSize === 0 &&
     sweepGemByPlySize === 0 &&
-    storedTierByPlySize === 0 &&
+    storedGemGreatByPlySize === 0 &&
     openingPlyCount === 0
   );
 }
 
 /**
  * Named seam for `moveListMarkers`'s candidate-node-set construction: every
- * stored-tier mainline ply FIRST (its REAL ply — IN-04), then every
+ * stored-tier mainline ply FIRST (its REAL ply), then every
  * `gemByNode` key not already covered (its own resolved mainline ply when it
  * has one, else the `NO_GAME_PLY` sentinel for a genuine free-variation
  * node), then any sweep-only mainline ply the live path has NOT graded.
  * `sweepGemByPly` is keyed by ply index into `mainLine` and is NOT
- * `gemByNode` (Pitfall 4 — the sweep has its OWN cache, bounded by
+ * `gemByNode` (the sweep has its OWN cache, bounded by
  * `candidates.length`, never the shared FIFO-256-capped map); display reads
  * the union, nothing is copied between them.
  */
 function buildMarkerNodePlies(
   mainLine: NodeId[],
-  storedTierByPly: Map<number, { tier: 'gem' | 'great'; maiaProb: number }>,
+  storedGemGreatByPly: Map<number, { tier: 'gem' | 'great'; maiaProb: number }>,
   gemByNode: Map<NodeId, GemDetail | null>,
   sweepGemByPly: Map<number, GemDetail | null>,
 ): Map<NodeId, number> {
   const markerNodePlies = new Map<NodeId, number>();
   mainLine.forEach((nodeId, plyIndex) => {
-    if (storedTierByPly.has(plyIndex)) markerNodePlies.set(nodeId, plyIndex);
+    if (storedGemGreatByPly.has(plyIndex)) markerNodePlies.set(nodeId, plyIndex);
   });
   for (const nodeId of gemByNode.keys()) {
     if (markerNodePlies.has(nodeId)) continue;
@@ -278,15 +255,15 @@ function buildMarkerNodePlies(
 /**
  * Named seam for `moveListMarkers`'s book-marker pass — LOWEST precedence in
  * severity > gem/great > book. Only MAINLINE plies before `openingPlyCount`
- * qualify (free-variation nodes are never in book — D-04 skips book plies
- * before they can even become sweep/gem candidates). Must not overwrite an
- * existing entry that will actually RENDER a glyph — but the move-list's
- * resolveMarkerIcon only draws blunder/mistake severities, NOT inaccuracy
- * (there is no inaccuracy glyph there, unlike the board's `!?`). WR-04 fix:
- * an inaccuracy-severity book ply was suppressed here yet rendered nothing,
- * leaving the ply blank. Defer only to entries that draw an icon (blunder,
- * mistake, gem, great) so an inaccuracy-only book ply falls through to the
- * book badge. Mutates `merged` in place, matching the original code's style.
+ * qualify (free-variation nodes are never in book, and book plies are
+ * skipped before they can even become sweep/gem candidates). Must not
+ * overwrite an existing entry that will actually RENDER a glyph — but the
+ * move-list's resolveMarkerIcon only draws blunder/mistake severities, NOT
+ * inaccuracy (there is no inaccuracy glyph there, unlike the board's `!?`).
+ * Deferring to an inaccuracy-severity entry would suppress the book badge yet
+ * render nothing, leaving the ply blank. Defer only to entries that draw an
+ * icon (blunder, mistake, gem, great) so an inaccuracy-only book ply falls
+ * through to the book badge. Mutates `merged` in place, matching the original code's style.
  */
 function applyBookMarkers(
   merged: Map<NodeId, FlawMarkerEntry>,
@@ -312,7 +289,7 @@ function applyBookMarkers(
         allowedMotif: null,
         missedDepth: null,
         allowedDepth: null,
-        ply: plyIndex, // IN-04 fix: the real ply index, never a synthesized -1
+        ply: plyIndex, // the real ply index, never a synthesized -1
       }),
       book: true,
     });
@@ -337,7 +314,7 @@ export function useAnalysisGemMarkers(
     gemByNode,
     setGemByNode,
     sweepGemByPly,
-    storedTierByPly,
+    storedGemGreatByPly,
     gameHasStoredBestMoveData,
     fenAtPly,
     pinnedEloForMover,
@@ -348,20 +325,20 @@ export function useAnalysisGemMarkers(
   } = options;
 
   // Flaw marker map for VariationTree: keyed by mainLine nodeId.
-  // Only entries with a tactic chip or blunder/mistake severity are included (D-02, D-03).
+  // Only entries with a tactic chip or blunder/mistake severity are included.
   const flawMarkerByNodeId = useMemo<Map<NodeId, FlawMarkerEntry>>(() => {
     const map = new Map<NodeId, FlawMarkerEntry>();
     if (!isGameMode || gameData?.flaw_markers == null) return map;
-    // Quick 260628-1t5 (reverting e116912c item 5): the missed chip goes back onto the
-    // flaw node mainLine[ply], together with the allowed chip + severity glyph — a single
-    // entry per flaw node, no decision-node (ply-1) split.
+    // The missed chip sits on the flaw node mainLine[ply], together with the allowed
+    // chip + severity glyph — a single entry per flaw node, no decision-node (ply-1)
+    // split.
     for (const fm of gameData.flaw_markers) {
-      // noUncheckedIndexedAccess guard (T-140-02b): skip out-of-range plies.
+      // noUncheckedIndexedAccess guard: skip out-of-range plies.
       const nodeId = mainLine[fm.ply];
       if (nodeId === undefined) continue;
-      // Quick 260628-u7d follow-up: opponent tactic tags are surfaced in the eval-chart
+      // Opponent tactic tags are surfaced in the eval-chart
       // tooltip (built separately in EvalChart) but NOT in the move list — suppress the
-      // opponent's motifs here. Severity glyphs stay both-color (pre-existing behavior).
+      // opponent's motifs here. Severity glyphs stay both-color.
       const missedMotif = fm.is_user ? fm.missed_tactic_motif : null;
       const allowedMotif = fm.is_user ? fm.allowed_tactic_motif : null;
       const sev = fm.severity;
@@ -379,13 +356,13 @@ export function useAnalysisGemMarkers(
     return map;
   }, [isGameMode, gameData, mainLine]);
 
-  // Phase 175 (SEED-108 D-01/D-03, Pitfall 2/3): resolve the gem/GREAT marker
+  // Resolve the gem/GREAT marker
   // for a node with the FULL documented precedence — the STORED backend tier
-  // (present or authoritatively null, per storedTierByPly/gameHasStoredBest-
+  // (present or authoritatively null, per storedGemGreatByPly/gameHasStoredBest-
   // MoveData above) wins for any mainline ply of an analyzed game, consulted
   // BEFORE the live fallback. Only when there is no stored answer for this
   // (nodeId, ply) — off-mainline, free-play, or an unanalyzed game — does this
-  // fall through to the Phase 172 CR-01 live precedence: the live per-node
+  // fall through to the live precedence: the live per-node
   // resolution (gemByNode) is AUTHORITATIVE the moment it has graded this
   // node, INCLUDING an explicit `null` "graded, not a gem" verdict; the
   // background sweep (sweepGemByPly) is a FALLBACK only, consulted solely
@@ -399,7 +376,7 @@ export function useAnalysisGemMarkers(
   const resolveMarkerFor = useCallback(
     (nodeId: NodeId, ply: number): ResolvedMarker | null => {
       if (ply >= 0) {
-        const stored = storedTierByPly.get(ply);
+        const stored = storedGemGreatByPly.get(ply);
         if (stored !== undefined) {
           const fen = fenAtPly(ply);
           const mover = fen !== null ? sideToMoveFromFen(fen) : null;
@@ -411,7 +388,7 @@ export function useAnalysisGemMarkers(
             byOpponent: isGameMode && userColor != null && mover !== null && mover !== userColor,
           };
         }
-        // Pitfall 3: an analyzed game's mainline ply with no stored row is an
+        // An analyzed game's mainline ply with no stored row is an
         // authoritative "not a gem/great" — the live fallback is never
         // consulted for it.
         if (gameHasStoredBestMoveData) return null;
@@ -420,7 +397,7 @@ export function useAnalysisGemMarkers(
       return gemDetail !== null ? { tier: 'gem', ...gemDetail } : null;
     },
     [
-      storedTierByPly,
+      storedGemGreatByPly,
       fenAtPly,
       pinnedEloForMover,
       isGameMode,
@@ -439,7 +416,7 @@ export function useAnalysisGemMarkers(
   useEffect(() => {
     if (!needParentGemGrade || currentNodeId === null || parentFen === null) return;
     // Wait for a COMPLETE parent pass keyed to the parent FEN (gradeMapFen guards
-    // against the one-commit-late clear, mirroring the Maia cache's WR-03 guard).
+    // against the one-commit-late clear, like the Maia cache's FEN guard).
     if (gemGrading.gradeMapFen !== parentFen || gemGrading.isGrading) return;
     if (gemGrading.gradeMap.size === 0) return;
 
@@ -478,7 +455,7 @@ export function useAnalysisGemMarkers(
     setGemByNode,
   ]);
 
-  // Move-list marker map (item 1, Quick 260628-1t5): merge the game-mode flaw markers with
+  // Move-list marker map: merge the game-mode flaw markers with
   // the live free-move severity for the CURRENT node, so a freely-played blunder/mistake
   // paints the same glyph in the move list as on the board (single source — liveFlaw's own
   // squareMarker severity — so list and board can never disagree). Only blunder/mistake get
@@ -496,7 +473,7 @@ export function useAnalysisGemMarkers(
         showCurrentLive,
         gemByNode.size,
         sweepGemByPly.size,
-        storedTierByPly.size,
+        storedGemGreatByPly.size,
         openingPlyCount,
       )
     ) {
@@ -515,7 +492,7 @@ export function useAnalysisGemMarkers(
         missedDepth: null,
         allowedDepth: null,
         severity,
-        ply: NO_GAME_PLY, // free-move entries carry no game ply (IN-04)
+        ply: NO_GAME_PLY, // free-move entries carry no game ply
       });
     };
     // Persisted sideline classifications first, then the current node's in-flight one.
@@ -524,10 +501,9 @@ export function useAnalysisGemMarkers(
       addLive(currentNodeId, liveSeverity);
     }
 
-    // Phase 163 (SEED-092 D-05/D-06), extended Phase 175 (SEED-108) with
-    // great: fold resolved gem/great entries into the SAME map — unlike
+    // Fold resolved gem/great entries into the SAME map — unlike
     // addLive above, this has NO mainLineSet exclusion. gemActive covers
-    // mainline AND free-variation nodes (D-05), and moveListMarkers is the ONLY
+    // mainline AND free-variation nodes, and moveListMarkers is the ONLY
     // map VariationTree reads, so excluding mainline ids here would silently
     // drop mainline gem/great badges from the move list. Merging onto a
     // severity-free entry (e.g. a tactic-chips-only game entry) keeps its
@@ -536,14 +512,14 @@ export function useAnalysisGemMarkers(
       if (!nodes.has(nodeId)) return; // node deleted (e.g. a collapsed PV fork)
       const existing = merged.get(nodeId);
       if (existing?.gem || existing?.great) return; // already flagged
-      // Bug fix (163-REVIEW WR-05, move-list side): a backend/live severity entry on
+      // A backend/live severity entry on
       // the same node wins — one move never renders two badges. "Mutually exclusive
       // by construction" only holds within the live pipeline; a BACKEND severity
       // (server Stockfish) and the live WASM gem/great can legitimately disagree.
       if (existing?.severity != null) return;
       const base =
         existing ??
-        // IN-04 fix: `ply` is the REAL mainline/sweep ply whenever one is
+        // `ply` is the REAL mainline/sweep ply whenever one is
         // known (markerNodePlies below only falls back to NO_GAME_PLY for a
         // genuine free-variation node) — never a synthesized -1 that discards
         // information the caller actually had.
@@ -576,21 +552,20 @@ export function useAnalysisGemMarkers(
         });
       }
     };
-    // Phase 175 (SEED-108 D-01/D-03), extending Phase 172 (SEED-106 CR-01/
-    // D-04/D-05): fold every mainline ply carrying a STORED tier, every live
+    // Fold every mainline ply carrying a STORED tier, every live
     // per-node resolution, AND the background sweep's resolved gems through
     // the SHARED `resolveMarkerFor` precedence (stored wins over live, live
     // wins over the sweep for any node it has graded — INCLUDING an explicit
     // `null` rejection, in which case the sweep is never consulted for that
     // node). Candidate node set built by the named `buildMarkerNodePlies` seam
     // above.
-    const markerNodePlies = buildMarkerNodePlies(mainLine, storedTierByPly, gemByNode, sweepGemByPly);
+    const markerNodePlies = buildMarkerNodePlies(mainLine, storedGemGreatByPly, gemByNode, sweepGemByPly);
     for (const [nodeId, ply] of markerNodePlies) {
       const detail = resolveMarkerFor(nodeId, ply);
       if (detail !== null) addMarker(nodeId, ply, detail); // null = absent or graded-and-rejected
     }
 
-    // Phase 172 (SEED-106 D-08): book markers — LOWEST precedence in
+    // Book markers — LOWEST precedence in
     // severity > gem/great > book. Named `applyBookMarkers` seam above.
     applyBookMarkers(merged, mainLine, nodes, openingPlyCount);
 
@@ -604,7 +579,7 @@ export function useAnalysisGemMarkers(
     nodes,
     gemByNode,
     sweepGemByPly,
-    storedTierByPly,
+    storedGemGreatByPly,
     resolveMarkerFor,
     gameData?.opening_ply_count,
   ]);

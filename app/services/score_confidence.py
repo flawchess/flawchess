@@ -1,8 +1,7 @@
 """Two-sided Wilson score-test p-value + N-gate confidence helper for chess score (W + 0.5*D)/N.
 
-Shared between app.services.opening_insights_service.compute_insights and
-app.services.openings_service.get_next_moves. Single source of truth for the
-formula (Phase 75 D-07 anti-pattern lock; Phase 76 D-06 module split).
+Chess-score significance helpers shared by the openings, opening-insights,
+endgame and library services. Single source of truth for the formula.
 
 Bucketing rule (thresholds + N gate shared with eval_confidence.py):
   - n < 10                         -> "low" (matches the unreliable-stats opacity dim)
@@ -41,7 +40,7 @@ score CI itself is now Wilson (see `wilson_bounds`), so SE is informational
 only — it describes the actual variance of the chess score on the data, not
 the test SE used for the p-value.
 
-Phase 83 Plan 2 Task 1: the Wilson math `(p_value, se_null)` is factored into
+The Wilson math `(p_value, se_null)` is factored into
 the private `_wilson_score_test_vs_half` helper so it can be reused by the
 `compute_score_confidence_from_mean(score, n)` sibling without duplicating
 the math. `compute_confidence_bucket(w, d, losses, n)` continues to accept
@@ -63,7 +62,7 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
 
-# Phase 239 D-14: red/green verdicts on the Library and Endgame Stats pages need 99%
+# Red/green verdicts on the Library and Endgame Stats pages need 99%
 # significance (about 50 cells on one page, so 95% flags 2-3 by chance alone). The
 # displayed CIs on those pages use the same z so the popover and the verdict agree.
 # Two-sided 99% normal quantile.
@@ -71,7 +70,7 @@ VERDICT_CI_Z_99: float = 2.5758293035489
 
 
 def ci_excludes(null: float, ci_low: float | None, ci_high: float | None) -> bool:
-    """True when the CI lies entirely on one side of ``null`` (the D-14 gate).
+    """True when the CI lies entirely on one side of ``null`` (the verdict gate).
 
     A missing CI (too few units for a variance) never passes the gate.
     """
@@ -80,18 +79,10 @@ def ci_excludes(null: float, ci_low: float | None, ci_high: float | None) -> boo
     return ci_low > null or ci_high < null
 
 
-# Phase 87.2 (D-05): compute_skill_diff_test, compute_per_bucket_diff_test, and
-# their shared internals (_BucketName, _SkillBucketRow, _headline_rate,
-# _opp_headline_rate, _headline_rate_variance, _opp_headline_rate_variance) were
-# deleted. The per-bucket ΔES Score Gap metric (Phase 87.2) replaces the rate-based
-# mirror-bucket peer-bullet approach (Phase 86). compute_paired_difference_test
-# is the sole math helper for the new Section 2 bullets.
-
-
 def wilson_bounds(p: float, n: int, z: float = CI_Z_95) -> tuple[float, float]:
     """Return (lower, upper) Wilson score interval bounds, clamped to [0, 1].
 
-    95% by default; ``z`` selects another level (D-14 verdicts pass VERDICT_CI_Z_99).
+    95% by default; ``z`` selects another level (the red/green verdicts pass VERDICT_CI_Z_99).
 
     Preferred over Wald for chess-score proportions in [0, 1]:
       - Wald (score +/- z * SE) is symmetric around p, so it routinely extends
@@ -129,7 +120,7 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     is positive for any n>=1 so the test is well-defined everywhere.
     p_value is `erfc(|z| / sqrt(2))` for `z = (score - 0.5) / SE_null`.
 
-    Phase 83 Plan 2 Task 1: single source of Wilson math; both
+    Single source of Wilson math; both
     `compute_confidence_bucket` and `compute_score_confidence_from_mean`
     delegate here so the formula appears exactly once in the codebase.
     """
@@ -137,13 +128,6 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     z = (score - SCORE_PIVOT) / se_null
     p_value = math.erfc(abs(z) / math.sqrt(2.0))
     return p_value, se_null
-
-
-# Phase 88.1 (Plan 09, REVIEW.md CR-01): _wilson_score_test_vs_ref and
-# compute_score_delta_vs_reference were removed. Their sole consumer was the
-# Phase 88 per-quintile Score-Delta bullet, which now uses
-# compute_score_difference_test against an in-set opponent-quintile split (see
-# app/services/endgame_service.build_quintile_bullets).
 
 
 def _bucket_from_p_value(p_value: float, n: int) -> Literal["low", "medium", "high"]:
@@ -174,13 +158,13 @@ def compute_score_confidence_from_mean(
     (all-wins / all-draws / all-losses already return SE=0.0). The third
     element is informational only — the Wilson p-value carries the test signal.
 
-    Phase 83 Plan 2 Task 1: the new entry_expected_score aggregator in
+    The entry_expected_score aggregator in
     endgame_service is a float mean, not a (W, D, L) triple, so it cannot
     call `compute_confidence_bucket` directly. This sibling preserves the
     single Wilson code path while accepting the right input shape.
 
-    n <= 0 returns ("low", 1.0, 0.0) without raising (mirrors the MD-02
-    defensive guard on `compute_confidence_bucket`).
+    n <= 0 returns ("low", 1.0, 0.0) without raising (mirrors the defensive
+    guard on `compute_confidence_bucket`).
     """
     if n <= 0:
         return "low", 1.0, 0.0
@@ -189,85 +173,88 @@ def compute_score_confidence_from_mean(
 
 
 def compute_score_difference_test(
-    eg_w: int,
-    eg_d: int,
-    eg_l: int,
-    eg_n: int,
-    ne_w: int,
-    ne_d: int,
-    ne_l: int,
-    ne_n: int,
+    a_w: int,
+    a_d: int,
+    a_l: int,
+    a_n: int,
+    b_w: int,
+    b_d: int,
+    b_l: int,
+    b_n: int,
     shared_n: int = 0,
     z: float = CI_Z_95,
 ) -> tuple[float | None, float | None, float | None]:
     """Return (p_value, ci_low, ci_high) for the two-sample z-test on the
     chess-score difference between two WDL cohorts.
 
-    H0: `score_eg - score_ne == 0`, where `score_i = (w_i + 0.5 * d_i) / n_i`.
+    Cohorts A and B are generic: callers pass endgame vs non-endgame games or
+    user vs opponent results.
+
+    H0: `score_a - score_b == 0`, where `score_i = (w_i + 0.5 * d_i) / n_i`.
 
     SE of the difference uses the *empirical* trinomial variance per side, plus
-    an optional covariance-correction term (Phase 148 item 3 / D-04) for the
+    an optional covariance-correction term for the
     case where the two cohorts are NOT independent — see `shared_n` below:
         var_i = max(0.0, (w_i + 0.25 * d_i) / n_i - score_i ** 2)
-        v_shared = (var_eg + var_ne) / 2.0
-        cov_correction = 2.0 * shared_n * v_shared / (eg_n * ne_n)
-        SE_diff = sqrt(var_eg / eg_n + var_ne / ne_n + cov_correction)
-        z_stat = (score_eg - score_ne) / SE_diff
+        v_shared = (var_a + var_b) / 2.0
+        cov_correction = 2.0 * shared_n * v_shared / (a_n * b_n)
+        SE_diff = sqrt(var_a / a_n + var_b / b_n + cov_correction)
+        z_stat = (score_a - score_b) / SE_diff
         p_value = erfc(|z_stat| / sqrt(2))                  # two-sided
 
     Wald-on-difference (not Wilson) because the difference of two independent
     proportions does not reduce to a single-proportion problem; the normal
-    approximation is adequate at `min(eg_n, ne_n) >= CONFIDENCE_MIN_N=10`.
+    approximation is adequate at `min(a_n, b_n) >= CONFIDENCE_MIN_N=10`.
 
-    CI (also Wald), 95% by default; ``z`` selects another level (D-14 verdicts pass
-    VERDICT_CI_Z_99):
-        ci_low  = (score_eg - score_ne) - z * SE_diff
-        ci_high = (score_eg - score_ne) + z * SE_diff
+    CI (also Wald), 95% by default; ``z`` selects another level (the red/green
+    verdicts pass VERDICT_CI_Z_99):
+        ci_low  = (score_a - score_b) - z * SE_diff
+        ci_high = (score_a - score_b) + z * SE_diff
 
-    `shared_n` (Phase 148 item 3, D-04 covariance correction): the count of
+    `shared_n` (covariance correction): the count of
     observations shared between the two cohorts (e.g. the same game
-    contributing to both `score_eg` and `score_ne` via `score_ne = 1 -
-    score_eg`, as in `endgame_service.build_quintile_bullets`). When the two
-    cohorts overlap like this, `Cov(score_eg, score_ne) = -shared_n * v /
-    (eg_n * ne_n)` (derived from `Var(A - B) = Var(A) + Var(B) - 2*Cov(A,B)`),
+    contributing to both `score_a` and `score_b` via `score_b = 1 -
+    score_a`, as in `endgame_service.build_quintile_bullets`). When the two
+    cohorts overlap like this, `Cov(score_a, score_b) = -shared_n * v /
+    (a_n * b_n)` (derived from `Var(A - B) = Var(A) + Var(B) - 2*Cov(A,B)`),
     which widens SE_diff relative to the naive independent-samples formula.
     `shared_n` defaults to 0 (the historical independent-samples behavior,
     used by every caller except the quintile-bullet one) — this default keeps
     every other call site byte-identical.
 
-    Independent n-gates (per SEC1-08/09):
-      - p_value is None when `min(eg_n, ne_n) < CONFIDENCE_MIN_N` (=10).
-      - ci_low/ci_high are None when `min(eg_n, ne_n) < 2` (variance ill-defined).
+    Independent n-gates:
+      - p_value is None when `min(a_n, b_n) < CONFIDENCE_MIN_N` (=10).
+      - ci_low/ci_high are None when `min(a_n, b_n) < 2` (variance ill-defined).
       - All three are None simultaneously when either n == 0.
 
     Variance-0 trap (SE_diff == 0.0): occurs when both sides are degenerate
     (e.g. all-wins vs all-losses, or all-draws both sides). The z-statistic
     is undefined; we short-circuit per the eval_confidence.py:116-119 pattern:
-      - score_eg != score_ne -> p_value = 0.0 (perfectly determined signal).
-      - score_eg == score_ne -> p_value = 1.0 (no evidence of a difference).
+      - score_a != score_b -> p_value = 0.0 (perfectly determined signal).
+      - score_a == score_b -> p_value = 1.0 (no evidence of a difference).
     CI half-width collapses to 0 in either case (point estimate, no spread).
     """
     # n=0 on either side: no sample, no signal, no spread.
-    if eg_n <= 0 or ne_n <= 0:
+    if a_n <= 0 or b_n <= 0:
         return None, None, None
 
-    min_n = min(eg_n, ne_n)
+    min_n = min(a_n, b_n)
 
-    score_eg = (eg_w + 0.5 * eg_d) / eg_n
-    score_ne = (ne_w + 0.5 * ne_d) / ne_n
+    score_a = (a_w + 0.5 * a_d) / a_n
+    score_b = (b_w + 0.5 * b_d) / b_n
     # Empirical trinomial variance per side, clamped at 0.0 (floating-point safety
     # — at all-wins or all-losses the raw value is exactly 0; at all-draws likewise).
-    var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg * score_eg)
-    var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne * score_ne)
-    # D-04 covariance correction: shared_n=0 (default) makes this term 0.0,
+    var_a = max(0.0, (a_w + 0.25 * a_d) / a_n - score_a * score_a)
+    var_b = max(0.0, (b_w + 0.25 * b_d) / b_n - score_b * score_b)
+    # Covariance correction: shared_n=0 (default) makes this term 0.0,
     # so se_diff is byte-identical to the pre-fix independent-samples formula.
-    v_shared = (var_eg + var_ne) / 2.0
-    cov_correction = 2.0 * shared_n * v_shared / (eg_n * ne_n)
-    se_diff = math.sqrt(max(0.0, var_eg / eg_n + var_ne / ne_n + cov_correction))
-    diff = score_eg - score_ne
+    v_shared = (var_a + var_b) / 2.0
+    cov_correction = 2.0 * shared_n * v_shared / (a_n * b_n)
+    se_diff = math.sqrt(max(0.0, var_a / a_n + var_b / b_n + cov_correction))
+    diff = score_a - score_b
 
     if se_diff == 0.0:
-        # Variance-0 trap (eval_confidence.py:116-119 pattern). Both sides
+        # Variance-0 trap (same pattern as eval_confidence.py). Both sides
         # are degenerate (no spread in either cohort). The z-statistic would
         # be 0/0 — instead resolve the test by direct comparison of the means.
         p_value: float = 0.0 if diff != 0.0 else 1.0
@@ -280,7 +267,7 @@ def compute_score_difference_test(
     ci_low: float = diff - ci_half_width
     ci_high: float = diff + ci_half_width
 
-    # Independent gates per SEC1-08/09. p_value gate is the strictest (n >= 10);
+    # Independent gates. The p_value gate is the strictest (n >= 10);
     # CI gate (n >= 2) is wider so a sub-gate cohort can still report a CI.
     p_out: float | None = p_value if min_n >= CONFIDENCE_MIN_N else None
     if min_n < 2:
@@ -306,16 +293,16 @@ def compute_paired_difference_test(
     the pre-computed diffs, not the (actual, expected) pairs — so it can be
     unit-tested in isolation.
 
-    Bessel-corrected sample variance (matches eval_confidence.py:113):
+    Bessel-corrected sample variance (matches eval_confidence.py):
         mean_d = sum(diffs) / n
         var_d  = max(0.0, (sumsq - n * mean_d ** 2) / (n - 1))    # n >= 2
         se     = sqrt(var_d / n)
         z_stat = mean_d / se
         p_value = erfc(|z_stat| / sqrt(2))                         # two-sided
-        ci_low  = mean_d - z * se       # z = CI_Z_95 by default; D-14 passes VERDICT_CI_Z_99
+        ci_low  = mean_d - z * se       # z = CI_Z_95 by default; verdicts pass VERDICT_CI_Z_99
         ci_high = mean_d + z * se
 
-    n-gates (per SEC1-10):
+    n-gates:
       - mean_d is always returned (0.0 when diffs is empty).
       - p_value is None when `len(diffs) < CONFIDENCE_MIN_N` (=10).
       - ci_low/ci_high are None when `len(diffs) < 2` (Bessel variance undefined).
@@ -396,7 +383,7 @@ def compute_confidence_bucket(
       - All-losses (score = 0, n>=10): z = -sqrt(n), p ~ 0.00157 at n=10 -> "high".
       - n <= 0: returns ("low", 1.0, 0.0) without raising.
 
-    No effect-size gate is applied (rejected during planning): the p-value bucket
+    No effect-size gate is applied: the p-value bucket
     already encodes both magnitude and sample size, and the score classifier
     upstream applies the |score - 0.50| >= 0.05 minor/major effect threshold.
 
@@ -404,17 +391,15 @@ def compute_confidence_bucket(
     (W, D, L, N) calling convention but is not used in the Wilson formula
     (only W, D, N matter for the score; the null SE depends on n only).
     """
-    # MD-02 guard: callers today only pass rows with n >= 1, but openings_service.get_next_moves
-    # has an inconsistent `if gc > 0` guard on the score expression while passing gc here
-    # unconditionally. Defend against future contract drift (e.g. a new JOIN producing
-    # zero-game rows) so this helper can never raise ZeroDivisionError. Returning ("low", 1.0, 0.0)
-    # is the conservative two-sided null: no sample, no signal, no spread.
+    # Defensive guard: callers should gate on n >= 1, but never raise ZeroDivisionError
+    # if one doesn't (e.g. a new JOIN producing zero-game rows). ("low", 1.0, 0.0) is the
+    # conservative two-sided null: no sample, no signal, no spread.
     if n <= 0:
         return "low", 1.0, 0.0
 
     score = (w + 0.5 * d) / n
 
-    # Phase 83 Plan 2 Task 1: Wilson math factored into `_wilson_score_test_vs_half`
+    # Wilson math factored into `_wilson_score_test_vs_half`
     # so the formula `(p_value, se_null)` lives in exactly one place. This call
     # is the inversion of `wilson_bounds` — rejecting H0 at alpha iff the Wilson
     # 1-alpha CI excludes 0.5.

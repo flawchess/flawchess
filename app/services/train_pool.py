@@ -1,24 +1,24 @@
-"""Pool-entry SQL assembly for Train (Phase 189).
+"""Pool-entry SQL assembly for Train.
 
-POOL-01: a user's own qualifying blunder becomes a `drill_items` candidate
+A user's own qualifying blunder becomes a `drill_items` candidate
 when (a) the mover is the user (ply-parity via `player_only_gate` —
 `app/repositories/query_utils.py` documents a prior off-by-one bug in this
 exact area; NEVER hand-roll `ply % 2`), (b) it is a blunder
 (`game_flaws.severity == 2`), (c) an answer key exists — a NON-EMPTY
 `game_flaws.missed_pv_lines` array (see `answer_key_present`; a non-NULL but
-EMPTY `[]` array is the eval pipeline's D-06 "un-fillable" sentinel and is
-excluded exactly like true SQL NULL, 189-06 gap closure), and (d) the
+EMPTY `[]` array is the eval pipeline's "un-fillable" sentinel and is
+excluded exactly like true SQL NULL), and (d) the
 PRE-flaw-move position clears the winnability floor.
 
-Winnability floor eval source (Pitfall 2, LOAD-BEARING): `game_positions.eval_cp`
+Winnability floor eval source (LOAD-BEARING): `game_positions.eval_cp`
 is post-move shifted — the eval AT row `ply` describes the position AFTER
 move `ply`. The floor must read the PRIOR row's eval (`ply - 1`, the position
-BEFORE the flaw move, which is what the drill puzzle actually presents), via
-an aliased self-join (`PriorPosition`) — never the flaw ply's own row. Do NOT
-reuse `library_repository.is_decided_lost`/`decided_lost_sql`: that predicate
-is a stricter, differently-purposed "already decisively lost" cutoff for tag
-suppression on the Flaws tab, not this feature's softer ~20-25% expected-score
-floor (Pitfall 6).
+BEFORE the flaw move, which is what the puzzle actually presents), via
+a correlated LATERAL lookup (`_prior_position_lateral`) — never the flaw ply's
+own row. Do NOT reuse `library_repository.is_decided_lost`/`decided_lost_sql`:
+that predicate is a stricter, differently-purposed "already decisively lost"
+cutoff for tag suppression on the Flaws tab, not this feature's softer ~20-25%
+expected-score floor.
 """
 
 from __future__ import annotations
@@ -69,16 +69,15 @@ from app.services.flaws_service import (
     classify_severity,
 )
 
-# P-05: low end of the seed's ~20-25% expected-score band. Planner discretion
-# (CONTEXT.md "Claude's Discretion").
+# Low end of the ~20-25% expected-score band for the winnability floor.
 WINNABILITY_FLOOR_ES: float = 0.20
 
-# P-04: a puzzle is "sharp" (second-best is itself a mistake) at exactly the
-# same gap flaws_service.classify_best_move's C2 gate uses — no new magic
-# number. See app/services/best_move_candidates.py's MISTAKE_DROP reuse.
+# A puzzle is "sharp" (second-best is itself a mistake) at exactly the
+# same gap best_move_candidates.classify_best_move's C2 gate uses — no new magic
+# number (MISTAKE_DROP reuse).
 SHARP_GAP_ES: float = MISTAKE_DROP
 
-# SEED-141: a Train drill puzzle is only fair when failing to find the best
+# A Train puzzle is only fair when failing to find the best
 # move actually costs something. `dead_band_admissible` notices the best-vs-
 # second GAP but not whether the runner-up STILL leaves the mover clearly
 # winning ("you were +6, best is +9, runner-up is +4" — a puzzle asking the
@@ -101,16 +100,14 @@ SHARP_GAP_ES: float = MISTAKE_DROP
 # coincidence is noted so a future reader does not "deduplicate" them.
 SECOND_BEST_WINNING_FLOOR_CP: int = 200
 
-# game_flaws.severity: 1=mistake, 2=blunder (game_flaws is M+B only, D-03 of
-# an earlier phase — see app/models/game_flaw.py). Train's pool is
-# blunders-only (POOL-01).
+# game_flaws.severity: 1=mistake, 2=blunder (game_flaws is M+B only, see
+# app/models/game_flaw.py). Train's pool is blunders-only.
 _SEVERITY_BLUNDER: int = 2
 
-# POOL-03: red herrings make up 25% of every session mix. Planner discretion
-# per the seed's stated ratio (CONTEXT.md "Claude's Discretion").
+# Red herrings make up 25% of every session mix.
 HERRING_SHARE: float = 0.25
 
-# Quick task 260728-pgp: a composed Train session draws at most this many
+# A composed Train session draws at most this many
 # puzzles from any single game, SESSION-WIDE across both SR sources (due
 # drill_items and fresh pool_entry_stmt picks combined via a shared
 # per-game count). Several blunders from one game a few plies apart (a
@@ -124,14 +121,14 @@ HERRING_SHARE: float = 0.25
 # relaxing.
 MAX_ITEMS_PER_GAME_PER_SESSION: int = 1
 
-# Phase 192 (POOL-03 amended, D-15): the herring_pool generation-time loose
+# The herring_pool generation-time loose
 # band. A candidate qualifies when at least HERRING_MIN_QUALIFYING_MOVES of
 # its 5-move ladder are within this many points of expected score of the best
 # move (inclusive at the band — generation is deliberately permissive; the
-# strict qualifier gate runs at query time, Plan 04's job, so thresholds stay
+# strict qualifier gate runs at query time, so thresholds stay
 # retunable with zero re-analysis).
 #
-# MEASURED (192-03 Task 2, 2026-07-28): 298-300 real MultiPV-5-searched dev
+# MEASURED (2026-07-28): 298-300 real MultiPV-5-searched dev
 # candidates per phase (opening/middlegame/endgame), PV0-to-PV1 expected-score
 # gap. The ~0.10 anchor is CONFIRMED, not moved: at 0.10 ES, 94.0% (opening),
 # 93.0% (middlegame), and 83.3% (endgame) of searched candidates already have
@@ -140,11 +137,10 @@ MAX_ITEMS_PER_GAME_PER_SESSION: int = 1
 # points per phase (e.g. endgame 83.3% -> 87.7%), so 0.10 is not leaving a
 # meaningful slice of real several-fine-moves positions on the table. It
 # stays comfortably (2x) above the query-time tight gate (INACCURACY_DROP =
-# 0.05), the retunability headroom D-15 requires. Full histograms and the
-# measurement script are in the 192-03-SUMMARY.md. Retunable without
-# re-analysis — the ladder is stored raw (D-16).
+# 0.05), the retunability headroom the loose band needs. Retunable without
+# re-analysis — the ladder is stored raw.
 HERRING_LOOSE_BAND_ES: float = 0.10
-# D-15: a candidate needs at least this many "several fine moves" ladder
+# A candidate needs at least this many "several fine moves" ladder
 # entries (including the best move itself) to qualify at generation time.
 HERRING_MIN_QUALIFYING_MOVES: int = 2
 # The generator's tally target for a comfortably-qualifying pool row (informational
@@ -153,7 +149,7 @@ HERRING_PREFERRED_QUALIFYING_MOVES: int = 3
 # The MultiPV-5 ladder size — every stored `HerringPool.ladder` has exactly this
 # many entries (see ck_herring_pool_ladder_shape).
 HERRING_LADDER_SIZE: int = 5
-# D-18: positions before this ply are excluded from the sampling frame — a red
+# Positions before this ply are excluded from the sampling frame — a red
 # herring is a "several fine moves" MIDDLEGAME/endgame judgment call, not an
 # opening-theory pick.
 HERRING_MIN_PLY: int = 12
@@ -161,16 +157,16 @@ HERRING_MIN_PLY: int = 12
 # (never a self-join): |eval_cp| <= this many centipawns keeps the sampled
 # frame roughly balanced instead of drawing mostly-decided positions. Off-by-one
 # ply noise in the stored eval costs only a noisier candidate frame, nothing
-# else (SEED-120 Pitfall 1) — the real qualifier gate is the MultiPV-5 search.
+# else — the real qualifier gate is the MultiPV-5 search.
 HERRING_PREFILTER_ABS_CP: int = 200
 
-# Phase 192 (POOL-03 amended, D-17), consumed at QUERY time by Plan 04: the
+# Consumed at QUERY time: the
 # minimum PV0-to-PV4 expected-score gap a stored row must have to be SERVED.
 # Excludes the degenerate "every legal move is fine" tail (dead-drawn,
 # totally winning) that MultiPV-5 exists to catch and boolean-count designs
 # cannot.
 #
-# MEASURED (192-03 Task 2, 2026-07-28): same 298-300-candidate-per-phase
+# MEASURED (2026-07-28): same 298-300-candidate-per-phase
 # sample, PV0-to-PV4 gap. The bottom of the distribution (gap < 0.02 ES) is
 # 24.8% (opening), 17.0% (middlegame), 29.0% (endgame) of searched
 # candidates — the genuinely flat, no-real-decision positions. 0.02 trims
@@ -178,18 +174,18 @@ HERRING_PREFILTER_ABS_CP: int = 200
 # down (0.01) only trims 5.0-18.3% (too thin a cut, especially opening/
 # middlegame), and one bucket up (0.03) starts cutting 30.3-40.3% — deep
 # enough into the body of genuine several-fine-moves positions to risk
-# under-serving. Full histograms in 192-03-SUMMARY.md. Retunable without
-# re-analysis — this is a query-time bound over the raw stored ladder
-# (D-16), never baked into what gets stored (D-17: stored-and-excluded, not
+# under-serving. Retunable without
+# re-analysis — this is a query-time bound over the raw stored ladder,
+# never baked into what gets stored (stored-and-excluded, not
 # generation-time-filtered).
 HERRING_DEGENERATE_MIN_GAP_ES: float = 0.02
 
-# POOL-02: a puzzle's ground-truth classification — "sharp" when the runner-up
+# A puzzle's ground-truth classification — "sharp" when the runner-up
 # at node 0 is itself a mistake (only one move is right); "soft" otherwise
 # (avoid-the-blunder). Never an entry gate — see classify_puzzle_type.
 PuzzleType = Literal["sharp", "soft"]
 
-# Phase 235 (SEED-192, D-05): the WIRE puzzle type on the pre-attempt payload —
+# The WIRE puzzle type on the pre-attempt payload —
 # PuzzleType plus the red-herring source. A sharp filler reads "sharp".
 TrainPuzzleType = Literal["sharp", "soft", "herring"]
 
@@ -205,10 +201,8 @@ def expected_score_sql(cp_col: Any, mate_col: Any, user_color_col: Any) -> Colum
     Train's winnability floor and the Library's gem/great classifier can
     never silently disagree on how a mate score converts.
 
-    Its Python twin is `app.services.eval_utils.eval_cp_to_expected_score`
-    (cp-only; mate handling here is Option-B, not that module's hard-1.0/0.0
-    `eval_mate_to_expected_score` — see this module's docstring for why the
-    two mate conventions differ by design).
+    Its Python twin is `expected_score_for` below (Option-B mate mapping on top
+    of `eval_cp_to_expected_score`).
 
     Args:
         cp_col: A column/expression resolving to a white-perspective
@@ -268,9 +262,9 @@ def expected_score_for(
 def classify_puzzle_type(
     missed_pv_lines: list[Any] | None, mover_color: Literal["white", "black"]
 ) -> PuzzleType:
-    """Classify a blunder's puzzle type from its node-0 best-vs-second gap (POOL-02).
+    """Classify a blunder's puzzle type from its node-0 best-vs-second gap.
 
-    A classifier, NEVER an entry gate (P-04): a "soft" blunder still qualifies
+    A classifier, NEVER an entry gate: a "soft" blunder still qualifies
     for the pool via `pool_entry_stmt` — it just becomes an avoid-the-blunder
     puzzle instead of a sharp one (see `test_soft_blob_still_enters_pool`).
 
@@ -281,7 +275,7 @@ def classify_puzzle_type(
     empty-string sentinel when there is no legal second move at all (only one
     move can be right, so that node is unconditionally "sharp").
 
-    `SHARP_GAP_ES` aliases `MISTAKE_DROP` (P-04): a sharp puzzle is exactly
+    `SHARP_GAP_ES` aliases `MISTAKE_DROP`: a sharp puzzle is exactly
     one where the runner-up is itself a mistake relative to the best move —
     no separate numeric literal is declared for this threshold.
 
@@ -316,14 +310,14 @@ def classify_puzzle_type(
 
 @dataclass(frozen=True)
 class PuzzleAnswerKey:
-    """The server's answer key for one puzzle (Phase 235, SEED-192, D-05/D-06/D-19).
+    """The server's answer key for one puzzle.
 
-    The single derivation shared by session composition (plan 01) and the solve
-    path (plan 03), so the two can never derive the key two different ways.
+    The single derivation shared by session composition and the solve
+    path, so the two can never derive the key two different ways.
 
-    `key_uci` is the move the puzzle is graded against (None = no usable key,
-    D-07); `puzzle_type` is the wire type; `runner_up_uci` is the blob's
-    second-best move for a SHARP SR item only (D-19), else None.
+    `key_uci` is the move the puzzle is graded against (None = no usable key);
+    `puzzle_type` is the wire type; `runner_up_uci` is the blob's
+    second-best move for a SHARP SR item only, else None.
     """
 
     key_uci: str | None
@@ -349,7 +343,7 @@ def _herring_key(ladder: list[Any] | None) -> str | None:
 def _sharp_runner_up(missed_pv_lines: list[Any] | None) -> str | None:
     """Node 0's `su` (white-POV second-best UCI), or None.
 
-    D-19: the empty-string `su` is the "no legal second move" sentinel, so it
+    The empty-string `su` is the "no legal second move" sentinel, so it
     reads as no runner-up.
     """
     if not missed_pv_lines:
@@ -377,7 +371,7 @@ def answer_key_for(
     `game_positions.best_move` at the flaw ply, its type is
     `classify_puzzle_type(live blob, ply-parity mover)` (never a stored color,
     matching `_classify_and_certify_solve`), and its runner-up is the blob's
-    `su` only when the type is "sharp" (D-19).
+    `su` only when the type is "sharp".
 
     Callers pass `missed_pv_lines`/`best_move` only for an SR item and
     `ladder` only for a herring — a herring row can share (user, game, ply)
@@ -404,7 +398,7 @@ def _legal_in(board: chess.Board, uci: str | None) -> str | None:
 
 
 def legal_answer_key(key: PuzzleAnswerKey, fen: str) -> PuzzleAnswerKey:
-    """Null any key / runner-up that is not a legal move in the served `fen` (D-07).
+    """Null any key / runner-up that is not a legal move in the served `fen`.
 
     A key the client cannot play is sent as null and the client falls back to
     today's root-search grading. An unparseable FEN nulls both. `puzzle_type`
@@ -423,7 +417,7 @@ def legal_answer_key(key: PuzzleAnswerKey, fen: str) -> PuzzleAnswerKey:
 
 @dataclass(frozen=True)
 class VettedMove:
-    """One server-certified "also fine" alternative move (Phase 211, D-01).
+    """One server-certified "also fine" alternative move.
 
     This is the DOMAIN value; its wire twin is `app.schemas.train.VettedMove`
     (deliberately the same name in a different module, mapped field-by-field
@@ -436,11 +430,10 @@ class VettedMove:
     mover could have achieved); `es_after` is this move's own — both through
     the shared sigmoid (`expected_score_for`), never a second derivation.
 
-    D-01 amendment (2026-08-16, Task 3 checkpoint round 2): quality "best"
-    marks the deep BEST move itself, served on a soft puzzle alongside the
-    certified second-best so the "several fine moves" copy is always backed
-    by at least one displayable alternative (the client filters entries that
-    coincide with its own best/played arrows). For a "best" entry
+    Quality "best" marks the deep BEST move itself, served on a soft puzzle
+    alongside the certified second-best so the "several fine moves" copy is
+    always backed by at least one displayable alternative (the client filters
+    entries that coincide with its own best/played arrows). For a "best" entry
     `es_before == es_after` — the best move against itself, drop 0.
     """
 
@@ -466,7 +459,7 @@ def _vetted_move(uci: str, best_es: float, move_es: float) -> VettedMove | None:
     severity maps to `"good"`, an `"inaccuracy"` severity maps to
     `"inaccuracy"`, any other severity returns None. Under today's strict
     band only `"good"` is reachable (the band excludes the whole inaccuracy
-    range); the two-member Literal exists so the wire shape mirrors the
+    range); the "inaccuracy" member exists so the wire shape mirrors the
     client's `TrainFineMove` and so the band stays retunable without a wire
     change.
     """
@@ -483,24 +476,23 @@ def _vetted_move(uci: str, best_es: float, move_es: float) -> VettedMove | None:
 def vetted_moves_from_pv_node(
     node: Any, mover_color: Literal["white", "black"], best_uci: str | None = None
 ) -> list[VettedMove]:
-    """Server-certified "also fine" moves from one `missed_pv_lines` node (D-01,
-    amended 2026-08-16).
+    """Server-certified "also fine" moves from one `missed_pv_lines` node.
 
     A pure-Python reader of an ALREADY-LOADED blob node — no SQL, and in
     particular no `jsonb_typeof` shape guard paired with an array function
     (the documented live crash `answer_key_present`'s docstring describes);
     shape tolerance is handled with plain `isinstance`/`get` below.
 
-    Asymmetry with the ladder path (`vetted_moves_from_ladder`, Task 2):
+    Asymmetry with the ladder path (`vetted_moves_from_ladder`):
     `PvNode` stores no UCI for the BEST move (only `b`/`bm` evals) — which is
     why the best entry's UCI is supplied by the CALLER, from the already-
     stored `game_positions.best_move` for the flaw's own ply (decision-keyed:
     row `ply`'s OWN best move for the pre-move position). No blob/worker-
-    pipeline change (D-04 stays intact). A SHARP puzzle falls out EMPTY
+    pipeline change. A SHARP puzzle falls out EMPTY
     through this same predicate with no `puzzle_type` branch anywhere:
     `classify_puzzle_type`'s sharp gate (`>= SHARP_GAP_ES`, which aliases
     `MISTAKE_DROP`) is strictly outside the good band, so a sharp node's `su`
-    can never clear `_vetted_move` — and the lone-best fallback (WR-01, see
+    can never clear `_vetted_move` — and the lone-best fallback (see
     the fix-site comment below) re-applies that exact same sharp gate, so a
     sharp node never serves a lone best entry either.
 
@@ -525,7 +517,7 @@ def vetted_moves_from_pv_node(
         `[best, su]` when both are available, `[su]` when the best UCI is
         unknown, `[best]` when the `su` fails the good band but the node is
         still soft-shaped (gap `< SHARP_GAP_ES`) and the best UCI is known
-        (WR-01 — a "soft" puzzle must never advertise "several fine moves"
+        (a "soft" puzzle must never advertise "several fine moves"
         with zero servable alternatives), `[]` otherwise (sharp node, or an
         uncertified `su` with no known best UCI).
     """
@@ -540,7 +532,7 @@ def vetted_moves_from_pv_node(
         return []
     vetted = _vetted_move(su, best_es, second_es)
     if vetted is None:
-        # Bug-fix comment (WR-01 code review, 2026-08-16): the best_uci
+        # Bug-fix comment (2026-08-16): the best_uci
         # fallback below used to be gated behind su certification, but
         # `classify_puzzle_type`'s soft band (gap < SHARP_GAP_ES = 0.10) is
         # WIDER than `_vetted_move`'s good band (gap < INACCURACY_DROP =
@@ -556,7 +548,7 @@ def vetted_moves_from_pv_node(
         if best_es - second_es < SHARP_GAP_ES and best_uci is not None and best_uci != "":
             return [VettedMove(uci=best_uci, quality="best", es_before=best_es, es_after=best_es)]
         return []
-    # Bug-fix comment (Task 3 checkpoint round 2, 2026-08-16): with only the
+    # Bug-fix comment (2026-08-16): with only the
     # `su` served, a soft puzzle whose `su` coincided with the client's own
     # best/played move rendered an EMPTY "Also fine" row under the "several
     # fine moves" copy — the client display filter absorbed the sole entry.
@@ -574,9 +566,9 @@ def vetted_moves_from_pv_node(
 
 @dataclass(frozen=True)
 class ServerGradedMove:
-    """A move whose grade the SERVER owns (Phase 235, SEED-192, D-02).
+    """A move whose grade the SERVER owns.
 
-    Every Phase 211 vetted entry plus the sharp runner-up. Never displayed: the
+    Every vetted entry plus the sharp runner-up. Never displayed: the
     display list stays `SolveResponse.vetted_moves`, because a sharp runner-up
     is a mistake by construction and must not render as "Also fine".
 
@@ -593,8 +585,7 @@ class ServerGradedMove:
 def graded_moves_from_vetted(vetted: list[VettedMove]) -> list[ServerGradedMove]:
     """Map vetted entries to graded moves, order kept; "best" collapses to "good".
 
-    The collapse used to live inline in `record_solve`: "best" is the deep best
-    move and is recorded as a plain "good" tier.
+    "best" is the deep best move and is recorded as a plain "good" tier.
     """
     return [
         ServerGradedMove(
@@ -610,9 +601,9 @@ def graded_moves_from_vetted(vetted: list[VettedMove]) -> list[ServerGradedMove]
 def sharp_runner_up_graded_move(
     node: Any, mover_color: Literal["white", "black"], *, key_uci: str | None
 ) -> ServerGradedMove | None:
-    """Grade a sharp node's runner-up `su` from the blob's own b/s evals (D-02).
+    """Grade a sharp node's runner-up `su` from the blob's own b/s evals.
 
-    The runner-up is graded the way a Phase 211 key move is: `classify_severity`
+    The runner-up is graded the way a vetted move is: `classify_severity`
     of the best-vs-second gap (in practice "wrong", a sharp gap is
     `>= SHARP_GAP_ES` = MISTAKE_DROP). None for a non-dict node, an absent,
     empty or non-str `su`, a `su` equal to the key (the key is never graded as
@@ -648,7 +639,7 @@ def server_graded_moves_for(
     herring_mover_color: Literal["white", "black"] | None,
     key: PuzzleAnswerKey,
 ) -> list[ServerGradedMove]:
-    """Every move whose grade the server owns, in first-match order (Phase 236 D-08).
+    """Every move whose grade the server owns, in first-match order.
 
     THE single derivation shared by session composition (the pre-attempt
     `TrainPuzzle.server_graded_moves`) and the solve path (`_resolve_grade`
@@ -686,7 +677,7 @@ def server_graded_moves_for(
 def legal_server_graded_moves(
     moves: Sequence[ServerGradedMove], fen: str, *, legal_key_uci: str | None
 ) -> tuple[ServerGradedMove, ...]:
-    """The composed set as served: legal in `fen`, empty without a legal key (D-08).
+    """The composed set as served: legal in `fen`, empty without a legal key.
 
     A puzzle with no usable key sends no set (the client falls back to today's
     root-search grading), so `legal_key_uci is None` gives `()`; so does an
@@ -703,15 +694,14 @@ def legal_server_graded_moves(
 
 def answer_key_present(col: Any) -> ColumnElement[bool]:
     """True when `col` (a `missed_pv_lines`-shaped JSONB column) holds a
-    genuinely usable answer key (189-06 gap closure).
+    genuinely usable answer key.
 
-    Bug-fix comment (CLAUDE.md): the eval pipeline's D-06 sentinel write
+    Bug-fix comment (CLAUDE.md): the eval pipeline's sentinel write
     (`app/services/eval_apply.py`'s `_assemble_one_line_blob` /
     `_batch_update_flaw_pv_lines`) stores a non-NULL, EMPTY `[]` JSONB array
     for an answer-key line it could not fill (NULL prior-ply PV, or a PV walk
     shorter than 2 nodes). A bare `col.isnot(None)` test therefore admits a
-    flaw with no usable answer key — directly contradicting POOL-01 and
-    ROADMAP Success Criterion 1, both of which require a NON-EMPTY
+    flaw with no usable answer key, though the pool requires a NON-EMPTY
     `missed_pv_lines` blob. This predicate closes that gap by requiring the
     value to be a JSON array AND not the empty-array literal.
 
@@ -727,8 +717,7 @@ def answer_key_present(col: Any) -> ColumnElement[bool]:
     Postgres does not guarantee AND-clause evaluation order, so pairing
     `jsonb_typeof(...) = 'array'` with an array-count guard can still raise
     `cannot get array length of a scalar` when the planner evaluates the
-    count function before the type guard (see 189-06-PLAN.md's
-    `<gap_reference>` Fact 2 for the exact reproduction). Do NOT "simplify"
+    count function before the type guard. Do NOT "simplify"
     this back to a count-based form — it is a live crash, not a style
     preference.
 
@@ -745,20 +734,20 @@ def answer_key_present(col: Any) -> ColumnElement[bool]:
 
 def dead_band_admissible(missed_pv_lines_col: Any, ply_col: Any) -> ColumnElement[bool]:
     """True when `missed_pv_lines_col`'s node-0 best-vs-second expected-score
-    gap clears Proposal A's dead band (D-05/D-11, SEED-137, Phase 205).
+    gap clears the dead band.
 
     The band is `[INACCURACY_DROP, BLUNDER_DROP)` — CLOSED at the lower edge,
     OPEN at the upper edge: a gap of exactly `INACCURACY_DROP` is EXCLUDED, a
     gap of exactly `BLUNDER_DROP` is KEPT and stays sharp. The 0.05 buffer
-    (rather than the measured `ES_STABILITY_TOLERANCE` of 0.025) stands on
-    SEED-130's rationale: the browser's Stockfish never clears its
-    transposition table, so evaluator 2's reading of a position depends on
-    what that Worker slot searched before.
+    (rather than the measured `ES_STABILITY_TOLERANCE` of 0.025) exists because
+    the browser's Stockfish never clears its transposition table
+    (see SEED-130), so evaluator 2's reading of a position depends on what
+    that Worker slot searched before.
 
-    BOTH of D-03's degenerate node-0 shapes are excluded HERE, at the
+    BOTH degenerate node-0 shapes are excluded HERE, at the
     selection predicate, rather than in `classify_puzzle_type` — that
     function keeps its current return contract (it is a classifier, never an
-    entry gate, P-04): the no-legal-second-move sentinel (`su == ""`) and an
+    entry gate): the no-legal-second-move sentinel (`su == ""`) and an
     unreadable blob (a non-object node 0, or either expected score
     resolving to NULL).
 
@@ -823,13 +812,12 @@ def second_best_not_winning_admissible(
     missed_pv_lines_col: Any, ply_col: Any
 ) -> ColumnElement[bool]:
     """True when `missed_pv_lines_col`'s node-0 runner-up move does NOT leave
-    the mover still clearly winning (SEED-141).
+    the mover still clearly winning.
 
-    Investigation findings (derived from the code, not assumed — see the
-    plan's `<investigation>` block):
+    Findings (derived from the code, not assumed):
 
     1. SIGN / COLOR. `s`/`sm` are WHITE-perspective (confirmed via
-       `app/models/game_flaw.py`'s D-05 blob-shape comment: "s — second_cp
+       `app/models/game_flaw.py`'s blob-shape comment: "s — second_cp
        (int | null): second-best-move eval in centipawns, WHITE-perspective"
        and `app/services/forcing_line_gate.py`'s `PvNode` TypedDict restating
        the same convention). Mover POV is derived from ply parity via
@@ -922,12 +910,12 @@ def second_best_not_winning_admissible(
 
 def answer_key_pending(col: Any) -> ColumnElement[bool]:
     """True when `col` (a `missed_pv_lines`-shaped JSONB column) has not yet
-    been processed by the eval pipeline — i.e. true SQL NULL (189-06 D-GAP-01).
+    been processed by the eval pipeline — i.e. true SQL NULL.
 
     DELIBERATELY NOT the boolean negation of `answer_key_present`. A NULL
     blob has not been processed yet and self-heals through the tier-4 blob
     lottery (`app/routers/eval_remote.py`'s `allowed_pv_lines IS NULL` claim
-    predicate) the next time that lane runs. The D-06 empty-array sentinel
+    predicate) the next time that lane runs. The empty-array sentinel
     is the opposite: the eval pipeline writes it specifically to CLEAR the
     lottery's `IS NULL` predicate "so the game is never re-picked" — it is
     terminal, not transient, and never self-heals.
@@ -937,8 +925,7 @@ def answer_key_pending(col: Any) -> ColumnElement[bool]:
     see `blob_pending_stmt`) at a permanently non-zero floor that never
     resolves — exactly the dishonest signal that field exists to prevent.
     So the terminal case is reported in NEITHER `pool_entry_stmt` NOR this
-    predicate: it is excluded, uncounted, silent (D-GAP-01 in
-    `189-06-PLAN.md`).
+    predicate: it is excluded, uncounted, silent.
 
     Args:
         col: A JSONB column/expression, typically `GameFlaw.missed_pv_lines`.
@@ -955,7 +942,7 @@ def _prior_position_lateral(
     """A `LEFT JOIN LATERAL` onto `game_positions` for one correlated
     `(user_id, game_id, ply)` lookup, yielding `.c.eval_cp` / `.c.eval_mate`.
 
-    Bug fix (Phase 190-01 checkpoint, discovered via manual browser UAT):
+    Bug fix:
     a plain `isouter`-joined self-alias of `GamePosition`, correlated on
     `(user_id, game_id, ply [- N])` inside a larger query, defeats
     Postgres's ability to push that correlation into `game_positions_pkey`
@@ -974,8 +961,8 @@ def _prior_position_lateral(
 
     Args:
         name: Distinct SQL alias for the LATERAL subquery (each call site
-            in this module needs its own, matching the old aliased-join
-            names so `EXPLAIN` output stays readable).
+            in this module needs its own, so `EXPLAIN` output stays
+            readable).
         user_id_col: The outer query's `user_id`-equivalent column to
             correlate against (`GameFlaw.user_id` / `Game.user_id` — the
             candidate table's own user scope).
@@ -1002,14 +989,14 @@ def _prior_position_lateral(
 
 
 def pool_entry_stmt(user_id: int) -> Select[tuple[GameFlaw, Game]]:
-    """Own-blunder pool-entry candidates for `user_id` (POOL-01).
+    """Own-blunder pool-entry candidates for `user_id`.
 
     Selects `GameFlaw`/`Game` rows for the user's own qualifying blunders:
     ply-parity via `player_only_gate` (never hand-rolled `ply % 2`), severity
     == blunder, a non-empty `missed_pv_lines` answer-key blob, and the
-    PRE-flaw-move position (an aliased `PriorPosition` self-join on
-    `ply - 1`, LEFT-joined since a ply-0 flaw has no `ply - 1` row to match)
-    clearing `WINNABILITY_FLOOR_ES`.
+    PRE-flaw-move position (a correlated LATERAL lookup,
+    `_prior_position_lateral`, on `ply - 1`, LEFT-joined since a ply-0 flaw has
+    no `ply - 1` row to match) clearing `WINNABILITY_FLOOR_ES`.
 
     `.options(undefer(GameFlaw.missed_pv_lines))` is mandatory here —
     `missed_pv_lines` is `deferred=True` by design (structural leak guard,
@@ -1097,7 +1084,7 @@ def _ladder_element_es(ladder_element: Any, mover_color_col: Any) -> ColumnEleme
             `_ladder_field`).
         mover_color_col: A column/expression resolving to 'white'/'black'
             (`HerringPool.mover_color` — the side to move on the generator's
-            own searched board, D-16).
+            own searched board).
 
     Returns:
         A SQLAlchemy ColumnElement[float] in (0, 1), or NULL when the
@@ -1111,7 +1098,7 @@ def _ladder_element_es(ladder_element: Any, mover_color_col: Any) -> ColumnEleme
 def vetted_moves_from_ladder(
     ladder: list[Any] | None, mover_color: Literal["white", "black"]
 ) -> list[VettedMove]:
-    """Server-certified "also fine" moves from a `HerringPool.ladder` (Phase 211, D-01).
+    """Server-certified "also fine" moves from a `HerringPool.ladder`.
 
     Reuses `herring_stmt`'s exact serve-time predicate
     (`best_es - element_es < INACCURACY_DROP`, STRICT `<`) via the shared
@@ -1135,7 +1122,7 @@ def vetted_moves_from_ladder(
             `{"move_uci", "cp", "mate"}` dicts, white POV), or None.
         mover_color: The STORED `HerringPool.mover_color` — the side to move
             on the generator's own board. NEVER ply parity for a herring
-            (SEED-120 Pitfall 1).
+            (the generator's own board is authoritative).
 
     Returns:
         The qualifying entries in ladder (best-first) order — `[]` for a
@@ -1168,10 +1155,9 @@ def vetted_moves_from_ladder(
 
 
 def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[HerringPool]]:
-    """Red-herring source candidates for `user_id` (POOL-03, amended Phase 192).
+    """Red-herring source candidates for `user_id`.
 
-    Phase 192 replaces the structurally-broken pre-Phase-192 `GameBestMove`
-    source with `herring_pool` — a global, phase-balanced pool of positions
+    The source is `herring_pool` — a global, phase-balanced pool of positions
     confirmed by a real MultiPV-5 Stockfish search
     (`scripts/gen_red_herring_pool.py`). A
     red herring is "several genuinely fine moves for whoever is to move",
@@ -1179,20 +1165,20 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
     several-fine-moves plies". Winnability (`WINNABILITY_FLOOR_ES`) is
     enforced once at generation time against the generator's own MultiPV[0]
     on its own searched board — never re-checked here, and never derived
-    from a correlated `game_positions` read (SEED-120 Pitfall 1's
+    from a correlated `game_positions` read (the post-move eval shift's
     `ply`/`ply - 1` ambiguity does not apply: the generator's board is
     authoritative by construction). There is no SR bookkeeping in this
     function at all (no `drill_items`, no `GameFlaw` join) — the pool is
     entirely separate material from a user's own blunders.
 
-    D-15 loose-generation / tight-query split, both constants named: the
+    Loose-generation / tight-query split, both constants named: the
     generator applies a deliberately LOOSE gate at write time
     (`HERRING_LOOSE_BAND_ES`, `HERRING_MIN_QUALIFYING_MOVES`) so a stored row
     is a superset of what could ever qualify at serve time. THIS function
     applies the real, tight, retunable-with-zero-re-analysis gate over the
     raw stored `ladder`:
 
-    - **Qualifying count** (D-15): at least `HERRING_MIN_QUALIFYING_MOVES` of
+    - **Qualifying count**: at least `HERRING_MIN_QUALIFYING_MOVES` of
       the 5 ladder entries must be within `INACCURACY_DROP` expected-score
       points of PV[0] (the best move). PV[0] always satisfies its own
       predicate (gap 0.0 to itself), so a count of 2 means "the best plus one
@@ -1202,14 +1188,14 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
       an inaccuracy at `drop >= INACCURACY_DROP`, so a move exactly
       `INACCURACY_DROP` below the best is already an inaccuracy and must not
       count as one of the "several fine moves" this gate exists to certify.
-    - **Degenerate exclusion** (D-17): PV[4]'s (the worst-of-five's) expected
+    - **Degenerate exclusion**: PV[4]'s (the worst-of-five's) expected
       score must be at least `HERRING_DEGENERATE_MIN_GAP_ES` below PV[0]'s,
       INCLUSIVE at the bound (`>=`) — a dead-drawn or totally-winning
       position where even the fifth-best move is fine is not a judgment
       test, and MultiPV-5 exists precisely to catch it. Kept at QUERY time
       rather than baked into generation: retunable without re-analysis, and
       later auditable for over-aggressiveness, because the raw 5-move ladder
-      always survives on the row (D-16 forbids a pre-converted
+      always survives on the row (there is deliberately no pre-converted
       expected-score/gap column, so the stored `game_positions.eval_cp` can
       never leak back in as an authoritative value here).
 
@@ -1239,21 +1225,20 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
     Ordering is a TOTAL order, stable across repeated executions of the same
     statement — which is what makes "no repeats until the pool is exhausted"
     observable:
-    `(qualifying_count >= HERRING_PREFERRED_QUALIFYING_MOVES) DESC` (D-15's
-    "preferring 3+" — a PREFERENCE, not a filter; rows with exactly
+    `(qualifying_count >= HERRING_PREFERRED_QUALIFYING_MOVES) DESC` ("preferring
+    3+" — a PREFERENCE, not a filter; rows with exactly
     `HERRING_MIN_QUALIFYING_MOVES` must still be reachable), then
     `HerringPool.source_played_at DESC NULLS LAST`, then `HerringPool.id
     ASC` (the deterministic tiebreak for rows equal on both prior keys).
     Recency reads off the pool row's own denormalized `source_played_at`
-    rather than a `games` join: SEED-120 carries the recency ordering
-    forward, but a global pool cannot join `games` for it without
-    reintroducing exactly the link D-01 lets null out. Copying `played_at`
-    onto the row at generation time preserves the recency contract and
-    survives source-game deletion — the same reasoning D-03 already applies
-    to the FEN and arriving move. This is a deliberate resolution, not a
+    rather than a `games` join: a global pool cannot join `games` for it
+    without reintroducing exactly the link that is allowed to null out. Copying
+    `played_at` onto the row at generation time preserves the recency contract
+    and survives source-game deletion — the same reasoning that applies to the
+    FEN and arriving move. This is a deliberate resolution, not a
     dropped requirement.
 
-    D-10: this function NEVER filters on `HerringPool.user_id` — a user may
+    This function NEVER filters on `HerringPool.user_id` — a user may
     legitimately be served a herring drawn from their own game (own-game
     herrings are permitted; composition drops one only when it collides with
     an SR pick in the same session, `app/repositories/train_repository.py`'s
@@ -1268,10 +1253,10 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
         user_id: Authenticated user's internal PK (V4: never client-supplied
             — callers must source this from `current_active_user.id`). Used
             ONLY to scope the `exclude_served` no-repeat exclusion below —
-            never as a `HerringPool` row filter (D-10).
+            never as a `HerringPool` row filter.
         exclude_served: When True (default), exclude any `HerringPool.id`
             already served to this user as a red herring
-            (`drill_solves.herring_pool_id`, D-04 — NOT `(game_id, ply)`,
+            (`drill_solves.herring_pool_id`, NOT `(game_id, ply)`,
             which can no longer serve as a stable identity once the source
             game link is nullable). Set False to allow repeats once the
             source is exhausted.
@@ -1325,7 +1310,7 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
 
 
 def compose_slots(n: int) -> tuple[int, int]:
-    """POOL-07: split `n` requested puzzles into a (sr_slots, herring_slots) pair.
+    """Split `n` requested puzzles into a (sr_slots, herring_slots) pair.
 
     `herring_slots = floor(n * HERRING_SHARE)`; `sr_slots = n - herring_slots`
     deliberately absorbs the rounding remainder — learnable material (a
@@ -1353,8 +1338,8 @@ def pick_one_per_game(
     user_id: int,
     session_date: datetime.date,
 ) -> list[tuple[int, int, _T]]:
-    """Cap `candidates` at `MAX_ITEMS_PER_GAME_PER_SESSION` per `game_id` (quick
-    task 260728-pgp), picking UNIFORM RANDOM among each game's entries —
+    """Cap `candidates` at `MAX_ITEMS_PER_GAME_PER_SESSION` per `game_id`,
+    picking UNIFORM RANDOM among each game's entries —
     deliberately NOT earliest-ply. Earliest-ply skews the phase mix from a
     measured 16.2/57.6/26.2 (opening/middlegame/endgame) to 32.2/59.6/8.2 —
     doubling the opening share and cutting the endgame share to a third — so
@@ -1362,7 +1347,7 @@ def pick_one_per_game(
     distribution across a game's candidate plies.
 
     The seed is namespaced `train-pool-pick:` so this stream is NEVER the
-    same sequence as the D-09 composition shuffle in `train_repository.py`
+    same sequence as the composition shuffle in `train_repository.py`
     (which seeds `f"{user_id}:{today.isoformat()}"` with no such prefix) —
     two independently-seeded RNG streams, deliberately kept apart.
     `game_id` is baked INTO the seed (not just `user_id`/`session_date`), so
@@ -1372,7 +1357,7 @@ def pick_one_per_game(
     game's pick. `random.Random` seeded with a `str` is stable across
     processes (CPython hashes `str` seeds with sha512, not the
     `PYTHONHASHSEED`-randomized `hash()`) — the same property the existing
-    D-09 shuffle already relies on. This is intentionally NOT pushed into
+    composition shuffle already relies on. This is intentionally NOT pushed into
     SQL: `pool_rows` is already materialized in Python by the time a caller
     has a `candidates` sequence to pass here.
 
@@ -1415,16 +1400,15 @@ def blob_pending_stmt(user_id: int) -> Select[tuple[int]]:
 
     Mirrors `pool_entry_stmt`'s own-blunder eligibility gate (ply-parity,
     `severity == blunder`, PRE-flaw-move winnability floor via the same
-    `PriorPosition` self-join pattern) but uses `answer_key_pending` for the
+    `_prior_position_lateral` lookup) but uses `answer_key_pending` for the
     answer-key condition — `missed_pv_lines IS NULL` (true SQL NULL only).
     This is NOT the boolean negation of `pool_entry_stmt`'s
-    `answer_key_present`: the D-06 empty-array sentinel (`[]`) is excluded
+    `answer_key_present`: the empty-array sentinel (`[]`) is excluded
     from BOTH `pool_entry_stmt` and this count (see `answer_key_pending`'s
-    docstring and D-GAP-01 in `189-06-PLAN.md` for why). This is the
+    docstring for why). This is the
     `TrainSessionResponse.blob_pending_count` source — the signal that
     distinguishes a session that's short because opportunistic tier-4
-    analysis hasn't caught up yet from a genuinely exhausted pool (Pitfall 4
-    in 189-RESEARCH.md).
+    analysis hasn't caught up yet from a genuinely exhausted pool.
 
     Args:
         user_id: Authenticated user's internal PK (V4: never client-supplied
@@ -1458,13 +1442,13 @@ def blob_pending_stmt(user_id: int) -> Select[tuple[int]]:
 
 
 def fen_and_last_move_at_ply(pgn: str, ply: int) -> tuple[str, str | None] | None:
-    """Reconstruct the FULL FEN and the arriving move's UCI at `ply` (190-02).
+    """Reconstruct the FULL FEN and the arriving move's UCI at `ply`.
 
     The single PGN-replay implementation shared by `full_fen_at_ply` (FEN
     only) and every Train puzzle-construction site that also needs the
-    arriving move. P-03: `game_flaws.fen` is `board_fen()` (piece placement
+    arriving move. `game_flaws.fen` is `board_fen()` (piece placement
     only — see its model docstring) and loses castling rights/en-passant,
-    which a drill puzzle needs for legal-move generation. Parses `pgn` and
+    which a puzzle needs for legal-move generation. Parses `pgn` and
     replays `ply` half-moves. Wrapped in try/except per the project's
     PGN-parsing constraint (per-game try/except, handle malformed input
     gracefully) — an unparseable PGN or a ply past the game's end is an
@@ -1474,7 +1458,7 @@ def fen_and_last_move_at_ply(pgn: str, ply: int) -> tuple[str, str | None] | Non
     The returned move describes HOW the position was reached — the
     half-move immediately before `ply` (the opponent's or the user's own
     prior move) — and is deliberately NOT answer-key data: it never reveals
-    what to play next, only what was just played (T-190-05).
+    what to play next, only what was just played.
 
     Args:
         pgn: The game's full PGN text.

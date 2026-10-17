@@ -1,7 +1,7 @@
 """Two-sided Wald-z p-value + N-gate confidence helper for one-sample mean-vs-zero tests.
 
-Used for Stockfish eval at middlegame entry (D-04). Callers supply already-trimmed
-inputs per D-08: rows with |eval_cp| >= 2000 are excluded upstream in SQL via FILTER
+Used for Stockfish eval at middlegame entry. Callers supply already-trimmed
+inputs: rows with |eval_cp| >= 2000 are excluded upstream in SQL via FILTER
 predicates; the helper math is phase-agnostic.
 
 Bucketing rule (thresholds + N gate shared with score_confidence.py):
@@ -14,7 +14,7 @@ Bucketing rule (thresholds + N gate shared with score_confidence.py):
 
 p_value is the **two-sided** Wald z-test p against H0: mean == 0 cp (engine-balanced).
 The function exposes a `baseline_cp` parameter for arithmetic generality, but no
-production caller passes a non-zero value (quick task 260504-rvh): the per-color
+production caller passes a non-zero value: the per-color
 engine-asymmetry baseline is now a display annotation (a tick on the bullet chart
 at ±0.25 pawns by color, symmetric around white's first-move tempo) rather than
 the H0 reference. This means a user whose MG-entry mean equals the engine baseline
@@ -35,10 +35,8 @@ runtime dependency for sub-1% precision gain. This project lists 11 runtime deps
 critical (CLAUDE.md); adding scipy is out of scope. Using math.erfc is consistent with
 score_confidence.compute_confidence_bucket, which uses the same stdlib approximation.
 
-Call sites (Phase 80):
-  Called once per opening row in app.services.stats_service.get_most_played_openings
-  finalizer — for MG-entry eval (eval_sum_mg, eval_sumsq_mg, eval_n_mg).
-  Not exposed via routers directly.
+Callers: stats_service, openings_service, opening_insights_service and endgame_service
+  (MG-entry eval: eval_sum_mg, eval_sumsq_mg, eval_n_mg). Not exposed via routers directly.
 """
 
 import math
@@ -60,7 +58,7 @@ def compute_eval_confidence_bucket(
     eval_sum: sum of (signed user-perspective) eval_cp values across n games.
     eval_sumsq: sum of squared eval_cp values (centipawns squared).
     n: count of games used in the mean (mate-excluded, NULL-excluded,
-       outlier-trimmed |eval_cp| < 2000 per D-08; trim happens upstream in SQL).
+       outlier-trimmed |eval_cp| < 2000; trim happens upstream in SQL).
     baseline_cp: H0 reference for the test. Default 0.0 (engine-balanced); no
        production caller passes a non-zero value. The parameter is retained
        for arithmetic generality and to keep the function self-contained.
@@ -93,7 +91,7 @@ def compute_eval_confidence_bucket(
         confidence depends on N gate. If mean == baseline -> p = 1.0 -> "low".
       - NaN inputs: not possible — eval_cp is SmallInteger, color_sign is +-1, both
         non-null by SQL filter (FILTER (WHERE eval_cp IS NOT NULL AND eval_mate IS NULL
-        AND abs(eval_cp) < 2000) per D-08).
+        AND abs(eval_cp) < 2000)).
     """
     # Guard: n <= 0 — no sample, no signal. Return the two-sided null (p=1.0) and
     # zero for both mean and CI. Mirrors the n <= 0 guard in score_confidence.py.

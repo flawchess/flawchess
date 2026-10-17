@@ -175,7 +175,7 @@ export function SettingsPanel() {
         groupPrefix="settings-fc"
       />
 
-      {/* Server-persisted privacy choice (Phase 230 D-16), deliberately outside
+      {/* Server-persisted privacy choice, deliberately outside
           isAtDefaults and Reset, which only cover localStorage display
           preferences. The card hides itself for guests. */}
       <LeaderboardPrivacyCard />

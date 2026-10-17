@@ -1,4 +1,4 @@
-"""Pure Pydantic tests for the Phase 235 disagreement re-check boundary (SEED-192, D-18)."""
+"""Pure Pydantic tests for the disagreement re-check boundary."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def test_integer_expected_scores_at_the_bounds_are_accepted() -> None:
     ],
 )
 def test_malformed_recheck_is_dropped_and_the_solve_still_validates(bad: Any) -> None:
-    """D-18: a malformed re-check becomes None; the rest of the request is intact."""
+    """A malformed re-check becomes None; the rest of the request is intact."""
     request = SolveRequest.model_validate({**_SOLVE_KWARGS, "recheck": bad})
     assert request.recheck is None
     assert request.position == 0

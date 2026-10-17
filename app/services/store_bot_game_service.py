@@ -1,13 +1,12 @@
-"""Store-on-finish service for POST /bots/games (Phase 167, STORE-01/03/05/06).
+"""Store-on-finish service for POST /bots/games.
 
-Orchestrates: server-side rating derivation (D-05/D-06/D-07) -> PGN-only
+Orchestrates: server-side rating derivation -> PGN-only
 normalization (normalize_flawchess_game_or_reason) -> the existing hot-lane persistence
-path (import_service._flush_batch, D-09) -> a game-id lookup (Pitfall 2, no id
-in _flush_batch's return) -> a post-insert PGN header stamp + targeted UPDATE
-(quick-260714-qaj, D-07 — the `Site` deep link needs the auto-increment
-`games.id`) -> the one-to-one bot_game_settings insert -> a single commit
-(D-10). The service owns the transaction boundary; _flush_batch itself never
-commits (WR-05).
+path (import_service._flush_batch) -> a game-id lookup (_flush_batch returns no
+id) -> a post-insert PGN header stamp + targeted UPDATE (the `Site` deep link
+needs the auto-increment `games.id`) -> the one-to-one bot_game_settings
+insert -> a single commit. The service owns the transaction boundary;
+_flush_batch itself never commits.
 """
 
 import sentry_sdk
@@ -26,7 +25,7 @@ from app.services.normalization import (
     parse_time_control,
 )
 
-# Platform constant — the one value this service ever writes/looks up (D-04/D-17).
+# Platform constant — the one value this service ever writes/looks up.
 _FLAWCHESS_PLATFORM = "flawchess"
 
 
@@ -34,7 +33,7 @@ def _derive_rating_source(
     n_lichess_games: int,
     n_chesscom_games: int,
 ) -> RatingSource:
-    """Derive rating_source from anchor provenance (D-07).
+    """Derive rating_source from anchor provenance.
 
     Only called when an anchor row exists, so at least one of the two counts
     is guaranteed to be > 0 (fetch_anchors_for_user never persists a row with
@@ -53,7 +52,7 @@ def resolve_player_username(
 ) -> str:
     """Resolve the display name for the human side of a stored bot game.
 
-    Precedence (quick-260714-pnk): lichess_username -> chess_com_username ->
+    Precedence: lichess_username -> chess_com_username ->
     FLAWCHESS_PLAYER_FALLBACK_USERNAME ("You"). A blank or whitespace-only
     column is treated as absent (falls through to the next link in the
     chain) — the users table columns are nullable String(100) with no
@@ -87,18 +86,18 @@ async def store_bot_game(
 
     Returns a FlawchessRejectReason (a plain string, never a StoreBotGameResponse)
     when the PGN is invalid (unparseable, missing [%clk] on either color, or no
-    recognized Result header) — this is an EXPECTED validation failure
-    (STORE-02/D-15); the caller (bots router) maps the reason to a 422 body. No
+    recognized Result header) — this is an EXPECTED validation failure;
+    the caller (bots router) maps the reason to a 422 body. No
     Sentry capture and no DB write happen on this path.
 
-    Idempotent on request.game_uuid (D-11): re-invoking with the same
+    Idempotent on request.game_uuid: re-invoking with the same
     game_uuid returns the existing game_id with created=False, and does NOT
     insert a second games row or a second bot_game_settings row.
 
     Args:
-        session: AsyncSession. This function commits once (D-10) — the caller
+        session: AsyncSession. This function commits once — the caller
             (router) must not also commit.
-        user_id: Internal user PK, sourced from current_active_user (D-13),
+        user_id: Internal user PK, sourced from current_active_user,
             never from the request body (ASVS V4).
         request: The validated StoreBotGameRequest.
 
@@ -106,9 +105,9 @@ async def store_bot_game(
         StoreBotGameResponse with the (new or existing) game_id and a
         created flag, or a FlawchessRejectReason on invalid PGN input.
     """
-    # D-05/D-06: player rating is server-computed from the user's rating
+    # Player rating is server-computed from the user's rating
     # anchor for the game's TC bucket; NULL when no anchor (guest or no
-    # imported games in that bucket). D-07: rating_source derived from the
+    # imported games in that bucket). rating_source is derived from the
     # anchor's platform provenance.
     tc_bucket, _ = parse_time_control(request.tc_preset)
     anchors = await user_rating_anchors_repository.fetch_anchors_for_user(session, user_id=user_id)
@@ -125,14 +124,14 @@ async def store_bot_game(
             anchor_row.n_lichess_games, anchor_row.n_chesscom_games
         )
 
-    # quick-260714-pnk: resolve the player's display name from their own
-    # profile (never the request body — T-pnk-01 spoofing mitigation). The
+    # Resolve the player's display name from their own
+    # profile (never the request body, to prevent spoofing). The
     # row is guaranteed to exist: games.user_id is an FK, so a missing row
     # is already a hard failure today.
     user = await user_repository.get_profile(session, user_id)
     player_username = resolve_player_username(user.lichess_username, user.chess_com_username)
 
-    # quick-260722-ucc: persona games store the persona's own name + CALIBRATED
+    # Persona games store the persona's own name + CALIBRATED
     # ELO instead of the generic "FlawChess Bot" / the raw engine dial. Both
     # fields are None for a Custom-mode game, preserving current behavior.
     bot_username = request.persona_name or FLAWCHESS_BOT_USERNAME
@@ -150,7 +149,7 @@ async def store_bot_game(
         bot_username=bot_username,
     )
     if isinstance(normalized, str):
-        # A FlawchessRejectReason — STORE-02/D-15, expected: no Sentry capture,
+        # A FlawchessRejectReason — expected: no Sentry capture,
         # no commit. Handed straight to the router, which puts it in the 422
         # body so a rejection is diagnosable from the client-side Sentry event.
         return normalized
@@ -168,9 +167,9 @@ async def store_bot_game(
             raise RuntimeError("flawchess game row not found after _flush_batch")
 
         if created:
-            # D-11: guard so a duplicate re-submit (created=False) never
+            # Guard so a duplicate re-submit (created=False) never
             # double-inserts the one-to-one settings row NOR rewrites the
-            # already-stored PGN (T-qaj-03).
+            # already-stored PGN.
             session.add(
                 BotGameSettings(
                     game_id=game_id,
@@ -181,7 +180,7 @@ async def store_bot_game(
                 )
             )
 
-            # quick-260714-qaj/D-07: both the PGN's `Site` header and the
+            # Both the PGN's `Site` header and the
             # `platform_url` column need the row's real auto-increment
             # `games.id`, which only exists post-INSERT — so both are written
             # here, once, in a second targeted UPDATE, from the same
@@ -199,9 +198,9 @@ async def store_bot_game(
                 session, game_id, stamped_pgn, build_bot_game_url(game_id)
             )
 
-            # Phase 185 (T-185-01): persist persona_id here too, same
+            # Persist persona_id here too, same
             # created-gate, same "no data no-op on duplicate resubmit"
-            # reasoning (D-11). None (custom-mode games) is a no-op — the
+            # reasoning. None (custom-mode games) is a no-op — the
             # column stays NULL, matching its default.
             if request.persona_id is not None:
                 await game_repository.update_bot_game_persona_id(
@@ -214,8 +213,8 @@ async def store_bot_game(
         sentry_sdk.capture_exception()
         raise
 
-    # D-10: this service owns the single transaction — _flush_batch never
-    # commits (WR-05); commit the game + positions + settings row together.
+    # This service owns the single transaction — _flush_batch never
+    # commits; commit the game + positions + settings row together.
     await session.commit()
 
     return StoreBotGameResponse(game_id=game_id, created=created)

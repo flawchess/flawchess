@@ -303,7 +303,7 @@ export function HomePageContent() {
       <PublicHeader />
 
       {/* Hero — radial bronze glow is centered on just the hero content (not the
-          stacked Opening Explorer below, which has its own charcoal section) */}
+          stacked mobile hero-feature section below, which has its own charcoal section) */}
       <div className="bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.12),transparent_65%)]">
       <section data-testid="hero-section" className="max-w-6xl mx-auto px-4 py-8 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-8 lg:gap-12 items-center">
@@ -429,8 +429,8 @@ export function HomePageContent() {
       {/* Feature sections — alternating image left/right (skips the hero feature) */}
       <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
         {featureSections.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }, index) => {
-          // On desktop, even-indexed features get charcoal bg. On mobile the Interactive
-          // Opening Explorer (charcoal) sits in front of the feature list, so the mobile
+          // On desktop, even-indexed features get charcoal bg. On mobile the hero-feature
+          // section (charcoal) sits in front of the feature list, so the mobile
           // alternation is flipped: odd-indexed features get charcoal on mobile to avoid
           // two consecutive charcoal bands at the top of the stack.
           const bgClass = index % 2 === 0
@@ -774,18 +774,18 @@ export function HomePage() {
         </div>
       );
     }
-    // Quick 260926-9bg: every post-auth flow (guest start, login, signup,
-    // Google callback) lands here, so this is the single place that returns a
-    // user to the protected page they originally opened (e.g. /train from a
-    // newsletter link). Without it, zero-game signups were dropped on the
-    // import page and the Train/Bots intent was lost.
+    // Every post-auth flow (guest start, login, signup, Google callback) lands
+    // here, so this is the single place that returns a user to the protected
+    // page they originally opened (e.g. /train from a newsletter link). Without
+    // it, zero-game signups would land on the import page and the Train/Bots
+    // intent would be lost.
     const returnTo = peekReturnTo();
     if (returnTo !== null) {
       return <Navigate to={returnTo} replace />;
     }
     // Every authenticated account, guest or registered, with games lands on the
     // games library; every account without games lands on the import page,
-    // guest or not (Phase 224 S-1, ROADMAP SC 1).
+    // guest or not.
     const hasGames = hasImportedGames(profile);
     return <Navigate to={hasGames ? '/library/games' : '/library/import'} replace />;
   }

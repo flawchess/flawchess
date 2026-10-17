@@ -26,20 +26,20 @@ from app.services.import_service import (
     run_import,
 )
 
-# Phase 186 Plan 02: fixed users.created_at used by every session-mock helper's
+# Fixed users.created_at used by every session-mock helper's
 # session.get(User, ...) stub below -- a real, concrete datetime so the new
-# bootstrap-scope created_at fetch (Pitfall 2 anchor) never leaks a MagicMock
+# bootstrap-scope created_at fetch never leaks a MagicMock
 # into datetime arithmetic (forward_since.timestamp(), etc.).
 _TEST_USER_CREATED_AT = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
-# Phase 186 Plan 02: default settings for tests that only exercise the
+# Default settings for tests that only exercise the
 # forward-pass / job-lifecycle machinery below and don't care about TC
 # filtering or the new backward pass. All-TC-disabled means enabled_tc_buckets
 # is empty, so _run_backward_pass short-circuits before touching any session
 # or platform client -- a true no-op for the ~16 pre-existing run_import tests
 # that don't mock backward-specific functions. Games in those tests are bare
 # dicts with no time_control_bucket key, so the forward-pass TC filter always
-# passes them regardless of this setting (D-15 None-bucket bypass).
+# passes them regardless of this setting (None-bucket bypass).
 _DEFAULT_TEST_IMPORT_SETTINGS = ImportSettingsRow(
     tc_bullet=False, tc_blitz=False, tc_rapid=False, tc_classical=False, game_cap=1000
 )
@@ -48,8 +48,8 @@ _DEFAULT_TEST_IMPORT_SETTINGS = ImportSettingsRow(
 @pytest.fixture(autouse=True)
 def _default_import_settings_noop_backward():
     """Default get_or_create_settings/get_settings so run_import's backward
-    pass (Phase 186 Plan 02, D-05) is a no-op AND the end-of-run scope
-    re-check (quick 260724-gnd, UAT-186-RACE) never spuriously fires, unless
+    pass is a no-op AND the end-of-run scope
+    re-check never spuriously fires, unless
     a test explicitly opts in.
 
     Tests exercising TC filtering or the backward pass patch
@@ -59,13 +59,13 @@ def _default_import_settings_noop_backward():
     inner patch's teardown restores to this fixture's patch, not the true
     unpatched function).
 
-    Bug fix (quick 260724-gnd): `get_settings` (the end-of-run reload) had no
+    Bug fix: `get_settings` (the end-of-run reload) had no
     default here, unlike `get_or_create_settings` -- so any test not
     explicitly mocking it fell through to the REAL function against the
     generic mocked session, whose unconfigured `scalar_one_or_none()` returns
     a truthy MagicMock row instead of None. Compared against the real
     all-False `_DEFAULT_TEST_IMPORT_SETTINGS` job-start snapshot, EVERY field
-    of that bogus row reads as "just turned on", so `_import_scope_expanded`
+    of that bogus row reads as "just turned on", so `import_scope_expanded`
     deterministically evaluated True and fired a spurious
     `reset_backfill_cursors` call (2 extra `async_session_maker()` opens) in
     every test that didn't override it -- surfaced as an exact-session-count
@@ -257,7 +257,7 @@ def _make_mock_session():
     result_mock = MagicMock()
     result_mock.fetchall.return_value = []
     session.execute.return_value = result_mock
-    # Phase 186 Plan 02: session.get(User, user_id) backs
+    # session.get(User, user_id) backs
     # user_repository.get_created_at (bootstrap-scope anchor fetch). A
     # concrete SimpleNamespace, not an unconfigured AsyncMock -- an
     # AsyncMock's auto-attribute chain (.created_at, then .timestamp()) would
@@ -614,7 +614,7 @@ class TestRunImport:
             }
 
         mock_session = _make_mock_session()
-        # Make execute return game id=999 with platform_game_id (D-03: no PGN in SELECT)
+        # Make execute return game id=999 with platform_game_id (no PGN in SELECT)
         result_mock = MagicMock()
         result_mock.fetchall.return_value = [(999, "game-1")]
         mock_session.execute.return_value = result_mock
@@ -824,7 +824,7 @@ class TestRunImport:
 
     @pytest.mark.asyncio
     async def test_ply_count_populated(self):
-        """After importing a game, ply_count is set correctly via bulk UPDATE (D-04)."""
+        """After importing a game, ply_count is set correctly via bulk UPDATE."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         # 1. e4 e5 = 2 plies = 2 half-moves => ply_count = 2
@@ -884,7 +884,7 @@ class TestRunImport:
 
             await run_import(job_id)
 
-        # Verify session.execute was called with a bulk UPDATE for ply_count (D-04)
+        # Verify session.execute was called with a bulk UPDATE for ply_count
         execute_calls = mock_session.execute.call_args_list
         update_calls = [
             call
@@ -1271,13 +1271,12 @@ class TestIncrementalProgress:
 
 
 # ---------------------------------------------------------------------------
-# TestFlushBatchStage5 — Wave 0 unit tests for Stage 5 executemany leak fix
+# TestFlushBatchStage5 — unit tests for Stage 5 executemany leak fix
 # ---------------------------------------------------------------------------
 
 
-# Phase 90 / SEED-018 / FLAWCHESS-56 / FLAWCHESS-3Q: pins the leak-free
-# invariant — Stage 5 SQL must not include literal game ids that vary per
-# batch, and result_fen must never be silently NULLed.
+# Pins the leak-free invariant — Stage 5 SQL must not include literal game ids
+# that vary per batch, and result_fen must never be silently NULLed.
 class TestFlushBatchStage5:
     """Unit tests for _flush_batch Stage 5: ply_count + result_fen UPDATE.
 
@@ -1411,8 +1410,7 @@ class TestFlushBatchStage5:
           (only games 101 and 103 which have non-None fens).
         - Game 102 does NOT appear in the fen UPDATE params.
 
-        With the current CASE+IN code: 1 combined UPDATE → this test fails (xfail).
-        After Task 2 rewrite: 2 separate UPDATE calls → test passes.
+        Stage 5 issues 2 separate UPDATE calls, not one combined CASE+IN UPDATE.
         """
         from app.services.import_service import _flush_batch
 
@@ -1465,7 +1463,7 @@ class TestFlushBatchStage5:
             if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
 
-        # Phase 91: _flush_batch now has 3 UPDATE groups:
+        # _flush_batch now has 3 UPDATE groups:
         #   (a) ply_count for all games, (b) result_fen for non-None fens,
         #   (c) Stage 5c evals_completed_at for covered games (no entry plies needing eval).
         # Games with "1. e4 *" PGN have no phase=1 or endgame entries, so all 3 are covered.
@@ -1590,7 +1588,7 @@ class TestFlushBatchStage5:
     async def test_stage5_sql_text_invariant_across_batches(self):
         """Stage 5 SQL text must be identical regardless of which game ids are in the batch.
 
-        This is the memory-leak regression guard (Phase 90 / SEED-018 / FLAWCHESS-56):
+        This is the memory-leak regression guard:
         if the SQL text varies per batch (e.g. via CASE+IN with literal game ids),
         SQLAlchemy's compile cache and asyncpg's prepared-statement LRU both grow
         unboundedly, OOM-killing production on large imports.
@@ -1598,9 +1596,9 @@ class TestFlushBatchStage5:
         Calls _flush_batch twice with two different game-id sets and compares the
         compiled SQL text of the Stage 5 UPDATE statements captured from each call.
 
-        EXPECTED STATE: xfail against current code (case()+IN SQL embeds literal game ids
-        in the WHERE clause, so the text differs between the two batches).
-        After Task 2 rewrite (bindparam executemany), both batches emit identical SQL.
+        Stage 5 uses bindparam executemany, so both batches emit identical SQL
+        (case()+IN would embed literal game ids in the WHERE clause, making the text
+        differ between the two batches).
         """
         from sqlalchemy.dialects import postgresql
 
@@ -1675,12 +1673,12 @@ class TestFlushBatchStage5:
                 f"Batch A: {sql_a!r}\nBatch B: {sql_b!r}"
             )
 
-        # WR-04: extra regression guard — render with literal_binds and assert
+        # Extra regression guard — render with literal_binds and assert
         # that NO batch game id appears inline in the SQL text. The template
         # compile above is trivially invariant under bindparam, but a future
         # regression to case()+IN would embed game ids as literals and this
         # assertion would catch it.
-        # WR-04: bindparams without supplied values render as NULL under
+        # Bindparams without supplied values render as NULL under
         # literal_binds; this is expected and harmless for the assertion below
         # (we only check that none of the batch game ids appear inline).
         import warnings as _warnings
@@ -1738,7 +1736,7 @@ class TestFlushBatchStage5:
 
 
 # ---------------------------------------------------------------------------
-# Phase 90 / SEED-017 carry-forward: Resilience defect tests
+# Resilience defect tests
 #
 # Assumption A3 verified (2026-05-20) via code inspection and SQLAlchemy
 # exception hierarchy research:
@@ -1746,7 +1744,7 @@ class TestFlushBatchStage5:
 #   ConnectionDoesNotExistError) in sqlalchemy.exc.OperationalError.
 #   The asyncpg exception is accessible via exc.__cause__. Catching
 #   sqlalchemy.exc.OperationalError covers both connection-refused and
-#   connection-dropped scenarios (Pitfall 4 in 90-RESEARCH.md).
+#   connection-dropped scenarios.
 #   Therefore _record_failure_with_retry catches OperationalError, not raw
 #   asyncpg types. This mirrors the finding in app/main.py:_sentry_before_send
 #   which walks __cause__ to detect the underlying asyncpg type.
@@ -1760,10 +1758,10 @@ class TestFlushBatchStage5:
 class TestFailOrphanedJobsAgeThreshold:
     """DB-backed tests for fail_orphaned_jobs age-threshold extension.
 
-    Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): cleanup_orphaned_jobs() only
+    Bug fix: cleanup_orphaned_jobs() only
     ran at backend startup. A Postgres-only restart left in_progress jobs
     stuck. The periodic reaper needed an age threshold to avoid killing a
-    live healthy import (Pitfall 3 in 90-RESEARCH.md).
+    live healthy import.
 
     Uses the real test DB via db_session fixture (rollback-scoped transactions).
     """
@@ -1779,7 +1777,7 @@ class TestFailOrphanedJobsAgeThreshold:
     ) -> None:
         """Insert an ImportJob with a controlled started_at.
 
-        Bug fix (Phase 149 PRUNE-05): platform is now a parameter (default
+        Bug fix: platform is now a parameter (default
         "lichess", unchanged for existing single-job callers) so tests seeding
         two simultaneously-active (pending/in_progress) rows for the same
         user_id can use two different platforms — otherwise they'd collide
@@ -1873,8 +1871,7 @@ class TestFailOrphanedJobsAgeThreshold:
         A 10 s old job must NOT be reaped — it is a live healthy import.
         A 4 h old job MUST be reaped — it exceeded its 3-hour budget.
 
-        This is the critical Pitfall 3 mitigation in 90-RESEARCH.md:
-        without this threshold the periodic reaper would kill live imports.
+        Without this threshold the periodic reaper would kill live imports.
         """
         import uuid
 
@@ -1984,14 +1981,14 @@ class _NoCloseSessionCtx:
 
 
 class TestQueuedJobReaperExemption:
-    """DB-backed tests for the SURGE-04/D-03 started_at re-stamp (Phase 209 Plan 02).
+    """DB-backed tests for the started_at re-stamp.
 
     Proves both directions of the reaper contract: a job that waited a long
     time in the QUEUED state and then got its semaphore slot must survive the
     orphan reaper (the re-stamp resets started_at at acquisition time), but a
     job that genuinely runs past IMPORT_TIMEOUT_SECONDS AFTER acquisition must
     still be reaped -- the exemption protects queue-wait time only, never
-    execution time (T-209-02-03 in the threat model).
+    execution time.
 
     Reuses TestFailOrphanedJobsAgeThreshold's _seed_job helper shape.
     """
@@ -2108,8 +2105,7 @@ class TestQueuedJobReaperExemption:
         """The exemption protects queue-wait time only. A job re-stamped at
         acquisition and THEN backdated to 4h ago again (simulating a job that
         genuinely ran past IMPORT_TIMEOUT_SECONDS after acquiring its slot)
-        MUST still be reaped -- guards against the immortal-job failure mode
-        (T-209-02-03).
+        MUST still be reaped -- guards against the immortal-job failure mode.
         """
         import uuid
 
@@ -2170,7 +2166,7 @@ class TestQueuedJobReaperExemption:
 
 class TestImportJobsPartialUniqueIndex:
     """DB-backed tests for the uq_import_jobs_user_platform_active partial
-    unique index (Phase 149 PRUNE-05).
+    unique index.
 
     Uses the real test DB via db_session fixture (rollback-scoped transactions).
     """
@@ -2289,7 +2285,7 @@ class TestImportJobsPartialUniqueIndex:
 class TestPeriodicReaper:
     """Unit tests for run_periodic_reaper coroutine (mocked — no real DB).
 
-    Bug fix (Phase 90, SEED-017): cleanup_orphaned_jobs() only ran at
+    Bug fix: cleanup_orphaned_jobs() only ran at
     backend startup. A Postgres-only restart left the backend up but
     orphaned import jobs stuck in_progress. run_periodic_reaper runs
     every _REAPER_INTERVAL_SECONDS and uses IMPORT_TIMEOUT_SECONDS as
@@ -2401,7 +2397,7 @@ class TestPeriodicReaper:
 class TestRecordFailureWithRetry:
     """Unit tests for _record_failure_with_retry helper (mocked — no real DB).
 
-    Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): the original except-block in
+    Bug fix: the original except-block in
     run_import opened a new session and immediately UPDATEd the job to failed
     while Postgres was still in crash recovery (OperationalError, ~2s window
     observed in the 2026-05-16 incident). The capture_exception swallowed the
@@ -2538,7 +2534,7 @@ class TestRecordFailureWithRetry:
 
         # 5 attempts → 4 sleep calls between them.
         assert len(sleep_calls) == _FAILURE_RECORD_MAX_RETRIES - 1
-        # Pin the documented backoff schedule (WR-02) so a future change to
+        # Pin the documented backoff schedule so a future change to
         # the constants is forced to update the docstring too.
         assert sleep_calls == [2, 4, 8, 16], (
             f"Backoff schedule must be 2/4/8/16s (30s total budget). Got {sleep_calls}."
@@ -2582,7 +2578,7 @@ class TestRecordFailureWithRetry:
 
     @pytest.mark.asyncio
     async def test_cancelled_error_propagates_without_retry(self, monkeypatch):
-        """WR-07: CancelledError from asyncio.sleep must propagate immediately.
+        """CancelledError from asyncio.sleep must propagate immediately.
 
         Simulates the lifespan shutdown path: an in-flight retry sleep is
         cancelled, the helper must re-raise CancelledError (not retry, not
@@ -2627,21 +2623,19 @@ class TestRecordFailureWithRetry:
 
 
 # ---------------------------------------------------------------------------
-# TestRunImportSessionPerBatch — Phase 90 / SEED-018: per-batch session lifecycle
+# TestRunImportSessionPerBatch — per-batch session lifecycle
 #
-# Phase 90 / SEED-018: pins the per-batch session lifecycle. A regression to a
+# Pins the per-batch session lifecycle. A regression to a
 # single-session import is the secondary accumulation surface mitigated alongside
-# the Stage 5 leak fix (Plan 90-01).
+# the Stage 5 leak fix.
 #
-# Tests 2–5 are xfail(strict=True) until Task 2 (Plan 90-02) lands the
-# three-session-scope restructure. Test 1 is NOT xfail — it asserts Assumption
-# A2 (scalar accessibility after session close), which is a property of the
-# current code that the implementation already relies on.
+# Test 1 asserts a property the implementation relies on: a scalar stays
+# accessible after its session closes.
 # ---------------------------------------------------------------------------
 
 
 class TestRunImportSessionPerBatch:
-    """Tests for the per-batch AsyncSession lifecycle introduced in Plan 90-02.
+    """Tests for the per-batch AsyncSession lifecycle.
 
     After restructure, run_import opens THREE distinct session scopes:
     1. Bootstrap scope — get_latest_for_user_platform + create_import_job + commit
@@ -2649,7 +2643,7 @@ class TestRunImportSessionPerBatch:
     3. Completion scope — update_import_job(completed) + commit
 
     Verifies:
-    1. previous_job.last_synced_at scalar survives session close (Assumption A2).
+    1. previous_job.last_synced_at scalar survives session close.
     2. async_session_maker() is called once per logical scope (1 bootstrap +
        N_batches per-batch + 1 completion = N_batches + 2 total).
     3. Bootstrap session is closed before the first per-batch session opens.
@@ -2674,7 +2668,7 @@ class TestRunImportSessionPerBatch:
                 self.execute = AsyncMock(
                     return_value=MagicMock(fetchall=MagicMock(return_value=[]))
                 )
-                # Phase 186 Plan 02: bootstrap-scope created_at fetch (Pitfall 2 anchor).
+                # Bootstrap-scope created_at fetch.
                 self.get = AsyncMock(return_value=SimpleNamespace(created_at=_TEST_USER_CREATED_AT))
 
             async def __aenter__(self):
@@ -2704,7 +2698,7 @@ class TestRunImportSessionPerBatch:
             result_mock = MagicMock()
             result_mock.fetchall.return_value = []
             mock_session.execute = AsyncMock(return_value=result_mock)
-            # Phase 186 Plan 02: bootstrap-scope created_at fetch (Pitfall 2 anchor).
+            # Bootstrap-scope created_at fetch.
             mock_session.get = AsyncMock(
                 return_value=SimpleNamespace(created_at=_TEST_USER_CREATED_AT)
             )
@@ -2717,14 +2711,14 @@ class TestRunImportSessionPerBatch:
 
     @pytest.mark.asyncio
     async def test_previous_job_last_synced_at_scalar_survives_close(self):
-        """Assumption A2 (90-RESEARCH.md Pitfall 2): after the bootstrap session closes,
-        a scalar extracted from previous_job.last_synced_at inside the session remains
-        accessible from a local variable.
+        """After the bootstrap session closes, a scalar extracted from
+        previous_job.last_synced_at inside the session remains accessible from a
+        local variable.
 
-        This test is NOT xfail — it asserts a property of the CURRENT code and must
-        pass before and after the Task 2 restructure. If it fails, the implementation
-        MUST extract the scalar inside the bootstrap scope before closing the session
-        (which Plan 90-02 Task 2 does unconditionally as a defensive measure).
+        This test asserts a property of the code that the implementation relies on.
+        If it fails, the implementation MUST extract the scalar inside the bootstrap
+        scope before closing the session (which run_import does unconditionally as a
+        defensive measure).
         """
         expected_dt = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -2749,7 +2743,7 @@ class TestRunImportSessionPerBatch:
             # Mimic the bootstrap scope: open session, load previous_job, extract scalar.
             async with ctx:
                 # In the real code, get_latest_for_user_platform returns previous_job here.
-                # We pre-load the attribute inside the session scope (Pitfall 2 mitigation).
+                # We pre-load the attribute inside the session scope.
                 extracted = previous_job.last_synced_at if previous_job is not None else None
             # Session is now "closed" (ctx.__aexit__ called). Scalar must still be readable.
             scalar_after_close = extracted
@@ -2769,24 +2763,23 @@ class TestRunImportSessionPerBatch:
     @pytest.mark.asyncio
     async def test_one_session_per_batch(self):
         """run_import opens one session for each logical scope: started_at re-stamp
-        (SURGE-04/D-03, on semaphore-slot acquisition) + bootstrap + TC-settings
+        (on semaphore-slot acquisition) + bootstrap + TC-settings
         load + per-batch + end-of-run scope-reset reload + completion + Stage-B gate.
 
         With N=30 games and _BATCH_SIZE=12:
           12 (batch 1) + 12 (batch 2) + 6 (trailing) = 3 batch sessions
-          + 1 started_at re-stamp (Phase 209 Plan 02, SURGE-04/D-03 --
-            _stamp_started_at, fires once per import-semaphore acquisition,
-            before the bootstrap scope opens)
-          + 1 bootstrap + 1 TC-settings load (Phase 186 Plan 01, _load_enabled_tc_buckets)
-          + 1 end-of-run scope-reset reload (UAT-186-RACE, quick 260724-gnd --
-            `_reset_cursors_if_scope_expanded_mid_run`'s own read session; the
+          + 1 started_at re-stamp (_stamp_started_at, fires once per
+            import-semaphore acquisition, before the bootstrap scope opens)
+          + 1 bootstrap + 1 TC-settings load (_load_enabled_tc_buckets)
+          + 1 end-of-run scope-reset reload
+            (`_reset_cursors_if_scope_expanded_mid_run`'s own read session; the
             autouse `get_settings` default matches the job-start snapshot so
             scope never expands here, meaning no SECOND session for an actual
             `reset_backfill_cursors` call)
-          + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 9 total session opens.
+          + 1 completion + 1 Stage-B gate read session = 9 total session opens.
 
         The trailing +1 is the fresh read session opened inside _complete_import_job to
-        evaluate users_with_zero_pending before firing compute_stage_b — see
+        evaluate users_with_no_pending_evals_or_imports before firing compute_stage_b — see
         app/services/import_service.py around line 510.
         """
         from app.services.import_service import _BATCH_SIZE
@@ -2865,8 +2858,7 @@ class TestRunImportSessionPerBatch:
         """Bootstrap session is closed (via __aexit__) before the first per-batch session opens.
 
         The event ordering must be: open bootstrap → close bootstrap → open batch-1.
-        Currently: one session is shared for the whole import — no distinct bootstrap close.
-        After Task 2: three-scope structure enforces this ordering.
+        The three-scope structure enforces this ordering.
         """
         from app.services.import_service import _BATCH_SIZE
 
@@ -2924,12 +2916,11 @@ class TestRunImportSessionPerBatch:
 
             await run_import(job_id)
 
-        # After Task 2: the first 3 events must be:
+        # The first 3 events must be:
         #   open:session-1  (bootstrap opens)
         #   close:session-1 (bootstrap closes)
         #   open:session-2  (first batch opens)
-        # Currently: only session-1 opens and closes once at the very end,
-        # so close:session-1 never comes before open:session-2 mid-import.
+        # so close:session-1 comes before open:session-2 mid-import.
         assert len(events) >= 3, f"Expected at least 3 session events, got: {events}"
         bootstrap_open = events.index("open:session-1")
         bootstrap_close = events.index("close:session-1")
@@ -2959,9 +2950,7 @@ class TestRunImportSessionPerBatch:
         (a distinct async_session_maker() call) rather than reusing the last
         batch's session.
 
-        Currently: one session covers the whole import — the completion update
-        uses the same session as every batch.
-        After Task 2: 1 bootstrap + N_batches + 1 completion = distinct sessions.
+        Sessions are distinct: 1 bootstrap + N_batches + 1 completion.
         """
         from app.services.import_service import _BATCH_SIZE
 
@@ -3022,7 +3011,7 @@ class TestRunImportSessionPerBatch:
 
             await run_import(job_id)
 
-        # After Task 2: trailing batch + completion = 3 total sessions
+        # Trailing batch + completion = 3 total sessions
         # (session-1=bootstrap, session-2=trailing batch, session-3=completion).
         # The last close must be session-3 (completion), and session-2 (trailing batch)
         # must have closed BEFORE session-3 opened.
@@ -3046,13 +3035,12 @@ class TestRunImportSessionPerBatch:
 
     @pytest.mark.asyncio
     async def test_run_import_e2e_smoke(self):
-        """Smoke test: after Task 2, _make_game_iterator is called with the extracted scalar
+        """Smoke test: _make_game_iterator is called with the extracted scalar
         (`previous_last_synced_at: datetime | None`) rather than the ORM ImportJob instance.
 
-        Currently: _make_game_iterator receives `previous_job` (an ORM instance or None).
-        After Task 2: _make_game_iterator receives `previous_last_synced_at` (a scalar
+        _make_game_iterator receives `previous_last_synced_at` (a scalar
         datetime or None) extracted inside the bootstrap scope, eliminating any risk of
-        DetachedInstanceError from cross-scope ORM attribute access (Pitfall 2).
+        DetachedInstanceError from cross-scope ORM attribute access.
 
         The parameter rename is the observable signal: the old signature accepts `previous_job`,
         the new signature accepts `previous_last_synced_at`. We verify by inspecting the
@@ -3060,7 +3048,7 @@ class TestRunImportSessionPerBatch:
         """
         last_synced = datetime(2025, 6, 1, tzinfo=timezone.utc)
 
-        # previous_job mock — after Task 2, its last_synced_at is extracted as a scalar
+        # previous_job mock — its last_synced_at is extracted as a scalar
         # and previous_job is never passed cross-scope.
         previous_job_mock = MagicMock()
         previous_job_mock.last_synced_at = last_synced
@@ -3072,8 +3060,8 @@ class TestRunImportSessionPerBatch:
 
         # Capture positional args passed to _make_game_iterator.
         # The call site uses positional args: _make_game_iterator(client, job, scalar, on_game_fetched).
-        # arg[2] is the 3rd positional — previous_last_synced_at (datetime | None) after Task 2,
-        # or previous_job (an ORM instance) before Task 2.
+        # arg[2] is the 3rd positional — previous_last_synced_at (datetime | None),
+        # not previous_job (an ORM instance).
         captured_make_game_iterator_args: list[tuple] = []
 
         async def _mock_make_game_iterator(*args, **kwargs):
@@ -3118,7 +3106,7 @@ class TestRunImportSessionPerBatch:
             f"Expected at least 3 positional args to _make_game_iterator, got: {positional_args!r}"
         )
         third_arg = positional_args[2]
-        # After Task 2: third arg is `previous_last_synced_at` — a datetime or None scalar.
+        # Third arg is `previous_last_synced_at` — a datetime or None scalar.
         # It must NOT be the previous_job_mock ORM instance.
         assert third_arg is not previous_job_mock, (
             f"After Task 2, _make_game_iterator must receive the extracted datetime scalar "
@@ -3140,7 +3128,7 @@ class TestFlushBatchStage5RealDb:
 
     The mock-based TestFlushBatchStage5 tests use AsyncMock sessions, which
     never trigger SQLAlchemy's real ORM-update-with-executemany validation.
-    UAT 2026-05-20 caught a runtime failure ("bulk synchronize of persistent
+    A real run hit a runtime failure ("bulk synchronize of persistent
     objects not supported when using bulk update with additional WHERE
     criteria right now") that the mock tests could not detect. This class
     pins the contract against a real DB session via the rollback-scoped
@@ -3270,7 +3258,7 @@ class TestFlushBatchStage5RealDb:
 class TestStampLichessEvalsAtRealDb:
     """DB-backed regression test for Stage 5d lichess_evals_at provenance stamping.
 
-    Pins the quick-260616-pjh fix: the import path must stamp lichess_evals_at for
+    Pins that the import path must stamp lichess_evals_at for
     freshly imported lichess games that arrived with lichess computer analysis
     (white_blunders IS NOT NULL), and must NOT touch chess.com games, lichess games
     without analysis, or games that already carry a lichess_evals_at value. Without
@@ -3391,7 +3379,7 @@ class TestRecordFailureWithRetryDbOutage:
     """Regression tests for the broadened DB-outage classifier in
     _record_failure_with_retry.
 
-    UAT 2026-05-20 (Postgres-only restart): a real outage raises
+    On a Postgres-only restart a real outage raises
     InterfaceError / DBAPIError / asyncpg.CannotConnectNowError /
     ConnectionRefusedError on the next session checkout — none of which
     were caught by the original `except OperationalError`. The helper
@@ -3400,8 +3388,7 @@ class TestRecordFailureWithRetryDbOutage:
     the engine.dispose() pool-invalidation between retries.
 
     These tests mock the session+update path to inject each exception
-    type directly; the full live-DB scenario is too heavy for CI but is
-    covered by UAT-2 in 90-HUMAN-UAT.md.
+    type directly; the full live-DB scenario is too heavy for CI.
     """
 
     def _make_failure_kwargs(self) -> dict:
@@ -3441,7 +3428,7 @@ class TestRecordFailureWithRetryDbOutage:
     async def test_retries_on_sqlalchemy_interface_error(self, monkeypatch):
         """SQLAlchemy InterfaceError ('underlying connection is closed') must be retried.
 
-        This is the exact exception observed in UAT 2026-05-20 for jobs
+        This is the exact exception observed for jobs
         e9466083 and 1466eb6d after Postgres was stopped mid-import.
         """
         from sqlalchemy.exc import InterfaceError as SAInterfaceError
@@ -3480,7 +3467,7 @@ class TestRecordFailureWithRetryDbOutage:
         """SQLAlchemy DBAPIError (parent of OperationalError) must be retried.
 
         Mirrors the asyncpg ConnectionDoesNotExistError observed for job
-        824bce84 in UAT 2026-05-20.
+        824bce84.
         """
         from sqlalchemy.exc import DBAPIError
 
@@ -3512,8 +3499,8 @@ class TestRecordFailureWithRetryDbOutage:
 
         This one escapes SA's exception translator because the pool's
         connect-time path can raise the raw asyncpg exception without
-        going through dialect._handle_exception. UAT 2026-05-20 caught
-        this exact pattern in the second retry attempt.
+        going through dialect._handle_exception. This exact pattern was caught
+        in the second retry attempt.
         """
         import asyncpg
 
@@ -3543,7 +3530,7 @@ class TestRecordFailureWithRetryDbOutage:
 
         asyncpg's _create_ssl_connection raises this from uvloop when the
         Postgres listener is fully down — observed at the bottom of the
-        UAT 2026-05-20 traceback for job 1466eb6d.
+        traceback for job 1466eb6d.
         """
         from app.services.import_service import _record_failure_with_retry
 
@@ -3615,7 +3602,7 @@ class TestRecordFailureWithRetryDbOutage:
 
 
 # ---------------------------------------------------------------------------
-# Phase 186 Plan 01 (IMPORT-02): forward/incremental-sync TC filter
+# forward/incremental-sync TC filter
 # ---------------------------------------------------------------------------
 
 
@@ -3634,15 +3621,15 @@ def _make_normalized_game(
 
     All calls in these tests go through mocked sessions (no real DB insert), so
     platform_game_id only needs to be distinct within a single test run, not
-    globally unique. `platform`/`played_at` are overridable (Phase 186 Plan 02)
+    globally unique. `platform`/`played_at` are overridable
     for backward-pass tests that need a specific platform or a decreasing
     played_at sequence to drive the lichess cursor.
 
-    Bug fix (quick 260724-gnd): the default `played_at` used to be
+    Bug fix: the default `played_at` used to be
     datetime(2024, 1, 1) -- AFTER `_TEST_USER_CREATED_AT` (2020-01-01), the
     anchor every backward-pass test's mocked `session.get` reports. Once
-    `_admit_backward_game` gained its anchor-aware post-anchor bypass
-    (UAT-186-BUDGET), every backward-walk test game defaulted to "post-anchor"
+    `_admit_backward_game` gained its anchor-aware post-anchor bypass,
+    every backward-walk test game defaulted to "post-anchor"
     and bypassed the cap entirely -- silently breaking the cap assertions in
     `TestBackwardPass` and hanging `TestBackwardPass`'s lichess-cursor test in
     an infinite `while not should_stop()` loop (live_counts never advanced).
@@ -3706,7 +3693,7 @@ class TestEnabledTcBuckets:
 
 
 class TestPassesTcFilter:
-    """Unit tests for _passes_tc_filter (D-02/D-14/D-15)."""
+    """Unit tests for _passes_tc_filter."""
 
     def test_tc_filter_drops_deselected_bucket(self):
         game = _make_normalized_game(time_control_bucket="bullet")
@@ -3719,14 +3706,14 @@ class TestPassesTcFilter:
         assert import_service._passes_tc_filter(game, enabled) is True
 
     def test_tc_filter_always_keeps_none_bucket(self):
-        """D-15: a game with no derivable TC bucket bypasses the filter entirely,
+        """A game with no derivable TC bucket bypasses the filter entirely,
         even when nothing is enabled.
         """
         game = _make_normalized_game(time_control_bucket=None)
         assert import_service._passes_tc_filter(game, frozenset()) is True
 
     def test_tc_filter_keeps_correspondence_under_classical(self):
-        """D-14: correspondence games normalize to the classical bucket upstream
+        """Correspondence games normalize to the classical bucket upstream
         (normalization.py) -- gating them under tc_classical is automatic.
         """
         # Represents a correspondence game post-normalization: bucket == "classical".
@@ -3791,7 +3778,7 @@ class TestRunImportTcFilter:
                 "app.services.import_service.chesscom_client.fetch_chesscom_games",
                 side_effect=_game_gen,
             ),
-            # Phase 186 Plan 02: this test's settings enable blitz/rapid/classical
+            # This test's settings enable blitz/rapid/classical
             # (non-empty enabled_tc_buckets), so the NEW backward pass would
             # otherwise try to run for real. It's out of scope for this
             # forward-pass-filter test -- keep it a no-op.
@@ -3822,15 +3809,14 @@ class TestRunImportTcFilter:
 
 
 # ---------------------------------------------------------------------------
-# Phase 186 Plan 02: two-pass Sync + backward-fetch backfill orchestration
+# two-pass Sync + backward-fetch backfill orchestration
 # ---------------------------------------------------------------------------
 
 
 class TestAdmitBackwardGame:
-    """Unit tests for the per-bucket budget insert gate (UAT-186 fix): the
-    budget must gate insertion per game, not just feed the D-07 stop
-    condition. Also covers the anchor-aware post-anchor bypass
-    (UAT-186-BUDGET, quick 260724-gnd)."""
+    """Unit tests for the per-bucket budget insert gate: the
+    budget must gate insertion per game, not just feed the stop
+    condition. Also covers the anchor-aware post-anchor bypass."""
 
     # _make_normalized_game's default played_at (2015-06-15) sits before this
     # anchor, so pre-anchor cases below rely on the default; post-anchor cases
@@ -3854,7 +3840,7 @@ class TestAdmitBackwardGame:
         assert live_counts["blitz"] == 3, "a rejected game must not consume budget"
 
     def test_duplicate_admitted_without_counting(self):
-        """CR-01: an already-imported game flows through to the ON CONFLICT
+        """An already-imported game flows through to the ON CONFLICT
         no-op insert but never consumes budget -- even when the bucket is full."""
         live_counts: dict = {"blitz": 3}
         game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="dup")
@@ -3864,7 +3850,7 @@ class TestAdmitBackwardGame:
         assert live_counts["blitz"] == 3
 
     def test_none_bucket_admitted_without_counting(self):
-        """D-15: a None-bucket game always passes and never counts."""
+        """A None-bucket game always passes and never counts."""
         live_counts: dict = {}
         game = _make_normalized_game(time_control_bucket=None, platform_game_id="g1")
         assert import_service._admit_backward_game(
@@ -3873,7 +3859,7 @@ class TestAdmitBackwardGame:
         assert live_counts == {}
 
     def test_post_anchor_game_admitted_without_counting_even_at_cap(self):
-        """UAT-186-BUDGET: a post-anchor game (played_at >= anchor) is admitted
+        """A post-anchor game (played_at >= anchor) is admitted
         UNCAPPED -- even when its bucket is already at game_cap -- mirroring the
         forward pass's uncapped post-anchor semantics for a TC enabled after
         the account's first sync.
@@ -3930,17 +3916,16 @@ class TestAdmitBackwardGame:
 
 
 class TestBackwardPass:
-    """Integration tests for run_import's backward-fetch backlog walk (D-01/
-    D-05/D-06/D-07) -- covers IMPORT-03's first-sync bound, budget stop
-    condition, two-pass ordering + cursor resumability, and the D-04 settings
-    snapshot.
+    """Integration tests for run_import's backward-fetch backlog walk -- covers
+    the first-sync bound, budget stop condition, two-pass ordering + cursor
+    resumability, and the settings snapshot.
     """
 
     @pytest.mark.asyncio
     async def test_first_sync_backlog_bounded_not_full_history(self):
         """A fresh user's first Sync ends with backlog == game_cap for the
-        single selected TC -- NOT the full mocked history (Pitfall 2
-        regression guard: since=None must never reach a capped fetch).
+        single selected TC -- NOT the full mocked history (regression
+        guard: since=None must never reach a capped fetch).
         """
         job_id = create_job(user_id=1, platform="lichess", username="alice")
 
@@ -3954,9 +3939,9 @@ class TestBackwardPass:
         # Each backward chunk returns a full _BACKWARD_LICHESS_CHUNK_SIZE
         # (200) blitz games with strictly decreasing played_at -- simulating
         # a user with years of history, far more than the 1000-game cap.
-        # Bug fix (quick 260724-gnd): base_ms must predate `_TEST_USER_CREATED_AT`
+        # Bug fix: base_ms must predate `_TEST_USER_CREATED_AT`
         # (2020-01-01) -- otherwise every fetched game is "post-anchor" and the
-        # UAT-186-BUDGET fix admits it uncapped, hanging this test's
+        # budget gate admits it uncapped, hanging this test's
         # `while not should_stop()` loop forever (live_counts never advances).
         call_index = [0]
         base_ms = 1_262_304_000_000  # 2010-01-01T00:00:00Z, well before the anchor
@@ -4006,7 +3991,7 @@ class TestBackwardPass:
                 "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
                 new=AsyncMock(return_value={}),
             ),
-            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # _run_backward_pass loads the existing platform_game_id
             # set once up front. Default empty here means "nothing pre-existing" --
             # every fetched game in these tests' scenarios is genuinely new, matching
             # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
@@ -4056,7 +4041,7 @@ class TestBackwardPass:
     @pytest.mark.asyncio
     async def test_budget_stops_only_when_all_selected_tc_full(self):
         """The backward walk does NOT stop once just one selected TC's budget
-        fills -- it continues until ALL selected TCs are full (D-07)."""
+        fills -- it continues until ALL selected TCs are full."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         # game_cap is normally restricted to {1000, 3000, 5000} (GameCap
@@ -4073,7 +4058,7 @@ class TestBackwardPass:
         # blitz fills first (5 games fetched, cap=3); rapid catches up after
         # (3 games, landing exactly at cap). should_stop() is checked before
         # each yield, so the walk keeps consuming the source past blitz's own
-        # cap while waiting for rapid -- but the UAT-186 budget gate drops the
+        # cap while waiting for rapid -- but the budget gate drops the
         # over-cap blitz games instead of inserting them.
         sequence: list[TimeControlBucket] = ["blitz"] * 5 + ["rapid"] * 5
 
@@ -4119,7 +4104,7 @@ class TestBackwardPass:
                 "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
                 new=AsyncMock(return_value={}),
             ),
-            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # _run_backward_pass loads the existing platform_game_id
             # set once up front. Default empty here means "nothing pre-existing" --
             # every fetched game in these tests' scenarios is genuinely new, matching
             # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
@@ -4158,7 +4143,7 @@ class TestBackwardPass:
         rapid_count = imported_buckets.count("rapid")
         # rapid reached its cap even though it only appears AFTER all 5 blitz
         # games in the source -- proves the walk did NOT stop the moment blitz
-        # alone reached cap (D-07). blitz stays AT cap because the UAT-186
+        # alone reached cap. blitz stays AT cap because the
         # budget gate drops its 2 over-cap games instead of inserting them.
         assert blitz_count == 3, (
             f"Expected blitz to be capped at 3 by the per-bucket insert gate, got {blitz_count}"
@@ -4167,7 +4152,7 @@ class TestBackwardPass:
 
     @pytest.mark.asyncio
     async def test_full_bucket_capped_when_other_bucket_never_fills(self):
-        """UAT-186 regression: a selected TC with less history than the cap
+        """Regression: a selected TC with less history than the cap
         (rapid here) drives the walk to full history exhaustion -- the
         already-full bucket (blitz) must stay AT cap, not absorb its entire
         remaining history along the way.
@@ -4337,7 +4322,7 @@ class TestBackwardPass:
                 "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
                 new=AsyncMock(return_value={}),
             ),
-            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # _run_backward_pass loads the existing platform_game_id
             # set once up front. Default empty here means "nothing pre-existing" --
             # every fetched game in these tests' scenarios is genuinely new, matching
             # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
@@ -4456,7 +4441,7 @@ class TestBackwardPass:
                 "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
                 new=AsyncMock(return_value={}),
             ),
-            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # _run_backward_pass loads the existing platform_game_id
             # set once up front. Default empty here means "nothing pre-existing" --
             # every fetched game in these tests' scenarios is genuinely new, matching
             # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
@@ -4517,8 +4502,8 @@ class TestBackwardPass:
     @pytest.mark.asyncio
     async def test_mid_run_settings_patch_does_not_affect_active_job(self):
         """A settings PATCH issued while a job is active does NOT alter that
-        job's TC filter or cap -- run_import reads settings once at job start
-        (D-04); only the NEXT Sync would observe the new values."""
+        job's TC filter or cap -- run_import reads settings once at job start;
+        only the NEXT Sync would observe the new values."""
         job_id = create_job(user_id=1, platform="chess.com", username="alice")
 
         initial_settings = ImportSettingsRow(
@@ -4575,7 +4560,7 @@ class TestBackwardPass:
                 "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
                 new=AsyncMock(return_value={}),
             ),
-            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # _run_backward_pass loads the existing platform_game_id
             # set once up front. Default empty here means "nothing pre-existing" --
             # every fetched game in these tests' scenarios is genuinely new, matching
             # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
@@ -4609,7 +4594,7 @@ class TestBackwardPass:
         assert job is not None
         assert job.status == JobStatus.COMPLETED
 
-        # Settings loaded exactly once for the whole job (D-04 snapshot) --
+        # Settings loaded exactly once for the whole job (snapshot) --
         # if run_import re-read settings mid-run, this would be >= 2.
         assert mock_get_settings.call_count == 1
 
@@ -4620,7 +4605,7 @@ class TestBackwardPass:
 
     @pytest.mark.asyncio
     async def test_backward_walk_duplicates_do_not_consume_budget(self):
-        """CR-01 regression: games the forward pass already imported this run
+        """Regression: games the forward pass already imported this run
         must NOT count toward the backward walk's per-(platform, TC) budget
         when the backward walk re-fetches them.
 
@@ -4737,7 +4722,7 @@ class TestBackwardPass:
 
     @pytest.mark.asyncio
     async def test_chesscom_cursor_persisted_in_batches_not_every_month(self):
-        """WR-03 regression: the chess.com backward-walk cursor is persisted
+        """Regression: the chess.com backward-walk cursor is persisted
         every `_CURSOR_PERSIST_EVERY_N_UNITS` attempted months, not after
         every single one -- with a forced final flush for the trailing
         not-yet-persisted months so no progress is lost when the walk ends.
@@ -4846,7 +4831,7 @@ class TestBackwardPass:
 
 
 # ---------------------------------------------------------------------------
-# Quick 260724-gnd (UAT-186-RACE): end-of-run scope re-check + cursor reset
+# End-of-run scope re-check + cursor reset
 # ---------------------------------------------------------------------------
 
 
@@ -4855,7 +4840,7 @@ class TestResetCursorsIfScopeExpandedMidRun:
     run_import calls after the backward pass's own final cursor flush to
     re-check the job-start settings snapshot against the current row and
     reset cursors again if a mid-run PATCH expanded scope. Also exercises the
-    shared `_import_scope_expanded` truth table (moved to
+    shared `import_scope_expanded` truth table (moved to
     user_import_settings_repository in this same fix) through this call path.
     """
 

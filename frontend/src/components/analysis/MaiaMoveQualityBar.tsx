@@ -1,7 +1,6 @@
 /**
  * MaiaMoveQualityBar — a stacked horizontal "move-quality" bar shown below the
- * Human Move Probability chart + ELO slider (quick 260705-kfg; mockup
- * screenshots/maia-bar.png).
+ * Human Move Probability chart.
  *
  * It reuses the SAME inputs the Moves-by-Rating chart already receives — the
  * shown candidate SANs, their Stockfish-graded quality, and the Maia per-ELO
@@ -11,14 +10,14 @@
  * moves' Maia probability mass at the selected ELO, normalized so the bar
  * always fills.
  *
- * Interaction (D-locked in the quick task):
+ * Interaction:
  * - The bar shows alone by default. Hovering (or tapping, for touch) a segment
  *   reveals ONLY that segment's move list under the bar.
  * - The same hover lifts the segment's moves up via `onHoverMovesChange` so the
  *   page can draw a board arrow per move in the segment's severity color.
  * - No icons inside the bars (mockup had severity glyphs — omitted).
  *
- * Resting-state text (quick 260705-m3z): when no segment is hovered, the slot
+ * Resting-state text: when no segment is hovered, the slot
  * below the bar shows a prose position verdict at the selected ELO
  * (positionVerdict.ts's computePositionVerdict) instead of static help text.
  * Named moves in the sentence are interactive spans. Hovering (or tapping, for
@@ -87,19 +86,18 @@ const BUCKET_META: Record<
 // text never overflows a sliver; the value is still reachable via the hover list.
 const MIN_INLINE_LABEL_PCT = 12;
 
-// CR-01 fix (Phase 219 review): module-scope stable reference so `stablePerElo`
-// below is referentially stable across renders (keeps useMemo deps from
-// churning) when the ladder is incomplete. A `useState`-backed freeze here
-// previously kept rendering position A's ladder against position B's
-// candidates after navigating to an uncached position, because nothing ever
-// reset the state when `isLadderComplete` flipped back to false.
+// Module-scope stable reference so `stablePerElo` below is referentially stable
+// across renders (keeps useMemo deps from churning) when the ladder is incomplete.
+// Don't back this with `useState`: a frozen state keeps rendering position A's
+// ladder against position B's candidates after navigating to an uncached
+// position, because nothing resets it when `isLadderComplete` flips back to false.
 const EMPTY_LADDER: MoveCurvePoint[] = [];
 
 export interface MaiaMoveQualityBarProps {
   /** useMaiaEngine's perElo (same value the chart receives); [] renders nothing. */
   perElo: MoveCurvePoint[];
   /**
-   * useMaiaEngine's isLadderComplete (Phase 219-03, D-12). This component is a
+   * useMaiaEngine's isLadderComplete. This component is a
    * WAIT-FOR-COMPLETE consumer: the position verdict and the quality buckets
    * must never flip from a coarse (11-rung) reading to the full 21-rung one,
    * so `perElo` is only read (via `stablePerElo`) while this flag is true —
@@ -110,10 +108,10 @@ export interface MaiaMoveQualityBarProps {
   selectedElo: number;
   /** The shown candidate set (Analysis.tsx's selectCandidatesByMass output). */
   shownSans: string[];
-  /** Per-SAN Stockfish-graded quality + eval, keyed by SAN (D-08). */
+  /** Per-SAN Stockfish-graded quality + eval, keyed by SAN. */
   qualityBySan: Map<string, MoveQualityEval>;
   /** Side to move at this position (sideToMoveFromFen) — the addressed player's frame for
-   *  re-signing white-POV evals in the prose (quick 260709-o72). */
+   *  re-signing white-POV evals in the prose. */
   mover: MoverColor;
   /**
    * Fired with the hovered segment's moves (SAN + severity color) so the page
@@ -122,9 +120,9 @@ export interface MaiaMoveQualityBarProps {
    */
   onHoverMovesChange?: (moves: HoveredQualityMove[] | null) => void;
   /** True when the analysed position is the opponent's move — frames the verdict
-   *  around "your opponent" rather than "you" (quick 260705-m3z). */
+   *  around "your opponent" rather than "you". */
   isOpponentToMove?: boolean;
-  /** Plays a named prose move as a free move on the board (quick 260705-mth).
+  /** Plays a named prose move as a free move on the board.
    *  Receives the move's SAN at the current position. Omitted where no board is
    *  in view (kept optional; currently always wired from Analysis). */
   onPlayMove?: (san: string) => void;
@@ -171,8 +169,8 @@ function StockfishEval({ text }: { text: string }): React.ReactNode {
  * parent owns the open state + hover timer so the board arrow it lifts stays in
  * sync and never fights the bar-segment hover.
  *
- * Clicking/tapping the move PLAYS it as a free move on the board (quick
- * 260705-mth). The show-vs-play split keys off whether the popover was already
+ * Clicking/tapping the move PLAYS it as a free move on the board. The show-vs-play
+ * split keys off whether the popover was already
  * open when the press started (captured at pointerdown, before focus/hover can
  * flip it): open-at-press → play; closed-at-press → just reveal it. That gives
  * "hover shows, click plays" on desktop and "first tap shows, second tap plays"
@@ -194,7 +192,7 @@ function ProseMoveSpan({
   move: VerdictMove;
   mover: MoverColor;
   isGem: boolean;
-  /** Phase 175 (SEED-108 D-02b): "great" gets the same popover treatment as
+  /** "great" gets the same popover treatment as
    *  "gem" everywhere gem appears — mutually exclusive with isGem by
    *  construction (qualityBySanWithGem's `quality` field is one or the other,
    *  never both). */
@@ -205,8 +203,8 @@ function ProseMoveSpan({
   onClose: () => void;
   onPlay?: () => void;
 }): React.ReactElement {
-  // The popover body stays white-POV objective (raw/objective surface, out of scope for the
-  // player-POV rewrite); only the aria-label (announced prose) re-signs to the mover (quick 260709-o72).
+  // The popover body stays white-POV objective (raw/objective surface); only the
+  // aria-label (announced prose) re-signs to the mover.
   const objectiveEvalText = formatVerdictEval(move.evalCp, move.evalMate);
   const povEvalText = formatPlayerPovEval(move.evalCp, move.evalMate, mover);
   const ariaLabel = `${move.san}, ${move.maiaPct}% at this rating, evaluated ${povEvalText}. Click to play it.`;
@@ -224,7 +222,7 @@ function ProseMoveSpan({
       onClose={onClose}
       onPlay={onPlay}
     >
-      {/* Unified 3-line popover shared with the FlawChess card (quick 260708-qrr).
+      {/* Unified 3-line popover shared with the FlawChess card.
           FlawChess's practical eval isn't available in this component's inputs
           (only Maia probabilities + Stockfish grading), so that line is omitted. */}
       <UnifiedMovePopover
@@ -239,9 +237,9 @@ function ProseMoveSpan({
 
 /**
  * Owner-aware standing clause for the decisive StandingBands, or null for
- * 'level' (which never gets a standing clause — quick 260709-o72). `owner` is
+ * 'level' (which never gets a standing clause). `owner` is
  * "you" on the user's move or "your opponent" when the position is the
- * opponent's move (quick 260705-m3z).
+ * opponent's move.
  */
 function renderStandingClause(band: StandingBand, owner: string): string | null {
   const isYou = owner === 'you';
@@ -275,11 +273,11 @@ function renderStandingChip(verdict: PositionVerdictResult, mover: MoverColor): 
 }
 
 /**
- * level's own phrasing (quick 260709-o72): level is never decisive, so it never
+ * level's own phrasing: level is never decisive, so it never
  * collapses and never carries a standing clause. safe renders the good-move list
- * alone; tricky/difficult use the OBJECTIVE/accuracy framing (quick 260709-t4w —
- * see renderObjectiveDifficultyClause for why the practical "knife-edge"/"holds"
- * wording had to go).
+ * alone; tricky/difficult use the OBJECTIVE/accuracy framing (see
+ * renderObjectiveDifficultyClause for why the practical "knife-edge"/"holds"
+ * wording is avoided).
  */
 function renderLevelClause(
   verdict: PositionVerdictResult,
@@ -300,11 +298,11 @@ function renderLevelClause(
 
 /**
  * OBJECTIVE/accuracy-framed difficulty clause for the tricky/difficult tiers
- * (quick 260709-t4w). The Maia card is the OBJECTIVE lens; the FlawChess Engine
+ * The Maia card is the OBJECTIVE lens; the FlawChess Engine
  * card is the PRACTICAL one, and the two legitimately disagree at low ELO (a
  * move that's objectively a mistake can be the best PRACTICAL pick when the
- * opponent won't punish it). The previous practical-sounding wording ("Kf1
- * holds, Kd1 walks into trouble") read as advice NOT to play Kd1 — directly
+ * opponent won't punish it). Practical-sounding wording ("Kf1
+ * holds, Kd1 walks into trouble") would read as advice NOT to play Kd1 — directly
  * contradicting the FlawChess card recommending exactly Kd1. So this names the
  * accurate move + labels the popular looser move(s) as "objectively looser"
  * (with a light human-tendency note from the move's own Maia %), keeping the
@@ -372,11 +370,10 @@ function renderBothClauses(
 
 /**
  * Assembles the "{standing clause} — {difficulty clause}" prose verdict
- * sentence for the resting-state slot (quick 260709-o72; replaces the old
- * badMass-only "safe for you"/"tricky for you" copy, which measured
- * DIFFICULTY of play and never told the player whether they were actually
- * winning or losing). `renderMove` produces the interactive span for one
- * named move; `owner` is "you"/"your opponent" (quick 260705-m3z); `mover`
+ * sentence for the resting-state slot: the standing clause tells the player
+ * whether they are actually winning or losing (difficulty of play alone does
+ * not). `renderMove` produces the interactive span for one
+ * named move; `owner` is "you"/"your opponent"; `mover`
  * re-signs white-POV evals to the addressed player's frame.
  *
  * Deterministic collapse rule:
@@ -451,18 +448,16 @@ export function MaiaMoveQualityBar({
   const [activeProseSan, setActiveProseSan] = useState<string | null>(null);
   const proseHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // T-219-14 / CR-01 (Phase 219 review): a partial (coarse) ladder is read as
-  // "no ladder", so the verdict/buckets can never show a coarse reading —
-  // and, critically, a navigation that resets `isLadderComplete` to false
-  // drops the previous position's ladder immediately instead of continuing
-  // to render it. This used to be a `useState` that only advanced when
-  // `isLadderComplete` was true and was NEVER reset when it went back to
-  // false, so after navigating to an uncached position the bar kept
-  // rendering the previous position's probabilities against the new
-  // position's candidates (any SAN present in both positions got the stale
-  // mass) until the new fill pass landed. A derived value with a stable
-  // empty reference (`EMPTY_LADDER`, module scope, so `useMemo` deps below
-  // don't churn every render) fixes this by construction: it can never lag
+  // A partial (coarse) ladder is read as "no ladder", so the verdict/buckets can
+  // never show a coarse reading — and, critically, a navigation that resets
+  // `isLadderComplete` to false drops the previous position's ladder immediately
+  // instead of continuing to render it. A `useState` that only advanced when
+  // `isLadderComplete` was true and was never reset when it went back to false
+  // broke this: after navigating to an uncached position the bar kept rendering
+  // the previous position's probabilities against the new position's candidates
+  // (any SAN present in both positions got the stale mass) until the new fill
+  // pass landed. A derived value with a stable empty reference (`EMPTY_LADDER`,
+  // module scope, so `useMemo` deps below don't churn every render) can never lag
   // behind `isLadderComplete`.
   const stablePerElo = isLadderComplete ? perElo : EMPTY_LADDER;
 
@@ -556,11 +551,10 @@ export function MaiaMoveQualityBar({
     setActiveProseSan(null);
   };
 
-  // A named move renders as a bare interactive SAN span — quick 260709-o72 dropped the old
-  // trailing " (eval)" parenthetical from the sentence body (it made the standing-clause chip
-  // read redundantly, e.g. "Qxc1 (-M4) is the longest resistance" right after "(-M4)" already
-  // shown). The move's eval is still surfaced via the (now player-POV) aria-label and the
-  // hover/focus popover — never lost, just moved out of the visible sentence text.
+  // A named move renders as a bare interactive SAN span. Don't add a trailing " (eval)"
+  // parenthetical to the sentence body: it makes the standing-clause chip read redundantly,
+  // e.g. "Qxc1 (-M4) is the longest resistance" right after "(-M4)" already shown. The
+  // move's eval is surfaced via the player-POV aria-label and the hover/focus popover.
   const renderMove = (m: VerdictMove): React.ReactNode => (
     <ProseMoveSpan
       key={m.san}
@@ -650,7 +644,7 @@ export function MaiaMoveQualityBar({
                 Stockfish eval in blue, and the Maia probability in violet —
                 matching the page's source palette (Stockfish blue / Maia
                 violet). The three parts are joined by grey dots; moves are
-                separated by commas (quick 260708). */}
+                separated by commas. */}
             {activeBucket.moves.map((m, i) => {
               const grade = qualityBySan.get(m.san);
               return (

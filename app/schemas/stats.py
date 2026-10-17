@@ -47,7 +47,7 @@ class OpeningWDL(BaseModel):
 
     opening_eco: str
     opening_name: str  # canonical name, used for FEN/bookmark lookups
-    display_name: str  # canonical name with "vs. " prefix when off-color (PRE-01)
+    display_name: str  # canonical name with "vs. " prefix when off-color
     label: str  # "Opening Name (ECO)" — precomputed for UI
     pgn: str  # PGN move sequence for display
     fen: str  # Full FEN (with side-to-move/castling) for miniboard and bookmark creation
@@ -60,16 +60,16 @@ class OpeningWDL(BaseModel):
     draw_pct: float
     loss_pct: float
 
-    # Phase 80 additions — middlegame-entry Stockfish eval (D-01, D-04, D-08)
+    # Middlegame-entry Stockfish eval
     # All optional with defaults so existing callers/tests keep working.
-    # Trim |eval_cp| >= 2000 happens upstream in SQL (Plan 02) per D-08.
+    # Trim |eval_cp| >= 2000 happens upstream in SQL.
     avg_eval_pawns: float | None = None  # signed, user-perspective; None when eval_n == 0
     eval_ci_low_pawns: float | None = None  # 95% CI lower bound; None when eval_n < 2
     eval_ci_high_pawns: float | None = None  # 95% CI upper bound; None when eval_n < 2
     eval_n: int = 0  # games used in the mean (mate-excluded, NULL-excluded, outlier-trimmed)
     eval_p_value: float | None = None  # two-sided p-value vs zero
     eval_confidence: Literal["low", "medium", "high"] = "low"
-    # Quick task 260508-r61: MAX(games.played_at) across the games visiting
+    # MAX(games.played_at) across the games visiting
     # this opening's full_hash. Drives the "Last played: <relative>" line in
     # the OpeningStatsCard score-confidence popover. None when every
     # contributing game has a NULL played_at (rare).
@@ -84,17 +84,18 @@ class MostPlayedOpeningsResponse(BaseModel):
     # Engine-asymmetry baselines (in pawns) rendered as a small reference tick
     # on the frontend MG-entry bullet chart. The chart's center stays at 0 cp
     # (engine-balanced) and the per-row z-test runs against H0: mean == 0;
-    # these values are display-only annotations (260504-rvh). Per-game mean
-    # from the 2026-05-04 Lichess benchmark (reports/benchmarks-2026-05-04.md).
+    # these values are display-only annotations. Per-game mean
+    # from the 2026-05-04 Lichess benchmark run (values in
+    # opening_insights_constants.EVAL_BASELINE_PAWNS_*).
     eval_baseline_pawns_white: float
     eval_baseline_pawns_black: float
 
 
 class BookmarkPhaseEntryItem(BaseModel):
-    """Phase 80 fields for a single bookmark target_hash (parallel to OpeningWDL's
-    Phase 80 subset). Returned by ``POST /stats/bookmark-phase-entry-metrics``.
+    """Middlegame-entry eval fields for a single bookmark target_hash (parallel to
+    OpeningWDL's eval subset). Returned by ``POST /stats/bookmark-phase-entry-metrics``.
 
-    Mirrors the OpeningWDL Phase 80 additions exactly so the frontend can spread
+    Mirrors the OpeningWDL eval fields exactly so the frontend can spread
     them onto a synthetic OpeningWDL row for bookmarks.
     """
 
@@ -146,6 +147,6 @@ class BookmarkPhaseEntryRequest(BaseModel):
 
 
 class BookmarkPhaseEntryResponse(BaseModel):
-    """Phase 80 fields keyed by target_hash (string form)."""
+    """Middlegame-entry eval fields keyed by target_hash (string form)."""
 
     items: list[BookmarkPhaseEntryItem]

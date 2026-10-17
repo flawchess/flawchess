@@ -2,8 +2,8 @@
 
 Endpoints (all mounted under /api/endgames):
 - GET /ranked-stats: filter-free per-TC ranked-sample payload for the percentile-first
-  Stats tab (Phase 238)
-- GET /stats: filtered per-category endgame stats for the Games tab (Phase 238)
+  Stats tab
+- GET /stats: filtered per-category endgame stats for the Games tab
 - GET /games: paginated game list filtered by endgame class
 """
 
@@ -32,16 +32,16 @@ async def get_endgame_ranked_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> EndgameRankedStatsResponse:
-    """Return the per-time-control ranked-sample Endgame Stats (Phase 238, SEED-196).
+    """Return the per-time-control ranked-sample Endgame Stats.
 
-    Takes NO filter parameters (D-01): the Stats tab always describes the canonical
+    Takes NO filter parameters: the Stats tab always describes the canonical
     ranked sample (rated, human opponents, within 100 Elo, last 36 months, at most
     3000 games per time control), so any query string produces the same body.
     ``user_id`` comes only from the authenticated user, never from the request.
 
     Dev-clock exception: the ranked window uses SQL ``NOW()`` rather than the
     ``dev_now_utc`` dependency (CLAUDE.md). The window must match the persisted
-    Stage A/B percentile basis byte for byte (D-07), and those SQL builders anchor
+    Stage A/B percentile basis byte for byte, and those SQL builders anchor
     the 36-month bound to ``NOW()``. The 36-month edge therefore cannot be dev-clock
     tested; this is a deliberate trade-off.
 
@@ -55,7 +55,7 @@ async def get_endgame_ranked_stats(
 async def get_endgame_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    # NO color parameter — per D-02 (no color filter on endgame endpoints)
+    # NO color parameter (no color filter on endgame endpoints)
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
     from_date: datetime.date | None = Query(default=None),
@@ -65,7 +65,7 @@ async def get_endgame_stats(
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
 ) -> EndgameStatsResponse:
-    """Return the filtered per-category endgame stats the Games tab needs (Phase 238, D-01).
+    """Return the filtered per-category endgame stats the Games tab needs.
 
     Unlike /ranked-stats this honours every sidebar filter, so the Games tab keeps
     working with filters after the Stats tab moves to the ranked sample.
@@ -102,7 +102,7 @@ async def get_endgame_games(
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
 ) -> EndgameGamesResponse:
-    """Return paginated games filtered by endgame class (D-12, D-14).
+    """Return paginated games filtered by endgame class.
 
     endgame_class must be one of: rook, minor_piece, pawn, queen, mixed, pawnless.
     Returns empty results (not an error) for unknown classes or users with no matching games.

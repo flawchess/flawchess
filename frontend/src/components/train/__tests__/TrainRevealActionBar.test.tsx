@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 /**
- * TrainRevealActionBar.test.tsx — Phase 237 plan 07.
- *
  * The presentational contract of the reveal's one action bar: the four board
- * buttons, Analyze (only with a URL) and Next, the walkthrough ring, the
+ * buttons, Analyze (only with a URL) and Next, the tour ring, the
  * desktop key hint, and that every control reaches its callback.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';

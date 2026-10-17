@@ -1,17 +1,14 @@
 /**
- * TrainStreakCard — the Train landing's hero card (SEED-181, sketch 006
- * variant A "Flame beside the CTA"): the session streak drawn inside a
- * 3-layer flame on the left; on the right the weekly tally, the 0-7 freeze
- * meter and, when the session is startable, the Start/Resume button passed in
- * as `action`. Self-contained: calls `useTrainProgress()` internally.
+ * TrainStreakCard — the Train landing's hero card: the session streak drawn
+ * inside a 3-layer flame on the left; on the right the weekly tally, the 0-7
+ * freeze meter and, when the session is startable, the Start/Resume button
+ * passed in as `action`. Self-contained: calls `useTrainProgress()`
+ * internally.
  *
- * History: 193 UAT rounds 2-4 drew the 0-7 `shield_level` buffer as flames,
- * so the streak itself could not use the flame (three lit flames next to a 3
- * read as "the flames ARE the streak") and sat in an amber trophy pill
- * instead. SEED-181 moved the buffer to cold snowflake "freezes" (the
- * mechanic literally freezes the streak on a missed day), which separates the
- * two concepts by color family and frees the flame for the streak. The
- * `shield_level` API field and the `train-shield-*` testids keep their names.
+ * The streak buffer is shown as snowflake "freezes" (cold color family,
+ * distinct from the flame, which is reserved for the streak). The
+ * `shield_level` API field and the `train-shield-*` testids keep the older
+ * name; don't rename them.
  *
  * The flame and meter play a one-shot animation only when the numbers changed
  * since this device last showed them (`lib/streakArrival.ts`).
@@ -41,10 +38,10 @@ const EARNED_AFTER_IGNITE_DELAY_MS = 1300;
 const FROST_AFTER_CRACKS_PAD_MS = 100;
 
 /**
- * Mirrors `app.services.train_scheduler._advance_one_day`'s four outcomes:
+ * Mirrors `app.services.train_scheduler._judge_one_day`'s four outcomes:
  * "fulfilled" is +1 streak +1 freeze, "credit_only" (an off-day session) is
  * +1 freeze and NO streak change, "missed" is -1 freeze with the streak held
- * until the freezes hit 0 and it resets. Prose only — the client holds no
+ * until the freezes hit 0 and it resets, "neutral" changes nothing. Prose only — the client holds no
  * copy of that arithmetic beyond the cap, which is interpolated.
  */
 const STREAK_EXPLAINER =
@@ -54,7 +51,7 @@ const STREAK_EXPLAINER =
 /** The weekly tally under the "Session streak" heading. */
 function thisWeekCaption(completed: number, required: number | null): string {
   if (required !== null) return `${completed} of ${required} this week`;
-  // D-01 "train anytime" mode has no denominator to show.
+  // "Train anytime" mode has no denominator to show.
   return `${completed} this week`;
 }
 
@@ -171,7 +168,7 @@ export function TrainStreakCard({ action }: TrainStreakCardProps): ReactElement 
   // Phone: flame | details on one row, the action full card width beneath it
   // (a ~200px column cannot hold "Resume session — 3 of 6 done" at the mobile
   // type bump). From sm: up the flame spans both rows and the action sits in
-  // the right column, beside the flame (sketch 006 A).
+  // the right column, beside the flame.
   return (
     <Card as="section" className="w-full" data-testid="train-streak-card">
       <CardBody className="grid grid-cols-[6rem_minmax(0,1fr)] items-center gap-x-4 gap-y-3">

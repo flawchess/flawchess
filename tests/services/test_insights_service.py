@@ -1,19 +1,18 @@
-"""Tests for app/services/insights_service.py — Phase 63 Plan 05, re-based on the
-ranked payload in Phase 238 plan 04 (D-04).
+"""Tests for app/services/insights_service.py, based on the ranked payload.
 
-Coverage by requirement:
+Coverage:
 
-- FIND-01 (layering): TestComputeFindingsLayering asserts that
+- Layering: TestComputeFindingsLayering asserts that
   `insights_service` imports no repositories and never calls
   `asyncio.gather`, and that `compute_findings` awaits `fetch_ranked_inputs`
   exactly once, then builds the all_time window (`since=None`) and the last_3mo
   window (`since=now-90d`) from the same inputs with `build_ranked_stats`.
-- FIND-04 (trend gate): TestComputeTrend covers count-fail, ratio-fail,
+- Trend gate: TestComputeTrend covers count-fail, ratio-fail,
   both-pass (improving / declining), and flat (stable).
-- FIND-05 (hash stability): TestComputeHash covers the 64-char lowercase
+- Hash stability: TestComputeHash covers the 64-char lowercase
   hex format, `as_of` / `findings_hash` exclusion, value-change
   discrimination, NaN safety, and dict-insertion-order invariance.
-- D-04 / D-00b (ranked alignment): TestRankedPayloadAlignment pins that every
+- Ranked alignment: TestRankedPayloadAlignment pins that every
   narrated number equals the ranked per-TC value, that last_3mo is the ranked
   subset played in the last 90 days, and that percentile records exist exactly
   for ranked metrics (all per TC).
@@ -116,7 +115,7 @@ def _make_finding(
 
 
 # ---------------------------------------------------------------------------
-# TestComputeTrend — FIND-04 trend gate (count + slope/volatility ratio).
+# TestComputeTrend — trend gate (count + slope/volatility ratio).
 # ---------------------------------------------------------------------------
 
 
@@ -143,7 +142,7 @@ class TestComputeTrend:
         For a pure linear series of length n, `slope / stdev(points)` is a
         FIXED property (scale-invariant): `sqrt(12 / (n^2 - 1))` for the
         sample-stdev variant. At n=25 that's 0.136 — below the default 0.5
-        gate by design (per 63-04 SUMMARY smoke-test note). To exercise the
+        gate by design. To exercise the
         "improving" branch deterministically, we call `_compute_trend` with
         a permissive `min_slope_vol_ratio` override; the test still runs
         the REAL gate check using the same function, just with a threshold
@@ -201,7 +200,7 @@ class TestComputeTrend:
 
 
 # ---------------------------------------------------------------------------
-# TestComputeHash — FIND-05 hash format + stability + discrimination.
+# TestComputeHash — hash format + stability + discrimination.
 # ---------------------------------------------------------------------------
 
 
@@ -249,7 +248,7 @@ class TestComputeHash:
         assert _compute_hash(a) != _compute_hash(b)
 
     def test_hash_differs_on_ranked_payload_change(self) -> None:
-        """A different ranked payload (Phase 238) -> different hash (cache discrimination)."""
+        """A different ranked payload -> different hash (cache discrimination)."""
         a = self._base_findings().model_copy(update={"ranked_tcs": [make_ranked_tc("blitz")]})
         b = a.model_copy(
             update={
@@ -367,7 +366,7 @@ class TestEmptyFinding:
 
 
 # ---------------------------------------------------------------------------
-# TestComputeFindingsLayering — FIND-01: service-only access, ONE sequential
+# TestComputeFindingsLayering — service-only access, ONE sequential
 # fetch of the ranked inputs, no asyncio.gather, no repository imports.
 # ---------------------------------------------------------------------------
 
@@ -377,10 +376,10 @@ def _ranked_response(*tcs: RankedTcStats) -> EndgameRankedStatsResponse:
 
 
 class TestComputeFindingsLayering:
-    """FIND-01: insights_service consumes only the ranked service (Phase 238, D-04)."""
+    """insights_service consumes only the ranked service."""
 
     def test_no_repository_import_in_module_source(self) -> None:
-        """Module source has no `from app.repositories` import (FIND-01)."""
+        """Module source has no `from app.repositories` import."""
         src = inspect.getsource(insights_module)
         assert "from app.repositories" not in src, (
             "FIND-01 violation: insights_service must not import from repositories"
@@ -395,7 +394,7 @@ class TestComputeFindingsLayering:
         )
 
     def test_compute_findings_takes_no_filter_argument(self) -> None:
-        """D-04: the only inputs are the session and the user id."""
+        """The only inputs are the session and the user id."""
         assert list(inspect.signature(compute_findings).parameters) == ["session", "user_id"]
 
     @pytest.mark.asyncio
@@ -443,7 +442,7 @@ class TestComputeFindingsLayering:
 
 
 # ---------------------------------------------------------------------------
-# TestComputeFindingsReturnContract — REVIEW WR-03: end-to-end contract that
+# TestComputeFindingsReturnContract — end-to-end contract that
 # compute_findings returns an EndgameTabFindings whose findings_hash is
 # populated (64-char lowercase hex) so a refactor cannot silently drop the
 # hash assignment.
@@ -495,7 +494,7 @@ class TestComputeFindingsReturnContract:
 
     @pytest.mark.asyncio
     async def test_empty_ranked_sample_yields_empty_findings(self) -> None:
-        """D-10: an empty ranked sample is a valid (empty) payload, not an error."""
+        """An empty ranked sample is a valid (empty) payload, not an error."""
         fetch_patch, build_patch = self._patches()
         with fetch_patch, build_patch:
             result = await compute_findings(AsyncMock(), 1)
@@ -510,7 +509,7 @@ class TestComputeFindingsReturnContract:
 
 
 # ---------------------------------------------------------------------------
-# TestRankedPayloadAlignment — D-04 / D-00b: every narrated number is the ranked
+# TestRankedPayloadAlignment — every narrated number is the ranked
 # value the Stats tab shows; last_3mo is the ranked subset; percentile records
 # exist exactly for ranked metrics.
 # ---------------------------------------------------------------------------
@@ -739,7 +738,7 @@ class TestRankedPayloadAlignment:
         assert records["score_gap_recov:blitz"] is records["recovery_score_gap:blitz"]
 
     def test_pctl_records_are_not_built_from_the_last_3mo_window(self) -> None:
-        """The windowed sample never carries persisted percentiles (D-04): only the
+        """The windowed sample never carries persisted percentiles: only the
         all_time payload feeds per_tc_metric_percentiles."""
         ranked = make_ranked_tc("blitz")
         windowed = make_ranked_tc(
@@ -811,19 +810,19 @@ class TestRankedPayloadAlignment:
 
 
 # ---------------------------------------------------------------------------
-# TestFindingsEndgameMetrics — 260422-tnb A1: bucket-matched metric emission.
+# TestFindingsEndgameMetrics — bucket-matched metric emission.
 # Each bucket maps to exactly ONE rate finding whose metric matches the bucket
 # (conversion -> conversion_win_pct, parity -> parity_score_pct, recovery ->
-# recovery_save_pct). Phase 87.4 (D-05): the aggregate ``endgame_skill`` finding
-# was removed end-to-end. Total emitted per TC = 3 rate + 3 score_gap_* findings.
+# recovery_save_pct). There is no aggregate ``endgame_skill`` finding.
+# Total emitted per TC = 3 rate + 3 score_gap_* findings.
 # ---------------------------------------------------------------------------
 
 
 class TestFindingsEndgameMetrics:
     """Unit tests for _findings_endgame_metrics (one ranked TC at a time).
 
-    Phase 102 UAT (2026-06-02): one ``endgame_metrics_<tc>`` subsection per time
-    control. Phase 238: sourced from ``RankedTcStats.metrics`` (value and n). Each TC
+    One ``endgame_metrics_<tc>`` subsection per time
+    control, sourced from ``RankedTcStats.metrics`` (value and n). Each TC
     emits 6 findings — 3 rate (conversion/parity/recovery) + 3 ΔES gap
     (score_gap_conv/parity/recov) — all carrying ``dimension={"time_control": tc}``.
     """
@@ -838,7 +837,7 @@ class TestFindingsEndgameMetrics:
         assert len(findings) == 6
         assert all(f.subsection_id == "endgame_metrics_blitz" for f in findings)
         assert all(f.dimension == {"time_control": "blitz"} for f in findings)
-        # Phase 87.4 (D-05): no aggregate endgame_skill finding any more.
+        # No aggregate endgame_skill finding any more.
         assert not any(f.metric == "endgame_skill" for f in findings)
 
         rate_metrics = {
@@ -948,11 +947,11 @@ def _by_metric(findings: list[SubsectionFinding]) -> dict[str, SubsectionFinding
 
 
 class TestFindingsEndgameStartVsEnd:
-    """Unit tests for _findings_endgame_start_vs_end (Phase 82 D-16/D-17/D-18/D-19/D-20).
+    """Unit tests for _findings_endgame_start_vs_end.
 
-    Phase 102 UAT: emitter returns FOUR findings in UI-card order —
+    The emitter returns FOUR findings in UI-card order —
     endgame_score, non_endgame_score, entry_eval_pawns, entry_expected_score.
-    Phase 238 (D-04, D-00h): one ranked TC at a time, each finding carries
+    One ranked TC at a time, each finding carries
     ``dimension={"time_control": tc}``. Assertions are keyed by metric (via
     `_by_metric`) so they survive future reordering. Covers independent per-tile gates,
     zone boundary dispatch via assign_zone, and is_headline_eligible =
@@ -984,7 +983,7 @@ class TestFindingsEndgameStartVsEnd:
         )
 
     def test_returns_four_findings_in_canonical_ui_order(self) -> None:
-        """Phase 102 UAT: all gates pass -> FOUR findings, score cards leading."""
+        """All gates pass -> FOUR findings, score cards leading."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         findings = _findings_endgame_start_vs_end(
@@ -1040,7 +1039,7 @@ class TestFindingsEndgameStartVsEnd:
     def test_entry_eval_at_n_10_is_populated_adequate(self) -> None:
         """Boundary: entry_eval_n == 10 (the strict-`<` floor) -> populated, adequate.
 
-        Phase 82 D-17 gates on `n_eval < 10`. n=10 must NOT be empty. Pairs with
+        The gate is `n_eval < 10`. n=10 must NOT be empty. Pairs with
         SAMPLE_QUALITY_BANDS["endgame_start_vs_end"] = (10, 50) which classifies
         n=10 as `adequate` (`thin` is `< 10`).
         """
@@ -1143,7 +1142,7 @@ class TestFindingsEndgameStartVsEnd:
         assert tiles["endgame_score"].zone == "weak"
 
     # ------------------------------------------------------------------
-    # Phase 102 UAT: non_endgame_score tile.
+    # non_endgame_score tile.
     # ------------------------------------------------------------------
 
     def test_non_endgame_score_value_and_band(self) -> None:
@@ -1191,7 +1190,7 @@ class TestFindingsEndgameStartVsEnd:
         assert non_tile.sample_size == 0
 
     def test_dimension_is_time_control_and_series_none(self) -> None:
-        """All findings carry the TC dimension (D-00h) and no series (D-19/D-20)."""
+        """All findings carry the TC dimension and no series."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         findings = _findings_endgame_start_vs_end(self._make_tc(), "all_time")
@@ -1212,7 +1211,7 @@ class TestFindingsEndgameStartVsEnd:
             assert f.parent_subsection_id is None
 
     # ------------------------------------------------------------------
-    # Phase 83 D-17 / D-19: entry_expected_score tile.
+    # entry_expected_score tile.
     # ------------------------------------------------------------------
 
     def test_entry_expected_score_emitted_when_n_at_or_above_10(self) -> None:
@@ -1276,7 +1275,7 @@ class TestFindingsEndgameStartVsEnd:
         assert tiles["entry_expected_score"].zone == "weak"
 
     def test_no_verdict_field(self) -> None:
-        """Phase 82 D-06 / Phase 83 D-19: SubsectionFinding has NO `verdict` field.
+        """SubsectionFinding has NO `verdict` field.
 
         Guards against a future regression that re-adds a sig-test signal —
         per memory `feedback_llm_significance_signal.md`, the LLM narrates
@@ -1294,7 +1293,7 @@ class TestFindingsEndgameStartVsEnd:
         assert "verdict" not in tile.model_dump()
 
     def test_entry_expected_score_independent_gate_from_other_tiles(self) -> None:
-        """Phase 83 D-19: entry_expected_score gate is independent of the other tiles.
+        """entry_expected_score gate is independent of the other tiles.
 
         The score / eval tiles may be populated while entry_expected_score is
         empty when only the expected-score backfill has not yet completed.
@@ -1333,7 +1332,7 @@ class TestFindingsEndgameStartVsEnd:
 
 
 class TestFindingsScoreGap:
-    """Unit tests for _findings_score_gap (Phase 102 UAT; ranked per-TC since Phase 238).
+    """Unit tests for _findings_score_gap (ranked, per TC).
 
     The dedicated `score_gap` subsection mirrors the UI "Endgame Score
     Differences" card: achievable_score_gap ("Eval Score Gap") first, then
@@ -1537,11 +1536,11 @@ class TestComputePlayerProfile:
         assert result[1].current_elo == 1354
 
 
-class TestD15LlmPathInvariant:
-    """Phase 102 UAT (2026-06-02): D-15 is REVERSED. The LLM type_breakdown path
+class TestLlmTypeBreakdownPerTcPath:
+    """The LLM type_breakdown path
     reads the per-(class × TC) type rows and emits one `endgame_type_<tc>`
     subsection per eligible time control, mirroring the UI's per-TC collapsible
-    cards. Phase 238: the rows come from each ranked TC's ``type_categories``.
+    cards. The rows come from each ranked TC's ``type_categories``.
     """
 
     def test_per_tc_producer_emits_endgame_type_subsections(self) -> None:

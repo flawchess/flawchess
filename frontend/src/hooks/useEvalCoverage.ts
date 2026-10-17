@@ -39,7 +39,7 @@ interface UseEvalCoverageOptions {
 
 /** Poll GET /imports/eval-coverage while Stockfish analysis is pending.
  *
- * Defaults to pct=100 / isPending=false before the first fetch resolves, so the
+ * Defaults to pct=100 / hasPendingEvals=false before the first fetch resolves, so the
  * header bar and per-metric caveats do not flash on initial page load.
  *
  * Poll-stop conditions:
@@ -53,15 +53,6 @@ interface UseEvalCoverageOptions {
  *
  * All consumers on the same page share one in-flight request via the shared
  * queryKey ['imports', 'eval-coverage'] — TanStack Query deduplicates them.
- *
- * NOTE: in_flight_count removed in Phase 119-03 (tier-3 derived picks have no
- * eval_jobs rows, so the count was structurally blind to the dominant backlog
- * drain). The trackFullAnalysis branch (analyzed_count < total_count) is now
- * the sole driver of badge-surface polling.
- *
- * NOTE: Auto-reload on eval completion was removed in Phase 96 Plan 03
- * (Constraint 4 / SC-5). Reactive reveal via useReadiness tier2 flag replaces the
- * forced full-page reload.
  */
 export function useEvalCoverage(options?: UseEvalCoverageOptions) {
   const trackFullAnalysis = options?.trackFullAnalysis ?? false;
@@ -109,13 +100,13 @@ export function useEvalCoverage(options?: UseEvalCoverageOptions) {
   });
 
   const data = query.data;
-  const isPending = (data?.pct_complete ?? 100) < 100;
+  const hasPendingEvals = (data?.pct_complete ?? 100) < 100;
 
   return {
     pendingCount: data?.pending_count ?? 0,
     totalCount: data?.total_count ?? 0,
     pct: data?.pct_complete ?? 100,
-    isPending,
+    hasPendingEvals,
     isLoading: query.isLoading,
     isError: query.isError,
     analyzedCount: data?.analyzed_count ?? 0,

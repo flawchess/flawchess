@@ -11,12 +11,12 @@ async function postTier1Enqueue(gameId: number): Promise<EnqueueTier1Response> {
 
 /**
  * Shared onSuccess invalidation for a tier-1 enqueue — the coverage badge
- * updates within one render cycle without waiting for the 3s poll
- * (RESEARCH.md Pitfall 5), and any cached library card (list or single-game)
- * refetches so it picks up the new active_eval_status (prefix match covers
- * every param variant, including a specific ['library-game', gameId] entry).
+ * updates within one render cycle without waiting for the next poll, and any
+ * cached library card (list or single-game) refetches so it picks up the new
+ * active_eval_status (prefix match covers every param variant, including a
+ * specific ['library-game', gameId] entry).
  *
- * Exported (Phase 208) so usePasteGame.useSavePastedGame reuses the exact
+ * Exported so usePasteGame.useSavePastedGame reuses the exact
  * same query-key list instead of duplicating it — the paste-save endpoint
  * performs save + tier-1 enqueue in one call, so it needs this same
  * invalidation without a second round-trip mutation.
@@ -49,7 +49,7 @@ export function useTier1Enqueue(
 }
 
 /**
- * Quick 260714-rj5: mutate-time variant of `useTier1Enqueue` — the game id is
+ * Mutate-time variant of `useTier1Enqueue` — the game id is
  * the `.mutate(gameId)` argument rather than bound at hook-construction time.
  * `useTier1Enqueue(gameId)` cannot serve a caller whose game id only exists
  * after an earlier async step resolves (Bots.tsx's Analyze CTA: the id comes

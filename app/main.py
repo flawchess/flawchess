@@ -95,7 +95,7 @@ def _sentry_before_send(event: Event, hint: dict[str, Any]) -> Event | None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    # Bug fix (phase 212 plan 08): the app configured logging nowhere, so every
+    # Bug fix: the app configured logging nowhere, so every
     # `app.*` logger inherited the root logger's default WARNING and each of the
     # handful of logger.info() calls under app/ was silently discarded in every
     # environment. That is how `maia_engine: onnxruntime not installed — Maia
@@ -128,32 +128,32 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # SECRET_KEY — a publicly-known signing key makes every JWT forgeable. Checked
     # before anything else so the deploy-blocker fires as early as possible.
     assert_secret_key_configured()
-    # D-22: validate insights Agent FIRST — startup failure is a deploy-blocker.
-    # Orphan cleanup is best-effort and must not run if the app can't serve
-    # the insights endpoint. Any pydantic-ai UserError
-    # propagates, aborting uvicorn startup (D-36).
+    # Validate the insights Agent before orphan cleanup: startup failure is a
+    # deploy-blocker, and orphan cleanup is best-effort and must not run if the
+    # app can't serve the insights endpoint. Any pydantic-ai UserError propagates
+    # and aborts uvicorn startup.
     get_insights_agent()
     await cleanup_orphaned_jobs()
-    # Phase 212 BENCHLANE-02/D-09/D-10: refuse to boot with the benchmark
-    # selection gate on but its table missing. Catches two failure modes: a
-    # gate-on instance whose benchmark tables were never created, and the far
-    # worse case where plain DATABASE_URL was left pointing at the dev
-    # database on :5432 (which has no benchmark_selection table), converting
-    # a silent wrong-database write into a startup abort. No-op (and touches
+    # Refuse to boot with the benchmark selection gate on but its table missing.
+    # Catches two failure modes: a gate-on instance whose benchmark tables were
+    # never created, and the far worse case where plain DATABASE_URL was left
+    # pointing at the dev database on :5432 (which has no benchmark_selection
+    # table), converting a silent wrong-database write into a startup abort.
+    # No-op (and touches
     # no database) whenever the gate is off, i.e. on every non-benchmark
     # instance including prod. Runs before start_engine() so a misconfigured
     # instance never pays the Stockfish/Maia startup cost before failing.
     await assert_benchmark_selection_gate_ready()
-    # Phase 78 D-02: long-lived Stockfish UCI process. Comes AFTER existing startup
+    # Long-lived Stockfish UCI process. Comes AFTER existing startup
     # so engine startup failure does not mask deploy-blocker validation. try/finally
     # ensures stop_engine runs on exception during yield (graceful shutdown of UCI).
     await start_engine()
-    # Phase 174 / D-03: eager-load the one process-wide Maia ONNX session right
+    # Eager-load the one process-wide Maia ONNX session right
     # after Stockfish, mirroring its lifecycle. NO-OP when onnxruntime is absent
     # (lean/worker images) — start_maia catches ImportError and disables Maia
-    # gracefully (D-03a), so this can never block boot.
+    # gracefully, so this can never block boot.
     await start_maia()
-    # SEED-138 convention for whoever adds a SEVENTH lifespan background loop
+    # Convention for whoever adds a SEVENTH lifespan background loop
     # below: wrap each per-tick body in `with sentry_sdk.isolation_scope():`
     # (enclosing the whole try/except, not just the awaited tick call) so a
     # `set_tag`/`set_context` write in one loop's tick can never bleed onto a
@@ -165,41 +165,42 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # (including request handlers) -- a much larger blast radius than these
     # six loops need. Per-tick isolation subsumes per-task isolation here.
     #
-    # Phase 90 / SEED-017: periodic reaper for the live process. Catches
+    # Periodic reaper for the live process. Catches
     # orphans that arise from a Postgres-only restart (backend survives)
     # which the startup-only cleanup_orphaned_jobs() call would miss.
     reaper_task = asyncio.create_task(run_periodic_reaper(), name="periodic-orphan-reaper")
-    # Phase 91 / SEED-023: cold-lane eval drain. Spawned here so it outlives
+    # Entry-ply eval drain. Spawned here so it outlives
     # any individual import job and shuts down cleanly alongside the reaper.
-    # stop_engine() runs AFTER both tasks are awaited so in-flight evaluations
-    # can complete before the EnginePool is torn down (T-91-20 ordering gate).
+    # stop_engine() runs AFTER all background tasks are awaited so in-flight
+    # evaluations can complete before the EnginePool is torn down.
     drain_task = asyncio.create_task(run_eval_drain(), name="eval-drain")
-    # Phase 116 / EVAL-01: full-ply drain — analyzes every non-terminal ply at 1M nodes.
-    # Runs alongside the entry-ply drain (D-116-08: entry-ply drain untouched).
+    # Full-ply drain — analyzes every non-terminal ply at 1M nodes.
+    # Runs alongside the entry-ply drain, which it leaves untouched.
     full_drain_task = asyncio.create_task(run_full_eval_drain(), name="full-eval-drain")
-    # Phase 187 / SEED-116: daily guest inactivity cleanup (D-01/D-02). No
-    # ordering dependency with stop_engine/stop_maia — guest cleanup never
+    # Daily guest inactivity cleanup. No ordering dependency with
+    # stop_engine/stop_maia — guest cleanup never
     # touches the engine.
     guest_cleanup_task = asyncio.create_task(run_periodic_guest_cleanup(), name="guest-cleanup")
-    # Phase 201 / SEED-132 (D-15): Train reminder ticker. No ordering dependency
+    # Train reminder ticker. No ordering dependency
     # with stop_engine/stop_maia -- it never touches the engine. Prod runs a
     # single uvicorn process (deploy/entrypoint.sh passes no --workers), so
-    # there is exactly one ticker; D-07's claim UPDATE covers restarts and any
+    # there is exactly one ticker; the claim UPDATE (claim the day first, then
+    # send) makes a double send structurally impossible across restarts and any
     # future multi-process case.
     reminder_task = asyncio.create_task(run_periodic_train_reminders(), name="train-reminders")
-    # SEED-139 item 5: daily automated re-arm of Path-C-stamped holed games
-    # (app/services/eval_drain.py's resweep_holed_games, now run in-process
+    # Daily automated re-arm of attempt-cap-stamped holed games
+    # (app/services/eval_drain.py's resweep_holed_games, run in-process
     # instead of only by hand). No ordering dependency with
     # stop_engine/stop_maia -- this loop never touches the engine.
     resweep_task = asyncio.create_task(run_periodic_holed_game_resweep(), name="holed-game-resweep")
     try:
         yield
     finally:
-        # WR-03: stop_engine() must always run even if the reaper or drain task
-        # raises a non-CancelledError on shutdown — otherwise the long-lived
-        # Stockfish UCI process leaks across restarts. Cancel both tasks before
-        # awaiting either so they enter cancellation in parallel. Wrap the
-        # awaits in an inner try/finally so the engine shutdown is unconditional.
+        # stop_engine() must always run even if any background task raises a
+        # non-CancelledError on shutdown — otherwise the long-lived Stockfish UCI
+        # process leaks across restarts. Cancel all tasks before awaiting any so
+        # they enter cancellation in parallel. Wrap the awaits in an inner
+        # try/finally so the engine shutdown is unconditional.
         reaper_task.cancel()
         drain_task.cancel()
         full_drain_task.cancel()
@@ -245,7 +246,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 logger.exception("Holed-game resweep task raised on shutdown")
         finally:
             await stop_engine()
-            # Phase 174 / D-03: tear down the Maia session alongside Stockfish. No
+            # Tear down the Maia session alongside Stockfish. No
             # cross-dependency with the engine, so order is flexible; stop_maia is a
             # safe no-op when Maia was never started (onnxruntime absent).
             await stop_maia()

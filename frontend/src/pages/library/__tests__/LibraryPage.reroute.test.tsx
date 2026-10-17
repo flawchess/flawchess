@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Regression test for the Library landing redirect (quick task 260606-hfy).
+ * Regression test for the Library landing redirect.
  *
  * Bug: /library with games redirected to /openings (outside the Library page).
  * Fix: redirect to /library/games for returning users, /library/import for new.
@@ -80,7 +80,7 @@ function renderLibrary(initialPath = '/library') {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('LibraryPage landing redirect (260606-hfy regression)', () => {
+describe('LibraryPage landing redirect', () => {
   it('with games, /library redirects to /library/games (not /openings)', () => {
     profileState.chess_com_game_count = 10;
     profileState.lichess_game_count = 0;

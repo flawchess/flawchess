@@ -54,15 +54,15 @@ interface EvalConfidenceTooltipProps {
 }
 
 /**
- * Tooltip body for the MG-entry eval bullet chart (z-test against 0 cp).
- * Used by BulletConfidencePopover. Finding-first layout: signed-pawn metric
+ * Tooltip body for the average-eval bullet chart (opening end or endgame entry;
+ * z-test against 0 cp).
+ * Used by EvalConfidencePopover. Finding-first layout: signed-pawn metric
  * with inline explainer, then bold verdict + confidence, then italic footer
  * for the chart-decoration legend. CI numbers are not shown in text — the
  * bullet's whisker carries that.
  *
  * The chart is centered on 0 cp regardless of color; the per-color engine
- * baseline is a tick on the chart, not subtracted from the displayed mean
- * (260504-rvh).
+ * baseline is a tick on the chart, not subtracted from the displayed mean.
  */
 export function EvalConfidenceTooltip({
   level,

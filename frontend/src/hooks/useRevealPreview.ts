@@ -1,6 +1,6 @@
 /**
- * useRevealPreview — the Train reveal's ephemeral engine preview state
- * (SEED-197). A sub-hook of `useTrainRevealTree` so that hook stays small.
+ * useRevealPreview — the Train reveal's ephemeral engine preview state.
+ * A sub-hook of `useTrainRevealTree` so that hook stays small.
  *
  * It owns three things, none of which ever live in the move tree:
  *  - the RESOLVED preview for the shown branch (`preview`): the dimmed engine
@@ -13,7 +13,7 @@
  *
  * Chip seeds are derived each render from the chips and are never stored, so a
  * Move or Game line that arrives late refreshes the preview without touching
- * committed nodes. Nothing is previewed while `active` is false (T-261011-lwy-01).
+ * committed nodes. Nothing is previewed while `active` is false.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -35,7 +35,7 @@ export interface RevealPreviewView {
    * first-move node at the puzzle position). */
   anchorId: NodeId;
   /** Legal moves to show, at most TRAIN_PREVIEW_MAX_PLIES. The preview carries
-   * no eval: the Stockfish row's line 1 shows it (SEED-197 UAT). */
+   * no eval: the Stockfish row's line 1 shows it. */
   steps: RevealPreviewStep[];
 }
 
@@ -142,7 +142,7 @@ export function useRevealPreview({
   });
   const committedIds = committedState.key === resetKey ? committedState.ids : NO_COMMITTED;
 
-  // WR-03 fix: the keyed state above only hides a previous key's data lazily. When
+  // Bug fix: the keyed state above only hides a previous key's data lazily. When
   // `resetKey` goes fen -> null -> fen (a deactivate/reactivate of the SAME puzzle FEN
   // in one mounted screen) the old key matched again and the previous reveal's
   // committed ids and stored lines came back, while the tree restarted its node ids at

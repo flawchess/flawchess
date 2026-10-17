@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * animatedScroll.ts unit tests (Quick 260914-uer, QUICK-03).
+ * animatedScroll.ts unit tests.
  *
  * Behaviors verified:
  * 1. `durationMs <= 0` (the reduced-motion path) sets `scrollTop` to

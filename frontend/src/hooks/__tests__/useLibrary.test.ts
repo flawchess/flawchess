@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useLibrary.ts pure-function tests (Quick 260714-rj5, Task 2).
+ * useLibrary.ts pure-function tests.
  *
  * Covers `libraryGamePollInterval` — the poll-interval decision that drives
  * useLibraryGame's opt-in `live` mode: poll while a game-mode card is
@@ -82,7 +82,7 @@ describe('libraryGamePollInterval', () => {
   });
 });
 
-describe('buildLibraryParams — has_gem / has_great (FILT-01, Phase 175)', () => {
+describe('buildLibraryParams — has_gem / has_great', () => {
   it('includes has_gem: true when hasGem is true', () => {
     const params = buildLibraryParams(DEFAULT_FILTERS, [], [], true, false);
     expect(params.has_gem).toBe(true);

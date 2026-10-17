@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /**
- * TrainMedalDialogHost.test.tsx — Phase 231 landing host (D-10, D-13,
- * RESEARCH Pitfall 6). Spies on the real axios instance (apiClient.get /
+ * TrainMedalDialogHost.test.tsx — landing host. Spies on the real axios instance (apiClient.get /
  * apiClient.post) so client.ts, the hooks and the host are exercised together.
  */
 import type { ReactNode } from 'react';
@@ -186,7 +185,7 @@ describe('TrainMedalDialogHost', () => {
     expect(screen.queryByTestId('train-medal-dialog')).toBeNull();
   });
 
-  it('an impersonating admin triggers no GET and shows nothing (T-231-16)', async () => {
+  it('an impersonating admin triggers no GET and shows nothing', async () => {
     profileMock = { data: { impersonation: { admin_email: 'admin@example.com' } } };
     renderHost();
     await act(async () => {});

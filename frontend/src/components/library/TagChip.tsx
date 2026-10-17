@@ -62,7 +62,7 @@ interface TagChipProps {
    */
   onHover?: (active: boolean) => void;
   /**
-   * Optional click/tap activation (Games card only, used with definition={false}).
+   * Optional click/tap activation (Games card only, used with showDefinitionPopover={false}).
    * Fires when the chip is clicked or activated via keyboard — the card uses it to
    * cycle the eval chart through this tag's flaw plies. Omitted call sites are
    * unaffected (the chip stays a plain highlight-only span).
@@ -72,36 +72,35 @@ interface TagChipProps {
    * When false, the per-chip hover/tap definition popover is suppressed and the
    * chip renders as a plain (highlight-only) span. The Games card sets this and
    * surfaces definitions once via <TagLegend> below the chip row instead, so the
-   * eval chart is never covered by a per-chip overlay. Defaults to true (FlawsTab
-   * keeps the inline popover).
+   * eval chart is never covered by a per-chip overlay. Defaults to true; every
+   * current call site passes false.
    */
-  definition?: boolean;
+  showDefinitionPopover?: boolean;
 }
 
 /**
- * Family-colored tag chip with a hover/tap definition popover (D-05 / D-06).
+ * Family-colored tag chip with a hover/tap definition popover.
  *
  * Desktop: hovering the chip shows the popover after a 100ms delay.
  * Mobile (no hover): tapping the chip toggles the popover open/closed.
  *
- * Navigation removed (D-06): chips no longer deep-link to the flaws filtered view.
  * The whole chip is the Radix Popover trigger (no separate HelpCircle icon).
  * Popover body: "<bold tag-name>: <one-sentence definition>".
- *   - The bold heading is the raw lowercase-with-dash tag string (D-07).
+ *   - The bold heading is the raw lowercase-with-dash tag string.
  *   - Definitions are sourced from tagDefinitions.ts; thresholds from flawThresholds.ts.
  *
- * Active-filter ring (D-05): the chip subscribes to useFlawFilterStore internally.
+ * Active-filter ring: the chip subscribes to useFlawFilterStore internally.
  * When the chip's tag matches an active filter, a colored ring is applied (theme.ts
  * ACTIVE_FILTER_RING_CLASS). Both Games and Flaws card call sites get the ring
  * without prop drilling or changes to either call site.
  *
  * Colors come from theme.ts FAM_* constants — no per-tag color sprawl.
  */
-export function TagChip({ tag, gameId, count, onHover, onActivate, definition = true }: TagChipProps) {
+export function TagChip({ tag, gameId, count, onHover, onActivate, showDefinitionPopover = true }: TagChipProps) {
   const family = getTagFamily(tag);
   const { color, bg } = TAG_FAMILY_COLORS[family];
 
-  // D-05: subscribe to the flaw filter store internally so both LibraryGameCard
+  // Subscribe to the flaw filter store internally so both LibraryGameCard
   // (Games tab) and FlawsTab (Flaws tab) get the ring without prop drilling.
   const [flawFilter] = useFlawFilterStore();
   const isActive = flawFilter.tags.includes(tag);
@@ -113,10 +112,10 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
 
   // The chip only earns hover/tap affordances when something is actually wired to
   // it: a chart-highlight callback (onHover), a click action (onActivate), or the
-  // inline definition popover (definition). FlawsTab renders chips with none of
+  // inline definition popover (showDefinitionPopover). FlawsTab renders chips with none of
   // these (it surfaces definitions via <TagLegend> instead), so there they are
   // purely decorative — no highlight, no lift, no cursor, not focusable.
-  const interactive = Boolean(onHover || onActivate || definition);
+  const interactive = Boolean(onHover || onActivate || showDefinitionPopover);
 
   const [open, setOpen] = React.useState(false);
   // Brighten the chip while it is hovered or focused (tap-focus on mobile), held
@@ -168,7 +167,7 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
         borderColor: color,
         // Brighten font/icon/border while hovered or focused.
         filter: highlighted ? 'brightness(1.2)' : undefined,
-        // Ring color matches the family color for D-05 active-filter emphasis.
+        // Ring color matches the family color for active-filter emphasis.
         ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
       }}
       role={interactive ? 'button' : undefined}
@@ -178,7 +177,7 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
       onMouseEnter={
         interactive
           ? () => {
-              if (definition) scheduleOpen();
+              if (showDefinitionPopover) scheduleOpen();
               onHover?.(true);
               setHighlighted(true);
             }
@@ -187,7 +186,7 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
       onMouseLeave={
         interactive
           ? () => {
-              if (definition) scheduleClose();
+              if (showDefinitionPopover) scheduleClose();
               onHover?.(false);
               setHighlighted(false);
             }
@@ -212,9 +211,9 @@ export function TagChip({ tag, gameId, count, onHover, onActivate, definition = 
     </span>
   );
 
-  // Games card suppresses the per-chip overlay (definition=false) and shows a
+  // Games card suppresses the per-chip overlay (showDefinitionPopover=false) and shows a
   // single <TagLegend> below the chip row instead; return the plain chip.
-  if (!definition) return chip;
+  if (!showDefinitionPopover) return chip;
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -253,8 +252,8 @@ interface TagLegendProps {
   /** The (unique) tags shown on this card; only these are explained. */
   tags: FlawTag[];
   /**
-   * Tactic motif strings on this card (Phase 126 UAT). Listed first in the popover,
-   * above the flaw tags. Caller is responsible for beta-gating (pass [] when off).
+   * Tactic motif strings on this card. Listed first in the popover, above the flaw
+   * tags.
    */
   tacticMotifs?: string[];
   /**
@@ -263,14 +262,12 @@ interface TagLegendProps {
    * and pass an explicit `testId` instead.
    */
   gameId?: number;
-  /** Visible label before the info icon (label variant only). Defaults to "Tags";
-   *  the label doubles as the section heading on FlawCard. */
+  /** Visible label before the info icon (label variant only). Defaults to "Tags". */
   label?: string;
   /**
-   * Trigger style (Phase 126 UAT). 'label' (default) keeps the "Tags" + HelpCircle
-   * row used by FlawCard. 'icon' drops the text and renders a brown Tag-icon popover
-   * inline at the end of a chip line — the Games card uses one per line (tactics /
-   * other families) so each line explains only its own tags.
+   * Trigger style. 'label' (default) renders a "Tags" text + HelpCircle row; 'icon'
+   * renders a brown Tag-icon popover inline at the end of a chip line (used by every
+   * current caller).
    */
   variant?: 'label' | 'icon';
   /** testId override so multiple legends can coexist on one card. */
@@ -280,11 +277,10 @@ interface TagLegendProps {
 /**
  * Keep the first motif for each resolved display label, preserving order, and drop
  * any motif that maps to no tactic family. Collapses the named-mate subtypes
- * (all → "checkmate") to a single legend row (Quick 260620-onv). The family filter
+ * (all → "checkmate") to a single legend row. The family filter
  * matters because the backend stores family-less motifs (clearance, deflection,
  * en-passant, …) — without it the legend icon would render with an empty popover
- * when a card's only tactic motif belongs to no family (Quick 260620: empty tag
- * tooltip icons).
+ * when a card's only tactic motif belongs to no family.
  */
 function dedupeByLabel(motifs: string[]): string[] {
   const seen = new Set<string>();
@@ -302,8 +298,8 @@ function dedupeByLabel(motifs: string[]): string[] {
  * card with its family-colored icon and definition; opt-in by click/hover on the
  * trigger — no overlay during normal use, so the eval chart is never covered.
  *
- * 'label' variant: "Tags" text + HelpCircle (FlawCard). 'icon' variant: a brown
- * Tag-icon-only trigger inline at the end of a chip line (Games card, Phase 126 UAT).
+ * 'label' variant: "Tags" text + HelpCircle. 'icon' variant: a brown Tag-icon-only
+ * trigger inline at the end of a chip line.
  */
 export function TagLegend({
   tags,
@@ -320,9 +316,9 @@ export function TagLegend({
   const resolvedTestId = testId ?? `tag-legend-${gameId}`;
   const definitions = (
         <div className="flex flex-col gap-1.5">
-          {/* Tactic motifs listed first (Phase 126 UAT). Mate-family motifs collapse
+          {/* Tactic motifs listed first. Mate-family motifs collapse
               to a single "checkmate" row — dedupe by resolved label so two named
-              mates in one game don't print twice (Quick 260620-onv). */}
+              mates in one game don't print twice. */}
           {visibleMotifs.map((motif) => {
             const family = TACTIC_FAMILY_FOR_MOTIF[motif];
             if (family == null) return null;

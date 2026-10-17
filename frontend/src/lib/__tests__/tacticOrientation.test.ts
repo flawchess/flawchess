@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import type { FlawMarker } from '@/types/library';
 
-// Quick 260702-fog: auto-open a tactic line when the board is deep-linked to a tactic ply.
+// Auto-open a tactic line when the board is deep-linked to a tactic ply.
 // These cover the pure selection logic (which orientation, if any, to open).
 
 function marker(overrides: Partial<FlawMarker>): FlawMarker {

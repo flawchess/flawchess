@@ -5,8 +5,8 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 // IntersectionObserver is not available in jsdom. Stub it as a class
 // constructor that fires the callback synchronously on observe() so
 // LazyMiniBoard mounts MiniBoard immediately and the arrow overlay renders
-// without us having to mock LazyMiniBoard itself. (Quick task 260429-gmj —
-// before this fix, `visible` stayed `false` and MiniBoard never mounted, so
+// without us having to mock LazyMiniBoard itself. (Without it,
+// `visible` stays `false` and MiniBoard never mounts, so
 // arrow-overlay assertions could not work.)
 class MockIntersectionObserver {
   private cb: IntersectionObserverCallback;
@@ -37,7 +37,7 @@ vi.mock('@/components/ui/tooltip', () => ({
 // useEvalCoverage calls useQuery which requires a QueryClientProvider.
 // Return safe defaults so the component renders without a provider.
 vi.mock('@/hooks/useEvalCoverage', () => ({
-  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+  useEvalCoverage: () => ({ hasPendingEvals: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
 // useReadiness calls useQuery which requires a QueryClientProvider. Default to
@@ -71,11 +71,11 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     draws: 3,
     losses: 11,
     score: 0.30,            // gives clean "30%" prose
-    confidence: 'medium',   // Phase 76 D-21
-    p_value: 0.05,          // Phase 76 D-21
+    confidence: 'medium',
+    p_value: 0.05,
     ci_low: 0.25,
     ci_high: 0.35,
-    // MG-entry eval fields (quick task 260506-u2b)
+    // MG-entry eval fields
     avg_eval_pawns: 0.5,
     eval_n: 18,
     eval_ci_low_pawns: 0.2,
@@ -116,7 +116,7 @@ afterEach(() => {
 });
 
 describe('OpeningFindingCard', () => {
-  it('renders score percent and "after <move>" caption (260507-t4r: prose replaced by bullet + caption)', () => {
+  it('renders score percent and "after <move>" caption', () => {
     // The "Score X% after [move]" prose line is gone. Score is shown in the score bullet row;
     // the move anchor is a small caption under the miniboard.
     const finding = makeFinding({ classification: 'weakness', color: 'black', score: 0.30 });
@@ -143,7 +143,7 @@ describe('OpeningFindingCard', () => {
     expect(text).not.toMatch(/You score/);
   });
 
-  it('does NOT render "lose" or "win" verbs in prose (Phase 76 D-02)', () => {
+  it('does NOT render "lose" or "win" verbs in prose', () => {
     const finding = makeFinding();
     renderCard({ finding, idx: 0 });
     const card = screen.getByTestId('opening-finding-card-0');
@@ -153,7 +153,6 @@ describe('OpeningFindingCard', () => {
   });
 
   it('score bullet row shows percent rounded to integer (no .toFixed precision in score-text)', () => {
-    // 260507-t4r: the proseLine with .toFixed(1) fallback is gone.
     // The score-text element uses Math.round(score * 100)%.
     // At score=0.499, Math.round(49.9) = 50 — acceptable since the prose contradiction
     // guard was prose-specific and is no longer needed.
@@ -317,7 +316,7 @@ describe('OpeningFindingCard', () => {
     expect(text).not.toContain('3. d4 cxd4');
   });
 
-  describe('WDL bar row + eval bullet row (quick task 260506-u2b)', () => {
+  describe('WDL bar row + eval bullet row', () => {
     it('renders the WDL chart row', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
@@ -326,7 +325,7 @@ describe('OpeningFindingCard', () => {
       expect(wdlRows.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('renders the score-bullet row (260507-t4r: score bullet added to Insights cards)', () => {
+    it('renders the score-bullet row', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
       expect(screen.queryAllByTestId('opening-finding-card-3-score-bullet').length).toBeGreaterThanOrEqual(1);
@@ -354,7 +353,7 @@ describe('OpeningFindingCard', () => {
       expect(evalText.textContent).toContain('—');
     });
 
-    it('renders BulletConfidencePopover trigger when eval_n > 0', () => {
+    it('renders EvalConfidencePopover trigger when eval_n > 0', () => {
       const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5, eval_confidence: 'medium' });
       renderCard({ finding, idx: 5 });
       // Dual layout: testid is duplicated across mobile + desktop blocks.
@@ -369,7 +368,7 @@ describe('OpeningFindingCard', () => {
       expect(card.textContent ?? '').not.toMatch(/Confidence:/);
     });
 
-    // Per-row dimming (260603-pgv): only the low-confidence stat row dims, not
+    // Per-row dimming: only the low-confidence stat row dims, not
     // the whole card. The dual mobile+desktop layout duplicates the testids, so
     // we assert on the first match.
     const opacityStr = String(UNRELIABLE_OPACITY);
@@ -424,7 +423,7 @@ describe('OpeningFindingCard', () => {
     });
   });
 
-  describe('Quick task 260429-gmj — score-colored after-move arrow', () => {
+  describe('score-colored after-move arrow', () => {
     // Test A: arrow overlay renders in both mobile + desktop layouts.
     it('renders <svg data-testid="mini-board-arrow-overlay"> in both mobile and desktop layouts', () => {
       const finding = makeFinding({

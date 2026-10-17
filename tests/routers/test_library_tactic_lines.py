@@ -1,8 +1,8 @@
-"""Integration tests for GET /api/library/flaws/{game_id}/{ply}/tactic-lines (Phase 135, Plan 01).
+"""Integration tests for GET /api/library/flaws/{game_id}/{ply}/tactic-lines.
 
 Coverage:
 - test_200_shape              : authenticated request for owned flaw returns 200 with TacticLinesResponse fields
-- test_cross_user_allowed_200 : requesting another user's flaw returns 200 (Quick 260717-agv)
+- test_cross_user_allowed_200 : requesting another user's flaw returns 200
 - test_404_missing            : game_id/ply with no game_flaws row returns 404
 - test_401_unauthenticated    : no-auth returns 401
 - test_no_hash_leak           : JSON body never exposes internal Zobrist hash field names
@@ -208,7 +208,7 @@ async def test_200_shape(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_cross_user_allowed_200(test_engine) -> None:
-    """Requesting another user's flaw returns 200 (Quick 260717-agv: cross-user analysis view).
+    """Requesting another user's flaw returns 200 (cross-user analysis view).
 
     The tactic-line expansion mirrors get_library_game — any authenticated user
     inspecting a game on the analysis page may expand its tactic lines. "Logged
@@ -271,7 +271,7 @@ async def test_401_unauthenticated() -> None:
 
 @pytest.mark.asyncio
 async def test_no_hash_leak(test_engine) -> None:
-    """JSON response body never exposes internal Zobrist hash field names (T-135-03).
+    """JSON response body never exposes internal Zobrist hash field names.
 
     API responses must expose only FEN/SAN/depth/motif — never internal hashes
     (CLAUDE.md "API responses never expose internal hashes").

@@ -1,11 +1,10 @@
 /**
  * Vitest unit tests for the shared signed-band gradient-stops algorithm.
  *
- * Covers the 6 algorithmic cases defined in Phase 87.6 Plan 02 + an
- * empty-rows edge case.
+ * Covers the 6 algorithmic cases + an empty-rows edge case.
  *
  * The two critical invariants being tested:
- *   1. "First non-zero sign" initialisation (Phase 68 UAT bug 260424):
+ *   1. "First non-zero sign" initialisation:
  *      sign=0 leading rows must not lock the initial color to positive.
  *   2. "colorA !== colorB" zero-endpoint handling: a sign=0 row followed by
  *      a non-zero sign of the opposite orientation must trigger a coincident
@@ -73,7 +72,7 @@ describe('signedBandGradient', () => {
     expect(result[5]).toEqual({ offset: 100, color: 'green-test' });
   });
 
-  it('sign-zero-leading: [0, 0, 1, 1] → initial color is positive (Phase 68 UAT fix)', () => {
+  it('sign-zero-leading: [0, 0, 1, 1] → initial color is positive', () => {
     // First non-zero sign is +1 → currentColor = positive.
     // No crossovers within the all-positive-or-zero series.
     // Stops: [0/positive, 100/positive]

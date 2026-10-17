@@ -1,8 +1,8 @@
-"""Game flaws repository: bulk insert, delete, and FlawRecord→row mapping (Phase 108 Plan 02).
+"""Game flaws repository: bulk insert, delete, and FlawRecord→row mapping.
 
-Provides the single FlawRecord→game_flaws row mapping (D-10: one classify path) reused
-by the import hook, backfill_flaws.py, and reclassify_positions.py so the materialized
-table never drifts from the live classify_game_flaws kernel.
+Provides the single FlawRecord→game_flaws row mapping (one classify path) reused
+by the eval pipeline (eval_entry, eval_apply) and scripts/backfill_flaws.py so the
+materialized table never drifts from the live classify_game_flaws kernel.
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ from app.services.flaws_service import FlawRecord
 
 # ---------------------------------------------------------------------------
 # Encoding maps — mirrors the FlawTag taxonomy from flaws_service.py
-# D-03: severity == "inaccuracy" is NEVER stored in game_flaws (M+B only).
+# severity == "inaccuracy" is NEVER stored in game_flaws (M+B only).
 # ---------------------------------------------------------------------------
 
 # Severity: 1=mistake, 2=blunder. Filtering uses set-membership (severity IN (...)),
 # so the UI's Blunders/Mistakes toggles select exactly the chosen tiers.
-# Inaccuracies are count-only (D-03); flaw_record_to_row raises ValueError on "inaccuracy".
+# Inaccuracies are count-only; flaw_record_to_row raises ValueError on "inaccuracy".
 _SEVERITY_INT: dict[str, int] = {"mistake": 1, "blunder": 2}
 
 # Tempo family: 0=low-clock, 1=hasty, 2=unrushed; NULL when no clock data.
@@ -48,14 +48,14 @@ def flaw_record_to_row(
 ) -> dict[str, Any]:
     """Map a FlawRecord (M+B only) + game context to a game_flaws insert dict.
 
-    D-10: this is the single FlawRecord→row mapping reused by all write paths
-    (import hook, backfill, reclassify) so the materialized table never drifts.
+    This is the single FlawRecord→row mapping reused by all write paths
+    (eval pipeline, backfill) so the materialized table never drifts.
 
     Args:
         user_id: The owning user's ID (from game.user_id — no cross-user writes).
         game_id: The parent game's ID.
         flaw: A FlawRecord emitted by classify_game_flaws. Must have severity
-              "mistake" or "blunder" (D-03: inaccuracies are never stored).
+              "mistake" or "blunder" (inaccuracies are never stored).
 
     Returns:
         A dict suitable for pg_insert(GameFlaw).values([row]).
@@ -66,7 +66,7 @@ def flaw_record_to_row(
     """
     severity = flaw["severity"]
     if severity == "inaccuracy":
-        # Guard: inaccuracies are count-only (D-03). Callers using classify_game_flaws
+        # Guard: inaccuracies are count-only. Callers using classify_game_flaws
         # should never see an inaccuracy in the returned FlawRecord list, but an explicit
         # guard here catches any future mis-routing.
         raise ValueError(
@@ -109,12 +109,10 @@ def flaw_record_to_row(
         "is_lucky": "lucky" in tags,
         "is_reversed": "reversed" in tags,
         "is_squandered": "squandered" in tags,
-        # Phase 112 (D-07): es_before, es_after, move_san removed — these were display-only
-        # columns now sourced via a game_positions join in query_flaws (D-08).
-        # The FlawRecord TypedDict still carries them for internal kernel use; they are
-        # intentionally not persisted here (Pitfall 6 in 112-CONTEXT.md).
+        # es_before/es_after/move_san are not persisted (FlawRecord carries them for
+        # the kernel only): query_flaws reads them from game_positions.
         "fen": flaw["fen"],
-        # Tactic family — both orientations (Phase 124/128 — D-01/D-02/D-06).
+        # Tactic family — both orientations.
         # Use .get() so older construction paths that omit keys map to None (not KeyError).
         # Note the int→motif key-name shift: FlawRecord uses _int suffix for motif int values
         # to distinguish from the DB column name (which stores the raw int directly).
@@ -122,7 +120,6 @@ def flaw_record_to_row(
         "allowed_tactic_piece": flaw.get("allowed_tactic_piece"),
         "allowed_tactic_confidence": flaw.get("allowed_tactic_confidence"),
         "allowed_tactic_depth": flaw.get("allowed_tactic_depth"),
-        # missed_* are None until the Phase 128 Plan 02 detector second pass runs.
         "missed_tactic_motif": flaw.get("missed_tactic_motif_int"),
         "missed_tactic_piece": flaw.get("missed_tactic_piece"),
         "missed_tactic_confidence": flaw.get("missed_tactic_confidence"),
@@ -137,7 +134,7 @@ async def bulk_insert_game_flaws(
     """Insert game_flaws rows, skipping conflicts (idempotent for import hook).
 
     Uses ON CONFLICT DO NOTHING on the PK (user_id, game_id, ply).
-    Per RESEARCH §11: small per-game row count (~1-5), pg_insert is appropriate.
+    Small per-game row count (~1-5), so pg_insert is appropriate.
     No-op on an empty list.
 
     Args:
@@ -163,12 +160,14 @@ TACTIC_TAG_COLUMNS: tuple[str, ...] = (
     "missed_tactic_depth",
 )
 
-# Phase 150 R3/D-04: the 10 columns a diff/upsert must preserve-by-omission for a
-# flaw ply that was NOT freshly re-blobbed this pass — the 2 PV-line JSONB blobs
-# plus the 8 tactic-tag columns above. Single source of truth so a future 11th
-# blob/tactic column cannot be silently nulled by an upsert that forgets to list it
-# (the exact "add a column, forget to preserve it" seam this phase closes).
-FLAW_BLOB_COLUMNS: tuple[str, ...] = ("allowed_pv_lines", "missed_pv_lines") + TACTIC_TAG_COLUMNS
+# The 10 columns a diff/upsert must preserve-by-omission for a flaw ply that was
+# NOT freshly re-blobbed this pass — the 2 PV-line JSONB blobs plus the 8
+# tactic-tag columns above. Single source of truth so a future 11th blob/tactic
+# column cannot be silently nulled by an upsert that forgets to list it.
+FLAW_BLOB_AND_TACTIC_COLUMNS: tuple[str, ...] = (
+    "allowed_pv_lines",
+    "missed_pv_lines",
+) + TACTIC_TAG_COLUMNS
 
 
 async def bulk_update_tactic_tags(
@@ -202,7 +201,7 @@ async def delete_flaws_for_game(
     """Delete all game_flaws rows for one game (used by backfill recompute).
 
     Scoped to BOTH game_id AND user_id so no cross-user deletion is possible
-    (T-108-05 mitigation: user_id derived from game.user_id by the caller).
+    (user_id derived from game.user_id by the caller).
 
     Args:
         session: AsyncSession to use for the delete.
@@ -224,12 +223,12 @@ async def delete_flaw_plies(
     user_id: int,
     plies: Collection[int],
 ) -> None:
-    """Delete specific game_flaws rows by ply (R3 diff/upsert "no longer a flaw" branch).
+    """Delete specific game_flaws rows by ply (diff/upsert "no longer a flaw" branch).
 
     A clean per-ply ``DELETE ... WHERE ply IN (...)`` — never a bulk-update-by-PK,
     which asserts exactly one row matched per parameter set and raises
     StaleDataError when a ply no longer exists (FLAWCHESS-8D). Scoped to BOTH
-    game_id AND user_id (T-108-05 mitigation, same as delete_flaws_for_game).
+    game_id AND user_id (same as delete_flaws_for_game).
 
     No-op on an empty ``plies``.
     """
@@ -253,10 +252,10 @@ async def bulk_update_game_flaw_rows(
     Generic counterpart to bulk_update_tactic_tags: each dict must carry the full
     PK (user_id/game_id/ply) plus whichever non-PK columns should be SET. A column
     absent from a dict is left untouched by the compiled ``UPDATE ... SET`` clause
-    — this is R3's "preservation-by-omission" (never rely on COALESCE-vs-bound-None
-    semantics for a JSONB column, see FLAW_BLOB_COLUMNS / project_asyncpg_jsonb_
-    null_vs_sql_null). Every dict in one call must share the SAME set of keys
-    (SQLAlchemy compiles one UPDATE statement, executed via executemany).
+    — this is "preservation-by-omission" (never rely on COALESCE-vs-bound-None
+    semantics for a JSONB column: a Python None binds as JSON null, not SQL NULL;
+    see FLAW_BLOB_AND_TACTIC_COLUMNS). Every dict in one call must share the SAME set
+    of keys (SQLAlchemy compiles one UPDATE statement, executed via executemany).
 
     No-op on an empty list.
     """

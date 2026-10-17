@@ -1,4 +1,4 @@
-"""Phase 70 router contract tests for POST /api/insights/openings (D-13, D-14).
+"""Router contract tests for POST /api/insights/openings.
 
 URL: POST /api/insights/openings
      (insights router prefix="/insights" + @router.post("/openings"), mounted under /api)
@@ -39,7 +39,7 @@ async def auth_headers(test_engine: AsyncEngine) -> dict[str, str]:
 
 @pytest.mark.asyncio
 async def test_post_openings_endpoint_requires_auth_returns_401() -> None:
-    """V4 / V2 ASVS: unauthenticated request to POST /api/insights/openings
+    """Unauthenticated request to POST /api/insights/openings
     must return 401 Unauthorized."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -52,7 +52,7 @@ async def test_post_openings_endpoint_requires_auth_returns_401() -> None:
 async def test_post_openings_endpoint_returns_four_section_response(
     auth_headers: dict[str, str],
 ) -> None:
-    """D-01: authenticated request returns a response with all four sections
+    """Authenticated request returns a response with all four sections
     (white_weaknesses, black_weaknesses, white_strengths, black_strengths)
     present, even when all lists are empty.
 
@@ -95,7 +95,7 @@ async def test_post_openings_endpoint_rejects_unknown_field(
 async def test_post_openings_endpoint_rejects_user_id_in_request_body(
     auth_headers: dict[str, str],
 ) -> None:
-    """V4 ASVS / T-70-05-02: endpoint must derive user_id from session only.
+    """Endpoint must derive user_id from session only.
     OpeningInsightsRequest has extra='forbid', so sending user_id in the body
     returns 422 Unprocessable Entity."""
     async with httpx.AsyncClient(
@@ -113,7 +113,7 @@ async def test_post_openings_endpoint_rejects_user_id_in_request_body(
 async def test_post_openings_endpoint_does_NOT_apply_full_history_gate(
     auth_headers: dict[str, str],
 ) -> None:
-    """D-14: the endpoint must NOT copy the (since removed, Phase 238) endgame full-history gate.
+    """The endpoint must NOT copy the (since removed) endgame full-history gate.
     A request with mixed filters that would return 400 on the endgame route
     must succeed here with 200.
 
@@ -136,7 +136,7 @@ async def test_post_openings_endpoint_does_NOT_apply_full_history_gate(
 async def test_post_openings_endpoint_filter_equivalence(
     auth_headers: dict[str, str],
 ) -> None:
-    """INSIGHT-CORE-01: two requests with identical filter bodies must return
+    """Two requests with identical filter bodies must return
     identical responses (filter determinism).
 
     A fresh user has no games, so both calls return empty sections — but
@@ -161,13 +161,13 @@ async def test_endgame_insights_no_longer_gated_by_from_date(
     auth_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Phase 238 (D-04): insights/endgame takes no filters, so from_date no longer 400s.
+    """insights/endgame takes no filters, so from_date no longer 400s.
 
-    Before Phase 238 this was a silent-regression gate (T-92-06-01) for the v8
+    This was a silent-regression gate for the v8
     full-history filter gate. The gate is intentionally gone: the report narrates
     the ranked sample, whatever the page filters are, and an undeclared ``from_date``
-    query parameter is ignored (the transient frontend still sends it until plan
-    238-07). generate_insights is stubbed so no LLM or findings pipeline runs.
+    query parameter is ignored (the frontend may still send it).
+    generate_insights is stubbed so no LLM or findings pipeline runs.
     """
     from app.schemas.insights import (
         EndgameInsightsReport,

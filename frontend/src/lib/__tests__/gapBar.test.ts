@@ -1,4 +1,4 @@
-/** Phase 239 D-00a / D-00b / D-11 / D-14: the gap-bar math, words and the significance gate. */
+/** The gap-bar math, words and the significance gate. */
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -26,7 +26,7 @@ import {
   type GapCell,
 } from '../gapBar';
 
-// Symmetric, like every benchmark band since D-15.
+// Symmetric, like every benchmark band.
 const LO = -0.3;
 const HI = 0.3;
 
@@ -48,7 +48,7 @@ function cell(overrides: Partial<GapCell> = {}): GapCell {
   };
 }
 
-describe('gapPosition (D-00a)', () => {
+describe('gapPosition', () => {
   it('puts a zero gap at the centre', () => {
     expect(gapPosition(0, LO, HI)).toBe(GAP_CENTRE);
   });
@@ -61,7 +61,7 @@ describe('gapPosition (D-00a)', () => {
     expect(gapPosition(HI, LO, HI)).toBeCloseTo(75, 10);
   });
 
-  it('scales an asymmetric band by its wider side (defensive: bands are symmetric since D-15)', () => {
+  it('scales an asymmetric band by its wider side (defensive: bands are symmetric)', () => {
     expect(gapPosition(-0.31, -0.31, 0.25)).toBeCloseTo(25, 10);
     expect(gapPosition(0.25, -0.31, 0.25)).toBeCloseTo(50 + (25 * 0.25) / 0.31, 10);
   });
@@ -102,7 +102,7 @@ describe('gapPosition (D-00a)', () => {
   });
 });
 
-describe('gapVerdict (D-00b)', () => {
+describe('gapVerdict', () => {
   it.each([
     [-0.66, 'better'],
     [0.5, 'worse'],
@@ -141,7 +141,7 @@ describe('gap words', () => {
   });
 });
 
-describe('effectiveVerdict (D-11, D-14)', () => {
+describe('effectiveVerdict', () => {
   it('returns the verdict for a zoned, significant cell', () => {
     expect(effectiveVerdict(cell())).toBe('better');
     expect(effectiveVerdict(cell({ delta: 0.5 }))).toBe('worse');
@@ -160,13 +160,13 @@ describe('effectiveVerdict (D-11, D-14)', () => {
     expect(effectiveVerdict(cell(overrides))).toBeNull();
   });
 
-  it('judges a zoneless cell on significance alone (D-16)', () => {
+  it('judges a zoneless cell on significance alone', () => {
     expect(effectiveVerdict(cell({ hasZone: false, delta: -0.66 }))).toBe('better');
     expect(effectiveVerdict(cell({ hasZone: false, delta: 0.5 }))).toBe('worse');
   });
 });
 
-describe('isChanceGap (D-14)', () => {
+describe('isChanceGap', () => {
   it('is true only for an out-of-band gap that is not significant', () => {
     expect(isChanceGap(cell({ significant: false }))).toBe(true);
     expect(isChanceGap(cell())).toBe(false);
@@ -211,7 +211,7 @@ describe('gapVerdictColor', () => {
   });
 });
 
-// ─── Heatmap tint (quick 261014-pb9) ──────────────────────────────────────────
+// ─── Heatmap tint ──────────────────────────────────────────
 
 function zonelessCell(delta: number | null, significant: boolean): GapCell {
   return cell({ delta, significant, hasZone: false, zoneLo: 0, zoneHi: 0 });

@@ -1,7 +1,7 @@
-"""Tests for the bot_game_settings side table (Phase 167 Plan 01, D-16/STORE-04).
+"""Tests for the bot_game_settings side table.
 
 Covers: insert + read back; CHECK constraint rejects an out-of-vocabulary
-rating_source (T-167-04); FK CASCADE removes the settings row when the parent
+rating_source; FK CASCADE removes the settings row when the parent
 game is deleted.
 
 Data isolation: uses the rollback-scoped ``db_session`` fixture from

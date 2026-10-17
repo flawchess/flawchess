@@ -1,8 +1,8 @@
-"""Round-trip tests for the Phase 220 opening cache repair audit models (CACHEFIX-01).
+"""Round-trip tests for the opening cache repair audit models.
 
 Coverage:
 - test_opening_cache_audit_round_trip : insert + read back OpeningCacheAudit
-  with every column populated, including the D-06 hash_mismatch_attempts
+  with every column populated, including the hash_mismatch_attempts
   counter and its server_default of 0.
 - test_opening_cache_repair_row_round_trip : insert + read back
   OpeningCacheRepairRow with its composite (game_id, ply) PK.
@@ -15,14 +15,14 @@ Coverage:
   CHECK accepts only the eight literals; a ninth raises IntegrityError.
 - test_opening_cache_repair_progress_rejects_second_row : the id=1 CHECK
   makes the table a true singleton; a second row (id=2) raises IntegrityError.
-- TestMigrationMarking::test_migration_marking_matches_status : Phase 220
+- TestMigrationMarking::test_migration_marking_matches_status : the
   release-2 migration (b7d4f5a60002) MARK_CONFIRMED_SQL, executed via its own
   exported constant (not a paraphrase), against a cache row seeded for each of
   the eight opening_cache_audit statuses -- confirms exactly the three
   post-repair statuses (screened_clean, confirmed_clean, repaired) and leaves
   every other status a candidate.
 - TestMigrationMarking::test_new_columns_default_on_plain_insert : the seven
-  CACHEFIX-08 columns' defaults on a plain OpeningPositionEval insert.
+  audit columns' defaults on a plain OpeningPositionEval insert.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ _ALL_STATUSES = _CONFIRMED_STATUSES + _CANDIDATE_STATUSES
 
 
 def _load_migration_module():
-    """Load the Phase 220 release-2 migration by path (not an importable package --
+    """Load the release-2 migration by path (not an importable package --
     alembic/versions filenames start with a digit, same pattern as
     tests/test_normalization.py::TestMigrationBackfillSqlMatchesPythonHelper).
     """
@@ -110,7 +110,7 @@ async def _seed_game(session: AsyncSession, *, user_id: int = _TEST_USER_ID) -> 
 class TestOpeningCacheAuditRoundTrip:
     @pytest.mark.asyncio
     async def test_opening_cache_audit_round_trip(self, db_session: AsyncSession) -> None:
-        """OpeningCacheAudit round-trips every column, including the D-06 retry counter."""
+        """OpeningCacheAudit round-trips every column, including the retry counter."""
         game = await _seed_game(db_session)
         now = datetime.now(timezone.utc)
         row = OpeningCacheAudit(
@@ -289,7 +289,7 @@ class TestOpeningCacheRepairProgressRoundTrip:
 
 
 class TestMigrationMarking:
-    """Phase 220 release-2 migration (b7d4f5a60002): MARK_CONFIRMED_SQL, executed
+    """Release-2 migration (b7d4f5a60002): MARK_CONFIRMED_SQL, executed
     as the exact statement the migration runs, must mark confirmed=true only for
     the three post-repair audit statuses.
     """
@@ -346,7 +346,7 @@ class TestMigrationMarking:
 
     @pytest.mark.asyncio
     async def test_new_columns_default_on_plain_insert(self, db_session: AsyncSession) -> None:
-        """The seven CACHEFIX-08 columns default correctly on a plain insert."""
+        """The seven audit columns default correctly on a plain insert."""
         row = OpeningPositionEval(full_hash=-999999, eval_cp=5)
         db_session.add(row)
         await db_session.flush()

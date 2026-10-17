@@ -4,7 +4,7 @@ Provides response models for:
 - GET /api/endgames/stats: per-category W/D/L with inline conversion/recovery stats
 - GET /api/endgames/games: paginated game list filtered by endgame class
 - GET /api/endgames/ranked-stats: filter-free per-TC ranked-sample payload for the
-  percentile-first Stats tab (Phase 238; EndgameRankedStatsResponse)
+  percentile-first Stats tab (EndgameRankedStatsResponse)
 """
 
 import datetime
@@ -28,9 +28,8 @@ TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 class RatingAnchorOut(BaseModel):
     """Blended anchor + per-platform composition for the ranked-metric popover.
 
-    D-12 Reversal Amendment (CONTEXT 2026-05-27). The anchor is the
-    game-weighted median of converted-chess.com + native-lichess ratings.
-    See: .planning/notes/percentile-anchor-d12-reversal.md (rationale, risk profile).
+    The anchor is the game-weighted median of converted-chess.com + native-lichess
+    ratings.
 
     `anchor_rating` is the blended Lichess-equivalent (post-conversion for
     chess.com games; native for lichess games). The per-platform game-count and
@@ -45,8 +44,7 @@ class RatingAnchorOut(BaseModel):
       (d) Suppression (both counts == 0): the popover omits the anchor line at the caller.
 
     Provenance: populated from the `user_rating_anchors` row written by
-    `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`
-    (Plan 10 blended-anchor rewrite).
+    `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`.
     """
 
     anchor_rating: int
@@ -57,18 +55,17 @@ class RatingAnchorOut(BaseModel):
 
 
 class ConversionRecoveryStats(BaseModel):
-    """Inline conversion/recovery stats for one endgame category (D-06, D-08, D-09).
+    """Inline conversion/recovery stats for one endgame category.
 
-    Buckets are split by the Stockfish evaluation at the endgame-entry ply
-    (REFAC-02): Conversion = user entered with eval >= +1.0 (>= +100 cp),
-    Recovery = user entered with eval <= -1.0 (<= -100 cp). The old material
-    imbalance + 4-ply persistence proxy is gone — eval coverage is 100%.
+    Buckets are split by the Stockfish evaluation at the endgame-entry ply:
+    Conversion = user entered with eval >= +1.0 (>= +100 cp),
+    Recovery = user entered with eval <= -1.0 (<= -100 cp).
 
     Conversion: win rate when user entered this endgame type with eval advantage.
     Recovery: draw+win rate when user entered this endgame type with eval deficit.
-    Both are computed per endgame type (D-11), not per game phase.
+    Both are computed per endgame type, not per game phase.
 
-    Phase 84: opponent baselines via same-game mirror identity, scoped per
+    Opponent baselines via same-game mirror identity, scoped per
     endgame class. opponent_conversion = opponent's win rate when opponent
     entered with eval advantage (derived from user_recovery_*);
     opponent_recovery = opponent's save rate when opponent entered with eval
@@ -76,21 +73,21 @@ class ConversionRecoveryStats(BaseModel):
     against the mirror bucket size.
     """
 
-    conversion_pct: float  # win rate when user entered with eval >= +1.0 (0-100), per D-08
+    conversion_pct: float  # win rate when user entered with eval >= +1.0 (0-100)
     conversion_games: int  # games where user entered this endgame type with eval >= +1.0
     conversion_wins: int  # wins among those games
     conversion_draws: int  # draws among those games
     conversion_losses: int  # losses among those games (= conversion_games - wins - draws)
 
-    recovery_pct: float  # draw+win rate when user entered with eval <= -1.0 (0-100), per D-09
+    recovery_pct: float  # draw+win rate when user entered with eval <= -1.0 (0-100)
     recovery_games: int  # games where user entered this endgame type with eval <= -1.0
     recovery_saves: int  # draws+wins among those games (kept for backward compat)
     recovery_wins: int  # wins among those games
     recovery_draws: int  # draws among those games
 
-    # Phase 84: per-class opponent baselines via same-game mirror identity.
+    # Per-class opponent baselines via same-game mirror identity.
     opponent_conversion_pct: float | None
-    """None when recovery_games < _MIN_OPPONENT_SAMPLE; else opponent's win-rate when opponent entered with eval advantage (Phase 84, mirror identity)."""
+    """None when recovery_games < _MIN_OPPONENT_SAMPLE; else opponent's win-rate when opponent entered with eval advantage (mirror identity)."""
     opponent_conversion_games: int
     """== recovery_games (mirror sample size, always int, possibly 0)."""
     opponent_recovery_pct: float | None
@@ -100,9 +97,9 @@ class ConversionRecoveryStats(BaseModel):
 
 
 class EndgameCategoryStats(BaseModel):
-    """W/D/L + inline conversion/recovery for one endgame category (D-06, D-10).
+    """W/D/L + inline conversion/recovery for one endgame category.
 
-    endgame_class maps to one of the six categories defined in D-07:
+    endgame_class maps to one of the six categories:
     rook | minor_piece | pawn | queen | mixed | pawnless
     """
 
@@ -115,25 +112,24 @@ class EndgameCategoryStats(BaseModel):
     win_pct: float
     draw_pct: float
     loss_pct: float
-    conversion: ConversionRecoveryStats  # Inline, not a separate section (D-10)
+    conversion: ConversionRecoveryStats  # Inline, not a separate section
 
-    # Phase 87 follow-up: Wilson score-test p-value of this class's WDL vs 50%.
+    # Wilson score-test p-value of this class's WDL vs 50%.
     # Gated to None when `total < PVALUE_RELIABILITY_MIN_N`. Kept on the
     # response for compatibility; the TypeTable does not render it.
     score_p_value: float | None = None
 
-    # Phase 87.1 (SEED-016, D-05): per-span mean Score Gap for this endgame type.
+    # Per-span mean Score Gap for this endgame type.
     # gap_span = exit_score - ES_sigmoid(entry_eval, user_color); positive = user
     # outperformed the Stockfish baseline across spans of this type. Populated via
     # compute_paired_difference_test in app/services/score_confidence.py (same
-    # helper Phase 85.1 uses for the page-level Achievable Score Gap).
+    # helper the page-level Achievable Score Gap uses).
     # User-facing label is "Score Gap" (card row) / "Endgame Type Score Gap"
     # (concepts). Internal name retains "achievable" to mark the math-family with
-    # achievable_score_gap (Phase 85.1) — see Phase 87.1 CONTEXT D-02 for the
-    # dual-label rationale. n-gates follow compute_paired_difference_test:
+    # achievable_score_gap. n-gates follow compute_paired_difference_test:
     #   n == 0       -> mean = 0.0 (None here), p/CI all None
     #   n == 1       -> mean populated, p/CI all None
-    #   n >= 2       -> ci_low/ci_high populated (99% CI, Phase 239 D-14)
+    #   n >= 2       -> ci_low/ci_high populated (99% CI)
     #   n >= CONFIDENCE_MIN_N (=10) -> p_value populated
     # Defaults are None for backward compat with existing constructor call sites.
     type_achievable_score_gap_mean: float | None = None
@@ -142,7 +138,7 @@ class EndgameCategoryStats(BaseModel):
     type_achievable_score_gap_ci_low: float | None = None
     type_achievable_score_gap_ci_high: float | None = None
 
-    # Phase 239 D-14: TypeTable verdict gates, set by the ranked service only (False
+    # TypeTable verdict gates, set by the ranked service only (False
     # elsewhere). A cell outside its typical band gets red/green only when True: the
     # 99% Wilson CI of the rate excludes the band centre (cohort median stand-in), or
     # the 99% CI of the Score Gap excludes 0.
@@ -150,7 +146,7 @@ class EndgameCategoryStats(BaseModel):
     recovery_significant: bool = False
     type_achievable_score_gap_significant: bool = False
 
-    # quick-260519-ni3: descriptive components of the Score Gap. Computed over the
+    # Descriptive components of the Score Gap. Computed over the
     # exact same span cohort as type_achievable_score_gap_* (same NULL-eval gate),
     # so end_mean - start_mean == gap_mean holds exactly (reconciliation invariant).
     # None when type_achievable_score_gap_n == 0 (no eligible spans).
@@ -159,7 +155,7 @@ class EndgameCategoryStats(BaseModel):
     type_achievable_score_start_mean: float | None = None
     type_achievable_score_end_mean: float | None = None
 
-    # Quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at fields.
+    # WDLStats-aligned score/eval/last_played_at fields.
     # Aligns EndgameCategoryStats with WDLStats (api.ts) so PositionResultsPanel
     # can consume it directly. Defaults match _build_wdl_stats's total==0 path so
     # existing constructor call sites that don't pass them remain valid.
@@ -176,15 +172,15 @@ class EndgameCategoryStats(BaseModel):
     eval_confidence: Literal["low", "medium", "high"] = "low"
     last_played_at: datetime.datetime | None = None
     eval_baseline_pawns: float = (
-        0.25  # always EVAL_BASELINE_PAWNS_WHITE for endgames (color-agnostic, D-02)
+        0.25  # always EVAL_BASELINE_PAWNS_WHITE for endgames (color-agnostic)
     )
 
 
 class EndgameStatsResponse(BaseModel):
     """Response for GET /api/endgames/stats.
 
-    Categories sorted by total game count descending (D-05).
-    No color filter applied — stats cover both colors (D-02).
+    Categories sorted by total game count descending.
+    No color filter applied — stats cover both colors.
     """
 
     categories: list[EndgameCategoryStats]
@@ -193,9 +189,9 @@ class EndgameStatsResponse(BaseModel):
 
 
 class EndgameGamesResponse(BaseModel):
-    """Response for GET /api/endgames/games (D-12, D-14).
+    """Response for GET /api/endgames/games.
 
-    Reuses GameRecord from analysis schema for consistency with existing game displays.
+    Reuses GameRecord from the openings schema for consistency with existing game displays.
     """
 
     games: list[GameRecord]
@@ -204,7 +200,7 @@ class EndgameGamesResponse(BaseModel):
     limit: int
 
 
-# --- Performance chart schemas (Phase 32) ---
+# --- Performance chart schemas ---
 
 
 class EndgameWDLSummary(BaseModel):
@@ -226,14 +222,8 @@ class EndgameWDLSummary(BaseModel):
 MaterialBucket = Literal["conversion", "parity", "recovery"]
 
 
-# Phase 87.2 (D-05): opponent_score, opponent_games, diff_p_value, diff_ci_low,
-# diff_ci_high deleted. The mirror-bucket Wald-z peer-bullet was mathematically
-# degenerate (Conv-Gap == Recov-Gap by symmetry; Parity-Gap affine of gauge).
-# Replaced by the eval-baseline Delta-ES Score Gap (the achievable_score_gap metric).
-
-
 class ScoreGapTimelinePoint(BaseModel):
-    """One point in the score-difference timeline (quick-260417-o2l).
+    """One point in the score-difference timeline.
 
     date: Monday of the ISO week, YYYY-MM-DD.
     score_difference: endgame_score - non_endgame_score on a 0.0-1.0 scale,
@@ -246,7 +236,7 @@ class ScoreGapTimelinePoint(BaseModel):
         (<= timeline_window).
     endgame_score: absolute rolling-window mean score (0.0-1.0) for endgame
         games only — persists the per-side value so both the frontend
-        two-line chart (Phase 68) and the insights `score_timeline`
+        two-line chart and the insights `score_timeline`
         subsection can read absolute scores directly instead of
         reconstructing them from `score_difference`.
     non_endgame_score: absolute rolling-window mean score (0.0-1.0) for
@@ -270,28 +260,15 @@ class ScoreGapTimelinePoint(BaseModel):
     # trailing 100-game window count). Defaults to 0 for back-compat with older
     # fixtures and existing tests that don't set it.
     per_week_endgame_games: int = 0
-    # Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Drives
+    # Absolute per-side rolling-window mean scores (0.0-1.0). Drives
     # the two-line Endgame vs Non-Endgame Score chart and the
     # `score_timeline` insights subsection's two per-part series blocks.
     endgame_score: float
     non_endgame_score: float
 
-    # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
-    # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
-    # the three bucket means) and endgame_skill_rate_mean (rate composite for
-    # the gauge) were deleted. See .planning/notes/endgame-skill-dropped-
-    # conversion-elo.md for rationale (no composite definition survived
-    # scrutiny on cohort de-confounding, individual interpretation, temporal
-    # stability, or the Phase 57 median-coincide invariant).
-
 
 class ClockDiffTimelinePoint(BaseModel):
     """One ISO-week point on the Average Clock Difference over Time line chart.
-
-    Plan 88-15 (CONTEXT §2 A-2): restored after the Phase 88-07 cleanup deleted
-    the line chart that previously consumed an equivalent shape on the legacy
-    clock-pressure response. Renamed (vs the pre-88-07 timeline point class) to
-    make the design-pivot history obvious to future readers.
 
     date: Monday of the ISO week, YYYY-MM-DD.
     avg_clock_diff_pct: rolling-window mean of
@@ -317,7 +294,7 @@ class ClockDiffTimelinePoint(BaseModel):
 class ClockDiffTimelineResponse(BaseModel):
     """Wrapper for the Average Clock Difference over Time line chart payload.
 
-    Plan 88-15 (CONTEXT §2 A-2): returned by compute_clock_diff_timeline; the ranked service
+    Returned by compute_clock_diff_timeline; the ranked service
     reads its points per time control. points is empty when no game in the user's filtered
     set passes the clock-eligibility predicate — the frontend hides the chart
     in that case.
@@ -330,8 +307,7 @@ class ClockDiffTimelineResponse(BaseModel):
 
 class EndgameEloTimelinePoint(BaseModel):
     """One weekly point for a (platform, time_control) combo of the Endgame ELO
-    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.6 amendment
-    2026-05-17 — logistic stretch anchored on Actual ELO).
+    Timeline (logistic stretch anchored on Actual ELO).
 
     date: Monday of the ISO week, YYYY-MM-DD. Aligned with the Score Gap timeline
         for x-axis consistency.
@@ -340,8 +316,6 @@ class EndgameEloTimelinePoint(BaseModel):
         ``s_E``, ``s_N`` are the trailing-window mean scores on the endgame /
         non-endgame subsets. The ``400`` is the same logistic scale FIDE Elo
         uses for its expected-score curve — not a calibration knob.
-        Supersedes the earlier Phase 87.6 per-side FIDE PR mapping; see
-        ``.planning/notes/endgame-elo-logistic-anchored.md`` for derivation.
     non_endgame_elo: ``actual_elo - spread / 2`` (same ``spread``). Endgame ELO
         and Non-Endgame ELO sit symmetrically around Actual ELO by construction:
         ``endgame_elo + non_endgame_elo == 2 * actual_elo`` for every emitted point.
@@ -373,14 +347,14 @@ class EndgameEloTimelinePoint(BaseModel):
 
 
 class EndgameEloTimelineCombo(BaseModel):
-    """One (platform, time_control) combo's paired-line series (Phase 57 ELO-05).
+    """One (platform, time_control) combo's paired-line series.
 
     combo_key: underscore-joined key like "chess_com_blitz" / "lichess_classical".
         Frontend uses this as the lookup key into ELO_COMBO_COLORS.
     platform / time_control: denormalized for the legend label, avoiding frontend
         string-split and keeping the wire format explicit.
     points: weekly points sorted by date ASC. Combos with zero qualifying points
-        are dropped from the response entirely (D-10 tier 2), so callers never
+        are dropped from the response entirely, so callers never
         receive an empty `points` list.
     """
 
@@ -393,8 +367,7 @@ class EndgameEloTimelineCombo(BaseModel):
 class PressureQuintileBullet(BaseModel):
     """Per-quintile Score-Delta bullet for the time pressure card.
 
-    Phase 88.1 (D-07 supersedes D-05): the global cohort layer was retired in
-    favour of a same-game opponent-quintile split. The user's own filtered
+    Same-game opponent-quintile split: the user's own filtered
     games are bucketed twice — once by the USER's clock-pct at endgame entry
     (yielding user_score for quintile Q), once by the OPPONENT's clock-pct
     (yielding opp_score for the matching quintile index). The two splits are
@@ -415,11 +388,11 @@ class PressureQuintileBullet(BaseModel):
         this quintile (no signal to compare).
     p_value: unpaired two-sample Wilson score-test p-value of
         H0: user_score - opp_score == 0; None when the n-gate is unmet.
-    ci_low/ci_high: 99% CI on delta (Phase 239 D-14) from the same two-sample
+    ci_low/ci_high: 99% CI on delta from the same two-sample
         test; None when the n-gate is unmet.
     opp_score: opponent's same-game score in the matching opponent-clock
         quintile; None when the n-gate is unmet.
-    significant: the 99% CI excludes 0 (D-14). Only then does a dot outside the
+    significant: the 99% CI excludes 0. Only then does a dot outside the
         typical band get its red/green colour.
     """
 
@@ -436,16 +409,16 @@ class PressureQuintileBullet(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Phase 238 (SEED-196): percentile-first Endgame Stats payload.
+# Percentile-first Endgame Stats payload.
 #
 # GET /api/endgames/ranked-stats returns, per time control that has at least one
 # ranked-sample game, the 11 peer-ranked metric values computed ON READ from the
 # canonical ranked slice (rated, human, opponents within 100 Elo, last 36 months,
 # at most 3000 games per TC). Values describe the same games the persisted
-# percentiles rank (D-00b, D-07). The endpoint takes no filters (D-01).
+# percentiles rank. The endpoint takes no filters.
 # ---------------------------------------------------------------------------
 
-# Rank status of one (metric, TC) cell (D-09 / D-11):
+# Rank status of one (metric, TC) cell:
 #   ranked      - value plus a persisted percentile
 #   below_floor - not enough games to rank yet (binding count vs floor in the metric)
 #   unranked    - value is computable but no persisted percentile exists yet
@@ -481,7 +454,7 @@ class RankedMetricOut(BaseModel):
     ci_low: float | None = None
     ci_high: float | None = None
     p_value: float | None = None
-    # Phase 239 D-14: the percentile verdict (red/green) shows only when True: the 99% CI
+    # The percentile verdict (red/green) shows only when True: the 99% CI
     # excludes the null (0 for a difference, the cohort p50 for a raw rate) on the
     # verdict's side. A ranked cell outside 25-75 without it renders neutral.
     significant: bool = False
@@ -566,7 +539,7 @@ class EndgameRankedStatsResponse(BaseModel):
     """GET /api/endgames/ranked-stats.
 
     tcs lists only time controls with at least one ranked-sample game, ordered
-    bullet, blitz, rapid, classical (D-14). An empty ranked sample returns [] (D-10).
+    bullet, blitz, rapid, classical. An empty ranked sample returns [].
     """
 
     tcs: list[RankedTcStats]

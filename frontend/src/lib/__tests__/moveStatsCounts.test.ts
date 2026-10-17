@@ -50,7 +50,7 @@ describe('severityCountsBySide', () => {
     expect(result.black.blunder).toBe(0);
   });
 
-  it('derives side from ply parity, not is_user (D-08)', () => {
+  it('derives side from ply parity, not is_user', () => {
     // Opponent's (is_user=false) inaccuracy at an even ply still lands in white.
     const markers = [marker({ ply: 2, severity: 'inaccuracy', is_user: false })];
     const result = severityCountsBySide(markers);
@@ -67,7 +67,7 @@ describe('tierCountsBySide', () => {
     expect(result.black).toEqual({ gem: 0, great: 0, best: 0, good: 0 });
   });
 
-  it('counts gem/great/best/good by moverColorAtPly for BOTH sides (D-08)', () => {
+  it('counts gem/great/best/good by moverColorAtPly for BOTH sides', () => {
     const points = [
       point({ ply: 0, best_move_tier: 'gem' }), // white
       point({ ply: 1, best_move_tier: 'great' }), // black

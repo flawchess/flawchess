@@ -1,35 +1,28 @@
 /**
- * useAnalysisBoardArrows — the board-overlay derivation cluster of `Analysis()`
- * (Phase 215 Plan 05, first of three hooks that clear the remaining
- * arrow-level complexity breaches — see 215-04-SUMMARY.md for the state this
- * plan builds on).
+ * useAnalysisBoardArrows — the board-overlay derivation cluster of `Analysis()`.
  *
  * Owns every `BoardArrow[]`/`SquareMarker[]` value the `<ChessBoard>` render
  * consumes: the PV-sideline tactic overlay, the move-quality hover preview,
  * the translucent next-move arrow, the two live-engine arrow layers (each drawing
- * its own settings-driven count of arrows, Phase 228), and the
+ * its own settings-driven count of arrows), and the
  * square-marker/last-move-tint derivation (severity > gem/great > best/good >
  * book precedence). WHY a separate hook: this is a pure transform of
  * already-computed board/engine/gem state (no state/effects of its own beyond
- * `useMemo`), matching the `useLiveMoveFlaw.ts` shape cited in
- * 215-PATTERNS.md ("Extracted transform hooks (gem-sweep / board-arrows)").
+ * `useMemo`), the same shape as `useLiveMoveFlaw.ts`.
  *
  * Ownership boundary: this hook calls no engine hook of its own — the
  * FlawChess ranked lines and the reconciled Stockfish ranking
  * (`stockfishArrowLines`, the same list that feeds the Stockfish card) are
  * already-resolved results threaded in as options, exactly like
- * `useAnalysisEngineLines.ts`'s `engine`/`flawChessEngine`/`grading` fields. `resolveMarkerFor` and
- * `storedBestGoodByPly` are still LOCAL to `Analysis.tsx` at this point in the
- * phase (215-06's `useAnalysisGemMarkers` extraction owns them next) — this
- * hook consumes them as options regardless of which file defines them.
+ * `useAnalysisEngineLines.ts`'s `engine`/`flawChessEngine`/`grading` fields.
+ * `resolveMarkerFor` (from `useAnalysisGemMarkers`) and `storedBestGoodByPly`
+ * (held in `Analysis.tsx`) arrive as options too.
  *
- * `forkPlyForOrientation` is NOT a private copy (215 code review WR-05): it
- * previously was, and had already textually diverged from the other three
- * copies (logically equivalent, but a silent drift risk) — now imported
- * from `lib/analysisTactics.ts` (a lib module, not a page module, so
- * "hooks must not depend on page-level modules" does not apply).
+ * `forkPlyForOrientation` is imported from `lib/analysisTactics.ts` (a lib
+ * module, not a page module, so "hooks must not depend on page-level modules"
+ * does not apply) rather than copied here, so the fork-ply rule cannot drift.
  *
- * Quick 261012-a6m (D-01..D-08): the Stockfish arrows (never the FlawChess ones)
+ * The Stockfish arrows (never the FlawChess ones)
  * are graded by `lib/engineArrowGrades` in ONE pass (`stockfishGrades`) once the
  * lines are deep enough: ranks 1+ take a proportional alpha, and every drawn
  * arrow's target square gets a move-quality badge (rank 0 the best star at the primary arrow alpha).
@@ -74,7 +67,7 @@ import {
 // cluster rather than staying behind as an orphaned import.
 const QUALITY_HOVER_ARROW_WIDTH = 0.6;
 const NEXT_MOVE_ARROW_WIDTH = 0.18;
-// Each live-engine overlay keeps its engine's width for EVERY rank (D-15): rank 2..N
+// Each live-engine overlay keeps its engine's width for EVERY rank: rank 2..N
 // differ from rank 1 only by the engine's translucent color. How many arrows an
 // engine draws is the settings-driven `fcArrowCount` / `sfArrowCount` option.
 const FLAWCHESS_ENGINE_ARROW_WIDTH = 1.0;
@@ -102,13 +95,13 @@ const STOCKFISH_ARROW_STYLE: EngineArrowStyle = {
 
 /**
  * Pushes up to `count` arrows for one engine into `out`, rank k reading
- * `rootMoves[k]` (D-14: each rank names its own move, so ranks 2..N are distinct
+ * `rootMoves[k]` (each rank names its own move, so ranks 2..N are distinct
  * and match the card order). Iterates from the lowest rank down to 0 so the
- * primary is pushed LAST and paints on top within its width tier (D-15;
- * ChessBoard's width sort keeps input order for equal keys, RESEARCH Pitfall 7).
+ * primary is pushed LAST and paints on top within its width tier
+ * (ChessBoard's width sort keeps input order for equal keys).
  * A count of 0 draws nothing for the engine (its card is unaffected).
  * `secondaryColors` (aligned with `rootMoves`) colors ranks 1+: each engine's graded
- * translucent color (quick 261012-a6m D-08; FlawChess graded the same way since).
+ * translucent color.
  */
 function pushEngineArrows(
   out: BoardArrow[],
@@ -134,7 +127,7 @@ function pushEngineArrows(
  * Named seam (CLAUDE.md: extract one named predicate/helper, not five
  * one-line helpers) that keeps `boardSquareMarkers` under the enforced
  * complexity-15 limit. Sticky gem/great marker append — see that memo's own
- * comment for the Phase 175/163-REVIEW WR-05 precedence rule this implements:
+ * comment for the precedence rule this implements:
  * yields to any existing severity marker already on the square.
  */
 function appendGemGreatMarker(
@@ -151,7 +144,7 @@ function appendGemGreatMarker(
 }
 
 /**
- * Quick 260717-rbn best/good marker append — the same defensive precedence
+ * Best/good marker append — the same defensive precedence
  * `appendGemGreatMarker` uses (yields to any existing severity/gem/great
  * marker on the square), appended only for the current MAINLINE ply.
  */
@@ -175,7 +168,7 @@ function appendBestGoodMarker(
 }
 
 /**
- * Phase 172 (SEED-106 D-08) book marker append — LOWEST precedence in
+ * Book marker append — LOWEST precedence in
  * severity > gem/great > best/good > book. Appended only when the current
  * node is a MAINLINE ply inside the book AND the square carries none of
  * severity/gem/great/best/good.
@@ -203,9 +196,9 @@ function appendBookMarker(
 }
 
 /**
- * Engine badges for the arrows actually drawn (D-07): only while the Stockfish
+ * Engine badges for the arrows actually drawn: only while the Stockfish
  * arrows are the visible overlay (not replaced by the move-quality hover or the
- * PV-sideline overlay) and the engine card is on. Existing markers win (D-03).
+ * PV-sideline overlay) and the engine card is on. Existing markers win.
  */
 function engineBadgeSquareMarkers(
   base: SquareMarker[],
@@ -248,8 +241,8 @@ export interface UseAnalysisBoardArrowsOptions {
   flawChessRankedLines: RankedLine[];
   engineEnabled: boolean;
   /**
-   * The reconciled Stockfish ranking that feeds the Stockfish card (Phase 228
-   * D-14): arrow k reads line k's first move, so arrows and card rows always
+   * The reconciled Stockfish ranking that feeds the Stockfish card:
+   * arrow k reads line k's first move, so arrows and card rows always
    * name the same moves. Before grading lands it is the free run's own lines
    * (the fallback inside the ranking, not a separate source here).
    */
@@ -264,8 +257,8 @@ export interface UseAnalysisBoardArrowsOptions {
   gameOverlaySquareMarkers: SquareMarker[];
   liveFlawSquareMarkers: SquareMarker[];
 
-  // ── Stored gem/great/best/good data (gem-sweep cluster, still in
-  // Analysis.tsx — 215-06's scope) ──────────────────────────────────────
+  // ── Stored gem/great/best/good data (resolveMarkerFor comes from
+  // useAnalysisGemMarkers; storedBestGoodByPly from Analysis.tsx) ───────
   resolveMarkerFor: (
     nodeId: NodeId,
     mainlinePly: number,
@@ -274,7 +267,7 @@ export interface UseAnalysisBoardArrowsOptions {
 }
 
 export interface UseAnalysisBoardArrowsResult {
-  /** Move-list/sideline text coloring inside a focused PV (Quick 260628-ojq). */
+  /** Move-list/sideline text coloring inside a focused PV. */
   sidelineNodeColors: Map<NodeId, string>;
   /** The board's full arrow overlay, precedence-resolved (hover > PV sideline > engines, +next-move). */
   boardArrows: BoardArrow[] | undefined;
@@ -319,7 +312,7 @@ export function useAnalysisBoardArrows(
     storedBestGoodByPly,
   } = options;
 
-  // Move-list coloring inside the PV sideline (Quick 260628-ojq UAT, extends item 4):
+  // Move-list coloring inside the PV sideline:
   // teal (TAC_MISSED) for a missed tactic, crimson (TAC_ALLOWED) for an allowed one. Every
   // sideline move from the fork up to and including the depth-0 resolving move is colored,
   // so the whole tactic line reads in its orientation color (not just the punchline move).
@@ -329,7 +322,7 @@ export function useAnalysisBoardArrows(
     if (!isGameMode || focusedFlaw == null || contextualTacticData == null) return colors;
     const isMissed = focusedFlaw.orientation === 'missed';
     // allowed_tactic_ply_index indexes the API allowed_moves (flaw move at index 0); the
-    // grafted focusedPvLine drops that lead-in, so shift -1 to align (Quick 260628-pu2).
+    // grafted focusedPvLine drops that lead-in, so shift -1 to align.
     const resolveIdx = isMissed
       ? (contextualTacticData.missed_tactic_ply_index ?? 0)
       : (contextualTacticData.allowed_tactic_ply_index ?? 1) - 1;
@@ -341,10 +334,9 @@ export function useAnalysisBoardArrows(
     return colors;
   }, [isGameMode, focusedFlaw, contextualTacticData, focusedPvLine]);
 
-  // Board "tactic overlay" while navigating a PV sideline (item 3): the depth-countdown
-  // arrow on the next stored PV move, mirroring the old tactic-mode overlay. Anchored to
-  // the FOCUSED line's depth/orientation (the line the board is currently in); the live
-  // engine still supplies the grey 2nd.
+  // Board "tactic overlay" while navigating a PV sideline: the depth-countdown
+  // arrow on the next stored PV move. Anchored to
+  // the FOCUSED line's depth/orientation (the line the board is currently in).
   const pvSidelineArrows = useMemo<BoardArrow[] | null>(() => {
     if (!isGameMode || focusedFlaw == null || contextualTacticData == null) return null;
     const orientation = focusedFlaw.orientation;
@@ -356,7 +348,7 @@ export function useAnalysisBoardArrows(
       orientation === 'missed'
         ? (contextualTacticData.missed_depth ?? 0)
         : (contextualTacticData.allowed_depth ?? 0);
-    // anchored=false (Quick 260628-1t5 DECISION 2): the analysis board is a navigable
+    // anchored=false: the analysis board is a navigable
     // surface, so the allowed +1 decision-anchor offset is dropped (allowed reads like missed).
     const rootDisplayDepth = toDisplayDepthForOrientation(depthRaw, orientation, false);
 
@@ -369,11 +361,11 @@ export function useAnalysisBoardArrows(
 
     const displayDepth = Math.max(0, rootDisplayDepth - stepIntoPv);
     // Depth 0 is the move after the tactic resolves: treat it as payoff so it shows no
-    // number and drops the orientation color — the tactic is over by then (Quick 260628-pu2
-    // UAT). The countdown therefore runs ...2, 1 (punchline), then payoff.
+    // number and drops the orientation color — the tactic is over by then.
+    // The countdown therefore runs ...2, 1 (punchline), then payoff.
     const isPayoff = stepIntoPv >= rootDisplayDepth;
-    // 156 UAT: only the single PV-continuation arrow here — no engine rank
-    // arrows join the tactic overlay (the per-engine count settings, Phase 228,
+    // Only the single PV-continuation arrow here — no engine rank
+    // arrows join the tactic overlay (the per-engine count settings
     // apply to the free-analysis engine layer below).
     const arrows = buildPvArrow(nextMove, displayDepth, isPayoff, orientation);
     return arrows.length > 0 ? arrows : null;
@@ -389,7 +381,7 @@ export function useAnalysisBoardArrows(
     nodes,
   ]);
 
-  // Quick 260705-kfg: arrows for the move-quality bar's hovered segment — one per
+  // Arrows for the move-quality bar's hovered segment — one per
   // move, tinted its severity color. Each SAN is replayed at the CURRENT position
   // to resolve from/to squares (skipped if illegal/malformed; never throws). Works
   // in both game mode and free play, so it's derived independently of isGameMode.
@@ -434,21 +426,21 @@ export function useAnalysisBoardArrows(
     };
   }, [currentNodeId, isOnMainLine, mainLine, nodes]);
 
-  // Phase 156 (ARROW-01/02/03) + Phase 228 (D-14/D-15): the board's live engine
+  // The board's live engine
   // arrows — amber FlawChess Engine (practical moves) and blue Stockfish
   // (objective moves), each drawing its own settings-driven count (0-3).
-  // Independently toggled via the existing Phase 155 card switches; each simply
+  // Independently toggled via the engine card switches; each simply
   // doesn't render until its engine's first snapshot yields a root move (no
-  // placeholder arrow, mirrors the card skeleton timing). 156 UAT: this layer is
+  // placeholder arrow, mirrors the card skeleton timing). This layer is
   // the default board overlay in BOTH game mode and free analysis — the engine
   // arrows must be identical regardless of whether a game is loaded.
   //
   // Stockfish rank k reads `stockfishArrowLines[k]`: the reconciled ranking that
-  // feeds the Stockfish card (Phase 162 SEED-090 D-07/D-12). sf-0 is still the
+  // feeds the Stockfish card. sf-0 is still the
   // reconciled argmax because that ranking's head IS the argmax; the free run's
   // own lines only appear as the pre-grading fallback inside that ranking. Ranks
-  // 2..N are distinct moves in card order (the old shape repeated the argmax).
-  // Quick 261012-a6m: the ONLY grade pass; arrow colors and badges both read it.
+  // 2..N are distinct moves in card order.
+  // This is the ONLY grade pass; arrow colors and badges both read it.
   const stockfishGrades = useMemo(
     () => gradeEngineLines(stockfishArrowLines, position),
     [stockfishArrowLines, position],
@@ -484,25 +476,23 @@ export function useAnalysisBoardArrows(
     stockfishGrades,
   ]);
 
-  // Board arrows (156 UAT — game/free parity): the FC + SF engine-arrow layer is
+  // Board arrows (game/free parity): the FC + SF engine-arrow layer is
   // the default overlay in BOTH modes, so the board looks identical whether or not
   // a game is loaded. The move-quality hover overlay still wins (both modes) so
   // hovering the bar previews its moves; the game-only flaw-line drill-down overlay
   // (pvSidelineArrows, self-gated to null outside game mode) still takes precedence
-  // when you navigate into a specific flaw's PV. The old game-review default overlay
-  // (gameOverlay.boardArrows: Stockfish best + light-blue 2nd-best) is no longer
-  // drawn — the per-engine count settings (Phase 228) decide how many arrows each
-  // engine draws. Draw order is ChessBoard's width sort (D-05) with input order
-  // as the tie-break (primary pushed last, D-15); the white next-move arrow
-  // layers on top (onTop).
+  // when you navigate into a specific flaw's PV. The per-engine count settings
+  // decide how many arrows each engine draws. Draw order is ChessBoard's width
+  // sort with input order as the tie-break (primary pushed last); the white
+  // next-move arrow layers on top (onTop).
   const baseArrows: BoardArrow[] | undefined =
     qualityHoverArrows ??
     pvSidelineArrows ??
     (engineArrows.length > 0 ? engineArrows : undefined);
-  // D-09 arrow isolation (157 UAT): while a move is being previewed via hover (or
+  // Arrow isolation: while a move is being previewed via hover (or
   // first-tap on mobile), show ONLY that move's arrow(s). The translucent white
-  // next-move arrow was previously appended unconditionally, so it survived the
-  // preview and cluttered the board — suppress it too whenever a hover is active.
+  // next-move arrow would otherwise survive the preview and clutter the board,
+  // so it is suppressed too whenever a hover is active.
   const isHoverIsolated = qualityHoverArrows !== null;
   const boardArrows: BoardArrow[] | undefined =
     nextMoveArrow && !isHoverIsolated ? [...(baseArrows ?? []), nextMoveArrow] : baseArrows;
@@ -511,14 +501,12 @@ export function useAnalysisBoardArrows(
   // (item 4), which also covers free-play mode. Then the sticky gem/great resolution,
   // then stored best/good, then book — one named helper per precedence tier (CLAUDE.md
   // seam: named helper for the marker-color decision, not five one-line helpers) keeps
-  // this memo under the enforced complexity limit (Phase 172 SEED-106 D-01/D-08, Phase
-  // 175 SEED-108 D-01/D-03/D-04/D-05, 163-REVIEW WR-05, Quick 260717-rbn).
+  // this memo under the enforced complexity limit.
   const baseSquareMarkers = useMemo(() => {
     const base =
       gameOverlaySquareMarkers.length > 0 ? gameOverlaySquareMarkers : liveFlawSquareMarkers;
-    // Phase 175 (SEED-108 D-01/D-03), extending Phase 172 (SEED-106 CR-01/
-    // D-04/D-05): the STORED backend tier wins whenever this mainline ply of
-    // an analyzed game has one — present or authoritatively null (Pitfall 3).
+    // The STORED backend tier wins whenever this mainline ply of
+    // an analyzed game has one — present or authoritatively null.
     // Only then does live resolution apply: gemByNode wins whenever it has
     // graded this node — INCLUDING an explicit `null` rejection, in which
     // case sweep.gemByPly is NOT consulted. `resolveMarkerFor` centralizes
@@ -529,14 +517,14 @@ export function useAnalysisBoardArrows(
       currentNodeId !== null ? resolveMarkerFor(currentNodeId, currentMainlinePly) : null;
     const withMarker = appendGemGreatMarker(base, markerHere, lastMove);
 
-    // Quick 260717-rbn: best/good — the same defensive precedence the gem/
+    // Best/good — the same defensive precedence the gem/
     // great block above uses (yields to any existing severity/gem/great
     // marker on the square), appended only for the current MAINLINE ply.
     const bestGoodTier =
       currentMainlinePly >= 0 ? storedBestGoodByPly.get(currentMainlinePly) : undefined;
     const withBestGood = appendBestGoodMarker(withMarker, bestGoodTier, lastMove);
 
-    // Phase 172 (SEED-106 D-08): book marker — LOWEST precedence in
+    // Book marker — LOWEST precedence in
     // severity > gem/great > best/good > book. Appended only when the current
     // node is a MAINLINE ply inside the book AND the square carries none of
     // severity/gem/great/best/good.
@@ -556,7 +544,7 @@ export function useAnalysisBoardArrows(
     storedBestGoodByPly,
   ]);
 
-  // Quick 261012-a6m D-03/D-07: engine badges merged under the base markers.
+  // Engine badges merged under the base markers.
   const engineArrowsVisible =
     engineEnabled && qualityHoverArrows === null && pvSidelineArrows === null;
   const boardSquareMarkers = useMemo(

@@ -1,6 +1,6 @@
 """CI-enforced parity: app/services/train_score.py must match frontend/src/lib/trainScore.ts.
 
-The weekly leaderboard computes points server-side (Phase 230 D-01) while the
+The weekly leaderboard computes points server-side while the
 client stays the source of truth for per-session display. Change both together;
 this test goes red when the two sides drift. Values are regex-extracted from
 trainScore.ts.

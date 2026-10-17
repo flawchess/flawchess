@@ -1,12 +1,10 @@
-"""Backfill script tests for scripts/backfill_user_percentiles.py (PCTL-10 gate).
-
-Phase 94.1 Plan 02 (scaffold) + Plan 08 (implementation).
+"""Backfill script tests for scripts/backfill_user_percentiles.py.
 
 Tests cover:
 - Idempotency: second run produces identical values
 - --user-id filter: only processes the specified user
 - --metric filter: only processes the specified metric
-- --target prod refusal when tunnel is down (Pitfall 6 / SC-6)
+- --target prod refusal when tunnel is down
 - --target dev refusal when URL lacks port 5432
 - Per-metric summary table emitted to stdout
 - Below-floor user: no row written, summary reports below_pooled_floor=1
@@ -56,7 +54,7 @@ _PROD_TUNNEL_PORT: int = 15432  # per CLAUDE.md / bin/prod_db_tunnel.sh
 _DEV_PORT: int = 5432  # per CLAUDE.md dev DB port
 _DUMMY_NON_5432_PORT: int = 99999
 
-# Expected summary tokens per metric. Phase 94.4 Plan 06 cohort-CDF cutover
+# Expected summary tokens per metric. The cohort-CDF cutover
 # rewrote the summary shape from per-metric (``{metric} upserted=X, skipped=Y``)
 # to per-(metric × TC) (``{metric} {tc} {included} {floor_rej} {suppressed}``)
 # plus a separate per-(TC × source_platform) anchor table. The metric labels
@@ -319,7 +317,7 @@ async def test_backfill_with_metric_filter_only_processes_that_metric(
 
 
 # ---------------------------------------------------------------------------
-# Target safety guards (Pitfall 6 / SC-6 / V4 Tampering)
+# Target safety guards
 # ---------------------------------------------------------------------------
 
 
@@ -330,8 +328,8 @@ def test_backfill_target_prod_refuses_when_tunnel_down(
     no socket listener exists on localhost:15432.
 
     The error message must contain 'bin/prod_db_tunnel.sh' so the operator
-    knows exactly what to run. This is the PCTL-10 safety gate against
-    accidental cross-env writes (Pitfall 6 / V4 Tampering).
+    knows exactly what to run. This is the safety gate against
+    accidental cross-env writes.
 
     The socket probe is monkeypatched to raise OSError ("tunnel down") so the
     test is deterministic regardless of whether a real prod tunnel happens to
@@ -381,7 +379,7 @@ async def test_backfill_emits_per_metric_summary(
     """Running backfill emits a summary table to stdout containing all 4 metric
     labels and 'upserted=' + 'skipped=' tokens.
 
-    Per CONTEXT §Specifics backfill output shape:
+    Backfill output shape:
         score_gap                      upserted=X, skipped=Y (...)
         achievable_score_gap           upserted=X, skipped=Y (...)
         score_gap_conv        upserted=X, skipped=Y (...)
@@ -427,8 +425,8 @@ async def test_backfill_handles_user_with_zero_canonical_slice_games(
     """When a user has a completed import_job but no games passing the canonical
     slice filter, backfill writes NO row for that user.
 
-    The summary must contain 'floor_rej' counts > 0 for that user (Phase 94.4
-    Plan 06: per-(metric, TC) pooled CTE emits no row for users below the
+    The summary must contain 'floor_rej' counts > 0 for that user (the
+    per-(metric, TC) pooled CTE emits no row for users below the
     inclusion floor, including users with zero canonical-slice games — both
     map to the floor-rejected counter in the new per-(metric × TC) summary
     table).
@@ -444,12 +442,12 @@ async def test_backfill_handles_user_with_zero_canonical_slice_games(
     try:
         await main(target="dev", user_id_filter=_TEST_USER_1_ID, metric_filter=None)
 
-        # No row must be written (value_raw is None → no row per CONTEXT discretion).
+        # No row must be written (value_raw is None → no row).
         async with session_maker() as check:
             rows = await _count_pctl_rows(check, _TEST_USER_1_ID)
         assert rows == 0, f"Expected 0 rows for user with zero canonical games, got {rows}"
 
-        # Summary must mention 'floor_rej' (Phase 94.4 Plan 06 cohort-CDF
+        # Summary must mention 'floor_rej' (cohort-CDF
         # per-(metric × TC) summary column header replacing the legacy
         # 'below_pooled_floor' phrase).
         captured = capsys.readouterr()

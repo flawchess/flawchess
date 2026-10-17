@@ -1,6 +1,6 @@
-"""ORM model for push_subscriptions -- one row per browser Web Push subscription (Phase 201).
+"""ORM model for push_subscriptions -- one row per browser Web Push subscription.
 
-PUSH-01/PUSH-02. CASCADE-only to `users.id` (mirrors `app/models/drill_session.py`'s
+CASCADE-only to `users.id` (mirrors `app/models/drill_session.py`'s
 FK shape) -- a subscription is pure client-supplied state, not game-derived data,
 so it has no other foreign key.
 """
@@ -16,7 +16,7 @@ from app.models.base import Base
 
 
 class PushSubscription(Base):
-    """One row per device-per-browser Web Push subscription (PUSH-01/PUSH-02)."""
+    """One row per device-per-browser Web Push subscription."""
 
     __tablename__ = "push_subscriptions"
     __table_args__ = (
@@ -26,7 +26,7 @@ class PushSubscription(Base):
         # one endpoint being claimed by two different user_ids simultaneously.
         UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
         # The FK is not auto-indexed in PostgreSQL; both the fan-out lookup and
-        # the later candidate EXISTS filter (plan 201-04) key on user_id.
+        # the reminder candidate EXISTS filter key on user_id.
         Index("ix_push_subscriptions_user_id", "user_id"),
     )
 
@@ -36,7 +36,7 @@ class PushSubscription(Base):
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
     # Cheap static metadata for a future device list. NOT a last_seen_at
-    # heuristic (D-05 rejected most-recently-active fan-out).
+    # heuristic: fan-out goes to every subscription, not the most recently active one.
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

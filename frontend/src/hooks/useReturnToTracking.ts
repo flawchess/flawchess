@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { clearReturnTo, stashReturnTo } from '@/lib/returnTo';
 
 /**
- * ProtectedLayout's side of the post-auth return path (quick 260926-9bg).
+ * ProtectedLayout's side of the post-auth return path.
  *
  * - Arrived signed out (e.g. a shared /train link): remember `path` so
  *   HomePage can send the user back after guest start, login, or signup.

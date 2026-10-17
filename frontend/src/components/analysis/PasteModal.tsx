@@ -20,11 +20,11 @@ type UserColor = 'white' | 'black';
 interface PasteModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** userColor reflects the side-selector's current selection (D-06, default
+  /** userColor reflects the side-selector's current selection (default
    *  'white') — meaningful only for a `kind: 'pgn'` result; callers may
    *  ignore it for 'fen'/'empty'/'error'. */
   onLoad: (result: PasteParseResult, userColor: UserColor) => void;
-  /** Called after "Analyze full game" successfully saves (Phase 208, D-15) —
+  /** Called after "Analyze full game" successfully saves —
    *  the caller navigates to the saved game's /analysis?game_id=N. Not
    *  called on an "enqueue_failed" outcome — the save DID succeed there too,
    *  but the modal stays open with a retry affordance instead (see the
@@ -32,23 +32,22 @@ interface PasteModalProps {
   onSaved: (gameId: number) => void;
 }
 
-/** D-22: one generic, exact-copy error message — no format-specific variant,
+/** One generic, exact-copy error message — no format-specific variant,
  *  no raw chess.js parser text (see pastedGame.ts's module doc for why the
  *  two chess.js error classes cannot reliably distinguish "nearly-good PGN"
  *  from "not chess at all"). */
 const PARSE_ERROR_MESSAGE = "Couldn't read that as a FEN or PGN.";
 
-/** UI-SPEC Copywriting Contract — server-side save failure (distinct from
- *  PARSE_ERROR_MESSAGE, which is the client-side parse failure). */
+/** Server-side save failure (distinct from PARSE_ERROR_MESSAGE, which is the
+ *  client-side parse failure). */
 const SAVE_ERROR_MESSAGE =
   "Couldn't save that game. Something went wrong. Please try again in a moment.";
 
-/** Claude's-discretion addition to the Copywriting Contract (208-03-PLAN.md):
- *  D-22 governs the PARSE error only. The save genuinely succeeded here —
- *  reusing SAVE_ERROR_MESSAGE would be actively wrong (it would say the save
- *  failed when it didn't). Pressing "Analyze full game" again resubmits the
- *  same PGN, which resolves to the same row through the D-16 identity hash
- *  and re-enqueues — the healing path for the SC-7 post-commit window. */
+/** Shown when the save succeeded but enqueueing the analysis failed. Reusing
+ *  SAVE_ERROR_MESSAGE would be actively wrong (it would say the save failed
+ *  when it didn't). Pressing "Analyze full game" again resubmits the same PGN,
+ *  which resolves to the same row through the identity hash and re-enqueues —
+ *  the healing path for the post-commit window. */
 const ENQUEUE_FAILED_MESSAGE =
   'Game saved, but analysis didn\'t start. Press "Analyze full game" again to retry.';
 
@@ -59,15 +58,15 @@ function eloSuffix(elo: number | null): string {
 }
 
 /**
- * The paste dialog (Phase 208, D-01): one textarea, live-sniffed on every
+ * The paste dialog: one textarea, live-sniffed on every
  * keystroke into one of four states (empty / fen / pgn / error — see
- * sniffPastedInput). No format toggle anywhere in this component (D-01).
+ * sniffPastedInput). No format toggle anywhere in this component.
  *
- * The pgn state additionally renders a White/Black side selector (D-06,
- * default White) plus a parsed-header meta line, and a secondary "Analyze
+ * The pgn state additionally renders a White/Black side selector (default
+ * White) plus a parsed-header meta line, and a secondary "Analyze
  * full game" button ahead of "Load" in DOM order (so DialogFooter's
- * flex-col-reverse puts Load topmost on mobile, rightmost on desktop). The
- * secondary button's request wiring is Plan 03's — it is a no-op here.
+ * flex-col-reverse puts Load topmost on mobile, rightmost on desktop).
+ * "Analyze full game" saves the pasted game and hands the saved id to `onSaved`.
  */
 export function PasteModal({ open, onOpenChange, onLoad, onSaved }: PasteModalProps) {
   const [text, setText] = useState('');

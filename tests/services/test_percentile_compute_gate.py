@@ -1,8 +1,8 @@
-"""Concurrency-gate tests for user_benchmark_percentiles_service (SURGE-05, D-06).
+"""Concurrency-gate tests for user_benchmark_percentiles_service.
 
 Proves PERCENTILE_COMPUTE_LIMIT bounds concurrent compute_stage_a/compute_stage_b
 bodies across BOTH trigger sites (import completion + the eval-drain cold-drain
-crossing) per RESEARCH Pattern 5 / Pitfall 4 — the semaphore lives inside the
+crossing) — the semaphore lives inside the
 compute functions themselves rather than at either asyncio.create_task call
 site, so a single in-function acquisition covers both by construction.
 
@@ -128,7 +128,7 @@ def _patch_stage_b_internals(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_stage_a_never_exceeds_the_configured_concurrency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SURGE-07 ledger row 4: removing the semaphore wrap makes this go red.
+    """Removing the semaphore wrap makes this go red.
 
     Launches PERCENTILE_COMPUTE_LIMIT + 2 concurrent compute_stage_a calls
     against a session_maker whose __aenter__ blocks until released; the
@@ -170,7 +170,7 @@ async def test_stage_a_never_exceeds_the_configured_concurrency(
 async def test_stage_b_shares_the_same_semaphore_as_stage_a(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SURGE-05: a mix of Stage A and Stage B calls share one concurrency bound.
+    """A mix of Stage A and Stage B calls share one concurrency bound.
 
     This is what proves the eval-drain trigger site (compute_stage_b's second,
     independent caller) is covered too — the semaphore lives inside the

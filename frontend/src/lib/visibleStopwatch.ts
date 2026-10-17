@@ -1,5 +1,5 @@
 /**
- * visibleStopwatch.ts — pure visible-time accumulator (Phase 233 D-04).
+ * visibleStopwatch.ts — pure visible-time accumulator.
  *
  * Counts only the time the tab is visible; hidden spans accumulate separately.
  * No DOM and no React: `now` is injected (the hook passes `Date.now()`, the
@@ -22,7 +22,7 @@ export interface VisibleStopwatch extends StopwatchTotals {
 }
 
 /**
- * Starting while hidden opens a hidden span (the useBotGameClock CR-01 rule:
+ * Starting while hidden opens a hidden span (the useBotGameClock rule:
  * seed the pause from the INITIAL visibility, since `visibilitychange` fires
  * only on a transition).
  */

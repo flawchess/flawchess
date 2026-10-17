@@ -21,7 +21,7 @@ function isAxiosLikeError(err: unknown): err is AxiosLikeError {
 
 // FLAWCHESS-24: axios XHR `onerror` (ERR_NETWORK/ERR_CANCELED) means no HTTP
 // response was ever received. The two dominant, unactionable populations are
-// (a) our own 8 `window.location.href` hard navigations aborting in-flight
+// (a) our own `window.location.href` hard navigations aborting in-flight
 // XHRs, and (b) iOS Safari backgrounding / flaky mobile connectivity (9 of
 // the last 15 events). Neither is a bug we can fix. The foreground+online
 // variant is deliberately KEPT (below, unchanged) because it is the only one
@@ -41,7 +41,7 @@ if (typeof window !== "undefined") {
 /**
  * True when a response-less XHR failure is EXPECTED rather than
  * informative: the page is unloading, offline, or backgrounded. Each browser
- * global is read behind its own `typeof` guard (D-09, precedent:
+ * global is read behind its own `typeof` guard (precedent:
  * useAuth.ts's `typeof localStorage` guard) so an unavailable global reads as
  * "not suppressible" — fail-open to REPORTING, never fail-open to dropping.
  */
@@ -74,9 +74,9 @@ const PASTE_GAME_URL = "/imports/paste";
  * `paste-save-error` slot and the user edits and retries, so there is nothing
  * to fix — reporting it just files a Sentry issue per typo.
  *
- * Scoped to this one method+path rather than to the status: every OTHER 422
- * in the API is `from_date must be <= to_date`, which our own date-range
- * picker is supposed to make impossible and which therefore IS a bug.
+ * Scoped to this one method+path rather than to the status: other 422s
+ * (date-range checks, schema validation) can signal a frontend bug and must
+ * keep reporting.
  *
  * The string-`detail` check keeps the remaining bug case visible. FastAPI
  * puts a plain string in `detail` for an explicit `HTTPException` (our
@@ -156,7 +156,7 @@ function sentryBeforeSend(
     // FLAWCHESS-64: an axios rejection's stack is always the same two minified
     // axios frames, so Sentry's default grouping collapses EVERY unfingerprinted
     // status into one issue. That issue absorbed 403s from guests on /train,
-    // and once those were gated out (quick 260807-dr9) it silently "regressed"
+    // and once those were gated out it silently "regressed"
     // by absorbing unrelated deploy-window 502s instead. Keying the fingerprint
     // on the status keeps unrelated failures in unrelated groups, so resolving
     // one can no longer be undone by the next.
@@ -191,7 +191,7 @@ function sentryBeforeSend(
 // and dataCollection.urlQueryParams does not gate them (it covers fetch/xhr
 // breadcrumbs and spans only). After a reset, ResetPasswordForm navigates away
 // from /reset-password?token=<JWT>, so any later error in that page session
-// shipped the token in event.breadcrumbs (found in Phase 232 UAT, gap G-232-3).
+// shipped the token in event.breadcrumbs.
 function scrubNavigationBreadcrumbs(breadcrumbs: Sentry.Breadcrumb[] | undefined): void {
   for (const breadcrumb of breadcrumbs ?? []) {
     if (breadcrumb.category !== "navigation" || !breadcrumb.data) continue;
@@ -216,7 +216,7 @@ Sentry.init({
   integrations: [Sentry.browserTracingIntegration()],
   tracesSampleRate: Number(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE) || 0,
   beforeSend: sentryBeforeSend,
-  // Phase 232 / D-02: Sentry v11 reversed the dataCollection defaults to
+  // Sentry v11 reversed the dataCollection defaults to
   // "collect everything" (user IP, cookies, request/response bodies, headers,
   // query params). Left unset, login POST bodies (passwords) and session
   // cookies would start leaving the browser. This block keeps exactly what v10
@@ -239,7 +239,7 @@ Sentry.init({
     urlQueryParams: { deny: SENTRY_PII_KEY_DENYLIST },
   },
   // v11 defaults this to true, attaching synthetic stack traces to non-Error
-  // captures. With no source maps shipped (SEED-189) those frames are minified
+  // captures. With no source maps shipped (see SEED-189) those frames are minified
   // and change on every deploy, which would split issues per release.
   attachStacktrace: false,
   // Suppress DOM errors caused by browser extensions (e.g. Google Translate)

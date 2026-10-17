@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 validation row D-00d: the bucket card shows the ranked rate as an
+ * The bucket card shows the ranked rate as an
  * uncolored big number, a bracketed WDL bar from the same games, and two
  * percentile rows; never a gauge.
  */
@@ -70,7 +70,7 @@ describe('MetricsCard', () => {
     expect(byId(container, 'metrics-card-parity-dim').style.left).toBe('50%');
   });
 
-  it('draws the WDL bar from the same bucket as the rate (D-00b)', () => {
+  it('draws the WDL bar from the same bucket as the rate', () => {
     const { container } = renderCard('conversion');
     const bar = byId(container, 'metrics-card-conversion-bar');
     // Segment widths are the bucket's W/D/L shares (the 10% draw is too narrow for a label).
@@ -99,7 +99,7 @@ describe('MetricsCard', () => {
     ).toBeTruthy();
   });
 
-  it('a pending rate renders the pending line instead of the big number and bar (D-11)', () => {
+  it('a pending rate renders the pending line instead of the big number and bar', () => {
     const tcStats = buildRankedTc(
       'rapid',
       { buckets: [CONVERSION, PARITY, RECOVERY] },

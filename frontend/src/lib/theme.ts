@@ -15,8 +15,8 @@ export const lightSquareStyle = { backgroundColor: BOARD_LIGHT_SQUARE } as const
 // ChessBoard last-move highlight and the Library eval-chart MiniBoard scrub.
 export const MOVE_HIGHLIGHT_SQUARE = 'rgba(255, 255, 0, 0.35)';
 
-// Analysis-board last-move overlay, colored by the played move's severity
-// (Quick 260627-r9g item 5): red blunder, orange mistake, yellow inaccuracy
+// Analysis-board last-move overlay, colored by the played move's severity:
+// red blunder, orange mistake, yellow inaccuracy
 // (the shared MOVE_HIGHLIGHT_SQUARE), green for a clean move. Same hues as the
 // SEV_* palette at the 0.35 alpha of the legacy yellow so all four read evenly.
 export const MOVE_HIGHLIGHT_BLUNDER = 'oklch(0.58 0.19 25 / 0.35)';
@@ -28,7 +28,7 @@ export const MOVE_HIGHLIGHT_GOOD = 'oklch(0.55 0.16 145 / 0.35)';
 // badge color instead of the generic "clean move" green.
 export const MOVE_HIGHLIGHT_GEM = 'oklch(0.58 0.20 290 / 0.35)';
 export const MOVE_HIGHLIGHT_GREAT = 'oklch(0.58 0.18 220 / 0.35)';
-// Engine-line last-move square highlight (Train reveal stepping, 190.1 UAT):
+// Engine-line last-move square highlight (Train reveal stepping):
 // the engine-pointer blue (BEST_MOVE_ARROW's hue) at the same 0.35 alpha as
 // the other MOVE_HIGHLIGHT_* overlays, so a stepped engine move's squares
 // read as "engine line", not as a played-move verdict color.
@@ -41,7 +41,7 @@ export const WDL_DRAW = 'oklch(0.60 0.02 260)';
 export const WDL_LOSS = 'oklch(0.50 0.15 25)';
 
 // Celebration confetti palette — a mixed, festive set for the bot-win confetti
-// burst (Quick 260723-tqn). MUST be plain hex: canvas-confetti parses colors by
+// burst. MUST be plain hex: canvas-confetti parses colors by
 // stripping every non-hex char from the string, so oklch()/named colors are
 // silently mangled into muddy browns (its hexToRgb only understands hex). Kept
 // here so the celebration palette lives with the other colors, not hardcoded at
@@ -62,7 +62,7 @@ export const WDL_BORDER_WIN = '#036C22';
 export const WDL_BORDER_DRAW = '#6B7280';
 export const WDL_BORDER_LOSS = '#9E2020';
 
-// Severity colors (B/M/I — flaw stats panel and library game cards, Phase 107)
+// Severity colors (B/M/I — flaw stats panel and library game cards)
 export const SEV_BLUNDER = 'oklch(0.58 0.19 25)';
 export const SEV_MISTAKE = 'oklch(0.70 0.16 55)';
 export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
@@ -77,13 +77,13 @@ export const SEV_BLUNDER_BORDER = 'oklch(0.58 0.19 25 / 0.30)';
 export const SEV_MISTAKE_BORDER = 'oklch(0.70 0.16 55 / 0.30)';
 export const SEV_INACCURACY_BORDER = 'oklch(0.82 0.13 95 / 0.30)';
 
-// Eval chart area fill and line colors (Phase 109 — EvalChart.tsx).
+// Eval chart area fill and line colors (EvalChart.tsx).
 // White-ahead region (above midline) = lighter grey; black-ahead region
 // (below midline) = dark grey, mirroring the white/black pieces.
 export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.78 0 0)';
 export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
 
-// EvalBar semantic re-exports (Phase 137 — EvalBar.tsx).
+// EvalBar semantic re-exports (EvalBar.tsx).
 // The analysis board's vertical centipawn bar shares the same palette as the
 // eval chart: white-ahead fill on top, black-ahead fill on bottom.
 export const EVAL_BAR_WHITE = EVAL_CHART_AREA_WHITE_AHEAD;
@@ -96,7 +96,7 @@ export const EVAL_BAR_BLACK = EVAL_CHART_AREA_BLACK_AHEAD;
 export const SIDE_SWATCH_WHITE = 'oklch(0.985 0 0)';
 export const SIDE_SWATCH_BLACK = 'var(--charcoal)';
 
-// SEED-161/F-20 housekeeping: single source of truth for the two colour
+// Single source of truth for the two colour
 // literals used at Home.tsx's dark section backgrounds and
 // MaiaMoveQualityBar's on-segment text colour. SURFACE_DARK resolves to the
 // --surface-dark custom property (index.css), NOT the existing --charcoal
@@ -106,7 +106,7 @@ export const SIDE_SWATCH_BLACK = 'var(--charcoal)';
 export const SURFACE_DARK = 'var(--surface-dark)';
 export const PURE_WHITE = '#ffffff';
 
-// Analysis eval-bar source accents (Phase 151.1 UAT). The two bars flanking the
+// Analysis eval-bar source accents. The two bars flanking the
 // analysis board are color-coded by their source so the pair is legible at a
 // glance: Stockfish (blue) on the right, Maia human-model (red) on the left. The
 // accent tints the bar's advantage fill + frame, the source's card-header caption,
@@ -114,14 +114,14 @@ export const PURE_WHITE = '#ffffff';
 export const STOCKFISH_ACCENT = 'oklch(0.58 0.16 255)'; // blue
 // Violet (not red): red/orange/yellow read as move-quality severity, teal/crimson are
 // the missed/allowed tactic arrows, and blue is Stockfish — violet sits in the one open
-// hue gap and reads as a distinct "human" identity (151.1 UAT).
+// hue gap and reads as a distinct "human" identity.
 export const MAIA_ACCENT = 'oklch(0.58 0.20 290)'; // violet
-// Gem-tier pill background (Phase 175, FILT-01) — same hue as MAIA_ACCENT at the
+// Gem-tier pill background — same hue as MAIA_ACCENT at the
 // same 14% alpha as the SEV_*_BG severity-pill composites, for the "has gem"
 // Library filter toggle (FlawFilterControl) to read as one colored pill family
 // with the severity/tag toggles it sits alongside.
 export const MAIA_ACCENT_BG = 'oklch(0.58 0.20 290 / 0.14)';
-// Great-move corner-marker identity color (Phase 175, SEED-108 D-01/D-02). The
+// Great-move corner-marker identity color. The
 // "great" tier sits one step below gem in the maia_prob band (0.20, 0.50] —
 // a distinct blue hue (not gem's violet 290, not Stockfish's 255, not the
 // desaturated Book blue 250) so all four board-marker identities read apart
@@ -132,20 +132,20 @@ export const GREAT_ACCENT = 'oklch(0.58 0.18 220)'; // blue
 // Great-tier pill background — same hue as GREAT_ACCENT, same 14% alpha
 // convention as MAIA_ACCENT_BG/SEV_*_BG, for the "has great" Library filter toggle.
 export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
-// FlawChess Engine source accent (Phase 155, D-05; 156 UAT: brown → gold). Tints
+// FlawChess Engine source accent. Tints
 // the FlawChessEngineLines card frame + header caption + "FC" eval-bar fill/cap —
 // the third source alongside Stockfish (blue) and Maia (violet). Gold/amber (not the
 // app's brand brown) gives the house engine a warm identity that's clearly distinct
 // from Stockfish's cold blue and doesn't collide with the brand-brown primary UI.
 // Rendered as colored text/elements on the dark card, so a bright gold is legible.
 export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
-// Solid FlawChess primary badge (155 UAT; 156 UAT: brown → gold; Phase 228): the fill of
-// the first (best) line's practical-score badge and the terminal-position badge. Since
-// quick 261012 it is the board arrow's gold (FLAWCHESS_ENGINE_ARROW) so badge and arrow
+// Solid FlawChess primary badge: the fill of
+// the first (best) line's practical-score badge and the terminal-position badge. It is
+// the board arrow's gold (FLAWCHESS_ENGINE_ARROW) so badge and arrow
 // match; white text is only ~2.5:1 on it, so FlawChess badges use DARK text (~7:1).
 // Every later line fades from it with its practical-score drop (flawChessSecondaryBadgeColor).
 export const FLAWCHESS_ENGINE_BADGE_PRIMARY = 'rgb(213, 152, 0)';
-// Book/opening-theory corner-marker identity color (Phase 172, SEED-106 D-08).
+// Book/opening-theory corner-marker identity color.
 // Chroma 0.04 is deliberately the LOWEST of any corner-marker hue (gem 0.20,
 // Stockfish 0.16, FlawChess 0.14, severities 0.13-0.19), so the book badge
 // visually recedes behind every alert/insight badge — it marks context
@@ -166,12 +166,11 @@ export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
 // scrub slider's `bg-foreground` thumb, so cursor and knob read as one control.
 export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 
-// Tag families (flaw chip color-by-family, Phase 107).
-// Phase 126 UAT: every flaw family now renders in a single neutral light grey
-// (the same grey as the white-ahead eval-chart area) so only the new tactic-motif
-// families (TAC_* below) carry distinct hue and stand out. The per-family constant
-// names are kept (each family still has its own constant) — only the values changed
-// to grey. This applies everywhere FAM_* is consumed: the tag chips, the Tags/eval
+// Tag families (flaw chip color-by-family).
+// Every flaw family renders in a single neutral light grey
+// (the same grey as the white-ahead eval-chart area) so only the tactic-motif
+// families (TAC_* below) carry distinct hue and stand out. Each family still has
+// its own constant, all aliasing the grey. This applies everywhere FAM_* is consumed: the tag chips, the Tags/eval
 // tooltips, and the Flaws filter panel.
 const FAM_NEUTRAL = EVAL_CHART_AREA_WHITE_AHEAD; // 'oklch(0.78 0 0)'
 const FAM_NEUTRAL_BG = 'oklch(0.78 0 0 / 0.15)';
@@ -184,12 +183,12 @@ export const FAM_IMPACT_BG = FAM_NEUTRAL_BG;
 export const FAM_PHASE = FAM_NEUTRAL;
 export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
 
-// Tactic motif family colors (Phase 126, updated Phase 129).
-// Phase 126 UAT: every tactic family renders in a single blue (indigo) so all
+// Tactic motif family colors.
+// Every tactic family renders in a single blue (indigo) so all
 // tactic families read as one consistent group. The per-family constant names
 // exist only so consumers key by family name — the values all alias the shared
 // TAC_BLUE. Do not introduce distinct hues; the single-blue convention is
-// intentional. Phase 129: rekey to the 10-family taxonomy (plan 129-04 contract).
+// intentional.
 // Cross-stack contract: TAC_* names match the backend FAMILY_TO_MOTIF_INTS keys.
 const TAC_BLUE = 'oklch(0.68 0.16 240)'; // indigo
 const TAC_BLUE_BG = 'oklch(0.68 0.16 240 / 0.15)';
@@ -213,29 +212,27 @@ export const TAC_HANGING = TAC_BLUE;
 export const TAC_HANGING_BG = TAC_BLUE_BG;
 export const TAC_MATE = TAC_BLUE;
 export const TAC_MATE_BG = TAC_BLUE_BG;
-// Tier-3 "Advanced" families (Quick 260623-6pd). Same single-blue convention as above.
+// Tier-3 "Advanced" families. Same single-blue convention as above.
 export const TAC_DEFLECTION = TAC_BLUE;
 export const TAC_DEFLECTION_BG = TAC_BLUE_BG;
 export const TAC_INTERMEZZO = TAC_BLUE;
 export const TAC_INTERMEZZO_BG = TAC_BLUE_BG;
 export const TAC_INTERFERENCE = TAC_BLUE;
 export const TAC_INTERFERENCE_BG = TAC_BLUE_BG;
-// TAC_CLEARANCE / TAC_CLEARANCE_BG REMOVED (Phase 221 plan 06, D-07 suppression) —
-// "clearance" no longer has a family (see tacticComparisonMeta.ts).
 export const TAC_CAPTURING_DEFENDER = TAC_BLUE;
 export const TAC_CAPTURING_DEFENDER_BG = TAC_BLUE_BG;
-// Phase 133 (plan 133-02): attraction + sacrifice unsuppressed. Same single-blue convention.
+// Attraction + sacrifice. Same single-blue convention.
 export const TAC_ATTRACTION = TAC_BLUE;
 export const TAC_ATTRACTION_BG = TAC_BLUE_BG;
 export const TAC_SACRIFICE = TAC_BLUE;
 export const TAC_SACRIFICE_BG = TAC_BLUE_BG;
-// Move-type families (Quick 260623): en-passant + under-promotion. Same single-blue convention.
+// Move-type families: en-passant + under-promotion. Same single-blue convention.
 export const TAC_EN_PASSANT = TAC_BLUE;
 export const TAC_EN_PASSANT_BG = TAC_BLUE_BG;
 export const TAC_UNDER_PROMOTION = TAC_BLUE;
 export const TAC_UNDER_PROMOTION_BG = TAC_BLUE_BG;
-// Quick: promotion (28) surfaced (was D-09-hidden; perfect-precision residual, sibling of
-// under-promotion). Same single-blue convention.
+// promotion (28): perfect-precision residual, sibling of
+// under-promotion. Same single-blue convention.
 export const TAC_PROMOTION = TAC_BLUE;
 export const TAC_PROMOTION_BG = TAC_BLUE_BG;
 
@@ -244,14 +241,13 @@ export const TAC_PROMOTION_BG = TAC_BLUE_BG;
 // they read apart at a glance independent of motif family. Both stay light enough to keep
 // the chip text/border legible on the charcoal card. BG variants end in `/ 0.15)` so the
 // shared HIGHLIGHT_BG helper (alpha 0.15 → 0.3 on hover) still applies.
-// Quick 260628-ojq: swapped the orientation hues. Missed (a missed opportunity — a cooler,
-// "you could have" signal) takes the teal (hue 200) that allowed used to wear. Allowed (you
-// handed the opponent a tactic — a bad outcome) takes a crimson (hue 10): a vivid pink-red
+// Missed (a missed opportunity — a cooler, "you could have" signal) takes the teal
+// (hue 200). Allowed (you handed the opponent a tactic — a bad outcome) takes a crimson
+// (hue 10): a vivid pink-red
 // in the warm "this hurt you" family, set apart from the blunder's orange-red (hue 25) by
 // being more saturated (chroma 0.22 vs 0.19), a touch lighter, and hue-shifted toward
-// magenta. (Earlier tries — a lighter wine red, a cool purple/violet, then a dark burgundy —
-// were dropped: wine/burgundy read too close to or muddier than the blunder, the purple too
-// far from any "bad" cue.) The board's other hues are taken (red 25 blunder, orange 55
+// magenta. (A lighter wine red or dark burgundy read too close to or muddier than the
+// blunder, and a cool purple/violet sat too far from any "bad" cue.) The board's other hues are taken (red 25 blunder, orange 55
 // mistake, yellow inaccuracy, green 145 clean move, blue 260 best-move arrow); teal (200) is
 // the cool gap, crimson the warm one.
 export const TAC_MISSED = 'oklch(0.70 0.15 200)'; // teal
@@ -265,9 +261,9 @@ export const TAC_ALLOWED = 'oklch(0.60 0.22 10)'; // crimson
 export const TAC_ALLOWED_BG = 'oklch(0.60 0.22 10 / 0.15)';
 export const TAC_ALLOWED_BORDER = 'oklch(0.60 0.22 10 / 0.30)';
 
-// Phase 135 UAT: the active tag in the Missed/Allowed switch (TacticLineExplorer)
+// The active tag in the Missed/Allowed switch (TacticLineExplorer)
 // gets a solid white border so the selected line reads at a glance against its
-// colored fill — replaces the old ghost-button toggle.
+// colored fill.
 export const TAC_SWITCH_ACTIVE_BORDER = 'white';
 
 // Lighter missed/allowed variants used only for the miniboard depth-number badges,
@@ -275,12 +271,10 @@ export const TAC_SWITCH_ACTIVE_BORDER = 'white';
 // lightness (0.70) reads muddy on the same-hue arrow, so the badge numbers are
 // raised to ~0.84 for contrast against the arrow fill (the black outline does the
 // rest). Hue/chroma match TAC_MISSED/TAC_ALLOWED so they stay the same colors.
-// Quick 260628-ojq: match the swapped families — missed teal (hue 200), allowed
-// crimson (hue 10).
 export const TAC_MISSED_LABEL = 'oklch(0.84 0.13 200)'; // lighter teal
 export const TAC_ALLOWED_LABEL = 'oklch(0.84 0.13 10)'; // lighter crimson
 
-// D-05 active-filter ring — applied to TagChip when its tag matches an active
+// Active-filter ring — applied to TagChip when its tag matches an active
 // useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
 // color is applied inline (per-family) so only the Tailwind ring-width + offset
 // classes are constant here; callers combine this with a family color string.
@@ -294,9 +288,6 @@ export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
 // in the app's permanent dark theme and was barely readable.
 export const ANALYSIS_PENDING_TINT_CLASS = 'border border-amber-500/30 bg-amber-500/10';
 export const ANALYSIS_PENDING_ICON_CLASS = 'text-amber-400';
-
-// Phase histogram bar fills (PHASE_OPENING/MIDDLEGAME/ENDGAME) were used by
-// FlawTagDistribution (deleted Phase 115 D-02). Removed to keep knip clean.
 
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look
@@ -315,7 +306,7 @@ export const ZONE_SUCCESS = 'oklch(0.50 0.14 145)';     // green zone (same hue 
 // endgame marks (matches MY_SCORE_COLOR / Recovery line).
 export const GAUGE_NEUTRAL = 'oklch(0.55 0.18 260)';
 
-// Phase 238 percentile bar (D-00a): one 0-100 axis for every peer-ranked metric.
+// Percentile bar: one 0-100 axis for every peer-ranked metric.
 // The track is a faint trough, the 25-75 "typical half of players" band sits a
 // little brighter, and the median tick marks 50. The dot reuses ZONE_DANGER /
 // GAUGE_NEUTRAL / ZONE_SUCCESS (red below 25, blue 25-75, green above 75).
@@ -323,7 +314,7 @@ export const PERCENTILE_TRACK = 'oklch(1 0 0 / 0.07)';
 export const PERCENTILE_TYPICAL_BAND = 'oklch(1 0 0 / 0.13)';
 export const PERCENTILE_MEDIAN_TICK = 'oklch(1 0 0 / 0.35)';
 
-// Quick 261014-pb9 / 261014-qj8 Library Stats tempo x phase heatmap: a cell is tinted
+// Library Stats tempo x phase heatmap: a cell is tinted
 // ZONE_SUCCESS / ZONE_DANGER by color-mix with transparent, only like the gap bars (gap
 // outside the band AND significant; the zoneless cell on significance alone). The percent
 // rises from MIN to MAX with the GapBar position beyond the band (saturating); the MIN
@@ -334,20 +325,20 @@ export const GAP_HEATMAP_TINT_MIN_PERCENT = 35;
 export const GAP_HEATMAP_TINT_MAX_PERCENT = 90;
 export const GAP_HEATMAP_NEUTRAL_FILL = PERCENTILE_TRACK;
 
-// Phase 238 Endgame Metrics cards (D-00d): the bracket under the WDL bar marks which
+// Endgame Metrics cards: the bracket under the WDL bar marks which
 // segments the headline rate counts (wins, wins + draws); the segments it does not
 // count are dimmed with a card-colored veil. Neutral greys, no red/green meaning.
 export const METRIC_BRACKET_COLOR = 'oklch(0.708 0 0)';
 export const METRIC_BRACKET_DIM_OVERLAY = 'oklch(0.205 0 0 / 0.55)';
 
-// Phase 238 time-pressure charts (D-00f): one grey "typical" band replaces the red/blue/green
+// Time-pressure charts: one grey "typical" band replaces the red/blue/green
 // zone bands, and every line, dot and tooltip swatch uses one neutral series color.
 export const TYPICAL_BAND_FILL = 'oklch(1 0 0 / 0.09)';
 export const NEUTRAL_SERIES_COLOR = 'oklch(0.95 0 0)';
 
-// Phase 238 Endgame Type Breakdown (D-00e): each conversion / recovery / vs.-engine cell shows
+// Endgame Type Breakdown: each conversion / recovery / vs.-engine cell shows
 // a grey typical range with a "you" dot colored like the percentile dot. The value text is red below the range, green
-// above it and white inside it (238 UAT replaced the below-only amber). Lighter than
+// above it and white inside it. Lighter than
 // ZONE_DANGER / ZONE_SUCCESS so the text reads on the charcoal card.
 export const TYPICAL_BELOW_VALUE = 'oklch(0.70 0.17 25)';
 export const TYPICAL_ABOVE_VALUE = 'oklch(0.75 0.16 145)';
@@ -355,8 +346,8 @@ export const TYPICAL_ABOVE_VALUE = 'oklch(0.75 0.16 145)';
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
-// Inactivity-gap break-label font (px). 14 = the CLAUDE.md text-sm floor; SC-4 enlarges the
-// prior compact fontSize-11 annotation into a deliberately prominent marker.
+// Inactivity-gap break-label font (px). 14 = the CLAUDE.md text-sm floor; a deliberately
+// prominent marker, not a compact annotation.
 export const BREAK_LABEL_FONT_SIZE = 14;
 
 // Inactivity-gap Palmtree glyph size (px). Deliberately larger than the label text so the
@@ -366,24 +357,22 @@ export const BREAK_LABEL_GLYPH_SIZE = 22;
 // Opacity applied to stats/charts with unreliable data (below MIN_GAMES_FOR_RELIABLE_STATS)
 export const UNRELIABLE_OPACITY = 0.5;
 
-// Time Pressure chart line colors (Phase 55)
+// Time Pressure chart line colors
 // Blue for user's score line — same hue as recovery line in EndgameConvRecovChart
 const MY_SCORE_COLOR = 'oklch(0.55 0.18 260)';     // internal alias for SCORE_TIMELINE_LINE_ENDGAME
 
-// Phase 62 — Impersonation pill.
+// Impersonation pill.
 // Orange (hue ~40) — distinct from amber Guest badge (hue ~80) and WDL_LOSS (hue ~25).
 // Semantic: "elevated state, admin attention"; must read legibly on dark surface.
 export const IMPERSONATION_PILL_BG = 'oklch(0.50 0.18 40)';
 export const IMPERSONATION_PILL_FG = 'oklch(0.95 0.02 40)';
 export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
 
-// Endgame ELO Timeline chart combo palette (Phase 57 ELO-05; rebuilt Phase
-// 87.5). 8 combos = 2 platforms x 4 time controls. Two constants per combo
+// Endgame ELO Timeline chart combo palette. 8 combos = 2 platforms x 4 time controls. Two constants per combo
 // (bright Endgame ELO stroke + dark Actual ELO stroke) instead of an opacity
 // modifier, so both tones preserve their hue reading on the dark charcoal surface.
 // Hues chosen to clear WCAG AA 3:1 non-text contrast against oklch(0.145 0 0);
 // adjacent combos separated by >=40 deg hue to stay visually distinct.
-// Values locked in 57-UI-SPEC.md §ELO_COMBO_COLORS.
 
 import type { EloComboKey } from '@/types/endgames';
 import type { MedalKind } from '@/types/train';
@@ -399,7 +388,7 @@ export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: strin
   lichess_classical:   { bright: 'oklch(0.60 0.18 340)', dark: 'oklch(0.40 0.14 340)' },
 };
 
-// Neutral fill color for score/eval bullets on Openings cards (260507-t4r).
+// Neutral fill color for score/eval bullets on Openings cards.
 // Tufte/Few bullet-chart convention: the bar carries position only; the colored
 // zone bands behind it carry the qualitative verdict. High contrast against the
 // 0.35-opacity zone fills; zero chroma so it reads as genuinely neutral.
@@ -414,52 +403,51 @@ export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
 // DARK_GREEN/DARK_RED in the same overlay.
 //
 // Hex (not oklch) because the Move Explorer + ChessBoard rely on string
-// equality `arrow.color === DARK_BLUE` to choose the low-emphasis opacity
-// branch, so DARK_BLUE in arrowColor.ts re-exports this exact string.
+// equality `arrow.color === NEUTRAL_ARROW_COLOR` to choose the low-emphasis opacity
+// branch, so NEUTRAL_ARROW_COLOR in arrowColor.ts re-exports this exact string.
 export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORDER_DRAW
 
-// Engine best-move arrow on the Library miniboards (Game + Flaw cards). Blue with
-// built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
-// secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
-// overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
 // Static group opacity ChessBoard paints every board arrow at, on top of the arrow
 // color's own alpha. Engine quality badges multiply their opacity by it too so a badge
-// reads exactly as translucent as its arrow (quick 261012-a6m owner follow-up).
+// reads exactly as translucent as its arrow.
 export const ARROW_OPACITY = 0.75;
 // RGB triplet shared by BEST_MOVE_ARROW and the Stockfish secondary arrows (graded ones
-// are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`, quick 261012-a6m).
+// are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`).
 export const STOCKFISH_ARROW_RGB = '37, 99, 235';  // Tailwind blue-600
 // Alpha of the solid top-move arrow; the top move's best-star badge uses the same value
-// as its group opacity so the icon reads as translucent as its arrow (quick 261012-a6m).
+// as its group opacity so the icon reads as translucent as its arrow.
 export const STOCKFISH_PRIMARY_ALPHA = 0.8;
+// Engine best-move arrow (Stockfish blue with built-in alpha so it reads as a translucent
+// engine-suggestion pointer): visually secondary to the red flaw-move arrow it sits beside
+// on the Flaw card, and a calm overlay on the scrubbed Game-card board. rgba (not oklch)
+// so the alpha is explicit.
 export const BEST_MOVE_ARROW = `rgba(${STOCKFISH_ARROW_RGB}, ${STOCKFISH_PRIMARY_ALPHA})`;
 
-// FlawChess Engine board arrow (Phase 156) — the practical-play move rendered on the
+// FlawChess Engine board arrow — the practical-play move rendered on the
 // analysis board (game + free). Bright gold/amber (matching FLAWCHESS_ENGINE_ACCENT's
 // hue) so it pops against both the dark and light board squares and reads as the FC
-// engine's identity color, distinct from the blue Stockfish arrow (156 UAT). rgba (not
+// engine's identity color, distinct from the blue Stockfish arrow. rgba (not
 // oklch) like the other arrow tokens: oklch() does not reliably paint in the SVG `fill`
 // presentation attribute, which left the arrow invisible. sRGB of oklch(0.80 0.15 80).
 // RGB triplet shared by FLAWCHESS_ENGINE_ARROW and the graded FlawChess secondary arrows.
 export const FLAWCHESS_ARROW_RGB = '213, 152, 0';
-export const FLAWCHESS_ENGINE_ARROW = `rgb(${FLAWCHESS_ARROW_RGB})`;  // deep gold/amber (156 UAT: darker + fully opaque)
+export const FLAWCHESS_ENGINE_ARROW = `rgb(${FLAWCHESS_ARROW_RGB})`;  // deep gold/amber, fully opaque
 // Alpha of the FlawChess top-move arrow (opaque, above): the start of its secondary fade.
 export const FLAWCHESS_PRIMARY_ALPHA = 1;
 
-// Non-primary engine lines (SEED-175 styling lock, Phase 228): ONE translucent color per
+// Non-primary engine lines: ONE translucent color per
 // engine for every board arrow after the first (primary stays solid: BEST_MOVE_ARROW
 // blue / FLAWCHESS_ENGINE_ARROW gold). Card badges use the *_BADGE_SECONDARY tokens
 // below instead. Same RGB as the engine's primary arrow at lower alpha; rgba (not oklch)
 // because oklch() does not reliably paint in an SVG `fill`. ChessBoard additionally
 // multiplies engine arrows by ARROW_OPACITY 0.75.
-// Quick 261012-a6m D-08 reverses the old "no eval-proportional transparency" lock for
-// STOCKFISH only: once the engine has searched deep enough to grade a line, its arrow
+// For STOCKFISH only, once the engine has searched deep enough to grade a line, its arrow
 // alpha follows its expected-score drop vs the top line (STOCKFISH_SECONDARY_ALPHA_*
 // below). STOCKFISH_SECONDARY_LINE is now the fixed PRE-DEPTH-GATE fallback look.
 // The FlawChess arrows follow the same alpha range from their practical-score drop
 // (engineArrowGrades.flawChessSecondaryAlphas); they have no depth gate, so no fallback.
 export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE_ARROW blue @ 45%
-// Graded secondary alpha floor (quick 261012-a6m D-08): a blunder-sized expected score
+// Graded secondary alpha floor: a blunder-sized expected score
 // drop gets MIN (floor so blunder arrows stay visible). A line equal to the top move gets
 // its engine's PRIMARY alpha (STOCKFISH_PRIMARY_ALPHA / FLAWCHESS_PRIMARY_ALPHA), so a
 // near-equal second move looks near-equal to the top move: there is no step between rank
@@ -468,9 +456,9 @@ export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE
 // secondary arrows despite the name.
 export const STOCKFISH_SECONDARY_ALPHA_MIN = 0.25;
 
-// Non-primary engine-card BADGES (Phase 228 UAT): a faded copy of the engine's primary
+// Non-primary engine-card BADGES: a faded copy of the engine's primary
 // badge, not the arrow color. The FC primary badge is a darker gold than the board arrow
-// (white text needs contrast), so reusing FLAWCHESS_SECONDARY_LINE gave a different-looking
+// (white text needs contrast), so reusing the FlawChess secondary arrow color gave a different-looking
 // gold nearly as strong as the primary.
 // OPAQUE, pre-mixed toward BOARD_LIGHT_SQUARE (not an alpha): a translucent fill fades
 // toward whatever is behind it, so the same alpha read lighter on the board but DARKER on
@@ -488,7 +476,7 @@ export const STOCKFISH_BADGE_SECONDARY = 'rgb(88, 129, 222)';  // blue-600 75% o
 // as the secondaries, so an equal-eval second line renders the same fill as the first.
 export const STOCKFISH_BADGE_PRIMARY = `rgb(${STOCKFISH_ARROW_RGB})`;
 
-// Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
+// Tactic Line Explorer payoff-ply arrows. Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
 export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-500 @ 50%
 
@@ -499,52 +487,47 @@ export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-50
 export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 
 // Game-volume bars behind the timeline charts (endgame, flaw trend, rating; first used
-// by the Endgame ELO Timeline, Phase 57.1). Muted gray with alpha so the
+// by the Endgame ELO Timeline). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
-// passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
+// passive-context reading.
 export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 
-// Phase 68 — Endgame vs Non-Endgame Score timeline.
+// Endgame vs Non-Endgame Score timeline.
 // Two line strokes (endgame + non-endgame) with a colored shaded band between
-// them indicating which side leads. Low alpha on the fills (0.18) so the
+// them indicating which side leads. Low alpha on the fills (0.28) so the
 // grid, axis labels, and the two primary lines remain dominant while still
 // conveying the sign of the gap at a glance.
 // - LINE_ENDGAME reuses MY_SCORE_COLOR (brand blue) — keeps "user's endgame"
 //   visually anchored to the same hue used on the Time Pressure chart.
-// - LINE_NON_ENDGAME uses a light blue (UAT 2026-05-17) so the two lines
+// - LINE_NON_ENDGAME uses a light blue so the two lines
 //   share the blue family but stay visually distinct via lightness + dash
 //   pattern (endgame = dashed brand blue, non-endgame = dotted light blue).
 // - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.28
-//   alpha — bumped from 0.18 (UAT 2026-05-17) so the signed band reads more
-//   clearly against the chart background. Sign convention: above ==
-//   endgame > non_endgame (green), below == endgame < non_endgame (red).
+//   alpha so the signed band reads clearly against the chart background. Sign
+//   convention: above == endgame > non_endgame (green), below == endgame < non_endgame (red).
 export const SCORE_TIMELINE_LINE_ENDGAME = MY_SCORE_COLOR;
 export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.78 0.09 230)';
 export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.28)';
 export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.28)';
 
-// "Moves by Rating" chart (Phase 151 Plan 05 — SURF-01/02/03, spike 006 port).
-// The "you are here" ELO reference line uses a dedicated warm brown (matches
-// spike 006's --brand marker). Line/label COLOR used to encode played/best
-// identity (MOVES_BY_RATING_PLAYED_LINE/BEST_LINE/OTHER_LINES) — that
-// identity-palette was replaced in Phase 151.1 (D-03) by the MOVE_QUALITY_*
-// palette below: color now encodes the Stockfish-graded quality bucket, and
-// played/best emphasis is carried by stroke WIDTH alone (decoupled, D-01/D-07).
-export const MOVES_BY_RATING_REFERENCE_LINE = 'white'; // white "you are here" marker (151.1 UAT)
+// "Moves by Rating" chart. Line/label COLOR encodes the Stockfish-graded quality
+// bucket (the MOVE_QUALITY_* palette below), and played/best emphasis is carried by
+// stroke WIDTH alone. The "you are here" ELO reference line is white.
+export const MOVES_BY_RATING_REFERENCE_LINE = 'white'; // white "you are here" marker
 
-// Move-quality 5-bucket palette (Phase 151.1 D-03 — Stockfish-graded Maia
-// moves on the Moves-by-Rating chart). Color now encodes QUALITY (was
-// identity, MOVES_BY_RATING_* above): dark-green = the grading search's own
+// Move-quality 5-bucket palette (Stockfish-graded Maia
+// moves on the Moves-by-Rating chart). Color encodes QUALITY, not
+// player identity: dark-green = the grading search's own
 // best-scoring candidate, light-green = a clean non-best move ("good"), and
 // the 3 severity tiers reuse SEV_INACCURACY/SEV_MISTAKE/SEV_BLUNDER verbatim
 // (never re-derive their oklch values — see liveFlaw.ts/flawThresholds.ts,
-// the single-sourced grading pipeline this phase's classifyMoveQuality
-// reuses). Both new greens share WDL_WIN's hue (145) but sit at distinct
+// the single-sourced grading pipeline classifyMoveQuality
+// reuses). Both greens share WDL_WIN's hue (145) but sit at distinct
 // lightness from each other and from WDL_WIN itself (which stays reserved
 // for its own win/draw/loss semantic, not quality). MOVE_QUALITY_PENDING is
-// the neutral "graded not yet arrived" line color (D-05 progressive/
+// the neutral "graded not yet arrived" line color (progressive/
 // streaming grading — lines render immediately in this muted gray before the
 // first shallow Stockfish eval commits a real quality color).
 export const MOVE_QUALITY_BEST = 'oklch(0.40 0.17 145)'; // dark green
@@ -554,19 +537,18 @@ export const MOVE_QUALITY_MISTAKE = SEV_MISTAKE;
 export const MOVE_QUALITY_BLUNDER = SEV_BLUNDER;
 export const MOVE_QUALITY_PENDING = 'oklch(0.65 0.02 260)'; // muted neutral gray
 
-// Bot-game clock low-time urgent color (Phase 169 D-07 — applied by the
+// Bot-game clock low-time urgent color (applied by the
 // shared PlayerBar via its `clockUrgent` prop, which both bot-game layouts
-// set from `isLowTime`; the retired ClockDisplay/BotClockStrip components
-// used to own it). Below LOW_TIME_THRESHOLD_MS (chessClock.ts), the clock's
+// set from `isLowTime`). Below LOW_TIME_THRESHOLD_MS (chessClock.ts), the clock's
 // digits switch to this destructive red, matching
 // the shadcn `--destructive` CSS-variable token value so the urgent state
 // reads consistently with the app's other destructive surfaces (resign
 // confirm button, etc.) without hard-coding a duplicate literal.
 export const CLOCK_LOW_TIME_URGENT = 'oklch(0.577 0.245 27.325)';
 
-// Bot persona per-style accent colors (Phase 183, PERS-03/AVAT-01). One accent
+// Bot persona per-style accent colors. One accent
 // per style — Attacker/Trickster/Grinder/Wall — used for the Bots page grid's
-// section headers and the D-18 placeholder-avatar background tint. Distinct
+// section headers and the placeholder-avatar background tint. Distinct
 // from every existing WDL/MAIA/severity/tactic hue above: Attacker (15) sits
 // between the crimson TAC_ALLOWED (10) and the blunder red (25) but at a
 // higher chroma so it reads as its own "aggressive" identity rather than a
@@ -585,7 +567,7 @@ export const GRINDER_ACCENT_BG = 'oklch(0.55 0.14 165 / 0.14)';
 export const WALL_ACCENT = 'oklch(0.55 0.12 235)'; // steady blue-gray
 export const WALL_ACCENT_BG = 'oklch(0.55 0.12 235 / 0.14)';
 
-// Persona win-stars row (Phase 185, 185-UI-SPEC.md Color section). Declared as
+// Persona win-stars row. Declared as
 // their own independent named constants — NOT an alias/import of
 // FLAWCHESS_ENGINE_ACCENT — even though STAR_FILLED numerically matches it
 // (same gold/amber hue), so the two can diverge independently in the future
@@ -593,14 +575,14 @@ export const WALL_ACCENT_BG = 'oklch(0.55 0.12 235 / 0.14)';
 export const STAR_FILLED = 'oklch(0.78 0.14 80)'; // gold/amber
 export const STAR_EMPTY = 'oklch(0.45 0 0)'; // mid-grey outline
 
-// Train verdict colors (Phase 190-05, D-10) — alias the existing WDL palette
+// Train verdict colors — alias the existing WDL palette
 // so "correct"/"incorrect" verdict rows read with the same green/red the
 // rest of the app already uses for win/loss, rather than inventing a
 // parallel pair of hues for the same semantic.
 export const TRAIN_VERDICT_CORRECT = WDL_WIN;
 export const TRAIN_VERDICT_INCORRECT = WDL_LOSS;
 
-// Train score-screen rating bands (Phase 190-05, SOLV-07: green/yellow/red).
+// Train score-screen rating bands (green/yellow/red).
 // Green/red alias the same WDL hues as the verdict colors above; yellow is a
 // genuinely new amber value. Deliberately NOT SEV_INACCURACY, even though
 // both are amber-family: SEV_INACCURACY belongs to the flaw-severity
@@ -613,7 +595,7 @@ export const TRAIN_RATING_GREEN = WDL_WIN;
 export const TRAIN_RATING_YELLOW = 'oklch(0.75 0.15 85)'; // amber
 export const TRAIN_RATING_RED = WDL_LOSS;
 
-// Train "Points: +N" flash badge foregrounds (SEED-119). The badge now
+// Train "Points: +N" flash badge foregrounds. The badge now
 // covers 4 background tiers (ZONE_DANGER/SEV_MISTAKE/SEV_INACCURACY/
 // ZONE_SUCCESS) instead of the old fixed white-text pill — 3 of those
 // backgrounds are dark enough for near-white text, but SEV_INACCURACY sits
@@ -623,43 +605,41 @@ export const TRAIN_RATING_RED = WDL_LOSS;
 export const TRAIN_POINTS_FG_ON_DARK = 'oklch(0.98 0 0)'; // near-white, for the 3 dark tiers
 export const TRAIN_POINTS_FG_ON_LIGHT = 'oklch(0.20 0 0)'; // near-black, for the light yellow tier
 
-// Train reveal-board best-move arrow (Phase 190.1, D-02; recolored per 190.1
-// UAT) — blue marks the engine's BEST move (matching what blue means
+// Train reveal-board best-move arrow — blue marks the engine's BEST move (matching what blue means
 // everywhere else in the app: an engine/analysis pointer), never the user's
 // played move. The played move is colored by its own move quality
 // (MOVE_QUALITY_* above) in lib/trainArrows.ts. Aliases the existing blue
 // BEST_MOVE_ARROW value (same aliasing style as TRAIN_VERDICT_CORRECT/
-// TRAIN_RATING_GREEN above); the two never coexist on one board (that token
-// is only used on Library miniboards).
+// TRAIN_RATING_GREEN above).
 export const TRAIN_BEST_MOVE_ARROW = BEST_MOVE_ARROW;
 
-// Train reveal focus dimming (Phase 237, sketch 008, owner-approved). The
-// locked rule is "the other arrows fade to ~20-30%, never hidden": arrows and
+// Train reveal focus dimming. The
+// rule is "the other arrows fade to ~20-30%, never hidden": arrows and
 // quality badges outside the focused set stay on the board at a low opacity,
-// the focused set is drawn near-opaque. Tunable in the plan 11 browser UAT.
+// the focused set is drawn near-opaque.
 export const TRAIN_FOCUS_ARROW_LIT_OPACITY = 0.92;
 export const TRAIN_FOCUS_ARROW_DIM_OPACITY = 0.22;
 export const TRAIN_FOCUS_BADGE_LIT_OPACITY = 1;
 export const TRAIN_FOCUS_BADGE_DIM_OPACITY = 0.32;
 
-// Train bot chat-row bubble (Phase 222, D-07/D-08). Two named borders, not
+// Train bot chat-row bubble. Two named borders, not
 // one: the nudge state (a piece dropped before the guess) must read as a
 // visually distinct "pay attention" moment from the bubble's resting state,
 // without introducing a whole new hue family for a single-purpose outline.
 export const TRAIN_BUBBLE_BORDER = 'oklch(0.55 0.02 40)'; // neutral warm grey-brown
 export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same family as TRAIN_RATING_YELLOW
 
-// Train reveal tour spotlight (Phase 240 D-20): the one class every tour target
+// Train reveal tour spotlight: the one class every tour target
 // carries while its step is active. The rule, keyframes and the gold --tour-glow-halo
 // var live in index.css; box-shadow only (a halo, no ring), so no layout shift.
 export const TOUR_SPOTLIGHT_CLASS = 'train-tour-spotlight';
 
-// Train streak flame + freeze meter (SEED-181, sketch 005 A). The streak count
+// Train streak flame + freeze meter. The streak count
 // sits inside a 3-layer flame (red outer, orange middle, yellow core); the 0-7
 // `shield_level` buffer renders as snowflake "freezes" in an icy blue. Hot vs
-// cold is deliberate: the 193 UAT round 2 failure was the buffer (then drawn
-// as flames) reading as the streak itself, so the two concepts now live in
-// opposite color families instead of sharing the flame ramp.
+// cold is deliberate: a buffer drawn as flames read as the streak itself, so
+// the two concepts live in opposite color families instead of sharing the
+// flame ramp.
 export const TRAIN_FLAME_OUTER = 'oklch(0.60 0.21 29)'; // red
 export const TRAIN_FLAME_MIDDLE = 'oklch(0.73 0.18 55)'; // orange
 export const TRAIN_FLAME_CORE = 'oklch(0.90 0.15 95)'; // yellow
@@ -671,10 +651,10 @@ export const TRAIN_FLAME_NUMBER_OUTLINE = 'black';
 export const TRAIN_FLAME_UNLIT = 'oklch(0.55 0 0)';
 export const TRAIN_FREEZE_COLOR = 'oklch(0.82 0.10 230)'; // icy blue
 
-// Weekly leaderboard medals (Phase 231), drawn after the 🥇 emoji: a two-strap
+// Weekly leaderboard medals, drawn after the 🥇 emoji: a two-strap
 // ribbon V above a filled disc with a darker rim and the place number in the
 // rim colour. Used on the dark card (tally, "Last week:" podium, dialog); not
-// confetti colours. Tuned in UAT through the admin "Leaderboard medals demo".
+// confetti colours. Tunable through the admin "Leaderboard medals demo".
 export interface MedalPalette {
   face: string;
   rim: string;

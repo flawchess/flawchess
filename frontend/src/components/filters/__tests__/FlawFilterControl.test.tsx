@@ -15,8 +15,8 @@ import {
 import type { FlawTag } from '@/types/library';
 import { SLIDER_TRACK_DEBOUNCE_MS } from '@/hooks/useDebouncedTrackFeature';
 
-// Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
-// [Rule 1 - Bug] The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
+// Stub ResizeObserver — required by Radix UI ToggleGroup.
+// The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
 // jsdom doesn't provide it, so tests with showTacticFilter=true crash without this stub.
 beforeAll(() => {
   if (typeof window.ResizeObserver === 'undefined') {
@@ -50,7 +50,7 @@ function renderExpanded(props: typeof defaultProps & Record<string, unknown> = d
 }
 
 describe('FlawFilterControl', () => {
-  describe('tactic motif family (Phase 126)', () => {
+  describe('tactic motif family', () => {
     it('hides the tactic section by default (showTacticFilter unset)', () => {
       render(<FlawFilterControl {...defaultProps} />);
       expect(screen.queryByTestId('filter-flaw-tactic-group-piece_attacks')).toBeNull();
@@ -68,13 +68,13 @@ describe('FlawFilterControl', () => {
       ]) {
         expect(screen.getByTestId(`filter-flaw-tactic-${fam}`)).toBeTruthy();
       }
-      // Chips read kebab-case; mate chip relabeled "checkmate" (Quick 260620-onv).
+      // Chips read kebab-case; mate chip relabeled "checkmate".
       expect(screen.getByTestId('filter-flaw-tactic-hanging').textContent).toBe('hanging-piece');
       expect(screen.getByTestId('filter-flaw-tactic-mate').textContent).toBe('checkmate');
     });
 
-    // Advanced tier-3 group (Quick 260623-6pd) — now a normal always-visible section.
-    // "clearance" REMOVED (Phase 221 plan 06, D-07 suppression).
+    // Advanced tier-3 group — now a normal always-visible section.
+    // "clearance" is deliberately absent (suppressed motif).
     const ADVANCED_FAMILIES = [
       'trapped_piece', 'x_ray', 'deflection', 'intermezzo', 'interference',
       'capturing_defender', 'en_passant', 'under_promotion',
@@ -146,7 +146,7 @@ describe('FlawFilterControl', () => {
     });
   });
 
-  // Severity is pinned to the top of the panel, above Tactic Depth (Quick 260624):
+  // Severity is pinned to the top of the panel, above Tactic Depth:
   // it is always visible, no longer inside the collapsed Context section.
   describe('severity buttons', () => {
     it('renders both severity buttons without expanding Context', () => {
@@ -193,7 +193,7 @@ describe('FlawFilterControl', () => {
     });
   });
 
-  describe('Best Moves (gem / great toggles, FILT-01 Phase 175)', () => {
+  describe('Best Moves (gem / great toggles)', () => {
     // Real usage: BOTH library tabs pass showTacticFilter=true. The Games tab is
     // distinguished ONLY by passing the gem/great toggle handlers (GamesTab), while
     // the Flaws tab passes none (FlawsTab). The render gate keys on the handlers'
@@ -438,11 +438,11 @@ describe('FlawFilterControl', () => {
   });
 });
 
-// ─── Phase 229 (D-03, D-12 group 2): filter-change tracking ────────────────────
+// ─── Filter-change tracking ────────────────────
 // Real analytics module + window.umami stub, so the whole handler -> trackFeature
 // -> window.umami.track path is exercised.
 
-describe('filter-change tracking (Phase 229)', () => {
+describe('filter-change tracking', () => {
   const track = vi.fn();
 
   beforeEach(() => {
@@ -531,7 +531,7 @@ describe('filter-change tracking (Phase 229)', () => {
     expect(track).not.toHaveBeenCalled();
   });
 
-  describe('slider commit (Pitfall 2)', () => {
+  describe('slider commit', () => {
     const SLIDER_WIDTH_PX = 400;
 
     beforeAll(() => {

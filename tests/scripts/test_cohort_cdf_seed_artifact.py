@@ -15,11 +15,11 @@ Round-trip formulation (committed TSV -> cells dict -> emit -> compare) is used
 intentionally so that:
 
 - The test does NOT depend on the in-source ``COHORT_PERCENTILE_CDF`` registry
-  (which Plan 04 removes). It runs against the committed artifact only.
-- A fresh CI run after Plan 04 (registry gone) still passes because the cells
+  (since removed). It runs against the committed artifact only.
+- A fresh CI run (registry gone) still passes because the cells
   dict is reconstructed from the TSV, not from the in-source literal.
 
-This is the SC#4 canary: "regen drift test diffs the TSV content, not source bytes."
+This is the canary: "regen drift test diffs the TSV content, not source bytes."
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def _load_cells_from_tsv(
     ``dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]]``.
 
     Returns a dict reconstruction that avoids importing the in-source registry
-    (so the test survives Plan 04 which removes ``COHORT_PERCENTILE_CDF``).
+    (so the test survives the removal of ``COHORT_PERCENTILE_CDF``).
     The ``CdfTable`` dataclass and the ``CdfMetricId``/``TimeControlBucket``
     type aliases are stable across plans -- only the registry literal is removed.
     """
@@ -102,7 +102,7 @@ def _load_cells_from_tsv(
 
 
 def test_committed_tsv_header() -> None:
-    """TSV header row matches the expected seven-column spec (D-02)."""
+    """TSV header row matches the expected seven-column spec."""
     with _TSV_PATH.open(newline="") as f:
         reader = csv.reader(f, delimiter="\t")
         header = next(reader)

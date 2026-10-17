@@ -3,8 +3,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 // Stock shadcn card primitive (neutral bg-card + ring), used by the auth forms.
-// Renamed from Card → FormCard so the project's themed card (ui/card.tsx) can own
-// the `Card` name. Visuals are unchanged from the original shadcn component.
+// Named FormCard because ui/card.tsx owns `Card`; visuals are stock shadcn.
 
 function FormCard({
   className,

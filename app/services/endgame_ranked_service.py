@@ -1,12 +1,12 @@
-"""On-read ranked Endgame Stats service (Phase 238, SEED-196).
+"""On-read ranked Endgame Stats service.
 
 ``get_ranked_stats`` serves ``GET /api/endgames/ranked-stats``: for every time
 control with at least one ranked-sample game it computes the 11 peer-ranked
 metric values ON READ from the canonical ranked slice (rated, human, opponents
 within 100 Elo, last 36 months, at most 3000 games per TC). The ranked games are
 selected by ``ranked_games_sql`` which composes the unchanged Stage A/B prelude,
-so every value describes the same games the persisted percentiles rank (D-00b,
-D-07). Percentiles are read as Stage A/B wrote them (D-07, D-08).
+so every value describes the same games the persisted percentiles rank.
+Percentiles are read as Stage A/B wrote them.
 
 Shape (pipeline seams, nesting depth <= 4):
 
@@ -109,7 +109,7 @@ from app.services.score_confidence import (
     wilson_bounds,
 )
 
-# Fixed display / iteration order for time controls (D-14): fastest to slowest.
+# Fixed display / iteration order for time controls: fastest to slowest.
 RANKED_TC_ORDER: Final[tuple[TimeControlBucket, ...]] = ("bullet", "blitz", "rapid", "classical")
 
 # Chess.com Daily games carry time_control_str "1/<seconds>"; the anchor CTE drops them
@@ -130,8 +130,7 @@ class RankedInputs:
 
     The row lists hold rows for ALL time controls (one query each, restricted to
     the union of the ranked ids); the builder groups them by ``time_control_bucket``.
-    ``entry_rows`` / ``bucket_rows`` / ``clock_rows`` are empty until the canonical
-    metric families that consume them are enabled.
+    The row lists are empty only when the user has no ranked games.
     """
 
     games_by_tc: dict[TimeControlBucket, list[RankedGameRow]]
@@ -144,7 +143,7 @@ class RankedInputs:
         default_factory=dict
     )
     anchors: dict[TimeControlBucket, RatingAnchorRow] = field(default_factory=dict)
-    # Phase 239 D-14: cohort p50 of each raw-rate metric at the user's anchor, the null
+    # Cohort p50 of each raw-rate metric at the user's anchor, the null
     # the rate's 99% CI is tested against. Missing key = no cohort cell, no verdict gate.
     cohort_medians: dict[tuple[CdfMetricId, TimeControlBucket], float] = field(default_factory=dict)
 
@@ -166,10 +165,10 @@ class _RowQueryKwargs(TypedDict):
 class _MetricCore:
     """A metric's value, binding counts and footer statistics before rank status.
 
-    ci_low / ci_high / p_value feed the popover footer (planner assumption A3): rates
+    ci_low / ci_high / p_value feed the popover footer: rates
     carry a Wilson CI only, score_gap and time_pressure a two-sample CI + p, the paired
-    metrics (net_flag_rate included since Phase 239 D-14) a paired CI + p. Every CI is
-    99% (D-14), the level the red/green verdict gate uses.
+    metrics (net_flag_rate included) a paired CI + p. Every CI is
+    99%, the level the red/green verdict gate uses.
     """
 
     value: float | None
@@ -198,7 +197,7 @@ async def fetch_ranked_inputs(session: AsyncSession, *, user_id: int) -> RankedI
         games_by_tc[tc] = await fetch_ranked_games(session, user_id=user_id, tc=tc)
     union_ids = [g.game_id for games in games_by_tc.values() for g in games]
 
-    # Neutral filters: the id set alone defines the population (D-01, D-07). The ranked
+    # Neutral filters: the id set alone defines the population. The ranked
     # games are rated and human by construction, so no filter is needed on those axes.
     row_kwargs = _RowQueryKwargs(
         user_id=user_id,
@@ -236,7 +235,7 @@ async def fetch_ranked_inputs(session: AsyncSession, *, user_id: int) -> RankedI
     )
 
 
-# Raw-rate metrics: no natural 0 null, so the D-14 gate tests them against the cohort p50.
+# Raw-rate metrics: no natural 0 null, so the verdict gate tests them against the cohort p50.
 RATE_METRICS: Final[frozenset[CdfMetricId]] = frozenset(
     {"conversion_rate", "parity_rate", "recovery_rate"}
 )
@@ -280,7 +279,7 @@ _GAP_METRIC: Final[dict[MaterialBucket, CdfMetricId]] = {
 _PAWNS_PER_CP: Final[float] = 100.0
 
 # Metrics that need entry evals (Stage B eval-dependent). While a TC still has evals
-# pending, one of these without a value is "pending" (D-11), not "below the floor".
+# pending, one of these without a value is "pending", not "below the floor".
 # The clock families are Stage B but eval-INDEPENDENT: their value is always computable,
 # so before a percentile row exists they land in "unranked", never "pending".
 EVAL_DEPENDENT_METRICS: Final[frozenset[CdfMetricId]] = frozenset(
@@ -344,7 +343,7 @@ def _rows_for_tc(rows: Sequence[Any], tc: TimeControlBucket) -> list[Any]:
 def _restrict_to_since(inputs: RankedInputs, since: datetime.datetime) -> RankedInputs:
     """Keep only games / rows played at or after ``since`` (insights last_3mo window).
 
-    The windowed sample never carries persisted percentiles (D-04): the stored
+    The windowed sample never carries persisted percentiles: the stored
     percentile ranks the full ranked sample, not a sub-window.
     """
     games_by_tc = {
@@ -514,7 +513,7 @@ def _rate_of(bucket: MaterialBucket, wins: int, draws: int, n: int) -> float | N
 
 
 def _wilson_interval(value: float | None, n: int) -> tuple[float | None, float | None]:
-    """Wilson 99% bounds for a rate (D-14). No p-value: a rate has no natural null; the
+    """Wilson 99% bounds for a rate. No p-value: a rate has no natural null; the
     verdict gate tests the CI against the cohort median instead."""
     if value is None or n <= 0:
         return None, None
@@ -650,7 +649,7 @@ def _net_flag_metric(clock_rows: Sequence[Any]) -> _MetricCore:
     """(timeout wins - timeout losses) / endgame games.
 
     The denominator is EVERY endgame game of the TC: the CTE has no base-clock check.
-    Phase 239 D-14: the mean of the per-game +1 / 0 / -1 values is the same number, and
+    The mean of the per-game +1 / 0 / -1 values is the same number, and
     the paired test on them gives the CI the verdict gate needs (it had none before).
     """
     return _paired_core([_net_flag_per_game(row) for row in clock_rows], NET_FLAG_RATE_MIN_POOL_N)
@@ -691,7 +690,7 @@ def _time_pressure_score_gap_metric(entries: Sequence[_ClockEntry]) -> _MetricCo
 
 
 # ---------------------------------------------------------------------------
-# Timelines (D-03): the same pure helpers the filtered path uses, fed ranked rows.
+# Timelines: the same pure helpers the filtered path uses, fed ranked rows.
 # ---------------------------------------------------------------------------
 
 
@@ -721,7 +720,7 @@ def _asof_by_platform(
 def _score_gap_timeline_points(
     endgame_rows: Sequence[Any], non_endgame_rows: Sequence[Any], since: datetime.datetime | None
 ) -> list[ScoreGapTimelinePoint]:
-    """Endgame Score Gap over Time for one TC from ranked rows (D-03).
+    """Endgame Score Gap over Time for one TC from ranked rows.
 
     ``endgame_rows`` / ``non_endgame_rows`` are the TC's FULL ranked rows: rolling
     windows pre-fill from older ranked games and points before ``since`` are dropped,
@@ -740,14 +739,14 @@ def _elo_timeline_combos(
     non_endgame_rows: Sequence[Any],
     since: datetime.datetime | None,
 ) -> list[EndgameEloTimelineCombo]:
-    """Endgame ELO Timeline combos (chess.com / lichess) for one TC from ranked games (D-03)."""
+    """Endgame ELO Timeline combos (chess.com / lichess) for one TC from ranked games."""
     return build_endgame_elo_combos(
         endgame_rows, non_endgame_rows, _asof_by_platform(tc, games), _cutoff_str(since)
     )
 
 
 # ---------------------------------------------------------------------------
-# Time pressure curve, Clock Gap timeline, Endgame Type categories (D-06 / D-05).
+# Time pressure curve, Clock Gap timeline, Endgame Type categories.
 # These three are NOT peer-ranked, so they keep the legacy Python semantics on
 # purpose and must NOT be "fixed" toward the Stage A/B CTE definitions:
 #   * clocks above MAX_CLOCK_PCT_OF_BASE x base are dropped (the CTE-mirroring
@@ -779,7 +778,7 @@ def _band_mid(band: tuple[float, float]) -> float:
 
 
 def _rate_significant(successes: int, games: int, band: tuple[float, float]) -> bool:
-    """D-14 gate for a per-class rate: the 99% Wilson CI excludes the band centre.
+    """Verdict gate for a per-class rate: the 99% Wilson CI excludes the band centre.
 
     The per-class bands are cohort p25/p75 per (class, TC); their centre stands in for
     the cohort median, which the per-class registry does not store.
@@ -791,7 +790,7 @@ def _rate_significant(successes: int, games: int, band: tuple[float, float]) -> 
 
 
 def _type_gap_significant(category: EndgameCategoryStats) -> bool:
-    """D-14 gate for the per-class Score Gap: its 99% CI excludes 0.
+    """Verdict gate for the per-class Score Gap: its 99% CI excludes 0.
 
     The shared category builder (endgame_service._build_category_stats) already emits
     the 99% CI, so the gate reads it directly; a missing CI (n < 2) never passes.
@@ -806,7 +805,7 @@ def _type_gap_significant(category: EndgameCategoryStats) -> bool:
 def _with_significance(
     category: EndgameCategoryStats, tc: TimeControlBucket
 ) -> EndgameCategoryStats:
-    """Attach the D-14 verdict gates of one TypeTable row (zoneless classes get none)."""
+    """Attach the verdict gates of one TypeTable row (zoneless classes get none)."""
     zones = PER_CLASS_TC_GAUGE_ZONES.get(category.endgame_class)
     if zones is None:
         return category
@@ -887,14 +886,14 @@ def _rank_status(
 ) -> tuple[RankStatus, int, int]:
     """Rank status of one (metric, TC) plus the (floor_n, floor_required) to display.
 
-    Applied in this order (D-09 / D-11):
+    Applied in this order:
       1. no anchor and fewer than 30 anchor-eligible games -> below_floor, counting the
          ANCHOR games ("18 of 30"), for every metric of the TC
       2. eval-dependent metric without a value while evals are pending -> pending
       3. the metric's own binding count under its floor -> below_floor
       4. a persisted row with a percentile -> ranked
       5. otherwise -> unranked (Stage B row not written yet, or no CDF cell)
-    No drift handling between a fresh value and the stored percentile (D-08).
+    No drift handling between a fresh value and the stored percentile.
     """
     if not has_anchor and anchor_games < MEDIAN_ANCHOR_MIN_GAMES:
         return "below_floor", anchor_games, MEDIAN_ANCHOR_MIN_GAMES
@@ -922,7 +921,7 @@ def _metric_significant(
     percentile: float | None,
     cohort_median: float | None,
 ) -> bool:
-    """Phase 239 D-14 verdict gate for one ranked metric.
+    """Verdict gate for one ranked metric.
 
     The 99% CI must exclude the null (0 for a difference metric, the cohort p50 for a raw
     rate) on the same side as the percentile verdict, so a green "above typical" never
@@ -1039,8 +1038,8 @@ def build_ranked_stats(
     """Assemble the response from fetched inputs (pure, no DB).
 
     Only time controls with at least one ranked game are listed, in
-    bullet, blitz, rapid, classical order (D-14); an empty ranked sample yields
-    ``tcs == []`` (D-10). ``since`` restricts the scalar metrics to games played at or
+    bullet, blitz, rapid, classical order; an empty ranked sample yields
+    ``tcs == []``. ``since`` restricts the scalar metrics to games played at or
     after it and drops persisted percentiles (insights ``last_3mo`` window); the
     timelines still pre-fill their rolling windows from the full ranked rows and only
     trim emitted points before ``since``.
@@ -1057,5 +1056,5 @@ def build_ranked_stats(
 
 
 async def get_ranked_stats(session: AsyncSession, *, user_id: int) -> EndgameRankedStatsResponse:
-    """Ranked-sample Endgame Stats for the authenticated user (no filters, D-01)."""
+    """Ranked-sample Endgame Stats for the authenticated user (no filters)."""
     return build_ranked_stats(await fetch_ranked_inputs(session, user_id=user_id))

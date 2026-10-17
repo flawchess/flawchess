@@ -1,4 +1,4 @@
-"""Unit tests for the remote eval worker CLI (Phase 123 SEED-051, Plan 03).
+"""Unit tests for the remote eval worker CLI.
 
 Covers:
 - worker_id_default_length: generated default IDs are < 10 chars, base36 charset.
@@ -7,10 +7,10 @@ Covers:
 - ladder_explicit_first: with /atomic-lease?scope=explicit returning 200, the cycle
   submits via /atomic-submit and does NOT call /entry-lease (busy path stays 1-2 calls).
 - ladder_entry_then_idle: scope=explicit 204 -> /entry-lease 200 -> /entry-submit; on
-  /entry-lease 204 falls through to scope=idle (also /atomic-lease, Phase 147 Part B).
+  /entry-lease 204 falls through to scope=idle (also /atomic-lease).
 - entry_eval_uses_depth15: _eval_entry_positions calls pool.evaluate (depth-15) and
   never calls pool.evaluate_nodes_with_pv (the 1M-node full-ply mode).
-- Phase 147 SEED-074 Part B (atomic rung): _hint_flaw_plies/_build_blob_walk_targets/
+- Atomic rung: _hint_flaw_plies/_build_blob_walk_targets/
   _eval_atomic_game — the local hint stays MultiPV-1 for the full-ply pass, selects
   only mistake/blunder plies, and the assembled /atomic-submit payload carries
   blob_nodes only for those hinted plies plus worker_schema_version.
@@ -87,7 +87,7 @@ def test_worker_id_default_length() -> None:
     """Generated default worker-id is < 10 chars, base36 charset, exact expected length."""
     wid = _generate_worker_id()
     assert len(wid) == _WORKER_ID_DEFAULT_LEN
-    assert len(wid) < 10  # D-10: must fit VARCHAR(16) as < 10 chars
+    assert len(wid) < 10  # Must fit VARCHAR(16) as < 10 chars
     assert all(c in _WORKER_ID_ALPHABET for c in wid), f"Non-base36 char in {wid!r}"
 
 
@@ -130,7 +130,7 @@ def test_worker_id_max_len_constant() -> None:
     assert WORKER_ID_MAX_LEN == 9
 
 
-# ─── D-06 ladder tests (mocked httpx.AsyncClient) ────────────────────────────
+# ─── Ladder tests (mocked httpx.AsyncClient) ────────────────────────────
 
 
 def _make_response(status_code: int, body: dict | None = None) -> MagicMock:
@@ -144,9 +144,9 @@ def _make_response(status_code: int, body: dict | None = None) -> MagicMock:
 
 async def test_ladder_explicit_first_skips_entry_lease() -> None:
     """When /atomic-lease?scope=explicit returns 200, the cycle submits via
-    /atomic-submit only (Phase 147 SEED-074 Part B — rung 1 upgraded).
+    /atomic-submit only (rung 1).
 
-    It must NOT call /entry-lease (busy tier-1 path stays at 1-2 calls per D-06).
+    It must NOT call /entry-lease (busy tier-1 path stays at 1-2 calls).
     """
     lease_body = {
         "game_id": 42,
@@ -250,7 +250,7 @@ async def test_ladder_entry_ply_on_explicit_204() -> None:
 
 async def test_ladder_falls_to_idle_when_entry_lease_204() -> None:
     """When scope=explicit 204 and /entry-lease 204, the cycle falls to scope=idle
-    (also via /atomic-lease, Phase 147 SEED-074 Part B — rung 3 upgraded).
+    (also via /atomic-lease, rung 3).
     """
     idle_body = {
         "game_id": 99,
@@ -308,7 +308,7 @@ async def test_ladder_falls_to_idle_when_entry_lease_204() -> None:
 async def test_entry_eval_uses_depth15_not_evaluate_nodes_with_pv() -> None:
     """_eval_entry_positions calls pool.evaluate (depth-15), never evaluate_nodes_with_pv.
 
-    Critical: mixing modes makes entry-ply 10x slower (D-2 / RESEARCH Anti-pattern).
+    Critical: mixing modes makes entry-ply 10x slower.
     """
     positions: list[dict[str, object]] = [
         {
@@ -342,14 +342,14 @@ async def test_entry_eval_uses_depth15_not_evaluate_nodes_with_pv() -> None:
         assert "pv" not in r, "Entry-ply results must not contain pv"
 
 
-# ─── D-04 tier-4 flaw-blob drain rung tests (Phase 146) ─────────────────────
+# ─── tier-4 flaw-blob drain rung tests ─────────────────────
 
 
 async def test_ladder_flaw_blob_on_all_tier123_204() -> None:
     """When all tier-1/2/3 rungs return 204, the worker reaches rung 4 (flaw-blob-lease).
 
     On a 200 flaw-blob-lease response, the cycle evaluates at MultiPV=2 and POSTs to
-    /flaw-blob-submit. Both URLs must appear in the client.post call list (D-04).
+    /flaw-blob-submit. Both URLs must appear in the client.post call list.
     """
     blob_lease_body = {
         "game_id": 7,
@@ -375,7 +375,7 @@ async def test_ladder_flaw_blob_on_all_tier123_204() -> None:
     )
 
     pool = AsyncMock()
-    # evaluate_nodes_multipv2 returns 7-tuple (D-04 blob rung keeps MultiPV-2)
+    # evaluate_nodes_multipv2 returns 7-tuple (blob rung keeps MultiPV-2)
     pool.evaluate_nodes_multipv2 = AsyncMock(
         return_value=(100, None, "e2e4", "e2e4 e7e5", 50, None, "d2d4")
     )
@@ -403,7 +403,7 @@ async def test_ladder_all_queues_empty_sleeps_once() -> None:
     """When all five tiers (including rung-4 flaw-blob and rung-5 bestmove) return
     204, the worker sleeps exactly once.
 
-    Regression guard: rungs 4/5 must not introduce a double-sleep (T-146-06).
+    Regression guard: rungs 4/5 must not introduce a double-sleep.
     """
     client = AsyncMock()
     client.post = AsyncMock(
@@ -444,7 +444,7 @@ async def test_eval_flaw_blob_positions_maps_indices_correctly() -> None:
 
     evaluate_nodes_multipv2 returns (eval_cp, eval_mate, best_move, pv,
     second_cp, second_mate, second_uci). Fields r[2] (best_move) and r[3] (pv)
-    must NOT appear in the output dict. Token is echoed unchanged (D-04a).
+    must NOT appear in the output dict. Token is echoed unchanged.
     """
     pool = AsyncMock()
     # 7-tuple: (eval_cp=100, eval_mate=None, best_move="e2e4", pv="e2e4 e7e5",
@@ -473,14 +473,14 @@ async def test_eval_flaw_blob_positions_maps_indices_correctly() -> None:
     assert "pv" not in r, "r[3] (pv) must NOT leak into the output dict"
 
 
-# ─── MultiPV-1 full-ply reduction + HTTP_TIMEOUT_S tests (Phase 146 Task 2) ──
+# ─── MultiPV-1 full-ply reduction + HTTP_TIMEOUT_S tests ──
 
 
 def test_http_timeout_s_restored_to_30() -> None:
-    """HTTP_TIMEOUT_S must be 30.0 — the SEED-071 120s stopgap is removed in Phase 146.
+    """HTTP_TIMEOUT_S must be 30.0 — the former 120s stopgap is gone.
 
-    After Phase 146 the live /submit no longer calls any engine, so the p99 latency
-    drops well below 30s. 30s provides a 10x safety margin (RESEARCH §5).
+    The live /submit no longer calls any engine, so the p99 latency
+    drops well below 30s. 30s provides a 10x safety margin.
     """
     assert HTTP_TIMEOUT_S == 30.0, (
         f"HTTP_TIMEOUT_S is {HTTP_TIMEOUT_S}, expected 30.0. "
@@ -492,7 +492,7 @@ async def test_eval_positions_uses_multipv1_no_second_best() -> None:
     """_eval_positions (full-ply pass) uses evaluate_nodes_with_pv (4-tuple, MultiPV-1).
 
     Second-best fields (second_cp/second_mate/second_uci) must be absent from the output
-    dict — they were dropped from SubmitEval in Plan 01 (D-03). The tier-4 blob rung
+    dict — SubmitEval no longer carries them. The tier-4 blob rung
     (_eval_flaw_blob_positions) keeps evaluate_nodes_multipv2; the full-ply rung does not.
     """
     from scripts.remote_eval_worker import _eval_positions
@@ -521,13 +521,13 @@ async def test_eval_positions_uses_multipv1_no_second_best() -> None:
     assert r["eval_mate"] is None
     assert r["best_move"] == "e2e4"
     assert r["pv"] == "e2e4 e7e5"
-    # Second-best keys must be absent (D-03 consequence: SubmitEval dropped them)
+    # Second-best keys must be absent (SubmitEval dropped them)
     assert "second_cp" not in r, "second_cp must not appear in full-ply output (D-03)"
     assert "second_mate" not in r, "second_mate must not appear in full-ply output (D-03)"
     assert "second_uci" not in r, "second_uci must not appear in full-ply output (D-03)"
 
 
-# ─── SEED-139 items 1-2: bounded worker-side retry of timed-out positions ────
+# ─── bounded worker-side retry of timed-out positions ────
 
 
 def test_is_engine_failure_true_only_for_all_none_score() -> None:
@@ -705,7 +705,7 @@ async def test_retry_timed_out_budget_shared_across_sequential_calls() -> None:
 
 
 async def test_eval_atomic_game_passes_identical_budget_to_all_three_passes() -> None:
-    """SEED-139 D-05: `_eval_atomic_game` constructs ONE `_RetryBudget` and passes
+    """`_eval_atomic_game` constructs ONE `_RetryBudget` and passes
     the SAME object (not equal copies) to `_eval_positions`, `_eval_atomic_blob_nodes`,
     and `_eval_targeted_second_best` — the load-bearing structural guarantee behind
     the per-cycle (not per-pass) cap.
@@ -753,7 +753,7 @@ async def test_eval_atomic_game_passes_identical_budget_to_all_three_passes() ->
 
 
 async def test_eval_targeted_second_best_retries_before_dropping() -> None:
-    """SEED-139 items 1-2: the retry runs BEFORE the drop-on-failure filter -- a
+    """The retry runs BEFORE the drop-on-failure filter -- a
     position whose first targeted search fails but whose retry succeeds is
     INCLUDED in second_best, not dropped."""
     positions: list[dict[str, object]] = [
@@ -786,7 +786,7 @@ async def test_fresh_retry_budget_seeded_from_max_positions() -> None:
     assert budget.remaining == EVAL_RETRY_MAX_POSITIONS
 
 
-# ─── Phase 147 SEED-074 Part B: atomic eval+blob rung tests ─────────────────
+# ─── Atomic eval+blob rung tests ─────────────────
 #
 # A 3-position synthetic mini-game (ply 0/1/2) used ONLY by tests that pass an
 # explicit flaw_plies set directly (test_build_blob_walk_targets_*) or that
@@ -806,7 +806,7 @@ _ATOMIC_EVALS: list[dict[str, object]] = [
     {"ply": 2, "eval_cp": 600, "eval_mate": None, "best_move": "g1f3", "pv": None},
 ]
 
-# CR-02 fix (147-REVIEW.md): `evals` is POSITION-keyed (the eval OF the board
+# `evals` is POSITION-keyed (the eval OF the board
 # AT a given ply), but _run_all_moves_pass — and therefore _hint_flaw_plies —
 # expects ROW-keyed/POST-MOVE values: hint row `m` must hold pos_eval[m + 1],
 # exactly matching the server's _post_move_eval convention
@@ -836,8 +836,8 @@ _HINTED_BLUNDER_EVALS: list[dict[str, object]] = [
 
 def test_hint_flaw_plies_selects_mistake_and_blunder_only() -> None:
     """_hint_flaw_plies runs _run_all_moves_pass over lightweight in-memory
-    GamePosition objects, POST-MOVE shifted by one (CR-02), and keeps only
-    mistake/blunder plies (Q4/RESEARCH A2).
+    GamePosition objects, POST-MOVE shifted by one, and keeps only
+    mistake/blunder plies.
 
     ply=2 (white, ES ~53% -> ~7%) is the real blunder in _HINTED_BLUNDER_EVALS
     — independently confirmed by the server's own classify_game_flaws for
@@ -854,7 +854,7 @@ def test_hint_flaw_plies_empty_for_no_evals() -> None:
 
 def test_build_blob_walk_targets_tokens_missed_and_allowed() -> None:
     """Walks the missed line at flaw_ply and the allowed line at flaw_ply + 1,
-    token-keyed per the D-04a scheme ("{flaw_ply}:{line}:{node_k}").
+    token-keyed per the "{flaw_ply}:{line}:{node_k}" scheme.
     """
     boards, tokens = _build_blob_walk_targets(_ATOMIC_POSITIONS, _ATOMIC_EVALS, {1})
 
@@ -866,7 +866,7 @@ def test_build_blob_walk_targets_tokens_missed_and_allowed() -> None:
 def test_build_blob_walk_targets_skips_line_with_no_start_fen() -> None:
     """A flaw_ply at the game's last ply has no allowed-line start FEN (flaw_ply + 1
     does not exist in the lease payload) -- skipped, not crashed. The server
-    independently re-derives this as a D-06 sentinel (T-147-03; never trusts
+    independently re-derives this as a sentinel (never trusts
     which lines this worker could walk).
     """
     positions: list[dict[str, object]] = [
@@ -886,8 +886,8 @@ def test_build_blob_walk_targets_skips_line_with_no_start_fen() -> None:
 
 async def test_eval_atomic_game_full_ply_pass_stays_multipv1() -> None:
     """The full-ply pass inside _eval_atomic_game uses MultiPV-1 (evaluate_nodes_with_pv),
-    never MultiPV-2, for the /atomic-submit evals list (Phase 146 D-03 invariant
-    still holds under the new atomic rung — mirrors
+    never MultiPV-2, for the /atomic-submit evals list (the full-ply MultiPV-1
+    invariant holds under the atomic rung — mirrors
     test_eval_positions_uses_multipv1_no_second_best).
     """
     pool = AsyncMock()
@@ -909,9 +909,9 @@ async def test_eval_atomic_game_full_ply_pass_stays_multipv1() -> None:
 
 async def test_eval_atomic_game_hints_and_blobs_flaw_plies_only() -> None:
     """_eval_atomic_game: full-ply MultiPV-1 pass -> local hint -> MultiPV-2 blobs
-    only for the hinted flaw ply (mistake/blunder), token-keyed per D-04a.
+    only for the hinted flaw ply (mistake/blunder), token-keyed ("{flaw_ply}:{line}:{node_k}").
 
-    Uses _HINTED_BLUNDER_POSITIONS/_HINTED_BLUNDER_EVALS (CR-02 cross-validated
+    Uses _HINTED_BLUNDER_POSITIONS/_HINTED_BLUNDER_EVALS (cross-validated
     fixture, see the fixture docstring): only flaw_ply=2 is hinted (the real
     blunder); every other ply has a small/zero ES change and must NOT produce
     any blob node or engine call.
@@ -975,7 +975,7 @@ async def test_eval_atomic_game_no_hinted_flaws_skips_multipv2_entirely() -> Non
 
 async def test_atomic_submit_payload_shape_and_schema_version() -> None:
     """The /atomic-submit body carries evals + blob_nodes together with
-    worker_schema_version, matching the 147-04 AtomicSubmitRequest schema, and
+    worker_schema_version, matching the AtomicSubmitRequest schema, and
     blob_nodes contains tokens only for the hinted flaw ply.
     """
     lease_body = {
@@ -1023,11 +1023,11 @@ async def test_atomic_submit_payload_shape_and_schema_version() -> None:
     assert body["job_id"] == "job-atomic-1"
     assert len(body["evals"]) == 7
     assert [n["token"] for n in body["blob_nodes"]] == ["2:missed:0", "2:allowed:0"]
-    # _HINTED_BLUNDER_POSITIONS carries no move_uci -- nothing to target (Phase 177).
+    # _HINTED_BLUNDER_POSITIONS carries no move_uci -- nothing to target.
     assert body["second_best"] == []
 
 
-# ─── Phase 177 PROTO-01/PROTO-02: version bump + targeted second-best re-search ──
+# ─── Version bump + targeted second-best re-search ──
 
 _TARGETED_SECOND_BEST_POSITIONS: list[dict[str, object]] = [
     {"ply": 0, "fen": chess.STARTING_FEN, "is_terminal": False, "move_uci": "e2e4"},
@@ -1037,17 +1037,17 @@ _TARGETED_SECOND_BEST_POSITIONS: list[dict[str, object]] = [
 
 
 def test_worker_schema_version_is_2() -> None:
-    """WORKER_SCHEMA_VERSION bumped 1 -> 2 (Phase 177 PROTO-01/S-03)."""
+    """WORKER_SCHEMA_VERSION bumped 1 -> 2."""
     assert WORKER_SCHEMA_VERSION == 2
 
 
 async def test_eval_atomic_game_targeted_second_best_only_played_best() -> None:
-    """PROTO-02: the targeted MultiPV-2 re-search runs ONLY for plies where the
+    """The targeted MultiPV-2 re-search runs ONLY for plies where the
     worker's own MultiPV-1 best move equals the leased `move_uci` (the move actually
     played). A played != best ply (ply 1: best "g1f3" != played "d7d5") and the
     terminal donor (ply 2: move_uci=None) produce NO second_best entry -- mirrors
     the server-side played==best gate this data feeds. The full-ply pass stays
-    MultiPV-1 (Phase 146 D-03 invariant, unchanged).
+    MultiPV-1 (unchanged).
     """
     pool = AsyncMock()
     pool.evaluate_nodes_with_pv = AsyncMock(
@@ -1075,7 +1075,7 @@ async def test_eval_atomic_game_targeted_second_best_only_played_best() -> None:
 async def test_eval_atomic_game_targeted_second_best_drops_failed_search() -> None:
     """A failed targeted search (engine failure -> the all-None 7-tuple) drops that
     ply from second_best rather than submitting garbage or failing the whole submit
-    (T-177-14) -- the server's own Pitfall-1 fallback covers the gap for that ply.
+    -- the server's own fallback covers the gap for that ply.
     """
     pool = AsyncMock()
     pool.evaluate_nodes_with_pv = AsyncMock(
@@ -1096,12 +1096,12 @@ async def test_eval_atomic_game_targeted_second_best_drops_failed_search() -> No
     assert second_best == [], "a failed targeted search must drop the ply, not submit garbage"
 
 
-# ─── Phase 177 BACK-02/03: rung-5 tier-4b best-move backfill tests ───────────
+# ─── rung-5 tier-4b best-move backfill tests ───────────
 
 
 async def test_ladder_bestmove_lease_only_after_flaw_blob_204() -> None:
     """Rung 5 (/bestmove-lease) is reached ONLY after rung 4 (/flaw-blob-lease)
-    returns 204 -- Pitfall 6: blob backfill (server tier 4) must always precede
+    returns 204 -- blob backfill (server tier 4) must always precede
     best-move backfill (server tier 5 / TIER_BESTMOVE_BACKFILL) on the worker's
     ladder, mirroring the server's own tier priority (the worker never sees tier
     numbers directly, only HTTP status codes).
@@ -1150,7 +1150,7 @@ async def test_ladder_bestmove_lease_only_after_flaw_blob_204() -> None:
 async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> None:
     """A 200 /bestmove-lease with N candidate plies evaluates each at MultiPV=2 ONLY
     (no full pass, no blob walk) and POSTs exactly N per-ply runner-up entries to
-    /bestmove-submit; /atomic-submit is never called (S-05/D-02 isolation).
+    /bestmove-submit; /atomic-submit is never called.
     """
     bestmove_lease_body = {
         "game_id": 101,
@@ -1197,7 +1197,7 @@ async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> 
     assert [e["ply"] for e in body["evals"]] == [4, 8, 12]
     assert [e["second_uci"] for e in body["evals"]] == ["d2d4", "c2c4", "f2f4"]
     assert [e["second_cp"] for e in body["evals"]] == [10, 20, 30]
-    # Quick 260719-fsz: the worker now ALSO submits its fresh best cp/mate (r[0]/r[1])
+    # The worker now ALSO submits its fresh best cp/mate (r[0]/r[1])
     # so the server can use our Stockfish best_cp for lichess games (was: absent).
     assert [e["best_cp"] for e in body["evals"]] == [0, 0, 0], (
         "BestMoveSubmitEval now carries the worker's fresh best_cp = r[0]"
@@ -1210,14 +1210,14 @@ async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> 
 
 
 async def test_eval_bestmove_positions_drops_failed_search() -> None:
-    """WR-01 regression: a failed search (engine failure -> the all-None 7-tuple
+    """Regression: a failed search (engine failure -> the all-None 7-tuple
     `evaluate_nodes_multipv2` returns) drops that ply from the returned evals
     rather than submitting an all-None (second_cp=None, second_mate=None) result
     as real data. Mirrors `test_eval_atomic_game_targeted_second_best_drops_failed_search`.
 
     Before the fix, the failed ply was submitted with second_cp/second_mate/
     second_uci all None. The server's second_best_map is keyed on presence,
-    not on non-None values, so the Pitfall-1 fallback never fired for that ply
+    not on non-None values, so the fallback never fired for that ply
     -- the all-None tuple flowed into passes_inaccuracy_gate (False on any None
     eval) and the candidate was silently and permanently dropped.
     """
@@ -1243,7 +1243,7 @@ async def test_eval_bestmove_positions_drops_failed_search() -> None:
 
 
 async def test_eval_bestmove_positions_includes_best_cp() -> None:
-    """Quick 260719-fsz (Option B): the worker now submits its fresh best cp/mate
+    """The worker submits its fresh best cp/mate
     (r[0]/r[1]) alongside the runner-up, so the server can use our Stockfish best_cp
     for lichess games instead of the stored lichess %eval. r[2]/r[3] still never leak."""
     pool = AsyncMock()
@@ -1293,7 +1293,7 @@ async def test_bestmove_lease_204_falls_to_idle_sleep_no_submit() -> None:
     assert "/api/eval/remote/bestmove-submit" not in called_urls
 
 
-# ─── SEED-063: supervisor/child/once dispatch + watchdog stall predicate ────
+# ─── supervisor/child/once dispatch + watchdog stall predicate ────
 
 
 def test_worker_role_once_no_marker() -> None:
@@ -1308,7 +1308,7 @@ def test_worker_role_child_marker_set() -> None:
 
 def test_worker_role_supervisor_default() -> None:
     """No --once and no child marker (the default, top-level invocation) returns
-    "supervisor" (SEED-063 D3: always supervised unless --once).
+    "supervisor" (always supervised unless --once).
     """
     assert _worker_role(once=False, child_marker=False) == "supervisor"
 
@@ -1326,9 +1326,8 @@ def test_is_stalled_true_when_gap_exceeds_threshold() -> None:
 
 
 def test_is_stalled_false_when_idle_but_under_threshold() -> None:
-    """An idle-but-healthy gap under threshold_s is NOT a stall (SEED-063:
-    a clean 204 idle cycle counts as progress; this only guards the boundary
-    predicate itself).
+    """An idle-but-healthy gap under threshold_s is NOT a stall (a clean 204
+    idle cycle counts as progress; this only guards the boundary predicate itself).
     """
     assert _is_stalled(now=40.0, last_progress=0.0, threshold_s=50.0) is False
 
@@ -1354,7 +1353,7 @@ def test_heartbeat_mark_advances_last_progress_and_writes_file(tmp_path: Path) -
 
 def test_heartbeat_mark_never_raises_on_write_failure(tmp_path: Path) -> None:
     """A heartbeat file write failure must never propagate -- observability-only
-    (SEED-063: writing must never kill the worker).
+    (writing must never kill the worker).
     """
     # Point the heartbeat at a path whose parent directory does not exist, so the
     # write raises OSError (FileNotFoundError is an OSError subclass).
@@ -1364,8 +1363,8 @@ def test_heartbeat_mark_never_raises_on_write_failure(tmp_path: Path) -> None:
 
 def test_stall_threshold_s_is_minutes_not_seconds() -> None:
     """STALL_THRESHOLD_S must clear the worst legitimate cycle PLUS the full
-    SEED-139 retry budget, derived rather than asserted against a bare literal
-    (SEED-063 regression guard, updated for D-05):
+    worker-side retry budget, derived rather than asserted against a bare literal
+    (regression guard):
 
     - worst single-worker cycle: ~500s (--workers 1, every position times out at
       _NODES_TIMEOUT_S=5s over a ~100-position tier-1 game -- the same figure
@@ -1480,7 +1479,7 @@ def test_transient_failure_alert_s_clears_deploy_window() -> None:
     assert TRANSIENT_FAILURE_ALERT_S >= 120.0
 
 
-# ─── D-13/D-14 dual-URL fallback tests (Plan 03 Task 2) ──────────────────────
+# ─── dual-URL fallback tests ──────────────────────
 
 _ATOMIC_LEASE_BODY: dict[str, object] = {
     "game_id": 42,
@@ -1505,7 +1504,7 @@ def _atomic_success_pool() -> AsyncMock:
 
 def _all_204_client() -> AsyncMock:
     """A mock client whose /atomic-lease/entry-lease/flaw-blob-lease/bestmove-lease
-    rungs all return 204, in D-06 ladder order."""
+    rungs all return 204, in ladder order."""
     client = AsyncMock()
     client.post = AsyncMock(side_effect=[_make_response(204) for _ in range(5)])
     return client
@@ -1662,7 +1661,7 @@ def test_env_fallback_token_reaches_the_fallback_target() -> None:
 
 async def test_single_target_call_sequence_unchanged() -> None:
     """With one client (--fallback-url omitted), _run_loop's per-cycle HTTP call
-    sequence is byte-identical to the pre-D-13 single-client loop: exactly one
+    sequence is byte-identical to the single-client loop: exactly one
     _run_cycle invocation, same rung-1 lease + submit calls."""
     client = AsyncMock()
     client.post = AsyncMock(
@@ -1822,7 +1821,7 @@ async def test_ladder_never_interleaves_targets() -> None:
 
 async def test_both_targets_idle_sleeps_once() -> None:
     """Both targets return all-204: asyncio.sleep(idle_sleep) is awaited exactly
-    once for the whole cycle, not once per target (T-146-06 regression guard)."""
+    once for the whole cycle, not once per target (regression guard)."""
     primary = _all_204_client()
     fallback = _all_204_client()
     pool = AsyncMock()
@@ -1843,9 +1842,9 @@ async def test_both_targets_idle_sleeps_once() -> None:
 
 
 async def test_unreachable_primary_falls_through() -> None:
-    """Primary's first call raises httpx.ConnectError (unreachable, D-14): the
+    """Primary's first call raises httpx.ConnectError (unreachable): the
     fallback ladder runs in the SAME cycle rather than the exception propagating.
-    D-14's fallthrough is unconditional (not gated on `loop`), so this holds even
+    The fallthrough is unconditional (not gated on `loop`), so this holds even
     for a bounded --once (loop=False) run -- there is more work left to try
     before the run can conclude."""
     primary = AsyncMock()

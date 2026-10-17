@@ -1,20 +1,15 @@
 /**
- * MovesByRatingChart — "Moves by Rating" chart (Phase 151 Plan 05, SURF-01/02/03;
- * recolored by Stockfish-graded quality in Phase 151.1 Plan 04, D-01/D-03/D-08).
+ * MovesByRatingChart — "Moves by Rating" chart, colored by Stockfish-graded quality.
  *
- * Recharts port of spike 006 (.planning/spikes/006-moves-by-rating-chart): one line
- * per candidate move's probability across the Maia ELO ladder, rendering exactly the
- * caller-selected `shownSans` (Phase 151.1: `selectCandidatesByMass`'s 0.95-mass set,
- * replacing this component's own top-N-by-peak cap), a "you are here"
- * `<ReferenceLine>` at the selected ELO (SURF-02), and played/best lines emphasized
- * with a thicker stroke (SURF-01) — DECOUPLED from color, which now encodes the
- * move's Stockfish-graded `MoveQuality` bucket (D-01/D-07) instead of played/best
- * identity.
+ * One line per candidate move's probability across the Maia ELO ladder, rendering
+ * exactly the caller-selected `shownSans` (`selectCandidatesByMass`'s 0.95-mass
+ * set), a "you are here" `<ReferenceLine>` at the selected ELO, and played/best
+ * lines emphasized with a thicker stroke — DECOUPLED from color, which encodes the
+ * move's Stockfish-graded `MoveQuality` bucket, not played/best identity.
  *
- * The spike hand-rolled imperative SVG to run with zero build — this component is
- * an idiomatic Recharts port (LineChart/Line/ReferenceLine/XAxis/YAxis, custom
- * tooltip via the `content` prop) following the existing chart conventions in
- * EvalChart.tsx / ScoreChart.tsx, not a line-by-line port of the spike's DOM code.
+ * Idiomatic Recharts (LineChart/Line/ReferenceLine/XAxis/YAxis, custom tooltip via
+ * the `content` prop), following the existing chart conventions in EvalChart.tsx /
+ * ScoreChart.tsx.
  */
 
 import {
@@ -51,15 +46,15 @@ import type { MoveQuality } from '@/lib/moveQuality';
 const EMPHASIZED_STROKE_WIDTH = 3;
 const OTHER_STROKE_WIDTH = 1.5;
 
-// Max x-axis ticks shown — keeps the ELO axis legible at ~360px (D-02).
+// Max x-axis ticks shown — keeps the ELO axis legible at ~360px.
 const MAX_X_TICKS = 5;
 
 // Fixed chart height — shared by the loading skeleton and the rendered chart so the
 // card holds a constant height instead of jumping when Maia results arrive (matches
-// the engine card's no-jump skeleton — UAT quick 260705-dj5).
+// the engine card's no-jump skeleton).
 const CHART_HEIGHT_CLASS = 'h-64';
 
-// End-of-line move labels (UAT quick 260705-dj5): each shown line is tagged with its
+// End-of-line move labels: each shown line is tagged with its
 // SAN at its right end (like the desktop reference), so the chart carries its own
 // legend. MOVE_LABEL_RIGHT_MARGIN reserves room for the label column PLUS the leader
 // gutter; the tighter Y_AXIS_WIDTH reclaims the left gutter so the plot stays wide.
@@ -67,7 +62,7 @@ const MOVE_LABEL_FONT_SIZE = 11;
 const MOVE_LABEL_RIGHT_MARGIN = 48;
 const Y_AXIS_WIDTH = 36;
 
-// Leader lines (Option B): when de-collision nudges a label off its endpoint, a thin
+// Leader lines: when de-collision nudges a label off its endpoint, a thin
 // connector links the label back to the line's true end so the pairing stays clear.
 // MOVE_LABEL_LEADER_GUTTER is the horizontal band reserved for that connector between
 // the plot's right edge and the label text; MOVE_LABEL_LEADER_MIN_OFFSET is how far a
@@ -86,7 +81,7 @@ export const MOVE_LABEL_LINE_HEIGHT = MOVE_LABEL_FONT_SIZE + 2;
 // Fallback y-axis ticks (0-100%) used only when no probability data is available.
 const PROBABILITY_TICKS = [0, 0.25, 0.5, 0.75, 1];
 
-// Adaptive y-axis (UAT quick 260705-bm3): candidate tick steps + the max number of
+// Adaptive y-axis: candidate tick steps + the max number of
 // intervals we'll draw. We pick the smallest step that keeps the axis at/below
 // Y_AXIS_MAX_INTERVALS divisions, then round the peak shown probability up to it.
 const Y_AXIS_STEP_CANDIDATES = [0.05, 0.1, 0.2, 0.25] as const;
@@ -132,8 +127,8 @@ export interface MoveQualityEval {
 /**
  * One primary-engine PV line's first move + white-POV eval — the authoritative
  * eval bar / engine-card search (useStockfishEngine, MultiPV=2), shown as a
- * reference header in the tooltip (151.1 UAT: surface the engine's best and
- * second-best line evals alongside the Maia probabilities).
+ * reference header in the tooltip, surfacing the engine's best and
+ * second-best line evals alongside the Maia probabilities.
  */
 export interface EngineLine {
   san: string;
@@ -152,12 +147,12 @@ export interface MovesByRatingChartProps {
   selectedElo: number;
   /** The already-selected candidate set to render (Analysis.tsx's selectCandidatesByMass output). */
   shownSans: string[];
-  /** Per-SAN Stockfish-graded quality + eval, for line/label color and the tooltip (D-08). Missing entries render MOVE_QUALITY_PENDING (D-05). */
+  /** Per-SAN Stockfish-graded quality + eval, for line/label color and the tooltip. Missing entries render MOVE_QUALITY_PENDING. */
   qualityBySan: Map<string, MoveQualityEval>;
-  /** Primary engine's top PV lines (best + 2nd-best), shown as a reference header in the tooltip (151.1 UAT). */
+  /** Primary engine's top PV lines (best + 2nd-best), shown as a reference header in the tooltip. */
   engineTopLines: EngineLine[];
   /** Tailwind height class for the plot (and its no-jump skeleton). Defaults to the
-   * desktop `h-64`; mobile passes a shorter class to reclaim vertical space (151.1 UAT). */
+   * desktop `h-64`; mobile passes a shorter class to reclaim vertical space. */
   heightClass?: string;
 }
 
@@ -173,8 +168,8 @@ function pivotRows(perElo: MoveCurvePoint[], shownSans: string[]): Record<string
 }
 
 /**
- * Color encodes quality ONLY (D-01/D-07) — stroke width (below) handles
- * played/best emphasis independently. Ungraded (not-yet-arrived, D-05)
+ * Color encodes quality ONLY — stroke width (below) handles
+ * played/best emphasis independently. Ungraded (not-yet-arrived)
  * candidates render MOVE_QUALITY_PENDING's neutral gray until the streaming
  * grading hook commits their first grade.
  */
@@ -199,7 +194,7 @@ function colorForQuality(quality: MoveQuality | undefined): string {
   }
 }
 
-/** White-POV eval text for the tooltip (D-08): "+1.2" for cp, "#N"/"#-N" for mate, "—" ungraded. */
+/** White-POV eval text for the tooltip: "+1.2" for cp, "#N"/"#-N" for mate, "—" ungraded. */
 function formatEvalText(evalCp: number | null, evalMate: number | null): string {
   if (evalMate !== null) return evalMate > 0 ? `#${evalMate}` : `#-${Math.abs(evalMate)}`;
   if (evalCp !== null) {
@@ -209,7 +204,7 @@ function formatEvalText(evalCp: number | null, evalMate: number | null): string 
   return '—';
 }
 
-/** Capitalized quality word for the tooltip (D-08), e.g. "Best"/"Inaccuracy". Ungraded → "Pending". */
+/** Capitalized quality word for the tooltip, e.g. "Best"/"Inaccuracy". Ungraded → "Pending". */
 function qualityWord(quality: MoveQuality | undefined): string {
   if (quality === undefined) return 'Pending';
   return quality[0]!.toUpperCase() + quality.slice(1);
@@ -234,7 +229,7 @@ export interface EndLabelDatum {
 }
 
 /**
- * Vertical de-collision (Option A): nudge labels apart so no two overprint, while
+ * Vertical de-collision: nudge labels apart so no two overprint, while
  * keeping each as close as possible to its line's true endpoint y. Sorts by target
  * y, pushes each label down until it clears the previous by MOVE_LABEL_LINE_HEIGHT,
  * then relaxes back up if the stack overflowed the bottom, and finally clamps the
@@ -292,12 +287,11 @@ function leaderPoints(xEnd: number, targetY: number, labelX: number, placedY: nu
 
 /**
  * On-chart legend: draws each shown move's SAN at the RIGHT end of its line (the
- * last ELO rung) in the line's own color, mirroring the desktop reference (UAT
- * quick 260705-dj5). Rendered as a SINGLE layer (not per-line LabelLists) so it can
- * see every endpoint at once and run spreadLabels to prevent overlaps when moves
- * converge to near-equal probabilities (Option A). When de-collision nudges a label
- * more than MOVE_LABEL_LEADER_MIN_OFFSET off its endpoint, a thin same-color leader
- * line links it back to the line end (Option B). Uses Recharts 3.8 scale/plot-area
+ * last ELO rung) in the line's own color. Rendered as a SINGLE layer (not per-line
+ * LabelLists) so it can see every endpoint at once and run spreadLabels to prevent
+ * overlaps when moves converge to near-equal probabilities. When de-collision nudges
+ * a label more than MOVE_LABEL_LEADER_MIN_OFFSET off its endpoint, a thin same-color
+ * leader line links it back to the line end. Uses Recharts 3.8 scale/plot-area
  * hooks to locate the endpoints; renders nothing until the geometry is available.
  */
 function MoveEndLabels({
@@ -380,7 +374,7 @@ export interface MovesTooltipRow {
 }
 
 /**
- * Custom tooltip body (D-08): an ELO-rung header over a 5-column table — move name,
+ * Custom tooltip body: an ELO-rung header over a 5-column table — move name,
  * the move-quality badge icon (gem/best/…), a label (gold "FlawChess" for the
  * engine's top move, or the Stockfish-graded quality word for each predicted move),
  * the white-POV Stockfish eval (accent blue), and the Maia probability (violet).
@@ -524,14 +518,11 @@ function movesTooltipContent(
 
 /**
  * Fixed-height placeholder shown while `perElo` is empty (Maia not yet ready
- * for this position). Kept as its own component (the extraction that used to
- * be required by rules of hooks is no longer load-bearing after G-213-34, but
- * re-inlining it into `MovesByRatingChart`'s early return is an unrelated
- * refactor outside this gap's scope).
+ * for this position).
  *
- * G-213-34 (supersedes D-12): shows no download state of any kind — download
- * progress lives exclusively in the `EngineReadyGate` modal now. Always
- * renders today's plain pulsing block, whether or not Maia is downloading.
+ * Shows no download state of any kind: download progress lives exclusively in
+ * the `EngineReadyGate` modal. Always renders a plain pulsing block, whether or
+ * not Maia is downloading.
  */
 function MaiaChartSkeleton({ heightClass }: { heightClass: string }): React.ReactElement {
   return (
@@ -613,7 +604,7 @@ export function MovesByRatingChart({
 
           {shownSans.map((san) => {
             // Stroke width encodes played/best emphasis ONLY; color encodes quality
-            // ONLY — the two are decoupled (D-01/D-07). A played or SF-best move
+            // ONLY — the two are decoupled. A played or SF-best move
             // keeps the emphasized stroke regardless of its quality color.
             const emphasized = san === playedSan || san === bestSan;
             const color = colorForQuality(qualityBySan.get(san)?.quality);
@@ -630,7 +621,7 @@ export function MovesByRatingChart({
             );
           })}
 
-          {/* Single de-collided label layer (Option A) drawn after the lines so the
+          {/* Single de-collided label layer drawn after the lines so the
               SANs sit on top; sees every endpoint at once to avoid overlaps. */}
           {lastRow && (
             <MoveEndLabels lastRow={lastRow} shownSans={shownSans} qualityBySan={qualityBySan} />

@@ -1,31 +1,29 @@
 """Unit tests for app.services.train_scheduler — pure interval-ladder scheduler.
 
-Phase 189 Plan 01 Task 2 (POOL-04/05/06). No DB fixture — every function under
+No DB fixture — every function under
 test is pure (plain `datetime.date`/`int`/`bool` in, plain values out). Mirrors
 tests/services/test_eval_utils.py's shape: direct import, plain asserts,
 table-driven parametrized cases over the boundary conditions.
 
 Covers:
   - apply_result: correct-move streak progression 0->1->2->MASTERED(3),
-    fail_count as a lifetime lapse counter never reset by a correct solve
-    (SEED-154), PARKED via Door A (never-solved, 3 lifetime lapses) or Door B
+    fail_count as a lifetime lapse counter never reset by a correct solve,
+    PARKED via Door A (never-solved, 3 lifetime lapses) or Door B
     (6 lifetime lapses regardless of ever_correct), due-date snapping via
     next_scheduled_day.
   - next_scheduled_day: identity on weekday_mask=0, identity when `after` is
     already on a scheduled weekday, forward scan otherwise.
-  - session_window: D-10 "open until the next scheduled session day".
+  - session_window: "open until the next scheduled session day".
   - local_today: the one UTC->local conversion site, unknown-zone fallback.
   - is_session_expired: today >= expires_on boundary (inclusive).
 
-Phase 193 (PROG-01, SEED-121) replaces Phase 191's weekly settlement machine
-(the deleted 3-state flame enum + its week-bucketed settle function) with a
-per-scheduled-day tick + a 0-7 depletable shield:
+The streak machine is a per-scheduled-day tick + a 0-7 depletable shield:
   - is_scheduled_day / scheduled_days_per_week: the two small pure helpers.
   - _judge_one_day: the shared arithmetic primitive (neutral/fulfilled/
     missed/credit_only), including the SHIELD_CAP clamp-parity gate.
   - tick_days: the day-walk, including the sparse-mask elapsed-day boundary
-    (RESEARCH.md Pitfall 1 — the phase's single highest-risk correctness
-    finding), the frozen-forever guarantee, the D-06 watermark, and the
+    (the highest-risk correctness case), the frozen-forever guarantee, the
+    watermark, and the
     streak_reset_notice derivation.
 """
 
@@ -59,7 +57,7 @@ from app.services.train_scheduler import (
 )
 
 _TODAY = datetime.date(2026, 7, 27)  # a Monday
-_EVERY_DAY_MASK = 0  # D-07 identity mask
+_EVERY_DAY_MASK = 0  # identity mask
 
 # Streak-test reference calendar (all Mondays, since _TODAY is a Monday):
 #   _W0  = current week (2026-07-27)
@@ -85,7 +83,7 @@ def _fresh_state(due_date: datetime.date = _TODAY) -> ItemState:
 
 
 class TestApplyResultCorrect:
-    """Streak progression + mastery boundary (POOL-04/05)."""
+    """Streak progression + mastery boundary."""
 
     def test_fresh_item_correct_advances_to_streak_1(self) -> None:
         state = _fresh_state()
@@ -125,7 +123,7 @@ class TestApplyResultCorrect:
         assert result.due_date == original_due, "a mastered item is never re-scheduled"
 
     def test_correct_move_preserves_fail_count_and_sets_ever_correct(self) -> None:
-        """SEED-154: fail_count is a lifetime lapse counter — a correct solve
+        """fail_count is a lifetime lapse counter — a correct solve
         never resets it, only ever_correct flips to True."""
         for prior_fail_count in (0, 1, 2, 5):
             state = ItemState(
@@ -142,7 +140,7 @@ class TestApplyResultCorrect:
             assert result.ever_correct is True
 
     def test_five_lapses_then_three_in_a_row_masters_not_parks(self) -> None:
-        """SEED-154: an item the SR system is successfully teaching is not
+        """An item the SR system is successfully teaching is not
         retired — 5 lifetime lapses followed by 3 consecutive correct solves
         reaches MASTERED with the lapse count preserved, never PARKED."""
         state = ItemState(
@@ -157,7 +155,7 @@ class TestApplyResultCorrect:
 
 
 class TestApplyResultWrong:
-    """fail_count accrual + parking boundary (POOL-06)."""
+    """fail_count accrual + parking boundary."""
 
     def test_fresh_item_wrong_resets_streak_and_accrues_one_fail(self) -> None:
         state = _fresh_state()
@@ -191,7 +189,7 @@ class TestApplyResultWrong:
         assert result.status == DrillStatus.ACTIVE
 
     def test_ever_correct_true_now_accrues_a_lapse(self) -> None:
-        """SEED-154: fail_count accrues unconditionally now — ever_correct no
+        """fail_count accrues unconditionally now — ever_correct no
         longer gates the increment, only which park door can fire."""
         state = ItemState(
             status=DrillStatus.ACTIVE, streak=0, due_date=_TODAY, fail_count=0, ever_correct=True
@@ -202,7 +200,7 @@ class TestApplyResultWrong:
         assert result.ever_correct is True
 
     def test_ever_correct_true_repeated_wrong_parks_at_leech_threshold(self) -> None:
-        """SEED-154 Door B: once ever_correct is True, Door A can never fire,
+        """Door B: once ever_correct is True, Door A can never fire,
         but repeated wrong solves still park the item at LEECH_FAIL_THRESHOLD."""
         state = ItemState(
             status=DrillStatus.ACTIVE, streak=0, due_date=_TODAY, fail_count=0, ever_correct=True
@@ -250,7 +248,7 @@ class TestApplyResultWrong:
         assert state.ever_correct is True
 
     def test_leech_park_preserves_ever_correct_true(self) -> None:
-        """SEED-154 silent-corruption guard: the PARKED return must propagate
+        """Silent-corruption guard: the PARKED return must propagate
         ever_correct from the incoming state, not hardcode False — Door B can
         fire on an item that HAS been solved."""
         original_due = datetime.date(2026, 7, 20)
@@ -269,7 +267,7 @@ class TestApplyResultWrong:
 
 
 class TestApplyResultAlternatingLeech:
-    """SEED-154's motivating case: an item alternately solved and failed must
+    """The motivating case: an item alternately solved and failed must
     still eventually leave the pool via Door B."""
 
     def test_alternating_solve_and_fail_eventually_parks(self) -> None:
@@ -356,9 +354,9 @@ class TestLocalToday:
 
 
 class TestLocalHour:
-    """local_hour: the companion UTC->local-hour conversion (Phase 201, REMIND-02).
+    """local_hour: the companion UTC->local-hour conversion.
 
-    The three fractional-offset zones are exactly what REMIND-02's >=15-minute
+    The three fractional-offset zones are exactly what the >=15-minute
     tick exists to serve -- a coarser tick could skip a user's hour entirely.
     """
 
@@ -381,7 +379,7 @@ class TestLocalHour:
 
 
 class TestSecondsUntilEndOfLocalDay:
-    """seconds_until_end_of_local_day: Phase 204 D-01/D-03. The push TTL bound.
+    """seconds_until_end_of_local_day: the push TTL bound.
 
     No floor, no cap -- a near-end-of-day instant returning a small exact
     count IS the no-floor proof (a hardcoded minimum would fail these).
@@ -550,7 +548,7 @@ class TestJudgeOneDay:
 
 
 class TestTickDays:
-    """The day-walk: elapsed-day boundary, frozen-forever guarantee, D-06
+    """The day-walk: elapsed-day boundary, frozen-forever guarantee,
     watermark, and no-op behavior."""
 
     def test_empty_snapshot_no_sessions_is_a_pure_noop(self) -> None:
@@ -613,7 +611,7 @@ class TestTickDays:
         assert view.settled.settled_through == _TODAY - datetime.timedelta(days=1)
 
     def test_sparse_mask_boundary_not_judged_before_window_closes(self) -> None:
-        """RESEARCH.md Pitfall 1 — THE highest-risk correctness case. Under a
+        """THE highest-risk correctness case. Under a
         Mon/Wed/Fri mask, a Monday scheduled day must NOT be judged on
         Tuesday (its window is still open until Wednesday)."""
         mask = 0b0010101  # Mon(0) + Wed(2) + Fri(4)

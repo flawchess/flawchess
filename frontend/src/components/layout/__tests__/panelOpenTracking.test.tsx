@@ -125,7 +125,7 @@ describe('panel-open tracking', () => {
       expect(track).toHaveBeenCalledTimes(2);
     });
 
-    it('fires nothing when mounted already open (D-03)', () => {
+    it('fires nothing when mounted already open', () => {
       render(<DrawerHarness open={true} panel="filters" />);
       expect(track).not.toHaveBeenCalled();
     });
