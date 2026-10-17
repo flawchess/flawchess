@@ -164,7 +164,7 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 6/9 plans executed
+**Plans:** 7/9 plans executed
 **Status**: Planned (9 plans, 7 waves), ready to execute
 
 Plans:
@@ -183,7 +183,7 @@ Plans:
 - [x] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 242-07-PLAN.md — Frontend findings merged into Stats (cards, phone Show more, Not clear yet, empty state, older-games chip) (wave 5)
+- [x] 242-07-PLAN.md — Frontend findings merged into Stats (cards, phone Show more, Not clear yet, empty state, older-games chip) (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 242-08-PLAN.md — Frontend Insights subtab, mobile tab and route removed with /openings/insights → /openings/stats redirect (D-15), one OpeningsTab union, old Insights components deleted (wave 6)
