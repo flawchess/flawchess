@@ -54,17 +54,6 @@ interface RepertoireCardProps {
   onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
 }
 
-function GamesLine({ row, testId }: { row: RepertoireRowModel; testId: string }) {
-  const lastPlayed = row.lastPlayedAt ? formatRelativeDate(row.lastPlayedAt) : '';
-  return (
-    <div className="space-y-1">
-      <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
-      <div className="text-sm text-muted-foreground tabular-nums" data-testid={`${testId}-games`}>
-        {row.games.toLocaleString('en-US')} games{lastPlayed ? ` · ${lastPlayed}` : ''}
-      </div>
-    </div>
-  );
-}
 
 function ScoreBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
   const input = {
@@ -285,7 +274,7 @@ function CardLinks({
 }
 
 /**
- * One repertoire opening as a card: name header, a 128 px board beside the WDL bar, the Score
+ * One repertoire opening as a card: name header with the last-played date, a 128 px board beside the WDL bar, the Score
  * and Eval after opening verdict bars, the Moves / Games / Bookmark links and a toggle that
  * opens the score-over-time chart under them. Cards with fewer than 20 games are faded.
  */
@@ -331,12 +320,20 @@ export function RepertoireCard({
             </span>
           )}
         </span>
+        {row.lastPlayedAt && (
+          <span
+            className="ml-auto shrink-0 text-sm font-normal whitespace-nowrap text-muted-foreground"
+            data-testid={`${testId}-last-played`}
+          >
+            {formatRelativeDate(row.lastPlayedAt)}
+          </span>
+        )}
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
           <LazyMiniBoard fen={row.fen} flipped={row.color === 'black'} size={BOARD_SIZE} />
           <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-            <GamesLine row={row} testId={testId} />
+            <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
             <ScoreBar row={row} testId={testId} />
             <EvalBar row={row} testId={testId} />
           </div>

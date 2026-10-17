@@ -119,8 +119,11 @@ discuss-phase" and record defaults for the rest.
 - **D-23:** lucide `BookMarked` is replaced by `Bookmark` everywhere.
 - **D-24:** Stats tab section order is **Bookmarks, Most Played, Moves that Cost You, Moves that Work**
   (findings move below the repertoire; amends D-00's "findings above"). Every section heading is an h2 in
-  Fredoka (`font-brand`); the "Opening insights" umbrella heading is dropped and its explanation sits under
-  "Moves that Cost You".
+  Fredoka (`font-brand`); the "Opening insights" umbrella heading and its explanation paragraph are dropped.
+  Each findings section carries its "You score clearly below/above 50%." line under the heading.
+- **D-25:** No "Playing as" label in the colour switch row. Repertoire cards drop the "N games · last played"
+  line under the WDL bar (the count stays on the Games link); the last-played date sits muted on the right of
+  the card header.
 
 </decisions>
 

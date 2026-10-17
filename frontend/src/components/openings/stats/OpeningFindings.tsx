@@ -24,8 +24,8 @@ interface KindMeta {
 }
 
 const KINDS: readonly KindMeta[] = [
-  { kind: 'weakness', title: 'Moves that Cost You', subtitle: 'you score clearly below 50%' },
-  { kind: 'strength', title: 'Moves that Work', subtitle: 'you score clearly above 50%' },
+  { kind: 'weakness', title: 'Moves that Cost You', subtitle: 'You score clearly below 50%.' },
+  { kind: 'strength', title: 'Moves that Work', subtitle: 'You score clearly above 50%.' },
 ];
 
 interface SectionData {
@@ -176,28 +176,16 @@ function ShowMoreButton({
   );
 }
 
-function FindingsIntro() {
-  return (
-    <p className="text-sm text-muted-foreground">
-      Moves in your games after which you score clearly better or worse than 50%. Your opponents'
-      moves count too: they show which replies you handle well or badly.
-    </p>
-  );
-}
-
 function FindingsSubsection({
   meta,
   color,
   data,
-  showIntro,
   onOpenMoves,
   onOpenGames,
 }: {
   meta: KindMeta;
   color: FindingColor;
   data: SectionData;
-  /** The shared explanation renders once, under the first section's heading. */
-  showIntro: boolean;
   onOpenMoves: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
@@ -210,11 +198,10 @@ function FindingsSubsection({
   };
   return (
     <div className="space-y-3" data-testid={testId}>
-      <h2 className={SECTION_HEADING_CLASS}>
-        {meta.title}{' '}
-        <small className="font-sans text-sm font-normal text-muted-foreground">{meta.subtitle}</small>
-      </h2>
-      {showIntro && <FindingsIntro />}
+      <div className="space-y-1">
+        <h2 className={SECTION_HEADING_CLASS}>{meta.title}</h2>
+        <p className="text-sm text-muted-foreground">{meta.subtitle}</p>
+      </div>
       {data.cards.length === 0 ? (
         <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
           Nothing clear yet as {colorLabel(color)}.
@@ -285,13 +272,12 @@ export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGa
         <FindingsError onRetry={() => void refetch()} />
       ) : data ? (
         <div className="flex flex-col gap-6">
-          {KINDS.map((meta, i) => (
+          {KINDS.map((meta) => (
             <FindingsSubsection
               key={meta.kind}
               meta={meta}
               color={color}
               data={sectionData(data, color, meta.kind)}
-              showIntro={i === 0}
               onOpenMoves={onOpenMoves}
               onOpenGames={onOpenGames}
             />
