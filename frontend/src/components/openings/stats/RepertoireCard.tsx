@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRightLeft, Bookmark, BookmarkMinus, BookmarkPlus, ChevronDown, Swords } from 'lucide-react';
+import { Archive, ArrowRightLeft, Bookmark, BookmarkMinus, BookmarkPlus, ChevronDown, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { ScoreChart } from '@/components/charts/ScoreChart';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
@@ -39,7 +39,7 @@ const BOARD_SIZE = 128;
 const NO_VALUE = '—';
 const EVAL_LABEL = 'Eval after opening';
 const EVAL_LABEL_SHORT = 'Eval';
-const NOT_PLAYED_RECENTLY = 'not played recently';
+const NOT_PLAYED_RECENTLY = 'Not played recently';
 const LINK_BUTTON_CLASS =
   'flex items-center gap-1 text-sm text-brand-brown-light transition-colors hover:text-brand-brown-highlight disabled:opacity-50';
 
@@ -288,7 +288,8 @@ export function RepertoireCard({
 }: RepertoireCardProps) {
   const [chartOpen, setChartOpen] = useState(false);
   const testId = `repertoire-card-${index}`;
-  const stale = row.kind === 'bookmark' && !row.isCurrent;
+  // Any card outside the current repertoire window: stale bookmarks and Played before rows.
+  const stale = !row.isCurrent;
 
   const handleToggleChart = () => {
     // Discovery only: track the expand, never the collapse.
@@ -309,23 +310,26 @@ export function RepertoireCard({
         {row.kind === 'bookmark' && (
           <Bookmark className="mt-1 h-4 w-4 shrink-0 text-brand-brown-light" aria-label="Bookmarked" />
         )}
-        <span className="min-w-0 break-words">
-          <span data-testid={`${testId}-name`}>{row.name}</span>
-          {stale && (
-            <span
-              className="ml-2 inline-block rounded-full bg-white/10 px-2 py-px align-[1px] text-sm font-semibold whitespace-nowrap text-muted-foreground"
-              data-testid={`${testId}-stale-chip`}
-            >
-              {NOT_PLAYED_RECENTLY}
-            </span>
-          )}
+        <span className="min-w-0 break-words" data-testid={`${testId}-name`}>
+          {row.name}
         </span>
-        {row.lastPlayedAt && (
+        {(row.lastPlayedAt || stale) && (
           <span
-            className="ml-auto shrink-0 text-sm font-normal whitespace-nowrap text-muted-foreground"
+            className="ml-auto flex shrink-0 items-center gap-1.5 text-sm font-normal whitespace-nowrap text-muted-foreground"
             data-testid={`${testId}-last-played`}
           >
-            {formatRelativeDate(row.lastPlayedAt)}
+            {row.lastPlayedAt && formatRelativeDate(row.lastPlayedAt)}
+            {/* Indicator only, not an action: marks openings outside the current repertoire. */}
+            {stale && (
+              <Archive
+                className="h-4 w-4"
+                role="img"
+                aria-label={NOT_PLAYED_RECENTLY}
+                data-testid={`${testId}-stale-icon`}
+              >
+                <title>{NOT_PLAYED_RECENTLY}</title>
+              </Archive>
+            )}
           </span>
         )}
       </CardHeader>

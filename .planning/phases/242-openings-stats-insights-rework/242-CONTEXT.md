@@ -124,6 +124,13 @@ discuss-phase" and record defaults for the rest.
 - **D-25:** No "Playing as" label in the colour switch row. Repertoire cards drop the "N games · last played"
   line under the WDL bar (the count stays on the Games link); the last-played date sits muted on the right of
   the card header.
+- **D-26:** The Stats White | Black switch **is the Played-as filter** (supersedes D-00's "not persisted"
+  page state): switching writes the committed filters and the open panel draft, flips the board, and the
+  sidebar Played-as button and filter panel follow it. A Played-as change via Apply no longer jumps from
+  Stats to Moves (only a Piece filter change still does). Desktop switch is right-aligned.
+- **D-27:** The "not played recently" chip is replaced by a muted lucide `Archive` icon right of the
+  last-played date, on every card outside the current repertoire window (stale bookmarks and Played before).
+  Indicator only, no action.
 
 </decisions>
 

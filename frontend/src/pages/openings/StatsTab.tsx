@@ -71,7 +71,7 @@ export function StatsTab({
           row in Openings.tsx (one sticky row, not two). No ancestor may set overflow-*
           or the bar stops sticking. */}
       <div
-        className="hidden lg:flex sticky top-0 z-20 items-center py-2 bg-background/80 backdrop-blur-sm"
+        className="hidden lg:flex sticky top-0 z-20 items-center justify-end py-2 bg-background/80 backdrop-blur-sm"
         data-testid="opening-stats-color-bar"
       >
         <OpeningColorSwitch idPrefix="desktop" selected={color} onSelect={onColorChange} />

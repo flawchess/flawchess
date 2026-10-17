@@ -116,12 +116,6 @@ export function OpeningsPage() {
     removeRetiredBookmarkChartKeys();
   }, []);
 
-  // ── Stats tab colour (the sticky White | Black switch, D-00) ─────────────────
-  // Starts from the Played-as filter so a user browsing Black lands on Black. Never
-  // persisted and never written back to the filter store (onTogglePlayedAs navigates
-  // away from Stats anyway).
-  const [statsColor, setStatsColor] = useState<Color>(filters.color);
-
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
@@ -140,6 +134,18 @@ export function OpeningsPage() {
 
   // ── Games tab pagination + tab-switch resets ────────────────────────────────
   const { gamesOffset, setGamesOffset } = useTabReset(activeTab);
+
+  // ── Stats tab colour (the sticky White | Black switch, D-26) ─────────────────
+  // The switch IS the Played-as filter: it writes the committed filters and the open
+  // panel's draft, so the sidebar button, the filter panel and the switch never disagree.
+  // The switch tracks its own option-change event.
+  const handleStatsColorChange = useCallback((color: Color) => {
+    setFilters(prev => ({ ...prev, color }));
+    setLocalFilters(prev => ({ ...prev, color }));
+    setGamesOffset(0);
+    setBoardFlipped(color === 'black');
+    sidebar.dismissPlayedAsHint();
+  }, [setFilters, setGamesOffset, sidebar]);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
@@ -259,7 +265,8 @@ export function OpeningsPage() {
     setGamesOffset(0);
     sidebar.setFiltersHintDismissed(true);
     setBoardFlipped(localFilters.color === 'black');
-    if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+    // Stats follows the Played-as colour since D-26, so only a Piece filter change leaves it.
+    if (localFilters.matchSide !== filters.matchSide
         && activeTab !== 'explorer' && activeTab !== 'games') {
       navigate('/openings/explorer');
     }
@@ -356,7 +363,8 @@ export function OpeningsPage() {
     setGamesOffset(0);
     sidebar.setFiltersHintDismissed(true);
     setBoardFlipped(localFilters.color === 'black');
-    if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+    // Stats follows the Played-as colour since D-26, so only a Piece filter change leaves it.
+    if (localFilters.matchSide !== filters.matchSide
         && activeTab !== 'explorer' && activeTab !== 'games') {
       navigate('/openings/explorer');
     }
@@ -483,8 +491,8 @@ export function OpeningsPage() {
 
   const statsTabEl = (
     <StatsTab
-      color={statsColor}
-      onColorChange={setStatsColor}
+      color={filters.color}
+      onColorChange={handleStatsColorChange}
       bookmarks={bookmarks}
       bookmarkPhaseEntryByHash={bookmarkPhaseEntryByHash}
       mostPlayedData={mostPlayedData}
@@ -712,7 +720,7 @@ export function OpeningsPage() {
               board settings column instead, so it is not rendered here. */}
           {activeTab === 'stats' && (
             <div className="sticky top-0 z-20 flex items-center justify-between gap-2 py-2 bg-background/80 backdrop-blur-sm">
-              <OpeningColorSwitch idPrefix="mobile" selected={statsColor} onSelect={setStatsColor} />
+              <OpeningColorSwitch idPrefix="mobile" selected={filters.color} onSelect={handleStatsColorChange} />
               <Button
                 variant="brand-outline"
                 className="relative"

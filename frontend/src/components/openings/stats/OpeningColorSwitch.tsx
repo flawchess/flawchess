@@ -16,8 +16,8 @@ interface OpeningColorSwitchProps {
 }
 
 /**
- * The one White | Black switch of the Openings Stats tab. Selection is plain page state
- * (not persisted, D-00); the Umami option-change event fires from a click on the other
+ * The one White | Black switch of the Openings Stats tab. Selection is the Played-as filter
+ * (D-26); the Umami option-change event fires from a click on the other
  * colour only, never on mount or restore.
  */
 export function OpeningColorSwitch({ idPrefix, selected, onSelect }: OpeningColorSwitchProps) {

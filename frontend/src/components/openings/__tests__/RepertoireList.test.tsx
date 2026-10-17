@@ -169,15 +169,17 @@ describe('RepertoireList bookmarks', () => {
     ).toBeTruthy();
   });
 
-  it('shows the "not played recently" chip only on a stale bookmark', () => {
+  it('shows the archive indicator only on cards outside the current repertoire', () => {
     renderList({
       bookmarkRows: [
         makeRow({ key: 'bookmark-1', kind: 'bookmark', isCurrent: false }),
         makeRow({ key: 'bookmark-2', kind: 'bookmark', isCurrent: true }),
       ],
     });
-    expect(screen.getByTestId('repertoire-card-0-stale-chip').textContent).toBe('not played recently');
-    expect(screen.queryByTestId('repertoire-card-1-stale-chip')).toBeNull();
+    expect(screen.getByTestId('repertoire-card-0-stale-icon').getAttribute('aria-label')).toBe(
+      'Not played recently',
+    );
+    expect(screen.queryByTestId('repertoire-card-1-stale-icon')).toBeNull();
   });
 });
 
