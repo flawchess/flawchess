@@ -89,8 +89,8 @@ def _make_normalized(
         black_rating=black_rating,
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         played_at=played_at,
     )
 

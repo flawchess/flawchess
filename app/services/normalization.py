@@ -305,8 +305,8 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
 
     # Engine analysis: game-level accuracy (only present for analyzed games)
     accuracies = game.get("accuracies", {})
-    white_accuracy: float | None = accuracies.get("white")
-    black_accuracy: float | None = accuracies.get("black")
+    white_accuracy_imported: float | None = accuracies.get("white")
+    black_accuracy_imported: float | None = accuracies.get("black")
 
     return NormalizedGame(
         user_id=user_id,
@@ -331,8 +331,8 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
         black_rating=black.get("rating"),
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=white_accuracy,
-        black_accuracy=black_accuracy,
+        white_accuracy_imported=white_accuracy_imported,
+        black_accuracy_imported=black_accuracy_imported,
         played_at=played_at,
         initial_fen=extract_initial_fen(pgn_str),
     )
@@ -478,10 +478,10 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         black_rating=black_player.get("rating"),
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=white_analysis.get("accuracy"),
-        black_accuracy=black_analysis.get("accuracy"),
-        white_acpl=white_analysis.get("acpl"),
-        black_acpl=black_analysis.get("acpl"),
+        white_accuracy_imported=white_analysis.get("accuracy"),
+        black_accuracy_imported=black_analysis.get("accuracy"),
+        white_acpl_imported=white_analysis.get("acpl"),
+        black_acpl_imported=black_analysis.get("acpl"),
         white_inaccuracies=white_analysis.get("inaccuracy"),
         black_inaccuracies=black_analysis.get("inaccuracy"),
         white_mistakes=white_analysis.get("mistake"),
@@ -722,8 +722,8 @@ def normalize_flawchess_game_or_reason(
         black_rating=black_rating,
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         played_at=datetime.datetime.now(datetime.timezone.utc),
         # Bot games are always played from the standard
         # start — the Bots page has no custom-position entry point — so this
@@ -1087,8 +1087,8 @@ def normalize_pasted_game(
         black_rating=_parse_optional_elo(game.headers.get("BlackElo")),
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         # Never fall back to wall-clock time (unlike normalize_flawchess_game)
         # — a pasted historical game must carry its own date; today's date
         # would sort it wrongly in the Library and misrepresent the game.

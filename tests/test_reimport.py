@@ -243,8 +243,8 @@ def _make_game_row(user_id: int = 1, pgn: str = _NO_EVAL_PGN) -> dict:
         "opening_name": None,
         "opening_eco": None,
         "played_at": datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc),
-        "white_accuracy": None,
-        "black_accuracy": None,
+        "white_accuracy_imported": None,
+        "black_accuracy_imported": None,
     }
 
 

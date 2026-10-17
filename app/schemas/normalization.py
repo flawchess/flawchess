@@ -46,8 +46,12 @@ class NormalizedGame(BaseModel):
     black_rating: int | None
     opening_name: str | None
     opening_eco: str | None
-    white_accuracy: float | None
-    black_accuracy: float | None
+    # Platform-reported accuracy/ACPL map to games.*_imported (SEED-202 item 2):
+    # these fields used to be named white_accuracy/white_acpl, so model_dump() wrote
+    # the platform values into our canonical computed columns and *_imported stopped
+    # growing after Phase 178.
+    white_accuracy_imported: float | None
+    black_accuracy_imported: float | None
     played_at: datetime.datetime | None
     # The game's starting position when it is NOT the
     # standard one (chess.com thematic tournaments and custom-position "Let's
@@ -60,8 +64,8 @@ class NormalizedGame(BaseModel):
     base_time_seconds: int | None = None
     increment_seconds: float | None = None
     # lichess-only analysis fields (optional, default None)
-    white_acpl: int | None = None
-    black_acpl: int | None = None
+    white_acpl_imported: int | None = None
+    black_acpl_imported: int | None = None
     white_inaccuracies: int | None = None
     black_inaccuracies: int | None = None
     white_mistakes: int | None = None

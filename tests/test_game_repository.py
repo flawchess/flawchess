@@ -106,6 +106,65 @@ class TestBulkInsertGames:
         assert len(ids) == 1
         assert ids[0] > 0
 
+    async def test_platform_accuracy_lands_in_imported_columns(self, db_session):
+        """Normalized platform accuracy/ACPL goes to *_imported, never the computed columns.
+
+        SEED-202 item 2: the import path inserts NormalizedGame.model_dump() as-is, so a
+        field named white_accuracy wrote the platform value into our canonical column.
+        """
+        from sqlalchemy import select
+
+        from app.models.game import Game
+        from app.repositories.game_repository import bulk_insert_games
+        from app.services.normalization import normalize_lichess_game
+
+        lichess_game = {
+            "id": f"acc{uuid.uuid4().hex[:8]}",
+            "variant": "standard",
+            "speed": "blitz",
+            "rated": True,
+            "status": "mate",
+            "winner": "white",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "clock": {"initial": 300, "increment": 0},
+            "pgn": '[Event "Rated Blitz game"]\n[White "testuser"]\n[Black "Opp"]\n'
+            '[Result "1-0"]\n\n1. e4 e5 1-0',
+            "players": {
+                "white": {
+                    "user": {"name": "testuser"},
+                    "rating": 1600,
+                    "analysis": {"accuracy": 91, "acpl": 12},
+                },
+                "black": {
+                    "user": {"name": "Opp"},
+                    "rating": 1500,
+                    "analysis": {"accuracy": 74, "acpl": 40},
+                },
+            },
+        }
+        normalized = normalize_lichess_game(lichess_game, "testuser", user_id=1)
+        assert normalized is not None
+
+        ids = await bulk_insert_games(db_session, [normalized.model_dump()])
+        assert len(ids) == 1
+        row = (
+            await db_session.execute(
+                select(
+                    Game.white_accuracy,
+                    Game.black_accuracy,
+                    Game.white_acpl,
+                    Game.black_acpl,
+                    Game.white_accuracy_imported,
+                    Game.black_accuracy_imported,
+                    Game.white_acpl_imported,
+                    Game.black_acpl_imported,
+                ).where(Game.id == ids[0])
+            )
+        ).one()
+        assert row[:4] == (None, None, None, None)
+        assert row[4:] == (91, 74, 12, 40)
+
     async def test_different_users_can_import_same_game(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
 

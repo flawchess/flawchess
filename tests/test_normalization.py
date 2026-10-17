@@ -427,14 +427,14 @@ class TestChesscomAccuracy:
         return game
 
     def test_accuracy_present(self):
-        """Both accuracies present -> white_accuracy and black_accuracy extracted."""
+        """Both accuracies present -> white_accuracy_imported and black_accuracy_imported extracted."""
         from app.services.normalization import normalize_chesscom_game
 
         game = self._make_chesscom_game(accuracies={"white": 83.53, "black": 76.21})
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy == 83.53
-        assert result.black_accuracy == 76.21
+        assert result.white_accuracy_imported == 83.53
+        assert result.black_accuracy_imported == 76.21
 
     def test_no_accuracies_key(self):
         """No accuracies key -> both accuracy fields are None."""
@@ -443,18 +443,18 @@ class TestChesscomAccuracy:
         game = self._make_chesscom_game()  # no accuracies key
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy is None
-        assert result.black_accuracy is None
+        assert result.white_accuracy_imported is None
+        assert result.black_accuracy_imported is None
 
     def test_partial_accuracies(self):
-        """Only white accuracy present -> white_accuracy=float, black_accuracy=None."""
+        """Only white accuracy present -> white_accuracy_imported=float, black_accuracy_imported=None."""
         from app.services.normalization import normalize_chesscom_game
 
         game = self._make_chesscom_game(accuracies={"white": 90.0})
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy == 90.0
-        assert result.black_accuracy is None
+        assert result.white_accuracy_imported == 90.0
+        assert result.black_accuracy_imported is None
 
     def test_lichess_no_accuracy(self):
         """Lichess game without analysis returns None accuracy."""
@@ -480,8 +480,8 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy is None
-        assert result.black_accuracy is None
+        assert result.white_accuracy_imported is None
+        assert result.black_accuracy_imported is None
 
     def test_lichess_with_accuracy(self):
         """Lichess game with analysis returns accuracy values."""
@@ -527,8 +527,8 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy == 94
-        assert result.black_accuracy == 82
+        assert result.white_accuracy_imported == 94
+        assert result.black_accuracy_imported == 82
 
 
 class TestLichessAnalysisMetrics:
@@ -578,8 +578,8 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_acpl == 15
-        assert result.black_acpl == 30
+        assert result.white_acpl_imported == 15
+        assert result.black_acpl_imported == 30
         assert result.white_inaccuracies == 1
         assert result.black_inaccuracies == 2
         assert result.white_mistakes == 0
@@ -611,8 +611,8 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_acpl is None
-        assert result.black_acpl is None
+        assert result.white_acpl_imported is None
+        assert result.black_acpl_imported is None
         assert result.white_inaccuracies is None
         assert result.black_inaccuracies is None
         assert result.white_mistakes is None
@@ -637,8 +637,8 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert "white_acpl" not in result
-        assert "black_acpl" not in result
+        assert "white_acpl_imported" not in result
+        assert "black_acpl_imported" not in result
         assert "white_inaccuracies" not in result
         assert "black_inaccuracies" not in result
         assert "white_mistakes" not in result

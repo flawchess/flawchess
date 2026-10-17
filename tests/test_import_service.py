@@ -3660,8 +3660,8 @@ def _make_normalized_game(
         black_rating=1550,
         opening_name=None,
         opening_eco=None,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         played_at=played_at
         if played_at is not None
         else datetime(2015, 6, 15, tzinfo=timezone.utc),
