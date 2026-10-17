@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate } from 'react-router';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { trackFeature } from '@/lib/analytics';
+import { removeRetiredBookmarkChartKeys } from '@/lib/retiredLocalStorage';
 import { ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -110,6 +111,12 @@ export function OpeningsPage() {
   // Edits always go to localFilters; Apply commits localFilters → filters (store).
   const [filters, setFilters] = useFilterStore();
   const debouncedFilters = useDebounce(filters, 300);
+
+  // One-time sweep of the retired per-bookmark "Include in opening results" keys (D-16).
+  // Stale client state cleanup, not a tracking event.
+  useEffect(() => {
+    removeRetiredBookmarkChartKeys();
+  }, []);
 
   // ── Stats tab colour (the sticky White | Black switch, D-00) ─────────────────
   // Starts from the Played-as filter so a user browsing Black lands on Black. Never

@@ -349,7 +349,6 @@ export const TOGGLE_TARGETS = [
   'engine-stockfish',
   'engine-maia',
   'engine-flawchess',
-  'bookmark-chart',
   'elo-timeline-legend',
   'flaw-trend-legend',
   ...IMPORT_TC_TOGGLE_TARGETS,
