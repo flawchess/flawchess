@@ -7,6 +7,7 @@ import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePop
 import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { VerdictBar } from '@/components/openings/stats/VerdictBar';
+import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
@@ -24,6 +25,7 @@ import {
   EVAL_VERDICT_BAND,
   evalBaselinePawns as colorEvalBaselinePawns,
   openingVerdict,
+  openingVerdictReason,
 } from '@/lib/openingVerdict';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
@@ -213,12 +215,13 @@ function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: Openin
   // Prefer the backend baseline; a stale cache that omits it falls back to the per-color constant.
   const baseline = evalBaselinePawns ?? colorEvalBaselinePawns(filterColor);
   const delta = avgEval - baseline;
-  const verdict = openingVerdict({
+  const verdictInput = {
     delta,
     band: EVAL_VERDICT_BAND,
     confidence: stats.eval_confidence,
     games: stats.total,
-  });
+  };
+  const verdict = openingVerdict(verdictInput);
   const colourName = filterColor === 'black' ? 'Black' : 'White';
   return (
     <div className="col-span-2" data-testid="eval-text-position">
@@ -235,14 +238,17 @@ function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: Openin
         trailing={
           <>
             <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-            <EvalConfidencePopover
-              level={stats.eval_confidence}
-              pValue={stats.eval_p_value}
-              gameCount={stats.eval_n}
-              evalMeanPawns={stats.avg_eval_pawns}
-              color={filterColor}
+            {/* Fixed trigger testId: it is the Umami popover-open target, keep its history. */}
+            <EvalVerdictPopover
               testId="eval-bullet-popover-trigger"
-              evalContext="opening-end"
+              label="End Eval"
+              avgEvalPawns={avgEval}
+              evalN={stats.eval_n}
+              color={filterColor}
+              reason={openingVerdictReason(verdictInput)}
+              ci99Low={stats.eval_ci99_low_pawns ?? null}
+              ci99High={stats.eval_ci99_high_pawns ?? null}
+              pValue={stats.eval_p_value ?? null}
             />
           </>
         }

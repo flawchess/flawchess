@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GAUGE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type { WDLStats } from '@/types/api';
@@ -110,5 +110,43 @@ describe('PositionResultsPanel End Eval row', () => {
     expect(screen.getByTestId('eval-bullet-position')).toBeTruthy();
     expect(screen.queryByTestId('eval-verdict-position-track')).toBeNull();
     expect(screen.getByTestId('eval-bullet-popover-trigger')).toBeTruthy();
+  });
+});
+
+describe('PositionResultsPanel End Eval popover', () => {
+  function openEvalPopover(): HTMLElement {
+    fireEvent.click(screen.getByTestId('eval-bullet-popover-trigger'));
+    const popover = screen.queryByTestId('eval-bullet-popover-trigger-popover');
+    expect(popover, 'popover open').not.toBeNull();
+    return popover as HTMLElement;
+  }
+
+  it('opening-end popover carries the greyed 99% CI / p vs baseline / n footer and no "pawns"', () => {
+    renderPanel(
+      stats({
+        avg_eval_pawns: 0.41,
+        eval_ci99_low_pawns: 0.12,
+        eval_ci99_high_pawns: 0.7,
+        eval_p_value: 0.004,
+        eval_n: 230,
+        total: 230,
+      }),
+    );
+    const popover = openEvalPopover();
+    expect(screen.getByTestId('eval-bullet-popover-trigger-footer').textContent).toBe(
+      '99% CI +0.12 to +0.70 · p = 0.004 vs +0.25 · n = 230',
+    );
+    expect(popover.textContent ?? '').not.toMatch(/pawns/i);
+  });
+
+  it('opening-end popover says "could be chance" for an out-of-band, non-confident eval', () => {
+    renderPanel(stats({ eval_confidence: 'medium' }));
+    expect(openEvalPopover().textContent ?? '').toMatch(/could be chance/);
+  });
+
+  it('endgame-entry popover is still the old EvalConfidencePopover (no verdict footer)', () => {
+    renderPanel(stats(), { evalContext: 'endgame-entry' });
+    fireEvent.click(screen.getByTestId('eval-bullet-popover-trigger'));
+    expect(screen.queryByTestId('eval-bullet-popover-trigger-footer')).toBeNull();
   });
 });

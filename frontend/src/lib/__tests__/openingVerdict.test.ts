@@ -1,0 +1,97 @@
+import { describe, expect, it } from 'vitest';
+import {
+  EVAL_VERDICT_BAND,
+  REPERTOIRE_MIN_GAMES_FOR_VERDICT,
+  evalBaselinePawns,
+  openingVerdict,
+  openingVerdictReason,
+  verdictBandRange,
+  verdictPosition,
+  type OpeningVerdictInput,
+} from '@/lib/openingVerdict';
+
+const BAND = 0.3;
+
+function input(overrides: Partial<OpeningVerdictInput> = {}): OpeningVerdictInput {
+  return { delta: 0.6, band: BAND, confidence: 'high', games: 40, ...overrides };
+}
+
+describe('openingVerdictReason', () => {
+  it('is better / worse for a confident, large-sample, out-of-band delta', () => {
+    expect(openingVerdictReason(input({ delta: 0.6 }))).toBe('better');
+    expect(openingVerdictReason(input({ delta: -0.6 }))).toBe('worse');
+  });
+
+  it('is typical inside the band, and exactly on the band edge', () => {
+    expect(openingVerdictReason(input({ delta: 0.1 }))).toBe('typical');
+    expect(openingVerdictReason(input({ delta: BAND }))).toBe('typical');
+    expect(openingVerdictReason(input({ delta: -BAND }))).toBe('typical');
+  });
+
+  it('is chance when outside the band but confidence is not high', () => {
+    expect(openingVerdictReason(input({ confidence: 'medium' }))).toBe('chance');
+    expect(openingVerdictReason(input({ confidence: 'low', delta: -0.6 }))).toBe('chance');
+  });
+
+  it('is too-few below the game floor, and the floor itself passes', () => {
+    expect(openingVerdictReason(input({ games: REPERTOIRE_MIN_GAMES_FOR_VERDICT - 1 }))).toBe('too-few');
+    expect(openingVerdictReason(input({ games: REPERTOIRE_MIN_GAMES_FOR_VERDICT }))).toBe('better');
+  });
+
+  it('applies too-few before typical before chance', () => {
+    // too-few beats typical (inside band) and chance (low confidence, outside band)
+    expect(openingVerdictReason(input({ games: 5, delta: 0.1 }))).toBe('too-few');
+    expect(openingVerdictReason(input({ games: 5, confidence: 'low' }))).toBe('too-few');
+    // typical beats chance: inside the band with low confidence is typical, not chance
+    expect(openingVerdictReason(input({ delta: 0.1, confidence: 'low' }))).toBe('typical');
+  });
+});
+
+describe('openingVerdict', () => {
+  it('passes better / worse through and maps everything else to typical', () => {
+    expect(openingVerdict(input({ delta: 0.6 }))).toBe('better');
+    expect(openingVerdict(input({ delta: -0.6 }))).toBe('worse');
+    expect(openingVerdict(input({ delta: 0.1 }))).toBe('typical');
+    expect(openingVerdict(input({ confidence: 'medium' }))).toBe('typical');
+    expect(openingVerdict(input({ games: 3 }))).toBe('typical');
+  });
+});
+
+describe('evalBaselinePawns', () => {
+  it('is +0.25 for White and -0.25 for Black', () => {
+    expect(evalBaselinePawns('white')).toBe(0.25);
+    expect(evalBaselinePawns('black')).toBe(-0.25);
+  });
+});
+
+describe('EVAL_VERDICT_BAND', () => {
+  it('is the symmetric +/-0.30 benchmark band', () => {
+    expect(EVAL_VERDICT_BAND).toBe(0.3);
+  });
+});
+
+describe('verdictPosition', () => {
+  it('centres zero, puts the band edges at 25 / 75, and draws higher to the right', () => {
+    expect(verdictPosition(0, BAND)).toBe(50);
+    expect(verdictPosition(BAND, BAND)).toBeCloseTo(75, 6);
+    expect(verdictPosition(-BAND, BAND)).toBeCloseTo(25, 6);
+    expect(verdictPosition(0.1, BAND)).toBeGreaterThan(50);
+    expect(verdictPosition(-0.1, BAND)).toBeLessThan(50);
+  });
+
+  it('saturates short of the track edges', () => {
+    expect(verdictPosition(50, BAND)).toBeLessThanOrEqual(97);
+    expect(verdictPosition(50, BAND)).toBeGreaterThan(90);
+    expect(verdictPosition(-50, BAND)).toBeGreaterThanOrEqual(3);
+    expect(verdictPosition(-50, BAND)).toBeLessThan(10);
+  });
+});
+
+describe('verdictBandRange', () => {
+  it('is symmetric around the centre', () => {
+    const { leftPct, widthPct } = verdictBandRange(BAND);
+    expect(leftPct).toBeCloseTo(25, 6);
+    expect(widthPct).toBeCloseTo(50, 6);
+    expect(leftPct + widthPct / 2).toBeCloseTo(50, 6);
+  });
+});
