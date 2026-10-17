@@ -164,7 +164,7 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 3/9 plans executed
+**Plans:** 5/9 plans executed
 **Status**: Planned (9 plans, 7 waves), ready to execute
 
 Plans:
@@ -176,8 +176,8 @@ Plans:
 - [x] 242-03-PLAN.md — Backend /openings: Moves/Games centred eval + 99% CIs, weekly time series with per-week games, bookmark score p + 99% CI and is_current (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 242-04-PLAN.md — Frontend verdict primitives (openingVerdict, VerdictBar, EvalVerdictPopover) shipped on the Moves/Games eval row (D-17) (wave 3)
-- [ ] 242-05-PLAN.md — Frontend Stats shell: sticky White | Black switch (desktop + phone, Umami) and retirement of the bookmark include toggle + its localStorage (D-16) (wave 3)
+- [x] 242-04-PLAN.md — Frontend verdict primitives (openingVerdict, VerdictBar, EvalVerdictPopover) shipped on the Moves/Games eval row (D-17) (wave 3)
+- [x] 242-05-PLAN.md — Frontend Stats shell: sticky White | Black switch (desktop + phone, Umami) and retirement of the bookmark include toggle + its localStorage (D-16) (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
