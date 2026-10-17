@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
+import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import {
+  MOST_PLAYED_ROW_SERIES_ID,
+  useOpeningRowTimeSeries,
+} from '@/pages/openings/useOpeningRowTimeSeries';
 import {
   useRepertoireRows,
   type RepertoireRowKind,
@@ -23,6 +28,15 @@ import type {
 } from '@/types/position_bookmarks';
 
 const trackFeature = vi.hoisted(() => vi.fn());
+const useTimeSeriesMock = vi.hoisted(() => vi.fn());
+const createMutate = vi.hoisted(() => vi.fn());
+const deleteMutate = vi.hoisted(() => vi.fn());
+
+vi.mock('@/hooks/usePositionBookmarks', () => ({
+  useTimeSeries: useTimeSeriesMock,
+  useCreatePositionBookmark: () => ({ mutate: createMutate, isPending: false }),
+  useDeletePositionBookmark: () => ({ mutate: deleteMutate, isPending: false }),
+}));
 
 vi.mock('@/lib/analytics', async () => {
   const actual = await vi.importActual<typeof import('@/lib/analytics')>('@/lib/analytics');
@@ -30,7 +44,15 @@ vi.mock('@/lib/analytics', async () => {
 });
 
 vi.mock('@/components/board/LazyMiniBoard', () => ({
-  LazyMiniBoard: () => <div data-testid="lazy-mini-board" />,
+  LazyMiniBoard: ({ size }: { size: number }) => (
+    <div data-testid="lazy-mini-board" data-size={size} />
+  ),
+}));
+
+vi.mock('@/components/charts/ScoreChart', () => ({
+  ScoreChart: ({ showVolume }: { showVolume?: boolean }) => (
+    <div data-testid="score-chart-stub" data-volume={String(Boolean(showVolume))} />
+  ),
 }));
 
 vi.mock('@/components/ui/tooltip', () => ({
@@ -50,6 +72,10 @@ vi.mock('@/hooks/useReadiness', () => ({
 
 beforeEach(() => {
   trackFeature.mockClear();
+  createMutate.mockClear();
+  deleteMutate.mockClear();
+  useTimeSeriesMock.mockReset();
+  useTimeSeriesMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
 });
 
 afterEach(() => {
@@ -98,6 +124,9 @@ function renderTable(props: {
   currentRows?: RepertoireRowModel[];
   pastRows?: RepertoireRowModel[];
   currentCutoff?: string | null;
+  onOpenMoves?: (pgn: string, color: 'white' | 'black') => void;
+  onOpenGames?: (pgn: string, color: 'white' | 'black') => void;
+  onOpenBookmarkGames?: (bookmark: PositionBookmarkResponse) => void;
 }) {
   return render(
     <RepertoireTable
@@ -107,6 +136,10 @@ function renderTable(props: {
       pastRows={props.pastRows ?? []}
       currentCutoff={props.currentCutoff ?? null}
       onOpenSuggestions={vi.fn()}
+      debouncedFilters={DEFAULT_FILTERS}
+      onOpenMoves={props.onOpenMoves ?? vi.fn()}
+      onOpenGames={props.onOpenGames ?? vi.fn()}
+      onOpenBookmarkGames={props.onOpenBookmarkGames ?? vi.fn()}
     />,
   );
 }
@@ -240,6 +273,139 @@ describe('RepertoireTable cells', () => {
   });
 });
 
+describe('RepertoireTable expanded row', () => {
+  const series = {
+    bookmark_id: MOST_PLAYED_ROW_SERIES_ID,
+    data: [{ date: '2026-09-28', score: 0.6, game_count: 30, window_size: 50, per_week_games: 4 }],
+    total_wins: 20,
+    total_draws: 5,
+    total_losses: 5,
+    total_games: 30,
+    score: 0.6,
+    score_confidence: 'high' as const,
+    score_p_value: 0.01,
+    score_ci99_low: 0.5,
+    score_ci99_high: 0.7,
+    is_current: true,
+  };
+
+  function bookmarkOf(id: number): PositionBookmarkResponse {
+    return {
+      id,
+      label: 'My Najdorf',
+      target_hash: '99',
+      fen: START_FEN,
+      moves: ['e4', 'c5'],
+      color: 'white',
+      match_side: 'both',
+      is_flipped: false,
+      sort_order: 1,
+    };
+  }
+
+  it('shows the 200px board, both verdict bars and the chart block, tracking the expand once', () => {
+    useTimeSeriesMock.mockReturnValue({ data: { series: [series] }, isLoading: false, isError: false });
+    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    expect(screen.queryByTestId('repertoire-row-0-expanded')).toBeNull();
+
+    const toggle = screen.getByTestId('repertoire-row-0-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const expanded = screen.getByTestId('repertoire-row-0-expanded');
+    expect(expanded.querySelector('[data-testid="lazy-mini-board"]')?.getAttribute('data-size')).toBe('200');
+    expect(screen.getByTestId('repertoire-row-0-score-bar')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-row-0-eval-bar')).toBeTruthy();
+    expect(screen.getByTestId('score-chart-stub').getAttribute('data-volume')).toBe('true');
+    expect(panelOpenCalls()).toEqual([['panel-open', { target: 'opening-row-expand' }]]);
+
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('repertoire-row-0-expanded')).toBeNull();
+    expect(panelOpenCalls()).toHaveLength(1);
+  });
+
+  it('toggles from the opening name as well', () => {
+    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    fireEvent.click(screen.getByTestId('repertoire-row-0-name-toggle'));
+    expect(screen.getByTestId('repertoire-row-0-expanded')).toBeTruthy();
+  });
+
+  it('fetches a most-played row series only after it is expanded', () => {
+    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    expect(useTimeSeriesMock.mock.calls.every(([request]) => request === null)).toBe(true);
+    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
+    expect(useTimeSeriesMock.mock.calls.some(([request]) => request !== null)).toBe(true);
+  });
+
+  it('shows a chart error instead of an empty chart when the series request fails', () => {
+    useTimeSeriesMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
+    expect(screen.getByTestId('repertoire-row-0-chart-error').textContent).toContain(
+      'Failed to load the score chart',
+    );
+    expect(screen.queryByTestId('score-chart-stub')).toBeNull();
+  });
+
+  it('opens Moves and, for a most-played row, Games with the row line and colour', () => {
+    const onOpenMoves = vi.fn();
+    const onOpenGames = vi.fn();
+    renderTable({ currentRows: [makeRow({ key: 'mpo-1', color: 'black' })], onOpenMoves, onOpenGames });
+    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
+    fireEvent.click(screen.getByTestId('repertoire-row-0-btn-moves'));
+    fireEvent.click(screen.getByTestId('repertoire-row-0-btn-games'));
+    expect(onOpenMoves).toHaveBeenCalledWith('1. e4 c5', 'black');
+    expect(onOpenGames).toHaveBeenCalledWith('1. e4 c5', 'black');
+  });
+
+  it('shows Remove bookmark on a bookmark row, deletes it and opens its Games via the bookmark', () => {
+    const bookmark = bookmarkOf(7);
+    const onOpenBookmarkGames = vi.fn();
+    const onOpenGames = vi.fn();
+    renderTable({
+      bookmarkRows: [makeRow({ key: 'bookmark-7', kind: 'bookmark', bookmark, series })],
+      onOpenBookmarkGames,
+      onOpenGames,
+    });
+    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
+    const link = screen.getByTestId('repertoire-row-0-btn-bookmark');
+    expect(link.textContent).toContain('Remove bookmark');
+
+    fireEvent.click(link);
+    expect(deleteMutate).toHaveBeenCalledWith(7);
+    expect(createMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('repertoire-row-0-btn-games'));
+    expect(onOpenBookmarkGames).toHaveBeenCalledWith(bookmark);
+    expect(onOpenGames).not.toHaveBeenCalled();
+    // A bookmark row reuses its loaded series: no per-row request.
+    expect(useTimeSeriesMock.mock.calls.every(([request]) => request === null)).toBe(true);
+  });
+
+  it('creates a bookmark from a most-played row without the ECO code and with both sides', () => {
+    renderTable({
+      currentRows: [makeRow({ key: 'mpo-1', name: 'Sicilian Defense', fullHash: '123', color: 'black' })],
+    });
+    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
+    const link = screen.getByTestId('repertoire-row-0-btn-bookmark');
+    expect(link.textContent).toContain('Bookmark');
+    expect(link.textContent).not.toContain('Remove');
+
+    fireEvent.click(link);
+    expect(createMutate).toHaveBeenCalledWith({
+      label: 'Sicilian Defense',
+      target_hash: '123',
+      fen: START_FEN,
+      moves: ['e4', 'c5'],
+      color: 'black',
+      match_side: 'both',
+      is_flipped: true,
+    });
+    expect(deleteMutate).not.toHaveBeenCalled();
+  });
+});
+
 function makeOpening(overrides: Partial<OpeningWDL> = {}): OpeningWDL {
   return {
     opening_eco: 'B12',
@@ -359,5 +525,40 @@ describe('useRepertoireRows', () => {
       }),
     );
     expect(result.current.bookmarkRows.map((r) => r.key)).toEqual(['bookmark-3', 'bookmark-1']);
+  });
+});
+
+describe('useOpeningRowTimeSeries', () => {
+  it('returns a bookmark row\'s own series and never requests one', () => {
+    const series = makeSeries(5, 30);
+    const row = makeRow({ key: 'bookmark-5', kind: 'bookmark', series });
+    const { result } = renderHook(() =>
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: true }),
+    );
+    expect(result.current.series).toBe(series);
+    expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
+  });
+
+  it('does not fetch a most-played row\'s series until enabled', () => {
+    const row = makeRow({ key: 'mpo-1', fullHash: '777' });
+    const { result } = renderHook(() =>
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: false }),
+    );
+    expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
+    expect(result.current.series).toBeNull();
+  });
+
+  it('requests one full-position series for an enabled most-played row', () => {
+    const series = makeSeries(MOST_PLAYED_ROW_SERIES_ID, 40);
+    useTimeSeriesMock.mockReturnValue({ data: { series: [series] }, isLoading: false, isError: false });
+    const row = makeRow({ key: 'mpo-1', fullHash: '777', color: 'black' });
+    const { result } = renderHook(() =>
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: true }),
+    );
+    const request = useTimeSeriesMock.mock.calls.at(-1)?.[0];
+    expect(request.bookmarks).toEqual([
+      { bookmark_id: MOST_PLAYED_ROW_SERIES_ID, target_hash: '777', match_side: 'full', color: 'black' },
+    ]);
+    expect(result.current.series).toBe(series);
   });
 });

@@ -1,7 +1,6 @@
 import { BookMarked, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
-import { ScoreChart } from '@/components/charts/ScoreChart';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
 import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
@@ -31,6 +30,10 @@ type StatsTabProps = {
   /** Finding card deep links: Moves tab with the pulse highlight, and Games tab. */
   onOpenFinding: (finding: OpeningInsightFinding) => void;
   onOpenFindingGames: (finding: OpeningInsightFinding) => void;
+  /** Expanded-row links: Moves tab, Games tab (most-played rows), Games tab (bookmark rows). */
+  onOpenMoves: (pgn: string, color: Color) => void;
+  onOpenGames: (pgn: string, color: Color) => void;
+  onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
 };
 
 export function StatsTab({
@@ -46,6 +49,9 @@ export function StatsTab({
   debouncedFilters,
   onOpenFinding,
   onOpenFindingGames,
+  onOpenMoves,
+  onOpenGames,
+  onOpenBookmarkGames,
 }: StatsTabProps) {
   const { bookmarkRows, currentRows, pastRows } = useRepertoireRows({
     color,
@@ -58,8 +64,6 @@ export function StatsTab({
     (color === 'white' ? mostPlayedData?.current_cutoff_white : mostPlayedData?.current_cutoff_black) ??
     null;
   const showTable = !mostPlayedError && (mostPlayedData !== undefined || bookmarkRows.length > 0);
-
-  const colorBookmarks = bookmarks.filter((b) => b.color === color);
 
   return (
     <div className="flex flex-col gap-6">
@@ -102,20 +106,6 @@ export function StatsTab({
         </div>
       )}
 
-      {/* 2. Score over Time (selected colour's bookmarks) — only when bookmarks exist with time series data */}
-      {colorBookmarks.length > 0 && tsData && (
-        <div className="charcoal-texture rounded-md overflow-hidden">
-          <ScoreChart bookmarks={colorBookmarks} series={tsData.series} />
-        </div>
-      )}
-
-      {/* Loading state when bookmarks exist but tsData is not ready */}
-      {colorBookmarks.length > 0 && !tsData && (
-        <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
-          Loading chart data...
-        </div>
-      )}
-
       {/* Most Played Openings — error / loading branches per CLAUDE.md */}
       {mostPlayedError && (
         <LoadError
@@ -150,6 +140,10 @@ export function StatsTab({
           pastRows={pastRows}
           currentCutoff={currentCutoff}
           onOpenSuggestions={onOpenSuggestions}
+          debouncedFilters={debouncedFilters}
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+          onOpenBookmarkGames={onOpenBookmarkGames}
         />
       )}
     </div>
