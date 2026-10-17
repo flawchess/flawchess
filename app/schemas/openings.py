@@ -156,7 +156,8 @@ class TimeSeriesBookmarkParam(BaseModel):
 class TimeSeriesRequest(BaseModel):
     """Request body for POST /openings/time-series.
 
-    The time-series endpoint accepts optional from_date/to_date bounds.
+    The time-series endpoint returns one weekly point per active ISO week (keyed by
+    that week's Monday) and accepts optional from_date/to_date bounds.
     When present, only TimeSeriesPoints whose
     played_at falls within [from_date, to_date] are emitted, and WDL totals
     count only in-window games. The rolling average is still warmed from games
@@ -195,10 +196,13 @@ class TimeSeriesRequest(BaseModel):
 class TimeSeriesPoint(BaseModel):
     """Score data for a single rolling-window datapoint."""
 
-    date: str  # "2025-01-15" (ISO date of the game)
-    score: float  # (wins + 0.5 * draws) / total in trailing window
+    date: str  # "2025-01-12" (ISO Monday of the week; one point per active ISO week)
+    score: float  # (wins + 0.5 * draws) / total in trailing window after the week's last game
     game_count: int  # total games in the window (1..window_size)
     window_size: int  # the configured window size (always ROLLING_WINDOW_SIZE)
+    # In-window games through this bookmark position that ISO week. Drives the
+    # grey weekly volume bars on the expanded-row ScoreChart (D-00).
+    per_week_games: int
 
 
 class BookmarkTimeSeries(BaseModel):
@@ -214,6 +218,18 @@ class BookmarkTimeSeries(BaseModel):
     # target_hash (date-windowed when from_date/to_date are set).
     # Drives the bookmark card score-confidence popover's "Last played: <relative>" line.
     last_played_at: datetime.datetime | None = None
+    # Score verdict inputs over the in-window totals (D-18): score, two-sided Wilson
+    # p-value bucket, and the 99% Wilson CI. Same helper as the most-played rows, so
+    # identical games report identical numbers. Empty series: 0.5 / "low" / p 1.0.
+    score: float
+    score_confidence: Literal["low", "medium", "high"]
+    score_p_value: float
+    score_ci99_low: float
+    score_ci99_high: float
+    # False when this opening was last played before the colour's current-repertoire
+    # cutoff under the request filters (D-04): drives the "not played recently" chip.
+    # Colour-less bookmarks and series without games read as current.
+    is_current: bool
 
 
 class TimeSeriesResponse(BaseModel):

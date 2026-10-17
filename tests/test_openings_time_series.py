@@ -8,7 +8,8 @@ Key mechanics under test:
 - For each row the service appends the outcome to results_so_far and slices
   the trailing ROLLING_WINDOW_SIZE entries to compute the chess score
   (W + 0.5·D) / N.
-- data_by_date keeps only the LAST game's rolling window per calendar day.
+- Points are bucketed by ISO week (keyed by the week's Monday): only the LAST in-window
+  game's rolling window per week is kept, with per_week_games = in-window games that week.
 - Date-windowed emission: when from_date/to_date are given,
   only points whose played_at is inside the window are emitted, and WDL totals
   count only in-window games. The rolling average is warmed from games before
@@ -17,7 +18,10 @@ Key mechanics under test:
 Coverage:
 - TestTimeSeriesRequestSchema: TimeSeriesRequest has no recency field;
   exposes from_date and to_date
-- TestRollingWindow: single game, two same-day games, multi-day sequence, empty position
+- TestRollingWindow: single game, same-week games, multi-week sequence, empty position
+- TestWeeklyBuckets: Monday keys, week boundaries, per_week_games, pre-window warm-up
+- TestSeriesVerdictFields: score, p-value, 99% Wilson CI, empty-series defaults
+- TestIsCurrent: current/past flag against the per-colour repertoire cutoff
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
 - TestDateWindowedTimeSeries: from_date/to_date windowing + warm-up preservation
 """
@@ -107,6 +111,9 @@ class TestTimeSeriesRequestSchema:
             )
 
 
+# Pinned dev-clock instant for get_time_series (anchors the is_current cutoff).
+_NOW_UTC = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
+
 # ---------------------------------------------------------------------------
 # User IDs (900-series to avoid collision with other test modules)
 # ---------------------------------------------------------------------------
@@ -114,8 +121,9 @@ class TestTimeSeriesRequestSchema:
 _USER_ROLLING = 901
 _USER_MULTI = 903
 _USER_DATE_WINDOW = 905
+_USER_WEEKLY = 906
 
-_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_MULTI, _USER_DATE_WINDOW]
+_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_MULTI, _USER_DATE_WINDOW, _USER_WEEKLY]
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -233,7 +241,10 @@ class TestRollingWindow:
         )
 
         response = await get_time_series(
-            db_session, uid, _make_request(bookmark_id=1, target_hash=fh, color="white")
+            db_session,
+            uid,
+            _make_request(bookmark_id=1, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
         )
 
         assert len(response.series) == 1
@@ -264,7 +275,10 @@ class TestRollingWindow:
         )
 
         response = await get_time_series(
-            db_session, uid, _make_request(bookmark_id=2, target_hash=fh, color="white")
+            db_session,
+            uid,
+            _make_request(bookmark_id=2, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
         )
 
         assert len(response.series) == 1
@@ -274,12 +288,12 @@ class TestRollingWindow:
 
     @pytest.mark.asyncio
     async def test_multiple_games_same_day_keeps_last(self, db_session: AsyncSession) -> None:
-        """Multiple games on the same calendar day -> 1 data point reflecting all in window.
+        """Multiple games on one Thursday -> 1 weekly point dated that week's Monday.
 
-        The rolling window processes games chronologically, but data_by_date
-        keeps only the LAST game's snapshot per day. Seeding MIN_GAMES_FOR_TIMELINE
-        games (alternating W/L) on the same day verifies same-day collapse and
-        that the data point passes the min-games threshold.
+        The rolling window processes games chronologically, but only the LAST game's
+        snapshot per ISO week is kept. Seeding MIN_GAMES_FOR_TIMELINE games
+        (alternating W/L) on 2026-03-05 verifies same-week collapse, the Monday key,
+        per_week_games, and that the data point passes the min-games threshold.
         """
         uid = _USER_ROLLING
         fh = 9_100_003
@@ -303,14 +317,18 @@ class TestRollingWindow:
             )
 
         response = await get_time_series(
-            db_session, uid, _make_request(bookmark_id=3, target_hash=fh, color="white")
+            db_session,
+            uid,
+            _make_request(bookmark_id=3, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
         )
 
         bts = response.series[0]
-        # Only one data point (same date collapsed)
+        # Only one data point (same week collapsed), keyed by the Monday of Thu 2026-03-05
         assert len(bts.data) == 1
         pt = bts.data[0]
-        assert pt.date == "2026-03-05"
+        assert pt.date == "2026-03-02"
+        assert pt.per_week_games == n
         # Pure W/L (no draws): score == wins / n
         assert pt.score == pytest.approx(wins / n, abs=0.01)
         assert pt.game_count == n
@@ -322,7 +340,11 @@ class TestRollingWindow:
 
     @pytest.mark.asyncio
     async def test_score_across_multiple_days(self, db_session: AsyncSession) -> None:
-        """12 games across 12 days — first data point appears at MIN_GAMES_FOR_TIMELINE."""
+        """12 games across 12 days (2026-03-10..21, two ISO weeks of 6 games each).
+
+        Week 1 ends with a 6-game rolling window (below MIN_GAMES_FOR_TIMELINE) and is
+        dropped; week 2 ends with all 12 games in the window and is the only point.
+        """
         uid = _USER_ROLLING
         fh = 9_100_004
         n = MIN_GAMES_FOR_TIMELINE
@@ -340,23 +362,23 @@ class TestRollingWindow:
             )
 
         response = await get_time_series(
-            db_session, uid, _make_request(bookmark_id=4, target_hash=fh, color="white")
+            db_session,
+            uid,
+            _make_request(bookmark_id=4, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
         )
 
         bts = response.series[0]
-        # Points with game_count < MIN_GAMES_FOR_TIMELINE are filtered out
-        total = len(results)
-        expected_points = total - n + 1  # first point at game n, then one per day
-        assert len(bts.data) == expected_points
+        # Week 1 (Mon 2026-03-09, 6-game window) is below MIN_GAMES_FOR_TIMELINE
+        assert n > 6
+        assert len(bts.data) == 1
 
-        # First visible point has exactly MIN_GAMES_FOR_TIMELINE games in window
-        first_pt = bts.data[0]
-        assert first_pt.game_count == n
-
-        # Final game (all 12 in window): 8W + 4L (no draws) -> score = 8/12
+        # Week 2 (Mon 2026-03-16): all 12 in the window, 8W + 4L -> score = 8/12
         last_pt = bts.data[-1]
+        assert last_pt.date == "2026-03-16"
         assert last_pt.score == pytest.approx(8 / 12, abs=0.01)
         assert last_pt.game_count == 12
+        assert last_pt.per_week_games == 6
 
         # Totals reflect full history
         assert bts.total_games == 12
@@ -370,7 +392,10 @@ class TestRollingWindow:
         fh = 9_100_999  # no games seeded for this hash
 
         response = await get_time_series(
-            db_session, uid, _make_request(bookmark_id=99, target_hash=fh, color="white")
+            db_session,
+            uid,
+            _make_request(bookmark_id=99, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
         )
 
         assert len(response.series) == 1
@@ -435,7 +460,7 @@ class TestMultipleBookmarks:
                 ),
             ],
         )
-        response = await get_time_series(db_session, uid, request)
+        response = await get_time_series(db_session, uid, request, now_utc=_NOW_UTC)
 
         # Two series returned, each keyed by bookmark_id
         assert len(response.series) == 2
@@ -491,7 +516,7 @@ class TestMultipleBookmarks:
                 ),
             ],
         )
-        response = await get_time_series(db_session, uid, request)
+        response = await get_time_series(db_session, uid, request, now_utc=_NOW_UTC)
 
         assert len(response.series) == 2
 
@@ -573,6 +598,7 @@ class TestDateWindowedTimeSeries:
                 from_date=window_from,
                 to_date=window_to,
             ),
+            now_utc=_NOW_UTC,
         )
         bts = windowed.series[0]
 
@@ -587,6 +613,7 @@ class TestDateWindowedTimeSeries:
             db_session,
             uid,
             _make_request(bookmark_id=40, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
         )
         assert full.series[0].total_games == 5
 
@@ -648,17 +675,25 @@ class TestDateWindowedTimeSeries:
                 from_date=window_from,
                 to_date=window_to,
             ),
+            now_utc=_NOW_UTC,
         )
         bts = response.series[0]
 
         # Must have at least one emitted point (February games are in-window)
         assert len(bts.data) > 0
 
-        # Every emitted point's date must be within the window
+        # Points are keyed by the Monday of their ISO week, so the first week may start
+        # up to 6 days before from_date (2026-02-01 is a Sunday); every point's week must
+        # still overlap the window and contain only in-window games.
+        max_week_start_offset = datetime.timedelta(days=6)
         for pt in bts.data:
             pt_date = datetime.date.fromisoformat(pt.date)
-            assert pt_date >= window_from, f"Point {pt.date} is before from_date {window_from}"
-            assert pt_date <= window_to, f"Point {pt.date} is after to_date {window_to}"
+            assert pt_date + max_week_start_offset >= window_from, (
+                f"Week {pt.date} ends before from_date {window_from}"
+            )
+            assert pt_date <= window_to, f"Week {pt.date} is after to_date {window_to}"
+        # In-window games only: none of the 10 January or 10 March games are counted.
+        assert sum(pt.per_week_games for pt in bts.data) == bts.total_games == n
 
     @pytest.mark.asyncio
     async def test_warm_up_preserved_at_window_boundary(self, db_session: AsyncSession) -> None:
@@ -749,13 +784,15 @@ class TestDateWindowedTimeSeries:
                 from_date=window_from,
                 to_date=window_to,
             ),
+            now_utc=_NOW_UTC,
         )
         bts = response.series[0]
 
         # The March game is the only emitted point
         assert len(bts.data) == 1
         pt = bts.data[0]
-        assert pt.date == "2026-03-01"
+        assert pt.date == "2026-02-23"  # Monday of the week containing Sun 2026-03-01
+        assert pt.per_week_games == 1  # pre-window warm-up games are not counted
 
         # Warm-up preserved: game_count == ROLLING_WINDOW_SIZE (not 1)
         assert pt.game_count == ROLLING_WINDOW_SIZE, (
@@ -802,6 +839,7 @@ class TestDateWindowedTimeSeries:
                 from_date=window_from,
                 to_date=window_to,
             ),
+            now_utc=_NOW_UTC,
         )
         bts = response.series[0]
 
@@ -811,3 +849,218 @@ class TestDateWindowedTimeSeries:
         assert bts.total_losses == 0
         assert bts.data == []
         assert bts.last_played_at is None
+
+
+# ---------------------------------------------------------------------------
+# TestWeeklyBuckets — ISO-week bucketing (Phase 242, D-00 volume bars)
+# ---------------------------------------------------------------------------
+
+
+class TestWeeklyBuckets:
+    """Points are keyed by the ISO Monday and carry per_week_games."""
+
+    @pytest.mark.asyncio
+    async def test_monday_and_sunday_share_a_week_and_next_monday_starts_a_new_one(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Mon 2026-03-02 + Sun 2026-03-08 -> one point; Mon 2026-03-09 -> the next point."""
+        uid = _USER_WEEKLY
+        fh = 9_600_001
+        # 1 game on Monday, 9 on Sunday (same ISO week), 1 on the following Monday.
+        played = (
+            [datetime.datetime(2026, 3, 2, 12, 0, tzinfo=datetime.timezone.utc)]
+            + [
+                datetime.datetime(2026, 3, 8, 8 + i, 0, tzinfo=datetime.timezone.utc)
+                for i in range(9)
+            ]
+            + [datetime.datetime(2026, 3, 9, 9, 0, tzinfo=datetime.timezone.utc)]
+        )
+        for ts in played:
+            await _seed_game_with_position(
+                db_session, user_id=uid, played_at=ts, full_hash=fh, result="1-0"
+            )
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(bookmark_id=60, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
+        )
+
+        data = response.series[0].data
+        assert [pt.date for pt in data] == ["2026-03-02", "2026-03-09"]
+        # Week 1: 10 in-window games, rolling window 10. Week 2: 1 game, window 11.
+        assert [pt.per_week_games for pt in data] == [10, 1]
+        assert [pt.game_count for pt in data] == [10, 11]
+        assert response.series[0].total_games == 11
+
+
+# ---------------------------------------------------------------------------
+# TestSeriesVerdictFields — D-18 score p + 99% Wilson CI per bookmark
+# ---------------------------------------------------------------------------
+
+
+class TestSeriesVerdictFields:
+    """Each BookmarkTimeSeries carries score_verdict_fields over its in-window totals."""
+
+    @pytest.mark.asyncio
+    async def test_30w_5d_5l_series_has_score_p_and_99_ci(self, db_session: AsyncSession) -> None:
+        uid = _USER_WEEKLY
+        fh = 9_600_002
+        results = ["1-0"] * 30 + ["1/2-1/2"] * 5 + ["0-1"] * 5
+        base = datetime.datetime(2026, 3, 2, tzinfo=datetime.timezone.utc)
+        for i, result in enumerate(results):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result=result,
+                played_at=base + datetime.timedelta(hours=i),
+                full_hash=fh,
+            )
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(bookmark_id=61, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
+        )
+
+        bts = response.series[0]
+        assert bts.score == pytest.approx(0.8125)
+        assert bts.score_ci99_low < 0.8125 < bts.score_ci99_high
+        assert bts.score_confidence == "high"
+        assert bts.score_p_value < 0.01
+
+    @pytest.mark.asyncio
+    async def test_empty_series_has_neutral_score_fields(self, db_session: AsyncSession) -> None:
+        response = await get_time_series(
+            db_session,
+            _USER_WEEKLY,
+            _make_request(bookmark_id=62, target_hash=9_600_999, color="white"),
+            now_utc=_NOW_UTC,
+        )
+
+        bts = response.series[0]
+        assert bts.score == 0.5
+        assert bts.score_confidence == "low"
+        assert bts.score_p_value == 1.0
+        assert bts.score_ci99_low == bts.score_ci99_high == 0.5
+
+    @pytest.mark.asyncio
+    async def test_score_fields_cover_only_in_window_games(self, db_session: AsyncSession) -> None:
+        """Pre-window games warm the rolling average but do not enter the verdict totals."""
+        uid = _USER_WEEKLY
+        fh = 9_600_003
+        for day in range(1, 6):  # 5 pre-window wins
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="1-0",
+                played_at=datetime.datetime(2026, 1, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+        for day in range(1, 3):  # 2 in-window losses
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                result="0-1",
+                played_at=datetime.datetime(2026, 3, day, tzinfo=datetime.timezone.utc),
+                full_hash=fh,
+            )
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(
+                bookmark_id=63,
+                target_hash=fh,
+                color="white",
+                from_date=datetime.date(2026, 3, 1),
+                to_date=datetime.date(2026, 3, 31),
+            ),
+            now_utc=_NOW_UTC,
+        )
+
+        assert response.series[0].score == 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestIsCurrent — D-02/D-04 per-colour repertoire cutoff
+# ---------------------------------------------------------------------------
+
+_USER_CURRENT_FEW = 24207
+_USER_CURRENT_MANY = 24208
+# Games of one colour needed before a recency cutoff exists (repertoire_recency).
+_RECENT_GAMES_FOR_CUTOFF = 205
+
+
+class TestIsCurrent:
+    """BookmarkTimeSeries.is_current reflects the colour's cutoff under the request filters."""
+
+    @pytest.mark.asyncio
+    async def test_light_user_is_current(self, db_session: AsyncSession) -> None:
+        """Fewer than 200 games of the colour -> no cutoff -> even an old opening is current."""
+        from tests.conftest import ensure_test_user
+
+        uid = _USER_CURRENT_FEW
+        await ensure_test_user(db_session, uid)
+        fh = 9_700_001
+        await _seed_game_with_position(
+            db_session,
+            user_id=uid,
+            played_at=_NOW_UTC - datetime.timedelta(days=400),
+            full_hash=fh,
+        )
+
+        response = await get_time_series(
+            db_session,
+            uid,
+            _make_request(bookmark_id=70, target_hash=fh, color="white"),
+            now_utc=_NOW_UTC,
+        )
+
+        assert response.series[0].is_current is True
+
+    @pytest.mark.asyncio
+    async def test_stale_opening_is_past_and_cutoff_is_per_colour(
+        self, db_session: AsyncSession
+    ) -> None:
+        """205 recent white games: a white opening last played 400 days ago is past, a recent
+        one is current, and a black opening of the same age stays current (fewer than 200
+        black games, so black has no cutoff)."""
+        from tests.conftest import ensure_test_user
+
+        uid = _USER_CURRENT_MANY
+        await ensure_test_user(db_session, uid)
+        fh_recent, fh_old_white, fh_old_black = 9_700_002, 9_700_003, 9_700_004
+        for i in range(_RECENT_GAMES_FOR_CUTOFF):
+            await _seed_game_with_position(
+                db_session,
+                user_id=uid,
+                played_at=_NOW_UTC - datetime.timedelta(hours=i + 1),
+                full_hash=fh_recent,
+            )
+        old = _NOW_UTC - datetime.timedelta(days=400)
+        await _seed_game_with_position(
+            db_session, user_id=uid, played_at=old, full_hash=fh_old_white
+        )
+        await _seed_game_with_position(
+            db_session,
+            user_id=uid,
+            result="0-1",
+            user_color="black",
+            played_at=old,
+            full_hash=fh_old_black,
+        )
+
+        request = TimeSeriesRequest(
+            bookmarks=[
+                TimeSeriesBookmarkParam(bookmark_id=71, target_hash=fh_old_white, color="white"),
+                TimeSeriesBookmarkParam(bookmark_id=72, target_hash=fh_recent, color="white"),
+                TimeSeriesBookmarkParam(bookmark_id=73, target_hash=fh_old_black, color="black"),
+            ]
+        )
+        response = await get_time_series(db_session, uid, request, now_utc=_NOW_UTC)
+
+        current_by_id = {s.bookmark_id: s.is_current for s in response.series}
+        assert current_by_id == {71: False, 72: True, 73: True}

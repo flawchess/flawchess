@@ -26,7 +26,12 @@ from app.repositories.openings_repository import (
 )
 from app.repositories.stats_repository import query_opening_phase_entry_metrics_batch
 from app.services.opening_eval import finalize_opening_eval, resolve_eval_baseline_pawns
-from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
+from app.services.repertoire_recency import is_current, resolve_current_cutoffs
+from app.services.score_confidence import (
+    compute_confidence_bucket,
+    score_verdict_fields,
+    wilson_bounds,
+)
 from app.schemas.openings import (
     OpeningsRequest,
     OpeningsResponse,
@@ -270,68 +275,91 @@ def _in_window(
     return True
 
 
+def _iso_week_monday(played_at: datetime.datetime) -> str:
+    """ISO date string of the Monday of played_at's ISO week (the weekly bucket key).
+
+    Same Monday-keyed bucketing as endgame_service's weekly score timeline
+    (isocalendar weekday - 1 days back), so the two charts share a week axis.
+    """
+    _iso_year, _iso_week, iso_weekday = played_at.isocalendar()
+    return (played_at - datetime.timedelta(days=iso_weekday - 1)).date().isoformat()
+
+
+def _rolling_score(results_so_far: Sequence[str]) -> tuple[float, int]:
+    """Chess score and size of the trailing ROLLING_WINDOW_SIZE window of outcomes."""
+    window = results_so_far[-ROLLING_WINDOW_SIZE:]
+    window_total = len(window)
+    window_score = (
+        (window.count("win") + 0.5 * window.count("draw")) / window_total
+        if window_total > 0
+        else 0.0
+    )
+    return window_score, window_total
+
+
 def _build_bookmark_time_series(
     bookmark_id: int,
     rows: Sequence[Row[Any]],
     from_date: datetime.date | None,
     to_date: datetime.date | None,
+    cutoff: datetime.datetime | None,
 ) -> BookmarkTimeSeries:
-    """Build one bookmark's rolling-window time series from its chronological rows.
+    """Build one bookmark's weekly rolling-score time series from its chronological rows.
 
-    Extracted from get_time_series's per-bookmark loop body (zero
-    behavior change): `rows` are (played_at, result, user_color) tuples
-    ordered by played_at ASC, spanning full history so pre-window games warm
-    the rolling average even though only in-window points
-    and WDL totals are emitted.
+    `rows` are (played_at, result, user_color) tuples ordered by played_at ASC,
+    spanning full history so pre-window games warm the rolling average even
+    though only in-window points and WDL totals are emitted.
+
+    Phase 242: points are bucketed by ISO week (keyed by that week's Monday). Each
+    carries the rolling-50 score after the week's LAST in-window game and
+    `per_week_games` (in-window games that week, the ScoreChart volume bars).
+    The MIN_GAMES_FOR_TIMELINE floor still drops weeks whose rolling window is too
+    thin. The series also carries the shared score verdict fields over its in-window
+    totals (D-18) and `is_current` against the colour's repertoire cutoff (D-04).
     """
     results_so_far: list[str] = []  # "win", "draw", or "loss" per game
-    total_wins = total_draws = total_losses = 0
+    outcome_counts = {"win": 0, "draw": 0, "loss": 0}
     last_played_at: datetime.datetime | None = None
-    data_by_date: dict[str, TimeSeriesPoint] = {}
+    per_week_games: dict[str, int] = {}
+    point_by_week: dict[str, TimeSeriesPoint] = {}
 
     for played_at, result, user_color in rows:
         outcome = derive_user_result(result, user_color)
+        # Every game warms the rolling window, in-window or not.
         results_so_far.append(outcome)
+        if not _in_window(played_at, from_date, to_date):
+            continue
 
-        # Rolling window: trailing ROLLING_WINDOW_SIZE results (warm-up).
-        # Computed for every game regardless of window — pre-window games
-        # contribute to the rolling average even when not emitted.
-        window = results_so_far[-ROLLING_WINDOW_SIZE:]
-        window_wins = window.count("win")
-        window_draws = window.count("draw")
-        window_total = len(window)
-        score = (window_wins + 0.5 * window_draws) / window_total if window_total > 0 else 0.0
-
-        point = TimeSeriesPoint(
-            date=played_at.strftime("%Y-%m-%d"),
-            score=round(score, 4),
+        outcome_counts[outcome] += 1
+        last_played_at = played_at  # rows ordered ASC; final assignment wins
+        week = _iso_week_monday(played_at)
+        per_week_games[week] = per_week_games.get(week, 0) + 1
+        window_score, window_total = _rolling_score(results_so_far)
+        # Later games of the same week overwrite earlier ones: last game wins.
+        point_by_week[week] = TimeSeriesPoint(
+            date=week,
+            score=round(window_score, 4),
             game_count=window_total,
             window_size=ROLLING_WINDOW_SIZE,
+            per_week_games=per_week_games[week],
         )
 
-        # Gate emission and totals on the date window.
-        if _in_window(played_at, from_date, to_date):
-            if outcome == "win":
-                total_wins += 1
-            elif outcome == "draw":
-                total_draws += 1
-            else:
-                total_losses += 1
-            last_played_at = played_at  # rows ordered ASC; final assignment wins
-            data_by_date[played_at.strftime("%Y-%m-%d")] = point
-
     # Drop early points with too few games in the rolling window.
-    data = [pt for pt in data_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
+    data = [pt for pt in point_by_week.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
 
-    total_games = total_wins + total_draws + total_losses
+    total_wins = outcome_counts["win"]
+    total_draws = outcome_counts["draw"]
+    total_losses = outcome_counts["loss"]
     return BookmarkTimeSeries(
         bookmark_id=bookmark_id,
         data=data,
         total_wins=total_wins,
         total_draws=total_draws,
         total_losses=total_losses,
-        total_games=total_games,
+        total_games=total_wins + total_draws + total_losses,
         last_played_at=last_played_at,
+        is_current=is_current(last_played_at, cutoff),
+        **score_verdict_fields(total_wins, total_draws, total_losses),
     )
 
 
@@ -339,21 +367,48 @@ async def get_time_series(
     session: AsyncSession,
     user_id: int,
     request: TimeSeriesRequest,
+    *,
+    now_utc: datetime.datetime,
 ) -> TimeSeriesResponse:
-    """Return rolling-window chess-score time series for each bookmark in the request.
+    """Return weekly rolling-window chess-score time series for each bookmark in the request.
 
     Processes all bookmarks in a single service call — no N+1 HTTP calls.
-    Each datapoint represents the chess score (W + 0.5·D) / N over the trailing
-    ROLLING_WINDOW_SIZE games (or all games so far if fewer than ROLLING_WINDOW_SIZE
-    have been played). Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are
-    included from the start.
+    Each datapoint is one ISO week (keyed by its Monday) and carries the chess
+    score (W + 0.5·D) / N over the trailing ROLLING_WINDOW_SIZE games (or all games
+    so far if fewer than ROLLING_WINDOW_SIZE have been played) after that week's
+    last game, plus the number of in-window games played that week. Partial
+    windows (games 1 to ROLLING_WINDOW_SIZE-1) are included from the start,
+    subject to the MIN_GAMES_FOR_TIMELINE floor.
 
     When from_date/to_date are set, emitted
     TimeSeriesPoints and WDL totals cover only in-window games; the rolling
     average is still warmed from pre-window games (full chronological history
     is loaded so trailing averages anchor correctly). When from_date/to_date
     are None, behavior is unchanged — the chart covers the full game history.
+
+    `now_utc` (from the dev_now_utc dependency) anchors the per-colour
+    current-repertoire cutoff behind each series' `is_current` flag (D-02..D-04).
     """
+    # One cutoff query per distinct bookmark colour, under the request filters
+    # (D-02). The cutoff uses the WINDOWED dates even though the series query below
+    # loads full history for warm-up. Sequential awaits: AsyncSession is not
+    # safe for asyncio.gather.
+    colors = sorted({bkm.color for bkm in request.bookmarks if bkm.color is not None})
+    cutoffs = await resolve_current_cutoffs(
+        session,
+        user_id,
+        colors,
+        now_utc=now_utc,
+        time_control=request.time_control,
+        platform=request.platform,
+        rated=request.rated,
+        opponent_type=request.opponent_type,
+        from_date=request.from_date,
+        to_date=request.to_date,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
+    )
+
     series: list[BookmarkTimeSeries] = []
     for bkm in request.bookmarks:
         hash_column = HASH_COLUMN_MAP[bkm.match_side]
@@ -372,8 +427,12 @@ async def get_time_series(
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
+        # A colour-less bookmark has no cutoff, so it reads as current.
+        cutoff = cutoffs[bkm.color] if bkm.color is not None else None
         series.append(
-            _build_bookmark_time_series(bkm.bookmark_id, rows, request.from_date, request.to_date)
+            _build_bookmark_time_series(
+                bkm.bookmark_id, rows, request.from_date, request.to_date, cutoff
+            )
         )
 
     return TimeSeriesResponse(series=series)

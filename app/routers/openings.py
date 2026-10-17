@@ -3,12 +3,14 @@
 HTTP layer only — all business logic lives in openings_service / repositories.
 """
 
+import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.schemas.openings import (
     OpeningsRequest,
@@ -22,6 +24,9 @@ from app.services import openings_service
 from app.users import current_active_user
 
 router = APIRouter(prefix="/openings", tags=["openings"])
+
+#: The current UTC instant, dev-clock-shiftable. Real clock outside development.
+NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 
 
 @router.post("/positions", response_model=OpeningsResponse)
@@ -43,9 +48,10 @@ async def get_time_series(
     request: TimeSeriesRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
 ) -> TimeSeriesResponse:
-    """Return monthly win-rate time series for a list of bookmark positions."""
-    return await openings_service.get_time_series(session, user.id, request)
+    """Return the weekly rolling-score time series for a list of bookmark positions."""
+    return await openings_service.get_time_series(session, user.id, request, now_utc=now_utc)
 
 
 @router.post("/next-moves", response_model=NextMovesResponse)
