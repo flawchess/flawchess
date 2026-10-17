@@ -330,8 +330,8 @@ async def query_top_openings_sql_wdl(
     by deepest name tag instead would look right only because the parity filter
     coincidentally hides most deep sub-variation rows.
 
-    Returns (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
-    tuples. `display_name` equals `name` when the opening's defining ply parity
+    Returns (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses,
+    ply_count) tuples (ply_count is the LAST column; prefer named access). `display_name` equals `name` when the opening's defining ply parity
     matches `color`, else `f"vs. {name}"`. WDL is COUNT(DISTINCT game_id) FILTER
     per condition — game-level columns are stable across a game's
     `game_positions` rows so DISTINCT collapses correctly.
@@ -401,6 +401,9 @@ async def query_top_openings_sql_wdl(
             distinct_game_count.filter(win_cond).label("wins"),
             distinct_game_count.filter(draw_cond).label("draws"),
             distinct_game_count.filter(loss_cond).label("losses"),
+            # Opening depth, used by the most-played pipeline to keep the deeper line
+            # when two rows share an identical game set (D-06). Already in the GROUP BY.
+            _openings_dedup.c.ply_count.label("ply_count"),
         )
         .select_from(_openings_dedup)
         .join(
@@ -435,7 +438,7 @@ async def query_top_openings_sql_wdl(
 class PositionWDL:
     """Position-based WDL stats for a single hash."""
 
-    __slots__ = ("total", "wins", "draws", "losses", "last_played_at")
+    __slots__ = ("total", "wins", "draws", "losses", "last_played_at", "game_id_sum")
 
     def __init__(
         self,
@@ -444,6 +447,7 @@ class PositionWDL:
         draws: int,
         losses: int,
         last_played_at: datetime.datetime | None = None,
+        game_id_sum: int = 0,
     ):
         self.total = total
         self.wins = wins
@@ -454,6 +458,11 @@ class PositionWDL:
         # score-confidence popover. None when no contributing game has a
         # populated played_at (rare; column is nullable on Game).
         self.last_played_at = last_played_at
+        # SUM(DISTINCT games.id) over the contributing games: with total it fingerprints
+        # the game set. Positions along one line are nested (every game through the
+        # deeper position also passes the shallower one), so equal total plus equal id
+        # sum is effectively exact for "identical game set" (D-06 dedupe).
+        self.game_id_sum = game_id_sum
 
 
 async def query_position_wdl_batch(
@@ -504,6 +513,7 @@ async def query_position_wdl_batch(
             distinct_game_count.filter(draw_cond).label("draws"),
             distinct_game_count.filter(loss_cond).label("losses"),
             func.max(Game.played_at).label("last_played_at"),
+            func.sum(func.distinct(Game.id)).label("game_id_sum"),
         )
         .join(Game, GamePosition.game_id == Game.id)
         .where(
@@ -533,12 +543,13 @@ async def query_position_wdl_batch(
 
     result = await session.execute(stmt)
     return {
-        row[0]: PositionWDL(
-            total=row[1] + row[2] + row[3],
-            wins=row[1],
-            draws=row[2],
-            losses=row[3],
-            last_played_at=row[4],
+        row.full_hash: PositionWDL(
+            total=row.wins + row.draws + row.losses,
+            wins=row.wins,
+            draws=row.draws,
+            losses=row.losses,
+            last_played_at=row.last_played_at,
+            game_id_sum=int(row.game_id_sum),
         )
         for row in result.fetchall()
     }

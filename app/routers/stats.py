@@ -102,7 +102,7 @@ async def get_most_played_openings(
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
 ) -> MostPlayedOpeningsResponse:
-    """Return top 10 most played openings per color with SQL-side WDL stats.
+    """Return up to 10 current and 10 past most-played openings per color with SQL-side WDL stats.
 
     Optionally filtered by from_date, to_date, time_control, platform, rated, opponent_type.
     """
