@@ -1,10 +1,10 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.24
+milestone: v2.27
 current_phase: 241
 status: completed
-stopped_at: Phase 241 complete — all phases complete
-last_updated: "2026-10-17T05:09:37.693Z"
+stopped_at: v2.25, v2.26 and v2.27 closed (phases 238–241 regrouped), no open milestone
+last_updated: "2026-10-17T12:00:00.000Z"
 state_head: d42a6ace0076266546af3da895c0bed86bad934e
 progress:
   total_phases: 4
@@ -12,26 +12,29 @@ progress:
   total_plans: 96
   completed_plans: 96
   percent: 100
-milestone_name: Train Grading Integrity & One-Screen Reveal
-last_activity: 2026-10-14
-last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort basis and per-TC flaw bands"
+milestone_name: Codebase Cleanup
+last_activity: 2026-10-17
+last_activity_desc: "Closed milestones v2.25 (238–239), v2.26 (240) and v2.27 (241) with tags and GitHub releases; v2.27 not yet deployed"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 241
+Phase: none (next standalone phase is 242)
 Plan: Not started
 
-Status: All phases complete
+Status: No open milestone; v2.25–v2.27 closed 2026-10-17 (v2.27 on `main`, not yet deployed)
 
 Open threads carried forward (not blockers):
 
+- Deploy v2.27: Phase 241 (1,119 files, comment/rename only) plus the three audit fixes and the feedback-button label sit on `main`; the `v2.27` tag is on the close commit, not a production forward-port.
+- Phase 241 follow-ups: INVENTORY §7 (50 seed candidates, suspected bugs) awaits an owner pass; review IN-01 (`frontend/CLAUDE.md` names two nonexistent components) open.
+- Phase 240 after-change funnel not read yet: compare first-session abandonment against `milestones/v2.26-phases/240-.../240-FUNNEL-BEFORE.md`.
 - Train grade audit (SEED-193 follow-up): tooling done 2026-10-09 as `temp/grade-audit/phone_grade_audit.py` (gitignored; reads `drill_solves.phone_grade` over the prod tunnel in a READ ONLY transaction, derives keys with the app's own `answer_key_for`, then a depth-18 spot check with local Stockfish). Run around 2026-10-22: `bin/prod_db_tunnel.sh` then `uv run python temp/grade-audit/phone_grade_audit.py --db prod --sample 300 --workers 8 > temp/grade-audit/report-$(date +%F).txt`. Smoke reading at n=140 records (report-smoke-2026-10-09.txt): server-graded moves 30/30 phone agreement; phone vs d18 31/40, phone `inaccuracy` the weak tier (2/8 confirmed). Too small to act on. Missing records skew toward fast Next presses and slow devices (236 WR-02, deferred).
 - Pending reads: Train telemetry and the weekly-leaderboard effect (~2026-10-25, data from 2026-10-05); feedback-ask yield (`feedback.source = 'milestone_ask'` vs `floating_button`); Umami funnels on `train-explore-exit` go flat from release #404 (`train-sideline-fork` replaces it).
 - Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
-- Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
+- Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - TypeScript 7 adopted in Phase 232 (D-01, supersedes Phase 217 D-11) via Microsoft's side-by-side alias: `typescript` is `@typescript/typescript6` (TS6 JS API for typescript-eslint and eslint-plugin-sonarjs) and `@typescript/native` is `typescript@7` (the `tsc` in `npm run build`). Unwind once TS 7.1 ships its API and a typescript-eslint release accepts it (typescript-eslint#10940); never merge Renovate's `typescript-7.x` branch as-is (it installs 7 under the `typescript` name and breaks lint).
@@ -46,7 +49,11 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.22, v2.23 and v2.24 closed 2026-10-09**; phases 228–237 regrouped into v2.22 Settings, Feature Analytics & Weekly Leaderboards (228–232, releases #382–#393), v2.23 Train Telemetry & Feedback Ask (233–234, #394–#401) and v2.24 Train Grading Integrity & One-Screen Reveal (235–237, #402–#404), each tagged with a GitHub release. Phase 237 deployed as part of the close (release #404, with the pydantic-ai-slim CVE bump). No open milestone: next is `/gsd-new-milestone` or standalone Phase 238.
+Current focus: **v2.25, v2.26 and v2.27 closed 2026-10-17**; phases 238–241 regrouped into v2.25 Readable Endgame & Library Stats (238–239, releases #406–#422), v2.26 Train First-Session Onboarding (240, #423–#426) and v2.27 Codebase Cleanup (241, not yet deployed), each tagged with a GitHub release. No open milestone: next is a deploy of v2.27, then `/gsd-new-milestone` or standalone Phase 242.
+
+### Superseded: focus after the v2.22–v2.24 close
+
+**v2.22, v2.23 and v2.24 closed 2026-10-09**; phases 228–237 regrouped into v2.22 Settings, Feature Analytics & Weekly Leaderboards (228–232, releases #382–#393), v2.23 Train Telemetry & Feedback Ask (233–234, #394–#401) and v2.24 Train Grading Integrity & One-Screen Reveal (235–237, #402–#404), each tagged with a GitHub release. Phase 237 deployed as part of the close (release #404, with the pydantic-ai-slim CVE bump). No open milestone: next is `/gsd-new-milestone` or standalone Phase 238.
 
 ### Superseded: focus after Phase 233
 
@@ -1100,9 +1107,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-16T12:20:38.008Z
-**Stopped at:** Phase 241 complete — all phases complete
-**Resume file:** .planning/phases/241-codebase-cleanup/241-CONTEXT.md
+**Last session:** 2026-10-17T12:00:00.000Z
+**Stopped at:** v2.25, v2.26 and v2.27 closed (phases 238–241 regrouped), no open milestone
+**Resume file:** None (v2.27 closed; Phase 241 archived to .planning/milestones/v2.27-phases/)
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

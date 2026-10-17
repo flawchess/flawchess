@@ -8,10 +8,25 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.27] Codebase Cleanup — 2026-10-17
+
+### Changed
+
+- The floating feedback button on desktop now shows a "Feedback" label next to its icon.
+- Maintenance: a codebase-wide cleanup of code comments and internal names (planning tags stripped, outdated comments fixed, 86 internal renames). No change in behavior.
+
+### Fixed
+
+- Train: the streak counter's count-up no longer flickers one below your previous streak for a frame on a busy device.
+- Continuing as a guest with an expired saved guest session now starts a fresh guest session instead of sending you to the login page.
+- Opening insights no longer fail to load when you have played a line only from custom starting positions.
+- Library filters: the Tactic Depth summary is now highlighted only when you narrow the range, not at the default.
+
+## [v2.26] Train First-Session Onboarding — 2026-10-16
+
 ### Added
 
 - Train: after you solve a puzzle from your own games, a line under the game details shows how long you took over the move and how much time was left on your clock (for example "Played after 13s, with 3:56 left.").
-- Library Stats: a new "Clock by game phase" card under the context cards crosses the three clock tags with the three game phases, so you can see, for example, whether your hasty flaws pile up in the middlegame. Each cell shows your gap to your opponents per 100 moves, in green or red only when the gap is outside the typical range for your level and very unlikely to be chance, the same rule as the gap bars above it.
 
 ### Changed
 
@@ -20,6 +35,21 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Train: as a guest, the sign-up ask on the Train page now waits until you have finished a session. The sign-up and import asks now also show on phones.
 - Train: your first finished session ends with a line on why practice matters, and the score screen no longer lists how many puzzles come back.
 - Library Stats: while fewer than 98% of the selected time control's games are analyzed, the coverage line at the top is highlighted and says the stats below will keep updating as analysis continues (guests see that only analyzed games are counted). Once analysis is complete it reads "All N games … are analyzed." Right after an import, before any game is analyzed, it shows "0 of N games analyzed" instead of only "No analyzed games". The analysis-in-progress banner is also easier to read on the dark theme.
+
+### Fixed
+
+- Signing up with Google after using FlawChess as a guest now keeps your guest data even if you logged out first or retried the Google sign-in, instead of creating a second, empty account. If your Google account already has a FlawChess account, you are signed into it.
+- Library Flaws: the "Sign up free" button shown to guests when no game is analyzed yet now opens the sign-up page instead of doing nothing.
+- Train: guests who imported games are no longer told their games are being analyzed. Guest games are not analyzed automatically, so warm-up sessions now say so and point to signing up, which is what brings your own mistakes into Train.
+
+## [v2.25] Readable Endgame & Library Stats — 2026-10-14
+
+### Added
+
+- Library Stats: a new "Clock by game phase" card under the context cards crosses the three clock tags with the three game phases, so you can see, for example, whether your hasty flaws pile up in the middlegame. Each cell shows your gap to your opponents per 100 moves, in green or red only when the gap is outside the typical range for your level and very unlikely to be chance, the same rule as the gap bars above it.
+
+### Changed
+
 - Library Stats: the typical range for each flaw comparison is now measured on games of the selected time control, so bullet and blitz get their own ranges instead of the rapid one. Ranges are narrower in fast games and wider in classical, where flaw rates vary more between players.
 - Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
 - Library Stats has one time-control switch for all its sections. It stays in reach while you scroll and remembers your choice between visits.
@@ -47,17 +77,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
-- Train: the streak counter's count-up no longer flickers one below your previous streak for a frame on a busy device.
-- Continuing as a guest with an expired saved guest session now starts a fresh guest session instead of sending you to the login page.
-- Opening insights no longer fail to load when you have played a line only from custom starting positions.
-- Library filters: the Tactic Depth summary is now highlighted only when you narrow the range, not at the default.
-- Signing up with Google after using FlawChess as a guest now keeps your guest data even if you logged out first or retried the Google sign-in, instead of creating a second, empty account. If your Google account already has a FlawChess account, you are signed into it.
-- Library Flaws: the "Sign up free" button shown to guests when no game is analyzed yet now opens the sign-up page instead of doing nothing.
 - Shelly's endgame report is no longer written twice when you reload the Endgames page while it is being generated.
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
 - Admin: closing the impersonation pill now takes you back to your own admin session on the Admin page instead of signing you out.
-- Train: guests who imported games are no longer told their games are being analyzed. Guest games are not analyzed automatically, so warm-up sessions now say so and point to signing up, which is what brings your own mistakes into Train.
 
 ### Security
 
@@ -1653,7 +1676,10 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.24...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.27...HEAD
+[v2.27]: https://github.com/flawchess/flawchess/compare/v2.26...v2.27
+[v2.26]: https://github.com/flawchess/flawchess/compare/v2.25...v2.26
+[v2.25]: https://github.com/flawchess/flawchess/compare/v2.24...v2.25
 [v2.24]: https://github.com/flawchess/flawchess/compare/v2.23...v2.24
 [v2.23]: https://github.com/flawchess/flawchess/compare/v2.22...v2.23
 [v2.22]: https://github.com/flawchess/flawchess/compare/v2.21...v2.22
