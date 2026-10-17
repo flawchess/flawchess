@@ -5,15 +5,15 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Bookmark-twin drop runs after the deeper-line dedupe, so a deeper twin of a shallower bookmark survives"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Eval verdict applies the 20-game floor to `games`, not to the eval sample size"
   - id: WR-03
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "A finding classified as a weakness at exactly 45% score renders as \"typical\" because of float arithmetic"
   - id: IN-01
     severity: info
@@ -43,18 +43,18 @@ findings:
     severity: info
     disposition: open
     title: "The `NowUtc` dependency alias is copy-pasted into four routers"
-open: 10
+open: 7
 total: 10
-recorded: 2026-10-17T18:01:59.627Z
+recorded: 2026-10-17T18:56:58.137Z
 ---
 
 # Phase 242: Code Review Disposition
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
-| WR-03 | warning | open | - |
+| WR-01 | warning | fixed | 242-REVIEW-FIX.md |
+| WR-02 | warning | fixed | 242-REVIEW-FIX.md |
+| WR-03 | warning | fixed | 242-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 | IN-03 | info | open | - |
