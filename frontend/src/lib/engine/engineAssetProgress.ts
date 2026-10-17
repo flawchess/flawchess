@@ -70,9 +70,9 @@ export const MAIA_MODEL_BYTES_FALLBACK = 45_683_686;
 export const STOCKFISH_WASM_BYTES_FALLBACK = 7_295_411;
 
 /**
- * Re-verified live 2026-09-05 at onnxruntime-web
- * 1.29.0: the onnxruntime-web runtime binary fallback. TWO real sizes exist
- * (13,961,845 wasm-only, 25,749,873 WebGPU/asyncify — `ortRuntimeSource.ts`'s
+ * Sizes of the vendored onnxruntime-web 1.27.0 files in public/maia/: the
+ * onnxruntime-web runtime binary fallback. TWO real sizes exist
+ * (13,479,978 wasm-only, 24,254,953 WebGPU/asyncify — `ortRuntimeSource.ts`'s
  * own named constants), and the backend decision isn't known yet at the
  * moment `markEngineAssetPending('ort-runtime')` fires (the adapter probe is
  * itself async, and this placeholder is registered synchronously before it
@@ -82,10 +82,10 @@ export const STOCKFISH_WASM_BYTES_FALLBACK = 7_295_411;
  * (`Content-Length`-derived) total the moment the first byte of THIS asset
  * arrives — before that, the placeholder shows 0% regardless of which figure
  * was guessed, so there is no user-visible "backwards" jump to avoid. The
- * gate must not promise 25.7 MB to a device that will only ever fetch
- * 14.0 MB.
+ * gate must not promise 24.3 MB to a device that will only ever fetch
+ * 13.5 MB.
  */
-export const ORT_RUNTIME_BYTES_FALLBACK = 13_961_845;
+export const ORT_RUNTIME_BYTES_FALLBACK = 13_479_978;
 
 export const ENGINE_ASSET_FALLBACK_BYTES: Record<EngineAssetId, number> = {
   'maia-model': MAIA_MODEL_BYTES_FALLBACK,

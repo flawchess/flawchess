@@ -5,7 +5,7 @@ import { useReorderPositionBookmarks } from '@/hooks/usePositionBookmarks';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { MatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
-import type { OpeningWDL, MostPlayedOpeningsResponse } from '@/types/stats';
+import type { OpeningWDL } from '@/types/stats';
 import type { OpeningInsightFinding } from '@/types/insights';
 import type { HighlightedMove } from './useDeepLinkHighlight';
 
@@ -22,7 +22,6 @@ type UseOpeningsHandlersParams = {
   setBoardFlipped: (flipped: boolean) => void;
   setFilters: SetFilters;
   setHighlightedMove: (m: HighlightedMove | null) => void;
-  mostPlayedData: MostPlayedOpeningsResponse | undefined;
 };
 
 type OpeningsNavHandlers = {
@@ -52,28 +51,20 @@ export function useOpeningsHandlers(params: UseOpeningsHandlersParams): Openings
     setBoardFlipped,
     setFilters,
     setHighlightedMove,
-    mostPlayedData,
   } = params;
   const reorder = useReorderPositionBookmarks();
 
   const handleOpenChartBookmarkGames = useCallback((bookmark: PositionBookmarkResponse) => {
-    if (bookmark.moves.length > 0) {
-      // Real bookmark — load its moves
-      chess.loadMoves(bookmark.moves);
-    } else if (mostPlayedData) {
-      // Default chart entry — find PGN from most-played data
-      const allOpenings = [...(mostPlayedData.white ?? []), ...(mostPlayedData.black ?? [])];
-      const opening = allOpenings.find(o => o.full_hash === bookmark.target_hash);
-      if (opening) {
-        chess.loadMoves(pgnToSanArray(opening.pgn));
-      }
-    }
+    // Chart entries are always real bookmarks (useOpeningsChartData filters the
+    // bookmark list), so load unconditionally like handleLoadBookmark: an empty
+    // moves list is a start-position bookmark, not a missing one.
+    chess.loadMoves(bookmark.moves);
     const color = bookmark.color ?? 'white';
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: bookmark.match_side }));
     navigate('/openings/games');
     window.scrollTo({ top: 0 });
-  }, [chess, navigate, mostPlayedData, setFilters, setBoardFlipped]);
+  }, [chess, navigate, setFilters, setBoardFlipped]);
 
   const handleOpenGames = useCallback((pgn: string, color: 'white' | 'black') => {
     chess.loadMoves(pgnToSanArray(pgn));

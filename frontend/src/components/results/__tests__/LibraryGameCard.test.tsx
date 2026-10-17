@@ -522,7 +522,7 @@ describe('LibraryGameCard mobile MoveStats collapse and unanalyzed pill', () => 
     const tableCard = screen.getAllByTestId(`move-stats-table-${GAME_ID}`)[0]!;
     expect((tableCard as HTMLElement).hidden).toBe(true);
 
-    const toggle = screen.getAllByTestId('move-stats-expand-toggle')[0]!;
+    const toggle = screen.getAllByTestId(`move-stats-expand-toggle-${GAME_ID}`)[0]!;
     fireEvent.click(toggle);
     const tableCardAfter = screen.getAllByTestId(`move-stats-table-${GAME_ID}`)[0]!;
     expect((tableCardAfter as HTMLElement).hidden).toBe(false);
@@ -540,7 +540,7 @@ describe('LibraryGameCard mobile MoveStats collapse and unanalyzed pill', () => 
     };
     renderCard(<LibraryGameCard game={game} />);
     expect(screen.queryAllByTestId(`move-stats-${GAME_ID}`)).toHaveLength(0);
-    expect(screen.queryAllByTestId('move-stats-expand-toggle')).toHaveLength(0);
+    expect(screen.queryAllByTestId(`move-stats-expand-toggle-${GAME_ID}`)).toHaveLength(0);
   });
 });
 
@@ -640,7 +640,7 @@ describe('LibraryGameCard feature-event tracking', () => {
       white_accuracy: 88,
     };
     renderCard(<LibraryGameCard game={game} />);
-    const toggle = screen.getAllByTestId('move-stats-expand-toggle')[0]!;
+    const toggle = screen.getAllByTestId(`move-stats-expand-toggle-${GAME_ID}`)[0]!;
     fireEvent.click(toggle);
     expect(track).toHaveBeenCalledTimes(1);
     expect(track).toHaveBeenCalledWith('panel-open', { page: 'library', target: 'move-stats-expand' });

@@ -12,6 +12,7 @@ import {
 import type { BotGameSnapshot } from '@/lib/botGameSnapshot';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
 import { trackFeature } from '@/lib/analytics';
+import { plysToFullMoves } from '@/lib/chess';
 
 // ─── Named constants (CLAUDE.md no-magic-numbers) ──────────────────────────
 
@@ -106,7 +107,7 @@ export function ResumeGate({
 
   const tcLabel = formatTcLabel(snapshot.settings.baseSeconds, snapshot.settings.incrementSeconds);
   const age = formatRelativeAge(snapshot.savedAt, now);
-  const identityLine = `${tcLabel} vs FlawChess Bot (${snapshot.settings.botElo}) · ${plyCount} moves · ${age}`;
+  const identityLine = `${tcLabel} vs FlawChess Bot (${snapshot.settings.botElo}) · ${plysToFullMoves(plyCount)} moves · ${age}`;
 
   const handleConfirmDiscard = (): void => {
     setDiscardConfirmOpen(false);

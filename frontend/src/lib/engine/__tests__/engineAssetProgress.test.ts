@@ -176,9 +176,9 @@ describe('useEngineAssets — three-asset denominator (includes ort-runtime)', (
       useEngineAssets(['maia-model', 'stockfish-wasm', 'ort-runtime'] as const),
     );
 
-    // Byte-weighted (onnxruntime-web 1.29.0 sizes):
-    // (7,295,411 + 13,961,845) / (45,683,686 + 7,295,411 + 13,961,845) ≈ 31.76% -> 32.
-    expect(result.current.percent).toBe(32);
+    // Byte-weighted (vendored onnxruntime-web 1.27.0 sizes):
+    // (7,295,411 + 13,479,978) / (45,683,686 + 7,295,411 + 13,479,978) ≈ 31.26% -> 31.
+    expect(result.current.percent).toBe(31);
   });
 
   it('sanity-checks the ort-runtime fallback constant feeding the ratio above', () => {
@@ -198,7 +198,7 @@ describe('reportEngineAssetProgress — ort-runtime monotonicity across the esti
     // Content-Length — this is "the exact figure lands before the bar leaves
     // zero": total corrects upward in the SAME call that first reports any
     // loaded bytes, so percent only ever moves forward from here.
-    const ASYNCIFY_TOTAL = 25_749_873; // onnxruntime-web 1.29.0
+    const ASYNCIFY_TOTAL = 24_254_953; // vendored onnxruntime-web 1.27.0
     act(() => {
       reportEngineAssetProgress('ort-runtime', 1_000_000, ASYNCIFY_TOTAL);
     });

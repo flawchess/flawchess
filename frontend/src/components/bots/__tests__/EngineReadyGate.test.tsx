@@ -88,10 +88,10 @@ describe('EngineReadyGate', () => {
       reportEngineAssetProgress('maia-model', 22_841_843, 45_683_686);
     });
 
-    // The denominator is the full 66.9 MB bundle
-    // (maia + stockfish + ort-runtime's untouched fallback totals; onnxruntime-web
-    // 1.29.0 sizes), not just the Maia + Stockfish pair —
-    // 22,841,843 / 66,940,942 -> 34%.
+    // The denominator is the full 66.5 MB bundle
+    // (maia + stockfish + ort-runtime's untouched fallback totals; vendored
+    // onnxruntime-web 1.27.0 sizes), not just the Maia + Stockfish pair —
+    // 22,841,843 / 66,459,075 -> 34%.
     await waitFor(
       () => {
         const gate = screen.getByTestId('engine-ready-gate');
@@ -116,10 +116,10 @@ describe('EngineReadyGate', () => {
       () => {
         // A bare percent gave no sense of scale — the readout must say how many
         // MB of how many, from the SAME byte-weighted aggregate as the bar.
-        // The total is the 66.9 MB unconditional triple
-        // (onnxruntime-web 1.29.0 sizes).
+        // The total is the 66.5 MB unconditional triple
+        // (vendored onnxruntime-web 1.27.0 sizes).
         expect(screen.getByTestId('engine-ready-readout').textContent).toBe(
-          'Maia model — 34% (22.8 / 66.9 MB)',
+          'Maia model — 34% (22.8 / 66.5 MB)',
         );
       },
       { timeout: WAIT_FOR_TIMEOUT_MS },
@@ -189,15 +189,15 @@ describe('EngineReadyGate', () => {
   it('does NOT claim the engine is starting while bytes are still arriving but the percent has rounded to 100', async () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
-    // Combined ~99.85% of the bundle's bytes (onnxruntime-web 1.29.0 sizes):
+    // Combined ~99.85% of the bundle's bytes (vendored onnxruntime-web 1.27.0 sizes):
     // `percent` rounds to 100, but the download is not
     // finished. This is why the preparing copy is gated on BYTES, not
     // percent. Maia + Stockfish fully in, ort-runtime at
-    // 13,861,845 / 13,961,845 (100,000 bytes short of the wasm-only fallback total).
+    // 13,379,978 / 13,479,978 (100,000 bytes short of the wasm-only fallback total).
     act(() => {
       reportEngineAssetProgress('maia-model', 45_683_686, 45_683_686);
       reportEngineAssetProgress('stockfish-wasm', STOCKFISH_WASM_BYTES_FALLBACK, STOCKFISH_WASM_BYTES_FALLBACK);
-      reportEngineAssetProgress('ort-runtime', 13_861_845, ORT_RUNTIME_BYTES_FALLBACK);
+      reportEngineAssetProgress('ort-runtime', 13_379_978, ORT_RUNTIME_BYTES_FALLBACK);
     });
 
     await waitFor(
@@ -209,7 +209,7 @@ describe('EngineReadyGate', () => {
       { timeout: WAIT_FOR_TIMEOUT_MS },
     );
     expect(screen.getByTestId('engine-ready-readout').textContent).toBe(
-      'Maia model — 100% (66.8 / 66.9 MB)',
+      'Maia model — 100% (66.4 / 66.5 MB)',
     );
   });
 
@@ -543,7 +543,7 @@ describe('EngineReadyGate', () => {
   // one surface with the other assumed.
 
   describe.each([['bots'], ['analysis']] as const)('surface=%s', (surface) => {
-    it('shows the three-asset denominator (66.9 MB) in its readout', async () => {
+    it('shows the three-asset denominator (66.5 MB) in its readout', async () => {
       render(<EngineReadyGate surface={surface} onStart={vi.fn()} onRetry={vi.fn()} />);
 
       act(() => {
@@ -553,7 +553,7 @@ describe('EngineReadyGate', () => {
       await waitFor(
         () => {
           expect(screen.getByTestId('engine-ready-readout').textContent).toBe(
-            'Maia model — 34% (22.8 / 66.9 MB)',
+            'Maia model — 34% (22.8 / 66.5 MB)',
           );
         },
         { timeout: WAIT_FOR_TIMEOUT_MS },

@@ -57,5 +57,10 @@ export interface ActivityStatsPayload {
   stick: (string | number | null)[][];
   conversion: Record<string, number | string>;
   conversion_compare: (string | number | null)[][];
+  /** Train sessions completed while the user was still a guest (`fetch_guest_train`). */
+  guest_train: {
+    sessions_completed: number;
+    users: number;
+  };
   purged_excluded: Record<string, number>;
 }

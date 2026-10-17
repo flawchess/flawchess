@@ -7,8 +7,8 @@
  * `ort.env.wasm.wasmPaths` in the worker — an object of versioned per-backend
  * `.mjs`/`.wasm` URLs (a bare string prefix cannot carry a `?v=` query — see
  * `maia-worker.js`'s file header). That fetch never touches a streaming
- * reader, posts no progress, and has no asset id — 14.0 MB (wasm-only) or
- * 25.7 MB (WebGPU/asyncify) transfers with the gate's bar showing nothing. Worse, on
+ * reader, posts no progress, and has no asset id — 13.5 MB (wasm-only) or
+ * 24.3 MB (WebGPU/asyncify) transfers with the gate's bar showing nothing. Worse, on
  * a device whose WebGPU adapter lacks the `shader-f16` feature the worker
  * would fetch the WebGPU build, fail its warmup `analyze()`, and THEN
  * fetch the wasm-only build too — 39.7 MB to end up exactly where a straight
@@ -71,18 +71,18 @@ export const ORT_RUNTIME_WASM_ONLY_PATH = versionedEngineAssetUrl('/maia/ort-was
  */
 export const ORT_RUNTIME_ASYNCIFY_PATH = versionedEngineAssetUrl('/maia/ort-wasm-simd-threaded.asyncify.wasm');
 
-/** Raw byte size of the wasm-only runtime binary, verified live 2026-09-05 (onnxruntime-web 1.29.0). Defense-in-depth fallback for a missing/garbage `Content-Length`, mirroring `engineAssetProgress.ts`'s existing fallback constants. */
-export const ORT_RUNTIME_WASM_ONLY_BYTES_FALLBACK = 13_961_845;
+/** Raw byte size of the wasm-only runtime binary, vendored onnxruntime-web 1.27.0 file in public/maia/. Defense-in-depth fallback for a missing/garbage `Content-Length`, mirroring `engineAssetProgress.ts`'s existing fallback constants. */
+export const ORT_RUNTIME_WASM_ONLY_BYTES_FALLBACK = 13_479_978;
 
-/** Raw byte size of the WebGPU/asyncify runtime binary, verified live 2026-09-05 (onnxruntime-web 1.29.0). */
-export const ORT_RUNTIME_ASYNCIFY_BYTES_FALLBACK = 25_749_873;
+/** Raw byte size of the WebGPU/asyncify runtime binary, vendored onnxruntime-web 1.27.0 file in public/maia/. */
+export const ORT_RUNTIME_ASYNCIFY_BYTES_FALLBACK = 24_254_953;
 
 /**
  * The WebGPU adapter feature Maia's fp16 graph needs for its Cast nodes. Bug
  * fix: without probing this BEFORE constructing a Worker, an adapter lacking
  * it only surfaced the failure inside the worker's warmup `analyze()` —
- * after the full 25.7 MB asyncify build had already been fetched, with a
- * second 14.0 MB wasm-only fetch still to come on respawn. Named per
+ * after the full 24.3 MB asyncify build had already been fetched, with a
+ * second 13.5 MB wasm-only fetch still to come on respawn. Named per
  * CLAUDE.md's no-magic-numbers rule (a magic string from a fixed set is the
  * same violation as a bare numeric literal at the branch).
  */
@@ -97,7 +97,7 @@ const REQUIRED_WEBGPU_FEATURE = 'shader-f16';
  * return a DIFFERENT adapter than ORT ends up with — measured on the Linux
  * dev box, where the default adapter (AMD iGPU) has `shader-f16` but the
  * high-performance one (NVIDIA, Chrome/Linux Vulkan) does not: the probe
- * said "webgpu", the 25.7 MB asyncify build downloaded, and the fp16 `Cast`
+ * said "webgpu", the 24.3 MB asyncify build downloaded, and the fp16 `Cast`
  * node then failed inside the worker ("Program Cast requires f16 but the
  * device does not support it"), costing a wasm respawn.
  * Probing the adapter ORT will actually use keeps the two decisions aligned.
@@ -161,7 +161,7 @@ let backendPromise: Promise<OrtBackend> | null = null;
  * Inspects the WebGPU adapter's advertised feature set to choose exactly ONE
  * runtime build, entirely on the main thread and before any Worker exists.
  * Every malformed/absent shape falls safe to `'wasm'` — the wasm path always
- * works, and a wrong "present" answer is precisely the 25.7 MB defect this
+ * works, and a wrong "present" answer is precisely the 24.3 MB defect this
  * module fixes (a wrong "absent" answer only costs GPU inference on that
  * device, never a second download):
  *  - no `navigator.gpu` at all (older/non-Chromium browsers)

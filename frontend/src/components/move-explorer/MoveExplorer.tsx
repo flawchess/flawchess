@@ -46,7 +46,14 @@ interface MoveExplorerProps {
   onHighlightConsumed?: () => void;
 }
 
-const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
+// Touch-primary devices only. Bug fix (SEED-202 item 8): this used
+// `'ontouchstart' in window`, which Chrome defines on any touch-capable desktop
+// (touchscreen laptop, touch monitor), so a mouse click there only highlighted a
+// row instead of playing it. Same heuristic ChessBoard.tsx documents.
+const IS_TOUCH =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(pointer: coarse)').matches;
 
 // Background-tint pulse for the highlighted row. The keyframe lives in
 // index.css (`@keyframes row-highlight-pulse`); MoveRow supplies the three

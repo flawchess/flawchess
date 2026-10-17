@@ -328,7 +328,6 @@ export function OpeningsPage() {
     setBoardFlipped,
     setFilters,
     setHighlightedMove,
-    mostPlayedData,
   });
 
   // ── Desktop sidebar panel-change handler ─────────────────────────────────────

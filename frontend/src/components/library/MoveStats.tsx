@@ -370,7 +370,7 @@ export function MoveStats({
             })}
             <button
               type="button"
-              data-testid="move-stats-expand-toggle"
+              data-testid={tid('move-stats-expand-toggle', gameId)}
               aria-label={collapsed ? 'Expand move stats' : 'Collapse move stats'}
               className="flex items-center justify-center text-muted-foreground hover:text-foreground"
               onClick={() => {

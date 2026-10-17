@@ -51,7 +51,8 @@ describe('ResumeGate', () => {
     const gate = screen.getByTestId('resume-gate');
     expect(gate.textContent).toContain('Blitz 5+3');
     expect(gate.textContent).toContain('1500');
-    expect(gate.textContent).toContain('14 moves');
+    // plyCount is half-moves: 14 plies = 7 full moves.
+    expect(gate.textContent).toContain('7 moves');
     expect(gate.textContent).toContain('just now');
   });
 
