@@ -1,3 +1,7 @@
+import { sanToSquares } from '@/lib/sanToSquares';
+import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import type { OpeningInsightFinding } from '@/types/insights';
+
 /**
  * Render a ply index and SAN in PGN move-number notation.
  *
@@ -37,4 +41,19 @@ export function formatCandidateMove(
   candidateMoveSan: string,
 ): string {
   return formatMoveNotation(entrySanSequence.length, candidateMoveSan);
+}
+
+/** "2... e6": the move a finding is about, in PGN notation. */
+export function findingMoveText(finding: OpeningInsightFinding): string {
+  return formatCandidateMove(finding.entry_san_sequence, finding.candidate_move_san);
+}
+
+/** One arrow from the candidate move's squares, red for a weakness and green for a strength. */
+export function findingArrows(
+  finding: OpeningInsightFinding,
+): ReadonlyArray<{ from: string; to: string; color: string }> | undefined {
+  const squares = sanToSquares(finding.entry_fen, finding.candidate_move_san);
+  if (!squares) return undefined;
+  const color = finding.classification === 'weakness' ? ZONE_DANGER : ZONE_SUCCESS;
+  return [{ from: squares.from, to: squares.to, color }];
 }
