@@ -1,3 +1,5 @@
+import type { OpeningsTab } from '@/types/openingsTab';
+
 /**
  * Board container layout helpers for the Openings page.
  *
@@ -8,12 +10,12 @@
 
 /**
  * Returns the className for the desktop board container.
- * On the Stats and Insights subtabs, lg:hidden hides the board to free
- * horizontal space (Insights uses a 2-column white/black layout).
+ * On the Stats subtab, lg:hidden hides the board to free horizontal space
+ * (Stats uses the full content width for the findings and opening cards).
  * The ChessBoard JSX element is NOT removed so chess.js state is preserved
  * across tab switches.
  */
-export function getBoardContainerClassName(activeTab: string): string {
-  const hideOnLg = activeTab === 'stats' || activeTab === 'insights';
+export function getBoardContainerClassName(activeTab: OpeningsTab): string {
+  const hideOnLg = activeTab === 'stats';
   return `flex flex-col gap-2 w-[400px] shrink-0${hideOnLg ? ' lg:hidden' : ''}`;
 }

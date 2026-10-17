@@ -27,7 +27,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { OpeningsPage } from '@/pages/Openings';
@@ -131,14 +131,20 @@ afterEach(() => {
   bookmarksState.data = [];
 });
 
-function renderOpeningsPage() {
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{location.pathname}</div>;
+}
+
+function renderOpeningsPage(initialPath = '/openings/explorer') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <MemoryRouter initialEntries={['/openings/explorer']}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
+          <LocationProbe />
           <OpeningsPage />
         </TooltipProvider>
       </QueryClientProvider>
@@ -156,7 +162,8 @@ describe('OpeningsPage render characterization', () => {
     expect(within(desktopTabs).getByTestId('tab-move-explorer')).toBeTruthy();
     expect(within(desktopTabs).getByTestId('tab-games')).toBeTruthy();
     expect(within(desktopTabs).getByTestId('tab-stats')).toBeTruthy();
-    expect(within(desktopTabs).getByTestId('tab-insights')).toBeTruthy();
+    // The Insights subtab was merged into Stats (Phase 242, D-00): it is gone.
+    expect(screen.queryByTestId('tab-insights')).toBeNull();
 
     // Mobile tab strip — both layouts are unconditionally in the tree (only
     // CSS-hidden via `hidden lg:flex` / `lg:hidden`, which jsdom ignores).
@@ -164,7 +171,19 @@ describe('OpeningsPage render characterization', () => {
     expect(within(mobileTabs).getByTestId('tab-move-explorer-mobile')).toBeTruthy();
     expect(within(mobileTabs).getByTestId('tab-games-mobile')).toBeTruthy();
     expect(within(mobileTabs).getByTestId('tab-stats-mobile')).toBeTruthy();
-    expect(within(mobileTabs).getByTestId('tab-insights-mobile')).toBeTruthy();
+    expect(screen.queryByTestId('tab-insights-mobile')).toBeNull();
+  });
+
+  it('redirects the legacy /openings/insights URL to the Stats tab with a replace (D-15)', async () => {
+    renderOpeningsPage('/openings/insights');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe').textContent).toBe('/openings/stats');
+    });
+    // Stats is the active tab (not a 404 and not the Moves tab) and its content renders.
+    expect(screen.getByTestId('tab-stats').getAttribute('data-state')).toBe('active');
+    expect(screen.getByTestId('tab-move-explorer').getAttribute('data-state')).toBe('inactive');
+    expect(screen.getAllByTestId('opening-stats-color-bar').length).toBeGreaterThan(0);
   });
 
   it('desktop sidebar filters panel renders the desktop piece-filter testids and FilterPanel', async () => {

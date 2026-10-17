@@ -9,10 +9,11 @@ import { BoardControls } from '@/components/board/BoardControls';
 import { ChessboardInfoCopy } from './ChessboardInfoCopy';
 import type { Opening } from '@/lib/openings';
 import type { Color } from '@/types/api';
+import type { OpeningsTab } from '@/types/openingsTab';
 
 export type OpeningsMobileBoardPanelProps = {
   /** Board block is only rendered on the Moves + Games subtabs. */
-  activeTab: 'explorer' | 'games' | 'stats' | 'insights';
+  activeTab: OpeningsTab;
 
   // Board
   mobileBoardRef: (el: HTMLDivElement | null) => void;
@@ -55,7 +56,7 @@ export type OpeningsMobileBoardPanelProps = {
  * four button conditionals, an opening-name ternary, and the mobile-only
  * settings column). `filtersNotificationDot` stays a prop rather than an
  * internally-owned branch because the SAME ternary is also used by the
- * sticky Filters button on Stats/Insights, which this component doesn't own.
+ * sticky Filters button on Stats, which this component doesn't own.
  */
 export function OpeningsMobileBoardPanel({
   activeTab,

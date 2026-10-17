@@ -20,13 +20,6 @@ describe('Openings board container className', () => {
     expect(className).toMatch(/lg:hidden/);
   });
 
-  it('board container has lg:hidden when activeTab is insights', () => {
-    // Insights uses a 2-column white/black layout on desktop and doesn't need
-    // the chessboard, so we hide it at lg+ to free horizontal space.
-    const className = getBoardContainerClassName('insights');
-    expect(className).toMatch(/lg:hidden/);
-  });
-
   it('board container does NOT have lg:hidden when activeTab is explorer', () => {
     const className = getBoardContainerClassName('explorer');
     expect(className).not.toMatch(/lg:hidden/);

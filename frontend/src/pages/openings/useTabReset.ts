@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { OpeningsTab } from '@/types/openingsTab';
 
 export type TabResetApi = {
   gamesOffset: number;
@@ -13,7 +14,7 @@ export type TabResetApi = {
  *    the original implementation.
  */
 export function useTabReset(
-  activeTab: 'explorer' | 'games' | 'stats' | 'insights',
+  activeTab: OpeningsTab,
 ): TabResetApi {
   const [gamesOffset, setGamesOffset] = useState(0);
 
