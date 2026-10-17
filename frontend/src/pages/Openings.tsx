@@ -43,6 +43,7 @@ import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+import type { OpeningsTab } from '@/types/openingsTab';
 import { useDeepLinkHighlight } from './openings/useDeepLinkHighlight';
 import { useSidebarState } from './openings/useSidebarState';
 import { useTabReset } from './openings/useTabReset';
@@ -59,7 +60,7 @@ import { StatsTab } from './openings/StatsTab';
 
 const PAGE_SIZE = 20;
 
-const TAB_INFO: Record<'explorer' | 'games' | 'stats', { aria: string; text: string }> = {
+const TAB_INFO: Record<OpeningsTab, { aria: string; text: string }> = {
   explorer: {
     aria: 'About Opening Moves',
     text: 'Interactive opening explorer with win/draw/loss charts and statistical analysis for each move.',
@@ -88,7 +89,7 @@ export function OpeningsPage() {
     || location.pathname.endsWith('/compare')
     || location.pathname.endsWith('/insights');
 
-  const activeTab: 'explorer' | 'games' | 'stats' = location.pathname.includes('/games')
+  const activeTab: OpeningsTab = location.pathname.includes('/games')
     ? 'games'
     : location.pathname.includes('/stats')
       ? 'stats'
