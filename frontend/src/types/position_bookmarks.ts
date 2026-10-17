@@ -62,6 +62,7 @@ export interface TimeSeriesPoint {
   score: number;         // chess score (W + 0.5·D) / N, 0.0 - 1.0
   game_count: number;    // games in rolling window (1..window_size)
   window_size: number;   // configured window size (ROLLING_WINDOW_SIZE)
+  per_week_games: number; // in-window games that ISO week (drives the weekly volume bars)
 }
 
 export interface BookmarkTimeSeries {

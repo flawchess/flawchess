@@ -1,6 +1,8 @@
 import { ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { ScoreChart } from '@/components/charts/ScoreChart';
 import { Button } from '@/components/ui/button';
+import { LoadError } from '@/components/ui/load-error';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { VerdictBar } from '@/components/openings/stats/VerdictBar';
 import {
@@ -8,6 +10,7 @@ import {
   ScoreVerdictPopover,
 } from '@/components/openings/stats/VerdictPopover';
 import { useReadiness } from '@/hooks/useReadiness';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import { formatSignedGap } from '@/lib/gapBar';
 import {
   EVAL_VERDICT_BAND,
@@ -19,6 +22,8 @@ import {
   openingVerdictReason,
   scoreDelta,
 } from '@/lib/openingVerdict';
+import { formatRelativeDate } from '@/lib/relativeDate';
+import { useOpeningRowTimeSeries } from '@/pages/openings/useOpeningRowTimeSeries';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
@@ -32,6 +37,8 @@ interface RepertoireExpandedRowProps {
   row: RepertoireRowModel;
   /** Table row index; builds the testids (names repeat once ECO codes are dropped). */
   index: number;
+  /** Sidebar filters (debounced) that scope the lazily fetched score series. */
+  debouncedFilters: FilterState;
   onOpenMoves: (pgn: string, color: 'white' | 'black') => void;
   onOpenGames: (pgn: string, color: 'white' | 'black') => void;
   onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
@@ -127,6 +134,48 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
   );
 }
 
+/** Score over time: the rolling score line plus grey weekly game bars (D-00). */
+function ScoreOverTime({
+  row,
+  testId,
+  debouncedFilters,
+}: {
+  row: RepertoireRowModel;
+  testId: string;
+  debouncedFilters: FilterState;
+}) {
+  // The block only mounts while the row is expanded, so mounting is the lazy trigger.
+  const { series, isLoading, isError } = useOpeningRowTimeSeries({
+    row,
+    debouncedFilters,
+    enabled: true,
+  });
+  const windowSize = series?.data[0]?.window_size;
+  return (
+    <div className="min-w-0" data-testid={`${testId}-chart`}>
+      <h4 className="mb-2 text-sm font-semibold text-muted-foreground">Score over time</h4>
+      {isError ? (
+        <LoadError resource="the score chart" data-testid={`${testId}-chart-error`} />
+      ) : isLoading || !series ? (
+        <p className="text-sm text-muted-foreground" data-testid={`${testId}-chart-loading`}>
+          Loading score chart...
+        </p>
+      ) : (
+        <>
+          <ScoreChart series={series} showVolume testId={`${testId}-score-chart`} />
+          {windowSize !== undefined && (
+            <p className="mt-1 text-sm text-muted-foreground" data-testid={`${testId}-chart-caption`}>
+              Line: your score over your last {windowSize} games in this opening · grey bars: games
+              per week · dashed line = 50% · palm tree = a break of 3+ months
+              {row.lastPlayedAt ? ` · last played ${formatRelativeDate(row.lastPlayedAt)}` : ''}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * Detail panel under an expanded repertoire row (D-00): a 200 px board (size={200}) with the Moves / Games
  * links (stacked right of the board on phones), the Score and Eval after opening verdict bars.
@@ -134,6 +183,7 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
 export function RepertoireExpandedRow({
   row,
   index,
+  debouncedFilters,
   onOpenMoves,
   onOpenGames,
   onOpenBookmarkGames,
@@ -145,7 +195,7 @@ export function RepertoireExpandedRow({
   };
   return (
     <div
-      className="grid gap-4 md:grid-cols-[200px_minmax(0,1fr)] md:gap-6"
+      className="grid gap-4 md:grid-cols-[200px_minmax(0,1fr)] md:gap-6 xl:grid-cols-[200px_minmax(0,1fr)_320px]"
       data-testid={`${testId}-expanded`}
     >
       <div className="flex items-start gap-4 md:flex-col md:gap-2.5">
@@ -179,6 +229,9 @@ export function RepertoireExpandedRow({
       <div className="flex min-w-0 flex-col gap-4">
         <ScoreBar row={row} testId={testId} />
         <EvalBar row={row} testId={testId} />
+      </div>
+      <div className="min-w-0 md:col-span-2 xl:col-span-1">
+        <ScoreOverTime row={row} testId={testId} debouncedFilters={debouncedFilters} />
       </div>
     </div>
   );

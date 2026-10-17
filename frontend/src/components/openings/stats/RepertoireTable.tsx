@@ -2,6 +2,7 @@ import { Fragment, useState, type ReactNode } from 'react';
 import { BookMarked, ChevronDown, Sparkles } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Button } from '@/components/ui/button';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { RepertoireExpandedRow } from '@/components/openings/stats/RepertoireExpandedRow';
@@ -52,6 +53,8 @@ interface RepertoireTableProps {
   /** ISO cutoff of the current repertoire for this colour; null when every opening is current. */
   currentCutoff: string | null;
   onOpenSuggestions: () => void;
+  /** Sidebar filters (debounced) that scope the expanded rows' score series. */
+  debouncedFilters: FilterState;
   /** Expanded-row links: Moves tab, Games tab (most-played rows) and Games tab (bookmark rows). */
   onOpenMoves: (pgn: string, color: 'white' | 'black') => void;
   onOpenGames: (pgn: string, color: 'white' | 'black') => void;
@@ -396,6 +399,7 @@ export function RepertoireTable({
   pastRows,
   currentCutoff,
   onOpenSuggestions,
+  debouncedFilters,
   onOpenMoves,
   onOpenGames,
   onOpenBookmarkGames,
@@ -436,6 +440,7 @@ export function RepertoireTable({
             <RepertoireExpandedRow
               row={row}
               index={index}
+              debouncedFilters={debouncedFilters}
               onOpenMoves={onOpenMoves}
               onOpenGames={onOpenGames}
               onOpenBookmarkGames={onOpenBookmarkGames}

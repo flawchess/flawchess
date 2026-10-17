@@ -27,6 +27,22 @@ export type UseOpeningsChartDataParams = {
   debouncedFilters: FilterState;
 };
 
+/** The sidebar filters as /openings/time-series request params (shared with the per-row series). */
+export function timeSeriesFilterParams(
+  filters: FilterState,
+): Omit<TimeSeriesRequest, 'bookmarks'> {
+  return {
+    time_control: filters.timeControls,
+    platform: filters.platforms,
+    rated: filters.rated,
+    opponent_type: filters.opponentType,
+    ...rangeToQueryParams(filters.opponentStrength),
+    // Recency flows as resolved date bounds (from_date/to_date)
+    // so the bookmark card WDL bar, game count, and Score % respond to the filter.
+    ...dateRangeToWireParams(resolveDateRange(filters)),
+  };
+}
+
 export type OpeningsChartData = {
   boardArrows: BoardArrow[];
   bookmarkPhaseEntryByHash: Map<string, BookmarkPhaseEntryItem>;
@@ -125,14 +141,7 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
         match_side: resolveMatchSide(b.match_side, (b.color ?? 'white') as Color),
         color: b.color,
       })),
-      time_control: debouncedFilters.timeControls,
-      platform: debouncedFilters.platforms,
-      rated: debouncedFilters.rated,
-      opponent_type: debouncedFilters.opponentType,
-      ...rangeToQueryParams(debouncedFilters.opponentStrength),
-      // Recency flows as resolved date bounds (from_date/to_date)
-      // so the bookmark card WDL bar, game count, and Score % respond to the filter.
-      ...dateRangeToWireParams(resolveDateRange(debouncedFilters)),
+      ...timeSeriesFilterParams(debouncedFilters),
     };
   }, [bookmarks, debouncedFilters]);
 

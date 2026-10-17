@@ -1,7 +1,6 @@
 import { BookMarked, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
-import { ScoreChart } from '@/components/charts/ScoreChart';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
 import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
@@ -66,8 +65,6 @@ export function StatsTab({
     null;
   const showTable = !mostPlayedError && (mostPlayedData !== undefined || bookmarkRows.length > 0);
 
-  const colorBookmarks = bookmarks.filter((b) => b.color === color);
-
   return (
     <div className="flex flex-col gap-6">
       {/* Desktop sticky colour bar. Phones render the same switch inside the sticky Filters
@@ -109,20 +106,6 @@ export function StatsTab({
         </div>
       )}
 
-      {/* 2. Score over Time (selected colour's bookmarks) — only when bookmarks exist with time series data */}
-      {colorBookmarks.length > 0 && tsData && (
-        <div className="charcoal-texture rounded-md overflow-hidden">
-          <ScoreChart bookmarks={colorBookmarks} series={tsData.series} />
-        </div>
-      )}
-
-      {/* Loading state when bookmarks exist but tsData is not ready */}
-      {colorBookmarks.length > 0 && !tsData && (
-        <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
-          Loading chart data...
-        </div>
-      )}
-
       {/* Most Played Openings — error / loading branches per CLAUDE.md */}
       {mostPlayedError && (
         <LoadError
@@ -157,6 +140,7 @@ export function StatsTab({
           pastRows={pastRows}
           currentCutoff={currentCutoff}
           onOpenSuggestions={onOpenSuggestions}
+          debouncedFilters={debouncedFilters}
           onOpenMoves={onOpenMoves}
           onOpenGames={onOpenGames}
           onOpenBookmarkGames={onOpenBookmarkGames}

@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
+import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import {
+  MOST_PLAYED_ROW_SERIES_ID,
+  useOpeningRowTimeSeries,
+} from '@/pages/openings/useOpeningRowTimeSeries';
 import {
   useRepertoireRows,
   type RepertoireRowKind,
@@ -23,6 +28,15 @@ import type {
 } from '@/types/position_bookmarks';
 
 const trackFeature = vi.hoisted(() => vi.fn());
+const useTimeSeriesMock = vi.hoisted(() => vi.fn());
+const createMutate = vi.hoisted(() => vi.fn());
+const deleteMutate = vi.hoisted(() => vi.fn());
+
+vi.mock('@/hooks/usePositionBookmarks', () => ({
+  useTimeSeries: useTimeSeriesMock,
+  useCreatePositionBookmark: () => ({ mutate: createMutate, isPending: false }),
+  useDeletePositionBookmark: () => ({ mutate: deleteMutate, isPending: false }),
+}));
 
 vi.mock('@/lib/analytics', async () => {
   const actual = await vi.importActual<typeof import('@/lib/analytics')>('@/lib/analytics');
@@ -50,6 +64,10 @@ vi.mock('@/hooks/useReadiness', () => ({
 
 beforeEach(() => {
   trackFeature.mockClear();
+  createMutate.mockClear();
+  deleteMutate.mockClear();
+  useTimeSeriesMock.mockReset();
+  useTimeSeriesMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
 });
 
 afterEach(() => {
@@ -107,6 +125,7 @@ function renderTable(props: {
       pastRows={props.pastRows ?? []}
       currentCutoff={props.currentCutoff ?? null}
       onOpenSuggestions={vi.fn()}
+      debouncedFilters={DEFAULT_FILTERS}
       onOpenMoves={vi.fn()}
       onOpenGames={vi.fn()}
       onOpenBookmarkGames={vi.fn()}
@@ -362,5 +381,40 @@ describe('useRepertoireRows', () => {
       }),
     );
     expect(result.current.bookmarkRows.map((r) => r.key)).toEqual(['bookmark-3', 'bookmark-1']);
+  });
+});
+
+describe('useOpeningRowTimeSeries', () => {
+  it('returns a bookmark row\'s own series and never requests one', () => {
+    const series = makeSeries(5, 30);
+    const row = makeRow({ key: 'bookmark-5', kind: 'bookmark', series });
+    const { result } = renderHook(() =>
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: true }),
+    );
+    expect(result.current.series).toBe(series);
+    expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
+  });
+
+  it('does not fetch a most-played row\'s series until enabled', () => {
+    const row = makeRow({ key: 'mpo-1', fullHash: '777' });
+    const { result } = renderHook(() =>
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: false }),
+    );
+    expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
+    expect(result.current.series).toBeNull();
+  });
+
+  it('requests one full-position series for an enabled most-played row', () => {
+    const series = makeSeries(MOST_PLAYED_ROW_SERIES_ID, 40);
+    useTimeSeriesMock.mockReturnValue({ data: { series: [series] }, isLoading: false, isError: false });
+    const row = makeRow({ key: 'mpo-1', fullHash: '777', color: 'black' });
+    const { result } = renderHook(() =>
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: true }),
+    );
+    const request = useTimeSeriesMock.mock.calls.at(-1)?.[0];
+    expect(request.bookmarks).toEqual([
+      { bookmark_id: MOST_PLAYED_ROW_SERIES_ID, target_hash: '777', match_side: 'full', color: 'black' },
+    ]);
+    expect(result.current.series).toBe(series);
   });
 });
