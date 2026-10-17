@@ -164,7 +164,7 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 1/9 plans executed
+**Plans:** 3/9 plans executed
 **Status**: Planned (9 plans, 7 waves), ready to execute
 
 Plans:
@@ -172,8 +172,8 @@ Plans:
 - [x] 242-01-PLAN.md — Backend /stats: current/past cutoff (200 games or 60 days, filters, dev clock), most-played fetch 60 → dedupe → bookmark-twin drop → cutoff-restricted second fetch when current rows run short → 10 current + 10 past, baseline-centred eval finalizer + 99% CIs, shared score verdict fields (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 242-02-PLAN.md — Backend /insights/openings: 99% cards (≤5, current first), "Not clear yet" medium list (≤10 + full count), is_current, centred eval on cards (wave 2)
-- [ ] 242-03-PLAN.md — Backend /openings: Moves/Games centred eval + 99% CIs, weekly time series with per-week games, bookmark score p + 99% CI and is_current (wave 2)
+- [x] 242-02-PLAN.md — Backend /insights/openings: 99% cards (≤5, current first), "Not clear yet" medium list (≤10 + full count), is_current, centred eval on cards (wave 2)
+- [x] 242-03-PLAN.md — Backend /openings: Moves/Games centred eval + 99% CIs, weekly time series with per-week games, bookmark score p + 99% CI and is_current (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 242-04-PLAN.md — Frontend verdict primitives (openingVerdict, VerdictBar, EvalVerdictPopover) shipped on the Moves/Games eval row (D-17) (wave 3)
