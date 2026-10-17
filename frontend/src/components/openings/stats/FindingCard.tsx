@@ -23,7 +23,7 @@ import {
   stripEcoSuffix,
   whyLine,
 } from '@/lib/openingVerdict';
-import { sanArrayToPgn } from '@/lib/pgn';
+import { ARROW_NEUTRAL } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -35,11 +35,6 @@ const OLDER_GAMES_LABEL = 'older games';
 const NO_VALUE = '—';
 const EVAL_LABEL = 'Eval after opening';
 
-/** The full line through the candidate move as PGN ("1. e4 e5 2. Nf3"). */
-function findingLineText(finding: OpeningInsightFinding): string {
-  return sanArrayToPgn([...finding.entry_san_sequence, finding.candidate_move_san]);
-}
-
 /** "Last seen October 2026" (title of the older-games chip); undefined without a date. */
 function lastSeenTitle(iso: string | null | undefined): string | undefined {
   if (!iso) return undefined;
@@ -48,7 +43,7 @@ function lastSeenTitle(iso: string | null | undefined): string | undefined {
 }
 
 /** Marks a finding whose games all predate the current repertoire (D-04). */
-export function OlderGamesChip({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
+function OlderGamesChip({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
   if (finding.is_current) return null;
   return (
     <span
@@ -61,15 +56,10 @@ export function OlderGamesChip({ finding, testId }: { finding: OpeningInsightFin
   );
 }
 
-/** Opening name without ECO (italic for the unnamed sentinel) and the full line. */
-export function FindingSubtitle({ finding }: { finding: OpeningInsightFinding }) {
+/** Opening name without ECO (italic for the unnamed sentinel); the board shows the position. */
+function FindingSubtitle({ finding }: { finding: OpeningInsightFinding }) {
   const unnamed = finding.opening_name === UNNAMED_SENTINEL;
-  const name = stripEcoSuffix(finding.display_name);
-  return (
-    <>
-      <span className={cn(unnamed && 'italic')}>{name}</span> · {findingLineText(finding)}
-    </>
-  );
+  return <span className={cn(unnamed && 'italic')}>{stripEcoSuffix(finding.display_name)}</span>;
 }
 
 function ScoreLine({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
@@ -182,17 +172,26 @@ interface FindingCardProps {
   testId: string;
   onOpenMoves: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
+  /** "Not clear yet" cards draw the move arrow uncoloured: only a 99% finding gets red or green. */
+  neutralArrow?: boolean;
 }
 
 const LINK_BUTTON_CLASS =
   'flex items-center gap-1 text-sm text-brand-brown-light transition-colors hover:text-brand-brown-highlight';
 
 /**
- * Move-led finding card (D-00): the move first, then the opening name and full line, a 120 px
+ * Move-led finding card (D-00): the move first, then the opening name, a 120 px
  * board with the move arrow, the score with its popover and WDL bar, the eval bar centred on
  * the colour baseline and a one-line why when the eval verdict is better or worse.
  */
-export function FindingCard({ finding, testId, onOpenMoves, onOpenGames }: FindingCardProps) {
+export function FindingCard({
+  finding,
+  testId,
+  onOpenMoves,
+  onOpenGames,
+  neutralArrow = false,
+}: FindingCardProps) {
+  const arrows = findingArrows(finding);
   return (
     <Card data-testid={testId}>
       <CardHeader as="h4" size="compact" className="flex-col items-start gap-0.5">
@@ -209,7 +208,7 @@ export function FindingCard({ finding, testId, onOpenMoves, onOpenGames }: Findi
           fen={finding.entry_fen}
           flipped={finding.color === 'black'}
           size={BOARD_SIZE}
-          arrows={findingArrows(finding)}
+          arrows={neutralArrow ? arrows?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL })) : arrows}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <ScoreLine finding={finding} testId={testId} />

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { SlidersHorizontal, BookMarked, Search } from 'lucide-react';
+import { SlidersHorizontal, Bookmark, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -164,7 +164,7 @@ export function OpeningsMobileBoardPanel({
               data-testid="btn-open-bookmark-sidebar"
               aria-label="Open bookmarks"
             >
-              <BookMarked className="h-4 w-4" />
+              <Bookmark className="h-4 w-4" />
               {showBookmarksHint && (
                 <span
                   className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"

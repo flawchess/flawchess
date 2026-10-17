@@ -13,7 +13,7 @@ const PERCENT_SCALE = 100;
 
 export type RepertoireRowKind = 'bookmark' | 'current' | 'past';
 
-/** One table row, whether it comes from a bookmark or from the most-played list. */
+/** One repertoire card, whether it comes from a bookmark or from the most-played list. */
 export interface RepertoireRowModel {
   /** Stable React key and testid source; never the opening name (names repeat without ECO). */
   key: string;
@@ -170,7 +170,7 @@ function buildBookmarkRows(
 }
 
 /**
- * View-model for the repertoire table of one colour: pinned bookmarks, the current most-played
+ * View-model for the repertoire cards of one colour: pinned bookmarks, the current most-played
  * rows and the "Played before" rows. The backend already deduped, ordered and capped the
  * most-played lists and flags each row `is_current`, so this only maps and splits.
  */

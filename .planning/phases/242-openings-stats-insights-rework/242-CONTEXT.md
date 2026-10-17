@@ -106,6 +106,18 @@ discuss-phase" and record defaults for the rest.
   since the current/past cutoff** and merges its rows, so past openings never push current ones out.
   Plan sizing warnings (01 over budget ~10%, 06 at 18 files) were accepted as is; no further splits.
 
+### Post-UAT decisions (owner, 2026-10-17)
+- **D-19:** The repertoire table is replaced by **cards** (2 columns from lg, 1 below): name header, 128 px
+  board, WDL bar with "N games · last played", Score and Eval verdict bars, Moves / Games / Bookmark links and a
+  "Score over time" toggle that opens the chart inside the card. Reason: 44 px row boards were too small on
+  desktop, expanding rows to see the board was impractical, and the stacked mobile rows read worse than the
+  old cards. Supersedes the table / sticky column header / expanded-row parts of D-00.
+- **D-20:** The findings gate **stays at p < 0.01**. "Not clear yet" moves render as the same finding cards
+  (uncoloured verdicts, neutral arrow, no fade) instead of the faded mini-board list; amends D-10's "faded".
+- **D-21:** No move sequences on repertoire cards or finding cards; the board shows the position.
+- **D-22:** Score-over-time chart: no rotated "Score" y-axis label and no caption line under it.
+- **D-23:** lucide `BookMarked` is replaced by `Bookmark` everywhere.
+
 </decisions>
 
 <canonical_refs>

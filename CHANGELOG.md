@@ -10,9 +10,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- Openings Stats now holds your opening insights: the moves that cost you and the moves that work, at 99% confidence, with a "Not clear yet" list for the rest. They sit above one repertoire table per colour, switched with a White | Black toggle.
-- The repertoire table pins your bookmarks, shows your most played openings, and moves openings you have not played recently into a collapsed "Played before" group. Duplicate rows collapse into one.
-- Each repertoire row expands to a board, Moves, Games and Bookmark links, a score bar, an engine-eval bar and a score-over-time chart with weekly game bars.
+- Openings Stats now holds your opening insights: the moves that cost you and the moves that work, at 99% confidence, with the rest as "Not clear yet" cards. They sit above your repertoire for one colour at a time, switched with a White | Black toggle.
+- The repertoire shows your bookmarks first, then your most played openings, and moves openings you have not played recently into a collapsed "Played before" group. Duplicates collapse into one.
+- Each repertoire opening is a card with a board, win/draw/loss bar, score and engine-eval bars, Moves, Games and Bookmark links, and a score-over-time chart with weekly game bars.
 - The eval verdict now compares against the average game for your colour on the Moves, Games and Stats tabs.
 - The Insights tab and the per-bookmark "Include in opening results" switch are gone. Old Insights links open Stats.
 

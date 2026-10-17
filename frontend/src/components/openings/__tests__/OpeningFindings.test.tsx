@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * OpeningFindings: the phone "Show more" (D-08) and its single Umami event, the collapsed
- * "Not clear yet (n)" list (D-09, D-10), the empty-state copy (D-11), the older-games chip
+ * "Not clear yet (n)" cards (D-09, D-10), the empty-state copy (D-11), the older-games chip
  * (D-04) and the Moves / Games deep-link callbacks.
  */
 
@@ -265,7 +265,7 @@ describe('OpeningFindings Not clear yet', () => {
     expect(screen.queryByTestId('opening-findings-weakness-unclear-list')).toBeNull();
   });
 
-  it('expands to the faded, uncoloured rows and tracks the expand once', () => {
+  it('expands to uncoloured finding cards and tracks the expand once', () => {
     renderFindings(
       emptyResponse({
         white_weaknesses: [makeFinding()],
@@ -279,14 +279,15 @@ describe('OpeningFindings Not clear yet', () => {
     const toggle = screen.getByTestId('opening-findings-weakness-unclear-toggle');
     fireEvent.click(toggle);
 
-    const list = screen.getByTestId('opening-findings-weakness-unclear-list');
-    expect(list.style.opacity).toBe('0.5');
-    const row0 = screen.getByTestId('opening-findings-weakness-unclear-row-0');
-    expect(row0.textContent).toContain('After 1. e4');
-    expect(row0.textContent).toContain('40%');
-    expect(row0.textContent).toContain('30 games');
-    expect(screen.queryByTestId('opening-findings-weakness-unclear-row-0-older')).toBeNull();
-    expect(screen.getByTestId('opening-findings-weakness-unclear-row-2-older').textContent).toBe(
+    const card0 = screen.getByTestId('opening-findings-weakness-unclear-card-0');
+    expect(card0.textContent).toContain('After 1. e4');
+    expect(card0.textContent).toContain('30 games');
+    // Medium confidence never passes the 99% gate, so the score stays uncoloured.
+    const score0 = screen.getByTestId('opening-findings-weakness-unclear-card-0-score');
+    expect(score0.textContent).toBe('40%');
+    expect(score0.style.color).toBe('');
+    expect(screen.queryByTestId('opening-findings-weakness-unclear-card-0-older')).toBeNull();
+    expect(screen.getByTestId('opening-findings-weakness-unclear-card-2-older').textContent).toBe(
       'older games',
     );
     expect(panelOpenTargets()).toEqual(['opening-findings-unclear']);

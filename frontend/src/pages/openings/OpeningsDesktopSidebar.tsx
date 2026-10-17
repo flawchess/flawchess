@@ -1,5 +1,5 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import { Save, Sparkles, SlidersHorizontal, BookMarked, Search } from 'lucide-react';
+import { Save, Sparkles, SlidersHorizontal, Bookmark, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -171,7 +171,7 @@ export function OpeningsDesktopSidebar({
         {
           id: 'bookmarks',
           label: 'Bookmarks',
-          icon: <BookMarked className="h-5 w-5" />,
+          icon: <Bookmark className="h-5 w-5" />,
           content: bookmarkPanelContent,
           footer: bookmarkPanelFooter,
           headerExtra: (

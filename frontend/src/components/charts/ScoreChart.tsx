@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
@@ -15,10 +15,6 @@ interface ScoreChartProps {
   testId?: string;
 }
 
-// Mirrors EndgameScoreOverTimeChart: hide the rotated Y-axis label on
-// narrow screens so the chart keeps its full width.
-const MOBILE_BREAKPOINT_PX = 768;
-
 /** The hidden bar axis runs [0, barMax * 5], which pins the tallest bar to the bottom 20%. */
 const VOLUME_BAR_DOMAIN_FACTOR = 5;
 const EVEN_SCORE = 0.5;
@@ -27,21 +23,6 @@ const SCORE_LINE_WIDTH = 2;
 const EVEN_SCORE_DASH = '4 3';
 const CHART_HEIGHT_CLASS = 'h-52';
 const EMPTY_MESSAGE = 'Not enough games in this opening for a score line yet.';
-
-function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return isMobile;
-}
 
 function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showVolume: boolean }) {
   return (
@@ -68,7 +49,6 @@ function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showV
  * takes the series as it comes.
  */
 export function ScoreChart({ series, showVolume = false, testId = 'score-chart' }: ScoreChartProps) {
-  const isMobile = useIsMobile();
   const points = series.data;
   const dates = useMemo(() => points.map((p) => p.date), [points]);
   const formatDateTick = useMemo(() => createDateTickFormatter(dates), [dates]);
@@ -89,15 +69,7 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
   }
 
   return (
-    <div className={isMobile ? '' : 'flex items-stretch'} data-testid={testId}>
-      {!isMobile && (
-        <div
-          className="flex shrink-0 items-center text-sm text-muted-foreground -mr-1"
-          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-        >
-          Score
-        </div>
-      )}
+    <div data-testid={testId}>
       <ChartContainer config={{}} className={`w-full ${CHART_HEIGHT_CLASS}`}>
         <ComposedChart data={points}>
           <CartesianGrid vertical={false} yAxisId="value" />

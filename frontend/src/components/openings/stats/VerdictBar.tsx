@@ -56,7 +56,7 @@ export function VerdictBar({
   const bandRange = verdictBandRange(band);
 
   return (
-    <div className="space-y-1.5" data-testid={testId}>
+    <div className="space-y-1.5" data-testid={testId} data-verdict={verdict}>
       <div className="flex items-center justify-between gap-2 text-sm">
         <div className="min-w-0">{leading}</div>
         <div className="flex shrink-0 items-center gap-1">
@@ -115,45 +115,5 @@ export function VerdictBar({
         />
       </div>
     </div>
-  );
-}
-
-interface VerdictCompactProps {
-  verdict: GapVerdict;
-  /** The raw value as text ("56%", "+0.9"). */
-  valueText: string;
-  testId: string;
-  /** After the value, typically the info popover trigger. */
-  trailing?: ReactNode;
-}
-
-/**
- * The repertoire table's compact cell: a verdict dot, the value and the popover trigger on one
- * line. The full bar lives in the expanded row; here the dot colour carries the verdict and the
- * value is coloured only when it is a clear better / worse call.
- */
-export function VerdictCompact({ verdict, valueText, testId, trailing }: VerdictCompactProps) {
-  const color = gapVerdictColor(verdict);
-  const coloured = verdict === 'better' || verdict === 'worse';
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 whitespace-nowrap"
-      data-testid={testId}
-      data-verdict={verdict}
-    >
-      <span
-        className="size-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: color }}
-        data-testid={`${testId}-dot`}
-      />
-      <span
-        className={cn('font-semibold tabular-nums', !coloured && 'text-foreground')}
-        style={coloured ? { color } : undefined}
-        data-testid={`${testId}-value`}
-      >
-        {valueText}
-      </span>
-      {trailing}
-    </span>
   );
 }

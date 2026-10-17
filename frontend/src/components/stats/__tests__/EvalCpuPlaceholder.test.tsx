@@ -1,19 +1,20 @@
 // @vitest-environment jsdom
 /**
- * Tests for EvalCpuPlaceholder and the tier2-gated eval cell of the RepertoireTable.
+ * Tests for EvalCpuPlaceholder and the tier2-gated eval bar of the RepertoireCard.
  *
  * Covers:
  *   - EvalCpuPlaceholder renders testid, "Analyzing…" label, and Cpu icon
- *   - RepertoireTable: when tier2=false -> EvalCpuPlaceholder renders, no eval value
- *   - RepertoireTable: when tier2=true  -> placeholder absent, eval value renders
- *   - The score cell is present in both cases (score is not eval-dependent)
+ *   - RepertoireCard: when tier2=false -> EvalCpuPlaceholder renders, no eval value
+ *   - RepertoireCard: when tier2=true  -> placeholder absent, eval value renders
+ *   - The score bar is present in both cases (score is not eval-dependent)
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { EvalCpuPlaceholder } from '../EvalCpuPlaceholder';
-import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
+import { RepertoireCard } from '@/components/openings/stats/RepertoireCard';
+import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 
 afterEach(() => {
@@ -21,12 +22,18 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Shared mocks needed by RepertoireTable
+// Shared mocks needed by RepertoireCard
 // ---------------------------------------------------------------------------
 
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('@/hooks/usePositionBookmarks', () => ({
+  useTimeSeries: () => ({ data: undefined, isLoading: false, isError: false }),
+  useCreatePositionBookmark: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeletePositionBookmark: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/components/board/LazyMiniBoard', () => ({
@@ -85,15 +92,15 @@ function makeRow(overrides: Partial<RepertoireRowModel> = {}): RepertoireRowMode
   };
 }
 
-function renderTable() {
+function renderCard() {
   return render(
-    <RepertoireTable
-      color="white"
-      bookmarkRows={[]}
-      currentRows={[makeRow()]}
-      pastRows={[]}
-      currentCutoff={null}
-      onOpenSuggestions={() => {}}
+    <RepertoireCard
+      row={makeRow()}
+      index={0}
+      debouncedFilters={DEFAULT_FILTERS}
+      onOpenMoves={() => {}}
+      onOpenGames={() => {}}
+      onOpenBookmarkGames={() => {}}
     />,
   );
 }
@@ -131,38 +138,38 @@ describe('EvalCpuPlaceholder — standalone', () => {
 });
 
 // ---------------------------------------------------------------------------
-// RepertoireTable tier2 gate tests
+// RepertoireCard tier2 gate tests
 // ---------------------------------------------------------------------------
 
-describe('RepertoireTable: tier2 gate for the eval cell', () => {
+describe('RepertoireCard: tier2 gate for the eval bar', () => {
   it('when tier2=false, EvalCpuPlaceholder renders in place of the eval value', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: false, pendingCount: 5, totalCount: 20, isLoading: false });
-    renderTable();
+    renderCard();
     expect(screen.queryByTestId('eval-cpu-placeholder')).not.toBeNull();
-    expect(screen.queryByTestId('repertoire-row-0-eval')).toBeNull();
-    expect(screen.queryByTestId('repertoire-row-0-eval-info')).toBeNull();
+    expect(screen.queryByTestId('repertoire-card-0-eval-bar')).toBeNull();
+    expect(screen.queryByTestId('repertoire-card-0-eval-info')).toBeNull();
   });
 
   it('when tier2=true, EvalCpuPlaceholder is absent and the eval value renders', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: true, pendingCount: 0, totalCount: 20, isLoading: false });
-    renderTable();
+    renderCard();
     expect(screen.queryByTestId('eval-cpu-placeholder')).toBeNull();
-    expect(screen.getByTestId('repertoire-row-0-eval-value').textContent).toBe('+0.3');
+    expect(screen.getByTestId('repertoire-card-0-eval-bar-value').textContent).toBe('+0.3');
   });
 
-  it('the score cell is present when tier2=false (score is not eval-dependent)', async () => {
+  it('the score bar is present when tier2=false (score is not eval-dependent)', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: false, pendingCount: 5, totalCount: 20, isLoading: false });
-    renderTable();
-    expect(screen.getByTestId('repertoire-row-0-score-value').textContent).toBe('57%');
+    renderCard();
+    expect(screen.getByTestId('repertoire-card-0-score-bar-value').textContent).toBe('57%');
   });
 
-  it('the score cell is present when tier2=true', async () => {
+  it('the score bar is present when tier2=true', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: true, pendingCount: 0, totalCount: 20, isLoading: false });
-    renderTable();
-    expect(screen.getByTestId('repertoire-row-0-score-value').textContent).toBe('57%');
+    renderCard();
+    expect(screen.getByTestId('repertoire-card-0-score-bar-value').textContent).toBe('57%');
   });
 });

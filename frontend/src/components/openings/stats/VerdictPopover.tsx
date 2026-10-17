@@ -1,5 +1,5 @@
 /**
- * Info popovers for the Openings verdict cells (End Eval bar, repertoire table Score and Eval), on the shared MetricInfoPopover shell:
+ * Info popovers for the Openings verdict cells (End Eval bar, repertoire card Score and Eval), on the shared MetricInfoPopover shell:
  * what the metric is and that higher is better, the raw value against an average game of the
  * colour, the typical range around that baseline with the verdict reason, then the 99% CI,
  * p-value (with its reference) and n greyed below a separator. Plain words only: no unit name,

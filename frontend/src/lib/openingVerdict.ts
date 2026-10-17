@@ -1,6 +1,6 @@
 /**
  * Pure verdict rules for the Openings verdict bars (Moves/Games End Eval row, and the
- * repertoire table and finding cards built on the same primitives).
+ * repertoire cards and finding cards built on the same primitives).
  *
  * Direction: HIGHER is better for both score and eval, so a positive delta is drawn to the
  * RIGHT and is 'better'. (The Library GapBar is the opposite: fewer flaws is better.) That is
@@ -43,7 +43,7 @@ const BAND_COMPARE_SCALE = 10 ** BAND_COMPARE_DECIMALS;
 const EVAL_COMPACT_ZERO_BELOW = 0.05;
 const EVAL_COMPACT_DECIMALS = 1;
 const TYPOGRAPHIC_MINUS = '\u2212';
-/** Opening names carry a trailing " (B12)" ECO code that the repertoire table drops (no ECO codes). */
+/** Opening names carry a trailing " (B12)" ECO code that the repertoire cards drop (no ECO codes). */
 const TRAILING_ECO_PATTERN = / \([A-E]\d\d\)$/;
 
 /** Why a bar reads the way it does; the popover turns this into a sentence. */
@@ -104,7 +104,7 @@ export function formatScorePercent(score: number): string {
   return `${Math.round(score * PERCENT_SCALE)}%`;
 }
 
-/** Compact signed eval for the table cell: "+0.9", "−0.4", "0.0" when it rounds to zero. */
+/** Compact signed eval for the verdict value: "+0.9", "−0.4", "0.0" when it rounds to zero. */
 export function formatEvalCompact(pawns: number): string {
   if (Math.abs(pawns) < EVAL_COMPACT_ZERO_BELOW) return (0).toFixed(EVAL_COMPACT_DECIMALS);
   const sign = pawns > 0 ? '+' : TYPOGRAPHIC_MINUS;

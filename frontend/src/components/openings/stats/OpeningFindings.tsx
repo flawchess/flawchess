@@ -1,25 +1,16 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
-import {
-  FindingCard,
-  FindingSubtitle,
-  OlderGamesChip,
-} from '@/components/openings/stats/FindingCard';
+import { FindingCard } from '@/components/openings/stats/FindingCard';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import { trackFeature } from '@/lib/analytics';
-import { findingArrows, findingMoveText } from '@/lib/openingInsights';
-import { formatScorePercent } from '@/lib/openingVerdict';
-import { ARROW_NEUTRAL, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 
 /** Phones show this many cards per section before "Show more" (D-08). */
 const INITIAL_VISIBLE_PHONE = 2;
-const UNCLEAR_BOARD_SIZE = 40;
 const SKELETON_SECTION_COUNT = 2;
 
 type FindingKind = 'weakness' | 'strength';
@@ -91,43 +82,22 @@ function FindingsError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function UnclearRow({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
-  return (
-    <div className="flex items-center gap-3 py-2" data-testid={testId}>
-      <LazyMiniBoard
-        fen={finding.entry_fen}
-        flipped={finding.color === 'black'}
-        size={UNCLEAR_BOARD_SIZE}
-        arrows={findingArrows(finding)?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL }))}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold">After {findingMoveText(finding)}</span>
-          <OlderGamesChip finding={finding} testId={`${testId}-older`} />
-        </div>
-        <div className="truncate text-sm text-muted-foreground">
-          <FindingSubtitle finding={finding} />
-        </div>
-      </div>
-      <div className="text-right tabular-nums">
-        <div>{formatScorePercent(finding.score)}</div>
-        <div className="text-sm text-muted-foreground">
-          {finding.n_games.toLocaleString('en-US')} games
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Collapsed, faded, uncoloured list of the medium candidates (D-09, D-10). */
+/**
+ * Collapsed list of the medium candidates (D-09, D-10), drawn as the same finding cards as the
+ * 99% ones; their verdicts and arrows stay uncoloured because none passed the 99% gate.
+ */
 function NotClearYet({
   kind,
   findings,
   count,
+  onOpenMoves,
+  onOpenGames,
 }: {
   kind: FindingKind;
   findings: OpeningInsightFinding[];
   count: number;
+  onOpenMoves: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (count <= 0) return null;
@@ -138,7 +108,7 @@ function NotClearYet({
     setExpanded((prev) => !prev);
   };
   return (
-    <div className="space-y-1" data-testid={`${testId}-unclear`}>
+    <div className="space-y-3" data-testid={`${testId}-unclear`}>
       <button
         type="button"
         className="flex w-full items-center gap-2 text-left text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
@@ -156,13 +126,16 @@ function NotClearYet({
         />
       </button>
       {expanded && (
-        <div
-          className="charcoal-texture divide-y divide-card-edge rounded-md px-3"
-          style={{ opacity: UNRELIABLE_OPACITY }}
-          data-testid={`${testId}-unclear-list`}
-        >
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid={`${testId}-unclear-list`}>
           {findings.map((finding, i) => (
-            <UnclearRow key={i} finding={finding} testId={`${testId}-unclear-row-${i}`} />
+            <FindingCard
+              key={i}
+              finding={finding}
+              testId={`${testId}-unclear-card-${i}`}
+              onOpenMoves={onOpenMoves}
+              onOpenGames={onOpenGames}
+              neutralArrow
+            />
           ))}
         </div>
       )}
@@ -255,7 +228,13 @@ function FindingsSubsection({
           )}
         </>
       )}
-      <NotClearYet kind={meta.kind} findings={data.notClear} count={data.notClearCount} />
+      <NotClearYet
+        kind={meta.kind}
+        findings={data.notClear}
+        count={data.notClearCount}
+        onOpenMoves={onOpenMoves}
+        onOpenGames={onOpenGames}
+      />
     </div>
   );
 }
@@ -268,7 +247,7 @@ interface OpeningFindingsProps {
 }
 
 /**
- * Findings for the selected colour above the repertoire table: "Moves that cost you" and
+ * Findings for the selected colour above the repertoire cards: "Moves that cost you" and
  * "Moves that work", each at most 5 cards from the 99%-gated backend lists (D-00), with a
  * phone "Show more" (D-08), a collapsed "Not clear yet (n)" list (D-09, D-10) and the
  * empty-state copy (D-11).

@@ -67,7 +67,7 @@ export interface OpeningWDL {
   eval_confidence: 'low' | 'medium' | 'high';
   // MAX(games.played_at) across the games visiting this opening's full_hash.
   // ISO 8601 string; null when contributing games all have NULL played_at.
-  // Drives the "last played" line in the repertoire table.
+  // Drives the "last played" line in the repertoire cards.
   last_played_at?: string | null;
   /** True when last_played_at is on or after the colour's current-repertoire cutoff (D-04). */
   is_current: boolean;

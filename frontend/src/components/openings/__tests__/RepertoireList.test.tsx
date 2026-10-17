@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 /**
- * RepertoireTable: pinned bookmarks, the stale-bookmark chip, the collapsed "Played before"
- * group (and its single Umami event), the 20-game fade, and the no-ECO opening names.
+ * RepertoireList / RepertoireCard: pinned bookmarks, the stale-bookmark chip, the collapsed
+ * "Played before" group (and its single Umami event), the 20-game fade, the card links and the
+ * lazily fetched score-over-time chart.
  * useRepertoireRows is covered for the colour-less bookmark and the ECO strip.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
+import { RepertoireList } from '@/components/openings/stats/RepertoireList';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import {
   MOST_PLAYED_ROW_SERIES_ID,
@@ -119,7 +120,7 @@ function makeRow(overrides: Partial<RepertoireRowModel> & { key: string }): Repe
   };
 }
 
-function renderTable(props: {
+function renderList(props: {
   bookmarkRows?: RepertoireRowModel[];
   currentRows?: RepertoireRowModel[];
   pastRows?: RepertoireRowModel[];
@@ -129,7 +130,7 @@ function renderTable(props: {
   onOpenBookmarkGames?: (bookmark: PositionBookmarkResponse) => void;
 }) {
   return render(
-    <RepertoireTable
+    <RepertoireList
       color="white"
       bookmarkRows={props.bookmarkRows ?? []}
       currentRows={props.currentRows ?? []}
@@ -148,18 +149,18 @@ function panelOpenCalls(): unknown[][] {
   return trackFeature.mock.calls.filter(([name]) => name === 'panel-open');
 }
 
-describe('RepertoireTable bookmarks', () => {
-  it('pins a bookmark row above the Most played group', () => {
-    renderTable({
+describe('RepertoireList bookmarks', () => {
+  it('pins a bookmark card above the Most played group', () => {
+    renderList({
       bookmarkRows: [makeRow({ key: 'bookmark-1', kind: 'bookmark', name: 'My Najdorf' })],
       currentRows: [makeRow({ key: 'mpo-1' })],
     });
-    const rows = screen.getAllByTestId(/^repertoire-row-\d+$/);
+    const rows = screen.getAllByTestId(/^repertoire-card-\d+$/);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.textContent).toContain('My Najdorf');
     const bookmarkGroup = screen.getByTestId('repertoire-group-bookmarks');
     const mostPlayedGroup = screen.getByTestId('repertoire-group-most-played');
-    // Document order: Bookmarks group, bookmark row, Most played group, current row.
+    // Document order: Bookmarks group (holding the bookmark card), then the Most played group.
     expect(
       bookmarkGroup.compareDocumentPosition(rows[0] as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -169,18 +170,18 @@ describe('RepertoireTable bookmarks', () => {
   });
 
   it('shows the "not played recently" chip only on a stale bookmark', () => {
-    renderTable({
+    renderList({
       bookmarkRows: [
         makeRow({ key: 'bookmark-1', kind: 'bookmark', isCurrent: false }),
         makeRow({ key: 'bookmark-2', kind: 'bookmark', isCurrent: true }),
       ],
     });
-    expect(screen.getByTestId('repertoire-row-0-stale-chip').textContent).toBe('not played recently');
-    expect(screen.queryByTestId('repertoire-row-1-stale-chip')).toBeNull();
+    expect(screen.getByTestId('repertoire-card-0-stale-chip').textContent).toBe('not played recently');
+    expect(screen.queryByTestId('repertoire-card-1-stale-chip')).toBeNull();
   });
 });
 
-describe('RepertoireTable played before', () => {
+describe('RepertoireList played before', () => {
   const past = [
     makeRow({ key: 'mpo-p1', kind: 'past', name: 'Queens Gambit' }),
     makeRow({ key: 'mpo-p2', kind: 'past', name: 'Dutch Defense' }),
@@ -188,7 +189,7 @@ describe('RepertoireTable played before', () => {
   ];
 
   it('renders collapsed with the count, hint and no past rows', () => {
-    renderTable({
+    renderList({
       currentRows: [makeRow({ key: 'mpo-1' })],
       pastRows: past,
       currentCutoff: '2026-02-14T12:00:00Z',
@@ -197,92 +198,92 @@ describe('RepertoireTable played before', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toContain('Played before (3)');
     expect(toggle.textContent).toContain('not played as White since 14 Feb 2026');
-    expect(screen.getAllByTestId(/^repertoire-row-\d+$/)).toHaveLength(1);
+    expect(screen.getAllByTestId(/^repertoire-card-\d+$/)).toHaveLength(1);
   });
 
   it('expands on click, tracks the expand once, and does not track the collapse', () => {
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })], pastRows: past });
+    renderList({ currentRows: [makeRow({ key: 'mpo-1' })], pastRows: past });
     const toggle = screen.getByTestId('repertoire-played-before-toggle');
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getAllByTestId(/^repertoire-row-\d+$/)).toHaveLength(4);
+    expect(screen.getAllByTestId(/^repertoire-card-\d+$/)).toHaveLength(4);
     expect(panelOpenCalls()).toEqual([['panel-open', { target: 'opening-stats-more' }]]);
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getAllByTestId(/^repertoire-row-\d+$/)).toHaveLength(1);
+    expect(screen.getAllByTestId(/^repertoire-card-\d+$/)).toHaveLength(1);
     expect(panelOpenCalls()).toHaveLength(1);
   });
 
   it('omits the toggle when nothing was played before', () => {
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    renderList({ currentRows: [makeRow({ key: 'mpo-1' })] });
     expect(screen.queryByTestId('repertoire-played-before-toggle')).toBeNull();
   });
 });
 
-describe('RepertoireTable low-sample rows', () => {
-  it('fades a 15-game row and keeps its dots neutral despite high confidence', () => {
-    renderTable({
+describe('RepertoireList low-sample rows', () => {
+  it('fades a 15-game card and keeps its dots neutral despite high confidence', () => {
+    renderList({
       currentRows: [
         makeRow({ key: 'mpo-small', games: 15, evalN: 15, score: 0.9, avgEvalPawns: 2.0 }),
         makeRow({ key: 'mpo-big', games: 100, score: 0.9, avgEvalPawns: 2.0 }),
       ],
     });
-    const small = screen.getByTestId('repertoire-row-0');
-    const big = screen.getByTestId('repertoire-row-1');
+    const small = screen.getByTestId('repertoire-card-0');
+    const big = screen.getByTestId('repertoire-card-1');
     expect(small.style.opacity).toBe(String(UNRELIABLE_OPACITY));
     expect(big.style.opacity).toBe('');
-    expect(screen.getByTestId('repertoire-row-0-score').getAttribute('data-verdict')).toBe('typical');
-    expect(screen.getByTestId('repertoire-row-0-eval').getAttribute('data-verdict')).toBe('typical');
-    expect(screen.getByTestId('repertoire-row-1-score').getAttribute('data-verdict')).toBe('better');
-    expect(screen.getByTestId('repertoire-row-1-eval').getAttribute('data-verdict')).toBe('better');
+    expect(screen.getByTestId('repertoire-card-0-score-bar').getAttribute('data-verdict')).toBe('typical');
+    expect(screen.getByTestId('repertoire-card-0-eval-bar').getAttribute('data-verdict')).toBe('typical');
+    expect(screen.getByTestId('repertoire-card-1-score-bar').getAttribute('data-verdict')).toBe('better');
+    expect(screen.getByTestId('repertoire-card-1-eval-bar').getAttribute('data-verdict')).toBe('better');
   });
 
   it('applies the 20-game floor to the eval sample, not the game count (WR-02)', () => {
     // 100 games but only 11 usable evals: the score may colour, the eval dot must stay neutral.
-    renderTable({
+    renderList({
       currentRows: [makeRow({ key: 'mpo-thin-eval', games: 100, evalN: 11, score: 0.9, avgEvalPawns: 2.0 })],
     });
-    expect(screen.getByTestId('repertoire-row-0-score').getAttribute('data-verdict')).toBe('better');
-    expect(screen.getByTestId('repertoire-row-0-eval').getAttribute('data-verdict')).toBe('typical');
+    expect(screen.getByTestId('repertoire-card-0-score-bar').getAttribute('data-verdict')).toBe('better');
+    expect(screen.getByTestId('repertoire-card-0-eval-bar').getAttribute('data-verdict')).toBe('typical');
   });
 
   it('centres the eval verdict on the colour baseline, not on zero', () => {
     // +0.25 is exactly an average White game: typical, however confident the test is.
-    renderTable({ currentRows: [makeRow({ key: 'mpo-avg', avgEvalPawns: 0.25 })] });
-    expect(screen.getByTestId('repertoire-row-0-eval').getAttribute('data-verdict')).toBe('typical');
+    renderList({ currentRows: [makeRow({ key: 'mpo-avg', avgEvalPawns: 0.25 })] });
+    expect(screen.getByTestId('repertoire-card-0-eval-bar').getAttribute('data-verdict')).toBe('typical');
   });
 });
 
-describe('RepertoireTable cells', () => {
+describe('RepertoireList card values', () => {
   it('shows compact score and eval values and an em dash without eval', () => {
-    renderTable({
+    renderList({
       currentRows: [
         makeRow({ key: 'mpo-1', score: 0.56, avgEvalPawns: 0.91 }),
         makeRow({ key: 'mpo-2', avgEvalPawns: null, evalN: 0 }),
       ],
     });
-    expect(screen.getByTestId('repertoire-row-0-score-value').textContent).toBe('56%');
-    expect(screen.getByTestId('repertoire-row-0-eval-value').textContent).toBe('+0.9');
-    expect(screen.queryByTestId('repertoire-row-1-eval')).toBeNull();
-    expect(screen.getByTestId('repertoire-row-1-eval-cell').textContent).toContain('—');
+    expect(screen.getByTestId('repertoire-card-0-score-bar-value').textContent).toBe('56%');
+    expect(screen.getByTestId('repertoire-card-0-eval-bar-value').textContent).toBe('+0.9');
+    expect(screen.queryByTestId('repertoire-card-1-eval-bar')).toBeNull();
+    expect(screen.getByTestId('repertoire-card-1-eval-none').textContent).toContain('—');
   });
 
-  it('keeps distinct testids for rows that share a name', () => {
-    renderTable({
+  it('keeps distinct testids for cards that share a name', () => {
+    renderList({
       currentRows: [
         makeRow({ key: 'mpo-1', name: 'Caro-Kann Defense: Advance Variation' }),
         makeRow({ key: 'mpo-2', name: 'Caro-Kann Defense: Advance Variation' }),
       ],
     });
-    expect(screen.getByTestId('repertoire-row-0')).toBeTruthy();
-    expect(screen.getByTestId('repertoire-row-1')).toBeTruthy();
-    expect(screen.getByTestId('repertoire-row-0-score-info')).toBeTruthy();
-    expect(screen.getByTestId('repertoire-row-1-score-info')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-0')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-1')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-0-score-info')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-1-score-info')).toBeTruthy();
   });
 });
 
-describe('RepertoireTable expanded row', () => {
+describe('RepertoireCard links and chart', () => {
   const series = {
     bookmark_id: MOST_PLAYED_ROW_SERIES_ID,
     data: [{ date: '2026-09-28', score: 0.6, game_count: 30, window_size: 50, per_week_games: 4 }],
@@ -312,92 +313,90 @@ describe('RepertoireTable expanded row', () => {
     };
   }
 
-  it('shows the 200px board, both verdict bars and the chart block, tracking the expand once', () => {
+  it('shows the 128px board and both verdict bars, and opens the chart tracking the expand once', () => {
     useTimeSeriesMock.mockReturnValue({ data: { series: [series] }, isLoading: false, isError: false });
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
-    expect(screen.queryByTestId('repertoire-row-0-expanded')).toBeNull();
+    renderList({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    const card = screen.getByTestId('repertoire-card-0');
+    expect(card.querySelector('[data-testid="lazy-mini-board"]')?.getAttribute('data-size')).toBe('128');
+    expect(screen.getByTestId('repertoire-card-0-score-bar')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-0-eval-bar')).toBeTruthy();
+    expect(screen.queryByTestId('repertoire-card-0-chart')).toBeNull();
 
-    const toggle = screen.getByTestId('repertoire-row-0-toggle');
+    const toggle = screen.getByTestId('repertoire-card-0-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
 
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    const expanded = screen.getByTestId('repertoire-row-0-expanded');
-    expect(expanded.querySelector('[data-testid="lazy-mini-board"]')?.getAttribute('data-size')).toBe('200');
-    expect(screen.getByTestId('repertoire-row-0-score-bar')).toBeTruthy();
-    expect(screen.getByTestId('repertoire-row-0-eval-bar')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-0-chart')).toBeTruthy();
     expect(screen.getByTestId('score-chart-stub').getAttribute('data-volume')).toBe('true');
     expect(panelOpenCalls()).toEqual([['panel-open', { target: 'opening-row-expand' }]]);
 
     fireEvent.click(toggle);
-    expect(screen.queryByTestId('repertoire-row-0-expanded')).toBeNull();
+    expect(screen.queryByTestId('repertoire-card-0-chart')).toBeNull();
     expect(panelOpenCalls()).toHaveLength(1);
   });
 
-  it('toggles from the opening name as well', () => {
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
-    fireEvent.click(screen.getByTestId('repertoire-row-0-name-toggle'));
-    expect(screen.getByTestId('repertoire-row-0-expanded')).toBeTruthy();
+  it('shows no move line, only the opening name', () => {
+    renderList({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    expect(screen.getByTestId('repertoire-card-0-name').textContent).toBe('Sicilian Defense');
+    expect(screen.getByTestId('repertoire-card-0').textContent).not.toContain('1. e4 c5');
   });
 
-  it('fetches a most-played row series only after it is expanded', () => {
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
+  it('fetches a most-played row series only after the chart is opened', () => {
+    renderList({ currentRows: [makeRow({ key: 'mpo-1' })] });
     expect(useTimeSeriesMock.mock.calls.every(([request]) => request === null)).toBe(true);
-    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
+    fireEvent.click(screen.getByTestId('repertoire-card-0-toggle'));
     expect(useTimeSeriesMock.mock.calls.some(([request]) => request !== null)).toBe(true);
   });
 
   it('shows a chart error instead of an empty chart when the series request fails', () => {
     useTimeSeriesMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1' })] });
-    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
-    expect(screen.getByTestId('repertoire-row-0-chart-error').textContent).toContain(
+    renderList({ currentRows: [makeRow({ key: 'mpo-1' })] });
+    fireEvent.click(screen.getByTestId('repertoire-card-0-toggle'));
+    expect(screen.getByTestId('repertoire-card-0-chart-error').textContent).toContain(
       'Failed to load the score chart',
     );
     expect(screen.queryByTestId('score-chart-stub')).toBeNull();
   });
 
-  it('opens Moves and, for a most-played row, Games with the row line and colour', () => {
+  it('opens Moves and, for a most-played card, Games with the line and colour', () => {
     const onOpenMoves = vi.fn();
     const onOpenGames = vi.fn();
-    renderTable({ currentRows: [makeRow({ key: 'mpo-1', color: 'black' })], onOpenMoves, onOpenGames });
-    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
-    fireEvent.click(screen.getByTestId('repertoire-row-0-btn-moves'));
-    fireEvent.click(screen.getByTestId('repertoire-row-0-btn-games'));
+    renderList({ currentRows: [makeRow({ key: 'mpo-1', color: 'black' })], onOpenMoves, onOpenGames });
+    fireEvent.click(screen.getByTestId('repertoire-card-0-btn-moves'));
+    fireEvent.click(screen.getByTestId('repertoire-card-0-btn-games'));
     expect(onOpenMoves).toHaveBeenCalledWith('1. e4 c5', 'black');
     expect(onOpenGames).toHaveBeenCalledWith('1. e4 c5', 'black');
   });
 
-  it('shows Remove bookmark on a bookmark row, deletes it and opens its Games via the bookmark', () => {
+  it('shows Remove bookmark on a bookmark card, deletes it and opens its Games via the bookmark', () => {
     const bookmark = bookmarkOf(7);
     const onOpenBookmarkGames = vi.fn();
     const onOpenGames = vi.fn();
-    renderTable({
+    renderList({
       bookmarkRows: [makeRow({ key: 'bookmark-7', kind: 'bookmark', bookmark, series })],
       onOpenBookmarkGames,
       onOpenGames,
     });
-    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
-    const link = screen.getByTestId('repertoire-row-0-btn-bookmark');
+    const link = screen.getByTestId('repertoire-card-0-btn-bookmark');
     expect(link.textContent).toContain('Remove bookmark');
 
     fireEvent.click(link);
     expect(deleteMutate).toHaveBeenCalledWith(7);
     expect(createMutate).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByTestId('repertoire-row-0-btn-games'));
+    fireEvent.click(screen.getByTestId('repertoire-card-0-btn-games'));
     expect(onOpenBookmarkGames).toHaveBeenCalledWith(bookmark);
     expect(onOpenGames).not.toHaveBeenCalled();
     // A bookmark row reuses its loaded series: no per-row request.
     expect(useTimeSeriesMock.mock.calls.every(([request]) => request === null)).toBe(true);
   });
 
-  it('creates a bookmark from a most-played row without the ECO code and with both sides', () => {
-    renderTable({
+  it('creates a bookmark from a most-played card without the ECO code and with both sides', () => {
+    renderList({
       currentRows: [makeRow({ key: 'mpo-1', name: 'Sicilian Defense', fullHash: '123', color: 'black' })],
     });
-    fireEvent.click(screen.getByTestId('repertoire-row-0-toggle'));
-    const link = screen.getByTestId('repertoire-row-0-btn-bookmark');
+    const link = screen.getByTestId('repertoire-card-0-btn-bookmark');
     expect(link.textContent).toContain('Bookmark');
     expect(link.textContent).not.toContain('Remove');
 

@@ -3,7 +3,7 @@ import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/
 import { cn } from '@/lib/utils';
 
 /**
- * Inline placeholder shown in the repertoire table's eval cell (and OpeningFindingCard) when
+ * Inline placeholder shown in the repertoire card's eval bar (and FindingCard) when
  * Tier 2 is not yet reached (i.e. Stockfish analysis is still pending).
  *
  * A thin pulsating-Cpu amber bar (h-5, matching the cell's content height) replaces the eval

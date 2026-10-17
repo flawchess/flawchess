@@ -1,9 +1,9 @@
-import { BookMarked, Sparkles } from 'lucide-react';
+import { Bookmark, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
-import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
+import { RepertoireList } from '@/components/openings/stats/RepertoireList';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useRepertoireRows } from '@/pages/openings/useRepertoireRows';
 import type { Color } from '@/types/api';
@@ -63,7 +63,7 @@ export function StatsTab({
   const currentCutoff =
     (color === 'white' ? mostPlayedData?.current_cutoff_white : mostPlayedData?.current_cutoff_black) ??
     null;
-  const showTable = !mostPlayedError && (mostPlayedData !== undefined || bookmarkRows.length > 0);
+  const showRepertoire = !mostPlayedError && (mostPlayedData !== undefined || bookmarkRows.length > 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -83,7 +83,7 @@ export function StatsTab({
         <div className="charcoal-texture rounded-md p-4">
           <h2 className="text-lg font-medium mb-3">
             <span className="inline-flex items-center gap-1">
-              <BookMarked className="h-5 w-5" />
+              <Bookmark className="h-5 w-5" />
               Bookmarked Openings
             </span>
           </h2>
@@ -123,7 +123,7 @@ export function StatsTab({
         </div>
       )}
 
-      {/* Findings of the selected colour (99%-gated cards, Not clear yet) above the table */}
+      {/* Findings of the selected colour (99%-gated cards, Not clear yet) above the repertoire */}
       <OpeningFindings
         color={color}
         debouncedFilters={debouncedFilters}
@@ -131,9 +131,9 @@ export function StatsTab({
         onOpenGames={onOpenFindingGames}
       />
 
-      {/* 3. Repertoire table of the selected colour: bookmarks, most played, played before */}
-      {showTable && (
-        <RepertoireTable
+      {/* Repertoire cards of the selected colour: bookmarks, most played, played before */}
+      {showRepertoire && (
+        <RepertoireList
           color={color}
           bookmarkRows={bookmarkRows}
           currentRows={currentRows}
