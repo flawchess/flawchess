@@ -44,19 +44,21 @@ Filled by the planner per task (`<automated>` + `<fails_when>`). Decision → te
 | Decision | Behavior | Test Type | Automated Command | File Exists | Status |
 |----------|----------|-----------|-------------------|-------------|--------|
 | D-00/D-13 | finalizer centres on ±25 cp; raw avg eval unchanged | unit | `uv run pytest tests/services/test_opening_eval.py -x` | ❌ W0 | ⬜ pending |
+| D-16 | toggle retired, stale keys swept once (plan 242-05) | unit/component | `npm --prefix frontend test -- src/lib/__tests__/retiredLocalStorage.test.ts src/components/position-bookmarks` | ❌ W0 (retiredLocalStorage.test.ts) | ⬜ pending |
+| D-00 switch | colour switch tracks only changing clicks (plan 242-05) | component | `npm --prefix frontend test -- src/components/openings/__tests__/OpeningColorSwitch.test.tsx` | ❌ W0 | ⬜ pending |
 | D-13 | all 4 Openings call sites centred | integration | `uv run pytest tests/services/test_stats_service_phase_entry.py tests/test_openings_service.py tests/services/test_opening_insights_service.py -x` | ✅ extend | ⬜ pending |
 | D-13 guard | endgame eval unchanged | regression | `uv run pytest tests/test_endgame_service.py -x` | ✅ | ⬜ pending |
 | D-01..D-03 | current/past cutoff (200 games OR 60 d, filters, now_utc) | unit/integration | `uv run pytest tests/test_repertoire_recency.py -x` | ❌ W0 | ⬜ pending |
 | D-05/D-06 | fetch → dedupe → bookmark twin drop → split → cap 10/10 | integration | `uv run pytest tests/test_stats_service.py -k most_played -x` | ✅ extend | ⬜ pending |
 | D-09..D-11 | findings high ≤5, medium ≤10, counts, low dropped | unit | `uv run pytest tests/services/test_opening_insights_service.py -x` | ✅ extend | ⬜ pending |
 | D-00 series / D-18 | weekly points + per-week games; bookmark score p + 99% CI | integration | `uv run pytest tests/test_openings_time_series.py tests/test_aggregation_sanity.py -x` | ✅ update | ⬜ pending |
-| D-03 | routers inject `dev_now_utc` | router | `uv run pytest tests/test_stats_router.py tests/routers/test_insights_openings.py -x` | ✅ extend | ⬜ pending |
+| D-03 | routers inject `dev_now_utc` (plans 242-01/02/03) | router | `uv run pytest tests/test_stats_router.py tests/routers/test_insights_openings.py tests/routers/test_openings_time_series_router.py -x` | ✅ extend + ❌ W0 (time-series router test) | ⬜ pending |
 | D-15 | `/openings/insights` redirects to `/openings/stats` | component | `cd frontend && npx vitest run src/pages/__tests__/Openings.render.test.tsx` | ✅ update | ⬜ pending |
 | D-00 verdicts | opening verdict rules (n<20 neutral, band, 99%) | unit | `cd frontend && npx vitest run src/lib/__tests__/openingVerdict.test.ts` | ❌ W0 | ⬜ pending |
 | D-00 table / D-16 | repertoire table, "Played before (n)", chips, fades; toggle gone | component | `cd frontend && npx vitest run src/components/openings/__tests__/RepertoireTable.test.tsx` | ❌ W0 | ⬜ pending |
 | D-08..D-11 | findings Show more, Not clear yet, empty state | component | `cd frontend && npx vitest run src/components/openings/__tests__/OpeningFindings.test.tsx` | ❌ W0 | ⬜ pending |
 | D-14 | single-series ScoreChart with volume bars | component | `cd frontend && npx vitest run src/components/charts/__tests__/ScoreChart.test.tsx` | ✅ rewrite | ⬜ pending |
-| D-17 | Moves/Games verdict bar for opening-end; endgame-entry unchanged | component | `cd frontend && npx vitest run src/components/insights/__tests__/EvalConfidenceTooltip.test.tsx src/pages/__tests__/Endgames.readinessGate.test.tsx` | ✅ extend | ⬜ pending |
+| D-17 | Moves/Games verdict bar for opening-end; endgame-entry unchanged (plan 242-04) | component | `npm --prefix frontend test -- src/components/charts/__tests__/PositionResultsPanel.test.tsx src/pages/__tests__/Endgames.readinessGate.test.tsx` | ❌ W0 (new PositionResultsPanel.test.tsx) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

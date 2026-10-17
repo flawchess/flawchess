@@ -165,11 +165,18 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
+**Plans:** 8 plans
 **Status**: Not planned yet
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 242 or /gsd-plan-phase 242)
+- [ ] 242-01-PLAN.md — Backend /stats: current/past cutoff (200 games or 60 days, filters, dev clock), most-played fetch 60 → dedupe → bookmark-twin drop → 10 current + 10 past, baseline-centred eval finalizer + 99% CIs, shared score verdict fields (wave 1)
+- [ ] 242-02-PLAN.md — Backend /insights/openings: 99% cards (≤5, current first), "Not clear yet" medium list (≤10 + full count), is_current, centred eval on cards (wave 2)
+- [ ] 242-03-PLAN.md — Backend /openings: Moves/Games centred eval + 99% CIs, weekly time series with per-week games, bookmark score p + 99% CI and is_current (wave 2)
+- [ ] 242-04-PLAN.md — Frontend verdict primitives (openingVerdict, VerdictBar, EvalVerdictPopover) shipped on the Moves/Games eval row (D-17) (wave 3)
+- [ ] 242-05-PLAN.md — Frontend Stats shell: sticky White | Black switch (desktop + phone, Umami) and retirement of the bookmark include toggle + its localStorage (D-16) (wave 3)
+- [ ] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
+- [ ] 242-07-PLAN.md — Frontend findings merged into Stats (cards, phone Show more, Not clear yet, empty state) and Insights tab/route removed with redirect (D-15) (wave 5)
+- [ ] 242-08-PLAN.md — Frontend expanded row (board, links, Score/Eval bars, bookmark toggle) + single-series ScoreChart with weekly volume (D-14) + CHANGELOG (wave 6)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
