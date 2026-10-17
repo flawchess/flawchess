@@ -1,6 +1,6 @@
 ---
 id: SEED-202
-status: dormant
+status: code-fixed; data repair for items 1-2 pending owner decision
 planted: 2026-10-17
 planted_during: owner review of the Phase 241 audit's suspected bugs (INVENTORY §7.2), after the v2.25–v2.27 close
 trigger_when: next session; start with item 1 (tier-4 lichess flag). Owner is not yet sure how big a deal items 1 and 2 are, so measure impact before sizing the fix
@@ -8,6 +8,27 @@ scope: small; a series of /gsd-quick tasks (items 3-8 fit one batch, e.g. /gsd-q
 ---
 
 # SEED-202: Phase 241 suspected bugs (verified 2026-10-17)
+
+## Resolution (2026-10-17)
+
+All eight code fixes landed on `main` (three commits after de3a44df7). Open: the data repairs for items 1 and 2.
+
+- **Item 1, measured on prod.** Prod runs the drain (`docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
+  Footprint check: compare `game_positions.eval_cp` at ply n-1 with the n-th `[%eval]` in the PGN (lichess
+  storage is post-move, so the n-th eval maps to row n-1). Non-guest lichess-eval games with blobs done: 97,174;
+  **about 4,000 match less than 50%** (Jun 85, Jul 2,167, Aug 459, Sep 303, Oct 988 by `full_evals_completed_at`
+  month). The 2026-10-09/10 sample: 645 overwritten (near-equal engine values, aligned), 18 shifted one ply
+  (the separate known convention issue), 4,769 ok. The damaged games still carry `lichess_evals_at`, so the app
+  treats them as lichess-eval games while their evals and flaws come from our engine. Opening-cache donations
+  from them are real engine evals of real positions, so they are probably harmless (not checked further).
+  Repair candidate: rewrite eval_cp/eval_mate from the PGN %evals for games under the threshold, then
+  reclassify. 2,458 non-guest lichess-eval games are still tier-4-pending; with the fix they now take the
+  preserve-evals path.
+- **Item 2.** Normalization now writes `*_imported`. Existing 15,289 rows still need the repair described below
+  (owner sign-off: it changes what Library shows for unanalyzed games).
+- **Item 7.** Removing the dead branch also makes a start-position bookmark (empty `moves`) load the start position
+  from the Stats chart instead of leaving the board where it was.
+- **Item 8.** Fixed with `(pointer: coarse)` as proposed. Still not verified on touchscreen hardware.
 
 Source: `.planning/milestones/v2.27-phases/241-codebase-cleanup/241-INVENTORY.md` §7.2 (13 entries, 11 distinct).
 Already fixed in v2.27: §7.2 #3 (NULL `sample_pair`, 07dd60fb4), #6 (Tactic Depth highlight), #8 (auth-route

@@ -8,6 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- Background analysis no longer replaces a lichess-analyzed game's lichess evaluations with FlawChess engine evaluations.
+- Newly imported games no longer show the platform's accuracy and ACPL as FlawChess's own before FlawChess has analyzed them; the platform values are kept separately.
+- Move explorer: on touchscreen laptops a mouse click on a move now plays it again instead of only highlighting the row.
+- Bots: the resume prompt for a saved game now shows full moves instead of half-moves.
+
 ## [v2.27] Codebase Cleanup — 2026-10-17
 
 ### Changed
