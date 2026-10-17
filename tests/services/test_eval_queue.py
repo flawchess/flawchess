@@ -22,14 +22,48 @@ import pytest_asyncio
 from sqlalchemy import delete, select, update
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 # ─── Module-level test constants ──────────────────────────────────────────────
 
 # Unique user IDs for this module to avoid FK conflicts with other test files.
-# Range 99201–99299 reserved for test_eval_queue.py.
-_TEST_USER_A_ID: int = 99201
-_TEST_USER_B_ID: int = 99202
-_TEST_GUEST_USER_ID: int = 99203
+# Range 99600–99699 reserved for test_eval_queue.py. It used 992xx, which other
+# modules also use (test_full_eval_drain.py creates 99203 and 99211 as
+# NON-guests); the get-or-create fixtures below then kept that user, so the
+# "guest" was not a guest and test_tier3_guest_excluded_from_lottery flaked
+# whenever the colliding module ran first in the same xdist worker.
+_TEST_USER_A_ID: int = 99601
+_TEST_USER_B_ID: int = 99602
+_TEST_GUEST_USER_ID: int = 99603
+
+
+async def _ensure_users(session_maker: async_sessionmaker[AsyncSession], users: list[User]) -> None:
+    """Get-or-create test users by id, failing loudly on an id collision.
+
+    The tests key on is_guest, so a same-id user created by another module
+    with a different is_guest silently changes what they test. Raise instead.
+    """
+    from app.models.user import User
+
+    async with session_maker() as session:
+        for u in users:
+            existing = (
+                (await session.execute(select(User).where(User.id == u.id)))
+                .unique()
+                .scalar_one_or_none()
+            )
+            if existing is None:
+                session.add(u)
+            elif existing.is_guest != u.is_guest:
+                raise RuntimeError(
+                    "Test user id collision: another module created this id with a "
+                    "different is_guest; move this module's id range"
+                )
+        await session.commit()
+
 
 # Minimal PGN for games (no real analysis needed — queue tests are DB-level only).
 _SIMPLE_PGN: str = "1. e4 e5 *"
@@ -89,12 +123,7 @@ async def queue_test_users(
         ),
     ]
 
-    async with queue_session_maker() as session:
-        for u in users:
-            existing = await session.execute(select(User).where(User.id == u.id))
-            if existing.unique().scalar_one_or_none() is None:
-                session.add(u)
-        await session.commit()
+    await _ensure_users(queue_session_maker, users)
 
     return {
         "user_a": _TEST_USER_A_ID,
@@ -593,11 +622,11 @@ class TestGuestExclusion:
 
 # ─── Tier-3 ordering test fixtures ───────────────────────────────────────────
 
-# Unique user IDs for queue-ordering tests — range 99210–99219 reserved.
-_TEST_USER_TIER2_ID: int = 99210
-_TEST_GUEST_TIER2_ID: int = 99211
-_TEST_USER_TIER3_A_ID: int = 99212
-_TEST_USER_TIER3_B_ID: int = 99213
+# Unique user IDs for queue-ordering tests — range 99610–99619 reserved.
+_TEST_USER_TIER2_ID: int = 99610
+_TEST_GUEST_TIER2_ID: int = 99611
+_TEST_USER_TIER3_A_ID: int = 99612
+_TEST_USER_TIER3_B_ID: int = 99613
 
 
 @pytest_asyncio.fixture(scope="session", autouse=False)
@@ -634,12 +663,7 @@ async def tier2_test_users(
         ),
     ]
 
-    async with queue_session_maker() as session:
-        for u in users:
-            existing = await session.execute(select(User).where(User.id == u.id))
-            if existing.unique().scalar_one_or_none() is None:
-                session.add(u)
-        await session.commit()
+    await _ensure_users(queue_session_maker, users)
 
     return {
         "user": _TEST_USER_TIER2_ID,
@@ -1678,9 +1702,9 @@ class TestTier3GamePickSpread:
 
 # ─── Tier-4 blob-backfill lottery ─────────────────────────────────────────────
 
-# Unique user IDs for tier-4 blob tests — range 99220–99229 reserved.
-_TEST_USER_TIER4_ID: int = 99220
-_TEST_GUEST_TIER4_ID: int = 99221
+# Unique user IDs for tier-4 blob tests — range 99620–99629 reserved.
+_TEST_USER_TIER4_ID: int = 99620
+_TEST_GUEST_TIER4_ID: int = 99621
 
 
 @pytest_asyncio.fixture(scope="session", autouse=False)
@@ -1705,12 +1729,7 @@ async def tier4_test_users(
         ),
     ]
 
-    async with queue_session_maker() as session:
-        for u in users:
-            existing = await session.execute(select(User).where(User.id == u.id))
-            if existing.unique().scalar_one_or_none() is None:
-                session.add(u)
-        await session.commit()
+    await _ensure_users(queue_session_maker, users)
 
     return {
         "user": _TEST_USER_TIER4_ID,
