@@ -1,4 +1,4 @@
-"""Flaw-detection + classification service for Phase 105 (SEED-036).
+"""Flaw-detection + classification service.
 
 Derives per-ply flaw severity and attribution tags from stored Stockfish evals.
 No I/O, no DB — the module is a pure Python transform over already-loaded ORM objects.
@@ -6,12 +6,12 @@ See tests/services/test_flaws_service.py for unit tests.
 
 Two output types:
   list[FlawRecord]   analyzed game — one entry per user mistake or blunder
-  GameNotAnalyzed    chess.com / unanalyzed lichess game (< 90% eval coverage)
+  GameNotAnalyzed    game without engine evals yet (< 90% eval coverage)
 
-Note: inaccuracies are detected internally (for counts and the oracle test) but are
+Note: inaccuracies are detected internally (for flaw counts) but are
 NOT emitted as FlawRecord items. Only mistakes and blunders appear in the returned
 list. An inaccuracy-only analyzed game returns an empty list — distinct from
-GameNotAnalyzed. See the 2026-06-05 amendment in 105-01-PLAN.md.
+GameNotAnalyzed.
 """
 
 from __future__ import annotations
@@ -43,12 +43,12 @@ from app.services.tactic_detector import detect_tactic_motif
 
 # Lichess-aligned severity thresholds on the [0,1] ES scale.
 # Lichess uses [−1, +1] winningChances with cutoffs 0.10/0.20/0.30; our scale
-# is (winningChances + 1) / 2, so thresholds halve. See CONTEXT.md §Severity.
+# is (winningChances + 1) / 2, so thresholds halve.
 INACCURACY_DROP: float = 0.05
 MISTAKE_DROP: float = 0.10
 BLUNDER_DROP: float = 0.15
 
-# Mate Option B: map mate eval to ±1000 cp before the sigmoid (CONTEXT.md §Mate).
+# Mate Option B: map mate eval to ±1000 cp before the sigmoid.
 # Do NOT use eval_mate_to_expected_score (hard 1.0/0.0) for drop math — that
 # function is for endgame span averaging and would mis-size mate transitions.
 # Since the mate-ladder addition (2026-06-11) Option B only supplies the
@@ -90,15 +90,15 @@ WINNING_LINE_ES: float = 0.6762  # reversed entry (>= 68%: clearly winning, ≈ 
 LOSING_LINE_ES: float = 0.3238  # reversed exit (<= 32%: clearly losing, ≈ −2.0)
 SQUANDERED_EXIT_ES: float = 0.5910  # squandered exit (<= 59%: back to a slight edge, ≈ +1.0)
 
-# Tempo thresholds — relative to base_time_seconds (RESEARCH §Pattern 6).
-# [ASSUMED] initial values; tunable once real data is available.
+# Tempo thresholds — relative to base_time_seconds.
+# Initial values; tunable once real data is available.
 TIME_PRESSURE_CLOCK_FRACTION: float = 0.05  # < 5% of base = low clock
 HASTY_MOVE_FRACTION: float = 0.01  # < 1% of base = fast move on comfortable clock
 TIME_PRESSURE_CLOCK_ABS_SECONDS: float = 30.0  # fallback when base_time unknown
 HASTY_MOVE_ABS_SECONDS: float = 5.0  # fallback when base_time unknown
 
 # Oracle closeness tolerance for sanity test against Lichess game-level columns.
-# [ASSUMED] — allows ≤2 off per color per severity (mate-handling divergence).
+# Allows ≤2 off per color per severity (mate-handling divergence).
 SANITY_TOLERANCE: int = 2
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ FlawTag = Literal[
 TempoTag = Literal["low-clock", "hasty", "unrushed"]
 
 # ---------------------------------------------------------------------------
-# TypedDict output contract (CONTEXT.md §Output contract; zobrist.py PlyData style)
+# TypedDict output contract (zobrist.py PlyData style)
 # ---------------------------------------------------------------------------
 
 
@@ -129,23 +129,23 @@ class FlawRecord(TypedDict):
     ply: int  # half-move number (0-indexed)
     fen: str  # board_fen() of the position BEFORE the flawed move (piece placement
     # only) — so the Flaws-tab miniboard renders the decision point and move_san
-    # resolves to its from/to arrow squares. Since Phase 148 D-02 fen_map holds the
+    # resolves to its from/to arrow squares. fen_map holds the
     # FULL board.fen(); this piece-placement-only value is derived by splitting it in
     # _build_flaw_record (fen_before_flaw.split(" ")[0]) — it is NOT filled directly
     # from fen_map.
     side: Literal["white", "black"]  # mover who made the flawed move
     severity: FlawSeverity
-    tags: list[FlawTag]  # ordered, additive, orthogonal (populated in plan 02)
+    tags: list[FlawTag]  # ordered, additive, orthogonal; filled by _build_tags
     es_before: float  # mover-POV ES before the flaw
     es_after: float  # mover-POV ES after the flaw
     move_san: str | None  # SAN from positions[N].move_san
-    # Tactic family — two orientation sets, all optional (Phase 124/128 — D-01).
+    # Tactic family — two orientation sets, all optional.
     #
     # allowed_* — the refutation from the flaw_ply+1 PV (punishing the flaw-maker).
     #   allowed_tactic_motif_int: TacticMotifInt value; None = no detector fired.
-    #   allowed_tactic_piece: python-chess PieceType (1-6) per D-12 semantics; None = ambiguous.
+    #   allowed_tactic_piece: python-chess PieceType (1-6), per-motif semantics; None = ambiguous.
     #   allowed_tactic_confidence: winner-confidence 0-100; None when motif is None.
-    #   allowed_tactic_depth: loop index within the flaw_ply+1 PV when motif fires (Phase 127 D-04);
+    #   allowed_tactic_depth: loop index within the flaw_ply+1 PV when motif fires;
     #                         None when motif is None.
     allowed_tactic_motif_int: int | None
     allowed_tactic_piece: int | None
@@ -156,9 +156,8 @@ class FlawRecord(TypedDict):
     #   missed_tactic_motif_int: TacticMotifInt value; None = no detector fired or no flaw_ply PV.
     #   missed_tactic_piece: python-chess PieceType (1-6); None = ambiguous or no motif.
     #   missed_tactic_confidence: winner-confidence 0-100; None when motif is None.
-    #   missed_tactic_depth: loop index within the flaw_ply PV when motif fires (Phase 128 D-05);
+    #   missed_tactic_depth: loop index within the flaw_ply PV when motif fires;
     #                        None when motif is None. One ply earlier than allowed_tactic_depth's PV.
-    #   All four are None until the Phase 128 missed-pass detector runs (Plan 02).
     missed_tactic_motif_int: int | None
     missed_tactic_piece: int | None
     missed_tactic_confidence: int | None
@@ -171,12 +170,12 @@ class GameNotAnalyzed(TypedDict):
 
 
 class SeverityCounts(TypedDict):
-    """Per-game severity counts over the USER's moves (Phase 106, LIBG-08).
+    """Per-game severity counts over the USER's moves.
 
     Unlike the FlawRecord list (mistakes + blunders only), this carries all
     three tiers including the inaccuracy count — which is never exposed via
-    classify_game_flaws (the kernel emits M+B only). See RESEARCH Pitfall 3:
-    the I count must NOT be derived from the M+B FlawRecord set.
+    classify_game_flaws (the kernel emits M+B only). The I count must NOT be
+    derived from the M+B FlawRecord set.
     """
 
     inaccuracy: int
@@ -202,9 +201,8 @@ def _ply_to_es(
 
     Option B mate: maps mate to ±MATE_CP_EQUIVALENT cp before sigmoid.
     Do NOT call eval_mate_to_expected_score here — that returns hard 1.0/0.0
-    and was built for endgame span averaging, not per-ply drop math (Pitfall 3
-    in RESEARCH: mis-sizes mate transitions, would always flag mate-adjacent
-    moves as blunders).
+    and was built for endgame span averaging, not per-ply drop math (it mis-sizes
+    mate transitions and would always flag mate-adjacent moves as blunders).
     """
     if pos.eval_mate is not None:
         cp_equiv = MATE_CP_EQUIVALENT if pos.eval_mate > 0 else -MATE_CP_EQUIVALENT
@@ -279,11 +277,10 @@ def _classify_mate_ladder(
 def classify_severity(drop: float) -> FlawSeverity | None:
     """Map a mover-POV ES drop to a severity label, or None if below threshold.
 
-    Highest band wins (CONTEXT.md §Severity). All thresholds are boundary-inclusive.
+    Highest band wins. All thresholds are boundary-inclusive.
 
-    Public since Phase 211 (previously a private helper): `train_pool`'s
-    vetted-move certification consumes this same ladder — one severity
-    ladder server-side, never a second local band (the client twin is
+    Public because `train_pool`'s vetted-move certification consumes this same
+    ladder — one severity ladder server-side, never a second local band (the client twin is
     `frontend/src/lib/liveFlaw.ts`'s `classifyLiveSeverity`, CI-drift-checked
     via the generated thresholds file).
     """
@@ -304,7 +301,7 @@ def _compute_eval_coverage(positions: list[GamePosition]) -> float:
     annotated from it (zobrist.py). For an N-ply game there are N+1 positions and at
     most N can carry an eval, so a fully-analyzed game scores N/N = 1.0 at any length.
 
-    BUG FIX (quick-task 260615-rb1): the denominator was previously len(positions),
+    BUG FIX: the denominator was len(positions),
     which counted the unevaluable terminal position against coverage. A fully-analyzed
     7-ply game (8 positions) capped at 7/8 = 0.875 < EVAL_COVERAGE_MIN (0.90), so short
     games were misclassified as GameNotAnalyzed, the oracle (move-quality) columns were
@@ -317,7 +314,7 @@ def _compute_eval_coverage(positions: list[GamePosition]) -> float:
     if len(positions) <= 1:
         return 0.0
     n_movable = len(positions) - 1
-    # BUG FIX (quick-task 260927-ajg): when the last move delivers checkmate, the
+    # BUG FIX: when the last move delivers checkmate, the
     # last movable row carries the eval of the mated position, which the engine
     # cannot score, so it is always null. Counting it capped a fully-analyzed 7-ply
     # mate at 6/7 = 0.857 < EVAL_COVERAGE_MIN: 1,014 prod games of 4-9 plies ending
@@ -342,7 +339,7 @@ def _compute_eval_coverage(positions: list[GamePosition]) -> float:
 def _recompute_fen_map(pgn: str) -> dict[int, str]:
     """Return {ply: board.fen()} for every ply by replaying the PGN with python-chess.
 
-    BUGFIX (Phase 148, D-02): this map used to store board_fen() (piece placement
+    BUGFIX: this map used to store board_fen() (piece placement
     only), which drops side-to-move, castling rights, and the en-passant target.
     A PV replay through _detect_tactic_for_flaw would then rebuild a chess.Board
     from that incomplete string, silently corrupting castling/en-passant flaw
@@ -364,7 +361,7 @@ def _recompute_fen_map(pgn: str) -> dict[int, str]:
             board.push(node.move)
             fens[ply] = board.fen()
     except (ValueError, AssertionError) as exc:
-        # WR-03 fix: this PGN already parsed cleanly at import time (its positions
+        # This PGN already parsed cleanly at import time (its positions
         # and evals are stored), so a replay failure here is a genuine data
         # inconsistency, not expected user-input noise. Capture it — otherwise
         # every later flaw silently falls back to fen="" via fen_map.get(n, "").
@@ -376,23 +373,20 @@ def _recompute_fen_map(pgn: str) -> dict[int, str]:
 def _run_all_moves_pass(
     positions: list[GamePosition],
 ) -> dict[int, _MoveEntry]:
-    """Classify every ply for both colors — required for miss/unpunished tag adjacency checks.
+    """Classify every ply for both colors — required for miss/lucky tag adjacency checks.
 
     Returns {ply_N: (mover_color, severity|None, es_before, es_after)} for
     N in range(1, len(positions)). Plies where either ES is None (interior null
-    eval — Pitfall 4) are skipped and not included in the dict.
+    eval) are skipped and not included in the dict.
 
-    ES semantics (eval-AFTER landmine, Pitfall 1):
+    ES semantics (eval-AFTER landmine):
         positions[N].eval_cp = eval AFTER move N was played.
         ES_before = _ply_to_es(positions[N-1], mover)  # board before mover plays move N
         ES_after  = _ply_to_es(positions[N],   mover)  # board after mover plays move N
 
-    This post-move convention is now uniform across ALL sources (SEED-044): lichess
-    `%eval` rows always stored it this way (zobrist.py), and the engine full-eval
-    drain now stores it too (eval_drain._post_move_eval). Previously the engine
-    drain stored the PRE-PUSH eval (eval BEFORE the move), making this classifier
-    off-by-one for every chess.com game — a single real blunder surfaced as a
-    spurious adjacent pair or as nothing. No per-source branch is needed here.
+    This post-move convention is uniform across ALL sources: lichess `%eval` rows
+    (zobrist.py) and the engine full-eval path (eval_apply._post_move_eval) both
+    store it, so no per-source branch is needed here.
 
     Severity routing mirrors lila's Advice dispatch: cp->cp transitions use the
     ES-drop thresholds (CpAdvice); any transition touching a mate eval uses the
@@ -407,7 +401,7 @@ def _run_all_moves_pass(
         es_before = _ply_to_es(positions[n - 1], mover)
         es_after = _ply_to_es(positions[n], mover)
         if es_before is None or es_after is None:
-            # Skip plies with missing eval (Pitfall 4: interior null)
+            # Skip plies with missing eval (interior null)
             continue
         if positions[n - 1].eval_mate is not None or positions[n].eval_mate is not None:
             severity = _classify_mate_ladder(positions[n - 1], positions[n], mover)
@@ -420,15 +414,15 @@ def _run_all_moves_pass(
 def _same_dest_as_best_line(board_before: chess.Board, flaw_san: str, pv: str) -> bool:
     """True if the flaw move and best PV first move share the same destination square.
 
-    Wrong-recapture false-alarm guard (D-03 / Workstream B): when the player captured
+    Wrong-recapture false-alarm guard: when the player captured
     the same piece the best line would capture — just with the wrong piece type — they
     demonstrably SAW the target.  The missed-tactic tag must be suppressed in that case.
 
-    Dest-square equality is the only criterion (D-03 deferred: adding a captured-piece-
-    value check only if a unit fixture surfaces a false suppression).
+    Dest-square equality is the only criterion (a captured-piece-value check is
+    deliberately not added unless a unit fixture surfaces a false suppression).
 
     Returns False on any parse error so the caller falls through to normal detection
-    (consistent with the existing guard posture, Security Domain V5).
+    (consistent with the existing guard posture).
     """
     try:
         flaw_move = board_before.parse_san(flaw_san)
@@ -446,17 +440,15 @@ def _build_missed_board_with_stack(
     fen_map: dict[int, str],
     positions: list[GamePosition],
 ) -> chess.Board | None:
-    """Build the missed-orientation board WITH a one-move stack (D-09, TAGFIX-06).
+    """Build the missed-orientation board WITH a one-move stack.
 
-    The missed pass has always evaluated the mover's decision position from a
-    bare `chess.Board(fen_map[n])` — position-correct but with an EMPTY move
+    A bare `chess.Board(fen_map[n])` is position-correct but has an EMPTY move
     stack. Two cook-ported predicates read `board.move_stack` (or
     `boards[0].move_stack` after the detector's own PV replay):
     `detect_intermezzo`'s k=2 branch and `detect_hanging_piece`'s recapture
     exclusion. On a stackless board both silently behave as if there were no
-    prior move at all — dev showed 64 allowed intermezzo tags against only 2
-    missed (32x; prod 188 against 6), because the allowed pass DOES carry a
-    stack (it pushes the flaw move) and the missed pass never did.
+    prior move at all, so the missed pass would under-tag them relative to the
+    allowed pass, which DOES carry a stack (it pushes the flaw move).
 
     This builds an EQUIVALENT position with a real one-move stack instead:
     `fen_map[k]` is the board AFTER k half-moves (_recompute_fen_map), so
@@ -521,25 +513,25 @@ def _detect_tactic_for_flaw(
         Detects the tactic the mover could have used but missed (the "instead-of"
         line). PV source: pv_by_ply.get(n) (live drain) or positions[n].pv
         (backfill). Board: board_before (no flaw move pushed). pov = board_before.turn
-        = the mover (D-03, D-06).
+        = the mover.
 
-    PV source rationale (260618-aiq): the in-process eval drain has just-computed PVs
+    PV source rationale: the in-process eval drain has just-computed PVs
     in memory that are NOT yet written to game_positions at classify time, so it passes
     them via `pv_by_ply` (ply -> pv_string). The backfill path passes pv_by_ply=None
-    and falls back to the persisted pv column, preserving the original behavior exactly.
+    and falls back to the persisted pv column.
 
     Guards implemented:
-    - Pitfall 1: `n + 1 < len(positions)` before indexing positions[n+1].pv (allowed)
-    - Pitfall 1b: `0 <= n < len(positions)` before indexing positions[n].pv (missed)
-    - Pitfall 6: try/except (ValueError, chess.IllegalMoveError) for SAN parse (allowed)
-    - T-128-03: missed pass reuses the existing try/except guard in detect_tactic_motif
+    - `n + 1 < len(positions)` before indexing positions[n+1].pv (allowed)
+    - `0 <= n < len(positions)` before indexing positions[n].pv (missed)
+    - try/except (ValueError, chess.IllegalMoveError) for SAN parse (allowed)
+    - missed pass reuses the existing try/except guard in detect_tactic_motif
       (malformed PV never raises out of the detector)
     """
     fen_before_flaw = fen_map.get(n, "")
     if not fen_before_flaw:
         return None, None, None, None
 
-    # fen_map now stores the full board.fen() (Phase 148 D-02), which already
+    # fen_map now stores the full board.fen(), which already
     # carries the correct side-to-move parsed from the FEN string itself. This
     # explicit override is redundant (re-asserts the same value chess.Board
     # already parsed) but harmless, and is kept as a defense-in-depth guard
@@ -549,7 +541,7 @@ def _detect_tactic_for_flaw(
 
     if orientation == "missed":
         # Missed pass: board_before + flaw_ply PV; pov = the mover (board_before.turn).
-        # No flaw move is pushed — the mover is evaluated on the decision position (D-03).
+        # No flaw move is pushed — the mover is evaluated on the decision position.
         pv: str | None = None
         if pv_by_ply is not None:
             pv = pv_by_ply.get(n)
@@ -557,7 +549,7 @@ def _detect_tactic_for_flaw(
             pv = positions[n].pv
         if not pv:
             return None, None, None, None
-        # D-03 / Workstream B dest-square gate: suppress when the flaw move and the best
+        # Dest-square gate: suppress when the flaw move and the best
         # line's first move share the same destination.  This kills the wrong-recapture
         # false alarm — the player captured the SAME piece with the wrong piece type, so
         # they plainly SAW it; tagging it as "you missed a tactic" is misleading.
@@ -567,10 +559,10 @@ def _detect_tactic_for_flaw(
         flaw_san_missed = positions[n].move_san if 0 <= n < len(positions) else None
         if flaw_san_missed and _same_dest_as_best_line(board_before, flaw_san_missed, pv):
             return None, None, None, None
-        # D-06: pov at flaw_ply is the mover (board_before.turn). A forced mate FOR the
+        # Pov at flaw_ply is the mover (board_before.turn). A forced mate FOR the
         # mover means the mover-POV mate distance is positive — allow the mate branch even
         # when the PV is truncated.
-        # Bug fix (Phase 148 code review CR-01): GamePosition.eval_mate is stored
+        # Bug fix: GamePosition.eval_mate is stored
         # white-perspective-absolute (positive = white mates), so a raw `> 0` test is only
         # correct when the mover is White. For black-POV flaws (~half of all plies) it
         # inverted the sign and silently dropped real Black forced mates. Convert to the
@@ -581,14 +573,14 @@ def _detect_tactic_for_flaw(
             _pov_mate(_pos_missed, _solver_color_for(n, "missed")) if _pos_missed else None
         )
         has_forced_mate_missed = _pov_mate_missed is not None and _pov_mate_missed > 0
-        # D-09 (TAGFIX-06): detect against a board carrying the opponent's previous
+        # Detect against a board carrying the opponent's previous
         # move on the stack — parity with the allowed pass, which always carries the
         # flaw move. Falls back to the stackless board_before (identical position,
         # empty stack) on any degradation (ply 0, partial fen_map, malformed SAN) so
         # this never changes behavior for those cases. The dest-square gate above
         # deliberately keeps reading board_before, NOT this board — pushing the
         # previous move doesn't change the position, but re-binding that gate risks a
-        # subtle SAN-disambiguation difference (RESEARCH Implementation Map 6).
+        # subtle SAN-disambiguation difference.
         detection_board = _build_missed_board_with_stack(n, fen_map, positions) or board_before
         return detect_tactic_motif(detection_board, pv, has_forced_mate=has_forced_mate_missed)
 
@@ -608,9 +600,9 @@ def _detect_tactic_for_flaw(
         flaw_move = board_before.parse_san(move_san_of_flaw)
         board_after_flaw = board_before.copy()
         board_after_flaw.push(flaw_move)
-        # D-06: pov at flaw_ply+1 is the refuting side (board_after_flaw.turn). The
+        # Pov at flaw_ply+1 is the refuting side (board_after_flaw.turn). The
         # refuting side has a forced mate when its mover-POV mate distance is positive.
-        # Bug fix (Phase 148 code review CR-01): eval_mate is white-perspective-absolute,
+        # Bug fix: eval_mate is white-perspective-absolute,
         # so a raw `> 0` test only holds when the refuter is White; convert to the
         # refuter's POV (== _solver_color_for(n, "allowed") == board_after_flaw.turn)
         # before comparing.
@@ -623,7 +615,7 @@ def _detect_tactic_for_flaw(
             board_after_flaw, pv_allowed, has_forced_mate=has_forced_mate_allowed
         )
     except ValueError, chess.IllegalMoveError:
-        # Malformed move_san or FEN — leave all four as None (Pitfall 6)
+        # Malformed move_san or FEN — leave all four as None
         return None, None, None, None
 
 
@@ -631,10 +623,10 @@ def _solver_color_for(
     n: int,
     orientation: Literal["allowed", "missed"],
 ) -> Literal["white", "black"]:
-    """Return the tactic-delivering side's color for the gate (D-02, SC4).
+    """Return the tactic-delivering side's color for the gate.
 
     Even ply means white moved (made the flaw). Ply parity matches the
-    board_before.turn convention at flaws_service.py line 444-446.
+    board_before.turn convention in _detect_tactic_for_flaw.
 
     "allowed": the refuter (solver) is the OPPONENT of the mover.
     "missed": the flaw-maker (solver) IS the mover.
@@ -645,7 +637,7 @@ def _solver_color_for(
 
 
 def _pre_flaw_eval_mate(n: int, positions: list[GamePosition]) -> int | None:
-    """White-perspective mate-in-N eval BEFORE the flaw move, or None (D-04, TAGFIX-02).
+    """White-perspective mate-in-N eval BEFORE the flaw move, or None.
 
     Same index as _build_flaw_record's pre_flaw_eval_cp (positions[n - 1]) --
     see that function's "eval-AFTER landmine" note. Raw white-perspective
@@ -662,17 +654,17 @@ def _firing_floor_fallback_eval(
     orientation: Literal["allowed", "missed"],
     positions: list[GamePosition],
 ) -> tuple[int | None, int | None]:
-    """Return (eval_cp, eval_mate) white-perspective raw for the D-03 blob-missing fallback.
+    """Return (eval_cp, eval_mate) white-perspective raw for the blob-missing fallback.
 
     Which position each orientation reads is the whole content of this function
-    (Pitfall 1 / T-221-16: an off-by-one here is the exact bug class Phase 143
-    already fixed once for pre_flaw_eval_cp) — keeping the orientation switch
+    (an off-by-one here is the exact bug class pre_flaw_eval_cp once had) —
+    keeping the orientation switch
     INSIDE one function is what prevents the two indices drifting apart:
       allowed: positions[n]   -- the eval AFTER the flaw move (refuter to move).
       missed:  positions[n-1] -- the eval after move n-1, i.e. the board BEFORE
                the flaw move (mover to move).
     Both indices are bounds-guarded; an out-of-range index returns (None, None)
-    rather than raising (D-03: nothing is suppressed merely for lacking data).
+    rather than raising (nothing is suppressed merely for lacking data).
 
     Warning sign: if the allowed fallback rejects nothing while the missed
     fallback rejects everything (or the reverse), this index is off by one --
@@ -695,49 +687,48 @@ def _classify_tactic_gated(
     margin: float = ONLY_MOVE_WIN_PROB_MARGIN,
     blobs_pending: bool = False,
 ) -> tuple[int | None, int | None, int | None, int | None]:
-    """Run tactic detection then apply the forcing-line gate (D-02, SC4 single classify path).
+    """Run tactic detection then apply the forcing-line gate (single classify path).
 
     Calls _detect_tactic_for_flaw, then — only when a motif was detected AND
     pv_blob is a non-empty list — applies apply_forcing_line_filter at the
     given margin. If the line is non-forcing, returns (None, None, None, None)
     to suppress the motif.
 
-    TAGFIX-02 (D-04): the gate ALWAYS runs on a non-empty blob now -- it is no
-    longer skipped merely because pre_flaw_eval_cp is None. The already-winning
+    The gate ALWAYS runs on a non-empty blob -- it is not
+    skipped merely because pre_flaw_eval_cp is None. The already-winning
     reject is derived from _pre_flaw_eval_mate when cp is absent: a forced mate
     for the solver before the flaw is already winning and rejects a non-mate
     motif (mate-motif tags stay exempt via the gate's existing forced-mate
     carve-out). The rest of the gate (only-move, the per-tier winning floor,
     strips, one-mover discard) runs on the blob exactly as for cp-scored flaws.
 
-    When pv_blob is None (pre-Phase-142 rows with no stored blob, or a flaw
-    whose continuation blob has not yet been computed), the gate itself is
-    still skipped -- but TAGFIX-01 / D-03 now applies the motif's per-tier
-    winning floor directly from game_positions (_firing_floor_fallback_eval +
+    When pv_blob is None (rows with no stored blob, or a flaw whose
+    continuation blob has not yet been computed), the gate itself is
+    still skipped -- but the motif's per-tier winning floor is applied
+    directly from game_positions (_firing_floor_fallback_eval +
     forcing_line_gate.passes_winning_floor_fallback): no tag is skipped or
     suppressed merely for lacking a blob, but a blobless tag still faces the
     same "solver must be winning at the firing node" bar as a blob-backed one.
 
-    D-06 sentinel: an empty list [] means the blob could not be assembled for this
-    flaw (e.g. single-legal-move position, analysis gap). BOTH the gate and the
-    D-03 fallback floor are SKIPPED for [] — same outcome as before (no
-    suppression, raw kernel result returned). Gate condition is
-    `pv_blob is not None and len(pv_blob) > 0`; the fallback condition is
-    `pv_blob is None` exactly (never for []) — superseding the Phase-143
-    Pitfall-2 wording that treated [] as a gate-eligible blob requiring the
-    one-mover discard. apply_forcing_line_filter itself still rejects [] when
-    called directly; the skip here is intentional and upstream of that call.
+    Empty-list sentinel: an empty list [] means the blob could not be assembled for
+    this flaw (e.g. single-legal-move position, analysis gap). BOTH the gate and the
+    fallback floor are SKIPPED for [] (no suppression, raw kernel result returned).
+    Gate condition is `pv_blob is not None and len(pv_blob) > 0`; the fallback
+    condition is `pv_blob is None` exactly (never for []). Don't treat [] as a
+    gate-eligible blob: the one-mover discard would then reject it.
+    apply_forcing_line_filter itself still rejects [] when called directly; the skip
+    here is intentional and upstream of that call.
 
-    blobs_pending (Phase 147, D-01/D-03): an independent, explicitly-passed signal
+    blobs_pending: an independent, explicitly-passed signal
     (never derived from pv_blob) meaning the continuation blob for this flaw is
     deferred to a later tier-4 pass (the remote go-forward submit path). When True
     AND a motif was detected AND pv_blob is None AND pre_flaw_eval_cp is not None,
     the motif cannot yet be gate-checked, so it is suppressed to NULL rather than
-    persisted raw/ungated. This self-heals when the tier-4 D-07 gated retag lands
-    with the real blob. Mate-adjacent (pre_flaw_eval_cp is None) and the D-06 []
-    sentinel are FINAL cases and are NEVER suppressed by this branch. T-221-20:
-    this pre_flaw_eval_cp is not None conjunct is DELIBERATELY independent of the
-    conjunct TAGFIX-02 removed from the gate-run condition above — it is the
+    persisted raw/ungated. This self-heals when the tier-4 gated retag lands
+    with the real blob. Mate-adjacent (pre_flaw_eval_cp is None) and the []
+    sentinel are FINAL cases and are NEVER suppressed by this branch. The
+    pre_flaw_eval_cp is not None conjunct here is DELIBERATELY independent of the
+    gate-run condition above (which no longer requires it) — it is the
     "mate-adjacent is a FINAL case, never suppressed by blobs_pending" carve-out,
     not the same condition. Do not consolidate the two.
     """
@@ -746,7 +737,7 @@ def _classify_tactic_gated(
     )
     if motif is not None and pv_blob is not None and len(pv_blob) > 0:
         solver_color = _solver_color_for(n, orientation)
-        # Bug B: pass the detected firing depth so only the solver nodes up to the
+        # Pass the detected firing depth so only the solver nodes up to the
         # tactic's firing point need be forced (the conversion tail is exempt).
         if not apply_forcing_line_filter(
             pv_blob,
@@ -759,7 +750,7 @@ def _classify_tactic_gated(
         ):
             return None, None, None, None
     elif motif is not None and pv_blob is None:
-        # TAGFIX-01 / D-03: no blob -> apply the tier floor to the game_positions
+        # No blob -> apply the tier floor to the game_positions
         # fallback eval instead of skipping the tag entirely. [] is NOT this
         # branch (len(pv_blob) > 0 is False for [] too, but pv_blob is None is
         # also False for [] -- [] keeps its skip-everything semantics).
@@ -799,8 +790,8 @@ def _build_flaw_record(
     allowed_pv_blob: list[PvNode] | None = blob_pair[0] if blob_pair is not None else None
     missed_pv_blob: list[PvNode] | None = blob_pair[1] if blob_pair is not None else None
     # pre_flaw_eval_cp: white-perspective eval_cp BEFORE the flaw move, used by the
-    # gate's already-winning reject (D-08). BUG FIX: this previously read positions[n],
-    # which is the eval AFTER the flaw move (see _run_all_moves_pass line 348:
+    # gate's already-winning reject. BUG FIX: this previously read positions[n],
+    # which is the eval AFTER the flaw move (see _run_all_moves_pass's docstring:
     # "positions[N].eval_cp = eval AFTER move N"). Feeding the post-blunder eval made
     # the already-winning reject fire on exactly the strongest allowed tactics — a big
     # blunder swings the solver past +300, so the gate discarded it as "already winning"
@@ -808,8 +799,8 @@ def _build_flaw_record(
     # (the position the flaw move was played FROM). Same value used for both orientations.
     pre_flaw_eval_cp: int | None = positions[n - 1].eval_cp if 1 <= n < len(positions) else None
     # allowed_* pass: detect tactic from flaw_ply+1 PV (the refutation of the flaw).
-    # pov = the refuting side (board_after_flaw.turn), per D-03.
-    # Routes through _classify_tactic_gated (single classify path, SC4 no-drift, D-02).
+    # pov = the refuting side (board_after_flaw.turn).
+    # Routes through _classify_tactic_gated (single classify path).
     allowed_motif_int, allowed_piece, allowed_confidence, allowed_depth = _classify_tactic_gated(
         n,
         fen_map,
@@ -822,7 +813,7 @@ def _build_flaw_record(
     )
     # missed_* pass: detect tactic from flaw_ply PV (the "instead-of" line).
     # pov = board_before.turn = the mover (the flaw-maker, who should have played this line).
-    # Reuses the same dispatcher + relevance gate unchanged (D-04).
+    # Reuses the same dispatcher + relevance gate unchanged.
     missed_motif_int, missed_piece, missed_confidence, missed_depth = _classify_tactic_gated(
         n,
         fen_map,
@@ -833,12 +824,12 @@ def _build_flaw_record(
         pv_by_ply,
         blobs_pending=blobs_pending,
     )
-    # BUGFIX (Phase 148, D-02): fen_map now stores the full board.fen() (side-to-move,
+    # BUGFIX: fen_map now stores the full board.fen() (side-to-move,
     # castling, en-passant) for detector-internal PV replay — but FlawRecord.fen /
     # game_flaws.fen is a persisted, API-facing column whose contract (piece-placement
     # only; downstream reconstructs side-to-move from ply parity — see
     # app/schemas/library.py TacticLinesResponse.position_fen) is explicitly OUT of
-    # scope for this fix (D-02: "detector-internal map only"). Split off the
+    # scope for this fix (fen_map is a detector-internal map only). Split off the
     # piece-placement field to keep that contract unchanged.
     fen_before_flaw = fen_map.get(n, "")
     board_fen_only = fen_before_flaw.split(" ")[0] if fen_before_flaw else ""
@@ -869,7 +860,7 @@ def _move_time(
 ) -> float | None:
     """Return move time in seconds for the mover at ply N, or None if unavailable.
 
-    Same-side clock is two plies back (Pitfall 2 in RESEARCH — N-1 is the
+    Same-side clock is two plies back (N-1 is the
     opponent's clock). Returns None for first moves (n < 2), when either
     clock is null, or when the computed time is negative (a clock anomaly).
 
@@ -884,7 +875,7 @@ def _move_time(
     if prev_clock is None or curr_clock is None:
         return None
     move_time = prev_clock - curr_clock + increment
-    # WR-05 fix: a negative move time is physically impossible (the player's own
+    # A negative move time is physically impossible (the player's own
     # clock cannot gain more than the increment between their moves) and signals
     # inconsistent/corrupt clock data. Treat it as unavailable rather than letting
     # it satisfy `move_time < fast_move_threshold` and mislabel the move as hasty.
@@ -909,7 +900,7 @@ def _classify_tempo(
     Relative thresholds are used when base_time is available (relative-to-base-clock
     is context-aware — a 5s move is hasty in classical but normal in bullet).
     Absolute fallback values are used when base_time is absent or zero.
-    All threshold values are [ASSUMED] initial defaults; tunable on-the-fly.
+    All threshold values are initial defaults; tunable on-the-fly.
     """
     if clock_after is None or move_time is None:
         return None
@@ -932,7 +923,7 @@ def _classify_tempo(
 def _is_miss(n: int, all_moves: dict[int, _MoveEntry]) -> bool:
     """Return True if opponent's move at ply N-1 was a mistake or blunder.
 
-    Requires the all-moves classification pass covering both colors (Pitfall 5).
+    Requires the all-moves classification pass covering both colors.
     A miss means the user's error followed immediately after an opponent error,
     suggesting the user may have been rattled or exploiting what they thought
     was a free recovery.
@@ -951,15 +942,15 @@ def _is_unpunished(
     n: int,
     all_moves: dict[int, _MoveEntry],
     severity: FlawSeverity,
-    user_result: Literal["win", "draw", "loss"],
+    mover_result: Literal["win", "draw", "loss"],
 ) -> bool:
     """Return True when a user BLUNDER at ply N went UNPUNISHED by the opponent.
 
     lucky = user's blunder that the opponent did NOT capitalize on, so the
-    user got away with it. Only applies to blunders (Pitfall 6 in RESEARCH —
-    applying to inaccuracies and mistakes would produce a noise-heavy flood).
+    user got away with it. Only applies to blunders (applying to inaccuracies and
+    mistakes would produce a noise-heavy flood).
 
-    A blunder is "unpunished" when the opponent's immediate reply at N+1 was itself
+    A blunder is "unpunished" (tagged lucky) when the opponent's immediate reply at N+1 was itself
     a mistake or blunder: the user's expected score dropped on their blunder, then
     recovered because the opponent failed to find the punishing line. (ES is
     zero-sum across colors, so an opponent error == the user's eval bouncing back.)
@@ -975,7 +966,7 @@ def _is_unpunished(
     End-of-game (no opponent move at N+1) counts as a lucky escape only when the
     user did NOT lose — a blunder followed by the user resigning or flagging is a
     loss, not an escape (the opponent never had to punish because the user
-    conceded). user_result != "loss" keeps the genuine end-of-game escapes (the
+    conceded). mover_result != "loss" keeps the genuine end-of-game escapes (the
     blunder was actually mate, the game drew, or the opponent resigned anyway).
     """
     if severity != "blunder":
@@ -985,7 +976,7 @@ def _is_unpunished(
     if entry is None:
         # End of game — a lucky escape only if the user didn't lose (a loss here
         # means the user resigned/flagged right after blundering, not an escape).
-        return user_result != "loss"
+        return mover_result != "loss"
     opp_severity = entry[1]
     # Unpunished == the opponent erred in reply, letting the user's eval recover.
     return opp_severity in ("mistake", "blunder")
@@ -995,12 +986,11 @@ def _classify_impact(es_before: float, es_after: float) -> Literal["reversed", "
     """Most-severe-wins outcome-independent impact ladder (flaw-tag-definitions.md §Impact).
 
     At most one tag; most-severe is checked first so a 0.90→0.25 swing returns only
-    "reversed" (not "squandered"). Replaces the prior outcome-dependent helper that
-    keyed off the final game result — impact is now result-independent (computed
-    entirely from es_before/es_after).
+    "reversed" (not "squandered"). Outcome-independent: computed entirely from
+    es_before/es_after.
 
-    Boundary convention: >= entry / <= exit (inclusive on both ends, per doc prose
-    "or below"; differs from the prior strict < exit — Pitfall 4).
+    Boundary convention: >= entry / <= exit (inclusive on both ends, per the doc prose
+    "or below").
 
     Rungs:
       reversed   — es_before >= WINNING_LINE_ES (0.6762) AND es_after <= LOSING_LINE_ES (0.3238)
@@ -1035,7 +1025,7 @@ def _build_tags(
     es_after: float,
     positions: list[GamePosition],
     all_moves: dict[int, _MoveEntry],
-    user_result: Literal["win", "draw", "loss"],
+    mover_result: Literal["win", "draw", "loss"],
     increment: float,
     base_time: int | None,
 ) -> list[FlawTag]:
@@ -1045,8 +1035,8 @@ def _build_tags(
     Tags are additive and orthogonal. At most one impact tag and at most one tempo
     tag are present (tempo absent when clock data is unavailable).
 
-    NOTE: user_result is still required here — _is_unpunished (lucky
-    end-of-game rule) reads it. Only the impact branch no longer uses it.
+    NOTE: mover_result is required here: _is_unpunished (lucky end-of-game rule)
+    reads it.
     """
     tags: list[FlawTag] = []
 
@@ -1057,7 +1047,7 @@ def _build_tags(
     if _is_miss(n, all_moves):
         tags.append("miss")
 
-    if _is_unpunished(n, all_moves, severity, user_result):
+    if _is_unpunished(n, all_moves, severity, mover_result):
         tags.append("lucky")
 
     tags.append(_phase_tag(positions[n].phase))
@@ -1074,9 +1064,8 @@ def _build_tags(
 def _resolve_increment(game: Game) -> float:
     """Return the increment in seconds for this game.
 
-    Single source of truth for increment resolution (Phase 109 — extracted
-    from the inline block in classify_game_flaws to enable reuse by the
-    eval chart builder in library_service.py).
+    Single source of truth for increment resolution (shared with the eval chart
+    builder in library_service.py).
 
     Priority:
     1. game.increment_seconds when explicitly stored (already parsed at import time).
@@ -1112,32 +1101,32 @@ def classify_game_flaws(
         positions: All GamePosition rows for this game, ordered by ply ASC.
             Load via flaws_repository.fetch_game_positions_ordered.
         pv_by_ply: optional {ply -> pv_string} override for tactic detection
-            (260618-aiq). The in-process eval drain passes freshly-computed PVs
+            The in-process eval drain passes freshly-computed PVs
             here because they are not yet written to game_positions at classify
             time; without it the live drain would tag every flaw NULL. The
             backfill path omits it and reads PVs from positions[n+1].pv.
         flaw_pv_blobs: optional {flaw_ply -> (allowed_blob, missed_blob)} mapping
-            of MultiPV-2 PvNode blobs built in memory by the eval drain (Phase 142).
-            When provided, _build_flaw_record routes tactic classification through
-            _classify_tactic_gated which applies the forcing-line gate (D-02, SC4).
-            None (default) preserves the pre-Phase-143 gate-free behavior.
-        blobs_pending: Phase 147 (D-01/D-03) — independent signal, defaulting to
+            of MultiPV-2 PvNode blobs built in memory by the eval drain.
+            When a flaw has a blob, the forcing-line gate is applied to its tactic.
+            None (default) means no blobs: the gate is skipped and only the
+            game_positions fallback winning floor applies.
+        blobs_pending: independent signal, defaulting to
             False and NEVER derived from flaw_pv_blobs, meaning the continuation
             blob for every flaw in this game is deferred to a later tier-4 pass
             (the remote go-forward submit path). When True, cp-based flaws that
             cannot yet be gate-checked (no blob, pre_flaw_eval_cp not None) are
             suppressed to NULL instead of persisted raw/ungated; mate-adjacent and
-            D-06 []-sentinel flaws are FINAL cases and keep their raw tag.
+            []-sentinel flaws are FINAL cases and keep their raw tag.
 
     Returns:
         list[FlawRecord] for analyzed games — one entry per user mistake or
         blunder (inaccuracies are count-only, NOT emitted). An inaccuracy-only
         analyzed game returns an empty list, distinct from GameNotAnalyzed.
 
-        GameNotAnalyzed when eval coverage < EVAL_COVERAGE_MIN (chess.com games,
-        unanalyzed lichess games). Never returns a false zero-flaw game (LIBG-02).
+        GameNotAnalyzed when eval coverage < EVAL_COVERAGE_MIN (no engine or lichess
+        evals yet). Never returns a false zero-flaw game.
     """
-    # Coverage gate: return early for unanalyzed games (chess.com / no evals)
+    # Coverage gate: return early for games without evals.
     coverage = _compute_eval_coverage(positions)
     if coverage < EVAL_COVERAGE_MIN:
         return GameNotAnalyzed(reason="no_engine_analysis", eval_coverage=coverage)
@@ -1145,28 +1134,26 @@ def classify_game_flaws(
     # Build FEN map once and reuse for all flaw records
     fen_map = _recompute_fen_map(game.pgn)
 
-    # All-moves pass: classify both colors (needed for miss/unpunished adjacency)
+    # All-moves pass: classify both colors (needed for miss/lucky adjacency)
     all_moves = _run_all_moves_pass(positions)
 
-    # Resolve increment once via shared helper (Phase 109: single source of truth).
+    # Resolve increment once via shared helper (single source of truth).
     increment = _resolve_increment(game)
 
-    # Phase 113 (D-06 / FLAWX-02): emit FlawRecords for BOTH movers (player and opponent).
-    # The previous filter `if mover != user_color: continue` is DROPPED so the kernel
-    # records both sides at zero added engine cost (the all-moves pass already evaluates
-    # both colors). Readers that need player-only data use is_opponent_expr() at query time
-    # (CONTEXT D-01; RESEARCH Pitfall 3 — do not scatter parity math across query sites).
+    # Emit FlawRecords for BOTH movers (player and opponent) at no extra engine cost (the
+    # all-moves pass already evaluates both colors). Player-only readers filter with
+    # is_opponent_expr() at query time; do not scatter parity math across query sites.
     #
     # Per-mover subject_result: the lucky end-of-game rule (_is_unpunished) checks
     # `subject_result != "loss"`. For opponent flaws this must be the opponent's result,
     # not the player's. Passing game.user_color here would mark any opponent end-of-game
-    # blunder in a game the player won as "lucky" — a logic error (RESEARCH Pitfall 2).
+    # blunder in a game the player won as "lucky" — a logic error.
     # Fix: call derive_user_result(game.result, mover) once per flaw instead of once
     # globally at the top of classify_game_flaws.
     flaws: list[FlawRecord] = []
     for n, (mover, severity, es_before, es_after) in all_moves.items():
         if severity not in ("mistake", "blunder"):
-            # Inaccuracies are count-only per the 2026-06-05 amendment
+            # Inaccuracies are count-only
             continue
         flaw = _build_flaw_record(
             n,
@@ -1180,7 +1167,7 @@ def classify_game_flaws(
             flaw_pv_blobs,
             blobs_pending=blobs_pending,
         )
-        # Per-mover subject_result drives the lucky tag correctly for both sides (D-05).
+        # Per-mover subject_result drives the lucky tag correctly for both sides.
         subject_result = derive_user_result(game.result, mover)
         flaw["tags"] = _build_tags(
             n,
@@ -1206,7 +1193,7 @@ def count_game_severities(
 
     The count-only sibling of classify_game_flaws. It exposes the inaccuracy
     count that the FlawRecord path deliberately omits (the kernel emits M+B only),
-    so the Games-list card can show full B/M/I per game (LIBG-08). No tags, no
+    so the Games-list card can show full B/M/I per game. No tags, no
     FEN recompute — pure tally.
 
     Args:
@@ -1220,8 +1207,8 @@ def count_game_severities(
 
         GameNotAnalyzed when eval coverage < EVAL_COVERAGE_MIN — the IDENTICAL
         gate as classify_game_flaws, so analyzed/unanalyzed classification is
-        consistent across the two entry points (chess.com / unanalyzed lichess
-        games surface "no engine analysis" rather than a false 0/0/0).
+        consistent across the two entry points (games without evals surface
+        "no engine analysis" rather than a false 0/0/0).
     """
     # Coverage gate: identical to classify_game_flaws (same shape on miss).
     coverage = _compute_eval_coverage(positions)

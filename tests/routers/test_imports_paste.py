@@ -1,15 +1,15 @@
-"""Integration tests for POST /api/imports/paste (Phase 208, PASTE-04/06/07).
+"""Integration tests for POST /api/imports/paste.
 
 Covers, through the app client (not the service directly):
-- Security: server-derived owner (T-208-10), per-user isolation (T-208-11),
-  auth required, guest QUEUE-08 carve-out, PGN length bound (T-208-12), and
-  an over-long crafted [Termination] header not producing a 500 (CR-02 class).
-- Idempotency (PASTE-06): same game_id + one row on re-paste, in-place
-  user_color flip, header-spelling-independent identity (D-16).
-- Eval eligibility (PASTE-07): the eval-jobs-or-analyzed invariant, no
+- Security: server-derived owner, per-user isolation,
+  auth required, guest carve-out, PGN length bound, and
+  an over-long crafted [Termination] header not producing a 500.
+- Idempotency: same game_id + one row on re-paste, in-place
+  user_color flip, header-spelling-independent identity.
+- Eval eligibility: the eval-jobs-or-analyzed invariant, no
   re-enqueue on an already-analyzed re-paste, already_queued on a second
   concurrent-ish post.
-- The SC-7 post-commit enqueue-failure window: a 200 with
+- The post-commit enqueue-failure window: a 200 with
   eval_status="enqueue_failed" instead of a 500 over a durably-saved row,
   and healing on resubmit — for both a regular account and a guest.
 
@@ -47,7 +47,7 @@ _PGN_SCHOLARS_MATE = (
 )
 
 # Same mainline (Scholar's Mate, 1-0), wildly different header spellings
-# (D-16 corpus evidence: one player spelled twelve ways) — must resolve to
+# (corpus evidence: one player spelled twelve ways) — must resolve to
 # the SAME identity hash since headers are excluded from it.
 _PGN_HEADER_VARIANT_A = (
     '[White "Noël, Studer"]\n[Black "Some Opponent"]\n[Event "Club Ch"]\n'
@@ -60,9 +60,9 @@ _PGN_HEADER_VARIANT_B = (
     "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0\n"
 )
 
-# CR-02 defect class: an over-long/unrecognized [Termination] header must
+# Defect class: an over-long/unrecognized [Termination] header must
 # never crash the INSERT. normalize_pasted_game always derives termination
-# from the board (Plan 02), so this must resolve to a normal 200.
+# from the board, so this must resolve to a normal 200.
 _PGN_LONG_TERMINATION_HEADER = (
     '[Event "Casual game"]\n[Result "1-0"]\n'
     f'[Termination "{"x" * 500}"]\n\n'
@@ -224,7 +224,7 @@ class TestSecurity:
         self, user_client: tuple[int, str], other_user_client: tuple[int, str], test_engine
     ) -> None:
         """A body carrying a foreign owner-shaped field does not change the
-        persisted row's owner — the principal is server-derived (T-208-10)."""
+        persisted row's owner — the principal is server-derived."""
         user_id, token = user_client
         other_user_id, _other_token = other_user_client
 
@@ -296,7 +296,7 @@ class TestSecurity:
     async def test_over_long_termination_header_does_not_500(
         self, user_client: tuple[int, str]
     ) -> None:
-        """CR-02 defect class: normalize_pasted_game always derives
+        """Defect class: normalize_pasted_game always derives
         termination from the board, never the header — an over-long/
         unrecognized [Termination] header must not crash the INSERT."""
         _user_id, token = user_client
@@ -306,7 +306,7 @@ class TestSecurity:
 
 
 # ---------------------------------------------------------------------------
-# Idempotency (PASTE-06)
+# Idempotency
 # ---------------------------------------------------------------------------
 
 
@@ -358,7 +358,7 @@ class TestIdempotency:
 
 
 # ---------------------------------------------------------------------------
-# Eval eligibility (PASTE-07)
+# Eval eligibility
 # ---------------------------------------------------------------------------
 
 
@@ -414,7 +414,7 @@ class TestEvalEligibility:
 
 
 # ---------------------------------------------------------------------------
-# Post-commit enqueue failure (PASTE-07, SC-7 window)
+# Post-commit enqueue failure
 # ---------------------------------------------------------------------------
 
 

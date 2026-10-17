@@ -17,7 +17,7 @@ export function InsightsTab({
 }: InsightsTabProps) {
   return (
     <div className="flex flex-col gap-6">
-      {/* Phase 71: dedicated Insights subtab. */}
+      {/* Dedicated Insights subtab. */}
       {/* Hidden block + friendly empty state when user has no imported games (proxy: mostPlayedData empty). */}
       {hasOpenings ? (
         <OpeningInsightsBlock

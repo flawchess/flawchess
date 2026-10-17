@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 /**
- * botGameSnapshot.ts unit tests (Phase 170 Plan 01).
+ * botGameSnapshot.ts unit tests.
  *
  * jsdom supplies a real `localStorage`; @sentry/react is mocked (its ESM
  * module namespace is not configurable, so vi.spyOn cannot redefine
  * captureException on the real module — mirrors workerPool.test.ts /
  * maiaQueue.test.ts).
  *
- * Behaviors verified (170-01-PLAN.md's `-t` filter tokens):
- * - "round-trip" (D-08 acceptance gate): a both-colors game with per-ply
+ * Behaviors verified (by describe-block name):
+ * - "round-trip" (acceptance gate): a both-colors game with per-ply
  *   [%clk] comments restores byte-identical.
  * - "version": a version mismatch is a silent hard drop (no removal, no
  *   Sentry capture).
@@ -17,10 +17,10 @@
  * - "owner": snapshots are invisible across different owner keys.
  * - storage-throw: writeSnapshot never lets an exception escape.
  * - clearSnapshot removes only the targeted owner's key.
- * - "personaId" (Phase 183, PERS-02/PERS-04): a settings.personaId round-trips
- *   through writeSnapshot/readSnapshot, and a pre-183 personaId-less snapshot
- *   still validates at CURRENT_SNAPSHOT_VERSION === 1 (no version bump —
- *   Pitfall 5) with settings.personaId reading back as undefined.
+ * - "personaId": a settings.personaId round-trips
+ *   through writeSnapshot/readSnapshot, and a personaId-less legacy snapshot
+ *   still validates at CURRENT_SNAPSHOT_VERSION === 1 (no version bump)
+ *   with settings.personaId reading back as undefined.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -82,7 +82,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('round-trip (D-08 acceptance gate)', () => {
+describe('round-trip', () => {
   it('restores a byte-identical pgn for a both-colors game with a [%clk] comment on every ply', () => {
     const chess = buildAnnotatedGame();
     const originalPgn = chess.pgn();
@@ -112,7 +112,7 @@ describe('round-trip (D-08 acceptance gate)', () => {
 });
 
 describe('version', () => {
-  it('a stored value with a mismatched version reads back as null (silent hard drop, D-06)', () => {
+  it('a stored value with a mismatched version reads back as null (silent hard drop)', () => {
     const key = `${BOT_GAME_SNAPSHOT_KEY_PREFIX}anon`;
     localStorage.setItem(key, JSON.stringify(buildSnapshot({ version: 999 })));
 
@@ -196,7 +196,7 @@ describe('write/clear behavior', () => {
   });
 });
 
-describe('personaId (Phase 183, PERS-02/PERS-04)', () => {
+describe('personaId', () => {
   it('a settings.personaId round-trips intact through writeSnapshot/readSnapshot', () => {
     const settingsWithPersona: BotGameSettings = { ...SETTINGS, personaId: 'attacker-1200' };
     const snapshot = buildSnapshot({ settings: settingsWithPersona });
@@ -208,7 +208,7 @@ describe('personaId (Phase 183, PERS-02/PERS-04)', () => {
     expect(read!.settings.personaId).toBe('attacker-1200');
   });
 
-  it('a pre-183 snapshot object with no personaId key still validates at version 1 and reads back with settings.personaId === undefined', () => {
+  it('a legacy snapshot object with no personaId key still validates at version 1 and reads back with settings.personaId === undefined', () => {
     const key = `${BOT_GAME_SNAPSHOT_KEY_PREFIX}anon`;
     // Simulates a snapshot written before this plan's field was added — the
     // `settings` object literally has no `personaId` key at all, not just an
@@ -220,7 +220,7 @@ describe('personaId (Phase 183, PERS-02/PERS-04)', () => {
 
     expect(read).not.toBeNull();
     expect(read!.version).toBe(CURRENT_SNAPSHOT_VERSION);
-    expect(CURRENT_SNAPSHOT_VERSION).toBe(1); // Pitfall 5: no version bump for this additive field.
+    expect(CURRENT_SNAPSHOT_VERSION).toBe(1); // No version bump for this additive field.
     expect(read!.settings.personaId).toBeUndefined();
     // Not corruption — no removal, no Sentry capture (mirrors the "version" describe block's assertions).
     expect(localStorage.getItem(key)).not.toBeNull();

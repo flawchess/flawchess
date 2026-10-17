@@ -20,14 +20,14 @@ export interface EndgameInsightsBubbleProps {
 
 /**
  * Shelly the Turtle hosting every no-report state of the Endgames Insights
- * block (quick 260927-b05): idle pitch, pending, error and blocked. It
- * replaced the old hero card, skeleton card and error card, so the page no
- * longer jumps between three different cards before a report lands. Once a
- * report exists the parent hides this bubble and shows the report card.
+ * block: idle pitch, pending, error and blocked. One bubble covers every
+ * no-report state, so the page doesn't jump between cards before a report
+ * lands. Once a report exists the parent hides this bubble and shows the report
+ * card.
  *
  * A blocked action stays visible but disabled, and Shelly SAYS why in a
- * second paragraph. This replaced a hover tooltip on the disabled button,
- * which phones never showed.
+ * second paragraph; don't use a hover tooltip on the disabled button, since
+ * phones never show it.
  */
 export function EndgameInsightsBubble({
   status,

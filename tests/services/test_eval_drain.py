@@ -1,10 +1,10 @@
-"""Cold-drain architectural invariant tests for Phase 91.
+"""Entry-ply lane architectural invariant tests.
 
 Tests cover:
 - gather-outside-session structural invariant (AST scan + static check)
 - LIFO pick order (id DESC, batch=10)
 - Idempotency: crash before commit leaves rows pending, re-picked next tick
-- Engine (None, None) marks game completed — no permanent retry (D-09 / R-02)
+- Engine (None, None) marks game completed — no permanent retry
 - Partial index used for the LIFO pick query (ix_games_evals_pending EXPLAIN check)
 - Cancellation propagates without retry (lifespan shutdown contract)
 
@@ -15,13 +15,13 @@ for test data inserts that need to be visible across sessions, and monkeypatch
 app.services.eval_drain.async_session_maker to route drain sessions to the
 test DB (same pattern as test_import_service.py).
 
-Phase 91 / SEED-023 locked decisions exercised here:
-    D-09: engine (None, None) → game still marked evals_completed_at = NOW()
-    D-11: LIFO id-DESC, batch size = _DRAIN_BATCH_SIZE
-    D-13: idle sleep = _DRAIN_IDLE_SLEEP_SECONDS (not tested for duration)
-    T-91-06: stuck game at LIFO head gets marked done via D-09 guard
-    T-91-08: gather-outside-session enforced by static AST test (CI regression)
-    T-91-09: idempotency on crash verified by test_idempotent_on_simulated_crash
+Locked behaviors exercised here:
+    Engine (None, None) → game still marked evals_completed_at = NOW()
+    LIFO id-DESC, batch size = _DRAIN_BATCH_SIZE
+    idle sleep = _DRAIN_IDLE_SLEEP_SECONDS (not tested for duration)
+    stuck game at LIFO head gets marked done via the (None, None) guard
+    gather-outside-session enforced by static AST test (CI regression)
+    idempotency on crash verified by test_idempotent_on_simulated_crash
 """
 
 from __future__ import annotations
@@ -142,10 +142,10 @@ async def _delete_games_by_ids(
 
 
 class TestGatherOutsideSession:
-    """T-91-08: asyncio.gather must NEVER be inside an AsyncSession scope.
+    """asyncio.gather must NEVER be inside an AsyncSession scope.
 
-    Task 2 (SEED-138) extracted run_eval_drain's per-tick body into
-    _eval_drain_tick (mirroring _full_drain_tick) so the loop is thin enough
+    run_eval_drain's per-tick body lives in _eval_drain_tick (mirroring
+    _full_drain_tick) so the loop is thin enough
     to carry a per-tick Sentry isolation scope. run_eval_drain itself no
     longer contains a gather call at all, so this test parses the AST of
     _eval_drain_tick instead and fails if a future edit moves the gather
@@ -220,7 +220,7 @@ class TestGatherOutsideSession:
 
 
 class TestLifoOrder:
-    """D-11: pick query returns the 10 highest IDs in descending order."""
+    """Pick query returns the 10 highest IDs in descending order."""
 
     async def test_lifo_order(
         self,
@@ -280,7 +280,7 @@ class TestLifoOrder:
 
 
 class TestIdempotentOnSimulatedCrash:
-    """T-91-09: crash before commit leaves rows pending; they are re-picked."""
+    """Crash before commit leaves rows pending; they are re-picked."""
 
     async def test_idempotent_on_simulated_crash(
         self,
@@ -371,7 +371,7 @@ class TestIdempotentOnSimulatedCrash:
             monkeypatch.setattr(drain_module, "_mark_evals_completed", original_mark)
 
             # (c) The SAME 3 games are re-pickable after their lease expires (TTL reclaim).
-            # D-01 (Phase 123 SEED-051): _pick_pending_game_ids now commits a lease before
+            # _pick_pending_game_ids now commits a lease before
             # drain work, so games are NOT instantly re-pickable on crash — they're reclaimable
             # after entry_eval_lease_expiry < now().  Simulate expiry by back-dating leases.
             past_ts = dt.now(timezone.utc) - timedelta(minutes=5)
@@ -396,7 +396,7 @@ class TestIdempotentOnSimulatedCrash:
 
 
 class TestEngineNoneMarksComplete:
-    """D-09 / R-02: engine returning (None, None) must NOT cause permanent retry."""
+    """Engine returning (None, None) must NOT cause permanent retry."""
 
     async def test_engine_none_marks_complete(
         self,
@@ -423,14 +423,14 @@ class TestEngineNoneMarksComplete:
 
         # Insert 2 pending games with NULL evals_completed_at (committed so drain sees them)
         # No GamePosition rows — the drain will find 0 eval targets but still call
-        # _mark_evals_completed for all picked game IDs (D-09 invariant).
+        # _mark_evals_completed for all picked game IDs.
         game_ids = await _insert_and_commit_pending_games(
             drain_test_session_maker, drain_test_user, 2
         )
         try:
             # Run one drain iteration with a short timeout.
             # The drain picks the games, finds 0 eval targets (no GamePosition rows),
-            # skips _apply_eval_results, calls _mark_evals_completed, commits.
+            # skips _apply_entry_eval_results, calls _mark_evals_completed, commits.
             drain_task = asyncio.create_task(drain_module.run_eval_drain())
             # Allow the drain to complete one full iteration (no eval targets → quick path)
             try:
@@ -461,15 +461,15 @@ class TestEngineNoneMarksComplete:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)
 
 
-# ─── Test: dead-pool all-fail circuit breaker leaves batch pending (Phase 148 item 2) ──
+# ─── Test: dead-pool all-fail circuit breaker leaves batch pending ──
 
 
 class TestDeadPoolAllFailLeavesPending:
-    """Phase 148 item 2: a non-empty entry-ply batch where every engine eval
+    """A non-empty entry-ply batch where every engine eval
 
     returns (None, None) must NOT be stamped evals_completed_at — mirrors the
-    full-ply WR-05 breaker (test_full_eval_drain.py::test_all_fail_keeps_game_pending).
-    Must coexist with TestEngineNoneMarksComplete (D-09 zero-eval-target case),
+    full-ply breaker (test_full_eval_drain.py::test_all_fail_keeps_game_pending).
+    Must coexist with TestEngineNoneMarksComplete (zero-eval-target case),
     which asserts the OPPOSITE outcome for an empty eval_targets batch.
     """
 
@@ -588,7 +588,7 @@ class TestCancellationPropagates:
             await drain_task
 
 
-# ─── Test: single-walk per-game target collection (Quick 260521-d6o) ──────────
+# ─── Test: single-walk per-game target collection ──────────
 
 
 def _make_ply_data(
@@ -627,7 +627,7 @@ _LONG_PGN: str = (
 
 
 class TestSingleWalkTargetCollection:
-    """Quick 260521-d6o: cold-drain target collection must parse each PGN once.
+    """Cold-drain target collection must parse each PGN once.
 
     Locks the single-walk invariant: a game with N entry plies (1 midgame +
     M endgame spans) triggers AT MOST ONE chess.pgn.read_game per outer
@@ -637,10 +637,9 @@ class TestSingleWalkTargetCollection:
     def _install_read_game_counter(self, monkeypatch: pytest.MonkeyPatch) -> list[int]:
         """Patch chess.pgn.read_game in the eval_entry namespace with a counter wrapper.
 
-        Phase 150 R7 Task 2: the single-walk collectors live in eval_entry.py now
-        (moved from eval_drain.py) -- chess.pgn is a shared module object either way
-        (patching it here affects the one real chess.pgn.read_game globally), but
-        `import chess.pgn` itself only lives in eval_entry.py's namespace post-move.
+        The single-walk collectors live in eval_entry.py -- chess.pgn is a shared module
+        object either way (patching it here affects the one real chess.pgn.read_game
+        globally), but `import chess.pgn` itself only lives in eval_entry.py's namespace.
 
         Returns a single-element list so the closure can mutate the counter.
         """
@@ -841,7 +840,7 @@ class TestSingleWalkTargetCollection:
         assert knight.piece_type == chess_lib.KNIGHT
 
 
-# ─── SEED-052: batched entry-ply eval write regression ────────────────────────
+# ─── Batched entry-ply eval write regression ──────────────────────────────────
 
 
 async def _insert_entry_positions(
@@ -850,7 +849,7 @@ async def _insert_entry_positions(
     game_id: int,
     rows: list[dict[str, Any]],
 ) -> None:
-    """Insert GamePosition rows for a game and commit (SEED-052 test helper).
+    """Insert GamePosition rows for a game and commit (test helper).
 
     Each dict: {"ply": int, "endgame_class": int|None}. eval_cp/eval_mate start
     NULL so the test can assert the batched UPDATE wrote them.
@@ -877,9 +876,9 @@ async def _insert_entry_positions(
 
 
 class TestBatchedEntryEvalWrite:
-    """SEED-052: _apply_eval_results batches the per-row UPDATE into one round-trip.
+    """_apply_entry_eval_results batches the per-row UPDATE into one round-trip.
 
-    Mirrors the full-ply lane's 260616-jq1 / FLAWCHESS-6B fix on the entry-ply lane.
+    Mirrors the full-ply lane's batched write on the entry-ply lane.
     Asserts the batched write spans multiple games, honors the optional endgame_class
     disambiguation, preserves the (None, None) skip + counts, and never clobbers a row
     whose endgame_class does not match the target.
@@ -893,7 +892,7 @@ class TestBatchedEntryEvalWrite:
         import chess
 
         from app.models.game_position import GamePosition
-        from app.services.eval_drain import _apply_eval_results, _EvalTarget
+        from app.services.eval_drain import _apply_entry_eval_results, _EntryPlyEvalTarget
 
         user_id = drain_test_user
         game_ids = await _insert_and_commit_pending_games(drain_test_session_maker, user_id, n=2)
@@ -917,28 +916,28 @@ class TestBatchedEntryEvalWrite:
 
         board = chess.Board()
         targets = [
-            _EvalTarget(
+            _EntryPlyEvalTarget(
                 game_id=g1,
                 ply=6,
                 eval_kind="middlegame_entry",
                 endgame_class=None,
                 board=board,
             ),
-            _EvalTarget(
+            _EntryPlyEvalTarget(
                 game_id=g1,
                 ply=8,
                 eval_kind="middlegame_entry",
                 endgame_class=None,
                 board=board,
             ),
-            _EvalTarget(
+            _EntryPlyEvalTarget(
                 game_id=g2,
                 ply=40,
                 eval_kind="endgame_span_entry",
                 endgame_class=3,
                 board=board,
             ),
-            _EvalTarget(
+            _EntryPlyEvalTarget(
                 game_id=g2,
                 ply=42,
                 eval_kind="endgame_span_entry",
@@ -955,7 +954,7 @@ class TestBatchedEntryEvalWrite:
 
         try:
             async with drain_test_session_maker() as session:
-                made, failed = await _apply_eval_results(session, targets, results)
+                made, failed = await _apply_entry_eval_results(session, targets, results)
                 await session.commit()
 
             assert made == 4
@@ -982,7 +981,7 @@ class TestBatchedEntryEvalWrite:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)
 
 
-# ─── SEED-053: opening-eval cache read/write tests ────────────────────────────
+# ─── Opening-eval cache read/write tests ──────────────────────────────────────
 
 # Unique hash values used across the three cache tests (avoid collisions with
 # other test helpers that use ply=0 or small integers as full_hash).
@@ -993,7 +992,7 @@ _CACHE_HASH_TERMINAL: int = 9_900_000_004  # terminal donor hash — must NOT be
 _CACHE_HASH_DEEP: int = 9_900_000_005  # ply > DEDUP_MAX_PLY — must NOT be cached
 _CACHE_HASH_MISS: int = 9_900_000_099  # a hash that is NOT in the cache
 
-# Phase 220 CACHEFIX-08: additional hashes for the two-source confirmation
+# Additional hashes for the two-source confirmation
 # write-path tests (promote/replace/self-promotion/immutability).
 _CACHE_HASH_PROMOTE: int = 9_900_000_101
 _CACHE_HASH_BOUNDARY: int = 9_900_000_102
@@ -1059,7 +1058,7 @@ async def _seed_opening_eval_cache_full(
     disagreements: int = 0,
     source_game_id: int | None = None,
 ) -> None:
-    """Phase 220 CACHEFIX-08: insert one opening_position_eval row with the full
+    """Insert one opening_position_eval row with the full
     provenance-column set and commit. ON CONFLICT DO NOTHING (safe to call
     repeatedly with the same full_hash)."""
     async with session_maker() as session:
@@ -1091,7 +1090,7 @@ async def _fetch_opening_eval_row(
     session_maker: async_sessionmaker[AsyncSession],
     full_hash: int,
 ) -> sa.Row[Any] | None:
-    """Phase 220 CACHEFIX-08: read back one opening_position_eval row's full
+    """Read back one opening_position_eval row's full
     provenance-column set for assertion."""
     async with session_maker() as session:
         return (
@@ -1107,7 +1106,7 @@ async def _fetch_opening_eval_row(
 
 
 class TestOpeningEvalCacheRead:
-    """SEED-053 / D-123.1-05: _fetch_dedup_evals reads the opening_position_eval cache.
+    """_fetch_dedup_evals reads the opening_position_eval cache.
 
     Read-equivalence test: seed opening_position_eval directly, call _fetch_dedup_evals,
     assert the result matches the expected (eval_cp, eval_mate, best_move) values.
@@ -1121,8 +1120,8 @@ class TestOpeningEvalCacheRead:
     ) -> None:
         """_fetch_dedup_evals returns cache contents for present hashes; absent hashes omitted.
 
-        Phase 220 CACHEFIX-08: seeds CONFIRMED rows -- _fetch_dedup_evals now filters
-        to confirmed=true, so a plain candidate (the pre-CACHEFIX-08 seeding shape)
+        Seeds CONFIRMED rows -- _fetch_dedup_evals now filters
+        to confirmed=true, so a plain candidate (the old seeding shape)
         would no longer be returned here. This test is about the read/column mapping,
         not the confirmation scheme (covered by TestOpeningEvalCacheWrite)."""
         from app.services.eval_drain import _fetch_dedup_evals
@@ -1156,7 +1155,7 @@ class TestOpeningEvalCacheRead:
             assert _CACHE_HASH_B in result, "cached hash B must be returned"
             assert _CACHE_HASH_MISS not in result, "uncached hash must be absent"
 
-            # Values must match what was seeded (4-tuple incl. pv — SEED-076 follow-up).
+            # Values must match what was seeded (4-tuple incl. pv).
             assert result[_CACHE_HASH_A] == (42, None, "e2e4", None), (
                 f"hash A: expected (42, None, 'e2e4', None), got {result[_CACHE_HASH_A]}"
             )
@@ -1179,18 +1178,17 @@ class TestOpeningEvalCacheRead:
 
 
 class TestOpeningEvalCacheWrite:
-    """SEED-053 / D-123.1-04, extended by Phase 220 CACHEFIX-08 (D-11/D-12/D-13):
-    _upsert_opening_cache writes through the two-source confirmation path.
+    """_upsert_opening_cache writes through the two-source confirmation path.
 
     Write-population test: construct engine_targets and engine_result_map representing
     a mix of cacheable positions, excluded positions (terminal, deep ply, null eval),
     and verify the correct subset lands in opening_position_eval as candidates.
 
-    Candidate/promote/replace tests (Phase 220): a second agreeing source from a
+    Candidate/promote/replace tests: a second agreeing source from a
     DIFFERENT game promotes; a disagreeing one replaces and bumps disagreements; a
-    result from the SAME source game neither promotes nor disagrees (D-13); a
+    result from the SAME source game neither promotes nor disagrees; a
     confirmed row is immutable except for the pv self-heal; disagreements reaching
-    exactly 2 fires Sentry once (D-12); an empty target list is a true no-op.
+    exactly 2 fires Sentry once; an empty target list is a true no-op.
     """
 
     async def _make_engine_targets_and_results(
@@ -1279,7 +1277,7 @@ class TestOpeningEvalCacheWrite:
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """Freshly-computed opening misses land in the cache as CANDIDATES; excluded
-        targets do not (Phase 220 CACHEFIX-08: confirmed=false, n_sources=1)."""
+        targets do not (confirmed=false, n_sources=1)."""
         from app.services.eval_drain import _upsert_opening_cache
 
         engine_targets, engine_result_map = await self._make_engine_targets_and_results()
@@ -1346,11 +1344,9 @@ class TestOpeningEvalCacheWrite:
         self,
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Phase 220 CACHEFIX-08 replaces first-write-wins: a second, disagreeing
-        result from a DIFFERENT game replaces the candidate's value wholesale and
-        bumps disagreements — it stays unconfirmed (n_sources=1). (Formerly
-        test_idempotency_first_write_wins, which pinned the pre-CACHEFIX-08
-        first-write-wins semantics this test now replaces.)"""
+        """A second, disagreeing result from a DIFFERENT game replaces the candidate's
+        value wholesale (not first-write-wins) and bumps disagreements — it stays
+        unconfirmed (n_sources=1)."""
         from app.services.eval_drain import _upsert_opening_cache
         import chess
 
@@ -1539,7 +1535,7 @@ class TestOpeningEvalCacheWrite:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-11: the comparison is `<=` -- a delta exactly at
+        """The comparison is `<=` -- a delta exactly at
         OPENING_CACHE_AGREE_MAX_SCORE_DELTA promotes; the smallest representable
         float step above it replaces. Tested against _cache_values_agree directly
         with the sigmoid conversion monkeypatched to fixed scores, since an exact
@@ -1576,7 +1572,7 @@ class TestOpeningEvalCacheWrite:
         drain_test_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-12: Sentry fires exactly once, on the write that takes disagreements
+        """Sentry fires exactly once, on the write that takes disagreements
         from 1 to 2 -- two CONSECUTIVE misses on the same position, not the first
         one (which is the expected ~1% p99-floor rate of an honest disagreement)."""
         import chess
@@ -1684,7 +1680,7 @@ class TestOpeningEvalCacheWrite:
         self,
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """D-13: a result whose game_id equals the candidate's own source_game_id
+        """A result whose game_id equals the candidate's own source_game_id
         (a re-drained or resubmitted game) neither promotes nor counts as a
         disagreement -- one game can never confirm itself."""
         from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
@@ -1732,7 +1728,7 @@ class TestOpeningEvalCacheWrite:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_SELF])
 
 
-# ─── Phase 145 Plan 03: _build_flaw_blob_lease_positions tests ────────────────
+# ─── _build_flaw_blob_lease_positions tests ───────────────────────────────────
 #
 # PGN used throughout: "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
 # Half-move (ply) sequence:
@@ -1878,7 +1874,7 @@ async def _delete_lease_build_games(
 
 
 class TestBuildFlawBlobLeasePositions:
-    """Phase 145 Plan 03: _build_flaw_blob_lease_positions correctness.
+    """_build_flaw_blob_lease_positions correctness.
 
     Tests:
     - lease_build_normal: walkable PV → N tokens with correct {flaw_ply}:{line}:{node_k}
@@ -1900,7 +1896,7 @@ class TestBuildFlawBlobLeasePositions:
         monkeypatch.setattr(
             eval_drain_module, "async_session_maker", lease_build_test_session_maker
         )
-        # Phase 150 R7: _build_flaw_blob_lease_positions moved to eval_apply.py and
+        # _build_flaw_blob_lease_positions lives in eval_apply.py and
         # opens its own internal session there -- redirect that binding too.
         monkeypatch.setattr(
             eval_apply_module, "async_session_maker", lease_build_test_session_maker
@@ -1934,7 +1930,7 @@ class TestBuildFlawBlobLeasePositions:
             # Both lines are walkable → no sentinels
             assert len(sentinels) == 0, f"Expected no sentinels for walkable PV, got {sentinels}"
 
-            # SEED-079: only even (solver) node_k are leased — the gate never reads
+            # Only even (solver) node_k are leased — the gate never reads
             # odd (defender) nodes, so they are not engine-evaluated.
             # Missed line: 2-move PV → walk nodes 0, 1, 2 → even tokens k=0, k=2 only.
             missed_tokens = [p.token for p in positions if ":missed:" in p.token]
@@ -1972,7 +1968,7 @@ class TestBuildFlawBlobLeasePositions:
         monkeypatch.setattr(
             eval_drain_module, "async_session_maker", lease_build_test_session_maker
         )
-        # Phase 150 R7: _build_flaw_blob_lease_positions moved to eval_apply.py and
+        # _build_flaw_blob_lease_positions lives in eval_apply.py and
         # opens its own internal session there -- redirect that binding too.
         monkeypatch.setattr(
             eval_apply_module, "async_session_maker", lease_build_test_session_maker
@@ -2011,7 +2007,7 @@ class TestBuildFlawBlobLeasePositions:
         lease_build_test_session_maker: async_sessionmaker[AsyncSession],
         lease_build_test_user: int,
     ) -> None:
-        """Lichess %eval game leased identically to engine game (D-09/D-09a)."""
+        """Lichess %eval game leased identically to engine game."""
         import app.services.eval_apply as eval_apply_module
         import app.services.eval_drain as eval_drain_module
         from app.services.eval_drain import _build_flaw_blob_lease_positions
@@ -2019,7 +2015,7 @@ class TestBuildFlawBlobLeasePositions:
         monkeypatch.setattr(
             eval_drain_module, "async_session_maker", lease_build_test_session_maker
         )
-        # Phase 150 R7: _build_flaw_blob_lease_positions moved to eval_apply.py and
+        # _build_flaw_blob_lease_positions lives in eval_apply.py and
         # opens its own internal session there -- redirect that binding too.
         monkeypatch.setattr(
             eval_apply_module, "async_session_maker", lease_build_test_session_maker
@@ -2069,11 +2065,11 @@ class TestBuildFlawBlobLeasePositions:
         try:
             positions, sentinels = await _build_flaw_blob_lease_positions(game_id)
 
-            # D-09: lichess game produces identical output (no is_lichess branch in the walk)
+            # Lichess game produces identical output (no is_lichess branch in the walk)
             assert len(sentinels) == 0, (
                 f"Lichess game: expected no sentinels for walkable PV, got {sentinels}"
             )
-            # SEED-079: even-only leasing applies identically to lichess games.
+            # Even-only leasing applies identically to lichess games.
             missed_tokens = [p.token for p in positions if ":missed:" in p.token]
             allowed_tokens = [p.token for p in positions if ":allowed:" in p.token]
             assert len(missed_tokens) == 2, (
@@ -2086,7 +2082,7 @@ class TestBuildFlawBlobLeasePositions:
             await _delete_lease_build_games(lease_build_test_session_maker, [game_id])
 
 
-# ─── SEED-079: slim-blob assembly (even-only worker results + odd placeholders) ─
+# ─── PV-line blob assembly (even-only worker results + odd placeholders) ─
 
 
 def _submit_eval(
@@ -2111,7 +2107,7 @@ def _submit_eval(
 
 
 def _is_placeholder_node(node: PvNode) -> bool:
-    """True when a PvNode is the SEED-079 all-None odd-index defender placeholder."""
+    """True when a PvNode is the all-None odd-index defender placeholder."""
     return (
         node["b"] is None
         and node["bm"] is None
@@ -2122,7 +2118,7 @@ def _is_placeholder_node(node: PvNode) -> bool:
 
 
 class TestSlimBlobAssembly:
-    """SEED-079: _assemble_one_line_blob reconstructs full-index blobs from even-only results.
+    """_assemble_one_line_blob reconstructs full-index blobs from even-only results.
 
     - even-only worker results → full-index blob with all-None placeholders at odd indices
     - a missing EVEN node is a gap (stop); a missing odd node is a placeholder (not a gap)
@@ -2249,7 +2245,7 @@ class TestSlimBlobAssembly:
 
 
 class TestSlimLocalDrainLineBlobs:
-    """SEED-079 item 4: _build_line_blobs assembles slim blobs (even continuation nodes only).
+    """_build_line_blobs assembles PV-line blobs (even continuation nodes only).
 
     Node 0 comes from pos_eval + second_best_map (unchanged); even continuation nodes
     (2, 4, ...) come from node_eval; odd indices are all-None placeholders; a missing

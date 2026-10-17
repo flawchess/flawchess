@@ -1,7 +1,5 @@
 """Repository tests for user_benchmark_percentiles: UPSERT, NULL, FK CASCADE.
 
-Phase 94.1 Plan 01 Wave 0.
-
 Tests:
 - test_upsert_inserts_when_no_row_exists
 - test_upsert_overwrites_existing_row
@@ -10,14 +8,14 @@ Tests:
 - test_pk_rejects_duplicate_metric_for_same_user_via_plain_insert
 - test_fetch_for_user_returns_dict_keyed_by_metric_id
 
-Guarded by ``pytest.importorskip`` so CI stays green until Plan 04 ships
-``app.repositories.user_benchmark_percentiles_repository``.
+Guarded by ``pytest.importorskip`` so the module is skipped when
+``app.repositories.user_benchmark_percentiles_repository`` is absent.
 
 Data isolation: all tests use the rollback-scoped ``db_session`` fixture from
 ``tests/conftest.py`` — no committed rows leak between tests.
 
-Plan 13 (gap-closure): ``n_cells_floor`` column dropped from the table and
-from all test fixtures / assertions. Row existence implies above-floor.
+The ``n_cells_floor`` column no longer exists on the table or in the
+test fixtures / assertions. Row existence implies above-floor.
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # ---------------------------------------------------------------------------
-# Guard — skip module until Plan 04 creates the repository
+# Guard — skip module when the repository is absent
 # ---------------------------------------------------------------------------
 
 user_benchmark_percentiles_repository = pytest.importorskip(
@@ -62,8 +60,8 @@ _ALL_METRICS: tuple[str, ...] = (
 _DEFAULT_VALUE: float = 0.05
 _DEFAULT_PERCENTILE: float = 62.3
 _DEFAULT_CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
-_DEFAULT_N_GAMES: int = 42  # arbitrary pooled count — n_games is required (Phase 94.2)
-# Phase 94.4 D-01: PK widens to include time_control_bucket. Tests use a
+_DEFAULT_N_GAMES: int = 42  # arbitrary pooled count — n_games is required
+# PK widens to include time_control_bucket. Tests use a
 # single canonical TC unless they exercise the per-TC dimensionality
 # directly. ``blitz`` mirrors the canonical-slice test seeds elsewhere.
 from app.models.user_rating_anchors import TimeControlBucket as _TimeControlBucket  # noqa: E402
@@ -97,7 +95,7 @@ async def _ensure_test_users(db_session: AsyncSession) -> None:
 
 async def test_upsert_inserts_when_no_row_exists(db_session: AsyncSession) -> None:
     """upsert_percentile creates a row that SELECT can retrieve."""
-    # Phase 94.4 D-01 / D-08: PK widens to (user_id, metric,
+    # PK widens to (user_id, metric,
     # time_control_bucket); fetch_for_user returns nested dict
     # dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]].
     await upsert_percentile(
@@ -192,7 +190,7 @@ async def test_upsert_handles_percentile_null(db_session: AsyncSession) -> None:
 
     This path may occur when the CDF lookup produces None (e.g., value out of
     range). The row is still written — the caller controls whether to write.
-    Plan 13: below-floor users no longer produce rows at all; this test covers
+    Below-floor users no longer produce rows at all; this test covers
     the case where a value is computed but the percentile lookup returns None.
     """
     await upsert_percentile(
@@ -229,7 +227,7 @@ async def test_fk_cascade_on_user_delete(db_session: AsyncSession) -> None:
     """Deleting the user cascades to remove all user_benchmark_percentiles rows.
 
     ON DELETE CASCADE from users.id ensures referential integrity — no orphan
-    percentile rows survive after the user is removed (D-08 schema spec).
+    percentile rows survive after the user is removed (schema spec).
     """
     from sqlalchemy import delete, text
 
@@ -283,7 +281,7 @@ async def test_pk_rejects_duplicate_metric_for_same_user_via_plain_insert(
 ) -> None:
     """A plain INSERT without ON CONFLICT fails with IntegrityError on duplicate PK.
 
-    Phase 94.4 D-01: the PK widens to (user_id, metric, time_control_bucket).
+    The PK widens to (user_id, metric, time_control_bucket).
     A duplicate (user, metric, tc) plain INSERT/INSERT still violates the
     PK; a SAME (user, metric) on a DIFFERENT tc is now legal (each TC has
     its own row).
@@ -396,7 +394,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
 async def test_has_any_rows_returns_false_when_no_rows(db_session: AsyncSession) -> None:
     """has_any_rows returns False when no percentile rows exist for the user.
 
-    Phase 96 Plan 01 Task 1: verifies the Tier-2 signal baseline (user with
+    Verifies the Tier-2 signal baseline (user with
     no rows is not yet Stage-B ready).
     """
     result = await has_any_rows(db_session, user_id=_TEST_USER_ID)
@@ -411,7 +409,7 @@ async def test_has_any_rows_returns_false_when_no_rows(db_session: AsyncSession)
 async def test_has_any_rows_returns_true_when_row_exists(db_session: AsyncSession) -> None:
     """has_any_rows returns True when at least one percentile row exists for the user.
 
-    Phase 96 Plan 01 Task 1: verifies the Tier-2 signal positive case.
+    Verifies the Tier-2 signal positive case.
     Row existence is the post-commit Stage-B signal (computed_at refreshed
     on every upsert, so no Stage-B race).
     """
@@ -439,7 +437,7 @@ async def test_has_any_rows_returns_true_when_row_exists(db_session: AsyncSessio
 async def test_has_any_rows_scoped_to_user(db_session: AsyncSession) -> None:
     """has_any_rows(user_id=X) must not return True due to rows owned by user Y.
 
-    Phase 96 Plan 01 Task 1 SC-1: T-96-01 IDOR mitigation — rows for a
+    IDOR guard: rows for a
     different user must not affect the existence check.
     """
     # Insert a row for _SECOND_USER_ID only

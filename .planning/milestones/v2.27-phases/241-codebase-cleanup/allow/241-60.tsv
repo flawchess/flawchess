@@ -1,0 +1,2 @@
+kind	path	needle	reason
+diff	frontend/src/hooks/useTrainRevealTree.ts	: liveEval	property shorthand `live` expanded to `live: liveEval` so the useTreeMoveGrading option keeps its name (plan 241-60 task 1a)

@@ -10,7 +10,7 @@
  *
  * This project registers no `@testing-library/jest-dom` matchers, so
  * assertions read `.disabled` off a cast element and `.textContent` off the
- * node, following `TrainReminderButton.test.tsx`.
+ * node, following `useTrainReminderSlot.test.tsx`.
  */
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

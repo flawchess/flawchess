@@ -1,7 +1,7 @@
 /**
  * Vitest unit tests for the computeInactivityGaps helper.
  *
- * Covers all behavior-block cases from 88.3-01-PLAN.md Task 1.
+ * Covers all behavior-block cases.
  * Pure function tests — no DOM environment needed.
  */
 

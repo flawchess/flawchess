@@ -1,18 +1,15 @@
 /**
  * engineAssetCache — the single byte-ownership layer for all three engine
  * assets (Maia model, ORT runtime, Stockfish wasm) backed by the browser's
- * Cache API (D-20, closing G-213-37).
+ * Cache API.
  *
- * Bug fix: the 45.7 MB Maia model was fetched ONLY inside `maia-worker.js`
- * (`fetch(MODEL_PATH)`) — a worker deliberately terminated at zero leases
- * every time `BotsGame` unmounts (FLAWCHESS-92's mobile-OOM policy), i.e. on
- * EVERY new game or rematch, by design. The only thing that had ever hidden
- * the resulting per-game re-download was the browser's HTTP cache, and
- * DevTools "Disable cache" — exactly how this phase is verified — removes
- * it. The ORT runtime (213-11) and the Stockfish wasm (213-08) each got
- * their own in-memory patch for their own path, but neither reaches INSIDE
- * the worker where the model lives, so the largest of the three assets had
- * no cache at all. That hole is G-213-37.
+ * Why a Cache API layer: the 45.7 MB Maia model is fetched inside
+ * `maia-worker.js` (`fetch(MODEL_PATH)`), and that worker is deliberately
+ * terminated at zero leases every time `BotsGame` unmounts (FLAWCHESS-92's
+ * mobile-OOM policy), i.e. on EVERY new game or rematch, by design. Only the
+ * browser's HTTP cache would hide the resulting per-game re-download, and
+ * DevTools "Disable cache" removes it. An in-memory cache on the main thread
+ * cannot reach INSIDE the worker where the model lives.
  *
  * CacheStorage resolves the contradiction between "download once, zero
  * refetches across surfaces" and "free the worker's heap at zero leases": it
@@ -42,33 +39,11 @@ import type { EngineAssetId } from './engineAssetProgress';
  * (knip): nothing outside this module needs the raw number, only the derived
  * name below.
  *
- * Bumped 1 -> 2 (Phase 217-02, 2026-09-05): the six vendored onnxruntime-web
- * runtime files under `public/maia/` were replaced at 1.29.0 (different
- * bytes, same filenames), so every returning browser must discard its
- * cached 1.27.0-era bytes rather than keep serving them indefinitely.
- *
- * Bumped 2 -> 3 (quick 260905-rhc, 2026-09-05): the URLs built from this
- * constant now carry a `?v=<n>` query (see `ENGINE_ASSET_VERSION_QUERY` /
- * `versionedEngineAssetUrl` below), so every existing `...-v2` CacheStorage
- * entry keys on a URL nothing will ever request again. Bumping makes the
- * next open/sweep delete those orphans rather than retain ~67 MB
- * unreachable forever.
- *
- * Bumped 3 -> 4 (Phase 219-01, 2026-09-06): the six vendored onnxruntime-web
- * runtime files under `public/maia/` were re-vendored back to 1.27.0
- * (different bytes, same filenames — 1.29.0's wasm build measured 1.5-2.3x
- * slower single-threaded, see `219-MEASUREMENTS.md`), so every returning
- * browser must discard its cached 1.29.0-era bytes rather than keep serving
- * the slower runtime indefinitely.
- *
- * Bumped 4 -> 5 (quick 260906-p54, 2026-09-06): both vendored ORT glue
- * loaders (`ort-wasm-simd-threaded.mjs`, `ort-wasm-simd-threaded.asyncify.mjs`)
- * now carry a 1 GB wasm memory reservation cap (different bytes, same
- * filenames) fixing FLAWCHESS-9V, an iOS Safari out-of-memory crash caused by
- * WebKit's three-large-reservation-per-page budget. Every returning browser
- * must discard the cached 4 GB-reserving loaders. The `?v=<n>` query this
- * constant feeds also invalidates the Cloudflare edge, so no manual CF purge
- * is needed.
+ * Bump this whenever any vendored engine-asset file under `public/maia/` or
+ * `public/engine/` changes bytes under the same filename: the next
+ * `openEngineAssetCache()` then sweeps the old cache, and the `?v=<n>` query
+ * it feeds also invalidates the Cloudflare edge, so no manual purge is
+ * needed.
  */
 const ENGINE_ASSET_CACHE_VERSION = 5;
 
@@ -122,7 +97,7 @@ export const ENGINE_ASSET_CACHE_NAME = `${ENGINE_ASSET_CACHE_NAME_PREFIX}v${ENGI
  * ONCE per page session, however many assets call `getEngineAsset`. Resolves
  * `null` when `caches` is unavailable (Safari private mode, insecure
  * contexts) or the open/sweep itself throws — every caller then degrades to
- * a plain streaming fetch, byte-for-byte the pre-D-20 behavior.
+ * a plain streaming fetch.
  */
 let cacheOpenPromise: Promise<Cache | null> | null = null;
 
@@ -184,7 +159,7 @@ function openEngineAssetCache(): Promise<Cache | null> {
  * local disk write. Throws on a genuine fetch failure — every current caller
  * already catches and degrades; swallowing here would hide a terminal
  * download failure the gate needs in order to offer Retry. NEVER writes a
- * non-ok or partial response to the cache — enforced (CR-01): a body short
+ * non-ok or partial response to the cache — enforced: a body short
  * of a trustworthy content-length throws as a failed download, and a body
  * whose completeness cannot be verified (no content-length, or a
  * content-encoded response whose header carries the wire size) is returned
@@ -201,12 +176,12 @@ async function streamAndCache(
     throw new Error(`engineAssetCache: fetch failed for ${url} (status ${response.status})`);
   }
 
-  // T-213-01-style coercion: a missing/zero/garbage content-length must
+  // Coercion: a missing/zero/garbage content-length must
   // never produce a NaN/Infinity percent downstream.
   const declaredLength = Number(response.headers.get('content-length')) || 0;
   const total = declaredLength || fallbackBytes;
 
-  // CR-01: content-length is only comparable to the DECODED byte count when
+  // Content-length is only comparable to the DECODED byte count when
   // the response is not content-encoded — under gzip/br the header carries
   // the wire size, so an equality check would be a false truncation.
   const contentEncoding = response.headers.get('content-encoding');
@@ -223,11 +198,11 @@ async function streamAndCache(
     onProgress(loaded, total);
   }
 
-  // CR-01 fix: a stream can end with a clean `done: true` short of the
+  // Bug fix: a stream can end with a clean `done: true` short of the
   // declared length (a proxy/CDN closing the socket in a way Fetch treats
-  // as EOF rather than a network error). Before this guard, those truncated
-  // bytes were written to CacheStorage and served back as complete on every
-  // later spawn — a retry loop with no chance of succeeding until a
+  // as EOF rather than a network error). Without this guard, those truncated
+  // bytes would be written to CacheStorage and served back as complete on
+  // every later spawn — a retry loop with no chance of succeeding until a
   // cache-version bump. A verified short read is a failed download: throw,
   // so the worker's retry loop / the gate's Retry re-fetches.
   if (lengthTrustworthy && loaded !== declaredLength) {
@@ -243,7 +218,7 @@ async function streamAndCache(
     offset += chunk.length;
   }
 
-  // CR-01 fix: only persist a body whose completeness was VERIFIED against a
+  // Only persist a body whose completeness was VERIFIED against a
   // trustworthy content-length. An unverifiable body (header absent, zero,
   // or content-encoded) is still returned — session create validates it —
   // but never cached, so unverified bytes can never be served back as
@@ -269,15 +244,15 @@ async function streamAndCache(
 // ─── Public surface ─────────────────────────────────────────────────────────
 
 /**
- * The single byte-ownership layer for engine assets (D-20). Cache-first:
+ * The single byte-ownership layer for engine assets. Cache-first:
  * `cache.match(url)` on a hit whose body has non-zero length reports
  * complete progress once (`onProgress(byteLength, byteLength)`) and resolves
  * those bytes — ZERO network. On a miss (or a zero-length entry, treated as
  * a miss), joins or starts a single-flight fetch keyed by `id`; every
  * JOINER receives an independent `slice(0)` copy so no two callers ever
  * share one ArrayBuffer instance — a caller may push what it receives into a
- * `postMessage` transfer list, which detaches it, exactly how `G-213-36`
- * happened upstream of this module.
+ * `postMessage` transfer list, which detaches it, and a shared instance would
+ * then be detached for every other holder.
  *
  * The single-flight entry is deleted the moment it settles (success or
  * failure) — nothing is retained in module scope past the fetch window, so
@@ -285,7 +260,7 @@ async function streamAndCache(
  * DELIBERATE, easy-to-lose invariant: a promise memoised for the whole page
  * session (the shape `ortRuntimeSource.ts`/`stockfishWorkerSource.ts` use
  * for their OWN single fetch-per-page-load) would retain the bytes in module
- * scope, which is precisely the RAM cost D-20 removes.
+ * scope, which is precisely the RAM cost this layer exists to avoid.
  *
  * NEVER swallows a fetch failure — throws exactly as `streamAndCache` does;
  * every current caller already catches and degrades.

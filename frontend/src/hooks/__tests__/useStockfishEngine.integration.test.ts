@@ -6,11 +6,11 @@
  * real WASM binary in Node — no Worker URL resolution, no @vitest/web-worker
  * (avoided due to known WASM import bug vitest#6118).
  *
- * Confirmed before writing (open question 1 / assumption A2):
+ * Confirmed before writing:
  *   node_modules/stockfish/bin/stockfish-18-lite-single.js contains:
  *     `f.print=function(e){f.listener?f.listener(e):console.log(e)}`
  *   → `engine.listener` is the correct output property name in v18.0.8.
- *   → Files live in `bin/` (not `src/` as RESEARCH.md suggested — v18.0.8
+ *   → Files live in `bin/` (not `src/` as assumed — v18.0.8
  *     changed the package structure; index.js checks `bin/` first, so no
  *     code changes were needed).
  *

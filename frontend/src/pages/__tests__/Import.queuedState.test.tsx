@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 209 Plan 02 (SURGE-04/D-03) — bare queued label on the import progress row.
+ * Bare queued label on the import progress row.
  *
  * Verifies:
  * 1. A job with status 'queued' renders the bare "Import queued, starting shortly"
@@ -85,7 +85,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));
@@ -111,11 +111,11 @@ afterEach(() => {
 
 import { ImportPage } from '../Import';
 
-// Quick 260826-qdl: ImportPage now unconditionally mounts PasteModal, whose
+// ImportPage unconditionally mounts PasteModal, whose
 // useSavePastedGame calls the REAL @tanstack/react-query useMutation, which
 // internally calls the library's OWN (unmocked) useQueryClient — a module
 // mock of the named export does not reach that internal cross-file call, so
-// a real QueryClientProvider is required instead of the previous stub.
+// a real QueryClientProvider is required.
 function renderImport() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -147,7 +147,7 @@ function baseJob(overrides: Partial<ImportStatusResponse>): ImportStatusResponse
   };
 }
 
-describe('Import page queued state (SURGE-04/D-03)', () => {
+describe('Import page queued state', () => {
   it('renders a bare queued label with no position number and no ETA', () => {
     pollingState.data = baseJob({ status: 'queued' });
 
@@ -155,7 +155,7 @@ describe('Import page queued state (SURGE-04/D-03)', () => {
 
     const label = screen.getByTestId('import-progress-text');
     expect(label.textContent).toBe('Import queued, starting shortly');
-    // D-03 prohibition: no queue position number (a digit-and-hash pattern like
+    // No queue position number (a digit-and-hash pattern like
     // "#37") and no minutes-based ETA wording anywhere in the label.
     expect(label.textContent).not.toMatch(/#\d+/);
     expect(label.textContent).not.toMatch(/\bmin(ute)?s?\b/i);

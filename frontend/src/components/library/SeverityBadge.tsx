@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
 import type { FlawSeverity } from '@/types/library';
 
-// Per UI-SPEC §Severity: badge bg = foreground at 14% alpha, border = 30% alpha.
+// Badge bg = foreground at 14% alpha, border = 30% alpha.
 // The composites live in theme.ts (SEV_*_BG / SEV_*_BORDER) and are shared with
 // the severity filter toggles (FlawFilterControl).
 
@@ -89,16 +89,15 @@ interface SeverityBadgeProps {
 
 /**
  * A single severity count badge (Blunders / Mistakes / Inaccuracies) rendered as
- * a colored pill per UI-SPEC §"Severity count row". Colors come from theme.ts
+ * a colored pill (the severity count row). Colors come from theme.ts
  * SEV_* constants; backgrounds and borders are alpha-composites of those same
  * oklch values — no new color values are hard-coded here.
  *
  * Active-filter ring: mirrors TagChip — the badge subscribes to useFlawFilterStore
- * and rings when the severity filter is narrowed to exactly this severity. The
- * filter default is both M+B selected, so a ring would always show if we keyed off
- * plain membership; gating on length===1 means the ring marks the *active
- * constraint* (you've filtered to only blunders, or only mistakes). Inaccuracy is
- * not a filterable severity, so its badge never rings.
+ * and rings when the severity filter is narrowed to exactly this severity. Empty
+ * and both-selected both mean 'all severities', so the ring keys on length===1: it
+ * marks the active constraint (you've filtered to only blunders, or only mistakes).
+ * Inaccuracy is not a filterable severity, so its badge never rings.
  */
 export function SeverityBadge({
   severity,

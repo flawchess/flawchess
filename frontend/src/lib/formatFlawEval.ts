@@ -1,12 +1,12 @@
 /**
- * formatFlawEval — user-POV eval swing formatter for FlawCard (Phase 112, SC-6).
+ * formatFlawEval — user-POV eval swing formatter for FlawCard.
  *
  * Stored eval_cp / eval_mate values are white-POV (positive = white ahead).
  * A flaw always harms the user — so for a black user, the eval *improves* for
  * white: the before eval is more negative (for black), and the after eval is
  * even more negative. To show the swing from the user's perspective we negate
  * both cp and mate when user_color === 'black'.
- * (Pitfall 3 fix: without this negation, a black user's blunder would show a
+ * (Without this negation, a black user's blunder would show a
  * positive swing, suggesting the position improved — the opposite of the truth.)
  *
  * Mate priority: when eval_mate is non-null it takes precedence over eval_cp
@@ -32,7 +32,7 @@ function applyUserPov(
 /**
  * Format a single white-POV eval (positive = white's advantage). Mate takes priority
  * over cp. Returns "—" when both are null. Exported for the TacticLineExplorer eval
- * readout (Phase 135 UAT — shown white-POV, never flipped to the player's perspective).
+ * readout (shown white-POV, never flipped to the player's perspective).
  */
 export function formatFlawEvalPart(evalCp: number | null, evalMate: number | null): string {
   if (evalMate !== null) return `#${evalMate}`;
@@ -52,7 +52,7 @@ export function formatFlawEvalPart(evalCp: number | null, evalMate: number | nul
  * at the anchor it delivers mate on ply `2|M|-1`, otherwise on ply `2|M|`. Walking
  * `stepPlies` into the line leaves `pliesToMate - stepPlies` plies to mate; the
  * displayed (white-POV) count is `ceil(remaining / 2)` with the original sign.
- * Returns 0 once mate has been delivered (Phase 135 UAT — mate count tracks the
+ * Returns 0 once mate has been delivered (the mate count tracks the
  * selected ply in the Tactic Line Explorer).
  */
 export function mateAtPly(

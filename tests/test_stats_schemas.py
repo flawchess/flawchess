@@ -1,8 +1,8 @@
-"""Schema-additivity tests for OpeningWDL — Phase 80 fields are optional.
+"""Schema-additivity tests for OpeningWDL — the MG-entry eval fields are optional.
 
 Verifies that:
 - Existing callers with only the 14 legacy fields still parse correctly.
-- The 6 Phase 80 MG-entry eval fields parse when present.
+- The 6 MG-entry eval fields parse when present.
 - Literal type for eval_confidence rejects invalid values.
 - Optional fields default correctly when omitted.
 """
@@ -34,7 +34,7 @@ _LEGACY: dict[str, object] = dict(
 
 
 def test_opening_wdl_old_payload_still_parses() -> None:
-    """Old payload without Phase 80 fields should parse and default correctly."""
+    """Old payload without the MG-entry eval fields should parse and default correctly."""
     m = OpeningWDL.model_validate(_LEGACY)
 
     # MG-entry eval defaults
@@ -46,11 +46,11 @@ def test_opening_wdl_old_payload_still_parses() -> None:
     assert m.eval_p_value is None
 
 
-# --- Full Phase 80 payload (new fields) ----------------------------------
+# --- Full payload (new fields) ----------------------------------
 
 
 def test_opening_wdl_new_payload_parses() -> None:
-    """All Phase 80 fields parse correctly and round-trip via model_dump."""
+    """All MG-entry eval fields parse correctly and round-trip via model_dump."""
     payload: dict[str, object] = {
         **_LEGACY,
         # MG-entry eval
@@ -91,7 +91,7 @@ def test_avg_eval_pawns_none_when_omitted() -> None:
     assert m.avg_eval_pawns is None
 
 
-# --- MostPlayedOpeningsResponse: eval baselines (260504-my2) -------------
+# --- MostPlayedOpeningsResponse: eval baselines -------------
 
 
 def test_most_played_response_carries_eval_baseline_pawns() -> None:

@@ -1,0 +1,103 @@
+import * as React from 'react';
+import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
+import { Popover as PopoverPrimitive } from 'radix-ui';
+import { Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { EvalConfidenceTooltip } from './EvalConfidenceTooltip';
+
+type ConfidenceLevel = 'low' | 'medium' | 'high';
+
+interface EvalConfidencePopoverProps {
+  level: ConfidenceLevel;
+  pValue: number | null | undefined;
+  gameCount: number | null | undefined;
+  evalMeanPawns: number | null | undefined;
+  /** User's color for this row — drives which per-color baseline tick is shown. */
+  color: 'white' | 'black';
+  testId: string;
+  ariaLabel?: string;
+  /** Extra classes for the trigger span (e.g. positioning). */
+  triggerClassName?: string;
+  /** Forwarded to EvalConfidenceTooltip; pass false when the bullet chart has
+   * no per-color baseline tick (e.g. endgame entry eval). */
+  showBaselineTick?: boolean;
+  /** Forwarded to EvalConfidenceTooltip — which game phase the eval is sampled
+   * at ('opening-end' default, or 'endgame-entry' on the Endgames Games subtab). */
+  evalContext?: 'opening-end' | 'endgame-entry';
+}
+
+// Hover- and tap-activated popover for the eval bullet chart confidence
+// details. Trigger is a Search (magnifying-glass) icon rather than the bullet
+// itself so the bullet stays interaction-free.
+export function EvalConfidencePopover({
+  level,
+  pValue,
+  gameCount,
+  evalMeanPawns,
+  color,
+  testId,
+  ariaLabel = 'Show eval confidence details',
+  triggerClassName,
+  showBaselineTick,
+  evalContext,
+}: EvalConfidencePopoverProps) {
+  const [open, setOpen] = useTrackedPopoverOpen(testId);
+  const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = () => {
+    hoverTimeout.current = setTimeout(() => setOpen(true), 100);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    setOpen(false);
+  };
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <span
+          role="button"
+          tabIndex={0}
+          className={cn(
+            'inline-flex items-center text-brand-brown-light/70 hover:text-brand-brown focus:outline-none cursor-pointer',
+            triggerClassName,
+          )}
+          aria-label={ariaLabel}
+          data-testid={testId}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <Search className="h-4 w-4" />
+        </span>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          side="top"
+          sideOffset={4}
+          onMouseEnter={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+          }}
+          onMouseLeave={handleMouseLeave}
+          className={cn(
+            'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background',
+            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+            'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2',
+            'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2'
+          )}
+        >
+          <EvalConfidenceTooltip
+            level={level}
+            pValue={pValue ?? 1}
+            gameCount={gameCount ?? 0}
+            evalMeanPawns={evalMeanPawns ?? 0}
+            color={color}
+            showBaselineTick={showBaselineTick}
+            evalContext={evalContext}
+          />
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  );
+}

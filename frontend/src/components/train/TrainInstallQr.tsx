@@ -1,8 +1,7 @@
 /**
- * TrainInstallQr — the desktop→phone QR handoff block (HANDOFF-01..04,
- * D-09/D-10/D-13, 203-UI-SPEC.md § Interaction Contract 4). Shared by two
- * mount points: `TrainReminderButton`'s desktop confirmed-state upsell
- * (`testId="qr-handoff-score"`) and `TrainScheduleSettings`'s permanent home
+ * TrainInstallQr — the desktop→phone QR handoff block, shared by the score
+ * screen's desktop phone block (`testId="qr-handoff-score"`, mounted through
+ * `useTrainReminderSlot`) and `TrainScheduleSettings`' phone section
  * (`testId="qr-handoff-settings"`).
  *
  * The mount-site `testId` is a REQUIRED PROP, never hardcoded inside this
@@ -10,27 +9,22 @@
  * queryable instead of colliding on one selector.
  *
  * The payload (`HANDOFF_QR_PATH`) is a plain URL with no token, session id,
- * user id or email of any kind (HANDOFF-01) — a signed one-time credential
- * was explicitly rejected for v1, because a scannable credential rendered on
- * a monitor is account takeover by screen-share, shoulder-surf, or
- * photograph.
+ * user id or email of any kind. A signed one-time credential is deliberately
+ * not used, because a scannable credential rendered on a monitor is account
+ * takeover by screen-share, shoulder-surf, or photograph.
  *
  * `qrcode.react`'s `QRCodeSVG` is lazy-loaded via `React.lazy` + `Suspense`
  * (fallback `null` — the structural-absence rule forbids a skeleton) so its
- * bundle stays off the mobile critical path. UAT item 5 (post-review fix,
- * 203-REVIEW.md): this component now ONLY ever mounts on desktop
- * (`!isMobile && !isStandalone`) at BOTH call sites — the score screen's
- * confirmed-state upsell already gated on that (`showDesktopQr` in
- * `TrainReminderButton`), but `TrainScheduleSettings`'s permanent Settings
- * home used to mount it unconditionally, which meant a phone visiting its
- * own Settings page rendered a QR asking the user to scan their own screen
- * with the same phone. Both call sites now gate before mounting this
- * component; the mobile-reachable equivalent is a live "Install FlawChess"
- * button (or nothing, if there is no live `beforeinstallprompt`), never this
- * component. The chunk is still fetched on demand either way, never eagerly.
+ * bundle stays off the mobile critical path. The chunk is fetched on demand,
+ * never eagerly.
  *
- * No dismiss control anywhere (D-13, a deliberate deviation from
- * HANDOFF-03's literal "dismissible" wording) — do not add one.
+ * Mounted on desktop only (`!isMobile && !isStandalone`) at both call sites:
+ * a phone rendering a QR that asks the user to scan their own screen with
+ * the same phone is nonsense. The mobile equivalent is a live "Install
+ * FlawChess" button (or nothing without a live `beforeinstallprompt`), never
+ * this component.
+ *
+ * No dismiss control anywhere: do not add one.
  */
 import { lazy, Suspense, type ReactElement } from 'react';
 
@@ -38,16 +32,16 @@ const QRCodeSVG = lazy(() =>
   import('qrcode.react').then((module) => ({ default: module.QRCodeSVG })),
 );
 
-/** HANDOFF-01: no credential, no token — a plain path appended to the
+/** No credential, no token — a plain path appended to the
  * current origin at render time. */
 export const HANDOFF_QR_PATH = '/train?src=handoff';
 
-/** Phase 222 UAT round 5: names the whole handoff (install + reminders),
- * since on desktop this block is now the primary ask, not a post-subscribe
- * upsell. Shared by both mount points. */
+/** Names the whole handoff (install + reminders), since on desktop this
+ * block is the primary ask, not a post-subscribe upsell. Shared by both
+ * mount points. */
 export const QR_CAPTION = 'Scan to install FlawChess on your phone and turn on reminders there.';
 
-/** D-10: 128x128, matching `qrcode.react`'s own default render size. */
+/** 128x128, matching `qrcode.react`'s own default render size. */
 export const QR_SIZE_PX = 128;
 
 export interface TrainInstallQrProps {
@@ -62,11 +56,10 @@ export function TrainInstallQr({ testId }: TrainInstallQrProps): ReactElement {
   return (
     <div className="w-full text-center" data-testid={testId}>
       {/*
-        The ONE new non-token colour surface in this phase — fixed
-        (#FFFFFF background / #000000 modules) precisely because it must
-        NOT follow the app theme. A theme-tinted or inverted QR is a
-        scan-reliability risk (203-UI-SPEC.md § Color, QR contrast
-        contract). Do not replace bg-white with a theme.ts token.
+        A non-token colour surface — fixed (#FFFFFF background / #000000
+        modules) precisely because it must NOT follow the app theme. A
+        theme-tinted or inverted QR is a scan-reliability risk. Do not
+        replace bg-white with a theme.ts token.
       */}
       <div className="inline-block rounded-md bg-white p-2">
         <Suspense fallback={null}>

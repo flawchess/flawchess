@@ -1,4 +1,4 @@
-"""Tests for count_wins_by_persona / update_bot_game_persona_id (Phase 185 T-185-02).
+"""Tests for count_wins_by_persona / update_bot_game_persona_id.
 
 Covers: count_wins_by_persona excludes draws, losses, persona_id-NULL rows, and
 non-flawchess-platform rows; groups correctly per persona_id; scoped to
@@ -206,7 +206,7 @@ class TestCountWinsByPersona:
     async def test_persona_with_only_losses_is_absent_not_zero(
         self, db_session: AsyncSession
     ) -> None:
-        """WR-01 regression: a persona played but never won must be absent from
+        """Regression: a persona played but never won must be absent from
         the dict entirely, matching the docstring's "absent means never played
         a winning game" contract — NOT present as a spurious {"persona": 0}
         entry (the previous GROUP BY with no HAVING produced exactly that).

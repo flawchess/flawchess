@@ -1,17 +1,14 @@
-"""Regression tests for SEED-138 Problem 2: background-task Sentry scope bleed.
+"""Regression tests for background-task Sentry scope bleed.
 
-Prior to the SEED-138 fix, all lifespan background loops shared ONE Sentry
-isolation scope. This parametrized suite now covers all SIX lifespan loops
-(run_periodic_reaper, run_eval_drain, run_full_eval_drain,
-run_periodic_guest_cleanup, run_periodic_train_reminders, and SEED-139's
-run_periodic_holed_game_resweep — the newest loop, added carrying the SAME
-per-tick isolation requirement from the start), because
-`AsyncioIntegration` is not enabled and nothing wrapped a per-tick scope
-(SEED-135's FLAWCHESS-9J event carried context/spans from a completely
-different background task). Fix: each loop now wraps its per-tick body in
-`with sentry_sdk.isolation_scope():`.
+Don't share one Sentry isolation scope across lifespan loops: `AsyncioIntegration`
+is not enabled, so nothing else isolates a per-tick scope and an event could carry
+context/spans from a completely different background task. Each loop wraps its
+per-tick body in `with sentry_sdk.isolation_scope():`. This parametrized suite
+covers all SIX lifespan loops (run_periodic_reaper, run_eval_drain,
+run_full_eval_drain, run_periodic_guest_cleanup, run_periodic_train_reminders,
+run_periodic_holed_game_resweep).
 
-This is the behavioral proof for Problem 2: it drives each real loop
+This is the behavioral proof: it drives each real loop
 coroutine through 3 stubbed ticks (tick 1 sets a distinctive Sentry tag,
 tick 2 captures a Sentry message, tick 3 raises asyncio.CancelledError to
 terminate the loop) against a real capturing `sentry_sdk.Client`, then
@@ -141,7 +138,7 @@ class _LoopCase:
 
 def _reminders_extra_setup(monkeypatch: pytest.MonkeyPatch, module: Any) -> None:
     # run_periodic_train_reminders returns immediately (never ticks) unless
-    # VAPID is configured (D-03) -- stub is_push_configured truthy so the
+    # VAPID is configured -- stub is_push_configured truthy so the
     # loop actually reaches its while-loop body.
     monkeypatch.setattr(module.push_send, "is_push_configured", lambda: True)
 

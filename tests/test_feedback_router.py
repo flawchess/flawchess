@@ -1,13 +1,13 @@
 """Integration tests for the POST /api/feedback endpoint.
 
 Coverage:
-- TestFeedbackPersist: 201 response + row written (D-04)
+- TestFeedbackPersist: 201 response + row written
 - TestFeedbackSource: source persisted ('floating_button' default, 'milestone_ask'), unknown -> 422
-- TestFeedbackValidation: empty text → 422; over-max text → 422 (D-03/D-07)
-- TestFeedbackRateLimit: 6th submission within window → 429 (D-07)
-- TestFeedbackGuest: guest user can submit feedback → 201 (D-08)
+- TestFeedbackValidation: empty text → 422; over-max text → 422
+- TestFeedbackRateLimit: 6th submission within window → 429
+- TestFeedbackGuest: guest user can submit feedback → 201
 - TestFeedbackAuth: unauthenticated request → 401
-- TestEloBucket: elo_bucket boundary values (D-05)
+- TestEloBucket: elo_bucket boundary values
 """
 
 import uuid
@@ -61,12 +61,12 @@ _STANDARD_FEEDBACK_BODY = {
 
 
 # ---------------------------------------------------------------------------
-# TestFeedbackPersist — D-04/D-05
+# TestFeedbackPersist
 # ---------------------------------------------------------------------------
 
 
 class TestFeedbackPersist:
-    """Verify POST /api/feedback persists a row and returns 201 (D-04)."""
+    """Verify POST /api/feedback persists a row and returns 201."""
 
     @pytest.mark.asyncio
     async def test_create_returns_201_with_response(self, auth_headers: dict[str, str]) -> None:
@@ -100,7 +100,7 @@ class TestFeedbackPersist:
 
 
 # ---------------------------------------------------------------------------
-# TestFeedbackSource — SEED-191 #9 (source written end to end)
+# TestFeedbackSource (source written end to end)
 # ---------------------------------------------------------------------------
 
 
@@ -176,12 +176,12 @@ class TestFeedbackSource:
 
 
 # ---------------------------------------------------------------------------
-# TestFeedbackValidation — D-03/D-07
+# TestFeedbackValidation
 # ---------------------------------------------------------------------------
 
 
 class TestFeedbackValidation:
-    """Verify validation: empty text → 422; over-max text → 422 (D-03/D-07)."""
+    """Verify validation: empty text → 422; over-max text → 422."""
 
     @pytest.mark.asyncio
     async def test_empty_text_returns_422(self, auth_headers: dict[str, str]) -> None:
@@ -219,12 +219,12 @@ class TestFeedbackValidation:
 
 
 # ---------------------------------------------------------------------------
-# TestFeedbackRateLimit — D-07
+# TestFeedbackRateLimit
 # ---------------------------------------------------------------------------
 
 
 class TestFeedbackRateLimit:
-    """Verify per-user rate limit: 6th submission in window → 429 (D-07)."""
+    """Verify per-user rate limit: 6th submission in window → 429."""
 
     @pytest.mark.asyncio
     async def test_sixth_submission_returns_429(self) -> None:
@@ -265,12 +265,12 @@ class TestFeedbackRateLimit:
 
 
 # ---------------------------------------------------------------------------
-# TestFeedbackGuest — D-08
+# TestFeedbackGuest
 # ---------------------------------------------------------------------------
 
 
 class TestFeedbackGuest:
-    """Verify guest users can submit feedback (D-08)."""
+    """Verify guest users can submit feedback."""
 
     @pytest.mark.asyncio
     async def test_guest_can_submit_feedback(self) -> None:
@@ -316,12 +316,12 @@ class TestFeedbackAuth:
 
 
 # ---------------------------------------------------------------------------
-# TestEloBucket — D-05 (boundary values)
+# TestEloBucket (boundary values)
 # ---------------------------------------------------------------------------
 
 
 class TestEloBucket:
-    """Verify elo_bucket(rating) boundary values (D-05)."""
+    """Verify elo_bucket(rating) boundary values."""
 
     def test_elo_bucket_below_800_returns_none(self) -> None:
         """Ratings below 800 return None (sub-800 floor)."""

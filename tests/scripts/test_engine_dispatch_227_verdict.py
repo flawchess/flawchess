@@ -1,22 +1,21 @@
-"""Tests for scripts/engine_dispatch_227_verdict.py — Phase 227 gate verdict.
+"""Tests for scripts/engine_dispatch_227_verdict.py — continuous-dispatch gate verdict.
 
-The twin of `reports/continuous-dispatch-227/accept-rule.md` (D-00..D-04, D-07,
-D-15, D-17, D-20). Two groups of tests:
+The twin of `reports/continuous-dispatch-227/accept-rule.md`. Two groups of tests:
 
-* Move quality (Task 1): the frozen constants, the D-01 signed point-estimate
-  rule, the D-03 net-regression allowance, the round-mode tripwire and the
+* Move quality: the frozen constants, the signed point-estimate
+  rule, the net-regression allowance, the round-mode tripwire and the
   invalid/incomplete exit codes.
-* Throughput, WebGPU, calibration and the composed `gates` verdict (Task 2).
+* Throughput, WebGPU, calibration and the composed `gates` verdict.
 
 Boundary behavior is pinned through the small pure helpers (`d01_passes`,
 `mq_allowance`) because hand-building TSV data whose mean lands exactly on a
 float margin is fragile; end-to-end behavior is driven through `main(argv)`,
 the same path a real gate run takes.
 
-Mutation checks (recorded in 227-03-SUMMARY.md): flipping `d01_passes` to a
-strict `>` fails `test_d01_exact_margin_passes`. Plan 227-09 (owner direction
-2026-10-02: very similar is good enough) turned the round-repeat determinism
-check into a report-only rate; restoring the raise fails
+Mutation checks: flipping `d01_passes` to a
+strict `>` fails `test_signed_point_estimate_exact_margin_passes`. Per owner
+direction (2026-10-02: very similar is good enough) the round-repeat determinism
+check is a report-only rate; restoring the raise fails
 `test_round_repeat_disagreement_is_valid_and_report_only`.
 """
 
@@ -171,7 +170,7 @@ def cell_line(out: str, cell: str) -> str:
 
 
 # ==============================================================================
-# Frozen constants (T-227-05)
+# Frozen constants
 # ==============================================================================
 
 
@@ -303,26 +302,26 @@ def test_no_threshold_is_reachable_from_the_cli(capsys: pytest.CaptureFixture[st
 
 
 # ==============================================================================
-# D-01 — signed point-estimate rule
+# Signed point-estimate rule
 # ==============================================================================
 
 
-def test_d01_exact_margin_passes() -> None:
+def test_signed_point_estimate_exact_margin_passes() -> None:
     assert d01_passes(-MQ_SIGNED_MARGIN) is True
 
 
-def test_d01_just_below_margin_fails() -> None:
+def test_signed_point_estimate_just_below_margin_fails() -> None:
     assert d01_passes(-MQ_SIGNED_MARGIN - 1e-9) is False
 
 
-def test_d01_positive_difference_passes() -> None:
+def test_signed_point_estimate_positive_difference_passes() -> None:
     assert d01_passes(0.2) is True
 
 
-def test_mq_cli_better_continuous_passes_d01(
+def test_mq_cli_better_continuous_passes_signed_point_estimate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A continuous mode that picks BETTER moves passes (D-00): D > 0."""
+    """A continuous mode that picks BETTER moves passes: D > 0."""
     for stop in ("off", "on"):
         write_cell(tmp_path, "round", stop, mq_rows("round", stop=stop))
         write_cell(
@@ -338,7 +337,7 @@ def test_mq_cli_better_continuous_passes_d01(
     assert "D=0.006667" in line
 
 
-def test_mq_cli_much_worse_continuous_fails_d01_and_still_exits_zero(
+def test_mq_cli_much_worse_continuous_fails_signed_point_estimate_and_still_exits_zero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Four positions lose 0.5 each: D = -2/60 = -0.0333, below -margin.
@@ -359,7 +358,7 @@ def test_mq_cli_much_worse_continuous_fails_d01_and_still_exits_zero(
     assert "d01=fail" in cell_line(out, "on")
 
 
-def test_d01_uses_the_mean_over_repeats_of_each_arm() -> None:
+def test_signed_point_estimate_uses_the_mean_over_repeats_of_each_arm() -> None:
     """Position i: continuous alternates 0.0 / 0.4 over five repeats (mean
     0.16), round is 0.5. Per-position difference = -0.34, pooled over repeats
     BEFORE the position mean (not the worst repeat, not repeat 1)."""
@@ -374,7 +373,7 @@ def test_d01_uses_the_mean_over_repeats_of_each_arm() -> None:
 
 
 # ==============================================================================
-# D-03 — net regressions with a repeat-flip allowance
+# Net regressions with a repeat-flip allowance
 # ==============================================================================
 
 
@@ -405,7 +404,7 @@ def test_mq_allowance_is_signed_net_not_flip_count() -> None:
     assert mq_allowance(rows) == 1
 
 
-def test_d03_net_uses_fractional_continuous_regression_rate() -> None:
+def test_net_regressions_use_fractional_continuous_regression_rate() -> None:
     """Position 0 regresses in 2 of 5 continuous repeats, round never: rho =
     0.4, so net = 0.4 (not 1, not 0)."""
     pid = IDS[0]
@@ -417,7 +416,7 @@ def test_d03_net_uses_fractional_continuous_regression_rate() -> None:
     assert result["net"] == pytest.approx(0.4)
 
 
-def test_d03_continuous_fix_lowers_net() -> None:
+def test_net_regressions_continuous_fix_lowers_net() -> None:
     """Round regresses on position 0 (every repeat, deterministic); continuous
     never does: the fix counts in continuous's favor, net = -1."""
     pid = IDS[0]
@@ -430,7 +429,7 @@ def test_d03_continuous_fix_lowers_net() -> None:
     assert result["pass_d03"] is True
 
 
-def test_d03_net_equal_to_allowance_passes_and_above_fails() -> None:
+def test_net_regressions_equal_to_allowance_pass_and_above_fail() -> None:
     """Allowance 1 (repeats agree). One position regressing in every
     continuous repeat gives net exactly 1 -> pass; two give net 2 -> fail."""
     one = {IDS[0]}
@@ -445,7 +444,9 @@ def test_d03_net_equal_to_allowance_passes_and_above_fails() -> None:
     assert (above["net"], above["allowance"], above["pass_d03"]) == (2.0, 1, False)
 
 
-def test_mq_cli_d03_failure_is_printed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_mq_cli_net_regression_failure_is_printed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     bad = set(IDS[:3])
     for stop in ("off", "on"):
         write_cell(tmp_path, "round", stop, mq_rows("round", stop=stop))
@@ -475,7 +476,7 @@ def test_round_repeat_disagreement_is_valid_and_report_only(
     with concurrent (worker-thread) Maia, so round repeats that pick different
     moves are VALID data, not a harness leak. The disagreement rate is reported
     and the decision math just averages over repeats (D) and uses the
-    fractional net (D-03). Restoring the old `InvalidDataError` raise fails
+    fractional net. Restoring the old `InvalidDataError` raise fails
     this test (mutation proof)."""
     write_passing_mq(tmp_path)
     write_cell(
@@ -502,7 +503,7 @@ def test_round_repeat_disagreement_is_valid_and_report_only(
 def test_round_repeat_disagreement_is_in_the_cell_report() -> None:
     """The statistic lives in the verdict JSON's report-only section (the
     cell's `report`), counts positions whose `bot_move` differs across round
-    repeats, and cannot change D-01 or D-03."""
+    repeats, and cannot change the signed point-estimate or net-regression verdicts."""
     pid = IDS[0]
     agreeing = evaluate_mq_cell("off", mq_rows("round"), mq_rows("continuous"))
     assert agreeing["report"]["round_repeat_disagreement_positions"] == 0
@@ -624,7 +625,7 @@ def test_report_only_inputs_cannot_change_the_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Catastrophic analysis-selector values, a catastrophic Clear-Hash cell and
-    a catastrophic analysis-400 cell leave d01/d03 untouched (D-02, D-20)."""
+    a catastrophic analysis-400 cell leave d01/d03 untouched."""
     write_passing_mq(tmp_path)
     _, base_out = run_mq(tmp_path, capsys)
 
@@ -675,7 +676,7 @@ def test_report_only_inputs_cannot_change_the_verdict(
 def test_report_only_cell_with_an_empty_arm_is_unreadable_not_a_crash(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], empty_arms: tuple[str, ...]
 ) -> None:
-    """Review WR-01: a header-only TSV in a report-only cell used to escape as
+    """A header-only TSV in a report-only cell used to escape as
     TypeError / ZeroDivisionError and abort the whole run."""
     write_passing_mq(tmp_path)
     for arm_mode in ("round", "continuous"):
@@ -732,7 +733,7 @@ def test_report_only_bootstrap_is_seeded_and_reproducible() -> None:
 
 
 # ==============================================================================
-# Tripwire — round mode against the committed 226 a21s data (D-11, D-18)
+# Tripwire — round mode against the committed 226 a21s data
 # ==============================================================================
 
 BASELINE_HEADER = (
@@ -931,8 +932,8 @@ def test_module_exposes_the_documented_surface() -> None:
 
 
 # ==============================================================================
-# Task 2 — throughput (D-04 as amended by D-17), pool-2, WebGPU (D-07),
-# calibration (D-15) and the composed `gates` verdict (D-08, D-00)
+# Throughput, pool-2, WebGPU,
+# calibration and the composed `gates` verdict
 # ==============================================================================
 
 ALL_CONFIGS = ("stop-p4", "t400-p4", "t50-p2", "t400-p2")
@@ -1467,7 +1468,7 @@ def test_gates_all_passing_is_ship_eligible(
     assert "ship-eligible" in out
 
 
-def test_gates_d03_failure_holds_and_triggers_virtual_loss(
+def test_gates_net_regression_failure_holds_and_triggers_virtual_loss(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     write_full_layout(tmp_path)

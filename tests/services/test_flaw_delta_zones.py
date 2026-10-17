@@ -1,4 +1,4 @@
-"""Pure registry-integrity tests for app/services/flaw_delta_zones.py (quick 261014-rux).
+"""Pure registry-integrity tests for app/services/flaw_delta_zones.py.
 
 No DB. Covers the 12-metric registry and the 9 tempo x phase cells, each keyed by all four
 time controls, the 0.01 rounding grid, and the direct per-TC lookups (no ZONE_TC_FOR: that
@@ -24,7 +24,7 @@ from app.services.flaw_delta_zones import (
 _ALL_TCS: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid", "classical")
 _GRID = 0.01
 # Served half-widths per (bullet, blitz, rapid, classical), per 100 user moves: symmetric_band
-# of each TC's own Q1/Q3 from the 2026-10-14 section 5 whole-cohort run (D-15, owner rule B).
+# of each TC's own Q1/Q3 from the 2026-10-14 section 5 whole-cohort run.
 # Generated from that run's chapter5.json; pinned literally so registry drift fails here.
 _HALF_WIDTHS: dict[FlawDeltaMetric, tuple[float, float, float, float]] = {
     "mistake": (0.1, 0.21, 0.29, 0.48),
@@ -57,7 +57,7 @@ _TEMPO_PHASE_HALF_WIDTHS: dict[
 _ZONELESS_CELLS: frozenset[tuple[FlawTempoMetric, FlawPhaseMetric]] = frozenset(
     {("low_clock", "opening"), ("low_clock", "middlegame")}
 )
-# Retired metrics (D-00e/D-00f) that must never reappear in the registry.
+# Retired metrics that must never reappear in the registry.
 _RETIRED_METRICS = ("flaw_rate", "hasty_miss", "low_clock_miss")
 
 
@@ -91,7 +91,7 @@ def test_flaw_delta_zone_reads_the_tc_directly() -> None:
 
 
 def test_registry_values_are_the_pinned_per_tc_bands() -> None:
-    """Every band is +-h, h = that TC's IQR / 2 rounded up to 0.01 (D-15)."""
+    """Every band is +-h, h = that TC's IQR / 2 rounded up to 0.01."""
     assert set(_HALF_WIDTHS) == set(FLAW_DELTA_METRICS)
     for metric, halves in _HALF_WIDTHS.items():
         for tc, half in zip(_ALL_TCS, halves, strict=True):

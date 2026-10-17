@@ -1,0 +1,2 @@
+frontend/src/pages/Analysis.tsx
+frontend/src/pages/Bots.tsx

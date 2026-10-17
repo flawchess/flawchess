@@ -5,15 +5,14 @@ import { cn } from '@/lib/utils';
 
 /** Global Stockfish analysis progress banner.
  *
- * Renders while Stockfish evaluation is still in progress (isPending === true).
+ * Renders while Stockfish evaluation is still in progress (hasPendingEvals === true).
  * Returns null at 100% so it leaves no layout gap once coverage is complete.
- * Mounted once in ProtectedLayout so it sits above the per-page subtab nav on
- * every protected page.
+ * Mounted per page (Import, Library Stats, Openings, Endgames) above the page content.
  */
 export function EvalCoverageHeader() {
-  const { pendingCount, totalCount, isPending } = useEvalCoverage();
+  const { pendingCount, totalCount, hasPendingEvals } = useEvalCoverage();
 
-  if (!isPending) return null;
+  if (!hasPendingEvals) return null;
 
   const analysedCount = Math.max(totalCount - pendingCount, 0);
   return (

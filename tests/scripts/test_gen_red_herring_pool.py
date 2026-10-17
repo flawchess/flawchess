@@ -1,4 +1,4 @@
-"""Tests for scripts/gen_red_herring_pool.py (Phase 192, Plan 03).
+"""Tests for scripts/gen_red_herring_pool.py.
 
 These are selection/persistence-logic tests — the engine is always stubbed
 (a `_FakePool` recording every board it was asked to evaluate) and the FEN/
@@ -10,23 +10,23 @@ real via the module's own helper where a test's assertions depend on it, so
 ambient `herring_pool` rows from other tests never bias the shortfall math.
 
 Coverage:
-- test_generator_rejects_fewer_than_five_legal_moves : D-18's legal-move-count
+- test_generator_rejects_fewer_than_five_legal_moves : the legal-move-count
   reject runs BEFORE any engine call.
-- test_generator_loose_gate_boundary : D-15's loose band is inclusive at the
+- test_generator_loose_gate_boundary : the loose band is inclusive at the
   boundary, exclusive one step beyond.
 - test_generator_rerun_tops_up_without_duplicates : a re-run only inserts the
-  shortfall (SC2, D-14) via ON CONFLICT DO NOTHING, and a genuine top-up run
+  shortfall via ON CONFLICT DO NOTHING, and a genuine top-up run
   fills the remainder from previously-unconsumed candidates.
 - test_generator_splits_n_into_phase_thirds : each phase bucket gets its own
-  independent target/shortfall (D-19) — one bucket's shortfall never absorbs
+  independent target/shortfall — one bucket's shortfall never absorbs
   another's quota.
-- test_generator_excludes_guest_sourced_positions : D-02's is_guest=false
+- test_generator_excludes_guest_sourced_positions : the is_guest=false
   join keeps guest-sourced candidates out of the sampling frame entirely.
 - test_generator_dry_run_writes_nothing : --dry-run performs the full scan
   and tally without writing any row.
-- test_generator_caps_rows_per_game : SEED-124's per-game cap holds, and the
+- test_generator_caps_rows_per_game : the per-game cap holds, and the
   skip happens BEFORE the engine call.
-- test_generator_caps_rows_per_user_and_moves_on : SEED-124's per-user cap
+- test_generator_caps_rows_per_user_and_moves_on : the per-user cap
   holds AND the scan reaches a second user (the concentration bug itself).
 - test_generator_caps_carry_across_runs : the caps are seeded from rows
   already in the pool, so a top-up cannot re-concentrate.
@@ -119,7 +119,7 @@ def _session_maker(test_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
 
 
 def _lift_diversity_caps(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neutralize the SEED-124 per-user/per-game caps for tests about OTHER gates.
+    """Neutralize the per-user/per-game caps for tests about OTHER gates.
 
     Those tests deliberately seed many plies of a single game (the cheapest way
     to produce N qualifying candidates), which the real caps would now reject
@@ -214,7 +214,7 @@ async def _pool_row_exists(
 
 
 async def _cleanup(test_engine: AsyncEngine, *, user_ids: list[int]) -> None:
-    """Delete herring_pool rows scoped to these users FIRST (D-01's SET NULL
+    """Delete herring_pool rows scoped to these users FIRST (the SET NULL
     FK would otherwise null out the linkage before we can scope the delete),
     then delete the users (cascades Game/GamePosition)."""
     if not user_ids:
@@ -600,7 +600,7 @@ async def test_generator_dry_run_writes_nothing(
 
 
 # ---------------------------------------------------------------------------
-# SEED-124 diversity caps
+# Diversity caps
 # ---------------------------------------------------------------------------
 
 
@@ -619,7 +619,7 @@ async def _rows_for_user(test_engine: AsyncEngine, user_id: int) -> int:
 async def test_generator_caps_rows_per_game(
     test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SEED-124: consecutive plies of one game are near-duplicate positions, so
+    """Consecutive plies of one game are near-duplicate positions, so
     a single game contributes at most HERRING_MAX_ROWS_PER_GAME rows even when
     every one of its plies would otherwise qualify."""
     phase_code = 1  # middlegame
@@ -664,7 +664,7 @@ async def test_generator_caps_rows_per_game(
 async def test_generator_caps_rows_per_user_and_moves_on(
     test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SEED-124: one user cannot fill a whole bucket. With a per-user cap of 2,
+    """One user cannot fill a whole bucket. With a per-user cap of 2,
     a prolific user contributes 2 rows and the scan JUMPS past their remaining
     positions to reach a second user — the concentration bug in one assertion.
     """
@@ -716,7 +716,7 @@ async def test_generator_caps_rows_per_user_and_moves_on(
 async def test_generator_caps_carry_across_runs(
     test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SEED-124: a top-up must not re-concentrate. The caps are seeded from the
+    """A top-up must not re-concentrate. The caps are seeded from the
     rows already in the pool, so a user who is already at their cap gets nothing
     more from a later run even though that run has its own fresh shortfall."""
     phase_code = 1  # middlegame

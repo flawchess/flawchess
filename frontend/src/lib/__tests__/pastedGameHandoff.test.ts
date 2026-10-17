@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * pastedGameHandoff.test.ts — round-trip, one-shot, and corruption coverage
- * for the Import-tab -> analysis-board paste handoff (Quick 260826-qdl).
+ * for the Import-tab -> analysis-board paste handoff.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { savePastedGameHandoff, takePastedGameHandoff } from '@/lib/pastedGameHandoff';

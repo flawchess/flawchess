@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ResetPasswordForm.test.tsx (Phase 207 Plan 02, Task 2).
+ * ResetPasswordForm.test.tsx.
  *
  * @sentry/react and sonner are mocked — their ESM module namespaces aren't
  * configurable for spying, and we assert exact call counts on both.
@@ -8,7 +8,7 @@
  *
  * apiClient is mocked at module level so these are true unit tests of the
  * component's branching logic, independent of the real backend (proven end
- * to end already by 207-01-SUMMARY.md's integration suite, whose exact
+ * to end already by the integration suite, whose exact
  * request body / status / detail shapes this file builds against).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -164,7 +164,7 @@ describe('ResetPasswordForm', () => {
   it('Case I: a password passing the client check but rejected by the server still surfaces the server reason', async () => {
     // Long enough to pass the client's length >= 8 check, but the server can
     // reject it on other grounds (e.g. common-password policy) — the client
-    // check is advisory only (RESET-06/encoding).
+    // check is advisory only.
     vi.mocked(apiClient.post).mockRejectedValueOnce(
       axiosError(400, { code: 'RESET_PASSWORD_INVALID_PASSWORD', reason: 'Password is too common.' }),
     );

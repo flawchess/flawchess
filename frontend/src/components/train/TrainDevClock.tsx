@@ -14,8 +14,8 @@
  *
  * Every offset change refetches the whole Train surface — the session compose
  * (a mutation, re-fired through `onChange`) and the progress query — because
- * both were computed against the previous "now" (Phase 230 adds the weekly
- * leaderboard: its week window and countdown move with the clock).
+ * both were computed against the previous "now" (the weekly leaderboard's
+ * week window and countdown move with the clock too).
  *
  * NOTE: rows written while shifted keep the shifted dates, so after
  * travelling forward the real clock sees future-dated drill items. Reset a
@@ -66,7 +66,7 @@ export function TrainDevClock({ onChange }: TrainDevClockProps): ReactElement {
     writeDevClockOffsetMinutes(next);
     setOffsetMinutes(next);
     void queryClient.invalidateQueries({ queryKey: TRAIN_PROGRESS_QUERY_KEY });
-    // Phase 230: the week window and countdown are computed against the shifted clock too.
+    // The week window and countdown are computed against the shifted clock too.
     void queryClient.invalidateQueries({ queryKey: TRAIN_LEADERBOARD_QUERY_KEY });
     onChange();
   }

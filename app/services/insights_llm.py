@@ -1,25 +1,25 @@
 """LLM insights orchestration service for the endgame insights endpoint.
 
-Scope (Phase 65):
-- get_insights_agent(): singleton pydantic-ai Agent per CONTEXT.md D-21.
+Scope:
+- get_insights_agent(): singleton pydantic-ai Agent.
 - generate_insights(user_id, session): sole orchestration entry point called by
   app/routers/insights.py. Handles tier-1 cache, fresh LLM call, and log-row
-  write. Filter-free since Phase 238 (D-04): one report per user.
+  write. Filter-free: one report per user.
 - get_cached_insights_response(session, user_id): the regeneration cache rule
   (import invalidation + 30d max age) used by generate_insights.
 - get_latest_insights_response(session, user_id): the display lookup behind
   GET /insights/endgame/cached (latest report, never invalidated).
-- Custom exceptions map to HTTP status codes at the router layer (Plan 06).
+- Custom exceptions map to HTTP status codes at the router layer.
 
 Critical invariants:
 - Sequential awaits on `session`; never asyncio.gather (CLAUDE.md constraint).
 - _SYSTEM_PROMPT loaded at module import — module cannot import if the
-  prompt file is missing. This is intentional: Phase 65 must fail to start
-  if the system prompt is missing (CONTEXT.md D-27).
+  prompt file is missing. This is intentional: the app must fail to start
+  if the system prompt is missing.
 - Sentry set_context uses structured data (user_id, findings_hash, model,
   endpoint); NEVER f-string interpolation in exception messages (CLAUDE.md
-  §Sentry / D-37).
-- Latency captured around `await agent.run(user_prompt)` only (D-25).
+  Sentry rules).
+- Latency captured around `await agent.run(user_prompt)` only.
 """
 
 import datetime
@@ -43,7 +43,13 @@ from app.repositories.llm_log_repository import (
     create_llm_log,
     get_latest_successful_log_for_user,
 )
-from app.schemas.endgames import EndgameCategoryStats, EndgameClass, RankedTcStats, RankStatus
+from app.schemas.endgames import (
+    EndgameCategoryStats,
+    EndgameClass,
+    RankedTcStats,
+    RankStatus,
+    TimeControlBucket,
+)
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameInsightsResponse,
@@ -64,7 +70,6 @@ from app.services.endgame_zones import (
     TC_METRIC_BANDS,
     ZONE_REGISTRY,
     TcBandMetricId,
-    TcBucket,
     ZoneSpec,
     tc_metric_zone_spec,
 )
@@ -77,7 +82,7 @@ from app.services.insights_service import (
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
-# Phase 102 UAT: the five metrics_elo metrics whose inline zone band + proximity
+# The five metrics_elo metrics whose inline zone band + proximity
 # hint are per-TC (sourced from TC_METRIC_BANDS via the finding's `time_control`
 # dimension). score_gap_parity is intentionally absent — its neutral band is
 # global, so it falls through to the scalar ZONE_REGISTRY branch.
@@ -91,36 +96,33 @@ _TC_BAND_METRICS: frozenset[str] = frozenset(
     }
 )
 
-# Phase 238 (D-04): the insights cache is one row per (user_id, prompt_version, model).
+# The insights cache is one row per (user_id, prompt_version, model).
 # `llm_logs.filter_context.opponent_strength` is kept as a column/JSON shape (no
 # migration) and always written and matched as this constant.
 INSIGHTS_CACHE_OPPONENT_STRENGTH: Literal["any"] = "any"
 
-_PROMPT_VERSION = "endgame_v49"  # v49 (Phase 238 UAT): adds the 1-2 sentence `summary` field shown as the Insights block header.
-# v48 (Phase 238, D-04): findings come from the ranked sample (last 36 months, opponents within 100 Elo, up to 3000 games per TC), overall findings are per TC, no filter scoping; bumping invalidates every v47 cache row.
-_OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
+# v49: adds the 1-2 sentence `summary` field shown as the Insights block header.
+# v48: findings come from the ranked sample (last 36 months, opponents within 100 Elo, up to 3000 games per TC), overall findings are per TC, no filter scoping; bumping invalidates every v47 cache row.
+_PROMPT_VERSION = "endgame_v49"
+_OUTPUT_RETRIES = 2  # structured-output validation retries before InsightsValidationFailure
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 
-# Structural cache TTL safety net (260425-dxh): bounds the sliding 3-month
+# Structural cache TTL safety net: bounds the sliding 3-month
 # window narrative drift on cache hits. Lower to 14 if users complain about
 # stale narratives.
 INSIGHTS_CACHE_MAX_AGE_DAYS = 30
 INSIGHTS_CACHE_MAX_AGE = datetime.timedelta(days=INSIGHTS_CACHE_MAX_AGE_DAYS)
 
-# Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2/C4/C5/C6).
-MIN_BUCKET_N: int = 3  # A4: drop timeline points with n<3
-_ACTIVITY_GAP_DAYS: int = 90  # C3: insert gap markers between >90-day-apart points
-_ALL_TIME_CUTOFF_DAYS: int = 90  # C2: trim last 90d from all_time series when last_3mo exists
-# C6 (v5): cap all_time series at the most-recent N monthly points. Older
+# Series / prompt-assembly filter constants.
+MIN_BUCKET_N: int = 3  # drop timeline points with n<3
+_ACTIVITY_GAP_DAYS: int = 90  # insert gap markers between >90-day-apart points
+_ALL_TIME_CUTOFF_DAYS: int = 90  # trim last 90d from all_time series when last_3mo exists
+# Cap all_time series at the most-recent N monthly points. Older
 # history rarely adds narrative value — Series interpretation rule already
 # tells the LLM to focus on multi-bucket direction, not long history.
-# v11: raised from 12 → 36 so the LLM can speak about multi-year trajectories
+# 36 monthly points (3 years) lets the LLM speak about multi-year trajectories
 # without overclaiming a 12-month window as a long-term arc.
 _ALL_TIME_MAX_POINTS: int = 36
-# Phase 88.1 (Plan 09, REVIEW.md WR-06): the per-subsection skip-set frozenset
-# was removed alongside its sole consumer (the empty time-pressure finding upstream
-# in insights_service.compose_findings). The assembler no longer needs a skip-set —
-# the finding never reaches the visible-findings filter to begin with.
 # Mirror frontend MIN_GAMES_FOR_RELIABLE_STATS (frontend/src/lib/theme.ts) so
 # the LLM sees the same bucket gating as the rendered chart.
 _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
@@ -128,22 +130,18 @@ _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
 # Metrics already emitted on a non-fractional scale (Elo points or percentage points).
 # Everything else is a fraction in [0, 1] (or signed [-1, +1] for score_gap) at the
 # service layer and gets multiplied by 100 here so the LLM payload matches the UI's
-# 0-100 percentage scale (v6 shape). Keeping the registry/service layer fractional
+# 0-100 percentage scale. Keeping the registry/service layer fractional
 # keeps the frontend gauge codegen unchanged; the scale flip lives at the formatter only.
 _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
-    # Phase 87.5 (D-06): the Phase 87.4 metric name restored to "endgame_elo_gap"
-    # in lockstep with the MetricId Literal in app/services/endgame_zones.py.
-    # Phase 102 UAT (2026-06-02): avg_clock_diff_pct + net_timeout_rate dropped —
-    # their producer (_findings_time_pressure_at_entry) was retired, so no
-    # SubsectionFinding with those metrics reaches the scaler any more.
+    # "endgame_elo_gap" must match the MetricId Literal in app/services/endgame_zones.py.
+    # avg_clock_diff_pct and net_timeout_rate are absent: no page-level finding
+    # carries them.
     {"endgame_elo_gap", "entry_eval_pawns"}
 )
 
 # Metrics whose ZONE_REGISTRY entry is a no-op `[0, 1]` placeholder (registered
 # only so `assign_zone` does not raise). They must not render an inline
-# `(typical ...)` band tag, since the band would be meaningless. Phase 82
-# (260510): renamed from the bare `endgame_score` / `non_endgame_score` after
-# the timeline metrics gained the `_timeline` suffix; the new bare
+# `(typical ...)` band tag, since the band would be meaningless. The bare
 # `endgame_score` (in subsection `endgame_start_vs_end`) DOES have a real
 # [0.45, 0.55] band and is intentionally absent from this set.
 _NO_BAND_METRICS: frozenset[str] = frozenset(
@@ -151,7 +149,7 @@ _NO_BAND_METRICS: frozenset[str] = frozenset(
 )
 
 # Metrics whose raw payload value is already on the rendered scale AND should
-# render with sub-integer precision. Phase 82 (260510) added entry_eval_pawns
+# render with sub-integer precision. entry_eval_pawns renders
 # at 2 decimals so values like `+0.47` survive the round-trip into the prompt
 # instead of collapsing to `+0` under the default `:+.0f` format.
 _VALUE_PRECISION: dict[str, int] = {"entry_eval_pawns": 2}
@@ -167,42 +165,40 @@ def _precision_for_metric(metric_id: str) -> int:
     return _VALUE_PRECISION.get(metric_id, 0)
 
 
-# Batch 2 enrichment thresholds (v6).
+# Enrichment thresholds.
 _STALE_SERIES_THRESHOLD_DAYS: int = 183  # ~6 months: a combo whose last bucket is this far behind the newest bucket across any series is flagged STALE.
 _TREND_MIN_POINTS: int = 4  # minimum retained buckets before we emit trend fields in [summary]
 _TREND_FLAT_THRESHOLD: float = (
     3.0  # on the 0-100 scale; |latest - mean(prior 3)| below this reads as flat
 )
-# Phase 88.1 (Plan 09, REVIEW.md WR-06): _LOW_TIME_BUCKETS and _LOW_TIME_GAP_DECISIVE
-# removed alongside the time-pressure chart-block helper and _low_time_gap_line
-# (their only consumers).
 _DELTA_WITHIN_NOISE_SHIFT: float = (
     5.0  # |all_time → last_3mo| shift on 0-100 scale below this reads as within-noise
 )
-_DELTA_WITHIN_NOISE_ELO: float = 50.0  # |Elo delta| below this reads as within-noise for endgame_elo_gap (Phase 87.5 D-06: restored from the Phase 87.4 metric name)
-# v11: trend flat threshold for derived [summary endgame_elo] (absolute Elo
+# |Elo delta| below this reads as within-noise for endgame_elo_gap
+_DELTA_WITHIN_NOISE_ELO: float = 50.0
+# Trend flat threshold for derived [summary endgame_elo] (absolute Elo
 # scale). Roughly half the within-noise cap — bucket-to-bucket Elo drift below
 # this reads as flat. Separate from _TREND_FLAT_THRESHOLD which is on the 0-100
 # percent scale.
 _TREND_FLAT_THRESHOLD_ELO: float = 25.0
 _DELTA_SMALL_SAMPLE_RATIO: float = 0.20  # last_3mo_n / all_time_n below this → within-noise flag only fires with this much size mismatch
 
-# v7 proximity hint thresholds: inline `[near edge]` marker on bullets whose
+# Proximity hint thresholds: inline `[near edge]` marker on bullets whose
 # value sits within this many points of a zone boundary. Different scales for
 # percent-scale metrics (0-100) and Elo-scale metrics.
 _PROXIMITY_PCT_THRESHOLD: float = 2.0
 _PROXIMITY_ELO_THRESHOLD: float = 20.0
-# Phase 82: entry_eval_pawns lives on a sub-integer scale (raw pawns).
+# entry_eval_pawns lives on a sub-integer scale (raw pawns).
 # Distance-from-band-edge threshold is 5 cp ≈ 0.05 pawns — same eyeball
 # proximity as ±2pp on a 0-100 scale.
 _PROXIMITY_PAWN_THRESHOLD: float = 0.05
 
-# v7 weakest-type tag: requires the lowest score_pct to be clearly separated
+# Weakest-type tag: requires the lowest score_pct to be clearly separated
 # from the next-lowest AND to have a meaningful sample (avoids noise calls).
 _WEAKEST_TYPE_MIN_GAMES: int = 100
 _WEAKEST_TYPE_MIN_SEPARATION: float = 2.0  # on 0-100 score_pct scale
 
-# v7 recovery pattern tag: fires when Recovery sits weak across at least this
+# Recovery pattern tag: fires when Recovery sits weak across at least this
 # many endgame types.
 _RECOVERY_PATTERN_MIN_WEAK_TYPES: int = 4
 
@@ -266,7 +262,7 @@ _SYSTEM_PROMPT = (_PROMPTS_DIR / "endgame_insights.md").read_text(
 ) + _build_zone_threshold_appendix()
 
 
-# -- Custom exceptions (router maps to HTTP status per Plan 06) --
+# -- Custom exceptions (the router maps them to HTTP statuses) --
 
 
 class InsightsProviderError(Exception):
@@ -285,7 +281,7 @@ class InsightsValidationFailure(Exception):
         self.error_marker = error_marker
 
 
-# -- Agent singleton (CONTEXT.md D-21, D-22) --
+# -- Agent singleton --
 
 _GOOGLE_PREFIXES = ("google:", "google-cloud:")
 _GEMINI3_MODEL_MARKER = "gemini-3"  # Gemini 3+ uses thinking_level; older uses thinking_budget
@@ -328,10 +324,9 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
             case raised a bare ValueError before pydantic-ai 2.39, which now
             wraps it in UserError (a RuntimeError subclass, not a ValueError).
 
-    Called from (a) main.py lifespan for startup validation (Plan 06), and
+    Called from (a) main.py lifespan for startup validation, and
     (b) generate_insights() at request time. lru_cache ensures one Agent
-    instance across the app lifetime; pydantic-ai Agents are async-safe
-    (RESEARCH.md §6).
+    instance across the app lifetime; pydantic-ai Agents are async-safe.
     """
     model_str = settings.PYDANTIC_AI_MODEL_INSIGHTS
     if model_str.startswith(_GOOGLE_PREFIXES):
@@ -361,14 +356,13 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
     )
 
 
-# -- User-prompt assembly (CONTEXT.md D-28, D-29) --
+# -- User-prompt assembly --
 
-# Subsections that produce Series blocks in the prompt (MUST match Plan 03's _TIMELINE_SUBSECTION_IDS).
+# Subsections that produce Series blocks in the prompt.
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        # Phase 87.5 (D-06): restored from the Phase 87.4 subsection name.
         "endgame_elo_timeline",
     }
 )
@@ -387,41 +381,32 @@ def _render_zone_spec(spec: ZoneSpec, metric_id: str) -> str:
 def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str:
     """Render '(typical LO to UP[, lower is better])' for a finding bullet.
 
-    v5 (260422-tnb pass2): inline shorthand of the zone band for each finding,
+    Inline shorthand of the zone band for each finding,
     so the LLM can judge proximity to a zone edge without consulting the
     global appendix. Bucketed metrics (conversion_win_pct / parity_score_pct /
     recovery_save_pct) dispatch via `dimension['bucket']`; all other scalar
     metrics use ZONE_REGISTRY directly. Returns '' for unknown metric_ids
     (defensive — shouldn't fire for valid findings since MetricId is enumerated).
 
-    v20 (260501-s0u pass2): when a conversion_win_pct / recovery_save_pct
+    When a conversion_win_pct / recovery_save_pct
     finding carries an `endgame_class` dimension, dispatch via
     PER_CLASS_GAUGE_ZONES so the inline bound matches the per-class zone the
     finding's `zone` label was computed against. Without this, every per-type
     Conv/Recov line printed the same global band and contradicted the table.
 
-    Phase 68 (260424-pc6): endgame_score_timeline / non_endgame_score_timeline
+    endgame_score_timeline / non_endgame_score_timeline
     have no calibrated zone band — their registry entries span [0, 1] only so
     assign_zone does not raise. Skip the bounds render for those two so
     the prompt does not show a meaningless `(typical +0 to +100)` tag.
-    Phase 82 (260510): renamed from `endgame_score` / `non_endgame_score`
-    after the timeline metric ids gained a `_timeline` suffix to free the
-    clean `endgame_score` slot for the new `endgame_start_vs_end` subsection
-    (which DOES have a calibrated [0.45, 0.55] band that should render).
-    The skip-set lives in `_NO_BAND_METRICS` so future renames have a
-    single discoverable touchpoint.
-
-    v21 (Phase 214): the original if/elif/.../elif dispatch chain nested one
-    level deeper per branch (each `elif` lives in the previous `If`'s
-    `orelse`), reaching AST depth 6. Flattened to sibling early-return `if`
-    statements — same precedence order, same result, but each condition now
-    sits at depth 1 instead of stacking.
+    The bare `endgame_score` (subsection `endgame_start_vs_end`) DOES have a
+    calibrated [0.45, 0.55] band that should render. The skip-set lives in
+    `_NO_BAND_METRICS`.
     """
     if metric_id in _NO_BAND_METRICS:
         return ""
     bucket = dimension.get("bucket") if dimension else None
     endgame_class = dimension.get("endgame_class") if dimension else None
-    # Phase 102 UAT: metrics_elo findings carry a `time_control` dimension only;
+    # metrics_elo findings carry a `time_control` dimension only;
     # their zone band is per-TC (TC_METRIC_BANDS). per-TC Endgame Type findings
     # carry BOTH endgame_class AND time_control — they band per-(class × TC) via
     # the PER_CLASS_TC_GAUGE_ZONES branch below (which precedes both the pooled
@@ -431,7 +416,7 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     scalar = cast("dict[str, ZoneSpec]", dict(ZONE_REGISTRY))
 
     if (
-        # Phase 102 UAT: per-TC Endgame Type findings carry BOTH endgame_class and
+        # Per-TC Endgame Type findings carry BOTH endgame_class and
         # time_control — band per-(class × TC) via PER_CLASS_TC_GAUGE_ZONES so the
         # inline bound matches the per-TC tile gauge. Must precede the pooled-class
         # branch below (which would otherwise win on endgame_class alone). Falls
@@ -445,7 +430,7 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
         and time_control in PER_CLASS_TC_GAUGE_ZONES[cast("EndgameClass", endgame_class)]
     ):
         tc_bands = PER_CLASS_TC_GAUGE_ZONES[cast("EndgameClass", endgame_class)][
-            cast(TcBucket, time_control)
+            cast(TimeControlBucket, time_control)
         ]
         if metric_id == "conversion_win_pct":
             lo_hi = tc_bands.conversion
@@ -465,11 +450,8 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
         return _render_zone_spec(ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better"), metric_id)
 
     if (
-        # Phase 87.1 (SEED-016 D-10): per-class Score Gap band dispatch.
-        # Currently both PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap and
-        # the global ZONE_REGISTRY entry hold the same ±5% placeholder, but
-        # routing through the per-class registry now means future §3.4.2
-        # benchmark recalibration takes effect without touching renderer code.
+        # Per-class Score Gap bands (PER_CLASS_GAUGE_ZONES) override the global
+        # ZONE_REGISTRY default.
         metric_id == "endgame_type_achievable_score_gap"
         and endgame_class is not None
         and endgame_class in PER_CLASS_GAUGE_ZONES
@@ -479,12 +461,14 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
         return _render_zone_spec(ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better"), metric_id)
 
     if (
-        # Phase 102 UAT: per-TC band for the metrics_elo metrics.
+        # Per-TC band for the metrics_elo metrics.
         metric_id in _TC_BAND_METRICS
         and time_control is not None
         and time_control in TC_METRIC_BANDS
     ):
-        spec = tc_metric_zone_spec(cast(TcBandMetricId, metric_id), cast(TcBucket, time_control))
+        spec = tc_metric_zone_spec(
+            cast(TcBandMetricId, metric_id), cast(TimeControlBucket, time_control)
+        )
         return _render_zone_spec(spec, metric_id)
 
     if metric_id in bucketed and bucket is not None:
@@ -552,7 +536,7 @@ def _render_player_profile_entry(entry: PlayerProfileEntry) -> list[str]:
 def _player_profile_anchor_tag(profile: list[PlayerProfileEntry], *, all_sparse: bool) -> str:
     """Return the `[anchor-combo ...]` tag line for the player-profile block.
 
-    v12: points at the most-played live combo (no stale marker). When every
+    Points at the most-played live combo (no stale marker). When every
     combo is stale, emits `all-stale` so the LLM frames the whole profile in
     past tense instead of fabricating a current-Elo read from a 27-month-old
     rating. Sparse-history profiles (Fix B) get their own cautionary variant.
@@ -599,7 +583,7 @@ def _format_rating_basis_block(
 ) -> list[str]:
     """Render the `## Rating basis` block listing per-TC Lichess-equivalent anchors.
 
-    Phase 102 (Plan 05): emitted once near the top of the user prompt (after the
+    Emitted once near the top of the user prompt (after the
     player profile, before the Section blocks) so the LLM has one clear place to
     learn the Lichess-equivalent framing for this user's time controls. Mirrors the
     disclosure branches of the RankedMetricPopover anchor disclosure:
@@ -685,16 +669,10 @@ def _format_rating_basis_block(
     return lines
 
 
-# Phase 88.1 (Plan 09, REVIEW.md WR-06): the 10-bucket time-pressure chart
-# block helper was removed. Its sole consumer was the chart_blocks dict in
-# _assemble_user_prompt, which no longer references it (see chart_blocks
-# construction below).
-
-
 def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     """Render the endgame-vs-non-endgame WDL + Score % comparison, one table per TC.
 
-    Phase 238 (D-04, D-00h): built from each ranked TC's ``overall`` block, so the rows
+    Built from each ranked TC's ``overall`` block, so the rows
     are exactly the games the Stats tab shows for that time control, and the TCs are
     never pooled. Emits one ``### Chart: overall_wdl ({tc}, all_time)`` header per TC
     followed by a 2-row markdown table (endgame, non_endgame) with win_pct / draw_pct /
@@ -740,14 +718,13 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
 def _format_type_wdl_table(tc: str, categories: Sequence["EndgameCategoryStats"]) -> list[str]:
     """Render the per-TC W/D/L + Score % table that leads an `endgame_type_<tc>` subsection.
 
-    Phase 102 UAT (2026-06-02): replaces the aggregate-over-TC
-    `results_by_endgame_type_wdl` chart. Mirrors the TypeTable row's WDL bar +
+    Mirrors the TypeTable row's WDL bar +
     score: one row per visible endgame type
     (rook / minor_piece / pawn / queen — mixed and pawnless are already excluded
     upstream by `aggregate_endgame_stats_by_tc`). score_pct uses wins=100,
     draws=50, losses=0; a value above 50 means the user outscores opponents in
-    that type (both sides played the same games), so the opponent/diff columns
-    the old aggregate chart carried are redundant and dropped.
+    that type (both sides played the same games), so there are no opponent/diff
+    columns.
 
     Sorted by `total` descending via `_sorted_type_categories` so the row order
     matches the Conv/Recov/Score-Gap bullet order below it. Rows with fewer than
@@ -791,15 +768,15 @@ def _format_type_wdl_table(tc: str, categories: Sequence["EndgameCategoryStats"]
 
 # Fixed TC order so the per-TC WDL tables (and their subsections) render
 # bullet → blitz → rapid → classical, matching the UI accordion + _SECTION_LAYOUT.
-_TYPE_WDL_TC_ORDER: tuple[TcBucket, ...] = ("bullet", "blitz", "rapid", "classical")
+_TYPE_WDL_TC_ORDER: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid", "classical")
 
 
 def _build_type_wdl_tables(
-    categories_by_tc: dict[TcBucket, list["EndgameCategoryStats"]] | None,
+    categories_by_tc: dict[TimeControlBucket, list["EndgameCategoryStats"]] | None,
 ) -> dict[str, list[str]]:
     """Pre-render the per-TC Endgame Type WDL table for each eligible time control.
 
-    Phase 102 UAT (2026-06-02): returns ``{subsection_id: table_lines}`` keyed by
+    Returns ``{subsection_id: table_lines}`` keyed by
     ``endgame_type_<tc>``. A TC is included only when its summed endgame-game count
     across the four visible classes clears ``MIN_GAMES_PER_TC_CARD`` — the same gate
     the findings producer (insights_service._findings_endgame_type_by_tc) applies,
@@ -818,17 +795,14 @@ def _build_type_wdl_tables(
     return tables
 
 
-# Phase 102 (Plan 01): Score-Gap-by-time per-quintile block restored to the payload
-# (the decomposition Phase 88.1 stripped). n-gated per-quintile sub-table per TC.
+# Score-Gap-by-time per-quintile block: n-gated per-quintile sub-table per TC.
 # Modeled on the per-TC WDL table builder: iterate cards, skip n-gated quintiles,
 # build per-TC sub-table with typical_band from PRESSURE_BIN_SCORE_NEUTRAL_ZONES.
-# Phase 102 UAT (2026-06-02): Q4 (80-100% clock = min pressure) dropped — the UI
-# chart only renders Q0-Q3 and the min-pressure bucket carries no time-pressure
-# signal. Per-TC percentile aggregates are appended below each quintile table so
-# the LLM reads the PERFORMANCE-under-pressure signal (Time-Pressure Score Gap)
-# and the FREQUENCY-of-pressure signals (Clock Gap, Net Flag Rate) together. These
-# replaced the retired page-level `time_pressure_at_entry` subsection (blended
-# avg_clock_diff_pct + net_timeout_rate, which carried no percentiles).
+# Q4 (80-100% clock = min pressure) is dropped — the UI chart only renders Q0-Q3
+# and the min-pressure bucket carries no time-pressure signal. Per-TC percentile
+# aggregates are appended below each quintile table so the LLM reads the
+# PERFORMANCE-under-pressure signal (Time-Pressure Score Gap) and the
+# FREQUENCY-of-pressure signals (Clock Gap, Net Flag Rate) together.
 _MAX_NARRATED_QUINTILE_INDEX = 3  # Q0-Q3 only; Q4 (80-100% clock) is min pressure.
 
 
@@ -838,23 +812,22 @@ def _format_time_pressure_score_gap_chart_block(
 ) -> list[str]:
     """Render per-TC Score-Gap-by-Remaining-Time chart (Q0-Q3) + percentile aggregates.
 
-    Phase 102 (Plan 01): restores the per-quintile Score-Delta decomposition that
-    Phase 88.1 stripped from the payload. For each TC, emits a sub-table with
+    Per-quintile Score-Delta decomposition: for each TC, emits a sub-table with
     Q0-Q3 quintile rows (Q0=0-20% clock remaining / max pressure, Q3=60-80%). Q4
     (80-100% / min pressure) is excluded. Rows where opp_score is None (n-gate
     unmet) are skipped.
 
-    Phase 238 (D-04): reads ``findings.ranked_tcs`` (``time_pressure.quintiles`` plus the
-    TC's ranked ``metrics``) instead of the filtered overview's time pressure cards, so
-    the tables are the ranked-sample curve the Stats tab shows. A TC is rendered when its
-    ranked endgame game count reaches MIN_GAMES_PER_TC_CARD (the old per-TC card gate).
+    Reads ``findings.ranked_tcs`` (``time_pressure.quintiles`` plus the
+    TC's ranked ``metrics``), so the tables are the ranked-sample curve the Stats tab
+    shows. A TC is rendered when its ranked endgame game count reaches
+    MIN_GAMES_PER_TC_CARD.
 
     Per-quintile user_score and opp_score are fractions (0..1) — multiplied by 100
     here for the 0-100 scale. The typical_band column is sourced from
     PRESSURE_BIN_SCORE_NEUTRAL_ZONES[(tc, quintile_index)] so the LLM sees the same
     neutral band bounds the UI tooltip shows.
 
-    Phase 102 UAT (2026-06-02): below each TC's quintile table, three per-TC
+    Below each TC's quintile table, three per-TC
     percentile aggregates are appended via _time_pressure_aggregate_lines — the
     Time-Pressure Score Gap (performance under pressure) and the Clock Gap + Net
     Flag Rate (frequency of pressure). per_tc_metric_percentiles supplies the
@@ -948,13 +921,13 @@ def _time_pressure_aggregate_lines(
 ) -> list[str]:
     """Per-TC time-pressure percentile aggregates appended below the quintile table.
 
-    Three metrics, two stories the LLM must keep distinct (Phase 102 UAT):
+    Three metrics, two stories the LLM must keep distinct:
       • Time-Pressure Score Gap — PERFORMANCE under pressure (how the player
         *scores* when short on the clock; Q0+Q1 combined, own clock < 40%).
       • Clock Gap + Net Flag Rate — FREQUENCY of pressure (how *often* the player
         is the one short on time / gets flagged).
     Each line cites the percentile vs equally-rated peers (value embedded in the
-    pctl= token). Phase 238: values come from the TC's ranked ``metrics``; a line is
+    pctl= token). Values come from the TC's ranked ``metrics``; a line is
     rendered when a percentile record or a floor-cleared ranked value exists, and
     omitted otherwise.
     """
@@ -983,7 +956,7 @@ def _time_pressure_aggregate_lines(
         # RankedMetricOut.value is NOT floor-gated (a time-pressure score gap exists from
         # one pressured game per side), so falling back to it for a below_floor/pending
         # cell narrated values built from a handful of games. Only cells that cleared
-        # their floor may fall back to the raw value (pre-238 TPSG behavior).
+        # their floor may fall back to the raw value.
         fallback = (
             ranked_metric.value
             if ranked_metric is not None and ranked_metric.status in _FLOOR_CLEARED_STATUSES
@@ -996,15 +969,14 @@ def _time_pressure_aggregate_lines(
     return lines
 
 
-# Phase 102 UAT (2026-06-02): _synthesize_endgame_type_achievable_score_gap_findings
-# was retired. The per-span Score Gap is now emitted directly by
+# The per-span Score Gap is emitted directly by
 # insights_service._endgame_type_class_findings as a real per-(class × TC)
 # SubsectionFinding under the `endgame_type_<tc>` subsections (banded via
-# assign_per_class_tc_zone), so the renderer no longer synthesizes it from the
+# assign_per_class_tc_zone), so the renderer does not synthesize it from the
 # pooled `type_categories`.
 
 
-# -- Batch 2 enrichments (v6): mechanical signals precomputed for the LLM --
+# -- Enrichments: mechanical signals precomputed for the LLM --
 
 
 def _newest_bucket_date(findings: list[SubsectionFinding]) -> datetime.date | None:
@@ -1023,8 +995,8 @@ def _newest_bucket_date(findings: list[SubsectionFinding]) -> datetime.date | No
     return newest
 
 
-def _apply_c6_filter(points: list[TimePoint]) -> list[TimePoint]:
-    """C6: cap an `all_time` series at the last `_ALL_TIME_MAX_POINTS` buckets.
+def _cap_all_time_points(points: list[TimePoint]) -> list[TimePoint]:
+    """Cap an `all_time` series at the last `_ALL_TIME_MAX_POINTS` buckets.
 
     Shared by `_all_time_window_bounds` and `_retained_series_for_summary` so
     the payload-summary window text and the actually-rendered series/summary
@@ -1036,7 +1008,7 @@ def _apply_c6_filter(points: list[TimePoint]) -> list[TimePoint]:
 def _all_time_window_bounds(
     findings: list[SubsectionFinding],
 ) -> tuple[datetime.date, datetime.date] | None:
-    """Return (oldest, newest) bucket dates for all_time series after the C6 cap.
+    """Return (oldest, newest) bucket dates for all_time series after the all-time point cap.
 
     Walks every all_time series, applies the same MIN_BUCKET_N filter and
     _ALL_TIME_MAX_POINTS tail-cap that `_retained_series_for_summary` applies,
@@ -1049,7 +1021,7 @@ def _all_time_window_bounds(
     for f in findings:
         if f.series is None or f.window != "all_time":
             continue
-        retained = _apply_c6_filter([pt for pt in f.series if pt.n >= MIN_BUCKET_N])
+        retained = _cap_all_time_points([pt for pt in f.series if pt.n >= MIN_BUCKET_N])
         for pt in retained:
             try:
                 d = datetime.date.fromisoformat(pt.bucket_start)
@@ -1068,8 +1040,7 @@ def _stale_marker(series: list[TimePoint] | None, newest_payload_date: datetime.
     """Return 'stale: last YYYY-MM (N mo ago)' or '' if the series is live.
 
     Consumed inline in [summary] window lines — a short, bracket-compatible
-    form. The threshold (_STALE_SERIES_THRESHOLD_DAYS) is unchanged; only the
-    rendered string format changed alongside the v10 tag unification.
+    form. The threshold is _STALE_SERIES_THRESHOLD_DAYS.
     """
     if not series or newest_payload_date is None:
         return ""
@@ -1089,11 +1060,12 @@ def _trend_info(
 ) -> tuple[str, float, float, int, bool] | None:
     """Return (direction, mean_scaled, std_scaled, n_total, within_noise) or None.
 
-    Uses the full retained series (post A4/C2/C6 filtering). direction is
+    Uses the full retained series (after the MIN_BUCKET_N, all-time-cutoff and
+    _ALL_TIME_MAX_POINTS filtering). direction is
     computed over the last 4 buckets (latest vs mean of prior 3) — flat when
     |latest - prior-mean| < _TREND_FLAT_THRESHOLD, otherwise improving /
     regressing. std is the stddev across all retained points (0.0 when fewer
-    than 2 points). within_noise mirrors the v7 rule: the last-4 shift is
+    than 2 points). within_noise is true when the last-4 shift is
     below the metric's noise cap even if direction is not flat. Returns None
     when fewer than _TREND_MIN_POINTS buckets remain — caller renders no
     trend field.
@@ -1120,7 +1092,6 @@ def _trend_info(
     )
     n_total = sum(pt.n for pt in points)
     noise_cap = (
-        # Phase 87.5 (D-06): restored from the Phase 87.4 metric name in lockstep with MetricId.
         _DELTA_WITHIN_NOISE_ELO if metric_id == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
     )
     within_noise = direction != "flat" and abs(diff) < noise_cap
@@ -1132,12 +1103,11 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
 
     Percent-scale metrics use _PROXIMITY_PCT_THRESHOLD; endgame_elo_gap uses
     _PROXIMITY_ELO_THRESHOLD. Returns '' for unknown metrics or when the value
-    is comfortably inside one zone. Phase 87.5 (D-06): metric restored from
-    the Phase 87.4 metric name.
+    is comfortably inside one zone.
     """
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
-    # Phase 102 UAT: metrics_elo findings dispatch their proximity band per-TC
+    # metrics_elo findings dispatch their proximity band per-TC
     # (TC_METRIC_BANDS) so the `[near edge]` hint matches the per-TC gauge edge.
     time_control = dimension.get("time_control") if dimension else None
     bucketed = cast("dict[str, dict[str, ZoneSpec]]", dict(BUCKETED_ZONE_REGISTRY))
@@ -1147,7 +1117,9 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
         and time_control is not None
         and time_control in TC_METRIC_BANDS
     ):
-        spec = tc_metric_zone_spec(cast(TcBandMetricId, metric_id), cast(TcBucket, time_control))
+        spec = tc_metric_zone_spec(
+            cast(TcBandMetricId, metric_id), cast(TimeControlBucket, time_control)
+        )
     elif metric_id in bucketed and bucket is not None:
         spec = bucketed[metric_id].get(bucket)
     elif metric_id in scalar:
@@ -1157,7 +1129,7 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     scale = _scale_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
-    if metric_id == "endgame_elo_gap":  # Phase 87.5 D-06: restored from the Phase 87.4 metric name.
+    if metric_id == "endgame_elo_gap":
         threshold = _PROXIMITY_ELO_THRESHOLD
     elif metric_id == "entry_eval_pawns":
         threshold = _PROXIMITY_PAWN_THRESHOLD
@@ -1179,7 +1151,7 @@ def _weakest_type_tag(sorted_cats: Sequence[object]) -> str:
        the #3 type (when present) is separated from #2 by >= the threshold,
        so the two lowest stand out together. Emits
        `[weakest-types-tied] <a>, <b> score_pct=X, Y — next=<c> score_pct=Z`
-       (v12). Releases pawn-ending recommendations the same way a clear
+       Releases pawn-ending recommendations the same way a clear
        `[weakest-type] pawn` would.
     3. No clear bottom — no tag emitted.
     """
@@ -1222,7 +1194,7 @@ def _weakest_type_tag(sorted_cats: Sequence[object]) -> str:
 def _recovery_pattern_tag(members: list[SubsectionFinding], tc: str) -> str:
     """Emit a recovery-pattern hint when Recovery is weak across many types in one TC.
 
-    Phase 102 UAT (2026-06-02): scoped per-TC — scans one `endgame_type_<tc>`
+    Scoped per-TC: scans one `endgame_type_<tc>`
     subsection's members for `recovery_save_pct` with zone=weak. When
     ≥ _RECOVERY_PATTERN_MIN_WEAK_TYPES of the four visible types qualify, emits a
     hint so the LLM frames Recovery as a consistent pattern within that time
@@ -1255,7 +1227,7 @@ def _recovery_pattern_tag(members: list[SubsectionFinding], tc: str) -> str:
 def _asymmetry_lines(members: list[SubsectionFinding], tc: str) -> list[str]:
     """Detect per-type Conversion/Recovery zone splits (one strong + one weak) in one TC.
 
-    Phase 102 UAT (2026-06-02): scoped per-TC — groups one `endgame_type_<tc>`
+    Scoped per-TC: groups one `endgame_type_<tc>`
     subsection's members by endgame class. When the two metrics sit in opposing
     zones, emits a comment the LLM should lead with for that type — the "you
     close winning pawn endgames but bleed losing ones" story is easy to miss if
@@ -1300,10 +1272,6 @@ def _asymmetry_lines(members: list[SubsectionFinding], tc: str) -> list[str]:
     return lines
 
 
-# Phase 88.1 (Plan 09, REVIEW.md WR-06): _low_time_gap_line removed. Its sole
-# consumer was the 10-bucket time-pressure chart block helper (also removed).
-
-
 def _dim_key_for_finding(f: SubsectionFinding) -> str:
     """Return the canonical dim-key string used to group findings across windows."""
     if f.dimension is None:
@@ -1316,13 +1284,13 @@ SeriesKey = tuple[str, str, str]
 
 
 def _series_key(f: SubsectionFinding) -> SeriesKey:
-    """Return the full series identity used by the C2 / C5 window filters.
+    """Return the full series identity used by the window filters.
 
-    Phase 238 review (BE-WR-02): score_timeline became per time control, so
-    (metric, subsection_id) is shared by up to four TCs. Keying C2/C5 on that pair let
-    one TC's series state trim or suppress another TC's series (a new rapid with only
-    recent games lost its last_3mo series because blitz had an all_time one). The
-    dim_key separates the combos.
+    score_timeline is per time control, so (metric, subsection_id) is shared by up
+    to four TCs. Keying the window filters on that pair would let one TC's series
+    state trim or suppress another TC's series (a new rapid with only recent games
+    would lose its last_3mo series because blitz had an all_time one). The dim_key
+    separates the combos.
     """
     return (f.metric, f.subsection_id, _dim_key_for_finding(f))
 
@@ -1334,11 +1302,11 @@ def _within_noise_shift(
     shift: float,
 ) -> bool:
     """Shift is within-noise when it's below the metric cap AND the last_3mo window is much smaller."""
-    if metric == "endgame_elo_gap":  # Phase 87.5 D-06: restored from the Phase 87.4 metric name.
+    if metric == "endgame_elo_gap":
         noise_cap = _DELTA_WITHIN_NOISE_ELO
     elif metric == "entry_eval_pawns":
-        # Phase 82: 0.05 pawns is the within-noise cap for entry_eval_pawns
-        # (matches the proximity threshold; ~5 cp is below the calibrated ±0.75 band).
+        # 0.05 pawns is the within-noise cap for entry_eval_pawns
+        # (matches the proximity threshold; ~5 cp is well inside the calibrated ±0.60 band).
         noise_cap = 0.05
     else:
         noise_cap = _DELTA_WITHIN_NOISE_SHIFT
@@ -1352,7 +1320,7 @@ def _within_noise_shift(
 def _series_granularity(finding: SubsectionFinding) -> str:
     """Weekly for last_3mo; monthly for all_time.
 
-    Exception: score_timeline (Phase 68) is always weekly (ISO-week is the
+    Exception: score_timeline is always weekly (ISO-week is the
     natural grain of the underlying `compute_score_gap_timeline`; the two-line
     chart reads weekly points directly and the insights series is built without
     monthly resampling — see `_findings_score_timeline`).
@@ -1365,7 +1333,7 @@ def _series_granularity(finding: SubsectionFinding) -> str:
 def _build_pctl_token(rec: MetricPercentileRecord | None) -> str:
     """Build the pctl= token string from an enriched MetricPercentileRecord.
 
-    Phase 102 (Plan 04): the enriched format is
+    The enriched format is
     `pctl=N (vs ~A-rated {tc} peers | n_games=M | value=V)`.
     Each context element is appended only when present so short-history users
     (no anchor or sparse n_games) still get a valid pctl= token.
@@ -1402,9 +1370,9 @@ def _summary_window_line(
     from the series. Appends `stale: ...` and `[near edge]` suffixes when
     applicable. All numbers on the UI 0-100 scale (or Elo points).
 
-    Phase 102 (Plan 01): optional pctl_record appends a pctl= token after
-    quality= when present. pctl= is metadata only; it never gates emission (D-04).
-    Phase 102 (Plan 04): enriched token format includes anchor, n_games, value.
+    Optional pctl_record appends a pctl= token after
+    quality= when present. pctl= is metadata only; it never gates emission.
+    Enriched token format includes anchor, n_games, value.
     """
     scale = _scale_for_metric(finding.metric)
     precision = _precision_for_metric(finding.metric)
@@ -1414,7 +1382,7 @@ def _summary_window_line(
     if bounds:
         zone_part += f" {bounds}"
 
-    # Phase 102 (Plan 04): enriched pctl= token carries anchor + n_games + value.
+    # Enriched pctl= token carries anchor + n_games + value.
     pctl_part = _build_pctl_token(pctl_record)
 
     parts: list[str] = [f"mean={value_scaled:+.{precision}f}", f"n={finding.sample_size}"]
@@ -1472,9 +1440,6 @@ def _endgame_elo_per_bucket(points: list[TimePoint] | None) -> list[tuple[float,
     (scale=1.0), so `pt.value` is already in Elo units. Points missing
     `actual_elo` are skipped — the gap series carries it for endgame_elo_gap
     only (see _render_series_block).
-
-    Phase 87.5 (D-06): restored from the Phase 87.4 helper name in lockstep
-    with the metric rename to `endgame_elo_gap`.
     """
     out: list[tuple[float, int]] = []
     if not points:
@@ -1492,7 +1457,7 @@ def _non_endgame_elo_per_bucket(points: list[TimePoint] | None) -> list[tuple[fl
     Points missing `non_endgame_elo` are skipped (only endgame_elo_timeline
     populates this field; see TimePoint docstring).
 
-    Phase 87.6: companion to `_endgame_elo_per_bucket`; reads pt.non_endgame_elo
+    Companion to `_endgame_elo_per_bucket`; reads pt.non_endgame_elo
     instead of deriving endgame_elo from pt.actual_elo + pt.value.
     """
     out: list[tuple[float, int]] = []
@@ -1517,8 +1482,8 @@ def _elo_variant_window_line(
 
     One window's line ("all_time" or "last_3mo") of an elo-variant summary
     block. Extracted to its own module-level function (not a closure inside
-    `_render_elo_variant_summary_block`) so ruff's per-function complexity
-    check scores it independently of the caller.
+    `_render_elo_variant_summary_block`) so the function-size / complexity checks
+    score it independently of the caller.
     """
     values = per_bucket(series)
     if not values:
@@ -1581,9 +1546,6 @@ def _render_elo_variant_summary_block(
     extractor they called. No zone / quality fields on either variant — the
     paired `[summary endgame_elo_gap]` block (rendered immediately after)
     carries the zone interpretation.
-
-    Phase 87.5 (D-06) / Phase 87.6: identifiers restored/added in lockstep
-    with the metric rename to `endgame_elo_*` and the non_endgame_elo variant.
     """
     header = f"[summary {label}"
     if dim_key:
@@ -1649,7 +1611,7 @@ def _render_endgame_elo_summary_block(
 ) -> list[str]:
     """Emit `[summary endgame_elo | dim]` derived from the endgame_elo_gap series.
 
-    v11: the chart's headline value is Endgame ELO (absolute Elo, score-gap-adjusted)
+    The chart's headline value is Endgame ELO (absolute Elo, score-gap-adjusted)
     not the gap. We derive a per-window aggregate from the same retained series
     points used by the gap summary so the LLM can cite the chart number directly
     without doing arithmetic. Thin wrapper over `_render_elo_variant_summary_block`
@@ -1680,12 +1642,12 @@ def _render_non_endgame_elo_summary_block(
     """Emit `[summary non_endgame_elo | dim]` from the endgame_elo_gap series.
 
     Analogous to `_render_endgame_elo_summary_block` but reads pt.non_endgame_elo
-    directly (the FIDE Performance Rating for the non-endgame game subset).
+    directly (Actual ELO stretched by the non-endgame score; see
+    endgame_service._endgame_elo_logistic).
     Thin wrapper over `_render_elo_variant_summary_block` — kept as its own
     named function for the same reason as `_render_endgame_elo_summary_block`.
 
-    Phase 87.6: new helper enabling THREE summary blocks per combo in the
-    endgame_elo_timeline subsection.
+    One of THREE summary blocks per combo in the endgame_elo_timeline subsection.
     """
     return _render_elo_variant_summary_block(
         label="non_endgame_elo",
@@ -1706,12 +1668,12 @@ def _lookup_pctl_record(
 ) -> "MetricPercentileRecord | None":
     """Look up a MetricPercentileRecord for a (metric, dim_key) pair.
 
-    Every record is per TC (Phase 238 D-04: no page-level weighted record exists),
+    Every record is per TC (no page-level weighted record exists),
     keyed as "{metric}:{tc}". The dim_key typically encodes the TC as
     "time_control=blitz" — we parse out the tc part.
-    D-04: this is metadata only and never gates emission.
+    This is metadata only and never gates emission.
 
-    Phase 102 UAT fix: only the per-TC Endgame Metrics subsections carry
+    Only the per-TC Endgame Metrics subsections carry
     percentiles. The per-(class × TC) Endgame Type findings share the
     conversion_win_pct / recovery_save_pct metric names AND a time_control
     dimension, so without this guard a class-scoped finding (e.g. rook
@@ -1758,10 +1720,10 @@ def _render_summary_block(
     shape. `no data` stands in on the last_3mo line when only the all_time
     window has a finding (keeps the paired-line visual consistent).
 
-    Phase 102 (Plan 01): optional per_tc_metric_percentiles thread pctl= annotations
-    into the all_time and last_3mo window lines. D-04 applies: percentile is
+    Optional per_tc_metric_percentiles thread pctl= annotations
+    into the all_time and last_3mo window lines. Percentile is
     metadata only and never gates emission.
-    Phase 102 (Plan 04): enriched MetricPercentileRecord carries anchor +
+    Enriched MetricPercentileRecord carries anchor +
     n_games + value; cohort_anchors is no longer needed for anchor resolution
     (the record already contains the resolved anchor). Kept in the signature
     for backwards compat but no longer used for framing.
@@ -1772,8 +1734,8 @@ def _render_summary_block(
     header += "]"
     lines: list[str] = [header]
 
-    # Phase 102 (Plan 04): resolve the enriched percentile record from the per-TC
-    # dict. D-04: pctl is metadata only.
+    # Resolve the enriched percentile record from the per-TC
+    # dict. pctl is metadata only.
     pctl_record = _lookup_pctl_record(metric, dim_key, per_tc_metric_percentiles)
 
     if all_time is not None:
@@ -1836,14 +1798,11 @@ def _payload_summary_lines(
 ) -> list[str]:
     """Compact summary prepended to the prompt so macro context is always visible.
 
-    v9: dropped the `Conversion/Recovery asymmetries detected: N` count — the
-    per-type `# asymmetry (<type>): ...` tags surfaced inside the
-    `conversion_recovery_by_type` subsection carry the actionable detail.
-    v11: added `All-time series window: ... → ...` line so the LLM cannot
+    Includes an `All-time series window: ... → ...` line so the LLM cannot
     overclaim a long-term trajectory beyond the actual cap.
     """
     lines: list[str] = ["## Payload summary"]
-    # Phase 238: games in the ranked sample, summed over the per-TC ranked payload.
+    # Games in the ranked sample, summed over the per-TC ranked payload.
     total_games = sum(t.ranked_games for t in findings.ranked_tcs)
     if total_games > 0:
         lines.append(f"- Total games in scope: {total_games}")
@@ -1870,7 +1829,7 @@ def _payload_summary_lines(
     return lines
 
 
-# v8: UI-ordered section layout. Each entry is (section_id, ordered blocks
+# UI-ordered section layout. Each entry is (section_id, ordered blocks
 # in UI top-to-bottom order). A block is ("subsection", id) or ("chart", id).
 # The `section_id` strings match the `SectionId` enum on EndgameInsightsReport
 # so the LLM can treat each `## Section:` header as the cue for which
@@ -1880,30 +1839,27 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
         "overall",
         [
             ("chart", "overall_wdl"),
-            # Phase 102 UAT: the scalar `overall` subsection (score_gap only) is
-            # retired. endgame_start_vs_end now leads with the two score cards
-            # (endgame_score + non_endgame_score), and the two gaps live in the
-            # dedicated `score_gap` subsection, mirroring the UI's "Games
-            # with/without Endgame" cards and "Endgame Score Differences" card.
+            # endgame_start_vs_end leads with the two score cards (endgame_score +
+            # non_endgame_score), and the two gaps live in the dedicated `score_gap`
+            # subsection, mirroring the UI's "Games with/without Endgame" cards and
+            # "Endgame Score Differences" card.
             ("subsection", "endgame_start_vs_end"),
             ("subsection", "score_gap"),
             ("subsection", "score_timeline"),
-            # Phase 87.5 D-07: endgame_elo_timeline moved from `metrics_elo` to
-            # `overall` so it co-locates with the Endgame Score Gap timeline
-            # (its input series). The chart's UI position mirrors this — it
-            # now renders directly below the Endgame Score Gap over Time chart
-            # in the Endgame Overall Performance section.
+            # endgame_elo_timeline sits in `overall` next to the Endgame Score Gap
+            # timeline (its input series). The chart's UI position mirrors this:
+            # it renders directly below the Endgame Score Gap over Time chart in
+            # the Endgame Overall Performance section.
             ("subsection", "endgame_elo_timeline"),
         ],
     ),
     (
         "metrics_elo",
         [
-            # Phase 102 UAT (2026-06-02): the aggregate-over-TC `endgame_metrics`
-            # subsection is retired. Each eligible time control renders its own
-            # subsection mirroring the UI's per-TC Endgame Metrics cards (bullet
-            # → blitz → rapid → classical). Subsections with no qualifying card
-            # (TC below MIN_GAMES_PER_TC_CARD) are skipped by the assembly loop.
+            # Each eligible time control renders its own subsection mirroring the
+            # UI's per-TC Endgame Metrics cards (bullet → blitz → rapid →
+            # classical). Subsections with no qualifying card (TC below
+            # MIN_GAMES_PER_TC_CARD) are skipped by the assembly loop.
             ("subsection", "endgame_metrics_bullet"),
             ("subsection", "endgame_metrics_blitz"),
             ("subsection", "endgame_metrics_rapid"),
@@ -1913,31 +1869,21 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "time_pressure",
         [
-            # Phase 88.1 (Plan 09, REVIEW.md WR-06): clock-diff timeline subsection
-            # and time-pressure-vs-performance chart block removed alongside the
-            # corresponding compose_findings entries and chart-block helper.
-            # Phase 102 (Plan 01): Score-Gap-by-time per-quintile chart block
-            # re-added as a new helper _format_time_pressure_score_gap_chart_block.
-            # Phase 102 UAT (2026-06-02): the page-level `time_pressure_at_entry`
-            # subsection (blended avg_clock_diff_pct + net_timeout_rate, no
-            # percentiles) is retired — the chart block now carries per-TC Clock Gap
-            # and Net Flag Rate WITH percentiles, making the blended pair redundant.
-            # The `time_pressure` section is now chart-only; the assembly loop emits
-            # the section header whenever the chart block has content.
+            # Chart-only section: the per-TC block carries the quintile table plus
+            # Clock Gap / Net Flag Rate percentiles; the assembly loop emits the
+            # section header whenever the block has content.
             ("chart", "time_pressure_score_gap_by_time"),
         ],
     ),
     (
         "type_breakdown",
         [
-            # Phase 102 UAT (2026-06-02): the aggregate-over-TC type WDL chart +
-            # `results_by_endgame_type` + `conversion_recovery_by_type` subsections
-            # are retired. Each eligible time control renders its own subsection
-            # mirroring the UI's per-TC collapsible Endgame Type cards: a WDL table
-            # (built from type_categories_by_tc) leads the subsection, followed by
-            # the per-class Conversion / Recovery / Score-Gap [summary] blocks.
-            # Subsections with no qualifying card (TC below MIN_GAMES_PER_TC_CARD)
-            # are skipped by the assembly loop.
+            # Each eligible time control renders its own subsection mirroring the
+            # UI's per-TC collapsible Endgame Type cards: a WDL table (built from
+            # type_categories_by_tc) leads the subsection, followed by the per-class
+            # Conversion / Recovery / Score-Gap [summary] blocks. Subsections with
+            # no qualifying card (TC below MIN_GAMES_PER_TC_CARD) are skipped by the
+            # assembly loop.
             ("subsection", "endgame_type_bullet"),
             ("subsection", "endgame_type_blitz"),
             ("subsection", "endgame_type_rapid"),
@@ -1947,7 +1893,7 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
 ]
 
 
-# Phase 102 UAT: subsection_id → TC bucket for the per-TC Endgame Type subsections.
+# subsection_id → TC bucket for the per-TC Endgame Type subsections.
 # Used by the renderer to look up the WDL table + scope the per-TC asymmetry /
 # recovery-pattern hints.
 _TYPE_SUBSECTION_TO_TC: dict[str, str] = {
@@ -1958,14 +1904,15 @@ _TYPE_SUBSECTION_TO_TC: dict[str, str] = {
 }
 
 
-def _apply_c2_filter(
+def _drop_points_covered_by_last_3mo(
     points: list[TimePoint], *, drop_last_90_days: bool, all_time_cutoff: str
 ) -> list[TimePoint]:
-    """C2: for an `all_time` series, drop points within the last 90 days when
-    a matching `last_3mo` series exists for the same (metric, subsection) pair.
+    """For an `all_time` series, drop points within the last 90 days when
+    a matching `last_3mo` series exists for the same series key (metric,
+    subsection, dimension).
 
     `drop_last_90_days` is pre-computed by the caller (True only when this is
-    an `all_time`-window finding whose (metric, subsection) pair also has a
+    an `all_time`-window finding whose series key also has a
     `last_3mo` finding) so this helper stays a pure points-in, points-out
     filter rather than re-deriving that condition from a `SubsectionFinding`.
     """
@@ -1982,32 +1929,33 @@ def _retained_series_for_summary(
 ) -> list[TimePoint] | None:
     """Return the retained series points for a timeline finding, or None.
 
-    Applies the same A4/C2/C6 filter chain used for series emission, so the
-    [summary] block's buckets / trend / std all describe the exact window
-    the LLM sees in the [series ...] block below it. Returns None for
-    non-timeline subsections (scalar findings carry no series semantics).
+    Applies the same thin-bucket drop, last_3mo-overlap drop and all-time point
+    cap used for series emission, so the [summary] block's buckets / trend / std
+    all describe the exact window the LLM sees in the [series ...] block below
+    it. Returns None for non-timeline subsections (scalar findings carry no
+    series semantics).
     """
     if finding.series is None or finding.subsection_id not in _TIMELINE_SUBSECTION_IDS:
         return None
-    points = [pt for pt in finding.series if pt.n >= MIN_BUCKET_N]  # A4
+    points = [pt for pt in finding.series if pt.n >= MIN_BUCKET_N]  # drop thin buckets
     is_all_time = finding.window == "all_time"
-    points = _apply_c2_filter(
+    points = _drop_points_covered_by_last_3mo(
         points,
         drop_last_90_days=is_all_time and _series_key(finding) in last_3mo_pairs,
         all_time_cutoff=all_time_cutoff,
     )
     if is_all_time:
-        points = _apply_c6_filter(points)
+        points = _cap_all_time_points(points)
     return points
 
 
-def _apply_c3_filter(
+def _activity_gap_marker(
     prev_date: datetime.date | None,
     curr_date: datetime.date,
     prev_bucket_start: str | None,
     curr_bucket_start: str,
 ) -> str | None:
-    """C3: return an `[activity-gap] ...` marker line for a >90-day gap between
+    """Return an `[activity-gap] ...` marker line for a >90-day gap between
     two consecutive retained series points, or None when there is no gap
     (or no prior point to compare against).
     """
@@ -2023,14 +1971,14 @@ def _apply_c3_filter(
 def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) -> list[str]:
     """Render `[series metric, window, granularity[, dim_key]]` + raw points + `[activity-gap]` markers.
 
-    Phase 68: when a finding carries a dimension (e.g. `{"part": "endgame"}`
+    When a finding carries a dimension (e.g. `{"time_control": "blitz"}`
     or `{"platform": "chess.com", "time_control": "blitz"}`), the series
     header gets a trailing dim_key suffix so two findings that share the
     same (metric, window, granularity) but different dims each get their
     own uniquely-labelled series block. This matches the grouping the
     `_dim_key_for_finding` helper already produces for summary blocks.
 
-    Phase 68 (260424-pc6, UAT pass): when every point carries the same
+    When every point carries the same
     `n` — as happens for trailing-window series (e.g. score_timeline's
     rolling 100-game window) — the repetitive `(n=<N>)` suffix is noise.
     Emit a single `[n=<N> for every point]` disclosure line right after
@@ -2038,8 +1986,6 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     endgame_elo_gap variant (which also carries per-point `elo=`) always
     keeps the per-point `(n=<N>)` suffix because its `elo=` field can
     still vary per bucket — the disclosure shortcut would lose signal.
-    Phase 87.5 (D-06): metric name restored to `endgame_elo_gap` from the
-    Phase 87.4 variant.
     """
     granularity = _series_granularity(finding)
     header = f"[series {finding.metric}, {finding.window}, {granularity}"
@@ -2049,9 +1995,8 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     header += "]"
     lines = [header]
     series_scale = _scale_for_metric(finding.metric)
-    # Phase 87.5 (D-06): restored metric → "endgame_elo_gap" in lockstep.
     emit_elo = finding.metric == "endgame_elo_gap"
-    # Constant-n suppression (260424-pc6 C): only applies when every point
+    # Constant-n suppression: only applies when every point
     # shares the same `n` AND this is NOT the endgame_elo_gap variant (whose
     # per-point `elo=` field is the reason the full per-point line exists).
     ns = [pt.n for pt in points]
@@ -2065,12 +2010,12 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
             curr_date = datetime.date.fromisoformat(pt.bucket_start)
         except ValueError:
             continue
-        gap_marker = _apply_c3_filter(prev_date, curr_date, prev_bucket_start, pt.bucket_start)
+        gap_marker = _activity_gap_marker(prev_date, curr_date, prev_bucket_start, pt.bucket_start)
         if gap_marker:
             lines.append(gap_marker)
         pt_value = pt.value * series_scale
         if emit_elo and pt.actual_elo is not None:
-            # Phase 87.6: extend series rows with non_eg_elo= when available.
+            # Extend series rows with non_eg_elo= when available.
             if pt.non_endgame_elo is not None:
                 lines.append(
                     f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo},"
@@ -2110,7 +2055,7 @@ def _group_findings_by_metric_dim(
     return groups, order
 
 
-def _apply_c5_filter(
+def _should_emit_series_block(
     candidate_finding: SubsectionFinding | None,
     candidate_series: list[TimePoint] | None,
     *,
@@ -2118,11 +2063,10 @@ def _apply_c5_filter(
     live_series_metrics: set[tuple[str, str]],
     stale_markers: dict[int, str],
 ) -> bool:
-    """C5 (+ stale/live-twin gate): should this candidate's raw `[series ...]`
-    block be emitted?
+    """Should this candidate's raw `[series ...]` block be emitted?
 
     False when there is nothing to render, when this is a `last_3mo` series
-    superseded by an `all_time` series for the same series key (C5 proper), or
+    superseded by an `all_time` series for the same series key, or
     when this is a stale combo shadowed by a live twin for the same
     (metric, subsection) pair. The stale gate is deliberately cross-combo: a stale
     combo keeps its [summary] with the stale marker but drops its raw series
@@ -2161,10 +2105,6 @@ def _render_subsection_block(
     Findings are grouped by (metric, dim_key) so each pair produces exactly
     one [summary] block carrying both windows plus optional shift. Timeline
     findings also emit a `[series ...]` raw-data block below the summary.
-    Phase 68 (B4 option c): `score_timeline` emits TWO findings per window
-    (one per `part`) so the subsection naturally renders two summary blocks
-    + two series blocks via the existing per-dimension grouping — no special
-    suppression carve-out.
     """
     lines: list[str] = []
     header = f"### Subsection: {subsection_id}"
@@ -2176,7 +2116,7 @@ def _render_subsection_block(
         header += f" (parent: {parent})"
     lines.append(header)
 
-    # Phase 102 UAT: per-TC Endgame Type subsections lead with their WDL table
+    # Per-TC Endgame Type subsections lead with their WDL table
     # (mirrors the UI tile's WDL bar + score bullet), then the per-TC recovery-
     # pattern / asymmetry hints scoped to this time control's findings, then the
     # per-class Conv/Recov/Score-Gap [summary] blocks below.
@@ -2217,13 +2157,10 @@ def _render_subsection_block(
             else None
         )
 
-        # v11 (Phase 87.5 D-07): in endgame_elo_timeline (subsection moved from
-        # `metrics_elo` to `overall` co-located with the Endgame Score Gap over
-        # Time chart), lead each combo with the derived absolute Endgame ELO
-        # summary (the chart's headline value), then the gap summary (which
-        # carries the zone interpretation).
-        # Phase 87.6: adds a second derived summary for Non-Endgame ELO between
-        # the Endgame ELO and the gap summaries, making THREE blocks per combo.
+        # In endgame_elo_timeline, lead each combo with the derived absolute
+        # Endgame ELO summary (the chart's headline value), then the Non-Endgame
+        # ELO summary, then the gap summary (which carries the zone
+        # interpretation): THREE blocks per combo.
         if subsection_id == "endgame_elo_timeline" and metric == "endgame_elo_gap":
             lines.extend(
                 _render_endgame_elo_summary_block(
@@ -2266,15 +2203,15 @@ def _render_subsection_block(
             )
             recovery_note_emitted = True
 
-        # Raw [series ...] block below the summary. _apply_c5_filter carries
-        # the same C5 / stale-live-twin gates as before: skip last_3mo series
+        # Raw [series ...] block below the summary. _should_emit_series_block carries
+        # the series-emission gates: skip last_3mo series
         # when an all_time series exists for the same series key;
         # skip stale combos when a live combo exists.
         for candidate_finding, candidate_series in (
             (all_time, all_time_series),
             (last_3mo, last_3mo_series),
         ):
-            if not _apply_c5_filter(
+            if not _should_emit_series_block(
                 candidate_finding,
                 candidate_series,
                 all_time_series_pairs=all_time_series_pairs,
@@ -2282,7 +2219,7 @@ def _render_subsection_block(
                 stale_markers=stale_markers,
             ):
                 continue
-            # _apply_c5_filter's first check (candidate_finding is None or not
+            # _should_emit_series_block's first check (candidate_finding is None or not
             # candidate_series) means both are non-None here; ty cannot narrow
             # across the function-call boundary, so assert to keep the
             # explicit-type-safety guarantee CLAUDE.md requires.
@@ -2294,15 +2231,8 @@ def _render_subsection_block(
     return lines
 
 
-def _apply_a2_filter(raw_findings: list[SubsectionFinding]) -> list[SubsectionFinding]:
-    """A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
-
-    v6: also drops any finding dimensioned on endgame_class=pawnless — the UI
-    hides pawnless rows (ENDGAME_CLASS_LABELS, Endgames.tsx) so the LLM must
-    not narrate a type the user cannot see. All three drop rules ran as one
-    inline list comprehension in `_assemble_user_prompt` before Phase 214;
-    named and extracted here per the docstring's own filter-stage bullets.
-    """
+def _visible_findings(raw_findings: list[SubsectionFinding]) -> list[SubsectionFinding]:
+    """Drop NaN-valued findings, empty thin findings, and pawnless-class findings (the UI hides pawnless rows)."""
     return [
         f
         for f in raw_findings
@@ -2319,13 +2249,12 @@ def _compute_all_time_series_pairs(
     all_time_cutoff: str,
 ) -> set[SeriesKey]:
     """Register a series key ONLY when the all_time series
-    still has retained points after the A4/C2/C6 filter chain.
+    still has retained points after thin-bucket, last_3mo-overlap and all-time-cap filtering.
 
-    For short-history users whose entire history fits inside the 90-day C2
-    cutoff, the all_time series filters to empty — without this gate the
-    empty pair would silently suppress the last_3mo [series] block (C5) so
-    the LLM would see [summary] lines pointing at no series data. See
-    `.planning/debug/llm-prompt-missing-sections.md` (Fix A).
+    For short-history users whose entire history fits inside the 90-day
+    last_3mo-overlap cutoff, the all_time series filters to empty — without this gate the
+    empty pair would silently suppress the last_3mo [series] block (see `_should_emit_series_block`) so
+    the LLM would see [summary] lines pointing at no series data.
     """
     all_time_series_pairs: set[SeriesKey] = set()
     for f in visible:
@@ -2349,7 +2278,7 @@ def _compute_stale_markers_and_live_metrics(
     `stale_markers` keys by `id(finding)` (matches the `stale_markers.get(id(f))`
     lookups downstream); `live_series_metrics` carries the (metric, subsection)
     pairs of every NON-stale series, so a stale combo can be shadowed by a
-    live twin for the same pair (C5's stale-live-twin gate).
+    live twin for the same pair (`_should_emit_series_block`'s stale-live-twin gate).
     """
     stale_markers: dict[int, str] = {}
     stale_count = 0
@@ -2393,12 +2322,11 @@ def _render_layout_item(
     members = groups.get(block_id) or []
     wdl_table = type_wdl_tables.get(block_id)
     if not members and not wdl_table:
-        # Fix C: keep the `endgame_elo_timeline` header visible even when
+        # Keep the `endgame_elo_timeline` header visible even when
         # every (platform, time_control) combo is sparse (< SPARSE_COMBO_FLOOR
         # weekly buckets). Without this the whole subsection vanishes for
         # short-history users, and the LLM has no signal that the Endgame
-        # ELO chart exists. See `.planning/debug/llm-prompt-missing-sections.md`.
-        # Phase 87.5 (D-06): block_id restored from the Phase 87.4 name.
+        # ELO chart exists.
         if block_id == "endgame_elo_timeline":
             return [
                 "### Subsection: endgame_elo_timeline",
@@ -2410,7 +2338,7 @@ def _render_layout_item(
                 "",
             ]
         return []
-    # Phase 102 UAT: a per-TC Endgame Type subsection still renders its WDL
+    # A per-TC Endgame Type subsection still renders its WDL
     # table even when the TC has no Conv/Recov/Score-Gap findings (e.g. an
     # all-parity TC), mirroring the UI card that always shows the WDL bars.
     return _render_subsection_block(
@@ -2428,46 +2356,39 @@ def _render_layout_item(
 
 
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
-    """Render EndgameTabFindings as structured text for the LLM (D-29 format).
+    """Render EndgameTabFindings as structured text for the LLM.
 
-    v8 layout: payload summary + player profile (Phase 238: no filter block),
+    Layout: payload summary + player profile (no filter block),
     then one `## Section:` block per UI section with subsection and chart
     blocks interleaved in UI order. Each section maps 1:1 to one `section_id`
     in the LLM output. Empty sections (no qualifying blocks) are omitted.
 
-    Filters applied (each stage is a same-named `_apply_<code>_filter` helper
-    at the point in the pipeline where it actually runs -- not all of them
-    execute inline in this function's own body; see each helper's docstring
-    for its real call site):
-    - A2: skip findings where value is NaN or (sample_size=0 AND thin quality).
-      Applied here, via `_apply_a2_filter`.
-    - A4: drop series points with n < MIN_BUCKET_N. Applied inside
+    Filters applied (each stage is a helper at the point in the pipeline where
+    it actually runs -- not all of them execute inline in this function's own
+    body; see each helper's docstring for its real call site):
+    - Visible findings: skip findings where value is NaN, sample_size=0 with
+      thin quality, or the endgame class is pawnless. Applied here, via
+      `_visible_findings`.
+    - Thin buckets: drop series points with n < MIN_BUCKET_N. Applied inside
       `_retained_series_for_summary`.
-    - C2: for `all_time` series, drop points within last 90 days if a matching
-      `last_3mo` series exists for the same (metric, subsection) pair.
-      Applied inside `_retained_series_for_summary`, via `_apply_c2_filter`.
-    - C3: insert `[activity-gap] ...` markers when consecutive retained
-      series points are > _ACTIVITY_GAP_DAYS apart. Applied inside
-      `_render_series_block`, via `_apply_c3_filter`.
-    - C5: skip the `last_3mo` Series block when an `all_time` Series for
-      the same (metric, subsection) is emitted. The last_3mo scalar stays.
-      Applied inside `_render_subsection_block`, via `_apply_c5_filter`.
-    - C6: cap `all_time` series at the last _ALL_TIME_MAX_POINTS buckets.
-      Applied inside `_retained_series_for_summary` and
-      `_all_time_window_bounds`, via `_apply_c6_filter`.
+    - Last-3-months overlap: for `all_time` series, drop points within last 90
+      days if a matching `last_3mo` series exists for the same series key
+      (metric, subsection, dimension). Applied inside
+      `_retained_series_for_summary`, via `_drop_points_covered_by_last_3mo`.
+    - Activity gaps: insert `[activity-gap] ...` markers when consecutive
+      retained series points are > _ACTIVITY_GAP_DAYS apart. Applied inside
+      `_render_series_block`, via `_activity_gap_marker`.
+    - Series emission: skip the `last_3mo` Series block when an `all_time`
+      Series for the same series key is emitted (the last_3mo scalar stays),
+      and skip stale combos shadowed by a live twin. Applied inside
+      `_render_subsection_block`, via `_should_emit_series_block`.
+    - All-time cap: cap `all_time` series at the last _ALL_TIME_MAX_POINTS
+      buckets. Applied inside `_retained_series_for_summary` and
+      `_all_time_window_bounds`, via `_cap_all_time_points`.
     - Inline zone bounds: every finding bullet includes a
       `(typical LO to UP[, lower is better])` fragment next to the zone token.
-
-    A former C4 stage ("drop the scalar `overall` subsection when the
-    overall_wdl chart renders") is retired: the scalar `overall` subsection
-    itself was removed from `_SECTION_LAYOUT` in the Phase 102 UAT pass (see
-    the comment on the `overall` section's layout list) — there is no longer
-    a runtime branch to gate, so no `_apply_c4_filter` exists.
     """
     overall_wdl_block = _format_overall_wdl_chart_block(findings)
-    # Phase 88.1 (Plan 09, REVIEW.md WR-06): the time-pressure 10-bucket
-    # chart block was dropped alongside its formatter helper.
-    # Phase 102 (Plan 01): Score-Gap-by-time per-quintile block re-added.
     time_pressure_score_gap_block = _format_time_pressure_score_gap_chart_block(
         findings, findings.per_tc_metric_percentiles
     )
@@ -2476,26 +2397,17 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         "time_pressure_score_gap_by_time": time_pressure_score_gap_block,
     }
 
-    # Phase 102 UAT (2026-06-02): pre-render the per-TC Endgame Type WDL tables
-    # (one per eligible TC, gated on MIN_GAMES_PER_TC_CARD) keyed by subsection_id.
-    # The matching table leads each `endgame_type_<tc>` subsection. Replaces the
-    # retired aggregate-over-TC `results_by_endgame_type_wdl` chart block.
+    # Pre-render the per-TC Endgame Type WDL tables (one per eligible TC, gated on
+    # MIN_GAMES_PER_TC_CARD) keyed by subsection_id. The matching table leads each
+    # `endgame_type_<tc>` subsection.
     type_wdl_tables = _build_type_wdl_tables(findings.type_categories_by_tc)
 
-    # Phase 102 UAT (2026-06-02): the per-class Score Gap is now a real
-    # per-(class × TC) finding emitted by insights_service._endgame_type_class_findings
-    # under the `endgame_type_<tc>` subsections, so no in-renderer synthesis is needed.
+    # The per-class Score Gap is a real per-(class × TC) finding emitted by
+    # insights_service._endgame_type_class_findings under the `endgame_type_<tc>`
+    # subsections, so no in-renderer synthesis is needed.
     raw_findings: list[SubsectionFinding] = list(findings.findings)
 
-    visible: list[SubsectionFinding] = _apply_a2_filter(raw_findings)
-
-    # v9/Phase 68: the `overall` subsection carries the authoritative
-    # aggregate `[summary score_gap]` alongside the overall_wdl chart
-    # (matches chart row math: endgame.score_pct - non_endgame.score_pct).
-    # The renamed `score_timeline` subsection emits TWO findings per window
-    # (one per `part`: endgame, non_endgame), each with its own absolute
-    # rolling-window series — the prompt reads two lines instead of
-    # narrating the signed difference as a scalar.
+    visible: list[SubsectionFinding] = _visible_findings(raw_findings)
 
     last_3mo_pairs: set[SeriesKey] = {_series_key(f) for f in visible if f.window == "last_3mo"}
     today = datetime.datetime.now(datetime.UTC).date()
@@ -2508,9 +2420,9 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     stale_markers, stale_count, live_series_metrics = _compute_stale_markers_and_live_metrics(
         visible, newest_date=newest_date
     )
-    # Phase 102 UAT: the asymmetry / recovery-pattern hints are now computed
-    # per-TC inside _render_subsection_block from each endgame_type_<tc>
-    # subsection's own members (no global pre-computation).
+    # The asymmetry / recovery-pattern hints are computed per-TC inside
+    # _render_subsection_block from each endgame_type_<tc> subsection's own
+    # members (no global pre-computation).
     activity_gap_count = _count_activity_gaps(visible)
     all_time_window = _all_time_window_bounds(visible)
 
@@ -2531,12 +2443,12 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     )
     lines.append("")
     lines.extend(_format_player_profile_block(findings.player_profile))
-    # Phase 102 (Plan 05): rating-basis block teaches the LLM about the
+    # Rating-basis block teaches the LLM about the
     # Lichess-equivalent framing. Emitted once after the player profile so
     # the context is available before any percentile annotation is encountered.
     lines.extend(_format_rating_basis_block(findings.cohort_anchors))
 
-    # v8: emit one `## Section:` block per UI section, with subsections and
+    # Emit one `## Section:` block per UI section, with subsections and
     # charts interleaved in UI order. Skip a whole section when none of its
     # blocks produce content.
     for section_id, layout in _SECTION_LAYOUT:
@@ -2566,7 +2478,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-# -- Overview gate (CONTEXT.md D-18) --
+# -- Overview gate --
 
 
 def _maybe_strip_overview(report: EndgameInsightsReport) -> EndgameInsightsReport:
@@ -2600,11 +2512,11 @@ async def _run_agent(
     it comes from `usage.details["thoughts_tokens"]` (populated by pydantic-ai's
     Google adapter from usage_metadata.thoughts_token_count).
 
-    Latency is measured ONLY around agent.run() per D-25.
+    Latency is measured ONLY around agent.run().
     """
     agent = get_insights_agent()
     try:
-        # WR-02 (phase 68 review): start the timer inside the try so latency
+        # Start the timer inside the try so latency
         # measures only the agent.run() call itself, not the small gap
         # between timer-start and the await.
         t0 = time.monotonic()
@@ -2637,8 +2549,7 @@ async def _run_agent(
         return None, 0, 0, None, latency_ms, "provider_error"
     except Exception as exc:
         # Defensive catch-all for unexpected exceptions (e.g. httpx connect errors
-        # not wrapped as ModelAPIError). Map to provider_error marker per
-        # RESEARCH.md §2 "Any other unexpected Exception -> 502 / provider_error".
+        # not wrapped as ModelAPIError). Map to the provider_error marker (router -> 502).
         latency_ms = int((time.monotonic() - t0) * 1000)
         sentry_sdk.set_context(
             "insights",
@@ -2657,7 +2568,7 @@ async def _run_agent(
     return result.output, usage.input_tokens, usage.output_tokens, thinking, latency_ms, None
 
 
-# -- Orchestration entry point (CONTEXT.md D-33) --
+# -- Orchestration entry point --
 
 
 def _cache_hit_response(row: LlmLog) -> EndgameInsightsResponse:
@@ -2709,7 +2620,7 @@ async def get_latest_insights_response(
 
     Never invalidated by imports or age, so None means the user has no report for
     the current (prompt_version, model) yet. The frontend auto-generates only on
-    None (quick 261012-qiz: only the first report is auto-generated; later
+    None (only the first report is auto-generated; later
     refreshes go through the "Update Insights" button, i.e. generate_insights).
     A prompt_version or model bump therefore auto-generates one new report.
     """
@@ -2723,7 +2634,7 @@ async def generate_insights(
 ) -> EndgameInsightsResponse:
     """Tier-1 structural cache -> fresh LLM call.
 
-    Cache key (260425-dxh, Phase 238 D-04): (user_id, prompt_version, model) plus the
+    Cache key: (user_id, prompt_version, model) plus the
     constant INSIGHTS_CACHE_OPPONENT_STRENGTH; there is no filter input, so exactly one
     report is cached per user.
     Validity rule (see get_cached_insights_response): row younger than
@@ -2739,7 +2650,7 @@ async def generate_insights(
     (router -> 502) on the respective failure paths.
 
     All DB work runs on the caller-supplied session (sequential awaits).
-    create_llm_log opens its OWN session (Phase 64 D-02) so log rows
+    create_llm_log opens its OWN session so log rows
     persist even if the caller's session rolls back.
     """
     model = settings.PYDANTIC_AI_MODEL_INSIGHTS
@@ -2758,7 +2669,7 @@ async def generate_insights(
     # Deliberately NOT taken in GET /cached (read-only, must never block).
     await acquire_insights_generation_lock(session, user_id)
 
-    # Tier-1 STRUCTURAL cache lookup (260425-dxh): cheap query on
+    # Tier-1 STRUCTURAL cache lookup: cheap query on
     # (user_id, prompt_version, model, constant opponent_strength) + freshness checks
     # (younger than 30 days, no import with new games since).
     # Runs BEFORE compute_findings so cache hits skip the heavy DB pipeline.
@@ -2780,7 +2691,7 @@ async def generate_insights(
     report, in_tokens, out_tokens, thinking_tokens, latency_ms, marker = await _run_agent(
         user_prompt, user_id, findings.findings_hash
     )
-    # A3 (260422-tnb): server-side override of model_used and prompt_version.
+    # Server-side override of model_used and prompt_version.
     # Previously the system prompt asked the LLM to echo these back, which
     # produced fabricated strings ("gpt-4o" in Gemini outputs). Overriding
     # here — before create_llm_log — ensures both the response AND the

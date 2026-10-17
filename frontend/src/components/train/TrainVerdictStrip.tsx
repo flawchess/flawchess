@@ -1,14 +1,13 @@
 /**
- * TrainVerdictStrip — Phase 237 plan 08 (ROADMAP item 1, D-05/D-07/D-08/D-14):
- * the phone's one-line verdict. Replaces the verdict bubble and the Your-call
- * card after the reveal: bot avatar + total-points pill + one clause
- * ("Right call, best move"). Tapping it expands the full feedback
- * (`TrainVerdictDetails`, passed as children) below the line.
+ * TrainVerdictStrip — the phone's one-line verdict after the reveal: bot
+ * avatar + total-points pill + one clause ("Right call, best move"). Tapping
+ * it expands the full feedback (`TrainVerdictDetails`, passed as children)
+ * below the line.
  *
- * Starts collapsed on every reveal (D-08): TrainReveal remounts per reveal, so
+ * Starts collapsed on every reveal: TrainReveal remounts per reveal, so
  * the initial `useState(false)` is the whole contract. The Umami `panel-open`
  * event fires from the click handler on the collapsed -> open transition only,
- * never on mount, restore or collapse (D-14, frontend/CLAUDE.md feature events).
+ * never on mount, restore or collapse (frontend/CLAUDE.md feature events).
  */
 
 import { useState } from 'react';
@@ -21,7 +20,7 @@ import type { Persona } from '@/lib/personas/personaRegistry';
 import { TOUR_SPOTLIGHT_CLASS, TRAIN_BUBBLE_BORDER } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
-/** The strip's avatar is smaller than the 40px points-flash face (sketch 008). */
+/** The strip's avatar is smaller than the 40px points-flash face. */
 const STRIP_AVATAR_CLASS = 'size-8';
 
 export interface TrainVerdictStripProps {
@@ -32,7 +31,7 @@ export interface TrainVerdictStripProps {
   line: string;
   /** Called once per collapsed -> open transition (the board owner's telemetry). */
   onExpand?: () => void;
-  /** Phase 240 D-20: the reveal tour spotlights the strip with the shared glow. */
+  /** The reveal tour spotlights the strip with the shared glow. */
   spotlight?: boolean;
   /** The expansion body (`TrainVerdictDetails`). */
   children: ReactNode;
@@ -108,24 +107,24 @@ export function TrainVerdictStrip({
 }
 
 /**
- * Phase 237 UAT: desktop's avatar size inside the verdict card, about three
- * text-sm lines (3 x 20px), so the verdict paragraph wraps beside it.
+ * Desktop's avatar size inside the verdict card, about three text-sm lines
+ * (3 x 20px), so the verdict paragraph wraps beside it.
  */
 const CARD_AVATAR_CLASS = 'size-15 text-3xl';
 
 export interface TrainVerdictCardProps {
   persona: Persona;
-  /** Phase 240 D-20: the reveal tour spotlights the card with the shared glow. */
+  /** The reveal tour spotlights the card with the shared glow. */
   spotlight?: boolean;
   /** Renders the verdict body with the floated avatar as its `leading` slot. */
   renderDetails: (avatar: ReactNode) => ReactNode;
 }
 
 /**
- * TrainVerdictCard — Phase 237 UAT: the desktop verdict surface. The phone
- * strip's card (same border, avatar inside, no name) but always open: the
- * avatar floats left of the verdict paragraph, and the Your-call block below
- * the separator uses the whole width. Replaces the avatar-column speech bubble.
+ * TrainVerdictCard — the desktop verdict surface. The phone strip's card (same
+ * border, avatar inside, no name) but always open: the avatar floats left of
+ * the verdict paragraph, and the Your-call block below the separator uses the
+ * whole width.
  */
 export function TrainVerdictCard({ persona, spotlight = false, renderDetails }: TrainVerdictCardProps): ReactElement {
   const avatar = placeholderAvatarFor(persona);

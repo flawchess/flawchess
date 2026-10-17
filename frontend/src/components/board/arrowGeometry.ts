@@ -2,7 +2,7 @@
 //
 // Both consumers map chess square strings ("e4") to grid coordinates and build
 // arrow-shaped <path> d-strings. ChessBoard uses normalized 0–1 widths from
-// arrow frequency; MiniBoard uses fixed thin proportions. The math is identical
+// arrow frequency; MiniBoard uses fixed proportions. The math is identical
 // — extracted here so we have a single source of truth (see CLAUDE.md
 // "Shared Query Filters" precedent: single implementation rule).
 
@@ -21,7 +21,7 @@ const FILES = 'abcdefgh';
  * `layerKey` is a second, caller-supplied escape for the same problem: when the
  * FlawChess Engine and Stockfish arrows agree on the same from→to, both must
  * survive dedupe and render as nested concentric arrows rather than collapsing
- * to one (D-06).
+ * to one.
  */
 export function arrowMoveKey(arrow: BoardArrow): string {
   return `${arrow.startSquare}-${arrow.endSquare}${arrow.onTop ? '-top' : ''}${arrow.layerKey ? `-${arrow.layerKey}` : ''}`;

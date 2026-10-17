@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * FeedbackAskBubble.test.tsx — Phase 234 plan 02. Real QueryClientProvider,
+ * FeedbackAskBubble.test.tsx — real QueryClientProvider,
  * bubble + useFeedbackAsk + a host that mounts the bubble only while
  * feedbackAskDays(profile) is non-null (exactly how the surfaces use it).
- * The network is stubbed through apiClient.post. Plan 03 adds the app-level
- * FeedbackAskModalHost beside the bubble host: "Sure!" opens it, and it must
+ * The network is stubbed through apiClient.post. The app-level
+ * FeedbackAskModalHost sits beside the bubble host: "Sure!" opens it, and it must
  * outlive the bubble.
  */
 import type { ReactNode } from 'react';

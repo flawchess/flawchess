@@ -1,50 +1,49 @@
 /**
- * mctsSearch.ts unit tests (ENGINE-01/02/04/05/07).
+ * mctsSearch.ts unit tests.
  *
  * Covers:
- * - ENGINE-01: a fixed FEN + budget + fabricated providers yields a
+ * - A fixed FEN + budget + fabricated providers yields a
  *   non-empty, practicalScore-descending ranked root-move list.
- * - ENGINE-02: only the ~90%-mass-truncated candidate set is ever passed to
+ * - Only the ~90%-mass-truncated candidate set is ever passed to
  *   grade() — the dropped tail is never graded.
- * - ENGINE-04: every policy() call's elo is keyed on the NODE's own
+ * - Every policy() call's elo is keyed on the NODE's own
  *   side-to-move, proven for BOTH a white-root and a black-root run (never
- *   depth/ply parity, Pitfall 3/4).
- * - ENGINE-05: an unexpanded leaf's practicalScore equals
+ *   depth/ply parity).
+ * - An unexpanded leaf's practicalScore equals
  *   evalToExpectedScore(grade, rootMover) exactly, and descent never
  *   continues past budget.maxPlies.
- * - Terminal positions (Pitfall 6): a one-ply-from-mate fixture yields a
+ * - Terminal positions: a one-ply-from-mate fixture yields a
  *   confident practicalScore (~1.0 when the root player delivers mate, ~0.0
  *   when the root player is mated one ply deeper) with zero policy() calls
  *   ever recorded for the terminal node's own fen.
- * - ENGINE-07/D-03: bit-identical output AND full onSnapshot-sequence across
+ * - Bit-identical output AND full onSnapshot-sequence across
  *   repeated runs at the SAME concurrency level — including concurrency=2
  *   under two deliberately DIFFERENT provider resolution jitters (Pattern 5).
  *   c=1 vs c=2 output equality is intentionally NOT asserted: it is not an
  *   invariant of this algorithm (at c=1 the second selection of a round sees
  *   the first expansion's backed-up value; at c=2 pending-exclusion forces
  *   it onto a different node — the two levels may build different trees).
- * - D-04: `budget.extraRootMoves` survives the truncation cut, is graded,
- *   and appears in rankedLines (WR-08).
- * - Phase 159 D-01: a low-prior/high-value root child that would WIN under
+ * - `budget.extraRootMoves` survives the truncation cut, is graded,
+ *   and appears in rankedLines.
+ * - A low-prior/high-value root child that would WIN under
  *   the old practicalScore-only sort LOSES under the new findability sort at
- *   a low root ELO, while practicalScore itself is unchanged (D-04).
- * - Phase 159 D-05/D-06/D-07 (policy temperature): omitting
+ *   a low root ELO, while practicalScore itself is unchanged.
+ * - Policy temperature: omitting
  *   `policyTemperature` behaves identically to explicitly passing the
- *   default (Pitfall 1 no-op short-circuit); temperature reshapes ONLY the
- *   root-mover's own side, never the opponent's (D-05, proven via the exact
+ *   default (no-op short-circuit); temperature reshapes ONLY the
+ *   root-mover's own side, never the opponent's (proven via the exact
  *   candidateUcis passed to grade() at a non-root node); the
- *   temperature-adjusted prior composes with the D-01 findability sort with
- *   zero extra glue (D-06); an extreme-flatness fixture never exceeds
- *   `ROOT_CANDIDATE_HARD_CAP` root children (D-07/Pitfall 6).
+ *   temperature-adjusted prior composes with the findability sort with
+ *   zero extra glue; an extreme-flatness fixture never exceeds
+ *   `ROOT_CANDIDATE_HARD_CAP` root children.
  * - AbortSignal: aborting mid-run stops promptly, resolves with a usable
- *   partial snapshot, and never reports budget exhaustion (WR-08).
- * - WR-04/WR-07 degenerate providers: empty candidate sets and
+ *   partial snapshot, and never reports budget exhaustion.
+ * - Degenerate providers: empty candidate sets and
  *   illegal/malformed UCIs are contained deterministically.
  *
  * Fabricated providers are built from ACTUAL chess.js legal moves (never
  * hand-enumerated) so every candidate uci fed into mctsSearch is guaranteed
- * legal, matching 153-PATTERNS.md's fabricated-provider construction
- * guidance.
+ * legal (the same fabricated-provider construction the other engine tests use).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -104,7 +103,7 @@ const SIMPLE_WHITE_GRADES: Record<string, MoveGrade> = {
 const NEUTRAL_BUDGET_ELO = { w: 1500, b: 1500 };
 
 /**
- * Test-local stop-rule guard allowance (Phase 225 D-01/D-02) — deliberately
+ * Test-local stop-rule guard allowance — deliberately
  * NOT the production `FLAWCHESS_BOT_STOP_RULE.rootGuardBoostAllowance`
  * (0.04, `reports/engine-search-fixes-225/d02-allowance.md`). A wider
  * test-local window keeps the guard-window arithmetic in these fixtures
@@ -145,7 +144,7 @@ function makeFixedGrade(
 }
 
 /**
- * Phase 225 D-01: builds a `grade()` fixture where every reply at a root
+ * Builds a `grade()` fixture where every reply at a root
  * child's OWN position is graded with that SAME child's own `evalCp` — so
  * `recomputeValue`'s prior-weighted expectation over equal-valued children
  * leaves the child's own `.value` unchanged after its first expansion.
@@ -170,9 +169,9 @@ function buildChildOwnGradeFixture(
   return byFen;
 }
 
-// ─── ENGINE-01: ranked output ───────────────────────────────────────────────
+// ─── ranked output ───────────────────────────────────────────────
 
-describe('mctsSearch — ENGINE-01 ranked output', () => {
+describe('mctsSearch — ranked output', () => {
   it('returns a non-empty rankedLines array sorted by practicalScore descending with UCI rootMove values', async () => {
     const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
     const providers: EngineProviders = {
@@ -196,9 +195,9 @@ describe('mctsSearch — ENGINE-01 ranked output', () => {
   });
 });
 
-// ─── ENGINE-04: ELO oracle, both root colors ────────────────────────────────
+// ─── ELO oracle, both root colors ────────────────────────────────
 
-describe('mctsSearch — ENGINE-04 ELO oracle', () => {
+describe('mctsSearch — ELO oracle', () => {
   it('keys elo on the NODE own side-to-move, proven for both a white-root and a black-root run', async () => {
     const budget: SearchBudget = { maxNodes: 4, elo: { w: 1500, b: 1800 }, maxPlies: 3, concurrency: 1 };
     const grade = makeFixedGrade({});
@@ -237,9 +236,9 @@ describe('mctsSearch — ENGINE-04 ELO oracle', () => {
   });
 });
 
-// ─── ENGINE-02: truncation — dropped tail never graded ──────────────────────
+// ─── truncation — dropped tail never graded ──────────────────────
 
-describe('mctsSearch — ENGINE-02 truncation', () => {
+describe('mctsSearch — truncation', () => {
   it('never passes the dropped (sub-90%-mass) tail to grade()', async () => {
     const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
     const gradeCalls: GradeCall[] = [];
@@ -259,9 +258,9 @@ describe('mctsSearch — ENGINE-02 truncation', () => {
   });
 });
 
-// ─── ENGINE-05: leaf sigmoid match + depth cutoff ───────────────────────────
+// ─── leaf sigmoid match + depth cutoff ───────────────────────────
 
-describe('mctsSearch — ENGINE-05 leaf conversion + depth cutoff', () => {
+describe('mctsSearch — leaf conversion + depth cutoff', () => {
   it("an unexpanded leaf's practicalScore matches evalToExpectedScore(grade, rootMover) exactly", async () => {
     const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
     const providers: EngineProviders = {
@@ -279,7 +278,7 @@ describe('mctsSearch — ENGINE-05 leaf conversion + depth cutoff', () => {
     }
   });
 
-  it("modalStats carries each ply's RAW Maia prob (not the renormalized prior) + white-POV eval (Phase 160)", async () => {
+  it("modalStats carries each ply's RAW Maia prob (not the renormalized prior) + white-POV eval", async () => {
     const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
     const providers: EngineProviders = {
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
@@ -313,7 +312,7 @@ describe('mctsSearch — ENGINE-05 leaf conversion + depth cutoff', () => {
     expect(snapshot.rankedLines.length).toBeGreaterThan(0);
     for (const line of snapshot.rankedLines) {
       expect(line.modalPath).toEqual([line.rootMove]);
-      // WR-01 regression guard: each depth-capped child is discovered (and
+      // Regression guard: each depth-capped child is discovered (and
       // visit-bumped) exactly once — the old retry-based exhaustion probe
       // re-walked closed dead ends up to 1000 times, so visits summed to
       // ~1000 here while nodesEvaluated stayed at 1.
@@ -322,7 +321,7 @@ describe('mctsSearch — ENGINE-05 leaf conversion + depth cutoff', () => {
   });
 });
 
-// ─── Terminal positions (Pitfall 6) ─────────────────────────────────────────
+// ─── Terminal positions ─────────────────────────────────────────
 
 describe('mctsSearch — terminal positions', () => {
   it('assigns practicalScore ~1.0 when the root player delivers mate, with no policy() call for the terminal node', async () => {
@@ -364,16 +363,16 @@ describe('mctsSearch — terminal positions', () => {
   });
 });
 
-// ─── D-04: extraRootMoves union (WR-08 coverage) ────────────────────────────
+// ─── extraRootMoves union ────────────────────────────
 
-describe('mctsSearch — D-04 extraRootMoves', () => {
+describe('mctsSearch — extraRootMoves', () => {
   it('an extra root move dropped by the Maia mass cut survives the union, is graded, and appears in rankedLines', async () => {
     const budget: SearchBudget = {
       maxNodes: 1,
       elo: NEUTRAL_BUDGET_ELO,
       maxPlies: 3,
       concurrency: 1,
-      extraRootMoves: ['e1f1'], // in SIMPLE_WHITE_DROPPED_TAIL — only the D-04 union can bring it back
+      extraRootMoves: ['e1f1'], // in SIMPLE_WHITE_DROPPED_TAIL — only the extraRootMoves union can bring it back
     };
     const gradeCalls: GradeCall[] = [];
     const extraMoveGrade: MoveGrade = { evalCp: 120, evalMate: null, depth: 10 };
@@ -394,17 +393,17 @@ describe('mctsSearch — D-04 extraRootMoves', () => {
     expect(snapshot.rankedLines.map((l) => l.rootMove)).not.toContain('e1d1');
   });
 
-  it('INJECT-02 observable-ranking proof: a post-fix injected move with a real prior ranks ABOVE a known weaker organic candidate whose rankScore it beats', async () => {
+  it('observable-ranking proof: a post-fix injected move with a real prior ranks ABOVE a known weaker organic candidate whose rankScore it beats', async () => {
     // Policy shaped so e2e4 (injected) carries a genuinely non-trivial raw
     // probability yet is still dropped by truncateAndRenormalize's 90%-mass
     // cut — e2e3 (0.55) + e1d2 (0.35) already reach cumulative 0.90 before
     // e2e4 is even considered. This is a materially different shape than the
-    // D-04 test above (whose dropped-tail probability is a near-zero 0.01):
-    // INJECT-02 needs the injected candidate's prior to be big enough, once
+    // extraRootMoves test above (whose dropped-tail probability is a near-zero 0.01):
+    // this test needs the injected candidate's prior to be big enough, once
     // seeded correctly, to outrank a real organic competitor.
     //
-    // Phase 225 D-10a: organic grades are SWAPPED from the original Phase
-    // 196 fixture (e2e3 now the WORSE organic grade, e1d2 the better one) so
+    // Organic grades are SWAPPED from an earlier fixture
+    // (e2e3 now the WORSE organic grade, e1d2 the better one) so
     // this test's derivation depends on the actual rankScore comparison, not
     // merely on which organic candidate happens to have the lower grade —
     // e1d2 is deliberately the higher-graded organic move here.
@@ -446,26 +445,25 @@ describe('mctsSearch — D-04 extraRootMoves', () => {
     const weakerOrganicIndex = snapshot.rankedLines.findIndex((l) => l.rootMove === 'e1d2');
     expect(injectedIndex).toBeGreaterThanOrEqual(0);
     expect(weakerOrganicIndex).toBeGreaterThanOrEqual(0);
-    // Phase 225 D-10a: with the injected seed prior forced to 0, e2e4 scores
+    // With the injected seed prior forced to 0, e2e4 scores
     // min(value, V_fallback) instead of saturating to its own value —
     // V_fallback over {e2e3, e1d2, e2e4-at-prior-0} ≈ 0.523, still BELOW
     // e1d2's saturated rankScore ≈0.546 — so the mutation-checked assertion
-    // below would fail (e2e4 sorts AFTER e1d2), exactly the INJECT-02
-    // regression this test exists to catch (mutation check recorded in the
-    // 225-06 SUMMARY, per RESEARCH C-4/D-10a).
+    // below would fail (e2e4 sorts AFTER e1d2), exactly the injected-move ranking
+    // regression this test exists to catch.
     expect(injectedIndex).toBeLessThan(weakerOrganicIndex);
   });
 });
 
-// ─── Phase 159 D-01: findability ranking reorders the root at low ELO ──────
-// Phase 225 D-10a/D-10e (SEED-170 item 3): rankScore now blends toward
+// ─── Findability ranking reorders the root at low ELO ──────────────────────
+// rankScore blends toward
 // V_fallback (the prior-weighted mean of the root's own children), never
 // toward 0 — so a hard-to-find move far better than the findable
 // alternative is no longer suppressed toward the bottom. This is an
-// intentional, user-accepted reversal of Phase 159's original showcase
-// fixture (D-10e), not a regression.
+// intentional, user-accepted reversal of the original showcase
+// fixture, not a regression.
 
-describe('mctsSearch — Phase 159 D-01 findability ranking (Phase 225 D-10a/D-10e: blend toward V_fallback)', () => {
+describe('mctsSearch — findability ranking (blend toward V_fallback)', () => {
   // e2e4 (low prior 0.06, high V via evalCp=700) vs e2e3 (high prior 0.85,
   // lower V via evalCp=100), at a low root ELO (600, pRefForElo(600)=0.12).
   const FINDABILITY_FEN = SIMPLE_WHITE_FEN;
@@ -502,7 +500,7 @@ describe('mctsSearch — Phase 159 D-01 findability ranking (Phase 225 D-10a/D-1
     expect(e2e4Line).toBeDefined();
     expect(e2e3Line).toBeDefined();
 
-    // practicalScore (D-04) is untouched: still the raw leaf conversion.
+    // practicalScore is untouched: still the raw leaf conversion.
     expect(e2e4Line!.practicalScore).toBe(evalToExpectedScore(700, null, 'white'));
     expect(e2e3Line!.practicalScore).toBe(evalToExpectedScore(100, null, 'white'));
     expect(e2e4Line!.practicalScore).toBeGreaterThan(e2e3Line!.practicalScore);
@@ -514,16 +512,16 @@ describe('mctsSearch — Phase 159 D-01 findability ranking (Phase 225 D-10a/D-1
     // children ≈ 0.613. rankScore(e2e3) saturates (prior 0.934 >> pRef600
     // 0.12) to its own value ≈0.591. rankScore(e2e4): f = min(1,
     // 0.066/0.12) ≈ 0.549 => 0.549*0.929 + 0.451*min(0.929, 0.613) ≈ 0.787.
-    // 0.787 > 0.591, so e2e4 now ranks FIRST — the Phase 159 showcase
-    // ordering is intentionally reversed here (D-10e, user-accepted).
+    // 0.787 > 0.591, so e2e4 now ranks FIRST — the original showcase
+    // ordering is intentionally reversed here (user-accepted).
     expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
   });
 });
 
-// ─── Phase 159 D-05/D-06/D-07: policy temperature ───────────────────────────
+// ─── policy temperature ───────────────────────────
 
-describe('mctsSearch — Phase 159 policy temperature', () => {
-  it('omitting policyTemperature behaves identically to the default (no-op short-circuit, Pitfall 1)', async () => {
+describe('mctsSearch — policy temperature', () => {
+  it('omitting policyTemperature behaves identically to the default (no-op short-circuit)', async () => {
     const providers = (): EngineProviders => ({
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
       grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
@@ -540,7 +538,7 @@ describe('mctsSearch — Phase 159 policy temperature', () => {
     expect(snapshotB.budgetExhausted).toBe(snapshotA.budgetExhausted);
   });
 
-  it("reshapes ONLY the root-mover's own side — the opponent's candidateUcis passed to grade() are the untouched raw truncation (D-05)", async () => {
+  it("reshapes ONLY the root-mover's own side — the opponent's candidateUcis passed to grade() are the untouched raw truncation", async () => {
     // ROOT (White to move): a real, legal 4-move policy so root's own
     // children actually get created (needed to reach a depth-1 node).
     const ROOT_POLICY: Record<string, number> = {
@@ -597,10 +595,10 @@ describe('mctsSearch — Phase 159 policy temperature', () => {
     expect(rootCall!.candidateUcis.length).toBe(4);
   });
 
-  it('composes with D-01 findability: reverses the T=1 winner at T=2 via a three-candidate fixture (Phase 225 D-10a/D-10e)', async () => {
-    // Phase 225 D-10a/D-10e: the OLD two-candidate composition fixture (e2e3
+  it('composes with findability: reverses the T=1 winner at T=2 via a three-candidate fixture', async () => {
+    // The OLD two-candidate composition fixture (e2e3
     // vs e2e4 only) no longer reverses at T=1->T=2 — under the V_fallback
-    // pull e2e4 already wins at T=1 (see the "Phase 159 D-01 findability
+    // pull e2e4 already wins at T=1 (see the "findability
     // ranking" describe above), so the "reverses" claim needs a THIRD
     // candidate (e1d2) whose mediocre grade keeps V_fallback low enough at
     // T=1 that e2e4 does NOT yet clear it, while T=2's flattening still
@@ -646,14 +644,14 @@ describe('mctsSearch — Phase 159 policy temperature', () => {
     // T=2: flattening raises e2e4's renormalized prior to ~0.130, ABOVE
     // pRefForElo(600)=0.12 — its findability factor saturates to 1, and its
     // own (unchanged) practicalScore (0.929) then wins outright over e2e3's
-    // saturated 0.784. This is D-06's "compose with zero extra glue" claim:
+    // saturated 0.784. This is the "compose with zero extra glue" claim:
     // the reorder happens purely because child.prior (what T=2 changed) is
     // exactly what rankScore reads.
     const snapshotT2 = await mctsSearch(FEN, budgetT2, providers(), () => {}, freshSignal());
     expect(snapshotT2.rankedLines[0]?.rootMove).toBe('e2e4');
   });
 
-  it('an extreme-flatness fixture never produces more than ROOT_CANDIDATE_HARD_CAP root children (D-07/Pitfall 6)', async () => {
+  it('an extreme-flatness fixture never produces more than ROOT_CANDIDATE_HARD_CAP root children', async () => {
     const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'; // 20 legal moves
     const budget: SearchBudget = {
       maxNodes: 1,
@@ -672,11 +670,11 @@ describe('mctsSearch — Phase 159 policy temperature', () => {
     expect(snapshot.rankedLines.length).toBeLessThanOrEqual(ROOT_CANDIDATE_HARD_CAP);
   });
 
-  it('extreme-flatness INJECT-01 regression: an out-of-mass-cut injected UCI survives BOTH the mass cut and the hard cap', async () => {
+  it('extreme-flatness regression: an out-of-mass-cut injected UCI survives BOTH the mass cut and the hard cap', async () => {
     const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'; // 20 legal moves
     const POLICY_TEMPERATURE = 2;
     const uniformPolicy = uniformPolicyFromLegalMoves(START_FEN);
-    // 196-RESEARCH.md Assumption A2: the exact dropped-tail UCI is unverified
+    // Assumption: the exact dropped-tail UCI is unverified
     // by name — derive it from the SAME pipeline dispatchExpansion actually
     // runs (temperature reshape THEN truncation), not from the raw policy:
     // floating-point drift from applyPolicyTemperature's renormalization can
@@ -714,7 +712,7 @@ describe('mctsSearch — Phase 159 policy temperature', () => {
   });
 });
 
-// ─── AbortSignal (WR-08 coverage) ───────────────────────────────────────────
+// ─── AbortSignal ───────────────────────────────────────────
 
 describe('mctsSearch — abort', () => {
   it('aborting after the Nth snapshot stops promptly, resolves (not rejects), and keeps budgetExhausted=false', async () => {
@@ -744,7 +742,7 @@ describe('mctsSearch — abort', () => {
     expect(result.rankedLines.length).toBeGreaterThan(0); // partial snapshot is still usable
   });
 
-  it('Phase 194 ABORT-01: every providers.grade() call receives the search\'s own AbortSignal, by reference, on every expansion', async () => {
+  it('every providers.grade() call receives the search\'s own AbortSignal, by reference, on every expansion', async () => {
     const controller = new AbortController();
     const budget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
     const gradeSpy = vi.fn(makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }));
@@ -791,14 +789,14 @@ describe('mctsSearch — abort', () => {
     }
   });
 
-  it('LADDER-02: every providers.grade() call receives a resolved grading-depth 4th argument, never undefined', async () => {
+  it('every providers.grade() call receives a resolved grading-depth 4th argument, never undefined', async () => {
     const controller = new AbortController();
     // Budget sized so the tree actually descends past the ladder table's
     // length: the shipped table is [14, 14] with floor 10, so a search that
     // only reaches tree depth 1 grades everything at 14 and cannot demonstrate
     // variation. 64 nodes / 6 plies is the point at which this fixture's
     // descent first reached the floor rung under the older, longer [14, 14, 14]
-    // table (measured, 195-06 Task 2); the 2026-07-31 override moved the floor
+    // table (measured); a later override moved the floor
     // one ply shallower, so this budget now reaches it strictly sooner and the
     // assertions below only get easier to satisfy — kept as-is rather than
     // re-tightened, since a smaller budget would weaken the other calls' cover.
@@ -834,26 +832,26 @@ describe('mctsSearch — abort', () => {
       if (i === 0) expect(gradingDepthArg).toBe(GRADING_ROOT_DEPTH); // first call is always the root
     });
 
-    // LADDER-02's observable claim: a real search grades at MORE THAN ONE
+    // The observable claim: a real search grades at MORE THAN ONE
     // depth. The membership assertion above is satisfied by a flat table too,
     // so without this the requirement could pass on a ladder that never
     // varies. Flattening GRADING_DEPTH_LADDER/GRADING_DEPTH_FLOOR to a single
-    // value must break this line (mutation-verified, 195-06 Task 2).
+    // value must break this line (mutation-verified).
     const observedDepths = new Set(gradeSpy.mock.calls.map((call) => call[3] as number));
     expect(observedDepths.size).toBeGreaterThan(1);
     expect(observedDepths.has(GRADING_ROOT_DEPTH)).toBe(true);
   });
 });
 
-// ─── Illegal/malformed provider candidates (WR-07) ──────────────────────────
+// ─── Illegal/malformed provider candidates ──────────────────────────
 
 describe('mctsSearch — illegal provider candidates', () => {
   it('drops illegal and malformed UCIs deterministically instead of rejecting the search', async () => {
     const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
     const providers: EngineProviders = {
       // e7e5 is a BLACK move (illegal from SIMPLE_WHITE_FEN — the stale-FEN
-      // race shape Phase 154's worker boundary can produce) and 'zz' is
-      // malformed; both must be dropped, not crash the runner (WR-07).
+      // race shape the worker boundary can produce) and 'zz' is
+      // malformed; both must be dropped, not crash the runner.
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: { e2e4: 0.5, e7e5: 0.3, zz: 0.2 } }),
       grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
     };
@@ -865,7 +863,7 @@ describe('mctsSearch — illegal provider candidates', () => {
   });
 });
 
-// ─── Degenerate provider: empty candidate set (WR-04) ───────────────────────
+// ─── Degenerate provider: empty candidate set ───────────────────────
 
 describe('mctsSearch — degenerate empty candidate set', () => {
   it('closes the node without calling grade() and without consuming node budget', async () => {
@@ -873,7 +871,7 @@ describe('mctsSearch — degenerate empty candidate set', () => {
     const gradeCalls: GradeCall[] = [];
     const providers: EngineProviders = {
       // A provider returning NO candidates for a non-terminal position —
-      // the degenerate case fallbackExpectimax already guarded (WR-04).
+      // the degenerate case fallbackExpectimax already guarded.
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: {} }),
       grade: makeFixedGrade({}, gradeCalls),
     };
@@ -881,7 +879,7 @@ describe('mctsSearch — degenerate empty candidate set', () => {
     const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
 
     expect(gradeCalls).toEqual([]); // grade() never sees candidateUcis: []
-    expect(snapshot.nodesEvaluated).toBe(0); // D-09: nothing was expanded
+    expect(snapshot.nodesEvaluated).toBe(0); // nothing was expanded
     expect(snapshot.rankedLines).toEqual([]);
   });
 });
@@ -892,8 +890,8 @@ describe('mctsSearch — degenerate empty candidate set', () => {
 // NEUTRAL_EXPECTED_SCORE whenever `grade()` resolved an empty Map for a
 // non-empty candidate set (the pool's watchdog/dead-pool/no-live-slot
 // fallback) — fabricated 0.5 grades that then backed up into ancestor
-// values. The revert proof for this describe block is recorded in
-// 260927-8xn-SUMMARY.md: temporarily deleting the guard in
+// values. The revert proof for this describe block: temporarily deleting
+// the guard in
 // `dispatchExpansion` makes the non-root case below fail (practicalScore
 // becomes NEUTRAL_EXPECTED_SCORE-derived instead of the real grade), while
 // the root-exemption case keeps passing either way.
@@ -931,16 +929,16 @@ describe('mctsSearch — 8XN-7 empty non-abort grade() closes a dead end', () =>
     );
     expect(e2e4Line!.modalPath).toEqual(['e2e4']); // no children were ever attached
     // grade() is called exactly once for the failed FEN — selectPath's
-    // closure marking (isClosed/propagateClosure, reused from WR-04) means
+    // closure marking (isClosed/propagateClosure, reused from the degenerate-provider handling) means
     // the dead leaf is never selected again.
     const failedCalls = gradeCalls.filter((c) => c.fen === SIMPLE_WHITE_AFTER_E2E4_FEN);
     expect(failedCalls.length).toBe(1);
-    // The failed expansion attempt is not counted (D-09): every OTHER
+    // The failed expansion attempt is not counted: every OTHER
     // dispatched leaf produced children and counted as one evaluated node,
     // but the failed one did not — nodesEvaluated is exactly one less than
     // the total number of dispatched (policy+grade) attempts. Without the
-    // 8XN-7 guard, the failed attempt would ALSO increment nodesEvaluated
-    // (this is the assertion the revert proof in the SUMMARY breaks).
+    // failed-expansion guard, the failed attempt would ALSO increment nodesEvaluated
+    // (reverting the guard breaks this assertion).
     expect(snapshot.nodesEvaluated).toBe(gradeCalls.length - failedCalls.length);
   });
 
@@ -984,11 +982,11 @@ describe('mctsSearch — 8XN-7 empty non-abort grade() closes a dead end', () =>
   });
 });
 
-// ─── Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02): bot-play stop rule ─
+// ─── Bot-play stop rule (clear-winner and flatness guards) ──────────────────
 
-describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot-play stop rule', () => {
+describe('mctsSearch — bot-play stop rule (guarded)', () => {
   it('clear-winner guard: an in-window unvisited runner-up (e2e3) delays the stop until settled, while an out-of-window unvisited child (e1d2) never blocks it', async () => {
-    // Phase 225 D-01 INTENDED BEHAVIOR CHANGE (RESEARCH Pitfall 2 — this is
+    // Intended behavior change (this is
     // a rewrite, not a loosened assertion). Before the guard, this exact
     // fixture stopped at nodesEvaluated 1 (the pre-225 test asserted
     // `toBe(1)`): e2e4 (200cp, es~0.676) already cleared e2e3 (50cp,
@@ -998,16 +996,16 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot
     // (window = marginThreshold 0.05 + GUARD_TEST_ALLOWANCE 0.1 = 0.15):
     // e2e3's gap (~0.13) is IN-window and unvisited, so it blocks the stop;
     // e1d2's gap (~0.20, -30cp/es~0.472) is OUT-of-window, so it never
-    // blocks regardless of its own visit state (D-01's "amended" window
-    // semantics, CONTEXT.md).
+    // blocks regardless of its own visit state (the "amended" window
+    // semantics).
     //
     // `buildChildOwnGradeFixture` grades every reply at a root child's OWN
     // position with that SAME child's own evalCp, so a root child's first
     // expansion (backupExpectation over equal-valued children) leaves its
     // OWN `.value` unchanged — isolating the guard's VISIT-based settlement
     // logic from any actual value drift the real opponent-error boost would
-    // otherwise cause (Task 1's fixture is deliberately boost-free; the
-    // production allowance is measured separately, D-02).
+    // otherwise cause (this fixture is deliberately boost-free; the
+    // production allowance is measured separately).
     const gradesByFen = buildChildOwnGradeFixture(SIMPLE_WHITE_FEN, SIMPLE_WHITE_GRADES);
     const budget: SearchBudget = {
       maxNodes: 20,
@@ -1076,7 +1074,7 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot
   });
 
   it('closed-top guard: a terminal (mate-in-1) top root child counts as settled at zero visits, so the search still early-stops at node 1', async () => {
-    // RESEARCH Pitfall 1: a "settled = visits >= 1" test alone (no isClosed
+    // A "settled = visits >= 1" test alone (no isClosed
     // clause) would stall this clear-winner stop forever — a checkmating
     // root child is never itself visited (createChildNode closes a terminal
     // child immediately at creation; selectPath's candidate filter excludes
@@ -1119,10 +1117,10 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot
     // clear-winner side alone would NOT fire) — isolates the flatness branch
     // of the OR.
     //
-    // D-03 residual (deliberately NOT guarded, CONTEXT.md): the flatness
+    // Residual (deliberately NOT guarded): the flatness
     // branch never consults hasUnsettledInWindow, so it stops here with
     // every root child still at visits 0 — stopping on a near-tie is
-    // low-stakes, and item 1's guard scope is the clear-winner branch only.
+    // low-stakes, and the guard scope is the clear-winner branch only.
     const CLOSE_GRADES: Record<string, MoveGrade> = {
       e2e4: { evalCp: 15, evalMate: null, depth: 10 },
       e2e3: { evalCp: 10, evalMate: null, depth: 10 },
@@ -1151,7 +1149,7 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot
     expect(snapshot.nodesEvaluated).toBeLessThan(budget.maxNodes);
     expect(snapshot.nodesEvaluated).toBe(1);
     expect(snapshot.stopReason).toBe('early-stop');
-    // D-03 residual, explicit: every root child is STILL unvisited at the
+    // Residual, explicit: every root child is STILL unvisited at the
     // stop — the guard never delayed this branch.
     for (const line of snapshot.rankedLines) {
       expect(line.visits).toBe(0);
@@ -1211,12 +1209,12 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot
   });
 });
 
-// ─── ENGINE-07: determinism, concurrency 1 and 2 ────────────────────────────
+// ─── determinism, concurrency 1 and 2 ────────────────────────────
 
-describe('mctsSearch — ENGINE-07 determinism', () => {
+describe('mctsSearch — determinism', () => {
   const determinismBudget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
 
-  /** Non-neutral providers (CR-01): non-uniform root policy + varied grades everywhere. */
+  /** Non-neutral providers: non-uniform root policy + varied grades everywhere. */
   function makeDeterminismProviders(): EngineProviders {
     return {
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
@@ -1252,10 +1250,10 @@ describe('mctsSearch — ENGINE-07 determinism', () => {
   });
 
   it('produces deterministic output + snapshot sequence across repeated concurrency=2 runs under DIFFERENT resolution jitters', async () => {
-    // CR-01: this test previously asserted c=2 output equals c=1 output.
+    // This test previously asserted c=2 output equals c=1 output.
     // That is NOT a real invariant (see the mctsSearch.ts module header's
     // "Determinism scope"): pending-exclusion forces same-round breadth at
-    // c=2, so c=1 and c=2 may legitimately build different trees. What D-03
+    // c=2, so c=1 and c=2 may legitimately build different trees. What the test
     // actually locks is determinism PER concurrency level with canonical-
     // dispatch-order application — proven here by running c=2 twice under
     // deliberately different, non-monotonic resolution jitters (later-
@@ -1296,16 +1294,16 @@ describe('mctsSearch — ENGINE-07 determinism', () => {
   });
 });
 
-// ─── Phase 226 D-18: gradeRoot routing ──────────────────────────────────────
+// ─── gradeRoot routing ──────────────────────────────────────
 
-describe('mctsSearch — gradeRoot routing (Phase 226 D-18)', () => {
+describe('mctsSearch — gradeRoot routing', () => {
   it('calls gradeRoot exactly once, for the root fen with its full candidate set (including an injected extraRootMoves candidate), and never calls grade for the root', async () => {
     const budget: SearchBudget = {
       maxNodes: 2, // root expansion + exactly one non-root expansion
       elo: NEUTRAL_BUDGET_ELO,
       maxPlies: 3,
       concurrency: 1,
-      extraRootMoves: ['e1f1'], // dropped-tail move (D-04) — only the root union revives it
+      extraRootMoves: ['e1f1'], // dropped-tail move — only the root union revives it
     };
     const gradeCalls: GradeCall[] = [];
     const gradeRootCalls: GradeCall[] = [];
@@ -1323,7 +1321,7 @@ describe('mctsSearch — gradeRoot routing (Phase 226 D-18)', () => {
     expect(gradeRootCalls.length).toBe(1);
     expect(gradeRootCalls[0]!.fen).toBe(SIMPLE_WHITE_FEN);
     // Full root candidate set: the ~90%-mass-kept organic candidates
-    // (e2e4, e2e3, e1d2) unioned with the injected e1f1 (D-04) — the exact
+    // (e2e4, e2e3, e1d2) unioned with the injected e1f1 — the exact
     // set that would have gone to `grade` had `gradeRoot` been absent.
     expect(new Set(gradeRootCalls[0]!.candidateUcis)).toEqual(new Set(['e2e4', 'e2e3', 'e1d2', 'e1f1']));
     // grade() is never called for the root fen — only for the one

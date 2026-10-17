@@ -1,4 +1,4 @@
-"""Tests for Phase 91 Alembic migration: evals_completed_at column + partial index + backfill.
+"""Tests for the evals_completed_at Alembic migration: column + partial index + backfill.
 
 Regression suite for the migration that adds `games.evals_completed_at TIMESTAMPTZ NULL`,
 the partial index `ix_games_evals_pending ON games(id) WHERE evals_completed_at IS NULL`,
@@ -42,7 +42,7 @@ def _make_alembic_cfg() -> AlembicConfig:
     """Build an AlembicConfig for this run's per-run test database.
 
     NOTE: alembic/env.py overrides sqlalchemy.url from settings.DATABASE_URL at
-    load time (RESEARCH Pitfall 1), which test_engine has patched to this run's
+    load time, which test_engine has patched to this run's
     private clone (flawchess_test_<pid|worker>). So these migrations run against
     the per-run clone, NOT a shared static DB. We derive the URL from that same
     settings.DATABASE_URL for clarity even though env.py would override it.
@@ -263,7 +263,6 @@ async def test_backfill_uses_now_when_imported_at_null(test_engine) -> None:
 
     Bypasses the ORM's NOT NULL constraint via a temporary ALTER TABLE to drop/restore
     the NOT NULL constraint on imported_at, allowing us to insert a NULL value.
-    See RESEARCH.md R-04 for the risk context.
     """
     test_user_id = 999_002
     platform_game_id = "migration-test-now-fallback"

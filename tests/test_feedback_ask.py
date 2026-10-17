@@ -1,8 +1,8 @@
-"""Integration tests for the milestone feedback ask (SEED-191, Phase 234).
+"""Integration tests for the milestone feedback ask.
 
-Requirement ids: FBASK-01 (prompt_state defaults), FBASK-02 (GET and PUT profile
-carry active_days + feedback_ask), FBASK-03 (server-decided eligibility, today-inclusive
-active days), FBASK-04 (view / snooze / done lifecycle, guards, concurrency).
+Covers prompt_state defaults, GET and PUT profile (active_days + feedback_ask),
+server-decided eligibility (today-inclusive active days), and the view / snooze /
+done lifecycle, guards and concurrency.
 
 Clock: the ``pin_now`` fixture pins ``dev_now_utc`` to a day before the real date.
 LastActivityMiddleware writes user_activity rows with the REAL clock after each
@@ -88,7 +88,7 @@ async def _delete_user(user_id: int) -> None:
 
 @pytest.mark.asyncio
 async def test_feedback_ask_new_user_prompt_state_is_empty_object() -> None:
-    """FBASK-01: a registered user's prompt_state is a JSON object, empty."""
+    """A registered user's prompt_state is a JSON object, empty."""
     async with _client() as client:
         user_id, _ = await _register(client)
     try:
@@ -105,7 +105,7 @@ async def test_feedback_ask_new_user_prompt_state_is_empty_object() -> None:
 
 @pytest.mark.asyncio
 async def test_feedback_ask_profile_inactive_below_threshold(pin_now: PinNow) -> None:
-    """FBASK-03: 3 prior days + today = 4 active days, one short of the threshold."""
+    """3 prior days + today = 4 active days, one short of the threshold."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -120,7 +120,7 @@ async def test_feedback_ask_profile_inactive_below_threshold(pin_now: PinNow) ->
 
 @pytest.mark.asyncio
 async def test_feedback_ask_profile_active_at_threshold(pin_now: PinNow) -> None:
-    """FBASK-03: 4 prior days + today = 5 active days, the first fetch of day 5 shows the ask."""
+    """4 prior days + today = 5 active days, the first fetch of day 5 shows the ask."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -135,7 +135,7 @@ async def test_feedback_ask_profile_active_at_threshold(pin_now: PinNow) -> None
 
 @pytest.mark.asyncio
 async def test_feedback_ask_today_row_counts_once(pin_now: PinNow) -> None:
-    """FBASK-03: a user_activity row dated today never counts twice (5, not 6)."""
+    """A user_activity row dated today never counts twice (5, not 6)."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -150,7 +150,7 @@ async def test_feedback_ask_today_row_counts_once(pin_now: PinNow) -> None:
 
 @pytest.mark.asyncio
 async def test_feedback_ask_view_records_first_view(pin_now: PinNow) -> None:
-    """FBASK-04: the first view of an eligible user lands in users.prompt_state."""
+    """The first view of an eligible user lands in users.prompt_state."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -170,7 +170,7 @@ async def test_feedback_ask_view_records_first_view(pin_now: PinNow) -> None:
 
 @pytest.mark.asyncio
 async def test_feedback_ask_get_and_put_profile_agree(pin_now: PinNow) -> None:
-    """FBASK-02: GET and PUT /me/profile return identical active_days and feedback_ask."""
+    """GET and PUT /me/profile return identical active_days and feedback_ask."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -189,7 +189,7 @@ async def test_feedback_ask_get_and_put_profile_agree(pin_now: PinNow) -> None:
 
 @pytest.mark.asyncio
 async def test_feedback_ask_any_feedback_ends_ask(pin_now: PinNow) -> None:
-    """FBASK-03: a feedback row from any source (here the floating button) ends the ask."""
+    """A feedback row from any source (here the floating button) ends the ask."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -210,7 +210,7 @@ async def test_feedback_ask_any_feedback_ends_ask(pin_now: PinNow) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 2: snooze / done / auto-snooze grace / round 2 / guards / concurrency
+# Snooze / done / auto-snooze grace / round 2 / guards / concurrency
 # ---------------------------------------------------------------------------
 
 
@@ -231,7 +231,7 @@ async def _profile(client: httpx.AsyncClient, headers: dict[str, str]) -> dict[s
 
 @pytest.mark.asyncio
 async def test_feedback_ask_snooze_hides_until_reask_gap(pin_now: PinNow) -> None:
-    """FBASK-04: snooze hides immediately; the ask returns after +10 active days (not +9)."""
+    """Snooze hides immediately; the ask returns after +10 active days (not +9)."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -260,7 +260,7 @@ async def test_feedback_ask_snooze_hides_until_reask_gap(pin_now: PinNow) -> Non
 
 @pytest.mark.asyncio
 async def test_feedback_ask_three_view_days_auto_snooze_with_grace(pin_now: PinNow) -> None:
-    """FBASK-04: the 3rd view day keeps showing all day, then the ask is snoozed."""
+    """The 3rd view day keeps showing all day, then the ask is snoozed."""
     async with _client() as client:
         user_id, headers = await _register(client)
         try:
@@ -285,7 +285,7 @@ async def test_feedback_ask_three_view_days_auto_snooze_with_grace(pin_now: PinN
 
 @pytest.mark.asyncio
 async def test_feedback_ask_done_ends_ask_forever(pin_now: PinNow) -> None:
-    """FBASK-04: done hides the ask and later views never write again."""
+    """Done hides the ask and later views never write again."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -406,7 +406,7 @@ async def test_feedback_ask_impersonation_is_inactive_and_never_written(
 
 @pytest.mark.asyncio
 async def test_feedback_ask_concurrent_same_day_views_count_once(pin_now: PinNow) -> None:
-    """FBASK-04 / T-234-04: two simultaneous same-day views leave views == 1."""
+    """Two simultaneous same-day views leave views == 1."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -438,7 +438,7 @@ async def _set_prompt_state(user_id: int, state: dict[str, object]) -> None:
 async def test_feedback_ask_corrupt_state_fails_closed_not_500(
     pin_now: PinNow, action: str
 ) -> None:
-    """WR-01: a corrupt stored state (unknown key) returns 200 inactive, never a 500.
+    """A corrupt stored state (unknown key) returns 200 inactive, never a 500.
 
     Before the fix the UPDATE's RETURNING value failed validation and surfaced as a 500;
     the UPDATE must also be rolled back so the stored state is left untouched.
@@ -460,7 +460,7 @@ async def test_feedback_ask_corrupt_state_fails_closed_not_500(
 
 @pytest.mark.asyncio
 async def test_feedback_ask_ineligible_snooze_writes_nothing(pin_now: PinNow) -> None:
-    """WR-02: a click-snooze from a below-threshold user must not write ask state.
+    """A click-snooze from a below-threshold user must not write ask state.
 
     Before the fix snooze ran ungated and stored snoozed_at_days=2, pushing the re-ask
     out to 12 active days instead of one gap after the real milestone.
@@ -479,7 +479,7 @@ async def test_feedback_ask_ineligible_snooze_writes_nothing(pin_now: PinNow) ->
 
 @pytest.mark.asyncio
 async def test_feedback_ask_snooze_after_feedback_writes_nothing(pin_now: PinNow) -> None:
-    """WR-02: a user who already sent feedback (any source) cannot write snooze state."""
+    """A user who already sent feedback (any source) cannot write snooze state."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)
@@ -500,7 +500,7 @@ async def test_feedback_ask_snooze_after_feedback_writes_nothing(pin_now: PinNow
 
 @pytest.mark.asyncio
 async def test_feedback_ask_done_stays_ungated(pin_now: PinNow) -> None:
-    """WR-02: done is deliberately unconditional (SEED-191 #5: it only shrinks exposure)."""
+    """Done is deliberately unconditional (it only shrinks exposure)."""
     pin_now(NOW)
     async with _client() as client:
         user_id, headers = await _register(client)

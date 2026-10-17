@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 229 D-02/D-12/Pitfall 2 — analysis-board tracking: tab switches, PGN/FEN
+ * Analysis-board tracking: tab switches, PGN/FEN
  * paste open, the Maia ELO slider (commit-only + reset) and the play-style
  * temperature slider (3-value bucket, commit-only).
  *
@@ -112,7 +112,7 @@ function renderTabs() {
   );
 }
 
-describe('AnalysisTabs tab-switch tracking (D-02)', () => {
+describe('AnalysisTabs tab-switch tracking', () => {
   it('sends nothing on render', () => {
     renderTabs();
     expect(track).not.toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe('MoveListHeaderContent paste-open tracking', () => {
   });
 });
 
-describe('EloSelector tracking (Pitfall 2)', () => {
+describe('EloSelector tracking', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });

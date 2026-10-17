@@ -1,14 +1,14 @@
-"""Tests for scripts/engine_throughput_226_calibration.py — Phase 226 calibration statistics.
+"""Tests for scripts/engine_throughput_226_calibration.py — calibration statistics.
 
-Covers 226-03-PLAN.md's two `<behavior>` blocks: Task 1's end-to-end null check
-(`load_parity_verdict`, `null_check`) and Task 2's powered verdict / refit
+Covers the end-to-end null check
+(`load_parity_verdict`, `null_check`) and the powered verdict / refit
 decision / Maia-anchor identity check.
 
 Every ``ParityVerdictResult``-shaped fixture below is built by hand (never by
 calling `calibration_parity_verdict.parity_verdict` itself) so these tests
 exercise only this module's own arithmetic on numbers with a known-by-
 construction answer — mirroring `test_engine_search_fixes_verdict.py`'s
-`_family_result`/`_parity_verdict` helpers for its Task 2 calibration-branch
+`_family_result`/`_parity_verdict` helpers for its calibration-branch
 section.
 """
 
@@ -118,7 +118,7 @@ def _null_parity(
 
 
 # ==============================================================================
-# Task 1 behaviors — null_check, load_parity_verdict
+# null_check, load_parity_verdict
 # ==============================================================================
 
 
@@ -172,7 +172,7 @@ def test_load_parity_verdict_raises_on_missing_family_key(tmp_path: Path) -> Non
 
 
 # ==============================================================================
-# Task 2 behaviors — powered_verdict, refit_decision, maia_anchor_identity
+# powered_verdict, refit_decision, maia_anchor_identity
 # ==============================================================================
 
 _POWERED_THRESHOLDS: dict[Family, float] = {"maia": 85.0, "sf": 50.0}
@@ -326,7 +326,7 @@ def test_refit_decision_missing_verdict_for_shipped_item_gives_escalate() -> Non
 
 
 # ==============================================================================
-# Task 2 behavior — maia_anchor_identity
+# maia_anchor_identity
 # ==============================================================================
 
 _LEDGER_ROW_A_MAIA_IDENTICAL = {

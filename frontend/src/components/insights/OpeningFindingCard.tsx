@@ -4,7 +4,7 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { useReadiness } from '@/hooks/useReadiness';
@@ -55,7 +55,7 @@ export function OpeningFindingCard({
   // palette used by the Moves-tab Score column: dark red <= 45%, dark green
   // >= 55%, neutral blue in between. One source of truth across both surfaces.
   const borderLeftColor = scoreZoneColor(finding.score);
-  // Quick-task 260429-gmj: render a fine score-colored arrow on the mini board
+  // Render a fine score-colored arrow on the mini board
   // pointing from the candidate move's source to its target square. Same color
   // as the border so the visuals stay in lockstep. Illegal/unparseable SAN
   // returns null and the card simply falls back to no arrow.
@@ -65,12 +65,10 @@ export function OpeningFindingCard({
     : undefined;
   const isUnnamed = finding.opening_name === UNNAMED_SENTINEL;
 
-  // Full-height left spine: the score-zone accent runs the entire left edge of
-  // the card (header band included). It lives on the card root, not the content
-  // div — the old content-div border started the colored stripe abruptly under
-  // the header band, leaving the rounded top-left corner un-accented.
-  // Per-row dimming (260603-pgv): the whole-card opacity dim was removed; each
-  // stat row now dims independently (see dimScoreRow / dimEvalRow below).
+  // Full-height left spine on the card root (header band included). Don't move
+  // it to the content div: the stripe would start under the header band and leave
+  // the rounded top-left corner un-accented.
+  // Dimming is per row (see dimScoreRow / dimEvalRow below).
   const cardTestId = `opening-finding-card-${idx}`;
 
   // WDL bar — same pattern as OpeningStatsCard.tsx.
@@ -103,7 +101,7 @@ export function OpeningFindingCard({
   const avgEvalPawns = finding.avg_eval_pawns ?? null;
   const hasMgEval = evalN > 0 && avgEvalPawns !== null && avgEvalPawns !== undefined;
 
-  // Quick task 260508-dcp: gate Score % and Eval text on confidence bucket
+  // Gate Score % and Eval text on confidence bucket
   // ('medium' or 'high', not 'low') AND value lands in a colored zone
   // (red/green). The card border + on-board arrow keep their existing zone
   // tint — only the font colors are gated here.
@@ -117,9 +115,9 @@ export function OpeningFindingCard({
     isConfident(finding.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
-  // Per-row dimming (260603-pgv): fade only the stat row whose confidence is
-  // low, instead of the whole card. Eval dims only when an eval value exists
-  // (the placeholder / no-eval "—" cases are never dimmed).
+  // Per-row dimming: fade only the stat row whose confidence is low. Eval dims
+  // only when an eval value exists (the placeholder / no-eval "—" cases are never
+  // dimmed).
   const dimScoreRow = !isConfident(finding.confidence);
   const dimEvalRow = hasMgEval && !isConfident(finding.eval_confidence);
 
@@ -212,7 +210,7 @@ export function OpeningFindingCard({
             <span className="text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
-              <BulletConfidencePopover
+              <EvalConfidencePopover
                 level={finding.eval_confidence ?? 'low'}
                 pValue={finding.eval_p_value}
                 gameCount={evalN}

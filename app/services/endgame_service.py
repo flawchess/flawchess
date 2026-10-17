@@ -2,7 +2,7 @@
 
 Exposes:
 - classify_endgame_class: pure function mapping material_signature to category name
-- EndgameClassInt: IntEnum encoding for endgame_class SmallInteger column (Per D-06)
+- EndgameClassInt: IntEnum encoding for endgame_class SmallInteger column
 - _INT_TO_CLASS / _CLASS_TO_INT: bidirectional mappings for integer <-> string conversion
 - _aggregate_endgame_stats: aggregates raw per-game rows into EndgameCategoryStats list
 - get_endgame_stats: orchestrator for GET /api/endgames/stats
@@ -49,7 +49,7 @@ from app.schemas.endgames import (
     ScoreGapTimelinePoint,
 )
 from app.services.endgame_zones import (
-    # Phase 88.1: MIN_GAMES_* lifted to endgame_zones.py for codegen sharing (WR-04).
+    # MIN_GAMES_* lifted to endgame_zones.py for codegen sharing.
     MIN_GAMES_PER_PRESSURE_BIN,
 )
 from app.services.eval_confidence import compute_eval_confidence_bucket
@@ -74,7 +74,7 @@ from app.services.score_confidence import (
 
 class EndgameClassInt(IntEnum):
     """Integer encoding for endgame_class column (SmallInteger, 2 bytes per row).
-    Maps 1:1 to EndgameClass Literal strings. Per D-06."""
+    Maps 1:1 to EndgameClass Literal strings."""
 
     ROOK = 1
     MINOR_PIECE = 2
@@ -95,15 +95,15 @@ _INT_TO_CLASS: dict[int, EndgameClass] = {
 
 _CLASS_TO_INT: dict[EndgameClass, int] = {v: k for k, v in _INT_TO_CLASS.items()}
 
-# Phase 98: endgame classes excluded from the collapsible per-(class × TC) type
-# cards. Mixed is the least-actionable catch-all (dropped per D-05) and pawnless is
+# Endgame classes excluded from the collapsible per-(class × TC) type
+# cards. Mixed is the least-actionable catch-all (dropped) and pawnless is
 # hidden in the UI; excluding them from aggregate_endgame_stats_by_tc keeps the
 # per-TC card header count equal to the sum of the four rendered tiles. This does
 # NOT affect the pooled `categories` (LLM path), which still includes Mixed.
 _TYPE_CARD_EXCLUDED_CLASSES: frozenset[EndgameClass] = frozenset({"mixed", "pawnless"})
 
 
-# Display labels for each endgame category (D-07).
+# Display labels for each endgame category.
 _ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
     "rook": "Rook",
     "minor_piece": "Minor Piece",
@@ -117,7 +117,7 @@ _ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
 def classify_endgame_class(material_signature: str) -> EndgameClass:
     """Classify a material_signature string into one of six endgame categories.
 
-    Categories (D-07):
+    Categories:
     - queen: queen(s), may have pawns, no rook or minor pieces
     - rook: rook(s), may have pawns, no queen or minor pieces
     - minor_piece: bishop/knight, may have pawns, no queen or rook
@@ -172,21 +172,19 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 
 # Minimum Stockfish eval (in centipawns) to count as conversion or recovery.
 # A single-point eval at the span-entry ply replaces the old material_imbalance +
-# 4-ply persistence proxy (REFAC-02). 100 cp == 1.0 pawn — surfaced to the user
+# 4-ply persistence proxy. 100 cp == 1.0 pawn — surfaced to the user
 # as "+1.0" / "-1.0" in tooltips and bucket labels.
 EVAL_ADVANTAGE_THRESHOLD = 100
 
-# Phase 83 (D-07): drop |eval_cp| >= 2000 from the entry_expected_score cohort.
+# Drop |eval_cp| >= 2000 from the entry_expected_score cohort.
 # The Lichess winning-chances sigmoid saturates around +/-800 cp anyway (f(+800) ~
 # 0.95, f(+1500) ~ 0.997), so very large evals add almost-1.0 contributions that
-# overwhelm the mean. Matches Phase 82's "analyzable endgame entry" cohort
-# definition for consistency with the entry_eval bullet (see SEED-014 D-07).
+# overwhelm the mean. Matches the "analyzable endgame entry" cohort
+# definition for consistency with the entry_eval bullet.
 EVAL_CLIP_MAX_CP = 2000
 
-# Phase 85.1 (SEC1-08 / IN-01 carry-forward): n-gate threshold below which any
-# p-value is too unstable to surface to the wire (score-difference and
-# paired-difference test gates). CLAUDE.md "No magic numbers" rule — see Phase 85
-# REVIEW IN-01 for the carry-forward.
+# n-gate threshold below which any p-value is too unstable to surface to the
+# wire (score-difference and paired-difference test gates).
 PVALUE_RELIABILITY_MIN_N: int = 10
 
 
@@ -220,9 +218,8 @@ def _classify_endgame_bucket(
     sign = 1 if user_color == "white" else -1
 
     if eval_mate is not None:
-        # Mate score: a positive value means the side that is to-move has mate,
-        # but the raw white-perspective convention treats eval_mate > 0 as white winning.
-        # We use large magnitude to guarantee threshold crossing.
+        # White-perspective mate: eval_mate > 0 means White mates. Use a large
+        # magnitude to guarantee threshold crossing.
         user_eval: int = sign * (1_000_000 if eval_mate > 0 else -1_000_000)
     elif eval_cp is not None:
         user_eval = sign * eval_cp
@@ -237,13 +234,13 @@ def _classify_endgame_bucket(
     return "parity"
 
 
-# Phase 60: minimum opponent sample size required to display the opponent
+# Minimum opponent sample size required to display the opponent
 # baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
 # mute threshold used elsewhere (e.g. Opening Explorer moves list).
 _MIN_OPPONENT_SAMPLE = 10
 
 
-# Phase 87.1 (SEED-016 D-07): map game result + user_color to a chess score for
+# Map game result + user_color to a chess score for
 # terminal-span exit_score. Named constant per CLAUDE.md "no magic numbers";
 # keyed on the outcome returned by derive_user_result (Literal["win","draw","loss"])
 # so the dict is exhaustive against the type system.
@@ -264,11 +261,11 @@ def _compute_span_scores(
 ) -> tuple[float, float] | None:
     """Return (es_entry, exit_score) for a span, or None if entry eval unavailable.
 
-    quick-260519-ni3: pure helper that exposes both components so callers can
+    Pure helper that exposes both components so callers can
     accumulate starts and ends separately (single source of truth for entry/exit
     logic). compute_span_gap delegates here and returns exit_score - es_entry.
 
-    Phase 87.1 (SEED-016 D-07) NULL-eval gate: returns None when both
+    NULL-eval gate: returns None when both
     entry_eval_cp and entry_eval_mate are NULL — the span is excluded from the
     per-class cohort.
 
@@ -281,7 +278,7 @@ def _compute_span_scores(
             * Terminal span (both next_entry_eval_* NULL): game-result score
               via _GAME_RESULT_TO_SCORE[derive_user_result(result, user_color)].
     """
-    # D-07: skip spans where the entry eval is unknown.
+    # Skip spans where the entry eval is unknown.
     if entry_eval_cp is None and entry_eval_mate is None:
         return None
 
@@ -325,7 +322,7 @@ def compute_span_gap(
 ) -> float | None:
     """Return per-span gap `exit_score - ES_entry`, or None if entry eval unavailable.
 
-    Phase 87.1 (SEED-016 D-07). Delegates to _compute_span_scores (single
+    Delegates to _compute_span_scores (single
     source of truth for entry/exit/mate-precedence/terminal-vs-transitory logic).
     Sign convention: positive = user outperformed the Stockfish baseline
     (recovered eval, decisive conversions); negative = user gave back expected
@@ -354,7 +351,7 @@ def compute_span_gap(
     return scores[1] - scores[0]
 
 
-# Rolling window size for the score-difference timeline chart (quick-260417-o2l).
+# Rolling window size for the score-difference timeline chart.
 # Mirrors the 100-game window used by the clock-diff timeline.
 SCORE_GAP_TIMELINE_WINDOW = 100
 
@@ -381,9 +378,7 @@ class _EndgameRow(NamedTuple):
 def _normalize_endgame_row(row: Row[Any] | tuple[Any, ...]) -> _EndgameRow:
     """Collapse the 6/8/9-tuple-vs-SA-`Row` shape dispatch into one typed row.
 
-    Mirrors the exact branch layout of the original inline dispatch inside
-    `_aggregate_endgame_stats` (214-RESEARCH.md "Pattern 1: Accumulate-then-build
-    pipeline"). Field ordering inside each branch is unchanged — a reordered field here
+    Field ordering inside each branch matters: a reordered field here
     produces plausible-looking but wrong aggregates that no type checker catches.
     """
     row_played_at: datetime | None = None
@@ -393,7 +388,7 @@ def _normalize_endgame_row(row: Row[Any] | tuple[Any, ...]) -> _EndgameRow:
             next_entry_eval_cp: int | None = None
             next_entry_eval_mate: int | None = None
         elif len(row) == 8:
-            # 8-tuple: full Phase 87.1 row shape (no played_at).
+            # 8-tuple: full row shape (no played_at).
             (
                 _game_id,
                 endgame_class_int,
@@ -445,7 +440,7 @@ class _EndgameAccumulators(TypedDict):
     """Per-endgame-class accumulator bundle built by one row-scan pass.
 
     Matches the `FilterParams` TypedDict convention in `app/services/stats_service.py`
-    (D-02: TypedDicts for internal data structures). All 11 fields are outputs of the
+    (TypedDicts for internal data structures). All 11 fields are outputs of the
     same row-scan pass in `_accumulate_endgame_rows`; `_build_category_stats` reads them
     to build one `EndgameCategoryStats` per class key.
     """
@@ -471,18 +466,18 @@ def _new_endgame_accumulators() -> _EndgameAccumulators:
         wdl=defaultdict(lambda: {"wins": 0, "draws": 0, "losses": 0}),
         conv=defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0}),
         recov=defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0}),
-        # Phase 87.1 (SEED-016 D-07): per-class per-span gap accumulator.
+        # Per-class per-span gap accumulator.
         # gap_span = exit_score - ES_entry; positive = outperformed Stockfish baseline.
         gaps_by_class=defaultdict(list),
-        # quick-260519-ni3: per-class start (es_entry) and end (exit_score) accumulators.
+        # Per-class start (es_entry) and end (exit_score) accumulators.
         # Appended under the exact same is-not-None gate as gaps_by_class, so the three
         # lists always have identical length (reconciliation invariant by construction).
         starts_by_class=defaultdict(list),
         ends_by_class=defaultdict(list),
-        # Phase 87.2 (D-01): per-bucket ΔES accumulator. Per-span grain (not per-game):
+        # Per-bucket ΔES accumulator. Per-span grain (not per-game):
         # a game spanning two bucket classes contributes a span-gap to each bucket.
         gaps_by_bucket=defaultdict(list),
-        # Quick task 260519-lu0: per-class eval cohort (user-perspective cp) for
+        # Per-class eval cohort (user-perspective cp) for
         # MG-entry eval aggregation via compute_eval_confidence_bucket (same helper
         # as openings stats path). mate-excluded, NULL-excluded, |cp|>=2000 trimmed.
         eval_sum_by_class=defaultdict(float),
@@ -515,7 +510,7 @@ def _accumulate_wdl_conv_recov(
     wdl_key = "wins" if outcome == "win" else "draws" if outcome == "draw" else "losses"
     accumulators["wdl"][endgame_class][wdl_key] += 1
 
-    # Conversion: user entered with significant eval advantage (REFAC-02)
+    # Conversion: user entered with significant eval advantage
     if bucket == "conversion":
         accumulators["conv"][endgame_class]["games"] += 1
         if outcome == "win":
@@ -523,7 +518,7 @@ def _accumulate_wdl_conv_recov(
         elif outcome == "draw":
             accumulators["conv"][endgame_class]["draws"] += 1
 
-    # Recovery: user entered with significant eval deficit (REFAC-02)
+    # Recovery: user entered with significant eval deficit
     if bucket == "recovery":
         accumulators["recov"][endgame_class]["games"] += 1
         if outcome == "win":
@@ -540,11 +535,11 @@ def _accumulate_score_gap(
 ) -> None:
     """Fold one row's per-span Score Gap into the per-class and per-bucket accumulators.
 
-    Phase 87.1 (SEED-016 D-03/D-05/D-07): accumulates the per-span gap for the paired
+    Accumulates the per-span gap for the paired
     one-sample z-test against H0: mean = 0 (compute_paired_difference_test, same helper
-    Phase 85.1 SEC1-10 uses for the page-level Achievable Score Gap). Sign convention:
+    the page-level Achievable Score Gap uses). Sign convention:
     gap = exit_score - ES_entry, positive = user outperformed Stockfish. NULL-eval spans
-    return None from _compute_span_scores and are excluded from the cohort (D-07).
+    return None from _compute_span_scores and are excluded from the cohort.
     """
     span_scores = _compute_span_scores(
         entry_eval_cp=endgame_row.eval_cp,
@@ -561,9 +556,9 @@ def _accumulate_score_gap(
     accumulators["gaps_by_class"][endgame_class].append(gap)
     accumulators["starts_by_class"][endgame_class].append(es_entry)
     accumulators["ends_by_class"][endgame_class].append(exit_score)
-    # Phase 87.2 (D-01): bucket is already computed above; append the same gap into the
+    # Bucket is already computed above; append the same gap into the
     # bucket cohort for the per-bucket paired-z test. Per-bucket path appends gap ONLY
-    # (not start/end — locked decision 4).
+    # (not start/end).
     accumulators["gaps_by_bucket"][bucket].append(gap)
 
 
@@ -574,10 +569,10 @@ def _accumulate_eval_and_played_at(
 ) -> None:
     """Fold one row's eval-mean cohort and MAX(played_at) into the per-class accumulators.
 
-    Quick task 260519-lu0: accumulates user-perspective eval cp for the per-category eval
+    Accumulates user-perspective eval cp for the per-category eval
     mean / CI / confidence via compute_eval_confidence_bucket. Sign convention: user_cp =
     +eval_cp for white, -eval_cp for black (mirrors _classify_endgame_bucket). Excludes
-    mate rows, NULL evals, and |cp| >= EVAL_OUTLIER_TRIM_CP (D-08 outlier trim, same as
+    mate rows, NULL evals, and |cp| >= EVAL_OUTLIER_TRIM_CP (outlier trim, same as
     openings). Only called when the caller tracks eval/played_at (see
     `_accumulate_endgame_rows`'s `track_eval_and_played_at`).
     """
@@ -605,13 +600,11 @@ def _accumulate_endgame_rows(
     track_eval_and_played_at: bool = True,
 ) -> _EndgameAccumulators:
     """Single-pass per-row accumulation shared by `_aggregate_endgame_stats` (pooled) and
-    `aggregate_endgame_stats_by_tc` (per-TC breakdown) — 214-RESEARCH.md "Pattern 1:
-    Accumulate-then-build pipeline".
+    `aggregate_endgame_stats_by_tc` (per-TC breakdown).
 
     `track_eval_and_played_at` gates the eval-mean and MAX(played_at) accumulation: the
-    per-TC breakdown never computed these (its EndgameCategoryStats always carried the
-    schema defaults for those fields), so it calls this with
-    `track_eval_and_played_at=False` to keep that behavior unchanged.
+    per-TC breakdown passes False, so its EndgameCategoryStats keep the schema defaults
+    for those fields.
     """
     accumulators = _new_endgame_accumulators()
 
@@ -644,8 +637,8 @@ def _build_category_stats(
     `aggregate_endgame_stats_by_tc` (per-TC breakdown). When the accumulators came from
     `_accumulate_endgame_rows(..., track_eval_and_played_at=False)`, `eval_n_by_class` and
     `last_played_at_by_class` stay at their defaultdict defaults for every class, so the
-    eval/`last_played_at` fields below come out as the same schema defaults the per-TC
-    breakdown always produced pre-split.
+    eval/`last_played_at` fields below come out as the schema defaults, which is what
+    the per-TC breakdown reports.
     """
     wdl = accumulators["wdl"]
     conv = accumulators["conv"]
@@ -688,11 +681,10 @@ def _build_category_stats(
     recovery_saves = recovery_wins + recovery_draws  # derived, kept for backward compat
     recovery_pct = round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0
 
-    # Phase 84: per-class opponent baseline via same-game mirror identity.
+    # Per-class opponent baseline via same-game mirror identity.
     # Conv is a win-rate, Recov is a save-rate, so the two mirror formulas
-    # are asymmetric. Reuses _MIN_OPPONENT_SAMPLE (line 233), gated on the
-    # MIRROR bucket size (not the own bucket). Phase 60 introduced the
-    # pattern for Section 2 at _compute_score_gap_material (~line 824).
+    # are asymmetric. Gated on the MIRROR bucket size (not the own bucket)
+    # via _MIN_OPPONENT_SAMPLE.
     recovery_losses = recovery_games - recovery_wins - recovery_draws
     opponent_conversion_pct: float | None
     if recovery_games >= _MIN_OPPONENT_SAMPLE:
@@ -731,7 +723,7 @@ def _build_category_stats(
     # endgame_class is always a valid EndgameClass because _INT_TO_CLASS only contains them.
     label = _ENDGAME_CATEGORY_LABELS[endgame_class]
 
-    # Quick task 260519-lu0: Wilson score + last_played_at via _build_wdl_stats
+    # Wilson score + last_played_at via _build_wdl_stats
     # (same helper as openings stats path — no reimplemented statistics).
     # score_p_value retains its existing gated semantics (None when total <
     # PVALUE_RELIABILITY_MIN_N) for backward compat (the field stays on the response; TypeTable does not render it).
@@ -739,10 +731,10 @@ def _build_category_stats(
     wdl_stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=category_last_played_at)
     score_p_value: float | None = wdl_stats.p_value if total >= PVALUE_RELIABILITY_MIN_N else None
 
-    # Quick task 260519-lu0: MG-entry eval aggregation via the verbatim
+    # MG-entry eval aggregation via the verbatim
     # openings eval finalizer (same helper as openings_service.analyze).
     # Eval is per-span at endgame-entry (user-perspective cp); mate excluded,
-    # NULL excluded, |cp| >= EVAL_OUTLIER_TRIM_CP trimmed (D-08).
+    # NULL excluded, |cp| >= EVAL_OUTLIER_TRIM_CP trimmed.
     cat_eval_n = eval_n_by_class[endgame_class]
     cat_eval_sum = eval_sum_by_class[endgame_class]
     cat_eval_sumsq = eval_sumsq_by_class[endgame_class]
@@ -762,14 +754,14 @@ def _build_category_stats(
         cat_eval_p_value = p_value_mg
         cat_eval_confidence = conf_mg
 
-    # Phase 87.1 (SEED-016 D-03/D-05/D-07): per-class mean per-span gap with
+    # Per-class mean per-span gap with
     # paired one-sample z-test via compute_paired_difference_test. n-gates
     # are owned by the helper:
     #   n == 0 -> (0.0, None, None, None) — surface mean as None for wire.
     #   n == 1 -> (mean, None, None, None) — p/CI gated.
     #   n >= 2 -> ci_low/ci_high populated.
     #   n >= CONFIDENCE_MIN_N (=10) -> p_value populated.
-    # Phase 239 D-14: the CI is 99% (displayed CIs match the verdict level), so the
+    # The CI is 99% (displayed CIs match the verdict level), so the
     # ranked service's significance gate reads it as-is.
     # Sign: exit_score - ES_entry (positive = outperformed Stockfish baseline).
     type_gaps = gaps_by_class[endgame_class]
@@ -781,11 +773,11 @@ def _build_category_stats(
         type_gap_ci_high,
     ) = compute_paired_difference_test(type_gaps, z=VERDICT_CI_Z_99)
     # When n == 0 compute_paired_difference_test returns mean=0.0. Surface
-    # None on the wire so the frontend hides the row (D-08 n==0 gate),
+    # None on the wire so the frontend hides the row (n==0 gate),
     # matching how the cohort-empty case reads.
     type_gap_mean: float | None = type_gap_mean_raw if type_gap_n > 0 else None
 
-    # quick-260519-ni3: start/end means over the identical cohort (same n,
+    # Start/end means over the identical cohort (same n,
     # same NULL-eval gate — lists have equal length by construction).
     # Use sum/len to avoid a statistics import; None when n == 0 (mirroring
     # type_gap_mean above so all three fields share the same None contract).
@@ -806,17 +798,17 @@ def _build_category_stats(
         loss_pct=loss_pct,
         conversion=conversion_stats,
         score_p_value=score_p_value,
-        # Phase 87.1 (SEED-016 D-05): per-class Score Gap fields. See
+        # Per-class Score Gap fields. See
         # _compute_span_scores + compute_paired_difference_test above.
         type_achievable_score_gap_mean=type_gap_mean,
         type_achievable_score_gap_n=type_gap_n,
         type_achievable_score_gap_p_value=type_gap_p,
         type_achievable_score_gap_ci_low=type_gap_ci_low,
         type_achievable_score_gap_ci_high=type_gap_ci_high,
-        # quick-260519-ni3: descriptive start/end components.
+        # Descriptive start/end components.
         type_achievable_score_start_mean=type_start_mean,
         type_achievable_score_end_mean=type_end_mean,
-        # Quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at.
+        # WDLStats-aligned score/eval/last_played_at.
         score=wdl_stats.score,
         confidence=wdl_stats.confidence,
         p_value=wdl_stats.p_value,
@@ -838,26 +830,26 @@ def _aggregate_endgame_stats(
 ) -> tuple[list[EndgameCategoryStats], dict[str, list[float]]]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
-    Each row is: (game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
-    where endgame_class_int is 1-6 (see EndgameClassInt).
-    A game_id may appear multiple times (once per endgame class it spent >= 6 plies in).
-    Per D-02: multi-class per game.
+    Each row is one (game, endgame_class) span; see _normalize_endgame_row for the accepted
+    SA Row / tuple shapes. endgame_class_int is 1-6 (see EndgameClassInt).
+    A game_id may appear multiple times (once per endgame class it spent >= 6 plies in),
+    so a game can count toward several classes.
 
     Computes per-category:
     - W/D/L counts and percentages
-    - Conversion: win rate when user entered with eval advantage (REFAC-02) — D-08
-    - Recovery: draw+win rate when user entered with eval deficit (REFAC-02) — D-09
+    - Conversion: win rate when user entered with eval advantage
+    - Recovery: draw+win rate when user entered with eval deficit
 
-    Phase 87.2 (D-01): also builds gaps_by_bucket — a per-bucket ΔES accumulator
-    at per-span grain (not per-game). Returned alongside the categories list so
-    the orchestrator can thread it to _compute_score_gap_material.
+    Also builds gaps_by_bucket — a per-bucket ΔES accumulator
+    at per-span grain (not per-game). Returned alongside the categories list;
+    current callers do not consume it.
 
     Returns (categories, gaps_by_bucket) where categories are sorted by total
-    game count descending (D-05) and gaps_by_bucket is a plain dict (not defaultdict).
+    game count descending and gaps_by_bucket is a plain dict (not defaultdict).
 
     Pipeline: normalize each raw row (_normalize_endgame_row) -> accumulate per class
     (_accumulate_endgame_rows) -> build one EndgameCategoryStats per class
-    (_build_category_stats) -> sort -> return (214-RESEARCH.md Pattern 1).
+    (_build_category_stats) -> sort -> return.
     """
     if not rows:
         return [], {}
@@ -869,7 +861,7 @@ def _aggregate_endgame_stats(
         _build_category_stats(endgame_class, accumulators) for endgame_class in accumulators["wdl"]
     ]
 
-    # Sort by total descending (D-05) — not a fixed category order
+    # Sort by total descending — not a fixed category order
     categories.sort(key=lambda c: c.total, reverse=True)
 
     # Convert defaultdict to plain dict to avoid downstream defaultdict surprises.
@@ -881,7 +873,7 @@ def aggregate_endgame_stats_by_tc(
 ) -> dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]]:
     """Group endgame stats by (TC, class) for the collapsible type-breakdown cards.
 
-    Phase 98: single pass over the per-class `entry_rows` (already fetched) —
+    Single pass over the per-class `entry_rows` (already fetched) —
     one row per (game, endgame_class) span, the SAME source the pooled
     `categories` use — keyed on (TC, class). NOT `bucket_rows` (one row per
     game, class = first endgame position): that classified almost every game as
@@ -896,14 +888,14 @@ def aggregate_endgame_stats_by_tc(
     eval_cp[4], eval_mate[5], time_control_bucket[6], next_entry_eval_cp[7],
     next_entry_eval_mate[8].
 
-    D-15 invariant: does NOT touch the pooled `categories` list or
-    `assign_per_class_zone`. The LLM path reads `EndgameStatsResponse.categories`
-    (pooled, Mixed included) and is unaffected by this function.
+    Does NOT touch the pooled `categories` list. The LLM path reads
+    `EndgameStatsResponse.categories` (pooled, Mixed included) and is unaffected by
+    this function.
     """
     if not rows:
         return {}
 
-    # Phase 98 / 214-03: own row-shape dispatch (the tuple test-fixture layout embeds
+    # Own row-shape dispatch (the tuple test-fixture layout embeds
     # time_control_bucket at index 6, shifting next_entry_eval_cp/mate to 7/8 -- a
     # different tuple shape than _normalize_endgame_row's, which has no TC column), then
     # group into per-TC _EndgameRow lists so the shared accumulate/build pipeline
@@ -911,7 +903,7 @@ def aggregate_endgame_stats_by_tc(
     # can run once per TC bucket instead of duplicating the per-row loop.
     rows_by_tc: dict[str, list[_EndgameRow]] = defaultdict(list)
     for row in rows:
-        # bucket_rows: SA Row or tuple. For tuples (test fixtures) col 6 is TC.
+        # entry_rows: SA Row or tuple. For tuples (test fixtures) col 6 is TC.
         if isinstance(row, tuple):
             if len(row) < 7:
                 # Legacy 6-column fixture (no TC column) — skip; not per-TC data
@@ -947,8 +939,8 @@ def aggregate_endgame_stats_by_tc(
         if endgame_class is None:
             continue  # Unknown class int; already captured by _aggregate_endgame_stats
 
-        # Phase 98: the collapsible type cards render only rook/minor_piece/pawn/queen
-        # tiles — Mixed is dropped (least-actionable catch-all, D-05) and pawnless is
+        # The collapsible type cards render only rook/minor_piece/pawn/queen
+        # tiles — Mixed is dropped (least-actionable catch-all) and pawnless is
         # hidden. Excluding them here (not just in the frontend) keeps the card header
         # "Games: X% (count)" equal to the sum of the four visible tiles. The pooled
         # `categories` / LLM path still see Mixed via _aggregate_endgame_stats.
@@ -958,8 +950,8 @@ def aggregate_endgame_stats_by_tc(
         rows_by_tc[tc].append(endgame_row)
 
     # Build per-TC lists in fixed order. track_eval_and_played_at=False: this breakdown
-    # never aggregated eval-mean or last_played_at (its EndgameCategoryStats always
-    # carried the schema defaults for those fields; see _build_category_stats' docstring).
+    # does not aggregate eval-mean or last_played_at (its EndgameCategoryStats keep the
+    # schema defaults for those fields).
     result_by_tc: dict[
         Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]
     ] = {}
@@ -994,7 +986,7 @@ async def get_endgame_stats(
     Steps:
     1. Fetch one row per (game, endgame_class) span meeting the ply threshold.
     2. Aggregate into per-category stats with conversion/recovery.
-    3. Return sorted categories (by total desc, D-05).
+    3. Return sorted categories (by total desc).
     """
     rows = await query_endgame_entry_rows(
         session,
@@ -1008,7 +1000,7 @@ async def get_endgame_stats(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    # _aggregate_endgame_stats returns (categories, gaps_by_bucket) as of Phase 87.2.
+    # _aggregate_endgame_stats returns (categories, gaps_by_bucket);
     # get_endgame_stats does not use gaps_by_bucket.
     categories, _gaps_by_bucket = _aggregate_endgame_stats(rows)
 
@@ -1025,8 +1017,8 @@ async def get_endgame_stats(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule
-    # (quick-260414-ae4): a game qualifies if its total endgame plies meet the threshold.
+    # Count games that reached an endgame phase per the uniform ENDGAME_PLY_THRESHOLD rule:
+    # a game qualifies if its total endgame plies meet the threshold.
     endgame_games = await count_endgame_games(
         session,
         user_id=user_id,
@@ -1116,13 +1108,13 @@ async def get_endgame_games(
     )
 
 
-# --- Performance chart service functions (Phase 32) ---
+# --- Performance chart service functions ---
 
 
 def build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
     """Build EndgameWDLSummary from query_endgame_performance_rows rows.
 
-    Row shape (Phase 87.5): ``(played_at, result, user_color, platform,
+    Row shape: ``(played_at, result, user_color, platform,
     time_control_bucket)`` — only indices 1 (result) and 2 (user_color) are
     consumed here; the trailing platform / TC columns enable per-combo
     partitioning in the Endgame ELO orchestrator and are ignored otherwise.
@@ -1212,14 +1204,12 @@ def compute_score_gap_timeline(
 
     endgame_window: list[float] = []
     non_endgame_window: list[float] = []
-    # Per-ISO-week count of all events (endgame + non-endgame) — drives the
-    # frontend volume bars on the Score % Difference timeline. Mirrors
-    # `per_week_count` in `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
+    # Per-ISO-week count of all events (endgame + non-endgame); drives the
+    # frontend volume bars on the Score % Difference timeline.
     per_week_total: dict[tuple[int, int], int] = {}
-    # Per-ISO-week count of ENDGAME games only — drives the Endgame ELO
-    # Timeline volume bars. Restored after Phase 87.5 CR-01 had collapsed
-    # `per_week_endgame_games` into the trailing-window count, which made the
-    # bars unreadable (they no longer reflected weekly activity).
+    # Per-ISO-week count of ENDGAME games only; drives the Endgame ELO
+    # Timeline volume bars. Keep this a true per-week count, not the
+    # trailing-window count: the bars stop reflecting weekly activity otherwise.
     per_week_endgame: dict[tuple[int, int], int] = {}
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
@@ -1239,8 +1229,8 @@ def compute_score_gap_timeline(
             )
 
         eg_count = len(endgame_window)
-        neg_count = len(non_endgame_window)
-        if eg_count == 0 or neg_count == 0:
+        non_endgame_count = len(non_endgame_window)
+        if eg_count == 0 or non_endgame_count == 0:
             # Can't compute a difference until both sides have at least one
             # game; defer emission. The MIN_GAMES_FOR_TIMELINE filter below
             # also drops anything still too thin once both sides start.
@@ -1252,15 +1242,15 @@ def compute_score_gap_timeline(
 
         monday = (played_at - timedelta(days=iso_weekday - 1)).date()
         # sanity: score_difference == endgame_score - non_endgame_score within
-        # rounding (1e-9 target; all three rounded to 4 decimals here). Phase 68
-        # persists the absolute per-side values so the frontend two-line chart
+        # rounding (1e-9 target; all three rounded to 4 decimals here). The
+        # absolute per-side values are persisted so the frontend two-line chart
         # and the `score_timeline` insights subsection can read them directly
         # instead of reconstructing them from the signed difference.
         data_by_week[(iso_year, iso_week)] = {
             "date": monday.isoformat(),
             "score_difference": round(diff, 4),
             "endgame_game_count": eg_count,
-            "non_endgame_game_count": neg_count,
+            "non_endgame_game_count": non_endgame_count,
             "per_week_total_games": per_week_total[(iso_year, iso_week)],
             "per_week_endgame_games": per_week_endgame.get((iso_year, iso_week), 0),
             "endgame_score": round(endgame_mean, 4),
@@ -1276,17 +1266,6 @@ def compute_score_gap_timeline(
     ]
 
 
-# Phase 87.2 (D-05): _MIRROR_BUCKET and opponent_score / diff_* fields deleted.
-# The peer-bullet WDL sig-test approach (Phase 60/86) is replaced by the
-# per-bucket ΔES Score Gap metric (Phase 87.2).
-
-
-# Phase 87.4 (D-05): _compute_skill_score_gap deleted — the Skill composite
-# scalar (equal-weighted mean of the three per-bucket ΔES results) was retired
-# end-to-end. No surviving caller. See
-# .planning/notes/endgame-skill-dropped-conversion-elo.md.
-
-
 # Quintile labels for the 5 pressure bins (0=max pressure, 4=min pressure).
 _QUINTILE_LABELS: list[str] = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
 
@@ -1297,8 +1276,6 @@ _QUINTILE_LABELS: list[str] = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
 MAX_CLOCK_PCT_OF_BASE = 2.0
 
 # Rolling-window size for the Average Clock Difference over Time line chart.
-# Restored under CONTEXT §2 A-2 (Plan 88-15) after 88-09 removed it during the
-# unused-constant sweep (IN-01). The line-chart consumer returned in 88-15.
 CLOCK_PRESSURE_TIMELINE_WINDOW: int = 100
 
 
@@ -1306,17 +1283,17 @@ CLOCK_PRESSURE_TIMELINE_WINDOW: int = 100
 _TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
 
 
-# Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
+# Rolling window size for the Endgame ELO timeline chart.
 # Matches SCORE_GAP_TIMELINE_WINDOW.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
 
 # Ordered combo list: chess.com first then lichess, per-platform follows
-# _TIME_CONTROL_ORDER. Used for stable response ordering (Phase 57 D-09).
+# _TIME_CONTROL_ORDER. Used for stable response ordering.
 _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
     (platform_name, tc) for platform_name in ("chess.com", "lichess") for tc in _TIME_CONTROL_ORDER
 ]
 
-# Phase 87.6 amendment (2026-05-17): logistic stretch around Actual ELO.
+# Logistic stretch around Actual ELO.
 # The `400` is fixed by Elo's logistic-skill assumption -- the same `400` the
 # FIDE Performance Rating formula uses -- not a knob.
 # See .planning/notes/endgame-elo-logistic-anchored.md for derivation.
@@ -1334,7 +1311,7 @@ def _endgame_elo_logistic(
     endgame_score: float,
     non_endgame_score: float,
 ) -> tuple[int, int]:
-    """Logistic stretch around Actual ELO (Phase 87.6 amendment 2026-05-17).
+    """Logistic stretch around Actual ELO.
 
     Returns (endgame_elo, non_endgame_elo) where the midpoint equals
     Actual ELO by construction:
@@ -1347,11 +1324,10 @@ def _endgame_elo_logistic(
     wins or all losses on either side cannot blow up the logit. Same `400`
     that appears in the FIDE Performance Rating formula — no free constant.
 
-    Supersedes the earlier Phase 87.6 PR-direct mapping (per-side FIDE PR),
-    which UAT against prod showed violated the "Actual ELO sits between the
-    two PR lines" invariant in ~88% of weekly points because the 100-game
-    trailing PR estimator lagged the live Glicko snapshot used for Actual
-    ELO. See `.planning/notes/endgame-elo-logistic-anchored.md`.
+    Don't derive the sides from a per-side FIDE Performance Rating: the 100-game
+    trailing PR estimator lags the live Glicko snapshot used for Actual ELO, so
+    Actual ELO stops sitting between the two lines (it failed in ~88% of weekly
+    points). See `.planning/notes/endgame-elo-logistic-anchored.md`.
     """
     s_e = max(min(endgame_score, 1 - _ENDGAME_ELO_SCORE_EPSILON), _ENDGAME_ELO_SCORE_EPSILON)
     s_n = max(min(non_endgame_score, 1 - _ENDGAME_ELO_SCORE_EPSILON), _ENDGAME_ELO_SCORE_EPSILON)
@@ -1368,7 +1344,7 @@ def _compute_endgame_elo_weekly_series(
     actual_elo_ratings: Sequence[int],
     cutoff_str: str | None = None,
 ) -> list[EndgameEloTimelinePoint]:
-    """Build weekly Endgame ELO + Non-Endgame ELO + Actual ELO series for one combo (Phase 87.6).
+    """Build weekly Endgame ELO + Non-Endgame ELO + Actual ELO series for one combo.
 
     For each ``ScoreGapTimelinePoint`` (already filtered to weeks where both
     the endgame and non-endgame trailing windows hold ``>= MIN_GAMES_FOR_TIMELINE``
@@ -1376,16 +1352,14 @@ def _compute_endgame_elo_weekly_series(
 
     - ``endgame_elo`` / ``non_endgame_elo`` = ``_endgame_elo_logistic(actual_elo,
       pt.endgame_score, pt.non_endgame_score)``. A logistic stretch around the
-      asof-joined Actual ELO; the midpoint equals Actual ELO by construction
-      (Phase 87.6 amendment 2026-05-17 supersedes the earlier per-side FIDE
-      PR mapping).
+      asof-joined Actual ELO; the midpoint equals Actual ELO by construction.
     - ``actual_elo`` = asof-join of (actual_elo_dates, actual_elo_ratings) at
       ``next_monday_dt``. Forward-fills from the latest prior game when the
       week itself has no games.
     - ``endgame_games_in_window`` = ``pt.endgame_game_count`` (carry-through
       from the score-gap producer; the trailing 100-game window count).
     - ``per_week_endgame_games`` = ``pt.per_week_endgame_games`` (true per-ISO
-      week count; see UAT fix post-Phase 87.5 CR-01).
+      week count).
     - ``per_week_total_games`` = ``pt.per_week_total_games`` (endgame +
       non-endgame games this ISO week; drives the volume bars because the
       chart plots both lines, so total weekly activity is what matters).
@@ -1403,8 +1377,8 @@ def _compute_endgame_elo_weekly_series(
         # also stores Monday). The asof bisect still runs against next-Monday
         # so the rating reflects the END of the ISO week -- i.e. the same
         # window state that drove the score-gap value plotted at this Monday.
-        # (UAT 2026-05-17: the earlier Sunday-of-week label caused a 6-day
-        # x-axis shift between the two charts.)
+        # Don't label the point with the Sunday of the week: that shifts the two
+        # charts against each other by 6 days on the x-axis.
         try:
             monday = datetime.fromisoformat(pt.date).date()
         except ValueError:
@@ -1497,12 +1471,11 @@ def iterate_clock_rows(
 ]:
     """Iterate clock_rows once, accumulating per-TC and per-(TC, quintile) data.
 
-    Phase 88.1 (D-07 supersedes D-05, REVIEW.md CR-01): the cohort layer was
-    removed. We now build TWO parallel quintile splits from the SAME filtered
+    Builds TWO parallel quintile splits from the SAME filtered
     games — one bucketed by USER's clock-pct, one by OPPONENT's clock-pct. The
     per-quintile delta is computed in build_quintile_bullets against these
-    two splits, which are NOT independent (see below) — the D-04 covariance
-    correction (Phase 148 item 3) accounts for the overlap.
+    two splits, which are NOT independent (see below) — the covariance
+    correction accounts for the overlap.
 
     Returns:
         tc_total: dict[tc -> total valid endgame games]
@@ -1510,7 +1483,7 @@ def iterate_clock_rows(
         tc_opp_quintile_wdl:  dict[(tc, quintile) -> (wins, draws, losses)] bucketed by OPP's clock-pct,
             with result inverted from the opponent's perspective (user-win = opp-loss).
         tc_shared_quintile_count: dict[(tc, quintile) -> count of games where
-            user_quintile == opp_quintile == quintile] (Phase 148 item 3, D-04).
+            user_quintile == opp_quintile == quintile].
             Feeds the covariance-correction `shared_n` parameter of
             `compute_score_difference_test` in `build_quintile_bullets`.
 
@@ -1525,14 +1498,14 @@ def iterate_clock_rows(
     q — as `X` (user outcome) on the user side and as the exact linear inverse
     `1 - X` (opponent outcome) on the opp side. That shared-game overlap makes
     `compute_score_difference_test`'s naive independent-samples SE an
-    underestimate; Phase 148 item 3 (D-04) tracks the per-(tc, quintile)
+    underestimate; this function tracks the per-(tc, quintile)
     shared-game count `m` (below) and passes it through `build_quintile_bullets`
     as `shared_n` so the SE gets the `+2m*v/(n_u*n_o)` covariance-correction
     term instead of silently treating the cohorts as independent.
 
-    Rows with base_clock <= 0 are skipped (T-88-04-02 defensive guard).
+    Rows with base_clock <= 0 are skipped (defensive guard).
     Rows where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_clock are skipped
-    (bogus readings — same guard as the legacy clock_pressure path).
+    (bogus readings; compute_clock_diff_timeline applies the same guard).
     """
     tc_total: dict[str, int] = defaultdict(int)
     tc_user_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(
@@ -1541,7 +1514,7 @@ def iterate_clock_rows(
     tc_opp_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(
         lambda: (0, 0, 0)
     )
-    # Phase 148 item 3 (D-04): count of games per (tc, quintile) where the user
+    # Count of games per (tc, quintile) where the user
     # and opponent land in the SAME quintile — feeds the covariance correction.
     tc_shared_quintile_count: dict[tuple[str, int], int] = defaultdict(int)
 
@@ -1555,7 +1528,7 @@ def iterate_clock_rows(
 
         if time_control_bucket is None:
             continue
-        # T-88-04-02: skip rows with invalid base clock.
+        # Skip rows with invalid base clock.
         if base_time_seconds is None or base_time_seconds <= 0:
             continue
 
@@ -1577,7 +1550,7 @@ def iterate_clock_rows(
         opp_clk_pct = opp_clock / base_time_seconds
         user_quintile = min(4, int(user_clk_pct * 5))
         opp_quintile = min(4, int(opp_clk_pct * 5))
-        # Phase 148 item 3 (D-04): this game overlaps both cohorts for the
+        # This game overlaps both cohorts for the
         # same (tc, quintile) bucket when the two sides share a quintile.
         if user_quintile == opp_quintile:
             tc_shared_quintile_count[(tc, user_quintile)] += 1
@@ -1607,17 +1580,17 @@ def build_quintile_bullets(
     tc: str,
     user_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
     opp_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
-    shared_wdl_count: dict[tuple[str, int], int],
+    shared_quintile_count: dict[tuple[str, int], int],
 ) -> list[PressureQuintileBullet]:
     """Build exactly 5 PressureQuintileBullet entries for quintiles 0..4.
 
-    Phase 88.1 (D-07 supersedes D-05): each bullet compares the user's score
+    Each bullet compares the user's score
     in quintile Q (bucketed by USER's clock-pct) against the opponent's score
     in the same quintile index Q (bucketed by OPPONENT's clock-pct). The two
     splits are NOT independent samples of the same filtered game-set — a game
     where the user's and opponent's quintile happen to coincide contributes to
     BOTH cohorts for the same quintile index (see `iterate_clock_rows`
-    docstring). Phase 148 item 3 (D-04): `shared_wdl_count[(tc, q)]` (the
+    docstring). `shared_quintile_count[(tc, q)]` (the
     number of such overlapping games) is passed as `shared_n` to
     `compute_score_difference_test`, which adds a covariance-correction term to
     the SE instead of treating the two cohorts as independent.
@@ -1625,7 +1598,7 @@ def build_quintile_bullets(
     For each quintile q in 0..4:
     - n_user = sum of user_quintile_wdl[(tc, q)]; n_opp = sum of opp_quintile_wdl[(tc, q)].
     - Bullet n is the user-side count (drives the displayed sample-size chip).
-    - n-gate: min(n_user, n_opp) >= MIN_GAMES_PER_PRESSURE_BIN (WR-05). If unmet,
+    - n-gate: min(n_user, n_opp) >= MIN_GAMES_PER_PRESSURE_BIN. If unmet,
       delta is the raw difference (or 0.0 when either side has zero games) and
       all stats (p_value, ci_low, ci_high, opp_score) are None.
     - When the gate is met, delta = user_score - opp_score and significance comes
@@ -1639,7 +1612,7 @@ def build_quintile_bullets(
         o_w, o_d, o_l = opp_quintile_wdl.get((tc, q), (0, 0, 0))
         n_opp = o_w + o_d + o_l
 
-        # n-gate per WR-05: both sides must clear the bin floor before we trust
+        # n-gate: both sides must clear the bin floor before we trust
         # the delta enough to report stats. Zero games on either side also fails
         # the gate (no opp_score to subtract).
         gate_met = n_user >= MIN_GAMES_PER_PRESSURE_BIN and n_opp >= MIN_GAMES_PER_PRESSURE_BIN
@@ -1670,8 +1643,8 @@ def build_quintile_bullets(
         user_score = (u_w + 0.5 * u_d) / n_user
         opp_score = (o_w + 0.5 * o_d) / n_opp
         delta = user_score - opp_score
-        m = shared_wdl_count.get((tc, q), 0)
-        # Phase 239 D-14: 99% CI, the level of the dot-colour verdict gate.
+        m = shared_quintile_count.get((tc, q), 0)
+        # 99% CI, the level of the dot-colour verdict gate.
         p_value, ci_low, ci_high = compute_score_difference_test(
             u_w, u_d, u_l, n_user, o_w, o_d, o_l, n_opp, shared_n=m, z=VERDICT_CI_Z_99
         )
@@ -1697,7 +1670,7 @@ def compute_clock_diff_timeline(
     window: int = CLOCK_PRESSURE_TIMELINE_WINDOW,
     cutoff: datetime | None = None,
 ) -> ClockDiffTimelineResponse:
-    """Build the per-ISO-week rolling clock-diff timeline (Plan 88-15, CONTEXT §2 A-2).
+    """Build the per-ISO-week rolling clock-diff timeline.
 
     Pooled across TCs (no time-control faceting — matches the pre-deletion
     line-chart convention). Filters out rows that lack clock data, have
@@ -1720,7 +1693,7 @@ def compute_clock_diff_timeline(
             user_color, ply_array, clock_array, played_at). Callers should pass
             the UNFILTERED-by-recency row stream so the rolling window can
             pre-fill from games before ``cutoff``; the function drops emitted
-            points dated before the cutoff's ISO Monday (REVIEW.md WR-01).
+            points dated before the cutoff's ISO Monday.
         window: trailing rolling-window size. Defaults to
             CLOCK_PRESSURE_TIMELINE_WINDOW (100). Parameterised for tests that
             want to exercise window-truncation behaviour without 100 fixtures.
@@ -1764,7 +1737,7 @@ def compute_clock_diff_timeline(
         clock_diff_pct = (user_clock - opp_clock) / base_time_seconds * 100
         eligible.append((played_at, clock_diff_pct))
         monday = played_at.date() - timedelta(days=played_at.date().weekday())
-        # WR-01: only count games at-or-after the cutoff toward per_week_counts.
+        # Only count games at-or-after the cutoff toward per_week_counts.
         # Pre-cutoff games pre-fill the rolling window (Phase 2) but never
         # produce an emitted point, so their per-week tallies are not surfaced.
         if cutoff is None or played_at >= cutoff:
@@ -1788,8 +1761,7 @@ def compute_clock_diff_timeline(
     # Phase 3: emit chronologically. With a cutoff, drop ISO-week points whose
     # Monday is strictly before the cutoff's ISO Monday — pre-cutoff weeks
     # already contributed to the rolling-window state (Phase 2) so the first
-    # emitted post-cutoff point has a fully populated trailing window
-    # (REVIEW.md WR-01).
+    # emitted post-cutoff point has a fully populated trailing window.
     cutoff_monday: _date | None = None
     if cutoff is not None:
         cutoff_date = cutoff.date()
@@ -1816,14 +1788,13 @@ def build_endgame_elo_combos(
     asof_by_combo: dict[tuple[str, str], tuple[list[Any], list[int]]],
     cutoff_str: str | None,
 ) -> list[EndgameEloTimelineCombo]:
-    """Pure per-(platform, TC) Endgame ELO combo builder (Phase 238 extraction).
+    """Pure per-(platform, TC) Endgame ELO combo builder.
 
-    Shared by the filtered path (``get_endgame_elo_timeline``) and the ranked
-    path (``endgame_ranked_service``). ``endgame_rows_all`` /
+    Used by the ranked path (``endgame_ranked_service``). ``endgame_rows_all`` /
     ``non_endgame_rows_all`` are cross-combo rows shaped ``(played_at, result,
     user_color, platform, time_control_bucket)``; ``asof_by_combo`` maps
     (platform, TC) to parallel ``(dates, ratings)`` arrays for the Actual ELO
-    asof-join. Combos with zero qualifying points are dropped (D-10 tier 2) and
+    asof-join. Combos with zero qualifying points are dropped and
     the result follows ``_ENDGAME_ELO_COMBO_ORDER``.
     """
     # Partition the cross-combo endgame / non-endgame rows by (platform, TC).
@@ -1861,7 +1832,7 @@ def build_endgame_elo_combos(
             cutoff_str=cutoff_str,
         )
         if not points:
-            # D-10 tier 2: drop combo entirely when no qualifying points.
+            # Drop the combo entirely when no qualifying points.
             continue
         combo_key = f"{platform_name.replace('.', '_')}_{tc}"
         # Narrow platform/tc to the Literal types the schema expects. Both come

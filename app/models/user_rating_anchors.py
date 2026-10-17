@@ -1,19 +1,14 @@
 """ORM model for user_rating_anchors table.
 
-D-12 Reversal Amendment (2026-05-27) -- see CONTEXT.md §Amendment and
-``.planning/notes/percentile-anchor-d12-reversal.md`` for the standalone
-design-decision record.
-
-The original D-12 rule (Lichess-precedence: "any Lichess games in TC =>
-Lichess source") is SUPERSEDED. The new algorithm is game-weighted blended
-anchor (CONTEXT §Amendment §"Schema reshape" + §"Risk profile"):
+The anchor is a game-weighted blend, not a Lichess-precedence rule ("any Lichess
+games in TC => Lichess source"):
 
   1. For each game in the canonical slice (per-TC, recent-3000-capped,
      36-month window, status=completed, ±100 opp filter):
        - Lichess game -> use rating_at_game_time as-is (native Lichess).
        - Chess.com game (non-Daily) -> convert rating_at_game_time to
          Lichess-equivalent via the per-TC ChessGoals snapshot
-         (``app/services/rating_conversion.py``).
+         (``app/services/chesscom_to_lichess.py``).
        - Chess.com Daily -> contributes weight 0 (conversion undefined).
   2. Pool the converted chess.com ratings with the native Lichess ratings.
   3. Take the median of the pool -> that is ``anchor_rating``.
@@ -22,25 +17,25 @@ Per-game conversion (not per-user) handles within-window rating drift
 naturally. ``anchor_rating`` is always Lichess-equivalent regardless of
 the user's platform mix.
 
-Tooltip-disclosure columns (CONTEXT §Amendment §"Tooltip disclosure update"):
+Tooltip-disclosure columns:
   - ``n_chesscom_games`` / ``chesscom_median_native``: number of non-Daily
     chess.com games used and their median RAW (pre-conversion) chess.com rating.
   - ``n_lichess_games`` / ``lichess_median_native``: number of Lichess games
     used and their median native Lichess rating.
-These are surfaced in the percentile-chip tooltip (D-07 bullet 4, amended) so
+These are surfaced in the percentile-chip tooltip so
 the user can see what the blended anchor blends.
 
-Suppression rule (CONTEXT §Amendment §"Suppression rule"): a user with
+Suppression rule: a user with
 ``n_chesscom_games == 0`` AND ``n_lichess_games == 0`` has no anchor row for
 that TC and the chip suppresses naturally. This is rare (chess.com-Daily-only
 users) and matches existing chip-suppression behavior.
 
-Risk profile by user type (CONTEXT §Amendment §"Risk profile"):
+Risk profile by user type:
   - Pure-Lichess users: unchanged (no conversion in play).
   - Pure-chess.com users: nearly identical anchors (median commutes with the
     ChessGoals monotonic mapping within a single piecewise segment).
   - Mixed-platform users: anchor shifts toward the platform contributing more
-    games -- the surgical fix the amendment targets.
+    games -- the case the blend exists for.
 
 ``time_control_bucket_enum`` is cross-imported from ``app/models/game.py`` to
 keep the Postgres ENUM single-source-of-truth. ``create_type=False`` on both
@@ -67,12 +62,11 @@ TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 class UserRatingAnchor(Base):
     """One blended-anchor row per (user_id, time_control_bucket).
 
-    Phase 94.4 D-12 Reversal Amendment (2026-05-27): game-weighted blended
-    anchor replaces the original Lichess-precedence rule. See module docstring
-    for the full algorithm description and risk profile.
+    Game-weighted blended anchor. See module docstring for the full algorithm
+    description and risk profile.
 
-    Written by Stage A at import time (Plan 10) and by the one-shot backfill
-    (Plan 12). Read by the percentile chip service and the tooltip payload.
+    Written by Stage A at import time and by the one-shot backfill.
+    Read by the percentile chip service and the tooltip payload.
 
     Columns:
       user_id (PK): FK to users.id with ON DELETE CASCADE.
@@ -86,7 +80,7 @@ class UserRatingAnchor(Base):
         A user with no Lichess games in this TC gets 0, not NULL.
       chesscom_median_native: median of the user's RAW chess.com ratings in
         this TC BEFORE ChessGoals conversion. None when n_chesscom_games == 0.
-        Tooltip-disclosure source (D-07 bullet 4, amendment-revised).
+        Tooltip-disclosure source.
       lichess_median_native: median of the user's native Lichess ratings in
         this TC. None when n_lichess_games == 0. Tooltip-disclosure source.
       computed_at: server-default NOW() on insert; refreshed by UPSERT.

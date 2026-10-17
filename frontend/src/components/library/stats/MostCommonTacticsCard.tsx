@@ -15,7 +15,7 @@ import { GapPopover } from './GapPopover';
 import type { TacticBullet, TacticComparisonTc, TacticSide } from '@/types/library';
 
 /**
- * Two equal Missed | Allowed columns from md up (UAT: no Motif column; each cell names its
+ * Two equal Missed | Allowed columns from md up (no Motif column; each cell names its
  * motif top left under the column header row); phones stack under the motif name.
  */
 const TABLE_GRID_CLASS = 'md:grid-cols-2';
@@ -30,7 +30,7 @@ const CARD_TITLE = 'Most common tactics';
 const COPY_FOOTER =
   "Per 100 games. Middle tick = same as your opponents, fewer (better) to the left. Your and your opponents' rates are in each search-icon popover.";
 
-/** The shown families in filter-panel order (D-17), never re-sorted by rate. */
+/** The shown families in filter-panel order, never re-sorted by rate. */
 const SHOWN_FAMILIES: readonly TacticFamilyDef[] = TACTIC_COMPARISON_FAMILIES.filter((def) =>
   LIBRARY_STATS_TACTIC_FAMILIES.includes(def.family),
 );
@@ -53,9 +53,9 @@ interface TacticCellProps {
 }
 
 /**
- * One Missed or Allowed cell: the gap bar per 100 games with its Search popover (D-00c).
- * A side without flaws (null gap) gets the bar's empty line and no popover (D-00d); the
- * bar owns the verdict and its significance gate (D-14). The words line carries a label top left:
+ * One Missed or Allowed cell: the gap bar per 100 games with its Search popover.
+ * A side without flaws (null gap) gets the bar's empty line and no popover; the
+ * bar owns the verdict and its significance gate. The words line carries a label top left:
  * "Fork · 152" from md up, "Missed · 152" on phones under the row's motif name.
  * The count is the player's own flaws on that side.
  */
@@ -136,7 +136,7 @@ interface MostCommonTacticsCardProps {
 }
 
 /**
- * The Tactic motifs section body (Phase 239 D-17, UAT): one card with the four most common
+ * The Tactic motifs section body: one card with the four most common
  * tactic families, the only ones with a benchmark typical range on both sides. The rarer
  * families happen less than once per 100 games, so their gaps were mostly noise. Every
  * row is shown, also without flaws; each cell is a gap bar per 100 games.

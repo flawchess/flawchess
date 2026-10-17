@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useFlawChessEngine unit tests (Phase 155 Plan 02).
+ * useFlawChessEngine unit tests.
  *
  * `createWorkerPool`/`createMaiaQueue`/`mctsSearch` are mocked so the tests
  * control exactly when `onSnapshot` fires and can assert on the mocked
@@ -10,10 +10,10 @@
  * useStockfishEngine.test.ts's `vi.useFakeTimers({ now: 0 })` convention.
  *
  * Behaviors verified:
- * 1. Throttle (DISPLAY-01/D-09): the first onSnapshot commits near-instantly;
+ * 1. Throttle: the first onSnapshot commits near-instantly;
  *    a burst of subsequent snapshots within 150ms results in at most one
  *    additional trailing commit, of the LATEST snapshot only.
- * 2. Abort (Pitfall 1 regression guard): navigating to a new FEN aborts the
+ * 2. Abort: navigating to a new FEN aborts the
  *    previous run's AbortSignal AND calls the mocked pool's `stopAll` before
  *    a fresh mctsSearch call is issued.
  */
@@ -143,7 +143,7 @@ describe('useFlawChessEngine', () => {
     vi.useRealTimers();
   });
 
-  it('throttle: first onSnapshot commits near-instantly; later snapshots throttle at ~150ms (never a debounce that delays first paint, DISPLAY-01)', async () => {
+  it('throttle: first onSnapshot commits near-instantly; later snapshots throttle at ~150ms (never a debounce that delays first paint)', async () => {
     // Advance past RAPID_STEP_DEBOUNCE_MS so the settled-first-mount FEN fires
     // the search immediately (sinceLast = 200 - 0 = 200 > 150).
     vi.advanceTimersByTime(200);
@@ -187,7 +187,7 @@ describe('useFlawChessEngine', () => {
     expect(result.current.rankedLines).not.toBe(snapshot2.rankedLines);
   });
 
-  it('abort: navigating to a new FEN aborts the previous run AND calls pool.stopAll() (DISPLAY-01 / Pitfall 1 regression guard)', async () => {
+  it('abort: navigating to a new FEN aborts the previous run AND calls pool.stopAll() (regression guard)', async () => {
     const { rerender } = renderHook(
       ({ fen }: { fen: string }) => useFlawChessEngine({ fen, enabled: true, elo: 1500 }),
       { initialProps: { fen: TEST_FEN } },
@@ -216,7 +216,7 @@ describe('useFlawChessEngine', () => {
       await vi.advanceTimersByTimeAsync(200);
     });
 
-    // Pitfall 1 regression guard: the previous run's signal is aborted AND
+    // Regression guard: the previous run's signal is aborted AND
     // pool.stopAll() was called again — the signal alone does not free the pool.
     expect(firstSignal.aborted).toBe(true);
     expect(mockStopAll.mock.calls.length).toBeGreaterThan(stopAllCallsBeforeNav);
@@ -228,9 +228,9 @@ describe('useFlawChessEngine', () => {
     expect(secondSignal.aborted).toBe(false);
   });
 
-  // ─── Phase 196 (INJECT-03): extraRootMoves threading ───────────────────────
+  // ─── extraRootMoves threading ───────────────────────
 
-  it('threads extraRootMoves into the SearchBudget by reference (INJECT-03)', async () => {
+  it('threads extraRootMoves into the SearchBudget by reference', async () => {
     vi.advanceTimersByTime(200);
     const extra = ['h2h4'];
 
@@ -285,7 +285,7 @@ describe('useFlawChessEngine', () => {
     const stopAllCallsBefore = mockStopAll.mock.calls.length;
 
     // A NEW array reference with equal contents must still restart — identity
-    // is the contract, which is precisely why Analysis.tsx (Task 2) owns the
+    // is the contract, which is precisely why Analysis.tsx owns the
     // stability guarantee.
     rerender({ extraRootMoves: ['h2h4'] });
 
@@ -299,9 +299,9 @@ describe('useFlawChessEngine', () => {
     expect(budget.extraRootMoves).toEqual(['h2h4']);
   });
 
-  // ─── FIX-5 (quick 260731-s0z): abort the superseded run on a RAPID FEN change ──
+  // ─── abort the superseded run on a RAPID FEN change ──
 
-  it('FIX-5: aborts the previous run immediately on a RAPID FEN change (not up to RAPID_STEP_DEBOUNCE_MS later), and its pending trailing snapshot never lands after the clear', async () => {
+  it('aborts the previous run immediately on a RAPID FEN change (not up to RAPID_STEP_DEBOUNCE_MS later), and its pending trailing snapshot never lands after the clear', async () => {
     vi.advanceTimersByTime(200); // settled path: first FEN fires the search immediately
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) => useFlawChessEngine({ fen, enabled: true, elo: 1500 }),
@@ -343,9 +343,9 @@ describe('useFlawChessEngine', () => {
     expect(mockMctsSearch.mock.calls[1]?.[0]).toBe(TEST_FEN_2);
   });
 
-  // ─── Phase 213 D-01: isReady reflects real asset readiness ─────────────────
+  // ─── isReady reflects real asset readiness ─────────────────
 
-  describe('D-01: isReady reflects real asset readiness', () => {
+  describe('isReady reflects real asset readiness', () => {
     it('isReady stays false until BOTH queue.whenReady() and pool.whenReady() resolve, then becomes true', async () => {
       const { result } = renderHook(() =>
         useFlawChessEngine({ fen: TEST_FEN, enabled: true, elo: 1500 }),

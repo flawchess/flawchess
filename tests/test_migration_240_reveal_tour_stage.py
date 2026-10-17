@@ -1,15 +1,15 @@
-"""Tests for the Phase 240 Plan 01 Alembic migration: reveal_tour_stage.
+"""Tests for the reveal_tour_stage Alembic migration.
 
-Regression suite for the migration that (D-09/D-10/D-12):
+Regression suite for the migration that:
 - adds `train_settings.reveal_tour_stage` (SmallInteger NOT NULL DEFAULT 0) with
   the CHECK `ck_train_settings_reveal_tour_stage` (0..3),
-- backfills stage 3 wherever the Phase 222 walkthrough timestamp was non-null
+- backfills stage 3 wherever the old walkthrough timestamp was non-null
   (the user finished the old single tour) and leaves every other row on 0 (a
   user mid-onboarding at deploy starts the split tour at part 1),
-- drops the Phase 222 walkthrough timestamp column.
+- drops the old walkthrough timestamp column.
 
 One-way data note: the original walkthrough completion instant is lost by the
-upgrade (owner accepted in discuss, D-10). The downgrade restores the column
+upgrade (accepted). The downgrade restores the column
 schema-wise and stamps an approximate `now()` for stage-3 rows, which the
 downgrade test pins.
 
@@ -20,7 +20,7 @@ upgrades back to head. DDL tests are NOT transactionally isolated, which is
 safe because each run owns its own database and always ends at head.
 
 Uses a dedicated test user ID range (999_600-999_602) to avoid FK collisions
-with other migration test suites (999_5xx is the phase 186 range).
+with other migration test suites (999_5xx belongs to the user_import_settings suite).
 """
 
 import asyncio
@@ -36,7 +36,7 @@ BASE_REVISION: str = "778c806092fb"  # down_revision of the reveal_tour_stage mi
 
 TABLE: str = "train_settings"
 STAGE_COLUMN: str = "reveal_tour_stage"
-# The Phase 222 column the migration retires; named here only to assert it is gone.
+# The old walkthrough column the migration retires; named here only to assert it is gone.
 RETIRED_COLUMN: str = "reveal_walkthrough_seen_at"
 CHECK_CONSTRAINT: str = "ck_train_settings_reveal_tour_stage"
 
@@ -165,7 +165,7 @@ async def _cleanup(engine, *user_ids: int) -> None:
 
 
 async def test_backfills_stage_three_from_old_timestamp_and_drops_old_column(test_engine) -> None:
-    """D-10/D-12: a row whose old walkthrough timestamp was set lands on stage 3,
+    """A row whose old walkthrough timestamp was set lands on stage 3,
     a row whose timestamp was NULL lands on stage 0, and the old column is gone."""
     await _run_downgrade(BASE_REVISION)
     try:
@@ -190,7 +190,7 @@ async def test_backfills_stage_three_from_old_timestamp_and_drops_old_column(tes
 
 
 async def test_check_constraint_rejects_out_of_range_stage(test_engine) -> None:
-    """D-09 defense-in-depth: the DB CHECK rejects a stage outside 0..3, on both
+    """Defense-in-depth: the DB CHECK rejects a stage outside 0..3, on both
     an INSERT above the bound and an UPDATE below it."""
     await _run_upgrade(TARGET_REVISION)
     assert await _check_constraint_exists(test_engine, CHECK_CONSTRAINT)
@@ -225,7 +225,7 @@ async def test_check_constraint_rejects_out_of_range_stage(test_engine) -> None:
 
 
 async def test_downgrade_restores_old_column_and_removes_stage(test_engine) -> None:
-    """D-10: the downgrade restores the retired column (set for a stage-3 row,
+    """The downgrade restores the retired column (set for a stage-3 row,
     NULL for a stage-0 row) and removes the stage column and its CHECK; a
     re-upgrade returns to head."""
     await _run_upgrade(TARGET_REVISION)

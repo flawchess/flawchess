@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Phase 171 Plan 03 — the codebase's FIRST App-level nav test.
+ * App-level nav tests.
  *
- * Purpose: PLAY-01 links a real /bots route into all three nav surfaces
+ * Purpose: the /bots route is linked into all three nav surfaces
  * (desktop NavHeader, mobile BOTTOM_NAV_ITEMS, mobile MobileMoreDrawer) and
- * exempts it from all three duplicated import-lock expressions. The lock rule
+ * exempted from all three duplicated import-lock expressions. The lock rule
  * is copy-pasted with slightly different clause lists per surface — patching
  * one site and missing the other two is exactly the failure mode this file
- * exists to catch (see the MUTATION CHECK recorded in 171-03-SUMMARY.md).
+ * exists to catch.
  *
  * This file (deliberately) also locks in the EXISTING Library/Openings/
  * Endgames lock behavior against silent regression, via the "control"
@@ -36,7 +36,7 @@ vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({ data: profileState }),
 }));
 
-// Phase 230 D-16: the real Privacy card uses useSetLeaderboardHidden (absent from the
+// The real Privacy card uses useSetLeaderboardHidden (absent from the
 // factory above) and a QueryClient; the settings overlay tests do not exercise it.
 vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
   LeaderboardPrivacyCard: () => null,
@@ -56,12 +56,12 @@ vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ logout: vi.fn() }),
 }));
 
-// 191-05: mock useTrainProgress so tests control the badge's resolved data
+// Mock useTrainProgress so tests control the badge's resolved data
 // without a real API or QueryClientProvider. trainProgressData undefined
 // stands in for BOTH the pending and errored states — App.tsx derives the
 // badge count from `.data?.waiting_count ?? 0` only, so both states collapse
 // to "no resolved data" from the component's point of view.
-// Phase 193 D-09/D-10: badge_visible is optional here (not required, unlike
+// badge_visible is optional here (not required, unlike
 // the real TrainProgressResponse) precisely so a test can omit it to prove
 // the fail-closed `?? false` path in App.tsx.
 let trainProgressData: { waiting_count: number; badge_visible?: boolean } | undefined;
@@ -151,7 +151,7 @@ function renderMobileMoreDrawer(initialPath = '/library') {
   );
 }
 
-// Quick 260809-g0n: a tiny probe that publishes a fixture board-controls
+// A tiny probe that publishes a fixture board-controls
 // payload for the duration it is mounted, so MobileBottomBar's swap can be
 // tested without wiring a real Train solve screen.
 function MobileBoardControlsProbe(props: {
@@ -179,7 +179,7 @@ function renderMobileHeader(initialPath = '/bots') {
 
 // ── navUnlocked state table ──────────────────────────────────────────────────────
 // A: zero-game user, B: guest (zero games), C: fully-imported user (tier1 + games).
-// navUnlocked = totalGames > 0 && tier1 — all three /bots assertions must pass in
+// navUnlocked = importedGameCount > 0 && tier1 — all three /bots assertions must pass in
 // EVERY row (A and B are locked, C is unlocked), proving /bots is NEVER gated.
 
 const NAV_STATES: {
@@ -262,9 +262,9 @@ describe.each(NAV_STATES)('nav lock state: $name', ({ setup }) => {
   });
 });
 
-// Phase 208 (PASTE-08, D-10): /analysis is IMPORT_EXEMPT_ROUTES too — reachable
+// /analysis is IMPORT_EXEMPT_ROUTES too — reachable
 // and clickable with zero imported games, on every surface it appears on.
-describe.each(NAV_STATES)('nav lock state: $name — /analysis (Phase 208)', ({ setup }) => {
+describe.each(NAV_STATES)('nav lock state: $name — /analysis', ({ setup }) => {
   it('desktop nav (NavHeader): renders nav-analysis, never aria-disabled or dimmed', () => {
     setup();
     renderNavHeader();
@@ -281,7 +281,7 @@ describe.each(NAV_STATES)('nav lock state: $name — /analysis (Phase 208)', ({ 
     expect(link.className).not.toMatch(/opacity-40/);
   });
 
-  it('mobile bottom bar (MobileBottomBar): renders NO analysis entry (D-09)', () => {
+  it('mobile bottom bar (MobileBottomBar): renders NO analysis entry', () => {
     setup();
     renderMobileBottomBar();
     expect(screen.queryByTestId('mobile-nav-analysis')).toBeNull();
@@ -309,7 +309,7 @@ describe('control assertion: existing lock behavior is genuinely exercised', () 
   });
 });
 
-describe('V-04: Bots renders in all three surfaces, second position (D-16)', () => {
+describe('Bots renders in all three surfaces, second position', () => {
   it('desktop NavHeader: order is Library, Train, Bots, Openings, Endgames', () => {
     profileState = {
       email: 'zero@example.com',
@@ -325,7 +325,7 @@ describe('V-04: Bots renders in all three surfaces, second position (D-16)', () 
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     const links = within(nav).getAllByTestId(/^nav-/);
     const order = links.map((el) => el.getAttribute('data-testid'));
-    // Phase 208: /analysis is appended as NAV_ITEMS' last entry (D-09) — it
+    // /analysis is appended as NAV_ITEMS' last entry — it
     // is absent from BOTTOM_NAV_ITEMS by design, so this desktop-only order
     // check gains it while the mobile bottom-bar check below does not.
     expect(order).toEqual([
@@ -376,8 +376,8 @@ describe('V-04: Bots renders in all three surfaces, second position (D-16)', () 
     renderMobileMoreDrawer();
     const links = screen.getAllByTestId(/^drawer-nav-/);
     const order = links.map((el) => el.getAttribute('data-testid'));
-    // Phase 208: the More drawer reads NAV_ITEMS too, so it also gains
-    // drawer-nav-analysis at the end (D-09).
+    // The More drawer reads NAV_ITEMS too, so it also gains
+    // drawer-nav-analysis at the end.
     expect(order).toEqual([
       'drawer-nav-library',
       'drawer-nav-train',
@@ -389,7 +389,7 @@ describe('V-04: Bots renders in all three surfaces, second position (D-16)', () 
   });
 });
 
-describe('190-03: Train renders in all three surfaces, correctly placed (NAV-01)', () => {
+describe('Train renders in all three surfaces, correctly placed', () => {
   it('desktop NavHeader: nav test-id sequence places Train between Library and Bots', () => {
     profileState = {
       email: 'zero@example.com',
@@ -405,7 +405,7 @@ describe('190-03: Train renders in all three surfaces, correctly placed (NAV-01)
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     const links = within(nav).getAllByTestId(/^nav-/);
     const order = links.map((el) => el.getAttribute('data-testid'));
-    // Phase 208: /analysis is appended last (D-09) — see the V-04 comment above.
+    // /analysis is appended last, as in the Bots order test above.
     expect(order).toEqual([
       'nav-library',
       'nav-train',
@@ -454,7 +454,7 @@ describe('190-03: Train renders in all three surfaces, correctly placed (NAV-01)
     renderMobileMoreDrawer();
     const links = screen.getAllByTestId(/^drawer-nav-/);
     const order = links.map((el) => el.getAttribute('data-testid'));
-    // Phase 208: drawer-nav-analysis appended last (D-09) — see the V-04 comment above.
+    // drawer-nav-analysis is appended last, as in the Bots order test above.
     expect(order).toEqual([
       'drawer-nav-library',
       'drawer-nav-train',
@@ -465,7 +465,7 @@ describe('190-03: Train renders in all three surfaces, correctly placed (NAV-01)
     ]);
   });
 
-  it('desktop and bottom-bar nav sequences agree everywhere EXCEPT /analysis (Phase 208, D-09)', () => {
+  it('desktop and bottom-bar nav sequences agree everywhere EXCEPT /analysis', () => {
     profileState = {
       email: 'zero@example.com',
       is_superuser: false,
@@ -489,20 +489,19 @@ describe('190-03: Train renders in all three surfaces, correctly placed (NAV-01)
       .getAllByTestId(/^mobile-nav-(?!more)/)
       .map((el) => el.getAttribute('data-testid')?.replace(/^mobile-nav-/, ''));
 
-    // Phase 208 (PASTE-08): NAV_ITEMS (desktop) and BOTTOM_NAV_ITEMS (mobile
-    // bottom bar) are now intentionally different by exactly one entry —
-    // /analysis is on the desktop surface only (D-09). This test used to
-    // assert full equality; the App.tsx comment on both arrays (WR-07)
-    // records this divergence as deliberate, so the fix here is to assert
-    // the divergence precisely rather than drop the test.
+    // NAV_ITEMS (desktop) and BOTTOM_NAV_ITEMS (mobile
+    // bottom bar) intentionally differ by exactly one entry —
+    // /analysis is on the desktop surface only. The App.tsx comment on both
+    // arrays records this divergence as deliberate, so the test asserts
+    // the divergence precisely.
     expect(desktopOrder).toContain('analysis');
     expect(mobileOrder).not.toContain('analysis');
     expect(desktopOrder.filter((id) => id !== 'analysis')).toEqual(mobileOrder);
   });
 });
 
-describe('190-03: Train gating (NAV-02)', () => {
-  it('locked state: Train is exempt (Phase 224 D-01) on all three surfaces; Openings/Endgames stay locked', () => {
+describe('Train gating', () => {
+  it('locked state: Train is exempt on all three surfaces; Openings/Endgames stay locked', () => {
     profileState = {
       email: 'zero@example.com',
       is_superuser: false,
@@ -561,8 +560,8 @@ describe('190-03: Train gating (NAV-02)', () => {
   });
 });
 
-describe('190-03: empty profile does not crash and renders Train exempt', () => {
-  it('all three surfaces render without throwing, Train exempt (Phase 224 D-01), with a null profile', () => {
+describe('empty profile does not crash and renders Train exempt', () => {
+  it('all three surfaces render without throwing, Train exempt, with a null profile', () => {
     profileState = null;
     tier1State = false;
 
@@ -591,7 +590,7 @@ describe('190-03: empty profile does not crash and renders Train exempt', () => 
   });
 });
 
-describe('190-03: Train active state (adjacency)', () => {
+describe('Train active state (adjacency)', () => {
   it('rendered at /train, exactly one nav link is active and it is Train', () => {
     profileState = {
       email: 'full@example.com',
@@ -646,7 +645,7 @@ describe('190-03: Train active state (adjacency)', () => {
   });
 });
 
-describe('190-03: mobile bottom-bar target count', () => {
+describe('mobile bottom-bar target count', () => {
   it('renders six nav links plus the More button, each with visible label text', () => {
     profileState = {
       email: 'full@example.com',
@@ -670,7 +669,7 @@ describe('190-03: mobile bottom-bar target count', () => {
   });
 });
 
-describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
+describe('Train waiting badge', () => {
   const UNLOCKED_PROFILE: Partial<UserProfile> = {
     email: 'badge@example.com',
     is_superuser: false,
@@ -728,7 +727,7 @@ describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
     expect(screen.queryByTestId('train-notification-badge-mobile')).toBeNull();
   });
 
-  it('waiting_count: 12, badge_visible: false -> badge absent on both surfaces (D-09 off-day)', () => {
+  it('waiting_count: 12, badge_visible: false -> badge absent on both surfaces (off-day)', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
     trainProgressData = { waiting_count: 12, badge_visible: false };
@@ -790,9 +789,9 @@ describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
     const { unmount } = renderNavHeader();
     const desktopBadge = screen.getByTestId('train-notification-badge');
     expect(desktopBadge.textContent).toBe('99+');
-    // 191-06 UAT bug fix: shrunk from min-w-4 to min-w-3.5 (desktop-only,
-    // reduces the badge's protrusion past the header's overflow-hidden
-    // clip boundary — see App.tsx's badge className comment).
+    // min-w-3.5 (desktop-only) reduces the badge's protrusion past the
+    // header's overflow-hidden clip boundary — see App.tsx's badge
+    // className comment.
     expect(desktopBadge.className).toMatch(/min-w-3\.5/);
     unmount();
 
@@ -817,7 +816,7 @@ describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
     expect(screen.queryByTestId('train-notification-dot-mobile')).toBeNull();
   });
 
-  // Phase 222 ship: the reworked-Train dot uses a NEW localStorage key so
+  // The Train dot uses its own localStorage key so
   // accounts that already cleared the old Openings/Endgames dots (and used
   // Train before) still see it once.
   it('reworked-Train dot shows for an unlocked account with no badge, even with the older visited flags set', () => {
@@ -892,7 +891,7 @@ describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
   });
 });
 
-describe('V-06: /bots active state + mobile header title', () => {
+describe('/bots active state + mobile header title', () => {
   it('desktop NavHeader marks /bots active when on /bots', () => {
     profileState = {
       email: 'full@example.com',
@@ -941,7 +940,7 @@ describe('V-06: /bots active state + mobile header title', () => {
   });
 });
 
-describe('Quick 260809-g0n: MobileBottomBar swaps main nav for board controls', () => {
+describe('MobileBottomBar swaps main nav for board controls', () => {
   const FULL_PROFILE = {
     email: 'full@example.com',
     is_superuser: false,
@@ -1072,10 +1071,10 @@ describe('Quick 260809-g0n: MobileBottomBar swaps main nav for board controls', 
   });
 });
 
-// Phase 223 (BOTVOICE-05, D-10): a payload carrying a resign action is the
+// A payload carrying a resign action is the
 // bot game's — MobileBottomBar swaps in the four-action BotGameMobileBar
 // instead of the shared BoardControls row.
-describe('Phase 223 (BOTVOICE-05): MobileBottomBar swaps to the bot four-action bar', () => {
+describe('MobileBottomBar swaps to the bot four-action bar', () => {
   const FULL_PROFILE = {
     email: 'full@example.com',
     is_superuser: false,
@@ -1146,7 +1145,7 @@ describe('Phase 223 (BOTVOICE-05): MobileBottomBar swaps to the bot four-action 
   });
 });
 
-describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () => {
+describe('MobileBottomBar swaps to the Train reveal bar', () => {
   const FULL_PROFILE = {
     email: 'full@example.com',
     is_superuser: false,
@@ -1227,7 +1226,7 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
   });
 
-  // Phase 240 UAT: the tour's Analyze step spotlights the fixed bar's Analyze
+  // The tour's Analyze step spotlights the fixed bar's Analyze
   // button alone (never the whole bar), exactly while the payload says so.
   it('a payload with spotlightAnalyze true spotlights the Analyze button, not the bar', () => {
     profileState = FULL_PROFILE;
@@ -1266,11 +1265,11 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
   });
 });
 
-// Quick 260824-qaz (D-7/D-8): the hosted Activity Pulse dashboard's nav entry
+// The hosted Activity Pulse dashboard's nav entry
 // mirrors ADMIN_NAV_ITEM's conditional-append pattern on both nav surfaces —
 // present for superusers on both NavHeader and MobileMoreDrawer, absent on
 // both for everyone else.
-describe('Quick 260824-qaz: /activity nav entry (superuser-only)', () => {
+describe('/activity nav entry (superuser-only)', () => {
   it('desktop NavHeader: is_superuser true -> renders nav-activity', () => {
     profileState = {
       email: 'admin@example.com',
@@ -1336,9 +1335,9 @@ describe('Quick 260824-qaz: /activity nav entry (superuser-only)', () => {
   });
 });
 
-// ── Phase 228: settings overlay entry (D-01..D-03; 228 UAT: no /settings page) ────
+// ── Settings overlay entry (no /settings page) ────────────────────────────────
 
-describe('228 settings overlay entry (D-01..D-03)', () => {
+describe('settings overlay entry', () => {
   afterEach(() => {
     localStorage.removeItem(MUTE_KEY);
     Object.values(SETTINGS_STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
@@ -1363,7 +1362,7 @@ describe('228 settings overlay entry (D-01..D-03)', () => {
 
     fireEvent.click(cogwheel);
     const dialog = await screen.findByTestId('settings-dialog');
-    // aria-modal gates useBoardNavigationInput's arrow-key suppression (WR-02).
+    // aria-modal gates useBoardNavigationInput's arrow-key suppression.
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(screen.getByTestId('library-sentinel')).toBeTruthy();
 
@@ -1382,7 +1381,7 @@ describe('228 settings overlay entry (D-01..D-03)', () => {
     expect(within(nav).queryByTestId('nav-settings')).toBeNull();
   });
 
-  it('more drawer: drawer-settings opens the settings sheet, precedes drawer-logout, and is not a drawer-nav entry (D-02)', async () => {
+  it('more drawer: drawer-settings opens the settings sheet, precedes drawer-logout, and is not a drawer-nav entry', async () => {
     renderMobileMoreDrawer();
     const row = screen.getByTestId('drawer-settings');
     expect(row.getAttribute('href')).toBeNull();
@@ -1397,7 +1396,7 @@ describe('228 settings overlay entry (D-01..D-03)', () => {
     expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
   });
 
-  it('mobile /analysis header: cogwheel opens the sheet in place without navigating (D-03)', async () => {
+  it('mobile /analysis header: cogwheel opens the sheet in place without navigating', async () => {
     render(
       <MemoryRouter initialEntries={['/analysis']}>
         <TooltipProvider>
@@ -1417,11 +1416,11 @@ describe('228 settings overlay entry (D-01..D-03)', () => {
   });
 });
 
-// ── Phase 229 (D-12 group 4, D-14): nav and drawer tracking ────────────────────
+// ── Nav and drawer tracking ─────────────────────────────────────────────────
 // trackFeature derives `page` from window.location (not the MemoryRouter), so the
 // path is set with history.pushState. Events reach window.umami.track via the real
 // analytics module.
-describe('229 nav and drawer tracking', () => {
+describe('nav and drawer tracking', () => {
   const track = vi.fn();
   const fullProfile = (isSuperuser: boolean): Partial<UserProfile> => ({
     email: 'tracked@example.com',
@@ -1492,7 +1491,7 @@ describe('229 nav and drawer tracking', () => {
     expect(track).not.toHaveBeenCalled();
   });
 
-  it('MobileMoreDrawer: superuser Admin and Activity items never send nav-click (D-14)', () => {
+  it('MobileMoreDrawer: superuser Admin and Activity items never send nav-click', () => {
     profileState = fullProfile(true);
     tier1State = true;
     renderMobileMoreDrawer();

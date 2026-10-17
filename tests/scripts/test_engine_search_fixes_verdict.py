@@ -1,8 +1,8 @@
-"""Tests for scripts/engine_search_fixes_verdict.py — Phase 225 gate verdict.
+"""Tests for scripts/engine_search_fixes_verdict.py — gate verdict.
 
-Covers Task 1's `<behavior>` block from 225-02-PLAN.md: throughput (T-50/T-400),
+Covers: throughput (T-50/T-400),
 move quality (MQ-2/MQ-1) including the rerun-confirmation rule, stop rule
-(S1/S2), and the "holds, not a near miss" calibration success path. Task 2's
+(S1/S2), and the "holds, not a near miss" calibration success path. The
 calibration fail-branch / cells-converter tests live in a later section of
 this file.
 
@@ -167,7 +167,7 @@ def write_calibration(tmp_path: Path, name: str, payload: Mapping[str, object]) 
 
 def write_full_passing_layout(tmp_path: Path) -> None:
     """A21 vs A2 early-stop counts (7 vs 9) and A21 max wall (9000 ms) mirror
-    the plan's own worked examples so a single default fixture supports every
+    the accept rule's worked examples so a single default fixture supports every
     boundary variant below with minimal per-test overrides."""
     for budget in (50, 400):
         write_throughput(tmp_path, "a0", budget, _throughput_rows(wall_ms=100.0, grade_cpu_ms=50.0))
@@ -193,7 +193,7 @@ def _run_gates(tmp_path: Path) -> tuple[int, dict[str, Any]]:
 
 
 # ==============================================================================
-# Task 1 behaviors
+# Throughput, move quality, stop rule and calibration success path
 # ==============================================================================
 
 
@@ -380,7 +380,7 @@ def test_delta_verdict_disagreement_recorded_as_missing(tmp_path: Path) -> None:
 
 
 # ==============================================================================
-# Task 2 behaviors — calibration fail branch (D-13 amended / RESEARCH C-6) and
+# Calibration fail branch and
 # the A0-cells converter.
 # ==============================================================================
 

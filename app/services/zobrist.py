@@ -33,7 +33,7 @@ class PlyData(TypedDict):
     """Per-ply data returned by process_game_pgn.
 
     Contains all data needed for a single game_positions row, computed in
-    a single PGN mainline walk (eliminates the triple-parse bottleneck D-01/D-02).
+    a single PGN mainline walk.
     """
 
     ply: int
@@ -45,12 +45,12 @@ class PlyData(TypedDict):
     eval_cp: int | None
     eval_mate: int | None
     # piece_count / backrank_sparse / mixedness are kept in-memory only — they feed
-    # assign_game_phases() to derive `phase` but are no longer persisted (SEED-055).
+    # assign_game_phases() to derive `phase` but are no longer persisted.
     piece_count: int
     backrank_sparse: bool
     mixedness: int
     endgame_class: int | None
-    phase: int  # 0=opening, 1=middlegame, 2=endgame; lichess Divider.scala (D-79-07)
+    phase: int  # 0=opening, 1=middlegame, 2=endgame; lichess Divider.scala
 
 
 class GameProcessingResult(TypedDict):
@@ -138,9 +138,8 @@ def compute_hashes(board: chess.Board) -> tuple[int, int, int]:
 def process_game_pgn(pgn_text: str) -> GameProcessingResult | None:
     """Parse pgn_text and return all per-ply data from a single mainline walk.
 
-    Replaces the triple-PGN-parse pattern (D-01). Walks the mainline once,
-    computing hashes, classification, eval, clock, and move SAN for each ply.
-    Also derives ply_count and result_fen (D-02).
+    Walks the mainline once, computing hashes, classification, eval, clock, and
+    move SAN for each ply. Also derives ply_count and result_fen.
 
     Returns None for empty, unparseable, or moveless PGNs.
 

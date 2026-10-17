@@ -11,8 +11,8 @@ Coverage:
 - GET /library/flaw-stats: requires auth
 - GET /library/flaw-stats?color=white: accepted, returns 200
 - GET /library/flaws: pagination, ordering, severity/tag filter, IDOR isolation,
-  phase-tag rejection (Plan 108-05)
-- GET /library/games: eval_series/flaw_markers/phase_transitions payload (Plan 109-03)
+  phase-tag rejection
+- GET /library/games: eval_series/flaw_markers/phase_transitions payload
   — analyzed games carry non-null eval fields, unanalyzed games carry null,
   single batched query (no N+1), IDOR scoping, gzipped payload below threshold.
 """
@@ -34,7 +34,7 @@ from app.main import app
 from app.schemas.library import LibraryFlawsResponse, LibraryGamesResponse
 
 # ---------------------------------------------------------------------------
-# Plan 109-03: payload threshold constant (D-05 — no magic number)
+# Payload threshold constant
 # ---------------------------------------------------------------------------
 # Max acceptable gzipped bytes for the full GET /library/games response
 # when the page contains up to 20 analyzed games with per-ply eval series.
@@ -218,7 +218,7 @@ class TestGetFlawStats:
         }
         for field in required:
             assert field in body, f"Missing field: {field}"
-        # Phase 239 D-00k: the aggregates nothing renders any more are gone.
+        # The aggregates nothing renders any more are gone.
         for removed in (
             "per_severity_counts",
             "rates",
@@ -291,7 +291,7 @@ class TestGetFlawStats:
 
 
 # ---------------------------------------------------------------------------
-# GET /library/flaw-comparison (Phase 239: per-TC payload)
+# GET /library/flaw-comparison (per-TC payload)
 # ---------------------------------------------------------------------------
 
 
@@ -376,8 +376,8 @@ async def _seed_game_committed(
 ) -> int:
     """Insert and commit a Game row, returning its ID.
 
-    full_evals_completed_at drives the _analyzed_game_ids_subquery gate (quick-task
-    260617-pu4): pass a non-None datetime to mark the game as fully eval-drained and
+    full_evals_completed_at drives the _analyzed_game_ids_subquery gate: pass a
+    non-None datetime to mark the game as fully eval-drained and
     thus "analyzed" by fetch_page_analyzed_set / analysis_state.
     """
     from app.models.game import Game
@@ -424,7 +424,7 @@ async def _seed_flaw_committed(
 ) -> None:
     """Insert and commit a GameFlaw row.
 
-    Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws;
+    es_before, es_after, move_san removed from game_flaws;
     they are sourced at query time via a game_positions join.
     """
     from app.models.game_flaw import GameFlaw
@@ -448,7 +448,7 @@ async def _seed_flaw_committed(
 
 
 # ---------------------------------------------------------------------------
-# GET /library/flaws — pagination, ordering, filtering, IDOR (Plan 108-05)
+# GET /library/flaws — pagination, ordering, filtering, IDOR
 # ---------------------------------------------------------------------------
 
 
@@ -478,7 +478,7 @@ async def flaws_test_state(test_engine: Any) -> dict[str, Any]:
     )
     # Flaws on game A1: ply 5 (blunder), ply 7 (mistake, reversed)
     # game_a1 is user_color="black" → black moves at ODD plies (player rows per
-    # D-04 player_only_gate: odd ply + black user = black mover = player).
+    # player_only_gate: odd ply + black user = black mover = player).
     await _seed_flaw_committed(
         session_maker,
         user_id=user_a_id,
@@ -576,7 +576,7 @@ class TestGetLibraryGamesTagFilter:
 
     The Games subtab must restrict to games containing >=1 flaw matching the
     combined tag filter (single-flaw EXISTS: OR within family, AND across
-    families, SEED-038) — the same semantics the Flaws subtab uses. Reuses the
+    families) — the same semantics the Flaws subtab uses. Reuses the
     flaws_test_state fixture, whose user A has 3 games:
       game_a1 — reversed (impact family), blunder
       game_a2 — miss (opportunity family), low-clock (tempo family)
@@ -637,7 +637,7 @@ class TestGetLibraryGamesTagFilter:
 
         reversed (impact) and low-clock (tempo) live in different games,
         so no single flaw satisfies both families → 0 games match. This is the
-        AND-across-families / single-flaw EXISTS semantics (SEED-038), and the
+        AND-across-families / single-flaw EXISTS semantics, and the
         exact behaviour that was broken (tags silently dropped) for the Games tab.
         """
         async with httpx.AsyncClient(
@@ -678,7 +678,7 @@ class TestGetLibraryGamesTagFilter:
 
 
 class TestGetLibraryFlaws:
-    """Tests for GET /library/flaws (Plan 108-05: pagination, ordering, filters, IDOR)."""
+    """Tests for GET /library/flaws (pagination, ordering, filters, IDOR)."""
 
     @pytest.mark.asyncio
     async def test_returns_401_without_auth(self) -> None:
@@ -707,7 +707,7 @@ class TestGetLibraryFlaws:
 
     @pytest.mark.asyncio
     async def test_default_limit_is_20(self, flaws_test_state: dict[str, Any]) -> None:
-        """Default limit in the response is 20 per D-08."""
+        """Default limit in the response is 20."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -719,7 +719,7 @@ class TestGetLibraryFlaws:
     async def test_ordering_recent_first_then_ply_asc(
         self, flaws_test_state: dict[str, Any]
     ) -> None:
-        """Flaws are ordered played_at DESC then ply ASC (D-07).
+        """Flaws are ordered played_at DESC then ply ASC.
 
         User A has flaws across 3 games (Jan, Feb, Mar). Expected order:
           game_a3 ply 10 → game_a2 ply 2 → game_a2 ply 6 → game_a1 ply 5 → game_a1 ply 7
@@ -885,7 +885,7 @@ class TestGetLibraryFlaws:
             "move_san",
             "severity",
             "tags",
-            # Phase 112 (SC-2+SC-4): new fields; es_before/es_after removed
+            # eval fields; es_before/es_after are not part of the response
             "eval_cp_before",
             "eval_mate_before",
             "eval_cp_after",
@@ -903,7 +903,7 @@ class TestGetLibraryFlaws:
         }
         for field in required_fields:
             assert field in flaw, f"Missing field: {field}"
-        # Ensure no hash fields leak (CLAUDE.md V5 / T-108-10)
+        # Ensure no hash fields leak
         for key in flaw:
             assert not key.endswith("_hash"), f"Hash field exposed in response: {key}"
 
@@ -911,7 +911,7 @@ class TestGetLibraryFlaws:
     async def test_idor_user_a_cannot_see_user_b_flaws(
         self, flaws_test_state: dict[str, Any]
     ) -> None:
-        """User A requesting /library/flaws NEVER sees user B's flaws (T-108-10).
+        """User A requesting /library/flaws NEVER sees user B's flaws.
 
         User B has one game (game_b1) with one flaw. User A's request must
         return only user A's 5 flaws; user B's game_id must not appear.
@@ -981,7 +981,7 @@ class TestGetLibraryFlaws:
 
     @pytest.mark.asyncio
     async def test_limit_bounds_enforced(self, flaws_test_state: dict[str, Any]) -> None:
-        """limit=0 or limit=101 are rejected with 422 (ge=1 le=100 constraints, T-108-12)."""
+        """limit=0 or limit=101 are rejected with 422 (ge=1 le=100 constraints)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -1022,7 +1022,7 @@ class TestGetLibraryFlaws:
         assert lc_flaw is not None, "game_a2 ply 6 flaw not found"
         assert "low-clock" in lc_flaw["tags"], f"Expected 'low-clock' in tags: {lc_flaw['tags']}"
 
-        # Phase tag is surfaced in the Flaws list (Quick 260612-fow): game_a2 ply 2/6
+        # Phase tag is surfaced in the Flaws list: game_a2 ply 2/6
         # are middlegame, game_a1 ply 5 is opening, game_a3 ply 10 is endgame.
         assert "middlegame" in miss_flaw["tags"], f"Expected phase in tags: {miss_flaw['tags']}"
         assert "middlegame" in lc_flaw["tags"], f"Expected phase in tags: {lc_flaw['tags']}"
@@ -1035,7 +1035,7 @@ class TestGetLibraryFlaws:
 
 
 # ---------------------------------------------------------------------------
-# Helpers for Plan 109-03 eval-series integration tests (committed sessions)
+# Helpers for eval-series integration tests (committed sessions)
 # ---------------------------------------------------------------------------
 
 
@@ -1126,13 +1126,13 @@ def _make_analyzed_positions(n_plies: int = 10) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Plan 109-03: fixture for eval-series integration tests
+# Fixture for eval-series integration tests
 # ---------------------------------------------------------------------------
 
 
 @pytest_asyncio.fixture(scope="module")
 async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
-    """Seed two users for Plan 109-03 eval-series integration tests.
+    """Seed two users for eval-series integration tests.
 
     User A:
       - game_analyzed: game with eval_cp on >=90% of plies (10 plies, 9 with eval).
@@ -1210,7 +1210,7 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Phase 129 (TACUI-06/CR-01): the orientation + depth filters must survive the
+# The orientation + depth filters must survive the
 # router → service hop. The repository already accepted these kwargs, but the
 # router and service did not declare/forward them, so FastAPI silently dropped
 # the query params and the Flaws-tab filters did nothing. These tests pin the
@@ -1219,7 +1219,7 @@ async def eval_series_test_state(test_engine: Any) -> dict[str, Any]:
 
 
 class TestGetLibraryFlawsTacticParamThreading:
-    """GET /library/flaws must forward tactic_orientation + max_tactic_depth (CR-01)."""
+    """GET /library/flaws must forward tactic_orientation + max_tactic_depth."""
 
     @pytest.mark.asyncio
     async def test_orientation_and_depth_forwarded_to_service(
@@ -1248,7 +1248,7 @@ class TestGetLibraryFlawsTacticParamThreading:
         assert spy.await_args is not None
         kwargs = spy.await_args.kwargs
         assert kwargs["tactic_orientation"] == "missed"
-        # Quick 260620-l5k: depth is now a [min, max] range; 0 must be accepted (ge=0).
+        # Depth is now a [min, max] range; 0 must be accepted (ge=0).
         assert kwargs["min_tactic_depth"] == 0
         assert kwargs["max_tactic_depth"] == 5
 
@@ -1256,7 +1256,7 @@ class TestGetLibraryFlawsTacticParamThreading:
     async def test_orientation_defaults_to_either_and_depth_to_none(
         self, flaws_test_state: dict[str, Any]
     ) -> None:
-        """Omitting the params yields Either-default orientation and no depth bound (D-07)."""
+        """Omitting the params yields Either-default orientation and no depth bound."""
         empty = LibraryFlawsResponse(flaws=[], matched_count=0, offset=0, limit=20)
         with patch(
             "app.routers.library.library_service.get_library_flaws",
@@ -1290,7 +1290,7 @@ class TestGetLibraryFlawsTacticParamThreading:
 
 
 class TestGetLibraryGamesTacticParamThreading:
-    """GET /library/games must forward the tactic filter params (Quick 260620-pza)."""
+    """GET /library/games must forward the tactic filter params."""
 
     @pytest.mark.asyncio
     async def test_tactic_params_forwarded_to_service(
@@ -1363,12 +1363,12 @@ class TestGetLibraryGamesTacticParamThreading:
 
 
 # ---------------------------------------------------------------------------
-# Plan 109-03 test class: eval_series / flaw_markers / phase_transitions
+# Test class: eval_series / flaw_markers / phase_transitions
 # ---------------------------------------------------------------------------
 
 
 class TestEvalSeriesPayload:
-    """Integration tests for the Plan 109-03 eval-chart payload extension.
+    """Integration tests for the eval-chart payload extension.
 
     Covers:
     - eval_series: analyzed game has non-null eval fields; unanalyzed game has null.
@@ -1376,7 +1376,7 @@ class TestEvalSeriesPayload:
     - phase_transitions: analyzed game has non-null transitions.
     - No N+1: fetch_page_eval_positions is a single batched query (query count invariant).
     - IDOR: user_a's fetch_page_eval_positions call does NOT return user_b's positions.
-    - Payload size: gzipped response is below the documented threshold (D-05).
+    - Payload size: gzipped response is below the documented threshold.
     """
 
     @pytest.mark.asyncio
@@ -1610,7 +1610,7 @@ class TestEvalSeriesPayload:
         """fetch_page_eval_positions returns no positions for a game owned by another user.
 
         User A tries to load positions for user B's game. The WHERE user_id == user_a_id
-        clause in fetch_page_eval_positions must return 0 rows (T-109-01 control).
+        clause in fetch_page_eval_positions must return 0 rows.
         """
         from app.repositories.library_repository import fetch_page_eval_positions
 
@@ -1632,15 +1632,12 @@ class TestEvalSeriesPayload:
     async def test_payload_gzip_size_below_threshold(
         self, eval_series_test_state: dict[str, Any]
     ) -> None:
-        """Gzipped GET /library/games response is below the D-05 ceiling constant.
+        """Gzipped GET /library/games response is below the ceiling constant.
 
         Serializes the response JSON to bytes and compresses with gzip (same as
         HTTP Content-Encoding: gzip). Asserts the compressed size is below
         _EVAL_PAYLOAD_GZIP_CEILING_BYTES (40 KB). This bounds the payload
         regression introduced by adding per-ply eval_series to each card.
-
-        The actual measured size is asserted here; the concrete byte count is
-        recorded in the plan SUMMARY for D-05 documentation.
         """
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -1664,7 +1661,7 @@ class TestEvalSeriesPayload:
 
 
 # ---------------------------------------------------------------------------
-# Plan 112-02: GET /library/games/{game_id} — single-game card endpoint (SC-7)
+# GET /library/games/{game_id} — single-game card endpoint
 # ---------------------------------------------------------------------------
 
 
@@ -1729,10 +1726,10 @@ async def game_by_id_test_state(test_engine: Any) -> dict[str, Any]:
 
 
 class TestLibraryGameById:
-    """Tests for GET /api/library/games/{game_id} (Plan 112-02, SC-7).
+    """Tests for GET /api/library/games/{game_id}.
 
-    Three cases: own game 200, cross-user 200 (analysis view is not owner-scoped,
-    Quick 260717-agv), missing game 404.
+    Three cases: own game 200, cross-user 200 (analysis view is not owner-scoped),
+    missing game 404.
     """
 
     @pytest.mark.asyncio
@@ -1767,7 +1764,7 @@ class TestLibraryGameById:
     async def test_library_game_by_id_cross_user_200(
         self, game_by_id_test_state: dict[str, Any]
     ) -> None:
-        """User A requests user B's game — returns 200 with B's card (Quick 260717-agv).
+        """User A requests user B's game — returns 200 with B's card.
 
         The analysis-page game view is intentionally NOT owner-scoped: any
         authenticated user may inspect any game by url (opponent scouting, game
@@ -1805,7 +1802,7 @@ class TestLibraryGameById:
 
 
 # ---------------------------------------------------------------------------
-# Phase 175 Plan 01 (FILT-01) — GET /library/games?has_gem=/has_great=
+# GET /library/games?has_gem=/has_great=
 # ---------------------------------------------------------------------------
 
 
@@ -1844,12 +1841,12 @@ async def _seed_best_move_committed(
 
 @pytest_asyncio.fixture(scope="module")
 async def best_move_filter_test_state(test_engine: Any) -> dict[str, Any]:
-    """Seed two users for GET /library/games?has_gem=/has_great= tests (FILT-01).
+    """Seed two users for GET /library/games?has_gem=/has_great= tests.
 
     User A: 3 own-gem games (game1-3, pagination fixture), 1 own-great game
     (game4), 1 stored-but-neither game (game5), 1 opponent-only-gem game
-    (game6, must be excluded — D-04), 1 own-gem game as BLACK (game7, used to
-    prove has_gem composes with color — D-05a).
+    (game6, must be excluded), 1 own-gem game as BLACK (game7, used to
+    prove has_gem composes with color).
     User B: 1 own-gem game — cross-user isolation target (IDOR backstop).
 
     Committed rows so the ASGI client sessions see the data.
@@ -1885,7 +1882,7 @@ async def best_move_filter_test_state(test_engine: Any) -> dict[str, Any]:
     await _seed_best_move_committed(session_maker, game_id=game5_neither, ply=2, maia_prob=0.60)
 
     # game6: gem at ply=1 (odd -> black mover -> OPPONENT for a white user) —
-    # must NOT count towards has_gem (D-04 player-parity scoping).
+    # must NOT count towards has_gem (player-parity scoping).
     game6_opponent_gem = await _seed_game_committed(
         session_maker, user_id=user_a_id, played_at=_day(6), user_color="white"
     )
@@ -1921,7 +1918,7 @@ async def best_move_filter_test_state(test_engine: Any) -> dict[str, Any]:
 
 
 class TestGetLibraryGamesBestMoveFilter:
-    """GET /library/games?has_gem=/has_great= — FILT-01 HTTP boundary."""
+    """GET /library/games?has_gem=/has_great= — HTTP boundary."""
 
     @pytest.mark.asyncio
     async def test_has_gem_returns_only_the_users_own_gem_games(
@@ -1975,7 +1972,7 @@ class TestGetLibraryGamesBestMoveFilter:
     async def test_has_gem_and_has_great_is_a_union(
         self, best_move_filter_test_state: dict[str, Any]
     ) -> None:
-        """?has_gem=true&has_great=true returns gem OR great games (union, D-05),
+        """?has_gem=true&has_great=true returns gem OR great games (union),
         never the intersection."""
         state = best_move_filter_test_state
         async with httpx.AsyncClient(
@@ -2001,7 +1998,7 @@ class TestGetLibraryGamesBestMoveFilter:
         self, best_move_filter_test_state: dict[str, Any]
     ) -> None:
         """?has_gem=true&color=white excludes the black user's own-gem game
-        (game7) — proves the filters AND together (D-05a), not a parallel path."""
+        (game7) — proves the filters AND together, not a parallel path."""
         state = best_move_filter_test_state
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -2022,7 +2019,7 @@ class TestGetLibraryGamesBestMoveFilter:
         self, best_move_filter_test_state: dict[str, Any]
     ) -> None:
         """matched_count and page contents stay correct with has_gem active
-        across >1 page (Pitfall 1 — predicate lives in SQL, never a Python
+        across >1 page (the predicate lives in SQL, never a Python
         post-filter that would corrupt LIMIT/OFFSET/matched_count)."""
         state = best_move_filter_test_state
         expected = set(state["gem_game_ids"]) | {state["game7_gem_black"]}
@@ -2057,8 +2054,7 @@ class TestGetLibraryGamesBestMoveFilter:
     async def test_has_gem_cross_user_isolation(
         self, best_move_filter_test_state: dict[str, Any]
     ) -> None:
-        """User A's ?has_gem=true never surfaces user B's game (IDOR backstop,
-        T-175-01)."""
+        """User A's ?has_gem=true never surfaces user B's game (IDOR backstop)."""
         state = best_move_filter_test_state
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -2074,7 +2070,7 @@ class TestGetLibraryGamesBestMoveFilter:
 
 
 # ---------------------------------------------------------------------------
-# Phase 175 Plan 02 (BOARD-01) — EvalPoint.best_move_tier/maia_prob round-trip
+# EvalPoint.best_move_tier/maia_prob round-trip
 # ---------------------------------------------------------------------------
 
 
@@ -2113,7 +2109,7 @@ async def best_move_tier_test_state(test_engine: Any) -> dict[str, Any]:
 
 class TestEvalPointBestMoveTierRoundTrip:
     """EvalPoint.best_move_tier/maia_prob serialize over GET /library/games/{id}
-    (BOARD-01) with no internal hash fields leaking (CLAUDE.md V5)."""
+    with no internal hash fields leaking."""
 
     @pytest.mark.asyncio
     async def test_eval_series_gem_tier_and_maia_prob_serialize_no_hash_leak(
@@ -2135,7 +2131,7 @@ class TestEvalPointBestMoveTierRoundTrip:
         assert point0["best_move_tier"] == "gem", f"expected gem tier, got {point0}"
         assert point0["maia_prob"] == pytest.approx(0.10, abs=1e-6)
 
-        # Quick 260717-rbn: every other ply has no stored gem/great row, but the
+        # Every other ply has no stored gem/great row, but the
         # live 'best'/'good' classifier now applies. _make_analyzed_positions'
         # fake move_san values ("m0", "m1", ...) are not legal SAN, so the
         # identity-replay in _best_move_identity_plies fails immediately on ply 0
@@ -2160,17 +2156,17 @@ class TestEvalPointBestMoveTierRoundTrip:
                 assert point["best_move_tier"] == expected_tiers[point["ply"]], (
                     f"ply {point['ply']}: {point}"
                 )
-                # maia_prob is a gem/great-only rarity stat (Pitfall 5) — never
+                # maia_prob is a gem/great-only rarity stat — never
                 # populated for good/None.
                 assert point["maia_prob"] is None
 
-        # No internal Zobrist hash fields leak anywhere in the card (CLAUDE.md V5).
+        # No internal Zobrist hash fields leak anywhere in the card.
         card_str = json.dumps(card)
         assert "_hash" not in card_str, f"internal hash field leaked in card: {card_str[:500]}"
 
 
 # ---------------------------------------------------------------------------
-# Phase 129 Plan 01 (Task 2 TDD RED) — dual-orientation tactic comparison
+# Dual-orientation tactic comparison
 # ---------------------------------------------------------------------------
 
 
@@ -2260,7 +2256,7 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
                 is_computer_game=False,
                 played_at=datetime.datetime(2026, 1, i + 1, tzinfo=datetime.timezone.utc),
                 full_evals_completed_at=analyzed_at,
-                blobs_completed_at=analyzed_at,  # WR-01: tactic population needs blobs done
+                blobs_completed_at=analyzed_at,  # Tactic population needs blobs done
                 white_blunders=0,  # non-NULL → is_analyzed = True
                 ply_count=40,  # non-NULL, > 0 → passes anchor gate in fetch_tactic_comparison
             )
@@ -2271,7 +2267,7 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
 
     # Fork motif = TacticMotifInt.FORK = 1 (see tactic_detector.py TacticMotifInt)
     FORK_MOTIF = 1
-    CONF = 80  # above _TACTIC_CHIP_CONFIDENCE_MIN=70
+    CONF = 80  # above MIN_TACTIC_CHIP_CONFIDENCE=70
 
     # Allowed fork on game 0, ply=2 (white=player, even ply)
     await _seed_tactic_flaw_committed(
@@ -2302,9 +2298,9 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
 
 
 class TestTacticComparisonDualOrientation:
-    """GET /library/tactic-comparison returns per-TC dual-orientation bullets (Phase 129, 239).
+    """GET /library/tactic-comparison returns per-TC dual-orientation bullets.
 
-    Phase 239 D-02/D-00h: the payload is `tcs[]`, each TC carries 38 bullets (19 families x
+    The payload is `tcs[]`, each TC carries 38 bullets (19 families x
     missed/allowed) in fixed family order, missed before allowed.
     """
 
@@ -2374,7 +2370,7 @@ class TestTacticComparisonDualOrientation:
     async def test_tactic_comparison_no_orientation_query_param(
         self, tactic_comparison_state: dict[str, Any]
     ) -> None:
-        """Endpoint accepts no 'orientation' query param (D-09 — grid always shows both)."""
+        """Endpoint accepts no 'orientation' query param (the grid always shows both)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -2393,10 +2389,10 @@ class TestTacticComparisonDualOrientation:
     async def test_tactic_comparison_fixed_family_order(
         self, tactic_comparison_state: dict[str, Any]
     ) -> None:
-        """Bullets follow the fixed family order, missed before allowed (D-00h).
+        """Bullets follow the fixed family order, missed before allowed.
 
         Only fork has events, yet fork is not special-cased: the order is the registry
-        order, not a ranking by Missed rate (the retired Phase 129 D-14 top-6).
+        order, not a ranking by Missed rate (there is no top-6 cut).
         """
         from app.services.tactic_delta_zones import TACTIC_FAMILIES
 

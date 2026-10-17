@@ -43,17 +43,17 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""  # Empty string = Sentry disabled (dev default)
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0  # 0.0 = no traces (dev default)
 
-    # Pydantic-AI model string for endgame insights (Phase 65). Empty string
+    # Pydantic-AI model string for endgame insights. Empty string
     # is treated as "unconfigured" — app/main.py lifespan calls
     # get_insights_agent() which raises UserError on the empty string, aborting
-    # startup (D-22/D-23). Accepts any pydantic-ai model string, e.g.
+    # startup. Accepts any pydantic-ai model string, e.g.
     # "anthropic:claude-haiku-4-5-20251001", "google:gemini-3.5-flash".
     # Tests use the built-in "test" provider (see tests/conftest.py).
     PYDANTIC_AI_MODEL_INSIGHTS: str = ""
     # When true, insights service strips `report.overview = ""` before
     # returning to client. Full overview still persists in llm_logs.response_json
     # for offline analysis — log is source of truth, response is policy-gated
-    # view (D-18, BETA-02).
+    # view.
     INSIGHTS_HIDE_OVERVIEW: bool = False
 
     # Google Gemini thinking controls. Only applied when PYDANTIC_AI_MODEL_INSIGHTS
@@ -74,34 +74,32 @@ class Settings(BaseSettings):
     GEMINI_THINKING_BUDGET: int = 0
     GEMINI_INCLUDE_THOUGHTS: bool = True
 
-    # Automatic background full-eval toggle (Phase 117). When False, the tier-3
-    # idle-backlog derived pick is suppressed — the only automatic eval source as of
-    # Phase 118, which removed the tier-2 auto-window enqueue. Tier-1 (explicit,
-    # on-demand single-game request) is UNAFFECTED — on-demand analysis still works.
+    # Automatic background full-eval toggle. When False, the automatic picks (tier-3
+    # idle backlog and the tier-4/4b spare-capacity backfills on the bundled claim
+    # path) are suppressed. Tier-1 (explicit, on-demand single-game request) is
+    # UNAFFECTED, so on-demand analysis still works.
     # Default False (safe for dev/CI so a local backend doesn't pin every core on the
     # hundreds-of-thousands-game backlog). Prod opts in explicitly via its .env.
     EVAL_AUTO_DRAIN_ENABLED: bool = False
 
-    # Best-move backfill toggle (Phase 176 BACK-01, D-05). When False (default),
+    # Best-move backfill toggle. When False (default),
     # the tier-4b spare-capacity lottery is suppressed even when
     # EVAL_AUTO_DRAIN_ENABLED is True (BOTH gates are checked — see
     # claim_eval_job's bundled scope=None path). Independent from
     # EVAL_AUTO_DRAIN_ENABLED so prod can pause best-move backfill without
-    # disabling all idle drain. Phase 177 BACK-02/03 added a dedicated
-    # /bestmove-lease + /bestmove-submit endpoint pair (mirroring the flaw-blob
-    # isolation pattern), so best-move backfill IS now shed-able to the remote
-    # worker fleet — this flag gates BOTH the in-process backend drain AND the
-    # worker-facing lease endpoint (single switch, D-04), not just backend load.
-    # Default False; enable in prod deliberately after observing backend
-    # RSS/CPU (mirrors 174 D-03b's posture). Do NOT enable in prod as part of
-    # this merge — it is a separate, observed flag flip.
+    # disabling all idle drain. A dedicated /bestmove-lease + /bestmove-submit
+    # endpoint pair (mirroring the flaw-blob isolation pattern) makes best-move
+    # backfill shed-able to the remote worker fleet, so this flag gates BOTH the
+    # in-process backend drain AND the worker-facing lease endpoint (single
+    # switch), not just backend load.
+    # Default False; enable in prod deliberately after observing backend RSS/CPU.
     BEST_MOVE_BACKFILL_ENABLED: bool = False
 
-    # Benchmark full-game-analysis lane selection gate (Phase 212 BENCHLANE-02,
-    # D-09). When True, every lottery/claim lane the worker fleet can reach --
+    # Benchmark full-game-analysis lane selection gate. When True, every
+    # lottery/claim lane the worker fleet can reach --
     # tier-3 derived, tier-4 blob, tier-4b bestmove (eval_queue_service.py), and
     # the entry-ply probe + canonical claim (eval_remote.py / eval_entry.py,
-    # 212-07, which also covers the in-process server-pool drain since it shares
+    # which also covers the in-process server-pool drain since it shares
     # the same claim) -- narrows its candidate query to games present in
     # benchmark_selection. See app/services/eval_utils.py's selection_gate_clause().
     # The explicit tier-1/2 queue (eval_jobs) is deliberately NOT gated: it is fed
@@ -117,8 +115,8 @@ class Settings(BaseSettings):
     # False (safe for dev/CI/prod).
     BENCHMARK_SELECTION_GATE_ENABLED: bool = False
 
-    # Eval-source homogenization for the benchmark full-game-analysis lane
-    # (Phase 212 BENCHLANE-05, D-03). When True, the derived
+    # Eval-source homogenization for the benchmark full-game-analysis lane.
+    # When True, the derived
     # is_lichess_eval_game boolean is forced False everywhere it is computed
     # (see app/services/eval_utils.py's derive_is_lichess_eval_game -- the
     # SINGLE derivation point all seven call sites route through). This makes
@@ -129,7 +127,7 @@ class Settings(BaseSettings):
     # evals -- so a §6-style analyzed-vs-unanalyzed comparison is not
     # confounded by eval source. games.lichess_evals_at itself is
     # deliberately left untouched by this flag and remains the §6 selection
-    # marker (D-04) -- only the derived boolean is overridden. Accepted
+    # marker -- only the derived boolean is overridden. Accepted
     # knock-on: this also drops the eval_drain.py best-move identity-key
     # substitution that keeps lichess's stored best_move as the candidate
     # identity key, so the engine's own best move becomes the identity key
@@ -139,13 +137,13 @@ class Settings(BaseSettings):
     # Default False (safe for dev/CI/prod).
     BENCHMARK_HOMOGENIZE_EVAL_SOURCE: bool = False
 
-    # Operator token for the remote eval worker (Phase 120 SEED-048).
+    # Operator token for the remote eval worker.
     # Empty string = endpoints return 403 (disabled in dev/CI).
     # Prod sets a strong random secret in .env.
     EVAL_OPERATOR_TOKEN: str = ""
 
-    # Operator token the remote eval worker presents to its FALLBACK backend
-    # (Phase 212 D-13), i.e. the benchmark instance's own EVAL_OPERATOR_TOKEN.
+    # Operator token the remote eval worker presents to its FALLBACK backend,
+    # i.e. the benchmark instance's own EVAL_OPERATOR_TOKEN.
     # Read ONLY by scripts/remote_eval_worker.py as the default for
     # --fallback-token; no backend ever reads this name, so unlike the benchmark
     # gate flags it is safe to keep in .env -- a dev backend loading the same
@@ -153,7 +151,7 @@ class Settings(BaseSettings):
     # failing that, the primary token) applies as before.
     EVAL_FALLBACK_OPERATOR_TOKEN: str = ""
 
-    # The benchmark :8001 instance's OWN operator token (Phase 212). Read by
+    # The benchmark :8001 instance's OWN operator token. Read by
     # bin/run_benchmark_backend.sh, which passes it as that process's
     # EVAL_OPERATOR_TOKEN on the command line; declared here so it is documented
     # alongside the other two rather than being an undeclared .env key. No
@@ -162,25 +160,25 @@ class Settings(BaseSettings):
     # boxes present the same value as EVAL_FALLBACK_OPERATOR_TOKEN.
     EVAL_BENCHMARK_OPERATOR_TOKEN: str = ""
 
-    # Expected Stockfish version string (Phase 120 D-5 version gate).
+    # Expected Stockfish version string (version gate).
     # e.g. "Stockfish 18". Empty = any version accepted (dev/CI).
     # Prod sets to the version installed on the server.
     EXPECTED_SF_VERSION: str = ""
 
-    # VAPID keypair for Web Push (Phase 201, PUSH-03, D-03). Empty PUBLIC or
+    # VAPID keypair for Web Push. Empty PUBLIC or
     # PRIVATE key means push is disabled: GET /push/vapid-public-key 404s,
     # POST /push/subscribe 503s, no send is ever attempted. Every dev/test/CI
     # run works with zero setup. Generate a real pair with
     # `uv run python scripts/gen_vapid_keys.py` and paste into
     # /opt/flawchess/.env only — never committed, never auto-generated into
     # the database (that would put the private key in every DB dump).
-    # Rotating the key invalidates every existing subscription (D-02) — rotate
+    # Rotating the key invalidates every existing subscription — rotate
     # only on key compromise, and truncate push_subscriptions when you do.
     VAPID_PUBLIC_KEY: str = ""
     VAPID_PRIVATE_KEY: str = ""
     VAPID_SUBJECT: str = "push@flawchess.com"
 
-    # Resend transactional email (Phase 207, D-03). Empty string = unconfigured:
+    # Resend transactional email. Empty string = unconfigured:
     # email_service.is_email_configured() returns False and every send is a
     # no-op, mirroring the VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY "empty = disabled"
     # contract above. Every dev/test/CI run works with zero setup.
@@ -196,7 +194,7 @@ settings = Settings()
 def assert_secret_key_configured() -> None:
     """Fail closed if a non-development environment still uses the default SECRET_KEY.
 
-    Mirrors the D-22 deploy-blocker pattern in get_insights_agent(): called from the
+    Mirrors the deploy-blocker pattern in get_insights_agent(): called from the
     app lifespan at startup (NOT at import time) so maintenance scripts and Alembic —
     which import ``settings`` but never sign tokens — are unaffected. A default
     SECRET_KEY in production means every JWT is forgeable, so we abort startup rather
@@ -213,7 +211,7 @@ def assert_secret_key_configured() -> None:
         )
 
 
-# Maintenance scripts (backfill_eval, reindex_table, gen_benchmarks, …) accept a
+# Maintenance scripts (reindex_table, gen_benchmarks, …) accept a
 # `--db` flag and resolve the connection URL through here, so the DATABASE_URL_*
 # settings above are the one place credentials/hosts/ports are configured.
 DbTarget = Literal["dev", "test", "prod", "benchmark"]

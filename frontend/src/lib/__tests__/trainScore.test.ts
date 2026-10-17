@@ -1,10 +1,9 @@
 /**
- * trainScore.test.ts — Phase 190 Plan 05 Task 3 (SOLV-07), written BEFORE
- * lib/trainScore.ts (RED). One case per behaviour bullet, plus the explicit
+ * trainScore.test.ts: one case per behaviour, plus the explicit
  * threshold-boundary/adjacency, display/band-agreement, empty-session, and
- * shuffled-results cases the plan's acceptance criteria call out by name.
+ * shuffled-results cases.
  *
- * SEED-119: scorePuzzle's second argument widened from a boolean to a
+ * scorePuzzle's second argument widened from a boolean to a
  * TrainMoveTier and TRAIN_POINTS_PER_PUZZLE went 2 -> 3 (1 guess + 0-2
  * move). moveTierFromSeverity is the ONLY translation from the project's
  * existing severity classifier into a score tier — its equivalence test
@@ -159,7 +158,7 @@ describe('displaySessionPercentage — flooring and display/band agreement', () 
   });
 });
 
-describe('SEED-119 scenario checks', () => {
+describe('move-tier scenario checks', () => {
   it('perfect guesses with every move an inaccuracy floors to 66% and rates yellow', () => {
     const SOLVED_COUNT = 3;
     const perPuzzleScores = Array.from({ length: SOLVED_COUNT }, () =>

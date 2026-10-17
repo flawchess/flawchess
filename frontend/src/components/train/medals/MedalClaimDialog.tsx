@@ -1,14 +1,14 @@
 /**
  * MedalClaimDialog — the claim-and-celebrate dialog listing every unclaimed
- * weekly medal (Phase 231, D-11/D-13). Presentational: the host owns fetching
- * and the claim POST, the admin demo renders it from fixtures.
+ * weekly medal. Presentational: the host owns fetching and the claim POST,
+ * the admin demo renders it from fixtures.
  *
  * Claim and dismiss (close button, Escape, outside click) each call exactly one
  * of onClaim / onDismiss with the shown keys; a settled ref keeps one open
  * cycle to one callback even if Radix reports a close after a Claim. Names
  * never appear here, only the viewer's own medals.
  *
- * Claim path (D-12, D-13), in this order inside the tap: unlockAudio() (iOS
+ * Claim path, in this order inside the tap: unlockAudio() (iOS
  * only allows Web Audio after a gesture), then the existing 'game-win' chime
  * once per tap whatever the medal count (unless muted), then confetti (unless
  * reduced motion; the canvas outlives the dialog), then the guarded onClaim.
@@ -16,7 +16,7 @@
  *
  * `muted` and `reducedMotion` arrive as props (not read from hooks here) so the
  * demo can simulate them; playSound also checks the persisted mute preference
- * itself. No analytics event fires for Claim or dismiss (locked): the
+ * itself. No analytics event fires for Claim or dismiss: the
  * celebrated_at row is the record.
  */
 import { useEffect, useRef } from 'react';

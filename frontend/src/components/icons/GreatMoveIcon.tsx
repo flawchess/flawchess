@@ -1,8 +1,8 @@
 /**
  * Great-move badge icon — a white "!" glyph on a blue (`GREAT_GLYPH`) dot,
- * marking a "great move" (Phase 175, SEED-108): a played move that is the
+ * marking a "great move": a played move that is the
  * only good move in the position (same C2 gate as gem) and one a human at
- * the selected rating rarely finds, but not as rarely as a gem (D-01: gem =
+ * the selected rating rarely finds, but not as rarely as a gem (gem =
  * maia_prob <= 0.20, great = maia_prob in (0.20, 0.50]).
  *
  * Shape-compatible with `SeverityGlyphIconProps`/`GemIconProps` (`className`,
@@ -11,7 +11,7 @@
  * glyphs and the gem badge.
  *
  * Unlike `GemIcon` — which draws lucide's MIT-licensed `Gem` icon — the great
- * badge's inner glyph is a CUSTOM inline SVG "!" (D-02): chess.com's "Great
+ * badge's inner glyph is a CUSTOM inline SVG "!": chess.com's "Great
  * Move" mark has no direct lucide equivalent, so it's hand-drawn as a
  * vertical bar + dot, matching `SeverityGlyphIcon`'s from-scratch-glyph
  * approach.
@@ -42,7 +42,7 @@ export function GreatMoveIcon({
       aria-hidden={ariaHidden}
       role="img"
     >
-      {/* Accessible name (mirrors GemIcon's 163-REVIEW IN-02 fix): aria-hidden
+      {/* Accessible name (mirrors GemIcon): aria-hidden
           defaults to true, but a caller passing false would otherwise expose an
           UNNAMED role="img" to screen readers — the badge conveys meaning only
           via color/shape. */}

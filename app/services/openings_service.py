@@ -20,7 +20,7 @@ from app.repositories.openings_repository import (
     HASH_COLUMN_MAP,
     query_matching_games,
     query_next_moves,
-    query_resulting_position_wdl,  # Phase 80.1 D-02 — resulting-position WDL
+    query_resulting_position_wdl,  # Resulting-position WDL
     query_time_series,
     query_wdl_counts,
 )
@@ -65,13 +65,12 @@ def _build_wdl_stats(
     """Construct WDLStats with score, confidence, p_value, and Wilson 95% CI.
 
     Computes score = (W + 0.5·D) / total via compute_confidence_bucket. The CI
-    uses Wilson bounds (shared `wilson_bounds`) — Wald was clamping to [0, 1] at
-    the boundaries and degenerated to width 0 at p=0/1, so it was replaced with
-    Wilson which is well-defined at the boundaries and always contains p.
+    uses Wilson bounds (shared `wilson_bounds`): well-defined at p=0/1 and always
+    containing p.
     When total == 0, all stats are neutral defaults (score=0.5, CI=[0.5, 0.5]).
 
-    `last_played_at` is the MAX(games.played_at) across the contributing games
-    (quick task 260508-r61); the FE renders a "Last played: <relative>" line
+    `last_played_at` is the MAX(games.played_at) across the contributing games;
+    the FE renders a "Last played: <relative>" line
     in the WDL confidence tooltip when it is non-None.
     """
     if total > 0:
@@ -162,10 +161,10 @@ async def analyze(
 
     stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=wdl_row.last_played_at)
 
-    # --- MG-entry eval pillar (quick task 260508-f9o) ---
-    # Reuse the same helper + finalizer used by stats_service.get_most_played_openings
-    # (lines 405-420) so the Moves-tab "Results played as" section gets the same
-    # avg_eval_pawns / CI / confidence triple shown by the Stats and Insights cards.
+    # --- MG-entry eval pillar ---
+    # Same helper + finalizer as stats_service.get_most_played_openings so the
+    # Moves-tab "Results played as" section gets the same avg_eval_pawns / CI /
+    # confidence triple shown by the Stats and Insights cards.
     # AsyncSession is not safe for asyncio.gather (CLAUDE.md) — sequential await.
     if request.target_hash is not None:
         phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
@@ -185,9 +184,9 @@ async def analyze(
         )
         pe = phase_entry_metrics.get(request.target_hash)
         if pe is not None and pe.eval_n_mg > 0:
-            # Mirrors stats_service.py:405-420 verbatim. H0: mean == 0 cp
+            # Mirrors stats_service.get_most_played_openings' finalizer. H0: mean == 0 cp
             # (engine-balanced); the per-color baseline is a display tick on
-            # the bullet chart, not the test reference (260504-rvh).
+            # the bullet chart, not the test reference.
             confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
                 pe.eval_sum_mg,
                 pe.eval_sumsq_mg,
@@ -271,7 +270,7 @@ def _in_window(
     None lower bound means "from the beginning of time", None upper bound
     means "to the end of time". Both None means always in-window (open range).
     Compares on date only — played_at.date() strips the time component so
-    "end of day to_date" semantics match the D-10 repository convention.
+    "end of day to_date" semantics match the repository convention.
     """
     game_date = played_at.date()
     if from_date is not None and game_date < from_date:
@@ -289,10 +288,10 @@ def _build_bookmark_time_series(
 ) -> BookmarkTimeSeries:
     """Build one bookmark's rolling-window time series from its chronological rows.
 
-    Extracted from get_time_series's per-bookmark loop body (216-06, zero
+    Extracted from get_time_series's per-bookmark loop body (zero
     behavior change): `rows` are (played_at, result, user_color) tuples
     ordered by played_at ASC, spanning full history so pre-window games warm
-    the rolling average (D-19 amendment) even though only in-window points
+    the rolling average even though only in-window points
     and WDL totals are emitted.
     """
     results_so_far: list[str] = []  # "win", "draw", or "loss" per game
@@ -320,7 +319,7 @@ def _build_bookmark_time_series(
             window_size=ROLLING_WINDOW_SIZE,
         )
 
-        # D-19 amendment: gate emission and totals on the date window.
+        # Gate emission and totals on the date window.
         if _in_window(played_at, from_date, to_date):
             if outcome == "win":
                 total_wins += 1
@@ -359,7 +358,7 @@ async def get_time_series(
     have been played). Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are
     included from the start.
 
-    D-19 amendment (2026-06-13): when from_date/to_date are set, emitted
+    When from_date/to_date are set, emitted
     TimeSeriesPoints and WDL totals cover only in-window games; the rolling
     average is still warmed from pre-window games (full chronological history
     is loaded so trailing averages anchor correctly). When from_date/to_date
@@ -408,7 +407,7 @@ async def _fetch_result_fens(
         return {}
 
     # One sample (full_hash, game_id, ply) per result_hash.
-    # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
+    # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used.
     stmt = (
         select(GamePosition.full_hash, GamePosition.game_id, GamePosition.ply)
         .where(
@@ -511,12 +510,12 @@ async def get_next_moves(
     if not move_rows:
         return NextMovesResponse(position_stats=position_stats, moves=[])
 
-    # --- Resulting-position WDL (batch) — Phase 80.1 D-02 ---
+    # --- Resulting-position WDL (batch) ---
     # Single round trip returns {result_hash: (wins, draws, losses, last_played_at)}.
     # trans_counts (the move-tab "Transposition count" popover, position-total games
     # reaching result_hash via any move order) is derived inline from wins+draws+losses
     # since every game has exactly one result. Filter parameters mirror
-    # query_next_moves exactly to preserve filter parity (Pitfall 1 from RESEARCH.md).
+    # query_next_moves exactly to preserve filter parity.
     result_hashes = list({row.result_hash for row in move_rows})
     pos_wdl = await query_resulting_position_wdl(
         session=session,
@@ -538,17 +537,17 @@ async def get_next_moves(
     result_fens = await _fetch_result_fens(session, user_id, result_hashes)
 
     # --- Build move entries ---
-    # Phase 80.1 D-01/D-02: game_count stays move-played; W/D/L flip to
+    # game_count stays move-played; W/D/L flip to
     # resulting-position WDL (combined across all games visiting result_hash,
-    # including transpositions). The two denominators (gc and pos_total)
+    # including transpositions). The two denominators (move_game_count and pos_total)
     # legitimately diverge when transpositions exist — see TranspositionInfo
     # popover in MoveExplorer.tsx for the user-facing explanation.
     moves: list[NextMoveEntry] = []
     for row in move_rows:
-        gc = row.game_count  # move-played, stays per D-01
+        move_game_count = row.game_count  # move-played
         pos = pos_wdl.get(row.result_hash)
         if pos is None:
-            # Filter mismatch defensive fallback (Pitfall 4 from RESEARCH.md).
+            # Filter mismatch defensive fallback.
             # Should not occur if query_resulting_position_wdl applies identical
             # filters to query_next_moves; logged so it surfaces in dev/prod.
             logger.warning(
@@ -556,7 +555,7 @@ async def get_next_moves(
                 row.result_hash,
             )
             w, d, lo = row.wins, row.draws, row.losses
-            pos_total = gc
+            pos_total = move_game_count
         else:
             w, d, lo, _last = pos
             pos_total = w + d + lo
@@ -565,14 +564,14 @@ async def get_next_moves(
         dp = round(d / pos_total * 100, 1) if pos_total > 0 else 0.0
         lp = round(lo / pos_total * 100, 1) if pos_total > 0 else 0.0
         score = (w + 0.5 * d) / pos_total if pos_total > 0 else 0.5
-        # Move Explorer rows are sorted by frequency or win_rate (not Wald CI bound),
+        # Move Explorer rows are sorted by frequency or win_rate (not a CI bound),
         # so SE is not needed here — `_se` underscore signals "intentionally unused".
         confidence, p_value, _se = compute_confidence_bucket(w, d, lo, pos_total)
         moves.append(
             NextMoveEntry(
                 move_san=row.move_san,
-                game_count=gc,  # move-played per D-01
-                wins=w,  # resulting-position per D-02
+                game_count=move_game_count,  # move-played
+                wins=w,  # resulting-position
                 draws=d,
                 losses=lo,
                 win_pct=wp,
@@ -580,14 +579,14 @@ async def get_next_moves(
                 loss_pct=lp,
                 result_hash=str(row.result_hash),
                 result_fen=result_fens.get(row.result_hash, ""),
-                transposition_count=trans_counts.get(row.result_hash, gc),
+                transposition_count=trans_counts.get(row.result_hash, move_game_count),
                 score=score,
                 confidence=confidence,
                 p_value=p_value,
                 # MAX(played_at) across all games where the user played this
                 # candidate move from the queried position (move-played
                 # semantics). Drives the move-explorer Score popover's
-                # "Last played: <relative>" line (quick task 260508-r61).
+                # "Last played: <relative>" line.
                 last_played_at=row.last_played_at,
             )
         )

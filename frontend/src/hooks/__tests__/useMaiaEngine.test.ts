@@ -1,22 +1,22 @@
 // @vitest-environment jsdom
 /**
  * useMaiaEngine unit tests, driven via a mocked `maiaWorkerHost` lease
- * (quick 260729-sod, FIX 3 — this hook no longer constructs a Worker
+ * (this hook no longer constructs a Worker
  * directly; it acquires a lease from the shared host).
  *
- * Behaviors verified (151-04-PLAN.md Task 3, + FIX 3 rewiring):
+ * Behaviors verified:
  * 1. Idle (no lease) until enabled.
  * 2. Lease acquisition with source 'maia-worker' and the requested priority.
  * 3. isReady flips false->true once the lease's whenReady() resolves.
  * 4. Adaptive debounce: settled FEN fires analyze with the exact selectedElo rung first
- *    (quick 260906-gu2 two-phase ladder), then the remaining ladder rungs.
+ *    (two-phase ladder), then the remaining ladder rungs.
  * 5. Rapid successive FEN changes coalesce to one analyze for the final FEN.
  * 6. Stale-result discard: a result for a superseded FEN is ignored.
  * 7. Cache hit for a previously-seen FEN skips a second lease round-trip.
  * 8. Tab-hide pause: no analyze while hidden; re-analyzes on visible.
  * 9. Unmount releases the lease.
  * 10. wdl / expectedScoreAtSelectedElo derive from the ladder rung nearest selectedElo.
- * 11. onFatal (worker death, quick 260729-sod FIX 3) sets hasFailed and resets isReady.
+ * 11. onFatal (worker death) sets hasFailed and resets isReady.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -134,8 +134,8 @@ async function resolveLatest(lease: FakeLease, fen: string): Promise<void> {
 /**
  * Resolves the latest analyze() call with a result payload matching EXACTLY
  * the ELOs that call actually requested (not `resolveLatest`'s default full
- * 21-rung fabrication) — needed to test the coarse/fill split (Phase 219-03,
- * D-11) honestly: a real worker response only ever carries the rungs it was
+ * 21-rung fabrication) — needed to test the coarse/fill split
+ * honestly: a real worker response only ever carries the rungs it was
  * asked for.
  */
 async function resolveLatestExact(lease: FakeLease): Promise<void> {
@@ -146,10 +146,10 @@ async function resolveLatestExact(lease: FakeLease): Promise<void> {
   });
 }
 
-/** The even-ladder-index rungs (D-11's coarse target set for a non-ladder-value `selectedElo`). */
+/** The even-ladder-index rungs (the coarse target set for a non-ladder-value `selectedElo`). */
 const COARSE_EVEN_ELOS = MAIA_ELO_LADDER.filter((_, i) => i % 2 === 0);
 
-/** The odd-ladder-index rungs (D-11's fill target set once the coarse pass has landed). */
+/** The odd-ladder-index rungs (the fill target set once the coarse pass has landed). */
 const FILL_ODD_ELOS = MAIA_ELO_LADDER.filter((_, i) => i % 2 !== 0);
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -158,8 +158,8 @@ describe('useMaiaEngine', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     stubHost();
-    // The shared policy cache is a module-scoped singleton (Phase 194
-    // CACHE-05) — clear it so no test in this file leaks state.
+    // The shared policy cache is a module-scoped singleton;
+    // clear it so no test in this file leaks state.
     clearMaiaPolicyCache();
   });
 
@@ -181,7 +181,7 @@ describe('useMaiaEngine', () => {
     );
   });
 
-  it('honors priority: false (e.g. useGemSweep, quick 260729-sod FIX 3)', () => {
+  it('honors priority: false (e.g. useGemSweep)', () => {
     renderHook(() => useMaiaEngine({ fen: null, enabled: true, selectedElo: 1500, priority: false }));
     expect(acquireMaiaWorker).toHaveBeenCalledWith(expect.objectContaining({ priority: false }));
   });
@@ -193,7 +193,7 @@ describe('useMaiaEngine', () => {
     expect(result.current.isReady).toBe(true);
   });
 
-  it('settled FEN fires analyze with the exact selectedElo rung first (quick 260906-gu2), then the coarse pass, then the fill pass (Phase 219-03, D-11)', async () => {
+  it('settled FEN fires analyze with the exact selectedElo rung first, then the coarse pass, then the fill pass', async () => {
     vi.advanceTimersByTime(200); // Date.now() >> 0 so the first FEN is a "settled move".
     const { result } = renderHook(() => useMaiaEngine({ fen: TEST_FEN, enabled: true, selectedElo: 1550 }));
     await driveReady(currentLease);
@@ -247,7 +247,7 @@ describe('useMaiaEngine', () => {
     expect(analyzeMessages(currentLease)).toHaveLength(3);
   });
 
-  it('a selectedElo that IS a ladder rung is excluded from the coarse request (already held) — D-11 ordering predicate', async () => {
+  it('a selectedElo that IS a ladder rung is excluded from the coarse request (already held) — ordering predicate', async () => {
     vi.advanceTimersByTime(200);
     // 1500 is an ODD-index ladder rung (index 9). Once the exact-rung phase
     // holds it, it must not appear a second time in the coarse batch, and the
@@ -273,7 +273,7 @@ describe('useMaiaEngine', () => {
     expect(fillMsg?.eloInputs).toEqual(FILL_ODD_ELOS.filter((elo) => elo !== 1500));
   });
 
-  it('ladderOnly + an odd-index ladder-value selectedElo: the coarse pass includes that exact rung (D-11 adjacency predicate)', async () => {
+  it('ladderOnly + an odd-index ladder-value selectedElo: the coarse pass includes that exact rung (adjacency predicate)', async () => {
     vi.advanceTimersByTime(200);
     // ladderOnly skips the exact-rung phase entirely, so 1500 (odd index) is
     // NOT already held when the coarse pass is planned — this is the one path
@@ -326,7 +326,7 @@ describe('useMaiaEngine', () => {
     // The prefetch result is cached (policy cache too) but never painted for the live position.
     expect(result.current.resultFen).toBe(TEST_FEN);
     expect(getCachedPolicy(TEST_FEN_2, 1550)).toBeDefined();
-    // Then the live position's COARSE pass (D-11) — 1550 is not a ladder
+    // Then the live position's COARSE pass — 1550 is not a ladder
     // value, so the coarse target set is the 11 even-index rungs.
     expect(analyzeMessages(currentLease)[2]).toEqual({ fen: TEST_FEN, eloInputs: COARSE_EVEN_ELOS });
     expect(result.current.isAnalyzing).toBe(true);
@@ -352,7 +352,7 @@ describe('useMaiaEngine', () => {
     expect(msgs[3]).toEqual({ fen: TEST_FEN_2, eloInputs: COARSE_EVEN_ELOS });
   });
 
-  it('ladderOnly: true skips the exact-rung phase and the prefetch, but still goes through the coarse/fill split (D-11, gem sweep contract)', async () => {
+  it('ladderOnly: true skips the exact-rung phase and the prefetch, but still goes through the coarse/fill split (gem sweep contract)', async () => {
     vi.advanceTimersByTime(200);
     const { result } = renderHook(() =>
       useMaiaEngine({ fen: TEST_FEN, enabled: true, selectedElo: 1550, prefetchFen: TEST_FEN_2, ladderOnly: true }),
@@ -507,9 +507,9 @@ describe('useMaiaEngine', () => {
     expect(result.current.perElo).toHaveLength(0);
   });
 
-  // ─── Coarse/fill pipeline split (Phase 219-03, D-11/D-12/D-13) ─────────────
+  // ─── Coarse/fill pipeline split ─────────────
 
-  it('the coarse-pass stale-FEN discard applies independently of the fill pass (D-11)', async () => {
+  it('the coarse-pass stale-FEN discard applies independently of the fill pass', async () => {
     vi.advanceTimersByTime(200);
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
@@ -543,7 +543,7 @@ describe('useMaiaEngine', () => {
     expect(result.current.perElo).toHaveLength(0);
   });
 
-  it('the fill-pass stale-FEN discard applies independently of the coarse pass (D-11)', async () => {
+  it('the fill-pass stale-FEN discard applies independently of the coarse pass', async () => {
     vi.advanceTimersByTime(200);
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
@@ -582,7 +582,7 @@ describe('useMaiaEngine', () => {
     expect(result.current.perElo).toHaveLength(0);
   });
 
-  it('a FEN with zero legal moves still reaches a complete 21-rung ladder without throwing (MAIAPERF-06 empty predicate)', async () => {
+  it('a FEN with zero legal moves still reaches a complete 21-rung ladder without throwing', async () => {
     vi.advanceTimersByTime(200);
     // Fool's Mate final position — white to move, checkmated, 0 legal moves.
     const CHECKMATE_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
@@ -609,7 +609,7 @@ describe('useMaiaEngine', () => {
     ).toBe(true);
   });
 
-  it('a cache hit for a previously-seen FEN skips a second lease round-trip — a complete cached ladder yields isLadderComplete on the FIRST render, no coarse request (D-13)', async () => {
+  it('a cache hit for a previously-seen FEN skips a second lease round-trip — a complete cached ladder yields isLadderComplete on the FIRST render, no coarse request', async () => {
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
       { initialProps: { fen: TEST_FEN } },
@@ -736,7 +736,7 @@ describe('useMaiaEngine', () => {
     expect(analyzeMessages(currentLease)[0]?.fen).toBe(TEST_FEN);
   });
 
-  it('resultFen reports the FEN the held curve belongs to, and clears with it (163-REVIEW WR-03)', async () => {
+  it('resultFen reports the FEN the held curve belongs to, and clears with it', async () => {
     vi.advanceTimersByTime(200); // first FEN settles immediately
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) => useMaiaEngine({ fen, enabled: true, selectedElo: 1500 }),
@@ -791,7 +791,7 @@ describe('useMaiaEngine', () => {
     expect(result.current.expectedScoreAtSelectedElo).toBeGreaterThan(0.9);
   });
 
-  // ─── Shared fen|elo policy cache write-through (Phase 194 CACHE-05) ────────
+  // ─── Shared fen|elo policy cache write-through ────────
 
   it('write-through populates the shared fen|elo policy cache with a UCI-keyed entry per ladder rung after a result commits', async () => {
     vi.advanceTimersByTime(200); // first FEN settles immediately
@@ -826,12 +826,12 @@ describe('useMaiaEngine', () => {
 
     // The 1500 rung the chart just wrote is directly readable via the shared
     // module — this is the exact seam maiaQueue.policy() reads through (see
-    // maiaQueue.test.ts's cross-consumer CACHE-05 assertion for the
+    // maiaQueue.test.ts's cross-consumer assertion for the
     // zero-analyze-call proof on that side).
     expect(getCachedPolicy(TEST_FEN, 1500)).toBeDefined();
   });
 
-  // ─── Disable-mid-inference cleanup (quick 260731-s0z, FIX-1) ───────────────
+  // ─── Disable-mid-inference cleanup ───────────────
 
   it('a disable while an analyze is in flight, followed by re-enable, leaves a later uncached FEN analyzable again', async () => {
     vi.advanceTimersByTime(200); // first FEN settles immediately
@@ -882,7 +882,7 @@ describe('useMaiaEngine', () => {
     expect(msgs.some((m) => m.fen === TEST_FEN_2)).toBe(true);
   });
 
-  // ─── Worker death (quick 260729-sod, FIX 3 — onFatal replaces the old onerror handler) ──
+  // ─── Worker death (onFatal replaces the old onerror handler) ──
 
   it('onFatal sets hasFailed and resets isReady', async () => {
     const { result } = renderHook(() => useMaiaEngine({ fen: null, enabled: true, selectedElo: 1500 }));
@@ -897,7 +897,7 @@ describe('useMaiaEngine', () => {
     expect(result.current.isReady).toBe(false);
   });
 
-  // ─── Dev-only pipeline timing (D-15 measurement harness, Phase 219-01) ─────
+  // ─── Dev-only pipeline timing (measurement harness) ─────
 
   describe('dev-only pipeline timing', () => {
     const TIMING_PREFIX = '[maia-timing]';

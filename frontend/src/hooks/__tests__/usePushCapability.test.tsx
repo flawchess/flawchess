@@ -18,7 +18,7 @@ vi.mock('@/lib/push', () => ({
 }));
 
 // Mock apiClient/pushApi at module level, preserving other exports via importActual
-// (mirrors useReadiness.test.tsx / D-12).
+// (mirrors useReadiness.test.tsx).
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
@@ -103,7 +103,7 @@ describe('usePushCapability — VAPID response shape guard (FLAWCHESS-9P)', () =
     expect(onErrorSpy).not.toHaveBeenCalled();
   });
 
-  it('a 404 resolves null / unavailable with no Sentry capture (existing D-12 branch, untouched)', async () => {
+  it('a 404 resolves null / unavailable with no Sentry capture (existing branch, untouched)', async () => {
     vi.mocked(pushApi.getVapidPublicKey).mockRejectedValue(makeAxiosError(404, { detail: 'not found' }));
     const onErrorSpy = vi.fn();
 

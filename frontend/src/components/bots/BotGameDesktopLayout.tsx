@@ -5,9 +5,7 @@ import { BotDrawOfferActions } from '@/components/bots/BotDrawOfferActions';
 import { resolvePlayerRow, type BotPlayerRowInputs } from '@/components/bots/botPlayerRow';
 import type { BotLineKey } from '@/lib/botGameCopy';
 
-/** Fixed width of the desktop right column (clocks + move list + controls) —
- * moved here from Bots.tsx (Phase 223, BOTVOICE-05) now that this component
- * owns the whole desktop layout; the page keeps none of this layout math. */
+/** Fixed width of the desktop right column (clocks + move list + controls). */
 const DESKTOP_SIDE_COLUMN_PX = 320;
 
 export interface BotGameDesktopLayoutProps extends BotPlayerRowInputs {
@@ -21,7 +19,7 @@ export interface BotGameDesktopLayoutProps extends BotPlayerRowInputs {
    * material tracks the board during scroll-back. */
   fen: string;
   botLine: BotLineKey | null;
-  /** True while the bot has a live outgoing draw offer (Phase 183, D-07). */
+  /** True while the bot has a live outgoing draw offer. */
   drawOfferLive: boolean;
   onAcceptDraw: () => void;
   onDeclineDraw: () => void;
@@ -33,8 +31,7 @@ export interface BotGameDesktopLayoutProps extends BotPlayerRowInputs {
 }
 
 /**
- * BotGameDesktopLayout — Phase 223 (BOTVOICE-05, D-11/D-12): replaces the
- * page's old `renderDesktopLayout` helper. Two stacked rows sharing the same
+ * BotGameDesktopLayout: two stacked rows sharing the same
  * board-column + side-column widths. The top row is the board (flanked
  * above and below by a `PlayerBar`, ordered by board orientation so the side
  * facing away from the user is on top) beside the avatar-and-bubble row over
@@ -46,8 +43,7 @@ export interface BotGameDesktopLayoutProps extends BotPlayerRowInputs {
  *
  * This component owns every branch the layout needs (orientation ordering,
  * the bubble/draw-offer construction; the guest gate on the user's rating
- * label lives in `resolvePlayerRow`) so `BotsGame` — pinned at its own
- * eslint complexity ceiling — gains none of them.
+ * label lives in `resolvePlayerRow`) so `BotsGame` gains none of them.
  */
 export function BotGameDesktopLayout({
   persona,

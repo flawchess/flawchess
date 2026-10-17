@@ -1,12 +1,12 @@
 """Flaw-delta zone registry: authoritative backend source for per-bullet zone constants.
 
-Backend is the single source of truth per Phase 115 D-07. The endpoint embeds
+Backend is the single source of truth. The endpoint embeds
 zone_lo / zone_hi / has_zone in every FlawBullet response so the frontend renders
 exactly what the registry stores. No TS codegen: the frontend does not commit
 these constants locally.
 
 The registry is keyed metric -> time control -> band, with its own band for each of
-bullet, blitz, rapid and classical (quick 261014-rux). The values are on a 0.01 grid
+bullet, blitz, rapid and classical. The values are on a 0.01 grid
 (the grid keeps a visible neutral band on the rare tags whose IQR is below 0.05; a
 coarser grid snapped those bands to zero width).
 
@@ -14,21 +14,21 @@ Basis: the section 5 whole-cohort run of 2026-10-14T18:22Z (every eval'd game of
 selected user, all four TCs, up to 1000 games per user per TC, at least 20 games per
 user x (ELO, TC) cell; per 100 user moves, per-user paired delta). Each band is
 symmetric_band() of that TC's own Q1/Q3: +-IQR/2 around 0, the half-width rounded up to
-the 0.01 grid (Phase 239 D-15). Per-TC everywhere is an owner decision (2026-10-14, rule
-B): the D-10 Cohen's-d verdict tests a shift of the MEAN between TCs (every flaw TC d is
+the 0.01 grid. Per-TC everywhere is an owner decision (2026-10-14): the
+Cohen's-d verdict tests a shift of the MEAN between TCs (every flaw TC d is
 below 0.5), but a band is a SPREAD, and the per-TC IQRs differ 3x to 15x (bullet
 narrowest, classical widest). A thin or degenerate TC level would fall back to the pooled
 band; none did. No Elo keying. The full-analysis lane is not used for flaws (its
 100-games-per-user cap makes the per-user means mostly sampling noise);
-tactic_delta_zones.py does use the lane. Bands are centred on 0 because the D-14
+tactic_delta_zones.py does use the lane. Bands are centred on 0 because the
 significance gate tests the gap against 0. Evidence: reports/benchmark/benchmarks-latest.md
 section 5.
 
 Sign convention: negative delta = fewer flaws than the opponent = good. No sign flip
-is stored; the UI draws lower (better) values on the LEFT (D-14 direction flip).
+is stored; the UI draws lower (better) values on the LEFT (direction flip).
 
-The module also holds the crossed tempo x phase registry (TEMPO_PHASE_ZONES, quick
-261014-qj8) for the 3x3 heatmap cells, kept apart from the 12 bullets.
+The module also holds the crossed tempo x phase registry (TEMPO_PHASE_ZONES) for the
+3x3 heatmap cells, kept apart from the 12 bullets.
 
 This module is pure Python with no DB or I/O. All functions are synchronous
 and side-effect free.
@@ -56,7 +56,7 @@ FlawDeltaMetric = Literal[
     "squandered",
 ]
 
-# Quick 261014-pb9: tempo x phase crossed cells. Same spellings as the FlawDeltaMetric
+# Tempo x phase crossed cells. Same spellings as the FlawDeltaMetric
 # tags so the frontend reuses its FLAW_GAP_META labels. Defined here (not in
 # app.schemas.library) because app.schemas.library imports this module.
 FlawTempoMetric = Literal["low_clock", "hasty", "unrushed"]
@@ -79,11 +79,11 @@ FLAW_DELTA_METRICS: Final[tuple[FlawDeltaMetric, ...]] = (
 )
 
 # Time controls that own a TACTIC zone band (tactic_delta_zones.py). Blitz and bullet are
-# not here (Phase 239 D-08): their full-analysis lane tranches are unfinished. The flaw and
+# not here: their full-analysis lane tranches are unfinished. The flaw and
 # tempo x phase registries below are keyed by all four TCs and do not use these two names.
 ZoneTc = Literal["rapid", "classical"]
 
-# D-08/D-09 stopgap for the tactic registry only: blitz and bullet read the rapid zones.
+# Stopgap for the tactic registry only: blitz and bullet read the rapid zones.
 ZONE_TC_FOR: Final[Mapping[TimeControlBucket, ZoneTc]] = {
     "bullet": "rapid",
     "blitz": "rapid",
@@ -94,10 +94,11 @@ ZONE_TC_FOR: Final[Mapping[TimeControlBucket, ZoneTc]] = {
 
 @dataclass(frozen=True)
 class ZoneBand:
-    """Typical-range bounds of one flaw-delta bullet, per 100 user moves.
+    """Typical-range bounds of one zone band, in the owning registry's unit (per 100 user
+    moves for flaws, per 100 games for tactics).
 
     zone_lo / zone_hi: -h / +h with h = IQR / 2 of the per-user paired delta, rounded up
-    to the 0.01 grid (D-15, symmetric_band).
+    to the 0.01 grid (symmetric_band).
     """
 
     zone_lo: float
@@ -111,7 +112,7 @@ _BAND_GRID_FLOAT_DIGITS: Final[int] = 6
 
 
 def symmetric_band(q1: float, q3: float) -> ZoneBand:
-    """+-IQR/2 around 0 from the measured quartiles, half-width rounded up to 0.01 (D-15)."""
+    """+-IQR/2 around 0 from the measured quartiles, half-width rounded up to 0.01."""
     half_steps = math.ceil(
         round((q3 - q1) / 2 * _BAND_GRID_STEPS_PER_UNIT, _BAND_GRID_FLOAT_DIGITS)
     )
@@ -120,7 +121,7 @@ def symmetric_band(q1: float, q3: float) -> ZoneBand:
 
 
 # Per-TC quartiles (per 100 user moves, 3 dp) from the 2026-10-14 section 5 run, made
-# symmetric by symmetric_band (D-15). Generated, not hand-tuned: re-derive from a new run.
+# symmetric by symmetric_band. Generated, not hand-tuned: re-derive from a new run.
 FLAW_DELTA_ZONES: Final[Mapping[FlawDeltaMetric, Mapping[TimeControlBucket, ZoneBand]]] = {
     # Severity family
     "mistake": {
@@ -207,10 +208,10 @@ def flaw_delta_zone(metric: FlawDeltaMetric, tc: TimeControlBucket) -> ZoneBand:
     return FLAW_DELTA_ZONES[metric][tc]
 
 
-# Quick 261014-qj8: benchmark bands for the crossed tempo x phase heatmap cells.
+# Benchmark bands for the crossed tempo x phase heatmap cells.
 #
 # Basis and rule: the same section 5 whole-cohort run and per-TC rule as FLAW_DELTA_ZONES,
-# measured by chapter5 section 5.16 (quick 261014-rux; supersedes the qj8 probe). Viability
+# measured by chapter5 section 5.16. Viability
 # rule from chapter5 (pooled IQR not degenerate AND at least 50% of user-cells with a player
 # event): 7 of 9 cells pass. low_clock x opening (1.7% nonzero, degenerate) and low_clock x
 # middlegame (46.5% nonzero) have no band (None).

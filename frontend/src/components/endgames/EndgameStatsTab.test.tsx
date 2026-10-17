@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 validation rows D-10 (empty ranked sample), D-01 (filter-free ranked
- * hook) and D-00h (one synced TC across every section), plus the per-TC
- * timelines (D-03, D-00i). The ranked hook is mocked.
+ * Empty ranked sample, filter-free ranked hook and one synced TC across every
+ * section, plus the per-TC
+ * timelines. The ranked hook is mocked.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,11 +54,11 @@ vi.mock('@/components/insights/EndgameInsightsBlock', () => ({
 
 // The charts keep their own tests; here they only expose the series they were given.
 vi.mock('@/components/charts/EndgameScoreOverTimeChart', () => ({
-  EndgameScoreOverTimeChart: ({ timeline, window }: { timeline: unknown[]; window: number }) => (
+  EndgameScoreOverTimeChart: ({ timeline, windowSize }: { timeline: unknown[]; windowSize: number }) => (
     <div
       data-testid="mock-score-chart"
       data-points={timeline.length}
-      data-window={window}
+      data-window={windowSize}
     />
   ),
 }));
@@ -122,7 +122,7 @@ const BLITZ_POINT = {
   non_endgame_opp_rating_avg: 1500,
 };
 
-describe('EndgameStatsTab empty ranked sample (D-10)', () => {
+describe('EndgameStatsTab empty ranked sample', () => {
   it('shows exactly one empty state that names what qualifies and links to the Games tab', () => {
     rankedState.data = buildRankedResponse([]);
     const { container } = renderTab();
@@ -138,7 +138,7 @@ describe('EndgameStatsTab empty ranked sample (D-10)', () => {
   });
 });
 
-describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
+describe('EndgameStatsTab with a ranked payload', () => {
   beforeEach(() => {
     rankedState.data = buildRankedResponse([
       buildRankedTc('blitz', {
@@ -163,7 +163,7 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
     ]);
   });
 
-  it('renders the Overall section for the D-12 default TC', () => {
+  it('renders the Overall section for the default TC', () => {
     renderTab();
     byId('endgame-overall-section');
     expect(byId('tc-switch-endgame-stats-rapid').getAttribute('aria-pressed')).toBe('true');
@@ -178,7 +178,7 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
     }
   });
 
-  it('switches every section from the one sticky switch (D-00h)', () => {
+  it('switches every section from the one sticky switch', () => {
     renderTab();
     for (const section of [
       'endgame-overall-section',
@@ -207,7 +207,7 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
     );
   });
 
-  it('feeds the timelines from the selected TC (D-03)', () => {
+  it('feeds the timelines from the selected TC', () => {
     renderTab();
     // Rapid is the default TC and has no score-gap series: the chart hides.
     expect(screen.queryByTestId('mock-score-chart')).toBeNull();

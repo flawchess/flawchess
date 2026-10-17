@@ -1,0 +1,41 @@
+# Plan 241-42 ledger: INVENTORY section 6 rows located in scopes/241-42.txt
+INV-L977: APPLIED EvalChart.tsx dot-renderer comment now says the all-severity map reveals inaccuracy dots on demand (badge highlight or cycling) and the tooltip shows flaw detail for every severity; re-verified: activeMarker comes from allMarkerMap with no severity gate
+INV-L978: APPLIED EvalChart.tsx tooltip-content comment drops "original" and the M/B-only claim; re-verified: all severities show their flaw-detail line
+INV-L979: APPLIED EvalChart.tsx slider comment says the half-thumb (8px) overhang; re-verified: SLIDER_THUMB_PX = 16
+INV-L980: APPLIED EvalChart.tsx onPointerDown comment now says the sticky hover is freed so the crosshair and tooltip track the thumb immediately (the controlled value binds to sliderPly, so the "pinned to hoverPly for one frame" claim was stale)
+INV-L981: APPLIED EvalChart.tsx tooltip tactic row comment says missed = teal, allowed = crimson; re-verified: TAC_MISSED teal and TAC_ALLOWED crimson in lib/theme.ts
+INV-L982: APPLIED EvalChart.tsx heightClass doc lists the real callers: h-[104px] desktop card, h-[114px] mobile card, h-[120px] analysis board (git grep heightClass=); the component docblock now says the default is h-[116px]
+INV-L983: APPLIED EvalChart.tsx floating-tooltip JSX comment says centered while hovering, bottom-aligned while slider-driven; re-verified against hoverDriven
+INV-L994: APPLIED LibraryGameCard.tsx header comment now only says formatDate is copied verbatim from GameCard.tsx; re-verified: formatTimeControl is imported from lib/formatTimeControl, not copied; the ":57 Standalone component" line is folded into the formatDate note
+INV-L995: APPLIED LibraryGameCard.tsx docblock describes a stacked body below lg and a board beside two lanes (eval chart + tags, MoveStats) at lg+; re-verified against the lg:hidden / hidden lg:flex bodies
+INV-L996: APPLIED LibraryGameCard.tsx contextChips comment drops the beta / non-beta layouts; chips render in the Context column of the tags block and the legend sits next to the "Context" label
+INV-L997: APPLIED LibraryGameCard.tsx renderDesktopExploreButton comment says the Analyze button opens /analysis?game_id=X[&ply=Y] with the scrubbed slider position, omitted when the slider rests on the end position; the comment names no identifier, so the later hoverPly rename (241-65) has nothing to update here
+INV-L998: APPLIED LibraryGameCard.tsx desktop body JSX comment describes eval chart + tags card beside the MoveStats card
+INV-L999: APPLIED LibraryGameCard.tsx desktop button-row JSX comment now reads "Analyze button row: own full-width row below the board + right-column row"
+INV-L1000: APPLIED LibraryGameCard.tsx MoveStats-column comment says the "Accuracy" label; re-verified: MoveStats.tsx renders "Accuracy"
+INV-L1001: APPLIED LibraryGameCard.tsx buildPerPly docblock says {fen, from, to} and that the corner glyph marks flaws and best-move tiers; the eval_cp post-move note is kept
+INV-L1013: APPLIED EvalChart.tsx touch overlay JSX comment names handleChartTouchStart/Move/End; re-verified: handleChartTouchScrub no longer exists
+INV-L1033: APPLIED EvalChart.tsx root-div comment drops "Tooltip z-lift hack removed (tooltip is gone)."
+INV-L1034: APPLIED EvalChart.tsx tooltipTactics comment now reads "Both orientations come from this ply's own flaw marker. Don't source 'missed' one ply early: the miss belongs to the flaw ply."
+INV-L1037: APPLIED LibraryGameCard.tsx outlinedPlies comment now says it is used only for the eval chart's white marker outline; sibling comments at the motifPlies, highlightedPlies, tacticMotifs and tacticFilterActive sites and the categoryPlies "(replaces the former ... memos)" aside were rewritten as the inventory row prescribes
+INV-L1038: APPLIED LibraryGameCard.tsx dropped the "overflowVisible and the z-30 hover hack" comment above <Card>; re-verified: the <Card> here passes no overflowVisible prop and no z-30 class is present
+# INV-L1318 (secondary LibraryGameCard.tsx): APPLIED the tacticDepthByPly comment now says family-less motifs (self-interference, clearance) instead of "promotion (28), self-interference (14)"; re-verified: promotion has a family (TACTIC_FAMILY_FOR_MOTIF) and clearance is suppressed per the lib/tacticComparisonMeta.ts module comment. Kept as a comment because the ledger parser accepts only plain INV-L<n> lines; the primary clause of INV-L1318 belongs to the plan that owns lib/tacticComparisonMeta.ts (241-35).
+INV-L960: DEFERRED to 241-65 (same commit as the flawId -> gameId rename, INVENTORY section 5); TacticMotifChip.tsx flawId doc line carries no tag, so nothing was stripped there
+INV-L984: APPLIED FlawCard.tsx docblock drops the "View game" button/modal paragraph and says an Analyze button below the body opens /analysis at the flaw ply; re-verified: buttonRow renders btn-flaw-analyze, no Game modal remains
+INV-L985: APPLIED FlawCard.tsx docblock says banded header with the opponent + exact-ply platform deep-link and a miniboard with the flaw-move arrow; re-verified: the header shows only "vs <opponent>", no 132px size claim (sizes are 132 mobile base and 200 desktop)
+INV-L986: APPLIED FlawCard.tsx mobile miniboard comment says 50%; re-verified: MOBILE_BOARD_WIDTH_FRACTION = 0.5 in hooks/useMiniBoardSize.ts
+INV-L987: APPLIED FlawCard.tsx desktop body JSX comment now lists the four-line metadata, severity + tactic/context tags and the Analyze button; re-verified against desktopMeta, tagsRow and buttonRow
+INV-L988: APPLIED SeverityBadge.tsx active-filter ring docblock says empty and both-selected both mean 'all severities' so the ring keys on length===1; re-verified: DEFAULT_FLAW_FILTER.severity is []
+INV-L989: APPLIED TacticMotifChip.tsx chip-size comment says text-xs deliberately deviates from the CLAUDE.md text-sm floor to match the flaw-tag chips (TagChip); the "documented exception" claim is gone
+INV-L990: APPLIED TacticMotifChip.tsx docblock says "The parent renders it only for a non-null motif." and drops the "Phase 128 D-07" tag
+INV-L991: APPLIED TagChip.tsx definition prop doc says "Defaults to true; every current call site passes false."; re-verified: LibraryGameCard, FlawCard and AnalysisTagsPanel all pass definition={false}
+INV-L992: APPLIED TagChip.tsx TagLegend variant doc (:270), label doc (:267) and docblock (:305) rewritten per the row; re-verified: every TagLegend call site passes variant="icon"
+INV-L993: APPLIED GapPopover.tsx testId doc says gap-popover-{metric-key}-tc-{tc}; re-verified: all five call sites build gap-popover-* ids and library-gap-* exists nowhere
+INV-L1014: APPLIED results/Pagination.tsx window comment says WINDOW_RADIUS; re-verified: WINDOW_SIZE does not exist
+INV-L1015: APPLIED MoveStats.tsx docblock reads "ALL 7 rows always render, even when every count is 0." and drops the bestMoveBadges clause; the same docblock lost its "Phase 179 Plan 02 ... Plan 03 wires" history and now says it is used by LibraryGameCard and AnalysisTagsPanel (INV-L1039)
+INV-L1031: APPLIED EvalCoverageBadge.tsx docblock says the pulsing CPU icon gates on analyzedN < totalN and not to use an eval_jobs in-flight count because tier-3 derived picks have no eval_jobs rows
+INV-L1032: APPLIED NoEngineAnalysisFlawsState.tsx docblock says there is no in-flight branch because an eval_jobs count misses tier-3 picks and the pulsing EvalCoverageBadge carries the 'analysis is running' signal
+INV-L1035: APPLIED FlawCard.tsx header comment line "viewGameButton removed from header; now lives in buttonRow below" deleted
+INV-L1036: APPLIED TagChip.tsx docblock line "Navigation removed: chips no longer deep-link to the flaws filtered view." deleted
+INV-L1039: APPLIED MoveStats.tsx docblock reads "MoveStats - shared, presentational two-sided move-classification component, used by LibraryGameCard and AnalysisTagsPanel."; re-verified: both import it
+INV-L1041: APPLIED AnalysisPendingPill.tsx docblock says it is shared by NoAnalysisState and the analysis board; re-verified: AnalysisTabs.tsx renders it twice

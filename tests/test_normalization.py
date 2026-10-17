@@ -427,14 +427,14 @@ class TestChesscomAccuracy:
         return game
 
     def test_accuracy_present(self):
-        """Both accuracies present -> white_accuracy and black_accuracy extracted."""
+        """Both accuracies present -> white_accuracy_imported and black_accuracy_imported extracted."""
         from app.services.normalization import normalize_chesscom_game
 
         game = self._make_chesscom_game(accuracies={"white": 83.53, "black": 76.21})
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy == 83.53
-        assert result.black_accuracy == 76.21
+        assert result.white_accuracy_imported == 83.53
+        assert result.black_accuracy_imported == 76.21
 
     def test_no_accuracies_key(self):
         """No accuracies key -> both accuracy fields are None."""
@@ -443,18 +443,18 @@ class TestChesscomAccuracy:
         game = self._make_chesscom_game()  # no accuracies key
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy is None
-        assert result.black_accuracy is None
+        assert result.white_accuracy_imported is None
+        assert result.black_accuracy_imported is None
 
     def test_partial_accuracies(self):
-        """Only white accuracy present -> white_accuracy=float, black_accuracy=None."""
+        """Only white accuracy present -> white_accuracy_imported=float, black_accuracy_imported=None."""
         from app.services.normalization import normalize_chesscom_game
 
         game = self._make_chesscom_game(accuracies={"white": 90.0})
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy == 90.0
-        assert result.black_accuracy is None
+        assert result.white_accuracy_imported == 90.0
+        assert result.black_accuracy_imported is None
 
     def test_lichess_no_accuracy(self):
         """Lichess game without analysis returns None accuracy."""
@@ -480,8 +480,8 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy is None
-        assert result.black_accuracy is None
+        assert result.white_accuracy_imported is None
+        assert result.black_accuracy_imported is None
 
     def test_lichess_with_accuracy(self):
         """Lichess game with analysis returns accuracy values."""
@@ -527,8 +527,8 @@ class TestChesscomAccuracy:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_accuracy == 94
-        assert result.black_accuracy == 82
+        assert result.white_accuracy_imported == 94
+        assert result.black_accuracy_imported == 82
 
 
 class TestLichessAnalysisMetrics:
@@ -578,8 +578,8 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_acpl == 15
-        assert result.black_acpl == 30
+        assert result.white_acpl_imported == 15
+        assert result.black_acpl_imported == 30
         assert result.white_inaccuracies == 1
         assert result.black_inaccuracies == 2
         assert result.white_mistakes == 0
@@ -611,8 +611,8 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_lichess_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert result.white_acpl is None
-        assert result.black_acpl is None
+        assert result.white_acpl_imported is None
+        assert result.black_acpl_imported is None
         assert result.white_inaccuracies is None
         assert result.black_inaccuracies is None
         assert result.white_mistakes is None
@@ -637,8 +637,8 @@ class TestLichessAnalysisMetrics:
         }
         result = normalize_chesscom_game(game, "Magnus", user_id=1)
         assert result is not None
-        assert "white_acpl" not in result
-        assert "black_acpl" not in result
+        assert "white_acpl_imported" not in result
+        assert "black_acpl_imported" not in result
         assert "white_inaccuracies" not in result
         assert "black_inaccuracies" not in result
         assert "white_mistakes" not in result
@@ -1229,7 +1229,7 @@ class TestNormalizeChesscomResult:
         assert result.result == "1/2-1/2"
 
     def test_unrecognized_result_pair_returns_none(self):
-        """PRUNE-03: an unmapped white/black result pair must NOT fabricate a draw.
+        """An unmapped white/black result pair must NOT fabricate a draw.
 
         Neither result string is a "win" or a known draw string, so
         _normalize_chesscom_result signals unknown (None) and the game
@@ -1491,7 +1491,7 @@ class TestBaseAndIncrementInNormalizers:
 
 
 # ---------------------------------------------------------------------------
-# Phase 210 (SEED-042): extract_initial_fen + the migration's SQL mirror
+# extract_initial_fen + the migration's SQL mirror
 # ---------------------------------------------------------------------------
 
 # A genuinely custom start: the Evans Gambit thematic position shape that caused
@@ -1505,7 +1505,7 @@ def _pgn_with_headers(headers: str, movetext: str = "1. e4 e5 *") -> str:
 
 
 class TestExtractInitialFen:
-    """extract_initial_fen is the single producer of games.initial_fen (D-06)."""
+    """extract_initial_fen is the single producer of games.initial_fen."""
 
     def test_setup_and_fen_pair_returns_the_fen(self):
         from app.services.normalization import extract_initial_fen
@@ -1526,7 +1526,7 @@ class TestExtractInitialFen:
         assert extract_initial_fen(pgn) is None
 
     def test_setup_naming_the_standard_start_returns_none(self):
-        """D-05: producers do emit this, and such a game is NOT custom-start.
+        """Producers do emit this, and such a game is NOT custom-start.
 
         It must stay eligible as an opening-transition sample representative,
         which is exactly what `initial_fen IS NULL` gates.
@@ -1626,7 +1626,7 @@ class TestNormalizersPopulateInitialFen:
 
     def test_pasted_custom_start_populates_from_the_derived_root(self):
         """normalize_pasted_game sources the root from game.board(), not the header
-        regex — but must land on the same value (D-06)."""
+        regex — but must land on the same value."""
         from app.services.normalization import normalize_pasted_game
 
         # Bxb4 is the main Evans Gambit acceptance from CUSTOM_START_FEN; a
@@ -1655,7 +1655,7 @@ class TestNormalizersPopulateInitialFen:
 
 
 class TestMigrationBackfillSqlMatchesPythonHelper:
-    """D-06: the Phase 210 migration's SQL backfill and extract_initial_fen must
+    """The migration's SQL backfill and extract_initial_fen must
     agree, or existing rows and newly-imported rows get different answers.
 
     The migration exports its own UPDATE as BACKFILL_SQL precisely so this test

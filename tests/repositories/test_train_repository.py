@@ -1,5 +1,5 @@
-"""Tests for app.repositories.train_repository's full POOL-07 composition and
-D-09/D-10/D-11/D-12 session lifecycle (Phase 189, Plan 04).
+"""Tests for app.repositories.train_repository's full session composition and
+session lifecycle.
 
 Coverage:
 - TestComposeSlots                         : compose_slots pure arithmetic (sums to n,
@@ -7,31 +7,31 @@ Coverage:
 - test_full_session_is_nine_sr_and_three_herrings : the default 75/25 mix with
                                               plenty of material on both sides.
 - test_sr_shortfall_backfills_with_herrings / test_herring_shortfall_backfills_with_sr :
-                                              honest cross-backfill (Pitfall 4).
+                                              honest cross-backfill.
 - test_padding_introduces_new_drill_items_recency_first : new drill_items come
                                               from the most-recently-played games.
 - test_empty_pool_writes_no_session_row    : zero material -> zero puzzles, no
                                               drill_sessions row.
 - test_blob_pending_count_reports_waiting_flaws : the thin-pool signal.
-- Session lifecycle (D-09/D-10/D-11/D-12)  : resume, expiry, eviction, frozen order.
-- test_emptied_blob_item_not_reserved_when_due : 189-06 WR-04 closure — an
+- Session lifecycle  : resume, expiry, eviction, frozen order.
+- test_emptied_blob_item_not_reserved_when_due : an
                                               already-tracked drill_items row whose
                                               backing flaw's missed_pv_lines became
-                                              the D-06 empty-array sentinel is
+                                              the empty-array sentinel is
                                               skipped by due_stmt's fresh scan, not
                                               re-served.
 
-Phase 191 Plan 01 (PROG-01/PROG-04, D-18) — get_progress:
+get_progress:
 - test_mastered_and_parked_counts_exclude_other_users_rows : the two-user
-                                              isolation proof for T-191-01.
-- test_first_settlement_replays_pre_existing_history : the all-null D-05
+                                              isolation proof.
+- test_first_settlement_replays_pre_existing_history : the all-null
                                               retroactivity case.
 - test_progress_read_is_idempotent           : two reads with no new sessions
                                               leave the snapshot byte-identical
-                                              (D-18 idempotence).
+                                              (idempotence).
 - test_settled_week_survives_mask_change     : a settled week's judgment
                                               survives a later weekday_mask
-                                              change (D-18 regression test).
+                                              change (regression test).
 
 Data isolation: uses the rollback-scoped ``db_session`` fixture from
 tests/conftest.py, following tests/repositories/test_bot_game_settings_repository.py's
@@ -92,24 +92,22 @@ _PGN = (
     "8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 *"
 )
 
-# Phase 205 (dead-band exclusion, D-05/D-11): the ORIGINAL blob here was
-# {"b": 40, "s": -30}, gap ~0.0643 -- squarely inside the new
-# [INACCURACY_DROP, BLUNDER_DROP) = [0.05, 0.15) band, so `pool_entry_stmt`
-# would no longer admit it. Moved `s` from -30 to 30 (holding `b` at 40),
+# Soft-fixture blob (dead-band exclusion): {"b": 40, "s": -30} has gap ~0.0643,
+# squarely inside the [INACCURACY_DROP, BLUNDER_DROP) = [0.05, 0.15) band, so
+# `pool_entry_stmt` would not admit it. `s` is 30 (holding `b` at 40) instead,
 # giving a gap of ~0.0092 -- comfortably below INACCURACY_DROP -- so the
-# fixture stays exactly as "soft" as before (the old drop was already below
-# SHARP_GAP_ES = 0.10) with no assertion elsewhere shifting. The old blob
-# survives verbatim as `_BANDED_PV_LINES` below, for the tests that need an
-# in-band fixture.
+# fixture is "soft" (below SHARP_GAP_ES = 0.10) and stays admissible.
+# The banded {"b": 40, "s": -30} blob survives verbatim as `_BANDED_PV_LINES`
+# below, for the tests that need an in-band fixture.
 _MISSED_PV_LINES = [{"b": 40, "bm": None, "s": 30, "sm": None, "su": "g8f6"}]
 
-# Phase 205: the pre-retune `_MISSED_PV_LINES` blob verbatim (gap ~0.0643,
+# The banded blob (gap ~0.0643,
 # inside [INACCURACY_DROP, BLUNDER_DROP) = [0.05, 0.15)) -- the in-band
 # fixture the dead-band tests use to prove pool_entry_stmt/due_stmt/
 # get_waiting_puzzle_count all exclude it.
 _BANDED_PV_LINES = [{"b": 40, "bm": None, "s": -30, "sm": None, "su": "g8f6"}]
 
-# SEED-141 (Phase 206.1): a node-0 whose best-vs-second gap CLEARS the dead
+# A node-0 whose best-vs-second gap CLEARS the dead
 # band (900 vs 400 cp, gap ~0.151 >= BLUNDER_DROP=0.15, so dead_band_admissible
 # is NOT what excludes this row) but whose second-best (400 cp) is at or above
 # SECOND_BEST_WINNING_FLOOR_CP (200) from the white mover's POV at
@@ -146,8 +144,8 @@ async def _seed_flaw_game(
 
     Attaches to `existing_game_id` when given (mirroring
     `_seed_herring_pool_row`'s parameter of the same name) — for seeding
-    several blunders on ONE game at different plies (quick task
-    260728-pgp's same-game cap tests) — else creates a fresh `Game` row as
+    several blunders on ONE game at different plies (the same-game cap tests)
+    — else creates a fresh `Game` row as
     before.
     """
     if existing_game_id is not None:
@@ -278,7 +276,7 @@ async def _seed_herring_game(
 
 # A default 5-entry MultiPV-5 ladder (white POV, best-first) for pool-row
 # fixtures that don't care about the exact ladder shape. Deliberately clears
-# BOTH of herring_stmt's Phase 192 (192-04) query-time gates so a fixture
+# BOTH of herring_stmt's query-time gates so a fixture
 # using this default is, by construction, a valid non-degenerate herring:
 # PV0/PV1/PV2 all fall within INACCURACY_DROP (0.05 ES) of PV0 (3 qualifying
 # moves, above HERRING_MIN_QUALIFYING_MOVES=2), and PV0-to-PV4 is ~0.092 ES,
@@ -306,12 +304,12 @@ async def _seed_herring_pool_row(
     played_at: datetime.datetime | None = None,
     ladder: list[dict[str, object]] | None = None,
 ) -> tuple[int, int]:
-    """Seed one `herring_pool` row (Phase 192, sibling to `_seed_herring_game`
-    above, which seeds the superseded source and stays where it is until Plan
-    04 replaces that block).
+    """Seed one `herring_pool` row (sibling to `_seed_herring_game`
+    above, which seeds the superseded source and stays where it is until the
+    herring-pool source replaces that block).
 
     Attaches to `existing_game_id` when given (for own-game-herring collision
-    tests, D-10), else creates a fresh `Game` row. Returns `(game_id,
+    tests), else creates a fresh `Game` row. Returns `(game_id,
     herring_pool_id)`.
     """
     if existing_game_id is not None:
@@ -356,7 +354,7 @@ async def _seed_herring_pool_row(
     return game_id, row.id
 
 
-# Phase 206: a small deterministic sharp-filler fixture — 10 entries, enough
+# A small deterministic sharp-filler fixture — 10 entries, enough
 # to cover every composition scenario in this file (the largest shortfall
 # any test drives is puzzles_per_session=12's cap-induced 7-puzzle gap).
 # `puzzle_id` is zero-padded so `SHARP_SET`'s ascending-id sort order is
@@ -381,7 +379,7 @@ def _install_sharp_fixture(
     monkeypatch: pytest.MonkeyPatch, puzzles: Sequence[SharpPuzzle] = _TEST_SHARP_PUZZLES
 ) -> None:
     """Install a small deterministic sharp-filler fixture in place of the
-    committed data file (Phase 206) — the module-level-constant analog of
+    committed data file — the module-level-constant analog of
     `_seed_herring_pool_row`'s DB row seeding. `pick_sharp_fillers` reads
     `sharp_filler.SHARP_SET` as a module global at call time, but
     `train_repository` binds `SHARP_SET_BY_ID` by reference at import time
@@ -397,14 +395,14 @@ def _install_sharp_fixture(
 
 @pytest.fixture(autouse=True)
 def _default_empty_sharp_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Phase 206: every test in this file defaults to an EMPTY sharp-filler
+    """Every test in this file defaults to an EMPTY sharp-filler
     set unless it opts in via `_install_sharp_fixture`.
 
     Without this, the real committed `app/data/sharp_filler_puzzles.csv`
-    (non-empty by construction — T-206-03's fail-closed loader forbids an
+    (non-empty by construction — the fail-closed loader forbids an
     empty `SHARP_SET`) would silently fill every "zero material" scenario
     this file's pre-existing pool-entry-gate tests rely on as their proxy
-    for "excluded from the SR pool" (D-05: a cold-start/exhausted session is
+    for "excluded from the SR pool" (a cold-start/exhausted session is
     now ALWAYS filled with the sharp/herring mix, never empty) — isolating
     sharp-filler composition to the tests that explicitly opt in.
     """
@@ -437,8 +435,8 @@ class TestComposeSlots:
 async def test_full_session_is_nine_sr_and_three_herrings(db_session: AsyncSession) -> None:
     """Plenty of material on both sides -> exactly the 9/3 split at N=12.
 
-    Pins puzzles_per_session=12 explicitly (191-06: DEFAULT_PUZZLES_PER_SESSION
-    changed to 6) — this test is about compose_slots' 75/25 mix at a
+    Pins puzzles_per_session=12 explicitly (DEFAULT_PUZZLES_PER_SESSION
+    is 6) — this test is about compose_slots' 75/25 mix at a
     specific N, not about the ambient default value, which has its own
     coverage elsewhere (test_get_settings_creates_defaults_on_first_touch).
     """
@@ -484,15 +482,13 @@ async def test_full_session_is_nine_sr_and_three_herrings(db_session: AsyncSessi
 async def test_sr_shortfall_backfills_with_herrings(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Phase 206 (D-02/D-03) rewrite of the pre-Phase-206
-    `test_sr_shortfall_backfills_with_herrings`: too few SR items no longer
-    pulls EXTRA herrings past `herring_slots` — the herring side is capped
-    at `floor(n * HERRING_SHARE)` and every remaining shortfall routes to
-    the static sharp set instead, so the pre-Phase-206 expectation "2 SR +
-    10 herrings" becomes "2 SR + 3 herrings (the cap) + 7 sharp fillers".
+    """Too few SR items no longer pull EXTRA herrings past `herring_slots`: the
+    herring side is capped at `floor(n * HERRING_SHARE)` and every remaining
+    shortfall routes to the static sharp set instead, so "2 SR + 10 herrings"
+    becomes "2 SR + 3 herrings (the cap) + 7 sharp fillers".
 
-    Pins puzzles_per_session=12 explicitly (191-06: DEFAULT_PUZZLES_PER_SESSION
-    changed to 6) so the SR shortfall this test exercises stays a genuine
+    Pins puzzles_per_session=12 explicitly (DEFAULT_PUZZLES_PER_SESSION
+    is 6) so the SR shortfall this test exercises stays a genuine
     shortfall relative to sr_slots.
     """
     _install_sharp_fixture(monkeypatch)
@@ -530,9 +526,9 @@ async def test_sr_shortfall_backfills_with_herrings(
         .all()
     )
     assert sum(1 for s in rows if s == DrillSource.SR_ITEM) == 2
-    # Capped at floor(12 * HERRING_SHARE) == 3, never grown past it (D-02).
+    # Capped at floor(12 * HERRING_SHARE) == 3, never grown past it.
     assert sum(1 for s in rows if s == DrillSource.RED_HERRING) == 3
-    # The residual shortfall (12 - 2 - 3 == 7) is sharp filler, not herring (D-03).
+    # The residual shortfall (12 - 2 - 3 == 7) is sharp filler, not herring.
     assert sum(1 for s in rows if s == DrillSource.SHARP_FILLER) == 7
 
 
@@ -540,8 +536,8 @@ async def test_sr_shortfall_backfills_with_herrings(
 async def test_herring_shortfall_backfills_with_sr(db_session: AsyncSession) -> None:
     """Too few herrings -> SR items fill the gap up to N.
 
-    Pins puzzles_per_session=12 explicitly (191-06: DEFAULT_PUZZLES_PER_SESSION
-    changed to 6) so the herring shortfall this test exercises stays a
+    Pins puzzles_per_session=12 explicitly (DEFAULT_PUZZLES_PER_SESSION
+    is 6) so the herring shortfall this test exercises stays a
     genuine shortfall relative to herring_slots.
     """
     await ensure_test_user(db_session, _USER_ID)
@@ -582,23 +578,22 @@ async def test_herring_shortfall_backfills_with_sr(db_session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_fully_empty_herring_pool_backfills_with_sr(db_session: AsyncSession) -> None:
-    """ROADMAP SC4: with ZERO herring_pool rows (not `test_herring_shortfall_
+    """With ZERO herring_pool rows (not `test_herring_shortfall_
     backfills_with_sr`'s partial-shortfall ONE), a composed session still
     returns a full N of 100% SR items, `waiting_count` stays honest, and
     neither `herring_stmt` invocation (exclude_served=True, then the
     exclude_served=False fallback) raises on the empty table.
 
-    This is a deliberate sibling, not a rewrite of the partial-shortfall
-    test above: that test hits the same cross-backfill branch, but this
-    phase swaps the herring source out from under that code path, so the
-    zero case deserves its own regression rather than inheriting confidence
-    from a test that never exercised zero rows. Per D-13/SEED-120, the
-    empty-pool window needs NO new handling in `compose_and_materialize_
-    session` — if this test fails, the fix belongs in the source swap, not
-    in a new empty-pool special case here.
+    This is a deliberate sibling of the partial-shortfall test above: that
+    test hits the same cross-backfill branch, but the herring source is the
+    `herring_pool` table, so the zero case deserves its own regression
+    rather than inheriting confidence from a test that never exercised zero
+    rows. The empty-pool window needs NO new handling in
+    `compose_and_materialize_session` — if this test fails, the fix belongs in
+    the herring source query, not in a new empty-pool special case here.
 
-    Pins puzzles_per_session=12 explicitly (191-06: DEFAULT_PUZZLES_PER_SESSION
-    changed to 6) so all 12 SR flaw games seeded below are needed to fill N.
+    Pins puzzles_per_session=12 explicitly (DEFAULT_PUZZLES_PER_SESSION
+    is 6) so all 12 SR flaw games seeded below are needed to fill N.
     """
     await ensure_test_user(db_session, _USER_ID)
     settings_row = await train_repository.upsert_settings(
@@ -647,8 +642,8 @@ async def test_fully_empty_herring_pool_backfills_with_sr(db_session: AsyncSessi
 async def test_padding_introduces_new_drill_items_recency_first(db_session: AsyncSession) -> None:
     """The newly-tracked drill_items correspond to the most recently played games.
 
-    Pins puzzles_per_session=12 explicitly (191-06: DEFAULT_PUZZLES_PER_SESSION
-    changed to 6) — the 9-most-recent/3-oldest split below is keyed to N=12.
+    Pins puzzles_per_session=12 explicitly (DEFAULT_PUZZLES_PER_SESSION
+    is 6) — the 9-most-recent/3-oldest split below is keyed to N=12.
     """
     await ensure_test_user(db_session, _USER_ID)
     await train_repository.upsert_settings(
@@ -697,7 +692,7 @@ async def test_padding_introduces_new_drill_items_recency_first(db_session: Asyn
 async def test_blunder_heavy_game_contributes_exactly_one_pool_pick(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Quick task 260728-pgp Task 1 (b): a fresh blunder-heavy game (6
+    """A fresh blunder-heavy game (6
     qualifying blunders, none yet tracked as a drill_items row) contributes
     EXACTLY ONE new drill_items row and exactly one SR_ITEM drill_solves row
     to the composed session — never one per qualifying blunder — and the
@@ -708,10 +703,9 @@ async def test_blunder_heavy_game_contributes_exactly_one_pool_pick(
     compose_slots(6) = (sr_slots=5, herring_slots=1). With only one capped
     SR candidate, the SR side is short by construction, so plenty of
     herring material is seeded to prove the cap doesn't relax under
-    cross-backfill (Task 2 territory, but this test must not accidentally
-    depend on an unbacked cross-backfill assumption). Phase 206 (D-02): the
-    residual shortfall this used to route through "SR short -> extra
-    herrings" now routes to the sharp filler instead — a sharp fixture is
+    cross-backfill (the due-item tests below cover that); this test must not
+    accidentally depend on an unbacked cross-backfill assumption. The residual shortfall
+    routes to the sharp filler (not extra herrings) — a sharp fixture is
     installed so `puzzle_count` still reaches the full 6; this test's own
     assertions are scoped to the SR side and are unaffected either way.
     """
@@ -770,7 +764,7 @@ async def test_blunder_heavy_game_contributes_exactly_one_pool_pick(
 
 @pytest.mark.asyncio
 async def test_multiple_due_items_same_game_serves_only_one(db_session: AsyncSession) -> None:
-    """Quick task 260728-pgp Task 2 (a): three ACTIVE due drill_items from ONE
+    """Three ACTIVE due drill_items from ONE
     game, all due today -> exactly one is served; the other two stay
     status == ACTIVE with a due_date byte-identical to what was seeded (the
     cap's skip-but-leave-untouched contract, mirroring the pre-existing
@@ -839,10 +833,10 @@ async def test_multiple_due_items_same_game_serves_only_one(db_session: AsyncSes
 async def test_due_and_untracked_pool_same_game_never_both_appear(
     db_session: AsyncSession,
 ) -> None:
-    """Quick task 260728-pgp Task 2 (d): a due drill_items row from game G plus
+    """A due drill_items row from game G plus
     an untracked fresh-pool blunder from the SAME game G -> only ONE puzzle
     from G appears in the session, and no second drill_items row is created
-    for G. This is the session-wide half of the requirement — Task 1's
+    for G. This is the session-wide half of the requirement — the
     pool-side pick_one_per_game alone cannot prevent this collision, since
     the due item and the pool candidate are resolved by two independent
     code paths; only the shared per_game_counts guard does."""
@@ -902,16 +896,14 @@ async def test_due_and_untracked_pool_same_game_never_both_appear(
 async def test_cap_shortened_sr_side_fills_via_herring_backfill(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Quick task 260728-pgp Task 2 (c) + step 5 confirmation, rewritten for
-    Phase 206 (D-02/D-03): two blunder-heavy games (5 qualifying blunders
+    """Two blunder-heavy games (5 qualifying blunders
     each, all untracked) at puzzles_per_session=12 with plenty of herring
     material -> the session still has 12 puzzles, but the cap-induced SR
-    shortfall (2 candidates found vs sr_slots=9) no longer relaxes the
+    shortfall (2 candidates found vs sr_slots=9) does not relax the
     herring cap to absorb it — the herring side stops at
     `floor(12 * HERRING_SHARE) == 3` and the residual 7-puzzle gap is sharp
-    filler instead (the pre-Phase-206 expectation was 2 SR + 10 herrings;
-    it is now 2 SR + 3 herrings + 7 sharp fillers). The one-per-game SR cap
-    itself is unchanged and still proven below."""
+    filler instead (2 SR + 3 herrings + 7 sharp fillers). The one-per-game SR
+    cap itself is proven below."""
     _install_sharp_fixture(monkeypatch)
     await ensure_test_user(db_session, _USER_ID)
     await train_repository.upsert_settings(
@@ -954,13 +946,13 @@ async def test_cap_shortened_sr_side_fills_via_herring_backfill(
     herring_rows = [row for row in rows if row[0] == DrillSource.RED_HERRING]
     sharp_rows = [row for row in rows if row[0] == DrillSource.SHARP_FILLER]
     assert len(sr_rows) == 2
-    assert len(herring_rows) == 3  # capped at floor(12 * HERRING_SHARE), never grown (D-02)
-    assert len(sharp_rows) == 7  # the residual shortfall, sharp filler not herring (D-03)
+    assert len(herring_rows) == 3  # capped at floor(12 * HERRING_SHARE), never grown
+    assert len(sharp_rows) == 7  # the residual shortfall, sharp filler not herring
     assert {gid for _source, gid in sr_rows} == set(game_ids)  # exactly one SR puzzle per game
 
 
 # ---------------------------------------------------------------------------
-# Sharp filler (Phase 206, D-02/D-03) — composition-ratio tests
+# Sharp filler — composition-ratio tests
 # ---------------------------------------------------------------------------
 
 
@@ -968,10 +960,10 @@ async def test_cap_shortened_sr_side_fills_via_herring_backfill(
 async def test_zero_sr_material_composes_two_herrings_and_six_sharp(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """WARM-03/SC3: zero SR candidates + plenty of herring material, N=8 ->
+    """Zero SR candidates + plenty of herring material, N=8 ->
     exactly 2 RED_HERRING (floor(8 * HERRING_SHARE)) + 6 SHARP_FILLER — never
-    100% herrings (the pre-Phase-206 defect this phase removes) and never
-    100% sharp (the herring side is still used as-is, D-01)."""
+    100% herrings (the defect the sharp filler removes) and never
+    100% sharp (the herring side is still used as-is)."""
     _install_sharp_fixture(monkeypatch)
     await ensure_test_user(db_session, _USER_ID)
     await train_repository.upsert_settings(
@@ -1014,8 +1006,8 @@ async def test_three_sr_candidates_compose_three_sr_two_herring_three_sharp(
 ) -> None:
     """3 SR candidates, N=8 (sr_slots=6, herring_slots=2) -> 3 SR_ITEM (the
     SR side genuinely has no more material, so no cross-backfill triggers
-    for it), 2 RED_HERRING (the D-02 cap, never grown), 3 SHARP_FILLER (the
-    residual 8 - 3 - 2 shortfall, D-03) — the herring count equals
+    for it), 2 RED_HERRING (the cap, never grown), 3 SHARP_FILLER (the
+    residual 8 - 3 - 2 shortfall) — the herring count equals
     math.floor(8 * HERRING_SHARE) exactly, never 5."""
     _install_sharp_fixture(monkeypatch)
     await ensure_test_user(db_session, _USER_ID)
@@ -1056,7 +1048,7 @@ async def test_three_sr_candidates_compose_three_sr_two_herring_three_sharp(
 
 
 # ---------------------------------------------------------------------------
-# is_warmup (Phase 206, D-06/D-07)
+# is_warmup
 # ---------------------------------------------------------------------------
 
 
@@ -1064,7 +1056,7 @@ async def test_three_sr_candidates_compose_three_sr_two_herring_three_sharp(
 async def test_zero_sr_composition_sets_is_warmup(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SC1/SC2 boundary: zero surviving SR_ITEM puzzles -> is_warmup True,
+    """Boundary: zero surviving SR_ITEM puzzles -> is_warmup True,
     both on the returned ComposedSession and the persisted drill_sessions
     row — never a ratio, never a threshold."""
     _install_sharp_fixture(monkeypatch)
@@ -1101,7 +1093,7 @@ async def test_zero_sr_composition_sets_is_warmup(
 async def test_one_sr_item_is_not_warmup(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SC2 boundary: exactly one qualifying blunder makes is_warmup False,
+    """Boundary: exactly one qualifying blunder makes is_warmup False,
     even with seven filler puzzles beside it in an 8-puzzle session."""
     _install_sharp_fixture(monkeypatch)
     await ensure_test_user(db_session, _USER_ID)
@@ -1138,7 +1130,7 @@ async def test_one_sr_item_is_not_warmup(
 async def test_is_warmup_survives_resume_after_material_arrives(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D-07: is_warmup is frozen at composition. Composing with zero SR
+    """is_warmup is frozen at composition. Composing with zero SR
     material, then seeding a due drill_items row and re-composing (which
     resumes the still-open session, never recomposes), must still report
     is_warmup True — the label is read off the stored column, never
@@ -1192,7 +1184,7 @@ async def test_is_warmup_survives_resume_after_material_arrives(
 
 @pytest.mark.asyncio
 async def test_empty_composition_reports_is_warmup_false(db_session: AsyncSession) -> None:
-    """SC1 empty: the nothing-qualified session_id=None path reports
+    """Empty: the nothing-qualified session_id=None path reports
     is_warmup False, never True — resolveLandingState must reach the
     'empty' kind before it could ever reach 'warmup'."""
     await ensure_test_user(db_session, _USER_ID)
@@ -1208,7 +1200,7 @@ async def test_empty_composition_reports_is_warmup_false(db_session: AsyncSessio
 async def test_no_resume_recomputation_mutation_check(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mutation check 1 (WARM-01) target, expressed as a real test rather
+    """Mutation check 1 target, expressed as a real test rather
     than a manual revert: resuming an already-warm-up session must return
     the STORED is_warmup, not a value recomputed from the puzzles currently
     on the row (which, for a resumed session, always reflects the frozen
@@ -1251,7 +1243,7 @@ async def test_no_resume_recomputation_mutation_check(
 async def test_no_sharp_puzzle_id_collides_within_one_session(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D-18: uq_drill_solves_session_puzzle cannot catch a duplicate
+    """uq_drill_solves_session_puzzle cannot catch a duplicate
     sharp_puzzle_id (every sharp row has game_id=None, and Postgres treats
     NULLs as distinct) — _backfill_sharp_fillers must dedupe itself."""
     _install_sharp_fixture(monkeypatch)
@@ -1325,10 +1317,10 @@ async def test_composed_session_rows_each_carry_exactly_one_identity_column(
     is non-null, the other of these two is null for every row regardless of
     source). `game_id` is NOT included in that mutual-exclusivity check: a
     fresh `RED_HERRING` row legitimately carries a non-null `game_id` too
-    (D-01, own-game herrings are permitted — the herring's identity key is
+    (own-game herrings are permitted — the herring's identity key is
     `herring_pool_id`, not `game_id`, but `game_id` is still real provenance,
     not forced null). Only `SR_ITEM` (its own identity) and `SHARP_FILLER`
-    (D-18, structurally NULL — no `games` row exists for a lichess puzzle)
+    (structurally NULL — no `games` row exists for a lichess puzzle)
     have a fixed expectation for `game_id`.
     """
     _install_sharp_fixture(monkeypatch)
@@ -1426,9 +1418,9 @@ async def test_blob_pending_count_reports_waiting_flaws(db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_composition_on_off_day_draws_from_same_queue(db_session: AsyncSession) -> None:
-    """SCHD-03 (191-04-PLAN.md Task 2): ad-hoc "train now" needs no new
-    backend code — neither the fresh-composition path below nor its D-11/
-    D-12 guards ever consult `weekday_mask` (189 D-12), so composing on a
+    """Ad-hoc "train now" needs no new
+    backend code — neither the fresh-composition path below nor its expiry and
+    one-open-session guards ever consult `weekday_mask`, so composing on a
     day whose weekday bit is NOT set must draw from the exact same due-item
     + pool queue a scheduled day would use.
 
@@ -1478,26 +1470,25 @@ async def test_composition_on_off_day_draws_from_same_queue(db_session: AsyncSes
 
 
 # ---------------------------------------------------------------------------
-# Herring source swap (Phase 192, D-03/D-04/D-10) — 192-01-PLAN.md Task 2
+# Herring source: the herring_pool row
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_herring_fen_comes_from_pool_row_not_pgn(db_session: AsyncSession) -> None:
-    """D-03: a herring's FEN and arriving move are read straight off the
+    """A herring's FEN and arriving move are read straight off the
     `herring_pool` row, never re-derived from the source game's PGN.
 
     Seeds a pool row whose `fen` deliberately does NOT match what the game's
     PGN would produce at that ply — if composition ever fell back to
     `fen_and_last_move_at_ply`, this assertion would catch it.
 
-    Phase 206 (D-02): `puzzles_per_session=4` (sr_slots=3, herring_slots=1)
+    `puzzles_per_session=4` (sr_slots=3, herring_slots=1)
     with exactly 3 SR flaw games and exactly 1 herring row fills BOTH slots
     exactly — no shortfall, no cross-backfill of any kind, so this test
-    exercises the herring FEN-source contract in isolation from D-02/D-03's
-    now-retired-vs-added backfill arms (a `puzzles_per_session=1` session, as
-    this test used pre-Phase-206, no longer has a herring slot at all:
-    `floor(1 * HERRING_SHARE) == 0`).
+    exercises the herring FEN-source contract in isolation from the
+    backfill arms (a `puzzles_per_session=1` session has no herring slot at
+    all: `floor(1 * HERRING_SHARE) == 0`).
     """
     await ensure_test_user(db_session, _USER_ID)
     await train_repository.upsert_settings(
@@ -1546,7 +1537,7 @@ async def test_herring_fen_comes_from_pool_row_not_pgn(db_session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_own_game_herring_colliding_with_sr_pick_is_dropped(db_session: AsyncSession) -> None:
-    """D-10: an own-game herring is permitted, but when its `(game_id, ply)`
+    """An own-game herring is permitted, but when its `(game_id, ply)`
     matches an SR pick already selected for this session, the herring is
     dropped before insert — `uq_drill_solves_session_puzzle` never fires and
     the SR row wins the slot.
@@ -1589,7 +1580,7 @@ async def test_own_game_herring_colliding_with_sr_pick_is_dropped(db_session: As
 
 
 # ---------------------------------------------------------------------------
-# Session lifecycle — resume, expire, freeze, evict (D-09/D-10/D-11/D-12)
+# Session lifecycle — resume, expire, freeze, evict
 # ---------------------------------------------------------------------------
 
 
@@ -1632,7 +1623,7 @@ async def test_second_compose_resumes_open_session(db_session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_fresh_composition_returns_empty_solved_results(db_session: AsyncSession) -> None:
-    """Quick task 260728-tgc: an untouched fresh session carries no recorded
+    """An untouched fresh session carries no recorded
     outcomes yet — `solved_results` must be `[]`, not omitted or None."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_flaw_game(db_session, _USER_ID, "fresh-solved-results")
@@ -1646,7 +1637,7 @@ async def test_fresh_composition_returns_empty_solved_results(db_session: AsyncS
 
 @pytest.mark.asyncio
 async def test_resume_returns_solved_results_in_position_order(db_session: AsyncSession) -> None:
-    """Quick task 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): resuming a
+    """Resuming a
     session with a subset of its puzzles solved returns one `ComposedSolvedResult`
     per solved row, ordered by `position`, matching what was recorded — the
     ingredient set a second device aggregates into the same session score the
@@ -1699,7 +1690,7 @@ async def test_resume_returns_solved_results_in_position_order(db_session: Async
 async def test_resume_solved_results_degrades_legacy_null_move_quality(
     db_session: AsyncSession,
 ) -> None:
-    """A pre-SEED-119 row with `move_quality IS NULL` still yields a total
+    """A legacy row with `move_quality IS NULL` still yields a total
     tier via `_resolve_move_quality_tier`'s boolean degradation, never a
     validation error."""
     await ensure_test_user(db_session, _USER_ID)
@@ -1730,7 +1721,7 @@ async def test_resume_solved_results_degrades_legacy_null_move_quality(
 async def test_resume_solved_results_include_source_item_status_due_date(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 222 (TRAINBOT-04, D-17): a resumed session's solved_results
+    """A resumed session's solved_results
     carries the joined source/item_status/due_date for an sr_item solve
     (matched against its own drill_items row), and NULL/NULL for a
     red_herring and a sharp_filler solve — neither ever has a matching
@@ -1820,7 +1811,7 @@ async def test_resume_solved_results_include_source_item_status_due_date(
 async def test_resume_solved_results_degrades_null_for_orphaned_drill_item(
     db_session: AsyncSession,
 ) -> None:
-    """RESEARCH Assumptions Log A6: an sr_item solve whose backing
+    """An sr_item solve whose backing
     drill_items row no longer exists (the game-deletion path, which
     orphans drill_solves.game_id to NULL via ON DELETE SET NULL) degrades
     to NULL item_status/due_date rather than an error — the LEFT JOIN
@@ -1840,7 +1831,7 @@ async def test_resume_solved_results_degrades_null_for_orphaned_drill_item(
             session_id=drill_session.id,
             position=0,
             user_id=_USER_ID,
-            game_id=None,  # Orphaned: the source game was deleted (D-05).
+            game_id=None,  # Orphaned: the source game was deleted.
             ply=2,
             source=DrillSource.SR_ITEM,
             solved_at=_NOW,
@@ -1864,10 +1855,10 @@ async def test_resume_solved_results_degrades_null_for_orphaned_drill_item(
 
 @pytest.mark.asyncio
 async def test_completed_session_in_window_blocks_recompose(db_session: AsyncSession) -> None:
-    """190.1 bug fix: finishing a session must not unlock a fresh one within
-    the same D-10 window. A `status='completed'` row is invisible to the
-    open-session resume path, so before the `completed_session_in_window`
-    guard the very next compose call built a brand-new session on the same
+    """Finishing a session must not unlock a fresh one within
+    the same window. A `status='completed'` row is invisible to the
+    open-session resume path, so without the `completed_session_in_window`
+    guard the very next compose call would build a brand-new session on the same
     day (unlimited sessions per day, pool drained)."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_flaw_game(db_session, _USER_ID, "completed-window-1")
@@ -1914,7 +1905,7 @@ async def test_completed_session_in_window_blocks_recompose(db_session: AsyncSes
 
 @pytest.mark.asyncio
 async def test_completed_session_past_window_recomposes(db_session: AsyncSession) -> None:
-    """The completed-session guard only holds inside the D-10 window: once
+    """The completed-session guard only holds inside the session window: once
     `expires_on` arrives, compose builds the next session normally."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_flaw_game(db_session, _USER_ID, "completed-expired-1")
@@ -1950,7 +1941,7 @@ async def test_completed_session_past_window_recomposes(db_session: AsyncSession
 async def test_integrity_error_race_resumes_winner_session(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """T-189-14: a race where the D-12 fast-path check misses a concurrent
+    """A race where the one-open-session fast-path check misses a concurrent
     winner's already-open session is caught via uq_drill_sessions_user_open
     at insert time and resumed rather than raised.
 
@@ -1960,7 +1951,7 @@ async def test_integrity_error_race_resumes_winner_session(
     composition proceeds into a fresh `DrillSession` insert on the SAME
     connection — which then genuinely collides with the winner's row on the
     partial unique index, proving the `except IntegrityError` branch (not
-    just the D-12 pre-check) is what resumes the winner.
+    just the pre-check) is what resumes the winner.
     """
     await ensure_test_user(db_session, _USER_ID)
     game_id = await _seed_flaw_game(db_session, _USER_ID, "race-1")
@@ -2160,8 +2151,8 @@ async def test_evicted_item_is_skipped_on_resume(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_emptied_blob_item_not_reserved_when_due(db_session: AsyncSession) -> None:
-    """189-06 WR-04 closure: an already-tracked drill_items row whose backing
-    flaw's missed_pv_lines was reset to the D-06 empty-array sentinel is
+    """An already-tracked drill_items row whose backing
+    flaw's missed_pv_lines was reset to the empty-array sentinel is
     skipped by due_stmt's fresh scan on the next session compose (isolates
     due_stmt specifically — pool_entry_stmt's padding scan already skips
     tracked items via existing_pairs regardless of this fix)."""
@@ -2183,7 +2174,7 @@ async def test_emptied_blob_item_not_reserved_when_due(db_session: AsyncSession)
     )
     await db_session.flush()
 
-    # Simulate a re-blob that came back un-fillable: the D-06 sentinel.
+    # Simulate a re-blob that came back un-fillable: the empty-array sentinel.
     await db_session.execute(
         update(GameFlaw)
         .where(GameFlaw.user_id == _USER_ID, GameFlaw.game_id == game_id, GameFlaw.ply == 2)
@@ -2207,14 +2198,13 @@ async def test_emptied_blob_item_not_reserved_when_due(db_session: AsyncSession)
 
 
 # ---------------------------------------------------------------------------
-# Phase 205 (D-05/D-06, ORACLE-03/ORACLE-05) — the dead-band re-serve sites.
+# The dead-band re-serve sites.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_banded_item_not_reserved_when_due(db_session: AsyncSession) -> None:
-    """Phase 205 ORACLE-03 (re-serve arm) + ORACLE-05 (criterion 4) in full:
-    an already-tracked drill_items row whose backing flaw's missed_pv_lines
+    """An already-tracked drill_items row whose backing flaw's missed_pv_lines
     is rewritten INTO the dead band ([INACCURACY_DROP, BLUNDER_DROP)) is
     skipped by due_stmt's fresh scan on the next session compose, with the
     row provably untouched -- it still EXISTS, its status is still ACTIVE,
@@ -2223,7 +2213,7 @@ async def test_banded_item_not_reserved_when_due(db_session: AsyncSession) -> No
     pool_entry_stmt's entry gate already skips ALREADY-TRACKED items via
     existing_pairs regardless of the band, so only due_stmt's clause can be
     responsible for the second session composing empty. Modeled on
-    test_emptied_blob_item_not_reserved_when_due (the D-06 empty-blob
+    test_emptied_blob_item_not_reserved_when_due (the empty-blob
     analog)."""
     await ensure_test_user(db_session, _USER_ID)
     game_id = await _seed_flaw_game(db_session, _USER_ID, "banded-reserve-1", ply=2)
@@ -2244,7 +2234,7 @@ async def test_banded_item_not_reserved_when_due(db_session: AsyncSession) -> No
 
     # Force the session to expire so the NEXT compose runs a fresh due_stmt
     # scan rather than resuming (resume/load_session_puzzles is a distinct
-    # code path, D-06, covered separately below).
+    # code path, covered separately below).
     await db_session.execute(
         update(DrillSession)
         .where(DrillSession.id == first.session_id)
@@ -2278,7 +2268,7 @@ async def test_banded_item_not_reserved_when_due(db_session: AsyncSession) -> No
 
 @pytest.mark.asyncio
 async def test_waiting_count_excludes_banded_due_item(db_session: AsyncSession) -> None:
-    """Phase 205: get_waiting_puzzle_count's due-count statement excludes a
+    """get_waiting_puzzle_count's due-count statement excludes a
     banded due item while still counting an admissible one -- not simply
     zero, which would pass for the wrong reason."""
     await ensure_test_user(db_session, _USER_ID)
@@ -2321,8 +2311,8 @@ async def test_waiting_count_excludes_banded_due_item(db_session: AsyncSession) 
 
 
 # ---------------------------------------------------------------------------
-# SEED-141 (Phase 206.1) -- the second-best-still-winning re-serve sites.
-# Mirrors the Phase 205 dead-band tests immediately above: the entry gate
+# The second-best-still-winning re-serve sites.
+# Mirrors the dead-band tests immediately above: the entry gate
 # (pool_entry_stmt) and both re-serve sites (due_stmt, get_waiting_puzzle_count's
 # due_count_stmt) must all apply the SAME second_best_not_winning_admissible
 # standard, read live from the flaw row and never snapshotted onto drill_items.
@@ -2331,7 +2321,7 @@ async def test_waiting_count_excludes_banded_due_item(db_session: AsyncSession) 
 
 @pytest.mark.asyncio
 async def test_still_winning_item_not_reserved_when_due(db_session: AsyncSession) -> None:
-    """SEED-141: an already-tracked drill_items row whose backing flaw's
+    """An already-tracked drill_items row whose backing flaw's
     missed_pv_lines is rewritten so the runner-up still leaves the mover
     clearly winning is skipped by due_stmt's fresh scan on the next session
     compose, with the row provably untouched -- it still EXISTS, its status
@@ -2390,7 +2380,7 @@ async def test_still_winning_item_not_reserved_when_due(db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_waiting_count_excludes_still_winning_due_item(db_session: AsyncSession) -> None:
-    """SEED-141: get_waiting_puzzle_count's due-count statement excludes a
+    """get_waiting_puzzle_count's due-count statement excludes a
     still-winning due item while still counting an admissible one -- not
     simply zero, which would pass for the wrong reason. Modeled on
     test_waiting_count_excludes_banded_due_item."""
@@ -2437,7 +2427,7 @@ async def test_waiting_count_excludes_still_winning_due_item(db_session: AsyncSe
 async def test_open_session_serves_item_after_backing_blob_moves_into_band(
     db_session: AsyncSession,
 ) -> None:
-    """D-06: a banded item already materialized into an OPEN session is
+    """A banded item already materialized into an OPEN session is
     still served out -- no mid-session eviction. The boundary the user drew:
     banded items already inside a set-up session are fine, the goal is only
     to keep them out of newly generated ones."""
@@ -2471,7 +2461,7 @@ async def test_open_session_serves_item_after_backing_blob_moves_into_band(
 async def test_frozen_order_is_stable_across_resumes(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Phase 206 (D-02): 4 SR + 2 herring is a 1-puzzle shortfall against the
+    # 4 SR + 2 herring is a 1-puzzle shortfall against the
     # default puzzles_per_session=6 (sr_slots=5, herring_slots=1) that used
     # to route through the retired "SR short -> extra herrings" arm — a
     # sharp fixture fills it instead so the total stays 6, which is all this
@@ -2498,15 +2488,15 @@ async def test_frozen_order_is_stable_across_resumes(
 
 
 # ---------------------------------------------------------------------------
-# D-05 nullability (Phase 192, Plan 02) — orphaned SR vs orphaned herring
+# game_id nullability — orphaned SR vs orphaned herring
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_resume_serves_herring_with_deleted_source_game(db_session: AsyncSession) -> None:
-    """D-01/D-05: a herring whose source game has been deleted is still
+    """A herring whose source game has been deleted is still
     served on resume, FEN/arriving move read off its `herring_pool` row
-    (D-03) — `game_id` is nulled via the real `ON DELETE SET NULL` FK policy,
+    — `game_id` is nulled via the real `ON DELETE SET NULL` FK policy,
     never dropped, never crashing.
     """
     await ensure_test_user(db_session, _USER_ID)
@@ -2568,11 +2558,11 @@ async def test_completion_ignores_orphaned_sr_row_but_counts_orphaned_herring(
 
     - An orphaned SR row (source game deleted) is EXCLUDED from `remaining` —
       it can never be attempted again, so it must not block completion
-      (the exact pre-D-05 CASCADE-deletion outcome, preserved via lazy
-      exclusion instead of a deleted row; this is the WR-02 stuck-session
+      (the same outcome as the former CASCADE-deletion, preserved via lazy
+      exclusion instead of a deleted row; this is the stuck-session
       fix, extended to also cover "game row gone").
     - An orphaned herring row (source game ALSO deleted) is NOT excluded —
-      it is still perfectly servable off its `herring_pool` row (D-03) and
+      it is still perfectly servable off its `herring_pool` row and
       must keep pinning the session open until solved.
 
     A session with only these two rows must therefore stay open — handling
@@ -2657,7 +2647,7 @@ async def test_completion_ignores_orphaned_sr_row_but_counts_orphaned_herring(
 async def test_completion_ignores_herring_with_missing_pool_row(
     db_session: AsyncSession,
 ) -> None:
-    """SEED-123: a herring whose `herring_pool` row is gone must not pin the
+    """A herring whose `herring_pool` row is gone must not pin the
     session open forever.
 
     The mirror image of the test above, and the distinction is the whole point:
@@ -2753,7 +2743,7 @@ async def test_completion_ignores_herring_with_missing_pool_row(
 
 
 # ---------------------------------------------------------------------------
-# get_waiting_puzzle_count (Phase 191 Plan 02, Task 1)
+# get_waiting_puzzle_count
 # ---------------------------------------------------------------------------
 
 
@@ -2907,7 +2897,7 @@ async def test_waiting_count_active_session_ignores_resized_setting(
 
     The user's explicit requirement: changing puzzles-per-session mid-session
     must not resize the session in flight. `puzzle_count` stays load-bearing as
-    the SOLV-04/D-13 progress denominator, so 12 puzzles with 5 solved reports 7
+    the progress denominator, so 12 puzzles with 5 solved reports 7
     even though the setting now says 5.
     """
     await ensure_test_user(db_session, _USER_ID)
@@ -2991,7 +2981,7 @@ async def test_waiting_count_expired_open_session_ignored_and_not_flipped(
 async def test_waiting_count_completed_session_in_window_returns_zero(
     db_session: AsyncSession,
 ) -> None:
-    """A completed session still inside its D-10 window -> 0 (D-07)."""
+    """A completed session still inside its session window -> 0."""
     await ensure_test_user(db_session, _USER_ID)
     settings_row = await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
     db_session.add(
@@ -3056,7 +3046,7 @@ async def test_waiting_count_never_writes_a_session_or_solve_row(
     db_session: AsyncSession,
 ) -> None:
     """Row-count invariant: drill_sessions/drill_solves counts are unchanged
-    across the call, in the fresh-material case (191-RESEARCH.md Pitfall 1)."""
+    across the call, in the fresh-material case."""
     await ensure_test_user(db_session, _USER_ID)
     settings_row = await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
     await _seed_flaw_game(db_session, _USER_ID, "waiting-invariant")
@@ -3121,7 +3111,7 @@ async def test_waiting_count_scoped_to_caller_user(db_session: AsyncSession) -> 
 
 
 # ---------------------------------------------------------------------------
-# get_progress (PROG-01/PROG-04, Phase 193 per-day tick + shield)
+# get_progress (per-day tick + shield)
 # ---------------------------------------------------------------------------
 
 # 2026-01-15 is a Thursday. 2026-01-14 (Wednesday) is "yesterday" — a single
@@ -3162,11 +3152,11 @@ async def _seed_completed_session(
 async def _seed_pool_eligible_since(
     db_session: AsyncSession, user_id: int, since: datetime.date
 ) -> None:
-    """Directly stamp the D-06 eligibility watermark, bypassing
+    """Directly stamp the eligibility watermark, bypassing
     `_stamp_pool_eligibility`'s material-detection path.
 
     A row's `pool_eligible_since` staying NULL is a first-class, correct
-    state (an all-neutral walk, per D-05/D-06 — see `TestStampPoolEligibility`
+    state (an all-neutral walk — see `TestStampPoolEligibility`
     for the material-detection path itself) — tests that want to exercise
     `tick_days`' day-walk machinery WITHOUT also constructing real
     `drill_items`/pool-candidate rows use this helper instead.
@@ -3204,7 +3194,7 @@ async def _seed_drill_item_with_status(
 async def test_mastered_and_parked_counts_exclude_other_users_rows(
     db_session: AsyncSession,
 ) -> None:
-    """T-191-01: mastered_count/parked_count are scoped strictly to user_id."""
+    """mastered_count/parked_count are scoped strictly to user_id."""
     await ensure_test_user(db_session, _USER_ID)
     await ensure_test_user(db_session, _OTHER_USER_ID)
 
@@ -3384,8 +3374,8 @@ async def test_next_due_date_is_none_with_no_future_active_item(db_session: Asyn
 async def test_first_settlement_replays_pre_existing_history(db_session: AsyncSession) -> None:
     """A brand-new all-zero snapshot replays the user's pre-existing
     completed-session history on the very first GET /train/progress, once
-    the D-06 watermark covers it (the mechanism Phase 191 used for
-    retroactivity, now at per-day granularity)."""
+    the eligibility watermark covers it (the retroactivity mechanism, now
+    at per-day granularity)."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_pool_eligible_since(db_session, _USER_ID, _PROGRESS_YESTERDAY)
     await _seed_completed_session(db_session, _USER_ID, _PROGRESS_YESTERDAY)
@@ -3430,9 +3420,9 @@ async def test_progress_read_is_idempotent(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_settled_day_survives_mask_change(db_session: AsyncSession) -> None:
     """A settled day's judgment is unchanged by a later weekday_mask change
-    (via direct row update, since a later plan wires the actual eager-tick
-    completion path) — the per-day granularity of the frozen-forever
-    guarantee Phase 191 D-18 established at the week level."""
+    (via direct row update, not through the eager-tick completion path) — the
+    per-day granularity of the frozen-forever
+    guarantee established at the week level."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_pool_eligible_since(db_session, _USER_ID, _PROGRESS_YESTERDAY)
     await _seed_completed_session(db_session, _USER_ID, _PROGRESS_YESTERDAY)
@@ -3460,12 +3450,12 @@ async def test_settled_day_survives_mask_change(db_session: AsyncSession) -> Non
 
 
 # ---------------------------------------------------------------------------
-# _stamp_pool_eligibility / D-06 watermark (Phase 193 Plan 01)
+# _stamp_pool_eligibility / eligibility watermark
 # ---------------------------------------------------------------------------
 
 
 class TestStampPoolEligibility:
-    """D-06: the eligibility watermark is stamped exactly once, from real
+    """The eligibility watermark is stamped exactly once, from real
     material, and never overwritten."""
 
     @pytest.mark.asyncio
@@ -3575,7 +3565,7 @@ class TestStampPoolEligibility:
     async def test_filler_only_session_stamps_pool_eligible_since(
         self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """ROADMAP Success Criterion 5: a user with zero drill_items and
+        """A user with zero drill_items and
         zero pool candidates, but a non-empty sharp set, gets
         pool_eligible_since stamped to today on the first
         compose_and_materialize_session call — a filler-only session is
@@ -3618,7 +3608,7 @@ class TestStampPoolEligibility:
 
 
 # ---------------------------------------------------------------------------
-# upsert_settings settle-before-mutate (Phase 193, per-day tick)
+# upsert_settings settle-before-mutate (per-day tick)
 # ---------------------------------------------------------------------------
 
 
@@ -3744,7 +3734,7 @@ async def test_settings_update_first_touch_creates_defaults_then_persists(
     db_session: AsyncSession,
 ) -> None:
     """upsert_settings on a user with no train_settings row creates the row
-    with the D-06/D-07/D-08 defaults and an all-zero snapshot, then persists
+    with the default settings and an all-zero snapshot, then persists
     the requested values, with no settlement error."""
     await ensure_test_user(db_session, _USER_ID)
     # No get_or_create_settings call beforehand — this IS the first touch.
@@ -3806,7 +3796,7 @@ async def test_settings_update_after_progress_read_does_not_resettle(
 
 
 # ---------------------------------------------------------------------------
-# Reminder configuration (Phase 201, REMIND-01, D-06/D-18)
+# Reminder configuration
 # ---------------------------------------------------------------------------
 
 
@@ -3884,10 +3874,10 @@ async def test_upsert_settings_persists_reminder_fields(db_session: AsyncSession
 async def test_upsert_settings_leaves_reminder_last_sent_on_unchanged(
     db_session: AsyncSession,
 ) -> None:
-    """T-201-13: upsert_settings called after a row already carries a
+    """upsert_settings called after a row already carries a
     non-NULL reminder_last_sent_on leaves that value byte-identical — the
-    watermark is written ONLY by the reminder job's claim UPDATE (plan
-    201-04), never by a settings PUT. This is the assertion that would fail
+    watermark is written ONLY by the reminder job's claim UPDATE,
+    never by a settings PUT. This is the assertion that would fail
     if reminder_last_sent_on were later "tidied" into upsert_settings' ON
     CONFLICT DO UPDATE set_ dict, which would let a settings save silently
     clear a user's daily send guard and let the scheduler re-send."""
@@ -3924,7 +3914,7 @@ async def test_upsert_settings_leaves_reminder_last_sent_on_unchanged(
 async def test_get_or_create_settings_onboarding_seen_defaults_null(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 222 (TRAINBOT-05, D-13) + Phase 240 (D-09): a freshly created
+    """A freshly created
     settings row reads back NULL on both onboarding-seen timestamps and stage 0
     on reveal_tour_stage via get_or_create_settings — no backfill, every
     brand-new user starts unseen."""
@@ -3973,9 +3963,9 @@ async def test_get_settings_round_trips_onboarding_seen_timestamps(
 
 @pytest.mark.asyncio
 async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: AsyncSession) -> None:
-    """Phase 222 (TRAINBOT-05, D-12): upsert_settings (PUT /train/settings)
+    """upsert_settings (PUT /train/settings)
     must never move any of the three onboarding columns (two timestamps and
-    the Phase 240 reveal_tour_stage) — the same
+    the reveal_tour_stage) — the same
     "leaves it unchanged" contract as reminder_last_sent_on above. This is
     the assertion that would fail if the PUT handler's settings save ever
     caused a completed stepper to silently replay."""
@@ -4018,7 +4008,7 @@ async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: Asyn
 
 @pytest.mark.asyncio
 async def test_stamp_onboarding_step_reveal_tour_forward_only(db_session: AsyncSession) -> None:
-    """Phase 240 (D-09): stamp_onboarding_step with reveal_tour_1..3 advances
+    """stamp_onboarding_step with reveal_tour_1..3 advances
     reveal_tour_stage in order, ignores an out-of-order step and a replay, never
     moves the stage backwards, and never writes a timestamp column."""
     await ensure_test_user(db_session, _USER_ID)
@@ -4048,7 +4038,7 @@ async def test_stamp_onboarding_step_reveal_tour_forward_only(db_session: AsyncS
 
 
 def test_onboarding_step_dicts_partition_the_literal() -> None:
-    """Phase 240 (D-09 / T-240-02): the timestamp-step dict and the tour-stage
+    """The timestamp-step dict and the tour-stage
     dict are disjoint and together cover every OnboardingStep member, so no step
     can fall through `stamp_onboarding_step` unhandled."""
     timestamp_steps = set(train_repository._ONBOARDING_COLUMNS)
@@ -4078,7 +4068,7 @@ async def test_reminder_hour_check_constraint_rejects_out_of_range(
 
 
 # ---------------------------------------------------------------------------
-# record_solve — tiered move_quality (SEED-119)
+# record_solve — tiered move_quality
 # ---------------------------------------------------------------------------
 
 
@@ -4094,7 +4084,7 @@ async def _seed_open_session_with_sr_item(
     """Seed one ACTIVE drill_items row + one open session with a single
     unsolved SR-source drill_solves row at position 0, ready for record_solve.
 
-    Phase 235: `missed_pv_lines` overrides the default soft blob and `best_move`
+    `missed_pv_lines` overrides the default soft blob and `best_move`
     (when given) seeds the `game_positions.best_move` row at the flaw ply (the
     SR answer key)."""
     game_id = await _seed_flaw_game(db_session, user_id, label, missed_pv_lines=missed_pv_lines)
@@ -4140,7 +4130,7 @@ async def _seed_open_session_with_sr_item(
 async def test_record_solve_persists_move_quality_alongside_correct_move(
     db_session: AsyncSession,
 ) -> None:
-    """SEED-119: record_solve persists the DrillMoveQuality int and the
+    """record_solve persists the DrillMoveQuality int and the
     derived correct_move boolean side by side."""
     await ensure_test_user(db_session, _USER_ID)
     drill_session = await _seed_open_session_with_sr_item(db_session, _USER_ID, "mq-persist")
@@ -4174,7 +4164,7 @@ async def test_record_solve_persists_move_quality_alongside_correct_move(
 async def test_record_solve_inaccuracy_advances_ladder_exactly_like_good(
     db_session: AsyncSession,
 ) -> None:
-    """SEED-119 regression guard: an inaccuracy must advance drill_items'
+    """Regression guard: an inaccuracy must advance drill_items'
     SR state (status/streak/due_date) identically to a good move — this is
     the invariant the whole tiering change must not break."""
     await ensure_test_user(db_session, _USER_ID)
@@ -4253,7 +4243,7 @@ async def test_record_solve_resubmit_returns_first_recorded_tier(
 
 @pytest.mark.asyncio
 async def test_record_solve_overrides_key_move_grade(db_session: AsyncSession) -> None:
-    """Phase 211 (D-03/D-07): playing the certified key move (the soft blob's
+    """Playing the certified key move (the soft blob's
     `su`, "g8f6" in `_MISSED_PV_LINES`) records and returns the SERVER's tier
     even when the client deliberately asserts "wrong" — and the graded-ES pair
     carries the exact blob-derived expected scores the override used."""
@@ -4301,7 +4291,7 @@ async def test_record_solve_overrides_key_move_grade(db_session: AsyncSession) -
 
 @pytest.mark.asyncio
 async def test_record_solve_leaves_off_key_grade_untouched(db_session: AsyncSession) -> None:
-    """Phase 211 (D-04, P-02's remaining half): an OFF-key played move's tier
+    """An OFF-key played move's tier
     stays byte-identical to the client's assertion, and no graded-ES pair is
     returned — the server has no basis to grade a move outside its key."""
     await ensure_test_user(db_session, _USER_ID)
@@ -4337,7 +4327,7 @@ async def test_record_solve_leaves_off_key_grade_untouched(db_session: AsyncSess
 
 @pytest.mark.asyncio
 async def test_key_move_grade_matches_its_own_vetted_entry(db_session: AsyncSession) -> None:
-    """Phase 211 assumption-delta invariant: for a key-move solve, the
+    """For a key-move solve, the
     recorded `move_quality`, the matching vetted entry's own `quality`, and
     the tier implied by `classify_severity(graded_es_before - graded_es_after)`
     all agree — the verdict can never contradict the "Also fine" list."""
@@ -4368,8 +4358,8 @@ async def _add_flaw_ply_position(
     db_session: AsyncSession, user_id: int, game_id: int, *, best_move: str | None
 ) -> None:
     """Add the game_positions row AT the flaw ply (2) carrying the stored deep
-    best-move UCI — the source of the D-01-amendment vetted "best" entry.
-    (`_seed_flaw_game` only seeds ply-1 for the prior eval, so pre-amendment
+    best-move UCI — the source of the vetted "best" entry.
+    (`_seed_flaw_game` only seeds ply-1 for the prior eval, so other
     fixtures exercise the no-row degrade path by construction.)"""
     db_session.add(
         GamePosition(
@@ -4387,7 +4377,7 @@ async def _add_flaw_ply_position(
 
 @pytest.mark.asyncio
 async def test_soft_vetted_list_serves_deep_best_first(db_session: AsyncSession) -> None:
-    """D-01 amendment (2026-08-16, Task 3 checkpoint round 2): a soft puzzle
+    """A soft puzzle
     whose flaw-ply game_positions row carries a best_move serves TWO vetted
     entries, best-first — [deep best (quality "best"), su (quality "good")] —
     so the "several fine moves" copy is always backed by at least one
@@ -4425,7 +4415,7 @@ async def test_soft_vetted_list_serves_deep_best_first(db_session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_played_deep_best_gets_key_move_override(db_session: AsyncSession) -> None:
-    """D-07 consequence of the D-01 amendment: playing the deep best matches
+    """Playing the deep best matches
     the certified key, so the server override fires — the recorded tier is
     "good" (the score ladder has no "best" tier; the client itself asserts
     "good" for a played engine-best move) and the graded-ES pair is the best
@@ -4474,8 +4464,8 @@ async def test_played_deep_best_gets_key_move_override(db_session: AsyncSession)
 async def test_null_best_move_degrades_to_su_only(db_session: AsyncSession) -> None:
     """A flaw-ply game_positions row whose best_move is NULL (not yet
     backfilled) degrades to today's su-only list — never a failed solve
-    (D-01 amendment degrade rule; the no-row case is covered by every
-    pre-amendment fixture in this file)."""
+    (the no-row case is covered by every
+    other fixture in this file)."""
     await ensure_test_user(db_session, _USER_ID)
     drill_session = await _seed_open_session_with_sr_item(db_session, _USER_ID, "vet-best-null")
     solve_row = (
@@ -4534,7 +4524,7 @@ async def _seed_open_session_with_herring(
 
 @pytest.mark.asyncio
 async def test_record_solve_herring_key_move_gets_server_tier(db_session: AsyncSession) -> None:
-    """Phase 211 (D-01/D-03): a herring solve playing a GOOD-BAND ladder entry
+    """A herring solve playing a GOOD-BAND ladder entry
     ("d2d4", `_DEFAULT_LADDER` index 1 — gap ~0.014 ES vs the best) gets the
     server's tier and the non-null graded-ES pair, overriding the client's
     deliberately-wrong assertion. The vetted set is the good-band prefix
@@ -4569,7 +4559,7 @@ async def test_record_solve_herring_key_move_gets_server_tier(db_session: AsyncS
 async def test_record_solve_herring_off_band_ladder_move_keeps_client_tier(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 211 (D-04): ladder index 4 ("b1c3", gap ~0.092 ES — outside the
+    """Ladder index 4 ("b1c3", gap ~0.092 ES — outside the
     good band) is NOT a key move: the client's asserted tier stands and no
     graded-ES pair is returned."""
     await ensure_test_user(db_session, _USER_ID)
@@ -4598,7 +4588,7 @@ async def test_record_solve_herring_off_band_ladder_move_keeps_client_tier(
 async def test_record_solve_sharp_filler_returns_empty_vetted_moves(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 211 / Phase 206 D-15: a sharp-filler solve serves NO vetted moves
+    """A sharp-filler solve serves NO vetted moves
     — the same empty outcome as any other sharp puzzle, with no stored data
     and no special-cased predicate."""
     await ensure_test_user(db_session, _USER_ID)
@@ -4646,7 +4636,7 @@ async def test_record_solve_sharp_filler_returns_empty_vetted_moves(
 async def test_record_solve_foreign_user_returns_none_before_herring_read(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """V4/IDOR (T-211-02): a second user's `(session_id, position)` resolves
+    """IDOR guard: a second user's `(session_id, position)` resolves
     to nothing in `record_solve`'s own user-scoped SELECT — the router 404s —
     and the herring ladder is never read (the certification function is
     patched to prove it is not reached)."""
@@ -4704,10 +4694,10 @@ async def test_out_of_range_move_quality_violates_check_constraint(
 
 
 # ---------------------------------------------------------------------------
-# _apply_completion_tick — D-03/D-07/D-08 eager completion tick (Phase 193 Plan 02)
+# _apply_completion_tick — eager completion tick
 # ---------------------------------------------------------------------------
 
-_MONDAY_ONLY_MASK = 1 << 0  # weekday_mask bit for Monday, D-06/D-07 convention
+_MONDAY_ONLY_MASK = 1 << 0  # weekday_mask bit for Monday
 
 # 2026-01-12 (Mon) / 2026-01-13 (Tue) / 2026-01-14 (Wed) / 2026-01-15 (Thu, == _TODAY/_NOW).
 _TICK_MONDAY = datetime.date(2026, 1, 12)
@@ -4804,9 +4794,9 @@ async def _read_tick_row(db_session: AsyncSession, user_id: int) -> TrainSetting
 
 
 class TestCompletionTick:
-    """D-03 (eager tick on completion), D-07 (off-day credit-only), D-08
-    (abandoned session is a plain lazy miss) and the double-count/skip
-    guards (RESEARCH.md Pitfall 2) that make the eager and lazy paths
+    """Eager tick on completion, off-day credit-only, an abandoned session as a
+    plain lazy miss, and the double-count/skip
+    guards that make the eager and lazy paths
     compose safely."""
 
     @pytest.mark.asyncio
@@ -4878,7 +4868,7 @@ class TestCompletionTick:
 
     @pytest.mark.asyncio
     async def test_off_day_completion_credits_shield_only(self, db_session: AsyncSession) -> None:
-        """D-07: an off-day (narrowed mask) completion raises shield_level by
+        """An off-day (narrowed mask) completion raises shield_level by
         1 and leaves streak_count and streak_settled_through byte-identical."""
         await ensure_test_user(db_session, _USER_ID)
         await _seed_tick_state(
@@ -4966,7 +4956,7 @@ class TestCompletionTick:
     async def test_abandoned_session_drains_one_pip_with_no_count_change(
         self, db_session: AsyncSession
     ) -> None:
-        """D-08: a session left open past its window and never completed is
+        """A session left open past its window and never completed is
         judged by the LAZY walk (via get_progress) as a plain missed
         scheduled day — never by the eager completion path."""
         await ensure_test_user(db_session, _USER_ID)
@@ -4992,7 +4982,7 @@ class TestCompletionTick:
     async def test_double_count_guard_late_completion_after_lazy_miss(
         self, db_session: AsyncSession
     ) -> None:
-        """RESEARCH.md Pitfall 2 (dev-clock shifted): compose on a scheduled
+        """Dev-clock shifted: compose on a scheduled
         day, advance the clock past its window without completing it, call
         get_progress so the lazy walk judges that day a miss, THEN complete
         the stale open session via record_solve. The net effect across both
@@ -5177,7 +5167,7 @@ class TestCompletionTick:
 
 
 # ---------------------------------------------------------------------------
-# badge_visible — D-09/D-10 nav-badge signal (Phase 193 Plan 02)
+# badge_visible — nav-badge signal
 # ---------------------------------------------------------------------------
 
 # 2026-01-13 is a Tuesday — not scheduled under a Mon/Wed/Fri mask.
@@ -5197,7 +5187,7 @@ async def _set_weekday_mask(db_session: AsyncSession, user_id: int, mask: int) -
 
 
 class TestBadgeVisible:
-    """D-09 (scheduled-day gate) and D-10 (open-session carve-out) for the
+    """The scheduled-day gate and the open-session carve-out for the
     server-computed nav-badge visibility signal (`ProgressSnapshot.badge_visible`)."""
 
     @pytest.mark.asyncio
@@ -5259,7 +5249,7 @@ class TestBadgeVisible:
     async def test_narrowed_mask_off_day_no_open_session_is_hidden(
         self, db_session: AsyncSession
     ) -> None:
-        """D-09: a Mon/Wed/Fri mask on a Tuesday, with material waiting but
+        """A Mon/Wed/Fri mask on a Tuesday, with material waiting but
         no open session, hides the badge."""
         await ensure_test_user(db_session, _USER_ID)
         await _set_weekday_mask(db_session, _USER_ID, _MON_WED_FRI_MASK)
@@ -5289,7 +5279,7 @@ class TestBadgeVisible:
     async def test_narrowed_mask_off_day_with_open_unfinished_session_is_visible(
         self, db_session: AsyncSession
     ) -> None:
-        """D-10: the same off-day carve-out — an already-open unexpired
+        """The same off-day carve-out — an already-open unexpired
         session with unsolved puzzles keeps the badge lit."""
         await ensure_test_user(db_session, _USER_ID)
         await _set_weekday_mask(db_session, _USER_ID, _MON_WED_FRI_MASK)
@@ -5323,7 +5313,7 @@ class TestBadgeVisible:
     async def test_fully_solved_open_session_contributes_no_carve_out(
         self, db_session: AsyncSession
     ) -> None:
-        """An open session whose every puzzle is solved contributes no D-10
+        """An open session whose every puzzle is solved contributes no open-session
         carve-out — get_waiting_puzzle_count's own branch 1 already reports
         0 for it, so the badge stays hidden."""
         await ensure_test_user(db_session, _USER_ID)
@@ -5346,14 +5336,14 @@ class TestBadgeVisible:
 
 
 # ---------------------------------------------------------------------------
-# compose_and_materialize_session — D-06 watermark stamp (Phase 193 Plan 02)
+# compose_and_materialize_session — eligibility watermark stamp
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_compose_stamps_pool_eligible_since_once(db_session: AsyncSession) -> None:
     """A user whose first drill_items row is created by composition also
-    gets the D-06 watermark, without waiting for a GET /train/progress
+    gets the eligibility watermark, without waiting for a GET /train/progress
     read to discover it. A second compose call (resuming the same open
     session) must not move it."""
     await ensure_test_user(db_session, _USER_ID)
@@ -5376,8 +5366,8 @@ async def test_compose_stamps_pool_eligible_since_once(db_session: AsyncSession)
 
 
 # ---------------------------------------------------------------------------
-# Phase 235 (SEED-192, D-05/D-06/D-07/D-19) — the server answer key attached
-# to every composed/resumed puzzle by `_attach_answer_keys`.
+# The server answer key attached to every composed/resumed puzzle by
+# `_attach_answer_keys`.
 # ---------------------------------------------------------------------------
 
 # Sharp for the white mover at ply 2 (best +200, second -200); `su` b1c3 is
@@ -5385,7 +5375,7 @@ async def test_compose_stamps_pool_eligible_since_once(db_session: AsyncSession)
 # keeps it on the key.
 _SHARP_KEYED_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "b1c3"}]
 
-# Phase 236 (D-08): a soft blob (gap ~0.009, inside the good band) whose `su`
+# A soft blob (gap ~0.009, inside the good band) whose `su`
 # b1c3 is legal at ply 2, so with best g1f3 the server-graded set is
 # [g1f3 good, b1c3 good].
 _SOFT_KEYED_PV_LINES = [{"b": 40, "bm": None, "s": 30, "sm": None, "su": "b1c3"}]
@@ -5442,7 +5432,7 @@ async def test_compose_attaches_answer_keys_for_every_source(
 ) -> None:
     """Fresh composition AND the resumed session carry the same answer keys:
     SR item = stored best_move + live-blob type + sharp `su`; herring = top of
-    its ladder; sharp filler = its CSV solution (D-05/D-06/D-19)."""
+    its ladder; sharp filler = its CSV solution."""
     _install_sharp_fixture(monkeypatch)
     await ensure_test_user(db_session, _USER_ID)
     await train_repository.upsert_settings(
@@ -5489,7 +5479,7 @@ async def test_compose_attaches_answer_keys_for_every_source(
 
 @pytest.mark.asyncio
 async def test_answer_keys_ignore_own_game_flaw_for_herring(db_session: AsyncSession) -> None:
-    """RESEARCH Pitfall 5: a RED_HERRING drill_solves row that shares
+    """A RED_HERRING drill_solves row that shares
     (user, game, ply) with the user's OWN sharp game_flaws row must still read
     puzzle_type "herring" with no runner-up — the SR joins are source-gated."""
     await ensure_test_user(db_session, _USER_ID)
@@ -5530,7 +5520,7 @@ async def test_answer_keys_ignore_own_game_flaw_for_herring(db_session: AsyncSes
     assert keys[0].key.puzzle_type == "herring"
     assert keys[0].key.runner_up_uci is None
     assert keys[0].key.key_uci == "e2e4"
-    # Phase 236 (D-08): the herring grades its LADDER band, not the user's own
+    # The herring grades its LADDER band, not the user's own
     # sharp game_flaws blob (which would give a runner-up "wrong" entry instead).
     assert [m.uci for m in keys[0].server_graded_moves] == ["e2e4", "d2d4", "g1f3"]
 
@@ -5539,7 +5529,7 @@ async def test_answer_keys_ignore_own_game_flaw_for_herring(db_session: AsyncSes
 async def test_server_graded_moves_graded_parity_fresh_and_resumed(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Phase 236 D-08: for EVERY composed puzzle (soft SR, sharp SR, herring, sharp
+    """For EVERY composed puzzle (soft SR, sharp SR, herring, sharp
     filler), fresh and resumed, the pre-attempt `server_graded_moves` equals
     `SolveClassification.graded_moves` from `_classify_and_certify_solve` on the
     same drill_solves row (uci, tier, order): composition and the solve path call
@@ -5611,14 +5601,13 @@ async def test_server_graded_moves_graded_parity_fresh_and_resumed(
 
 
 # ---------------------------------------------------------------------------
-# Phase 235 (SEED-192, D-02/D-14) — server-graded sharp runner-up and the pure
-# `_resolve_grade` decision.
+# Server-graded sharp runner-up and the pure `_resolve_grade` decision.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_record_solve_grades_sharp_runner_up_server_side(db_session: AsyncSession) -> None:
-    """D-02: on a sharp SR item the played runner-up `su` is graded by the server
+    """On a sharp SR item the played runner-up `su` is graded by the server
     from the blob's b/s evals, whatever tier the client asserted; the runner-up is
     never shown as also fine (vetted_moves stays empty)."""
     await ensure_test_user(db_session, _USER_ID)
@@ -5654,7 +5643,7 @@ async def test_record_solve_grades_sharp_runner_up_server_side(db_session: Async
 
 @pytest.mark.asyncio
 async def test_record_solve_sharp_key_keeps_client_tier(db_session: AsyncSession) -> None:
-    """D-02: playing the sharp KEY is not graded by the server (the key is never
+    """Playing the sharp KEY is not graded by the server (the key is never
     a mistake): the client's tier stands and no graded-ES pair is returned."""
     await ensure_test_user(db_session, _USER_ID)
     drill_session = await _seed_open_session_with_sr_item(
@@ -5738,7 +5727,7 @@ def test_resolve_grade_accepts_a_confirmed_sharp_disagreement(
     classification: train_repository.SolveClassification,
     recheck: SolveRecheck,
 ) -> None:
-    """D-14: either guess earns the point, tier good, no graded ES pair."""
+    """Either guess earns the point, tier good, no graded ES pair."""
     resolved = train_repository._resolve_grade(
         guess=guess,
         played_move=played,
@@ -5866,7 +5855,7 @@ def test_resolve_grade_rejects_every_failed_sanity_check(
     expected_quality: str,
     expected_correct_guess: bool,
 ) -> None:
-    """D-14 sanity rejects grade exactly as without the claim: the client tier and
+    """Sanity-rejected claims grade exactly as without the claim: the client tier and
     the normal server-computed guess verdict, disagreement False."""
     resolved = train_repository._resolve_grade(
         guess=guess,
@@ -5883,7 +5872,7 @@ def test_resolve_grade_rejects_every_failed_sanity_check(
 
 
 def test_resolve_grade_server_graded_move_wins_over_a_confirmed_claim() -> None:
-    """D-02 beats D-14: a played sharp runner-up is graded by the server even when
+    """A played sharp runner-up is graded by the server even when
     the phone claims a confirmed disagreement."""
     resolved = train_repository._resolve_grade(
         guess="critical",
@@ -5895,8 +5884,8 @@ def test_resolve_grade_server_graded_move_wins_over_a_confirmed_claim() -> None:
     assert resolved == train_repository.ResolvedGrade("wrong", True, False, 0.7, 0.3)
 
 
-def test_resolve_grade_instant_payload_tier_d10() -> None:
-    """Phase 236 D-10: the instant path POSTs the payload tier. A set member that
+def test_resolve_grade_instant_payload_tier() -> None:
+    """The instant path POSTs the payload tier. A set member that
     left the live classification (blob changed between composition and solve)
     records the client-asserted tier via path 3 with no graded ES pair; a member
     still in the live set records the live server tier via path 1."""
@@ -5928,7 +5917,7 @@ def test_resolve_grade_instant_payload_tier_d10() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 240 (D-13..D-15) — the first-ever session opens on a sharp puzzle and
+# The first-ever session opens on a sharp puzzle and
 # carries a "several" puzzle at puzzle 2 or 3.
 # ---------------------------------------------------------------------------
 
@@ -6086,8 +6075,8 @@ async def _seed_first_session_material(
 async def test_first_session_opens_on_sharp_and_several_in_slot_1_or_2(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Tracer (D-13..D-15): the spy proves the stage is wired between assembly and
-    materialization regardless of how the D-09 shuffle happened to fall."""
+    """Tracer: the spy proves the stage is wired between assembly and
+    materialization regardless of how the shuffle happened to fall."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
     spy = _install_first_session_spy(monkeypatch)
@@ -6109,7 +6098,7 @@ async def test_first_session_opens_on_sharp_and_several_in_slot_1_or_2(
 async def test_first_session_order_is_reproducible_for_the_same_user_and_day(
     db_session: AsyncSession,
 ) -> None:
-    """D-13: the stage is a pure function of (user, day, assembled items), so
+    """The stage is a pure function of (user, day, assembled items), so
     re-running it on the same assembly yields the same order."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
@@ -6132,7 +6121,7 @@ async def test_first_session_order_is_reproducible_for_the_same_user_and_day(
 async def test_first_session_gate_blocks_an_expired_earlier_session(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D-13: an earlier drill_sessions row of status expired disables the reorder."""
+    """An earlier drill_sessions row of status expired disables the reorder."""
     await ensure_test_user(db_session, _USER_ID)
     old = await _seed_open_session_dated(
         db_session, _USER_ID, "fs-expired", session_date=_TODAY - datetime.timedelta(days=10)
@@ -6156,7 +6145,7 @@ async def test_first_session_gate_blocks_an_expired_earlier_session(
 async def test_first_session_gate_blocks_an_earlier_completed_session(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D-13: an earlier completed session outside today's window disables the reorder."""
+    """An earlier completed session outside today's window disables the reorder."""
     await ensure_test_user(db_session, _USER_ID)
     await _seed_completed_session(db_session, _USER_ID, _TODAY - datetime.timedelta(days=10))
     await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
@@ -6174,7 +6163,7 @@ async def test_first_session_gate_blocks_an_earlier_completed_session(
 async def test_first_session_resized_untouched_session_is_recomposed_with_the_reorder(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """D-13: a first session discarded as untouched-and-resized still counts as
+    """A first session discarded as untouched-and-resized still counts as
     first-ever, because the discard DELETE runs before the check."""
     # Sharp fillers make a sharp puzzle available at every session size.
     _install_sharp_fixture(monkeypatch)

@@ -1,11 +1,11 @@
 /**
- * Shared fabricated providers for the mctsSearch test suites (Phase 227-10).
+ * Shared fabricated providers for the mctsSearch test suites.
  *
  * `uniformPolicyFromLegalMoves`, `makeFixedPolicy`, `withJitter`, `hashedEvalCp`
  * and `makeVariedGrade` are MOVED verbatim from `mctsSearch.test.ts` so the
  * continuous-dispatch tests (`mctsSearch.continuous.test.ts`) reuse the exact
- * same fixtures the round-mode suites use. The remaining helpers are new in
- * Phase 227-10: `deferred` and `makeControlledGrade` (hand-settled provider
+ * same fixtures the round-mode suites use. The remaining helpers are new:
+ * `deferred` and `makeControlledGrade` (hand-settled provider
  * promises for ordering control), `settlesWithin` (a bounded wait, so a hang
  * fails an assertion instead of timing the whole test out), and the peaked /
  * chain policies whose shapes exercise `selectPath`'s per-fill block logic.
@@ -35,7 +35,7 @@ export function uniformPolicyFromLegalMoves(fen: string): Record<string, number>
  * A fabricated `policy()`: returns `byFen[fen]` when explicitly configured,
  * else falls back to a uniform distribution over chess.js's real legal moves
  * (so deeper/unconfigured tree nodes always receive a legal distribution).
- * Records every call when `calls` is provided (ENGINE-04 oracle / ENGINE-02
+ * Records every call when `calls` is provided (ELO-oracle and
  * dropped-tail assertions).
  */
 export function makeFixedPolicy(
@@ -63,7 +63,7 @@ export function withJitter<Args extends unknown[], Result>(
   };
 }
 
-// CR-01 fixture hardening: the original determinism fixtures used uniform
+// Fixture hardening: the original determinism fixtures used uniform
 // policies and all-zero grades, pinning every node value at exactly 0.5 —
 // structurally unable to detect a selection-order regression (any two search
 // trees look identical when every value is 0.5). These constants derive a
@@ -91,7 +91,7 @@ export function makeVariedGrade(): EngineProviders['grade'] {
   };
 }
 
-// ─── Phase 227-10 additions ──────────────────────────────────────────────────
+// ─── Continuous-dispatch helpers ──────────────────────────────────────────────────
 
 /** A promise whose settlement the test controls by hand. */
 export interface Deferred<T> {
@@ -216,7 +216,7 @@ function legalUcisSorted(fen: string): string[] {
  * `truncateAndRenormalize`'s ~90% mass cut keeps exactly `peaks.length`
  * candidates. At `rootFen` it returns `rootPeaks` instead (default: uniform
  * over all legal moves, a broad Maia-like root). Used for the "peaked non-root
- * policy" shape (SEED-170 item 2) and for chains that collapse a subtree to a
+ * policy" shape and for chains that collapse a subtree to a
  * single live child.
  */
 export function makePeakedPolicy(

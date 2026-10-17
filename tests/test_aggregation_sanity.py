@@ -1,6 +1,6 @@
-"""Aggregation sanity tests (Phase 61).
+"""Aggregation sanity tests.
 
-Encodes the audit gaps identified in the 2026-04-16 session. Each test seeds
+Encodes audit gaps in the aggregation logic. Each test seeds
 the minimum games needed via db_session (transaction rolled back per test),
 calls the service function directly, and asserts exact integers.
 
@@ -366,7 +366,7 @@ class TestRecencyBoundary:
 
     @pytest.mark.asyncio
     async def test_from_date_is_inclusive(self, db_session: AsyncSession) -> None:
-        """Games played on or after from_date (same day) must be included (D-10)."""
+        """Games played on or after from_date (same day) must be included."""
         from_date = datetime.date(2026, 1, 15)
         played_at = datetime.datetime(2026, 1, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
         await _seed_game(
@@ -391,7 +391,7 @@ class TestRecencyBoundary:
 
     @pytest.mark.asyncio
     async def test_from_date_excludes_day_before(self, db_session: AsyncSession) -> None:
-        """Games played strictly before from_date must be excluded (D-10)."""
+        """Games played strictly before from_date must be excluded."""
         from_date = datetime.date(2026, 2, 15)
         played_at = datetime.datetime(2026, 2, 14, 23, 59, 59, tzinfo=datetime.timezone.utc)
         await _seed_game(

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * LeaderboardPrivacyCard.test.tsx: Phase 230 D-16. The card reads the profile
+ * LeaderboardPrivacyCard.test.tsx: the card reads the profile
  * from the server, writes the flag through PUT /users/me/profile and refreshes
  * the profile cache and the weekly boards from the response. Spies on the real
  * axios instance so card, hook and cache are covered together.
@@ -92,7 +92,7 @@ describe('LeaderboardPrivacyCard', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['train', 'leaderboard'] });
   });
 
-  it("tells hidden users they don't earn medals (Phase 231)", async () => {
+  it("tells hidden users they don't earn medals", async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: PROFILE });
     renderCard();
     await screen.findByTestId(SWITCH_ID);

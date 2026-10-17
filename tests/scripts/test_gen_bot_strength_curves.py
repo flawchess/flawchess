@@ -1,4 +1,4 @@
-"""Bot-strength lookup-curve generator tests (D-01/D-02/D-06/D-07/D-08/D-10). Phase 181 Plan 01.
+"""Bot-strength lookup-curve generator tests.
 
 Pure-function unit tests over `scripts.gen_bot_strength_curves` — no DB, no
 engines, no TSV files on disk. Uses small in-memory synthetic points for the
@@ -10,29 +10,29 @@ pure stdlib math over static data.
 
 Tests cover (one function per behavior):
 - test_pava_pools_light_dip: PAVA pools Light's non-monotone bot_elo 1100/1300
-  pair into one block (D-07).
+  pair into one block.
 - test_pava_deep_plateau_is_ceiling: PAVA pools Deep's 2300/2600 dip into its
-  ceiling block (D-07).
+  ceiling block.
 - test_pava_human_noop: PAVA is a no-op on Human's already-monotone points.
 - test_inversion_lowest_bot_elo_wins: inversion returns the LOWEST bot_elo in a
-  plateau/merged block, never the highest (D-07).
+  plateau/merged block, never the highest.
 - test_offset_uses_pooled_g_not_per_cell_or_vs_sf: offset subtracts the pooled
-  g_preset_combined starting from rating_vs_maia (D-01).
+  g_preset_combined starting from rating_vs_maia.
 - test_all_cells_retained: all 5 measured cells per preset (including the two
-  Human beyond_ladder cells) are present after loading — none dropped (D-08).
+  Human beyond_ladder cells) are present after loading — none dropped.
 - test_range_rounds_inward: range floor rounds UP, ceiling rounds DOWN to the
-  nearest GRID_STEP (D-10) — asserts the rounding RULE, not a hardcoded number.
+  nearest GRID_STEP — asserts the rounding RULE, not a hardcoded number.
 - test_preset_band_derives_from_c_and_mean_ci_halfwidth: the band is derived
   from C_UNCERTAINTY_HALF_BAND + mean CI half-width, not a hardcoded number.
 - test_loader_fails_loud_on_missing_cells: load_internal_scale raises ValueError
   naming the missing field on empty 'cells' / missing 'per_preset'.
 - test_json_has_components_and_derived: the lookup JSON payload has both a
-  `components` and a `derived` section, each covering all three presets (D-02).
+  `components` and a `derived` section, each covering all three presets.
 - test_disclaimer_present_both_outputs: APPROX_ELO_DISCLAIMER appears verbatim
-  in both the JSON payload and the TS render (D-06).
+  in both the JSON payload and the TS render.
 - test_render_is_deterministic: rendering the real frozen fixture twice yields
   byte-identical JSON and TS (the invariant the CI drift check relies on).
-- test_deep_range_ceiling_below_1900: sanity check against D-07 — Deep's
+- test_deep_range_ceiling_below_1900: sanity check — Deep's
   measured plateau must not be marketed as reaching the seed's hoped ~2600.
 """
 
@@ -61,8 +61,8 @@ from scripts.gen_bot_strength_curves import (
 FIT_VALUE_TOLERANCE = 0.05  # rating points; PAVA pooled-mean arithmetic is exact float math
 OFFSET_TOLERANCE = 0.05
 
-# Real Phase-180 measured points, rating_vs_maia, sorted ascending by bot_elo
-# (RESEARCH.md Pattern 2 — hand-verified against reports/data/bot-curves-internal-scale.json).
+# Real measured points, rating_vs_maia, sorted ascending by bot_elo
+# (hand-verified against reports/data/bot-curves-internal-scale.json).
 LIGHT_POINTS = [
     (1100.0, 1638.8857921090334),
     (1300.0, 1512.799070855996),
@@ -86,7 +86,7 @@ HUMAN_POINTS = [
 ]
 
 # Human's per_preset.g_preset_combined vs its bot_elo=700 per-cell g_preset —
-# the two must differ (D-01: the fit uses the pooled value, never the per-cell one).
+# the two must differ (the fit uses the pooled value, never the per-cell one).
 HUMAN_G_PRESET_COMBINED = 40.947876930543565
 HUMAN_BOT_ELO_700_G_PRESET = 108.07089014379801
 
@@ -152,7 +152,7 @@ def test_offset_uses_pooled_g_not_per_cell_or_vs_sf() -> None:
     approx = approx_blitz_points(blocks, HUMAN_G_PRESET_COMBINED, c)
     first_bot_elo, first_blitz = approx[0]
     assert first_bot_elo == 700.0
-    # D-01: offset subtracts the POOLED g, not the noisier per-cell g.
+    # Offset subtracts the POOLED g, not the noisier per-cell g.
     expected = HUMAN_POINTS[0][1] - HUMAN_G_PRESET_COMBINED + c
     assert first_blitz == pytest.approx(expected, abs=OFFSET_TOLERANCE)
     wrong_with_per_cell_g = HUMAN_POINTS[0][1] - HUMAN_BOT_ELO_700_G_PRESET + c
@@ -167,7 +167,7 @@ def test_all_cells_retained() -> None:
     for blend in (0.0, 0.05, 0.5):
         cells = by_blend[blend]
         assert len(cells) == 5, f"blend {blend} has {len(cells)} cells, expected 5"
-    # D-08: the two Human beyond_ladder cells (bot_elo 700, 1100) are present, not dropped.
+    # The two Human beyond_ladder cells (bot_elo 700, 1100) are present, not dropped.
     human_beyond_ladder_elos = {c["bot_elo"] for c in by_blend[0.0] if c.get("beyond_ladder")}
     assert human_beyond_ladder_elos == {700, 1100}
 
@@ -245,7 +245,7 @@ def test_render_is_deterministic() -> None:
 
 
 def test_deep_range_ceiling_below_1900() -> None:
-    # D-07 sanity check: Deep's measured plateau (~1950-2100 internal) must not
+    # Sanity check: Deep's measured plateau (~1950-2100 internal) must not
     # be marketed as reaching the seed's hoped ~2600 approx-blitz.
     artifact = _real_artifact()
     assert artifact["derived"]["deep"]["range"]["ceiling"] < 1900

@@ -1,7 +1,7 @@
 /**
- * wasmSimd — a cheap, synchronous WASM-SIMD capability probe (D-13).
+ * wasmSimd — a cheap, synchronous WASM-SIMD capability probe.
  *
- * Today a device that can never run Maia (no WASM SIMD support) downloads all
+ * A device that can never run Maia (no WASM SIMD support) would download all
  * 45.7 MB of the model on mobile data before onnxruntime-web's `create()`
  * throws. This probe runs BEFORE any fetch starts (see `maiaWorkerHost.ts`'s
  * `ensureSpawned()`), so an incapable device never pays that cost finding out.
@@ -10,8 +10,7 @@
  * (`src/detectors/simd/module.ts`) — a minimal WASM module using a SIMD
  * instruction (`v128.const` / `i32x4.splat`-family opcode), valid only on an
  * engine with SIMD support. Hand-rolled here rather than depending on the
- * `wasm-feature-detect` npm package per 213-RESEARCH.md's Package Legitimacy
- * Audit / "Don't Hand-Roll" recommendation — this one detector is simple
+ * `wasm-feature-detect` npm package: this one detector is simple
  * enough, and cited, to inline.
  */
 

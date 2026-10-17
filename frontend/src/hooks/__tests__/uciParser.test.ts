@@ -8,7 +8,7 @@ import {
 } from '../uciParser';
 import type { PvLine } from '../uciParser';
 
-// UCI input strings from RESEARCH.md / PATTERNS.md § "UCI Parser Unit Test Inputs"
+// UCI input strings for the parser unit tests
 
 describe('parseInfoLine', () => {
   it('returns null for non-info lines', () => {
@@ -167,7 +167,7 @@ describe('dedupePvLinesByFirstMove', () => {
   });
 });
 
-// Phase 211 (Plan 03): the squares-only rank matcher that used to live here
+// The squares-only rank matcher that used to live here
 // was deleted with the free-play mount-rank seam; its behavior contract
 // (promotion tolerance, array-order ties, never-throws) survives in
 // `trainArrows.ts`'s `vettedMoveForSquares` — see trainArrows.test.ts.

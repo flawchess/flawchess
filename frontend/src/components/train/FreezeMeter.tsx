@@ -1,8 +1,8 @@
 /**
  * FreezeMeter — the 0-7 `shield_level` buffer as snowflake "freezes"
- * (SEED-181, sketch 005: plain stroke snowflake, icy blue when held, grey
- * outline when empty). Filled vs empty differs in stroke weight as well as
- * color, so the distinction survives a greyscale render.
+ * (plain stroke snowflake, icy blue when held, grey outline when empty).
+ * Filled vs empty differs in stroke weight as well as color, so the
+ * distinction survives a greyscale render.
  *
  * One-shot animations from the arrival diff, skipped under reduced motion:
  * - `usedCount`: the top `usedCount` empty slots (the freezes spent since the

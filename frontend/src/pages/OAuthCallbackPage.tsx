@@ -55,8 +55,9 @@ export function OAuthCallbackPage() {
         // Guest promoted via Google SSO — clear saved guest token
         localStorage.removeItem('guest_token');
         // Defer the toast message so it appears after the final redirect
-        // (OAuthCallback → / → /openings or /import). Showing the toast here
-        // can lose it during the rapid redirect chain after a full page load.
+        // (OAuthCallback → / → returnTo, /library/games or /library/import).
+        // Showing the toast here can lose it during the rapid redirect chain
+        // after a full page load.
         sessionStorage.setItem(
           'pending_toast',
           'Account created with Google. Your data is saved.',

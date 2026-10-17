@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * sounds.ts unit tests (PLAY-08, D-09/D-10).
+ * sounds.ts unit tests.
  *
  * Behaviors verified:
  * 1. Default (no localStorage key) is unmuted; playSound triggers Audio.play
@@ -9,11 +9,11 @@
  *    setMuted(false).
  * 3. setMuted persists to localStorage under MUTE_KEY and notifies
  *    useSyncExternalStore subscribers (useMuted re-renders).
- * 4. unlockAudio calls play then pause on each preloaded clip (Pitfall 4).
+ * 4. unlockAudio calls play then pause on each preloaded clip.
  * 5. Every event dispatches its mapped asset — including the Train
  *    mixed-result event 'score-partial' (PartialScore, the clip 'low-time'
  *    used to play) and the two events that deliberately SHARE one clip
- *    ('draw-declined' and 'game-draw' both play Notify.mp3, Quick 260814-b).
+ *    ('draw-declined' and 'game-draw' both play Notify.mp3).
  *
  * 6. Web Audio path (iOS rapid-retrigger fix): with an AudioContext present,
  *    every playSound is a fresh AudioBufferSourceNode, NO media element is
@@ -126,7 +126,7 @@ describe('sounds', () => {
   );
 
   it('gives the two clip-sharing events (draw-declined, game-draw) their own Audio instances', async () => {
-    // Quick 260814-b: both play Notify.mp3, but audioCache is keyed by EVENT,
+    // Both play Notify.mp3, but audioCache is keyed by EVENT,
     // not by filename. That is deliberate — a shared instance would make a
     // `game-draw` fired moments after a `draw-declined` restart the same
     // element (currentTime = 0) instead of sounding independently.
@@ -177,10 +177,7 @@ describe('sounds', () => {
 
     unlockAudio();
 
-    // Twelve SoundEvent members (Task 1 added game-win/game-loss/game-draw;
-    // 190.1 UAT round 7 removed the short-lived victory event again; Quick
-    // 260813-oae added game-start; Quick 260814 added score-partial; Quick
-    // 260814-b added score-full), each gets its own preloaded Audio instance.
+    // Twelve SoundEvent members; each gets its own preloaded Audio instance.
     // Twelve, not eleven, even though draw-declined and game-draw now point at
     // the same file — the cache is keyed by event, not by filename.
     expect(instances).toHaveLength(12);
@@ -196,7 +193,7 @@ describe('sounds', () => {
   });
 
   it('unlockAudio does not interrupt a clip that is already playing', async () => {
-    // Quick 260813-oae: `game-start` is ~0.78s and fires from the Start click,
+    // `game-start` is ~0.78s and fires from the Start click,
     // so a pointerdown inside the game view moments later reaches unlockAudio
     // while it is still sounding. That must not pause it mid-clip.
     const { playSound, unlockAudio } = await loadSounds();

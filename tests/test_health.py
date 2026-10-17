@@ -1,6 +1,6 @@
 """Tests for GET /api/health.
 
-Covers all three paths (F-12 / SEED-161 group 5):
+Covers all three paths:
 - Happy path: DB reachable -> 200 {"status": "ok"}
 - Probe raises: the connection's execute() raises -> 503 {"status": "degraded"}
 - Timeout: the probe exceeds _HEALTH_DB_TIMEOUT_S -> 503 {"status": "degraded"}
@@ -10,7 +10,7 @@ short-lived connection inside the timeout. It deliberately does NOT use the
 request-scoped `get_async_session`: that dependency commits after its `yield`, outside
 the handler's try/except, so a cancelled query would be followed by an unbounded
 commit() on a cancelled asyncpg connection and surface as a 500 or a hang instead of
-the intended 503 (Phase 216 code review, BLOCKER). The session-scoped autouse
+the intended 503. The session-scoped autouse
 fixture in conftest.py overrides `get_engine` with the per-run test engine, so the
 happy path runs the whole slice (HTTP -> FastAPI dependency -> fresh Postgres
 connection) for real. The failure-path tests swap in a stub engine and must RESTORE

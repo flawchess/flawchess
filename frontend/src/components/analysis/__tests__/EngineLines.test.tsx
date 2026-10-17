@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Phase 137 Plan 02 — EngineLines render tests.
- * Updated Quick 260627-mt8: depth badge moved to the engine info line (Analysis.tsx),
+ * EngineLines render tests.
+ * The depth badge lives in the engine info line (Analysis.tsx),
  * so EngineLines no longer takes a `depth` prop or renders a `d{depth}` badge.
  *
  * Verifies:
@@ -109,7 +109,7 @@ describe('EngineLines', () => {
 
   it('clicking a later move passes the full UCI prefix up to that move', () => {
     // LINE_CP = ['e2e4', 'd7d5', 'e4d5']; clicking move index 2 must graft the
-    // whole line up to it (not just the single clicked move) — the UAT bug fix.
+    // whole line up to it (not just the single clicked move).
     const onMoveClick = vi.fn();
     render(
       <EngineLines
@@ -133,7 +133,7 @@ describe('EngineLines', () => {
         onMoveClick={vi.fn()}
       />,
     );
-    // Quick 260627-r9g item 3: the "Analyzing…" text is now a skeleton placeholder.
+    // The "Analyzing…" text is a skeleton placeholder.
     expect(screen.getByTestId('engine-lines-analyzing')).toBeTruthy();
     expect(screen.queryByText('Analyzing…')).toBeNull();
   });
@@ -214,7 +214,7 @@ describe('EngineLines', () => {
     expect(screen.queryByText('Analyzing…')).toBeNull();
   });
 
-  it('with baseFen, move chips are tooltip-wrapped and still clickable (thl item 5)', () => {
+  it('with baseFen, move chips are tooltip-wrapped and still clickable', () => {
     const onMoveClick = vi.fn();
     render(
       <TooltipProvider>
@@ -284,14 +284,14 @@ describe('EngineLines', () => {
     expect(screen.getByTestId('engine-line-0-move-6')).toBeTruthy();
   });
 
-  it('move chips never wrap inside, so O-O-O stays on one row (Phase 237 UAT)', () => {
+  it('move chips never wrap inside, so O-O-O stays on one row', () => {
     render(
       <EngineLines maxLines={1} pvLines={[LINE_CP]} isAnalyzing={false} onMoveClick={vi.fn()} compact />,
     );
     expect(screen.getByTestId('engine-line-0-move-0').className).toContain('whitespace-nowrap');
   });
 
-  it('renders at most maxLines rows (Phase 228, D-16)', () => {
+  it('renders at most maxLines rows', () => {
     const five: PvLine[] = [1, 2, 3, 4, 5].map((n) => ({ ...LINE_CP, multipv: n }));
     const three = render(
       <EngineLines pvLines={five} isAnalyzing={false} maxLines={3} onMoveClick={vi.fn()} />,
@@ -364,7 +364,7 @@ describe('EngineLines', () => {
   });
 });
 
-// ─── G-213-34 (supersedes D-12): EngineLinesSkeleton reads no download state ──
+// ─── EngineLinesSkeleton reads no download state ──
 
 describe('EngineLinesSkeleton', () => {
   it('renders the pulsing placeholder rows (the ONLY thing this skeleton ever renders now)', () => {

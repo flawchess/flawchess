@@ -371,7 +371,7 @@ def _build_report(
     )
     lines.append(
         "| **Status** | `shipped` = floor-gated and surfaced; `suppressed` = excluded from the "
-        "floor gate and query-suppressed via the `_TACTIC_CHIP_CONFIDENCE_MIN` lever. |"
+        "floor gate and query-suppressed via the `MIN_TACTIC_CHIP_CONFIDENCE` lever. |"
     )
     lines.append("")
 

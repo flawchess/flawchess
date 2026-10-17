@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 /** Parse a "YYYY-MM-DD" string (a full ISO 8601 timestamp also works — its
  * time part is ignored) into a Date (local time). */
 function parseDate(d: string): Date {
-  // Bug fix (190.1 UAT): callers pass full ISO timestamps too (e.g.
+  // Bug fix: callers pass full ISO timestamps too (e.g.
   // games.played_at "2026-07-20T12:00:00Z"); splitting the raw string on '-'
   // made the day component "20T12:00:00Z" -> NaN -> "Invalid Date".
   const datePart = d.split('T')[0] ?? d;
@@ -82,13 +82,11 @@ export function niceWinRateAxis(values: number[]): { domain: [number, number]; t
 /**
  * Compute a nice y-axis domain and evenly-spaced ticks for Elo rating data.
  * Uses step candidates [50, 100, 200, 500]; picks the largest step where
- * range / step >= 4 (aim for 4-8 ticks). Lifted from RatingChart.tsx:54-106.
+ * range / step >= 4 (aim for 4-8 ticks).
  *
  * Fallbacks:
  * - empty values: { domain: ['auto', 'auto'], ticks: undefined } (Recharts auto-scale).
  * - all values equal: expand min -= 50, max += 50 so ticks are meaningful.
- *
- * 57-UI-SPEC.md §Axes prescribes this signature and step set.
  */
 export function niceEloAxis(
   values: number[],

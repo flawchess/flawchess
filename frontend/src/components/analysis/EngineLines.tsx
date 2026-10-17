@@ -1,23 +1,24 @@
 /**
  * EngineLines — renders up to `maxLines` top PV lines from the Stockfish engine
- * (the count comes from the Stockfish lines setting, 1-5, Phase 228).
+ * (the count comes from the Stockfish lines setting, 1-5).
  *
  * Each line is a single row:
- *  - a colored eval badge (read from pvLines[i].evalCp / pvLines[i].evalMate, D-03):
+ *  - a colored eval badge (read from pvLines[i].evalCp / pvLines[i].evalMate):
  *    solid blue (STOCKFISH_BADGE_PRIMARY) on the best line; every later line an opaque faded blue
  *    graded by its quality vs the top line, like its board arrow and icon
- *    (stockfishSecondaryBadgeColor), white text throughout (SEED-175).
- *  - up to 5 clickable PV move chips that call onMoveClick(from, to)
+ *    (stockfishSecondaryBadgeColor), white text throughout.
+ *  - up to MAX_PLIES clickable PV move chips (the chevron reveals the rest); a click
+ *    calls onMoveClick with the UCI path up to that move
  *
  * The search depth is shown by the engine info line above this component, not here.
  *
  * When `isAnalyzing && pvLines.length === 0`, shows a fixed-height skeleton
  * placeholder (EngineLinesSkeleton) so the panel height is stable as lines arrive.
  * When `isAnalyzing && pvLines.length > 0`, shows the lines.
- * When `!isAnalyzing && pvLines.length === 0`, renders empty (Phase 138 handles
+ * When `!isAnalyzing && pvLines.length === 0`, renders empty (the parent handles
  * engine-loading chrome).
  *
- * All engine strings are rendered as React children (auto-escaped, T-137-03 mitigated).
+ * All engine strings are rendered as React children (auto-escaped).
  */
 
 import { useState } from 'react';
@@ -52,8 +53,8 @@ interface PvStep {
  * Replay is sequential, so once a move fails every later move returns nulls (the
  * board can no longer advance).
  *
- * Exported (Phase 155 Plan 03) so `FlawChessEngineLines.tsx` can reuse this verbatim
- * instead of duplicating it — see D-07.
+ * Exported so `FlawChessEngineLines.tsx` can reuse this verbatim
+ * instead of duplicating it.
  */
 export function replayPvLine(baseFen: string | undefined, uciMoves: string[]): PvStep[] {
   if (!baseFen) return uciMoves.map(() => ({ san: null, fen: null }));
@@ -81,41 +82,41 @@ export function replayPvLine(baseFen: string | undefined, uciMoves: string[]): P
   });
 }
 
-// PV chip class — matches HorizontalMoveList chip exactly (PATTERNS line 176).
+// PV chip class — matches HorizontalMoveList chip exactly.
 // whitespace-nowrap: a chip is a flex item that may shrink to min-content, which broke
-// "O-O-O+" at its hyphens and stacked the O's vertically (Phase 237 UAT).
+// "O-O-O+" at its hyphens and stacked the O's vertically.
 // text-xs is the user-approved exception to the CLAUDE.md text-sm floor, scoped to this
-// dense engine surface (Quick 260628-r5v UAT: shrink the desktop engine lines to match the
-// already-compact mobile lines). The compact variant below keeps the same font, differing
-// only in row layout (no-wrap + zero padding).
+// dense engine surface (the desktop engine lines match the already-compact mobile
+// lines). The compact variant below keeps the same font, differing only in row layout
+// (no-wrap + zero padding).
 const CHIP_CLASS =
   'inline-flex items-center gap-0.5 rounded px-1 py-0.5 whitespace-nowrap font-mono text-xs cursor-pointer transition-colors hover:bg-accent';
 
 // Eval badge — filled pill in the line's arrow color (solid blue best / graded faded blue rest).
 const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white';
 
-// Compact variants (Quick 260628-dgv — mobile /analysis takeover): same text-xs font as the
+// Compact variants (mobile /analysis takeover): same text-xs font as the
 // desktop chips, but with zero vertical padding and no-wrap so each PV line is one
-// deterministic ~16px row. (Desktop now uses text-xs too — Quick 260628-r5v — so the compact
+// deterministic ~16px row. (Desktop uses text-xs too, so the compact
 // split is purely about row layout, not font size.)
 const CHIP_CLASS_COMPACT =
   'inline-flex items-center gap-0.5 rounded px-1 whitespace-nowrap font-mono text-xs leading-4 cursor-pointer transition-colors hover:bg-accent';
 const BADGE_CLASS_COMPACT = 'shrink-0 rounded px-1 text-xs font-semibold leading-4 text-white';
 
 // Fixed-height container for the engine-lines region — keeps the panel from
-// jumping as the engine transitions analyzing → N lines (Quick 260627-mt8 item 5).
+// jumping as the engine transitions analyzing → N lines.
 // Height is rows × a per-row pixel budget, applied as an inline style (Tailwind only
 // ships literal class strings, so an interpolated `min-h-[${n}px]` would never be
-// generated — Phase 228 RESEARCH Pitfall 4).
+// generated).
 //
-// Desktop: ~30px per row (2 rows = 60px, the pre-Phase-228 `min-h-[60px]`).
+// Desktop: ~30px per row (2 rows = 60px).
 export const ENGINE_LINE_ROW_PX = 30;
-// Compact (mobile takeover) rows: 25px each, so 2 rows = 50px. Quick 260628-cjp: bumped
-// 44→50px. Below 640px the unlayered `.text-xs` override in index.css forces line-height
-// 1.25rem (20px), beating the chips' `leading-4` (16px), so two real PV rows measure 49px —
+// Compact (mobile takeover) rows: 25px each, so 2 rows = 50px. Below 640px the
+// unlayered `.text-xs` override in index.css forces line-height 1.25rem (20px),
+// beating the chips' `leading-4` (16px), so two real PV rows measure 49px —
 // but the skeleton's fixed h-4/h-3 bars stay at 40px. 50px clears the measured 49px with a
 // 1px margin so every state (loading skeleton, analyzing skeleton, rendered rows) is the
-// same height (no vertical jump on the mobile takeover — Quick 260628-dgv).
+// same height (no vertical jump on the mobile takeover).
 const ENGINE_LINE_ROW_PX_COMPACT = 25;
 
 /** Fixed min-height (px) of an engine-lines region holding `rows` PV rows. */
@@ -126,10 +127,10 @@ export function engineLinesMinHeightPx(rows: number, compact = false): number {
 /**
  * Pulsing placeholder rows shaped like PV lines (eval badge + move chips) — the
  * card-content loading animation that replaces the "Analyzing…" / "Loading
- * engine…" text while the engine spins up or searches (Quick 260627-r9g item 3).
+ * engine…" text while the engine spins up or searches.
  *
- * G-213-34 (supersedes D-12): download progress lives EXCLUSIVELY in the
- * `EngineReadyGate` modal now — this skeleton never renders a download
+ * Download progress lives EXCLUSIVELY in the
+ * `EngineReadyGate` modal — this skeleton never renders a download
  * readout of any kind, on any surface. Do not reintroduce one here; the one
  * aggregate bar in the gate is the only progress surface in the app.
  */
@@ -142,7 +143,7 @@ export function EngineLinesSkeleton({
   /** Mobile takeover: shorter rows matching the compact text-xs PV lines. */
   compact?: boolean;
   /**
-   * Number of placeholder rows — the engine's lines setting (1-5, Phase 228 D-16).
+   * Number of placeholder rows — the engine's lines setting (1-5).
    * Also sets the container's fixed min-height via `engineLinesMinHeightPx`.
    */
   rows: number;
@@ -176,11 +177,11 @@ export function EngineLinesSkeleton({
 }
 
 /**
- * Format a per-line score from evalCp / evalMate per the UI-SPEC table.
- * Exported (Phase 155 Plan 03) so `FlawChessEngineLines.tsx` can reuse this
- * verbatim for both the objective and practical score-pair numbers (D-06).
+ * Format a per-line score from evalCp / evalMate.
+ * Exported so `FlawChessEngineLines.tsx` can reuse this
+ * verbatim for both the objective and practical score-pair numbers.
  */
-export function formatScore(
+export function formatEval(
   evalCp: number | null,
   evalMate: number | null,
 ): string {
@@ -220,14 +221,14 @@ export interface EngineLinesProps {
    * Called when the user clicks a PV move chip with the UCI moves from the start
    * of the line up to (and including) the clicked move. The board grafts the whole
    * prefix as a sideline from the current anchor and lands on the clicked move —
-   * clicking move N no longer skips moves 1..N-1 (Quick 260628-shc UAT).
+   * so clicking move N never skips moves 1..N-1.
    */
   onMoveClick: (uciMoves: string[]) => void;
   /**
-   * Compact mobile rendering (Quick 260628-dgv): single-row PV lines with a shorter
+   * Compact mobile rendering: single-row PV lines with a shorter
    * container, so the mobile takeover region holds a constant height through
    * loading → analyzing → 2 lines. Desktop leaves this false (same text-xs font, but
-   * wrapping rows). Font size no longer differs between the two (Quick 260628-r5v).
+   * wrapping rows). Font size no longer differs between the two.
    */
   compact?: boolean;
 }
@@ -258,10 +259,10 @@ function PvLineRow({
   compact,
 }: PvLineRowProps) {
   // Per-line expand toggle: collapsed shows the first MAX_PLIES moves; the chevron
-  // reveals the whole PV (Quick 260628-shc UAT). State persists across the engine's
+  // reveals the whole PV. State persists across the engine's
   // streaming depth updates because the row's key (lineIndex) is stable.
   const [expanded, setExpanded] = useState(false);
-  const scoreText = formatScore(line.evalCp, line.evalMate);
+  const scoreText = formatEval(line.evalCp, line.evalMate);
   const hasMore = line.moves.length > MAX_PLIES;
   const moves = expanded ? line.moves : line.moves.slice(0, MAX_PLIES);
   // SAN labels + per-step FENs (replayed from baseFen). Null SAN falls back to raw
@@ -301,7 +302,6 @@ function PvLineRow({
       >
       {/* PV move chips — inline on the same row as the badge. */}
       {moves.map((uciMove, moveIndex) => {
-          // Safe: moveIndex is within moves.slice(0, MAX_PLIES) bounds.
           const from = uciMove.slice(0, 2);
           const to = uciMove.slice(2, 4);
           const label = moveLabel(startPly, moveIndex);
@@ -338,14 +338,14 @@ function PvLineRow({
                   side="top"
                   delayDuration={150}
                   // p-0 + overflow-hidden drops the dark padding frame and clips the
-                  // board to the tooltip's rounded corners (Quick w8k item 1).
+                  // board to the tooltip's rounded corners.
                   contentClassName="overflow-hidden p-0"
                   content={
                     <MiniBoard
                       fen={previewFen}
                       size={TOOLTIP_BOARD_SIZE}
                       flipped={flipped}
-                      // Green overlay on the move played to reach this preview (item 1).
+                      // Green overlay on the move played to reach this preview.
                       lastMove={{ from, to }}
                       lastMoveColor={MOVE_HIGHLIGHT_GOOD}
                     />

@@ -21,7 +21,7 @@ import type { HighlightedMove } from './useDeepLinkHighlight';
 // localStorage helper for per-bookmark chart-enable toggle (default: enabled).
 // Only consumed by chartEnabledMap below — the write side
 // (setChartEnabledStorage) stays in Openings.tsx, called by handlers this
-// hook doesn't own (handleChartEnabledChange, handleBookmarkSidebarOpenChange).
+// hook doesn't own (handleChartEnabledChange, handleBookmarkDrawerOpenChange).
 function getChartEnabled(bookmarkId: number): boolean {
   const stored = localStorage.getItem(`bookmark-chart-enabled-${bookmarkId}`);
   return stored === null ? true : stored === 'true';
@@ -123,7 +123,7 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
     [bookmarks, chartEnabledMap],
   );
 
-  // Phase 80 fix: per-bookmark MG/EG entry eval + clock-diff metrics.
+  // Per-bookmark MG/EG entry eval metrics.
   // Without this, bookmark rows in the Stats subtab tables permanently render with
   // eval_n=0 / "low" / "0 games" because buildBookmarkRows hardcoded those fields.
   const bookmarkMetricsRequest = useMemo(
@@ -169,7 +169,7 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
       rated: debouncedFilters.rated,
       opponent_type: debouncedFilters.opponentType,
       ...rangeToQueryParams(debouncedFilters.opponentStrength),
-      // D-19 amendment: recency now flows as resolved date bounds (from_date/to_date)
+      // Recency flows as resolved date bounds (from_date/to_date)
       // so the bookmark card WDL bar, game count, and Score % respond to the filter.
       ...dateRangeToWireParams(resolveDateRange(debouncedFilters)),
     };

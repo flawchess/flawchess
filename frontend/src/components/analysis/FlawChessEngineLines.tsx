@@ -1,28 +1,26 @@
 /**
  * FlawChessEngineLines — renders the top `maxLines` ranked practical lines from the
- * FlawChess Engine (the Phase 153-155 client-side MCTS search core).
+ * FlawChess Engine (the client-side MCTS search core).
  *
  * Structurally a sibling of `EngineLines.tsx`: same row skeleton, same
- * chip/badge/hover-preview pattern, same expand chevron — with three deltas
- * (D-08/D-06/D-07):
- *  - up to `maxLines` lines (the FlawChess lines setting, 1-5, Phase 228; was a fixed 2, D-08).
+ * chip/badge/hover-preview pattern, same expand chevron — with three deltas:
+ *  - up to `maxLines` lines (the FlawChess lines setting, 1-5).
  *  - a filled gold practical-score badge (dark font: solid arrow-gold
  *    `FLAWCHESS_ENGINE_BADGE_PRIMARY` on the first line, a faded gold graded by each
  *    later line's practical-score drop like its board arrow — the gold analog of the
- *    Stockfish primary/secondary badges, SEED-175), followed by the objective Stockfish eval of the
- *    same move in Stockfish blue (155 UAT). Both numbers are white-POV
- *    pawn-scale (D-06, DISPLAY-03). The badge NEVER renders the bare phrase "best
- *    move" unqualified (ARROW-04 principle) — the aria-label frames it as
+ *    Stockfish primary/secondary badges), followed by the objective Stockfish eval of the
+ *    same move in Stockfish blue. Both numbers are white-POV
+ *    pawn-scale. The badge NEVER renders the bare phrase "best
+ *    move" unqualified — the aria-label frames it as
  *    "practically Y for you, objectively X".
  *  - modal-path chips walked from `RankedLine.modalPath` (already root-relative)
- *    instead of a raw PV move array (D-07, DISPLAY-02).
+ *    instead of a raw PV move array.
  *
- * This is body-only (like `EngineLines`) — the `Card`/`CardHeader`/`Switch`
- * wrapper and placement inside `/analysis` are Plan 04's job.
+ * This is body-only (like `EngineLines`); `FlawChessCard` in AnalysisTabs.tsx
+ * supplies the card chrome.
  *
- * All engine strings are rendered as React children (auto-escaped, T-155-04
- * mitigated — inherited by construction from `EngineLines.tsx`'s T-137-03
- * mitigation).
+ * All engine strings are rendered as React children (auto-escaped), like
+ * `EngineLines.tsx`.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -44,7 +42,7 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { trackFeature } from '@/lib/analytics';
 import {
   replayPvLine,
-  formatScore,
+  formatEval,
   EngineLinesSkeleton,
   engineLinesMinHeightPx,
 } from './EngineLines';
@@ -58,7 +56,7 @@ const MAX_PLIES = 4;
 /** Miniboard size (px) inside the move-chip hover tooltip (mirrors EngineLines.tsx). */
 const TOOLTIP_BOARD_SIZE = 144;
 /** Placeholder for an unavailable eval/probability in the hover header — the
- *  same glyph `formatScore` uses for a null eval, so both slots read alike. */
+ *  same glyph `formatEval` uses for a null eval, so both slots read alike. */
 const STAT_PLACEHOLDER = '…';
 /** Icon size in the preview header — matches UnifiedMovePopover's ICON_CLASS. */
 const HEADER_ICON_CLASS = 'inline h-3.5 w-3.5 shrink-0';
@@ -80,8 +78,7 @@ function formatMaiaPct(prob: number | null): string {
 }
 
 // Chip class — identical to EngineLines.tsx's desktop (non-compact) CHIP_CLASS,
-// so the two engine cards read as one visual family. No compact variant here:
-// card placement/mobile-tab wiring is Plan 04's job, not this body component's.
+// so the two engine cards read as one visual family. No compact variant here.
 const CHIP_CLASS =
   'inline-flex items-center gap-0.5 rounded px-1 py-0.5 whitespace-nowrap font-mono text-xs transition-colors hover:bg-accent';
 // Filled gold practical-score badge — the same pill shell as EngineLines'
@@ -114,15 +111,15 @@ export interface FlawChessEngineLinesProps {
   /**
    * Root side-to-move, used to convert each line's root-side-to-move
    * `practicalScore` (0-1) to a white-POV cp value for the practical badge
-   * number (D-06). Derived from `baseFen` via `sideToMoveFromFen` when omitted;
+   * number. Derived from `baseFen` via `sideToMoveFromFen` when omitted;
    * defaults to 'white' if neither is available.
    */
   rootMover?: MoverColor;
   /** Board orientation for the hover-preview miniboards (matches the main board). */
   flipped?: boolean;
   /**
-   * Game-over state of `baseFen`, when the position is terminal (quick 260709
-   * follow-up). A checkmated/drawn root has NO legal moves, so the search
+   * Game-over state of `baseFen`, when the position is terminal. A checkmated/drawn
+   * root has NO legal moves, so the search
    * produces zero ranked lines — instead of leaving the card blank (which read
    * as "still loading"), render a single terminal row: a gold `#0` badge for
    * checkmate, a `½–½` badge for a draw. Null when the game is still on.
@@ -131,7 +128,7 @@ export interface FlawChessEngineLinesProps {
   /**
    * Called when the user clicks a modal-path chip with the UCI moves from the
    * start of the line up to (and including) the clicked move. The board grafts
-   * the whole prefix as a sideline (D-10) — identical semantics to EngineLines.
+   * the whole prefix as a sideline — identical semantics to EngineLines.
    */
   onMoveClick: (uciMoves: string[]) => void;
 }
@@ -312,19 +309,19 @@ function RankedLineRow({
   const [expanded, setExpanded] = useState(false);
 
   // Objective is already white-POV cp (RankedLine.objectiveEvalCp) — pass
-  // straight to formatScore. Practical is a 0-1 root-STM expected score —
-  // convert via the Plan 01 inverse-sigmoid before formatting (D-06).
-  const objectiveText = formatScore(line.objectiveEvalCp, line.objectiveEvalMate);
+  // straight to formatEval. Practical is a 0-1 root-STM expected score —
+  // convert via the inverse sigmoid before formatting.
+  const objectiveText = formatEval(line.objectiveEvalCp, line.objectiveEvalMate);
   // The practical score is a probability with no mate-distance concept, so on a
   // forced-mate line it saturates to a useless ±MATE_CP_EQUIVALENT cap (e.g.
   // "-10.0"). Borrow the objective mate distance for the badge instead so it reads
-  // "#-1" like the blue objective + the agreement verdict (quick 260709 follow-up).
+  // "#-1" like the blue objective + the agreement verdict.
   const practicalText =
     line.objectiveEvalMate != null
-      ? formatScore(null, line.objectiveEvalMate)
-      : formatScore(expectedScoreToWhitePovCp(line.practicalScore, rootMover), null);
-  // Solid gold for the first line, one translucent gold for every later line (no
-  // per-rank shades; SEED-175 styling lock).
+      ? formatEval(null, line.objectiveEvalMate)
+      : formatEval(expectedScoreToWhitePovCp(line.practicalScore, rootMover), null);
+  // Solid gold for the first line; later lines fade with their practical-score drop,
+  // like their board arrows.
   const badgeColor = lineIndex === 0 ? FLAWCHESS_ENGINE_BADGE_PRIMARY : flawChessSecondaryBadgeColor(alpha);
 
   const hasMore = line.modalPath.length > MAX_PLIES;
@@ -346,7 +343,7 @@ function RankedLineRow({
     >
       {/* Gold practical-score badge (dark font, solid arrow gold / faded rest) + the objective
           Stockfish eval of this same move in Stockfish blue. Never the bare phrase
-          "best move" (D-06). */}
+          "best move". */}
       <span
         className="flex shrink-0 items-center gap-1"
         aria-label={`Line ${lineIndex + 1}: practically ${practicalText} for you, objectively ${objectiveText}`}
@@ -370,7 +367,6 @@ function RankedLineRow({
         )}
       >
         {moves.map((uciMove, moveIndex) => {
-          // Safe: moveIndex is within moves.slice(0, MAX_PLIES) bounds (noUncheckedIndexedAccess).
           const from = uciMove.slice(0, 2);
           const to = uciMove.slice(2, 4);
           const label = moveLabel(startPly, moveIndex);
@@ -392,7 +388,7 @@ function RankedLineRow({
                 displayMove={displayMove}
                 testId={`flawchess-line-${lineIndex}-move-${moveIndex}`}
                 // Grafts the WHOLE line up to (and including) this move — moves is
-                // a prefix of line.modalPath, so slice gives the UCI path (D-10).
+                // a prefix of line.modalPath, so slice gives the UCI path.
                 onPlay={() => onMoveClick(moves.slice(0, moveIndex + 1))}
                 preview={
                   previewFen
@@ -401,7 +397,7 @@ function RankedLineRow({
                         from,
                         to,
                         flipped,
-                        evalText: formatScore(stat?.objectiveEvalCp ?? null, stat?.objectiveEvalMate ?? null),
+                        evalText: formatEval(stat?.objectiveEvalCp ?? null, stat?.objectiveEvalMate ?? null),
                         maiaText: formatMaiaPct(stat?.maiaProb ?? null),
                       }
                     : null
@@ -437,9 +433,8 @@ function RankedLineRow({
 /**
  * Renders up to `maxLines` top FlawChess Engine ranked lines as single rows (score-pair
  * badge + clickable modal-path chips) inside a fixed-height container, with a
- * non-jumping skeleton before the first snapshot arrives (D-09). Card
- * chrome/placement inside `/analysis` is Plan 04's job — this component is
- * body-only.
+ * non-jumping skeleton before the first snapshot arrives. Body-only: the card
+ * chrome lives in `FlawChessCard`.
  */
 export function FlawChessEngineLines({
   rankedLines,
@@ -458,7 +453,7 @@ export function FlawChessEngineLines({
   // Same grading the board arrows use, so a badge fades with its arrow.
   const alphas = flawChessSecondaryAlphas(visibleLines);
   // A terminal root has no legal moves → no ranked lines. Show a single badge row
-  // (once the search has settled to empty) instead of a blank card (quick 260709).
+  // (once the search has settled to empty) instead of a blank card.
   const showTerminalRow = terminalOutcome !== null && rankedLines.length === 0 && !isSearching;
   return (
     <div
@@ -470,7 +465,7 @@ export function FlawChessEngineLines({
       style={{ minHeight: engineLinesMinHeightPx(maxLines) }}
     >
       {/* Pre-first-snapshot placeholder — fixed-height skeleton sized for maxLines
-          rows (D-09), avoids layout jump as lines arrive. */}
+          rows, avoids layout jump as lines arrive. */}
       {isSearching && rankedLines.length === 0 && (
         <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={maxLines} />
       )}

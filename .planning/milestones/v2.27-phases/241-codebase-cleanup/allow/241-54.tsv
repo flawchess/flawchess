@@ -1,0 +1,5 @@
+kind	path	needle	reason
+diff	app/services/endgame_zones.py	TimeControlBucket	TcBucket alias replaced by the schema import, INVENTORY §5 M row
+diff	app/services/insights_service.py	TimeControlBucket	TcBucket alias replaced by the schema import, INVENTORY §5 M row
+diff	app/services/insights_llm.py	TimeControlBucket	TcBucket alias replaced by the schema import, INVENTORY §5 M row
+diff	app/services/insights_llm.py	(	schema import line wrapped in parentheses by ruff format after adding TimeControlBucket (TcBucket alias replacement)

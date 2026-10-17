@@ -1,17 +1,17 @@
-"""Backfill dry-run + batched-insert test for Phase 108 Plan 06.
+"""Backfill dry-run + batched-insert test.
 
 Tests that run_backfill (from scripts/backfill_flaws.py):
   (a) dry_run=True writes zero game_flaws rows
   (b) A real run materializes the expected rows for an analyzed game
   (c) Re-running is idempotent (same row set, no PK duplicates)
 
-Phase 125 Plan 01 adds TestBackfillTacticColumns (Nyquist Wave 0):
+TestBackfillTacticColumns adds:
   (d) After run_backfill, the blunder row has allowed_tactic_motif IS NOT NULL when a
       PV is present at flaw_ply+1 and the detector fires (PV-fires path).
   (e) The no-PV control (existing committed_analyzed_game fixture) produces
       allowed_tactic_motif IS NULL for all rows (no-PV NULL bucket = honest).
 
-Phase 128 Plan 01: renamed tactic_* → allowed_tactic_* columns (D-02).
+Renamed tactic_* → allowed_tactic_* columns.
 
 Uses session-maker injection against the per-run test DB so run_backfill
 never touches a real --db target. The game must have committed data (not
@@ -59,11 +59,11 @@ _CP_MISTAKE_AFTER = -50
 _TEST_USER_ID = 108060
 
 # ---------------------------------------------------------------------------
-# Phase 125 tactic-column test constants
+# Tactic-column test constants
 # ---------------------------------------------------------------------------
 
 # Separate user ID for the tactic test so its committed data never interferes
-# with the Phase 108 fixture.
+# with the main fixture.
 _TACTIC_TEST_USER_ID = 125010
 
 # FEN-header PGN for the tactic fixture:
@@ -73,7 +73,7 @@ _TACTIC_TEST_USER_ID = 125010
 # FEN at ply 0 (fen_map[0]): 8/6p1/5k2/2p5/8/P1P1K3/1P2r3/8
 # FEN at ply 1 (fen_map[1], fen_before_flaw): 8/6p1/5k2/2p5/5K2/P1P5/1P2r3/8
 # FEN at ply 2 (fen_after_flaw): 8/6p1/5k2/2p5/4rK2/P1P5/1P6/8
-# White king captures on e4 = refutation confirming hanging-piece (D-09 prod fixture).
+# White king captures on e4 = refutation confirming hanging-piece (prod fixture).
 _TACTIC_PGN = '[FEN "8/6p1/5k2/2p5/8/P1P1K3/1P2r3/8 w - - 0 1"]\n\n1. Kf4 Re4 *'
 
 # Blunder ply for the tactic game (black's Re4?? is at ply 1).
@@ -88,7 +88,7 @@ _TACTIC_CP_BEFORE_BLUNDER = -500  # eval at positions[0], black winning
 _TACTIC_CP_AFTER_BLUNDER = 200  # eval at positions[1], white winning after Re4??
 
 # Refutation PV at flaw_ply+1 = positions[2].pv:
-# Kxe4 captures the hanging rook.  This PV is a D-09 prod-confirmed fixture
+# Kxe4 captures the hanging rook.  This PV is a prod-confirmed fixture
 # from tests/services/test_tactic_detector.py (_HANGING_PIECE_FIXTURES entry 3):
 #   FEN after Re4??: 8/6p1/5k2/2p5/4rK2/P1P5/1P6/8 w - - 0 2
 #   PV: f4e4 f6e6 c3c4 ... → hanging-piece fires (motif=2, confidence=100).
@@ -393,7 +393,7 @@ class TestBackfillRealRun:
 
 
 # ---------------------------------------------------------------------------
-# Phase 125 Plan 01: TestBackfillTacticColumns (Nyquist Wave 0 gap closure)
+# TestBackfillTacticColumns
 # ---------------------------------------------------------------------------
 
 
@@ -412,7 +412,7 @@ async def committed_tactic_game(
 
     run_backfill with this game must produce a GameFlaw row at ply 1 with
     allowed_tactic_motif IS NOT NULL (hanging-piece detector fires on the PV).
-    Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+    Renamed tactic_* → allowed_tactic_*.
 
     Yields (game, blunder_ply). Teardown: deletes committed data.
     """
@@ -481,7 +481,7 @@ async def committed_tactic_game(
                 eval_mate=None,
                 clock_seconds=None,
                 phase=1,  # middlegame
-                full_hash=ply + 1000,  # offset from Phase 108 fixture to avoid collisions
+                full_hash=ply + 1000,  # offset from the main fixture to avoid collisions
                 white_hash=ply + 1000,
                 black_hash=ply + 1000,
                 endgame_class=1,  # rook endgame
@@ -501,14 +501,14 @@ async def committed_tactic_game(
 
 
 class TestBackfillTacticColumns:
-    """Phase 125 Nyquist Wave 0: verify tactic columns are written by run_backfill.
+    """Verify tactic columns are written by run_backfill.
 
     Two paths:
     - PV-fires path (Test B): a game seeded with positions[blunder_ply+1].pv AND
       move_san at blunder_ply produces a GameFlaw row with tactic_motif IS NOT NULL.
     - No-PV NULL path (Test A): the existing committed_analyzed_game fixture
       (move_san=None, no pv) produces allowed_tactic_motif IS NULL for all rows.
-    Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+    Renamed tactic_* → allowed_tactic_*.
     """
 
     @pytest.mark.asyncio
@@ -547,7 +547,7 @@ class TestBackfillTacticColumns:
 
         assert len(stored) >= 1, "Expected at least one flaw row"
         for row in stored:
-            # Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+            # Renamed tactic_* → allowed_tactic_*.
             assert row.allowed_tactic_motif is None, (
                 f"Expected allowed_tactic_motif IS NULL (no pv), got {row.allowed_tactic_motif} at ply {row.ply}"
             )
@@ -568,14 +568,14 @@ class TestBackfillTacticColumns:
 
         The committed_tactic_game fixture seeds a hanging-piece blunder at ply 1:
         black plays Re4?? (rook to e4, hanging to white's king on f4).
-        positions[2].pv = the D-09 prod-confirmed refutation PV (f4e4 ...).
+        positions[2].pv = the prod-confirmed refutation PV (f4e4 ...).
         After run_backfill, the GameFlaw at ply 1 must carry a non-NULL allowed_tactic_motif
         and allowed_tactic_confidence, confirming the detect path was exercised.
 
         The control: flaw rows at other plies (if any) keep allowed_tactic_motif NULL if
         their pv is absent, which preserves the honest NULL semantics.
 
-        Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+        Renamed tactic_* → allowed_tactic_*.
         """
         from scripts.backfill_flaws import run_backfill
 
@@ -608,10 +608,10 @@ class TestBackfillTacticColumns:
         )
         blunder_row = blunder_rows[0]
 
-        # Strong assertion (WR-01): pin the exact motif + confidence the known
+        # Strong assertion: pin the exact motif + confidence the known
         # hanging-piece fixture must produce, so a detector regression that fires
         # the WRONG motif fails loudly instead of passing on a bare not-None check.
-        # Phase 128: renamed tactic_* → allowed_tactic_* (D-02).
+        # Renamed tactic_* → allowed_tactic_*.
         assert blunder_row.allowed_tactic_motif == TacticMotifInt.HANGING_PIECE, (
             f"Expected allowed_tactic_motif == HANGING_PIECE ({TacticMotifInt.HANGING_PIECE}) "
             f"at ply {blunder_ply} (PV-fires path), got {blunder_row.allowed_tactic_motif}. "
@@ -624,7 +624,7 @@ class TestBackfillTacticColumns:
 
 
 # ---------------------------------------------------------------------------
-# TestFromRepairTable (Phase 220, CACHEFIX-06)
+# TestFromRepairTable
 # ---------------------------------------------------------------------------
 
 
@@ -718,7 +718,7 @@ class TestFromRepairTable:
 
 
 # ---------------------------------------------------------------------------
-# Quick 260927-ajg: --oracle-gap re-derive (short checkmates)
+# --oracle-gap re-derive (short checkmates)
 # ---------------------------------------------------------------------------
 
 _ORACLE_GAP_USER_ID = 260927

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useStoreBotGame unit tests (Phase 170 Plan 02, RESUME-02).
+ * useStoreBotGame unit tests.
  *
  * `.ts` (not `.tsx`) per the plan's file list — the QueryClientProvider
  * wrapper is built with `createElement`, not JSX, since Vite's esbuild
@@ -9,10 +9,10 @@
  * `-t` filter tokens:
  * - "tc-preset" — `toStoreRequest`'s `tc_preset` field is base-SECONDS
  *   (`toBackendTcStr` output), identical to the PGN's `[TimeControl]`
- *   header, NOT the lichess minutes-display preset (D-14 corrected).
+ *   header, NOT the lichess minutes-display preset.
  * - "retry-predicate" — `shouldRetryStore`'s per-status differentiation:
  *   422 never retries, everything else (401/5xx/network) is BOUNDED at
- *   `MAX_STORE_RETRIES` (CR-01: the 401 branch used to be unbounded).
+ *   `MAX_STORE_RETRIES` (the 401 branch used to be unbounded).
  * - "drain" — `useDrainPendingStore`'s per-outcome entry-removal decision:
  *   2xx (created true or false) removes, 422 removes, 401/5xx/network keeps,
  *   a mid-queue failure doesn't abort the rest, an empty queue makes zero
@@ -104,7 +104,7 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
-/** CR-01: same shape as `makeWrapper`, but also returns the `QueryClient`
+/** Same shape as `makeWrapper`, but also returns the `QueryClient`
  * instance so a test can spy on `invalidateQueries` — `makeWrapper` builds
  * its client inside the returned component, with no way to reach it from
  * the test body. */
@@ -175,7 +175,7 @@ describe('tc-preset', () => {
     expect(toStoreRequest(entry).persona_id).toBeNull();
   });
 
-  // quick-260722-ucc: persona_name/bot_rating are re-derived from personaId
+  // persona_name/bot_rating are re-derived from personaId
   // at store time via personaForId, not carried on PendingStoreEntry itself.
   it('sends the persona name + calibrated ELO (not botElo) for a persona game', () => {
     const entry = makeEntry({
@@ -215,11 +215,11 @@ describe('retry-predicate', () => {
     expect(shouldRetryStore(1, axiosError(422))).toBe(false);
   });
 
-  // CR-01 regression: a 401 used to return `true` unconditionally (no
+  // Regression: a 401 used to return `true` unconditionally (no
   // failureCount bound), which TanStack Query turns into an unbounded retry
   // loop that never settles — so `MutationCache.onError` never fired and the
   // caller's `isSuccess`/`isError` never flipped. The durable retry is the
-  // next-visit drain (D-13), so the in-flight retry MUST be bounded.
+  // next-visit drain, so the in-flight retry MUST be bounded.
   it('bounds a 401 at MAX_STORE_RETRIES (logged out / expired guest token — never an unbounded loop)', () => {
     expect(shouldRetryStore(0, axiosError(401))).toBe(true);
     expect(shouldRetryStore(MAX_STORE_RETRIES, axiosError(401))).toBe(false);
@@ -354,12 +354,12 @@ describe('drain', () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  // CR-01 regression: a queued/offline game that drains successfully on a
+  // Regression: a queued/offline game that drains successfully on a
   // later `/bots` mount must also refresh the win stars shown on that same
   // mount — before this fix, `useDrainPendingStore` never touched the query
   // cache at all, so `useBotPersonaWins`'s 5-minute staleTime kept serving
   // pre-game counts.
-  it('invalidates the botPersonaWins query cache after a successful drain (CR-01)', async () => {
+  it('invalidates the botPersonaWins query cache after a successful drain', async () => {
     enqueuePendingStore(OWNER_KEY, makeEntry({ gameUuid: 'g1' }));
     vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
 
@@ -374,7 +374,7 @@ describe('drain', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: BOT_PERSONA_WINS_QUERY_KEY });
   });
 
-  it('does NOT invalidate the botPersonaWins query cache when every entry fails to drain (CR-01)', async () => {
+  it('does NOT invalidate the botPersonaWins query cache when every entry fails to drain', async () => {
     enqueuePendingStore(OWNER_KEY, makeEntry({ gameUuid: 'g1' }));
     vi.mocked(botsApi.storeGame).mockRejectedValue(axiosError(500));
 

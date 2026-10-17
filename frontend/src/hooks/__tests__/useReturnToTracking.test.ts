@@ -8,7 +8,7 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe('useReturnToTracking (quick 260926-9bg)', () => {
+describe('useReturnToTracking', () => {
   it('stashes the path when the visitor arrives signed out', () => {
     renderHook(() => useReturnToTracking(null, '/train'));
     expect(peekReturnTo()).toBe('/train');

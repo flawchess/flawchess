@@ -1,6 +1,5 @@
 /**
- * maiaPageKillSentinel — makes a silent page kill visible in Sentry
- * (SEED-158, 2026-09-07).
+ * maiaPageKillSentinel — makes a silent page kill visible in Sentry.
  *
  * The failure this exists for: iOS Safari terminates the whole WebContent
  * process when a page crosses WebKit's per-page memory limit. Nothing in the
@@ -45,7 +44,7 @@ const SENTRY_MESSAGE_PAGE_KILLED = 'Maia worker: page was killed while Maia was 
 const SENTRY_SOURCE = 'maia-page-kill-sentinel';
 const SENTRY_FAILURE_TAG = 'page-killed';
 /**
- * Quick 260916-g38 / FLAWCHESS-BM: a record whose last dispatch is older than
+ * FLAWCHESS-BM: a record whose last dispatch is older than
  * this is NOT reported. The failure this sentinel exists for (the iOS per-page
  * memory kill) lands seconds after a dispatch. A foreground death long after
  * Maia last ran — the app swiped from recents, the OS reclaiming an idle page
@@ -59,7 +58,7 @@ interface MaiaPageSession {
   armedAt: number;
   backend: 'webgpu' | 'wasm';
   numThreads: number;
-  /** SEED-158: `ort.env.versions.web` of the loaded build (`null` when the worker could not read it). */
+  /** `ort.env.versions.web` of the loaded build (`null` when the worker could not read it). */
   ortVersion: string | null;
   ios: boolean;
   /** Route the worker was armed on (`/analysis` vs `/bots`). */

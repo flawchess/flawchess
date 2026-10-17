@@ -62,7 +62,7 @@ export function OpeningStatsSection({ section }: OpeningStatsSectionProps) {
         <button
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => {
-            // Discovery only: track the expand, never the collapse (D-13).
+            // Discovery only: track the expand, never the collapse.
             if (!expanded) trackFeature('panel-open', { target: 'opening-stats-more' });
             setExpanded((prev) => !prev);
           }}

@@ -67,9 +67,9 @@ describe('libraryApi.getGames', () => {
     expect(lastGetParams(getSpy)).not.toHaveProperty('tag');
   });
 
-  // FILT-01 (Phase 175): has_gem/has_great serialize into the query string only
+  // has_gem/has_great serialize into the query string only
   // when true, same conditional-inclusion pattern as tactic_orientation above.
-  describe('has_gem / has_great (FILT-01, Phase 175)', () => {
+  describe('has_gem / has_great', () => {
     it('forwards has_gem: true when has_gem is true', async () => {
       const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
       await libraryApi.getGames({ has_gem: true });

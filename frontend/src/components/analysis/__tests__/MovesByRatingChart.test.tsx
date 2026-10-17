@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 /**
- * Phase 151.1 Plan 04 — MovesByRatingChart tests.
+ * MovesByRatingChart tests.
  *
- * Verifies the D-01/D-03/D-07 quality-coloring model: the chart renders exactly
+ * Verifies the quality-coloring model: the chart renders exactly
  * the caller-selected `shownSans`, colors each line/label by its `qualityBySan`
- * bucket (ungraded → MOVE_QUALITY_PENDING, D-05), keeps stroke width decoupled
+ * bucket (ungraded → MOVE_QUALITY_PENDING), keeps stroke width decoupled
  * from color (played/best always emphasized regardless of quality color), and
- * the D-08 tooltip surfaces the quality word + white-POV eval alongside prob%.
- * Supersedes Phase 151 Plan 05's capMovesByPeak-based tests (that cap moved to
- * `selectCandidatesByMass` in Plan 02 and is computed upstream in Analysis.tsx).
+ * the tooltip surfaces the quality word + white-POV eval alongside prob%.
+ * Candidate capping (`selectCandidatesByMass`) is computed upstream in
+ * Analysis.tsx.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -113,9 +113,9 @@ function makeQualityBySan(): Map<string, MoveQualityEval> {
     ['h3', { quality: 'inaccuracy', evalCp: -10, evalMate: null }],
     ['Qd2', { quality: 'mistake', evalCp: -80, evalMate: null }],
     // Ne4 (played) is a blunder — verifies color/stroke decoupling: played stays
-    // EMPHASIZED_STROKE_WIDTH even though colored red (D-01/D-07).
+    // EMPHASIZED_STROKE_WIDTH even though colored red.
     ['Ne4', { quality: 'blunder', evalCp: -400, evalMate: null }],
-    // a3 intentionally omitted — an ungraded SHOWN move must render PENDING (D-05).
+    // a3 intentionally omitted — an ungraded SHOWN move must render PENDING.
   ]);
 }
 
@@ -208,7 +208,7 @@ describe('MovesByRatingChart', () => {
     expect(pendingLine).toBeTruthy();
   });
 
-  it('renders the "you are here" reference line without a text label (151.1 UAT)', () => {
+  it('renders the "you are here" reference line without a text label', () => {
     render(
       <MovesByRatingChart
         perElo={makePerElo()}
@@ -244,7 +244,7 @@ describe('MovesByRatingChart', () => {
     expect(el.textContent).toMatch(/Waiting/i);
   });
 
-  // ─── Progressive ladder paint (Phase 219-03, D-11/D-12): the chart is the
+  // ─── Progressive ladder paint: the chart is the
   // PAINT-LIVE consumer group — it draws whatever rungs `perElo` holds, with
   // no partial-specific branch, and must never be gated on isLadderComplete. ──
 
@@ -297,7 +297,7 @@ describe('MovesByRatingChart', () => {
     expect(screen.getByTestId('moves-by-rating-chart')).toBeTruthy();
   });
 
-  // ─── G-213-34 (supersedes D-12): the Maia chart skeleton reads no download state ──
+  // ─── The Maia chart skeleton reads no download state ──
 
   it('even while the Maia model asset is actively downloading, the perElo-empty skeleton renders no progress element and no percent text (inverted regression guard)', () => {
     // Drive the REAL store into its downloading state — the exact condition
@@ -326,7 +326,7 @@ describe('MovesByRatingChart', () => {
   });
 });
 
-describe('MovesByRatingTooltipContent (D-08)', () => {
+describe('MovesByRatingTooltipContent', () => {
   it('shows the quality word, white-POV eval, and prob% for a graded blunder row', () => {
     render(
       <MovesByRatingTooltipContent

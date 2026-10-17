@@ -1,11 +1,10 @@
 /**
- * FeedbackAskModalHost: Phase 234 (SEED-191 #5). The feedback modal that
- * "Sure!" opens, mounted once at app level (ProtectedLayout) instead of inside
- * FeedbackAskBubble. The bubble's done response (and the 3s profile poll on
- * Import, and window-focus refetches) patch the cached profile and unmount the
- * bubble; a modal owned by the bubble would vanish with it, mid-draft
- * (RESEARCH Pitfall 1). The host is always mounted and renders nothing visible
- * while closed.
+ * FeedbackAskModalHost: the feedback modal that "Sure!" opens, mounted once at
+ * app level (ProtectedLayout) instead of inside FeedbackAskBubble. The bubble's
+ * done response (and the 3s profile poll on Import, and window-focus refetches)
+ * patch the cached profile and unmount the bubble; a modal owned by the bubble
+ * would vanish with it, mid-draft. The host is always mounted and renders
+ * nothing visible while closed.
  *
  * No Umami event here: the submission is a database row carrying its source
  * ('milestone_ask'), which the browser need not duplicate.

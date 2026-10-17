@@ -1,15 +1,15 @@
 /**
- * TypeScript mirrors of the Phase 189/190 Train API Pydantic schemas
+ * TypeScript mirrors of the Train API Pydantic schemas
  * (app/schemas/train.py). Field-for-field, literal unions instead of bare
  * `string` per CLAUDE.md's type-safety rule.
  *
- * Since Phase 235 (SEED-192, D-05) `TrainPuzzle` carries the server answer key
- * (`key_move_uci`), the puzzle type and the sharp runner-up so the phone grades
- * against the key. They are read only to start grading and are never displayed
- * before the attempt. Since Phase 236 the pre-attempt payload also carries the
- * server-graded set (`server_graded_moves`), read only after the move.
- * `last_move_uci` (190-02, SOLV-02) is the position's
- * arrival, the prior half-move, never what to play next.
+ * `TrainPuzzle` carries the server answer key (`key_move_uci`), the puzzle
+ * type and the sharp runner-up so the phone grades against the key. They are
+ * read only to start grading and are never displayed before the attempt. The
+ * pre-attempt payload also carries the server-graded set
+ * (`server_graded_moves`), read only after the move.
+ * `last_move_uci` is the position's arrival, the prior half-move, never what
+ * to play next.
  */
 
 import type { TrainMoveTier } from '@/lib/trainScore';
@@ -23,51 +23,50 @@ export interface TrainPuzzle {
   side_to_move: 'white' | 'black';
   last_move_uci: string | null;
   /**
-   * Phase 235 (D-05/D-08): the server-picked solution move. The think-time
-   * search evaluates the position AFTER it, and the reveal names it. All three
-   * fields are OPTIONAL on purpose: a stale server (or an old trainRevealCache
-   * entry) omits them, and every consumer defaults with a single `?? null`
-   * (the `SolveResponse.vetted_moves?` precedent). null means no usable key,
-   * which keeps the legacy root-search grading (D-07).
+   * The server-picked solution move. The think-time search evaluates the
+   * position AFTER it, and the reveal names it. All three fields are OPTIONAL
+   * on purpose: a stale server (or an old trainRevealCache entry) omits them,
+   * and every consumer defaults with a single `?? null` (the
+   * `SolveResponse.vetted_moves?` precedent). null means no usable key, which
+   * keeps the legacy root-search grading.
    */
   key_move_uci?: string | null;
-  /** Phase 235 (D-05): the puzzle type, known before the attempt but never displayed until the reveal. */
+  /** The puzzle type, known before the attempt but never displayed until the reveal. */
   puzzle_type?: TrainPuzzleType | null;
-  /** Phase 235 (D-19): the sharp runner-up move, null for non-sharp puzzles; never displayed pre-attempt. */
+  /** The sharp runner-up move, null for non-sharp puzzles; never displayed pre-attempt. */
   runner_up_uci?: string | null;
   /**
-   * Phase 236 (D-03/D-08): the moves whose grade the server owns, read only
-   * AFTER the move (never displayed before the attempt). OPTIONAL because a
-   * stale server or an old reveal-cache entry omits it; the one consumer
-   * defaults with a single `?? []`. Empty for sharp fillers and the no-key
-   * path; includes the key for soft and herring puzzles.
+   * The moves whose grade the server owns, read only AFTER the move (never
+   * displayed before the attempt). OPTIONAL because a stale server or an old
+   * reveal-cache entry omits it; the one consumer defaults with a single
+   * `?? []`. Empty for sharp fillers and the no-key path; includes the key for
+   * soft and herring puzzles.
    */
   server_graded_moves?: ServerGradedMove[];
 }
 
-/** Phase 236 (D-08): a move whose grade the server owns; read only after the move, never displayed pre-attempt (D-03 / Phase 235 D-05). */
+/** A move whose grade the server owns; read only after the move, never displayed pre-attempt. */
 export interface ServerGradedMove {
   uci: string;
   tier: TrainMoveTier;
 }
 
 /**
- * One recorded solve's outcome, part of `TrainSessionResponse.solved_results`
- * (quick task 260728-tgc, BUGFIX-TRAIN-SCORE-CROSSDEVICE).
+ * One recorded solve's outcome, part of `TrainSessionResponse.solved_results`.
  *
  * One entry per `drill_solves` row with `solved_at IS NOT NULL`, in
  * `position` order. The client aggregates these with `scorePuzzle` +
  * `aggregateSessionScore` from `@/lib/trainScore` — that module stays the
- * single source of truth for scoring (LOCKED, Option B); this response
+ * single source of truth for scoring; this response
  * deliberately carries NO precomputed score integer.
  */
 export interface SolvedResult {
   correct_guess: boolean;
   move_quality: TrainMoveTier;
   /**
-   * Phase 222 (D-17): the same three values `SolveResponse` already returned
-   * for this exact position at the moment it was attempted — NOT a new
-   * answer-key leak (mirrors this interface's own docstring rule above).
+   * The same three values `SolveResponse` already returned for this exact
+   * position at the moment it was attempted — NOT a new answer-key leak
+   * (mirrors this interface's own docstring rule above).
    * Entries here still carry no `position`, `game_id`, `ply` or best-move
    * field. `source` mirrors `SolveResponse.source` (required); `item_status`
    * and `due_date` mirror `SolveResponse.item_status`/`due_date` (nullable —
@@ -81,16 +80,16 @@ export interface SolvedResult {
 /**
  * Response for POST /train/sessions — a composed or resumed session.
  *
- * `solved_results` (260728-tgc) is what makes "Scored today" correct on a
- * device that never saw the original solve responses — see `SolvedResult`'s
- * docstring. Empty for a freshly composed session and for the
- * no-eligible-material (`session_id === null`) case.
+ * `solved_results` is what makes "Scored today" correct on a device that
+ * never saw the original solve responses — see `SolvedResult`'s docstring.
+ * Empty for a freshly composed session and for the no-eligible-material
+ * (`session_id === null`) case.
  *
- * `is_warmup` (Phase 206, D-06/D-07) is frozen at composition and derived
- * purely from material scarcity — true iff the session contains zero
- * surviving SR_ITEM puzzles at the moment it was (re-)composed. Never
- * derived from session ordinal, session count, or account age. The client
- * performs no arithmetic over it — a single equality read (T-191-24).
+ * `is_warmup` is frozen at composition and derived purely from material
+ * scarcity — true iff the session contains zero surviving SR_ITEM puzzles at
+ * the moment it was (re-)composed. Never derived from session ordinal,
+ * session count, or account age. The client performs no arithmetic over it —
+ * a single equality read.
  */
 export interface TrainSessionResponse {
   session_id: number | null;
@@ -108,11 +107,10 @@ export interface TrainSessionResponse {
 /**
  * Body for POST /train/sessions/{session_id}/solve.
  *
- * P-02 (LOCKED) / SEED-119: the client asserts the three-way `move_quality`
- * tier (grading happens entirely client-side, SOLV-03) but NEVER
- * `correct_guess` — that is computed server-side from the live blob
- * classifier. The server derives the ladder verdict as
- * `move_quality != "wrong"`.
+ * The client asserts the three-way `move_quality` tier (grading happens
+ * entirely client-side) but NEVER `correct_guess` — that is computed
+ * server-side from the live blob classifier. The server derives the ladder
+ * verdict as `move_quality != "wrong"`.
  */
 export interface SolveRequest {
   position: number;
@@ -121,33 +119,33 @@ export interface SolveRequest {
   played_move: string;
   move_quality: TrainMoveTier;
   /**
-   * Phase 233 think-time telemetry. Optional so a stale client bundle still
-   * solves; never an input to grading or scoring (D-05).
+   * Think-time telemetry. Optional so a stale client bundle still solves;
+   * never an input to grading or scoring.
    */
   telemetry?: SolveTelemetry;
   /**
-   * Phase 235 (D-17/D-20): the disagreement re-check record. Present exactly
-   * when a re-check COMPLETED (confirmed or resolved); absent when none ran or
-   * it timed out or errored, in which case the 1.5 s grade stands and the
-   * server credits nothing. A client claim only: the server re-validates it.
+   * The disagreement re-check record. Present exactly when a re-check
+   * COMPLETED (confirmed or resolved); absent when none ran or it timed out or
+   * errored, in which case the 1.5 s grade stands and the server credits
+   * nothing. A client claim only: the server re-validates it.
    */
   recheck?: SolveRecheck;
   /**
-   * Phase 236 (D-01/D-13): the phone's 1.5 s grading reading, audit data only.
-   * Present for a keyed solve graded on the phone, including played == key;
-   * absent on the legacy no-key path, on a server-graded move's instant POST
-   * and when the after-key search never completed. Frozen with the payload so a
-   * retry resends it unchanged.
+   * The phone's 1.5 s grading reading, audit data only. Present for a keyed
+   * solve graded on the phone, including played == key; absent on the legacy
+   * no-key path, on a server-graded move's instant POST and when the after-key
+   * search never completed. Frozen with the payload so a retry resends it
+   * unchanged.
    */
   phone_grade?: PhoneGrade;
 }
 
 /**
- * Mirrors app/schemas/train.py PhoneGrade (Phase 236 D-01). ES values are
- * mover-POV expected scores in [0, 1] of the 1.5 s after-key and after-played
- * searches; depths are the engine depths reported with them (0 when no exact
- * line arrived). Audit data only, never a grading input (D-02). `v` is
- * PHONE_GRADE_SCHEMA_VERSION in lib/trainPhoneGrade.ts.
+ * Mirrors app/schemas/train.py PhoneGrade. ES values are mover-POV expected
+ * scores in [0, 1] of the 1.5 s after-key and after-played searches; depths
+ * are the engine depths reported with them (0 when no exact line arrived).
+ * Audit data only, never a grading input. `v` is PHONE_GRADE_SCHEMA_VERSION
+ * in lib/trainPhoneGrade.ts.
  */
 export interface PhoneGrade {
   v: 1;
@@ -158,14 +156,14 @@ export interface PhoneGrade {
   played_depth: number;
 }
 
-/** How a completed re-check ended (D-13): the 3 s reading still rates the played move good, or not. */
+/** How a completed re-check ended: the 3 s reading still rates the played move good, or not. */
 export type RecheckOutcome = 'confirmed' | 'resolved';
 
 /**
- * Mirrors app/schemas/train.py SolveRecheck (Phase 235 D-17/D-18). ES values
- * are mover-POV expected scores in [0, 1]: `key_es`/`played_es` are the 1.5 s
- * after-move searches, `*_recheck` the 3 s ones. Depths are the engine depth
- * reported with each reading (0 when no exact line arrived). `v` is
+ * Mirrors app/schemas/train.py SolveRecheck. ES values are mover-POV
+ * expected scores in [0, 1]: `key_es`/`played_es` are the 1.5 s after-move
+ * searches, `*_recheck` the 3 s ones. Depths are the engine depth reported
+ * with each reading (0 when no exact line arrived). `v` is
  * RECHECK_SCHEMA_VERSION in lib/trainRecheck.ts.
  */
 export interface SolveRecheck {
@@ -181,12 +179,12 @@ export interface SolveRecheck {
   played_depth_recheck: number;
 }
 
-/** Device class sent with telemetry (D-09): a two-value class, never the raw UA string. */
+/** Device class sent with telemetry: a two-value class, never the raw UA string. */
 export type TelemetryClient = 'mobile' | 'desktop';
 
 /**
- * Mirrors app/schemas/train.py SolveTelemetry (Phase 233). Durations are
- * integer milliseconds of VISIBLE time (D-04); `v` is TELEMETRY_SCHEMA_VERSION.
+ * Mirrors app/schemas/train.py SolveTelemetry. Durations are integer
+ * milliseconds of VISIBLE time; `v` is TELEMETRY_SCHEMA_VERSION.
  * `think_hidden_ms` is the think phase's hidden-tab time, kept distinct from
  * the review flush's `review_hidden_ms` because the server merges per key.
  */
@@ -200,7 +198,7 @@ export interface SolveTelemetry {
 }
 
 /**
- * Why a review flush was sent (D-07), closed set mirrored from
+ * Why a review flush was sent, closed set mirrored from
  * app/schemas/train.py with no third value. 'next' = the user pressed Next on
  * the reveal; 'pagehide' = the user left the reveal without pressing Next
  * (page hidden or unloaded, in-app route change or screen unmount, leaving
@@ -210,27 +208,26 @@ export interface SolveTelemetry {
 export type ReviewExit = 'next' | 'pagehide';
 
 /**
- * Mirrors app/schemas/train.py ReviewTelemetry (Phase 233 D-03, v2 in Phase 237
- * D-12). Every value is a CUMULATIVE total for the reveal, because one reveal can
- * be flushed several times (non-Next exits, then Next) and the server merges per
- * key, last write wins. Durations are integer ms of VISIBLE time (D-04);
- * hidden-tab time is `review_hidden_ms`, distinct from the solve patch's
- * `think_hidden_ms`.
+ * Mirrors app/schemas/train.py ReviewTelemetry. Every value is a CUMULATIVE
+ * total for the reveal, because one reveal can be flushed several times
+ * (non-Next exits, then Next) and the server merges per key, last write wins.
+ * Durations are integer ms of VISIBLE time; hidden-tab time is
+ * `review_hidden_ms`, distinct from the solve patch's `think_hidden_ms`.
  *
  * This client always sends v 2: chips selected / chips total / strip expanded
  * replace the v1 card keys, and `review_explored` means "forked at least one
- * sideline" (D-13). v 1 is what older bundles still send; the server accepts both.
+ * sideline". v 1 is what older bundles still send; the server accepts both.
  */
 export interface ReviewTelemetry {
   v: 2;
   exit: ReviewExit;
   review_ms?: number;
   review_hidden_ms?: number;
-  /** Distinct chips selected beyond the default You chip (D-12). */
+  /** Distinct chips selected beyond the default You chip. */
   review_chips_selected?: number;
-  /** The most chips shown on this reveal (D-12). */
+  /** The most chips shown on this reveal. */
   review_chips_total?: number;
-  /** The phone verdict strip was opened at least once (D-12). */
+  /** The phone verdict strip was opened at least once. */
   review_strip_expanded?: boolean;
   review_line_steps?: number;
   review_explore_moves?: number;
@@ -242,43 +239,42 @@ export interface ReviewTelemetry {
 
 /**
  * Body of POST /train/sessions/{session_id}/solves/{position}/review. Mirrors
- * app/schemas/train.py ReviewRequest (Phase 236 D-12): the Phase 233 telemetry
- * keys plus the optional late 1.5 s phone reading of a server-graded move,
- * present only once the background search settled. The server writes it once
- * and never merges it into telemetry.
+ * app/schemas/train.py ReviewRequest: the review telemetry keys plus the
+ * optional late 1.5 s phone reading of a server-graded move, present only once
+ * the background search settled. The server writes it once and never merges it
+ * into telemetry.
  */
 export interface ReviewRequest extends ReviewTelemetry {
   phone_grade?: PhoneGrade;
 }
 
 /**
- * Response for POST /train/sessions/{session_id}/solve.
- *
- * SEED-119: `correct_move` retains its exact prior meaning — the SR
- * ladder's pass/fail verdict, also what the reveal's check/cross mark
- * reads. `move_quality` is the new three-way scoring tier the client's
- * points formula consumes.
- *
- * Phase 206 (RESEARCH Pitfall 1): `source` mirrors `puzzle_type` — it lands
- * synchronously with this response, so the D-19 your-game predicates in
- * TrainReveal.tsx read `verdict.source`, never the separate, asynchronously
- * fetched `PuzzleRevealResponse.source` (which would open a post-solve
- * window where a real SR puzzle misrenders as suppressed).
- */
-/**
- * One server-certified "also fine" alternative move (Phase 211, D-01) — the
- * wire mirror of `app.schemas.train.VettedMove`. Structurally identical to
+ * One server-certified "also fine" alternative move — the wire mirror of
+ * `app.schemas.train.VettedMove`. Structurally identical to
  * `trainArrows.ts`'s `TrainFineMove`, on purpose: the reveal overlay consumes
- * these entries directly. D-01 amendment (2026-08-16): 'best' marks the deep
- * best move itself, served first on a soft puzzle alongside the certified
- * second-best, so the "Also fine" row always has a displayable entry after
- * the overlay filters out the client's own best/played arrows.
+ * these entries directly. 'best' marks the deep best move itself, served first
+ * on a soft puzzle alongside the certified second-best, so the "Also fine" row
+ * always has a displayable entry after the overlay filters out the client's
+ * own best/played arrows.
  */
 export interface VettedMove {
   uci: string;
   quality: 'best' | 'good' | 'inaccuracy';
 }
 
+/**
+ * Response for POST /train/sessions/{session_id}/solve.
+ *
+ * `correct_move` is the SR ladder's pass/fail verdict, also what the reveal's
+ * check/cross mark reads. `move_quality` is the three-way scoring tier the
+ * client's points formula consumes.
+ *
+ * `source` mirrors `puzzle_type` — it lands synchronously with this response,
+ * so the your-game predicates in TrainReveal.tsx read `verdict.source`, never
+ * the separate, asynchronously fetched `PuzzleRevealResponse.source` (which
+ * would open a post-solve window where a real SR puzzle misrenders as
+ * suppressed).
+ */
 export interface SolveResponse {
   correct_guess: boolean;
   correct_move: boolean;
@@ -290,50 +286,45 @@ export interface SolveResponse {
   due_date: string | null;
   session_complete: boolean;
   /**
-   * Phase 211 (D-01/D-03/D-07): the server's certified "also fine" set and
-   * the graded-eval pair for a key-move override (non-null exactly when the
-   * server overrode the client's tier). All three fields are OPTIONAL on
-   * purpose: a `trainRevealCache` entry written by a pre-211 bundle restores
-   * a `verdict` object with none of these keys at runtime even though the
-   * compiler sees them — the same D-10 graceful-degradation pattern
-   * `GradeResult.lines?` established. Exactly one nullish default per seam,
-   * at the consumption site.
+   * The server's certified "also fine" set and the graded-eval pair for a
+   * key-move override (non-null exactly when the server overrode the client's
+   * tier). All three fields are OPTIONAL on purpose: a `trainRevealCache`
+   * entry written by an older bundle restores a `verdict` object with none of
+   * these keys at runtime even though the compiler sees them — the same
+   * graceful-degradation pattern `GradeResult.lines?` uses. Exactly one
+   * nullish default per seam, at the consumption site.
    */
   vetted_moves?: VettedMove[];
   graded_es_before?: number | null;
   graded_es_after?: number | null;
   /**
-   * Phase 235 (D-14): true only when the server accepted a confirmed phone
-   * re-check, crediting either guess. Optional for pre-235 trainRevealCache
-   * entries and a not-yet-deployed server; read with a single `?? false`.
+   * True only when the server accepted a confirmed phone re-check, crediting
+   * either guess. Optional for older trainRevealCache entries and a
+   * not-yet-deployed server; read with a single `?? false`.
    */
   disagreement?: boolean;
 }
 
 /**
  * Response for GET /train/sessions/{session_id}/puzzles/{position}/reveal.
- * Reachable ONLY after the attempt is recorded (409 otherwise — T-189-17).
+ * Reachable ONLY after the attempt is recorded (409 otherwise).
  *
- * 190.1-03 (D-01/D-05): deliberately thin — NO `best_move`/`best_move_san`/
- * `pv` fields. The best move, the best line, and every eval shown in the
- * reveal panel are computed CLIENT-SIDE by the grading engine
- * (`useTrainGradingEngine.ts`), never derived or stored server-side (a
- * server-stored Stockfish eval and the client's own WASM search are not
- * guaranteed to agree bit-for-bit — project_eval_nondeterminism). Do not
- * re-add these fields as a "fallback" — see 190.1-03-PLAN.md's
- * assumption-delta decision.
- * Phase 235 (D-09): the server now picks the solution MOVE
+ * Deliberately thin — NO `best_move`/`best_move_san`/`pv` fields. The best
+ * move, the best line, and every eval shown in the reveal panel are computed
+ * CLIENT-SIDE by the grading engine (`useTrainGradingEngine.ts`), never
+ * derived or stored server-side (a server-stored Stockfish eval and the
+ * client's own WASM search are not guaranteed to agree bit-for-bit). Do not
+ * re-add these fields as a "fallback". The server picks the solution MOVE
  * (`TrainPuzzle.key_move_uci`); the phone still supplies every number.
  *
- * `played_in_game_move_uci` (190.1-01, D-05) is the UCI counterpart of
- * `played_in_game_san`, behind the identical gate — used to dispatch the
- * client's reveal-time engine search.
+ * `played_in_game_move_uci` is the UCI counterpart of `played_in_game_san`,
+ * behind the identical gate — used to dispatch the client's reveal-time engine
+ * search.
  *
- * `game_id` is `number | null` (Phase 192 Plan 02/05, D-05/D-09): a red
- * herring's source game can be nulled by the OWNER deleting it (a global
- * pool row survives independently, D-03) — never by the solving user. A
- * null `game_id` degrades the reveal's game footer to nothing (D-07) and
- * hides the Analyze deep-link (D-09) rather than disabling it.
+ * `game_id` is `number | null`: a red herring's source game can be nulled by
+ * the OWNER deleting it (a global pool row survives independently) — never by
+ * the solving user. A null `game_id` degrades the reveal's game footer to
+ * nothing and hides the Analyze deep-link rather than disabling it.
  */
 export interface PuzzleRevealResponse {
   game_id: number | null;
@@ -344,25 +335,23 @@ export interface PuzzleRevealResponse {
   puzzle_type: 'sharp' | 'soft' | 'herring';
   source: 'sr_item' | 'red_herring' | 'sharp_filler';
   has_tactic_lines: boolean;
-  /** Phase 206 (D-20): the sharp filler's motif label ("Fork", "Skewer",
-   * ...), read straight from the committed data file. null for every
+  /** The sharp filler's motif label ("Fork", "Skewer", ...), read straight
+   * from the committed data file. null for every
    * sr_item/red_herring reveal — no motif taxonomy exists for those today. */
   motif: string | null;
 }
 
-/** Response for GET /train/settings.
- *
- * `reminder_enabled`/`reminder_hour` (Phase 202, PERM-01..04) were exposed by
- * 201 D-18 but never round-tripped through the frontend until now. The
- * backend CHECK bound on `reminder_hour` is 0..23 inclusive
- * (`REMINDER_HOUR_MIN`/`REMINDER_HOUR_MAX` in `app/services/train_scheduler.py`).
- *
- * `reminder_intent_at` (Phase 203, OFFER-03/OFFER-05/D-02/D-15) is an ISO
- * instant string, or null if the user has never expressed install intent.
- */
-/** Phase 240 (D-09): finished reveal-tour parts, 0..3; 3 means the whole tour is done. */
+/** Finished reveal-tour parts, 0..3; 3 means the whole tour is done. */
 export type RevealTourStage = 0 | 1 | 2 | 3;
 
+/** Response for GET /train/settings.
+ *
+ * The backend CHECK bound on `reminder_hour` is 0..23 inclusive
+ * (`REMINDER_HOUR_MIN`/`REMINDER_HOUR_MAX` in `app/services/train_scheduler.py`).
+ *
+ * `reminder_intent_at` is an ISO instant string, or null if the user has never
+ * expressed install intent.
+ */
 export interface TrainSettingsResponse {
   timezone: string;
   weekday_mask: number;
@@ -371,20 +360,19 @@ export interface TrainSettingsResponse {
   reminder_hour: number;
   reminder_intent_at: string | null;
   /**
-   * Phase 222 (D-11/D-12): server-stamped, read-only "seen" watermarks for
-   * the intro and score-explanation steppers (`intro_seen_at`,
-   * `sr_explained_at`), stamped by `POST /train/onboarding/{step}` only on a
-   * COMPLETED stepper (an abandoned one replays). Phase 240 (D-09): the
-   * first-reveal tour is a forward-only count of finished parts instead,
-   * `reveal_tour_stage` (0 = none, 3 = whole tour done). None of these is
-   * writable via `TrainSettingsUpdate` (D-12): a PUT body can never smuggle a
-   * server-owned field, same rule as `reminder_last_sent_on`.
+   * Server-stamped, read-only "seen" watermarks for the intro and
+   * score-explanation steppers (`intro_seen_at`, `sr_explained_at`), stamped
+   * by `POST /train/onboarding/{step}` only on a COMPLETED stepper (an
+   * abandoned one replays). The first-reveal tour is a forward-only count of
+   * finished parts instead, `reveal_tour_stage` (0 = none, 3 = whole tour
+   * done). None of these is writable via `TrainSettingsUpdate`: a PUT body can
+   * never smuggle a server-owned field, same rule as `reminder_last_sent_on`.
    */
   intro_seen_at: string | null;
   reveal_tour_stage: RevealTourStage;
   sr_explained_at: string | null;
   /**
-   * Phase 222 UAT round 5: whether ANY of the account's push subscriptions
+   * Whether ANY of the account's push subscriptions
    * came from a mobile browser (server-side User-Agent check). Account-wide,
    * unlike the per-device subscription probe — the desktop score screen uses
    * it to swap the phone QR handoff for a "reminders on your phone" line.
@@ -398,7 +386,7 @@ export interface TrainSettingsResponse {
  * This is a full-replace body with exactly one call site
  * (`useTrainSettings.ts`'s `mutationFn`) — every field here must be sent on
  * every save, or an existing save 422s the moment the backend requires it.
- * `reminder_intent_at` is required-but-nullable (D-02) — an ISO instant
+ * `reminder_intent_at` is required-but-nullable — an ISO instant
  * string or null, never omitted. */
 export interface TrainSettingsUpdate {
   timezone: string;
@@ -410,7 +398,7 @@ export interface TrainSettingsUpdate {
 }
 
 /**
- * The server-computed PROG-05/D-16 empty-state discriminant (mirrors the
+ * The server-computed empty-state discriminant (mirrors the
  * backend `_pool_state`). `'no_material'` = never had any qualifying
  * material (cold start); `'exhausted'` = material existed but nothing is
  * waiting and nothing is still analyzing; `'available'` = every other case,
@@ -422,17 +410,14 @@ export interface TrainSettingsUpdate {
 export type TrainPoolState = 'no_material' | 'exhausted' | 'available';
 
 /**
- * Response for GET /train/progress (PROG-01/PROG-04).
+ * Response for GET /train/progress.
  *
- * Phase 193 replaced the Phase 191 weekly D-18 settled-streak snapshot with
- * a per-scheduled-day tick + a 0-7 depletable shield: `session_streak_count`
- * (was `settled_streak_weeks`) and `shield_level` (was `flame_state`, a
- * 3-state enum; now a plain number) mirror the persisted tick snapshot on
- * `train_settings`. There is no display overlay any more — the returned
+ * `session_streak_count` and `shield_level` (a plain 0-7 number) mirror the
+ * persisted per-scheduled-day tick snapshot on `train_settings`; the returned
  * values are always exactly what is persisted. `current_week_required` is
  * null when `weekday_mask === 0` ("train anytime" has no denominator to
  * show). `mastered_count`/`parked_count` are computed on the fly from
- * `drill_items` (D-05, unaffected by the tick snapshot).
+ * `drill_items` (unaffected by the tick snapshot).
  *
  * `waiting_count` is an upper-bound attention-signal estimate, never a
  * promise of exact session size — the start screen's own "N puzzles
@@ -440,12 +425,12 @@ export type TrainPoolState = 'no_material' | 'exhausted' | 'available';
  * is the earliest date an ACTIVE item will next resurface, or null when
  * nothing will (the "All caught up!" empty state's date).
  *
- * `streak_reset_notice` (was `streak_lost_last_week`) is derived from the
+ * `streak_reset_notice` is derived from the
  * RESULTING state (never from "did this call settle the reset"), so it
  * survives a page reload.
  *
- * `badge_visible` (Plan 02, D-09/D-10) is a DISPLAY HINT ONLY — it gates no
- * server-side authorization, and the number the nav badge shows still comes
+ * `badge_visible` is a DISPLAY HINT ONLY — it gates no server-side
+ * authorization, and the number the nav badge shows still comes
  * from `waiting_count`. The client MUST NEVER attempt its own day-of-week or
  * timezone math here — it has no `weekday_mask` and no clean way to
  * reproduce the backend's `local_today` — this field is the single source
@@ -465,29 +450,29 @@ export interface TrainProgressResponse {
   badge_visible: boolean;
 }
 
-// ─── Weekly leaderboards (Phase 230) ─────────────────────────────────────────
+// ─── Weekly leaderboards ─────────────────────────────────────────
 
 /** Which weekly board a payload or tab refers to. Mirrors app/schemas/train.py. */
 export type LeaderboardBoardKind = 'points' | 'accuracy';
 
 /**
  * Row visibility. `'public'` for every row except the viewer's own private
- * would-be row: `'hidden'` (opted out, D-13) or `'guest'` (ghost row, D-14).
+ * would-be row: `'hidden'` (opted out) or `'guest'` (ghost row).
  * Mirrors app/schemas/train.py.
  */
 export type LeaderboardVisibility = 'public' | 'hidden' | 'guest';
 
-/** Medal types, best first. Mirrors app/schemas/train.py (Phase 231). */
+/** Medal types, best first. Mirrors app/schemas/train.py. */
 export type MedalKind = 'gold' | 'silver' | 'bronze';
 
-/** Lifetime medal counts of one row's user. Mirrors app/schemas/train.py (Phase 231). */
+/** Lifetime medal counts of one row's user. Mirrors app/schemas/train.py. */
 export interface LeaderboardMedals {
   gold: number;
   silver: number;
   bronze: number;
 }
 
-/** One medal on last week's podium. Mirrors app/schemas/train.py (Phase 231). */
+/** One medal on last week's podium. Mirrors app/schemas/train.py. */
 export interface LeaderboardPodiumEntry {
   medal: MedalKind;
   /** Read-time masked by the server ("Anonymous" / "Deleted user"); render as text only. */
@@ -496,13 +481,13 @@ export interface LeaderboardPodiumEntry {
   is_viewer: boolean;
 }
 
-/** Last week's podium plus the viewer's own non-medal rank. Mirrors app/schemas/train.py (Phase 231). */
+/** Last week's podium plus the viewer's own non-medal rank. Mirrors app/schemas/train.py. */
 export interface LeaderboardLastWeek {
   /** ISO date of the previous Monday (UTC). */
   week_start: string;
   /** Server-ordered gold to bronze, every tied name listed; empty means no podium line. */
   podium: LeaderboardPodiumEntry[];
-  /** Set only for the viewer's own row that earned no medal (D-03). */
+  /** Set only for the viewer's own row that earned no medal. */
   viewer_final_rank: number | null;
 }
 
@@ -510,7 +495,7 @@ export interface LeaderboardLastWeek {
 export interface LeaderboardRow {
   /**
    * Null marks a tentative Accuracy entry: listed below every qualified row,
-   * without a rank (quick 261004-8rt).
+   * without a rank.
    */
   rank: number | null;
   name: string;
@@ -526,13 +511,13 @@ export interface LeaderboardRow {
   gap_before: boolean;
   /** True on the last shown row when ranks below it are cut: a gap marker follows it. */
   gap_after: boolean;
-  /** Lifetime medals of this row's owner on this board; all zero when none (Phase 231). */
+  /** Lifetime medals of this row's owner on this board; all zero when none. */
   medals: LeaderboardMedals;
 }
 
 /** The viewer's own standing on one board. Mirrors app/schemas/train.py. */
 export interface LeaderboardViewer {
-  /** Null while the viewer is a tentative Accuracy entry (quick 261004-8rt). */
+  /** Null while the viewer is a tentative Accuracy entry. */
   rank: number | null;
   /**
    * Rank without the given session's solves (score screen only), else null.
@@ -555,7 +540,7 @@ export interface LeaderboardBoard {
   rows: LeaderboardRow[];
   viewer: LeaderboardViewer | null;
   pass_target: LeaderboardPassTarget | null;
-  /** Previous ISO week only (D-07); null means there is nothing to show (D-08). */
+  /** Previous ISO week only; null means there is nothing to show. */
   last_week: LeaderboardLastWeek | null;
 }
 
@@ -563,15 +548,15 @@ export interface LeaderboardBoard {
 export interface TrainLeaderboardResponse {
   week_start: string;
   week_end: string;
-  /** Server-computed remainder to week_end; the client never does its own week math (D-02). */
+  /** Server-computed remainder to week_end; the client never does its own week math. */
   seconds_remaining: number;
   points: LeaderboardBoard;
   accuracy: LeaderboardBoard;
 }
 
-// ─── Medal claim (Phase 231) ─────────────────────────────────────────────────
+// ─── Medal claim ─────────────────────────────────────────────────
 
-/** One unclaimed medal awaiting the claim dialog. Mirrors app/schemas/train.py (Phase 231). */
+/** One unclaimed medal awaiting the claim dialog. Mirrors app/schemas/train.py. */
 export interface UnclaimedMedal {
   /** ISO date of the week's Monday (UTC); render with parseISO, never `new Date`. */
   week_start: string;

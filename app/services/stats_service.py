@@ -58,7 +58,7 @@ _COLOR_ORDER = ["white", "black"]
 class FilterParams(TypedDict):
     """Typed filter parameters for position WDL batch queries.
 
-    Created per D-02: TypedDicts for internal data structures.
+    Internal data structure, so a TypedDict rather than a Pydantic model.
     Matches keyword parameters of query_position_wdl_batch in stats_repository.py.
     """
 
@@ -273,8 +273,8 @@ async def get_most_played_openings(
     displayed game count comes from game_positions (games passing through
     the position). This matches the count shown in "Results by Opening".
 
-    Phase 80: also populates MG-entry eval + clock-diff + EG-entry eval fields
-    via query_opening_phase_entry_metrics_batch (D-01, D-04, D-05, D-08, D-09).
+    Also populates the MG-entry eval fields via
+    query_opening_phase_entry_metrics_batch.
     Sequential awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
     """
     white_rows = await query_top_openings_sql_wdl(
@@ -313,7 +313,7 @@ async def get_most_played_openings(
     # Batch-query position-based WDL — games passing through each position,
     # which is typically higher than the opening-name count because many
     # openings share early moves. This matches "Results by Opening" counts.
-    # FilterParams TypedDict per D-02. Passed explicitly (not via **) for ty compatibility.
+    # FilterParams TypedDict. Passed explicitly (not via **) for ty compatibility.
     filter_params: FilterParams = FilterParams(
         time_control=time_control,
         platform=platform,
@@ -325,7 +325,7 @@ async def get_most_played_openings(
         opponent_gap_max=opponent_gap_max,
     )
     # Row tuple shape: (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
-    # full_hash sits at index 5 after the display_name column was added (PRE-01).
+    # full_hash sits at index 5 after the display_name column was added.
     white_position_wdl = await query_position_wdl_batch(
         session,
         user_id,
@@ -340,7 +340,7 @@ async def get_most_played_openings(
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
-    # Phase 80: batch-query phase-entry metrics (MG + EG eval + clock-diff).
+    # Batch-query MG-entry eval metrics.
     # Sequential await — same session, AsyncSession not safe for concurrent use (CLAUDE.md).
     white_phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
         session,
@@ -396,7 +396,7 @@ async def get_most_played_openings(
             # Use position-based WDL if available, falling back to
             # opening-name WDL for openings without a hash
             pos = position_wdl.get(full_hash) if full_hash else None
-            # Quick task 260508-r61: surface MAX(played_at) on each card so the
+            # Surface MAX(played_at) on each card so the
             # score-confidence popover can render "Last played: <relative>".
             # Only the position-based path carries played_at — name-only fallback
             # rows leave this as None (no associated full_hash bucket to query).
@@ -410,10 +410,10 @@ async def get_most_played_openings(
             else:
                 win_pct = draw_pct = loss_pct = 0.0
 
-            # Phase 80: phase-entry eval finalizer (D-01, D-04, D-08).
+            # Phase-entry eval finalizer.
             pe = phase_entry_metrics.get(full_hash) if full_hash else None
 
-            # MG-entry pillar (D-01, D-04, D-08)
+            # MG-entry pillar
             avg_eval_pawns: float | None = None
             eval_ci_low_pawns: float | None = None
             eval_ci_high_pawns: float | None = None
@@ -424,7 +424,7 @@ async def get_most_played_openings(
             if pe is not None and pe.eval_n_mg > 0:
                 # H0: mean == 0 cp (engine-balanced). The per-color engine
                 # asymmetry baseline is shown on the bullet chart as a tick,
-                # not subtracted from the test reference (260504-rvh).
+                # not subtracted from the test reference.
                 confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
                     pe.eval_sum_mg,
                     pe.eval_sumsq_mg,
@@ -454,7 +454,7 @@ async def get_most_played_openings(
                     win_pct=win_pct,
                     draw_pct=draw_pct,
                     loss_pct=loss_pct,
-                    # Phase 80 MG-entry eval fields
+                    # MG-entry eval fields
                     avg_eval_pawns=avg_eval_pawns,
                     eval_ci_low_pawns=eval_ci_low_pawns,
                     eval_ci_high_pawns=eval_ci_high_pawns,
@@ -475,25 +475,25 @@ async def get_most_played_openings(
         # Per-color engine-asymmetry baselines (in pawns). The frontend renders
         # these as a small reference tick on the MG-entry bullet chart. They
         # are NOT used as the chart's center or the z-test H0 — both of those
-        # remain anchored at 0 cp (engine-balanced) per quick task 260504-rvh.
+        # remain anchored at 0 cp (engine-balanced).
         eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
         eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
     )
 
 
-def _phase80_item_from_metrics(
+def _bookmark_phase_entry_item(
     target_hash: str,
     pe: OpeningPhaseEntryMetrics | None,
 ) -> BookmarkPhaseEntryItem:
-    """Compute the Phase 80 display fields for a single hash.
+    """Compute the MG-entry eval display fields for a single hash.
 
-    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings
-    (D-01, D-04, D-05, D-08). Kept as a separate helper so the bookmark endpoint
+    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings.
+    Kept as a separate helper so the bookmark endpoint
     can reuse the same numerical logic without depending on the OpeningWDL row shape.
 
     The eval z-test runs against H0: mean == 0 cp (engine-balanced) regardless
-    of the bookmark's color — the per-color engine-asymmetry baseline is now
-    a display tick on the bullet chart, not the test reference (260504-rvh).
+    of the bookmark's color — the per-color engine-asymmetry baseline is
+    a display tick on the bullet chart, not the test reference.
     """
     item = BookmarkPhaseEntryItem(target_hash=target_hash)
     if pe is None:
@@ -530,7 +530,7 @@ async def get_bookmark_phase_entry_metrics(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> BookmarkPhaseEntryResponse:
-    """Phase 80 fields for arbitrary bookmark target_hashes.
+    """MG-entry eval fields for arbitrary bookmark target_hashes.
 
     Groups bookmarks by (match_side, color) — each group is one batched DB call to
     query_opening_phase_entry_metrics_batch with the matching hash_column. Sequential
@@ -569,7 +569,7 @@ async def get_bookmark_phase_entry_metrics(
         metrics_by_hash.update(group_metrics)
 
     items = [
-        _phase80_item_from_metrics(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
+        _bookmark_phase_entry_item(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
         for b in bookmarks
     ]
     return BookmarkPhaseEntryResponse(items=items)

@@ -1,6 +1,7 @@
-"""Integration + unit tests for admin impersonation (phase 62).
+"""Integration + unit tests for admin impersonation.
 
-Covers D-01..D-06 and D-23 from .planning/phases/62-admin-user-impersonation/62-CONTEXT.md.
+Covers token claims and TTL, the superuser and nested-impersonation guards, token revocation,
+and that last_login is untouched.
 
 Each test:
 - Uses httpx.AsyncClient with ASGITransport to hit the full FastAPI app directly.
@@ -107,7 +108,7 @@ async def make_admin_and_target(
 
 @pytest.mark.asyncio
 async def test_impersonate_issues_token_with_claims(test_engine):
-    """POST /api/admin/impersonate/{id} returns a JWT with the expected claims + TTL (D-01, D-03)."""
+    """POST /api/admin/impersonate/{id} returns a JWT with the expected claims + TTL."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -159,7 +160,7 @@ async def test_impersonate_rejects_non_superuser(test_engine):
 
 @pytest.mark.asyncio
 async def test_impersonate_rejects_target_superuser(test_engine):
-    """Cannot impersonate a user who is themselves a superuser (D-05)."""
+    """Cannot impersonate a user who is themselves a superuser."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -216,7 +217,7 @@ async def test_impersonate_rejects_inactive_user(test_engine):
 
 @pytest.mark.asyncio
 async def test_impersonation_token_returns_target_user(test_engine):
-    """Calling /users/me/profile with an impersonation token returns the target user (D-23)."""
+    """Calling /users/me/profile with an impersonation token returns the target user."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -242,7 +243,7 @@ async def test_impersonation_token_returns_target_user(test_engine):
 
 @pytest.mark.asyncio
 async def test_nested_impersonation_rejected(test_engine):
-    """Holding an impersonation token of B, attempting to impersonate C must 403 (D-04)."""
+    """Holding an impersonation token of B, attempting to impersonate C must 403."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -268,7 +269,7 @@ async def test_nested_impersonation_rejected(test_engine):
 
 @pytest.mark.asyncio
 async def test_admin_demoted_invalidates_token(test_engine):
-    """After admin loses is_superuser, the impersonation token must be rejected (D-02)."""
+    """After admin loses is_superuser, the impersonation token must be rejected."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -295,7 +296,7 @@ async def test_admin_demoted_invalidates_token(test_engine):
 
 @pytest.mark.asyncio
 async def test_target_promoted_invalidates_token(test_engine):
-    """After target becomes a superuser, the impersonation token must be rejected (D-02 / D-05)."""
+    """After target becomes a superuser, the impersonation token must be rejected."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -337,7 +338,7 @@ async def test_regular_jwt_still_works(test_engine):
 
 @pytest.mark.asyncio
 async def test_impersonation_does_not_update_last_login(test_engine):
-    """Issuing + using an impersonation token must not update either user's last_login (D-06)."""
+    """Issuing + using an impersonation token must not update either user's last_login."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:

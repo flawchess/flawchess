@@ -24,7 +24,7 @@ describe('PersonaCard', () => {
     expect(card.querySelectorAll('span[aria-hidden="true"]')).toHaveLength(1);
   });
 
-  it('renders the calibrated label, not the raw rung, when they differ (CAL-05)', () => {
+  it('renders the calibrated label, not the raw rung, when they differ', () => {
     const personaWithDistinctLabel = { ...PERSONA, calibratedLabel: '~1050' };
     render(<PersonaCard persona={personaWithDistinctLabel} onSelect={vi.fn()} />);
 
@@ -61,7 +61,7 @@ describe('PersonaCard', () => {
 
   it('backstop: falls back to the emoji when no real art resolves', () => {
     // An id the assets glob cannot match — forces resolveAvatarSrc to
-    // undefined regardless of which webp files exist on disk, so the D-18
+    // undefined regardless of which webp files exist on disk, so the
     // emoji placeholder branch stays covered now that real art has landed.
     const personaNoArt = {
       ...PERSONA,
@@ -75,7 +75,7 @@ describe('PersonaCard', () => {
     expect(card.textContent).toContain(PERSONA.avatarEmoji);
   });
 
-  it('backstop: renders the real-art image instead of the emoji when avatarSrc is present (D-17 forward-compat seam)', () => {
+  it('backstop: renders the real-art image instead of the emoji when avatarSrc is present', () => {
     const personaWithArt = { ...PERSONA, avatarSrc: '/personas/attacker-800.webp' };
     render(<PersonaCard persona={personaWithArt} onSelect={vi.fn()} />);
 
@@ -85,7 +85,7 @@ describe('PersonaCard', () => {
     expect(img?.getAttribute('src')).toBe(personaWithArt.avatarSrc);
   });
 
-  it('lazy-loads the real-art avatar image (213-02, D-18)', () => {
+  it('lazy-loads the real-art avatar image', () => {
     // A persona whose webp exists in the assets glob renders the real-art
     // <img>, which must carry loading="lazy" so the /bots grid does not
     // eagerly fetch every persona's avatar on mount.
@@ -99,7 +99,7 @@ describe('PersonaCard', () => {
   });
 });
 
-describe('PersonaCard win-stars row (Phase 185)', () => {
+describe('PersonaCard win-stars row', () => {
   function starsRow(): HTMLElement {
     const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
     const row = card.querySelector('[aria-label$="win"], [aria-label$="wins"]');
@@ -181,8 +181,8 @@ describe('PersonaCard win-stars row (Phase 185)', () => {
   });
 });
 
-// Phase 229 (D-04, T-229-19): opening a persona reports the open without any persona identity.
-describe('PersonaCard feature events (Phase 229)', () => {
+// Opening a persona reports the open without any persona identity.
+describe('PersonaCard feature events', () => {
   const track = vi.fn();
 
   beforeEach(() => {

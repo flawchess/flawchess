@@ -1,6 +1,6 @@
 /**
- * MedalIcon — a gold, silver or bronze medal drawn after the 🥇 emoji
- * (Phase 231 UAT): two ribbon straps forming a V above a filled disc with a
+ * MedalIcon — a gold, silver or bronze medal drawn after the 🥇 emoji: two
+ * ribbon straps forming a V above a filled disc with a
  * darker rim and the place number. Shared by the row tally, the "Last week:"
  * podium and the medal dialog. The colours live in theme.ts; this component
  * never carries a colour literal. Inline SVG rather than the emoji character,

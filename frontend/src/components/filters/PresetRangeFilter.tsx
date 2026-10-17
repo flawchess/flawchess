@@ -1,5 +1,5 @@
 /**
- * PresetRangeFilter — shared two-handle range filter (Quick 260620-l5k, Phase 130).
+ * PresetRangeFilter — shared two-handle range filter.
  *
  * Extracted from the near-identical TacticDepthFilter / OpponentStrengthFilter
  * clones. Renders a label row with an InfoPopover + active-summary, a preset
@@ -21,7 +21,7 @@ export interface PresetOption {
 }
 
 interface PresetRangeFilterProps {
-  /** Visible filter title (e.g. "Tactic Difficulty"). */
+  /** Visible filter title (e.g. "Tactic Depth"). */
   label: string;
   /** data-testid prefix; derives root/info/summary/presets/preset/slider ids. */
   testIdPrefix: string;

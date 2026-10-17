@@ -1,6 +1,6 @@
 """Admin service layer: user search for the impersonation selector.
 
-Phase 62. Superuser-only by callers (guarded at the router layer via
+Superuser-only by callers (guarded at the router layer via
 `current_superuser` — see app/users.py).
 """
 
@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 
-# D-13: cap results at 20 so the combobox stays lightweight.
+# Cap results at 20 so the combobox stays lightweight.
 USER_SEARCH_LIMIT = 20
 
-# D-12: minimum query length. Below this, return empty. Keeps the endpoint
+# Minimum query length. Below this, return empty. Keeps the endpoint
 # from being used as an enumeration oracle for tiny prefixes.
 USER_SEARCH_MIN_QUERY_LEN = 2
 
@@ -24,8 +24,8 @@ async def search_users(session: AsyncSession, query: str) -> Sequence[User]:
     """Return up to 20 non-superuser users matching ILIKE on email / usernames
     or exact numeric id match.
 
-    Superusers are EXCLUDED from results — D-05 forbids impersonating another
-    superuser, so surfacing them in the selector is pointless and leaks a tiny
+    Superusers are EXCLUDED from results — impersonating another
+    superuser is rejected, so surfacing them in the selector is pointless and leaks a tiny
     bit of roster info if the admin session is compromised.
 
     Ordering: most-recently-logged-in first, then ascending id (stable tiebreak).
@@ -37,7 +37,7 @@ async def search_users(session: AsyncSession, query: str) -> Sequence[User]:
 
     # Build the or_ clauses conditionally so we don't mix SQLAlchemy
     # ColumnElement with a Python False literal — sa.false() keeps the
-    # expression pure SQLAlchemy and avoids RESEARCH.md Open Question #4.
+    # expression pure SQLAlchemy.
     # ty infers the Mapped columns as their Python types (`str`/`str | None`),
     # missing the SQLAlchemy operator overloads — suppress unresolved-attribute
     # on the .ilike() calls. See CLAUDE.md §"ty compliance".
@@ -53,7 +53,7 @@ async def search_users(session: AsyncSession, query: str) -> Sequence[User]:
         select(User)
         .where(
             or_(*match_clauses),
-            # hygiene: exclude superusers (D-05 forbids impersonating them).
+            # hygiene: exclude superusers (impersonating them is rejected).
             # ty collapses `Mapped[bool] == sa.false()` to Python bool; suppress.
             User.is_superuser == sa_false(),  # ty: ignore[invalid-argument-type]  # SQLAlchemy ColumnElement, not Python bool
         )

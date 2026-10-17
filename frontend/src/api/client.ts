@@ -108,11 +108,15 @@ apiClient.interceptors.response.use(
       error.response?.status === 401
     ) {
       const onLoginPage = window.location.pathname === '/login';
-      const isAuthRoute = (error.config?.url ?? '').startsWith('/api/auth/');
-      // Quick 260926-9bg: only a request that carried a token can mean "session
-      // expired". ProtectedLayout's profile query fires before its no-token
-      // redirect to the home page; its tokenless 401 used to hard-redirect a
-      // signed-out visitor to /login, overriding the home-page landing.
+      // config.url is relative to baseURL ('/api'), so auth routes start with
+      // '/auth/'. The old '/api/auth/' prefix never matched, so a saved guest
+      // token that 401'd on /auth/guest/refresh hard-redirected to /login instead
+      // of falling through to a fresh guest in loginAsGuest.
+      const isAuthRoute = (error.config?.url ?? '').startsWith('/auth/');
+      // Only a request that carried a token can mean "session expired".
+      // ProtectedLayout's profile query fires before its no-token redirect to the
+      // home page; a tokenless 401 must not hard-redirect a signed-out visitor to
+      // /login, which would override the home-page landing.
       const sentToken = error.config?.headers?.Authorization != null;
 
       if (!onLoginPage && !isAuthRoute && sentToken) {
@@ -121,8 +125,8 @@ apiClient.interceptors.response.use(
         // An expired impersonation session must not leave the superuser's 7-day JWT
         // behind in storage with no visible session.
         localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
-        // Quick 260926-9bg: an expired session (e.g. a Train reminder push to
-        // /train) returns to the page after re-login instead of the default landing.
+        // An expired session (e.g. a Train reminder push to /train) returns to
+        // the page after re-login instead of the default landing.
         stashReturnTo(window.location.pathname + window.location.search);
         window.location.href = '/login';
       }
@@ -144,9 +148,9 @@ export function buildFilterParams(params: {
   opponent_strength?: OpponentStrengthRange;
   window?: number;
   color?: string | null;
-  // Phase 208 (D-11/D-12, PASTE-05/09): Library-only "Pasted" opt-in. Omitted
-  // when false/absent so a default (unfiltered) call sends nothing, matching
-  // the has_gem/has_great conditional-inclusion pattern above.
+  // Library-only "Pasted" opt-in. Omitted when false/absent so a default
+  // (unfiltered) call sends nothing, matching the has_gem/has_great
+  // conditional-inclusion pattern in libraryApi.getGames.
   include_pasted?: boolean;
 }): Record<string, string | string[] | number | boolean> {
   const result: Record<string, string | string[] | number | boolean> = {};
@@ -245,9 +249,9 @@ export const statsApi = {
 
 // ─── Endgame Analytics API ────────────────────────────────────────────────────
 
-// No color parameter passed — endgame stats are color-agnostic per D-02.
+// No color parameter passed: endgame stats are color-agnostic.
 export const endgameApi = {
-  // Phase 238 (D-01): the Games tab's filtered per-category stats (and its
+  // The Games tab's filtered per-category stats (and its
   // "N of M games with an endgame matched" total). Honours every sidebar filter.
   getStats: (params: {
     time_control?: string[] | null;
@@ -262,7 +266,7 @@ export const endgameApi = {
       params: buildFilterParams(params),
     }).then(r => r.data),
 
-  // Phase 238 (D-01): ranked-sample stats per time control. Takes no filters:
+  // Ranked-sample stats per time control. Takes no filters:
   // the Stats tab ignores the shared filter state entirely.
   getRankedStats: () =>
     apiClient.get<EndgameRankedStatsResponse>('/endgames/ranked-stats').then(r => r.data),
@@ -324,7 +328,7 @@ export const trainApi = {
     apiClient.put<TrainSettingsResponse>('/train/settings', data).then(r => r.data),
   getProgress: () =>
     apiClient.get<TrainProgressResponse>('/train/progress').then(r => r.data),
-  /** Phase 230: weekly Points + Accuracy boards. `sessionId` (score screen only)
+  /** Weekly Points + Accuracy boards. `sessionId` (score screen only)
    * asks the server to fill `rank_without_session`; omitted for the landing card. */
   getLeaderboard: (sessionId?: number) =>
     apiClient
@@ -332,32 +336,32 @@ export const trainApi = {
         params: sessionId !== undefined ? { session_id: sessionId } : undefined,
       })
       .then(r => r.data),
-  /** Phase 231: medals won in closed weeks that the user has not celebrated yet. */
+  /** Medals won in closed weeks that the user has not celebrated yet. */
   getUnclaimedMedals: () =>
     apiClient.get<UnclaimedMedalsResponse>('/train/medals/unclaimed').then(r => r.data),
-  /** Phase 231 (D-13): records the shown medals as celebrated (Claim or dismiss).
+  /** Records the shown medals as celebrated (Claim or dismiss).
    * Idempotent server-side; resolves to undefined (204). */
   claimMedals: (medals: MedalKey[]) =>
     apiClient.post<void>('/train/medals/claim', { medals }).then(() => undefined),
   /** Stamps one onboarding step: `intro` and `sr_explained` set a "seen"
    * watermark on stepper completion; `reveal_tour_1`, `reveal_tour_2` and
    * `reveal_tour_3` each finish one part of the reveal tour and advance the
-   * server's forward-only `reveal_tour_stage` counter (Phase 240 D-09). Returns
-   * the full settings response so `useTrainOnboarding`'s `onSuccess` can refresh
-   * the shared cache with no extra fetch (RESEARCH Finding D). */
+   * server's forward-only `reveal_tour_stage` counter. Returns the full
+   * settings response so `useTrainOnboarding`'s `onSuccess` can refresh the
+   * shared cache with no extra fetch. */
   stampOnboarding: (step: OnboardingStep) =>
     apiClient.post<TrainSettingsResponse>(`/train/onboarding/${step}`).then(r => r.data),
 };
 
 /**
- * Phase 233 (D-06): the transport for EVERY review flush: Next, page hidden,
- * unload and screen unmount (Next moved here in the 233 review fix WR-02, so a
- * Next flush survives the page navigating away right after it). Fire-and-forget: a keepalive request outlives the
+ * The transport for EVERY review flush: Next, page hidden, unload and screen
+ * unmount (Next included, so a Next flush survives the page navigating away
+ * right after it). Fire-and-forget: a keepalive request outlives the
  * page. Not the navigator beacon API: it cannot set an Authorization header,
  * so with Bearer auth it would 401. Not `apiClient`: its 401 interceptor
  * redirects to /login and clears the query cache, wrong during an unload or in
  * a background tab. The URL is relative, so the token only ever goes same-origin.
- * The body may carry the Phase 236 D-12 late `phone_grade` record.
+ * The body may carry the late `phone_grade` record.
  */
 export function postReviewKeepalive(sessionId: number, position: number, body: ReviewRequest): void {
   const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
@@ -392,13 +396,14 @@ export function postReviewKeepalive(sessionId: number, position: number, body: R
 // ─── Push API ─────────────────────────────────────────────────────────────────
 
 /**
- * Deliberately NO `unsubscribe` method. D-07 (Phase 202) keeps the stored
- * `push_subscriptions` row on toggle-off, so no application code may ever
- * call `POST /push/unsubscribe` — an exported-but-uncalled method would
- * invite exactly the regression PERM-04 forbids. Do not add one.
+ * Deliberately NO `unsubscribe` method. Toggling reminders off silences them
+ * inside FlawChess and keeps the stored `push_subscriptions` row (the user
+ * stays reachable if they turn them back on), so no application code may ever
+ * call `POST /push/unsubscribe`: an exported-but-uncalled method would invite
+ * exactly that regression. Do not add one.
  *
  * `devTriggerReminder` is the admin panel's manual delivery test. The backend
- * 404s it outside `ENVIRONMENT=development` (D-17), so its only caller gates
+ * 404s it outside `ENVIRONMENT=development`, so its only caller gates
  * on `import.meta.env.DEV`.
  */
 export const pushApi = {
@@ -426,7 +431,7 @@ export const libraryApi = {
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
     severity?: ('blunder' | 'mistake')[];
     tag?: string[];
-    // Quick 260620-pza: tactic filters on the Games tab (mirrors getFlaws). The
+    // Tactic filters on the Games tab (mirrors getFlaws). The
     // tactic family tag group is repeated as tactic_family=fork&...; orientation is
     // omitted when 'either'; depth bounds are sent when present (the backend EXISTS
     // ignores all three unless ≥1 tactic_family is selected).
@@ -434,11 +439,11 @@ export const libraryApi = {
     tactic_orientation?: string;
     min_tactic_depth?: number;
     max_tactic_depth?: number;
-    // FILT-01 (Phase 175): "has gem" / "has great" Library filter toggles, each
+    // "has gem" / "has great" Library filter toggles, each
     // independent (union at the backend when both are true); omitted when false.
     has_gem?: boolean;
     has_great?: boolean;
-    // Phase 208 (D-11/D-12): Library "Pasted" opt-in, off by default.
+    // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
     offset?: number;
     limit?: number;
@@ -473,7 +478,7 @@ export const libraryApi = {
     opponent_strength?: OpponentStrengthRange;
     color?: string | null;
     severity?: ('blunder' | 'mistake')[];
-    // Phase 208 (D-11/D-12): Library "Pasted" opt-in, off by default.
+    // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
   }) =>
     apiClient.get<FlawStatsResponse>('/library/flaw-stats', {
@@ -493,7 +498,7 @@ export const libraryApi = {
     opponent_strength?: OpponentStrengthRange;
     color?: string | null;
     severity?: ('blunder' | 'mistake')[];
-    // Phase 208 (D-11/D-12): Library "Pasted" opt-in, off by default.
+    // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
   }) =>
     apiClient.get<FlawComparisonResponse>('/library/flaw-comparison', {
@@ -514,7 +519,7 @@ export const libraryApi = {
     color?: string | null;
     severity?: ('blunder' | 'mistake')[];
     tactic_families?: string[];
-    // Phase 208 (D-11/D-12): Library "Pasted" opt-in, off by default.
+    // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
   }) =>
     apiClient.get<TacticComparisonResponse>('/library/tactic-comparison', {
@@ -540,14 +545,14 @@ export const libraryApi = {
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
     severity?: ('blunder' | 'mistake')[];
     tag?: string[];
-    // Phase 126: flaw-level tactic motif family filter, repeated as tactic_family=fork&...
+    // Flaw-level tactic motif family filter, repeated as tactic_family=fork&...
     tactic_family?: string[];
-    // Phase 129: orientation filter ('either'|'missed'|'allowed'); omit when 'either'.
+    // Orientation filter ('either'|'missed'|'allowed'); omit when 'either'.
     tactic_orientation?: string;
-    // Quick 260620-l5k: inclusive tactic-depth range bounds (0-based ply, 0..11).
+    // Inclusive tactic-depth range bounds (0-based ply, 0..11).
     min_tactic_depth?: number;
     max_tactic_depth?: number;
-    // Phase 208 (D-11/D-12): Library "Pasted" opt-in, off by default.
+    // Library "Pasted" opt-in, off by default.
     include_pasted?: boolean;
     offset?: number;
     limit?: number;
@@ -560,11 +565,11 @@ export const libraryApi = {
         ...(params.tactic_family && params.tactic_family.length > 0
           ? { tactic_family: params.tactic_family }
           : {}),
-        // Phase 129: orientation — omit when 'either' (default, no param needed)
+        // Orientation: omit when 'either' (default, no param needed)
         ...(params.tactic_orientation && params.tactic_orientation !== 'either'
           ? { tactic_orientation: params.tactic_orientation }
           : {}),
-        // Quick 260620-l5k: depth range — both bounds sent when present (0 is valid).
+        // Depth range: both bounds sent when present (0 is valid).
         ...(params.min_tactic_depth != null ? { min_tactic_depth: params.min_tactic_depth } : {}),
         ...(params.max_tactic_depth != null ? { max_tactic_depth: params.max_tactic_depth } : {}),
         offset: params.offset ?? 0,
@@ -577,8 +582,7 @@ export const libraryApi = {
       .get<TacticLinesResponse>(`/library/flaws/${gameId}/${ply}/tactic-lines`)
       .then(r => r.data),
 
-  // Quick 260702-mnd (D-3): the backend endpoint no longer accepts severity/tactic
-  // filter params (they only drove now-removed per-slot pruning) — no query params.
+  // Takes no query params.
   getGame: (gameId: number) =>
     apiClient.get<GameFlawCard>(`/library/games/${gameId}`).then(r => r.data),
 };

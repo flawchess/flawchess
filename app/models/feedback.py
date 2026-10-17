@@ -29,8 +29,8 @@ class Feedback(Base):
         nullable=False,
         server_default=func.now(),
     )
-    # Which entry point produced this row (SEED-191 #9): the floating button or the
-    # milestone feedback ask. TEXT + CHECK per the low-volume domain-column rule.
+    # Which entry point produced this row : the floating button or the milestone
+    # feedback ask. TEXT + CHECK per the low-volume domain-column rule.
     source: Mapped[str] = mapped_column(
         Text,
         nullable=False,

@@ -1,14 +1,14 @@
-"""Regression tests for the Phase 91 hot-lane refactor in import_service.py.
+"""Regression tests for the hot-lane split in import_service.py.
 
 Two test classes cover:
 1. TestHotLaneNoEvalCalls: proves engine.evaluate is never called from _flush_batch
-   (T-91-12 CI regression guard — structural invariant).
+   (CI regression guard, structural invariant).
 2. TestHotLaneCoveredGate: integration + unit tests for Stage 5c covered-game gate
    (_collect_covered_game_ids + evals_completed_at marking).
 
-Phase 91 / SEED-023:
-    The Stockfish eval pass was removed from the hot import lane and moved to
-    the cold-drain coroutine (run_eval_drain in eval_drain.py).  _flush_batch
+Rationale:
+    The Stockfish eval pass is not part of the hot import lane; it runs in the
+    background drain coroutine (run_eval_drain in eval_drain.py).  _flush_batch
     must NEVER call engine.evaluate, regardless of the game content.
     Stage 5c sets evals_completed_at = NOW() for games whose entry plies are
     already covered (lichess %eval) or absent (very short games) so they are
@@ -137,7 +137,7 @@ def _make_midgame_needs_eval_processing_result() -> dict[str, Any]:
 
 
 class TestHotLaneNoEvalCalls:
-    """T-91-12: engine.evaluate must NEVER be called from the hot import lane.
+    """engine.evaluate must NEVER be called from the hot import lane.
 
     This is a CI regression guard — if a future edit re-introduces engine.evaluate
     calls inside _flush_batch (or any function it calls), this test fails.
@@ -317,7 +317,7 @@ class TestHotLaneCoveredGate:
         platform_id_a = "stage5c-test-game-A"
         platform_id_b = "stage5c-test-game-B"
 
-        # Pre-insert the two games so they exist in DB for the SELECT in _collect_position_rows
+        # Pre-insert the two games so they exist in DB for the SELECT in _insert_games_and_build_position_rows
         game_a = Game(
             user_id=test_user_id,
             platform="chess.com",
@@ -357,14 +357,14 @@ class TestHotLaneCoveredGate:
             call_index[0] += 1
             return processing_results[idx]
 
-        # Build minimal batch dicts matching _collect_position_rows dict-fallback path
+        # Build minimal batch dicts matching _insert_games_and_build_position_rows dict-fallback path
         batch: list[Any] = [
             {"platform_game_id": platform_id_a, "pgn": _SHORT_PGN_COVERED},
             {"platform_game_id": platform_id_b, "pgn": _SHORT_PGN_COVERED},
         ]
 
         with (
-            # Return pre-inserted IDs so _collect_position_rows does the SELECT
+            # Return pre-inserted IDs so _insert_games_and_build_position_rows does the SELECT
             patch(
                 "app.services.import_service.game_repository.bulk_insert_games",
                 new=AsyncMock(return_value=[game_a_id, game_b_id]),
@@ -404,7 +404,7 @@ class TestHotLaneCoveredGate:
         )
 
 
-# ── Stage B import-complete trigger (quick-260527-u3u) ───────────────────────
+# ── Stage B import-complete trigger ──────────────────────────────────────────
 #
 # These tests pin the new Stage B trigger inside _complete_import_job that
 # closes the gap where all-Stage-5c-covered incremental imports never tick the
@@ -449,7 +449,7 @@ def _make_job_state() -> Any:
 async def test_stage_b_fires_on_import_complete_when_zero_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Stage B is scheduled exactly once when users_with_zero_pending returns [user_id].
+    """Stage B is scheduled exactly once when users_with_no_pending_evals_or_imports returns [user_id].
 
     Also confirms Stage A continues to be scheduled (no regression).
     """
@@ -466,7 +466,9 @@ async def test_stage_b_fires_on_import_complete_when_zero_pending(
     async def _fake_gate(_session: Any, user_ids: Any) -> list[int]:
         return list(user_ids)
 
-    monkeypatch.setattr(import_service.game_repository, "users_with_zero_pending", _fake_gate)
+    monkeypatch.setattr(
+        import_service.game_repository, "users_with_no_pending_evals_or_imports", _fake_gate
+    )
     monkeypatch.setattr(import_service.import_job_repository, "update_import_job", AsyncMock())
 
     job = _make_job_state()
@@ -482,7 +484,7 @@ async def test_stage_b_fires_on_import_complete_when_zero_pending(
 async def test_stage_b_does_not_fire_when_pending_remains(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Stage B is NOT scheduled when users_with_zero_pending returns [].
+    """Stage B is NOT scheduled when users_with_no_pending_evals_or_imports returns [].
 
     Stage A must still be scheduled (gate only applies to Stage B).
     """
@@ -499,7 +501,9 @@ async def test_stage_b_does_not_fire_when_pending_remains(
     async def _fake_gate_empty(_session: Any, _user_ids: Any) -> list[int]:
         return []
 
-    monkeypatch.setattr(import_service.game_repository, "users_with_zero_pending", _fake_gate_empty)
+    monkeypatch.setattr(
+        import_service.game_repository, "users_with_no_pending_evals_or_imports", _fake_gate_empty
+    )
     monkeypatch.setattr(import_service.import_job_repository, "update_import_job", AsyncMock())
 
     job = _make_job_state()
@@ -536,7 +540,7 @@ async def test_stage_b_gate_exception_is_swallowed_and_captured(
         raise boom
 
     monkeypatch.setattr(
-        import_service.game_repository, "users_with_zero_pending", _fake_gate_raises
+        import_service.game_repository, "users_with_no_pending_evals_or_imports", _fake_gate_raises
     )
     monkeypatch.setattr(import_service.import_job_repository, "update_import_job", AsyncMock())
 
@@ -557,13 +561,13 @@ async def test_stage_b_gate_exception_is_swallowed_and_captured(
     )
 
 
-# ── D-03: chess.com skipped-archive cursor hold-back (quick-260806-p9n) ──────
+# ── chess.com skipped-archive cursor hold-back ───────────────────────────────
 #
 # _complete_import_job normally advances last_synced_at to `now` unconditionally.
 # When the forward pass had to skip a chess.com monthly archive (404/410), that
-# would silently drop the skipped month from every future sync (see D-01/D-02/D-03
-# in quick/260806-p9n-PLAN.md). These tests pin the clamp and the earliest-wins
-# accumulation the forward iterator wires into JobState.earliest_skipped_archive_ym.
+# would silently drop the skipped month from every future sync. These tests pin
+# the clamp and the earliest-wins accumulation the forward iterator wires into
+# JobState.earliest_skipped_archive_ym.
 
 
 def _make_stage_b_gate_and_stage_ab_mocks(
@@ -590,14 +594,16 @@ def _make_stage_b_gate_and_stage_ab_mocks(
     async def _fake_gate(_session: Any, user_ids: Any) -> list[int]:
         return list(user_ids) if zero_pending else []
 
-    monkeypatch.setattr(import_service.game_repository, "users_with_zero_pending", _fake_gate)
+    monkeypatch.setattr(
+        import_service.game_repository, "users_with_no_pending_evals_or_imports", _fake_gate
+    )
 
 
 @pytest.mark.asyncio
 async def test_complete_import_job_no_skip_last_synced_at_equals_completed_at(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test A (no-skip regression, D-03): when earliest_skipped_archive_ym is
+    """Test A (no-skip regression): when earliest_skipped_archive_ym is
     None, last_synced_at == completed_at (both `now`) -- byte-identical to
     today's behavior when nothing was skipped."""
     from app.services import import_service
@@ -623,10 +629,10 @@ async def test_complete_import_job_no_skip_last_synced_at_equals_completed_at(
 async def test_complete_import_job_clamps_last_synced_at_to_earliest_skip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test B (the clamp, D-03): when earliest_skipped_archive_ym is set,
+    """Test B (the clamp): when earliest_skipped_archive_ym is set,
     last_synced_at is clamped to the first instant of that month exactly,
     completed_at is still `now` and strictly greater, and status stays
-    'completed' -- a skip must NOT fail the job (D-01)."""
+    'completed' -- a skip must NOT fail the job."""
     from datetime import datetime, timezone as tz
 
     from app.services import import_service
@@ -659,7 +665,7 @@ async def test_complete_import_job_clamps_last_synced_at_to_earliest_skip(
 async def test_forward_iterator_keeps_minimum_skipped_month(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test C (earliest wins, D-03): the on_archive_skipped callback wired by
+    """Test C (earliest wins): the on_archive_skipped callback wired by
     _make_game_iterator for a chess.com job keeps the MINIMUM reported month
     regardless of arrival order, so the hold-back covers every skipped month."""
     from typing import AsyncIterator

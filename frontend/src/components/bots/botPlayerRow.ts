@@ -1,8 +1,6 @@
 /**
- * botPlayerRow — the pure resolver behind both bot-game player rows
- * (`BotGameDesktopLayout` and, since the Phase 223 UAT round,
- * `BotGameMobileLayout` — the mobile clock strip was retired in favour of
- * the same name-left / clock-right rows the analysis board uses). No React,
+ * botPlayerRow: the pure resolver behind both bot-game player rows
+ * (`BotGameDesktopLayout` and `BotGameMobileLayout`). No React,
  * no side effects: a total function of already-computed values, so the
  * bot-vs-user / guest-gate branching lives in ONE place rather than in each
  * layout's JSX.
@@ -62,10 +60,9 @@ export function resolvePlayerRow(
     return {
       ...shared,
       name: persona?.name ?? 'FlawChess Bot',
-      // D-11 (Phase 184 calibration-honesty rule): the honest tilde-prefixed
-      // calibrated label, never a numeric rating — a null persona (Custom
-      // game) renders no rating label at all, matching a Custom bot's
-      // pre-existing no-rating treatment.
+      // The honest tilde-prefixed calibrated label, never a numeric rating
+      // (calibration-honesty rule) — a null persona (Custom game) renders no
+      // rating label at all.
       ratingLabel: persona?.calibratedLabel,
       testId: 'clock-bot',
     };

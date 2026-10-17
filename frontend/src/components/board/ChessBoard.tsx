@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, useMemo, type RefObject } from 'react';
 import { Chessboard } from 'react-chessboard';
-import { arrowSortKey, DARK_BLUE } from '../../lib/arrowColor';
+import { arrowSortKey, NEUTRAL_ARROW_COLOR } from '../../lib/arrowColor';
 import {
   darkSquareStyle,
   lightSquareStyle,
@@ -25,16 +25,16 @@ export interface BoardArrow {
   isHovered?: boolean;
   /**
    * When true, the arrow's <path> gets the .animate-arrow-pulse class so it
-   * pulses (opacity 0.45 → 1.0 → 0.75) for ARROW_PULSE_ITERATIONS iterations
-   * and then settles at the static ARROW_OPACITY. Used by the deep-link from
-   * OpeningInsightsBlock → MoveExplorer to draw attention to the candidate
-   * move on arrival. (Quick-task 260427-j41.)
+   * pulses (opacity 0.45 → 1.0 → 0.75) for HIGHLIGHT_PULSE_ITERATIONS
+   * iterations and then settles at the static ARROW_OPACITY. Used by the
+   * deep-link from OpeningInsightsBlock → MoveExplorer to draw attention to the
+   * candidate move on arrival.
    */
   isHighlightPulse?: boolean;
   /**
    * Optional depth-badge label rendered as an SVG <text> on the arrow's target
-   * square (e.g. the tactic depth number). Mirrors MiniBoard.tsx badge geometry.
-   * When omitted the arrow renders exactly as before (no badge).
+   * square (e.g. the tactic depth number), drawn by the shared DepthLabel
+   * (boardMarkers.tsx). Omitted = no badge.
    */
   label?: string;
   /**
@@ -52,13 +52,13 @@ export interface BoardArrow {
    * Optional layer id folded into the arrow's React/dedupe key so two engine
    * arrows on the same from→to (FC + SF agreeing) both survive
    * dedupeArrowsByMove instead of collapsing — mirrors the `-top` suffix
-   * escape (D-06).
+   * escape.
    */
   layerKey?: string;
   /**
-   * Phase 237: an explicit resting opacity. The Train reveal dims arrows
+   * An explicit resting opacity. The Train reveal dims arrows
    * outside the focused move instead of hiding them. Omitted = the color-based
-   * default (blue low-emphasis vs the standard opacity); a hovered arrow
+   * default (neutral grey low-emphasis vs the standard opacity); a hovered arrow
    * always wins over this.
    */
   opacity?: number;
@@ -76,17 +76,17 @@ interface ChessBoardProps {
   /**
    * Background color for the last-move from/to square overlay. Defaults to the
    * shared translucent yellow (MOVE_HIGHLIGHT_SQUARE). The analysis board passes
-   * a severity-coded color (Quick 260627-r9g item 5).
+   * a severity-coded color.
    */
   lastMoveColor?: string;
   /** Arrows to render on the board */
   arrows?: BoardArrow[];
-  /** Severity glyph badges drawn in the top-right corner of a square (item 4). */
+  /** Severity glyph badges drawn in the top-right corner of a square. */
   squareMarkers?: SquareMarker[];
   /**
    * Board id for square testid generation. Defaults to 'chessboard'.
-   * Pass a distinct id (e.g. 'tactic-explorer-board') when two boards coexist
-   * in the DOM so their square testids do not collide (Pitfall 6 — Phase 135).
+   * Pass a distinct id (e.g. 'analysis-board') when two boards coexist
+   * in the DOM so their square testids do not collide.
    */
   id?: string;
   /**
@@ -97,9 +97,8 @@ interface ChessBoardProps {
   maxWidth?: number;
   /**
    * When supplied, the board also shrinks to this element's flex-resolved
-   * clientHeight so it fits the available viewport height (Phase 161 D-02).
-   * Omitted (default) = width-only sizing exactly as today — the height
-   * budget resolves to Infinity, so no other caller's behavior changes.
+   * clientHeight so it fits the available viewport height. Omitted (default) =
+   * width-only sizing: the height budget resolves to Infinity.
    */
   heightRef?: RefObject<HTMLElement | null>;
   /**
@@ -112,12 +111,12 @@ interface ChessBoardProps {
    * passing `undefined` is the intended "unchanged" path, not a bug.
    *
    * It exists so the analysis board can SHORTEN the slide for the duration of a
-   * fast-forward run (quick 260901-oxh), where a 300ms animation would outlast
+   * fast-forward run, where a 300ms animation would outlast
    * the replay's per-ply cadence (FAST_FORWARD_STEP_MS) and be aborted partway
    * through the slide.
    *
-   * Pairs with `showAnimations` below: on touch devices animations are off
-   * entirely, so this duration is inert there.
+   * Pairs with `showAnimations` below: animations are on everywhere except
+   * under vitest, where this duration is inert.
    */
   animationDurationInMs?: number;
 }
@@ -138,7 +137,7 @@ const MAX_SHAFT_WIDTH = 0.26;
 const MIN_HEAD_WIDTH = 0.25;
 const MAX_HEAD_WIDTH = 0.65;
 const HEAD_LENGTH_RATIO = 0.7; // head length = head width * this
-// Blue arrows (in-between zone OR low-data OR low-confidence) render much
+// Neutral grey arrows (in-between zone OR low-data OR low-confidence) render much
 // fainter at rest so reliable red/green arrows visually dominate. Hover bumps
 // any arrow back to ARROW_HOVER_OPACITY regardless of color.
 const ARROW_LOW_EMPHASIS_OPACITY = 0.30;
@@ -162,18 +161,18 @@ const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
 const TOUCH_TAP_DEDUPE_MS = 500;
 
 // Depth-label and severity corner-marker rendering live in ./boardMarkers, shared
-// with MiniBoard so both boards draw identical marks (Quick 260627-r9g items 4 & 6).
+// with MiniBoard so both boards draw identical marks.
 
 /**
  * Resting opacity of one arrow: hover wins, then an explicit `arrow.opacity`
- * (Phase 237 Train focus dimming), then the color-based default (blue arrows
+ * (the Train reveal's focus dimming), then the color-based default (neutral grey arrows
  * render much fainter at rest so reliable red/green arrows dominate).
  */
 // eslint-disable-next-line react-refresh/only-export-components -- pure helper shared with tests, not a component
 export function resolveArrowOpacity(arrow: BoardArrow): number {
   if (arrow.isHovered) return ARROW_HOVER_OPACITY;
   if (arrow.opacity !== undefined) return arrow.opacity;
-  return arrow.color === DARK_BLUE ? ARROW_LOW_EMPHASIS_OPACITY : ARROW_OPACITY;
+  return arrow.color === NEUTRAL_ARROW_COLOR ? ARROW_LOW_EMPHASIS_OPACITY : ARROW_OPACITY;
 }
 
 interface TouchTap {
@@ -190,9 +189,9 @@ export function isDuplicateTouchTap(lastTap: TouchTap | null, square: string, no
   return lastTap !== null && lastTap.square === square && now - lastTap.at < TOUCH_TAP_DEDUPE_MS;
 }
 
-// Render priority: hovered arrow always on top; otherwise green > red > blue
-// > grey (low-data). Within each tier, thicker arrows are drawn first so thin
-// arrows stay visible.
+// Render priority: hovered arrow always on top; otherwise green > red >
+// neutral grey > any other color. Within each tier, thicker arrows are drawn
+// first so thin arrows stay visible.
 
 function ArrowOverlay({
   arrows,
@@ -286,7 +285,7 @@ function ArrowOverlay({
         );
       })}
       {/* Depth-label badges drawn after the arrows so they sit on top of the
-          arrowheads. Anchored top-left (item 6). Only rendered when label is set. */}
+          arrowheads. Anchored top-left. Only rendered when label is set. */}
       {sortedArrows.map((arrow) =>
         arrow.label ? (
           <DepthLabel
@@ -299,7 +298,7 @@ function ArrowOverlay({
           />
         ) : null,
       )}
-      {/* Severity corner markers (item 4) — glyph top-right, optional depth top-left. */}
+      {/* Severity corner markers — glyph top-right, optional depth top-left. */}
       {markers.map((marker) => (
         <SquareMarkerGroup key={`marker-${marker.square}`} marker={marker} sqSize={sqSize} flipped={flipped} />
       ))}
@@ -324,9 +323,8 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
       if (containerRef.current) {
         const containerWidth = containerRef.current.clientWidth;
         // heightRef points at a wrapper the caller sizes via flex-1 min-h-0 (the
-        // /analysis board row gives the board this treatment, D-02); when unset
-        // (e.g. Openings mini-board, tactic explorer), heightBudget is Infinity so
-        // sizing stays width-driven exactly as it was before this prop existed.
+        // /analysis board row gives the board this treatment); when unset (e.g.
+        // the Openings board), heightBudget is Infinity and sizing is width-driven.
         const heightBudget = heightRef?.current?.clientHeight ?? Infinity;
         setBoardWidth(computeBoardSize(containerWidth, heightBudget, maxWidth));
       }
@@ -335,7 +333,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
     updateWidth();
     // Single ResizeObserver instance observing both the width container and the
     // optional height-bounding element — one code path, one set of edge cases
-    // (Phase 161 RESEARCH.md "Don't Hand-Roll": do not add a second observer).
+    // (do not add a second observer).
     const observer = new ResizeObserver(updateWidth);
     if (containerRef.current) {
       observer.observe(containerRef.current);
@@ -379,12 +377,12 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
     [selectedSquare, onPieceDrop],
   );
 
-  // Phase 237 UAT bug fix: a clean tap (no finger movement) fired onSquareClick
-  // TWICE, once from our onPointerUp workaround below and once from
-  // react-chessboard's own onTouchEnd (its tap flag survives when no drag
-  // started). The second call saw the just-selected square and deselected it,
-  // so a single tap on a piece never stuck; only a drag back onto the source
-  // square (which resets the library flag) selected it. Swallow the echo.
+  // A clean tap (no finger movement) fires onSquareClick TWICE, once from our
+  // onPointerUp workaround below and once from react-chessboard's own
+  // onTouchEnd (its tap flag survives when no drag started). The second call
+  // sees the just-selected square and deselects it, so a single tap on a piece
+  // would never stick; only a drag back onto the source square (which resets
+  // the library flag) selected it. Swallow the echo.
   const handleLibrarySquareClick = useCallback(
     (args: SquareHandlerArgs) => {
       if (isDuplicateTouchTap(lastTouchTapRef.current, args.square, performance.now())) {
@@ -407,7 +405,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
   const squareStyles = useMemo<Record<string, React.CSSProperties>>(() => {
     const styles: Record<string, React.CSSProperties> = {};
     if (lastMoveFrom && lastMoveTo) {
-      // Severity-coded on the analysis board (item 5); default translucent yellow elsewhere.
+      // Severity-coded on the analysis board; default translucent yellow elsewhere.
       const highlightStyle: React.CSSProperties = { backgroundColor: lastMoveColor ?? MOVE_HIGHLIGHT_SQUARE };
       styles[lastMoveFrom] = highlightStyle;
       styles[lastMoveTo] = highlightStyle;
@@ -465,43 +463,18 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
   );
 
   /**
-   * Piece animation is enabled EVERYWHERE, mobile included.
+   * Piece animation is on everywhere, mobile included. Don't gate it on
+   * `'ontouchstart' in window`: Chrome defines that on any touch-capable desktop
+   * (touchscreen laptop, convertible, touch monitor), which silently loses
+   * animation on every navigation (and makes FAST_FORWARD_ANIMATION_MS dead
+   * code, since the library early-returns `setCurrentPosition(newPosition)` when
+   * showAnimations is false).
    *
-   * History (quick 260901-oxh). Phase 19 (2026-03-21) disabled animation on
-   * touch devices via `!('ontouchstart' in window)`, because react-chessboard
-   * v5's animation state machine was observed black-screening on mobile when
-   * the position prop updates. Two separate problems with that:
-   *
-   *   1. The TEST was far too broad. Chrome defines `ontouchstart` on any
-   *      DESKTOP merely reporting touch capability (touchscreen laptop,
-   *      convertible, touch monitor), so those users silently lost piece
-   *      animation on every navigation — and FAST_FORWARD_ANIMATION_MS was
-   *      dead code for them, since the library early-returns
-   *      `setCurrentPosition(newPosition)` when showAnimations is false.
-   *   2. The premise no longer holds. The guard was written against
-   *      react-chessboard 5.10.0 and 5.10.0 is still what we ship, so the
-   *      library cannot have fixed it, and no release from 5.11.0 to 5.12.1
-   *      touches the animation path either. But our OWN board code has been
-   *      rewritten around that path since March (squareRenderer, ArrowOverlay,
-   *      JS board sizing), so the original diagnosis was most likely wrong
-   *      about the cause. Retiring the guard was VERIFIED on a real phone
-   *      (2026-09-01): stepping through moves on /analysis animates normally
-   *      and the black screen could not be reproduced.
-   *
-   * REVERT PATH — if the black screen ever resurfaces on some device, restore
-   * the narrow (not the original broad) guard, which was also verified green:
-   *
-   *   const showAnimations = useMemo(
-   *     () =>
-   *       typeof window === 'undefined' || typeof window.matchMedia !== 'function'
-   *         ? true
-   *         : !window.matchMedia('(pointer: coarse)').matches,
-   *     [],
-   *   );
-   *
-   * That form needs the `(pointer: coarse)` answers in Analysis.test.tsx's
-   * matchMedia shims to stay TRUE; those shims are left in place precisely so
-   * this revert stays a one-line change.
+   * If react-chessboard's mobile black screen (seen on position updates in
+   * 5.10.0) ever resurfaces on some device, gate on
+   * `!window.matchMedia('(pointer: coarse)').matches` instead (touch-primary
+   * devices only). Analysis.test.tsx keeps its coarse-pointer matchMedia shims
+   * returning true for that case.
    *
    * The `MODE !== 'test'` term is NOT a device concern — it is jsdom's. jsdom
    * performs no layout, so every square measures 0 and react-chessboard's
@@ -523,10 +496,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
       darkSquareNotationStyle: DARK_SQUARE_NOTATION,
       lightSquareNotationStyle: LIGHT_SQUARE_NOTATION,
       id: id ?? 'chessboard',
-      // react-chessboard v5 animation state machine causes black screen on mobile
-      // when position prop updates — disabled on touch-PRIMARY devices only
-      // (see the showAnimations derivation above for why the test is
-      // `(pointer: coarse)` and not `'ontouchstart' in window`)
+      // Off only under vitest (jsdom has no layout; see showAnimations).
       showAnimations,
       // Undefined here = the library's own 300ms default (see the prop doc).
       animationDurationInMs,

@@ -14,11 +14,11 @@ export function InstallPromptBanner() {
   const { showAndroidPrompt, showIOSBanner, triggerInstall, dismissAndroid, dismissIOS } = useInstallPrompt();
   const location = useLocation();
 
-  // D-07/INSTALL-03: neither install surface renders on a Train route — this
+  // Neither install surface renders on a Train route — this
   // is how "push before install" is satisfied structurally, by making it
   // geometrically impossible for the drawer to sit on top of, or steal a tap
   // from, the "Remind me" button, the score screen, or the Settings toggle,
-  // rather than with a cross-component ordering arbiter. D-11: a scanned
+  // rather than with a cross-component ordering arbiter. A scanned
   // handoff QR overrides this suppression for that one load — the marker is
   // an explicit "I came here to install" signal.
   const suppressedOnTrainRoute = location.pathname.startsWith('/train') && !isHandoffActive();

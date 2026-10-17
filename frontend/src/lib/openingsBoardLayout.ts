@@ -9,9 +9,9 @@
 /**
  * Returns the className for the desktop board container.
  * On the Stats and Insights subtabs, lg:hidden hides the board to free
- * horizontal space (Stats: D-03; Insights: 2-column white/black layout).
+ * horizontal space (Insights uses a 2-column white/black layout).
  * The ChessBoard JSX element is NOT removed so chess.js state is preserved
- * across tab switches (Pitfall 7).
+ * across tab switches.
  */
 export function getBoardContainerClassName(activeTab: string): string {
   const hideOnLg = activeTab === 'stats' || activeTab === 'insights';

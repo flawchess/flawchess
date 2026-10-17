@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Phase 87.4 (Plan 02, SC#8) + Phase 87.5 (Plan 02, SC#1) — RTL regression tests.
- *
- * Phase 97 D-10: EndgameMetricsSection is deleted (superseded by per-TC cards).
- * The SC#8 blocks that mounted EndgameMetricsSection are removed; the
- * EndgameEloTimelineSection regression guards (SC#1 / Phase 87.5) remain.
+ * RTL regression tests for the Endgame ELO timeline: no "Endgame Skill" or
+ * "Conversion ELO" strings in the rendered surfaces.
  *
  * Whitelist: CHANGELOG.md historical entries are excluded by test scope (we
  * mount components, not markdown content).
@@ -16,7 +13,7 @@ import { cleanup, render } from '@testing-library/react';
 // useEvalCoverage calls useQuery which requires a QueryClientProvider.
 // Return safe defaults so the component renders without a provider.
 vi.mock('@/hooks/useEvalCoverage', () => ({
-  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+  useEvalCoverage: () => ({ hasPendingEvals: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
 import type { EndgameEloTimelineResponse } from '@/types/endgames';
@@ -54,14 +51,13 @@ function buildEmptyTimeline(): EndgameEloTimelineResponse {
   return { combos: [], timeline_window: 100 };
 }
 
-// Phase 87.5 (Plan 02 SC#1 frontend half): after the rename, the rendered
+// After the rename, the rendered
 // surfaces must contain zero matches for "Conversion ELO" — chart heading,
 // info popover, tooltip, and error copy all read "Endgame ELO" now. The
 // per-bucket Conv/Parity/Recov gauge labels (the literal word "Conversion"
 // without "ELO") are SAFE — this regression test searches for the two-word
 // phrase only.
-// Phase 97 D-10: EndgameMetricsSection block removed (component deleted).
-describe('SC#1 (Phase 87.5) — no "Conversion ELO" string in rendered Endgames surfaces', () => {
+describe('no "Conversion ELO" string in rendered Endgames surfaces', () => {
   it('EndgameEloTimelineSection (empty state): no "Endgame Skill" in rendered output', () => {
     const { container } = render(
       <EndgameEloTimelineSection

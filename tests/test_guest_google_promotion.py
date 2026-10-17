@@ -67,7 +67,7 @@ def make_fake_token_response(
 
 
 # ---------------------------------------------------------------------------
-# promote_guest_with_google service unit tests (TDD RED)
+# promote_guest_with_google service unit tests
 # ---------------------------------------------------------------------------
 
 
@@ -532,7 +532,7 @@ class TestCallbackPromote:
                 "/api/users/me/profile",
                 headers={"Authorization": f"Bearer {new_token}"},
             )
-            # Promotion revokes the long-lived guest JWT (quick 261016-fwd).
+            # Promotion revokes the long-lived guest JWT.
             stale_resp = await client2.get(
                 "/api/users/me/profile",
                 headers={"Authorization": f"Bearer {guest_token}"},

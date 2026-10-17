@@ -1,4 +1,4 @@
-"""ChessGoals chess.com ↔ Lichess + USCF/FIDE empirical rating conversion (Phase 94.4).
+"""ChessGoals chess.com ↔ Lichess + USCF/FIDE empirical rating conversion.
 
 Snapshot source: https://chessgoals.com/rating-comparison/ (source page "Last
 Updated: July 2025"; data re-fetched into this module on 2026-05-27).
@@ -11,32 +11,28 @@ Pure Python — no DB, no I/O. The two tables are the ChessGoals study output
     back to a chess.com Blitz equivalent before chaining into Table 2.
   * Table 2 (`CHESSCOM_BLITZ_TO_LICHESS`): chess.com Blitz anchor → Lichess
     Bullet, Lichess Blitz, Lichess Rapid, Lichess Classical. Consumed by
-    `convert_chesscom_to_lichess` (Phase 94.4 Plan 05 wires the call).
+    `convert_chesscom_to_lichess`.
 
 For non-Blitz chess.com inputs (Bullet, Rapid), invert Table 1 to estimate the
 chess.com Blitz equivalent, then look up in Table 2. Inversion bias is
-~10-30 Elo per the SEED-026 error budget — accepted as a known approximation
+~10-30 Elo — accepted as a known approximation
 at the 50-Elo cohort granularity (refit-from-prod is a future trigger).
 
 chess.com Daily has no ChessGoals mapping; conversion returns None and the
-caller suppresses the chip for that (user, TC) combination (Pitfall 2).
+caller suppresses the chip for that (user, TC) combination.
 
 Interpolation: bisect_left + linear interpolation between adjacent anchors;
 clamp at edges (return None below min or above max — do NOT extrapolate beyond
 the published 500–3000 chess.com Blitz range).
 
-(Phase 149-04 PRUNE-02: the former Lichess-Blitz-anchored Table 3 and its two
-USCF/FIDE lookups were removed as genuinely dead code — zero callers ever
-consumed them.)
-
-Phase 164 Plan 01 (SEED-093) adds the reverse Lichess-intra-TC direction:
-`normalize_to_lichess_blitz` normalizes ANY (platform, source_tc) rating to
-its Lichess-Blitz equivalent (Maia-3's training scale), inverting Table 2's
-Bullet/Rapid/Classical columns via the new `_invert_table2_column` for
-Lichess-native non-blitz inputs, and reusing `convert_chesscom_to_lichess`
-for chess.com inputs. Correspondence (chess.com Daily) inputs return None
-for both platforms via a caller-supplied `is_correspondence` flag, keeping
-this module free of any `app.services.normalization` import.
+The reverse Lichess-intra-TC direction: `normalize_to_lichess_blitz`
+normalizes ANY (platform, source_tc) rating to its Lichess-Blitz equivalent
+(Maia-3's training scale), inverting Table 2's Bullet/Rapid/Classical columns
+via `_invert_table2_column` for Lichess-native non-blitz inputs, and reusing
+`convert_chesscom_to_lichess` for chess.com inputs. Correspondence (chess.com
+Daily) inputs return None for both platforms via a caller-supplied
+`is_correspondence` flag, keeping this module free of any
+`app.services.normalization` import.
 """
 
 from __future__ import annotations
@@ -47,8 +43,8 @@ from typing import Final, Literal, Mapping
 from app.schemas.normalization import Platform, TimeControlBucket
 
 # ---------------------------------------------------------------------------
-# Snapshot provenance — per D-14, surfaced to user-facing tooltips downstream
-# (Plan 07). Refresh tracked as a future trigger (SEED-026 §"Trigger conditions").
+# Snapshot provenance (date and source page). Refreshing the snapshot is a
+# future trigger.
 # ---------------------------------------------------------------------------
 
 CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT: Final[str] = "2026-05-27"
@@ -71,9 +67,9 @@ ChessComIntraTC = Literal["bullet", "rapid", "uscf", "fide"]
 # the Blitz key on most rows (copy-paste artifact), and (2) the FIDE column
 # was shifted at the low end (rows 500-900 had bogus values, rows 1000-1100
 # were off by one). Re-fetched directly from the ChessGoals "Table 1" panel
-# and re-verified row-by-row against the published snapshot. RESEARCH Pattern
-# 8b, lines 927-960. N values from source: USCF (~130), FIDE (~85), chess.com
-# Bullet (~130), chess.com Rapid (~115).
+# and re-verified row-by-row against the published snapshot. N values from
+# source: USCF (~130), FIDE (~85), chess.com Bullet (~130), chess.com Rapid
+# (~115).
 #
 # FIDE is None on chess.com Blitz rows 500-900 (no published mapping; the
 # ChessGoals study has no FIDE-rated profiles below the 1000 Blitz cohort).
@@ -123,14 +119,14 @@ CHESSCOM_INTRA_TC: Final[Mapping[int, Mapping[ChessComIntraTC, int | None]]] = {
 
 # ---------------------------------------------------------------------------
 # Table 2 — chess.com Blitz → Lichess Bullet/Blitz/Rapid/Classical.
-# Canonical re-fetched 2026-05-26 snapshot (RESEARCH Pattern 8b, lines 968-1003).
+# Canonical re-fetched 2026-05-26 snapshot.
 # N values from source: lichess_blitz (2489), lichess_bullet (1945),
 # lichess_rapid (1344), lichess_classical (314).
 #
-# NOTE: Lichess Classical is None for chess.com Blitz 2900/3000 in the source
+# NOTE: Lichess Classical is None for chess.com Blitz 2800-3000 in the source
 # (insufficient classical data above that rating). chess.com Daily has no
 # ChessGoals mapping — convert_chesscom_to_lichess returns None for
-# source_tc='daily' (Pitfall 2, no Table 2 lookup).
+# source_tc='daily' (no Table 2 lookup).
 # ---------------------------------------------------------------------------
 
 CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[LichessTC, int | None]]] = {
@@ -189,7 +185,7 @@ _CHESSCOM_BLITZ_KEYS: Final[list[int]] = sorted(CHESSCOM_BLITZ_TO_LICHESS.keys()
 # ---------------------------------------------------------------------------
 # Native chess.com rating bounds per source TC — derived from the table
 # constants (not hardcoded magic numbers), so a future snapshot refit keeps the
-# composed-grid domain in sync automatically (quick-260529-js1).
+# composed-grid domain in sync automatically.
 #
 #   * blitz  → the CHESSCOM_BLITZ_TO_LICHESS key range (native chess.com Blitz
 #              is the table's own key, [500, 3000]).
@@ -279,7 +275,7 @@ def _interp_int_column(
 
 
 # ---------------------------------------------------------------------------
-# chess.com → Lichess conversion (Phase 94.4 caller, Plan 05 wires Stage A).
+# chess.com → Lichess conversion.
 # ---------------------------------------------------------------------------
 
 
@@ -290,9 +286,9 @@ def convert_chesscom_to_lichess(
 ) -> int | None:
     """Convert a chess.com rating to a Lichess-equivalent rating.
 
-    Algorithm (RESEARCH Pattern 8 lines 880-913):
+    Algorithm:
       1. ``source_tc == 'daily'`` → return None (no published mapping;
-         Pitfall 2 — caller suppresses the chip for that (user, TC)).
+         caller suppresses the chip for that (user, TC)).
       2. ``source_tc == 'blitz'`` → linear-interp lookup in
          ``CHESSCOM_BLITZ_TO_LICHESS`` against ``target_tc`` column.
       3. ``source_tc in ('bullet', 'rapid')`` → invert ``CHESSCOM_INTRA_TC``
@@ -302,7 +298,7 @@ def convert_chesscom_to_lichess(
 
     Returns None when rating falls outside the published [500, 3000] chess.com
     Blitz range, or when Table 2's ``target_tc`` column is None at the recovered
-    anchor (e.g. chess.com Blitz 2900/3000 have no Lichess Classical mapping).
+    anchor (e.g. chess.com Blitz 2800-3000 have no Lichess Classical mapping).
     """
     if source_tc == "daily":
         return None
@@ -326,7 +322,7 @@ def normalize_to_lichess_blitz(
 
     Maia-3 is trained on Lichess Blitz games, so this is the single
     model-facing conversion every rating must pass through before seating
-    Maia's ELO conditioning (SEED-093). Dispatch order:
+    Maia's ELO conditioning. Dispatch order:
 
       1. ``is_correspondence`` — correspondence games (chess.com Daily; a
          Lichess correspondence TC) have no real-time-play analogue in
@@ -337,7 +333,7 @@ def normalize_to_lichess_blitz(
          (which reaches here only when NOT correspondence, i.e. a genuine
          long real-time game such as ``3600+45``) is treated as rapid-scale
          and mapped to Table 1's Rapid column before converting — matching
-         the module's own ``_BUCKET_TO_SOURCE_TC`` convention
+         ``canonical_slice_sql._BUCKET_TO_CHESSCOM_SOURCE_TC``
          (``{"classical": "rapid", ...}``) already relied on by the SQL
          composed-grid pipeline, so both code paths agree. Bullet/Blitz/Rapid
          chain through the existing ``convert_chesscom_to_lichess`` to the
@@ -363,7 +359,7 @@ def normalize_to_lichess_blitz(
         # chess.com has no native Classical TC in the ChessGoals tables. A
         # classical-bucketed game reaching here is already non-correspondence
         # (guarded above), i.e. a genuine long real-time game — treat it as
-        # rapid-scale, matching _BUCKET_TO_SOURCE_TC's existing convention so
+        # rapid-scale, matching canonical_slice_sql._BUCKET_TO_CHESSCOM_SOURCE_TC so
         # this path agrees with the SQL composed-grid pipeline.
         effective_tc: ChessComSourceTC = "rapid" if source_tc == "classical" else source_tc
         return convert_chesscom_to_lichess(rating, effective_tc, "blitz")
@@ -411,7 +407,7 @@ def composed_chesscom_to_lichess_grid(
     a None target column such as Lichess Classical above chess.com Blitz 2800)
     are omitted.
 
-    Why this exists (quick-260529-js1 bug fix): the SQL anchor pipeline
+    Why this exists (bug fix): the SQL anchor pipeline
     (``_chesscom_conversion_values_sql``) previously keyed its VALUES lookup on
     chess.com Blitz anchors and matched every game's native rating against them
     regardless of the game's actual TC, skipping the intra-TC inversion the
@@ -460,7 +456,7 @@ def _invert_intra_tc(
     """
     # Build the source_tc column projected against the Blitz anchor keys.
     # Bullet and Rapid columns are guaranteed non-None across all rows by the
-    # snapshot invariant; assert at module-load to surface any future drift.
+    # snapshot invariant; the assert surfaces any future drift.
     column_values: list[int] = []
     for anchor in _CHESSCOM_INTRA_KEYS:
         value = CHESSCOM_INTRA_TC[anchor][source_tc]
@@ -471,7 +467,7 @@ def _invert_intra_tc(
         column_values.append(value)
     if rating < column_values[0] or rating > column_values[-1]:
         return None
-    # Linear scan for the first index where column_values[i] >= rating.
+    # bisect_left: first index where column_values[i] >= rating.
     # (Monotone non-decreasing assumption; bisect_left works because Python
     # bisect handles equal-keys deterministically.)
     idx = bisect.bisect_left(column_values, rating)
@@ -490,7 +486,7 @@ def _invert_intra_tc(
         # Defensive: the 2026-05-27 re-fetch made Bullet and Rapid columns
         # strictly monotone, so this branch is unreachable for the current
         # snapshot. Kept in case a future refit reintroduces a tied row — fall
-        # back to the lower Blitz anchor per the SEED-026 conservative-estimate
+        # back to the lower Blitz anchor per the conservative-estimate
         # principle.
         return lo_blitz
     frac = (rating - lo_col) / (hi_col - lo_col)
@@ -499,7 +495,7 @@ def _invert_intra_tc(
 
 # ---------------------------------------------------------------------------
 # Table 2 inversion — Lichess-scale column → chess.com Blitz anchor
-# (Phase 164 Plan 01, Task 1). Mirror direction of `_invert_intra_tc` above,
+# Mirror direction of `_invert_intra_tc` above,
 # but over Table 2 instead of Table 1.
 # ---------------------------------------------------------------------------
 
@@ -522,9 +518,9 @@ def _invert_table2_column(
         Bullet/Rapid columns and would raise against this column.
       * Reachable tie: `classical` is flat at 1935 across chess.com Blitz
         anchors 1500/1550/1600. Ties resolve to the LOWEST anchor (leftmost
-        occurrence via `bisect_left`), matching the SEED-026
-        conservative-estimate convention documented on `_invert_intra_tc`
-        (lines 417-423) — except here the tie is genuinely reachable (not
+        occurrence via `bisect_left`), matching the
+        conservative-estimate convention documented in `_invert_intra_tc`'s tie
+        branch — except here the tie is genuinely reachable (not
         "unreachable for current snapshot" defensive code) and covered by a
         dedicated test.
 
@@ -559,7 +555,7 @@ def _invert_table2_column(
 
 
 # ---------------------------------------------------------------------------
-# USCF + FIDE accessors (D-14 future-use — no Phase 94.4 caller).
+# USCF + FIDE accessors (future use — no app caller yet).
 # ---------------------------------------------------------------------------
 
 
@@ -567,7 +563,7 @@ def lookup_uscf_from_chesscom_blitz(rating: int) -> int | None:
     """USCF rating from a chess.com Blitz rating (Table 1 ``uscf`` column).
 
     Linear interpolation between adjacent anchors; returns None outside the
-    [500, 3000] chess.com Blitz range. No Phase 94.4 caller (D-14 future-use).
+    [500, 3000] chess.com Blitz range. No app caller yet (future use).
     """
     column: dict[int, int | None] = {
         anchor: row["uscf"] for anchor, row in CHESSCOM_INTRA_TC.items()
@@ -579,7 +575,7 @@ def lookup_fide_from_chesscom_blitz(rating: int) -> int | None:
     """FIDE rating from a chess.com Blitz rating (Table 1 ``fide`` column).
 
     Linear interpolation between adjacent anchors; returns None outside the
-    [500, 3000] chess.com Blitz range. No Phase 94.4 caller (D-14 future-use).
+    [500, 3000] chess.com Blitz range. No app caller yet (future use).
     """
     column: dict[int, int | None] = {
         anchor: row["fide"] for anchor, row in CHESSCOM_INTRA_TC.items()

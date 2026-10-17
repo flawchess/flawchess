@@ -1,5 +1,4 @@
-"""Drift-check equivalence test for the WRITE-03 write-path golden-snapshot harness
-(Phase 150 Plan 01).
+"""Drift-check equivalence test for the write-path golden-snapshot harness.
 
 Parametrized over the 7 named scenarios in ``write_path_golden_scenarios.py``, this
 test re-runs the SAME setup through the production submit path
@@ -7,23 +6,20 @@ test re-runs the SAME setup through the production submit path
 ``game_flaws`` state matches the committed golden fixture byte-for-byte (after a JSON
 round-trip).
 
-Green against current HEAD is expected — both are the delete-then-insert path, so this
-is currently a tautology. This test only becomes a REAL equivalence proof once Plan 04
-swaps ``_classify_and_fill_oracle``'s delete-then-insert for a diff/upsert: the SAME
-scenarios must still produce byte-identical output, proving no behavior change
-(WRITE-03).
+The write path (``_classify_and_fill_oracle``) is a per-ply diff/upsert, so this test
+is the equivalence proof that it still produces the same output as the committed
+goldens: the SAME scenarios must stay byte-identical, proving no behavior change.
 
 Assert ``is None`` explicitly for every blob column the golden expects NULL (never a
-truthy or ``==``-falsy check) per 150-RESEARCH.md Pitfall 2 /
-``project_asyncpg_jsonb_null_vs_sql_null``: the dangerous implementation this guards
+truthy or ``==``-falsy check): the dangerous implementation this guards
 against is a single ``ON CONFLICT DO UPDATE ... COALESCE(EXCLUDED.col, existing.col)``
 upsert, where a bound Python ``None`` for "no fresh blob this submit" serializes as a
 real, non-NULL JSON ``null`` via asyncpg — so ``COALESCE`` always picks that JSON
 ``null`` over the existing preserved value, silently wiping it. A plain ``==``
 equality check against a non-NULL golden value (e.g. scenario 2's preserved blob)
 already fails loudly if that happens (``None != [...]``); the explicit ``is None``
-branch below is the belt-and-suspenders assertion the plan's acceptance criteria
-requires for the NULL-expected side of that same comparison.
+branch below is the belt-and-suspenders assertion for the NULL-expected side of
+that same comparison.
 
 Regenerating goldens (only after an intentional, reviewed classify/write-path change —
 review the diff before committing)::
@@ -49,7 +45,7 @@ _FIXTURE_DIR: Path = Path(__file__).resolve().parent.parent / "fixtures" / "writ
 
 # Blob columns that must be asserted with an explicit `is None` check (never
 # truthy/`==`-falsy) when the golden expects NULL -- catches the asyncpg JSONB
-# `None` -> `null::jsonb` pitfall (project_asyncpg_jsonb_null_vs_sql_null).
+# `None` -> `null::jsonb` pitfall.
 _BLOB_COLUMNS: tuple[str, ...] = ("allowed_pv_lines", "missed_pv_lines")
 
 _TEST_USER_ID: int = 99_400  # unique to this module, avoids FK conflicts with other suites
@@ -119,7 +115,7 @@ async def test_write_path_matches_golden(
             actual_val = actual_row[col]
             if col in _BLOB_COLUMNS and golden_val is None:
                 # Explicit is-None check -- never a truthy/`==`-falsy comparison here
-                # (RESEARCH.md Pitfall 2 / project_asyncpg_jsonb_null_vs_sql_null).
+                # (a bound Python None would serialize as JSON null, not SQL NULL).
                 assert actual_val is None, (
                     f"{scenario_name} ply={ply} {col}: expected NULL (Python None), "
                     f"got {actual_val!r} -- possible JSONB null::jsonb regression."

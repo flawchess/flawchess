@@ -1,10 +1,10 @@
-"""Tests for scripts/engine_throughput_226_verdict.py — Phase 226 gate verdict.
+"""Tests for scripts/engine_throughput_226_verdict.py — gate verdict.
 
-Task 1 covers the end-to-end gate slice: frozen constants, data layout, and
+Covers the end-to-end gate slice: frozen constants, data layout, and
 the underfill throughput criterion (A2 vs the step-0 A0 baseline) flowing
 through the CLI to a written verdict JSON, plus the design-input-unset gate
-(D-10, D-16) and the root-split-column data-validity check (RESEARCH
-Pitfall 1, D-08). Every test drives the module through its public CLI
+and the root-split-column data-validity check. Every test drives the module
+through its public CLI
 entrypoint, `main(argv)`, never by calling the evaluate_*/validate_* helpers
 directly (mirrors tests/scripts/test_engine_search_fixes_verdict.py), so the
 tests exercise the same path a real gate run does.
@@ -103,10 +103,9 @@ def write_full_underfill_layout(tmp_path: Path, a2_ratio: float = 0.95) -> None:
 
 
 def _set_design_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sets every design-input constant to a harmless non-None value — Task 1
-    only exercises the underfill throughput criterion, which needs none of
-    these values itself, but `gates` refuses to run at all while any is
-    unset (D-10, D-16)."""
+    """Sets every design-input constant to a harmless non-None value — the
+    underfill throughput tests need none of these values themselves, but
+    `gates` refuses to run at all while any is unset."""
     import scripts.engine_throughput_226_verdict as module
 
     monkeypatch.setattr(module, "EXPECTED_MQ_POSITIONS", 50)
@@ -128,7 +127,7 @@ def _run_gates(tmp_path: Path) -> tuple[int, dict[str, Any]]:
 
 
 def _set_design_inputs_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Forces every design-input constant back to `None` (#226-08: the module
+    """Forces every design-input constant back to `None` (the module
     default was `None` before the constants were frozen from
     design-inputs.json; this fixture keeps the unset-constants gate testable
     now that the module-level default is the real, non-None value)."""
@@ -161,10 +160,10 @@ def test_underfill_throughput_passes_when_a2_is_95_percent_of_a0_in_all_configs(
     _set_design_inputs(monkeypatch)
     write_full_underfill_layout(tmp_path, a2_ratio=0.95)
     code, verdict = _run_gates(tmp_path)
-    # Task 2: with no MQ/stop/content/calibration data present at all, every
+    # With no MQ/stop/content/calibration data present at all, every
     # OTHER criterion soft-skips to None (no directory -> no "missing" entry)
     # and `status` reaches "complete" — but underfill's own MQ criterion is
-    # None too, which D-15 treats as NOT passing (fail-closed on absent MQ
+    # None too, which the gate treats as NOT passing (fail-closed on absent MQ
     # data), so every item holds and the shipped-items-only refit is "no-refit".
     assert code == 0
     assert verdict["status"] == "complete"
@@ -249,7 +248,7 @@ def test_a21s_root_split_premise_violation_is_invalid_exit_1(
 
 
 # ==============================================================================
-# Task 2 behaviors — full criteria, item decisions, reruns, calibration/refit.
+# Full criteria, item decisions, reruns, calibration/refit.
 # ==============================================================================
 
 MQ_HEADER = ("id", "delta_bot", "verdict_bot")
@@ -737,7 +736,7 @@ def test_candidate_cap_inactive_requires_no_a21sc_data_and_is_absent_from_items(
 
 
 # ==============================================================================
-# Task 3 behaviors — design-inputs (D-16, D-17) and cells-to-json.
+# Design-inputs and cells-to-json.
 # ==============================================================================
 
 
@@ -908,7 +907,7 @@ def test_content_bounds_warm_noise_floor_002_gives_warm_003_clear_002(
     assert "DESIGN-INPUT CONTENT_MAX_CLEAR_MEAN_ABS_DES 0.02" in out
 
 
-def test_d17_shares_055_045_at_50_nodes_mean_050_fires_cap(
+def test_cap_arm_shares_055_045_at_50_nodes_mean_050_fires_cap(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fixture = write_fixture(tmp_path, 4)
@@ -920,7 +919,7 @@ def test_d17_shares_055_045_at_50_nodes_mean_050_fires_cap(
     assert "DESIGN-INPUT CANDIDATE_CAP_ARM_ACTIVE True" in out
 
 
-def test_d17_shares_below_half_at_both_budgets_do_not_fire_cap(
+def test_cap_arm_shares_below_half_at_both_budgets_do_not_fire_cap(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fixture = write_fixture(tmp_path, 4)
@@ -977,8 +976,8 @@ def test_cells_to_json_round_trips_through_load_old_cells(tmp_path: Path) -> Non
 
 
 # ==============================================================================
-# Task 2 (226-08): design-input constants are frozen from the committed
-# design-inputs.json — pinning test (D-10). Reads the SAME committed file the
+# Design-input constants are frozen from the committed
+# design-inputs.json — pinning test. Reads the SAME committed file the
 # module's constants were transcribed from, so an edit to either one without
 # the other fails this test.
 # ==============================================================================

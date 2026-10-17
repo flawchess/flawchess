@@ -1,4 +1,4 @@
-"""Tests for store_bot_game_service.store_bot_game (Phase 167 STORE-03/04/05/06).
+"""Tests for store_bot_game_service.store_bot_game.
 
 Covers: rating derivation from user_rating_anchors (lichess-only / chess.com-only
 / blended / no-anchor), the games-row + bot_game_settings insert, and idempotency
@@ -34,7 +34,7 @@ from app.services.store_bot_game_service import (
 )
 from tests.conftest import ensure_test_user
 
-# quick-260714-pnk: no module-level `pytestmark = pytest.mark.asyncio` —
+# No module-level `pytestmark = pytest.mark.asyncio` —
 # asyncio_mode = "auto" (pyproject.toml) picks up async tests automatically,
 # and a module-level marker triggers a "marked async but not async" warning
 # on TestResolvePlayerUsername's sync tests (mirrors
@@ -70,7 +70,7 @@ _PGN_CHECKMATE = (
     "4. Qxf7# {[%clk 0:02:54]} 1-0\n"
 )
 
-# PGN missing black's [%clk] annotations — invalid input (STORE-02).
+# PGN missing black's [%clk] annotations — invalid input.
 _PGN_MISSING_CLOCK = (
     '[Event "FlawChess Bot Game"]\n[Result "1-0"]\n\n'
     "1. e4 {[%clk 0:03:00]} e5 "
@@ -80,7 +80,7 @@ _PGN_MISSING_CLOCK = (
 )
 
 # A materially different mainline (Termination differs from _PGN_CHECKMATE too)
-# for D-11's duplicate-re-submit-does-not-rewrite test.
+# for the duplicate-re-submit-does-not-rewrite test.
 _PGN_CHECKMATE_ALT = (
     '[Event "FlawChess Bot Game"]\n[Result "0-1"]\n\n'
     "1. d4 {[%clk 0:03:00]} d5 {[%clk 0:03:00]} "
@@ -110,7 +110,7 @@ def _make_request(
 
 
 class TestRatingDerivation:
-    """STORE-03: server-computed rating placement + rating_source provenance."""
+    """Server-computed rating placement + rating_source provenance."""
 
     async def test_lichess_only_anchor(self, db_session: AsyncSession) -> None:
         await ensure_test_user(db_session, _TEST_USER_ID)
@@ -132,7 +132,7 @@ class TestRatingDerivation:
 
         game = await db_session.get(Game, response.game_id)
         assert game is not None
-        # D-08: player-color (white, this request) = anchor rating; opponent = bot ELO.
+        # Player-color (white, this request) = anchor rating; opponent = bot ELO.
         assert game.white_rating == 1550
         assert game.black_rating == _TEST_BOT_ELO
 
@@ -146,7 +146,7 @@ class TestRatingDerivation:
         assert settings.tc_preset == _TC_STR
 
     async def test_no_anchor_null_rating(self, db_session: AsyncSession) -> None:
-        """Guest / user with no anchor for the bucket -> NULL rating + NULL source (D-06)."""
+        """Guest / user with no anchor for the bucket -> NULL rating + NULL source."""
         await ensure_test_user(db_session, _TEST_USER_ID + 1)
 
         response = await store_bot_game(db_session, _TEST_USER_ID + 1, _make_request())
@@ -191,7 +191,7 @@ class TestRatingDerivation:
 
 
 class TestInvalidPgn:
-    """STORE-02: invalid PGN input surfaces as a reject reason (router maps to 422)."""
+    """Invalid PGN input surfaces as a reject reason (router maps to 422)."""
 
     async def test_missing_clock_returns_reason(self, db_session: AsyncSession) -> None:
         await ensure_test_user(db_session, _TEST_USER_ID + 3)
@@ -203,7 +203,7 @@ class TestInvalidPgn:
 
 
 class TestIdempotency:
-    """STORE-05: re-submitting the same game_uuid is a no-op success, not a duplicate row."""
+    """Re-submitting the same game_uuid is a no-op success, not a duplicate row."""
 
     async def test_duplicate_game_uuid_returns_existing_id(self, db_session: AsyncSession) -> None:
         user_id = _TEST_USER_ID + 4
@@ -248,8 +248,8 @@ class TestIdempotency:
 
 
 class TestResolvePlayerUsername:
-    """Pure precedence-chain coverage for resolve_player_username (no DB;
-    quick-260714-pnk): lichess -> chess.com -> FLAWCHESS_PLAYER_FALLBACK_USERNAME.
+    """Pure precedence-chain coverage for resolve_player_username (no DB):
+    lichess -> chess.com -> FLAWCHESS_PLAYER_FALLBACK_USERNAME.
     """
 
     def test_lichess_wins_when_both_set(self) -> None:
@@ -269,7 +269,7 @@ class TestResolvePlayerUsername:
 
 
 class TestPlayerUsername:
-    """DB-backed coverage (quick-260714-pnk): the resolved player_username
+    """DB-backed coverage: the resolved player_username
     lands in the games row's player-color username column; the bot-color
     column always stays FLAWCHESS_BOT_USERNAME.
     """
@@ -328,7 +328,7 @@ def _reparse_stored_pgn(pgn_text: str) -> chess.pgn.Headers:
     """Re-parse a stored games.pgn column and return its headers.
 
     Every TestPgnHeaders assertion goes through this — never asserts on the
-    in-memory NormalizedGame/StoreBotGameResponse (quick-260714-qaj).
+    in-memory NormalizedGame/StoreBotGameResponse.
     """
     game = chess.pgn.read_game(io.StringIO(pgn_text))
     assert game is not None
@@ -336,7 +336,7 @@ def _reparse_stored_pgn(pgn_text: str) -> chess.pgn.Headers:
 
 
 class TestPgnHeaders:
-    """quick-260714-qaj: the full D-03 header block, stamped end-to-end.
+    """The full header block, stamped end-to-end.
 
     Every assertion re-reads games.pgn FROM THE DB and re-parses it.
     """
@@ -363,7 +363,7 @@ class TestPgnHeaders:
         assert game is not None
         headers = _reparse_stored_pgn(game.pgn)
 
-        # D-07: the Site deep link carries the REAL post-INSERT game_id.
+        # The Site deep link carries the REAL post-INSERT game_id.
         assert (
             headers["Site"]
             == f"{settings.FRONTEND_URL.rstrip('/')}/analysis?game_id={response.game_id}"
@@ -376,7 +376,7 @@ class TestPgnHeaders:
         assert headers["Variant"] == "Standard"
 
     async def test_column_header_consistency(self, db_session: AsyncSession) -> None:
-        """D-01 one-source-of-truth invariant: header values equal their column."""
+        """One-source-of-truth invariant: header values equal their column."""
         user_id = _TEST_USER_ID + 11
         await ensure_test_user(db_session, user_id)
         await upsert_anchor(
@@ -491,7 +491,7 @@ class TestPgnHeaders:
         )
 
     async def test_duplicate_resubmit_does_not_rewrite_pgn(self, db_session: AsyncSession) -> None:
-        """D-11: a re-submit with a forged PGN + different bot_elo must not
+        """A re-submit with a forged PGN + different bot_elo must not
         overwrite the stored row's PGN or platform_url (T-qaj-03).
         """
         user_id = _TEST_USER_ID + 15
@@ -526,7 +526,7 @@ class TestPgnHeaders:
 
 
 class TestPersonaNameAndCalibratedRating:
-    """quick-260722-ucc: a persona game stores the persona's name + calibrated
+    """A persona game stores the persona's name + calibrated
     ELO (not "FlawChess Bot" / the raw engine dial) on both the PGN and the
     games columns; nominal_elo (the engine dial) is unchanged either way.
     """

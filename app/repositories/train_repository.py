@@ -1,10 +1,6 @@
-"""Repository for the Train tables: settings + session composition (Phase 189).
-
-Phase 189 Plan 01 (POOL-01/POOL-04/POOL-07/POOL-10, D-01/D-02/D-06/D-07/D-08/D-09)
-built the SR-only composition skeleton. Phase 189 Plan 04 Task 1 widened it to
-the full POOL-07 75/25 mix with honest cross-backfill; Task 2 layers the
-D-09/D-10/D-11/D-12 session lifecycle on top — resume, expiry, and lazy
-eviction on resume.
+"""Repository for the Train tables: settings, progress/streak settlement, session
+composition and lifecycle (resume, expiry, lazy eviction on resume), solve
+recording and reveal.
 
 V4 Information Disclosure mitigation: every function requires `user_id` as a
 keyword-only argument. Callers MUST pass the authenticated user's ID (from
@@ -110,7 +106,7 @@ _STATUS_LITERAL: dict[DrillStatus, Literal["active", "mastered", "parked"]] = {
     DrillStatus.PARKED: "parked",
 }
 
-# move_quality wire literal <-> DrillMoveQuality enum (SEED-119). Bidirectional
+# move_quality wire literal <-> DrillMoveQuality enum. Bidirectional
 # so the repository never re-derives either direction independently.
 _MOVE_QUALITY_LITERAL: dict[DrillMoveQuality, Literal["good", "inaccuracy", "wrong"]] = {
     DrillMoveQuality.GOOD: "good",
@@ -125,16 +121,16 @@ _MOVE_QUALITY_ENUM: dict[Literal["good", "inaccuracy", "wrong"], DrillMoveQualit
 def _resolve_move_quality_tier(
     move_quality: int | None, correct_move: bool
 ) -> Literal["good", "inaccuracy", "wrong"]:
-    """Resolve a stored `drill_solves` row's move-quality tier (SEED-119).
+    """Resolve a stored `drill_solves` row's move-quality tier.
 
     A non-NULL `move_quality` maps through `_MOVE_QUALITY_LITERAL`. A NULL
-    `move_quality` means the row predates SEED-119 (go-forward only, no
-    backfill) — degrade from the stored `correct_move` boolean instead: True
-    maps to the good tier (the pre-tiering era only ever recorded a full move
-    point), False maps to the wrong tier. These legacy rows predate SEED-119
-    and cannot actually reach the landing-screen display path — the landing
-    screen only ever shows the CURRENT window's session — so this mapping
-    exists purely to make the type total; build nothing further for it.
+    `move_quality` means the row predates the three-way tier (no backfill) —
+    degrade from the stored `correct_move` boolean instead: True maps to the
+    good tier (the pre-tiering era only ever recorded a full move point), False
+    maps to the wrong tier. These legacy rows cannot actually reach the
+    landing-screen display path — the landing screen only ever shows the
+    CURRENT window's session — so this mapping exists purely to make the type
+    total; build nothing further for it.
     Shared by `record_solve`'s lost-claim re-read and `_resume_session`'s
     `solved_results` builder so the rule exists in exactly one place.
     """
@@ -143,14 +139,13 @@ def _resolve_move_quality_tier(
     return "good" if correct_move else "wrong"
 
 
-# Quick task 260728-pgp: due_stmt over-fetches by this factor before the
-# session-wide per-game cap is applied in Python (it must span both SR
-# sources — due drill_items AND fresh pool picks — so it cannot be a bare
-# SQL LIMIT). A plain `.limit(sr_slots)` would under-fill the SR side by
-# exactly the number of same-game duplicates in the fetched window; prod's
-# worst observed same-game (game_id, due_date) drill_items cluster is 6
-# items, so 8x leaves headroom while keeping the query BOUNDED —
-# deliberately not an unbounded scan.
+# due_stmt over-fetches by this factor before the session-wide per-game cap is
+# applied in Python (it must span both SR sources — due drill_items AND fresh
+# pool picks — so it cannot be a bare SQL LIMIT). A plain `.limit(sr_slots)`
+# would under-fill the SR side by exactly the number of same-game duplicates
+# in the fetched window; prod's worst observed same-game (game_id, due_date)
+# drill_items cluster is 6 items, so 8x leaves headroom while keeping the
+# query BOUNDED — deliberately not an unbounded scan.
 _DUE_OVERFETCH_FACTOR: int = 8
 
 
@@ -162,15 +157,14 @@ class TrainSettingsRow:
     `app.repositories.user_import_settings_repository.ImportSettingsRow`.
 
     `streak_count`/`shield_level`/`streak_settled_through`/`pool_eligible_since`
-    are the Phase 193 per-day tick snapshot fields (added alongside the
-    original D-06/D-07/D-08 fields, not a separate row type).
+    are the per-day tick snapshot fields (part of this row alongside the
+    settings fields, not a separate row type).
 
-    `reminder_enabled`/`reminder_hour` (Phase 201, REMIND-01) are user-owned
-    reminder configuration. `reminder_last_sent_on` is the reminder job's own
-    "already sent today" watermark (D-06) -- exposed on this row because the
-    job reads it, never because a client writes it. `reminder_intent_at`
-    (Phase 203, OFFER-03/OFFER-05) is the opposite access pattern -- it IS
-    client-writable, stamped on the iOS install-affordance tap (D-15).
+    `reminder_enabled`/`reminder_hour` are user-owned reminder configuration.
+    `reminder_last_sent_on` is the reminder job's own "already sent today"
+    watermark -- exposed on this row because the job reads it, never because a
+    client writes it. `reminder_intent_at` is the opposite access pattern -- it
+    IS client-writable, stamped on the iOS install-affordance tap.
     """
 
     timezone: str
@@ -184,11 +178,10 @@ class TrainSettingsRow:
     reminder_hour: int
     reminder_last_sent_on: datetime.date | None
     reminder_intent_at: datetime.datetime | None
-    # Phase 222 (TRAINBOT-05, D-11/D-12) + Phase 240 (D-09). Response-only
-    # onboarding state (two seen timestamps and the reveal-tour stage counter)
-    # -- exposed on this row because the stamp endpoint and GET/PUT
-    # /train/settings all read it, never because a client writes it through the
-    # PUT body (that is `stamp_onboarding_step`'s job instead).
+    # Response-only onboarding state (two seen timestamps and the reveal-tour
+    # stage counter) -- exposed on this row because the stamp endpoint and
+    # GET/PUT /train/settings all read it, never because a client writes it
+    # through the PUT body (that is `stamp_onboarding_step`'s job instead).
     intro_seen_at: datetime.datetime | None
     sr_explained_at: datetime.datetime | None
     reveal_tour_stage: int
@@ -198,20 +191,20 @@ class TrainSettingsRow:
 class ComposedPuzzle:
     """Internal dataclass for one puzzle within a composed/resumed session.
 
-    Phase 192: `game_id` is `int | None` — a puzzle's source game link is
-    nullable provenance (D-01/D-05), not the puzzle's identity
-    (`herring_pool_id` is, for a herring). `drill_solves.game_id` itself went
-    nullable in Plan 02 (the phase's one-way door, `ondelete="SET NULL"`), so
-    `None` here is a real, servable case — not merely forward-compat typing.
+    `game_id` is `int | None` — a puzzle's source game link is nullable
+    provenance, not the puzzle's identity (`herring_pool_id` is, for a
+    herring). `drill_solves.game_id` itself is nullable
+    (`ondelete="SET NULL"`), so `None` here is a real, servable case — not
+    merely forward-compat typing.
 
-    Phase 235 (SEED-192, D-05): `key_move_uci`/`puzzle_type`/`runner_up_uci`
-    are the server's answer key, attached to every puzzle by
-    `_attach_answer_keys` after composition/resume; `None` means no usable key
-    (D-07) or, for `puzzle_type`, a puzzle the funnel did not see.
+    `key_move_uci`/`puzzle_type`/`runner_up_uci` are the server's answer key,
+    attached to every puzzle by `_attach_answer_keys` after composition/resume;
+    `None` means no usable key or, for `puzzle_type`, a puzzle the funnel did
+    not see.
 
-    Phase 236 (SEED-193, D-08): `server_graded_moves` is the legal-filtered set
-    of moves whose grade the server owns (empty without a legal key), attached
-    by `_attach_answer_keys` from the same function the solve path uses.
+    `server_graded_moves` is the legal-filtered set of moves whose grade the
+    server owns (empty without a legal key), attached by
+    `_attach_answer_keys` from the same function the solve path uses.
     """
 
     position: int
@@ -230,7 +223,7 @@ class ComposedPuzzle:
 @dataclass(frozen=True)
 class PositionAnswerKey:
     """One unsolved position's pre-legality answer key plus its composed
-    server-graded set (Phase 236 D-08), as `_answer_keys_by_position` returns it."""
+    server-graded set, as `_answer_keys_by_position` returns it."""
 
     key: PuzzleAnswerKey
     server_graded_moves: tuple[ServerGradedMove, ...]
@@ -240,16 +233,15 @@ class PositionAnswerKey:
 class ComposedSolvedResult:
     """Internal dataclass for one recorded solve within a composed/resumed session.
 
-    Quick task 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): mirrors
-    `app.schemas.train.SolvedResult` field-for-field — the router maps one
+    Mirrors `app.schemas.train.SolvedResult` field-for-field — the router maps one
     directly onto the other, same convention as `ComposedPuzzle` ->
     `TrainPuzzle`. `correct_guess`/`move_quality` are the RECORDED OUTCOME of
     an attempt (the same values `record_solve` already wrote to this row),
     never a server-computed score — this dataclass carries no score field and
     the repository must not import from `app.schemas`.
 
-    Phase 222 (TRAINBOT-04, D-17): `source`/`item_status`/`due_date` mirror
-    `SolveResponse`'s own nullability exactly — `item_status`/`due_date` are
+    `source`/`item_status`/`due_date` mirror `SolveResponse`'s own nullability
+    exactly — `item_status`/`due_date` are
     `None` for a red-herring or sharp-filler solve (no SR bookkeeping),
     populated via the same `_STATUS_LITERAL`/`_wire_source` mappings
     `record_solve`/`reveal_for_puzzle` already use, never re-derived.
@@ -276,20 +268,20 @@ class ComposedSession:
     A caller seeing `puzzle_count < requested_count` must read
     `blob_pending_count` to distinguish a session that's short because
     opportunistic tier-4 analysis hasn't caught up yet from a genuinely
-    exhausted pool (Pitfall 4) — see `app.schemas.train.TrainSessionResponse`
+    exhausted pool — see `app.schemas.train.TrainSessionResponse`
     for the wire-level contract this mirrors.
 
-    `solved_results` (260728-tgc) is one `ComposedSolvedResult` per recorded
-    solve, in `position` order — `[]` for a fresh composition and for the
+    `solved_results` is one `ComposedSolvedResult` per recorded solve, in
+    `position` order — `[]` for a fresh composition and for the
     nothing-qualified case. `solved_count` always equals its length.
 
-    `is_warmup` (Phase 206, D-06/D-07) is the frozen-at-composition warm-up
-    discriminant: `len(surviving_sr_keys) == 0` at the moment the session was
-    (re-)composed, never a ratio or a threshold, and never derived from
-    session ordinal, session count, `session_date`, or account age. `False`
-    for the nothing-qualified case (`session_id is None`). `_resume_session`
-    reads it straight off the stored `drill_sessions.is_warmup` column rather
-    than recomputing it, so the label cannot be shed mid-session when the ES
+    `is_warmup` is the frozen-at-composition warm-up discriminant:
+    `len(surviving_sr_keys) == 0` at the moment the session was (re-)composed,
+    never a ratio or a threshold, and never derived from session ordinal,
+    session count, `session_date`, or account age. `False` for the
+    nothing-qualified case (`session_id is None`). `_resume_session` reads it
+    straight off the stored `drill_sessions.is_warmup` column rather than
+    recomputing it, so the label cannot be shed mid-session when the ES
     lottery lands new material.
     """
 
@@ -335,10 +327,10 @@ async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsR
 
 
 async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsRow:
-    """Return the user's train_settings, creating a default row on first touch (D-07).
+    """Return the user's train_settings, creating a default row on first touch.
 
     Mirrors `user_import_settings_repository.get_or_create_settings`'s
-    create-on-first-touch shape, using the D-06/D-07/D-08 defaults from
+    create-on-first-touch shape, using the defaults from
     `app.services.train_scheduler`.
 
     Args:
@@ -355,27 +347,25 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         puzzles_per_session=DEFAULT_PUZZLES_PER_SESSION,
         # A brand-new row's tick snapshot starts at zero/never-settled —
         # exactly the state that triggers a full-history replay on first
-        # settlement (mirrors Phase 191's D-05 retroactivity mechanism).
-        # pool_eligible_since stays NULL until _stamp_pool_eligibility finds
-        # real material (D-06).
+        # settlement. pool_eligible_since stays NULL until
+        # _stamp_pool_eligibility finds real material.
         streak_count=0,
         shield_level=0,
         streak_settled_through=None,
         pool_eligible_since=None,
-        # REMIND-01 (D-18): the reminder columns default through this same
-        # create-on-first-touch seam, exactly like weekday_mask/
-        # puzzles_per_session. reminder_last_sent_on starts NULL -- no user
-        # has ever been sent a reminder yet.
+        # The reminder columns default through this same create-on-first-touch
+        # seam, exactly like weekday_mask/puzzles_per_session.
+        # reminder_last_sent_on starts NULL -- no user has ever been sent a
+        # reminder yet.
         reminder_enabled=DEFAULT_REMINDER_ENABLED,
         reminder_hour=DEFAULT_REMINDER_HOUR,
         reminder_last_sent_on=None,
-        # Phase 203 (OFFER-03): a brand-new user has never expressed install
-        # intent -- NULL, same create-on-first-touch seam as every other
-        # default here.
+        # A brand-new user has never expressed install intent -- NULL, same
+        # create-on-first-touch seam as every other default here.
         reminder_intent_at=None,
-        # Phase 222 (TRAINBOT-05, D-13) + Phase 240 (D-09): a brand-new user
-        # has never seen any onboarding stepper -- NULL timestamps and tour
-        # stage 0, same create-on-first-touch seam as every other default here.
+        # A brand-new user has never seen any onboarding stepper -- NULL
+        # timestamps and tour stage 0, same create-on-first-touch seam as every
+        # other default here.
         intro_seen_at=None,
         sr_explained_at=None,
         reveal_tour_stage=0,
@@ -424,9 +414,9 @@ async def upsert_settings(
     `puzzles_per_session` are within the table's CHECK bounds — this function
     trusts that and does no re-validation.
 
-    Settle-before-mutate (carried forward from Phase 191 D-18, now at
-    per-day tick granularity): settlement runs STRICTLY BEFORE any new value
-    is applied, judged against the OLD mask and OLD timezone:
+    Settle-before-mutate (at per-day tick granularity): settlement runs
+    STRICTLY BEFORE any new value is applied, judged against the OLD mask and
+    OLD timezone:
 
     1. `old_row = await get_or_create_settings(...)` — reading this BEFORE
        applying any new value is load-bearing. Reading it AFTER would settle
@@ -451,19 +441,17 @@ async def upsert_settings(
     schedule that was never persisted.
 
     Deliberately does NOT re-snap existing `drill_items.due_date` values when
-    `weekday_mask` changes (unchanged from the router's prior documented
-    behaviour).
+    `weekday_mask` changes.
 
-    REMIND-01/T-201-13: `reminder_last_sent_on` is deliberately NOT a
-    parameter here and does not appear in the UPSERT's `values(...)` or
-    `set_` dict below — it is the reminder job's own watermark (D-06),
-    written only by its claim UPDATE (plan 201-04). A settings PUT must
-    never move it, so this function structurally cannot write it.
+    `reminder_last_sent_on` is deliberately NOT a parameter here and does not
+    appear in the UPSERT's `values(...)` or `set_` dict below — it is the
+    reminder job's own watermark, written only by its claim UPDATE. A settings
+    PUT must never move it, so this function structurally cannot write it.
 
-    Phase 203 (OFFER-03/D-02): `reminder_intent_at` IS a parameter here and
-    DOES appear in both `values(...)` and `set_` — the opposite access
-    pattern from `reminder_last_sent_on`, since it is client-writable on
-    every PUT (unlike the reminder job's own watermark, above).
+    `reminder_intent_at` IS a parameter here and DOES appear in both
+    `values(...)` and `set_` — the opposite access pattern from
+    `reminder_last_sent_on`, since it is client-writable on every PUT (unlike
+    the reminder job's own watermark, above).
 
     Args:
         session: AsyncSession. Caller commits.
@@ -475,7 +463,7 @@ async def upsert_settings(
         reminder_hour: The local hour (0-23) reminders fire at.
         reminder_intent_at: The instant the user last expressed install
             intent, or None to clear it. Required-but-nullable at the schema
-            layer (D-02) — never defaulted here either.
+            layer — never defaulted here either.
         now_utc: The current UTC instant. Used ONLY to resolve `today` from
             the OLD (pre-mutation) timezone for the settle-before-mutate
             step — never converted against the NEW timezone being applied.
@@ -502,9 +490,9 @@ async def upsert_settings(
             "reminder_enabled": stmt.excluded.reminder_enabled,
             "reminder_hour": stmt.excluded.reminder_hour,
             "reminder_intent_at": stmt.excluded.reminder_intent_at,
-            # reminder_last_sent_on deliberately absent — see the module
-            # docstring above (T-201-13): it is the reminder job's own
-            # watermark, never moved by a settings PUT.
+            # reminder_last_sent_on deliberately absent (see this function's
+            # docstring): it is the reminder job's own watermark, never moved
+            # by a settings PUT.
         },
     )
     # RETURNING: this UPDATE never touches streak_count/shield_level/
@@ -513,16 +501,14 @@ async def upsert_settings(
     # so read back whatever the row holds after that settlement (either the
     # brand-new insert's server defaults or an existing row's just-settled
     # snapshot) rather than fabricating a value here. reminder_last_sent_on
-    # is included here too for the same reason: this UPSERT never writes it
-    # (T-201-13), so the returned row must reflect whatever is already
-    # persisted, not a fabricated value.
-    # Phase 222 (TRAINBOT-05, D-12) + Phase 240 (D-09): the onboarding columns
-    # (two seen timestamps and reveal_tour_stage) are ALSO absent from
-    # values()/set_ above -- this UPSERT structurally cannot write them
-    # (D-12's PUT-can-never-smuggle-them rule) -- so they are RETURNING'd here
-    # for the identical reason reminder_last_sent_on is:
-    # the returned row must reflect whatever is already persisted, never a
+    # is included here too for the same reason: this UPSERT never writes it,
+    # so the returned row must reflect whatever is already persisted, not a
     # fabricated value.
+    # The onboarding columns (two seen timestamps and reveal_tour_stage) are
+    # ALSO absent from values()/set_ above -- this UPSERT structurally cannot
+    # write them (a PUT can never smuggle them in) -- so they are RETURNING'd
+    # here for the identical reason reminder_last_sent_on is: the returned row
+    # must reflect whatever is already persisted, never a fabricated value.
     stmt = stmt.returning(
         TrainSettings.streak_count,
         TrainSettings.shield_level,
@@ -563,7 +549,7 @@ async def upsert_settings(
 
 
 # ---------------------------------------------------------------------------
-# Progress (PROG-01/PROG-04, Phase 191 Plan 01, D-18)
+# Progress
 # ---------------------------------------------------------------------------
 
 
@@ -589,13 +575,10 @@ async def _count_drill_items_by_status(
 class ProgressSnapshot:
     """Internal dataclass mirroring `app.schemas.train.TrainProgressResponse`.
 
-    `session_streak_count` (Phase 193, was `settled_streak_weeks`) counts
-    completed scheduled-day sessions. `shield_level` (was `flame_state`) is
-    the plain 0-`SHIELD_CAP` persisted value — there is no display overlay
-    any more (the eager-write model this plan adds makes the persisted
-    value always current). `streak_reset_notice` (was `streak_lost_last_week`)
-    is derived from the resulting state, so it survives a page reload.
-    `badge_visible` (Plan 02, D-09/D-10) is a display hint only — it gates no
+    `session_streak_count` counts completed scheduled-day sessions.
+    `shield_level` is the plain 0-`SHIELD_CAP` persisted value, always current.
+    `streak_reset_notice` is derived from the resulting state, so it survives a
+    page reload. `badge_visible` is a display hint only — it gates no
     server-side authorization; the badge's own number still comes from
     `waiting_count`.
     """
@@ -617,11 +600,11 @@ async def _material_flags(session: AsyncSession, *, user_id: int) -> tuple[bool,
     """Return `(has_drill_items, has_pool_candidates)` — the two EXISTS
     signals `_pool_state` already needed, factored out so `get_progress` can
     also use them (resolved exactly once per request) to decide whether to
-    stamp the D-06 `pool_eligible_since` watermark.
+    stamp the `pool_eligible_since` watermark.
 
     `blob_pending_count > 0` alone is deliberately EXCLUDED from "qualifying
     material": a blunder still awaiting tier-4 analysis has no answer key
-    yet, so it is not yet drillable under D-06's own wording.
+    yet, so it is not yet drillable.
 
     Args:
         session: AsyncSession.
@@ -646,7 +629,7 @@ async def _stamp_pool_eligibility(
     today: datetime.date,
     has_material: bool,
 ) -> datetime.date | None:
-    """D-06: stamp the eligibility watermark once, the first time qualifying
+    """Stamp the eligibility watermark once, the first time qualifying
     material is observed; never overwrite an existing one.
 
     Args:
@@ -655,12 +638,11 @@ async def _stamp_pool_eligibility(
         settings_row: The user's current `TrainSettingsRow`.
         today: The local calendar day (from `local_today`).
         has_material: `has_drill_items OR has_pool_candidates` from
-            `_material_flags`, resolved once by the caller. Phase 206
-            (ROADMAP Success Criterion 5): a caller composing a session may
-            additionally OR in `sharp_filler_available()` — a filler-only
-            session is still a real, completable session, so the
-            eligibility floor `tick_days` reads must exist for a
-            warm-up-only user too.
+            `_material_flags`, resolved once by the caller. A caller composing
+            a session may additionally OR in `sharp_filler_available()` — a
+            filler-only session is still a real, completable session, so the
+            eligibility floor `tick_days` reads must exist for a warm-up-only
+            user too.
 
     Returns:
         `settings_row.pool_eligible_since` unchanged when already set;
@@ -684,22 +666,20 @@ async def _stamp_pool_eligibility(
     return today
 
 
-# Phase 222 (TRAINBOT-05, D-11/D-12): the step->column lookup for
-# `stamp_onboarding_step`. A fixed dict, never a string interpolated into
-# SQL and never `getattr` on a request-supplied name (T-222-02-03 threat
-# register). Typed `Any` because `ty` does not recognise `InstrumentedAttribute`
-# as a `ColumnElement` subtype, mirroring `app/repositories/query_utils.py`'s
+# The step->column lookup for `stamp_onboarding_step`. A fixed dict, never a
+# string interpolated into SQL and never `getattr` on a request-supplied name.
+# Typed `Any` because `ty` does not recognise `InstrumentedAttribute` as a
+# `ColumnElement` subtype, mirroring `app/repositories/query_utils.py`'s
 # documented widening for the same reason.
 _ONBOARDING_COLUMNS: dict[OnboardingStep, Any] = {
     "intro": TrainSettings.intro_seen_at,
     "sr_explained": TrainSettings.sr_explained_at,
 }
 
-# Phase 240 (D-09): the step->target-stage lookup for the reveal-tour steps.
-# Same fixed-dict rule as `_ONBOARDING_COLUMNS` above (T-222-02-03): never
-# `getattr`, never SQL interpolation. Together the two dicts partition
-# `OnboardingStep` (pinned by a test): a step is either a timestamp step or a
-# tour-stage step.
+# The step->target-stage lookup for the reveal-tour steps. Same fixed-dict
+# rule as `_ONBOARDING_COLUMNS` above: never `getattr`, never SQL
+# interpolation. Together the two dicts partition `OnboardingStep` (pinned by
+# a test): a step is either a timestamp step or a tour-stage step.
 _REVEAL_TOUR_TARGET_STAGE: dict[OnboardingStep, int] = {
     "reveal_tour_1": 1,
     "reveal_tour_2": 2,
@@ -710,7 +690,7 @@ _REVEAL_TOUR_TARGET_STAGE: dict[OnboardingStep, int] = {
 async def _advance_reveal_tour_stage(
     session: AsyncSession, *, user_id: int, target_stage: int
 ) -> None:
-    """D-09: advance `reveal_tour_stage` to `target_stage`, forward-only.
+    """Advance `reveal_tour_stage` to `target_stage`, forward-only.
 
     Guarded on `reveal_tour_stage == target_stage - 1`: the stage moves to N
     only from N-1, so a replayed POST, a concurrent duplicate and an
@@ -730,13 +710,13 @@ async def _advance_reveal_tour_stage(
 async def stamp_onboarding_step(
     session: AsyncSession, *, user_id: int, step: OnboardingStep, now_utc: datetime.datetime
 ) -> TrainSettingsRow:
-    """D-12: record completion of one onboarding step, forward-only and
+    """Record completion of one onboarding step, forward-only and
     idempotent; never overwrite earlier progress.
 
     `intro` / `sr_explained` stamp their seen-timestamp first-write-wins.
-    `reveal_tour_N` (Phase 240, D-09) advances `reveal_tour_stage` to N only
-    from N-1, so a replayed or out-of-order POST is a no-op and the stage never
-    moves backwards. Mirrors `_stamp_pool_eligibility`'s "stamp once, never
+    `reveal_tour_N` advances `reveal_tour_stage` to N only from N-1, so a
+    replayed or out-of-order POST is a no-op and the stage never moves
+    backwards. Mirrors `_stamp_pool_eligibility`'s "stamp once, never
     overwrite" shape. `get_or_create_settings` runs first so a user who has
     never touched Train still gets a row before the UPDATE.
 
@@ -775,14 +755,14 @@ async def settle_streak_snapshot(
     session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow, today: datetime.date
 ) -> TickView:
     """Advance the per-day tick snapshot over every elapsed scheduled day and
-    persist the advance (PROG-01).
+    persist the advance.
 
     THE SINGLE settlement entry point, shared by `GET /train/progress` (here)
     and `PUT /train/settings` (settle-before-mutate). Reads the user's
     `status='completed'` `drill_sessions.session_date` values (order-
     insensitive — `tick_days` buckets internally), builds the input
     `TickSnapshot` from `settings_row`'s three snapshot fields, calls
-    `tick_days` (passing `settings_row.pool_eligible_since` as the D-06
+    `tick_days` (passing `settings_row.pool_eligible_since` as the eligibility
     watermark), and persists the advanced snapshot IF AND ONLY IF
     `view.changed` is True.
 
@@ -849,12 +829,12 @@ async def settle_streak_snapshot(
 async def get_progress(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> ProgressSnapshot:
-    """Return the full Train progress read-model (PROG-01/PROG-04).
+    """Return the full Train progress read-model.
 
     Sequential awaits only — never `asyncio.gather` on this `AsyncSession`
     (CLAUDE.md). Steps: `get_or_create_settings` -> resolve today's local
     date -> `_material_flags` -> `_stamp_pool_eligibility` (so the very call
-    that discovers material gives the tick machine a usable floor, D-06) ->
+    that discovers material gives the tick machine a usable floor) ->
     `settle_streak_snapshot` (with a settings row carrying the just-stamped
     watermark) -> mastered/parked counts -> `current_week_required` ->
     `blob_pending_count` -> `waiting_count` -> `_pool_state` (now passed the
@@ -928,12 +908,12 @@ async def get_progress(
     )
     next_due_date = await _next_due_date(session, user_id=user_id, today=today)
 
-    # D-09/D-10 (Plan 02): the nav badge shows only on a scheduled session
-    # day, UNLESS an already-open unexpired session still has unsolved
-    # puzzles left to rescue (only reachable under a narrowed mask, where
-    # session_window can leave a session open across an unscheduled day).
-    # is_scheduled_day is the SAME bit-test the D-07 off-day tick branch
-    # uses — one predicate, two call sites, never re-derived here.
+    # The nav badge shows only on a scheduled session day, UNLESS an
+    # already-open unexpired session still has unsolved puzzles left to rescue
+    # (only reachable under a narrowed mask, where session_window can leave a
+    # session open across an unscheduled day). is_scheduled_day is the SAME
+    # bit-test the off-day tick branch uses — one predicate, two call sites,
+    # never re-derived here.
     badge_visible = waiting_count > 0 and (
         is_scheduled_day(today, settings_row.weekday_mask)
         or await _open_unfinished_exists(session, user_id=user_id, today=today)
@@ -957,7 +937,7 @@ async def get_progress(
 async def expire_stale_sessions(
     session: AsyncSession, *, user_id: int, today: datetime.date
 ) -> None:
-    """D-11: close out any of the user's open sessions whose window has elapsed.
+    """Close out any of the user's open sessions whose window has elapsed.
 
     `UPDATE drill_sessions SET status='expired' WHERE user_id = :user_id AND
     status = 'open' AND expires_on <= :today`. Touches nothing else: recorded
@@ -1035,13 +1015,13 @@ async def open_session_for_user(session: AsyncSession, *, user_id: int) -> Drill
 async def completed_session_in_window(
     session: AsyncSession, *, user_id: int, today: datetime.date
 ) -> DrillSession | None:
-    """Return the user's latest `status='completed'` session still inside its D-10 window.
+    """Return the user's latest `status='completed'` session still inside its window.
 
-    Bug fix (190.1 pre-deploy): completing a session flips it to
-    `status='completed'` (`_mark_session_complete_if_done`), so the D-12
-    resume path — which only looks at `status='open'` rows — stopped seeing
+    Bug fix: completing a session flips it to
+    `status='completed'` (`_mark_session_complete_if_done`), so the resume
+    path — which only looks at `status='open'` rows — stopped seeing
     it, and the very next compose call built a brand-new session on the same
-    day. That defeated the D-10 session window ("one session until the next
+    day. That defeated the session window ("one session until the next
     scheduled day") and made the 'completed' landing state unreachable after
     a page reload. Compose must treat a completed-but-unexpired session
     exactly like an open one: return it, don't recompose.
@@ -1091,14 +1071,14 @@ async def _is_untouched_and_resized(
 
     Compares against the session's OWN `requested_count` snapshot, NEVER its
     `puzzle_count` — a session can legitimately serve fewer puzzles than
-    requested when the pool is short on material (the D-14 "short session"
+    requested when the pool is short on material (the "short session"
     state), and re-checking that same shortfall on every call would churn the
     session for no reason. `requested_count is None` (pre-migration rows, or a
     test fixture seeding a session directly without going through composition)
     is always treated as "not resized" — the conservative default.
 
     Only a session with ZERO recorded solves qualifies: once any puzzle has
-    been solved, `puzzle_count` is load-bearing for the SOLV-04/D-13 frozen
+    been solved, `puzzle_count` is load-bearing for the frozen
     progress denominator and must never move out from under an in-progress
     solve loop.
     """
@@ -1116,13 +1096,13 @@ async def _is_untouched_and_resized(
 async def get_waiting_puzzle_count(
     session: AsyncSession, *, user_id: int, settings_row: TrainSettingsRow, today: datetime.date
 ) -> int:
-    """Read-only estimate of puzzles waiting for the nav badge (SCHD-02/D-07).
+    """Read-only estimate of puzzles waiting for the nav badge.
 
     NEVER calls `compose_and_materialize_session` and NEVER calls
     `expire_stale_sessions` — this whole function is a read. Takes
     `settings_row`/`today` as parameters rather than re-resolving them, so a
     caller resolves `get_or_create_settings`/`local_today` exactly once per
-    request (191-RESEARCH.md Pitfall 2).
+    request.
 
     Branch order, all sequential awaits (never `asyncio.gather` on this
     `AsyncSession`, CLAUDE.md):
@@ -1139,8 +1119,8 @@ async def get_waiting_puzzle_count(
        already dead — reporting it made the badge advertise a size the user had
        just changed away from. Predicting the discard is read-only; the delete
        stays in `_discard_if_untouched_and_resized`.
-    2. Otherwise a completed session still inside its D-10 window -> 0 (D-07:
-       the badge hides once today's session is done).
+    2. Otherwise a completed session still inside its window -> 0 (the
+       badge hides once today's session is done).
     3. Otherwise an estimate of available fresh material, capped at
        `settings_row.puzzles_per_session`: due `drill_items` (mirroring
        `compose_and_materialize_session`'s `due_stmt` eligibility predicates
@@ -1151,9 +1131,8 @@ async def get_waiting_puzzle_count(
 
     Never imports `classify_puzzle_type`, a `missed_pv_lines` reader,
     `fen_and_last_move_at_ply`, or any other answer-key/classification
-    helper — this function needs counts and dates only (191-RESEARCH.md
-    Pitfall 5). Never issues `session.add`/`session.flush`/INSERT/UPDATE/
-    DELETE.
+    helper — this function needs counts and dates only. Never issues
+    `session.add`/`session.flush`/INSERT/UPDATE/DELETE.
 
     The returned number is an UPPER BOUND, never a promise of exact session
     size: it applies composition's own eligibility predicates and the
@@ -1200,16 +1179,16 @@ async def get_waiting_puzzle_count(
 
     # Due drill_items — mirrors compose_and_materialize_session's due_stmt
     # eligibility exactly (status/due_date/flaw-row-presence/answer-key/
-    # dead-band/second-best-still-winning, Phase 205 + SEED-141), minus the
+    # dead-band/second-best-still-winning), minus the
     # Game join (not needed for a count). dead_band_admissible and
     # second_best_not_winning_admissible both derive mover color from ply
     # parity rather than Game.user_color for exactly this reason — every
     # candidate row here is already the user's own ply by construction.
     # Leaving this arm unfiltered was considered and rejected: a user whose
     # whole due set is banded/still-winning would otherwise see a badge for
-    # a session that composes empty (D-05, extended by SEED-141 to the same
-    # standard — the value is read LIVE from the flaw row and is NEVER
-    # snapshotted onto drill_items).
+    # a session that composes empty (the dead-band and second-best checks hold
+    # the same standard — the value is read LIVE from the flaw row and is
+    # NEVER snapshotted onto drill_items).
     due_count_stmt = (
         select(func.count())
         .select_from(DrillItem)
@@ -1262,7 +1241,7 @@ async def get_waiting_puzzle_count(
 async def _open_unfinished_exists(
     session: AsyncSession, *, user_id: int, today: datetime.date
 ) -> bool:
-    """D-10: whether the user has an open, unexpired session with unsolved
+    """Whether the user has an open, unexpired session with unsolved
     puzzles left — the nav-badge carve-out that keeps the badge lit on an
     off-day when a half-finished session is still rescuable.
 
@@ -1272,8 +1251,8 @@ async def _open_unfinished_exists(
     single-row lookups on the progress path, accepted for the smaller diff.
     Never flips an expired-but-still-open row to `'expired'` here; that write
     belongs solely to `expire_stale_sessions`. Window-based (`expires_on`)
-    only — D-10 cares whether the session is still open, not whether today
-    happens to be a scheduled day.
+    only — what matters is whether the session is still open, not whether
+    today happens to be a scheduled day.
 
     Args:
         session: AsyncSession.
@@ -1295,7 +1274,7 @@ async def _open_unfinished_exists(
 async def _next_due_date(
     session: AsyncSession, *, user_id: int, today: datetime.date
 ) -> datetime.date | None:
-    """PROG-05: the earliest due date among the user's still-ACTIVE items due
+    """The earliest due date among the user's still-ACTIVE items due
     strictly in the future — the "All caught up!" empty state's date.
 
     Args:
@@ -1325,7 +1304,7 @@ async def _pool_state(
     has_drill_items: bool,
     has_pool_candidates: bool,
 ) -> Literal["no_material", "exhausted", "available"]:
-    """PROG-05/D-16: discriminate cold-start ("never had material") from a
+    """Discriminate cold-start ("never had material") from a
     genuinely exhausted pool from an available one — the single server-side
     discriminant the two empty-state surfaces branch on (no client-side
     arithmetic).
@@ -1342,17 +1321,17 @@ async def _pool_state(
        that is "catching up", not a cold start.
 
     Args:
-        session: AsyncSession (unused directly — kept in the signature to
             match every other repository function's shape; the two EXISTS
-            queries this used to run itself now live in `_material_flags`).
+            queries live in `_material_flags`).
+            query this used to run itself now live in `_material_flags`).
         user_id: Authenticated user's internal PK (V4: never client-supplied).
         waiting_count: The result of `get_waiting_puzzle_count` for this
             request (resolved once by the caller, never re-derived here).
         blob_pending_count: The result of `blob_pending_stmt` for this
             request (resolved once by the caller, never re-derived here).
         has_drill_items: The result of `_material_flags` for this request
-            (resolved once by the caller — Phase 193, also feeds the D-06
-            `_stamp_pool_eligibility` check — never re-derived here).
+            (resolved once by the caller, also feeds the
+            `_stamp_pool_eligibility` check, never re-derived here).
         has_pool_candidates: The result of `_material_flags` for this
             request (same "resolved once" contract as `has_drill_items`).
     """
@@ -1366,35 +1345,33 @@ async def _pool_state(
 async def load_session_puzzles(
     session: AsyncSession, *, user_id: int, session_id: int
 ) -> list[ComposedPuzzle]:
-    """Return the ordered, not-yet-attempted puzzles for a session (D-09/D-12 resume path).
+    """Return the ordered, not-yet-attempted puzzles for a session (resume path).
 
     `drill_solves` rows with `solved_at IS NULL`, ordered by `position` (the
-    frozen composition order), OUTER-joined to `games` (Phase 192 D-05:
-    `game_id` can be NULL after a source-game deletion, so this can no longer
-    be an INNER JOIN without silently dropping puzzles) and to `herring_pool`
-    for a herring's FEN/arriving move. Scoped by `user_id` in the WHERE
-    clause IN ADDITION to `session_id` — a session id arriving from a request
-    body/path parameter is untrusted client input (T-189-12 / V4 IDOR guard);
-    a foreign session id resolves to zero rows rather than another user's
-    puzzles.
+    frozen composition order), OUTER-joined to `games` (`game_id` can be NULL
+    after a source-game deletion, so an INNER JOIN here would silently drop
+    puzzles) and to `herring_pool` for a herring's
+    FEN/arriving move. Scoped by `user_id` in the WHERE clause IN ADDITION to
+    `session_id` — a session id arriving from a request body/path parameter
+    is untrusted client input (IDOR guard); a foreign session id resolves to
+    zero rows rather than another user's puzzles.
 
     Two independent lazy-eviction paths, opposite reasons:
     - A `RED_HERRING` row reads its FEN/arriving move straight off the
-      `herring_pool` row (D-03 — the only herring path, alive game-link or
+      `herring_pool` row (the only herring path, alive game-link or
       not) and is skipped only if the pool row itself is gone, handled
       identically to a broken FEN: drop, never serve. This DOES happen —
       every session composed before the pool was first generated carried a
       NULL `herring_pool_id` (prod, 2026-07-28), and `drill_solves
       .herring_pool_id` is `ON DELETE SET NULL`, so any future pool prune
       orphans in-flight rows the same way. `_mark_session_complete_if_done`
-      carries the matching exclusion (SEED-123) so a dropped herring cannot
+      carries the matching exclusion so a dropped herring cannot
       pin the session open forever.
-    - An `SR_ITEM` row is skipped when its `games` row has vanished (D-05:
-      the row now survives its source game's deletion with `game_id` NULL
-      instead of being CASCADE-deleted, so an orphaned SR row is unservable
-      but must not be served or crash — mirrors the pre-D-05 CASCADE
-      behavior) OR when its backing `game_flaws` row has since vanished under
-      reclassification (pre-existing D-02 lazy eviction, unchanged).
+    - An `SR_ITEM` row is skipped when its `games` row has vanished (the row
+      survives its source game's deletion with `game_id` NULL instead of
+      being CASCADE-deleted, so an orphaned SR row is unservable but must not
+      be served or crash) OR when its backing `game_flaws` row has since
+      vanished under reclassification (lazy eviction).
 
     Rows whose FEN will not reconstruct are also skipped. The session's
     frozen `puzzle_count` is returned UNCHANGED by this function — callers
@@ -1439,7 +1416,7 @@ async def load_session_puzzles(
     puzzles: list[ComposedPuzzle] = []
     for solve, game, herring_row in rows:
         if solve.source == DrillSource.SHARP_FILLER:
-            # Phase 206: resolved straight from the in-memory sharp set by
+            # Resolved straight from the in-memory sharp set by
             # sharp_puzzle_id — no games/herring_pool join needed (both
             # outer joins above naturally yield None for a sharp row).
             sharp_row = SHARP_SET_BY_ID.get(solve.sharp_puzzle_id)
@@ -1476,13 +1453,13 @@ async def load_session_puzzles(
 
         # SR_ITEM
         if game is None:
-            continue  # orphaned by a source-game deletion (D-05): lazily evicted
+            continue  # orphaned by a source-game deletion: lazily evicted
         # The outer join above guarantees game.id == solve.game_id here, so
         # solve.game_id is non-None whenever game is not None — narrowed
         # explicitly for ty rather than suppressed.
         assert solve.game_id is not None
         if (solve.game_id, solve.ply) not in existing_flaw_keys:
-            continue  # lazy eviction: the backing flaw row vanished (D-02)
+            continue  # lazy eviction: the backing flaw row vanished
         result = fen_and_last_move_at_ply(game.pgn, solve.ply)
         if result is None:
             continue  # never serve a puzzle whose FEN can't reconstruct
@@ -1511,26 +1488,22 @@ async def _resume_session(
 ) -> ComposedSession:
     """Build a `ComposedSession` for an existing session row.
 
-    Serves both the D-12 resume path (an open session: unsolved puzzles
+    Serves both the resume path (an open session: unsolved puzzles
     returned for the loop to continue) and the completed-in-window path (a
     `status='completed'` session: `load_session_puzzles` returns [] and the
-    landing screen renders the D-03 recap from `solved_count`/`expires_on`).
+    landing screen renders the recap from `solved_count`/`expires_on`).
 
-    Quick task 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): the former
-    `solved_count`-only `func.count()` query is widened into a row select of
-    `correct_guess`/`move_quality`/`correct_move`, ordered by `position` —
-    still ONE query, no second round-trip. `solved_count` is now derived as
-    `len(solved_results)` rather than a separate COUNT.
+    One row select of `correct_guess`/`move_quality`/`correct_move`, ordered by
+    `position`, feeds `solved_results`; `solved_count` is its length.
 
-    Phase 222 (TRAINBOT-04, D-17): further widened with a set-based LEFT
-    JOIN to `drill_items` on `(user_id, game_id, ply)` — never N per-row
-    `_read_drill_item_state` calls — so `item_status`/`due_date` ride along
-    for free. A non-`sr_item` row (red herring / sharp filler) never has a
-    matching `drill_items` row (that table holds only the user's own
-    qualifying blunders), so the join naturally yields NULL for both, which
-    is exactly `SolveResponse`'s own nullability rule for those sources. A
-    deleted-game orphan (Assumptions Log A6) degrades the same way: no
-    matching row, NULL/NULL, never an error.
+    The select carries a set-based LEFT JOIN to `drill_items` on
+    `(user_id, game_id, ply)` — never N per-row `_read_drill_item_state`
+    calls — so `item_status`/`due_date` ride along for free. A non-`sr_item`
+    row (red herring / sharp filler) never has a matching `drill_items` row
+    (that table holds only the user's own qualifying blunders), so the join
+    naturally yields NULL for both, which is exactly `SolveResponse`'s own
+    nullability rule for those sources. A deleted-game orphan degrades the
+    same way: no matching row, NULL/NULL, never an error.
     """
     puzzles = await load_session_puzzles(session, user_id=user_id, session_id=drill_session.id)
     solved_rows_stmt = (
@@ -1576,9 +1549,9 @@ async def _resume_session(
         blob_pending_count=blob_pending_count,
         puzzles=puzzles,
         solved_results=solved_results,
-        # Phase 206 (D-07): read the stored column, never recompute — a
-        # recomputed flag would silently shed the warm-up label the moment
-        # the ES lottery delivers material mid-session.
+        # Read the stored column, never recompute — a recomputed flag would
+        # silently shed the warm-up label the moment the ES lottery delivers
+        # material mid-session.
         is_warmup=drill_session.is_warmup,
     )
 
@@ -1591,7 +1564,7 @@ async def _discard_if_untouched_and_resized(
     (caller must fall through to fresh composition), False if it should be
     resumed exactly as-is.
 
-    Bug fix (191-06 UAT checkpoint round, SCHD-01): `Train.tsx` auto-fires
+    Bug fix: `Train.tsx` auto-fires
     `POST /train/sessions` as a status read on page MOUNT (see
     `useTrainSession.ts`'s module docstring), which can happen BEFORE the
     user has a chance to edit `TrainScheduleSettings` on the same visit.
@@ -1602,7 +1575,7 @@ async def _discard_if_untouched_and_resized(
 
     Only a session with ZERO recorded solves is eligible: once any puzzle
     has been solved, `puzzle_count`/`session_id` are load-bearing for the
-    SOLV-04/D-13 frozen progress denominator and must never move out from
+    frozen progress denominator and must never move out from
     under an in-progress solve loop. Deleting an untouched
     `drill_sessions` row cascades its placeholder `drill_solves` rows
     (`ondelete="CASCADE"`); any `drill_items` padding rows created during the
@@ -1627,12 +1600,10 @@ async def _discard_if_untouched_and_resized(
 class _ReconstructedPuzzle:
     """One puzzle after FEN/arriving-move reconstruction, pre-shuffle/pre-insert.
 
-    Phase 192: replaces the former 7-tuple `reconstructed` element (seven
-    positional fields is past readable as a tuple). `herring_pool_id` is
-    non-None only for a `RED_HERRING` row (D-04); an `SR_ITEM` row always
-    carries `herring_pool_id=None`.
+    `herring_pool_id` is non-None only for a `RED_HERRING` row; an `SR_ITEM`
+    row always carries `herring_pool_id=None`.
 
-    Phase 206 (D-10): `sharp_puzzle_id` mirrors `herring_pool_id`'s exact
+    `sharp_puzzle_id` mirrors `herring_pool_id`'s exact
     nullability contract — non-None only for a `SHARP_FILLER` row; an
     `SR_ITEM`/`RED_HERRING` row always carries `sharp_puzzle_id=None`.
     """
@@ -1649,8 +1620,8 @@ class _ReconstructedPuzzle:
 
 @dataclass(frozen=True)
 class _SessionCandidates:
-    """The SR/herring candidate-selection stage's output (Phase 206 e0
-    extraction). Three fields, three DIFFERENT downstream readers in
+    """The SR/herring candidate-selection stage's output. Three fields, three
+    DIFFERENT downstream readers in
     `compose_and_materialize_session`: `sr_candidates` feeds the FEN
     reconstruction loop, `herring_candidates` feeds the herring
     reconstruction loop, `new_sr_items` feeds the `DrillItem` inserts inside
@@ -1674,19 +1645,12 @@ async def _select_candidates(
     herring_slots: int,
 ) -> _SessionCandidates:
     """The SR-due + SR-pool + herring candidate-selection stage, extracted
-    from `compose_and_materialize_session` (Phase 206 e0, CLAUDE.md
-    "refactor bloated code on sight" — the parent was 249 logic LOC / depth 5
-    before this extraction, past the hard ceiling).
+    from `compose_and_materialize_session`.
 
-    This is a pure move: the `per_game_counts` Counter, the `sr_pool` scan
-    cursor (`pool_idx`), the `existing_pairs` dedup set, `herring_rows`, and
-    `herring_idx` are today live across ~160 lines specifically because the
-    cross-backfill loop resumes the same `sr_pool` scan the SR-padding loop
-    left off — moving the whole stage makes every one of them helper-local
-    and none of them crosses a function boundary. Do NOT extract the SR side
-    alone: that would force a context object, since the cross-backfill would
-    have to receive `pool_idx`/`per_game_counts`/`sr_pool`/`sr_candidates`/
-    `new_sr_items` back and hand three of them out again.
+    The SR padding loop and the herring-shortfall cross-backfill loop share
+    one `sr_pool` cursor (`pool_idx`) and one `per_game_counts` Counter, so
+    this stage must stay one function: extracting the SR side alone would
+    force a context object to hand that state back and forth.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -1698,18 +1662,18 @@ async def _select_candidates(
             counts alone at every call site, so it is passed explicitly).
         sr_slots: `compose_slots(n)`'s SR share.
         herring_slots: `compose_slots(n)`'s herring share (`HERRING_SHARE`
-            cap, D-02 — never grown past by this function).
+            cap — never grown past by this function).
 
     Returns:
         `_SessionCandidates` — `sr_candidates`/`herring_candidates` summing
         to at most `n`, plus `new_sr_items` (the subset of `sr_candidates`
         that needs a brand-new `drill_items` row).
     """
-    # Quick task 260728-pgp: the SINGLE session-wide per-game count, threaded
-    # through every SR take-site below (the due loop, the sr_needed padding
-    # loop, and the herring-shortfall cross-backfill loop) — this shared
-    # Counter IS the session-wide 1-per-game guarantee, since due items and
-    # fresh pool picks are otherwise resolved independently.
+    # The SINGLE session-wide per-game count, threaded through every SR
+    # take-site below (the due loop, the sr_needed padding loop, and the
+    # herring-shortfall cross-backfill loop) — this shared Counter IS the
+    # session-wide 1-per-game guarantee, since due items and fresh pool picks
+    # are otherwise resolved independently.
     per_game_counts: Counter[int] = Counter()
 
     # --- SR side: due drill_items first, most-overdue-first ---
@@ -1729,11 +1693,10 @@ async def _select_candidates(
             DrillItem.user_id == user_id,
             DrillItem.status == DrillStatus.ACTIVE,
             DrillItem.due_date <= today,
-            GameFlaw.ply.isnot(None),  # lazy eviction: flaw row still exists (D-02)
-            # 189-REVIEW.md WR-04 / 189-06: the flaw row can survive a
-            # reclassify with its blob reset to NULL or rewritten as the D-06
-            # empty-array sentinel; without this clause an already-tracked
-            # item is re-served with a degenerate answer key that
+            GameFlaw.ply.isnot(None),  # lazy eviction: flaw row still exists
+            # The flaw row can survive a reclassify with its blob reset to NULL
+            # or rewritten as the empty-array sentinel; without this clause an
+            # already-tracked item is re-served with a degenerate answer key that
             # classify_puzzle_type silently degrades to "soft" — the entry
             # gate (pool_entry_stmt) and this re-serve scan must apply the
             # same answer-key standard. Such an item is skipped for this
@@ -1742,9 +1705,9 @@ async def _select_candidates(
             # re-analysis restores a real blob — no deletion or status
             # change is introduced here.
             answer_key_present(GameFlaw.missed_pv_lines),
-            # Phase 205 (D-05/SEED-137): the entry gate (pool_entry_stmt) and
-            # this re-serve scan must apply the SAME dead-band standard —
-            # the exact precedent the answer-key comment above already sets.
+            # The entry gate (pool_entry_stmt) and this re-serve scan must
+            # apply the SAME dead-band standard — the exact precedent the
+            # answer-key comment above already sets.
             # The band is read LIVE from the flaw row and is NEVER
             # snapshotted onto the item, so a later reclassification moves
             # an item in or out of service with no backfill of its own. A
@@ -1752,7 +1715,7 @@ async def _select_candidates(
             # due_date untouched, nothing deleted — so it resurfaces
             # automatically if a re-analysis moves it back out.
             dead_band_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
-            # SEED-141: the entry gate and the re-serve scan must enforce the
+            # The entry gate and the re-serve scan must enforce the
             # SAME second-best-still-winning standard, the exact precedent
             # the dead-band comment above already sets. Read LIVE from the
             # flaw row, never snapshotted onto drill_items — an excluded item
@@ -1761,11 +1724,11 @@ async def _select_candidates(
             second_best_not_winning_admissible(GameFlaw.missed_pv_lines, GameFlaw.ply),
         )
         .order_by(DrillItem.due_date.asc(), DrillItem.game_id.asc(), DrillItem.ply.asc())
-        # Quick task 260728-pgp: over-fetch (bounded by _DUE_OVERFETCH_FACTOR,
-        # never unbounded) because the session-wide per-game cap below is
-        # applied in Python AFTER this fetch — it must span both SR sources,
-        # so a bare .limit(sr_slots) would under-fill the SR side by exactly
-        # the number of same-game duplicates in the fetched window.
+        # Over-fetch (bounded by _DUE_OVERFETCH_FACTOR, never unbounded)
+        # because the session-wide per-game cap below is applied in Python AFTER
+        # this fetch — it must span both SR sources, so a bare .limit(sr_slots)
+        # would under-fill the SR side by exactly the number of same-game
+        # duplicates in the fetched window.
         .limit(sr_slots * _DUE_OVERFETCH_FACTOR)
     )
     due_rows = (await session.execute(due_stmt)).all()
@@ -1774,9 +1737,9 @@ async def _select_candidates(
         if len(sr_candidates) >= sr_slots:
             break
         if per_game_counts[drill_item.game_id] >= MAX_ITEMS_PER_GAME_PER_SESSION:
-            # Quick task 260728-pgp: this due item is deferred for THIS
-            # session only, mirroring the lazy-eviction comment above — it
-            # is left completely untouched (status stays ACTIVE, due_date is
+            # This due item is deferred for THIS session only, mirroring the
+            # lazy-eviction comment above — it is left completely untouched
+            # (status stays ACTIVE, due_date is
             # not modified, nothing is deleted), so due_date ASC puts it
             # first next session and the game self-drains at
             # MAX_ITEMS_PER_GAME_PER_SESSION/session. The due side's order
@@ -1805,8 +1768,8 @@ async def _select_candidates(
             continue
         deduped_pool.append((flaw.game_id, flaw.ply, game))
         existing_pairs.add(key)
-    # Quick task 260728-pgp: cap the fresh pool at MAX_ITEMS_PER_GAME_PER_SESSION
-    # per game_id BEFORE it's consumed below. pick_one_per_game groups by
+    # Cap the fresh pool at MAX_ITEMS_PER_GAME_PER_SESSION per game_id BEFORE
+    # it's consumed below. pick_one_per_game groups by
     # game_id in first-appearance order, so the Game.played_at DESC ordering
     # across games above is unchanged — only the WITHIN-game choice (which
     # ply of a blunder-heavy game) is randomized.
@@ -1820,10 +1783,9 @@ async def _select_candidates(
     while sr_needed > 0 and pool_idx < len(sr_pool):
         pick = sr_pool[pool_idx]
         pool_idx += 1
-        # Quick task 260728-pgp: session-wide guard — sr_pool already holds
-        # at most one entry per game (Task 1's pick_one_per_game), so this
-        # is what stops a fresh-pool pick from colliding with a game the
-        # DUE side above already claimed.
+        # Session-wide guard — sr_pool already holds at most one entry per
+        # game (pick_one_per_game), so this is what stops a fresh-pool pick
+        # from colliding with a game the DUE side above already claimed.
         if per_game_counts[pick[0]] >= MAX_ITEMS_PER_GAME_PER_SESSION:
             continue
         per_game_counts[pick[0]] += 1
@@ -1831,8 +1793,8 @@ async def _select_candidates(
         new_sr_items.append(pick)
         sr_needed -= 1
 
-    # --- Herring side (Phase 192, D-03): HerringPool rows carry their own FEN/
-    # arriving-move/mover_color — no Game join, no PGN reconstruction. ---
+    # --- Herring side: HerringPool rows carry their own FEN/arriving-move/
+    # mover_color — no Game join, no PGN reconstruction. ---
     herring_rows: list[HerringPool] = list(
         (await session.execute(herring_stmt(user_id, exclude_served=True).limit(n))).scalars()
     )
@@ -1841,21 +1803,16 @@ async def _select_candidates(
         herring_rows = list(
             (await session.execute(herring_stmt(user_id, exclude_served=False).limit(n))).scalars()
         )
-    # Phase 206 (D-02): herring_candidates is CAPPED at herring_slots and
-    # never grows past it — the pre-Phase-206 "SR side came up short -> pull
-    # EXTRA herrings" cross-backfill arm is retired. Any residual shortfall
-    # (whether from a short SR side or a short herring side) is the caller's
-    # job (compose_and_materialize_session's post-reconstruction
-    # _backfill_sharp_fillers call, D-03) — an 8-puzzle all-filler session is
-    # now 2 herrings + 6 sharp, matching the real 75/25 base rate, instead of
-    # 10 herrings skewing the critical/several prior a warm-up teaches.
+    # herring_candidates is capped at herring_slots; a short SR side is filled
+    # by sharp fillers after reconstruction (_backfill_sharp_fillers), not
+    # extra herrings, so a filler-heavy session keeps the 75/25
+    # critical/several mix (an 8-puzzle all-filler session is 2 herrings + 6
+    # sharp). Any shortfall left after the cross-backfill below is the
+    # caller's job too.
     herring_candidates = herring_rows[:herring_slots]
 
-    # --- Cross-backfill (Pitfall 4), herring-short side only: a short
-    # herring side never silently shrinks the session while the SR side has
-    # spare material. Retiring the sibling arm above collapses this to one
-    # `if` (was `if .. elif ..`) — drops this helper's deepest path to
-    # nesting depth 3. ---
+    # --- Cross-backfill, herring-short side only: a short herring side never
+    # silently shrinks the session while the SR side has spare material. ---
     shortfall = n - (len(sr_candidates) + len(herring_candidates))
     if shortfall > 0 and len(herring_candidates) < herring_slots:
         # Herring side came up short -> pull extra SR, continuing the same
@@ -1863,9 +1820,8 @@ async def _select_candidates(
         while shortfall > 0 and pool_idx < len(sr_pool):
             pick = sr_pool[pool_idx]
             pool_idx += 1
-            # Quick task 260728-pgp: same session-wide guard as the
-            # sr_needed padding loop above — never relax the cap even
-            # when backfilling a herring shortfall.
+            # Same session-wide guard as the sr_needed padding loop above —
+            # never relax the cap even when backfilling a herring shortfall.
             if per_game_counts[pick[0]] >= MAX_ITEMS_PER_GAME_PER_SESSION:
                 continue
             per_game_counts[pick[0]] += 1
@@ -1883,9 +1839,8 @@ async def _select_candidates(
 async def _backfill_sharp_fillers(
     session: AsyncSession, *, user_id: int, shortfall: int
 ) -> list[_ReconstructedPuzzle]:
-    """Draw `shortfall` puzzles from the static sharp set (D-02/D-03), the
-    new post-reconstruction stage that replaces the retired "pull extra
-    herrings" cross-backfill arm.
+    """Draw `shortfall` puzzles from the static sharp set: the
+    post-reconstruction stage that fills every residual shortfall.
 
     Three scalar inputs, one list output, no state threaded back to the
     caller — a self-contained stage, unlike `_select_candidates`'s SR/
@@ -1898,7 +1853,7 @@ async def _backfill_sharp_fillers(
     `uq_drill_solves_session_puzzle` is `(session_id, game_id, ply)` and
     every sharp-filler row has `game_id=None`, so Postgres's "NULLs are
     distinct" rule means the DB constraint cannot catch a duplicate
-    `sharp_puzzle_id` within one session (D-18) — this function must.
+    `sharp_puzzle_id` within one session — this function must.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -1954,22 +1909,22 @@ async def _resolve_existing_session(
     """Resolve a session `compose_and_materialize_session` should hand back
     as-is, or `None` to continue into fresh composition.
 
-    Extracted from `compose_and_materialize_session` (Phase 214 Plan 06,
-    task 1) — the "is there already a session to hand back?" decision:
+    Extracted from `compose_and_materialize_session` — the "is there already
+    a session to hand back?" decision:
 
-    3. D-12: if an open session still exists (after the caller's own
+    3. If an open session still exists (after the caller's own
        `expire_stale_sessions` call), RESUME it (`_resume_session`) rather
-       than composing a new one. EXCEPTION (191-06 UAT bug fix,
-       `_discard_if_untouched_and_resized`): an open session with ZERO
+       than composing a new one. EXCEPTION
+       (`_discard_if_untouched_and_resized`): an open session with ZERO
        recorded solves whose frozen `puzzle_count` no longer matches the
        CURRENT `puzzles_per_session` is discarded instead, falling through to
        fresh composition below — this is what lets a same-day settings edit
        actually take effect before the first puzzle is solved.
-    3b. D-10 guard (190.1 bug fix): if a COMPLETED session's window still
+    3b. Window guard: if a COMPLETED session's window still
        covers today (`completed_session_in_window`), return it instead of
        composing fresh — completing a session must not unlock an immediate
        replacement on reload; the next session arrives when the window rolls
-       over. Phase 191's ad-hoc "train now" (SCHD-03) will need an explicit
+       over. A future ad-hoc "train now" will need an explicit
        opt-out of this guard, not a bypass of the open-session resume above.
 
     Args:
@@ -2001,11 +1956,11 @@ async def _resolve_existing_session(
                 blob_pending_count=blob_pending_count,
             )
 
-    # Step 3b (190.1 bug fix): a completed session still inside its D-10
-    # window blocks fresh composition — without this, a reload right after
-    # finishing a session composed a brand-new one (status='completed' rows
-    # are invisible to the open-session resume above), granting unlimited
-    # same-day sessions and draining the pool.
+    # Step 3b (bug fix): a completed session still inside its window blocks
+    # fresh composition — without this, a reload right after finishing a
+    # session composed a brand-new one (status='completed' rows are invisible
+    # to the open-session resume above), granting unlimited same-day sessions
+    # and draining the pool.
     completed = await completed_session_in_window(session, user_id=user_id, today=today)
     if completed is not None:
         return await _resume_session(
@@ -2019,12 +1974,12 @@ async def _resolve_existing_session(
     return None
 
 
-# Phase 240 (D-15): puzzle 2 or 3 of the first-ever session holds a "several"
-# puzzle (zero-based indices 1 and 2).
+# Puzzle 2 or 3 of the first-ever session holds a "several" puzzle (zero-based
+# indices 1 and 2).
 _FIRST_SESSION_SEVERAL_SLOTS: tuple[int, ...] = (1, 2)
 # A "several" puzzle is any whose answer-key type is not sharp (soft SR item or herring).
 _SEVERAL_PUZZLE_TYPES: frozenset[TrainPuzzleType] = frozenset({"soft", "herring"})
-# Distinct from the D-09 shuffle seed so the two draws are independent yet reproducible.
+# Distinct from the session shuffle seed so the two draws are independent yet reproducible.
 _FIRST_SESSION_SEED_SUFFIX = "first-session"
 
 
@@ -2033,7 +1988,7 @@ def _first_session_order(
     types: Sequence[TrainPuzzleType],
     rng: random.Random,
 ) -> list[_ReconstructedPuzzle]:
-    """Reorder an already-shuffled first-ever session (Phase 240 D-13..D-15).
+    """Reorder an already-shuffled first-ever session.
 
     (a) The first sharp puzzle (in shuffled order) moves to slot 0, keeping the
     relative order of the rest. (b) A "several" puzzle (soft or herring) then
@@ -2045,7 +2000,7 @@ def _first_session_order(
     or two puzzles clamp the slots so nothing indexes out of range.
 
     Args:
-        puzzles: The post-D-09-shuffle puzzles.
+        puzzles: The shuffled puzzles.
         types: Each puzzle's answer-key type, aligned with `puzzles`.
         rng: Seeded generator picking between the several slots.
     """
@@ -2067,7 +2022,7 @@ def _first_session_order(
 
 
 async def _is_first_ever_session(session: AsyncSession, *, user_id: int) -> bool:
-    """True when the user has no `drill_sessions` row of any status (D-13).
+    """True when the user has no `drill_sessions` row of any status.
 
     Runs only after `_resolve_existing_session` returned None, so a discarded
     untouched-and-resized first session's row is already deleted and the
@@ -2082,7 +2037,7 @@ async def _is_first_ever_session(session: AsyncSession, *, user_id: int) -> bool
 async def _composition_puzzle_types(
     session: AsyncSession, *, user_id: int, puzzles: Sequence[_ReconstructedPuzzle]
 ) -> list[TrainPuzzleType]:
-    """Each puzzle's answer-key type, from the verdict's own derivation (D-14).
+    """Each puzzle's answer-key type, from the verdict's own derivation.
 
     One query loads the live `game_flaws` blobs of the SR items (user_id in the
     WHERE, V4); herrings and sharp fillers need no query because their type is
@@ -2128,11 +2083,11 @@ async def _order_first_ever_session(
     today: datetime.date,
     items: _AssembledSessionItems,
 ) -> _AssembledSessionItems:
-    """Phase 240 (D-13): apply `_first_session_order` to a first-ever composition.
+    """Apply `_first_session_order` to a first-ever composition.
 
     Returns `items` unchanged for an empty composition or any user with an
     earlier `drill_sessions` row (any status), so later sessions keep the plain
-    D-09 shuffle and the only leak is that slot 0 of session 1 is never a
+    shuffle and the only leak is that slot 0 of session 1 is never a
     herring. `surviving_sr_keys` and `is_warmup` are set-valued, so they stay
     correct after the reorder.
     """
@@ -2147,7 +2102,7 @@ async def _order_first_ever_session(
 
 @dataclass(frozen=True)
 class _AssembledSessionItems:
-    """The item-assembly stage's output (Phase 214 Plan 06 task 2). Four
+    """The item-assembly stage's output. Four
     fields, three DIFFERENT downstream readers in
     `compose_and_materialize_session`/`_materialize_session_rows`:
     `reconstructed` feeds the empty-session early return AND the row-insert
@@ -2170,18 +2125,17 @@ async def _assemble_session_items(
     session: AsyncSession, *, user_id: int, today: datetime.date, n: int
 ) -> _AssembledSessionItems:
     """The item-assembly stage: candidate selection, FEN reconstruction,
-    Phase 206 sharp-filler shortfall fill, and the D-09 deterministic
-    shuffle. Extracted from `compose_and_materialize_session` (Phase 214
-    Plan 06, task 2).
+    sharp-filler shortfall fill, and the deterministic shuffle. Extracted
+    from `compose_and_materialize_session`.
 
     4. `_select_candidates` returns due `drill_items` (most-overdue-first)
        padded from `pool_entry_stmt` up to `sr_slots`, plus `herring_stmt` up
        to `herring_slots`.
     5. Reconstruct each puzzle's full FEN + arriving move via
        `fen_and_last_move_at_ply`; a puzzle whose FEN cannot be
-       reconstructed is dropped rather than served broken (never
-       backfilled — the slot arithmetic already ran).
-    Phase 206 (D-03): sharp filler fills EVERY residual shortfall after SR +
+       reconstructed is dropped rather than served broken (the
+       post-reconstruction sharp-filler stage fills the gap).
+       Sharp filler fills EVERY residual shortfall after SR +
        herring reconstruction — not gated on "is this an all-filler
        session". Computed POST-reconstruction on purpose: it absorbs
        puzzles dropped above for an unparseable FEN, which the
@@ -2190,10 +2144,10 @@ async def _assemble_session_items(
        `_select_candidates` — it runs at a different point in the pipeline.
     6. If nothing survives, `reconstructed` is empty and the caller must
        write NO `drill_sessions` row. Otherwise shuffle deterministically by
-       `(user_id, today)` (D-09: a red herring's position must not be
+       `(user_id, today)` (a red herring's position must not be
        inferable from ordering).
 
-    The D-06/D-07 warm-up discriminant is computed here — a plain equality
+    The warm-up discriminant is computed here — a plain equality
     against zero, never a ratio, never a threshold — because it is derived
     from `surviving_sr_keys`, which only exists once the shuffle has run;
     moving it to a different stage would either recompute
@@ -2235,7 +2189,7 @@ async def _assemble_session_items(
                 sharp_puzzle_id=None,
             )
         )
-    # D-10: own-game herrings are permitted, so a position can legitimately be
+    # Own-game herrings are permitted, so a position can legitimately be
     # both a several-fine-moves pool row and the user's own blunder ply —
     # drop the herring before insert rather than colliding on
     # uq_drill_solves_session_puzzle and raising IntegrityError mid-composition.
@@ -2255,7 +2209,7 @@ async def _assemble_session_items(
                 sharp_puzzle_id=None,
             )
         )
-    # Phase 206 (D-03): sharp filler fills EVERY residual shortfall after SR
+    # Sharp filler fills EVERY residual shortfall after SR
     # + herring reconstruction — not gated on "is this an all-filler
     # session". Computed POST-reconstruction on purpose: it absorbs puzzles
     # dropped above for an unparseable FEN, which the pre-reconstruction slot
@@ -2274,7 +2228,7 @@ async def _assemble_session_items(
             reconstructed=[], new_sr_items=new_sr_items, surviving_sr_keys=set(), is_warmup=False
         )
 
-    # D-09: deterministic (user_id, session_date)-seeded shuffle so a red
+    # Deterministic (user_id, session_date)-seeded shuffle so a red
     # herring's slot is never inferable from a fixed SR-then-herring layout,
     # and re-composition (e.g. this same call) is reproducible.
     random.Random(f"{user_id}:{today.isoformat()}").shuffle(reconstructed)
@@ -2284,7 +2238,7 @@ async def _assemble_session_items(
         for puzzle in reconstructed
         if puzzle.source == DrillSource.SR_ITEM
     }
-    # Phase 206 (D-06/D-07): the warm-up discriminant is a plain equality
+    # The warm-up discriminant is a plain equality
     # against zero — never a ratio, never a threshold — computed from
     # surviving_sr_keys alone and frozen onto the drill_sessions row below.
     is_warmup = len(surviving_sr_keys) == 0
@@ -2309,16 +2263,16 @@ async def _materialize_session_rows(
 ) -> ComposedSession:
     """The row-materialization stage: insert the `DrillItem`/`DrillSession`/
     `DrillSolve` rows for `items` and return the `ComposedSession`. Extracted
-    from `compose_and_materialize_session` (Phase 214 Plan 06, task 2). Only
-    called once `items.reconstructed` is non-empty — the caller handles the
-    empty case itself, since that path writes no rows at all.
+    from `compose_and_materialize_session`. Only called once
+    `items.reconstructed` is non-empty — the caller handles the empty case
+    itself, since that path writes no rows at all.
 
     7. The `DrillSession` insert (plus any new `drill_items` padding rows) is
        wrapped in a SAVEPOINT (`session.begin_nested()`). A concurrent second
        composition winning the `uq_drill_sessions_user_open` race — or
        colliding on a `drill_items` primary key from the same simultaneous
        padding scan — raises `IntegrityError`; that partial unique index is
-       the authority for "at most one open session per user" (T-189-14), so
+       the authority for "at most one open session per user", so
        the loser resumes the winner's session instead of erroring.
 
     (Sequential awaits only throughout, per CLAUDE.md's AsyncSession rule.)
@@ -2368,12 +2322,12 @@ async def _materialize_session_rows(
 
             puzzles: list[ComposedPuzzle] = []
             for position, puzzle in enumerate(items.reconstructed):
-                # Phase 192 Plan 02: `drill_solves.game_id` is now nullable
-                # (D-05) — a herring composed from an already-orphaned pool
-                # row (its source game deleted before this composition ran)
-                # legitimately has `game_id=None` here. SR items always carry
-                # a non-None `game_id` (sourced via an INNER JOIN to `games`
-                # above), so this is never a real NULL constraint violation.
+                # `drill_solves.game_id` is nullable — a herring composed from
+                # an already-orphaned pool row (its source game deleted before
+                # this composition ran) legitimately has `game_id=None` here. SR
+                # items always carry a non-None `game_id` (sourced via an INNER
+                # JOIN to `games` above), so this is never a real NULL
+                # constraint violation.
                 session.add(
                     DrillSolve(
                         session_id=drill_session.id,
@@ -2400,12 +2354,11 @@ async def _materialize_session_rows(
                 )
             await session.flush()
     except IntegrityError:
-        # uq_drill_sessions_user_open (the partial unique index enforcing
-        # D-12's at-most-one-open-session invariant) is the authority here —
-        # a concurrent request won the race, or a simultaneous padding scan
-        # collided on a drill_items primary key from the same underlying
-        # race. Resume the winner's session instead of surfacing a 500
-        # (T-189-14).
+        # uq_drill_sessions_user_open (the partial unique index enforcing the
+        # at-most-one-open-session invariant) is the authority here — a
+        # concurrent request won the race, or a simultaneous padding scan
+        # collided on a drill_items primary key from the same underlying race.
+        # Resume the winner's session instead of surfacing a 500.
         resumed = await open_session_for_user(session, user_id=user_id)
         if resumed is None:
             raise
@@ -2443,12 +2396,12 @@ def _position_answer_key(
 ) -> PositionAnswerKey:
     """Derive one position's key and server-graded set from its composition row.
 
-    Phase 235 key plus Phase 236 D-08 set, with the SAME source gating for both:
+    The answer key plus the server-graded set, with the SAME source gating for both:
     the SR columns (blob, best move) only for an SR item and the ladder only for
     a herring. A herring row can share (user, game, ply) with one of the user's
     own `game_flaws` rows, which must not be read as an SR blob. The herring's
-    color is the STORED `HerringPool.mover_color`, never ply parity (SEED-120
-    Pitfall 1); a herring row with no pool row yields a null color and no set.
+    color is the STORED `HerringPool.mover_color`, never ply parity; a herring
+    row with no pool row yields a null color and no set.
     """
     filler_row = SHARP_SET_BY_ID.get(sharp_puzzle_id) if sharp_puzzle_id is not None else None
     is_sr = source == DrillSource.SR_ITEM
@@ -2490,7 +2443,7 @@ async def _answer_keys_by_position(
     """One query: the unsolved puzzles' answer keys and server-graded sets, keyed
     by `drill_solves.position`.
 
-    Phase 235 (SEED-192, D-05/D-06/D-19). Outer-joins the three key sources
+    Outer-joins the three key sources
     (`game_flaws` live blob + `game_positions.best_move` for an SR item,
     `herring_pool.ladder` + `herring_pool.mover_color` for a herring); a sharp
     filler's key comes from the in-memory `SHARP_SET_BY_ID` (module global, so
@@ -2498,9 +2451,9 @@ async def _answer_keys_by_position(
     `HerringPool.ladder` columns are loaded because they are named in the select
     (the resume path would otherwise raise MissingGreenlet on the ladder).
 
-    Phase 236 (D-08): each value also carries the (pre-legality) server-graded
-    set from `server_graded_moves_for`; `mover_color` is selected so a herring's
-    ladder band is graded with its stored color.
+    Each value also carries the (pre-legality) server-graded set from
+    `server_graded_moves_for`; `mover_color` is selected so a herring's ladder
+    band is graded with its stored color.
 
     `user_id` is in the WHERE (V4/IDOR) and in every SR join. Source gating of
     the SR and ladder columns lives in `_position_answer_key`.
@@ -2559,14 +2512,13 @@ async def _answer_keys_by_position(
 async def _attach_answer_keys(
     session: AsyncSession, *, user_id: int, composed: ComposedSession
 ) -> ComposedSession:
-    """Attach the server answer key to every puzzle of `composed` (Phase 235, D-05).
+    """Attach the server answer key to every puzzle of `composed`.
 
     The single funnel for the fresh, resume and IntegrityError-resume return
     paths of `compose_and_materialize_session` (one query, not one per path).
-    Each key is checked for legality against the served FEN (D-07): an
-    illegal key or runner-up degrades to None and the puzzle is still served.
-    Phase 236 (D-08): the server-graded set is filtered to legal moves and is
-    empty whenever the legal key is null.
+    Each key is checked for legality against the served FEN: an illegal key or
+    runner-up degrades to None and the puzzle is still served. The server-graded
+    set is filtered to legal moves and is empty whenever the legal key is null.
     """
     if composed.session_id is None or not composed.puzzles:
         return composed
@@ -2595,43 +2547,43 @@ async def _attach_answer_keys(
 async def compose_and_materialize_session(
     session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
 ) -> ComposedSession:
-    """Compose or resume a Train session at the full POOL-07 75/25 mix.
+    """Compose or resume a Train session at the full 75/25 mix.
 
     1. Resolve `train_settings` (create-on-first-touch), today's local date,
        and the `(sr_slots, herring_slots)` split (`compose_slots`).
-    1b. D-06 (Plan 02): stamp the `pool_eligible_since` watermark if it is
-       still NULL and real material (`_material_flags`) is present — a user
+    1b. Stamp the `pool_eligible_since` watermark if it is still NULL and
+       real material (`_material_flags`) is present — a user
        whose first `drill_items` row is created by THIS composition call
        also gets the eligibility floor immediately, without waiting for a
        `GET /train/progress` read to discover it. Reuses the same
        `_material_flags`/`_stamp_pool_eligibility` pair `get_progress`
        already calls; stamp-if-null only, never an overwrite.
-    2. D-11: `expire_stale_sessions` closes out a stale open session before
+    2. `expire_stale_sessions` closes out a stale open session before
        anything else runs.
-    3. D-12: if an open session still exists after expiry, RESUME it
+    3. If an open session still exists after expiry, RESUME it
        (`load_session_puzzles`) rather than composing a new one — this is the
        only path taken on a second call inside an open session's window,
-       including an ad-hoc "train now" request from a future phase that hits
-       this same endpoint. EXCEPTION (191-06 UAT bug fix,
-       `_discard_if_untouched_and_resized`): an open session with ZERO
+       including a future ad-hoc "train now" request that hits
+       this same endpoint. EXCEPTION
+       (`_discard_if_untouched_and_resized`): an open session with ZERO
        recorded solves whose frozen `puzzle_count` no longer matches the
        CURRENT `puzzles_per_session` is discarded instead, falling through to
        fresh composition below — this is what lets a same-day settings edit
        actually take effect before the first puzzle is solved.
-    3b. D-10 guard (190.1 bug fix): if a COMPLETED session's window still
+    3b. Window guard: if a COMPLETED session's window still
        covers today (`completed_session_in_window`), return it instead of
        composing fresh — completing a session must not unlock an immediate
        replacement on reload; the next session arrives when the window rolls
-       over. Phase 191's ad-hoc "train now" (SCHD-03) will need an explicit
+       over. A future ad-hoc "train now" will need an explicit
        opt-out of this guard, not a bypass of the open-session resume above.
     4. Otherwise compose fresh: due `drill_items` (most-overdue-first) padded
        from `pool_entry_stmt` up to `sr_slots`, plus `herring_stmt` up to
        `herring_slots` (retried with `exclude_served=False` when the source
-       is exhausted). Cross-backfill (Pitfall 4): if one side comes up short,
-       the OTHER side fills the gap up to `n`, so a lopsided pool still
-       yields a full session whenever enough total material exists.
+       is exhausted). A short herring side pulls extra SR picks; any remaining
+       shortfall (short SR side or dropped FENs) is filled by sharp fillers
+       after reconstruction.
 
-       Quick task 260728-pgp: both SR sources are capped at
+       Both SR sources are capped at
        `MAX_ITEMS_PER_GAME_PER_SESSION` per `game_id`, SESSION-WIDE, via one
        shared `per_game_counts` Counter threaded through the due loop, the
        `sr_needed` padding loop, and the herring-shortfall cross-backfill
@@ -2642,28 +2594,27 @@ async def compose_and_materialize_session(
        seeded UNIFORM RANDOM pick (`pick_one_per_game`), never earliest-ply
        — a permanently-tracked `drill_items` row makes an earliest-ply bias
        there permanent, unlike the due side's transient ordering. A
-       cap-shortened SR side still routes through the existing
-       cross-backfill above rather than relaxing the cap.
+       cap-shortened SR side is filled by sharp fillers, never by relaxing the
+       cap.
     5. Reconstruct each puzzle's full FEN + arriving move via
        `fen_and_last_move_at_ply`; a puzzle whose FEN cannot be
-       reconstructed is dropped rather than served broken (never
-       backfilled — the slot arithmetic already ran).
+       reconstructed is dropped rather than served broken (the
+       post-reconstruction sharp-filler stage fills the gap).
     6. If nothing survives, return zero puzzles and write NO `drill_sessions`
-       row. Otherwise shuffle deterministically by `(user_id, today)` (D-09:
-       a red herring's position must not be inferable from ordering), reorder
-       a user's first-ever session to open on a sharp puzzle with a "several"
-       puzzle at puzzle 2 or 3 (Phase 240 D-13..D-15), and
-       materialize the session header plus one pre-inserted `DrillSolve` per
-       puzzle.
+       row. Otherwise shuffle deterministically by `(user_id, today)` (a red
+       herring's position must not be inferable from ordering), reorder a
+       user's first-ever session to open on a sharp puzzle with a "several"
+       puzzle at puzzle 2 or 3, and materialize the session header plus one
+       pre-inserted `DrillSolve` per puzzle.
     7. The `DrillSession` insert (plus any new `drill_items` padding rows) is
        wrapped in a SAVEPOINT (`session.begin_nested()`). A concurrent second
        composition winning the `uq_drill_sessions_user_open` race — or
        colliding on a `drill_items` primary key from the same simultaneous
        padding scan — raises `IntegrityError`; that partial unique index is
-       the authority for "at most one open session per user" (T-189-14), so
+       the authority for "at most one open session per user", so
        the loser resumes the winner's session instead of erroring.
-    8. Phase 235 (SEED-192, D-05): every return path (resume, completed
-       session, fresh, IntegrityError-resume) passes through
+    8. Every return path (resume, completed session, fresh,
+       IntegrityError-resume) passes through
        `_attach_answer_keys`, which attaches the server answer key, puzzle
        type and sharp runner-up to each puzzle.
 
@@ -2673,7 +2624,7 @@ async def compose_and_materialize_session(
     Args:
         session: AsyncSession. Caller commits.
         user_id: Authenticated user's internal PK (V4: never client-supplied).
-        now_utc: The current UTC instant (D-06: converted to a local date via
+        now_utc: The current UTC instant (converted to a local date via
             `local_today` using the user's stored timezone).
     """
     settings_row = await get_or_create_settings(session, user_id=user_id)
@@ -2681,10 +2632,10 @@ async def compose_and_materialize_session(
     today = local_today(settings_row.timezone, now_utc)
 
     has_drill_items, has_pool_candidates = await _material_flags(session, user_id=user_id)
-    # ROADMAP Success Criterion 5 (Phase 206): widened with sharp_filler_available()
-    # so a filler-only session still stamps the eligibility floor tick_days
-    # reads — without this term a warm-up user accrues NO streak regardless
-    # of what the UI says. Do not "simplify" this third term away.
+    # The third term, sharp_filler_available(), lets a filler-only session
+    # still stamp the eligibility floor tick_days reads — without it a warm-up
+    # user accrues NO streak regardless of what the UI says. Do not "simplify"
+    # this third term away.
     await _stamp_pool_eligibility(
         session,
         user_id=user_id,
@@ -2704,8 +2655,8 @@ async def compose_and_materialize_session(
         return await _attach_answer_keys(session, user_id=user_id, composed=resolved)
 
     items = await _assemble_session_items(session, user_id=user_id, today=today, n=n)
-    # Phase 240 (D-13..D-15): first-ever session only, after the D-09 shuffle and
-    # before materialize (positions are frozen into drill_solves.position).
+    # First-ever session only, after the shuffle and before materialize
+    # (positions are frozen into drill_solves.position).
     items = await _order_first_ever_session(session, user_id=user_id, today=today, items=items)
     if not items.reconstructed:
         return ComposedSession(
@@ -2734,19 +2685,19 @@ async def compose_and_materialize_session(
 
 
 # ---------------------------------------------------------------------------
-# Solve (POOL-08, Plan 05 Task 1)
+# Solve
 # ---------------------------------------------------------------------------
 
 
 def _wire_source(source: int) -> Literal["sr_item", "red_herring", "sharp_filler"]:
     """Convert a `DrillSource` integer to its published wire string — the
-    SINGLE mapping site for this conversion (RESEARCH Pitfall 2). Both
+    SINGLE mapping site for this conversion. Both
     `record_solve` (via `RecordedSolve.source`) and `reveal_for_puzzle`
     call this rather than each hand-rolling their own ternary. Exhaustive
     over `DrillSource` and raises on an unrecognized member rather than
     defaulting — a two-way `if/else` here would silently mislabel a third
     source as `"red_herring"` with no exception and no test failure unless a
-    test explicitly checks that source's wire value (Success Criterion 8).
+    test explicitly checks that source's wire value.
 
     Args:
         source: A `DrillSource` value (or the raw stored SMALLINT).
@@ -2770,19 +2721,17 @@ def _wire_source(source: int) -> Literal["sr_item", "red_herring", "sharp_filler
 class RecordedSolve:
     """Internal dataclass returned by `record_solve`.
 
-    `move_quality` (SEED-119) is the three-way scoring tier; `correct_move`
-    keeps its exact prior meaning (the SR ladder verdict, `move_quality !=
-    "wrong"`). Both are always populated with the FIRST recorded outcome,
-    even on a re-submit with a different tier.
+    `move_quality` is the three-way scoring tier; `correct_move` is the SR
+    ladder verdict (`move_quality != "wrong"`). Both are always populated with
+    the FIRST recorded outcome, even on a re-submit with a different tier.
 
-    Phase 206: `source` mirrors `puzzle_type`'s existing shape — populated
-    from `_wire_source(solve_row.source)`, landing on `SolveResponse`
-    synchronously with the solve mutation (RESEARCH Pitfall 1) so the three
-    D-19 frontend predicates never depend on the separate, asynchronous
-    reveal fetch.
+    `source` mirrors `puzzle_type`'s shape — populated from
+    `_wire_source(solve_row.source)`, landing on `SolveResponse` synchronously
+    with the solve mutation so the three frontend predicates never depend on
+    the separate, asynchronous reveal fetch.
 
-    Phase 211 (D-01/D-03/D-07): `vetted_moves` is the server-certified
-    "also fine" set — a property of the PUZZLE, populated on every return
+    `vetted_moves` is the server-certified "also fine" set — a property of the
+    PUZZLE, populated on every return
     path (claimed and lost-claim alike). `graded_es_before`/`graded_es_after`
     are ATTEMPT-scoped: non-null only when THIS call claimed the row AND the
     played move matched a vetted entry (the key-move override), None on
@@ -2790,9 +2739,9 @@ class RecordedSolve:
     outcome wins, and this call's graded numbers would describe a move that
     was never recorded.
 
-    Phase 235 (D-02): `graded_es_*` also cover a played sharp runner-up the
-    server graded from its own blob. `disagreement` (D-14/D-15) is true when the
-    server accepted a confirmed phone disagreement: attempt-scoped like graded ES
+    `graded_es_*` also cover a played sharp runner-up the server graded from
+    its own blob. `disagreement` is true when the server accepted a confirmed
+    phone disagreement: attempt-scoped like graded ES
     on the claimed path, read back from the stored `recheck.accepted` on the
     lost-claim path (the first recorded outcome wins).
     """
@@ -2816,12 +2765,12 @@ class RecordedSolve:
 class SolveClassification:
     """`_classify_and_certify_solve`'s result: the puzzle type and the
     server-certified "also fine" set, computed from ONE read of the live
-    blob/ladder so the two can never disagree (Phase 211).
+    blob/ladder so the two can never disagree.
 
-    Phase 235 (SEED-192): also carries the solve-time answer key derived through
+    Also carries the solve-time answer key derived through
     `answer_key_for` (the same function composition uses): `key_uci` and, for a
-    sharp SR item, `runner_up_uci` feed the D-14 inequality checks. `graded_moves`
-    is every move whose grade the server owns (D-02): the vetted entries plus,
+    sharp SR item, `runner_up_uci` feed the disagreement inequality checks. `graded_moves`
+    is every move whose grade the server owns: the vetted entries plus,
     for a sharp SR item, the runner-up. `vetted_moves` stays the DISPLAY list
     (a sharp runner-up must never render as "also fine").
     """
@@ -2855,7 +2804,7 @@ async def _classify_herring_solve(
         # this elsewhere). Serve no vetted moves rather than failing.
         return SolveClassification(puzzle_type="herring", vetted_moves=[])
     # V4 IDOR note: `HerringPool` carries no user scoping BY DESIGN
-    # (D-10 -- the pool is identity-blind at serve time), so the guard is
+    # (the pool is identity-blind at serve time), so the guard is
     # that `solve.herring_pool_id` was read from a `DrillSolve` row
     # already filtered by `DrillSolve.user_id == user_id` in
     # `record_solve`'s own SELECT -- a foreign `(session_id, position)`
@@ -2863,12 +2812,12 @@ async def _classify_herring_solve(
     # before this function is ever called.
     #
     # Mover color is the STORED `HerringPool.mover_color` column, NEVER
-    # ply parity (SEED-120 Pitfall 1: the generator's own board is
+    # ply parity (the generator's own board is
     # authoritative; a pool row's ply does not reconcile with the
     # parity convention). The SR branch does the opposite -- parity,
     # never a stored color -- for the opposite reason (see
     # `pool_entry_stmt`'s parity rationale).
-    # cast, not a ternary (IN-02): the CHECK-constrained column is trusted
+    # cast, not a ternary: the CHECK-constrained column is trusted
     # verbatim, matching `_ReconstructedPuzzle.side_to_move`'s pattern --
     # a ternary would silently map a corrupt value to "black".
     mover = cast(Literal["white", "black"], pool_row.mover_color)
@@ -2881,8 +2830,8 @@ async def _classify_herring_solve(
         ladder=pool_row.ladder,
         filler_solution_uci=None,
     )
-    # Phase 236 D-08: the graded set comes from the SAME function composition
-    # uses for the pre-attempt payload, so the two lists cannot drift.
+    # The graded set comes from the SAME function composition uses for the
+    # pre-attempt payload, so the two lists cannot drift.
     return SolveClassification(
         puzzle_type="herring",
         vetted_moves=vetted,
@@ -2900,11 +2849,11 @@ async def _classify_herring_solve(
 
 
 def _classify_filler_solve(solve: DrillSolve) -> SolveClassification:
-    """A sharp filler is always `"sharp"` (D-15 -- D-13's offline MultiPV-5
-    verification pass at authoring time is what makes this constant assertion
-    provably true rather than assumed; no `game_flaws` row exists for it), and
-    its vetted set is empty by the same rule as any other sharp puzzle. Its key
-    is the CSV `solution_uci`."""
+    """A sharp filler is always `"sharp"` (the offline MultiPV-5 verification
+    pass at authoring time is what makes this constant assertion provably true
+    rather than assumed; no `game_flaws` row exists for it), and its vetted set
+    is empty by the same rule as any other sharp puzzle. Its key is the CSV
+    `solution_uci`."""
     filler_row = (
         SHARP_SET_BY_ID.get(solve.sharp_puzzle_id) if solve.sharp_puzzle_id is not None else None
     )
@@ -2937,16 +2886,15 @@ async def _classify_sr_solve(session: AsyncSession, *, solve: DrillSolve) -> Sol
     ).scalar_one_or_none()
     missed_pv_lines = flaw_row.missed_pv_lines if flaw_row is not None else None
     mover_color = mover_color_for_ply(solve.ply)
-    # D-01 amendment (2026-08-16, Task 3 checkpoint round 2): the deep best
-    # move's UCI, read from the already-stored game_positions.best_move at the
-    # flaw's OWN ply (decision-keyed, un-shifted -- row `ply`'s best move for
-    # the pre-move position; see eval_apply's tier-4b reader for the same
-    # convention). No blob/worker-pipeline change (D-04 intact). NULL / no
-    # row / nulled game link (Phase 192 D-05) all degrade to the su-only
-    # list inside vetted_moves_from_pv_node -- never a failed solve.
-    # Phase 235 (D-05): read whenever the row has a game, so the solve-time key
-    # is derived from exactly the composition-time inputs (the key must exist
-    # even for a blob-less row).
+    # The deep best move's UCI, read from the already-stored
+    # game_positions.best_move at the flaw's OWN ply (decision-keyed,
+    # un-shifted -- row `ply`'s best move for the pre-move position; see
+    # eval_apply's tier-4b reader for the same convention). No blob or
+    # worker-pipeline change. NULL / no row / nulled game link all degrade to
+    # the su-only list inside vetted_moves_from_pv_node -- never a failed solve.
+    # Read whenever the row has a game, so the solve-time key is derived from
+    # exactly the composition-time inputs (the key must exist even for a
+    # blob-less row).
     best_uci: str | None = None
     if solve.game_id is not None:
         best_uci = (
@@ -2971,9 +2919,9 @@ async def _classify_sr_solve(session: AsyncSession, *, solve: DrillSolve) -> Sol
         if missed_pv_lines
         else []
     )
-    # Phase 236 D-08: the same function composition uses, so the pre-attempt
+    # The same function composition uses, so the pre-attempt
     # list and the path-1 list cannot drift. It appends the sharp runner-up
-    # (D-02) AFTER the vetted entries so a key always wins a UCI tie.
+    # AFTER the vetted entries so a key always wins a UCI tie.
     graded_moves = server_graded_moves_for(
         source=solve.source,
         ply=solve.ply,
@@ -2996,14 +2944,14 @@ async def _classify_and_certify_solve(
     session: AsyncSession, *, solve: DrillSolve
 ) -> SolveClassification:
     """Server-side puzzle-type classification AND key certification at solve
-    time (D-01, Phase 211 -- replaces `_classify_solve_puzzle_type`).
+    time.
 
     Dispatches on the row's source. Both non-SR early returns sit above the
     `game_flaws` read so the "no blob read for a non-SR source" invariant holds.
     The point of merging classification and certification into one function is
     that ONE blob/ladder read feeds the puzzle type, the certified key and the
     graded moves -- they can never be computed from two different reads of a
-    live blob. Phase 235: the solve-time key/runner-up/type go through
+    live blob. The solve-time key/runner-up/type go through
     `answer_key_for`, the same function composition uses.
     """
     if solve.source == DrillSource.RED_HERRING:
@@ -3013,15 +2961,14 @@ async def _classify_and_certify_solve(
     return await _classify_sr_solve(session, solve=solve)
 
 
-def _override_for_key_move(
+def _matching_server_graded_move(
     played_move: str, graded: list[ServerGradedMove]
 ) -> ServerGradedMove | None:
     """The server-graded entry the played move matches, or None for an off-key move.
 
-    A plain first-match lookup by exact UCI equality -- the D-07 override's
-    predicate, decomposed as a sibling of `_compute_correct_guess` (the
-    pre-existing server-override-of-client-assertion this phase extends to
-    `move_quality`).
+    A plain first-match lookup by exact UCI equality -- the override
+    predicate, a sibling of `_compute_correct_guess` (the other server
+    override of a client assertion).
     """
     for entry in graded:
         if entry.uci == played_move:
@@ -3032,7 +2979,7 @@ def _override_for_key_move(
 def _compute_correct_guess(
     guess: Literal["critical", "several"], puzzle_type: Literal["sharp", "soft", "herring"]
 ) -> bool:
-    """P-02: grade the metacognition guess against the server-computed puzzle type.
+    """Grade the metacognition guess against the server-computed puzzle type.
 
     "critical" is correct only for a sharp puzzle; "several" is correct for
     both "soft" (avoid-the-blunder) and "herring" (several fine moves) —
@@ -3046,7 +2993,7 @@ def _compute_correct_guess(
 @dataclass(frozen=True)
 class ResolvedGrade:
     """`_resolve_grade`'s decision: the recorded tier, the guess verdict, whether a
-    phone disagreement was accepted (D-14) and the server-graded ES pair (None
+    phone disagreement was accepted and the server-graded ES pair (None
     unless a server-graded move matched)."""
 
     effective_quality: Literal["good", "inaccuracy", "wrong"]
@@ -3063,25 +3010,24 @@ def _disagreement_accepted(
     classification: SolveClassification,
     recheck: SolveRecheck | None,
 ) -> bool:
-    """D-14: should this solve's confirmed phone disagreement earn the guess point?
+    """Should this solve's confirmed phone disagreement earn the guess point?
 
     Pure. True only when every check below holds; otherwise the claim is still
-    stored (D-17) but grades exactly as without it. The checks:
+    stored but grades exactly as without it. The checks:
 
-    - a recheck arrived and its outcome is "confirmed" (D-13: a "resolved"
+    - a recheck arrived and its outcome is "confirmed" (a "resolved"
       re-check means the phone agreed with the key after all);
     - both payload ES pairs, the 1.5 s pair and the 3 s pair, classify as good
       (`classify_severity` of key minus played is None), i.e. the phone's own
-      numbers actually say the played move is as good as the key (D-10);
-    - the LIVE puzzle type is sharp (Pitfall 4: the live type decides, not the
+      numbers actually say the played move is as good as the key;
+    - the LIVE puzzle type is sharp (the live type decides, not the
       type the client was sent; a soft or herring puzzle already credits
       "several" and has no sharp-key disagreement to resolve);
     - the server has a key, and the played move is neither the key (not a
-      disagreement) nor the sharp runner-up (the server grades that itself,
-      D-02);
+      disagreement) nor the sharp runner-up (the server grades that itself);
     - the client's asserted tier is "good".
 
-    An inaccuracy-triggered re-check (quick 261008-ob1) always fails the 1.5 s
+    An inaccuracy-triggered re-check always fails the 1.5 s
     check, so it never earns the guess point here; its upgraded tier reaches the
     record through the client tier (path 3 of `_resolve_grade`).
     """
@@ -3108,16 +3054,16 @@ def _resolve_grade(
     classification: SolveClassification,
     recheck: SolveRecheck | None,
 ) -> ResolvedGrade:
-    """The one pure grading decision for a solve (Phase 211 + Phase 235).
+    """The one pure grading decision for a solve.
 
-    1. A played move the server grades itself (a vetted entry or, D-02, the sharp
-       runner-up) takes the server's tier and ES pair and DISCARDS the client's
-       (Phase 211 D-03/D-07). Wins over a confirmed claim.
-    2. Else an accepted confirmed phone disagreement (D-14): tier "good" and
+    1. A played move the server grades itself (a vetted entry or the sharp
+       runner-up) takes the server's tier and ES pair and DISCARDS the
+       client's. Wins over a confirmed claim.
+    2. Else an accepted confirmed phone disagreement: tier "good" and
        either guess earns the point.
     3. Else the client's tier and the server-computed guess verdict.
     """
-    graded = _override_for_key_move(played_move, classification.graded_moves)
+    graded = _matching_server_graded_move(played_move, classification.graded_moves)
     if graded is not None:
         return ResolvedGrade(
             effective_quality=graded.tier,
@@ -3156,7 +3102,7 @@ async def _advance_drill_item(
     Loads the current `TrainSettingsRow` (create-on-first-touch — a session
     could not have been composed without one, but this stays defensive),
     converts `now_utc` to the user's local session day, and delegates the
-    actual state transition to the pure `apply_result` (POOL-04/05/06).
+    actual state transition to the pure `apply_result`.
     """
     settings_row = await get_or_create_settings(session, user_id=user_id)
     today = local_today(settings_row.timezone, now_utc)
@@ -3216,36 +3162,31 @@ async def _mark_session_complete_if_done(
 ) -> bool:
     """Complete the session once every still-servable puzzle has been recorded.
 
-    "Still servable" now means two DIFFERENT things depending on `source`
-    (Phase 192, D-05 — `drill_solves.game_id` went from `NOT NULL` +
-    `CASCADE` to nullable + `SET NULL`, so a deleted game no longer deletes
-    the row):
+    "Still servable" means two DIFFERENT things depending on `source`
+    (`drill_solves.game_id` is nullable with `SET NULL`, so a deleted game
+    does not delete the row):
 
     - `SR_ITEM`: excluded from `remaining` when EITHER its `games` row OR its
       `game_flaws` row has vanished. An orphaned SR row can never be
       attempted (the game it drills is gone), so it must not block
-      completion — this is the WR-02 fix's exact reasoning, extended from
-      "flaw row gone" to also cover "game row gone". Bug-fix note: this
-      `Game.id.isnot(None)` clause is MANDATORY, not optional.
-      189-RESEARCH.md's assumption A2 (that the outer join needed no
-      parallel `or_` guard here) is wrong: before this phase, a deleted game
-      CASCADE-deleted the `drill_solves` row, which is what let `remaining`
-      reach 0 in the first place. After `SET NULL`, an orphaned SR row
-      survives forever with `solved_at IS NULL` and would pin `remaining`
-      above zero, reproducing the exact stuck-session bug WR-02 fixed.
+      completion. The `Game.id.isnot(None)` clause is MANDATORY: a deleted
+      game does not CASCADE-delete the `drill_solves` row (`SET NULL`), so an
+      orphaned SR row survives forever with `solved_at IS NULL` and would pin
+      `remaining` above zero, leaving the session stuck on "resume" (the same
+      stuck-session shape as the vanished flaw row described below).
     - `RED_HERRING`: never excluded by EITHER of the two SR clauses below (an
       unsolved herring with a nulled game link is still perfectly servable off
-      its `herring_pool` row, D-03, and must keep counting toward `remaining`
+      its `herring_pool` row, and must keep counting toward `remaining`
       until solved — the opposite of the SR-orphan treatment above). It is
       excluded by its OWN third clause when the `herring_pool` row itself does
-      not resolve; see the SEED-123 bug-fix note below.
+      not resolve; see the bug-fix note below.
 
-    Bug fix (SEED-123, 2026-07-28): a herring whose `herring_pool` row does not
-    resolve is now excluded from `remaining`. `load_session_puzzles` has always
+    Bug fix: a herring whose `herring_pool` row does not resolve is excluded
+    from `remaining`. `load_session_puzzles` has always
     skipped such a row ("drop, never serve broken"), so counting it here made it
     unservable AND unsatisfiable: `remaining` could never reach 0 and the session
     stuck on "resume" until `expires_on` passed. This is the same stuck-session
-    shape as WR-02 and D-05 above, and it is reachable in normal operation, not
+    shape as the SR orphan cases above, and it is reachable in normal operation, not
     just across a migration — `drill_solves.herring_pool_id` is `ON DELETE SET
     NULL`, so deleting ANY `herring_pool` row (a prune, a regeneration) orphans
     the pointer on every in-flight session that drew it. The clause tests the
@@ -3254,7 +3195,7 @@ async def _mark_session_complete_if_done(
     2026-07-28: every session composed before the pool was first generated
     carried `herring_pool_id IS NULL` and was unfinishable.
 
-    Bug fix (WR-02, pre-Phase-192): excludes SR-source rows whose backing
+    Bug fix: excludes SR-source rows whose backing
     `game_flaws` row has vanished under reclassification. `load_session_puzzles`
     documents this as "lazy eviction" (a delete-then-insert reclassify can
     drop the flaw row a `drill_solves` SR item points at) and simply skips
@@ -3289,14 +3230,14 @@ async def _mark_session_complete_if_done(
                 DrillSolve.source != DrillSource.SR_ITEM,
                 GameFlaw.game_id.isnot(None),
             ),
-            # Phase 192 (D-05): mandatory parallel leniency clause — an
-            # orphaned SR row (source-game deleted) must be excluded here the
-            # same way an orphaned herring must NOT be. See docstring above.
+            # Mandatory parallel leniency clause — an orphaned SR row
+            # (source-game deleted) must be excluded here the same way an
+            # orphaned herring must NOT be. See docstring above.
             or_(
                 DrillSolve.source != DrillSource.SR_ITEM,
                 Game.id.isnot(None),
             ),
-            # SEED-123: the herring's own leniency clause, mirroring
+            # The herring's own leniency clause, mirroring
             # `load_session_puzzles`'s `if herring_row is None: continue`. A
             # herring that cannot be served must not block completion. Tests
             # the JOINED ROW, not `DrillSolve.herring_pool_id` — the pool row
@@ -3307,10 +3248,9 @@ async def _mark_session_complete_if_done(
                 DrillSolve.source != DrillSource.RED_HERRING,
                 HerringPool.id.isnot(None),
             ),
-            # Phase 206 (SEED-123 symmetry): a sharp filler with a NULL
-            # identity column cannot be served (`load_session_puzzles`
-            # already `continue`s past it), so it must not pin the session
-            # open either.
+            # Same leniency for a sharp filler with a NULL identity column: it
+            # cannot be served (`load_session_puzzles` already `continue`s past
+            # it), so it must not pin the session open either.
             or_(
                 DrillSolve.source != DrillSource.SHARP_FILLER,
                 DrillSolve.sharp_puzzle_id.isnot(None),
@@ -3330,7 +3270,7 @@ async def _mark_session_complete_if_done(
 async def _apply_completion_tick(
     session: AsyncSession, *, user_id: int, session_id: int, now_utc: datetime.datetime
 ) -> None:
-    """D-03: tick the shield/count IMMEDIATELY when a session completes,
+    """Tick the shield/count IMMEDIATELY when a session completes,
     correctly composed with the lazy miss walk so neither path can
     double-count or skip a scheduled day.
 
@@ -3343,15 +3283,15 @@ async def _apply_completion_tick(
     Order of operations, all sequential awaits on this ONE `AsyncSession`
     (CLAUDE.md — never `asyncio.gather`):
 
-    1. Resolve `session_date` scoped by `(id, user_id)` together (T-193-07
-       IDOR guard) — a foreign or invented `session_id` resolves to nothing
+    1. Resolve `session_date` scoped by `(id, user_id)` together (IDOR
+       guard) — a foreign or invented `session_id` resolves to nothing
        and this function returns without writing.
     2. `get_or_create_settings` + `local_today` for the current settings row.
     3. `settle_streak_snapshot` FIRST — the lazy walk runs before the
        completion is applied, so every scheduled day whose window has
        already closed is judged before this write, and a completion on a
        later day can never let an earlier missed scheduled day escape
-       judgement (RESEARCH.md Pitfall 2). `session_window(today, mask)` is
+       judgement. `session_window(today, mask)` is
        strictly after `today`, so today's own scheduled day is never judged
        by this walk — there is no conflict between the two paths on the
        current day.
@@ -3359,9 +3299,9 @@ async def _apply_completion_tick(
        (`view.settled`), never a stale pre-settle one:
        `"fulfilled"` when `session_date` is scheduled AND
        (`settled_through` is None OR `session_date > settled_through`);
-       otherwise `"credit_only"` — an off-day session (D-07) or a late
-       completion of an already-frozen day (RESEARCH.md Pitfall 2, Phase 191
-       D-18). `"credit_only"` returns `streak_count`/`settled_through`
+       otherwise `"credit_only"` — an off-day session or a late
+       completion of an already-frozen day. `"credit_only"` returns
+       `streak_count`/`settled_through`
        unchanged by construction, so the two branches differ ONLY in which
        discriminant is passed.
     5. Persist the already-bounded integers `_judge_one_day` returned — never
@@ -3372,10 +3312,11 @@ async def _apply_completion_tick(
        boundary); the credit-only write needs no boundary guard because it
        never moves the boundary.
 
-    D-08 needs no code here: only `status='completed'` sessions ever reach
-    this function (the caller gates on the claim that just completed the
-    session), so a started-and-abandoned session is judged by the lazy walk
-    as a plain missed scheduled day, never by this eager path.
+    An abandoned session needs no code here: only `status='completed'`
+    sessions ever reach this function (the caller gates on the claim that
+    just completed the session), so a started-and-abandoned session is judged
+    by the lazy walk as a plain missed scheduled day, never by this eager
+    path.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -3436,7 +3377,7 @@ async def _apply_completion_tick(
 
 
 def _merged_telemetry(patch: dict[str, object]) -> ColumnElement[Any]:
-    """SQL expression merging `patch` into `drill_solves.telemetry` (D-01).
+    """SQL expression merging `patch` into `drill_solves.telemetry`.
 
     `coalesce(telemetry, '{}'::jsonb) || patch`: the existing keys survive, the
     patch keys are added or overwritten (last write wins per key), and a SQL NULL
@@ -3458,7 +3399,7 @@ async def merge_solve_telemetry(
     patch: dict[str, object],
     phone_grade: PhoneGrade | None = None,
 ) -> bool:
-    """Merge a review-flush telemetry patch into the caller's solved row (D-03).
+    """Merge a review-flush telemetry patch into the caller's solved row.
 
     One UPDATE, no SELECT first, no join to `drill_sessions` and no session-status
     check: a flush for the last puzzle always lands after the session completed,
@@ -3471,7 +3412,7 @@ async def merge_solve_telemetry(
             only in combination with `user_id`).
         position: The puzzle's frozen 0-based order within the session.
         patch: Validated review telemetry keys, no None values.
-        phone_grade: Phase 236 (D-12) the validated late phone grading reading,
+        phone_grade: The validated late phone grading reading,
             or None. Written write-once to `drill_solves.phone_grade` in the same
             UPDATE (an existing record always wins); never merged into telemetry.
 
@@ -3481,7 +3422,7 @@ async def merge_solve_telemetry(
     """
     values: dict[str, Any] = {"telemetry": _merged_telemetry(patch)}
     if phone_grade is not None:
-        # D-12 write-once: an existing record (from the solve POST or an earlier
+        # Write-once: an existing record (from the solve POST or an earlier
         # flush) wins, atomically inside this one UPDATE. Deliberately NOT a WHERE
         # guard: that would make a second flush affect 0 rows, which the route
         # reports as 404, and would drop that flush's telemetry.
@@ -3515,24 +3456,24 @@ async def record_solve(
     recheck: SolveRecheck | None = None,
     phone_grade: PhoneGrade | None = None,
 ) -> RecordedSolve | None:
-    """Record one puzzle's outcome and advance the interval ladder (POOL-08).
+    """Record one puzzle's outcome and advance the interval ladder.
 
     1. Resolve the `drill_solves` row by `(session_id, position)`, scoped by
-       `user_id` in the WHERE clause (T-189-16 / IDOR guard) — a foreign or
+       `user_id` in the WHERE clause (IDOR guard) — a foreign or
        invented `session_id` resolves to nothing, so this returns None and
        the router raises 404.
     2. Compute `correct_guess` server-side from the LIVE blob
        (`_classify_and_certify_solve`) — the client can never assert either
-       verdict it does not own (P-02). Phase 211 (D-03/D-07): the SAME blob
-       read also certifies the vetted "also fine" set; when `played_move`
-       matches a vetted entry, the server recomputes `move_quality` from its
-       own stored evals and DISCARDS the client's asserted tier (the
-       key-move override — `move_quality` joins `correct_guess` on the list
-       of verdicts the client does not own). Off-key moves keep the client's
-       assertion unchanged (D-04's accepted residual).
+       verdict it does not own. The SAME blob read also certifies the vetted
+       "also fine" set; when `played_move` matches a vetted entry, the server
+       recomputes `move_quality` from its own stored evals and DISCARDS the
+       client's asserted tier (the key-move override — `move_quality` joins
+       `correct_guess` on the list of verdicts the client does not own).
+       Off-key moves keep the client's assertion unchanged (an accepted
+       residual).
     3. Claim the row with a conditional UPDATE carrying `solved_at IS NULL`
-       in its WHERE clause. This is the WHOLE concurrency guarantee
-       (T-189-19): under READ COMMITTED, a second concurrent UPDATE blocks on
+       in its WHERE clause. This is the WHOLE concurrency guarantee: under
+       READ COMMITTED, a second concurrent UPDATE blocks on
        the row lock, then re-evaluates its WHERE clause against the first
        transaction's now-committed row once unblocked — so at most one
        transaction ever claims a zero-to-nonzero `solved_at` transition.
@@ -3542,10 +3483,10 @@ async def record_solve(
     4. For an SR-source row ONLY, advance `drill_items` via `apply_result`
        (`_advance_drill_item` on a win, `_read_drill_item_state` on a loss —
        either way returning the CURRENT state, never a stale pre-solve one).
-       A red-herring row touches no `drill_items` row (POOL-08).
+       A red-herring row touches no `drill_items` row.
     5. Recompute session completion (`_mark_session_complete_if_done`) after
        every call, win or lose — idempotent via the `status = 'open'` guard.
-    6. D-03 (Plan 02): when THIS call's claim (`solved_at IS NULL` -> now
+    6. When THIS call's claim (`solved_at IS NULL` -> now
        set) is what just completed the session, call
        `_apply_completion_tick` inside the SAME transaction — a rollback can
        never leave a half-applied tick. Gated on `claimed AND
@@ -3564,23 +3505,20 @@ async def record_solve(
         guess: The user's pre-attempt "critical vs several fine" guess.
         played_move: The move the user actually played (UCI).
         move_quality: The three-way move-quality tier asserted by the client
-            (T-189-18, accepted per SEED-037; SEED-119 widened the boolean to
-            a tier). Phase 211 (D-07): for a key move this assertion is
+            (an accepted trust boundary). For a key move this assertion is
             DISCARDED in favor of the server's own tier — see step 2 above.
             `correct_move` — what feeds `apply_result` and the SR ladder — is
             derived from the post-override `effective_quality` as
-            `!= "wrong"`, keeping the ladder's pass/fail semantics
-            byte-identical to pre-SEED-119 for off-key moves (an inaccuracy
-            passed then and passes now).
+            `!= "wrong"`, so an inaccuracy still passes the ladder.
         now_utc: The current UTC instant.
-        telemetry: Phase 233 (D-01/D-02) validated solve-telemetry keys (no None
+        telemetry: Validated solve-telemetry keys (no None
             values), merged into `drill_solves.telemetry` inside the claim UPDATE.
             None leaves the column untouched (SQL NULL). Never read by grading.
-        recheck: Phase 235 (D-14/D-17/D-18) the validated disagreement re-check, or
+        recheck: The validated disagreement re-check, or
             None. Every re-check is stored in `drill_solves.recheck` with the
             server-added `accepted` flag; only an accepted one changes grading
             (see `_disagreement_accepted`). None leaves the column SQL NULL.
-        phone_grade: Phase 236 (D-01/D-02/D-13) the validated phone grading
+        phone_grade: The validated phone grading
             reading, or None. Audit-only: stored in `drill_solves.phone_grade`
             by the claim UPDATE and NEVER passed to `_resolve_grade`. None
             leaves the column SQL NULL.
@@ -3604,11 +3542,10 @@ async def record_solve(
     classification = await _classify_and_certify_solve(session, solve=solve_row)
     puzzle_type = classification.puzzle_type
     guess_int = int(DrillGuess.CRITICAL if guess == "critical" else DrillGuess.SEVERAL)
-    # Phase 211 (D-03/D-07) + Phase 235 (D-02/D-14): one pure decision. A played
-    # server-graded move (vetted entry or sharp runner-up) takes the server's tier
-    # and discards the client's; else an accepted confirmed phone disagreement
-    # credits either guess; else the client's tier stands (D-04's accepted
-    # residual for off-key moves).
+    # One pure decision. A played server-graded move (vetted entry or sharp
+    # runner-up) takes the server's tier and discards the client's; else an
+    # accepted confirmed phone disagreement credits either guess; else the
+    # client's tier stands (an accepted residual for off-key moves).
     resolved = _resolve_grade(
         guess=guess,
         played_move=played_move,
@@ -3618,10 +3555,9 @@ async def record_solve(
     )
     correct_guess = resolved.correct_guess
     effective_quality = resolved.effective_quality
-    # SEED-119: correct_move is DERIVED from move_quality — this is what
-    # keeps the SR ladder's semantics identical to pre-SEED-119 (an
-    # inaccuracy passed then and passes now, since it derives to True here).
-    # Phase 211: both derivations read `effective_quality` (the value AFTER
+    # correct_move is DERIVED from move_quality — this is what keeps the SR
+    # ladder's semantics unchanged (an inaccuracy passes, since it derives to
+    # True here). Both derivations read `effective_quality` (the value AFTER
     # the key-move override above), never the raw client argument — an
     # overridden key move must pass the SR ladder on the server's tier.
     correct_move = effective_quality != "wrong"
@@ -3635,21 +3571,21 @@ async def record_solve(
         "correct_guess": correct_guess,
         "solved_at": now_utc,
     }
-    # D-01: add the column ONLY when there is a patch. Omitting it keeps "no
+    # Add the column ONLY when there is a patch. Omitting it keeps "no
     # telemetry" a true SQL NULL (asyncpg would write Python None as a JSON null
     # VALUE, which `IS NULL` skips and which would break the later `||` merge).
     if telemetry is not None:
         claim_values["telemetry"] = _merged_telemetry(telemetry)
-    # D-17: every re-check is stored, accepted or not, so answer-key quality can
-    # be judged from prod solves. Omitted when absent so the column stays SQL NULL
-    # (memory project_asyncpg_jsonb_null_vs_sql_null); a plain set, one write per
+    # Every re-check is stored, accepted or not, so answer-key quality can
+    # be judged from prod solves. Omitted when absent so the column stays SQL
+    # NULL (see the telemetry comment above); a plain set, one write per
     # solve (the claim UPDATE is guarded by solved_at IS NULL).
     if recheck is not None:
         claim_values["recheck"] = {**recheck.model_dump(), "accepted": resolved.disagreement}
-    # Phase 236 D-13: the phone's grading reading is written once by this claim
-    # UPDATE (the solved_at IS NULL guard makes the first write win). Omitted when
-    # absent so the column stays SQL NULL (memory project_asyncpg_jsonb_null_vs_sql_null).
-    # D-02: deliberately not an input to _resolve_grade above.
+    # The phone's grading reading is written once by this claim UPDATE (the
+    # solved_at IS NULL guard makes the first write win). Omitted when absent
+    # so the column stays SQL NULL (see the telemetry comment above).
+    # Deliberately not an input to _resolve_grade above.
     if phone_grade is not None:
         claim_values["phone_grade"] = phone_grade.model_dump()
     claim_result = await session.execute(
@@ -3667,8 +3603,8 @@ async def record_solve(
     item_status: Literal["active", "mastered", "parked"] | None = None
     streak: int | None = None
     due_date: datetime.date | None = None
-    # Phase 211: attempt-scoped graded evals — set only on the claimed path
-    # below, and only for a key-move override (see RecordedSolve's docstring).
+    # Attempt-scoped graded evals — set only on the claimed path below, and
+    # only for a key-move override (see RecordedSolve's docstring).
     graded_es_before: float | None = None
     graded_es_after: float | None = None
     disagreement = False
@@ -3683,8 +3619,8 @@ async def record_solve(
         graded_es_before = resolved.graded_es_before
         graded_es_after = resolved.graded_es_after
         disagreement = resolved.disagreement
-        # Phase 192 (D-05): `solve_row.game_id` is `int | None` now that the
-        # column is nullable. `DrillItem.game_id` stays NOT NULL + CASCADE
+        # `solve_row.game_id` is `int | None` since the column is nullable.
+        # `DrillItem.game_id` stays NOT NULL + CASCADE
         # (SR items are always sourced from the user's own live or lazily
         # evicted game), so when an SR row's game link has been nulled, the
         # backing `drill_items` row was never created in the first place for
@@ -3719,7 +3655,7 @@ async def record_solve(
         ).one()
         stored_correct_guess = bool(stored.correct_guess)
         stored_correct_move = bool(stored.correct_move)
-        # Legacy-tier fallback (SEED-119) lives once in _resolve_move_quality_tier
+        # Legacy-tier fallback lives once in _resolve_move_quality_tier
         # — shared with _resume_session's solved_results builder.
         stored_move_quality = _resolve_move_quality_tier(stored.move_quality, stored_correct_move)
         # First recorded outcome wins: the stored record's accepted flag, not this call's.
@@ -3735,9 +3671,9 @@ async def record_solve(
     session_complete = await _mark_session_complete_if_done(
         session, session_id=session_id, now_utc=now_utc
     )
-    # D-03 eager tick: only when THIS call's claim is what just completed the
+    # Eager tick: only when THIS call's claim is what just completed the
     # session. `claimed=True` means `solved_at` was NULL before this call
-    # (T-193-06's `solved_at IS NULL` claim guard), so before this call the
+    # (the `solved_at IS NULL` claim guard), so before this call the
     # session could not yet have been complete; if it is complete now, this
     # is exactly the transition point, and `_mark_session_complete_if_done`'s
     # own `status = 'open'` guard means that UPDATE fires at most once. A
@@ -3769,7 +3705,7 @@ async def record_solve(
 
 
 # ---------------------------------------------------------------------------
-# Reveal (POOL-10, Plan 05 Task 2)
+# Reveal
 # ---------------------------------------------------------------------------
 
 # Sentinel strings the router maps to 404/409 — kept distinct from a real
@@ -3782,60 +3718,57 @@ RevealNotAttempted = Literal["not_attempted"]
 class RevealedPuzzle:
     """Internal dataclass returned by `reveal_for_puzzle` on a solved puzzle.
 
-    `game_id` is `int | None` (Phase 192, D-01/D-05): `None` means the
-    puzzle's source game has since been deleted — only reachable for a
-    `RED_HERRING` row (an orphaned `SR_ITEM` row returns `RevealNotFound`
-    instead, see the function docstring).
+    `game_id` is `int | None`: `None` for a sharp filler (no source game) or a
+    red herring whose source game was deleted; an orphaned `SR_ITEM` returns
+    `RevealNotFound` instead (see the function docstring).
     """
 
     game_id: int | None
     ply: int
     fen: str
     played_in_game_san: str | None
-    # 190.1-01, D-05: the game move as UCI (SAN -> UCI derivation below) so
+    # The game move as UCI (SAN -> UCI derivation below) so
     # the client can dispatch its own reveal-time engine search. Same
     # post-attempt 409 gate as every other answer-key field.
     played_in_game_move_uci: str | None
     puzzle_type: Literal["sharp", "soft", "herring"]
     source: Literal["sr_item", "red_herring", "sharp_filler"]
     has_tactic_lines: bool
-    # Phase 206 (D-20): the sharp filler's motif label, read straight from
-    # the committed data file's precomputed `motif` column. None for every
-    # SR_ITEM/RED_HERRING row — there is no motif taxonomy for those today.
+    # The sharp filler's motif label, read straight from the committed data
+    # file's precomputed `motif` column. None for every SR_ITEM/RED_HERRING
+    # row — there is no motif taxonomy for those today.
     motif: str | None
 
 
 async def reveal_for_puzzle(
     session: AsyncSession, *, user_id: int, session_id: int, position: int
 ) -> RevealedPuzzle | RevealNotFound | RevealNotAttempted:
-    """Return the post-attempt answer key for one puzzle (POOL-10 reveal gate).
+    """Return the post-attempt answer key for one puzzle (reveal gate).
 
     Resolves the `drill_solves` row scoped by `user_id` AND `session_id`
-    (T-189-16 / IDOR guard) — a foreign or invented `(session_id, position)`
-    returns `"not_found"`. `solved_at IS NULL` returns `"not_attempted"`
-    (T-189-17): the puzzle type and in-game move are unreachable before the
-    attempt is recorded.
+    (IDOR guard) — a foreign or invented `(session_id, position)`
+    returns `"not_found"`. `solved_at IS NULL` returns `"not_attempted"`: the
+    puzzle type and in-game move are unreachable before the attempt is
+    recorded.
 
-    Phase 192 (D-01/D-05): `Game` and `HerringPool` are now OUTER joins — a
-    `RED_HERRING` row's source game can be gone (still fully revealable off
-    its `herring_pool` row, D-03), and an `SR_ITEM` row's source game can
-    also be gone (D-05, `SET NULL`). AFTER the `not_attempted` gate: when
-    `game is None` and `solve.source == SR_ITEM`, this returns `"not_found"`
-    — this preserves the exact pre-D-05 behavior, where a deleted game
-    CASCADE-deleted the whole `drill_solves` row and the reveal query
-    returned no row at all. There is no "reveal an orphaned SR item" state to
-    invent; the puzzle simply cannot be re-shown once its source game is
-    gone.
+    `Game` and `HerringPool` are OUTER joins — a `RED_HERRING` row's source
+    game can be gone (still fully revealable off its `herring_pool` row), and
+    an `SR_ITEM` row's source game can also be gone (`SET NULL`). AFTER the
+    `not_attempted` gate: when `game is None` and `solve.source == SR_ITEM`,
+    this returns `"not_found"`, as if the row did not exist. There is no
+    "reveal an orphaned SR item" state to invent; the puzzle simply cannot be
+    re-shown once its source game is gone.
 
-    190.1-03 (D-01/D-05): the answer key here is deliberately thin — the
-    puzzle type, the in-game move (SAN + UCI), and a tactic-lines pointer.
+    The answer key here is deliberately thin — the puzzle type, the in-game
+    move (SAN + UCI), and a tactic-lines pointer.
     The best move, the best line, and every displayed eval are computed
     CLIENT-SIDE by the grading engine (`useTrainGradingEngine.ts`'s
     `gradeMove` and reveal-time searches) — never derived here, never stored,
     never sent over the wire — because a server-stored Stockfish eval and the
     client's own WASM search are not guaranteed to agree bit-for-bit
-    (project_eval_nondeterminism), and this endpoint must never be a second,
-    contradicting source of truth for a number the reveal panel displays.
+    (Stockfish evals are not reproducible across machines), and this endpoint
+    must never be a second, contradicting source of truth for a number the
+    reveal panel displays.
 
     `has_tactic_lines` is a pointer, not a payload — the client fetches the
     steppable PV line from the pre-existing
@@ -3866,35 +3799,33 @@ async def reveal_for_puzzle(
     if solve.solved_at is None:
         return "not_attempted"
     if game is None and solve.source == DrillSource.SR_ITEM:
-        # D-05: an orphaned SR row is unservable/unrevealable — this is the
-        # exact pre-D-05 CASCADE outcome (the row, and therefore this query's
-        # result, used to not exist at all). Never invent a new "reveal with
-        # an empty FEN" state for this case.
+        # An orphaned SR row is unservable/unrevealable: report it as if the
+        # row did not exist. Never invent a new "reveal with an empty FEN"
+        # state for this case.
         return "not_found"
-    # Phase 206 (RESEARCH Pitfall 2, site 1): the sharp set is an in-memory
-    # dict, not a table — it cannot become a third `outerjoin` above, so it
-    # is resolved here by `sharp_puzzle_id` instead.
+    # The sharp set is an in-memory dict, not a table — it cannot become a
+    # third `outerjoin` above, so it is resolved here by `sharp_puzzle_id`
+    # instead.
     sharp_row = (
         SHARP_SET_BY_ID.get(solve.sharp_puzzle_id)
         if solve.source == DrillSource.SHARP_FILLER
         else None
     )
 
-    # Bug fix (quick 260902-qf7): REVERSES D-06's widening to the source
-    # game's owner. `herring_pool` is a globally shared, identity-blind pool
-    # (D-10), so a RED_HERRING row's `game_id` routinely points at ANOTHER
-    # user's game — 453 of 499 served herrings in prod. D-06 read the
-    # resulting None as "silently degrading" a live game row and widened the
-    # lookup to `game.user_id`; that was backwards. The solving user never
-    # played that move, so labelling it "Played in game" in their reveal
-    # states something false (observed: a herring from another user's game
-    # rendered the reveal card "Best move / Played in game: a3"). A move is
-    # only "played in game" when the solving user owns the source game, so
+    # Bug fix: the SAN lookup is scoped to the SOLVING user's own game, not
+    # the source game's owner. `herring_pool` is a globally shared,
+    # identity-blind pool, so a RED_HERRING row's `game_id` routinely points at
+    # ANOTHER user's game — 453 of 499 served herrings in prod. Looking the
+    # move up by `game.user_id` would label a stranger's move "Played in
+    # game" in the solver's reveal (observed: a herring from another user's
+    # game rendered the reveal card "Best move / Played in game: a3"), which
+    # states something false: the solving user never played that move. A move
+    # is only "played in game" when the solving user owns the source game, so
     # the ownership test is an explicit gate here rather than an implicit
     # empty-result from the row filter — the intent has to survive the next
     # reader. Own-game herrings and every SR_ITEM keep the label. Skipped
     # entirely when `game is None` (only reachable for a herring or a sharp
-    # filler at this point) — `played_in_game_san` degrades to None per D-08.
+    # filler at this point) — `played_in_game_san` degrades to None.
     played_in_game_san: str | None = None
     if game is not None and game.user_id == user_id:
         position_row = (
@@ -3908,13 +3839,12 @@ async def reveal_for_puzzle(
         ).one_or_none()
         played_in_game_san = position_row.move_san if position_row is not None else None
 
-    # P-03: game_flaws.fen is board_fen() only (no castling/en-passant) —
-    # reconstruct the full FEN the same way composition did. D-03: a herring
-    # always reads its FEN off the pool row (never the PGN), alive game-link
-    # or not. Phase 206: a sharp filler always reads its FEN off the
-    # in-memory data file — both are exceptions to "game is None -> degrade"
-    # above; a real three-way branch (RESEARCH Pitfall 2), not a fourth `if`
-    # bolted onto the pre-Phase-206 two-way shape.
+    # game_flaws.fen is board_fen() only (no castling/en-passant) —
+    # reconstruct the full FEN the same way composition did. A herring always
+    # reads its FEN off the pool row (never the PGN), alive game-link or not;
+    # a sharp filler always reads its FEN off the in-memory data file — both
+    # are exceptions to "game is None -> degrade" above, so this is a real
+    # three-way branch.
     if solve.source == DrillSource.RED_HERRING:
         fen = herring_row.fen if herring_row is not None else ""
     elif solve.source == DrillSource.SHARP_FILLER:
@@ -3926,9 +3856,8 @@ async def reveal_for_puzzle(
         assert game is not None
         fen = full_fen_at_ply(game.pgn, solve.ply) or ""
 
-    # 190.1-01, D-05: the game move as UCI — SAN -> UCI, never-raise contract,
-    # same house try/except shape (app/services/library_service.py:135,
-    # app/services/flaws_service.py:407,515).
+    # The game move as UCI: SAN -> UCI with the same never-raise try/except
+    # shape as the parse_san guards in flaws_service.
     played_in_game_move_uci: str | None = None
     if fen and played_in_game_san is not None:
         try:
@@ -3942,14 +3871,14 @@ async def reveal_for_puzzle(
         puzzle_type: Literal["sharp", "soft", "herring"] = "herring"
         has_tactic_lines = False
     elif solve.source == DrillSource.SHARP_FILLER:
-        # D-15: constant, not derived — D-13's offline MultiPV-5 verification
+        # Constant, not derived — the offline MultiPV-5 verification
         # pass at authoring time is what makes this assertion provably true.
         puzzle_type = "sharp"
-        # D-20: no tactic-lines pointer for a foreign lichess puzzle — the
+        # No tactic-lines pointer for a foreign lichess puzzle — the
         # tactic-lines endpoint reads game_flaws, which does not exist here.
         has_tactic_lines = False
-        # D-20: the label is free — already in the data file, no runtime
-        # camelCase-theme -> display-label map needed (RESEARCH Pitfall 3).
+        # The label is free — already in the data file, no runtime
+        # camelCase-theme -> display-label map needed.
         motif = sharp_row.motif if sharp_row is not None else None
     else:
         # Same not_found-gate invariant as above: source == SR_ITEM implies
@@ -3979,9 +3908,8 @@ async def reveal_for_puzzle(
         played_in_game_san=played_in_game_san,
         played_in_game_move_uci=played_in_game_move_uci,
         puzzle_type=puzzle_type,
-        # Phase 206 (RESEARCH Pitfall 2, site 4 — the highest-risk site: this
-        # line fails silently, no exception, if left as the old two-way
-        # ternary). _wire_source is exhaustive over DrillSource.
+        # _wire_source is exhaustive over DrillSource; a two-way ternary here
+        # would fail silently (no exception) for the third source.
         source=_wire_source(solve.source),
         has_tactic_lines=has_tactic_lines,
         motif=motif,

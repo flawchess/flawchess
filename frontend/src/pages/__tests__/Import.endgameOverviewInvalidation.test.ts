@@ -1,5 +1,5 @@
 /**
- * Phase 94.1 Plan 11 — regression guard for the import-complete invalidation gap.
+ * Regression guard for the import-complete invalidation gap.
  *
  * Bug: percentile badges on /endgames only appeared after a hard refresh because
  * the import-complete handlers in App.tsx (`handleJobDone`) and Import.tsx
@@ -31,7 +31,7 @@ function load(url: URL): string {
 const ENDGAME_OVERVIEW_INVALIDATION =
   /queryClient\.invalidateQueries\(\s*\{\s*queryKey:\s*\['endgameOverview'\]\s*\}\s*\)/g;
 
-describe('endgameOverview invalidation contract (Phase 94.1-11)', () => {
+describe('endgameOverview invalidation contract', () => {
   it('Import.tsx invalidates endgameOverview in at least 2 call sites', () => {
     const src = load(IMPORT_TSX);
     const matches = src.match(ENDGAME_OVERVIEW_INVALIDATION) ?? [];

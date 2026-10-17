@@ -1,4 +1,4 @@
-"""Synthetic ranked-payload builders for the insights tests (Phase 238 plan 04, D-04).
+"""Synthetic ranked-payload builders for the insights tests.
 
 The insights pipeline narrates the ranked Endgame Stats payload
 (``RankedTcStats`` per time control). These builders construct that payload directly

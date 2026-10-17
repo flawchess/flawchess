@@ -1,7 +1,6 @@
-"""Service-level tests for the time-pressure helpers (Phase 88.1, Plan 09).
+"""Service-level tests for the time-pressure helpers.
 
-Phase 88.1 (D-07 supersedes D-05): cohort layer removed. Tests verify the new
-same-game opp-quintile split design:
+Tests verify the same-game opp-quintile split design:
 - iterate_clock_rows builds user_quintile_wdl + opp_quintile_wdl from the same
   filtered game-set, each side bucketed by its OWN clock-pct at endgame entry.
 - build_quintile_bullets computes delta = user_score_in_Q − opp_score_in_Q
@@ -64,7 +63,7 @@ def _make_row(
     We use white-at-ply-0 (even) for user_clock, ply-1 (odd) for opp_clock.
     user_color="white" so extract_entry_clocks extracts (ply-0, ply-1).
 
-    Plan 88-14: `termination` is consumed by the new top-zone aggregator for
+    `termination` is consumed by the top-zone aggregator for
     net_timeout_rate. `user_clock` / `opp_clock` overrides allow the caller to
     inject absolute-second clock values that don't match the pct convention,
     or pass `None` to exercise the clock-ineligible accumulation branch.
@@ -82,12 +81,12 @@ def _make_row(
         user_color,  # [5] user_color
         [0, 1],  # [6] ply_array (0=white's first move, 1=black's first move)
         [user_clock, opp_clock],  # [7] clock_array
-        played_at,  # [8] played_at — consumed by compute_clock_diff_timeline (88-15 A-2)
+        played_at,  # [8] played_at — consumed by compute_clock_diff_timeline
     )
 
 
 # ---------------------------------------------------------------------------
-# Phase 88.1 design tests (RED -> GREEN after refactor)
+# Design tests for the same-game opp-quintile split
 # ---------------------------------------------------------------------------
 
 
@@ -156,7 +155,7 @@ class TestUserAndOppQuintileIndependentSplit:
         assert opp_q_wdl.get(("bullet", 3)) == (0, 1, 0)
 
     def test_shared_quintile_count_increments_only_when_quintiles_match(self) -> None:
-        """Phase 148 item 3 (D-04): tc_shared_quintile_count[(tc, q)] counts only
+        """tc_shared_quintile_count[(tc, q)] counts only
         rows where user_quintile == opp_quintile == q. A row where the two
         sides land in DIFFERENT quintiles must not increment any bucket."""
         same_quintile_row = _make_row(
@@ -189,13 +188,13 @@ class TestRepositoryNoCohortFunction:
 
 class TestMinGamesPerPressureBinWired:
     def test_constant_imported_and_used(self) -> None:
-        """MIN_GAMES_PER_PRESSURE_BIN must be importable from endgame_service (WR-05 wired)."""
+        """MIN_GAMES_PER_PRESSURE_BIN must be importable from endgame_service."""
         assert isinstance(MIN_GAMES_PER_PRESSURE_BIN, int)
         assert MIN_GAMES_PER_PRESSURE_BIN >= 1
 
 
 # ---------------------------------------------------------------------------
-# Plan 88-15 A-2: compute_clock_diff_timeline (rolling-window per-ISO-week
+# compute_clock_diff_timeline (rolling-window per-ISO-week
 # clock-diff timeline). Pooled across TCs. Backend timeline for the restored
 # "Average Clock Difference over Time" line chart.
 # ---------------------------------------------------------------------------
@@ -207,7 +206,7 @@ def _dt(year: int, month: int, day: int) -> datetime.datetime:
 
 
 class TestComputeClockDiffTimeline:
-    """Plan 88-15 A-2: rolling-window per-ISO-week clock-diff timeline.
+    """Rolling-window per-ISO-week clock-diff timeline.
 
     Verifies the new compute_clock_diff_timeline aggregator: filters rows for
     clock eligibility, computes per-game clock_diff_pct = (user-opp)/base * 100
@@ -389,7 +388,7 @@ class TestComputeClockDiffTimeline:
         assert resp.points[0].avg_clock_diff_pct == pytest.approx(50.0, abs=1e-6)
 
     def test_cutoff_prefills_rolling_window_from_pre_cutoff_games(self) -> None:
-        """REVIEW.md WR-01: pre-cutoff games pre-fill the rolling window but
+        """Pre-cutoff games pre-fill the rolling window but
         do NOT produce emitted points.
 
         Fixture: 4 pre-cutoff games (week 2024-12-30) with diff +10% each, then
@@ -446,5 +445,5 @@ class TestComputeClockDiffTimeline:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.3 Plan 04 — percentile_rows kwarg + per-(metric × TC) chip attach
+# percentile_rows kwarg + per-(metric × TC) chip attach
 # ---------------------------------------------------------------------------

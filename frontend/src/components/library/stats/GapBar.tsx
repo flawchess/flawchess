@@ -67,12 +67,12 @@ const LAYOUT_CLASSES: Record<GapBarLayout, LayoutClasses> = {
 };
 
 /**
- * The one visual of the Library Stats tab (D-00a): a zero-centred track with the
- * benchmark band (symmetric around 0, D-15), a zero tick, and a dot. Lower (fewer flaws,
- * better) is to the left (D-14). The gap reads in words beside or top right above the bar
- * (D-00b): green or red for a significant better or worse, plain foreground for typical or
- * a gap that could be chance (D-14). A zoneless cell draws no band (D-11) and is coloured only when its gap
- * is significant (D-16).
+ * The one visual of the Library Stats tab: a zero-centred track with the
+ * benchmark band (symmetric around 0), a zero tick, and a dot. Lower (fewer flaws,
+ * better) is to the left. The gap reads in words beside or top right above the bar:
+ * green or red for a significant better or worse, plain foreground for typical or
+ * a gap that could be chance. A zoneless cell draws no band and is coloured only when its gap
+ * is significant.
  */
 export function GapBar({ cell, testId, trailing, layout = 'responsive', leading }: GapBarProps) {
   if (cell.delta === null) {
@@ -94,7 +94,7 @@ export function GapBar({ cell, testId, trailing, layout = 'responsive', leading 
   const band = bandRange(cell);
   const words = gapWords(cell.delta);
   const colored = verdict === 'better' || verdict === 'worse';
-  // IN-03: "same flaws than your opponents" was ungrammatical; "same" takes "as".
+  // "same" takes "as" ("same flaws as your opponents"), not "than".
   const ariaLabel =
     words === GAP_SAME_WORD
       ? `${words} flaws as your opponents`
@@ -155,7 +155,7 @@ interface GapGateSlotProps {
   testId: string;
 }
 
-/** The muted line standing in for the bars when a TC has fewer analyzed games than the gate (D-03). */
+/** The muted line standing in for the bars when a TC has fewer analyzed games than the gate. */
 export function GapGateSlot({ analyzedN, gate, testId }: GapGateSlotProps) {
   return (
     <p className="text-sm text-muted-foreground" data-testid={testId}>

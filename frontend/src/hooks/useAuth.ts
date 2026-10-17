@@ -41,7 +41,7 @@ interface AuthState {
    * Clear auth state without redirect — used when a guest navigates to the register page.
    * Callers MUST hard-navigate immediately afterwards (all three current callers assign
    * window.location.href to the register URL), because that reload also wipes the Umami
-   * in-memory identity (Phase 229 D-07).
+   * in-memory identity.
    */
   logoutForPromotion: () => void;
 }
@@ -191,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Load-bearing for analytics identity: this hard navigation is also the
     // Umami identity reset. Umami v3 keeps the identify() id in tracker memory
     // with no reset API, so this reload is what stops post-logout traffic from
-    // carrying this user's id. Keep it (Phase 229 D-07).
+    // carrying this user's id. Keep it.
     window.location.href = '/';
   };
 
@@ -199,12 +199,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // impersonation signed the superuser out and forced a fresh login. impersonate()
   // now stashes the admin's own JWT; this restores it and lands on /admin.
   // The hard navigation is load-bearing (same as logout): it resets the TanStack
-  // cache and the Umami in-memory identity (Phase 229 D-07), so keep it a full page
+  // cache and the Umami in-memory identity, so keep it a full page
   // load, not a client-side navigate. An expired stashed admin token needs no
   // handling: the 401 interceptor sends the admin to /login. A backend endpoint that
   // mints an admin token from the impersonation claims was deliberately NOT added:
   // a leaked 1h impersonation token could then be exchanged for a 7-day admin token,
-  // defeating Phase 62 D-03.
+  // defeating the short impersonation lifetime.
   const endImpersonation = (): void => {
     const stashed = localStorage.getItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
     if (stashed === null) {

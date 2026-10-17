@@ -1,18 +1,18 @@
-"""Materialization round-trip test for Phase 108 Plan 02 (D-10).
+"""Materialization round-trip test.
 
 Tests that the FlawRecord→game_flaws insert chain (flaw_record_to_row +
 bulk_insert_game_flaws) produces rows that exactly match what classify_game_flaws
-returns — the D-10 invariant that the import hook, reclassify_positions.py, and
+returns — the invariant that the import hook, reclassify_positions.py, and
 backfill_flaws.py all use the same single classification path.
 
 Coverage:
 - The set of (ply, severity) rows written equals the M+B subset of classify_game_flaws
-- No row exists for an inaccuracy ply (D-03: game_flaws is M+B only)
+- No row exists for an inaccuracy ply (game_flaws is M+B only)
 - A FlawRecord with no tempo tag yields a row with tempo IS NULL
 - Each boolean column matches tag membership
 - A GameNotAnalyzed game produces zero rows
 
-Phase 113 additions: TestBothSidesMaterialization — after both-sides kernel,
+TestBothSidesMaterialization — after both-sides kernel,
 ungated row count roughly doubles for a two-color-flaw game.
 
 No dev DB reset needed — tests use the db_session rollback fixture.
@@ -206,7 +206,7 @@ class TestFlawRecordToRow:
             es_before=es_before,
             es_after=es_after,
             move_san="e4",
-            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            # Renamed tactic_* → allowed_tactic_*; added missed_tactic_*.
             allowed_tactic_motif_int=None,
             allowed_tactic_piece=None,
             allowed_tactic_confidence=None,
@@ -228,7 +228,7 @@ class TestFlawRecordToRow:
         assert row["severity"] == 1
 
     def test_inaccuracy_raises_value_error(self) -> None:
-        """D-03: inaccuracy severity raises ValueError (never stored in game_flaws)."""
+        """Inaccuracy severity raises ValueError (never stored in game_flaws)."""
         with pytest.raises(ValueError, match="inaccuracy"):
             flaw_record_to_row(user_id=1, game_id=10, flaw=self._make_flaw(severity="inaccuracy"))
 
@@ -338,14 +338,14 @@ class TestFlawRecordToRow:
         assert row["is_squandered"] is True
 
     def test_passthrough_fields(self) -> None:
-        """fen is passed through; es_before/es_after/move_san are NOT in output (Phase 112 D-07)."""
+        """fen is passed through; es_before/es_after/move_san are NOT in output."""
         flaw = self._make_flaw(ply=15, es_before=0.72, es_after=0.31, tags=["middlegame"])
         flaw["move_san"] = "Rxf7"
         flaw["fen"] = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R"
         row = flaw_record_to_row(user_id=1, game_id=10, flaw=flaw)
         assert row["ply"] == 15
         assert "r1bqkbnr" in row["fen"]
-        # Phase 112 (D-07): these three keys removed from DB write-path
+        # These three keys removed from DB write-path
         assert "es_before" not in row, "es_before must not be in row dict (Phase 112 D-07)"
         assert "es_after" not in row, "es_after must not be in row dict (Phase 112 D-07)"
         assert "move_san" not in row, "move_san must not be in row dict (Phase 112 D-07)"
@@ -385,7 +385,7 @@ class TestBulkInsertGameFlaws:
             "es_before": 0.90,
             "es_after": 0.20,
             "move_san": "e4",
-            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            # Renamed tactic_* → allowed_tactic_*; added missed_tactic_*.
             "allowed_tactic_motif_int": None,
             "allowed_tactic_piece": None,
             "allowed_tactic_confidence": None,
@@ -412,11 +412,11 @@ class TestBulkInsertGameFlaws:
         assert stored.is_reversed is True
         assert stored.is_miss is False
         assert stored.tempo is None  # no tempo tag
-        # Phase 112 (D-07): es_before/es_after/move_san no longer on GameFlaw model
+        # es_before/es_after/move_san no longer on GameFlaw model
         assert not hasattr(stored, "es_before")
         assert not hasattr(stored, "es_after")
         assert not hasattr(stored, "move_san")
-        # fen is still present (Pitfall 4)
+        # fen is still present
         assert stored.fen == flaw["fen"]
 
     @pytest.mark.asyncio
@@ -433,7 +433,7 @@ class TestBulkInsertGameFlaws:
             "es_before": 0.55,
             "es_after": 0.44,
             "move_san": "e4",
-            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            # Renamed tactic_* → allowed_tactic_*; added missed_tactic_*.
             "allowed_tactic_motif_int": None,
             "allowed_tactic_piece": None,
             "allowed_tactic_confidence": None,
@@ -462,7 +462,7 @@ class TestBulkInsertGameFlaws:
 
 
 # ---------------------------------------------------------------------------
-# TestMaterializationRoundTrip — the D-10 invariant (one classify path)
+# TestMaterializationRoundTrip — the one-classify-path invariant
 # ---------------------------------------------------------------------------
 
 
@@ -470,7 +470,7 @@ class TestMaterializationRoundTrip:
     """The set of rows inserted by flaw_record_to_row + bulk_insert_game_flaws
     exactly matches the M+B subset of classify_game_flaws output.
 
-    This is the Wave 0 dependency proving the D-10 invariant:
+    This proves the one-classify-path invariant:
         game_flaws rows ≡ classify_game_flaws M+B output
     """
 
@@ -541,7 +541,7 @@ class TestMaterializationRoundTrip:
 
     @pytest.mark.asyncio
     async def test_no_row_for_inaccuracy_ply(self, db_session: AsyncSession) -> None:
-        """The inaccuracy ply (ply 6) produces no game_flaws row (D-03)."""
+        """The inaccuracy ply (ply 6) produces no game_flaws row."""
         game_obj = _make_game_obj(user_color="white", result="1-0")
         positions, blunder_ply, mistake_ply, inaccuracy_ply = _build_mixed_positions()
 
@@ -702,10 +702,10 @@ class TestMaterializationRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# TestBothSidesMaterialization — Phase 113 (FLAWX-01/FLAWX-02) integration
+# TestBothSidesMaterialization integration
 # ---------------------------------------------------------------------------
 #
-# After the both-sides kernel change (D-06), classifying a game with flaws on
+# After the both-sides kernel change, classifying a game with flaws on
 # both colors and inserting the results must produce roughly 2× more rows than
 # a player-only game. The PK (user_id, game_id, ply) never collides because
 # each ply belongs to exactly one side.
@@ -751,7 +751,7 @@ class TestBothSidesMaterialization:
     produces rows for BOTH colors — the ungated count is at least 2× the
     player-only count for the same game.
 
-    This is the FLAWX-01 row-count doubles invariant from VALIDATION.md.
+    This is the row-count-doubles invariant.
     """
 
     @pytest.mark.asyncio
@@ -784,7 +784,7 @@ class TestBothSidesMaterialization:
             f"total={total_flaws}, player={len(player_flaws)}, opponent={len(opponent_flaws)}"
         )
 
-        # Insert via the D-10 path and verify row counts in DB
+        # Insert via the single classify path and verify row counts in DB
         game = await _seed_game(db_session)
         rows = [
             flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw) for flaw in result

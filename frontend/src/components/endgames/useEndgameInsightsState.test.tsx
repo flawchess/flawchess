@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * 238 UAT: the Stats tab auto-generates a missing insights report. One empty
+ * The Stats tab auto-generates a missing insights report. One empty
  * cache result buys exactly one LLM call, even with the tab mounted twice
  * (desktop + mobile), and never while an import runs or without ranked games.
  */

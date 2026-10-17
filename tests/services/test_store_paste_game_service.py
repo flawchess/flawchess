@@ -1,8 +1,8 @@
-"""Tests for store_paste_game_service.store_pasted_game (Phase 208, PASTE-04/06/07).
+"""Tests for store_paste_game_service.store_pasted_game.
 
-Covers every <behavior> bullet of 208-03-PLAN.md Task 1: the reuse-or-insert
-identity flow (D-16/D-17/D-18), the single-commit persistence path, the
-post-commit tier-1 enqueue, and the SC-7 post-commit enqueue-failure window.
+Covers the reuse-or-insert
+identity flow, the single-commit persistence path, the
+post-commit tier-1 enqueue, and the post-commit enqueue-failure window.
 
 Data isolation: unlike the rollback-scoped `db_session` fixture used
 elsewhere, `enqueue_tier1_game` opens its OWN session via
@@ -234,7 +234,7 @@ class TestStorePastedGame:
         self, test_engine
     ) -> None:
         """A concurrent-duplicate simulation: pre-insert the identical row (by
-        the same D-16 identity the service would compute), then invoke the
+        the same identity the service would compute), then invoke the
         service and assert a 2xx-shaped result with the pre-existing
         game_id — never an IntegrityError.
         """
@@ -269,7 +269,7 @@ class TestStorePastedGame:
             assert await _count_pgn_rows(session, _TEST_USER_ID) == 1
 
     async def test_guest_can_save_and_enqueue_own_pasted_game(self, test_engine) -> None:
-        """QUEUE-08 tier-1 carve-out: a guest can save + enqueue their own
+        """Tier-1 carve-out: a guest can save + enqueue their own
         pasted game exactly as they already can for an imported game.
         """
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

@@ -1,8 +1,8 @@
-"""End-to-end router tests for POST /api/insights/endgame (Phase 65).
+"""End-to-end router tests for POST /api/insights/endgame.
 
 Tests the HTTP layer using httpx AsyncClient with ASGITransport. All LLM calls
 are mocked via the fake_insights_agent fixture (TestModel) or monkeypatched
-FunctionModel. No real provider calls are made (D-42).
+FunctionModel. No real provider calls are made.
 
 URL: POST /api/insights/endgame
      (insights_router prefix="/insights" + @router.post("/endgame"), mounted under /api)
@@ -218,8 +218,7 @@ class TestHappyPath:
         create_llm_log appends '; cost_unknown:test' to the error column for the
         'test' provider, so get_latest_log_by_hash (which filters error IS NULL) cannot
         find the fresh-miss row written by the first HTTP call. We therefore seed a
-        pre-existing row with error=None directly — same pattern used in Plan 05 tests
-        (deviation #3 documented in 65-05-SUMMARY.md).
+        pre-existing row with error=None directly.
         """
         headers, user = authed_user_with_session
         fake_insights_agent(_sample_report())
@@ -364,10 +363,10 @@ class TestHideOverview:
 
 
 # ---------------------------------------------------------------------------
-# TestFilterFree: Phase 238 D-04, the endgame insights take no filters
+# TestFilterFree: the endgame insights take no filters
 # ---------------------------------------------------------------------------
 
-# Every query string the pre-238 router either rejected (400 filters_not_supported) or
+# Every query string the earlier router either rejected (400 filters_not_supported) or
 # keyed the cache on. The filter-free router declares no parameters, so all of them
 # must behave exactly like no query string at all.
 LEGACY_FILTER_PARAMS: list[dict[str, str]] = [
@@ -414,7 +413,7 @@ class TestFilterFree:
 
         compute_findings receives only (session, user_id): the removed filter plumbing
         cannot reach the service, so one report per user is served whatever the page
-        filters were. The transient frontend (filters still sent until plan 238-07)
+        filters were. A client that still sends filters
         therefore keeps working.
         """
         headers, user = authed_user_with_session
@@ -511,7 +510,7 @@ class TestFilterFree:
 
 
 # ---------------------------------------------------------------------------
-# TestCachedEndpoint — GET /api/insights/endgame/cached (260508-q1z)
+# TestCachedEndpoint — GET /api/insights/endgame/cached
 # ---------------------------------------------------------------------------
 
 
@@ -613,7 +612,7 @@ class TestCachedEndpoint:
         authed_user_with_session: tuple[dict[str, str], User],
         test_engine: AsyncEngine,
     ) -> None:
-        """Phase 238 D-04: filters no longer scope the cache. Any query string (the
+        """Filters no longer scope the cache. Any query string (the
         transient frontend still sends the page filters) returns the one per-user
         report, never a 404 caused by a filter or a custom opponent-gap range."""
         headers, user = authed_user_with_session
@@ -730,7 +729,7 @@ class TestCachedEndpoint:
         authed_user_with_session: tuple[dict[str, str], User],
         test_engine: AsyncEngine,
     ) -> None:
-        """Quick 261012-qiz: an import with games > 0 after the report does NOT
+        """An import with games > 0 after the report does NOT
         404 the display lookup (a 404 would auto-generate a second report); the
         user refreshes explicitly via Update Insights."""
         headers, user = authed_user_with_session

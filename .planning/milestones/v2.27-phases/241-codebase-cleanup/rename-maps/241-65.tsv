@@ -1,0 +1,8 @@
+old	new	kind	absent_paths	ref	canon_paths
+onHoverPlyChange	onActivePlyChange	parameter	frontend/src	INVENTORY s5 EvalChart.tsx:116	frontend/src/components/library/EvalChart.tsx,frontend/src/components/results/LibraryGameCard.tsx,frontend/src/pages/Analysis.tsx,frontend/src/components/analysis/AnalysisTabs.tsx,frontend/src/components/results/__tests__/LibraryGameCard.test.tsx
+hoverPly	scrubPly	variable	frontend/src/components/results	INVENTORY s5 LibraryGameCard.tsx:248 (EvalChart internal hoverPly state keeps its name)	frontend/src/components/results/LibraryGameCard.tsx
+setHoverPly	setScrubPly	variable	frontend/src/components/results	INVENTORY s5 LibraryGameCard.tsx:248	frontend/src/components/results/LibraryGameCard.tsx
+renderDesktopExploreButton	renderDesktopAnalyzeButton	function	frontend/src	INVENTORY s5 LibraryGameCard.tsx:1097	frontend/src/components/results/LibraryGameCard.tsx
+passesContext	isUserMarker	variable	frontend/src	INVENTORY s5 LibraryGameCard.tsx:546	frontend/src/components/results/LibraryGameCard.tsx
+flawId	gameId	parameter	frontend/src	INVENTORY s5 TacticMotifChip.tsx:43	frontend/src/components/library/TacticMotifChip.tsx,frontend/src/components/library/FlawCard.tsx,frontend/src/components/library/TacticMotifGroup.tsx,frontend/src/components/library/__tests__/TacticMotifChip.test.tsx
+definition	showDefinitionPopover	parameter	-	INVENTORY s5 TagChip.tsx:78 (boolean prop only; definition text elsewhere keeps its name)	frontend/src/components/library/TagChip.tsx,frontend/src/components/results/LibraryGameCard.tsx,frontend/src/components/library/FlawCard.tsx,frontend/src/components/analysis/AnalysisTagsPanel.tsx,frontend/src/components/library/TacticMotifChip.tsx

@@ -46,10 +46,9 @@ export type OpeningsDesktopSidebarProps = {
 
 /**
  * Desktop sidebar strip + panel (filters, bookmarks) wrapping the board/tab
- * content passed as `children`. Owns the notification-dot branching that
- * OpeningsPage previously computed inline — the branch now counts toward
- * this component's own complexity, matching the seam 215-04/215-05/215-06
- * used for Analysis.tsx's own render-fragment extractions.
+ * content passed as `children`. Owns the notification-dot branching, so the
+ * branch counts toward this component's own complexity rather than
+ * OpeningsPage's.
  */
 export function OpeningsDesktopSidebar({
   children,

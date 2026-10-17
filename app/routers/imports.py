@@ -1,6 +1,5 @@
-"""Import router: POST /imports and GET /imports/{job_id} endpoints.
-
-HTTP layer only — all orchestration logic lives in import_service.
+"""Import router: import jobs, readiness/eval coverage, tier-1 enqueue, PGN paste and
+delete-all-games.
 """
 
 import asyncio
@@ -89,7 +88,7 @@ async def start_import(
     await user_repository.update_platform_username(
         session, user_id, request.platform, request.username
     )
-    # QTE-02: first-write-wins stamp of this user's first-ever import start, in
+    # First-write-wins stamp of this user's first-ever import start, in
     # the same transaction as the username write above. The already-active-job
     # early return above correctly skips this call: an active job means the
     # first import already started and was already stamped.
@@ -98,16 +97,14 @@ async def start_import(
 
     job_id = import_service.create_job(user_id, request.platform, request.username)
 
-    # Bug fix (Phase 149 PRUNE-05): the durable import_jobs row used to be
-    # created later, inside the fire-and-forget background task
-    # (_bootstrap_import_job) — strictly AFTER this response would already
-    # have been sent. That left a TOCTOU window where two concurrent requests
-    # both see an empty in-memory registry above and both proceed. The row is
-    # now created HERE, synchronously, before the background task is
-    # scheduled, backed by the uq_import_jobs_user_platform_active partial
-    # unique index — the DB, not the in-memory registry, is the real
-    # concurrency guarantee. A losing concurrent request hits IntegrityError
-    # below (expected race, not a bug — mirrors guest_service.py's Google-
+    # Bug fix: the durable import_jobs row used to be created later, inside the
+    # fire-and-forget background task (_bootstrap_import_job) — strictly AFTER this response
+    # would already have been sent. That left a TOCTOU window where two concurrent requests
+    # both see an empty in-memory registry above and both proceed. The row is now created
+    # HERE, synchronously, before the background task is scheduled, backed by the
+    # uq_import_jobs_user_platform_active partial unique index — the DB, not the in-memory
+    # registry, is the real concurrency guarantee. A losing concurrent request hits
+    # IntegrityError below (expected race, not a bug — mirrors guest_service.py's Google-
     # promotion double-submit handling) and returns the winner's job with 200.
     try:
         await import_job_repository.create_import_job(
@@ -130,7 +127,7 @@ async def start_import(
         existing_row = await import_job_repository.get_active_job_for_user_platform(
             session, user_id, request.platform
         )
-        # Explicit guard, not `assert` (Bug fix, IN-02 code review 2026-07-04):
+        # Explicit guard, not `assert` (bug fix):
         # `assert` statements are stripped under `python -O`, which would let
         # this genuinely-should-never-happen invariant fail silently and fall
         # through to an AttributeError on `existing_row.id` below instead of a
@@ -146,22 +143,21 @@ async def start_import(
             sentry_sdk.capture_exception(exc)
             raise exc from integrity_exc
         response.status_code = 200
-        # ImportJob.status is a DB column typed Mapped[str] (SURGE-04/D-03: "queued"
-        # is in-memory only and never written to this column, so the DB value is
-        # always one of the four DB-writer statuses -- see ImportJobStatusLiteral).
+        # ImportJob.status is a DB column typed Mapped[str] ("queued" is in-memory
+        # only and never written to this column, so the DB value is always one of the
+        # four DB-writer statuses -- see ImportJobStatusLiteral).
         return ImportStartedResponse(
             job_id=existing_row.id, status=cast(ImportJobStatusLiteral, existing_row.status)
         )
     except Exception:
-        # Bug fix (CR-01 code review 2026-07-04): the durable-insert write
-        # above can fail for reasons OTHER than the expected IntegrityError
-        # race (e.g. a transient Postgres outage during flush/commit). Before
-        # this branch existed, such a failure left the in-memory
-        # JobState(status=PENDING) registered forever — no background task
-        # was ever scheduled to transition it, and no reaper touches the
-        # in-memory registry, so find_active_job() would report this phantom
-        # job as active on every retry, permanently locking the user out of
-        # importing this platform until the backend process restarted.
+        # Bug fix: the durable-insert write above can fail for reasons OTHER than the
+        # expected IntegrityError race (e.g. a transient Postgres outage during
+        # flush/commit). Before this branch existed, such a failure left the in-memory
+        # JobState(status=PENDING) registered forever — no background task was ever
+        # scheduled to transition it, and no reaper touches the in-memory registry, so
+        # find_active_job() would report this phantom job as active on every retry,
+        # permanently locking the user out of importing this platform until the backend
+        # process restarted.
         await session.rollback()
         import_service.discard_job(job_id)
         sentry_sdk.set_context("import", {"user_id": str(user_id), "platform": request.platform})
@@ -216,8 +212,8 @@ async def get_active_imports(
                 job_id=db_job.id,
                 platform=db_job.platform,
                 username=db_job.username,
-                # ImportJob.status is DB-writer-only ("queued" is in-memory-only,
-                # SURGE-04/D-03) -- see ImportJobStatusLiteral.
+                # ImportJob.status is DB-writer-only ("queued" is in-memory-only)
+                # -- see ImportJobStatusLiteral.
                 status=cast(ImportJobStatusLiteral, db_job.status),
                 games_fetched=db_job.games_fetched,
                 games_imported=db_job.games_imported,
@@ -235,13 +231,11 @@ async def get_readiness(
 ) -> ReadinessResponse:
     """Return two-tier readiness for the authenticated user.
 
-    Locked by D-01/D-04: dedicated endpoint; keys tier1, tier2, pending_count,
-    total_count.
+    Dedicated endpoint; keys tier1, tier2, pending_count, total_count.
 
     Tier 1 (tier1=True): no active import job in-flight for this user.
         Derived from the in-memory import registry only — orphaned DB jobs
-        after server restart are not detected here (RESEARCH Open Question 1 /
-        A3, out of scope).
+        after server restart are not detected here (out of scope).
 
     Tier 2 (tier2=True): tier1=True AND pending evals == 0 AND
         (total_count == 0 OR at least one user_benchmark_percentiles row exists
@@ -249,24 +243,22 @@ async def get_readiness(
          OR the user is below the per-TC anchor floor in every TC)
         AND the user is not mid-Stage-B percentile compute (in-memory registry).
         The ``total_count == 0`` branch is the empty-account escape: a user with
-        no games is vacuously Stage-B ready and must not be locked out forever
-        (RESEARCH Pitfall 1). The below-anchor-floor branch (quick-260529)
-        generalises that escape to users who DO have games but too few to clear
-        the 30-game per-TC anchor floor in any TC: Stage A/B write zero rows for
-        them by design, so ``has_any_rows`` stays False forever and they would
-        otherwise be locked out permanently (prod user 145: 13 games). The
-        settled-empty branch (endgame-percentiles-missing, prod user 146) closes
-        a gap that branch missed: a user can be ABOVE the anchor floor (enough
-        rating-eligible games) yet BELOW every endgame metric's per-metric
-        population floor because too few of their games reach an endgame (user
-        146: 33 rating-eligible rapid games, only 22 reach an endgame, < 30). An
-        anchor row proves Stage A ran and committed; zero percentile rows
+        no games is vacuously Stage-B ready and must not be locked out forever.
+        The below-anchor-floor branch generalises that escape to users who DO have games but
+        too few to clear the 30-game per-TC anchor floor in any TC: Stage A/B write zero
+        rows for them by design, so ``has_any_rows`` stays False forever and they would
+        otherwise be locked out permanently (prod user 145: 13 games). The settled-empty
+        branch (endgame-percentiles-missing, prod user 146) closes a gap that branch missed:
+        a user can be ABOVE the anchor floor (enough rating-eligible games) yet BELOW every
+        endgame metric's per-metric population floor because too few of their games reach an
+        endgame (user 146: 33 rating-eligible rapid games, only 22 reach an endgame,
+        < 30). An anchor row proves Stage A ran and committed; zero percentile rows
         alongside it means no metric can ever qualify (score_gap's game set is a
         superset of every Stage B metric's), so the user is unlocked rather than
-        spinning forever. The Stage-B-computing clause (Quick 260529-015) closes
-        the race where pending==0 is observed before the eval-dependent
-        percentile rows are written, so the page would otherwise unlock with
-        missing (first import) or stale (re-import) badges.
+        spinning forever. The Stage-B-computing clause closes the race where
+        pending==0 is observed before the eval-dependent percentile rows are
+        written, so the page would otherwise unlock with missing (first import) or
+        stale (re-import) badges.
 
     Reads are strictly sequential on one AsyncSession per CLAUDE.md constraint
     (no asyncio.gather on a single AsyncSession). Short-circuits skip downstream
@@ -284,7 +276,7 @@ async def get_readiness(
     has_active = bool(import_service.find_active_jobs_for_user(user.id))
     tier1 = not has_active
 
-    # Quick 260529-015: in-memory Stage-B-in-progress gate (sync set lookup).
+    # In-memory Stage-B-in-progress gate (sync set lookup).
     stage_b_computing = percentile_compute_registry.is_computing(user.id)
 
     # Total games (needed for tier2 and pending_count)
@@ -317,14 +309,13 @@ async def get_readiness(
         session, user_id=user.id
     )
 
-    # Below-anchor-floor escape (quick-260529): a user with games but no
-    # percentile rows, whose evals are fully drained and who is not mid-compute,
-    # may simply be below the per-TC anchor floor everywhere — Stage A/B wrote
-    # nothing by design and never will (no anchor row exists either). Probe the
-    # anchor-candidate SQL so these users unlock instead of polling forever.
-    # Evaluated lazily: skipped on the common above-floor path AND when the
-    # settled-empty escape already fired (an anchor row exists, so the user is
-    # above floor and this probe would return False anyway).
+    # Below-anchor-floor escape: a user with games but no percentile rows, whose evals are
+    # fully drained and who is not mid-compute, may simply be below the per-TC anchor floor
+    # everywhere — Stage A/B wrote nothing by design and never will (no anchor row exists
+    # either). Probe the anchor-candidate SQL so these users unlock instead of polling
+    # forever. Evaluated lazily: skipped on the common above-floor path AND when the
+    # settled-empty escape already fired (an anchor row exists, so the user is above floor
+    # and this probe would return False anyway).
     below_floor = (
         stuck
         and not settled_empty
@@ -357,12 +348,11 @@ async def get_eval_coverage(
 
     Returns pending_count, total_count, pct_complete (0-100), and analyzed_count.
     Returns pct_complete=100 when the user has no games (avoids division-by-zero).
-    D-118-12 extension: analyzed_count added. in_flight_count removed in Phase
-    119-03 (tier-3 derived picks have no eval_jobs rows — structurally blind to
-    the dominant backlog drain; see 119-RESEARCH-NOTES.md).
+    There is no in_flight_count: tier-3 derived picks have no eval_jobs rows, so it
+    would be structurally blind to the dominant backlog drain.
 
-    Locked by D-01: dedicated endpoint, NOT extending GET /imports/active.
-    Locked by D-04: response keys pending_count, total_count, pct_complete unchanged.
+    Dedicated endpoint, NOT extending GET /imports/active; the keys pending_count,
+    total_count, pct_complete are unchanged.
     """
     # Badge = "analyzed of total games", matching the per-game Library cards.
     # total_count is every imported game; analyzed_count is full_evals_completed_at
@@ -399,14 +389,13 @@ async def enqueue_tier1(
 ) -> EnqueueTier1Response:
     """Enqueue a single game for tier-1 (explicit-request) Stockfish eval.
 
-    IDOR guard (T-118-06, ASVS V4): returns 404 when the game does not exist OR
+    IDOR guard (ASVS V4): returns 404 when the game does not exist OR
     belongs to a different user. Never 403 — avoids confirming id existence to
     unauthorised callers (library.py pattern). game_id typed int: FastAPI rejects
-    non-integers with 422 (T-118-10).
+    non-integers with 422.
 
-    Tier-1 is an explicit per-game request available to guests for their OWN games
-    (QUEUE-08 guest gate opened for tier-1 only). Automatic tier-3 background
-    analysis remains gated to authenticated users.
+    Tier-1 is an explicit per-game request available to guests for their OWN games.
+    Automatic tier-3 background analysis remains gated to authenticated users.
     """
     # IDOR guard — verifies ownership before any service call
     game = await session.get(Game, game_id)
@@ -428,18 +417,17 @@ async def save_pasted_game(
 
     HTTP only — all orchestration lives in store_pasted_game (CLAUDE.md's
     router-is-thin convention). The principal is server-derived from
-    current_active_user (ASVS V4, T-208-10): user.id is passed to the
+    current_active_user (ASVS V4): user.id is passed to the
     service, never anything from the request body.
 
-    Available to guests for their own games under the same QUEUE-08 tier-1
-    carve-out enqueue_tier1 documents above (D-08) — this endpoint introduces
-    no new guest boundary.
+    Available to guests for their own games under the same tier-1 carve-out
+    enqueue_tier1 documents above — this endpoint introduces no new guest boundary.
 
-    Re-posting the same game (by the D-16 identity hash: canonical root FEN
+    Re-posting the same game (by the identity hash: canonical root FEN
     + mainline SAN, headers and user_color excluded) reuses the existing row
-    rather than dodging uq_games_user_platform_game_id (D-17); re-posting
+    rather than dodging uq_games_user_platform_game_id; re-posting
     with the other user_color updates the existing row's orientation in
-    place (D-18) instead of inserting a second row.
+    place instead of inserting a second row.
     """
     result = await store_pasted_game(session, user.id, request)
     if result is None:
@@ -491,8 +479,8 @@ async def get_import_status(
             job_id=db_job.id,
             platform=db_job.platform,
             username=db_job.username,
-            # ImportJob.status is DB-writer-only ("queued" is in-memory-only,
-            # SURGE-04/D-03) -- see ImportJobStatusLiteral.
+            # ImportJob.status is DB-writer-only ("queued" is in-memory-only)
+            # -- see ImportJobStatusLiteral.
             status=cast(ImportJobStatusLiteral, db_job.status),
             games_fetched=db_job.games_fetched,
             games_imported=db_job.games_imported,
@@ -514,27 +502,24 @@ async def delete_all_games(
     Returns the count of deleted games.
     """
     deleted_count = await game_repository.delete_all_games_for_user(session, user.id)
-    # Phase 189 Plan 02 (POOL-09, D-02/D-04): `drill_items` and `drill_solves`
-    # need NO explicit delete here -- both FK to `games.id ON DELETE CASCADE`
-    # (D-02), so the DELETE FROM games above already removed them. `drill_sessions`
-    # and `train_settings` are DELIBERATELY preserved: session history is user
-    # progress (the Phase 191 weekly-streak source), not game-derived data (D-04).
-    # Do NOT add a delete(DrillSession)/delete(TrainSettings) statement here --
-    # that would silently violate D-04. See tests/test_imports_router.py::
-    # TestDeleteAllGamesDrillCascade for the pinning tests.
+    # `drill_items` cascades via its games.id FK and `drill_solves.game_id` is SET NULL
+    # (a solve survives as a nulled session entry), so neither needs an explicit delete
+    # here. `drill_sessions` and `train_settings` are DELIBERATELY preserved: session
+    # history is user progress (the streak source), not game-derived data. Do NOT add a
+    # delete(DrillSession)/delete(TrainSettings) statement here; see
+    # tests/test_imports_router.py::TestDeleteAllGamesDrillCascade.
     await session.execute(delete(ImportJob).where(ImportJob.user_id == user.id))
     await session.execute(
         delete(UserBenchmarkPercentile).where(UserBenchmarkPercentile.user_id == user.id)
     )
     await session.execute(delete(UserRatingAnchor).where(UserRatingAnchor.user_id == user.id))
-    # Phase 186 Plan 02 (IMPORT-03, Pitfall 4): the backward-walk cursor is NOT
-    # derived from `games` rows (it tracks fetch ATTEMPTS, not stored games),
-    # so it would otherwise still point at wherever a previous walk reached --
-    # a post-delete resync would then skip straight to that stale boundary
-    # instead of backfilling the fresh account's full budget. TC toggles and
-    # game_cap PREFERENCES are left untouched (only progress cursors reset).
+    # The backward-walk cursor is NOT derived from `games` rows (it tracks fetch ATTEMPTS,
+    # not stored games), so it would otherwise still point at wherever a previous walk
+    # reached -- a post-delete resync would then skip straight to that stale boundary
+    # instead of backfilling the fresh account's full budget. TC toggles and game_cap
+    # PREFERENCES are left untouched (only progress cursors reset).
     await user_import_settings_repository.reset_backfill_cursors(session, user_id=user.id)
-    # QTE-02: stamp the retained fact that lets the Activity dashboard tell a
+    # Stamp the retained fact that lets the Activity dashboard tell a
     # purged user apart from one who never imported. Commits atomically with
     # the deletes above.
     await user_repository.stamp_games_purged_at(session, user.id, now_utc)

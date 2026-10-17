@@ -10,14 +10,13 @@ import {
 } from '@/components/import/importBotBubbleCopy';
 
 /**
- * ImportBotBubble: Phase 224 (S-6, D-06; GUESTACT-07). Replaces the Import
- * page's old `Alert`-based guest sign-up prompt with a friendly-bot bubble.
+ * ImportBotBubble: a friendly-bot bubble on the Import page.
  * Composed exactly like `BotGameDesktopLayout` composes its bubble: the
  * parent (this component) supplies persona, copy and actions;
  * `SignupAskActions` (the actions component) carries no logic of its own.
  *
- * Three variants (224 UAT rounds 1-2: the sign-up CTA on a fresh account was
- * "too early", and registered accounts should get the same tour):
+ * Three variants (a sign-up CTA on a fresh account is
+ * "too early", and registered accounts get the same tour):
  *
  * - `welcome`: shown to guests AND registered users before their first
  *   completed import. A plain welcome that points at the import cards and,
@@ -26,12 +25,12 @@ import {
  *   completed. Points at the tabs that now have data (Games, Train, Bots,
  *   Openings, Endgames). No sign-up ask, no actions.
  * - `signup-ask`: the guest counterpart of `explore`: the same sentence plus
- *   the import-specific payoff (D-06: background analysis of all imported
+ *   the import-specific payoff (background analysis of all imported
  *   games) and the sign-up action pair. Shares no sentence with the
  *   score-screen ask (`GUEST_SIGNUP_ASK_SCORE`).
  *
  * This is the FIRST persona appearance outside a game/puzzle context
- * (accepted, S-6). The component reads no profile: the caller (`ImportPage`)
+ * (accepted). The component reads no profile: the caller (`ImportPage`)
  * picks the variant and decides whether to mount it at all.
  */
 

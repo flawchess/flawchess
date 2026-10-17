@@ -1,5 +1,5 @@
 /**
- * trainRevealPreview tests (SEED-197): the pure preview model. Trees are built
+ * trainRevealPreview tests: the pure preview model. Trees are built
  * with a child-reusing graft helper so the anchor / inheritance walks run on the
  * same node-map shape the real analysis board produces.
  */
@@ -183,7 +183,7 @@ describe('resolvePreview precedence', () => {
   });
 });
 
-describe('resolvePreview minimum length (SEED-197 UAT)', () => {
+describe('resolvePreview minimum length', () => {
   /** Tail of LONG_LINE after 1.e4: 11 plies, so the fallback clips to the max. */
   const TAIL = LONG_LINE.slice(1);
 

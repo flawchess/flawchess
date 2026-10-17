@@ -1,9 +1,9 @@
 /**
- * Phase 87.4 (Plan 02 Wave 0) — unit test for SCORE_GAP_BUCKET_DISPLAY_SHIFT.
+ * Unit test for SCORE_GAP_BUCKET_DISPLAY_SHIFT.
  *
  * The shift is a presentation-layer affine that recenters the Conv/Parity/Recov
  * bullets on a single visual "zero" without mutating the underlying calibrated
- * zone bands. See CONTEXT.md D-03/D-04: shift values come from the midpoint of
+ * zone bands. Shift values come from the midpoint of
  * each metric's calibrated typical band ([-0.11, 0.00] for Conv, [-0.04, +0.04]
  * for Parity, [+0.01, +0.11] for Recov).
  */

@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.24",
+  "milestone": "v2.27",
   "phases": [
     {
       "number": "1",
@@ -292,12 +292,27 @@
       "number": "235",
       "name": "237. v2.24 phases",
       "status": "complete"
+    },
+    {
+      "number": "238",
+      "name": "239. v2.25 phases",
+      "status": "complete"
+    },
+    {
+      "number": "240",
+      "name": "v2.26 phase",
+      "status": "complete"
+    },
+    {
+      "number": "241",
+      "name": "v2.27 phase",
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 240 of 3 · ready to verify"
+    "command": "/gsd-new-milestone",
+    "label": "Start the next milestone or a standalone phase",
+    "reason": "v2.25\u2013v2.27 closed 2026-10-17; no open milestone (v2.27 not yet deployed)"
   },
-  "updated_at": "2026-10-15T20:43:55.090Z"
+  "updated_at": "2026-10-17T12:00:00.000Z"
 }

@@ -2,7 +2,7 @@
 
 Reuses the in-process _SlidingWindowRateLimiter from ip_rate_limiter.
 Keyed by user_id (str), not IP address. In-process limiter resets on restart —
-acceptable for single-process Uvicorn deployment (D-07 / A5).
+acceptable for single-process Uvicorn deployment.
 """
 
 from app.core.ip_rate_limiter import _SlidingWindowRateLimiter

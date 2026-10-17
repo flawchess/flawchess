@@ -29,11 +29,11 @@ const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
 /**
  * Top-of-tab Insights block.
  *
- * Parent owns the mutation + rendered state. The report is filter-free (one
- * per user, D-04), so `rendered` is whatever report the parent holds and this
+ * Parent owns the generate state + insights. The report is filter-free (one
+ * per user), so `insights` is whatever report the parent holds and this
  * component never has to reason about "outdated" reports.
  *
- * Quick 260927-b05: every no-report state (idle, pending, error, blocked) is
+ * Every no-report state (idle, pending, error, blocked) is
  * Shelly the Turtle in a bot bubble (`EndgameInsightsBubble`); the report
  * card only renders once a report exists. Error still outranks a rendered
  * report, so a failed regenerate falls back to the bubble.
@@ -41,15 +41,15 @@ const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
  * Button gating: Generate / Update / Try again are disabled only while an
  * import is running. Page filters never block and are never touched.
  *
- * 238 UAT: the header is the report's 1-2 sentence summary in Shelly's voice,
- * collapsed by default with a "click or tap for details" hint (second UAT round,
- * was expanded); the tab auto-generates a missing report, so the report
- * card's action is "Update Insights".
+ * The header is the report's 1-2 sentence summary in Shelly's voice,
+ * collapsed by default with a "click or tap for details" hint; the tab
+ * auto-generates a missing report, so the report card's action is
+ * "Update Insights".
  */
 export interface EndgameInsightsBlockProps {
-  rendered: EndgameInsightsResponse | null;
+  insights: EndgameInsightsResponse | null;
   /** Pending / error of the Generate mutation (a full mutation result also fits). */
-  mutation: InsightsGenerateState;
+  generateState: InsightsGenerateState;
   onGenerate: () => void;
 }
 
@@ -68,20 +68,20 @@ function bubbleStatus(isError: boolean, isPending: boolean): InsightsBubbleStatu
 }
 
 export function EndgameInsightsBlock({
-  rendered,
-  mutation,
+  insights,
+  generateState,
   onGenerate,
 }: EndgameInsightsBlockProps) {
   const { data: activeJobs } = useActiveJobs(true);
 
-  const isPending = mutation.isPending;
-  const isError = mutation.isError;
-  const hasRendered = rendered !== null;
+  const isPending = generateState.isPending;
+  const isError = generateState.isError;
+  const hasInsights = insights !== null;
 
   const hasActiveImport = (activeJobs?.length ?? 0) > 0;
   const blockedReason = getBlockedReason(hasActiveImport);
 
-  if (isError || !hasRendered) {
+  if (isError || !hasInsights) {
     return (
       <EndgameInsightsBubble
         status={bubbleStatus(isError, isPending)}
@@ -104,7 +104,7 @@ export function EndgameInsightsBlock({
         >
           <h2 className="flex-1 text-base font-semibold" data-testid="insights-block-summary">
             <ShellyQuote
-              text={rendered.report.summary || FALLBACK_HEADER}
+              text={insights.report.summary || FALLBACK_HEADER}
               avatarClassName="size-12"
               expandHint
             />
@@ -112,7 +112,7 @@ export function EndgameInsightsBlock({
         </AccordionTrigger>
         <AccordionContent className="p-4">
           <RenderedState
-            response={rendered}
+            response={insights}
             isPending={isPending}
             blockedReason={blockedReason}
             onRegenerate={onGenerate}

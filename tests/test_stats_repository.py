@@ -93,8 +93,8 @@ async def _seed_game(
     await session.flush()
 
     # If the game is tagged with a named opening, seed a matching game_positions
-    # row carrying that opening's full_hash. The top-openings query (post
-    # PRE-01.1) ranks by COUNT(DISTINCT game) joined through game_positions —
+    # row carrying that opening's full_hash. The top-openings query ranks by
+    # COUNT(DISTINCT game) joined through game_positions —
     # without this row the JOIN would drop the game and the count would be 0.
     if opening_eco is not None and opening_name is not None:
         from sqlalchemy import select as _select
@@ -533,7 +533,7 @@ class TestQueryResultsByColor:
 
 
 class TestQueryTopOpeningsSqlWDL:
-    """Tests for the SQL-side WDL aggregation query (Phase 37)."""
+    """Tests for the SQL-side WDL aggregation query."""
 
     @pytest.mark.asyncio
     async def test_sql_wdl_returns_correct_counts(self, db_session: AsyncSession) -> None:
@@ -661,7 +661,7 @@ class TestQueryTopOpeningsSqlWDL:
     async def test_top_openings_includes_off_color_with_vs_prefix(
         self, db_session: AsyncSession, color: str
     ) -> None:
-        """PRE-01: parity filter removed — off-color openings appear with `vs. ` prefix.
+        """Parity filter removed — off-color openings appear with `vs. ` prefix.
 
         Seeds two openings with known parity:
         - "King's Pawn Game" (B00, ply_count=1, odd) — white-defined

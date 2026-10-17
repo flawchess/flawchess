@@ -1,31 +1,31 @@
 /**
  * ortRuntimeSource — the single main-thread owner of the onnxruntime-web
- * runtime `.wasm` binary (Phase 213-09, G-213-35 second half).
+ * runtime `.wasm` binary.
  *
- * Bug fix: today onnxruntime-web fetches its own runtime binary INSIDE
- * `InferenceSession.create()`, resolved off `ort.env.wasm.wasmPaths` in the
- * worker — an object of versioned per-backend `.mjs`/`.wasm` URLs (quick
- * 260905-rhc; a bare string prefix cannot carry a `?v=` query — see
+ * Why this module exists: onnxruntime-web would otherwise fetch its own
+ * runtime binary INSIDE `InferenceSession.create()`, resolved off
+ * `ort.env.wasm.wasmPaths` in the worker — an object of versioned per-backend
+ * `.mjs`/`.wasm` URLs (a bare string prefix cannot carry a `?v=` query — see
  * `maia-worker.js`'s file header). That fetch never touches a streaming
- * reader, posts no progress, and has no asset id — 14.0 MB (wasm-only) or
- * 25.7 MB (WebGPU/asyncify) transfers with the gate's bar showing nothing. Worse, on
+ * reader, posts no progress, and has no asset id — 13.5 MB (wasm-only) or
+ * 24.3 MB (WebGPU/asyncify) transfers with the gate's bar showing nothing. Worse, on
  * a device whose WebGPU adapter lacks the `shader-f16` feature the worker
- * used to fetch the WebGPU build, fail its D-14 warmup `analyze()`, and THEN
+ * would fetch the WebGPU build, fail its warmup `analyze()`, and THEN
  * fetch the wasm-only build too — 39.7 MB to end up exactly where a straight
- * wasm boot would have started (see 213-09-PLAN.md's objective).
+ * wasm boot would have started.
  *
  * This module moves both decisions to the main thread, BEFORE any Worker is
  * constructed: it inspects the WebGPU adapter's advertised feature set to
  * choose exactly ONE build, then resolves that build's bytes through
  * `engineAssetCache.ts`'s `getEngineAsset()` — the same cache-first layer
- * every engine asset now shares (D-20) — reporting every chunk under the
+ * every engine asset now shares — reporting every chunk under the
  * `ort-runtime` asset id, and hands the resulting buffer to the worker at
- * spawn (`maiaWorkerHost`, Task 2) for `ort.env.wasm.wasmBinary`.
- * onnxruntime-web then issues NO runtime request of its own — see this
- * file's Task 1 gate finding below for the empirical proof that `wasmBinary`
+ * spawn (`maiaWorkerHost`) for `ort.env.wasm.wasmBinary`.
+ * onnxruntime-web then issues NO runtime request of its own — see the gate
+ * finding below for the empirical proof that `wasmBinary`
  * actually suppresses that fetch.
  *
- * Empirical `wasmBinary` gate (213-09-PLAN.md Task 1, run headlessly in
+ * Empirical `wasmBinary` gate (run headlessly in
  * Node against the real vendored `.mjs` loaders with `fs.readFileSync`
  * instrumented — see the vendored README's "Runtime binary ownership"
  * section for the full method and result): setting `wasmBinary` on the
@@ -36,8 +36,8 @@
  * via `wasmPaths` in the worker (24-47 KB) — expected and negligible, not a
  * defect this module needs to prevent.
  *
- * D-08: the fetch is triggered ONLY at the spawn seam that already exists
- * (`maiaWorkerHost.ts`'s `ensureSpawned()`/`spawn()`, Task 2) — nothing is
+ * The fetch is triggered ONLY at the spawn seam that already exists
+ * (`maiaWorkerHost.ts`'s `ensureSpawned()`/`spawn()`) — nothing is
  * fetched at import time and nothing is fetched speculatively.
  *
  * A failed fetch (network error, non-ok response, absent body) must never be
@@ -45,7 +45,7 @@
  * failure mode resolves `{ backend, buffer: null }`, reported once to Sentry.
  * A `null` buffer makes the caller spawn the worker with `wasmBinary` simply
  * left unset, so onnxruntime-web resolves the binary from `wasmPaths` exactly
- * as it does today (T-213-09-02).
+ * as it does without a buffer.
  */
 
 import * as Sentry from '@sentry/react';
@@ -55,7 +55,7 @@ import { getEngineAsset, versionedEngineAssetUrl } from './engineAssetCache';
 // ─── Named constants (CLAUDE.md no-magic-numbers) ──────────────────────────
 
 /**
- * Versioned URL (path plus the shared `?v=<n>` query — quick 260905-rhc) to
+ * Versioned URL (path plus the shared `?v=<n>` query) to
  * the WASM-CPU-only runtime binary served from public/maia/ — pairs with
  * `ort.wasm.min.js` (confirmed by grepping the vendored bundle for the
  * literal filename it requests; see the vendored README).
@@ -63,7 +63,7 @@ import { getEngineAsset, versionedEngineAssetUrl } from './engineAssetCache';
 export const ORT_RUNTIME_WASM_ONLY_PATH = versionedEngineAssetUrl('/maia/ort-wasm-simd-threaded.wasm');
 
 /**
- * Versioned URL (path plus the shared `?v=<n>` query — quick 260905-rhc) to
+ * Versioned URL (path plus the shared `?v=<n>` query) to
  * the WebGPU/asyncify runtime binary served from public/maia/ — pairs with
  * `ort.webgpu.min.js`, NOT the `.jsep` pair some onnxruntime-web docs
  * reference for other bundle combinations (confirmed the same way; see the
@@ -71,18 +71,18 @@ export const ORT_RUNTIME_WASM_ONLY_PATH = versionedEngineAssetUrl('/maia/ort-was
  */
 export const ORT_RUNTIME_ASYNCIFY_PATH = versionedEngineAssetUrl('/maia/ort-wasm-simd-threaded.asyncify.wasm');
 
-/** Raw byte size of the wasm-only runtime binary, verified live 2026-09-05 (onnxruntime-web 1.29.0). Defense-in-depth fallback for a missing/garbage `Content-Length`, mirroring `engineAssetProgress.ts`'s existing fallback constants. */
-export const ORT_RUNTIME_WASM_ONLY_BYTES_FALLBACK = 13_961_845;
+/** Raw byte size of the wasm-only runtime binary, vendored onnxruntime-web 1.27.0 file in public/maia/. Defense-in-depth fallback for a missing/garbage `Content-Length`, mirroring `engineAssetProgress.ts`'s existing fallback constants. */
+export const ORT_RUNTIME_WASM_ONLY_BYTES_FALLBACK = 13_479_978;
 
-/** Raw byte size of the WebGPU/asyncify runtime binary, verified live 2026-09-05 (onnxruntime-web 1.29.0). */
-export const ORT_RUNTIME_ASYNCIFY_BYTES_FALLBACK = 25_749_873;
+/** Raw byte size of the WebGPU/asyncify runtime binary, vendored onnxruntime-web 1.27.0 file in public/maia/. */
+export const ORT_RUNTIME_ASYNCIFY_BYTES_FALLBACK = 24_254_953;
 
 /**
  * The WebGPU adapter feature Maia's fp16 graph needs for its Cast nodes. Bug
  * fix: without probing this BEFORE constructing a Worker, an adapter lacking
- * it only surfaced the failure inside the worker's D-14 warmup `analyze()` —
- * after the full 25.7 MB asyncify build had already been fetched, with a
- * second 14.0 MB wasm-only fetch still to come on respawn. Named per
+ * it only surfaced the failure inside the worker's warmup `analyze()` —
+ * after the full 24.3 MB asyncify build had already been fetched, with a
+ * second 13.5 MB wasm-only fetch still to come on respawn. Named per
  * CLAUDE.md's no-magic-numbers rule (a magic string from a fixed set is the
  * same violation as a bare numeric literal at the branch).
  */
@@ -92,14 +92,14 @@ const REQUIRED_WEBGPU_FEATURE = 'shader-f16';
  * The adapter power preference onnxruntime-web's native WebGPU EP uses when
  * it creates ITS adapter inside `InferenceSession.create()` (the
  * `WebGpuContextConfig` default in `webgpu_context.h`, unreachable from the
- * JS EP options in 1.27). Bug fix (SEED-158, 2026-09-06): the probe used to
- * call `requestAdapter()` with NO options, which on a multi-GPU machine can
+ * JS EP options in 1.27). Bug fix: the probe passes this because
+ * `requestAdapter()` with NO options can, on a multi-GPU machine,
  * return a DIFFERENT adapter than ORT ends up with — measured on the Linux
  * dev box, where the default adapter (AMD iGPU) has `shader-f16` but the
  * high-performance one (NVIDIA, Chrome/Linux Vulkan) does not: the probe
- * said "webgpu", the 25.7 MB asyncify build downloaded, and the fp16 `Cast`
+ * said "webgpu", the 24.3 MB asyncify build downloaded, and the fp16 `Cast`
  * node then failed inside the worker ("Program Cast requires f16 but the
- * device does not support it"), costing the wasm respawn the seed describes.
+ * device does not support it"), costing a wasm respawn.
  * Probing the adapter ORT will actually use keeps the two decisions aligned.
  */
 const ORT_ADAPTER_POWER_PREFERENCE = 'high-performance';
@@ -140,21 +140,18 @@ interface MinimalGpu {
  * `getEngineAsset()` owns that (cache-first, single-flight, fresh instance
  * per caller) and is called fresh on every `ensureOrtRuntime()` invocation.
  *
- * Phase 213-12 (D-20, G-213-36 mechanism moved): before this fix, the
- * fetched `ArrayBuffer` was itself memoised inside this promise and handed
+ * Don't memoise the fetched `ArrayBuffer` inside this promise and hand it
  * DIRECTLY to every caller. `maiaWorkerHost.ts`'s `constructWorker` pushes
  * that buffer into `postMessage`'s transfer list, which DETACHES it — so the
- * first worker's spawn silently consumed the ONE buffer this promise would
- * ever resolve, and every later caller (in practice: the ordinary
- * /analysis -> /bots navigation) received the SAME now-detached instance,
+ * first worker's spawn would consume the ONE buffer this promise could ever
+ * resolve, and every later caller (in practice: the ordinary
+ * /analysis -> /bots navigation) would receive the SAME now-detached instance,
  * producing `DataCloneError: ArrayBuffer at index 0 is already detached`
- * inside a `.then()` as an unhandled rejection. 213-11 fixed this with a
- * retained, never-transferred master plus a per-call `slice(0)` copy — this
- * plan supersedes that mechanism: `getEngineAsset()`'s cache-first design
- * makes retain-and-copy unnecessary, because every call already resolves an
- * independent instance (a fresh cache read, or a fresh copy of a
- * single-flight join) with no ArrayBuffer EVER retained in this module's own
- * scope between calls.
+ * inside a `.then()` as an unhandled rejection. `getEngineAsset()`'s
+ * cache-first design makes retain-and-copy unnecessary, because every call
+ * already resolves an independent instance (a fresh cache read, or a fresh
+ * copy of a single-flight join) with no ArrayBuffer EVER retained in this
+ * module's own scope between calls.
  */
 let backendPromise: Promise<OrtBackend> | null = null;
 
@@ -164,7 +161,7 @@ let backendPromise: Promise<OrtBackend> | null = null;
  * Inspects the WebGPU adapter's advertised feature set to choose exactly ONE
  * runtime build, entirely on the main thread and before any Worker exists.
  * Every malformed/absent shape falls safe to `'wasm'` — the wasm path always
- * works, and a wrong "present" answer is precisely the 25.7 MB defect this
+ * works, and a wrong "present" answer is precisely the 24.3 MB defect this
  * module fixes (a wrong "absent" answer only costs GPU inference on that
  * device, never a second download):
  *  - no `navigator.gpu` at all (older/non-Chromium browsers)
@@ -201,9 +198,9 @@ function runtimeAssetFor(backend: OrtBackend): { url: string; fallbackBytes: num
 /**
  * The single owner of the onnxruntime-web runtime resolution. Memoised at
  * the BACKEND level only (the first call synchronously registers
- * `'ort-runtime'` as pending — CR-02, this MUST happen before the adapter
+ * `'ort-runtime'` as pending — this MUST happen before the adapter
  * probe or the fetch, in the same synchronous call as the caller's
- * `markEngineAssetPending('maia-model')`, Task 2 — and starts the async
+ * `markEngineAssetPending('maia-model')` — and starts the async
  * probe; every later call joins the same backend decision). The runtime
  * BYTES are resolved fresh on EVERY call via `getEngineAsset()`, which owns
  * its own cache-first + single-flight + fresh-instance-per-caller guarantee
@@ -236,10 +233,8 @@ export function ensureOrtRuntime(): Promise<OrtRuntimeResult> {
 
 /**
  * The memoised backend decision on its own, WITHOUT the runtime fetch.
- * (SEED-158 briefly exported it for a fetch-free iOS probe; iOS now spawns
- * the wasm backend without probing, so it is internal again.)
  *
- * CR-02: `'ort-runtime'` is registered as pending synchronously here, before
+ * `'ort-runtime'` is registered as pending synchronously here, before
  * the (async) adapter probe begins, in the exact same tick as the first
  * caller's request.
  */
@@ -254,7 +249,7 @@ function probeOrtBackendOnce(): Promise<OrtBackend> {
 /**
  * Fetches the wasm-only runtime binary directly, bypassing the adapter probe
  * entirely and NOT joining `ensureOrtRuntime()`'s memoised BACKEND decision.
- * Used exclusively by `maiaWorkerHost.ts`'s `respawnPinnedToWasm()` (Task 2):
+ * Used exclusively by `maiaWorkerHost.ts`'s `respawnPinnedToWasm()`:
  * the host already knows the replacement worker is pinned to wasm (a WebGPU
  * session just failed), so there is no adapter left to probe, and the
  * replacement needs the wasm-only binary regardless of whatever
@@ -268,14 +263,12 @@ function probeOrtBackendOnce(): Promise<OrtBackend> {
  * a failed respawn fetch still lets the replacement worker spawn (with
  * `wasmBinary` left unset) rather than stranding the respawn.
  *
- * Routes through the SAME `getEngineAsset()` layer as `ensureOrtRuntime()`
- * (Phase 213-12, D-20): a respawn's binary is now a genuine CACHE READ when
- * this exact URL was already fetched earlier in the page session (e.g. a
- * SECOND wasm-pinned respawn, or a wasm-only backend that later needs this
- * same binary again) — an improvement over the pre-D-20 behavior, not a
- * behavior change to the caller's contract: this function still returns an
- * instance no other reader has touched, and it still does not share
- * `ensureOrtRuntime()`'s backend memoisation.
+ * Routes through the SAME `getEngineAsset()` layer as `ensureOrtRuntime()`:
+ * a respawn's binary is a genuine CACHE READ when this exact URL was already
+ * fetched earlier in the page session (e.g. a SECOND wasm-pinned respawn, or
+ * a wasm-only backend that later needs this same binary again). This
+ * function returns an instance no other reader has touched, and it does not
+ * share `ensureOrtRuntime()`'s backend memoisation.
  */
 export function fetchWasmOnlyOrtRuntime(): Promise<ArrayBuffer | null> {
   return getEngineAsset(

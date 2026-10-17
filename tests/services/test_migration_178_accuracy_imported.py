@@ -1,11 +1,11 @@
-"""Tests for the Phase 178 Plan 01 Alembic migration: accuracy/acpl imported columns.
+"""Tests for the Alembic migration that adds the accuracy/acpl imported columns.
 
 Regression suite for the migration that adds:
 - `games.white_accuracy_imported` / `games.black_accuracy_imported` (REAL, nullable)
 - `games.white_acpl_imported` / `games.black_acpl_imported` (SmallInteger, nullable)
 - Copies the pre-migration platform-provided `white_accuracy` / `black_accuracy` /
   `white_acpl` / `black_acpl` values into the new `*_imported` columns, THEN NULLs
-  the canonical columns (D-01/D-02/D-03).
+  the canonical columns.
 
 MANDATORY behavioral assertion (not schema/column-presence only): a copy-AFTER-null
 ordering bug would silently produce all-NULL `*_imported` columns and would NOT be
@@ -35,7 +35,7 @@ from sqlalchemy import text
 
 # ─── Constants (CLAUDE.md: no magic numbers) ─────────────────────────────────
 TARGET_REVISION: str = "head"
-# down_revision of the Phase 178 Plan 01 migration (the previous head before it).
+# down_revision of the imported-columns migration (the previous head before it).
 BASE_REVISION: str = "939c3d99868d"
 
 MINIMAL_PGN: str = "1. e4 e5 *"

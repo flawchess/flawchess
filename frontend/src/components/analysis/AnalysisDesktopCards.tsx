@@ -14,22 +14,21 @@ import type { MoveGrade } from '@/lib/moveQuality';
 import type { PvLine } from '@/hooks/uciParser';
 
 /**
- * AnalysisDesktopCards — the shared desktop/mid cards, extracted from
- * `Analysis.tsx`'s `stockfishCard`/`movesCard`/`desktopMaiaPanel`/`pasteModalNode`
- * render fragments (215-06). Each is reused verbatim between the mid-range
+ * AnalysisDesktopCards — the shared desktop/mid cards (Stockfish, moves, Maia
+ * panel, paste modal). Each is reused verbatim between the mid-range
  * two-column layout and the desktop 3-column layout (single mount — only one
  * return branch renders).
  */
 
 const ENGINE_NAME = 'Stockfish 18';
 /** Card-body chrome (px) on top of the engine-lines region: 78 - 60, so the default
- *  2-line card keeps its pre-Phase-228 78px body height exactly. */
+ *  2-line card body is exactly 78px tall. */
 const STOCKFISH_CARD_BODY_CHROME_PX = 18;
 
 // ─── StockfishCard ──────────────────────────────────────────────────────────────
 
 export type StockfishCardProps = {
-  /** Stockfish lines setting (1-5): rows and skeleton rows (Phase 228 D-16). */
+  /** Stockfish lines setting (1-5): rows and skeleton rows. */
   sfLines: number;
   engineEnabled: boolean;
   setEngineEnabled: (enabled: boolean) => void;
@@ -43,8 +42,7 @@ export type StockfishCardProps = {
   onMoveClick: (uciMoves: string[]) => void;
 };
 
-// Stockfish engine info + lines card (155/162 UAT: reconciled top-N over the
-// grading union).
+// Stockfish engine info + lines card (reconciled top-N over the grading union).
 export function StockfishCard({
   sfLines,
   engineEnabled,
@@ -141,7 +139,7 @@ export type PasteModalNodeProps = {
   onSaved: (savedGameId: number) => void;
 };
 
-// Phase 208 (D-19/D-20): the paste modal — rendered into all three layout
+// The paste modal — rendered into all three layout
 // branches (mid/mobile/desktop return at different points), mirroring the
 // "analysis-page" testid pattern already used the same way. Only one branch
 // mounts per render, and Dialog itself portals its content, so duplicating the

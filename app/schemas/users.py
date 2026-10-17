@@ -15,7 +15,7 @@ from app.schemas.normalization import TimeControlBucket
 class CurrentStrengthRung(BaseModel):
     """Provenance of a recent-games-derived current-strength estimate.
 
-    Quick 260811-u11 (SEED-147). ``converted`` is False only for a native
+    ``converted`` is False only for a native
     Lichess blitz rung; every other rung was mapped onto the Lichess blitz
     scale by ``normalize_to_lichess_blitz`` before comparison, so it always
     carries some conversion error.
@@ -29,7 +29,7 @@ class CurrentStrengthRung(BaseModel):
 
 
 class CurrentStrengthResponse(BaseModel):
-    """The opponent-matching current-strength estimate (Quick 260811-u11, SEED-147).
+    """The opponent-matching current-strength estimate.
 
     Separate from the ``user_rating_anchors`` career-median anchor the
     percentile chip reads -- this value answers "who should I play right
@@ -38,7 +38,7 @@ class CurrentStrengthResponse(BaseModel):
     90-day/20-game activity floor, ``source`` is "rating_anchor" and ``rung``
     is None.
 
-    UI DEFAULT ONLY -- never fed into bot move selection (BOT-03). This
+    UI DEFAULT ONLY -- never fed into bot move selection. This
     value seeds the Bots page's PersonaGrid rating line, the custom-bot ELO
     default, and the analysis board's free-play ELO default; it must never
     reach the bot's move-selection budget.
@@ -63,28 +63,26 @@ class UserProfileResponse(BaseModel):
     lichess_game_count: int
     chess_com_last_sync_at: datetime | None = None
     lichess_last_sync_at: datetime | None = None
-    # D-22: populated when the request's JWT has is_impersonation=true.
-    # Frontend uses this to render the header pill (phase 62).
+    # Populated when the request's JWT has is_impersonation=true.
+    # Frontend uses this to render the header pill.
     impersonation: ImpersonationContext | None = None
-    # BETA-01: beta_enabled flag (e.g. Endgame Insights). Default false; flipped via direct DB op.
+    # beta_enabled flag (e.g. Endgame Insights). Default false; flipped via direct DB op.
     beta_enabled: bool
-    # Phase 230 D-16: weekly Train leaderboard opt-out. Written only via the
+    # Weekly Train leaderboard opt-out. Written only via the
     # profile PUT (UserProfileUpdate.leaderboard_hidden).
     leaderboard_hidden: bool
-    # Quick 260811-u11 (SEED-147): the opponent-matching current-strength
-    # estimate, replacing `lichess_blitz_equivalent_rating` (P-01) -- that
-    # field had zero readers left once all three opponent-matching surfaces
-    # repointed here, and the anchor fallback (D-07) now happens server-side
+    # The opponent-matching current-strength
+    # estimate. The anchor fallback happens server-side
     # inside this field's resolution instead of at each call site. None for
     # guests, for users with no anchor at all, and for users with anchors
     # only in non-blitz buckets and no qualifying recent games (deliberate,
     # not a bug); the frontend falls back to 1500. UI DEFAULT ONLY -- never
-    # fed into bot move selection (BOT-03).
+    # fed into bot move selection.
     current_strength: CurrentStrengthResponse | None = None
-    # Phase 234 (SEED-191, D-01): distinct UTC activity days up to and including
+    # Distinct UTC activity days up to and including
     # today; the milestone-ask copy interpolates it.
     active_days: int
-    # Phase 234 (SEED-191 #8): server-decided milestone feedback ask state.
+    # Server-decided milestone feedback ask state.
     feedback_ask: FeedbackAskView
 
 
@@ -93,11 +91,11 @@ class UserProfileUpdate(BaseModel):
 
     chess_com_username: str | None = None
     lichess_username: str | None = None
-    # Phase 230 D-16: None means unchanged (the repository drops None values),
+    # None means unchanged (the repository drops None values),
     # an explicit False un-hides. beta_enabled stays absent from this schema.
     leaderboard_hidden: bool | None = None
 
-    # D-03: per-field validators pinned to that field's own platform, so a
+    # Per-field validators pinned to that field's own platform, so a
     # chess.com URL pasted into lichess_username (or vice versa) is not
     # silently rewritten -- it is left unchanged and rejected downstream by
     # the platform API instead.
@@ -135,7 +133,7 @@ def _clip(value: object, max_len: int) -> str | None:
 
 
 class FirstTouchRequest(BaseModel):
-    """Request body for POST /users/me/first-touch (growth report item 16)."""
+    """Request body for POST /users/me/first-touch."""
 
     referrer_host: str | None = None
     utm_source: str | None = None
@@ -173,7 +171,7 @@ class GameCountResponse(BaseModel):
 class ImportSettingsResponse(BaseModel):
     """Response for GET/PATCH /users/me/import-settings.
 
-    Phase 186 Plan 01 (IMPORT-01/IMPORT-04). `game_cap` is a `Literal`, never
+    `game_cap` is a `Literal`, never
     a bare `int` (CLAUDE.md V5 rule) -- mirrors the DB
     `ck_user_import_settings_cap` CHECK constraint at the schema boundary.
     """
@@ -186,7 +184,7 @@ class ImportSettingsResponse(BaseModel):
     # Per-(platform, TC) count of ALL imported games (not just the pre-anchor
     # backlog), e.g. {"chess.com": {"blitz": 2705, "rapid": 1643}}. Populated by
     # count_imported_by_platform_and_tc so the per-TC chips read as an honest
-    # breakdown of the header's total game count (UAT follow-up to Plan 03).
+    # breakdown of the header's total game count.
     # NULL-bucket games are omitted (no TC chip); empty dict is a valid "no
     # games yet" response, not a sentinel for "not computed".
     imported_counts: dict[str, dict[str, int]]

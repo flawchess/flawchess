@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 239 D-04 / D-05: the Library default TC, its own localStorage key and the shared
+ * The Library default TC, its own localStorage key and the shared
  * (synced) selection store. The store is module-level state, so each test loads a fresh
  * copy of both hook modules (the dynamic imports live in beforeEach, never in a test body).
  */
@@ -33,7 +33,7 @@ function lib(tc: TimeControlBucket, analyzed_n: number, below_gate = false): Lib
   return { tc, analyzed_n, below_gate };
 }
 
-describe('pickDefaultLibraryTc (D-04)', () => {
+describe('pickDefaultLibraryTc', () => {
   it('picks the TC with the most analyzed games', () => {
     expect(library.pickDefaultLibraryTc([lib('blitz', 180), lib('rapid', 871)])).toBe('rapid');
   });
@@ -58,7 +58,7 @@ describe('pickDefaultLibraryTc (D-04)', () => {
   });
 });
 
-describe('useLibraryStatsTc (D-02, D-05)', () => {
+describe('useLibraryStatsTc', () => {
   const tcs: LibraryTcCount[] = [lib('blitz', 180), lib('rapid', 871)];
 
   it('uses its own storage key', () => {
@@ -66,7 +66,7 @@ describe('useLibraryStatsTc (D-02, D-05)', () => {
     expect(library.LIBRARY_STATS_TC_STORAGE_KEY).not.toBe(endgame.ENDGAME_STATS_TC_STORAGE_KEY);
   });
 
-  it('defaults to the D-04 TC when nothing is stored', () => {
+  it('defaults to the most-analyzed TC when nothing is stored', () => {
     const { result } = renderHook(() => library.useLibraryStatsTc(tcs));
     expect(result.current[0]).toBe('rapid');
   });
@@ -136,7 +136,7 @@ describe('useLibraryStatsTc (D-02, D-05)', () => {
     expect(endgameHook.result.current[0]).toBe('rapid');
   });
 
-  it('keeps the un-chosen default when a refetch makes another TC the leader (FE-IN-05)', () => {
+  it('keeps the un-chosen default when a refetch makes another TC the leader', () => {
     const { result, rerender } = renderHook(({ list }) => library.useLibraryStatsTc(list), {
       initialProps: { list: tcs },
     });

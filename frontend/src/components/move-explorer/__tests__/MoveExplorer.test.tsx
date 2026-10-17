@@ -8,7 +8,7 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Phase 77: stub curated data — sentinel key matches the WHITE-only
+// Stub curated data — sentinel key matches the WHITE-only
 // derivation of RESULT_FEN_AFTER_E5 below (post-1.e4 e5 board FEN with
 // black pieces stripped). BLACK_TROLL_KEYS stays empty so the side-routing
 // test can assert "same result_fen but black-to-move => no icon".
@@ -49,15 +49,15 @@ function makeEntry(overrides: Partial<NextMoveEntry> & Pick<NextMoveEntry, 'move
     draw_pct: 25,
     loss_pct: 25,
     result_hash: '0',
-    // Phase 77: must be a valid 8-rank board FEN — MoveExplorer now calls
+    // Must be a valid 8-rank board FEN — MoveExplorer now calls
     // isTrollPosition(result_fen, side) which throws on malformed input. The
     // starting-position board FEN is a safe non-troll default; tests that
     // exercise the troll path override this explicitly.
     result_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
     transposition_count: 100,
-    score: 0.625,           // Phase 76 D-05
-    confidence: 'high',     // Phase 76 D-05
-    p_value: 0.05,          // Phase 76 D-05
+    score: 0.625,
+    confidence: 'high',
+    p_value: 0.05,
     ...overrides,
   };
 }
@@ -255,7 +255,7 @@ describe('Score column + mute extension', () => {
     const row = screen.getByTestId('move-explorer-row-e4');
     expect(row.textContent).toContain('52%');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
-    // Quick task 260508-dcp: in-between band no longer paints zone color on
+    // In-between band no longer paints zone color on
     // the font. The font is only colored when the score lands in red/green
     // AND the result is significant (p < 0.05).
     expect(scoreSpan?.className).not.toContain('text-muted-foreground');
@@ -399,7 +399,7 @@ describe('Score column + mute extension', () => {
   });
 });
 
-describe('Phase 77 — Troll-opening inline icon', () => {
+describe('Troll-opening inline icon', () => {
   it('renders troll icon when result_fen matches WHITE_TROLL_KEYS and parent is white-to-move', () => {
     render(
       <MoveExplorer
@@ -427,7 +427,7 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     expect(screen.queryByTestId('move-list-row-d4-troll-icon')).toBeNull();
   });
 
-  it('routes to BLACK_TROLL_KEYS when parent position is black-to-move (D-10)', () => {
+  it('routes to BLACK_TROLL_KEYS when parent position is black-to-move', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e5', result_fen: RESULT_FEN_AFTER_E5 })]}
@@ -444,9 +444,9 @@ describe('Phase 77 — Troll-opening inline icon', () => {
   });
 
   it('icon renders on mobile and desktop with muted-foreground tint', () => {
-    // D-07 reversed (post-77 polish): the smiley now shows on mobile too,
-    // tinted to text-muted-foreground to match the confidence column. After
-    // quick task 260508-r61 the SVG lives inside a <button> wrapper that
+    // The smiley shows on mobile too,
+    // tinted to text-muted-foreground to match the confidence column. The
+    // SVG lives inside a <button> wrapper that
     // carries the muted-foreground class (the SVG inherits via currentColor).
     render(
       <MoveExplorer
@@ -462,13 +462,13 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     const classes = icon.getAttribute('class') ?? '';
     expect(classes).toContain('inline-block');
     expect(classes).not.toContain('hidden');
-    // The muted-foreground class moved to the button wrapper after quick task
-    // 260508-r61; assert it on the button instead of the SVG.
+    // The muted-foreground class lives on the button wrapper;
+    // assert it on the button instead of the SVG.
     const button = screen.getByTestId('move-explorer-troll-e4');
     expect(button.getAttribute('class') ?? '').toContain('text-muted-foreground');
   });
 
-  it('throws when position is a board-only FEN with no side-to-move token (Pitfall 7)', () => {
+  it('throws when position is a board-only FEN with no side-to-move token', () => {
     // Suppress React's error-boundary logging for this assertion.
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(() =>
@@ -486,8 +486,8 @@ describe('Phase 77 — Troll-opening inline icon', () => {
   });
 
   it('icon is exposed to assistive tech with role and label', () => {
-    // Quick task 260508-r61 swapped the wrapper from a hover-only Tooltip to a
-    // tap-friendly Radix popover. The button now owns the aria-label (the SVG
+    // The wrapper is not a hover-only Tooltip but a
+    // tap-friendly Radix popover. The button owns the aria-label (the SVG
     // is purely decorative inside the button) so screen readers announce a
     // single labeled control rather than nested labels.
     render(
@@ -507,10 +507,10 @@ describe('Phase 77 — Troll-opening inline icon', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Quick task 260508-r61 — Score info popover, troll-icon popover, selected-row !
+// Score info popover, troll-icon popover, selected-row !
 // ---------------------------------------------------------------------------
 
-describe('260508-r61 — Score cell info-icon popover', () => {
+describe('Score cell info-icon popover', () => {
   it('renders the Search (score-info) button with the expected testid for every move row', () => {
     render(
       <MoveExplorer
@@ -556,7 +556,7 @@ describe('260508-r61 — Score cell info-icon popover', () => {
   });
 });
 
-describe('260508-r61 — Troll icon popover', () => {
+describe('Troll icon popover', () => {
   it('renders a button with the kebab-case testid for the troll trigger', () => {
     render(
       <MoveExplorer
@@ -587,12 +587,12 @@ describe('260508-r61 — Troll icon popover', () => {
   });
 });
 
-describe('260508-r61 — Selected-row important suffix on tinted backgrounds', () => {
+describe('Selected-row important suffix on tinted backgrounds', () => {
   // The MoveRow `cn()` chain adds `bg-foreground/10!` (Tailwind v4 important
   // suffix) for both the hover and the selectedMove paths so the static class
   // wins over the inline `style.backgroundColor` set for score-zone tinted
-  // rows. Before quick task 260508-r61 the selected branch was missing the `!`
-  // and the selection was invisible on green/red zones. This regression guard
+  // rows. Without the `!` on the selected branch
+  // the selection is invisible on green/red zones. This regression guard
   // reads the source file directly so it survives bundler transformations
   // that would otherwise strip the literal from MoveExplorer.toString().
   it('source file contains bg-foreground/10! for both hover and selected paths', async () => {

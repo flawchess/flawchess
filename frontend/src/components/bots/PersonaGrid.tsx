@@ -1,11 +1,10 @@
 /**
- * PersonaGrid — the Bots page's default setup view (Phase 183, PERS-01/
- * PERS-04). Renders all 24 personas as a transposed grid (Phase 185): one
+ * PersonaGrid — the Bots page's default setup view. Renders all 24 personas as a transposed grid: one
  * header row of the 4 style names (`STYLE_SECTION_ORDER`) in their accent
  * colors, then 6 rung rows ascending 800 (top) -> 1800 (bottom)
  * (`RUNGS`/`personasForRung`), 4 `PersonaCard`s per row in style order, no
  * row labels — plus one clearly-visible Custom entry that routes to the
- * unchanged `SetupScreen` (D-01) rather than duplicating any of its
+ * unchanged `SetupScreen` rather than duplicating any of its
  * controls here.
  */
 
@@ -28,7 +27,7 @@ import {
 import type { Style } from '@/lib/engine/styleOpeningLines';
 import { ATTACKER_ACCENT, TRICKSTER_ACCENT, GRINDER_ACCENT, WALL_ACCENT } from '@/lib/theme';
 
-/** Per-style section-heading accent (D-14: the heading text is the style's
+/** Per-style section-heading accent (the heading text is the style's
  * own display name — "Wall", never "Solid Wall"/"Great Wall"). Mirrors
  * `personaAvatars.ts`'s `PERSONA_STYLE_TINT` exhaustiveness convention. */
 const STYLE_ACCENT: Record<Style, string> = {
@@ -41,14 +40,14 @@ const STYLE_ACCENT: Record<Style, string> = {
 export interface PersonaGridProps {
   onSelectPersona: (persona: Persona) => void;
   onSelectCustom: () => void;
-  /** Phase 185: per-persona-id raw win counts, fetched ONCE by `Bots.tsx`
+  /** Per-persona-id raw win counts, fetched ONCE by `Bots.tsx`
    * (`useBotPersonaWins`) and prop-drilled here — this component never calls
-   * `useQuery` itself (Pattern 3, single-fetch-then-prop-drill), which would
-   * break its existing no-`QueryClientProvider` render tests. `undefined`
+   * `useQuery` itself (single fetch, then prop-drill), which would
+   * break its no-`QueryClientProvider` render tests. `undefined`
    * while loading/erroring; each card degrades to its own all-outline
    * zero-state rather than blocking this whole grid. */
   winsByPersona?: Record<string, number>;
-  /** Phase 234 (SEED-191): non-null while the milestone feedback ask is active,
+  /** Non-null while the milestone feedback ask is active,
    * the user's active days for Hilda's copy. Computed by `Bots.tsx` from its
    * single `useUserProfile()` read and prop-drilled like `winsByPersona`, so
    * this component still calls no query hook; the ask's only hook-bearing child
@@ -57,20 +56,15 @@ export interface PersonaGridProps {
 }
 
 /**
- * BotWelcomeCard — the roster page's per-persona welcome (D-13,
- * 223-CONTEXT). Replaces the retired `HumanLikeOpponentsCard`'s prose
- * paragraph with the SAME rotating `TrainBotBubble` the /train landing page
- * uses (`TrainStartScreen.tsx`'s `landingHost` call site is the register
- * this bubble matches) — `rosterHost` (`botGameCopy.ts`) shares its epoch
- * and id order with `landingHost`, so the two pages agree on today's host
- * structurally. Phase 223 UAT: no card around it any more — the bubble sits
- * directly on the page like the Train landing's.
+ * BotWelcomeBubble — the roster page's rotating host bubble, the same
+ * `TrainBotBubble` the /train landing uses (`rosterHost` shares
+ * `landingHost`'s epoch and id order, so the two pages agree on today's host
+ * structurally). It sits directly on the page, with no card around it.
  *
  * The bubble renders unconditionally, guests included — they are exactly who
- * needs the explanation most. Phase 223 UAT also retired the player's
- * estimated-rating line that used to sit beneath it: a bot's calibrated ELO
- * is measured against engines, not humans, so putting a human number next to
- * it invited a comparison the two scales do not support.
+ * needs the explanation most. Don't show the player's estimated rating next
+ * to it: bot ELO is measured against engines, not humans, so a human number
+ * beside it invites a comparison the two scales do not support.
  *
  * Copy accuracy constraint: 16 of the 24 personas run at `HUMAN_BLEND` (rungs
  * 800-1400), where `selectBotMove` makes exactly ONE Maia policy call and never
@@ -81,13 +75,13 @@ export interface PersonaGridProps {
  * `varianceBonus` and `contempt` only bite on the Light/Deep rungs, while the
  * prior reweighting and opening books tilt every rung.
  *
- * Phase 234: while the milestone feedback ask is active (`feedbackAskDays`
+ * While the milestone feedback ask is active (`feedbackAskDays`
  * non-null) Hilda's `FeedbackAskBubble` takes this slot instead of the host
  * greeting.
  */
-function BotWelcomeCard({ feedbackAskDays }: { feedbackAskDays: number | null }): ReactElement {
+function BotWelcomeBubble({ feedbackAskDays }: { feedbackAskDays: number | null }): ReactElement {
   if (feedbackAskDays != null) {
-    // SEED-191 #2: Hilda replaces the rotating host, and the inline bot-engine
+    // Hilda replaces the rotating host, and the inline bot-engine
     // explainer popover is hidden for that stretch (acceptable: eligible users
     // have 5+ active days). Guests are never eligible.
     return (
@@ -114,7 +108,7 @@ function BotWelcomeCard({ feedbackAskDays }: { feedbackAskDays: number | null })
               <InfoPopover ariaLabel="About the bot opponents" testId="bots-intro-info">
                 <div className="max-w-xs space-y-2">
                   {/* Non-technical engine explainer, kept in the register
-                      of Analysis.tsx's FlawChessInfoTooltip: no "Maia", no
+                      of AnalysisTabs.tsx's FlawChessInfoTooltip: no "Maia", no
                       "MCTS", no "expectimax". It describes what the engine
                       KNOWS (how players at a rating move), never that the
                       bot calculates — 16 of the 24 personas run no search
@@ -151,19 +145,19 @@ export function PersonaGrid({
 }: PersonaGridProps): ReactElement {
   return (
     // Bottom-nav clearance (mirrors SetupScreen.tsx's root pb-20 sm:pb-4
-    // pattern — this is now the Bots page's default setup-phase root).
+    // pattern — this is the Bots page's default setup-phase root).
     <div
       data-testid="bots-persona-grid"
       className="mx-auto flex max-w-2xl flex-col gap-6 p-4 pb-20 sm:pb-4"
     >
-      <BotWelcomeCard feedbackAskDays={feedbackAskDays ?? null} />
+      <BotWelcomeBubble feedbackAskDays={feedbackAskDays ?? null} />
 
       {/* Single grid-cols-4 container for the header row + all 6 rung body
           rows, so columns align exactly and row/column gaps stay uniform
-          (8px, per UI-SPEC) — separate from the outer flex column's gap-6.
+          (8px) — separate from the outer flex column's gap-6.
           Header cells auto-flow into row 1; RUNGS.flatMap(personasForRung)
           fills the remaining rows rung-major (800 top -> 1800 bottom), no
-          row labels (locked decision). */}
+          row labels. */}
       <div className="grid grid-cols-4 gap-2">
         {STYLE_SECTION_ORDER.map((style) => (
           <div

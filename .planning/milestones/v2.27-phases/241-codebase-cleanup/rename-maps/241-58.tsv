@@ -1,0 +1,8 @@
+old	new	kind	absent_paths	ref	canon_paths
+BotWelcomeCard	BotWelcomeBubble	identifier	frontend/src,docs,CLAUDE.md,frontend/CLAUDE.md	INVENTORY §5 PersonaGrid.tsx:88	
+useWinCelebrationHold	useResultDialogHold	file	frontend/src	INVENTORY §5 hooks/useWinCelebrationHold.ts:74	
+useWinCelebrationHold	useResultDialogHold	identifier	frontend/src,docs,CLAUDE.md,frontend/CLAUDE.md	INVENTORY §5 hooks/useWinCelebrationHold.ts:74	
+celebrationHold	resultDialogHeld	identifier	frontend/src/pages/Bots.tsx	D-08 should-follow	frontend/src/pages/Bots.tsx
+botDrawOffer	botDrawOfferPending	identifier	frontend/src,docs,CLAUDE.md,frontend/CLAUDE.md	INVENTORY §5 hooks/useBotGame.ts:225	
+botDrawOfferRef	botDrawOfferPendingRef	identifier	frontend/src,docs,CLAUDE.md,frontend/CLAUDE.md	INVENTORY §5 hooks/useBotGame.ts:225	
+setBotDrawOffer	setBotDrawOfferPending	identifier	frontend/src,docs,CLAUDE.md,frontend/CLAUDE.md	INVENTORY §5 hooks/useBotGame.ts:225	

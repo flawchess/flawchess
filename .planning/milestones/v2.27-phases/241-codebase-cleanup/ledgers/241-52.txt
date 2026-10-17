@@ -1,0 +1,2 @@
+# Plan 241-52 ledger
+INV-L341: APPLIED ip_rate_limiter.py module docstring, class docstring and the _timestamps comment now describe the arbitrary-key limiter (re-verified: feedback.py and users.py call is_allowed with a user id and an email); same commit as the is_allowed(key) rename

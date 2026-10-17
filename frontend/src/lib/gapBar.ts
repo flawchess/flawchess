@@ -1,13 +1,12 @@
 /**
  * Pure math and vocabulary for the Library Stats you-vs-opponents gap bar
- * (Phase 239, sketch 010 round 5). No React: the GapBar and GapPopover both read from
- * here so they never disagree.
+ * No React: the GapBar and GapPopover both read from here so they never disagree.
  *
  * Sign convention: the API's gap is you minus opponents per 100 moves / games, so a
  * NEGATIVE gap means FEWER flaws, which is good. The bar follows the number line: zero
- * is the centre and lower (better) gaps are drawn to the LEFT (Phase 239 D-14, UAT).
+ * is the centre and lower (better) gaps are drawn to the LEFT.
  *
- * Verdicts need significance (D-14): a gap outside the band whose 99% CI still covers 0
+ * Verdicts need significance: a gap outside the band whose 99% CI still covers 0
  * renders neutral like a typical one, and the popover says it could be chance.
  */
 
@@ -20,7 +19,7 @@ import {
   ZONE_SUCCESS,
 } from '@/lib/theme';
 
-/** The benchmark band edge sits this far (in %) from the centre (bands are symmetric since D-15). */
+/** The benchmark band edge sits this far (in %) from the centre (bands are symmetric). */
 const GAP_BAND_HALF_POS = 25;
 /** The outermost dot position, in % from either edge: the dot never touches the edge. */
 export const GAP_EDGE_POS = 3;
@@ -52,9 +51,9 @@ export interface GapCell {
   delta: number | null;
   zoneLo: number;
   zoneHi: number;
-  /** False for an unviable family (D-11): no band, no verdict. */
+  /** False for an unviable family: no band, no verdict. */
   hasZone: boolean;
-  /** The 99% CI on the gap excludes 0 (D-14): only then may an out-of-band gap be coloured. */
+  /** The 99% CI on the gap excludes 0: only then may an out-of-band gap be coloured. */
   significant: boolean;
   youRate: number | null;
   oppRate: number | null;
@@ -69,12 +68,12 @@ export interface GapCell {
  * Position (0-100, % from the left) of a gap on the zero-centred track. Linear inside
  * the band (its half-width maps to GAP_BAND_HALF_POS), then saturating with 1 - e^-x
  * (x in band widths) so large gaps approach the edge without clipping. Bands are
- * symmetric since D-15; the max() over both sides only keeps an asymmetric band sane.
+ * symmetric; the max() over both sides only keeps an asymmetric band sane.
  */
 export function gapPosition(delta: number, zoneLo: number, zoneHi: number): number {
   const s = Math.max(Math.abs(zoneLo), Math.abs(zoneHi));
   const a = Math.abs(delta);
-  // Number line: fewer flaws (negative gap, better) is drawn to the left (D-14 flip).
+  // Number line: fewer flaws (negative gap, better) is drawn to the left.
   const sign = delta < 0 ? -1 : 1;
   if (s === 0) {
     // A band collapsed onto zero has no scale: only a zero gap sits at the centre,
@@ -107,8 +106,8 @@ function rawVerdict(cell: GapCell): GapVerdict | null {
 
 /**
  * The verdict a cell shows; null when it has none. An out-of-band gap that is not
- * significant reads 'typical' (D-14): neutral dot and words. A zoneless cell (D-11) has
- * no band to be outside of, so it is judged on significance alone (D-16): better or worse
+ * significant reads 'typical': neutral dot and words. A zoneless cell has
+ * no band to be outside of, so it is judged on significance alone: better or worse
  * when its 99% CI excludes 0, no verdict otherwise.
  */
 export function effectiveVerdict(cell: GapCell): GapVerdict | null {
@@ -122,7 +121,7 @@ export function effectiveVerdict(cell: GapCell): GapVerdict | null {
   return cell.significant ? raw : 'typical';
 }
 
-/** True when the gap is outside the band but not significant: it could be chance (D-14). */
+/** True when the gap is outside the band but not significant: it could be chance. */
 export function isChanceGap(cell: GapCell): boolean {
   const raw = rawVerdict(cell);
   return raw !== null && raw !== 'typical' && !cell.significant;
@@ -194,7 +193,7 @@ function clamp01(value: number): number {
 
 /**
  * Tint strength share in [0, 1], read off the same position curve the GapBar dot uses
- * (quick 261014-qj8). Banded cell: how far beyond the band edge the dot sits along the
+ * Banded cell: how far beyond the band edge the dot sits along the
  * saturating outer span, so a gap just outside the band is faint and a far one saturates.
  * Zoneless cell: its dot sits inside the virtual max-rate band, so the share is the gap
  * relative to the larger rate.
@@ -206,10 +205,10 @@ function heatmapShare(cell: GapCell): number {
 }
 
 /**
- * Background of one heatmap cell, coloured exactly like the gap bars (quick 261014-qj8):
+ * Background of one heatmap cell, coloured exactly like the gap bars:
  * only a cell with a better/worse effectiveVerdict is tinted, i.e. a banded cell whose gap
- * is outside the band AND significant (D-14), or a zoneless cell that is significant
- * (D-16). Every other cell (inside the band, could-be-chance, null gap) is neutral with
+ * is outside the band AND significant, or a zoneless cell that is significant
+ * Every other cell (inside the band, could-be-chance, null gap) is neutral with
  * percent 0. The tint percent rises from GAP_HEATMAP_TINT_MIN_PERCENT to
  * GAP_HEATMAP_TINT_MAX_PERCENT with the GapBar position beyond the band.
  */

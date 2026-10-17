@@ -1,19 +1,18 @@
-"""Pydantic v2 schemas for the endgame findings pipeline (Phase 63).
+"""Pydantic v2 schemas for the endgame findings pipeline.
 
-Defined per FIND-01 / FIND-05 — the schema is the contract consumed by
-`insights_service.compute_findings` (Plan 04) and by the Phase 65 LLM endpoint's
-prompt-assembly. Field names are LOCKED once this ships: renaming after
-Phase 65 forces a prompt revision.
+The schema is the contract consumed by
+`insights_service.compute_findings` and by the LLM endpoint's
+prompt-assembly. Field names are LOCKED: renaming forces a prompt revision.
 
 Re-exports `Zone`, `Trend`, `SampleQuality`, `Window`, `MetricId`, and
 `SubsectionId` from `app.services.endgame_zones` so consumers only need one
-import path. Plan 01 owns those type aliases; this module does not redefine
-them.
+import path. Those type aliases are owned by `app.services.endgame_zones`; this
+module does not redefine them.
 
-Field declaration order matters for `findings_hash` determinism (FIND-05):
+Field declaration order matters for `findings_hash` determinism:
 Pydantic v2's `model_dump_json` emits fields in declaration order, and the
 service re-serialises with `json.dumps(sort_keys=True)` for cross-session
-stability (see Plan 04 / RESEARCH.md §Hash Implementation).
+stability.
 """
 
 import datetime
@@ -21,7 +20,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-# Re-import the Literal aliases owned by Plan 01 so `from app.schemas.insights
+# Re-import the Literal aliases so `from app.schemas.insights
 # import Zone` works and consumers do not need to know about
 # `app.services.endgame_zones`.
 from app.services.endgame_zones import (
@@ -74,9 +73,8 @@ __all__ = [
 # Literal aliases owned by this module (cross-section concepts, not zone-level).
 # ---------------------------------------------------------------------------
 
-# Section grouping used by Phase 65 prompt-assembly. NOT stored on
-# SubsectionFinding — section membership is derived at consumption time
-# (CONTEXT.md §Specifics).
+# Section grouping used by prompt-assembly. NOT stored on
+# SubsectionFinding — section membership is derived at consumption time.
 SectionId = Literal[
     "overall",
     "metrics_elo",
@@ -85,11 +83,11 @@ SectionId = Literal[
 ]
 
 # Discriminator on EndgameInsightsResponse. Frontend TanStack Query branches
-# on this value (Phase 66) — "cache_hit" vs "fresh" drive different banner states.
+# on this value — "cache_hit" vs "fresh" drive different banner states.
 InsightsStatus = Literal["fresh", "cache_hit"]
 
 # Error codes on InsightsErrorResponse. Stable machine-readable prefixes,
-# NOT user-facing copy — Phase 66 frontend owns the retry-message mapping.
+# NOT user-facing copy — the frontend owns the retry-message mapping.
 # "provider_error" covers ModelAPIError subclasses; "validation_failure" covers
 # UnexpectedModelBehavior after output_retries exhaust; "config_error" is
 # defensive (should never reach clients — lifespan aborts first).
@@ -104,7 +102,7 @@ InsightsError = Literal["provider_error", "validation_failure", "config_error"]
 class RatingAnchorContext(BaseModel):
     """Per-TC anchor context forwarded to the LLM prompt for Lichess-equivalent framing.
 
-    Phase 102 (Plan 05): mirrors RatingAnchorOut from app/schemas/endgames.py so the
+    Mirrors RatingAnchorOut from app/schemas/endgames.py so the
     insights pipeline carries full platform-composition disclosure to the LLM without
     re-reading the ranked payload. Fields are a subset of RatingAnchorOut — only
     the fields needed for the [rating basis] block.
@@ -129,9 +127,9 @@ class RatingAnchorContext(BaseModel):
 class MetricPercentileRecord(BaseModel):
     """Enriched per-metric percentile record carrying cohort context.
 
-    Phase 102 (Plan 04): replaces the flat float in metric_percentiles with a
-    richer record so the LLM prompt can cite anchor, n_games, and value
-    alongside the percentile number for reliability context.
+    A richer record than a flat percentile float, so the LLM prompt can cite
+    anchor, n_games, and value alongside the percentile number for reliability
+    context.
 
     Fields:
       percentile: cohort percentile in [0, 100].
@@ -142,8 +140,8 @@ class MetricPercentileRecord(BaseModel):
         None when not available from the source row.
       anchor: blended rating anchor (Lichess-equivalent) for the cohort.
         None when no anchor is available for this (metric, tc) cell.
-      tc: time-control bucket the metric was ranked in. Every record is per TC
-        since Phase 238 (D-04); the page-level game-count-weighted records are gone.
+      tc: time-control bucket the metric was ranked in. Every record is per TC;
+        the page-level game-count-weighted records are gone.
     """
 
     percentile: float
@@ -160,7 +158,7 @@ class SubsectionFinding(BaseModel):
     the window, the service emits ``value=float('nan')`` (serialised as JSON
     ``null`` by Pydantic v2), ``zone="typical"``, ``trend="n_a"``,
     ``sample_size=0``, ``sample_quality="thin"``,
-    ``is_headline_eligible=False``. Phase 65 prompt-assembly skips findings
+    ``is_headline_eligible=False``. Prompt-assembly skips findings
     where ``sample_quality == "thin"`` AND ``value`` is null.
 
     ``dimension`` carries per-combo or per-bucket identity (e.g.
@@ -170,7 +168,7 @@ class SubsectionFinding(BaseModel):
     ``dict[str, str] | None`` preserves the ``value: float`` contract.
 
     Field declaration order is load-bearing for ``findings_hash`` stability
-    (Plan 04 re-serialises with ``json.dumps(sort_keys=True)`` for final
+    (the service re-serialises with ``json.dumps(sort_keys=True)`` for final
     determinism, but the declaration order is still the canonical shape).
     """
 
@@ -186,9 +184,8 @@ class SubsectionFinding(BaseModel):
     sample_quality: SampleQuality
     is_headline_eligible: bool
     dimension: dict[str, str] | None = None
-    # Phase 65 D-02: populated ONLY for the 3 timeline subsections
+    # Populated ONLY for the 3 timeline subsections
     # (score_timeline, clock_diff_timeline, endgame_elo_timeline).
-    # type_win_rate_timeline removed in 260501-s0u.
     # None for non-timeline findings — default preserves existing callers
     # unchanged. Append-only: reordering this field above another existing
     # field would churn findings_hash.
@@ -200,8 +197,7 @@ class EndgameTabFindings(BaseModel):
 
     ``findings_hash`` is a 64-char lowercase hex SHA256 of the canonical JSON
     of this model with ``as_of`` and ``findings_hash`` itself excluded.
-    Excluding ``as_of`` means identical findings on different days cache-hit
-    (FIND-05).
+    Excluding ``as_of`` means identical findings on different days cache-hit.
 
     ``findings_hash`` is populated by ``compute_findings`` AFTER all other
     fields are set. Callers pass ``findings_hash=""`` as a placeholder during
@@ -215,34 +211,31 @@ class EndgameTabFindings(BaseModel):
     # narrative tone to skill level. None when no qualifying combo exists
     # (new user with too few games). See PlayerProfileEntry for shape.
     player_profile: list["PlayerProfileEntry"] | None = None
-    # Phase 238 (D-04): the all_time ranked payload (one RankedTcStats per time
+    # The all_time ranked payload (one RankedTcStats per time
     # control with ranked games). Source of the per-TC overall WDL chart block and the
-    # time-pressure quintile tables (ranked_tcs[i].time_pressure.quintiles, which
-    # replaced the removed time_pressure_cards field); every number the LLM narrates comes from here or
+    # time-pressure quintile tables (ranked_tcs[i].time_pressure.quintiles);
+    # every number the LLM narrates comes from here or
     # from findings built over the same ranked sample. Appended after player_profile,
     # before findings_hash (load-bearing: the hash stays last).
     ranked_tcs: list[RankedTcStats] = []
-    # Phase 102 (Plan 04): per-TC metric percentiles for the 6 per-TC metrics
+    # Per-TC metric percentiles for the 6 per-TC metrics
     # (score_gap_conv, score_gap_parity, recovery_score_gap per TC, plus
     # conversion_rate, parity_rate, recovery_rate per TC). Keyed as
     # "{metric_id}:{tc}" (e.g. "score_gap_conv:blitz"). Optional for
     # backwards compat; None when no per-TC percentiles are available.
     per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
-    # Phase 102 (Plan 01): time-control bucket → anchor_rating mapping derived
+    # Time-control bucket → anchor_rating mapping derived
     # from RankedTcStats.anchor. Lets the assembler build cohort
     # framing ("vs ~{anchor}-rated {tc} peers") without re-reading the full
     # ranked payload. Optional for backwards compat.
-    # Phase 102 (Plan 05): type changed from dict[str, int] to
-    # dict[str, RatingAnchorContext] to carry platform-composition disclosure
+    # Each value is a RatingAnchorContext carrying platform-composition disclosure
     # (n_chesscom_games, n_lichess_games, chesscom_median_native, lichess_median_native)
     # so the LLM can render the [rating basis] block and frame the Lichess-equivalent
-    # anchor for chess.com-heavy users. Backwards-incompatible field-type change is safe:
-    # field is optional and no external consumer reads it directly.
+    # anchor for chess.com-heavy users.
     cohort_anchors: dict[str, "RatingAnchorContext"] | None = None
-    # Phase 102 UAT (2026-06-02): per-(class × TC) endgame type breakdown from the
-    # all_time window (EndgameStatsResponse.categories_by_tc, Phase 98). Drives the
-    # per-TC `endgame_type_<tc>` subsections that replaced the aggregate-over-TC
-    # `results_by_endgame_type` + `conversion_recovery_by_type` blocks — the LLM
+    # Per-(class × TC) endgame type breakdown from the
+    # all_time window (EndgameStatsResponse.categories_by_tc). Drives the
+    # per-TC `endgame_type_<tc>` subsections — the LLM
     # renders one WDL table + Conv/Recov/Score-Gap bullets per eligible TC. Keyed
     # by TC bucket; mixed/pawnless already excluded upstream by
     # aggregate_endgame_stats_by_tc. Optional for backwards compat with fixtures
@@ -317,7 +310,7 @@ class TimePoint(BaseModel):
     """One point on a resampled timeseries attached to a timeline SubsectionFinding.
 
     `bucket_start` is ISO YYYY-MM-DD: first-of-week (Monday) for `last_3mo`
-    window, first-of-month for `all_time` window (D-03).
+    window, first-of-month for `all_time` window.
 
     `n` is the sample size for this bucket (weekly game count for last_3mo,
     summed-over-the-month for all_time — see insights_service resampler).
@@ -327,7 +320,7 @@ class TimePoint(BaseModel):
     user's actual rating alongside the gap lets the prompt render
     `gap=<v>, elo=<r>` per bucket so the LLM can distinguish endgame-skill
     regression from rating growth outpacing skill. `endgame_elo` and
-    `non_endgame_elo` are derived by Phase 87.6's amended logistic stretch
+    `non_endgame_elo` are derived by the logistic stretch
     around Actual ELO; the midpoint property holds exactly
     (`endgame_elo + non_endgame_elo == 2 * actual_elo`).
     """
@@ -340,7 +333,7 @@ class TimePoint(BaseModel):
     non_endgame_elo: int | None = None
 
 
-# Phase 238 UAT: the report summary is the Insights block header, 1-2 sentences.
+# The report summary is the Insights block header, 1-2 sentences.
 SUMMARY_MAX_CHARS = 300
 
 
@@ -363,18 +356,18 @@ class EndgameInsightsReport(BaseModel):
     """LLM-produced structured report.
 
     Shape locked by:
-      - INS-06: `overview` is `str` (not `str | None`); Pydantic rejects null.
+      - `overview` is `str` (not `str | None`); Pydantic rejects null.
         Always-populate rule is enforced in the system prompt (endgame_insights.md).
-      - D-19: `sections` has `min_length=1, max_length=4`. LLM decides which
+      - `sections` has `min_length=1, max_length=4`. LLM decides which
         to include based on sample_quality of underlying findings.
-      - D-20: `unique_section_ids` validator is a cheap safety net — duplicate
+      - `unique_section_ids` validator is a cheap safety net — duplicate
         section_id raises ValueError; pydantic-ai catches and retries.
-      - D-17: `model_used` + `prompt_version` echoed back for frontend debug.
+      - `model_used` + `prompt_version` echoed back for frontend debug.
       - v9: `player_profile` (~3-5 sentence paragraph) and `recommendations`
         (2-4 short bullets) are first-class top-of-page blocks rendered above
         the `overview`. The LLM derives both from the `## Player profile`
         block in the user prompt and the per-section findings.
-      - v49 (Phase 238 UAT): `summary` is a 1-2 sentence takeaway rendered as
+      - v49: `summary` is a 1-2 sentence takeaway rendered as
         the quoted header of the Insights block.
     """
 

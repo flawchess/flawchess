@@ -1,5 +1,5 @@
 /**
- * TrainBotBubble — Phase 222 (D-07): the ONE chat-row slot under the board.
+ * TrainBotBubble — the ONE chat-row slot under the board.
  * Purely presentational: no data fetching, no Train domain logic. A left
  * avatar column (persona art + name) and a right speech bubble carrying
  * whatever copy/actions the caller passes — `resolveBubbleState` (the
@@ -16,26 +16,19 @@ import { TRAIN_BUBBLE_BORDER, TRAIN_BUBBLE_NUDGE_BORDER } from '@/lib/theme';
 import type { TrainBubbleState } from '@/components/train/trainBubbleState';
 
 /**
- * Avatar size for the Train chat row — deliberately its own size, not shared
- * with PersonaCard's 58px grid-card size or ClockDisplay's 48px in-game size;
- * each surface picks the size that fits its own layout. 222-CONTEXT.md
- * started at 56px; the phase 222 UAT asked for 30% more (72px), and UAT
- * round 3 for another 10%, hence 80px (`size-20`) on `sm+`.
+ * Avatar size for the Train chat row, deliberately its own size; each surface
+ * picks what fits its layout. 80px (`size-20`) on `sm+`, which must not
+ * change.
  *
- * Phone layout (plan 06 SC2 fix, `max-sm`): the avatar column collapses into
- * a compact avatar + name header ABOVE the bubble instead of a column BESIDE
- * it, so the copy gets the whole bubble width. 32px originally, 42px after
- * the first UAT bump, 46px after the round 3 one, 55px after quick task
- * 260914-uer (another 20% on phones only — 46 * 1.2 = 55.2, rounded down);
- * the `sm+` step (80px) is deliberately frozen.
+ * On phones (`max-sm`) the avatar column collapses into a compact avatar +
+ * name header (55px) ABOVE the bubble instead of a column BESIDE it, so the
+ * copy gets the whole bubble width.
  */
 const TRAIN_BOT_AVATAR_CLASS = 'size-[55px] sm:size-20';
 
 /**
- * 222 UAT round 6: the /train landing page replaced its "Train" heading with
- * Tank speaking the tagline, and asked for him "a bit bigger" there than in
- * the solve loop (whose 80px/46px were tuned over three UAT rounds and must
- * not move). One size step up on both breakpoints.
+ * The /train landing's host bubble: one size step larger on both breakpoints
+ * than the solve loop's avatar (which must not move).
  */
 const TRAIN_BOT_AVATAR_LARGE_CLASS = 'size-14 sm:size-24';
 
@@ -54,8 +47,7 @@ export interface TrainBotBubbleProps {
    * Bumped by the caller on every drop-before-guess nudge. Used as the
    * bubble's own React `key` so a REPEATED nudge remounts the element and
    * replays the pulse animation — a class toggle alone cannot restart an
-   * already-running CSS animation on a node that never unmounts (RESEARCH
-   * Pitfall 3).
+   * already-running CSS animation on a node that never unmounts.
    */
   nudgeNonce?: number;
   /** The bubble's copy for the current state. */
@@ -102,10 +94,9 @@ export function TrainBotBubble({
   avatarSize = 'default',
 }: TrainBotBubbleProps): ReactElement {
   const isNudge = state === 'drop-nudge';
-  // Plan 06 UAT (SC1 during the intro): `resolveBubbleState` ranks `intro`
-  // above `drop-nudge`, so a piece dropped while Hilda's guess step is up
-  // keeps the intro copy — plan 04's contract is "nudges the bubble without
-  // destroying the current intro step". The pulse therefore also replays on
+  // `resolveBubbleState` ranks `intro` above `drop-nudge`, so a piece dropped
+  // while Hilda's guess step is up keeps the intro copy: a nudge must not
+  // destroy the current intro step. The pulse therefore also replays on
   // an intro-state nudge (the `nudgeNonce` remount key restarts it); only the
   // copy swap and the nudge border stay exclusive to the `drop-nudge` state.
   const pulses = isNudge || (state === 'intro' && (nudgeNonce ?? 0) > 0);
@@ -148,8 +139,8 @@ export function TrainBotBubble({
         <div className="text-sm" data-testid="train-bot-copy">
           {children}
         </div>
-        {/* Phase 222 UAT: the action row sits bottom-RIGHT inside the bubble,
-            where a phone thumb reaches it. */}
+        {/* The action row sits bottom-RIGHT inside the bubble, where a phone
+            thumb reaches it. */}
         {actions !== undefined && (
           <div className="mt-2 flex flex-wrap justify-end gap-2">{actions}</div>
         )}

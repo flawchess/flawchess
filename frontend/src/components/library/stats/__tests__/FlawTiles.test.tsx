@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 239 D-00a..D-00e, D-03: the Blunders and Mistakes tiles of the Flaw Stats section.
+ * The Blunders and Mistakes tiles of the Flaw Stats section.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -59,7 +59,7 @@ describe('FlawTiles', () => {
     expect(screen.getByTestId('gap-popover-blunder-tc-blitz')).not.toBeNull();
   });
 
-  it('says blunders and the TC basis in the popover, never events (D-00d)', () => {
+  it('says blunders and the TC basis in the popover, never events', () => {
     renderTiles(BLITZ_ENTRY);
     fireEvent.click(screen.getByTestId('gap-popover-blunder-tc-blitz'));
     const popover = text('gap-popover-blunder-tc-blitz-popover');
@@ -80,7 +80,7 @@ describe('FlawTiles', () => {
     expect(text('flaw-tile-blunder-bar-empty')).toBe('No flaws yet');
   });
 
-  it('keeps the numbers below the gate and swaps the bar for the gate line (D-03)', () => {
+  it('keeps the numbers below the gate and swaps the bar for the gate line', () => {
     const entry = makeTcEntry('bullet', {
       analyzedN: 12,
       blunder: { player_rate: 4.1, opp_rate: 4.6, delta: -0.5 },
@@ -94,7 +94,7 @@ describe('FlawTiles', () => {
     expect(screen.queryByTestId('gap-popover-blunder-tc-bullet')).toBeNull();
   });
 
-  it('shows the verdict for a significant out-of-band tile and withholds it otherwise (D-14)', () => {
+  it('shows the verdict for a significant out-of-band tile and withholds it otherwise', () => {
     // delta -0.61 is below the fixture band (-0.3..0.3): a "better" verdict.
     renderTiles(makeTcEntry('rapid', { analyzedN: 400, blunder: { delta: -0.61, significant: true } }));
     expect(screen.getByTestId('flaw-tile-blunder-bar-dot').style.backgroundColor).toBe(

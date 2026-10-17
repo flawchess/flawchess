@@ -1,8 +1,8 @@
 /**
  * trainLeaderboard — pure helpers and copy for the weekly Train leaderboard
- * card (Phase 230). No React import, so the rules are testable without a DOM.
+ * card. No React import, so the rules are testable without a DOM.
  *
- * Copy rule (D-10): the boards measure effort and consistency, never ability.
+ * Copy rule: the boards measure effort and consistency, never ability.
  * Nothing in this file frames a rank as a measure of how good someone is.
  */
 import type {
@@ -13,7 +13,7 @@ import type {
   TrainLeaderboardResponse,
 } from '@/types/train';
 
-/** localStorage key for the remembered tab (D-09). */
+/** localStorage key for the remembered tab. */
 export const LEADERBOARD_TAB_STORAGE_KEY = 'flawchess_train_leaderboard_tab';
 
 /** The tab shown on a first visit, and the fallback for any storage trouble. */
@@ -26,21 +26,21 @@ export const DEFAULT_LEADERBOARD_TAB: LeaderboardBoardKind = 'points';
  */
 export const ACCURACY_QUALIFY_MIN_PUZZLES = 20;
 
-/** Header info popover: what each board rewards (D-10 wording: effort and care, never ability). */
+/** Header info popover: what each board rewards (wording: effort and care, never ability). */
 export const LEADERBOARD_INFO_POINTS_COPY = 'Points mainly rewards how many puzzles you solve.';
 export const LEADERBOARD_INFO_ACCURACY_COPY =
   'Accuracy is your average session score: it rewards how carefully you solve, not how many.';
-/** Viewer has Points entries but no Accuracy entry (D-19): never a misleading count. */
+/** Viewer has Points entries but no Accuracy entry: never a misleading count. */
 export const ACCURACY_NOT_ENTERED_COPY =
   "You're not on this board yet: tactics puzzles don't count here.";
 export const ACCURACY_EMPTY_COPY = 'No accuracy entries yet this week.';
 export const EMPTY_WEEK_COPY = 'No one has trained yet this week. Be the first.';
 export const ENTER_BOARD_HINT_COPY = "Solve a puzzle to enter this week's board.";
 
-/** Divider label before the first unranked (tentative) Accuracy row (quick 261004-8rt). */
+/** Divider label before the first unranked (tentative) Accuracy row. */
 export const NOT_YET_QUALIFIED_DIVIDER_COPY = `Not yet qualified (${ACCURACY_QUALIFY_MIN_PUZZLES}+ puzzles)`;
 
-/** Shown under the board for guests, above the shared sign-up action pair (D-14). */
+/** Shown under the board for guests, above the shared sign-up action pair. */
 export const GUEST_CLAIM_SPOT_COPY = 'Sign up to claim your spot';
 
 /** '12 pts' on the Points board, '89%' on the Accuracy board. */
@@ -54,14 +54,14 @@ export function puzzleCountLabel(puzzles: number): string {
 }
 
 /**
- * Validates a stored tab value (T-230-10: the value is user-editable). Only
+ * Validates a stored tab value (the value is user-editable). Only
  * the two literals pass; anything else, including null, is the default tab.
  */
 export function parseLeaderboardTab(value: string | null): LeaderboardBoardKind {
   return value === 'points' || value === 'accuracy' ? value : DEFAULT_LEADERBOARD_TAB;
 }
 
-/** Reads the remembered tab. SSR or a throwing localStorage degrade to Points (D-09). */
+/** Reads the remembered tab. SSR or a throwing localStorage degrade to Points. */
 export function readLeaderboardTab(): LeaderboardBoardKind {
   if (typeof localStorage === 'undefined') return DEFAULT_LEADERBOARD_TAB;
   try {
@@ -100,7 +100,7 @@ export type ViewerHintId = 'pass-target' | 'accuracy-not-entered' | 'enter-hint'
 /**
  * The one hint line under the active board, or null. The pass-target number
  * comes from the server (`points_needed`); the client never counts the
- * viewer's solves itself (D-19). A tentative Accuracy viewer gets no hint: the
+ * viewer's solves itself. A tentative Accuracy viewer gets no hint: the
  * "Not yet qualified" divider already states the threshold.
  */
 export function viewerHint(
@@ -121,15 +121,15 @@ function pointsHint(data: TrainLeaderboardResponse): { id: ViewerHintId; text: s
 
 function accuracyHint(data: TrainLeaderboardResponse): { id: ViewerHintId; text: string } | null {
   if (data.accuracy.viewer !== null) return null;
-  // On the Points board but not here: only tactics puzzles so far (D-19).
+  // On the Points board but not here: only tactics puzzles so far.
   return data.points.viewer !== null
     ? { id: 'accuracy-not-entered', text: ACCURACY_NOT_ENTERED_COPY }
     : { id: 'enter-hint', text: ENTER_BOARD_HINT_COPY };
 }
 
-/** Label on the viewer's own private row when they opted out (D-13). */
+/** Label on the viewer's own private row when they opted out. */
 export const HIDDEN_FROM_OTHERS_LABEL = 'Hidden from others';
-/** Replaces the server name on a guest's ghost row (D-14). */
+/** Replaces the server name on a guest's ghost row. */
 export const GUEST_ROW_LABEL = 'You (guest)';
 
 export const MS_PER_SECOND = 1000;
@@ -139,16 +139,16 @@ export const SECONDS_PER_DAY = 86400;
 /** The countdown shows minutes at best, so a one-minute tick is precise enough. */
 export const COUNTDOWN_TICK_MS = 60_000;
 /**
- * WR-03 (phase 230 review): when the deadline refetch still returns the old
- * week (it landed a moment before the server's Monday reset), retry after this
- * delay, at most ROLLOVER_MAX_RETRIES times per week_end.
+ * When the deadline refetch still returns the old week (it landed a moment
+ * before the server's Monday reset), retry after this delay, at most
+ * ROLLOVER_MAX_RETRIES times per week_end.
  */
 export const ROLLOVER_RETRY_MS = 2_000;
 export const ROLLOVER_MAX_RETRIES = 3;
 
 /**
  * Seconds left to the deadline, derived from the SERVER's remainder minus the
- * time since that response was fetched (D-02). The client never does its own
+ * time since that response was fetched. The client never does its own
  * week math: its clock and timezone are not the week's. Floored at 0, and a
  * clock reading before the fetch counts as no elapsed time.
  */
@@ -184,23 +184,23 @@ const RANK_LINE_LABEL: Record<LeaderboardBoardKind, string> = {
   accuracy: 'Accuracy',
 };
 
-/** Viewer has Points entries but no Accuracy entry (D-19): never a count. */
+/** Viewer has Points entries but no Accuracy entry: never a count. */
 export const ACCURACY_NOT_ENTERED_LINE =
   "Accuracy: not on this board yet (tactics puzzles don't count)";
 
 /**
- * One score-screen rank line for a board (D-11, D-12, D-17, D-18).
+ * One score-screen rank line for a board.
  *
  * - unranked (rank null, a tentative Accuracy viewer): "Accuracy: N more to
- *   qualify" from the server's puzzles_to_qualify. Supersedes D-11's
- *   "(tentative)" suffix: a tentative viewer never gets a numbered rank line
- *   (quick 261004-8rt). The wording names no solve type, so D-19 holds.
- * - guest: the hypothetical rank wording, no delta (D-17).
+ *   qualify" from the server's puzzles_to_qualify. A tentative viewer never
+ *   gets a numbered rank line or a "(tentative)" suffix. The wording names no
+ *   solve type.
+ * - guest: the hypothetical rank wording, no delta.
  * - first entry of the week: "#N this week".
  * - improvement: "#N (up M)".
- * - everything else, unchanged or worse: the plain "#N". D-18 (owner call):
- *   Accuracy can get worse after a session because the average moved, and the
- *   screen never shows a downward delta; there is deliberately no "down" path.
+ * - everything else, unchanged or worse: the plain "#N". Accuracy can get
+ *   worse after a session because the average moved, and the screen never
+ *   shows a downward delta; there is deliberately no "down" path.
  *
  * "(up N)" is only computed when both ranks are numbers: the server nulls
  * rank_without_session whenever the viewer is tentative without the session,
@@ -223,8 +223,8 @@ export interface ScoreRankLine {
 
 /**
  * The score screen's rank lines: one per board the viewer is on, the specific
- * not-entered line when only tactics puzzles kept them off Accuracy (D-19),
- * and a closing "Hidden from others" for an opted-out viewer (D-13).
+ * not-entered line when only tactics puzzles kept them off Accuracy,
+ * and a closing "Hidden from others" for an opted-out viewer.
  */
 export function scoreRankLines(data: TrainLeaderboardResponse): ScoreRankLine[] {
   const points = data.points.viewer;

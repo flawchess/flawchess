@@ -25,7 +25,7 @@
 const CHESS_COM_GAME_RE = /^(https?:\/\/(?:www\.)?chess\.com)\/game\/(live|daily)\/(\d+)/i;
 
 /**
- * Bot games played on FlawChess itself (quick-260714-qaj). Their `platform_url`
+ * Bot games played on FlawChess itself. Their `platform_url`
  * IS populated (it is the same in-app `/analysis?game_id=` URL the PGN's `[Site]`
  * header carries), but it is SELF-REFERENTIAL — there is no external platform to
  * send the user to. Both link builders return null for it, so the cards render no

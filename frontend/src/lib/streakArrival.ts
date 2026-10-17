@@ -1,6 +1,6 @@
 /**
  * streakArrival — decides which one-shot animation the Train landing plays
- * for the streak flame and freeze meter (SEED-181).
+ * for the streak flame and freeze meter.
  *
  * The page remembers the last `{streak, freezes}` it showed (per account, per
  * device, in localStorage) and diffs it against the fresh `/train/progress`

@@ -8,10 +8,6 @@
  * (app/services/endgame_zones.py::ZONE_REGISTRY["entry_eval_pawns"])
  * per reports/benchmarks-diff-2026-05-17-vs-2026-05-19.md item A.
  *
- * History: Phase 82 D-09 had editorially tightened the band to ±0.50 to
- * narrate half-pawn swings; reverted to benchmark-recommended ±0.75; then
- * re-tightened to ±0.60 per diff item A (game-time bucketing pass).
- *
  * Why a separate module from openingStatsZones.ts: the MG-entry baseline (±0.30
  * pawns there) is calibrated for the middlegame-entry distribution (per-game
  * SD ≈ 2.4 pawns); endgame entry has ≈4.4 pawn SD and a wider centered
@@ -29,14 +25,11 @@ export const ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.60;
  * Must match ZONE_REGISTRY["entry_eval_pawns"].typical_upper in endgame_zones.py. */
 export const ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = 0.60;
 
-/** EG-entry: bullet-chart half-domain in pawns. Sized so the neutral band
- * (width 1.5 pawns) fills ≈1/3 of the axis (1.5 / 4.5), matching the visual
- * proportion of the Achievable- and Endgame-score bullets on the same page.
- * Slightly wider than the cohort p05/p95 range (±1.99 pawns); CI whiskers
- * past ±domain render open-ended. */
+/** EG-entry: bullet-chart half-domain in pawns. Slightly wider than the cohort
+ * p05/p95 range (±1.99 pawns); CI whiskers past ±domain render open-ended. */
 export const ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.25;
 
-/** Center of the bullet axis (Tile 1 H0 per D-07). */
+/** Center of the bullet axis (the H0 of the tile). */
 export const ENDGAME_ENTRY_EVAL_CENTER = 0;
 
 /**

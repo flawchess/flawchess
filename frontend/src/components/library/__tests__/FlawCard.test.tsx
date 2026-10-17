@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * FlawCard vitest suite (Phase 112 / Phase 140-03).
+ * FlawCard vitest suite.
  *
  * Tests:
  * 1. CardHeader renders white + black usernames with ratings
@@ -9,10 +9,9 @@
  * 4. Board at size 132 with a flaw-move arrow when move_san is set
  * 5. data-testid on root article: flaw-card-{game_id}-{ply}
  * 6. Platform link testid and aria-label present
- * 7. Phase 140-03: unified Analyze button (btn-flaw-analyze) replaces Explore + Game pair
+ * 7. Unified Analyze button (btn-flaw-analyze) replaces Explore + Game pair
  *
- * Phase 140-03: "View game" button + modal path removed (D-09); old SC-7, SC-8 tests removed.
- * The Game modal (Dialog/Drawer + useLibraryGame + LibraryGameCard inline) is deleted entirely.
+ * There is no "View game" button or modal path.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -144,7 +143,7 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     clock_seconds: 125,
     move_seconds: 8.4,
     best_move: null,
-    // Phase 128/129 tactic motif fields — null by default
+    // Tactic motif fields — null by default
     allowed_tactic_motif: null,
     allowed_tactic_confidence: null,
     allowed_tactic_depth: null,
@@ -163,7 +162,7 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('FlawCard', () => {
-  describe('CardHeader — opponent-only (quick-260610-vru)', () => {
+  describe('CardHeader — opponent-only', () => {
     it('renders "vs <opponent>" — the opponent name only, not the user', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
@@ -203,7 +202,7 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Move notation (SC-5)', () => {
+  describe('Move notation', () => {
     it('renders white move notation: ply=2 → "2. Nxd4"', () => {
       render(<FlawCard flaw={makeFlaw({ ply: 2, move_san: 'Nxd4' })} />);
       const article = screen.getByTestId('flaw-card-42-2');
@@ -223,7 +222,7 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Game-info block (quick-260610-vru — clock + move time, no TC/moves/termination)', () => {
+  describe('Game-info block (clock + move time, no TC/moves/termination)', () => {
     it('renders "mm:ss · Move Ns" and drops TC, move count, and termination', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       const article = screen.getByTestId('flaw-card-42-2');
@@ -252,7 +251,7 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Miniboard (SC-3)', () => {
+  describe('Miniboard', () => {
     it('renders a board at size 132', () => {
       render(<FlawCard flaw={makeFlaw()} />);
       // LazyMiniBoard renders a div with explicit width/height style=132px
@@ -261,7 +260,7 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Best-move arrow (quick-260618-oqw)', () => {
+  describe('Best-move arrow', () => {
     it('draws a blue best-move arrow when best_move (UCI) is set', () => {
       render(<FlawCard flaw={makeFlaw({ best_move: 'g1f3' })} />);
       const overlay = document.querySelector('[data-testid="mini-board-arrow-overlay"]');
@@ -280,11 +279,11 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Tactic-depth badge (quick-260621-mq4)', () => {
+  describe('Tactic-depth badge', () => {
     it('renders the missed-tactic depth (1-based) on the blue best-move arrow', () => {
       // missed_tactic_depth 4 (0-based) → display "5" at the best-move arrow. The motif is
       // set too: the detector always writes motif + depth together, and the depth badge is
-      // family-guarded (Quick 260625-qbj), so a depth never renders without its motif/chip.
+      // family-guarded, so a depth never renders without its motif/chip.
       render(
         <FlawCard
           flaw={makeFlaw({ best_move: 'g1f3', missed_tactic_motif: 'fork', missed_tactic_depth: 4 })}
@@ -317,9 +316,9 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Phase 140-03: unified Analyze button (btn-flaw-analyze)', () => {
-    // Phase 140-03 (D-09): the Game modal path is deleted entirely. The old Explore + Game
-    // pair is replaced by a single Analyze button that opens /analysis?game_id=X&ply=Y.
+  describe('unified Analyze button (btn-flaw-analyze)', () => {
+    // A single Analyze button (no Game modal) opens
+    // /analysis?game_id=X&ply=Y.
     // buttonRow renders in BOTH mobile (sm:hidden) and desktop (hidden sm:flex) wrappers;
     // jsdom ignores CSS so both buttons appear in the DOM. Use getAllByTestId.
 
@@ -349,7 +348,7 @@ describe('FlawCard', () => {
     });
   });
 
-  describe('Phase 129 D-11: orientation-prefixed dual-chip matrix (TACUI-07)', () => {
+  describe('orientation-prefixed dual-chip matrix', () => {
     const BOTH_MOTIFS = {
       missed_tactic_motif: 'fork',
       missed_tactic_confidence: 90,
@@ -440,7 +439,7 @@ describe('FlawCard', () => {
       expect(screen.getAllByTestId('chip-tactic-allowed-pin-42').length).toBeGreaterThan(0);
     });
 
-    it('no per-chip Popover rendered (D-12 narration = chip label + TagLegend)', () => {
+    it('no per-chip Popover rendered (narration = chip label + TagLegend)', () => {
       const { container } = render(
         <FlawCard flaw={makeFlaw(BOTH_MOTIFS)} tacticOrientation="either" />,
       );

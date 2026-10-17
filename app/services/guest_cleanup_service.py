@@ -1,26 +1,24 @@
-"""Guest cleanup service: purge game data for guests inactive >= 30 days (SEED-116).
+"""Guest cleanup service: purge game data for guests inactive >= 30 days.
 
-Implements the already-advertised but never-built 30-day-inactivity guest
-cleanup (Phase 187). Eligible guests (``is_guest=true``, ``last_activity``
-older than ``_GUEST_INACTIVITY_THRESHOLD``) have their games and all
-cascading children purged and their import cursor mechanisms reset, but
-their ``User`` row + auth + bookmarks + import-settings preferences survive
-(D-05) so a returning guest can log back in and simply re-import.
+Implements the advertised 30-day-inactivity guest cleanup. Eligible guests
+(``is_guest=true``, ``last_activity`` older than
+``_GUEST_INACTIVITY_THRESHOLD``) have their games and all cascading children
+purged and their import cursor mechanisms reset, but their ``User`` row +
+auth + bookmarks + import-settings preferences survive so a returning guest
+can log back in and simply re-import.
 
-Phase 224 (D-08): a guest's Train rows do NOT survive the purge. Once Train
-opened to guests (Phase 224 D-01, reversing Phase 189 D-05's guest gate) a
+A guest's Train rows do NOT survive the purge. Train is open to guests, so a
 guest can accumulate real ``drill_sessions``/``drill_solves``/
-``train_settings`` rows, and ``/welcome`` advertises "nothing is deleted
+``train_settings`` rows, and ``/welcome`` advertises "Nothing is deleted
 after 30 days of inactivity" as a sign-up delta -- honest only if a purged
 guest's Train state goes with their games. See ``_purge_guest`` for the two
 deletes and ``tests/test_guest_cleanup_service.py::
 test_purge_guest_cascades_drill_rows`` for the proof.
 
-Plan 01 built the eligibility query, the per-guest purge, and the per-tick
-orchestration loop (``cleanup_inactive_guests``). Plan 02 (this module's
-``run_periodic_guest_cleanup``) wraps that orchestration in a periodic
-``asyncio`` task and wires it into the FastAPI lifespan, mirroring
-``run_periodic_reaper`` (``app/services/import_service.py``).
+``run_periodic_guest_cleanup`` wraps the per-tick orchestration
+(``cleanup_inactive_guests``) in a periodic ``asyncio`` task started from the
+FastAPI lifespan, mirroring ``run_periodic_reaper``
+(``app/services/import_service.py``).
 """
 
 import asyncio
@@ -42,21 +40,19 @@ from app.repositories import game_repository, user_import_settings_repository, u
 
 logger = logging.getLogger(__name__)
 
-# D-02: daily tick interval. Declared here (consumed by Plan 02's periodic
-# wrapper) so the interval and the eligibility threshold live together as
+# Daily tick interval, kept next to the eligibility threshold so they are
 # this module's two named constants (no magic numbers, CLAUDE.md).
 _GUEST_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60  # 24 hours
 
-# The already-advertised 30-day threshold (welcome/import copy) — not a
-# tunable to revisit in this phase (187-CONTEXT.md domain boundary).
+# The advertised 30-day threshold (welcome/import copy), not a tunable.
 _GUEST_INACTIVITY_THRESHOLD = timedelta(days=30)
 
 
 async def get_eligible_guest_ids(session: AsyncSession) -> list[int]:
-    """Return ``user.id`` for every guest inactive >= 30 days (SEED-116).
+    """Return ``user.id`` for every guest inactive >= 30 days.
 
     NULL ``last_activity`` (a guest with no authenticated request since
-    creation — Pitfall 3, 187-RESEARCH.md) is naturally excluded: PostgreSQL's
+    creation) is naturally excluded: PostgreSQL's
     ``<`` comparison against NULL evaluates to NULL, which ``WHERE`` treats as
     false. The explicit ``isnot(None)`` below documents that behavior; it is
     not a functional guard.
@@ -73,7 +69,7 @@ async def get_eligible_guest_ids(session: AsyncSession) -> list[int]:
 
 
 async def _purge_guest(guest_id: int) -> int:
-    """Delete one guest's games + reset import cursors. One transaction (D-06).
+    """Delete one guest's games + reset import cursors. One transaction.
 
     Mirrors ``app/routers/imports.py``'s ``DELETE /games`` handler body — the
     same delete-all-games-and-reset-cursors flow a registered user already
@@ -85,7 +81,7 @@ async def _purge_guest(guest_id: int) -> int:
     Returns the count of deleted games.
     """
     async with async_session_maker() as session:
-        # WR-01 defense-in-depth: re-verify eligibility inside the purge
+        # Defense-in-depth: re-verify eligibility inside the purge
         # transaction. cleanup_inactive_guests snapshots the eligible-id list
         # in one SELECT, then purges each guest in its own later transaction;
         # during a large first-tick backlog a guest can log back in (bumping
@@ -106,7 +102,7 @@ async def _purge_guest(guest_id: int) -> int:
             return 0
         deleted_count = await game_repository.delete_all_games_for_user(session, guest_id)
         await session.execute(delete(ImportJob).where(ImportJob.user_id == guest_id))
-        # Pitfall 2 (187-RESEARCH.md): mirror the DELETE /api/games precedent
+        # Mirror the DELETE /api/games precedent
         # and also drop derived-stats rows tied to the now-deleted games, so a
         # returning guest never sees stale benchmark percentiles / rating
         # anchors computed from history that no longer exists. Both deletes
@@ -115,37 +111,35 @@ async def _purge_guest(guest_id: int) -> int:
             delete(UserBenchmarkPercentile).where(UserBenchmarkPercentile.user_id == guest_id)
         )
         await session.execute(delete(UserRatingAnchor).where(UserRatingAnchor.user_id == guest_id))
-        # Phase 224 D-08 supersedes the Phase 189 D-04 preservation FOR
-        # GUESTS ONLY: Phase 224 removed the Train guest gate (`_reject_guest`),
-        # so a guest now accumulates real drill_sessions/drill_solves/
-        # train_settings rows, and /welcome advertises "no 30-day inactivity
-        # purge" as a sign-up delta -- only honest if a purged guest's Train
+        # Guests can accumulate real drill_sessions/drill_solves/train_settings
+        # rows, and /welcome advertises "Nothing is deleted after 30 days of
+        # inactivity" as a sign-up delta -- only honest if a purged guest's Train
         # state goes with their games. Deleting drill_sessions is sufficient:
         # drill_solves.session_id is ON DELETE CASCADE to drill_sessions, so
         # this reaches every solve, including warm-up filler / red-herring
         # rows whose game_id is NULL or points at a stranger's game -- rows
         # the games cascade above cannot see. Do NOT add a separate
         # DrillSolve-targeting delete statement. The streak has drained to 0
-        # by 30 idle days anyway (shield cap 7). Registered users' Phase 189 D-04
-        # preservation is untouched: the WR-01 re-check above already
+        # by 30 idle days anyway (shield cap 7). Registered users' Train rows are
+        # preserved: the eligibility re-check above already
         # verified `User.is_guest.is_(True)` in this same transaction, so
         # this code can never reach a registered user. See
         # tests/test_guest_cleanup_service.py::
         # test_purge_guest_cascades_drill_rows.
         await session.execute(delete(DrillSession).where(DrillSession.user_id == guest_id))
         await session.execute(delete(TrainSettings).where(TrainSettings.user_id == guest_id))
-        # Pitfall 1 (187-RESEARCH.md): deleting import_jobs alone does NOT
+        # Deleting import_jobs alone does NOT
         # reset the backward-walk backlog cursor (chesscom_backfill_oldest_year
         # /_month, lichess_backfill_oldest_ms) — those live on
-        # user_import_settings, a separate table that survives game deletion
-        # (Phase 186). Without this call, a returning guest's re-import would
+        # user_import_settings, a separate table that survives game deletion.
+        # Without this call, a returning guest's re-import would
         # silently resume the backward walk from wherever the original import
         # had already reached, skipping backlog games that were just purged,
         # instead of re-backfilling the fresh (empty) account's full budget.
-        # D-05: this only NULLs the 3 progress-cursor columns — the row
+        # This only NULLs the 3 progress-cursor columns — the row
         # itself (and its tc_*/game_cap preferences) survives.
         await user_import_settings_repository.reset_backfill_cursors(session, user_id=guest_id)
-        # QTE-02: stamp the retained fact that lets the Activity dashboard tell
+        # Stamp the retained fact that lets the Activity dashboard tell
         # a purged guest apart from one who never imported. Must stay inside
         # this same transaction as the deletes above -- a guest purged without
         # this stamp would otherwise read as "never imported" forever.
@@ -155,20 +149,17 @@ async def _purge_guest(guest_id: int) -> int:
 
 
 async def cleanup_inactive_guests() -> None:
-    """One cleanup tick: purge every currently-eligible guest (D-06/D-07).
+    """One cleanup tick: purge every currently-eligible guest.
 
     Opens one session to snapshot the eligible-guest id list, then purges each
-    guest in its own transaction (D-06). A failure purging one guest is
+    guest in its own transaction. A failure purging one guest is
     logged (with a traceback, via ``logger.exception``) and does NOT prevent
-    the rest of the tick's backlog from being processed (Pitfall 4,
-    187-RESEARCH.md) — a naive single outer try/except around the whole loop
-    (mirroring ``run_periodic_reaper``'s single-bulk-operation shape) would
-    let guest N's failure starve guests N+1..the end of the backlog every
+    the rest of the tick's backlog from being processed — a naive single outer
+    try/except around the whole loop (mirroring ``run_periodic_reaper``'s
+    single-bulk-operation shape) would let guest N's failure starve guests N+1..the end of the backlog every
     tick. Failures are accumulated and reported as a single Sentry event at
     the end of the tick (CLAUDE.md: per-tick loops capture once, not once per
     guest), while every failure still gets a full local traceback.
-
-    Wired into the periodic loop by Plan 02's ``run_periodic_guest_cleanup``.
     """
     async with async_session_maker() as session:
         eligible_guest_ids = await get_eligible_guest_ids(session)
@@ -192,7 +183,7 @@ async def cleanup_inactive_guests() -> None:
             failure_count += 1
             last_failure = exc
 
-    # D-07: one per-run summary log line (scanned/purged/games_deleted).
+    # One per-run summary log line (scanned/purged/games_deleted).
     logger.info(
         "Guest cleanup tick: scanned=%d purged=%d games_deleted=%d failed=%d",
         scanned,
@@ -210,11 +201,11 @@ async def cleanup_inactive_guests() -> None:
         sentry_sdk.capture_exception(last_failure)
 
 
-# D-01/D-02: daily in-process asyncio task, following the exact
-# run_periodic_reaper pattern (app/services/import_service.py:338) — no
-# external cron/systemd infra exists in this repo.
+# Daily in-process asyncio task, following the exact
+# run_periodic_reaper pattern (app/services/import_service.py), with no
+# external cron/systemd infra.
 async def run_periodic_guest_cleanup() -> None:
-    """Periodically purge game data for guests inactive >= 30 days (SEED-116).
+    """Periodically purge game data for guests inactive >= 30 days.
 
     Sleeps BEFORE the first tick — mirrors run_periodic_reaper's T=0 vs
     T+interval split (there is no startup-time equivalent call for guest
@@ -223,16 +214,15 @@ async def run_periodic_guest_cleanup() -> None:
 
     A cleanup_inactive_guests exception is caught here (per-tick, not
     per-guest — per-guest isolation already happens inside
-    cleanup_inactive_guests itself, D-06/D-07), logged, and reported to
+    cleanup_inactive_guests itself), logged, and reported to
     Sentry; the loop always continues to the next tick.
 
-    Wired in app/main.py lifespan — started on startup, cancelled+awaited on
-    shutdown, alongside the other 3 background tasks (reaper, eval-drain,
-    full-eval-drain).
+    Wired in app/main.py lifespan — started on startup, cancelled and awaited on
+    shutdown alongside the other background loops.
     """
     while True:
         await asyncio.sleep(_GUEST_CLEANUP_INTERVAL_SECONDS)
-        # SEED-138: per-tick isolation scope -- a background loop must never
+        # Per-tick isolation scope -- a background loop must never
         # write to the shared lifespan scope (AsyncioIntegration is not
         # enabled; see app/main.py's create_task comment for why).
         with sentry_sdk.isolation_scope():

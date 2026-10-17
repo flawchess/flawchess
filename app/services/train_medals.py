@@ -1,4 +1,4 @@
-"""Lazy weekly leaderboard finalization (Phase 231).
+"""Lazy weekly leaderboard finalization.
 
 At or after a week's Sunday deadline plus `MEDALS_FINALIZE_GRACE`, the first request to
 reach `finalize_due_weeks` freezes that week's public boards into
@@ -8,20 +8,20 @@ task: finalization is lazy, idempotent and global. The marker row
 finalizer blocks on it and then skips the week, and a week with no eligible entrants
 still gets a marker so it is never re-scanned.
 
-Eligibility timing (accepted trade-off, review WR-02): `users.leaderboard_hidden` is read
+Eligibility timing (accepted trade-off): `users.leaderboard_hidden` is read
 live by `fetch_week_aggregates` when a week is finalized, i.e. on the first board or
 unclaimed-medals request after the deadline plus `MEDALS_FINALIZE_GRACE`, not at the
 deadline itself. With low Train traffic that gap can be hours, so a user who toggles
 "Hide me from leaderboards" in between is excluded (or included) according to their
 setting at finalization time, and the ranks below them shift accordingly. This was
-accepted rather than adding a scheduler or background tick (unplanned scope); see the
+accepted rather than adding a scheduler or background tick; see the
 "Weekly leaderboard medals" note in docs/production-runbook.md.
 
 Time only ever arrives as the `now_utc` argument (the router injects it from the
 `dev_now_utc` dependency), never the wall clock. The service does not commit; the
 router commits so the marker and that week's rows land in one transaction.
 
-Dev-clock caveat (Pitfall 5): shifting the dev clock past a deadline finalizes that
+Dev-clock caveat: shifting the dev clock past a deadline finalizes that
 week permanently with whatever data it has. Dev cleanup is deleting the week from
 `train_weekly_finalizations` (the FK cascades its standings rows).
 """
@@ -53,11 +53,11 @@ from app.services.train_leaderboard import (
 )
 
 # Locked: the first week that earns medals. Read at call time (a module global, never a
-# default argument) so tests can monkeypatch it. Moved back from 2026-10-05 to 2026-09-28
-# after launch so the launch week (the board went live Sunday 2026-10-04) awards medals
-# too; finalization recomputes from drill_solves, so a past week finalizes exactly.
+# default argument) so tests can monkeypatch it. Starts 2026-09-28 so the launch week
+# (the board went live Sunday 2026-10-04) awards medals too; finalization recomputes from
+# drill_solves, so a past week finalizes exactly.
 MEDALS_START_WEEK: Final = datetime.date(2026, 9, 28)
-# Pitfall 1: `solved_at` is the request's start time but visibility is commit time, so a
+# `solved_at` is the request's start time but visibility is commit time, so a
 # solve that started before the deadline can commit a moment after it. The grace keeps a
 # permanent snapshot from missing it, at the cost of the podium appearing at 00:05 UTC.
 MEDALS_FINALIZE_GRACE: Final = datetime.timedelta(minutes=5)

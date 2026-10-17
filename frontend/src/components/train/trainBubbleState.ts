@@ -1,29 +1,27 @@
 /**
- * trainBubbleState — Phase 222 (D-07): resolves which state the single
- * chat-row bubble slot under the board should render. Pure, no React import
- * (mirrors `lib/trainGuessLabels.ts`'s guard-clause-returns convention).
+ * trainBubbleState — resolves which state the single chat-row bubble slot
+ * under the board should render. Pure, no React import (mirrors
+ * `lib/trainGuessLabels.ts`'s guard-clause-returns convention).
  *
- * D-07 (LOCKED): one chat-row slot under the board persists through the
- * whole puzzle — guess prompt with buttons -> after the guess the SAME host
- * bubble swaps copy to the move prompt -> while grading "Checking your
- * move…" (or, while the Phase 235 disagreement re-check runs, "Taking a
- * closer look…": the same `grading` state with `recheck: true`) -> the
- * outcome bot's verdict row replaces it when the reveal opens. Phase 236: on the
- * instant (server-graded) path the solve POST round trip shows `submitting`, a
- * copy-less spinner, instead of any grading copy (D-16). No layout jump, no vanishing bot. Extracting this resolution OUT of
- * `TrainSolveScreen` (rather than inlining five sibling JSX guard blocks) is
- * the mechanism that LOWERS the component's own cyclomatic complexity while
- * adding the intro/nudge states — see 222-01-PLAN.md task 1, RESEARCH
- * Finding B / Pattern 2.
+ * One chat-row slot under the board persists through the whole puzzle —
+ * guess prompt with buttons -> after the guess the SAME host bubble swaps
+ * copy to the move prompt -> while grading "Checking your move…" (or, while
+ * the disagreement re-check runs, "Taking a closer look…": the same
+ * `grading` state with `recheck: true`) -> the outcome bot's verdict row
+ * replaces it when the reveal opens. On the instant (server-graded) path the
+ * solve POST round trip shows `submitting`, a copy-less spinner, instead of
+ * any grading copy. No layout jump, no vanishing bot. Keeping this
+ * resolution out of `TrainSolveScreen` (rather than inlining sibling JSX
+ * guard blocks) keeps that component's own branching down.
  *
  * Precedence (highest first): verdict > grading > submitting > move > intro
  * > drop-nudge > prompt. The `intro` state carries a step of the two-bubble
- * first-session intro (Phase 240 D-01: welcome, then the closing prompt).
+ * first-session intro (welcome, then the closing prompt).
  */
 
 import type { IntroStep } from '@/lib/trainBotCopy';
 
-/** The single chat-row bubble's current state (D-07 discriminated union). */
+/** The single chat-row bubble's current state (discriminated union). */
 export type TrainBubbleState =
   | { kind: 'verdict' }
   | { kind: 'grading'; recheck: boolean }
@@ -40,10 +38,10 @@ export interface ResolveBubbleStateInput {
   hasVerdict: boolean;
   /** True while the grading engine (and the follow-on solve POST) is in flight. */
   isGrading: boolean;
-  /** True while the Phase 235 (D-10) disagreement re-check runs; only ever true
-   * while `isGrading`. Selects the "Taking a closer look…" copy (D-12). */
+  /** True while the disagreement re-check runs; only ever true
+   * while `isGrading`. Selects the "Taking a closer look…" copy. */
   isRechecking: boolean;
-  /** Phase 236 (D-16): true while the instant solve POST is in flight. No grading
+  /** True while the instant solve POST is in flight. No grading
    * copy; the bubble shows a copy-less spinner. Never set together with
    * `isGrading` (the instant path does not grade before the POST). */
   isSubmitting: boolean;

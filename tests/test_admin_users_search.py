@@ -1,7 +1,7 @@
-"""Integration tests for GET /api/admin/users/search (phase 62).
+"""Integration tests for GET /api/admin/users/search.
 
-Covers D-12 (min query length), D-13 (superuser-gated, ≤20 results, response shape),
-and the superuser-exclusion hygiene requirement from Plan 02 must_haves.
+Covers the 2-character minimum query length, the superuser gate (≤20 results,
+response shape), and the superuser-exclusion hygiene requirement.
 """
 
 import uuid
@@ -82,7 +82,7 @@ async def make_superuser(client: httpx.AsyncClient, test_engine) -> tuple[int, s
 
 @pytest.mark.asyncio
 async def test_search_requires_superuser(test_engine):
-    """Non-superuser caller hitting /admin/users/search gets 403 (D-13)."""
+    """Non-superuser caller hitting /admin/users/search gets 403."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -99,7 +99,7 @@ async def test_search_requires_superuser(test_engine):
 
 @pytest.mark.asyncio
 async def test_search_short_query_returns_empty(test_engine):
-    """Query shorter than 2 characters returns an empty list (D-12)."""
+    """Query shorter than 2 characters returns an empty list."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -195,7 +195,7 @@ async def test_search_by_exact_id(test_engine):
 
     Per-run isolation bug: in a fresh per-run DB (sequences reset to 1), the
     first few registered users get single-digit IDs.  The search endpoint
-    enforces a 2-character minimum query (D-12), so searching for e.g. "2"
+    enforces a 2-character minimum query, so searching for e.g. "2"
     returns an empty list — the correct server behaviour, but not what this
     test intends to exercise.  Fix: register enough padding users first so the
     target user's ID is guaranteed to be >= 10 (2 digits), making the exact-ID
@@ -286,7 +286,7 @@ async def test_search_result_limit_20(test_engine):
 
 @pytest.mark.asyncio
 async def test_search_response_shape(test_engine):
-    """Every row carries id, email, chess_com_username, lichess_username, is_guest, last_login (D-13)."""
+    """Every row carries id, email, chess_com_username, lichess_username, is_guest, last_login."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useFeedback.test.tsx — Phase 234 plan 02 (SEED-191 #8): any successful feedback
+ * useFeedback.test.tsx — any successful feedback
  * submission invalidates the cached profile so the milestone ask can end; a
  * failed submission leaves it untouched.
  */

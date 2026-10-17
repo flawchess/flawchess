@@ -42,7 +42,7 @@ interface EvalCoverageBadgeProps {
   totalN: number;
   /** Whether the current user is a guest — show sign-up instead of analyze CTA. */
   isGuest: boolean;
-  /** Whether the eval-coverage query failed (T-118-13 isError requirement). */
+  /** Whether the eval-coverage query failed (rendered as an error state, not as zero coverage). */
   isCoverageError: boolean;
 }
 
@@ -62,16 +62,15 @@ interface EvalCoverageBadgeProps {
  * CTA logic:
  * - Guest, coverage < LOW_COVERAGE_THRESHOLD: "Sign up to analyze all games"
  *   link → /login?tab=register. Guests can analyze games one at a time on demand
- *   (each card's "Analyze" button, tier-1; see quick task 260616-ey1), but they
+ *   (each card's "Analyze" button, tier-1), but they
  *   stay excluded from the background queue, so signing up is the only way to get
  *   the whole library analyzed automatically — that is what this CTA sells.
  * - Non-guest: no button. Recent games are analyzed automatically in the
  *   background (activity-based auto-enqueue); the badge plus its InfoPopover
  *   tell that story, and per-game analysis lives on each card's "Analyze" button.
  *
- * in_flight_count removed in Phase 119-03: tier-3 derived picks have no
- * eval_jobs rows, so aggregate in-flight was structurally blind to the dominant
- * backlog drain. The pulsing CPU icon gates on analyzedN < totalN instead.
+ * The pulsing CPU icon gates on analyzedN < totalN. Don't use an eval_jobs
+ * in-flight count, because tier-3 derived picks have no eval_jobs rows.
  *
  * Polling is handled by the caller's useEvalCoverage() invocation.
  */

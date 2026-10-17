@@ -1,40 +1,29 @@
 """Cohort empirical-CDF artifact: per-(metric, anchor, TC) percentile breakpoints.
 
-Phase 94.4 — peer-relative percentile chip (CONTEXT D-09 / D-09a / D-13)
-Phase 99.1 — registry relocated to DB (D-04: pure module, repo async)
------------------------------------------------------------------------
-
 This module provides the pure synchronous interpolation logic for the cohort
-CDF.  The breakpoint data that was formerly inline in this module (as a large
-in-source dict) now lives in the ``benchmark_cohort_cdf`` DB table, seeded by
+CDF.  The breakpoint data lives in the ``benchmark_cohort_cdf`` DB table, seeded by
 ``scripts/seed_cohort_cdf.py``.  The caller fetches the relevant cells once
 per import via ``app.repositories.benchmark_cohort_cdf_repository.load_cohort_cells``
 and passes the resulting ``CdfTable`` to ``interpolate_cohort_percentile``.
 
 The chip is peer-relative: every user's percentile is read against an
 in-window cohort of users near the user's anchor rating in the user's own TC.
-The 11-metric ``CdfMetricId`` Literal (D-13 + Phase 99 rate families) and the
-``CdfTable`` dataclass are the single source of truth imported repo-wide.
+The 11-metric ``CdfMetricId`` Literal and the ``CdfTable`` dataclass are the
+single source of truth imported repo-wide. TC is an outer key on the DB
+table, not a metric suffix.
 
-Key reshape vs Phase 94.3:
-
-- **CdfMetricId collapses 16 → 11** (CONTEXT D-13, Phase 99 rate families).
-  The 12 Phase 94.3 TC-suffixed entries retire — TC is an outer key on the
-  DB table, not a metric suffix.
-- **Helper shape (Phase 99.1 D-04)**: ``interpolate_cohort_percentile(value,
-  table)`` takes a prefetched ``CdfTable | None`` and stays synchronous.
-  The old 4-arg shape ``(metric, value, anchor, tc)`` that read from the
-  in-source registry is retired.
+``interpolate_cohort_percentile(value, table)`` takes a prefetched
+``CdfTable | None`` and stays synchronous.
 
 Regen via ``scripts/gen_global_percentile_cdf.py --target benchmark`` to emit
 the updated ``app/data/cohort_cdf.tsv``; then run ``scripts/seed_cohort_cdf.py``
 to load the new breakpoints into the DB.
 
-This module is a sibling of ``app/services/endgame_zones.py`` (D-04), NOT a
+This module is a sibling of ``app/services/endgame_zones.py``, NOT a
 graft into it: CDF tables (99 percentile breakpoints per cell, sliding-window
 cohort) have a different shape than ZoneSpec (IQR bands per (TC, ELO) cell).
 
-D-01 — Python-only artifact. No TS mirror.
+Python-only artifact. No TS mirror.
 
 The module is pure Python with no DB or I/O. All functions are synchronous
 and side-effect free, matching the purity invariant of ``endgame_zones.py``.
@@ -57,13 +46,13 @@ TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 # Audit-trail and breakpoint constants.
 # ---------------------------------------------------------------------------
 
-# Locked benchmark snapshot month (D-04 "Claude's Discretion" item #4). Carried
+# Locked benchmark snapshot month. Carried
 # on every CdfTable for future-recalibration auditability — if the breakpoint
 # values look anomalous, the snapshot tag tells you which benchmark DB month
 # they came from.
 BENCHMARK_DB_SNAPSHOT_MONTH: Final[str] = "2026-05"
 
-# Anchor grid step (CONTEXT D-11). Must match
+# Anchor grid step. Must match
 # ``COHORT_ANCHOR_STEP_ELO`` in ``scripts/gen_global_percentile_cdf.py`` —
 # duplicated here so ``interpolate_cohort_percentile`` can round inputs
 # without depending on the script module. Keep these in sync.
@@ -71,7 +60,7 @@ COHORT_ANCHOR_STEP_ELO: Final[int] = 50
 
 # Every integer percentile from p1 through p99 (99 breakpoints total). NO
 # sub-percent steps (no p0.5 / p2.5 / p97.5 / p99.5) — chip phrasing operates
-# on whole-percent precision per ROADMAP success criterion #5.
+# on whole-percent precision.
 BREAKPOINT_LABELS: Final[tuple[str, ...]] = tuple(f"p{i}" for i in range(1, 100))
 
 # Parallel tuple of float percentiles. Position i corresponds to
@@ -86,13 +75,11 @@ BREAKPOINT_PERCENTILES: Final[tuple[float, ...]] = tuple(float(i) for i in range
 _LEFT_TAIL_CLAMP: Final[float] = 0.0
 _RIGHT_TAIL_CLAMP: Final[float] = 100.0
 
-# Phase 94.4 CdfMetricId — collapsed from 16 to 8 (CONTEXT D-13). The 12
-# Phase 94.3 TC-suffixed entries retire; ``recovery_score_gap`` joins as a
-# peer to the score-gap-bucket family. TC is an outer key on the registry (not a
-# suffix on the metric name), so each metric has at most 4 cells per anchor.
+# TC is an outer key on the benchmark_cohort_cdf table (not a suffix on the
+# metric name), so each metric has at most 4 cells per anchor.
 #
 # This Literal is the single source of truth — ``scripts/gen_global_percentile_cdf.py``
-# re-exports it (drift-impossibility per RESEARCH §Pattern 3).
+# imports it, so the two cannot drift apart.
 CdfMetricId = Literal[
     "score_gap",
     "achievable_score_gap",
@@ -102,8 +89,8 @@ CdfMetricId = Literal[
     "time_pressure_score_gap",
     "clock_gap",
     "net_flag_rate",
-    # Phase 99: raw-rate percentile families (TC is an outer registry key, NOT a
-    # suffix here — per Phase 94.4 D-13 / Anti-Patterns in 99-RESEARCH.md).
+    # Raw-rate percentile families (TC is an outer registry key, NOT a
+    # suffix here).
     "conversion_rate",
     "parity_rate",
     "recovery_rate",
@@ -188,8 +175,7 @@ def round_anchor_to_grid(anchor: int) -> int:
 def interpolate_cohort_percentile(value: float, table: CdfTable | None) -> float | None:
     """Linear-interpolate ``value`` against a PREFETCHED cohort CDF cell.
 
-    Phase 99.1 shape (D-04, supersedes Phase 94.4 D-09a wording): the caller
-    is responsible for fetching the ``CdfTable`` from the DB via
+    The caller is responsible for fetching the ``CdfTable`` from the DB via
     ``app.repositories.benchmark_cohort_cdf_repository.load_cohort_cells``
     and resolving the correct cell with ``round_anchor_to_grid``.  This
     function is pure / synchronous and performs no DB or I/O.
@@ -206,10 +192,3 @@ def interpolate_cohort_percentile(value: float, table: CdfTable | None) -> float
     if table is None:
         return None
     return _interpolate_with_table(table, value)
-
-
-# Legacy ``interpolate_percentile`` stub retired in Phase 94.4 Plan 05b — every
-# call site now uses ``interpolate_cohort_percentile``. Re-introducing a stub
-# would mask future regressions (it returned None unconditionally), so the
-# name is gone outright; an ImportError from any straggler is the desired
-# signal.

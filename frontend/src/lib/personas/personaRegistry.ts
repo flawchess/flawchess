@@ -1,29 +1,27 @@
 /**
- * personaRegistry — the 24-slot exhaustive persona registry (Phase 183, D-02,
- * PERS-03) — 4 styles (`Attacker`/`Trickster`/`Grinder`/`Wall`, imported from
+ * personaRegistry — the 24-slot exhaustive persona registry: 4 styles (`Attacker`/`Trickster`/`Grinder`/`Wall`, imported from
  * `styleOpeningLines.ts`) x 6 rungs (800/1000/1200/1400/1600/1800), each
  * slot a complete pinned `BotGameSettings` fragment: `botElo`, `blend`,
  * `style` (a plain `Style` key, resolved by the caller via
- * `BOT_STYLE_BUNDLES[persona.style]` — NEVER embedded/cloned here, Pitfall
- * 4), plus authored identity (`name`/`species`/`bio`/`avatarEmoji`).
+ * `BOT_STYLE_BUNDLES[persona.style]` — NEVER embedded/cloned here),
+ * plus authored identity (`name`/`species`/`bio`/`avatarEmoji`).
  * `PERSONA_REGISTRY` is typed `Record<PersonaId, Persona>` over the
  * template-literal `PersonaId` union, so TypeScript enforces exhaustiveness
  * at compile time — omitting any of the 24 slots is a type error, mirroring
  * `botStyleBundles.ts`'s `Record<Style, BotStyleParams>` convention.
  *
- * Calibration provenance (Phase 184, CAL-04/CAL-05): `botElo` and
- * `calibratedLabel` are sourced per-persona from the generated
+ * Calibration provenance: `botElo` and `calibratedLabel` are sourced per-persona from the generated
  * `frontend/src/generated/personaCalibration.ts` (`PERSONA_CALIBRATION`,
  * keyed by `PersonaId`), produced by `scripts/calibration_persona_fit.py` +
  * `scripts/gen_persona_calibration.py` from the operator-run overnight
  * sweep (`bin/run_persona_calibration_sweep.sh`). `botElo` is the
- * RETARGETED engine-facing ELO input (Phase-181 lookup, D-01) — it is no
- * longer `=== rung`. `calibratedLabel` is the honest, tilde-prefixed,
- * round-50 measured/extrapolated display value a user sees (D-03/D-06/D-07).
+ * RETARGETED engine-facing ELO input (bot-strength lookup) — it is not
+ * `=== rung`. `calibratedLabel` is the honest, tilde-prefixed,
+ * round-50 measured/extrapolated display value a user sees.
  * `rung` is UNCHANGED in meaning: it stays the structural grid-position key
  * this registry is organized by, never a strength value.
  *
- * STALENESS (D-11): changing `botStyleBundles.ts`'s style params or the
+ * STALENESS: changing `botStyleBundles.ts`'s style params or the
  * anchor ladder invalidates this calibration — re-run the persona sweep
  * (`bin/run_persona_calibration_sweep.sh`) and regenerate
  * `personaCalibration.ts` before trusting these values again. No hash-guard
@@ -37,7 +35,7 @@
  *                          canonical default (LIGHT_BLEND) for shape
  *                          completeness, but each of the 4 personas AT rung
  *                          1600 picks its own preset explicitly below
- *                          (Claude's discretion, justified per-style in the
+ *                          (justified per-style in the
  *                          persona's own doc comment) — RUNG_BLEND[1600]
  *                          alone is not read by every 1600-rung entry.
  *   1800                -> DEEP_BLEND (Deep's measured ceiling, per the
@@ -47,7 +45,7 @@
 import type { Style } from '@/lib/engine/styleOpeningLines';
 import { HUMAN_BLEND, LIGHT_BLEND, DEEP_BLEND } from '@/lib/playStyle';
 import { PERSONA_CALIBRATION } from '@/generated/personaCalibration';
-// quick-260722-ucc: matches PERSONA_CALIBRATION's `label` shape — a tilde
+// Matches PERSONA_CALIBRATION's `label` shape — a tilde
 // followed by an integer (e.g. "~800", "~1850"). Named so the parse intent
 // reads clearly at the call site rather than a bare regex literal.
 const CALIBRATED_LABEL_INTEGER_PATTERN = /\d+/;
@@ -61,7 +59,7 @@ export type Rung = 800 | 1000 | 1200 | 1400 | 1600 | 1800;
 
 /** All 6 rungs, ascending — the single source of truth `personasForSection`
  * and the registry-construction helpers below iterate over. Exported
- * (Phase 185) so `PersonaGrid` can iterate rung-rows without duplicating
+ * so `PersonaGrid` can iterate rung-rows without duplicating
  * this ordering. */
 export const RUNGS: readonly Rung[] = [800, 1000, 1200, 1400, 1600, 1800];
 
@@ -71,7 +69,7 @@ export const RUNGS: readonly Rung[] = [800, 1000, 1200, 1400, 1600, 1800];
 export type PersonaId = `${Lowercase<Style>}-${Rung}`;
 
 /**
- * Phase 222 (D-01): the Train bot-casting axis. Deliberately orthogonal to
+ * The Train bot-casting axis. Deliberately orthogonal to
  * `style`/`rung` — a persona's playstyle identity (Attacker/Trickster/etc.)
  * says nothing about the VOICE it should speak with when narrating a Train
  * puzzle. `trainBotCopy.ts`'s `BY_TEMPERAMENT` pools are derived from this
@@ -85,11 +83,11 @@ export interface Persona {
   style: Style;
   rung: Rung;
   /** Engine-facing ELO input — RETARGETED per the persona's own preset via
-   * the Phase-181 lookup (see the calibration-provenance note above), read
-   * from `PERSONA_CALIBRATION[id].botElo`. No longer `=== rung`. */
+   * the bot-strength lookup (see the calibration-provenance note above), read
+   * from `PERSONA_CALIBRATION[id].botElo`. Not `=== rung`. */
   botElo: number;
   /** Honest, tilde-prefixed, round-50 measured/extrapolated display label
-   * (D-03/D-06/D-07), read from `PERSONA_CALIBRATION[id].label`. This is
+   * read from `PERSONA_CALIBRATION[id].label`. This is
    * what `PersonaCard`/`PersonaDetailSurface` render — never `~${rung}`. */
   calibratedLabel: string;
   /** The search-preset blend (`HUMAN_BLEND` / `LIGHT_BLEND` / `DEEP_BLEND` —
@@ -99,32 +97,26 @@ export interface Persona {
   name: string;
   species: string;
   bio: string;
-  /** Placeholder-avatar glyph (D-18) — species-appropriate emoji rendered on
+  /** Placeholder-avatar glyph — species-appropriate emoji rendered on
    * the persona's per-style tint (`personaAvatars.ts`). */
   avatarEmoji: string;
-  /**
-   * Forward-compat only (D-17, RESEARCH.md Pitfall 6): reserved for the
-   * future real-art PR's Vite-imported WebP portrait path
-   * (`frontend/src/assets/personas/{persona-id}.webp`). No import machinery
-   * is built this phase — every persona below omits this field, so it is
-   * always `undefined` today. `personaAvatars.ts`'s `resolveAvatarSrc`
-   * consumes it as the single seam the future PR will need to touch.
-   */
+  /** Optional per-persona override for the avatar image URL. No persona sets
+   * it; `resolveAvatarSrc` (personaAvatars.ts) prefers it when present and
+   * otherwise falls back to the glob-backed lookup keyed by persona id. */
   avatarSrc?: string;
   /**
-   * Phase 222 (D-01): the Train bot-casting voice. Required on every entry —
+   * The Train bot-casting voice. Required on every entry —
    * `Record<PersonaId, Persona>` makes a missed slot a compile error, which
    * is the guarantee that keeps the three casting pools (stern/friendly/
    * smart) always non-empty and exhaustive without a hand-maintained id
-   * list. Set per the reviewed table in 222-CONTEXT.md `<specifics>`
-   * (8 stern, 7 smart, 9 friendly).
+   * list. Set per a reviewed table (8 stern, 7 smart, 9 friendly).
    */
   temperament: Temperament;
 }
 
 /**
  * Rung -> preset blend lookup. `Record<Rung, number>` enforces every rung
- * resolves to SOME defined blend (PERS-03) even though, per the header note,
+ * resolves to SOME defined blend even though, per the header note,
  * `RUNG_BLEND[1600]` is a canonical default rather than a value every
  * 1600-rung persona actually reads (those pick explicitly, justified inline
  * per persona below).
@@ -148,7 +140,7 @@ function personaId(style: Style, rung: Rung): PersonaId {
 // ─── Attacker — Wasp -> Terrier -> Falcon -> Wolverine -> Ram -> Bull ──────
 // Small, fast, biting animals at the low rungs growing into larger,
 // full-force chargers at the top — matches the style's aggressive,
-// complicating identity (D-10 size-ladder convention).
+// complicating identity (size-ladder convention).
 
 const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
   'attacker-800': {
@@ -203,7 +195,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     avatarEmoji: '🐺',
     temperament: 'stern',
   },
-  // 1600 -> Light (Claude's discretion): an attacker's identity is carried
+  // 1600 -> Light: an attacker's identity is carried
   // mostly by the feature multipliers + gambit book, not by heavy search —
   // Light keeps the pace sharp without slowing into a calculating Deep bot.
   'attacker-1600': {
@@ -236,7 +228,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
 
 // ─── Trickster — Magpie -> Ferret -> Fox -> Raccoon -> Coyote -> Hyena ─────
 // Cheap trap lines at the low rungs, full swindle mode + high variance from
-// 1600 up (SEED-098's "swindle mode + high variance at 1600+").
+// 1600 up.
 
 const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
   'trickster-800': {
@@ -291,7 +283,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     avatarEmoji: '🦝',
     temperament: 'smart',
   },
-  // 1600 -> Deep (Claude's discretion): SEED-098's "swindle mode + high
+  // 1600 -> Deep: "swindle mode + high
   // variance at 1600+" reads as needing real search to conjure a genuine
   // swindle chance, not just book knowledge — Deep pairs the highest
   // varianceBonus of the 4 styles with the calculation to exploit it.
@@ -325,7 +317,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
 
 // ─── Grinder — Ant -> Mole -> Otter -> Penguin -> Ox -> Gorilla ───────────
 // Trade-happy, steers toward simplified endgames, never resigns early
-// (SEED-098: "playing it trains exactly what FlawChess measures").
+// (playing it trains exactly what FlawChess measures).
 
 const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
   'grinder-800': {
@@ -380,7 +372,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     avatarEmoji: '🐧',
     temperament: 'stern',
   },
-  // 1600 -> Deep (Claude's discretion): Grinder's identity is fundamentally
+  // 1600 -> Deep: Grinder's identity is fundamentally
   // calculation-driven (steering toward favorable trades and endgames), so
   // pairing it with heavier search fits better than the lighter Light preset.
   'grinder-1600': {
@@ -413,7 +405,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
 
 // ─── Wall — Snail -> Hedgehog -> Turtle -> Badger -> Armadillo -> Hippo ───
 // Fixed system openings, simplifying trades, welcomes an early draw a bit
-// more readily than dead-equal (D-09).
+// more readily than dead-equal.
 
 const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
   'wall-800': {
@@ -468,7 +460,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     avatarEmoji: '🦡',
     temperament: 'friendly',
   },
-  // 1600 -> Light (Claude's discretion): Wall's identity is carried mainly by
+  // 1600 -> Light: Wall's identity is carried mainly by
   // its system book + simplifying trades rather than deep calculation, so
   // the lighter preset is the better fit — Deep is reserved for the 1800
   // ceiling where "genuinely difficult wall to crack" needs real depth.
@@ -513,7 +505,7 @@ export const PERSONA_REGISTRY: Record<PersonaId, Persona> = {
   ...WALL_PERSONAS,
 };
 
-/** Section display order for the Bots page grid (D-02/D-14): "Wall", never
+/** Section display order for the Bots page grid: "Wall", never
  * "Solid Wall"/"Great Wall". */
 export const STYLE_SECTION_ORDER: readonly Style[] = ['Attacker', 'Trickster', 'Grinder', 'Wall'];
 
@@ -523,21 +515,21 @@ export function personasForSection(style: Style): Persona[] {
 }
 
 /**
- * Rung-major accessor (Phase 185, transposed grid): returns the 4 personas
+ * Rung-major accessor (transposed grid): returns the 4 personas
  * AT `rung`, one per style, in `STYLE_SECTION_ORDER` order. Mirrors
  * `personasForSection`'s abstraction level so `PersonaGrid` can iterate
  * `RUNGS` (rows) outer x this (columns) inner without ever touching
- * `PERSONA_REGISTRY` directly (Pitfall 1).
+ * `PERSONA_REGISTRY` directly.
  */
 export function personasForRung(rung: Rung): Persona[] {
   return STYLE_SECTION_ORDER.map((style) => PERSONA_REGISTRY[personaId(style, rung)]);
 }
 
 /**
- * Plain guarded object-index lookup (T-183-02, RESEARCH.md): never throws,
+ * Plain guarded object-index lookup: never throws,
  * never uses a dynamic `require`/`eval`. An unrecognized or `undefined` id
- * resolves to `undefined` — every downstream consumer (clock strip, draw
- * banner, result surfaces) null-coalesces to an unstyled fallback.
+ * resolves to `undefined` — every downstream consumer (clock strip, result
+ * surfaces) null-coalesces to an unstyled fallback.
  */
 export function personaForId(id: PersonaId | string | undefined): Persona | undefined {
   if (id === undefined) return undefined;
@@ -545,7 +537,7 @@ export function personaForId(id: PersonaId | string | undefined): Persona | unde
 }
 
 /**
- * quick-260722-ucc: extracts the persona's CALIBRATED ELO (the honest ~label
+ * Extracts the persona's CALIBRATED ELO (the honest ~label
  * value a user sees, e.g. `~800` -> `800`) from `calibratedLabel` — NOT
  * `botElo`, which is the retargeted internal engine dial (e.g. `attacker-800`
  * has `botElo: 1100`). All 25 labels in `personaCalibration.ts` are a tilde
@@ -559,9 +551,9 @@ export function personaCalibratedElo(persona: Persona): number {
 }
 
 /**
- * The ONE shared `settings.personaId -> Persona` lookup (Phase 183 Plan 05,
- * T-183-12) — every in-game/result-surface consumer (clock strip, draw
- * banner, result copy) calls this instead of re-implementing the
+ * The ONE shared `settings.personaId -> Persona` lookup — every
+ * in-game/result-surface consumer (clock strip, result copy) calls this
+ * instead of re-implementing the
  * `settings.personaId ? PERSONA_REGISTRY[...] : undefined` ternary inline.
  * Returns `undefined` for a Custom-mode game (`personaId` unset) or an
  * unrecognized/removed id (`personaForId`'s existing guarded-lookup

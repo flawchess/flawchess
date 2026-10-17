@@ -30,28 +30,28 @@ export interface EndgameCategoryStats {
   draw_pct: number;
   loss_pct: number;
   conversion: ConversionRecoveryStats;
-  // Phase 87 follow-up: Wilson score-test p-value of this class's WDL vs 50%.
+  // Wilson score-test p-value of this class's WDL vs 50%.
   // null when total < PVALUE_RELIABILITY_MIN_N (=10). Wire field kept for
   // schema parity; TypeTable shows typical-range cells and does not render it.
   score_p_value: number | null;
-  // Phase 87.1 (SEED-016, D-05): per-span mean Score Gap for this endgame type.
+  // Per-span mean Score Gap for this endgame type.
   // User-facing label: "Score Gap" (card row) / "Endgame Type Score Gap" (concepts).
-  // Internal name retains "achievable" to preserve grep-ability with Phase 85.1.
+  // Internal name retains "achievable".
   type_achievable_score_gap_mean: number | null;
   type_achievable_score_gap_n: number | null;
   type_achievable_score_gap_p_value: number | null;
   type_achievable_score_gap_ci_low: number | null;
   type_achievable_score_gap_ci_high: number | null;
-  // Phase 239 D-14: TypeTable verdict gates (ranked payload only; false elsewhere).
+  // TypeTable verdict gates (ranked payload only; false elsewhere).
   conversion_significant: boolean;
   recovery_significant: boolean;
   type_achievable_score_gap_significant: boolean;
-  // quick-260519-ni3: descriptive start/end components of the Score Gap.
+  // Descriptive start/end components of the Score Gap.
   // end_mean - start_mean == gap_mean exactly (same span cohort, reconciliation invariant).
   // null when type_achievable_score_gap_n == 0.
   type_achievable_score_start_mean: number | null;
   type_achievable_score_end_mean: number | null;
-  // Quick task 260519-lu0: WDLStats-aligned fields so PositionResultsPanel
+  // WDLStats-aligned fields so PositionResultsPanel
   // can consume EndgameCategoryStats directly (mirrors WDLStats shape in api.ts).
   score: number;
   confidence: 'low' | 'medium' | 'high';
@@ -97,9 +97,9 @@ export type MaterialBucket = 'conversion' | 'parity' | 'recovery';
  *  `date` is the Monday of an ISO week (YYYY-MM-DD).
  *  `score_difference` is endgame_score - non_endgame_score on a 0-1 scale (signed).
  *  `endgame_score` / `non_endgame_score` are the absolute per-side
- *  rolling-window means (0-1). Phase 68 added them so the two-line chart
- *  and the `score_timeline` insights subsection read absolute scores
- *  directly instead of reconstructing them from `score_difference`. */
+ *  rolling-window means (0-1). They let the two-line chart and the
+ *  `score_timeline` insights subsection read absolute scores directly
+ *  instead of reconstructing them from `score_difference`. */
 export interface ScoreGapTimelinePoint {
   date: string;
   score_difference: number;
@@ -112,11 +112,11 @@ export interface ScoreGapTimelinePoint {
   // through to EndgameEloTimelinePoint.per_week_endgame_games so the Endgame
   // ELO Timeline volume bars show per-week endgame activity.
   per_week_endgame_games: number;
-  // Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Invariant:
+  // Absolute per-side rolling-window mean scores (0.0-1.0). Invariant:
   // abs((endgame_score - non_endgame_score) - score_difference) < 1e-9 per bucket.
   endgame_score: number;
   non_endgame_score: number;
-  // Phase 87.6: per-side trailing-window mean opponent rating. Drives the
+  // Per-side trailing-window mean opponent rating. Drives the
   // Performance Rating math backend-side; not consumed by the score chart
   // but mirrored for schema parity with the Pydantic model.
   endgame_opp_rating_avg: number;
@@ -124,8 +124,7 @@ export interface ScoreGapTimelinePoint {
 }
 
 // ── Time pressure ──
-// Phase 88.1 (D-07): independent opp-quintile split — both sides derived from the user's
-// own game stream. See .planning/.../88-CONTEXT.md D-07 for design rationale.
+// Independent opp-quintile split: both sides derived from the user's own game stream.
 
 /** Score-Delta data for one pressure quintile in a time control. */
 export interface PressureQuintileBullet {
@@ -138,7 +137,7 @@ export interface PressureQuintileBullet {
   ci_low: number | null;
   ci_high: number | null;
   opp_score: number | null;     // opponent's same-game score in the matching opp-clock quintile
-  significant: boolean;         // 99% CI excludes 0: only then is the dot coloured (239 D-14)
+  significant: boolean;         // 99% CI excludes 0: only then is the dot coloured
 }
 
 /** One ISO-week point on the Average Clock Difference over Time line chart.
@@ -152,7 +151,7 @@ export interface ClockDiffTimelinePoint {
   per_week_game_count: number;   // clock-eligible games in THIS week only
 }
 
-/** D-12 Reversal Amendment (CONTEXT 2026-05-27) — per-TC blended rating-anchor
+/** Per-TC blended rating-anchor
  *  disclosure for the ranked-metric popover. The anchor is the game-weighted
  *  median of converted-chess.com + native-lichess ratings. The per-platform
  *  game-count and native-median fields support the four disclosure branches:
@@ -189,14 +188,14 @@ export interface RatingAnchorOut {
   lichess_median_native: number | null;
 }
 
-// ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──
+// ── Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──
 
 /** Stable string-literal union of all 8 (platform, time_control) combo keys.
  *  Format: {platform_with_dot_replaced_by_underscore}_{time_control}.
  *  Frontend uses this as the lookup key into ELO_COMBO_COLORS.
  *  Backend populates via EndgameEloTimelineCombo.combo_key.
  *
- *  Phase 87.4 D-06: kept as EloComboKey rather than renaming — the combo_key
+ *  Kept as EloComboKey rather than renaming — the combo_key
  *  encodes (platform, time_control) and carries no "endgame" semantic, so a
  *  rename would add churn without clarifying anything. */
 export type EloComboKey =
@@ -212,13 +211,11 @@ export type EloComboKey =
 /** Single weekly point for a (platform, time_control) combo of the Endgame ELO timeline.
  *  date: Monday of the ISO week, YYYY-MM-DD.
  *  endgame_elo: `actual_elo + spread / 2` where
- *    `spread = 400 · log10((s_E / (1 − s_E)) / (s_N / (1 − s_N)))` (Phase 87.6
- *    amendment 2026-05-17 — logistic stretch anchored on Actual ELO,
- *    supersedes the earlier per-side FIDE PR mapping).
+ *    `spread = 400 · log10((s_E / (1 − s_E)) / (s_N / (1 − s_N)))` (logistic
+ *    stretch anchored on Actual ELO).
  *  non_endgame_elo: `actual_elo − spread / 2`. Endgame ELO and Non-Endgame ELO
  *    sit symmetrically around Actual ELO by construction:
  *    `endgame_elo + non_endgame_elo == 2 · actual_elo` for every point.
- *    See .planning/notes/endgame-elo-logistic-anchored.md.
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
  *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor +
  *    tooltip "past N games").
@@ -251,9 +248,9 @@ export interface EndgameEloTimelineResponse {
   timeline_window: number;
 }
 
-// ── Phase 238: ranked-sample payload (GET /api/endgames/ranked-stats) ──
+// ── Ranked-sample payload (GET /api/endgames/ranked-stats) ──
 // Mirrors app/schemas/endgames.py (EndgameRankedStatsResponse and friends). The
-// payload takes no filters (D-01): every number describes the ranked sample
+// payload takes no filters: every number describes the ranked sample
 // (rated games vs human opponents within 100 Elo, last 36 months, <= 3000 games
 // per time control), so a value and its percentile always describe the same games.
 
@@ -290,10 +287,10 @@ export interface RankedMetricOut {
   floor_required: number;
   percentile: number | null;
   status: RankStatus;
-  ci_low: number | null;        // 99% CI (239 D-14)
+  ci_low: number | null;        // 99% CI
   ci_high: number | null;
   p_value: number | null;
-  /** 99% CI excludes the null on the verdict's side; red/green needs it (239 D-14). */
+  /** 99% CI excludes the null on the verdict's side; red/green needs it. */
   significant: boolean;
 }
 
@@ -343,7 +340,7 @@ export interface RankedTcStats {
 }
 
 /** `tcs` lists only time controls with at least one ranked-sample game, ordered
- *  bullet, blitz, rapid, classical (238 D-14). An empty ranked sample returns [] (238 D-10). */
+ *  bullet, blitz, rapid, classical. An empty ranked sample returns []. */
 export interface EndgameRankedStatsResponse {
   tcs: RankedTcStats[];
 }

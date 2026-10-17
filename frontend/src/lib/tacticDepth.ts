@@ -1,13 +1,13 @@
 /**
- * tacticDepth.ts — Quick 260620-l5k (Phase 130).
+ * Tactic depth filter: units, display offsets and presets.
  *
  * UNIT (LOCKED): the slider and the API/DB value are BOTH plain depth — the
  * 0-based ply index into the winning line (`game_flaws.*_tactic_depth`). No
  * full-move ↔ half-ply conversion anymore; the slider domain IS the DB domain.
  *
  * The filter is a two-handle RANGE [min, max] over depth 0..11 (the dev-DB max
- * is 11). Mates obey the range like every other tactic (the Phase 129 D-04
- * exemption was removed). Cloned in spirit from opponentStrength.ts.
+ * is 11). Mates obey the range like every other tactic (no exemption). Cloned in
+ * spirit from opponentStrength.ts.
  */
 
 // ─── Named constants (no magic numbers) ─────────────────────────────────────
@@ -35,7 +35,7 @@ export function toDisplayDepth(depth: number): number {
 }
 
 /**
- * Decision-anchored depth offset for the ALLOWED orientation (Quick 260621-qz9).
+ * Decision-anchored depth offset for the ALLOWED orientation.
  *
  * missed_tactic_depth and allowed_tactic_depth both store the raw 0-based detector
  * loop index within their OWN principal variation. The missed PV starts at the
@@ -57,7 +57,7 @@ export type TacticDepthOrientation = 'missed' | 'allowed';
  * the miniboard depth badges so allowed and missed are comparable on screen.
  *
  * `anchored` (default true) controls whether the allowed +1 decision-anchor offset
- * applies (Quick 260628-1t5, DECISION 2). It is correct only where missed and allowed
+ * applies. It is correct only where missed and allowed
  * depths are co-anchored on ONE decision board — the static FlawCard. On the navigable
  * surfaces (game card, analysis board, move list, eval-chart tooltip) missed and allowed
  * are no longer rendered on a shared decision board, so callers pass `anchored = false`
@@ -147,7 +147,7 @@ export function sliderToRange(lo: number, hi: number): TacticDepthValue {
 
 /**
  * Summary text for the active depth range. Always shows the range using the
- * 1-based display numbers (e.g. `Intermediate: 1-6`); when it matches a preset,
+ * 1-based display numbers (e.g. `Medium: 1-6`); when it matches a preset,
  * the preset name is prefixed. A custom range renders bare (`3-5`, or `4` when
  * min === max). Internal values stay 0-based; only the display is offset.
  */

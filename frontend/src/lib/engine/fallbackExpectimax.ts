@@ -1,26 +1,25 @@
 /**
  * fallbackExpectimax — the depth-limited expectimax guardrail behind the
- * IDENTICAL `SearchRunner` contract as `mctsSearch.ts` (ENGINE-06 / SC5).
+ * IDENTICAL `SearchRunner` contract as `mctsSearch.ts`.
  *
- * `useFlawChessEngine.ts` (Phase 155) imports exactly one of `mctsSearch` /
+ * `useFlawChessEngine.ts` imports exactly one of `mctsSearch` /
  * `fallbackExpectimax` behind `guardrail.ts`'s frozen `SearchRunner` type —
  * this file exists to PROVE that swap is real, not just claimed: it is a
  * structurally simpler second implementation (uniform depth-first descent to
  * `budget.maxPlies`, no PUCT/visit-count selection or budget allocation) that
  * nonetheless reuses the SAME correctness-critical primitives as the MCTS
- * core, so `practicalScore` semantics cannot silently diverge (D-06,
- * 153-RESEARCH.md Open Question 2):
+ * core, so `practicalScore` semantics cannot silently diverge:
  *
  *   - `backupExpectation`/`backupRootMax` from `./backup` — the Maia-prior-
  *     weighted expectation (non-root) / max (root) rule.
  *   - `leafExpectedScore` from `./leafScore` — root-relative sigmoid
  *     conversion. `rootMover` is computed ONCE via `sideToMoveFromFen(rootFen)`
  *     and threaded as a constant through every leaf, exactly as in
- *     `mctsSearch.ts` (Pattern 3 — no per-ply sign flip).
+ *     `mctsSearch.ts` (no per-ply sign flip).
  *   - `truncateAndRenormalize` from `./select` — the same ~90%-mass Maia
  *     top-k cut at every expansion, root or non-root.
  *   - `terminalValue`/`applyUciMoveFen`/`recomputeValue`/`buildSnapshot`
- *     from `./treeCommon` (WR-06) — the root-relative mate/draw frame and
+ *     from `./treeCommon` — the root-relative mate/draw frame and
  *     the entire RankedLine construction are a SINGLE implementation shared
  *     with `mctsSearch.ts`, not parallel copies that could silently drift.
  *
@@ -30,14 +29,14 @@
  * `budget.concurrency` is unused here (sequential by construction; there is
  * no dispatch round to parallelize).
  *
- * D-09: `nodesEvaluated` increments once per expansion event (one
+ * `nodesEvaluated` increments once per expansion event (one
  * `policy()` + one batched `grade()` call), never for a terminal/depth-capped
- * dead end. D-10: `onSnapshot` fires once per completed backup (this node's
+ * dead end. `onSnapshot` fires once per completed backup (this node's
  * own recompute plus every already-visited ancestor's recompute) — no
  * `Date.now()`/`performance.now()` anywhere in this file. Because expansion
  * is purely sequential (no `Promise.all` fan-out), repeated runs are
  * trivially bit-identical with no jitter-ordering concern (unlike
- * `mctsSearch.ts`'s ENGINE-07 concurrency case).
+ * `mctsSearch.ts`'s concurrency case).
  */
 
 import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
@@ -61,7 +60,7 @@ import {
 
 /**
  * One node in the fallback's full depth-limited tree. Mutable — private
- * orchestrator state. The shared node shape (`treeCommon.ts`, WR-06) needs
+ * orchestrator state. The shared node shape (`treeCommon.ts`) needs
  * no strategy-specific additions here: the full-width walk has no pending/
  * closure bookkeeping and no root exploration floor.
  */
@@ -136,16 +135,16 @@ interface FallbackState {
 }
 
 /**
- * Expands `node` (one `policy()` + one batched `grade()` call, D-09), backs
- * up its own value plus every already-visited ancestor along `path` (D-10),
+ * Expands `node` (one `policy()` + one batched `grade()` call), backs
+ * up its own value plus every already-visited ancestor along `path`,
  * emits ONE `onSnapshot`, then recurses uniformly into every surviving child
  * — bounded only by `budget.maxPlies` (depth cutoff) and `budget.maxNodes`
- * (D-09 expansion-event budget). `path` holds `node`'s ancestors, root-first,
- * NOT including `node` itself. Phase 159 D-05/D-06/D-07: the raw policy is
+ * (expansion-event budget). `path` holds `node`'s ancestors, root-first,
+ * NOT including `node` itself. The raw policy is
  * reshaped by `applyPolicyTemperature` ONLY when `node.side` matches
  * `rootMover` and the budget's temperature differs from the default
- * (Pitfall 1 short-circuit), mirroring `mctsSearch.ts`'s `dispatchExpansion`
- * identically (Pitfall 3 — the two runners must never diverge here).
+ * (short-circuit), mirroring `mctsSearch.ts`'s `dispatchExpansion`
+ * identically (the two runners must never diverge here).
  */
 async function expandNode(
   node: FallbackNode,
@@ -160,12 +159,11 @@ async function expandNode(
 ): Promise<void> {
   if (node.isTerminal || node.depth >= budget.maxPlies) {
     if (!node.isTerminal && node.depth >= budget.maxPlies) {
-      // WR-05: a NON-terminal node cut by the depth ceiling means maxPlies
+      // A NON-terminal node cut by the depth ceiling means maxPlies
       // stopped the walk — the normal termination mode for a full-width
       // expectimax. The types.ts contract ("True once maxNodes/maxPlies
-      // stopped the search") requires reporting it; previously only the
-      // maxNodes path ever set the flag, so mctsSearch and this runner
-      // reported contradictory completion states for the same input.
+      // stopped the search") requires reporting it, so mctsSearch
+      // and this runner report the same completion state for the same input.
       state.budgetExhausted = true;
     }
     node.isExpanded = true;
@@ -184,7 +182,7 @@ async function expandNode(
       ? applyPolicyTemperature(rawPolicy, temperature)
       : rawPolicy;
   let candidateMap = truncateAndRenormalize(effectivePolicy);
-  // WR-02 (196-REVIEW.md): the union/prior-seeding merge is shared with
+  // The union/prior-seeding merge is shared with
   // mctsSearch.ts's dispatchExpansion via treeCommon.ts's
   // mergeExtraRootMoves, so the two SearchRunner implementations cannot
   // silently diverge on this logic (see that function's own doc comment).
@@ -202,16 +200,16 @@ async function expandNode(
     node.isExpanded = true;
     return;
   }
-  // Phase 194 ABORT-01 (discretionary consistency fix): forward this node's
-  // signal into grade() too, so the ENGINE-06 independent fallback path is
+  // Forward this node's signal into grade() too, so this independent
+  // fallback path is
   // not left as the one un-abortable grade site now that EngineProviders.grade
   // carries the optional 3rd param — mirrors mctsSearch.ts's dispatchExpansion.
   //
-  // Phase 195: deliberately NOT resolving a ladder depth here — this runner's
+  // Deliberately NOT resolving a ladder depth here — this runner's
   // whole purpose (module header) is to prove SearchRunner has a second,
   // structurally independent implementation; entangling it with mctsSearch's
   // ladder-depth resolution would undercut that proof. Inherits
-  // WorkerPool.grade's root-rung default (D-02).
+  // WorkerPool.grade's root-rung default.
   const grades = await providers.grade(node.fen, candidateUcis, signal);
 
   state.nodesEvaluated += 1;
@@ -219,7 +217,7 @@ async function expandNode(
 
   for (const uci of candidateUcis) {
     const childFen = applyUciMoveFen(node.fen, uci);
-    if (childFen === null) continue; // illegal/malformed provider candidate — deterministic drop, never a crash (WR-07)
+    if (childFen === null) continue; // illegal/malformed provider candidate — deterministic drop, never a crash
     const prior = candidateMap.get(uci) ?? 0;
     const grade = grades.get(uci);
     const value = grade ? leafExpectedScore(grade, rootMover) : NEUTRAL_EXPECTED_SCORE;

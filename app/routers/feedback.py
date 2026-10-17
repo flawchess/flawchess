@@ -28,8 +28,8 @@ async def submit_feedback(
 ) -> FeedbackResponse:
     """Submit user feedback.
 
-    Accepts feedback from authenticated users (full and guest, per D-08).
-    Rate-limited to 5 submissions per user per hour (D-07).
+    Accepts feedback from authenticated users (full and guest).
+    Rate-limited to 5 submissions per user per hour.
     user_id is derived from the authenticated JWT — never from the request body (V4).
     """
     if not feedback_limiter.is_allowed(str(user.id)):

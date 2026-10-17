@@ -12,7 +12,7 @@ import {
 } from '@/lib/personas/personaRegistry';
 import { ATTACKER_ACCENT, TRICKSTER_ACCENT, GRINDER_ACCENT, WALL_ACCENT } from '@/lib/theme';
 
-// Phase 234: the real bubble needs a QueryClientProvider (it owns a TanStack
+// The real bubble needs a QueryClientProvider (it owns a TanStack
 // mutation), which these provider-less grid renders deliberately lack. A stub
 // exposing the props proves what the roster hands it; FeedbackAskBubble.test.tsx
 // covers the bubble itself.
@@ -37,7 +37,7 @@ vi.mock('@/components/feedback/FeedbackAskBubble', () => ({
 // The welcome bubble's copy is `rosterHost({ today }).copy` for the
 // component's own day computation (`devClockNow(readDevClockOffsetMinutes())`
 // formatted 'yyyy-MM-dd'). Pinning the system clock makes `today` — and so
-// the assertions below — deterministic, matching Phase 223's own convention
+// the assertions below — deterministic, matching the convention
 // for testing a daily rotation (mirrors `trainBotCopy.test.ts`'s fixed-date
 // `landingHost` cases).
 const MOCKED_TODAY = '2026-07-01';
@@ -142,10 +142,10 @@ describe('PersonaGrid', () => {
     expect(screen.getByTestId('bots-intro-info')).toBeTruthy();
   });
 
-  it('shows the welcome bubble to every visitor and shows nobody an estimated rating (D-13, SC6)', () => {
+  it('shows the welcome bubble to every visitor and shows nobody an estimated rating', () => {
     render(<PersonaGrid onSelectPersona={vi.fn()} onSelectCustom={vi.fn()} />);
 
-    // Phase 223 UAT retired the player's estimated-rating line: a bot's
+    // The player's estimated-rating line is gone: a bot's
     // calibrated ELO is measured against engines, so a human number beside it
     // invited a comparison the two scales do not support. The bubble itself is
     // ungated — a guest needs the explanation most.
@@ -169,7 +169,7 @@ describe('PersonaGrid', () => {
   });
 });
 
-describe('PersonaGrid: Phase 234 milestone feedback ask (FBASK-09)', () => {
+describe('PersonaGrid: milestone feedback ask', () => {
   const ASK_DAYS = 9;
 
   it("an active ask hands the welcome bubble to Hilda (large) and hides the greeting and engine popover", () => {

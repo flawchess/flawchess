@@ -1,5 +1,63 @@
 # Milestones: FlawChess
 
+## v2.27 Codebase Cleanup (Shipped: 2026-10-17, not yet deployed)
+
+**Phases completed:** 1 phase (241), 70 plans, 14 commits on `main` since the `v2.26` tag (1,119 non-planning files, +23,872 / −26,714; the range also carries three fixes from the Phase 241 audit (expired guest session, NULL `sample_pair` in opening insights, Tactic Depth summary highlight), the "Feedback" label on the floating feedback button and the SEED-201 test-infra hardening (quick 261017-986))
+
+**Delivered:** A hygiene pass after many iterations, with no architecture refactor and no behavior change. Inputs were an owner-approved `241-STYLE-GUIDE.md` and a read-only, adversarially verified multi-agent audit (`241-INVENTORY.md`, 711/711 files). Planning-artifact tags (`Phase NNN`, `D-NN`, `SEED-NNN`; 10,939 file-lines at base) were stripped from comments, docstrings and test titles in `app/`, `frontend/src` and `tests/`, leaving only deliberate string literals and open-seed pointers. 772 inventory comment rows were resolved (759 applied, 10 moved, 4 left for the owner, 5 deferred into their target ledgers), and all 86 renames shipped (39 local, 40 module, 9 cross-layer, plus walkthrough → tour) with wire, DB, testid, Umami, Sentry, storage, URL, env and prompt contracts untouched.
+
+**Closeout:** Retroactive lightweight close (same pattern as v2.14–v2.24). Phase 241 has no seed of its own; SEED-201 (test-infra hardening found during it) closed by quick 261017-986. **Not deployed at close**: by owner decision the `v2.27` tag sits on the close commit on `main`, not on a production forward-port; the next release PR ships it.
+
+**Key accomplishments:**
+
+- **Phase 241 — Codebase Cleanup: naming + comments (70 plans).** A cleanup toolkit (scope files, per-scope ledgers, rename maps, `cleanup.py absent`/`diff`/`scan --gate`) drove 40 comment ledgers and 18 rename maps in 9 waves. Behavior neutrality proven independently: identifier-blinded Python and TypeScript AST comparisons over 378 `.py` and 731 `.ts/.tsx` changed files (every residue a rename follow-through), 4,555 Python test functions before and after, no assertion changed. VERIFICATION 8/8; full pre-merge gate re-run by the verifier (backend 5,494 passed, frontend 5,649 passed). Code review 1 warning fixed, 2 infos open.
+
+**Known gaps, recorded rather than smoothed over:**
+
+- **INVENTORY §7 is unseeded**: 50 seed candidates and the suspected bugs (three were fixed as fast tasks) await an owner pass.
+- **Review IN-01/IN-02 open**: `frontend/CLAUDE.md` still names two components that no longer exist; a behavior fix (`07dd60fb4`) landed inside the no-behavior-change phase (correct and tested, but outside the stated scope).
+- **Glossary row 56** in STYLE-GUIDE §3.3 still names the pre-rename components (doc staleness only).
+
+---
+
+## v2.26 Train First-Session Onboarding (Shipped: 2026-10-16)
+
+**Phases completed:** 1 phase (240), 7 plans, 33 commits on `main` since the `v2.25` tag (71 non-planning files, +3,694 / −1,673; the range also carries the reveal clock-context line (quick 261015-s05), the salient Library Stats coverage line, truthful warm-up copy for guests with imported games (quick 261015-pjr) and Google sign-up keeping guest data (quick 261016-fwd))
+
+**Delivered:** The first Train session asks less before you play. In the clean first-session cohort about 44% of guests and registered users abandoned session 1, and the puzzle-1 reveal tour (11-12 bubbles on puzzle 1) was the largest single drop point. Phase 240 follows "the user acts within one or two taps, and reads later": the intro shrinks to two bubbles with the guess buttons, the first verdict teaches what "only one" and "several" mean for that position, the practice rationale moves to the session-1 score screen, the reveal tour is split over the first three reveals with a pulsing gold highlight on what each step explains, the reminder prompt waits for all three parts, and session composition puts a one-good-move puzzle first with a several-good-moves puzzle at 2 or 3.
+
+**Closeout:** Retroactive lightweight close. Phase 240 sourced from SEED-200 (closed). **Deployed throughout**: releases #423 and #424 carried the quick tasks, Phase 240 shipped as #426 (2026-10-16). The `v2.26` tag sits on the forward-port of release #426 and is byte-identical to `origin/production` outside `.planning/`.
+
+**Key accomplishments:**
+
+- **Phase 240 — Train First-Session Onboarding Load (SEED-200, 7 plans).** Baseline funnel captured in `240-FUNNEL-BEFORE.md`; intro and verdict copy, per-reveal tour parts with a reduced-motion static glow, a small backend change to first-session puzzle ordering. VERIFICATION 6/6; UAT 6/6 (owner accepted the warm-up first-completed score bubble at 375x667). Code review 1 warning, 5 infos, all left open.
+
+**Known gaps, recorded rather than smoothed over:**
+
+- **The after-change funnel has not been read**: compare against `240-FUNNEL-BEFORE.md` once enough first sessions accumulate (the sample was small: 81 first sessions).
+- **Review WR-01 open by owner choice**: the registered has-games warm-up first-completed bubble was not re-measured at 375x667 after the guest variant was shortened.
+
+---
+
+## v2.25 Readable Endgame & Library Stats (Shipped: 2026-10-14)
+
+**Phases completed:** 2 phases (238–239), 19 plans, 135 commits on `main` since the `v2.24` tag (309 non-planning files, +27,045 / −27,683; the range also carries the Train live engine preview and live alternatives (SEED-197, quick 261010-e5l), Stockfish rows on known reveal lines (quick 261009-por), the Analyze button on every reveal, graded Stockfish arrows with move-quality badges (quick 261012-a6m), endgame insights generation hardening (quick 261012-qiz), the tempo x phase heatmap (quick 261014-pb9/-qj8), per-TC flaw bands from a whole-cohort benchmark §5 (quick 261014-rux), the auth hardening and the grading-watchdog hidden-tab re-arm (SEED-180))
+
+**Delivered:** The Endgame Stats and Library Stats tabs each give a metric one verdict instead of three that could contradict each other. Phase 238 made Endgame Stats percentile-first: one 0-100 peer percentile bar per ranked metric on the ranked sample (last 36 months, rated, human opponents within 100 Elo, per TC), values uncolored, the big number and its WDL bar describing the same games, gauges and zone-colored numbers retired, WDL bars with a bracket and grey typical range, the Type Breakdown as a table, one synced TC switch, and a Shelly report that no longer depends on filters (`GET /api/endgames/ranked-stats`, `/overview` retired). Phase 239 rebuilt Library Stats as you vs. your opponents in plain words: one gap bar per metric (0 in the middle, grey benchmark IQR of the gap, better always to the right, "1.7 fewer"), Blunders/Mistakes tiles with the opponents' rate, four context cards, one "Most common tactics" card with per-100-games typical ranges from fully analyzed benchmark games, and green/red only at 99% confidence on both tabs.
+
+**Closeout:** Retroactive lightweight close of two standalone phases. Phase 238 sourced from SEED-196, Phase 239 from SEED-198 (both closed). **Deployed throughout**: Phase 238 as release #414 (2026-10-11), Phase 239 as #421 (2026-10-13), the auth hardening and heatmap as #422 (2026-10-14), with releases #406–#422 carrying the quick tasks. The `v2.25` tag sits on the forward-port of release #422 and is byte-identical to `origin/production` outside `.planning/`.
+
+**Key accomplishments:**
+
+- **Phase 238 — Endgame Stats Percentile-First Redesign (SEED-196, 9 plans).** Ranked-sample backend with per-TC timelines and a quintile time-pressure curve, filter-free Shelly insights (endgame_v48 with a deliberate golden regen), a retirement sweep of gauges, chips and stat popovers, and Claude-run desktop and mobile UAT plus a live Shelly smoke. VERIFICATION 22/23 (the open item, whether the time-pressure curve keeps its CI whiskers, resolved in UAT: kept). Code review 5 warnings and 3 infos, all fixed.
+- **Phase 239 — Library Stats You-vs-Opponents Redesign (SEED-198, 10 plans).** Gap-bar component, a zone proposal for the gap bands, the context and tactics cards, and one pinned TC switch. VERIFICATION 13/13. Code review 4 warnings fixed (tactic population now requires `blobs_completed_at`, all mutation-proven), 1 info fixed, 3 infos open.
+
+**Known gaps, recorded rather than smoothed over:**
+
+- **239 IN-01/IN-02/IN-04 open**: an empty section can reset the pinned default TC; "N of your flaws" double-counts a flaw tagged in both orientations; `user_moves` floor/ceil parity unverified.
+
+---
+
 ## v2.24 Train Grading Integrity & One-Screen Reveal (Shipped: 2026-10-09)
 
 **Phases completed:** 3 phases (235–237), 22 plans, 51 commits on `main` since the `v2.23` tag (92 non-planning files, +16,260 / −6,564; the range also carries the off-key inaccuracy re-check (quick 261008-ob1), the inaccuracy reveal marks (quick 261008-opg), the `review_board_moves` telemetry counter (quick 261007-axc), the Train puzzle icon and the pydantic-ai-slim CVE-2026-107286 bump)

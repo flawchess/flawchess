@@ -283,15 +283,12 @@ def test_process_game_pgn_endgame_class_none_for_opening():
 
 
 # ---------------------------------------------------------------------------
-# Phase 79 SCHEMA-02 — PlyData phase field (TDD RED)
+# PlyData phase field
 # ---------------------------------------------------------------------------
 
 
 def test_plydata_has_phase_annotation() -> None:
-    """PlyData TypedDict must carry a runtime 'phase: int' annotation (SCHEMA-02).
-
-    Fails until PlyData gains the 'phase' key.
-    """
+    """PlyData TypedDict must carry a runtime 'phase: int' annotation."""
     from app.services.zobrist import PlyData  # noqa: PLC0415 — re-import for clarity
 
     assert "phase" in PlyData.__annotations__, (

@@ -1,0 +1,11 @@
+old	new	kind	absent_paths	ref	canon_paths
+neg_count	non_endgame_count	identifier	app,tests,scripts,docs	INVENTORY s5 endgame_service.py:1242	app/services/endgame_service.py
+shared_wdl_count	shared_quintile_count	identifier	app,tests,scripts,docs	INVENTORY s5 endgame_service.py:1610	app/services/endgame_service.py
+TcConvRecovBands	TcMetricBands	class	app,tests,scripts,docs	INVENTORY s5 endgame_zones.py:786	app/services/endgame_zones.py
+TcBucket	TimeControlBucket	type	app/services/endgame_zones.py,app/services/insights_service.py,app/services/insights_llm.py	INVENTORY s5 endgame_zones.py:880	app/services/endgame_zones.py,app/services/insights_service.py,app/services/insights_llm.py
+_METRICS_ELO_BUCKETS	_ENDGAME_METRICS_BUCKETS	identifier	app,tests,scripts	INVENTORY s5 insights_service.py:812	app/services/insights_service.py
+_apply_c3_filter	_activity_gap_marker	function	app,tests,scripts,docs	INVENTORY s5 G1 insights_llm.py:2004	app/services/insights_llm.py,tests/services/test_insights_llm.py
+_apply_c5_filter	_should_emit_series_block	function	app,tests,scripts,docs	INVENTORY s5 G1 insights_llm.py:2113	app/services/insights_llm.py,tests/services/test_insights_llm.py
+_apply_c6_filter	_cap_all_time_points	function	app,tests,scripts,docs	INVENTORY s5 G1 insights_llm.py:1026	app/services/insights_llm.py,tests/services/test_insights_llm.py
+_apply_c2_filter	_drop_points_covered_by_last_3mo	function	app,tests,scripts,docs	INVENTORY s5 G1 insights_llm.py:1961	app/services/insights_llm.py,tests/services/test_insights_llm.py
+_apply_a2_filter	_visible_findings	function	app,tests,scripts,docs	INVENTORY s5 G1 insights_llm.py:2297	app/services/insights_llm.py,tests/services/test_insights_llm.py

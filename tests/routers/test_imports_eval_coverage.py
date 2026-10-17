@@ -1,12 +1,12 @@
 """Integration tests for GET /api/imports/eval-coverage.
 
 Covers:
-- T-91-14: Unauthenticated access returns 401
-- T-91-15: Cross-user data scoping (User A's pending count not visible to User B)
+- Unauthenticated access returns 401
+- Cross-user data scoping (User A's pending count not visible to User B)
 - Response shape: pending_count, total_count, pct_complete, analyzed_count
 - Zero-games edge case: pct_complete=100, analyzed_count=0
 - All-complete case: pending_count=0, pct_complete=100
-- Partial case: correct pending count and rounded pct (D-04 backward-compat regression)
+- Partial case: correct pending count and rounded pct (backward-compat regression)
 - analyzed_count: full_evals_completed_at IS NOT NULL (FlawChess's own full analysis,
   the same gate the Library cards use). Lichess games imported with bundled analysis
   (white_blunders SET at import, full_evals_completed_at NULL) are NOT counted until
@@ -80,7 +80,7 @@ def _make_game(user_id: int, evals_completed_at: datetime.datetime | None = None
 
 def _make_analyzed_engine_game(user_id: int) -> Game:
     """Engine-analyzed game: white_blunders IS NOT NULL, lichess_evals_at IS NULL.
-    Counts as is_analyzed (D-118-10).
+    Counts as is_analyzed.
     """
     return Game(
         user_id=user_id,
@@ -133,7 +133,7 @@ def _make_analyzed_lichess_game(user_id: int) -> Game:
 
 def _make_entry_ply_only_game(user_id: int) -> Game:
     """Entry-ply analyzed game: evals_completed_at IS NOT NULL but white_blunders IS NULL.
-    NOT is_analyzed (D-118-10): entry-ply eval alone does not mean flaw analysis.
+    NOT is_analyzed: entry-ply eval alone does not mean flaw analysis.
     """
     return Game(
         user_id=user_id,
@@ -276,13 +276,13 @@ async def user_b_client(test_engine) -> AsyncGenerator[tuple[int, str], None]:
 
 
 # ---------------------------------------------------------------------------
-# Tests — existing behavior (D-04 backward-compat regression guard)
+# Tests — existing behavior (backward-compat regression guard)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_eval_coverage_requires_auth() -> None:
-    """T-91-14: GET /api/imports/eval-coverage without token returns 401."""
+    """GET /api/imports/eval-coverage without token returns 401."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -334,7 +334,7 @@ async def test_eval_coverage_all_complete(user_a_client: tuple[int, str], test_e
 
 @pytest.mark.asyncio
 async def test_eval_coverage_partial(user_a_client: tuple[int, str], test_engine) -> None:
-    """D-04 backward-compat: pending_count/pct_complete unchanged by D-118-12 extension."""
+    """Backward-compat: pending_count/pct_complete unchanged by the analyzed_count extension."""
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -354,11 +354,11 @@ async def test_eval_coverage_partial(user_a_client: tuple[int, str], test_engine
 
     assert response.status_code == 200
     body = response.json()
-    # D-04 backward-compat regression: existing keys unchanged
+    # Backward-compat regression: existing keys unchanged
     assert body["pending_count"] == PARTIAL_PENDING_COUNT
     assert body["total_count"] == PARTIAL_TOTAL_COUNT
     assert body["pct_complete"] == PARTIAL_EXPECTED_PCT
-    # D-118-12 extension present; in_flight_count removed in Phase 119-03
+    # analyzed_count extension present; in_flight_count is gone
     assert "analyzed_count" in body
     assert "in_flight_count" not in body
 
@@ -369,7 +369,7 @@ async def test_eval_coverage_scoped_to_user(
     user_b_client: tuple[int, str],
     test_engine,
 ) -> None:
-    """T-91-15: User B sees their own data only — User A's pending count is not leaked."""
+    """User B sees their own data only — User A's pending count is not leaked."""
     user_a_id, _token_a = user_a_client
     _user_b_id, token_b = user_b_client
     headers_b = {"Authorization": f"Bearer {token_b}"}

@@ -442,7 +442,7 @@ class TestGetMostPlayedOpenings:
             assert hasattr(opening, "losses")
             assert hasattr(opening, "total")
             assert hasattr(opening, "win_pct")
-            # PRE-01: display_name is canonical name OR "vs. {name}" when off-color.
+            # display_name is canonical name OR "vs. {name}" when off-color.
             assert hasattr(opening, "display_name")
             assert opening.display_name == opening.opening_name or (
                 opening.display_name == f"vs. {opening.opening_name}"

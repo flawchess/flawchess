@@ -1,4 +1,4 @@
-"""DB tests for current_strength_repository.fetch_recent_rungs (Quick 260811-u11, SEED-147).
+"""DB tests for current_strength_repository.fetch_recent_rungs.
 
 Data isolation: uses the rollback-scoped ``db_session`` fixture and
 ``ensure_test_user`` exactly as tests/repositories/test_pasted_platform_exclusion.py

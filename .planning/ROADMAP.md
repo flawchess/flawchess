@@ -60,6 +60,9 @@
 - ✅ **v2.22 Settings, Feature Analytics & Weekly Leaderboards** — Phases 228–232 (shipped 2026-10-05; deployed to production throughout, releases #382–#393) — a cogwheel settings overlay with the missing sound off switch and per-engine lines/arrows (SEED-175), Umami sessions identified by account id plus a typed feature-event registry (SEED-183), weekly Train Points and Accuracy leaderboards with an opt-out (SEED-185), weekly gold/silver/bronze medals with a podium and claim dialog (SEED-186), and the frontend majors vite-plugin-pwa 2, @sentry/react 11 and TypeScript 7 (SEED-187) — see [milestones/v2.22-ROADMAP.md](milestones/v2.22-ROADMAP.md)
 - ✅ **v2.23 Train Telemetry & Feedback Ask** — Phases 233–234 (shipped 2026-10-06; deployed to production throughout, releases #394–#401) — Train records how each puzzle was solved (think time, review time, reveal engagement) in one validated JSONB column that never feeds grading (SEED-190), and Hilda asks invested users for feedback after 5 active days on the Import, Train and Bots pages, with snooze, one re-ask and source attribution (SEED-191) — see [milestones/v2.23-ROADMAP.md](milestones/v2.23-ROADMAP.md)
 - ✅ **v2.24 Train Grading Integrity & One-Screen Reveal** — Phases 235–237 (shipped 2026-10-09; deployed to production throughout, releases #402–#404) — a Train reveal never contradicts itself: the server's answer key is the solution and the played move is graded against it with the same search on both sides, disagreements re-checked and recorded (SEED-192); the phone's grade is stored on every keyed solve and server-graded moves get an instant verdict (SEED-193); and the reveal is rebuilt as a verdict strip, You/Best/Game chips and one move tree that fits a phone without scrolling (SEED-194) — see [milestones/v2.24-ROADMAP.md](milestones/v2.24-ROADMAP.md)
+- ✅ **v2.25 Readable Endgame & Library Stats** — Phases 238–239 (shipped 2026-10-14; deployed to production throughout, releases #406–#422) — Endgame Stats gives every metric one verdict, a peer percentile bar on the ranked sample with uncolored values, WDL bars with a grey typical range and a filter-free Shelly report (SEED-196); Library Stats compares you with your opponents in words, one gap bar per metric with a benchmark typical band, four context cards and one tactics card (SEED-198). The range also carries the Train live engine preview and live alternatives (SEED-197), graded Stockfish arrows with move-quality badges, the tempo x phase heatmap, per-TC flaw bands and the auth hardening (Google email-link takeover, password policy, login limit, case-insensitive emails, forged X-Forwarded-For) — see [milestones/v2.25-ROADMAP.md](milestones/v2.25-ROADMAP.md)
+- ✅ **v2.26 Train First-Session Onboarding** — Phase 240 (shipped 2026-10-16; deployed to production throughout, releases #423–#426) — the first Train session asks less before you play: two intro bubbles, the first verdict teaches "only one" vs "several", the reveal tour is split over the first three reveals with a pulsing highlight, and a one-good-move puzzle comes first (SEED-200). The range also carries the reveal clock-context line, the salient Library Stats coverage line and Google sign-up keeping guest data — see [milestones/v2.26-ROADMAP.md](milestones/v2.26-ROADMAP.md)
+- ✅ **v2.27 Codebase Cleanup** — Phase 241 (tagged 2026-10-17 on `main`, not yet deployed) — a no-behavior-change hygiene pass: planning tags stripped from comments and test titles, 772 comment fixes and 86 renames across `app/`, `frontend/src` and `tests/`, with SEED-201 test-infra hardening after it — see [milestones/v2.27-ROADMAP.md](milestones/v2.27-ROADMAP.md)
 
 ## Progress
 
@@ -123,178 +126,13 @@
 | 228-232. v2.22 phases | 26/26 | Complete | 2026-10-05 |
 | 233-234. v2.23 phases | 9/9 | Complete | 2026-10-06 |
 | 235-237. v2.24 phases | 22/22 | Complete | 2026-10-09 |
+| 238-239. v2.25 phases | 19/19 | Complete | 2026-10-13 |
+| 240. v2.26 phase | 7/7 | Complete | 2026-10-16 |
+| 241. v2.27 phase | 70/70 | Complete | 2026-10-17 |
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.24's Phase 237.
-
-### Phase 238: Endgame Stats Percentile-First Redesign (SEED-196)
-
-**Goal**: Make the Endgame Stats tab readable by giving every metric one verdict. Today each metric carries
-three that can contradict each other in the same red/blue/green: population-IQR zone color on the filtered
-whole-history value, a peer percentile chip on a different (ranked) value, and a z-test verdict in the
-magnifier popover (Endgame Score Gap −13% reads red + "real weakness" while its chip says typical 27th).
-Gauges duplicate the WDL bar. Direction is the owner-approved sketch 009 round 2
-(`.planning/sketches/009-endgame-stats-percentile-first/`; locked decisions in SEED-196).
-
-- **1. Percentile-first:** one 0-100 percentile bar per peer-ranked metric (typical band 25-75, median tick,
-  dot colored by band); values uncolored. No zone bands, CI whiskers or zone-colored numbers on ranked metrics.
-- **2. Ranked value displayed:** the big number, its WDL bar and the percentile describe the same games
-  (last 36 months, opponents ±100 Elo, per TC). Backend computes the missing components on the ranked
-  sample (conv/parity/recovery WDL, with/without-endgame scores, entry eval / expected / actual, CI and
-  p-value inputs); aggregated cross-TC chips retire. LLM insights payload narrates the same ranked values.
-- **3. One popover per metric:** WHAT + sign, percentile statement + the four disclosures, then n / 95% CI /
-  p-value greyed below a separator (merges `MetricStatPopover` and `PercentileChip`).
-- **4. Sections:** "Compared to similar-rated players" dot plot (all ranked metrics for the TC, rows link to
-  sections; owner may drop it later); Overall reduced to 2 cards; Endgame Metrics cards without gauges
-  (bracket on the WDL bar); Time Pressure curve and Clock Gap timeline get one grey typical band with
-  neutral line/dots; Endgame Type Breakdown becomes a table with grey typical ranges and an amber
-  below-typical mark (no per-type percentiles). One TC switch per section, synced, replaces the accordions.
-- **Guardrails:** percentile tooltip disclosure contract; no flame icons; `MiniBulletChart` stays (Openings);
-  CDF-side and user-side SQL stay byte-identical; concepts accordion copy updated; mobile and desktop UAT.
-- **Open for discuss:** what filters still do on the Stats tab; TCs below the anchor floor; whether the Type
-  table also moves to the ranked sample; default TC; card state before Stage B percentiles land.
-
-**Depends on**: nothing in flight (builds on Phase 94.4 peer-relative percentiles and Phase 99 rate percentiles)
-**Requirements**: TBD (coverage contract = CONTEXT decisions D-00a..D-00i, D-01..D-14)
-**Plans:** 9/9 plans executed
-**Status**: Complete 2026-10-11 (squash-merged to `main`, unreleased)
-
-Plans:
-**Wave 1**
-- [x] 238-01-PLAN.md — Backend ranked-sample core: GET /endgames/ranked-stats, 11 metrics on read with CTE parity, rank status (wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 238-02-PLAN.md — Backend per-TC timelines, time-pressure curve, type categories, filtered GET /endgames/stats, latency probe (wave 2)
-- [x] 238-03-PLAN.md — Frontend foundation: synced TC switch, PercentileBar, merged popover, Overall section, peers card, empty state (wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 238-04-PLAN.md — Filter-free Shelly insights on the ranked payload, endgame_v48, deliberate golden regen (wave 3)
-- [x] 238-05-PLAN.md — Frontend Metrics cards, Time Pressure grey bands, Type table, filter-free Stats tab, concepts copy (wave 3)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 238-06-PLAN.md — Retirement sweep: delete gauges/chips/stat popovers and old section components, stale-reference grep (wave 4, run inline)
-
-**Wave 5** *(blocked on Wave 4 completion)*
-- [x] 238-07-PLAN.md — Frontend insights without filters, Games tab on /stats, filters hidden on Stats, overview types retired (wave 5)
-
-**Wave 6** *(blocked on Wave 5 completion)*
-- [x] 238-08-PLAN.md — Backend /overview and aggregated chips retired, zone codegen pruned, CHANGELOG (wave 6, after 238-07)
-
-**Wave 7** *(blocked on Wave 6 completion)*
-- [x] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 7)
-
-### Phase 239: Library Stats You-vs-Opponents Redesign (SEED-198)
-
-**Goal**: Make the Library Stats tab (below the Flaw Stats tiles and the Flaws Timeline) readable for
-non-statisticians. Today every one of the 15 context tags and 12+ tactic motifs is the same `MiniBulletChart`
-(red/green halves, blue IQR band, CI whiskers, inverted-sign delta, mixed per-100-moves vs per-game units),
-tactic rows have no typical band at all, and the plain-language "You: x, opponents: y" sentence hides in the
-hover popover. Direction is the owner-approved sketch 010 round 5
-(`.planning/sketches/010-library-stats-you-vs-opponents/`; locked decisions 1-12 in SEED-198), kept
-consistent with Phase 238 (Endgame Stats).
-
-- **1. One gap bar** for every you-vs-opponent metric: 0 tick in the middle, grey benchmark IQR of the gap
-  drawn where it is, one red/blue/green dot, better always to the right, saturating outside the band. No
-  red/green halves, no CI whiskers. The gap reads as words ("1.7 fewer", "same").
-- **2. Only the gap on the page**; a Search icon opens a `RankedMetricPopover`-style popover (definition,
-  You/Opponents, typical range + verdict, basis, greyed counts / 95% CI / p-value below a separator).
-- **3. Tiles:** Blunders and Mistakes only, each with an "Opponents" line and a gap bar; Inaccuracies tile,
-  Severity card and "Flaw rate" retire.
-- **4. Context tags:** combos removed; four cards (Clock | Game phase, Opponent errors | Lost advantages)
-  with one-line hints, plus a "What stands out" card (top 3 strengths / weaknesses by band-width distance).
-- **5. Tactic motifs:** three tables in `TACTIC_GROUPS` order (Advanced collapsed by default), Missed |
-  Allowed gap-bar columns per 100 games, zero-count motifs listed under the table; "More tactics" accordion
-  and the top-6 ranking (D-14) retire. Low-sample cells (< 40 flaws) faded, no verdict.
-- **6. Synced TC switch** in every section (`TcSwitch` / `useEndgameStatsTc` pattern).
-- **7. Benchmark tactic IQRs:** extend `/benchmarks` §5 (`scripts/benchmarks/chapter5.py`) with per-family
-  Missed/Allowed paired-delta zones on the fully analyzed sample only (same methodology as the 15 flaw-delta
-  zones, collapse verdict, viability table), then a tactic zone registry next to
-  `app/services/flaw_delta_zones.py` wired into `get_tactic_comparison`. Gated on the blitz full-analysis
-  benchmark sample finishing.
-- **Guardrails:** Flaws Timeline, ELO Ratings, Results Breakdown and the coverage badge unchanged; "flaws"
-  wording, never "events"; check Openings before deleting `MiniBulletChart` / `FlawBulletPopover`; mobile
-  and desktop UAT.
-- **Open for discuss:** TC switch vs the sidebar TC filter (and the pooled Flaws Timeline); default TC and
-  TCs below the 20-game gate; tactic zones per TC×Elo or pooled; ship tables band-less before the IQRs or
-  wait; tactics in "What stands out"; low-sample threshold calibration.
-
-**Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
-**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 10/10 plans complete
-**Status**: Complete 2026-10-13 (verified on branch `gsd/phase-239-library-stats-you-vs-opponents`, not yet squash-merged to `main`)
-
-Plans:
-**Wave 1**
-- [x] 239-01-PLAN.md — §5 code on the full-analysis lane: 12 flaw + 38 tactic metrics, floor, noise diagnostic, §5-only CLI, SKILL.md, smoke wall time recorded (wave 1)
-- [x] 239-02-PLAN.md — Backend per-TC flaw comparison + per-TC timeline, per-zone-TC flaw registry, retired combos/flaw rate/aggregates (wave 1)
-- [x] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
-- [x] 239-05-PLAN.md — Frontend Flaw Stats section: container, synced Library TC switch, Blunders/Mistakes tiles, per-TC timeline, legacy band/grid/popover removed (wave 2)
-- [x] 239-06-PLAN.md — Run §5 (executor or orchestrator-inline by smoke time), pin diff gate, narrate report, D-12 sanity check, owner accepts or holds zone values (wave 2, checkpoint)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 239-07-PLAN.md — Write accepted values into both registries, accepted fade constant, Elo keying only if accepted (wave 3)
-- [x] 239-10-PLAN.md — Frontend You vs. your opponents section (What stands out + four context cards) and legacy flaw metadata cleanup (wave 3)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
-
-**Wave 5** *(blocked on Wave 4 completion)*
-- [x] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
-
-### Phase 240: Train First-Session Onboarding Load (SEED-200)
-
-**Goal**: Cut first-session Train abandonment by lightening the tutorial around puzzle 1. In the clean
-first-ever-session cohort (since 2026-09-28) about 44% of both guests and registered users abandon session 1,
-and the puzzle-1 reveal tour is the largest single drop point (8 of 81 first sessions end inside it). Today
-puzzle 1 carries 11-12 bubbles: 5-6 intro steps before the first move plus a 6-step reveal walkthrough.
-Guiding rule (owner-agreed in explore 2026-10-15): **the user acts within one or two taps, and reads later.**
-Locked design in SEED-200.
-
-- **1. Intro shrinks to 2 bubbles:** welcome, then the merged closing prompt with the guess buttons.
-  `INTRO_QUESTION` (duplicates `promptCopy`) and `INTRO_VOCABULARY` retire.
-- **2. The first verdict teaches the vocabulary** ("only one" / "several" explained for this position).
-- **3. Practice rationale moves to the session-1 score screen.**
-- **4. Warm-up notice leaves the intro** (after puzzle 1: verdict tail or score screen).
-- **5. Reveal tour spreads over puzzles 1-3** (P1: result + Next; P2: chips + stepping through lines; P3:
-  sidelines, "understand, don't memorize", Analyze), each step once per account, so
-  `reveal_walkthrough_seen_at` becomes per-step stamps or a counter. Chips stay visible but unexplained on P1.
-- **6. Backend session composition:** first puzzle of the first-ever session is a sharp one (moved to slot 0
-  after the D-09 shuffle in `train_repository.py`, first-ever session only; own-games sessions without a
-  sharp puzzle keep random order), and a soft or herring puzzle lands in slots 2-3.
-- **Guardrails:** every bubble within `STEPPER_COPY_MAX_CHARS` (145), shortened not concatenated; step-count
-  assertions (`introStepCount`, `WALKTHROUGH_STEP_COUNT`, `IntroStep`, `WalkthroughStep`) updated; no herring
-  slot leak in later sessions; the reveal overlay reads as Hilda; mobile and desktop UAT.
-- **Measure:** re-run the SEED-200 clean-cohort funnel query before/after (split guest-origin vs registered),
-  adapting the "never finished the tour" column to the new per-step stamps.
-- **Open for discuss:** warm-up notice placement; per-step stamp shape (columns vs counter vs JSONB);
-  whether the welcome copy is tightened; the soft-vs-herring choice for slots 2-3.
-
-**Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
-**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 7/7 plans executed
-**Status**: Planned
-
-Plans:
-**Wave 1**
-- [x] 240-01-PLAN.md — Backend: reveal_tour_stage counter replaces the walkthrough timestamp (migration, forward-only onboarding advance, settings response)
-- [x] 240-03-PLAN.md — Frontend: three-part reveal tour model and hook, part 1 (only one / several) end to end, landing gate and the stage field swap
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 240-02-PLAN.md — Backend: first-ever session opens on a sharp puzzle, a several puzzle at 2 or 3
-- [x] 240-04-PLAN.md — Frontend: tour parts 2 and 3 end to end, one part per reveal, abandon replay, the D-19 tour copy matrix
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 240-05-PLAN.md — Frontend: two-bubble intro; score screen rationale in line 1, no returning counts, sr_explained in any branch
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 240-06-PLAN.md — Frontend: one shared pulsing bronze spotlight on every tour target, incl. chips row and phone bar
-
-**Wave 5** *(blocked on Wave 4 completion)*
-- [x] 240-07-PLAN.md — Close-out: CHANGELOG, pre-merge gate, browser walkthrough, pre-deploy funnel snapshot (orchestrator)
+No open milestone. Standalone phases continue absolute numbering from v2.27's Phase 241.
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

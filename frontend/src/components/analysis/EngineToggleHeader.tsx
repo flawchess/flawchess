@@ -5,12 +5,7 @@ import { Switch } from '@/components/ui/switch';
 /**
  * Engine-card header: a Switch + accented icon/label row. Shared by
  * `AnalysisTabs.tsx`'s `FlawChessCard` and `AnalysisDesktopCards.tsx`'s
- * `StockfishCard` (215-06 WR-03) — previously two private copies that had
- * already diverged (one hard-coded the `Cpu` icon, the other kept the
- * original `icon` prop), each citing `Analysis.tsx`'s own module-level
- * `EngineToggleHeader` as their "source of truth" even though that helper
- * no longer exists there. Both sibling component files import from here
- * instead.
+ * `StockfishCard`.
  */
 export function EngineToggleHeader({
   checked,

@@ -48,7 +48,7 @@ def clear_jobs():
 async def clear_import_job_rows(test_engine):
     """Delete durable import_jobs rows before/after each test.
 
-    Bug fix (Phase 149 PRUNE-05): start_import now creates the import_jobs row
+    Bug fix: start_import now creates the import_jobs row
     synchronously (previously only the no-op'd background task wrote it, so
     these router tests never touched the table). `auth_headers` is
     module-scoped (one real user shared across this whole test class), so a
@@ -211,7 +211,7 @@ class TestPostImports:
 
     @pytest.mark.asyncio
     async def test_first_post_imports_sets_first_import_started_at(self, test_engine):
-        """QTE-02: the first POST /imports for a user sets first_import_started_at."""
+        """The first POST /imports for a user sets first_import_started_at."""
         user_id, headers = await _register_and_login()
 
         async def _noop(job_id: str) -> None:
@@ -238,7 +238,7 @@ class TestPostImports:
 
     @pytest.mark.asyncio
     async def test_later_post_imports_does_not_overwrite_first_import_started_at(self, test_engine):
-        """QTE-02: a later POST /imports (after the first job is no longer active)
+        """A later POST /imports (after the first job is no longer active)
         does NOT overwrite the original first_import_started_at."""
         user_id, headers = await _register_and_login()
 
@@ -352,7 +352,7 @@ class TestPostImports:
         self, no_op_run_import, test_engine
     ):
         """A genuine race (not just a same-process duplicate) is rejected at the
-        DB level and returns the existing job with 200 (Phase 149 PRUNE-05).
+        DB level and returns the existing job with 200.
 
         The in-memory find_active_job pre-check cannot catch every race: two
         concurrent requests can both observe an empty in-memory registry before
@@ -428,7 +428,7 @@ class TestPostImports:
     async def test_non_integrity_db_failure_discards_stuck_in_memory_job(self):
         """A non-IntegrityError DB failure (e.g. a transient outage) during the
         durable-row insert must not strand the in-memory JobState as PENDING
-        forever (CR-01 code review 2026-07-04).
+        forever.
 
         Before the fix, only IntegrityError was caught, so an OperationalError
         (or any other exception) left find_active_job() reporting a phantom
@@ -622,8 +622,7 @@ class TestGetImportStatus:
 
 
 # ---------------------------------------------------------------------------
-# DELETE /imports/games -- backfill-cursor reset (Phase 186 Plan 02,
-# IMPORT-03, Pitfall 4)
+# DELETE /imports/games -- backfill-cursor reset
 # ---------------------------------------------------------------------------
 
 
@@ -631,8 +630,8 @@ class TestDeleteAllGamesCursorReset:
     @pytest.mark.asyncio
     async def test_delete_and_cursor_reset_preserves_tc_and_cap(self, test_engine):
         """After DELETE /imports/games, the backfill-cursor columns are NULL
-        while tc_* and game_cap retain their pre-delete values (Pitfall 4:
-        the cursor is not derived from `games` rows, so it must be reset
+        while tc_* and game_cap retain their pre-delete values (the cursor is not
+        derived from `games` rows, so it must be reset
         explicitly, but the user's preferences must survive delete-all).
         """
         user_id, headers = await _register_and_login()
@@ -655,8 +654,8 @@ class TestDeleteAllGamesCursorReset:
             assert patch_resp.status_code == 200
 
             # Seed backfill-cursor columns directly -- no API writes them yet;
-            # in production only the internal Sync backward walk does (186-02
-            # Task 2). Confirms a pre-existing cursor from a prior walk.
+            # in production only the internal Sync backward walk does.
+            # Confirms a pre-existing cursor from a prior walk.
             async with test_engine.begin() as conn:
                 await conn.execute(
                     text(
@@ -745,7 +744,7 @@ class TestDeleteAllGamesCursorReset:
 
     @pytest.mark.asyncio
     async def test_delete_stamps_games_purged_at(self, test_engine):
-        """QTE-02: DELETE /imports/games stamps users.games_purged_at."""
+        """DELETE /imports/games stamps users.games_purged_at."""
         user_id, headers = await _register_and_login()
 
         async with httpx.AsyncClient(
@@ -764,8 +763,7 @@ class TestDeleteAllGamesCursorReset:
 
 
 # ---------------------------------------------------------------------------
-# DELETE /imports/games -- Train drill-table cascade + survival (Phase 189
-# Plan 02, POOL-09, D-02/D-03/D-04)
+# DELETE /imports/games -- Train drill-table cascade + survival
 # ---------------------------------------------------------------------------
 
 
@@ -797,10 +795,10 @@ class TestDeleteAllGamesDrillCascade:
     @pytest.mark.asyncio
     async def test_delete_games_cascades_drill_rows(self, test_engine) -> None:
         """DELETE /imports/games cascades drill_items away via the games FK
-        (D-02, unchanged CASCADE), while drill_sessions and train_settings
-        survive (D-04).
+        (unchanged CASCADE), while drill_sessions and train_settings
+        survive.
 
-        Phase 192 Plan 02 (D-05): `drill_solves.game_id` is now
+        `drill_solves.game_id` is now
         `ON DELETE SET NULL`, not `CASCADE` — a global herring pool means a
         game deletion must never delete a row out of another user's
         in-flight session, and that FK policy is uniform regardless of
@@ -887,7 +885,7 @@ class TestDeleteAllGamesDrillCascade:
         assert await _count(TrainSettings, TrainSettings.user_id == user_id) == 1, (
             "train_settings must survive delete-all (D-04)"
         )
-        # D-05: both drill_solves rows survive with game_id nulled (SET
+        # Both drill_solves rows survive with game_id nulled (SET
         # NULL, not CASCADE) — never deleted alongside drill_items.
         assert await _count(DrillSolve, DrillSolve.user_id == user_id) == 2
         assert (
@@ -898,7 +896,7 @@ class TestDeleteAllGamesDrillCascade:
     @pytest.mark.asyncio
     async def test_delete_single_game_leaves_sibling_drill_rows(self, test_engine) -> None:
         """Deleting one game cascades only that game's drill_items; a sibling
-        game's drill_items for the same user survive untouched (POOL-09 edge probe)."""
+        game's drill_items for the same user survive untouched (edge probe)."""
         user_id, _headers = await _register_and_login()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
@@ -1019,11 +1017,11 @@ class TestDeleteAllGamesDrillCascade:
         """POST /train/sessions after a full delete-all returns 200 with zero
         puzzles -- not a 500 from a dangling drill_items reference.
 
-        Phase 206 (D-05): composition no longer returns an empty session
+        Composition no longer returns an empty session
         once real material exists in the committed sharp-filler set — this
         test's actual regression guard is "no 500 from a dangling
         drill_items reference" after the cascade, which is orthogonal to
-        Phase 206's backfill; the sharp set is patched empty here so the
+        the sharp-filler backfill; the sharp set is patched empty here so the
         original "returns empty" assertion still exercises exactly that.
         """
         monkeypatch.setattr(sharp_filler, "SHARP_SET", ())

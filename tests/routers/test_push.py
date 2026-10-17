@@ -1,22 +1,21 @@
-"""Integration tests for the push router (Phase 201, PUSH-01..05, REMIND-08).
+"""Integration tests for the push router.
 
 Coverage:
 - test_dev_trigger_sends_real_encrypted_push_end_to_end : the whole chain
-  (Task 1 tracer), subscribe -> dev trigger -> a real VAPID-signed,
+  (tracer), subscribe -> dev trigger -> a real VAPID-signed,
   aes128gcm-encrypted POST.
 - test_unsubscribe_removes_own_endpoint / test_unsubscribe_foreign_endpoint_removes_nothing :
-  unsubscribe is scoped to the caller (V4/IDOR).
+  unsubscribe is scoped to the caller (IDOR).
 - test_vapid_public_key_200_when_configured / test_vapid_public_key_404_when_unconfigured :
-  D-03's graceful-disable contract at the public-key endpoint.
-- test_subscribe_503_when_unconfigured : D-03 at the subscribe endpoint.
-- test_dev_trigger_404_outside_development : T-201-04's fail-closed gate.
-- test_dev_trigger_reminder_body_names_day_one_for_zero_streak : D-10's "+1"
+  the graceful-disable contract at the public-key endpoint.
+- test_subscribe_503_when_unconfigured : the same contract at the subscribe endpoint.
+- test_dev_trigger_404_outside_development : the fail-closed gate.
+- test_dev_trigger_reminder_body_names_day_one_for_zero_streak : the "+1"
   framing removes the streak-0 case.
 
 Follows `tests/routers/test_train.py`'s register-and-login-over-HTTP pattern.
 
-Mocking note (deviation from the plan's literal "patch httpx.AsyncClient.post"
-instruction, Rule 1 -- the literal instruction is not viable here): this file
+Mocking note (patching `httpx.AsyncClient.post` directly is not viable here): this file
 drives the outer HTTP request through `httpx.AsyncClient` + `ASGITransport`
 (the established router-test pattern). Patching `httpx.AsyncClient.post` at
 the class level would ALSO intercept that outer driving call, since it is the
@@ -106,12 +105,12 @@ def _fresh_subscription_keys() -> tuple[str, str]:
 
 @pytest.fixture
 def unconfigured_vapid(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force the D-03 unconfigured state regardless of the machine's `.env`.
+    """Force the unconfigured state regardless of the machine's `.env`.
 
     Without this the "unconfigured" tests silently depend on the developer's
     `.env` having no VAPID keys -- so they pass in CI and on a fresh checkout,
     but fail permanently on any machine set up to actually exercise push (which
-    is exactly the machine running the phase UAT).
+    is exactly the machine used for manual testing).
     """
     monkeypatch.setattr(config_settings, "VAPID_PRIVATE_KEY", "")
     monkeypatch.setattr(config_settings, "VAPID_PUBLIC_KEY", "")
@@ -180,7 +179,7 @@ async def test_dev_trigger_sends_real_encrypted_push_end_to_end(
 async def test_resubscribe_after_prune_restores_delivery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PUSHREL-01/PUSHREL-06 (Phase 204, SEED-135 D2): the desync-and-recover
+    """The desync-and-recover
     round trip at the HTTP layer.
 
     The unsubscribe call stands in for a server-side prune's row deletion --
@@ -216,7 +215,7 @@ async def test_resubscribe_after_prune_restores_delivery(
         mock_post = AsyncMock(return_value=MagicMock(status_code=201))
         fake_client = _FakePushHttpClient(mock_post)
         with patch("app.services.push_send.push_http_client", return_value=fake_client):
-            # The dark state SEED-135 describes: the device is unreachable.
+            # The dark state: the device is unreachable.
             dark_trigger_resp = await client.post(DEV_TRIGGER_ENDPOINT, headers=auth_header)
         assert dark_trigger_resp.status_code == 200, dark_trigger_resp.text
         assert dark_trigger_resp.json()["attempted"] == 0
@@ -244,7 +243,7 @@ async def test_resubscribe_after_prune_restores_delivery(
 
 
 # ---------------------------------------------------------------------------
-# Unsubscribe scoping (V4/IDOR)
+# Unsubscribe scoping (IDOR)
 # ---------------------------------------------------------------------------
 
 
@@ -318,7 +317,7 @@ async def test_unsubscribe_foreign_endpoint_removes_nothing(
 
 
 # ---------------------------------------------------------------------------
-# D-03: graceful disable when VAPID is unconfigured
+# graceful disable when VAPID is unconfigured
 # ---------------------------------------------------------------------------
 
 
@@ -361,7 +360,7 @@ async def test_subscribe_503_when_unconfigured() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Dev trigger (T-201-04, D-10)
+# Dev trigger
 # ---------------------------------------------------------------------------
 
 
@@ -381,7 +380,7 @@ async def test_dev_trigger_404_outside_development(monkeypatch: pytest.MonkeyPat
 async def test_dev_trigger_reminder_body_names_day_one_for_zero_streak(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D-10: a brand-new user (streak_count == 0) reads "Day 1", never "Day 0"."""
+    """A brand-new user (streak_count == 0) reads "Day 1", never "Day 0"."""
     monkeypatch.setattr(config_settings, "ENVIRONMENT", "development")
     _user_id, token = await _register_and_login("push-day-one@example.com")
     auth_header = {"Authorization": f"Bearer {token}"}

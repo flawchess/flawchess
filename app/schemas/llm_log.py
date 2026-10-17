@@ -1,7 +1,6 @@
 """Pydantic v2 schemas for llm_logs writes.
 
-LlmLogEndpoint is a single-member Literal in Phase 64 — extend it when new
-LLM features ship (Phase 65+ adds nothing; future milestones add more).
+LlmLogEndpoint is a single-member Literal — extend it when new LLM features ship.
 
 All fields come from the caller:
   - user_id, endpoint, prompt_version, findings_hash, filter_context,
@@ -27,7 +26,7 @@ LlmLogEndpoint = Literal["insights.endgame"]
 class LlmLogFilterContext(BaseModel):
     """Minimal filter state persisted per log row.
 
-    Since Phase 238 (D-04) the endgame insights are filter-independent, so every
+    The endgame insights are filter-independent, so every
     new log row carries the single constant value `insights_llm.INSIGHTS_CACHE_OPPONENT_STRENGTH`
     ("any"). The shape is kept (the Literal still lists the legacy values that
     older rows may hold) so no JSON-shape migration is needed.
@@ -41,7 +40,7 @@ class LlmLogCreate(BaseModel):
     endpoint: LlmLogEndpoint
     model: str  # pydantic-ai provider:model format, e.g. "anthropic:claude-haiku-4-5-20251001"
     prompt_version: str
-    findings_hash: str  # 64-char sha256 hex from insights_service.compute_findings (Phase 63)
+    findings_hash: str  # 64-char sha256 hex from insights_service.compute_findings
     filter_context: LlmLogFilterContext
     user_prompt: str
     response_json: dict[str, Any] | None

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 229 (D-03, D-12 group 2): FilterPanel and the shared FilterActions footer
+ * FilterPanel and the shared FilterActions footer
  * report one typed `filter-change` per user change, nothing on render, and nothing
  * on a Radix single-select re-tap. Uses the REAL analytics module with a
  * window.umami stub so the whole click -> trackFeature -> window.umami.track path
@@ -133,7 +133,7 @@ describe('FilterPanel filter-change tracking', () => {
     expectSingleEvent({ target: 'reset' });
   });
 
-  it('sends nothing on an excluded route (D-14)', () => {
+  it('sends nothing on an excluded route', () => {
     window.history.pushState({}, '', '/admin');
     render(<Harness />);
     fireEvent.click(screen.getByTestId('filter-time-control-blitz'));

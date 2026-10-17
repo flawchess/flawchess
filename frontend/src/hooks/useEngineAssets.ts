@@ -1,5 +1,5 @@
 /**
- * useEngineAssets — the D-10/D-11 read model over `engineAssetProgress.ts`'s
+ * useEngineAssets — the read model over `engineAssetProgress.ts`'s
  * module-level store. Subscribes via `useSyncExternalStore` and derives the
  * byte-weighted aggregate percent, the currently-in-flight asset's label, and
  * overall readiness for whatever asset set the caller currently needs.
@@ -12,7 +12,7 @@
  * `snapshot`, which changes reference on every store notification), so any
  * component calling it re-renders on every notification — correct for
  * `EngineReadyGate`, which needs the byte-level data, but wrong for a
- * component that only reads `.status` (G-213-35 third part).
+ * component that only reads `.status`.
  */
 
 import { useMemo, useSyncExternalStore } from 'react';
@@ -43,17 +43,17 @@ export interface EngineAssetsState {
   /** True once every id in `required` is done. */
   ready: boolean;
   /**
-   * Quick 260829-tku: which Maia worker failure bucket caused the current
+   * Which Maia worker failure bucket caused the current
    * `'failed'` status, or `null` when there is no failure (or an unclassified
    * one). Read straight off the snapshot — it needs no per-`required` derivation.
    */
   failureKind: MaiaFailureKind | null;
-  /** Hotfix 2026-09-06 (SEED-158): which gate produced an `'unsupported'` status — drives the gate's copy. */
+  /** Which gate produced an `'unsupported'` status — drives the gate's copy. */
   unsupportedReason: EngineUnsupportedReason | null;
 }
 
 /**
- * Derives byte-weighted download progress across `required` (D-11: NOT a
+ * Derives byte-weighted download progress across `required` (NOT a
  * per-asset average — Maia's 45.7 MB and Stockfish's 7.3 MB must not
  * contribute equally). Callers should pass a referentially stable array (see
  * `EngineReadyGate.tsx`'s `useMemo`) or this hook's own memo recomputes every
@@ -96,7 +96,7 @@ export function useEngineAssets(required: readonly EngineAssetId[]): EngineAsset
 }
 
 /**
- * useEngineAssetStatus — Phase 213-10 (G-213-35 third part): a narrow
+ * useEngineAssetStatus — a narrow
  * companion to `useEngineAssets` for callers that only need the coarse
  * `EngineAssetStatus`, not byte-level progress. Returning the primitive
  * directly (rather than a field plucked from a fresh object each call) is
@@ -105,11 +105,9 @@ export function useEngineAssets(required: readonly EngineAssetId[]): EngineAsset
  * but not `status` — is skipped entirely, and the calling component does not
  * re-render.
  *
- * `Analysis.tsx` is the motivating caller: it used to call `useEngineAssets`
- * for a single boolean (`status !== 'unsupported'`), which subscribed the
- * whole 3,600-line page to every download chunk. Use this hook wherever only
- * the status matters — `EngineReadyGate` still needs the full
- * `useEngineAssets` above for its byte-level progress bar.
+ * Use this hook wherever only the status matters (e.g. `Analysis.tsx`, so a
+ * large page does not re-render on every download chunk); `EngineReadyGate`
+ * needs the full `useEngineAssets` above for its byte-level progress bar.
  */
 export function useEngineAssetStatus(): EngineAssetStatus {
   return useSyncExternalStore(subscribeEngineAssets, () => getEngineAssetsSnapshot().status);
@@ -117,7 +115,7 @@ export function useEngineAssetStatus(): EngineAssetStatus {
 
 /**
  * The gate reason behind an `unsupported` status, `null` in every other
- * status (SEED-158, 2026-09-07). A primitive, for the same `Object.is`
+ * status. A primitive, for the same `Object.is`
  * reason as `useEngineAssetStatus` above — the Maia and FlawChess cards read
  * it on every render of /analysis.
  */

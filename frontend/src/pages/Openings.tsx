@@ -65,7 +65,6 @@ import { StatsTab } from './openings/StatsTab';
 import { InsightsTab } from './openings/InsightsTab';
 
 const PAGE_SIZE = 20;
-// Number of most-played openings per color to use as default chart data when no bookmarks exist
 
 const TAB_INFO: Record<'explorer' | 'games' | 'stats' | 'insights', { aria: string; text: string }> = {
   explorer: {
@@ -122,7 +121,7 @@ export function OpeningsPage() {
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
-  // ── Deep-link highlight (Insights → MoveExplorer / quick-task 260427-j41) ──
+  // ── Deep-link highlight (Insights → MoveExplorer) ──
   const { highlightedMove, setHighlightedMove, pulseActive } = useDeepLinkHighlight(
     activeTab,
     filters,
@@ -131,7 +130,7 @@ export function OpeningsPage() {
   // ── Sidebar / drawer state + onboarding hint dismissal ──────────────────────
   const sidebar = useSidebarState();
 
-  // ── Mobile sidebar deferred-apply local state ───────────────────────────────
+  // ── Mobile drawer deferred-apply local state ───────────────────────────────
   const [localChartEnabled, setLocalChartEnabled] = useState<Record<number, boolean>>({});
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
@@ -154,11 +153,11 @@ export function OpeningsPage() {
     hasGames && sidebar.playedAsHintDismissed && sidebar.filtersHintDismissed && bookmarks.length === 0;
 
   // ── Modified-filters indicator ─────────────────────────────────────────────
-  // Desktop: filters apply immediately, so the dot tracks `filters` directly.
-  // Mobile drawer: defers apply until drawer close, so the dot also tracks `filters`
-  // (the committed state), and we add a one-shot pulse on drawer close when
-  // localFilters differed from filters at close time.
-  const justCommittedFromDrawerRef = useRef(false);
+  // Both desktop and mobile stage filter edits and commit on Apply; the dot
+  // tracks the committed `filters`, and a one-shot pulse fires when an Apply
+  // actually changed them (the ref is set in handleDesktopFiltersApply /
+  // handleMobileFiltersApply).
+  const justCommittedFiltersRef = useRef(false);
   const isFiltersModified = useMemo(
     () => !areFiltersEqual(filters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [filters],
@@ -170,11 +169,11 @@ export function OpeningsPage() {
   useEffect(() => {
     if (prevFiltersRef.current !== filters) {
       prevFiltersRef.current = filters;
-      // On Openings desktop, `filters` changes live as the user toggles — pulsing on every
-      // change would be noisy. Only pulse when the mobile drawer JUST closed AND committed
-      // a change. We guard via `justCommittedFromDrawerRef` set inside handleFilterSidebarOpenChange.
-      if (justCommittedFromDrawerRef.current) {
-        justCommittedFromDrawerRef.current = false;
+      // Only pulse when an Apply JUST committed a change (not for any other
+      // `filters` update). We guard via `justCommittedFiltersRef`, set inside
+      // handleDesktopFiltersApply / handleMobileFiltersApply.
+      if (justCommittedFiltersRef.current) {
+        justCommittedFiltersRef.current = false;
         setIsFiltersPulsing(true);
         if (filtersPulseTimeoutRef.current !== null) {
           window.clearTimeout(filtersPulseTimeoutRef.current);
@@ -265,7 +264,7 @@ export function OpeningsPage() {
   const handleDesktopFiltersApply = useCallback(() => {
     // Set the ref BEFORE setFilters so the existing useEffect detects the commit.
     if (!areFiltersEqual(localFilters, filters)) {
-      justCommittedFromDrawerRef.current = true;
+      justCommittedFiltersRef.current = true;
     }
     setFilters(localFilters);
     setGamesOffset(0);
@@ -280,7 +279,7 @@ export function OpeningsPage() {
 
   const openBookmarkDialog = useCallback(() => {
     // Use currentPly, not full moveHistory length — user may have navigated back
-    const defaultLabel = chess.openingName?.name ?? `Position (${chess.currentPly} moves)`;
+    const defaultLabel = chess.opening?.name ?? `Position (${chess.currentPly} moves)`;
     setBookmarkLabel(defaultLabel);
     setBookmarkDialogOpen(true);
   }, [chess]);
@@ -329,7 +328,6 @@ export function OpeningsPage() {
     setBoardFlipped,
     setFilters,
     setHighlightedMove,
-    mostPlayedData,
   });
 
   // ── Desktop sidebar panel-change handler ─────────────────────────────────────
@@ -343,27 +341,27 @@ export function OpeningsPage() {
     sidebar.setSidebarOpen(panel as 'filters' | 'bookmarks' | null);
   }, [sidebar, filters]);
 
-  // ── Mobile sidebar handlers ──────────────────────────────────────────────────
+  // ── Mobile drawer handlers ──────────────────────────────────────────────────
 
-  const openFilterSidebar = useCallback(() => {
+  const openFilterDrawer = useCallback(() => {
     setLocalFilters({ ...filters });
-    sidebar.setFilterSidebarOpen(true);
+    sidebar.setFilterDrawerOpen(true);
   }, [filters, sidebar]);
 
-  const handleFilterSidebarOpenChange = useCallback((open: boolean) => {
-    if (open && !sidebar.filterSidebarOpen) {
+  const handleFilterDrawerOpenChange = useCallback((open: boolean) => {
+    if (open && !sidebar.filterDrawerOpen) {
       // Snapshot committed state on open.
       setLocalFilters({ ...filters });
     }
     // Close without Apply: do NOT commit. The draft is discarded (re-snapshotted on next open).
-    sidebar.setFilterSidebarOpen(open);
+    sidebar.setFilterDrawerOpen(open);
   }, [sidebar, filters]);
 
   // Mobile Apply handler: commits localFilters to store, fires pulse, closes drawer,
   // handles navigation + board flip.
   const handleMobileFiltersApply = useCallback(() => {
     if (!areFiltersEqual(localFilters, filters)) {
-      justCommittedFromDrawerRef.current = true;
+      justCommittedFiltersRef.current = true;
     }
     setFilters(localFilters);
     setGamesOffset(0);
@@ -373,19 +371,19 @@ export function OpeningsPage() {
         && activeTab !== 'explorer' && activeTab !== 'games') {
       navigate('/openings/explorer');
     }
-    sidebar.setFilterSidebarOpen(false);
+    sidebar.setFilterDrawerOpen(false);
   }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate]);
 
   const updateMatchSide = useUpdateMatchSide();
 
-  const openBookmarkSidebar = useCallback(() => {
+  const openBookmarkDrawer = useCallback(() => {
     setLocalChartEnabled({ ...chartEnabledMap });
     setLocalMatchSides({});
-    sidebar.setBookmarkSidebarOpen(true);
+    sidebar.setBookmarkDrawerOpen(true);
   }, [chartEnabledMap, sidebar]);
 
-  const handleBookmarkSidebarOpenChange = useCallback((open: boolean) => {
-    if (!open && sidebar.bookmarkSidebarOpen) {
+  const handleBookmarkDrawerOpenChange = useCallback((open: boolean) => {
+    if (!open && sidebar.bookmarkDrawerOpen) {
       // Commit deferred chart toggle changes on close
       for (const [idStr, enabled] of Object.entries(localChartEnabled)) {
         const id = Number(idStr);
@@ -405,7 +403,7 @@ export function OpeningsPage() {
         if (activeTab !== 'stats') navigate('/openings/stats');
       }
     }
-    sidebar.setBookmarkSidebarOpen(open);
+    sidebar.setBookmarkDrawerOpen(open);
   }, [sidebar, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide, activeTab, navigate]);
 
   const handleLocalChartEnabledChange = useCallback((id: number, enabled: boolean) => {
@@ -427,7 +425,7 @@ export function OpeningsPage() {
 
   const handleLoadBookmarkFromSidebar = useCallback((bkm: PositionBookmarkResponse) => {
     handleLoadBookmark(bkm);
-    sidebar.setBookmarkSidebarOpen(false);
+    sidebar.setBookmarkDrawerOpen(false);
   }, [handleLoadBookmark, sidebar]);
 
   const handleLoadBookmarkFromDesktopSidebar = useCallback((bkm: PositionBookmarkResponse) => {
@@ -439,13 +437,14 @@ export function OpeningsPage() {
   // board as a `?line=` main line — so the user can step all the way back to move
   // 1 there — rather than a bare snapshot FEN (which lost the move history).
   const handleAnalyzePosition = useCallback(() => {
-    // Tracked before navigate so the derived page is still 'openings' (Phase 229).
+    // Tracked before navigate so the derived page is still 'openings'.
     trackFeature('action', { target: 'analyze' });
     navigate(buildAnalysisLineUrl(chess.moveHistory.slice(0, chess.currentPly)));
   }, [navigate, chess.moveHistory, chess.currentPly]);
 
   // One opener for the three bookmark-suggestions entry points (sidebar, desktop
-  // sidebar, mobile drawer): D-13 reports the panel being opened, from the click only.
+  // sidebar, mobile drawer): the panel-open event reports the panel being opened,
+  // from the click only.
   const openSuggestions = useCallback(() => {
     setSuggestionsOpen(true);
     trackFeature('panel-open', { target: 'bookmark-suggestions' });
@@ -460,8 +459,8 @@ export function OpeningsPage() {
   const hasNoGames = gameCount !== null && gameCount === 0;
   const gamesData = gamesQuery.data;
   const filtersMatchNothing = gamesData !== undefined && gamesData.matched_count === 0 && !hasNoGames;
-  // SEED-163 2d: true only when the Human+Rated defaults alone (no other
-  // filter) are what emptied the population.
+  // True only when the Human+Rated defaults alone (no other filter) are what
+  // emptied the population.
   const noHumanRatedGames = shouldShowNoHumanRatedGames(filters, gameCount);
 
   // Color icon + name reused in Position Results labels and the matched-games summary
@@ -577,8 +576,8 @@ export function OpeningsPage() {
   return (
     <div data-testid="openings-page" className="flex min-h-0 flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
-        {/* Desktop: full-width subnav above the sidebar strip + board/content row (Phase 111 —
-            matches the Library page). Tabs wraps SidebarLayout so the subnav spans both the
+        {/* Desktop: full-width subnav above the sidebar strip + board/content row
+            (matches the Library page). Tabs wraps SidebarLayout so the subnav spans both the
             strip and the content; TabsContent stays inside SidebarLayout to keep Tabs context. */}
         <Tabs
           value={activeTab}
@@ -657,7 +656,7 @@ export function OpeningsPage() {
             setFilters(prev => ({ ...prev, color: next }));
             setBoardFlipped(next === 'black');
             sidebar.dismissPlayedAsHint();
-            // Same concept as Library/Endgames played-as, so one Umami row (D-01).
+            // Same concept as Library/Endgames played-as, so one Umami row.
             trackFeature('filter-change', { target: 'played-as', value: next });
           }}
           showPlayedAsHint={showPlayedAsHint}
@@ -689,10 +688,10 @@ export function OpeningsPage() {
                   }
                 />
                 <div className="flex items-center gap-2 px-1 text-sm min-h-[1.25rem]">
-                  {chess.openingName ? (
+                  {chess.opening ? (
                     <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-xs text-muted-foreground">{chess.openingName.eco}</span>
-                      <span className="text-foreground">{chess.openingName.name}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{chess.opening.eco}</span>
+                      <span className="text-foreground">{chess.opening.name}</span>
                     </div>
                   ) : (
                     <span className="text-muted-foreground italic">Play some moves</span>
@@ -714,7 +713,7 @@ export function OpeningsPage() {
           </OpeningsDesktopSidebar>
         </Tabs>
 
-        {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern, 71.1-02) */}
+        {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern) */}
         <div className="lg:hidden flex flex-col min-w-0">
           <EvalCoverageHeader />
         <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="flex flex-col gap-2 min-w-0">
@@ -777,7 +776,7 @@ export function OpeningsPage() {
               <Button
                 variant="brand-outline"
                 className="relative"
-                onClick={openFilterSidebar}
+                onClick={openFilterDrawer}
                 data-testid="subnav-filter-button"
                 aria-label="Open filters"
               >
@@ -788,7 +787,7 @@ export function OpeningsPage() {
             </div>
           )}
 
-          {/* Non-sticky board block — only visible on Moves + Games subtabs (D-07, D-08, D-09) */}
+          {/* Non-sticky board block — only visible on Moves + Games subtabs */}
           <OpeningsMobileBoardPanel
             activeTab={activeTab}
             mobileBoardRef={mobileBoardRef}
@@ -803,7 +802,7 @@ export function OpeningsPage() {
             onFlip={() => setBoardFlipped((f) => !f)}
             canGoBack={chess.currentPly > 0}
             canGoForward={chess.currentPly < chess.moveHistory.length}
-            onOpenFilterSidebar={openFilterSidebar}
+            onOpenFilterDrawer={openFilterDrawer}
             filtersNotificationDot={mobileFiltersDot}
             filterColor={filters.color}
             onTogglePlayedAs={() => {
@@ -818,24 +817,24 @@ export function OpeningsPage() {
               if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
             }}
             showPlayedAsHint={showPlayedAsHint}
-            onOpenBookmarkSidebar={openBookmarkSidebar}
+            onOpenBookmarkDrawer={openBookmarkDrawer}
             showBookmarksHint={showBookmarksHint}
             showAnalyzeButton={showAnalyzeButton}
             onAnalyzePosition={handleAnalyzePosition}
-            openingName={chess.openingName}
+            opening={chess.opening}
             moveHistory={chess.moveHistory}
             currentPly={chess.currentPly}
             onMoveClick={chess.goToMove}
           />
 
           <OpeningsMobileDrawers
-            filterSidebarOpen={sidebar.filterSidebarOpen}
-            onFilterSidebarOpenChange={handleFilterSidebarOpenChange}
+            filterDrawerOpen={sidebar.filterDrawerOpen}
+            onFilterDrawerOpenChange={handleFilterDrawerOpenChange}
             localFilters={localFilters}
             setLocalFilters={setLocalFilters}
             onApplyMobileFilters={handleMobileFiltersApply}
-            bookmarkSidebarOpen={sidebar.bookmarkSidebarOpen}
-            onBookmarkSidebarOpenChange={handleBookmarkSidebarOpenChange}
+            bookmarkDrawerOpen={sidebar.bookmarkDrawerOpen}
+            onBookmarkDrawerOpenChange={handleBookmarkDrawerOpenChange}
             localBookmarks={localBookmarks}
             onReorderBookmarks={handleReorder}
             onLoadBookmark={handleLoadBookmarkFromSidebar}

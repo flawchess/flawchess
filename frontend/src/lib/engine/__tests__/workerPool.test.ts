@@ -2,8 +2,8 @@
 /**
  * workerPool.ts mock-Worker unit tests.
  *
- * Task 1 covers the pure priority-queue (POOL-02) and adaptive pool-sizing
- * (POOL-04/D-01) functions in isolation — no Worker instantiation needed yet.
+ * Covers the pure priority-queue and adaptive pool-sizing
+ * functions in isolation — no Worker instantiation needed yet.
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
@@ -46,7 +46,7 @@ import { ensureStockfishWorkerUrl } from '../stockfishWorkerSource';
 // (mirrors maiaQueue.test.ts).
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
-// ─── stockfishWorkerSource mock (Phase 213-08, G-213-35) ───────────────────
+// ─── stockfishWorkerSource mock ───────────────────
 //
 // `createSlot()` now constructs through the shared source module instead of
 // a bare `new Worker(ENGINE_PATH)`. This file's job is the POOL's own
@@ -87,7 +87,7 @@ vi.mock('../stockfishWorkerSource', () => ({
 // ─── Mock Worker (multi-instance — a pool spawns N separate Worker()s) ──────
 
 /**
- * Phase 213: a minimal synchronous double for the `MessageChannel`/
+ * A minimal synchronous double for the `MessageChannel`/
  * `MessagePort` pair `createSlot()` uses to wire the vendored Stockfish
  * glue's `progressPort` protocol. A real jsdom `MessageChannel` delivers
  * messages asynchronously (a real event-loop tick), which would force every
@@ -127,7 +127,7 @@ class MockWorker {
   onerror: ((e: ErrorEvent) => void) | null = null;
   messages: string[] = [];
   /**
-   * Phase 213: every `postMessage` call in arrival order, including
+   * Every `postMessage` call in arrival order, including
    * non-string payloads (the `{ progressPort }` handoff) — `messages` above
    * stays string-only so every pre-existing `.startsWith('go ')`-style
    * assertion keeps working untouched. Use this array for ordering
@@ -212,11 +212,11 @@ function stubDesktopSizing(cores: number): void {
 // Black-to-move FEN after 1. e4 — used for white-POV negation assertions.
 const TEST_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
 const TEST_FEN_2 = 'rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1';
-// A third distinct FEN (Phase 194 ABORT-02) — only used by the
+// A third distinct FEN — only used by the
 // several-concurrent-grade-calls-share-one-signal test below.
 const TEST_FEN_3 = 'rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq c3 0 1';
 
-// ─── Priority queue (POOL-02) ───────────────────────────────────────────────
+// ─── Priority queue ───────────────────────────────────────────────
 
 describe('enqueue / dequeueHighestPriority', () => {
   it('dequeues the higher-priority request first, regardless of enqueue order', () => {
@@ -266,7 +266,7 @@ describe('enqueue / dequeueHighestPriority', () => {
     expect(next?.fen).toBe('FEN_SHALLOW');
   });
 
-  // Phase 227 D-19 / N-3: this test used to pin the UCI-string tie-break
+  // This test used to pin the UCI-string tie-break
   // (ascending candidateUcis[0]). The tie-break is now arrival order (FIFO),
   // matching the Node harness pool's acquireEngine/releaseEngine.
   it('serves equal-priority, equal-depth requests FIFO (arrival order), regardless of candidateUcis[0]', () => {
@@ -295,7 +295,7 @@ describe('enqueue / dequeueHighestPriority', () => {
     expect(order).toEqual(['FEN_FIRST', 'FEN_SECOND', 'FEN_THIRD']);
   });
 
-  // The starvation shape D-19 closes: a queued grade that keeps losing to
+  // The starvation shape FIFO closes: a queued grade that keeps losing to
   // newer equal requests whose first UCI sorts lower waits unboundedly once
   // dispatch is continuous (pool of 2, concurrency 4).
   it('FIFO: an earlier request is never overtaken by later equal requests', () => {
@@ -334,7 +334,7 @@ describe('enqueue / dequeueHighestPriority', () => {
   });
 });
 
-// ─── Adaptive pool sizing (POOL-04/D-01) ───────────────────────────────────
+// ─── Adaptive pool sizing ───────────────────────────────────
 
 describe('computePoolSize', () => {
   afterEach(() => {
@@ -403,7 +403,7 @@ describe('computePoolSize', () => {
   });
 });
 
-// ─── createWorkerPool: grade() dispatch (POOL-01, SC5) ─────────────────────
+// ─── createWorkerPool: grade() dispatch ─────────────────────
 
 describe('createWorkerPool: grade() dispatch', () => {
   beforeEach(() => {
@@ -517,9 +517,9 @@ describe('createWorkerPool: grade() dispatch', () => {
   });
 });
 
-// ─── createWorkerPool + mctsSearch: LADDER-02 end-to-end depth resolution ──
+// ─── createWorkerPool + mctsSearch: end-to-end depth resolution ──
 
-describe('createWorkerPool + mctsSearch: a tree node is graded at its ladder rung (LADDER-02 end-to-end)', () => {
+describe('createWorkerPool + mctsSearch: a tree node is graded at its ladder rung (end-to-end)', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -584,9 +584,9 @@ describe('createWorkerPool + mctsSearch: a tree node is graded at its ladder run
   });
 });
 
-// ─── createWorkerPool: gradeRoot() root split (Phase 226 D-18/L-2/L-3/L-4, arm A21S) ──
+// ─── createWorkerPool: gradeRoot() root split ──
 
-describe('createWorkerPool: gradeRoot() root split (Phase 226 L-2/L-3/L-4)', () => {
+describe('createWorkerPool: gradeRoot() root split', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -652,7 +652,7 @@ describe('createWorkerPool: gradeRoot() root split (Phase 226 L-2/L-3/L-4)', () 
     expect(new Set(allAssigned).size).toBe(10);
     expect([...allAssigned].sort()).toEqual([...ROOT_CANDIDATES].sort());
     // Round-robin, one shard per slot, in slot (dispatch) order — matches
-    // `partitionCandidates` (Plan 226-10) exactly, the shared helper this
+    // `partitionCandidates` exactly, the shared helper this
     // implementation delegates to.
     expect(shardUcisPerWorker).toEqual(partitionCandidates(ROOT_CANDIDATES, 4));
 
@@ -733,9 +733,9 @@ describe('createWorkerPool: gradeRoot() root split (Phase 226 L-2/L-3/L-4)', () 
   });
 });
 
-// ─── createWorkerPool: gradeRoot() failure paths and edge cases (Phase 226 L-2/L-3/L-4, arm A21S) ──
+// ─── createWorkerPool: gradeRoot() failure paths and edge cases ──
 
-describe('createWorkerPool: gradeRoot() root split — failure paths and edge cases (Phase 226 L-2/L-3/L-4)', () => {
+describe('createWorkerPool: gradeRoot() root split — failure paths and edge cases', () => {
   const ROOT_CANDIDATES = [
     'b8c6', 'c7c5', 'c7c6', 'd7d5', 'd7d6', 'e7e5', 'e7e6', 'g7g5', 'g7g6', 'g8f6',
   ];
@@ -782,7 +782,7 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     expect(pool.cacheStats().misses).toBe(missesBefore + 1);
   });
 
-  it('L-2: 3 shards completing with real grades before a 4th is aborted still resolves the WHOLE group empty — never a partial merge', async () => {
+  it('3 shards completing with real grades before a 4th is aborted still resolves the WHOLE group empty — never a partial merge', async () => {
     const pool = createWorkerPool();
     warmAllSlots(pool);
     const controller = new AbortController();
@@ -798,14 +798,14 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     });
 
     // The 4th never answers — abort the whole group while it is still
-    // thinking. Without the L-2 empty-on-failure gate, the 3 real shard
+    // thinking. Without the empty-on-failure gate, the 3 real shard
     // results above would leak through as a non-empty partial merge.
     controller.abort();
 
     const result = await promise;
     expect(result.size).toBe(0);
 
-    // L-3: shards skip cache writes entirely (writeCache: false) — even
+    // Shards skip cache writes entirely (writeCache: false) — even
     // though 3 shards had real, non-empty grades, none of them may have
     // written those directly to the cache. A subsequent grade() for those
     // very candidates must still be a cache MISS, proving no partial data
@@ -843,13 +843,13 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     for (const w of originalWorkers) expect(w.messages).toContain('stop');
   });
 
-  // The outer-abort L-2 test above resolves empty through `finish()`'s own
+  // The outer-abort test above resolves empty through `finish()`'s own
   // `signal.aborted` check, so it never exercised the per-shard failure flag:
   // deleting the `groupFailed = true` assignment left every test green
   // (226-VERIFICATION mutation check). This drives the real failure shape,
   // where 3 shards finish with real grades and the 4th dies on its watchdog
   // with no outer abort, so only the per-shard flag can keep the merge empty.
-  it('L-2: 3 shards completing before the 4th watchdog-fires (no outer abort) still resolves the whole group empty', async () => {
+  it('3 shards completing before the 4th watchdog-fires (no outer abort) still resolves the whole group empty', async () => {
     vi.useFakeTimers();
     const pool = createWorkerPool();
     warmAllSlots(pool);
@@ -923,7 +923,7 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     const SIX = ROOT_CANDIDATES.slice(0, 6);
     const rootPromise = pool.gradeRoot(TEST_FEN, SIX);
     // No new go line yet — every slot is still busy; the root request queued
-    // behind the stranded one (FIFO among equals, Phase 227 D-19).
+    // behind the stranded one (FIFO among equals).
     expect(
       createdWorkers.reduce((sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length, 0),
     ).toBe(4);
@@ -1041,7 +1041,7 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     for (const uci of othersUcis) expect(result.has(uci)).toBe(true);
     expect(result.size).toBe(othersUcis.length);
 
-    // Success path (not the L-2 failure path): a following grade() for the
+    // Success path (not the failure path): a following grade() for the
     // OTHER shards' candidates is a cache hit.
     const before = pool.cacheStats();
     await pool.grade(TEST_FEN, othersUcis, undefined, GRADING_ROOT_DEPTH);
@@ -1053,7 +1053,7 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     warmAllSlots(pool);
     const controller = new AbortController();
 
-    // Count listeners by instrumenting the real signal (WR-02 pattern).
+    // Count listeners by instrumenting the real signal.
     let live = 0;
     let addCount = 0;
     const realAdd = controller.signal.addEventListener.bind(controller.signal);
@@ -1082,9 +1082,9 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
   });
 });
 
-// ─── createWorkerPool: LADDER-02/04 grading-depth parameter plumbing ───────
+// ─── createWorkerPool: grading-depth parameter plumbing ───────
 
-describe('createWorkerPool: gradingDepth parameter plumbing (LADDER-02/04)', () => {
+describe('createWorkerPool: gradingDepth parameter plumbing', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -1108,8 +1108,8 @@ describe('createWorkerPool: gradingDepth parameter plumbing (LADDER-02/04)', () 
     expect(goAtD10).toContain('depth 10 ');
 
     // A distinct FEN so this second call cannot be satisfied by the first's
-    // cache entry (independent of the (fen, depth) composite key rekey —
-    // Plan 03 — which the "grade cache" describe block below covers).
+    // cache entry (independent of the (fen, depth) composite key rekey,
+    // which the "grade cache" describe block below covers).
     const atD6 = pool.grade(TEST_FEN_2, ['d7d5'], undefined, 6);
     w.simulateMessage('info depth 6 multipv 1 score cp 3 nodes 500 pv d7d5');
     w.simulateMessage('bestmove d7d5');
@@ -1118,7 +1118,7 @@ describe('createWorkerPool: gradingDepth parameter plumbing (LADDER-02/04)', () 
     expect(goAtD6).toContain('depth 6 ');
   });
 
-  it('an omitted gradingDepth (3-arg call, no signal) defaults to GRADING_ROOT_DEPTH (D-02)', async () => {
+  it('an omitted gradingDepth (3-arg call, no signal) defaults to GRADING_ROOT_DEPTH', async () => {
     const pool = createWorkerPool();
     const gradePromise = pool.grade(TEST_FEN, ['e7e5']); // 4th arg omitted entirely
     const worker = createdWorkers[0]!;
@@ -1131,7 +1131,7 @@ describe('createWorkerPool: gradingDepth parameter plumbing (LADDER-02/04)', () 
     expect(go).toBe(buildGradeGoCommand(GRADING_ROOT_DEPTH, ['e7e5']));
   });
 
-  it('no emitted go line ever carries a wall-clock (movetime) token, across multiple grading depths (LADDER-04)', async () => {
+  it('no emitted go line ever carries a wall-clock (movetime) token, across multiple grading depths', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5'], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -1158,9 +1158,9 @@ describe('createWorkerPool: gradingDepth parameter plumbing (LADDER-02/04)', () 
   });
 });
 
-// ─── createWorkerPool: D-06 grading watchdog ───────────────────────────────
+// ─── createWorkerPool: grading watchdog ───────────────────────────────
 
-describe('createWorkerPool: watchdog (D-06)', () => {
+describe('createWorkerPool: watchdog', () => {
   /** What `stubDesktopSizing(6)` below resolves to via `computePoolSize()`. */
   const POOL_SIZE = 4;
 
@@ -1219,7 +1219,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
       expect.objectContaining({ tags: expect.objectContaining({ source: 'stockfish-worker-pool' }) }),
     );
 
-    // Slot is permanently out of service (mirrors WR-04 onerror): a later
+    // Slot is permanently out of service (mirrors the onerror handling): a later
     // grade() call is serviced by a DIFFERENT (still-idle) slot, never
     // re-dispatched to the dead one.
     const second = pool.grade(TEST_FEN_2, ['d7d5']);
@@ -1327,11 +1327,11 @@ describe('createWorkerPool: watchdog (D-06)', () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  it('quick 260731-s0z FIX-4: an abort of an in-flight request re-arms a stop-bestmove watchdog — one static Sentry capture after STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS if the worker never answers `stop`, and the dead slot is never re-dispatched to', async () => {
-    // Prior to FIX-4 this test asserted NO capture at all after
+  it('an abort of an in-flight request re-arms a stop-bestmove watchdog — one static Sentry capture after STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS if the worker never answers `stop`, and the dead slot is never re-dispatched to', async () => {
+    // This test used to assert NO capture at all after
     // GRADING_WATCHDOG_TIMEOUT_MS — a bare `clearSlotWatchdog` on abort left
     // the 'stopping' slot with no exit if `stop` never got a `bestmove` back.
-    // FIX-4 re-arms a MUCH tighter bound instead (10s, not 60s) precisely so
+    // The stop path now re-arms a MUCH tighter bound instead (10s, not 60s) precisely so
     // that hang is bounded and Sentry-visible.
     const pool = createWorkerPool();
     const controller = new AbortController();
@@ -1356,7 +1356,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
       expect.objectContaining({ tags: expect.objectContaining({ source: 'stockfish-worker-pool' }) }),
     );
 
-    // The dead slot is never re-dispatched to (mirrors the D-06 watchdog's
+    // The dead slot is never re-dispatched to (mirrors the grading watchdog's
     // own dead-slot-avoidance proof above).
     const second = pool.grade(TEST_FEN_2, ['d7d5']);
     const otherWorker = createdWorkers.find((w) => w !== worker)!;
@@ -1368,7 +1368,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
     expect(worker.messages).not.toContain(`position fen ${TEST_FEN_2}`);
   });
 
-  it('quick 260731-s0z FIX-4: a healthy stop answered by a bestmove before STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS disarms the re-armed watchdog — no Sentry capture', async () => {
+  it('a healthy stop answered by a bestmove before STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS disarms the re-armed watchdog — no Sentry capture', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     const gradePromise = pool.grade(TEST_FEN, ['e7e5'], controller.signal);
@@ -1387,7 +1387,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  it('quick 260731-s0z FIX-4: stopAll() re-arms a stop-bestmove watchdog per thinking slot — one static Sentry capture per never-answering slot after STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS', async () => {
+  it('stopAll() re-arms a stop-bestmove watchdog per thinking slot — one static Sentry capture per never-answering slot after STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS', async () => {
     // Same failure shape as the abort test above, via stopAll() instead.
     const pool = createWorkerPool();
     const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
@@ -1423,7 +1423,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  it('195-06 WR-01: worker.onerror clears the in-flight watchdog — no second, misleading Sentry capture after the deadline', async () => {
+  it('worker.onerror clears the in-flight watchdog — no second, misleading Sentry capture after the deadline', async () => {
     const pool = createWorkerPool();
     const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
     const worker = createdWorkers[0]!;
@@ -1723,7 +1723,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
     expect(GRADING_WATCHDOG_LIVENESS_MS).toBeLessThan(GRADING_WATCHDOG_TIMEOUT_MS);
   });
 
-  // ─── FLAWCHESS-9G third pass: hidden-tab gate (SEED-180) ─────────────────
+  // ─── FLAWCHESS-9G third pass: hidden-tab gate ─────────────────
 
   it('FLAWCHESS-9G: an on-time fire from a silent slot in a HIDDEN tab is background throttling — re-armed, not killed, and its eventual bestmove delivers the real grade', async () => {
     const pool = createWorkerPool();
@@ -1808,9 +1808,9 @@ describe('createWorkerPool: watchdog (D-06)', () => {
 
 });
 
-// ─── createWorkerPool: FIX-3 — grade() on a fully dead pool (quick 260731-s0z) ──
+// ─── createWorkerPool: grade() on a fully dead pool ──
 
-describe('createWorkerPool: grade() on a fully dead pool (quick 260731-s0z FIX-3)', () => {
+describe('createWorkerPool: grade() on a fully dead pool', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -1824,7 +1824,7 @@ describe('createWorkerPool: grade() on a fully dead pool (quick 260731-s0z FIX-3
   });
 
 
-  it('FIX-3 + FIX-4 composed: aborting one shared signal across every slot kills the whole pool via the stop-bestmove watchdog, and a subsequent signal-less grade() still resolves empty', async () => {
+  it('composed: aborting one shared signal across every slot kills the whole pool via the stop-bestmove watchdog, and a subsequent signal-less grade() still resolves empty', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     // One request per slot (4 slots under stubDesktopSizing(6)), sharing ONE
@@ -1856,9 +1856,9 @@ describe('createWorkerPool: grade() on a fully dead pool (quick 260731-s0z FIX-3
   });
 });
 
-// ─── createWorkerPool: grade cache — capacity, LRU, merge (Phase 194 CACHE-01..04, INJECT-05) ──
+// ─── createWorkerPool: grade cache — capacity, LRU, merge ──
 
-describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', () => {
+describe('createWorkerPool: grade cache', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -1889,7 +1889,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     return promise;
   }
 
-  // ─── INJECT-05: cacheStats()/resetCacheStats() outcome counters ────────────
+  // ─── cacheStats()/resetCacheStats() outcome counters ────────────
   //
   // These pin the counter semantics the root-injection measurement harness
   // (scripts/engine-root-injection.mjs) depends on: a hit/miss here is a
@@ -1897,12 +1897,12 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   // point grade()'s read gate decides that — not a count of Stockfish
   // dispatches or resolved searches.
 
-  it('a fresh cache reports { hits: 0, misses: 0 } (INJECT-05)', () => {
+  it('a fresh cache reports { hits: 0, misses: 0 }', () => {
     const pool = createWorkerPool();
     expect(pool.cacheStats()).toEqual({ hits: 0, misses: 0 });
   });
 
-  it('a grade() for a novel (fen, depth) increments misses by 1 and leaves hits at 0 (INJECT-05)', async () => {
+  it('a grade() for a novel (fen, depth) increments misses by 1 and leaves hits at 0', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -1911,7 +1911,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(pool.cacheStats()).toEqual({ hits: 0, misses: 1 });
   });
 
-  it('a repeat grade() for the same (fen, depth) with an already-cached candidate subset increments hits by 1 and leaves misses unchanged (INJECT-05)', async () => {
+  it('a repeat grade() for the same (fen, depth) with an already-cached candidate subset increments hits by 1 and leaves misses unchanged', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -1924,7 +1924,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(pool.cacheStats()).toEqual({ hits: 1, misses: 1 });
   });
 
-  it('a repeat grade() for the same fen at a DIFFERENT depth increments misses (LADDER-03, INJECT-05)', async () => {
+  it('a repeat grade() for the same fen at a DIFFERENT depth increments misses', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 14);
     const worker = createdWorkers[0]!;
@@ -1937,7 +1937,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(pool.cacheStats()).toEqual({ hits: 0, misses: 2 });
   });
 
-  it('a repeat grade() for the same (fen, depth) requesting a UCI the cached entry lacks increments misses (CACHE-04, INJECT-05)', async () => {
+  it('a repeat grade() for the same (fen, depth) requesting a UCI the cached entry lacks increments misses', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -1953,7 +1953,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(pool.cacheStats()).toEqual({ hits: 0, misses: 2 });
   });
 
-  it("resetCacheStats() returns both counters to 0 without evicting any cached entry — a subsequent repeat request still reports a hit (INJECT-05)", async () => {
+  it("resetCacheStats() returns both counters to 0 without evicting any cached entry — a subsequent repeat request still reports a hit", async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -1969,7 +1969,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(pool.cacheStats()).toEqual({ hits: 1, misses: 0 });
   });
 
-  it('the empty-candidateUcis and already-aborted early returns happen before the cache is consulted and increment neither counter (INJECT-05)', async () => {
+  it('the empty-candidateUcis and already-aborted early returns happen before the cache is consulted and increment neither counter', async () => {
     const pool = createWorkerPool();
 
     const emptyResult = await pool.grade(TEST_FEN, []);
@@ -1984,7 +1984,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   });
 
   it(
-    'LRU (CACHE-01/02): filling to exactly GRADE_CACHE_MAX evicts nothing; touching an entry then forcing one eviction spares it and evicts a never-read entry — fails under FIFO',
+    'LRU: filling to exactly GRADE_CACHE_MAX evicts nothing; touching an entry then forcing one eviction spares it and evicts a never-read entry — fails under FIFO',
     async () => {
       const pool = createWorkerPool();
       const first = pool.grade(fenFor(0), [UCI]);
@@ -2028,7 +2028,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   );
 
   it(
-    'LRU (CACHE-02): a re-grade WRITE to an already-cached FEN counts as a use — it spares that FEN from the next eviction (fails when cacheGrades omits the delete-then-reinsert touch)',
+    'LRU: a re-grade WRITE to an already-cached FEN counts as a use — it spares that FEN from the next eviction (fails when cacheGrades omits the delete-then-reinsert touch)',
     async () => {
       const pool = createWorkerPool();
       const first = pool.grade(fenFor(0), [UCI]);
@@ -2071,7 +2071,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     15000,
   );
 
-  it('merges a new candidate set into the existing per-FEN entry rather than replacing it (CACHE-03)', async () => {
+  it('merges a new candidate set into the existing per-FEN entry rather than replacing it', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5', 'c7c5']);
     const worker = createdWorkers[0]!;
@@ -2097,7 +2097,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(combined.get('g8f6')?.evalCp).toBe(-20);
   });
 
-  it('re-grading a UCI already in the cache overwrites its value — the newly-graded value wins on key collision (CACHE-03 ordering)', async () => {
+  it('re-grading a UCI already in the cache overwrites its value — the newly-graded value wins on key collision', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5']);
     const worker = createdWorkers[0]!;
@@ -2106,7 +2106,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     worker.simulateMessage('bestmove e7e5');
     await first;
 
-    // A superset request is a miss (CACHE-04 all-or-nothing) and re-grades
+    // A superset request is a miss (all-or-nothing) and re-grades
     // e7e5 too, this time with a different score.
     const second = pool.grade(TEST_FEN, ['e7e5', 'd7d5']);
     worker.simulateMessage('info depth 14 multipv 1 score cp 99 nodes 1000 pv e7e5');
@@ -2116,7 +2116,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(result.get('e7e5')?.evalCp).toBe(-99); // the newly-graded value wins
   });
 
-  it('merging an empty incoming grades map (a search yielding no info lines) leaves the existing entry unchanged (CACHE-03 empty)', async () => {
+  it('merging an empty incoming grades map (a search yielding no info lines) leaves the existing entry unchanged', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['c7c5']);
     const worker = createdWorkers[0]!;
@@ -2138,7 +2138,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(stillCached.get('c7c5')?.evalCp).toBe(-5);
   });
 
-  it('two concurrent grade() calls for the same FEN resolving in either order leave the union of both candidate sets cached (CACHE-03 concurrency)', async () => {
+  it('two concurrent grade() calls for the same FEN resolving in either order leave the union of both candidate sets cached', async () => {
     const pool = createWorkerPool();
     const a = pool.grade(TEST_FEN, ['e7e5']);
     const b = pool.grade(TEST_FEN, ['c7c5']);
@@ -2165,7 +2165,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(union.get('c7c5')?.evalCp).toBe(-5);
   });
 
-  it('a superset cache entry serves any subset request as a hit, returning only the requested keys (CACHE-04 adjacency)', async () => {
+  it('a superset cache entry serves any subset request as a hit, returning only the requested keys', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5', 'c7c5', 'g8f6']);
     const worker = createdWorkers[0]!;
@@ -2183,7 +2183,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(subset.has('g8f6')).toBe(false);
   });
 
-  it('a request with one un-cached UCI is a miss that re-grades the FULL requested set, not only the missing UCI (CACHE-04 ordering)', async () => {
+  it('a request with one un-cached UCI is a miss that re-grades the FULL requested set, not only the missing UCI', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5', 'c7c5']);
     const worker = createdWorkers[0]!;
@@ -2203,19 +2203,19 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     await second;
   });
 
-  // ─── LADDER-03/ENGINE-07: composite (fen, gradingDepth) cache key ──────────
+  // ─── Composite (fen, gradingDepth) cache key ──────────
   //
-  // The cache used to be keyed by `fen` alone (Phase 194). Once the ladder
-  // makes grading depth vary by tree position (Plan 05), a transposed
+  // The cache used to be keyed by `fen` alone. Once the ladder
+  // makes grading depth vary by tree position, a transposed
   // position could be graded at depth 14 via one path and depth 10 via
   // another, and a fen-only cache would silently serve whichever depth's
   // grade happened to land first to the OTHER depth's request — a real
-  // ENGINE-07 determinism violation. These tests assert the composite key
+  // determinism violation. These tests assert the composite key
   // closes that hole in both visit orders, by `go`-message count (never by
   // reaching into the pool's internal cache Map).
 
   it(
-    'a depth-14 cached grade never satisfies a depth-10 request for the same FEN, regardless of visit order — depth-14-first (LADDER-03)',
+    'a depth-14 cached grade never satisfies a depth-10 request for the same FEN, regardless of visit order — depth-14-first',
     async () => {
       const pool = createWorkerPool();
       const atD14 = pool.grade(TEST_FEN, [UCI], undefined, 14);
@@ -2244,7 +2244,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   );
 
   it(
-    'a depth-10 cached grade never satisfies a depth-14 request for the same FEN, regardless of visit order — depth-10-first (LADDER-03)',
+    'a depth-10 cached grade never satisfies a depth-14 request for the same FEN, regardless of visit order — depth-10-first',
     async () => {
       const pool = createWorkerPool();
       const atD10 = pool.grade(TEST_FEN, [UCI], undefined, 10);
@@ -2272,7 +2272,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     },
   );
 
-  it('two different FENs at the same grading depth remain independent cache entries (unchanged by the rekey, LADDER-03)', async () => {
+  it('two different FENs at the same grading depth remain independent cache entries (unchanged by the rekey)', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -2297,7 +2297,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(stillCached.get(UCI)?.evalCp).toBe(-10);
   });
 
-  it('the all-or-nothing gate still applies inside one (fen, depth) entry — a UCI absent from that entry is a miss even though other UCIs of the same entry are present (CACHE-04, composite key)', async () => {
+  it('the all-or-nothing gate still applies inside one (fen, depth) entry — a UCI absent from that entry is a miss even though other UCIs of the same entry are present (composite key)', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, [UCI], undefined, 10);
     const worker = createdWorkers[0]!;
@@ -2316,7 +2316,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     await second;
   });
 
-  it('a grade aborted before bestmove writes nothing to the cache — a subsequent identical (fen, depth) request issues a fresh go (LADDER-03)', async () => {
+  it('a grade aborted before bestmove writes nothing to the cache — a subsequent identical (fen, depth) request issues a fresh go', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     const aborted = pool.grade(TEST_FEN, [UCI], controller.signal, 10);
@@ -2340,9 +2340,9 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
     expect(result.get(UCI)?.evalCp).toBe(-7);
   });
 
-  // ─── Phase 194 WR-01 LRU touch sites, pinned under the composite key ───────
+  // ─── LRU touch sites, pinned under the composite key ───────
   //
-  // The rekey is a one-expression edit at four call sites (Task 1's key
+  // The rekey is a one-expression edit at four call sites (the key
   // helper). The specific way it breaks silently is if only ONE of the two
   // delete-then-reinsert LRU touches gets threaded through the helper: the
   // cache still "looks" composite-keyed (reads/writes succeed, values are
@@ -2352,7 +2352,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   // observing the failure, and restoring it.
 
   it(
-    'LRU regression (Task 2, read-side): the read-hit cache.delete(key)/cache.set(key, cached) touch in grade() survives the composite-key rekey — deleting it makes this test fail',
+    'LRU regression (read-side): the read-hit cache.delete(key)/cache.set(key, cached) touch in grade() survives the composite-key rekey — deleting it makes this test fail',
     async () => {
       const pool = createWorkerPool();
       const first = pool.grade(fenFor(0), [UCI], undefined, 10);
@@ -2395,7 +2395,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   );
 
   it(
-    "LRU regression (Task 2, write-side): cacheGrades' cache.delete(key) touch survives the composite-key rekey — deleting it makes this test fail",
+    "LRU regression (write-side): cacheGrades' cache.delete(key) touch survives the composite-key rekey — deleting it makes this test fail",
     async () => {
       const pool = createWorkerPool();
       const first = pool.grade(fenFor(0), [UCI], undefined, 10);
@@ -2409,7 +2409,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
       }
 
       // Re-grade fenFor(0) at the SAME depth with a DIFFERENT candidate — a
-      // cache miss (CACHE-04 all-or-nothing), so this goes through
+      // cache miss (all-or-nothing), so this goes through
       // cacheGrades' merge/write path, not the read-hit touch.
       const rewrite = pool.grade(fenFor(0), [OTHER_UCI], undefined, 10);
       await roundTrip(worker, rewrite, OTHER_UCI, 20);
@@ -2485,7 +2485,7 @@ describe('createWorkerPool: grade cache (Phase 194 CACHE-01..04, INJECT-05)', ()
   );
 });
 
-// ─── createWorkerPool: lazy spawn + abort/lifecycle surface (POOL-04, D-02, D-03) ──
+// ─── createWorkerPool: lazy spawn + abort/lifecycle surface ──
 
 describe('createWorkerPool: lifecycle', () => {
   beforeEach(() => {
@@ -2497,7 +2497,7 @@ describe('createWorkerPool: lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
-  it('D-02: no Worker is constructed until the first grade() call (lazy spawn)', () => {
+  it('no Worker is constructed until the first grade() call (lazy spawn)', () => {
     createWorkerPool();
     expect(createdWorkers.length).toBe(0);
   });
@@ -2508,7 +2508,7 @@ describe('createWorkerPool: lifecycle', () => {
     expect(createdWorkers.length).toBe(4); // stubDesktopSizing(6) -> 6-2 clamped -> 4
   });
 
-  // ─── Prewarm (Phase 169.5, SC5) ─────────────────────────────────────────
+  // ─── Prewarm ─────────────────────────────────────────
 
   it('warm() spawns computePoolSize() workers', () => {
     const pool = createWorkerPool();
@@ -2533,8 +2533,8 @@ describe('createWorkerPool: lifecycle', () => {
     expect(createdWorkers.length).toBe(computePoolSize());
   });
 
-  it('grade(fen, []) spawns nothing — WR-05 no-op (this is why warm() exists)', async () => {
-    // Pins RESEARCH.md Pitfall 2. `grade()` returns on the WR-05
+  it('grade(fen, []) spawns nothing — no-op (this is why warm() exists)', async () => {
+    // Pins that `grade()` returns on the
     // empty-candidates guard BEFORE ensureSpawned() runs, so the tempting
     // prewarm ping `grade(fen, [])` silently warms nothing — it does not
     // throw, it does not error, it just does not work. This test is what
@@ -2564,7 +2564,7 @@ describe('createWorkerPool: lifecycle', () => {
 
   it('stopAll() sends stop to every thinking slot and clears the pending queue', async () => {
     const pool = createWorkerPool();
-    // Phase 227 D-19: FIFO among equals, so the request enqueued first (`second`)
+    // FIFO among equals, so the request enqueued first (`second`)
     // is the one dispatched; the old UCI-string tie-break ('d7d5' < 'e7e5') no
     // longer decides it.
     const second = pool.grade(TEST_FEN_2, ['d7d5']); // dequeues first (arrival order)
@@ -2577,11 +2577,11 @@ describe('createWorkerPool: lifecycle', () => {
     expect(createdWorkers[0]!.messages).toContain('stop');
     // The still-pending `first` request is resolved (empty) rather than left hanging.
     await expect(first).resolves.toEqual(new Map());
-    // CR-01: the DISPATCHED in-flight `second` request must ALSO settle, not just queued ones.
+    // The DISPATCHED in-flight `second` request must ALSO settle, not just queued ones.
     await expect(second).resolves.toEqual(new Map());
   });
 
-  it('CR-02: terminate() resolves an in-flight (dispatched) grade() promise instead of hanging it', async () => {
+  it('terminate() resolves an in-flight (dispatched) grade() promise instead of hanging it', async () => {
     const pool = createWorkerPool();
     const first = pool.grade(TEST_FEN, ['e7e5']);
     driveInit(createdWorkers[0]!); // dispatches `first` -> slot.current set, state 'thinking'
@@ -2617,7 +2617,7 @@ describe('createWorkerPool: lifecycle', () => {
   it('an AbortSignal aborting an unstarted (still-pending) request removes it from the pending queue', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
-    // Phase 227 D-19: the queue is FIFO among equals, so `second` (enqueued
+    // The queue is FIFO among equals, so `second` (enqueued
     // first) dispatches first. This test used to enqueue the abortable request
     // first and rely on the old UCI-string tie-break ('d7d5' < 'e7e5') to put
     // the other request ahead of it; the order of the two calls is swapped.
@@ -2635,7 +2635,7 @@ describe('createWorkerPool: lifecycle', () => {
     await second;
   });
 
-  it('Phase 194 ABORT-02: an AbortSignal aborting an IN-FLIGHT (dispatched) request posts stop to its owning slot and resolves it empty', async () => {
+  it('an AbortSignal aborting an IN-FLIGHT (dispatched) request posts stop to its owning slot and resolves it empty', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     const gradePromise = pool.grade(TEST_FEN, ['e7e5'], controller.signal);
@@ -2648,7 +2648,7 @@ describe('createWorkerPool: lifecycle', () => {
     await expect(gradePromise).resolves.toEqual(new Map());
   });
 
-  it('Phase 194 ABORT-02: aborting a signal after its own request already settled is a no-op — no throw, no dangling entry', async () => {
+  it('aborting a signal after its own request already settled is a no-op — no throw, no dangling entry', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     const first = pool.grade(TEST_FEN, ['e7e5'], controller.signal);
@@ -2669,7 +2669,7 @@ describe('createWorkerPool: lifecycle', () => {
     expect(grades.get('d7d5')?.evalCp).toBe(-5);
   });
 
-  it('code-review WR-02: a request that settles NORMALLY detaches its abort listener, so one signal reused across many grades does not accumulate listeners', async () => {
+  it('a request that settles NORMALLY detaches its abort listener, so one signal reused across many grades does not accumulate listeners', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
 
@@ -2712,12 +2712,12 @@ describe('createWorkerPool: lifecycle', () => {
     expect(live).toBe(0);
   });
 
-  it('Phase 194 ABORT-02: a single abort settles every one of several concurrently-issued grade() promises sharing one signal', async () => {
+  it('a single abort settles every one of several concurrently-issued grade() promises sharing one signal', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     // All three share the SAME signal — mirrors mctsSearch's `concurrency>1`
     // dispatch round, where every dispatchExpansion() call in the round
-    // forwards the identical search-level AbortSignal (Phase 194 ABORT-01).
+    // forwards the identical search-level AbortSignal.
     const first = pool.grade(TEST_FEN, ['e7e5'], controller.signal);
     const second = pool.grade(TEST_FEN_2, ['d7d5'], controller.signal);
     const third = pool.grade(TEST_FEN_3, ['c7c5'], controller.signal);
@@ -2735,7 +2735,7 @@ describe('createWorkerPool: lifecycle', () => {
     await expect(third).resolves.toEqual(new Map());
   });
 
-  it('WR-01: a pre-aborted signal resolves grade() empty immediately with zero Worker constructions', async () => {
+  it('a pre-aborted signal resolves grade() empty immediately with zero Worker constructions', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
     controller.abort(); // aborted BEFORE grade() is even called
@@ -2744,7 +2744,7 @@ describe('createWorkerPool: lifecycle', () => {
     expect(createdWorkers.length).toBe(0);
   });
 
-  it('WR-05: an empty candidateUcis array resolves grade() empty without dispatching a go message', async () => {
+  it('an empty candidateUcis array resolves grade() empty without dispatching a go message', async () => {
     const pool = createWorkerPool();
     const result = await pool.grade(TEST_FEN, []);
     expect(result).toEqual(new Map());
@@ -2754,7 +2754,7 @@ describe('createWorkerPool: lifecycle', () => {
     }
   });
 
-  it('grade is structurally assignable to EngineProviders.grade (D-08 two-arg call form)', () => {
+  it('grade is structurally assignable to EngineProviders.grade (two-arg call form)', () => {
     const pool: WorkerPool = createWorkerPool();
     const providerGrade: EngineProviders['grade'] = pool.grade;
     expect(typeof providerGrade).toBe('function');
@@ -2776,14 +2776,14 @@ describe('createWorkerPool: lifecycle', () => {
     expect(() => pool.grade(TEST_FEN, ['e7e5'])).not.toThrow();
     // 4 attempted, 1 failed -> 3 live slots.
     expect(createdWorkers.length).toBe(3);
-    // WR-03: the construction failure must be Sentry-visible, not a silent catch.
+    // The construction failure must be Sentry-visible, not a silent catch.
     expect(Sentry.captureException).toHaveBeenCalledWith(
       expect.any(Error),
       expect.objectContaining({ tags: expect.objectContaining({ source: 'stockfish-worker-pool' }) }),
     );
   });
 
-  it('WR-04: worker.onerror settles the in-flight request and is Sentry-captured with the stockfish-worker-pool tag', async () => {
+  it('worker.onerror settles the in-flight request and is Sentry-captured with the stockfish-worker-pool tag', async () => {
     const pool = createWorkerPool();
     const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
     const worker = createdWorkers[0]!;
@@ -2798,7 +2798,7 @@ describe('createWorkerPool: lifecycle', () => {
     );
   });
 
-  it('WR-04: once every slot has failed via onerror, a still-pending (never-dispatched) request drains instead of hanging', async () => {
+  it('once every slot has failed via onerror, a still-pending (never-dispatched) request drains instead of hanging', async () => {
     const pool = createWorkerPool();
     // Do NOT driveInit any worker — every slot stays not-isReady, so this
     // request sits in `pending`, never assigned to a slot's `current`.
@@ -2812,9 +2812,9 @@ describe('createWorkerPool: lifecycle', () => {
   });
 });
 
-// ─── createWorkerPool: whenReady() (Phase 213 D-01) ────────────────────────
+// ─── createWorkerPool: whenReady() ────────────────────────
 
-describe('createWorkerPool: whenReady() (Phase 213 D-01)', () => {
+describe('createWorkerPool: whenReady()', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -2900,7 +2900,7 @@ describe('createWorkerPool: whenReady() (Phase 213 D-01)', () => {
   });
 });
 
-// ─── createWorkerPool: markPoolFailed (CR-01, 213-REVIEW.md) ───────────────
+// ─── createWorkerPool: markPoolFailed ───────────────
 //
 // Before this fix, `markEngineAssetFailed` was imported and called exactly
 // once anywhere in the codebase (maiaWorkerHost.ts, tagged 'maia-model') —
@@ -2908,7 +2908,7 @@ describe('createWorkerPool: whenReady() (Phase 213 D-01)', () => {
 // reject path at all. A totally dead Stockfish pool left `EngineReadyGate`
 // permanently stuck: Start disabled forever, no Retry ever shown.
 
-describe('createWorkerPool: markPoolFailed (CR-01, 213-REVIEW.md)', () => {
+describe('createWorkerPool: markPoolFailed', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     resetEngineAssetsForTests();
@@ -2970,9 +2970,9 @@ describe('createWorkerPool: markPoolFailed (CR-01, 213-REVIEW.md)', () => {
   });
 });
 
-// ─── createWorkerPool: progressPort wiring (Phase 213 D-01, T-213-01/T-213-07) ──
+// ─── createWorkerPool: progressPort wiring ──
 
-describe('createWorkerPool: progressPort wiring (Phase 213 D-01, T-213-01/T-213-07)', () => {
+describe('createWorkerPool: progressPort wiring', () => {
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> 4 slots
     stubWorkerCtor();
@@ -3012,7 +3012,7 @@ describe('createWorkerPool: progressPort wiring (Phase 213 D-01, T-213-01/T-213-
     expect(entry?.total).toBe(STOCKFISH_WASM_BYTES_FALLBACK);
   });
 
-  it('a progressPort message with a missing/zero total still produces a finite percent via the store fallback (T-213-01)', () => {
+  it('a progressPort message with a missing/zero total still produces a finite percent via the store fallback', () => {
     const pool = createWorkerPool();
     pool.warm();
     const worker = createdWorkers[0]!;
@@ -3025,7 +3025,7 @@ describe('createWorkerPool: progressPort wiring (Phase 213 D-01, T-213-01/T-213-
     expect(Number.isFinite(entry?.loaded)).toBe(true);
   });
 
-  it('a MessageChannel-less environment skips the wiring without breaking engine spawn (T-213-07)', () => {
+  it('a MessageChannel-less environment skips the wiring without breaking engine spawn', () => {
     vi.unstubAllGlobals();
     stubDesktopSizing(6);
     stubWorkerCtor();
@@ -3042,7 +3042,7 @@ describe('createWorkerPool: progressPort wiring (Phase 213 D-01, T-213-01/T-213-
   });
 });
 
-// ─── createWorkerPool: shared Stockfish wasm source (Phase 213-08, G-213-35) ──
+// ─── createWorkerPool: shared Stockfish wasm source ──
 //
 // Every OTHER describe block above relies on the module-level mock's DEFAULT
 // synchronous-thenable `ensureStockfishWorkerUrl()` (see the mock comment at
@@ -3075,7 +3075,7 @@ function constructedWorkerUrls(): string[] {
     .mock.calls.map((call) => call[0]);
 }
 
-describe('createWorkerPool: shared Stockfish wasm source (Phase 213-08, G-213-35)', () => {
+describe('createWorkerPool: shared Stockfish wasm source', () => {
   const POOL_SIZE = 4;
 
   beforeEach(() => {
@@ -3146,7 +3146,7 @@ describe('createWorkerPool: shared Stockfish wasm source (Phase 213-08, G-213-35
   });
 
   it("MUTATION CHECK: the queue-instead-of-empty behavior is load-bearing — reverting grade()'s in-flight guard to its unconditional form makes the queued-request test fail", async () => {
-    // Mirrors the unconditional pre-Phase-213-08 guard
+    // Mirrors the earlier unconditional guard
     // (`if (slots.length === 0) return Promise.resolve(new Map())`) to prove
     // the `!spawnInFlight` gate added to that guard is the thing keeping the
     // test above green, not a coincidence of the mock setup.
@@ -3276,12 +3276,12 @@ describe('createWorkerPool: shared Stockfish wasm source (Phase 213-08, G-213-35
     pool.warm();
     expect(createdWorkers.length).toBe(POOL_SIZE);
     // ensureStockfishWorkerUrl() is called exactly once per pool — the
-    // memoisation contract belongs to the SOURCE module (Task 1), but this
+    // memoisation contract belongs to the SOURCE module, but this
     // proves the pool itself never calls it a second time for a respawn.
     expect(vi.mocked(ensureStockfishWorkerUrl)).toHaveBeenCalledTimes(1);
 
     const dyingWorker = createdWorkers[0]!;
-    dyingWorker.simulateError(); // WR-03/WR-04 death path -> replaceDeadSlot()
+    dyingWorker.simulateError(); // death path -> replaceDeadSlot()
 
     await vi.waitFor(() => expect(createdWorkers.length).toBe(POOL_SIZE + 1));
     expect(vi.mocked(ensureStockfishWorkerUrl)).toHaveBeenCalledTimes(1); // still just once

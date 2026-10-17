@@ -1,32 +1,29 @@
 /**
- * botLineTrigger — Phase 223 (BOTVOICE-02/03): the pure resolver deciding
+ * botLineTrigger — the pure resolver deciding
  * which in-game bubble line (if any) fires after the bot's own move. No
  * React import.
  *
  * Mirrors `components/train/trainBubbleState.ts`'s rationale verbatim:
  * extracting this resolution OUT of `BotsGame` (rather than inlining guard
- * blocks in JSX) is the mechanism that keeps the page's own cyclomatic
- * complexity from rising — `BotsGame` sits AT its eslint ceiling
- * (`frontend/eslint.config.js`, Phase 215 baseline region), so every new
- * branch this phase needs must land in a module like this one, never in the
- * page itself.
+ * blocks in JSX) keeps BotsGame's (report-only) cognitive complexity from
+ * rising, so every new branch of this logic must land in a module like this
+ * one, never in the page itself.
  *
- * Sign convention (BOTVOICE-03, D-01): `swingCp` is bot-POV. A POSITIVE
+ * Sign convention: `swingCp` is bot-POV. A POSITIVE
  * delta means the bot's own position improved over the move pair (the
- * earned tease, D-03, "delta is delta" — no optimality check against
+ * earned tease, "delta is delta" — no optimality check against
  * whether the bot found the strongest punishment); a NEGATIVE delta means
- * it worsened (a swing against the bot, split by capture per D-04). The
+ * it worsened (a swing against the bot, split by capture). The
  * caller (`useBotGameVoice`) is responsible for supplying `null` whenever
  * the two graded plies are not exactly one move pair apart
  * (`BOT_LINE_PAIR_PLY_SPAN`) — this resolver never re-derives ply adjacency
  * itself, and a `null` delta can never yield a swing key regardless of the
- * other fields (RESEARCH Pitfall 4: the book window, a failed grade, an
- * aborted turn, and a resumed game's first reply all surface this way).
+ * other fields (the book window, a failed grade, an aborted turn, and a
+ * resumed game's first reply all surface this way).
  *
- * UNITS CHANGED in Phase 223 UAT, and this is the bug fix that made the bot
- * actually talk: the swing was originally measured as a delta in EXPECTED
- * SCORE (the `evalToExpectedScore` sigmoid), thresholded at 0.20. That
- * signal saturates. Once a game is decided — which is most of a game against
+ * The swing is measured in clamped centipawns, not in EXPECTED SCORE (the
+ * `evalToExpectedScore` sigmoid thresholded at 0.20): that signal saturates.
+ * Once a game is decided — which is most of a game against
  * a sub-1400 rung — winning a further rook moves expected score by a couple
  * of hundredths, so no swing line could fire in exactly the games with the
  * most dramatic material swings. An instrumented 81-ply live game against
@@ -35,16 +32,15 @@
  * saturate over the range where a swing is worth remarking on, and the
  * clamp is what keeps a decided game from re-announcing itself every move.
  *
- * TIMING MODEL, rewritten in Phase 223 UAT (the "comment when I take the
- * hanging piece" round). A swing AGAINST the bot is no longer spoken when
- * the bot's own grade lands. Three facts forced this:
+ * TIMING MODEL. A swing AGAINST the bot is not spoken when the bot's own
+ * grade lands. Three facts force this:
  *
  *  1. The drop appears in the grade of the bot's OWN move — a depth-14
  *     search sees the knight hangs the instant it is played. Speaking there
  *     means the bot announces its own blunder BEFORE the player has touched
  *     it: wrong beat, and a spoiler.
  *  2. The pair delta has two authors (the player's move and the bot's
- *     reply), so a drop caused purely by the bot's own move was being keyed
+ *     reply), so a drop caused purely by the bot's own move would be keyed
  *     as `'nice-move'` — credited to whatever the player happened to play
  *     before it.
  *  3. The capture itself is an engine NON-EVENT. In the game that prompted
@@ -58,8 +54,7 @@
  * and the latch resolves at whichever of these comes first:
  *
  *  - the player captures on their very next move — `resolveRegretPunishKey`
- *    fires `'punished-mistake'` right then, at the seam that used to do
- *    nothing but clear the bubble;
+ *    fires `'punished-mistake'` right then, at the player-commit seam;
  *  - the bot's next grade shows the position RECOVERED by a full threshold
  *    — `'got-away'`, the bot wriggling off the hook;
  *  - the bot's next grade shows it did NOT recover — `'nice-move'`, the
@@ -70,11 +65,10 @@
  * same piece hanging a second move shows no recovery and so never claims to
  * have escaped.
  *
- * Every `BotLineKey` is reachable through the locked precedence chain below
- * (BOTVOICE-02/03).
+ * Every `BotLineKey` is reachable through the locked precedence chain below.
  *
- * Retired in Phase 223 UAT: the `'player-threat'` arm and its engine-free
- * `lib/botThreat.ts` detector. The detector compared the cheapest enemy
+ * There is no `'player-threat'` arm (its engine-free `lib/botThreat.ts`
+ * detector is gone). The detector compared the cheapest enemy
  * attacker against the piece's own value, which ignores defender count and
  * recapture value entirely, so it announced "my piece is hanging" during
  * ordinary exchanges — a recapturing piece is always attacked by whatever can
@@ -94,17 +88,17 @@ import type { BotLineKey } from '@/lib/botGameCopy';
  */
 export interface ResolveBotLineInput {
   /** True on the bot's first move of a fresh (non-resumed) game, latched
-   * once by the caller so a resumed game never greets (D-06/D-07). */
+   * once by the caller so a resumed game never greets. */
   gameStartPending: boolean;
   /**
-   * Bot-POV CLAMPED-CENTIPAWN delta (D-01) over exactly one move pair
+   * Bot-POV CLAMPED-CENTIPAWN delta over exactly one move pair
    * (player move + bot reply): `newCp - previousCp`, each end already
    * clamped to ±`BOT_LINE_SWING_CLAMP_CP` by `clampedMoverPovCp`. `null`
    * whenever the pair is not adjacent (`BOT_LINE_PAIR_PLY_SPAN`), the grade
    * failed (best-effort, as today), or the game is still in the opening
-   * book — RESEARCH Pitfall 4's three documented gaps. Positive = the bot
-   * improved (earned tease, BOTVOICE-03 D-03); negative = a swing against
-   * the bot (D-04). See the file header for why this is not expected score.
+   * book — those three gaps. Positive = the bot
+   * improved (earned tease); negative = a swing against
+   * the bot. See the file header for why this is not expected score.
    */
   swingCp: number | null;
   /**
@@ -119,7 +113,7 @@ export interface ResolveBotLineInput {
   /** True on the first capture of the game, by either side, not yet
    * announced. */
   firstCapturePending: boolean;
-  /** True while the bot has a live outgoing draw offer (Phase 183 D-07). */
+  /** True while the bot has a live outgoing draw offer. */
   drawOfferLive: boolean;
   /** The game's terminal outcome kind, or `null` while the game continues. */
   outcomeKind: 'win' | 'loss' | 'draw' | null;
@@ -131,7 +125,7 @@ export interface ResolveBotLineInput {
 /**
  * Resolves the swing arm in isolation — split out of `resolveBotLine`'s own
  * body so the top-level precedence chain stays a flat, single-level list of
- * guard-clause returns (Claude's Discretion: project soft nesting depth 3).
+ * guard-clause returns (project soft nesting depth 3).
  *
  * A live regret latch (`recoveryCp !== null`) is resolved FIRST and always
  * produces a key, because the caller clears the latch on this same grade
@@ -195,20 +189,24 @@ function resolveOutcomeKey(outcomeKind: 'win' | 'loss' | 'draw'): BotLineKey {
 /**
  * Resolves the bubble's line key from already-computed inputs. Guard-clause
  * returns only — no `else`, no nesting — so the locked precedence chain
- * reads as a flat, ordered list (Claude's Discretion, 223-CONTEXT.md):
+ * reads as a flat, ordered list:
  *
  *   1. game end (win/loss/draw)
  *   2. the bot's own outgoing draw offer
- *   3. a swing in either direction (earned tease / punished mistake / nice
- *      move), gated by `BOT_LINE_SWING_THRESHOLD_CP`
- *   4. the game's first capture
- *   5. game start
+ *   3. the settle of a live regret latch (got away / nice move), never paced
+ *   4. a swing in the bot's favour (earned tease), gated by
+ *      `BOT_LINE_SWING_THRESHOLD_CP`
+ *   5. the game's first capture
+ *   6. game start
  *
- * Arms 3 through 5 are paced: swings on `BOT_LINE_SWING_SPACING_MOVES`, the
+ * (`'punished-mistake'` fires separately, via `resolveRegretPunishKey` on the
+ * player's capture.)
+ *
+ * Arms 4 through 6 are paced: swings on `BOT_LINE_SWING_SPACING_MOVES`, the
  * mood arms on the wider `BOT_LINE_MIN_SPACING_MOVES`, each evaluated once
  * ahead of its arms, suppressing them while too few bot moves have passed
- * since the last line. Arms 1-2 (game end, draw offer) and the settle of a
- * live regret latch are checked BEFORE those guards and so are never
+ * since the last line. Arms 1-3 (game end, draw offer, the settle of a live
+ * regret latch) are checked BEFORE those guards and so are never
  * suppressed — a game ending, a draw offer, or the bot owning up to a
  * blunder it already latched is never noise.
  */
@@ -216,7 +214,7 @@ export function resolveBotLine(input: ResolveBotLineInput): BotLineKey | null {
   if (input.outcomeKind !== null) return resolveOutcomeKey(input.outcomeKind);
   if (input.drawOfferLive) return 'draw-offer';
   const swingKey = resolveSwingKey(input.swingCp, input.recoveryCp);
-  // A live regret latch settles UNGATED (223-REVIEW CR-01): the hook clears the
+  // A live regret latch settles UNGATED: the hook clears the
   // latch on this grade whatever we return, so pacing this key did not delay
   // the bot's acknowledgement of its own blunder, it dropped it outright
   // whenever a mood line had fired a move earlier. Like the punish line, the
@@ -232,7 +230,7 @@ export function resolveBotLine(input: ResolveBotLineInput): BotLineKey | null {
 }
 
 /**
- * D-02: the swing threshold, in bot-POV CLAMPED CENTIPAWNS over one move
+ * The swing threshold, in bot-POV CLAMPED CENTIPAWNS over one move
  * pair (see the file header for the units change). 150cp is "a minor piece,
  * or a positional shift of that weight" — big enough that every fire is
  * obviously visible on the board, small enough that the bot has something to
@@ -290,12 +288,12 @@ export function clampedMoverPovCp(
  * exempt by construction: they are checked in `resolveBotLine` BEFORE this
  * guard is ever consulted.
  *
- * Phase 223 UAT: this gate no longer covers the swing arm, which has its
- * own, shorter `BOT_LINE_SWING_SPACING_MOVES`. The game that prompted the
- * round is the argument — `'first-capture'` fired for a routine ply-3 pawn
- * recapture and reset this counter, and two moves later the bot hung a
- * knight and said nothing, because the throwaway line was still holding the
- * gate. A mood line must never be able to eat a swing line.
+ * This gate does not cover the swing arm, which has its own, shorter
+ * `BOT_LINE_SWING_SPACING_MOVES`. Otherwise `'first-capture'` firing for a
+ * routine ply-3 pawn recapture would reset this counter, and two moves later
+ * the bot could hang a knight and say nothing, because the throwaway line
+ * was still holding the gate. A mood line must never be able to eat a swing
+ * line.
  */
 export const BOT_LINE_MIN_SPACING_MOVES = 3;
 
@@ -315,7 +313,7 @@ export const BOT_LINE_MIN_SPACING_MOVES = 3;
 export const BOT_LINE_SWING_SPACING_MOVES = 2;
 
 /**
- * RESEARCH Pitfall 4: a swing line must only ever describe a swing the board
+ * A swing line must only ever describe a swing the board
  * just showed — exactly one move pair (the player's move, then the bot's
  * reply) — never an accumulation across several moves. `2` because a move
  * pair spans two plies (one per side); the caller compares this against the

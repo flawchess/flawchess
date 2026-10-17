@@ -3,7 +3,7 @@ import { Pagination } from '@/components/results/Pagination';
 import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
 import type { GameFlawCard } from '@/types/library';
 
-// Page size matches the API default (limit=20 per UI-SPEC §Pagination).
+// Page size matches the API default (limit=20).
 const PAGE_SIZE = 20;
 
 interface LibraryGameCardListProps {
@@ -66,7 +66,7 @@ export function LibraryGameCardList({
     const newOffset = (page - 1) * pageSize;
     onPageChange(newOffset);
     // Scroll the library list into view — uses the LIBRARY testid, not "game-card-list"
-    // (distinct scroll target from GameCardList per UI-SPEC §Pagination).
+    // (distinct scroll target from GameCardList).
     document
       .querySelector('[data-testid="library-game-card-list"]')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

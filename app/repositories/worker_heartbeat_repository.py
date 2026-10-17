@@ -1,8 +1,8 @@
-"""Worker heartbeat repository: upsert-on-submit fleet liveness registry (PRUNE-06).
+"""Worker heartbeat repository: upsert-on-submit fleet liveness registry.
 
-Single shared helper called from all three live submit handlers (entry-submit,
-flaw-blob-submit, atomic-submit) inside their existing write session — never
-opens a new session, never called from a lease endpoint (D-04).
+Single shared helper called from every live submit handler (entry, flaw-blob,
+atomic, bestmove) inside their existing write session — never opens a new
+session, never called from a lease endpoint.
 """
 
 import sentry_sdk
@@ -14,8 +14,8 @@ from app.models.worker_heartbeat import WorkerHeartbeat
 
 # Mirror app/models/worker_heartbeat.py column widths so an oversized value
 # from a misbehaving/future worker can never hit a DB-level
-# StringDataRightTruncation on the heartbeat insert (WR-01 code review
-# 2026-07-04). `last_ip` is intentionally excluded: its model column is
+# StringDataRightTruncation on the heartbeat insert. `last_ip` is
+# intentionally excluded: its model column is
 # `Text` (unbounded), so there is no width to truncate to.
 _WORKER_ID_MAX_LEN = 16  # WorkerHeartbeat.worker_id: String(16)
 _SF_VERSION_MAX_LEN = 50  # WorkerHeartbeat.sf_version: String(50)
@@ -32,23 +32,22 @@ async def upsert_worker_heartbeat(
     n_holes: int = 0,
     n_plies_leased: int = 0,
 ) -> None:
-    """Upsert one worker_heartbeats row by advisory worker identity (D-01/D-05).
+    """Upsert one worker_heartbeats row by advisory worker identity.
 
     Accumulates submit_count/evals_submitted across calls for the same worker_id;
     overwrites last_ip/sf_version/last_seen with the latest values. worker_schema_version
-    is coalesced (D-03): a lane that omits it (entry-submit, flaw-blob-submit) must never
+    is coalesced: a lane that omits it (entry-submit, flaw-blob-submit) must never
     clobber the last known atomic-lane value with NULL.
 
-    n_holes/n_plies_leased (260725-da3, FLAWCHESS-8B) accumulate exactly like
+    n_holes/n_plies_leased accumulate exactly like
     submit_count/evals_submitted, but are ATOMIC-LANE-ONLY: the default of 0 is
-    load-bearing so the untouched entry-submit and flaw-blob-submit call sites can
+    load-bearing so the untouched entry and flaw-blob call sites can
     never inflate them, keeping holes_submitted/plies_leased a meaningful per-worker
     hole rate.
 
     Does NOT commit — the caller's existing write session owns the commit.
 
-    Bug fix (WR-01 code review 2026-07-04): this is passive telemetry only —
-    "never a gate" per the phase's design intent — so ANY failure here (a
+    This is passive telemetry only — never a gate — so ANY failure here (a
     still-oversized value, a transient DB error, etc.) is isolated to its own
     SAVEPOINT and swallowed after a Sentry capture. It must never abort the
     caller's surrounding write transaction and discard real, already-computed
@@ -75,7 +74,7 @@ async def upsert_worker_heartbeat(
             "last_ip": stmt.excluded.last_ip,
             "sf_version": stmt.excluded.sf_version,
             # worker_schema_version: only overwrite when the new value is non-NULL
-            # (D-03: entry/flaw-blob lanes never send it — must not clobber the
+            # (entry/flaw-blob lanes never send it — must not clobber the
             # last known atomic-lane value with NULL).
             "worker_schema_version": sa.func.coalesce(
                 stmt.excluded.worker_schema_version, WorkerHeartbeat.worker_schema_version

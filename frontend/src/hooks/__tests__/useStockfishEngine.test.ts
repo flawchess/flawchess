@@ -13,7 +13,7 @@
  * 8. Visibility hidden → stop sent, worker NOT terminated.
  * 9. Unmount → stop + terminate.
  *
- * Phase 213-08 (G-213-35): the worker-lifecycle effect now constructs its
+ * The worker-lifecycle effect now constructs its
  * Worker asynchronously, via `ensureStockfishWorkerUrl().then(setupWorker)`
  * — this file mocks `stockfishWorkerSource` so the hook's own UCI/debounce
  * logic stays the thing under test (the shared-fetch mechanics are covered
@@ -36,7 +36,7 @@ import {
 // (mirrors useFlawChessEngine.test.ts).
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
-// Phase 213-08: the hook now routes construction through the shared source
+// The hook now routes construction through the shared source
 // module. This file's job is the hook's own UCI/debounce/state-machine
 // logic, not the shared-fetch mechanics (covered by
 // `stockfishWorkerSource.test.ts`) — mock the module so
@@ -58,7 +58,7 @@ vi.mock('@/lib/engine/stockfishWorkerSource', () => ({
 // ─── Mock Worker ─────────────────────────────────────────────────────────────
 
 /**
- * Phase 213: a minimal synchronous double for the `MessageChannel`/
+ * A minimal synchronous double for the `MessageChannel`/
  * `MessagePort` pair the worker-lifecycle effect uses to wire the vendored
  * Stockfish glue's `progressPort` protocol. Mirrors `workerPool.test.ts`'s
  * identical double — a real Node/jsdom `MessageChannel` delivers messages
@@ -98,7 +98,7 @@ class MockWorker {
   onerror: ((e: ErrorEvent) => void) | null = null;
   messages: string[] = [];
   /**
-   * Phase 213: every `postMessage` call in arrival order, including
+   * Every `postMessage` call in arrival order, including
    * non-string payloads (the `{ progressPort }` handoff) — `messages` above
    * stays string-only so every pre-existing assertion keeps working
    * untouched. Use this array for ordering assertions the string-only log
@@ -153,7 +153,7 @@ function driveInit(worker: MockWorker): void {
 }
 
 /**
- * Phase 213-08: flushes the microtask the worker-lifecycle effect's deferred
+ * Flushes the microtask the worker-lifecycle effect's deferred
  * `ensureStockfishWorkerUrl().then(setupWorker)` continuation needs to run
  * and construct the mock Worker. Every test that reads `mockWorker` (or
  * asserts on the Worker constructor) after the INITIAL render must await
@@ -168,7 +168,7 @@ async function flushWorkerSpawn(): Promise<void> {
   });
 }
 
-/** Candidate-line count the generic tests run at (the caller owns the policy, D-12). */
+/** Candidate-line count the generic tests run at (the caller owns the policy). */
 const TEST_MULTIPV = 2;
 
 const TEST_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
@@ -188,10 +188,10 @@ describe('useStockfishEngine', () => {
     // Use a regular function (not arrow) so `new Worker(url)` works.
     // A constructor that returns a plain object has that object override `this`.
     vi.stubGlobal('Worker', vi.fn(function () { return mockWorker; }));
-    // Phase 213: deterministic synchronous double for the progressPort wiring.
+    // Deterministic synchronous double for the progressPort wiring.
     stubMessageChannel();
     resetEngineAssetsForTests();
-    // Test hygiene fix (quick 260731-s0z): the 'visibility hidden...' test
+    // Test hygiene fix: the 'visibility hidden...' test
     // below redefines document.visibilityState via Object.defineProperty,
     // which leaks across tests in this file (jsdom's document is not
     // recreated per-test) — reset it here so later tests are not silently
@@ -536,9 +536,9 @@ describe('useStockfishEngine', () => {
     expect(mockWorker.terminated).toBe(true);
   });
 
-  // ─── Phase 213-08 (G-213-35): unmount racing the deferred worker spawn ────
+  // ─── unmount racing the deferred worker spawn ────
 
-  it('Phase 213-08: unmounting before the shared fetch resolves constructs no worker and leaves nothing behind', async () => {
+  it('unmounting before the shared fetch resolves constructs no worker and leaves nothing behind', async () => {
     const { unmount } = renderHook(() =>
       useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }),
     );
@@ -558,9 +558,9 @@ describe('useStockfishEngine', () => {
     expect(mockWorker.terminated).toBe(false); // never constructed, nothing to terminate
   });
 
-  // ─── FIX-5 (quick 260731-s0z): stop the superseded search on a RAPID FEN change ──
+  // ─── stop the superseded search on a RAPID FEN change ──
 
-  it('FIX-5: stops the superseded search immediately on a RAPID FEN change, discarding its info lines and bestmove', async () => {
+  it('stops the superseded search immediately on a RAPID FEN change, discarding its info lines and bestmove', async () => {
     vi.advanceTimersByTime(200); // settled path: first FEN fires the search immediately
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true, multiPv: TEST_MULTIPV }),
@@ -578,7 +578,7 @@ describe('useStockfishEngine', () => {
     expect(result.current.evalCp).toBe(-52);
 
     // RAPID FEN change — no time advance since the initial settle, so
-    // sinceLast is 0 (< RAPID_STEP_DEBOUNCE_MS). Before FIX-5, nothing
+    // sinceLast is 0 (< RAPID_STEP_DEBOUNCE_MS). Before the fix, nothing
     // stopped the old search on this path.
     rerender({ fen: TEST_FEN_2 });
     expect(mockWorker.messages).toContain('stop');
@@ -608,9 +608,9 @@ describe('useStockfishEngine', () => {
     expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(2);
   });
 
-  // ─── FIX-6 (quick 260731-s0z): throttle pvLines commits during a search ────
+  // ─── throttle pvLines commits during a search ────
 
-  it('FIX-6: commits at most one pvLines snapshot per throttle window, first paint immediate, final bestmove unconditional', async () => {
+  it('commits at most one pvLines snapshot per throttle window, first paint immediate, final bestmove unconditional', async () => {
     const { result } = renderHook(() =>
       useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
@@ -662,9 +662,9 @@ describe('useStockfishEngine', () => {
     expect(result.current.isAnalyzing).toBe(false);
   });
 
-  // ─── Phase 213 D-01: standalone worker reports progress + marks ready ─────
+  // ─── standalone worker reports progress + marks ready ─────
 
-  describe('D-01: reports download progress and marks stockfish-wasm ready', () => {
+  describe('reports download progress and marks stockfish-wasm ready', () => {
     it('wires a progressPort before the uci handshake, and reporting progress through it updates the shared asset store', async () => {
       renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
@@ -705,8 +705,8 @@ describe('useStockfishEngine', () => {
     });
   });
 
-  // ─── Phase 228 D-06/D-12: live, restart-free MultiPV changes ──────────────
-  describe('multiPv option changes (D-06, D-12)', () => {
+  // ─── live, restart-free MultiPV changes ──────────────
+  describe('multiPv option changes', () => {
     function renderAt(multiPv: number) {
       return renderHook(
         ({ mpv }: { mpv: number }) =>
@@ -809,14 +809,14 @@ describe('useStockfishEngine', () => {
     });
   });
 
-  // ─── CR-01 (213-REVIEW.md): worker.onerror must not be invisible ──────────
+  // ─── worker.onerror must not be invisible ──────────
   //
   // Before this fix, this hook installed NO worker.onerror handler at all
   // (contrast with workerPool.ts's createSlot(), which does) — a 404/CSP-
   // blocked engine script failed completely silently: no Sentry capture,
   // isReady never became true, and the shared 'stockfish-wasm' asset store
   // never learned about the failure either.
-  describe('CR-01: worker.onerror is Sentry-captured and marks stockfish-wasm failed', () => {
+  describe('worker.onerror is Sentry-captured and marks stockfish-wasm failed', () => {
     it('captures to Sentry with the stockfish-engine source tag on an async script-load failure', async () => {
       renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();

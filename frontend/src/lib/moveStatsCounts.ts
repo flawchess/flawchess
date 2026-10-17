@@ -1,5 +1,5 @@
 /**
- * Move Stats count derivation (Phase 179 Plan 02, SEED-112 D-05) — pure,
+ * Move Stats count derivation — pure,
  * client-side reduction of the 7-category × 2-side count table from data
  * already on the wire (`GameFlawCard.flaw_markers` + `.eval_series`). No new
  * backend aggregation, no new fetch.
@@ -34,14 +34,14 @@ function emptyTierCounts(): Record<MoveStatTier, number> {
 
 /**
  * Folds `flaw_markers` into per-side severity (I/M/B) counts, keyed by
- * `moverColorAtPly(m.ply)` — NOT `m.is_user` (D-08: this surface deliberately
+ * `moverColorAtPly(m.ply)` — NOT `m.is_user` (this surface deliberately
  * surfaces both sides, reversing the user-scoped `isUserPly` convention used
  * elsewhere).
  *
  * Deliberately reads `flaw_markers` (not `game.severity_counts`) so this
  * table's I/M/B counts and the cycling machinery that walks the same
- * `flaw_markers` array share one source (RESEARCH Pitfall 1: `severity_counts`
- * is a separately-written oracle column with no test asserting it stays in
+ * `flaw_markers` array share one source (`severity_counts`
+ * is a separately-written flaw-count column with no test asserting it stays in
  * sync with `flaw_markers` for every game state).
  */
 export function severityCountsBySide(
@@ -62,7 +62,7 @@ export function severityCountsBySide(
  * Folds `eval_series` into per-side positive-tier (gem/great/best/good)
  * counts, keyed by `moverColorAtPly(p.ply)`. Points with a null
  * `best_move_tier` (no candidate row, or classified "neither") are skipped.
- * Both sides included unconditionally (D-08) — opponent gems/greats/bests/
+ * Both sides included unconditionally — opponent gems/greats/bests/
  * goods appear here even though every other surface (eval-chart dots, board
  * markers) stays user-scoped via `isUserPly`.
  */

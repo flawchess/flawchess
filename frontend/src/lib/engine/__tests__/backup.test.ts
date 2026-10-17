@@ -1,26 +1,25 @@
 /**
  * backup.ts unit tests — pure, deterministic (no engine/worker involved).
  *
- * Encodes the SC2 primary fixture from 153-RESEARCH.md ("Backup Rule: Worked
- * Fixture"): a non-root node with three children mixing one EXPANDED child
- * (its own backed-up expectation) and two UNEXPANDED children (parent-time
+ * Encodes the primary fixture for the backup rule: a non-root node with
+ * three children mixing one EXPANDED child (its own backed-up expectation)
+ * and two UNEXPANDED children (parent-time
  * leaf estimates), proving `backupExpectation` is the Maia-prior-weighted
- * expectation over the FULL truncated set (D-02) and NOT:
+ * expectation over the FULL truncated set and NOT:
  *   - a naive average (would ignore priors entirely), or
  *   - a visit-count-weighted average (the textbook-MCTS degeneration this
- *     phase's interface design (BackupChild) makes structurally impossible —
- *     Pitfall 1).
+ *     interface design (BackupChild) makes structurally impossible).
  *
  * Also covers the renormalization path, the totalPrior===0 degenerate guard,
  * and the root-vs-non-root branch (backupRootMax uses max, never the
- * expectation formula — D-01's "exactly one max node in the tree").
+ * expectation formula, so there is exactly one max node in the tree).
  */
 
 import { describe, it, expect } from 'vitest';
 import { backupExpectation, backupRootMax, type BackupChild } from '../backup';
 
 describe('backupExpectation', () => {
-  it('computes the Maia-prior-weighted expectation over a mixed expanded/unexpanded set (SC2 fixture)', () => {
+  it('computes the Maia-prior-weighted expectation over a mixed expanded/unexpanded set', () => {
     const children: BackupChild[] = [
       { prior: 0.6, value: 0.72 }, // EXPANDED — its own subtree's backed-up value
       { prior: 0.3, value: 0.55 }, // UNEXPANDED — parent-time leaf estimate
@@ -37,7 +36,7 @@ describe('backupExpectation', () => {
     expect(result).not.toBeCloseTo(naiveAverage, 2);
 
     // Negative assertion #2: NOT the visit-count-weighted collapse to child
-    // A's value (the textbook-MCTS degeneration Pitfall 1 warns about — a
+    // A's value (the textbook-MCTS degeneration): a
     // wide, shallow-visited node where only child A has visits > 0 would
     // wrongly collapse to just child A's value under a visit-weighted rule).
     expect(result).not.toBeCloseTo(0.72, 2);

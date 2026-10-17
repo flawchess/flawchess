@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 186 Plan 03 — ImportFilterCard component test.
+ * ImportFilterCard component test.
  *
  * Mocks useImportSettings/useUpdateImportSettings (preserving the real
  * tcSettingsKey helper + types via vi.importActual) so the component can be
@@ -8,7 +8,7 @@
  *
  * Covers:
  * - TC grid + cap ToggleGroup render with the expected data-testids and aria-pressed states.
- * - Toggling a TC calls the update mutation with the new TC set (D-09 auto-save).
+ * - Toggling a TC calls the update mutation with the new TC set (auto-save).
  * - Last-one-standing guard: deselecting the final active TC is a no-op (no mutate call).
  * - Selecting a different cap calls the mutation with the new game_cap.
  * - Inline helper copy + InfoPopover trigger presence.

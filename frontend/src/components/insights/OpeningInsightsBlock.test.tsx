@@ -69,8 +69,8 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     draws: 10,
     losses: 30,
     score: 0.30,
-    confidence: 'high',     // Phase 76 D-21
-    p_value: 0.01,          // Phase 76 D-21
+    confidence: 'high',
+    p_value: 0.01,
     ...overrides,
   };
 }
@@ -236,7 +236,7 @@ describe('OpeningInsightsBlock', () => {
 
 });
 
-describe('Phase 76 — Section-title InfoPopover triggers', () => {
+describe('Section-title InfoPopover triggers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -282,7 +282,7 @@ describe('Phase 76 — Section-title InfoPopover triggers', () => {
     ).toContain('Black Opening Strengths');
   });
 
-  it('does not render a block-level "Opening Insights" h2 title (D-18)', async () => {
+  it('does not render a block-level "Opening Insights" h2 title', async () => {
     await renderBlock({ white_weaknesses: [makeFinding()] });
     // No top-level h2 with this exact text.
     const h2 = screen.queryByRole('heading', { level: 2, name: /Opening Insights/i });

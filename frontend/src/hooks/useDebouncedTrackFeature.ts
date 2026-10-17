@@ -22,7 +22,8 @@ interface PendingTrack<E extends FeatureEventName> {
  * The returned scheduler replaces any pending event, so a burst sends exactly one
  * event carrying the LAST props, `delayMs` after the last call. Unmounting with an
  * event still pending sends it immediately (attributed to the page where the user
- * acted, and subject to that page's D-14 exclusion) instead of dropping it. An
+ * acted, and subject to `trackFeature`'s excluded-route rule for that page) instead of
+ * dropping it. An
  * event still pending when the tab is closed is lost (no pagehide flush).
  *
  * State lives in refs, so scheduling never re-renders the slider.

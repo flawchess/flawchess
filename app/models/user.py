@@ -38,7 +38,7 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     is_guest: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
 
     # Beta feature flag — controls access to experimental features (e.g. Endgame Insights in v1.11).
-    # Default false; flipped via direct DB operation for a hand-picked cohort per BETA-01.
+    # Default false; flipped via direct DB operation for a hand-picked cohort.
     beta_enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -46,7 +46,7 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         default=False,
     )
 
-    # Phase 230 D-16: opt-out from the weekly Train leaderboards. Server-persisted,
+    # Opt-out from the weekly Train leaderboards. Server-persisted,
     # written only through PUT /users/me/profile. Default false: every registered
     # user appears on the boards until they opt out.
     leaderboard_hidden: Mapped[bool] = mapped_column(
@@ -68,11 +68,11 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         default=None,
     )
 
-    # --- Retained facts (QTE-01..04) ---
+    # --- Retained facts ---
     # These three columns deliberately SURVIVE the games/import_jobs purge performed by
     # guest_cleanup_service._purge_guest (30-day guest inactivity sweep) and
     # DELETE /api/games. Both purge paths intentionally delete `games` and `import_jobs`
-    # rows while keeping the `users` row (D-05, Phase 187), so without a retained fact the
+    # rows while keeping the `users` row, so without a retained fact the
     # Activity dashboard cannot distinguish "never imported" from "imported, then purged".
 
     # Timestamp of the FIRST successful `POST /api/imports` for this user. First-write-wins
@@ -103,7 +103,7 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         default=None,
     )
 
-    # --- First-touch acquisition attribution (growth report 2026-09-15, item 16) ---
+    # --- First-touch acquisition attribution ---
     # Where this user's browser first arrived from, captured client-side on the first
     # page load (lib/firstTouch.ts) and submitted once right after the account is
     # created (guest, email or Google). Guest promotion keeps the row, so a promoted
@@ -118,7 +118,7 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         JSONB(none_as_null=True), nullable=True, default=None
     )
 
-    # --- Per-ask prompt state (Phase 234, SEED-191) ---
+    # --- Per-ask prompt state ---
     # One JSON object keyed by ask id (feedback ask = "feedback_v1"). The shape of
     # each entry is validated by FeedbackAskState in app/schemas/feedback_ask.py
     # instead of a DB CHECK. Written ONLY by the atomic guarded UPDATEs in
@@ -133,7 +133,8 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     # Embedded in every auth JWT as the `tv` claim; app/users.py rejects a token whose
     # claim differs. Bumping it invalidates every outstanding token for the user (JWTs
     # are otherwise valid until they expire). Bumped when a Google sign-in claims an
-    # unverified password account and when a password reset completes.
+    # unverified password account, when a password reset completes, and when a guest
+    # is promoted (revoking the guest JWT).
     token_version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

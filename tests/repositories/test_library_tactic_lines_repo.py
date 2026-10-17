@@ -1,4 +1,4 @@
-"""Repository unit tests for fetch_tactic_lines() (Phase 135, Plan 01).
+"""Repository unit tests for fetch_tactic_lines().
 
 Uses the rollback-scoped db_session fixture so tests are isolated and fast.
 
@@ -7,7 +7,7 @@ Coverage:
 - test_allowed_decision_depth_offset                 : allowed_depth returned as raw 0-based (no offset)
 - test_short_pv_no_crash                             : PV shorter than tactic_depth → no crash, no negative
 - test_null_pv_returns_none                          : pos[n].pv = None → missed_moves is None
-- test_full_pv_no_truncation                         : full engine PV returned untruncated (Phase 135 UAT)
+- test_full_pv_no_truncation                         : full engine PV returned untruncated
 - test_eval_fields_populated                          : missed eval from pos[ply-1] (decision), allowed eval from pos[ply] (post-flaw) — eval_cp is post-move
 - test_missed_eval_none_at_game_start                 : ply 0 → no pos[ply-1] → missed eval is None
 """
@@ -167,7 +167,7 @@ class TestFetchTacticLines:
         PV anchoring:
         - Missed: uses board_before (decision position at flaw ply, white to move for ply 0).
         - Allowed: uses board_after_flaw (flaw move pushed), PV from pos[n+1].pv;
-                   flaw_move_san is prepended as allowed_moves[0] (Pitfall 3).
+                   flaw_move_san is prepended as allowed_moves[0].
         """
         session = cast(AsyncSession, db_session)
         uid = 13501
@@ -255,14 +255,14 @@ class TestFetchTacticLines:
         # missed has no prepend → ply_index == raw depth.
         assert result.missed_tactic_ply_index == raw_missed_depth
         # allowed_moves prepends the flaw move at index 0, so the refutation punchline
-        # sits one index deeper → ply_index == raw depth + 1 (Phase 135 UAT).
+        # sits one index deeper → ply_index == raw depth + 1.
         assert result.allowed_tactic_ply_index == raw_allowed_depth + 1
 
     @pytest.mark.asyncio
     async def test_short_pv_no_crash(self, db_session: object) -> None:
         """PV shorter than missed_tactic_depth: no crash, returns the full short list.
 
-        Pitfall 1: tactic_depth >= pv_length. The slice handles this gracefully
+        tactic_depth >= pv_length. The slice handles this gracefully
         (slicing past end is safe in Python). No negative counters, no None corruption.
         """
         session = cast(AsyncSession, db_session)
@@ -291,7 +291,7 @@ class TestFetchTacticLines:
     async def test_null_pv_returns_none(self, db_session: object) -> None:
         """pos[n].pv = None → missed_moves is None; allowed_moves still resolves from pos[n+1].
 
-        Pitfall 4: pv can be NULL for certain positions; the endpoint handles gracefully.
+        pv can be NULL for certain positions; the endpoint handles gracefully.
         """
         session = cast(AsyncSession, db_session)
         uid = 13504
@@ -315,9 +315,9 @@ class TestFetchTacticLines:
 
     @pytest.mark.asyncio
     async def test_full_pv_no_truncation(self, db_session: object) -> None:
-        """The full engine PV is returned untruncated (Phase 135 UAT).
+        """The full engine PV is returned untruncated.
 
-        Previously the PV was capped at tactic_depth + 1 + payoff plies; now every
+        The PV is not capped at tactic_depth + 1 + payoff plies: every
         move the engine returned is shown so the user can walk the whole line.
         """
         session = cast(AsyncSession, db_session)
@@ -349,7 +349,7 @@ class TestFetchTacticLines:
 
         game_positions.eval_cp is the POST-MOVE eval (eval of the position AFTER that
         ply's move), so the decision-position eval lives on ply-1 and the post-flaw
-        eval lives on ply. White-POV (Phase 135 UAT). Uses ply=10 (even → white to
+        eval lives on ply. White-POV. Uses ply=10 (even → white to
         move, starting position) so a real ply-1 row exists.
         """
         session = cast(AsyncSession, db_session)

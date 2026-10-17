@@ -1,6 +1,6 @@
 """Admin-only endpoints (superuser-gated).
 
-Phase 62: impersonation + user search. Per CLAUDE.md, 403/404s raised by
+Impersonation + user search. Per CLAUDE.md, 403/404s raised by
 `current_superuser` or target lookups are EXPECTED conditions — do NOT wrap
 in try/except + sentry_sdk.capture_exception (would fragment Sentry issues).
 """
@@ -27,10 +27,10 @@ async def search_users(
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> list[UserSearchResult]:
     """Return ≤20 non-superuser users matching ILIKE on email / chess_com_username /
-    lichess_username, or exact numeric id. Superuser-only (D-13).
+    lichess_username, or exact numeric id. Superuser-only.
 
-    Short queries (<2 chars) return an empty list (D-12). Superusers are excluded
-    from results — they cannot be impersonated (D-05) and leaking the admin roster
+    Short queries (<2 chars) return an empty list. Superusers are excluded
+    from results — they cannot be impersonated and leaking the admin roster
     to a compromised session is unnecessary.
     """
     rows = await admin_service.search_users(session, q)
@@ -55,19 +55,18 @@ async def impersonate_user(
 ) -> ImpersonateResponse:
     """Issue a 1-hour impersonation JWT for `user_id`.
 
-    Superuser-only. Rejects impersonating another superuser (D-05) and rejects
-    nested impersonation (D-04 — enforced transparently: ClaimAwareJWTStrategy
+    Superuser-only. Rejects impersonating another superuser and rejects
+    nested impersonation (enforced transparently: ClaimAwareJWTStrategy
     returns the non-superuser target for impersonation tokens, so the
     `current_superuser` dep 403s nested attempts).
 
-    on_after_login is NOT invoked (D-06 by construction — we issue the token
+    on_after_login is NOT invoked (by construction — we issue the token
     manually via strategy.write_impersonation_token, not via /auth/jwt/login).
     """
     target = await session.get(User, user_id)
     if target is None or not target.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if target.is_superuser:
-        # D-05
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot impersonate another superuser",
@@ -91,14 +90,13 @@ async def admin_enqueue_tier1(
 ) -> EnqueueTier1Response:
     """Enqueue a tier-1 eval job for one game (admin/internal use only).
 
-    Phase 117 D-117-05 / QUEUE-03: internal trigger to exercise the ~10s fan-out
-    on the prod engine pool. NOT the user-facing 'analyze this game' endpoint
-    (Phase 118).
+    Internal trigger to exercise the ~10s fan-out on the prod engine pool. NOT the
+    user-facing 'analyze this game' endpoint.
 
     404s when the game does not exist — an EXPECTED condition per the admin router
     header note, so it is NOT wrapped in Sentry capture.
 
-    Guests now enqueue normally (QUEUE-08 guest gate opened for tier-1).
+    Guests enqueue normally.
     Returns 'already_queued' when the game already has an active eval job.
     Returns 'enqueued' when the tier-1 row was inserted.
     """

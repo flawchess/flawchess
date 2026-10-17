@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { PlayerBar } from '../PlayerBar';
 
-// Black's queen removed — White up a queen (9 points). Quick 260809-jzz (D-05).
+// Black's queen removed — White up a queen (9 points).
 const WHITE_UP_QUEEN_FEN = 'rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 describe('PlayerBar', () => {
@@ -18,7 +18,7 @@ describe('PlayerBar', () => {
     expect(row.textContent).toContain('(2839)');
   });
 
-  // Phase 223 UAT: the clock badge carries the side identity in its own board
+  // The clock badge carries the side identity in its own board
   // colour, so the ■/□ glyph is NOT rendered alongside it — it only appears in
   // the no-clock fallback (see the two glyph-fallback tests below).
   it('omits the side glyph while a clock badge is rendered', () => {
@@ -84,7 +84,7 @@ describe('PlayerBar', () => {
     expect(screen.getByTestId('pb').textContent).not.toMatch(/\d:\d\d/);
   });
 
-  it('shows the material surplus when a fen is provided (Quick 260809-jzz, D-05)', () => {
+  it('shows the material surplus when a fen is provided', () => {
     render(
       <PlayerBar
         isWhite
@@ -103,7 +103,7 @@ describe('PlayerBar', () => {
     expect(screen.getByTestId('pb').textContent).not.toMatch(/\+\d/);
   });
 
-  // Phase 223 (BOTVOICE-05, D-11): ratingLabel is additive and wins over the
+  // ratingLabel is additive and wins over the
   // numeric rating prop when both are present, so a calibrated estimate is
   // never misrepresented as a parenthesised exact integer.
   it('renders the tilde-prefixed label and NOT the parenthesised number when both are supplied', () => {
@@ -130,7 +130,7 @@ describe('PlayerBar', () => {
     expect(text).not.toContain(')');
   });
 
-  // Phase 223 UAT: the clock icon marks the side to move; the slot stays
+  // The clock icon marks the side to move; the slot stays
   // laid out (invisible, not unmounted) so the digits never shift.
   it('keeps the clock icon visible when clockActive is omitted (analysis rendering unchanged)', () => {
     render(<PlayerBar isWhite name="A" rating={1500} clockSeconds={30} testId="pb" />);
@@ -143,7 +143,7 @@ describe('PlayerBar', () => {
     expect(screen.getByTestId('pb').textContent).toContain('0:30');
   });
 
-  // Phase 223 UAT: low time repaints the whole badge (background + text),
+  // Low time repaints the whole badge (background + text),
   // outranking the side-identity colour it normally carries.
   it('repaints the clock badge in the low-time color only when clockUrgent is set', () => {
     const { unmount } = render(

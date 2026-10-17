@@ -1,5 +1,5 @@
 /**
- * Shared inactivity-gap render helper for ordinal-axis timeline charts (SC-4).
+ * Shared inactivity-gap render helper for ordinal-axis timeline charts.
  *
  * Returns a flat array of <ReferenceLine> elements — NOT a React component.
  * Recharts (ComposedChart/LineChart) discovers ReferenceLine by scanning DIRECT

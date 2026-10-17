@@ -1,26 +1,25 @@
 /**
  * TrainMedalDialogHost — fetches the user's unclaimed weekly medals and shows
- * the claim dialog on the Train landing (Phase 231).
+ * the claim dialog on the Train landing.
  *
- * D-10: mounted by TrainStartScreen's empty, completed and fresh/resume/warmup
+ * Mounted by TrainStartScreen's empty, completed and fresh/resume/warmup
  * branches only (never loading or error; Train.tsx renders the landing outside
  * the solve loop and the score screen is separate), and never for guests. It
  * opens once per mount, when the list fetched AFTER this mount is non-empty:
  * `isFetchedAfterMount` rules out a stale cache entry showing medals that were
  * already claimed. Claim and dismiss both close it for the visit and POST the
  * shown keys once; a failed POST leaves the medals unclaimed, so they come back
- * next visit (D-13).
+ * next visit.
  *
- * Impersonation guard (RESEARCH Pitfall 6, T-231-16): under an admin
- * impersonation session the host neither fetches nor opens, so an admin cannot
- * consume the user's celebration.
+ * Impersonation guard: under an admin impersonation session the host neither
+ * fetches nor opens, so an admin cannot consume the user's celebration.
  *
- * D-04: leaderboard_hidden is deliberately not consulted; a viewer hidden now
+ * leaderboard_hidden is deliberately not consulted; a viewer hidden now
  * still gets their own dialog.
  *
  * No isError UI: a failed read must not put an error on the landing, and the
  * global QueryCache/MutationCache onError already reports it to Sentry. No
- * analytics call either (locked): the celebrated_at row is the record.
+ * analytics call either: the celebrated_at row is the record.
  */
 import { useState } from 'react';
 import type { ReactElement } from 'react';

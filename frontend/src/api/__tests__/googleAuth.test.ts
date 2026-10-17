@@ -48,7 +48,7 @@ beforeEach(() => {
 
 describe('getGoogleAuthorizationUrl', () => {
   it('uses the promote endpoint with the guest Bearer header whenever a guest_token is saved', async () => {
-    // No intent flag needed (quick 261016-fwd): a guest who logged out first or retried an
+    // No intent flag needed: a guest who logged out first or retried an
     // abandoned Google screen must still be promoted, not duplicated.
     localStorage.setItem(GUEST_TOKEN_KEY, 'guest-jwt-abc');
     mockedGet.mockResolvedValueOnce({ data: { authorization_url: PROMOTE_URL } });

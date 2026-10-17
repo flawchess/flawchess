@@ -1,8 +1,7 @@
-"""Smoke test: Phase 64 Alembic migration creates llm_logs with locked schema.
+"""Smoke test: the Alembic migration creates llm_logs with the locked schema.
 
-Covers SC #1 (LOG-01 table + columns) and partial SC #1 (LOG-03 named indexes —
-DESC ordering is verified manually against the dev DB via pg_indexes in Plan 02
-Task 3; SQLAlchemy's inspect API does not expose index column ordering).
+Covers the table + columns and the named indexes (DESC ordering is not asserted:
+SQLAlchemy's inspect API does not expose index column ordering).
 
 Uses the session-scoped test_engine fixture, which clones this run's private
 database from a migrated template once per pytest session (see tests/conftest.py).

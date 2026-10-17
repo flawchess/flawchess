@@ -1,14 +1,14 @@
-"""Unit tests for app/services/best_move_candidates.py (Phase 174 Plan 04).
+"""Unit tests for app/services/best_move_candidates.py.
 
 Four behavior groups:
-  1. pinned_elo_for_mover (GEMS-05): flawchess passthrough, `*_lichess_blitz ??
-     raw` fallback, clamp to [600, 2600] (D-04) — matching the live board.
-  2. passes_inaccuracy_gate (GEMS-02): best_es - second_es >= INACCURACY_DROP
-     via the shared sigmoid + MATE_CP_EQUIVALENT Option-B mate mapping (D-05a).
-  3. classify_best_move (GEMS-07): pure gem/great/neither from stored maia_prob
+  1. pinned_elo_for_mover: flawchess passthrough, `*_lichess_blitz ??
+     raw` fallback, clamp to [600, 2600] — matching the live board.
+  2. passes_inaccuracy_gate: best_es - second_es >= INACCURACY_DROP
+     via the shared sigmoid + MATE_CP_EQUIVALENT mate mapping.
+  3. classify_best_move: pure gem/great/neither from stored maia_prob
      + cp margin, using only module constants.
   4. Constants-only retune: the SAME stored inputs reclassify under different
-     GEM_MAIA_MAX_PROB / MISTAKE_DROP with ZERO re-analysis (GEMS-07).
+     GEM_MAIA_MAX_PROB / MISTAKE_DROP with ZERO re-analysis.
 
 Every function is pure (no DB, no engine, no inference) and reuses the shared
 sigmoid / ELO normalization / clamp verbatim (no re-derivation).
@@ -47,7 +47,7 @@ class _ClassifyKwargs(_MarginKwargs):
     maia_prob: float
 
 
-# ─── Group 1: pinned_elo_for_mover (GEMS-05, D-04) ────────────────────────────
+# ─── Group 1: pinned_elo_for_mover ────────────────────────────
 
 
 def test_flawchess_rating_passthrough_then_clamp() -> None:
@@ -133,7 +133,7 @@ def test_mover_color_ply_parity() -> None:
     assert bmc.mover_color_for_ply(47) == "black"
 
 
-# ─── Group 2: passes_inaccuracy_gate (GEMS-02, D-05a) ─────────────────────────
+# ─── Group 2: passes_inaccuracy_gate ──────────────────────────────────────────
 
 
 def test_gate_passes_when_margin_at_least_inaccuracy_drop() -> None:
@@ -217,7 +217,7 @@ def test_gate_false_when_eval_missing() -> None:
     )
 
 
-# ─── Group 3: classify_best_move (GEMS-07) ────────────────────────────────────
+# ─── Group 3: classify_best_move ────────────────────────────────────
 
 # A cp pair with an ES gap comfortably >= MISTAKE_DROP (0.10) for a white mover:
 # best +250cp (es ~0.71) vs second +0cp (es 0.5) -> gap ~0.21.
@@ -255,7 +255,7 @@ def test_classify_boundary_great_max_is_inclusive() -> None:
     assert bmc.classify_best_move(maia_prob=bmc.GREAT_MAIA_MAX_PROB, **_WIDE_MARGIN) == "great"
 
 
-# ─── Group 3b: imported-eval divergence guard (Quick 260717-gmg) ───────────────
+# ─── Group 3b: imported-eval divergence guard ───────────────
 #
 # For lichess-eval games the eval graph (post_move_cp) is lichess's imported %eval
 # while best_cp is our Stockfish. When our best-move ES is optimistic vs lichess's
@@ -388,7 +388,7 @@ def test_guard_respects_mover_pov_for_black() -> None:
     )
 
 
-# ─── Group 4: constants-only reclassification (GEMS-07 zero-re-analysis) ───────
+# ─── Group 4: constants-only reclassification (zero re-analysis) ──────────────
 
 
 def test_constants_only_retune_flips_classification() -> None:
@@ -418,7 +418,7 @@ def test_reuses_shared_thresholds_not_local_copies() -> None:
     assert bmc.MISTAKE_DROP is MISTAKE_DROP
 
 
-# ─── Group 5: best_move_tier_sql agreement with classify_best_move (FILT-01) ───
+# ─── Group 5: best_move_tier_sql agreement with classify_best_move ───
 #
 # The SQL twin can only be proven correct by REAL SQL evaluation (func.exp() is
 # a database function, not Python math) — a hand-computed expected value could
@@ -428,7 +428,7 @@ def test_reuses_shared_thresholds_not_local_copies() -> None:
 # is_opponent_expr live-DB-evaluation pattern (TestIsOpponentExpr).
 
 # A cp margin whose white-mover ES gap lands exactly in [INACCURACY_DROP,
-# MISTAKE_DROP) = [0.05, 0.10) — Pitfall 3: a stored row in this band must
+# MISTAKE_DROP) = [0.05, 0.10) — a stored row in this band must
 # classify NEITHER/NULL regardless of maia_prob. Computed (not hand-picked) by
 # inverting the shared sigmoid, ceiling so the integer cp never undershoots.
 _NARROW_BAND_TARGET_ES_GAP = 0.07
@@ -559,7 +559,7 @@ async def test_tier_sql_agrees_with_classify_best_move(
 ) -> None:
     """best_move_tier_sql (SQL twin) agrees with classify_best_move (Python) on
     every fixture-matrix case, including the GEM/GREAT boundary, the narrow
-    [0.05, 0.10) margin band (Pitfall 3 — NEITHER regardless of maia_prob), and
+    [0.05, 0.10) margin band (NEITHER regardless of maia_prob), and
     mate-based bests for both mover colors.
 
     The expected value is DERIVED from classify_best_move itself (never a
@@ -577,7 +577,7 @@ async def test_tier_sql_agrees_with_classify_best_move(
     )
 
 
-# ─── Group 5b: divergence-guard agreement (SQL twin vs Python, Quick 260717-gmg) ─
+# ─── Group 5b: divergence-guard agreement (SQL twin vs Python) ────────────────
 #
 # Each row is (id, classify-kwargs, post_move_cp, is_lichess) covering: guard fires
 # (optimistic + lichess), guard off (engine game), guard off (evals agree), guard
@@ -617,7 +617,7 @@ async def test_tier_sql_guard_agrees_with_classify_best_move(
 ) -> None:
     """The SQL twin's imported-eval divergence guard agrees with the Python guard.
     Expected is derived from classify_best_move itself, so board (Python) and
-    Library filter (SQL) cannot drift on the guard (D-03b)."""
+    Library filter (SQL) cannot drift on the guard."""
     expected = bmc.classify_best_move(
         post_move_cp=post_move_cp,
         post_move_mate=None,

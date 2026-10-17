@@ -54,7 +54,7 @@ def test_n_below_gate_balanced_is_low() -> None:
 
 
 def test_n_zero_returns_low_one() -> None:
-    """MD-02 guard: n<=0 returns ("low", 1.0, 0.0) without raising — 1.0 is the
+    """n<=0 returns ("low", 1.0, 0.0) without raising — 1.0 is the
     two-sided null and SE is zero with no sample."""
     confidence, p_value, se = compute_confidence_bucket(w=0, d=0, losses=0, n=0)
     assert confidence == "low"
@@ -169,7 +169,7 @@ def test_se_positive_for_mixed_outcomes() -> None:
 
 
 # --- Backward-compat regression after Wilson-math refactor ----------------
-# Phase 83 Plan 2 Task 1: `_wilson_score_test_vs_half` is factored out as a
+# `_wilson_score_test_vs_half` is factored out as a
 # private helper. `compute_confidence_bucket` is refactored to delegate to it,
 # but its public signature and per-input output must be byte-for-byte
 # preserved. Pin a single golden tuple so the refactor is detectable.
@@ -189,7 +189,7 @@ def test_compute_confidence_bucket_golden_after_refactor() -> None:
     assert se == pytest.approx(math.sqrt(0.1625 / 100), abs=1e-9)
 
 
-# --- compute_score_confidence_from_mean (Phase 83 Plan 2 Task 1) ----------
+# --- compute_score_confidence_from_mean ----------
 # Sibling helper that accepts a float mean instead of (w, d, losses, n).
 # Bucketing/gating must match `compute_confidence_bucket` exactly when given
 # equivalent inputs (i.e. when (w + 0.5 * d) / n == score).
@@ -254,17 +254,17 @@ class TestComputeScoreConfidenceFromMean:
         assert up[1] == pytest.approx(down[1], abs=1e-12)
 
 
-# --- compute_score_difference_test (Phase 85.1 Plan 1 Task 1) -------------
+# --- compute_score_difference_test -------------
 # Independent two-sample z-test on chess-score difference between two WDL
-# cohorts. Per SEC1-08/09: p_value gated to None when min(eg_n, ne_n) < 10
-# (CONFIDENCE_MIN_N); CI bounds gated to None when min(eg_n, ne_n) < 2.
+# cohorts. p_value gated to None when min(a_n, b_n) < 10
+# (CONFIDENCE_MIN_N); CI bounds gated to None when min(a_n, b_n) < 2.
 # Wald-on-difference (not Wilson) because the difference of two independent
 # proportions does not reduce to a single-proportion problem. Variance-0
 # trap follows the eval_confidence.py:116-119 pattern verbatim.
 
 
 class TestComputeScoreDifferenceTest:
-    """compute_score_difference_test(eg_w, eg_d, eg_l, eg_n, ne_w, ne_d, ne_l, ne_n)
+    """compute_score_difference_test(a_w, a_d, a_l, a_n, b_w, b_d, b_l, b_n)
     -> (p_value, ci_low, ci_high). Independent gates on p (n>=10) and CI (n>=2)."""
 
     # CONFIDENCE_MIN_N is 10; the bare 10/9 numbers below are gate boundaries.
@@ -274,45 +274,45 @@ class TestComputeScoreDifferenceTest:
     def test_n_zero_either_side_returns_all_none(self) -> None:
         """n=0 on either cohort gates both p and CI to None without raising."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=0,
-            eg_d=0,
-            eg_l=0,
-            eg_n=0,
-            ne_w=5,
-            ne_d=5,
-            ne_l=5,
-            ne_n=15,
+            a_w=0,
+            a_d=0,
+            a_l=0,
+            a_n=0,
+            b_w=5,
+            b_d=5,
+            b_l=5,
+            b_n=15,
         )
         assert p is None
         assert lo is None
         assert hi is None
 
         p2, lo2, hi2 = compute_score_difference_test(
-            eg_w=5,
-            eg_d=5,
-            eg_l=5,
-            eg_n=15,
-            ne_w=0,
-            ne_d=0,
-            ne_l=0,
-            ne_n=0,
+            a_w=5,
+            a_d=5,
+            a_l=5,
+            a_n=15,
+            b_w=0,
+            b_d=0,
+            b_l=0,
+            b_n=0,
         )
         assert p2 is None
         assert lo2 is None
         assert hi2 is None
 
     def test_below_p_gate_returns_p_none_with_ci_present(self) -> None:
-        """eg_n=9 (below CONFIDENCE_MIN_N=10) gates p_value but CI is still
-        computed because eg_n >= 2."""
+        """a_n=9 (below CONFIDENCE_MIN_N=10) gates p_value but CI is still
+        computed because a_n >= 2."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=4,
-            eg_d=2,
-            eg_l=3,
-            eg_n=9,
-            ne_w=10,
-            ne_d=5,
-            ne_l=5,
-            ne_n=20,
+            a_w=4,
+            a_d=2,
+            a_l=3,
+            a_n=9,
+            b_w=10,
+            b_d=5,
+            b_l=5,
+            b_n=20,
         )
         assert p is None
         assert lo is not None
@@ -320,53 +320,53 @@ class TestComputeScoreDifferenceTest:
         assert lo <= hi
 
     def test_n_one_either_side_gates_ci_only(self) -> None:
-        """ne_n=1 gates CI bounds (need n >= 2) and also gates p_value (n < 10)."""
+        """b_n=1 gates CI bounds (need n >= 2) and also gates p_value (n < 10)."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=8,
-            eg_d=5,
-            eg_l=2,
-            eg_n=15,
-            ne_w=1,
-            ne_d=0,
-            ne_l=0,
-            ne_n=1,
+            a_w=8,
+            a_d=5,
+            a_l=2,
+            a_n=15,
+            b_w=1,
+            b_d=0,
+            b_l=0,
+            b_n=1,
         )
-        assert p is None  # ne_n=1 < CONFIDENCE_MIN_N=10
-        assert lo is None  # ne_n=1 < 2
+        assert p is None  # b_n=1 < CONFIDENCE_MIN_N=10
+        assert lo is None  # b_n=1 < 2
         assert hi is None
 
     def test_identical_distributions_both_sides_give_p_one_ci_brackets_zero(self) -> None:
-        """Same proportions both sides: score_eg == score_ne -> z=0 -> p=1.0.
+        """Same proportions both sides: score_a == score_b -> z=0 -> p=1.0.
         SE_diff > 0 (non-degenerate WDL spread) -> CI brackets 0 symmetrically."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=20,
-            eg_d=10,
-            eg_l=20,
-            eg_n=50,
-            ne_w=20,
-            ne_d=10,
-            ne_l=20,
-            ne_n=50,
+            a_w=20,
+            a_d=10,
+            a_l=20,
+            a_n=50,
+            b_w=20,
+            b_d=10,
+            b_l=20,
+            b_n=50,
         )
         assert p == pytest.approx(1.0, abs=1e-9)
         assert lo is not None and hi is not None
-        # score_eg - score_ne = 0, so CI is symmetric around 0.
+        # score_a - score_b = 0, so CI is symmetric around 0.
         assert lo == pytest.approx(-hi, abs=1e-9)
         assert lo < 0.0 < hi
 
     def test_all_wins_vs_all_losses_collapses_to_point_estimate(self) -> None:
         """All-wins (10,0,0) vs all-losses (0,0,10): each side's variance is 0,
-        so SE_diff = 0. score_eg - score_ne = 1.0 -> p_value=0.0 (perfectly
+        so SE_diff = 0. score_a - score_b = 1.0 -> p_value=0.0 (perfectly
         determined), and CI collapses to ci_low == ci_high == 1.0."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=10,
-            eg_d=0,
-            eg_l=0,
-            eg_n=10,
-            ne_w=0,
-            ne_d=0,
-            ne_l=10,
-            ne_n=10,
+            a_w=10,
+            a_d=0,
+            a_l=0,
+            a_n=10,
+            b_w=0,
+            b_d=0,
+            b_l=10,
+            b_n=10,
         )
         assert p == pytest.approx(0.0, abs=1e-9)
         assert lo == pytest.approx(1.0, abs=1e-9)
@@ -374,17 +374,17 @@ class TestComputeScoreDifferenceTest:
 
     def test_all_draws_both_sides_gives_p_one_zero_width_ci(self) -> None:
         """All-draws both sides: variance is 0 in each term (score=0.5,
-        E[X^2] = 0.25*N/N = 0.25, var = 0.25 - 0.25 = 0). score_eg == score_ne
+        E[X^2] = 0.25*N/N = 0.25, var = 0.25 - 0.25 = 0). score_a == score_b
         -> p_value = 1.0. CI half-width = 0."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=0,
-            eg_d=10,
-            eg_l=0,
-            eg_n=10,
-            ne_w=0,
-            ne_d=10,
-            ne_l=0,
-            ne_n=10,
+            a_w=0,
+            a_d=10,
+            a_l=0,
+            a_n=10,
+            b_w=0,
+            b_d=10,
+            b_l=0,
+            b_n=10,
         )
         assert p == pytest.approx(1.0, abs=1e-9)
         assert lo == pytest.approx(0.0, abs=1e-9)
@@ -392,28 +392,28 @@ class TestComputeScoreDifferenceTest:
 
     def test_ci_half_width_matches_wald_closed_form(self) -> None:
         """For known input (eg: w=60,d=20,l=20,n=100; ne: w=40,d=20,l=40,n=100),
-        the CI half-width must equal CI_Z_95 * sqrt(var_eg/eg_n + var_ne/ne_n)
+        the CI half-width must equal CI_Z_95 * sqrt(var_a/a_n + var_b/b_n)
         where var_i = max(0, (w_i + 0.25*d_i)/n_i - score_i**2)."""
-        eg_w, eg_d, eg_n = 60, 20, 100
-        ne_w, ne_d, ne_n = 40, 20, 100
-        score_eg = (eg_w + 0.5 * eg_d) / eg_n
-        score_ne = (ne_w + 0.5 * ne_d) / ne_n
-        var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg * score_eg)
-        var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne * score_ne)
-        se_diff = math.sqrt(var_eg / eg_n + var_ne / ne_n)
+        a_w, a_d, a_n = 60, 20, 100
+        b_w, b_d, b_n = 40, 20, 100
+        score_a = (a_w + 0.5 * a_d) / a_n
+        score_b = (b_w + 0.5 * b_d) / b_n
+        var_a = max(0.0, (a_w + 0.25 * a_d) / a_n - score_a * score_a)
+        var_b = max(0.0, (b_w + 0.25 * b_d) / b_n - score_b * score_b)
+        se_diff = math.sqrt(var_a / a_n + var_b / b_n)
         # 1.96 is the constant CI_Z_95 already imported by the implementation.
         expected_half_width = 1.96 * se_diff
-        expected_diff = score_eg - score_ne
+        expected_diff = score_a - score_b
 
         p, lo, hi = compute_score_difference_test(
-            eg_w=eg_w,
-            eg_d=eg_d,
-            eg_l=20,
-            eg_n=eg_n,
-            ne_w=ne_w,
-            ne_d=ne_d,
-            ne_l=40,
-            ne_n=ne_n,
+            a_w=a_w,
+            a_d=a_d,
+            a_l=20,
+            a_n=a_n,
+            b_w=b_w,
+            b_d=b_d,
+            b_l=40,
+            b_n=b_n,
         )
         assert p is not None
         assert lo is not None and hi is not None
@@ -423,26 +423,25 @@ class TestComputeScoreDifferenceTest:
     def test_p_value_in_unit_interval_for_non_degenerate_input(self) -> None:
         """For any well-defined two-sample z-test, erfc(|z|/sqrt(2)) is in [0, 1]."""
         p, _lo, _hi = compute_score_difference_test(
-            eg_w=70,
-            eg_d=10,
-            eg_l=20,
-            eg_n=100,
-            ne_w=30,
-            ne_d=10,
-            ne_l=60,
-            ne_n=100,
+            a_w=70,
+            a_d=10,
+            a_l=20,
+            a_n=100,
+            b_w=30,
+            b_d=10,
+            b_l=60,
+            b_n=100,
         )
         assert p is not None
         assert 0.0 <= p <= 1.0
 
-    # --- shared_n covariance correction (Phase 148 item 3, D-04) ----------
+    # --- shared_n covariance correction ----------
     # Quintile cohorts overlap when a game lands in the same quintile on both
     # the user and opponent splits (endgame_service.build_quintile_bullets).
-    # shared_n tracks that overlap count; see RESEARCH.md "Item 3 — D-04
-    # covariance algebra" for the full derivation and worked example.
+    # shared_n tracks that overlap count.
 
     def test_shared_n_widens_se_matching_covariance_correction(self) -> None:
-        """CONTEXT.md's own worked example: 100 fully-shared games, var=0.25
+        """Worked example: 100 fully-shared games, var=0.25
         both sides (w=50, d=0, l=50, n=100 -> score=0.5, var=0.25).
 
         Buggy (shared_n=0) SE = sqrt(0.25/100 + 0.25/100) = sqrt(0.005) ~=
@@ -450,7 +449,7 @@ class TestComputeScoreDifferenceTest:
         = sqrt(0.01) = 0.10 -- exactly reproducing the cited "true SE 0.10".
         SE is recovered from the returned CI: ci_half_width = 1.96 * se_diff.
         """
-        kwargs = dict(eg_w=50, eg_d=0, eg_l=50, eg_n=100, ne_w=50, ne_d=0, ne_l=50, ne_n=100)
+        kwargs = dict(a_w=50, a_d=0, a_l=50, a_n=100, b_w=50, b_d=0, b_l=50, b_n=100)
 
         _p_buggy, lo_buggy, hi_buggy = compute_score_difference_test(**kwargs, shared_n=0)
         assert lo_buggy is not None and hi_buggy is not None
@@ -471,26 +470,26 @@ class TestComputeScoreDifferenceTest:
         """shared_n=0 (default, every non-quintile caller) reproduces the
         historical independent-samples formula exactly -- no cov_correction
         term leaks in when there is no shared cohort."""
-        eg_w, eg_d, eg_l, eg_n = 60, 20, 20, 100
-        ne_w, ne_d, ne_l, ne_n = 40, 20, 40, 100
+        a_w, a_d, a_l, a_n = 60, 20, 20, 100
+        b_w, b_d, b_l, b_n = 40, 20, 40, 100
 
-        score_eg = (eg_w + 0.5 * eg_d) / eg_n
-        score_ne = (ne_w + 0.5 * ne_d) / ne_n
-        var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg**2)
-        var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne**2)
-        pre_fix_se = math.sqrt(var_eg / eg_n + var_ne / ne_n)
-        pre_fix_diff = score_eg - score_ne
+        score_a = (a_w + 0.5 * a_d) / a_n
+        score_b = (b_w + 0.5 * b_d) / b_n
+        var_a = max(0.0, (a_w + 0.25 * a_d) / a_n - score_a**2)
+        var_b = max(0.0, (b_w + 0.25 * b_d) / b_n - score_b**2)
+        pre_fix_se = math.sqrt(var_a / a_n + var_b / b_n)
+        pre_fix_diff = score_a - score_b
         pre_fix_p = math.erfc(abs(pre_fix_diff / pre_fix_se) / math.sqrt(2.0))
         pre_fix_lo = pre_fix_diff - 1.96 * pre_fix_se
         pre_fix_hi = pre_fix_diff + 1.96 * pre_fix_se
 
         # Implicit default (no shared_n kwarg at all).
         p_default, lo_default, hi_default = compute_score_difference_test(
-            eg_w, eg_d, eg_l, eg_n, ne_w, ne_d, ne_l, ne_n
+            a_w, a_d, a_l, a_n, b_w, b_d, b_l, b_n
         )
         # Explicit shared_n=0.
         p_explicit, lo_explicit, hi_explicit = compute_score_difference_test(
-            eg_w, eg_d, eg_l, eg_n, ne_w, ne_d, ne_l, ne_n, shared_n=0
+            a_w, a_d, a_l, a_n, b_w, b_d, b_l, b_n, shared_n=0
         )
 
         assert p_default == p_explicit
@@ -501,9 +500,9 @@ class TestComputeScoreDifferenceTest:
         assert hi_default == pytest.approx(pre_fix_hi, abs=1e-9)
 
 
-# --- compute_paired_difference_test (Phase 85.1 Plan 1 Task 2) ------------
+# --- compute_paired_difference_test ------------
 # Paired one-sample z-test on per-game differences d_i = actual_i - expected_i.
-# Per SEC1-10: mean_d always returned (0.0 when empty); p_value None when
+# mean_d always returned (0.0 when empty); p_value None when
 # len(diffs) < 10 (CONFIDENCE_MIN_N); ci_* None when len(diffs) < 2. H0 is
 # mean_d == 0. Variance uses Bessel correction (n-1 denominator).
 
@@ -609,10 +608,3 @@ class TestComputePairedDifferenceTest:
         assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
         # Explicitly NOT the naive half-width:
         assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
-
-
-# Phase 88.1 (Plan 09, REVIEW.md CR-01): compute_score_delta_vs_reference and
-# its private helper _wilson_score_test_vs_ref were removed when the global
-# cohort layer was retired in favour of a same-game opponent-quintile split.
-# The TestComputeScoreDeltaVsReference test class is gone with them; the new
-# delta path is exercised in tests/services/test_time_pressure_service.py.

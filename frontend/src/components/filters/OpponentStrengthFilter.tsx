@@ -7,7 +7,7 @@ import type { OpponentStrengthPreset, OpponentStrengthRange } from '@/types/api'
 import {
   PRESET_LABELS,
   PRESET_ORDER,
-  PRESET_THRESHOLD,
+  SIMILAR_THRESHOLD,
   SLIDER_MAX,
   SLIDER_MIN,
   SLIDER_STEP,
@@ -43,8 +43,8 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
     [onChange],
   );
 
-  // Tracked on commit (Radix onValueCommit), never per drag step (Phase 229
-  // Pitfall 2), and debounced to one event per adjustment burst because Radix also
+  // Tracked on commit (Radix onValueCommit), never per drag step, and
+  // debounced to one event per adjustment burst because Radix also
   // commits on every keyboard step. The raw Elo gap is never sent: only the
   // matching preset or 'custom'.
   const handleSliderCommit = useCallback(
@@ -86,7 +86,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
               <strong>Stronger</strong>: opponents rated {STRONG_WEAK_THRESHOLD}+ Elo above you.
             </p>
             <p>
-              <strong>Similar</strong>: opponents within ±{PRESET_THRESHOLD} Elo.
+              <strong>Similar</strong>: opponents within ±{SIMILAR_THRESHOLD} Elo.
             </p>
             <p>
               <strong>Weaker</strong>: opponents rated {STRONG_WEAK_THRESHOLD}+ Elo below you.

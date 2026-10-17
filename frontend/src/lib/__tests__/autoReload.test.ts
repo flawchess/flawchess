@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * autoReload.test.ts — Quick 261004-rmc. An automatic reload must leave a
+ * autoReload.test.ts: an automatic reload must leave a
  * one-shot marker for the next page load, and must reload even when storage
  * is unavailable.
  */

@@ -1,16 +1,16 @@
 /**
- * botGamePgn — the `[%clk]`/`[Termination]`/`[Result]` PGN builder (Phase 169,
- * PLAY-09). Produces a finished-game PGN string the frozen Phase 167 backend
+ * botGamePgn — the `[%clk]`/`[Termination]`/`[Result]` PGN builder.
+ * Produces a finished-game PGN string the backend
  * validator (`normalize_flawchess_game`) accepts: per-move `[%clk h:mm:ss]`
- * comments for BOTH colors (STORE-02's presence gate) and a closed-vocabulary
+ * comments for BOTH colors (the validator's presence gate) and a closed-vocabulary
  * `[Termination]`/`[Result]` header pair.
  *
  * Extracted to a standalone module so the `[%clk]`/Termination encoding
  * behavior is directly unit-testable without mounting the game-loop hook,
  * mirroring analysisUrl.ts's extraction rationale. Uses chess.js's own
  * setComment/setHeader/pgn() API throughout — never hand-templates PGN text
- * (RESEARCH.md "Don't Hand-Roll"). A python-chess round-trip check
- * (tests/test_bot_pgn_clk_roundtrip.py) resolves RESEARCH Assumption A1: the
+ * (hand-rolled PGN text is fragile). A python-chess round-trip check
+ * (tests/test_bot_pgn_clk_roundtrip.py) confirms the
  * `h:mm:ss` format parses cleanly via python-chess's `node.clock()`.
  */
 
@@ -53,8 +53,8 @@ export function formatClockHms(remainingMs: number): string {
 
 /**
  * Attaches a `[%clk h:mm:ss]` comment to the move just played — call
- * immediately after `chess.move(...)`, for BOTH colors, every ply (STORE-02
- * requires at least one clock reading per color across the whole game).
+ * immediately after `chess.move(...)`, for BOTH colors, every ply (the
+ * validator requires at least one clock reading per color across the whole game).
  * `chess.pgn()` auto-wraps this as `{[%clk h:mm:ss]}` in the exported text.
  */
 export function annotateClock(chess: Chess, remainingMs: number): void {

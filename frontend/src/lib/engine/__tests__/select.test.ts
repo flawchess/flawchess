@@ -1,5 +1,5 @@
 /**
- * select.ts unit tests (ENGINE-02, D-01, D-05).
+ * select.ts unit tests.
  *
  * Covers:
  * - truncateAndRenormalize: cuts at ~90% cumulative mass, drops the tail, and
@@ -8,10 +8,10 @@
  * - selectChild: root PUCT selection includes the Q term (a fixture where Q
  *   flips the choice vs. exploration alone); non-root selection drops Q
  *   entirely (same children, different winner at root vs. non-root — proving
- *   the D-01 split); canonical UCI tie-break on equal scores.
+ *   the root/non-root split); canonical UCI tie-break on equal scores.
  * - rootExplorationPriors: floor-boosts a near-zero-Maia candidate, while
  *   truncateAndRenormalize on the same input does NOT — proving the floor is
- *   a separate, root-only transform (D-05).
+ *   a separate, root-only transform.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -58,7 +58,7 @@ describe('truncateAndRenormalize', () => {
     expect(POLICY_MASS_THRESHOLD).toBe(0.9);
   });
 
-  it('breaks equal-probability ties by ascending UCI order, not Record insertion order (WR-03)', () => {
+  it('breaks equal-probability ties by ascending UCI order, not Record insertion order', () => {
     // d2d4 and c2c4 tie at 0.2 and straddle the 0.9 boundary: only one
     // survives (0.75 + 0.2 = 0.95 >= threshold; 0.75 chosen over 0.7 to
     // stay clear of float rounding, 0.7 + 0.2 < 0.9 in doubles). The
@@ -75,14 +75,14 @@ describe('truncateAndRenormalize', () => {
   });
 });
 
-// ─── selectChild — root vs non-root PUCT split (D-01) ──────────────────────
+// ─── selectChild — root vs non-root PUCT split ──────────────────────
 
 describe('selectChild', () => {
-  // Shared fixture (D-01 split proof): the plain `prior` (non-root
+  // Shared fixture (root/non-root split proof): the plain `prior` (non-root
   // exploration weight) favors 'a1a2' (0.8 vs 0.2), while `rootExplorationPrior`
   // is IDENTICAL for both (so the root exploration term ties) and `q` favors
   // 'b1b2' heavily (0.9 vs 0.1). Same children object, opposite winner at
-  // root vs. non-root, proving the D-01 formula split.
+  // root vs. non-root, proving the formula split.
   const splitFixtureChildren: SelectionChild[] = [
     { uci: 'a1a2', prior: 0.8, visits: 0, q: 0.1, rootExplorationPrior: 0.5 },
     { uci: 'b1b2', prior: 0.2, visits: 0, q: 0.9, rootExplorationPrior: 0.5 },
@@ -128,7 +128,7 @@ describe('selectChild', () => {
   });
 });
 
-// ─── rootExplorationPriors — floor scope isolated from truncateAndRenormalize (D-05) ──
+// ─── rootExplorationPriors — floor scope isolated from truncateAndRenormalize ──
 
 describe('rootExplorationPriors', () => {
   it('raises a near-zero-Maia candidate to at least the floor after renormalization', () => {
@@ -147,7 +147,7 @@ describe('rootExplorationPriors', () => {
     expect(sumValues(floored)).toBeCloseTo(1.0, 10);
   });
 
-  it('does NOT floor-boost when truncateAndRenormalize runs on the same input (D-05 floor scope isolated)', () => {
+  it('does NOT floor-boost when truncateAndRenormalize runs on the same input (floor scope isolated)', () => {
     const policy = { a1a2: 0.999, h7h8q: 0.001 };
     const kept = truncateAndRenormalize(policy);
 

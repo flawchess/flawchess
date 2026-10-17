@@ -1,5 +1,5 @@
 /**
- * botGameCopy.test.ts — Phase 223 Plan 02 Task 2 (BOTVOICE-01/06).
+ * botGameCopy.ts line-table tests.
  *
  * Pure-module invariant test mirroring `trainBotCopy.test.ts`'s
  * exhaustiveness + regex-over-every-entry loop template (see that file's
@@ -41,18 +41,18 @@ const ALL_SURFACES: Record<string, Record<PersonaId, string>> = {
 const ALL_SURFACE_KEYS = Object.keys(ALL_SURFACES);
 
 /**
- * Forbidden-claim rule (223-02-PLAN.md task action for `'earned-tease'`,
- * carried into every table by this module's own header): no line may claim
+ * Forbidden-claim rule (for `'earned-tease'`, carried into every table by
+ * this module's own header): no line may claim
  * the bot calculated, thought ahead, foresaw, predicted or knew what was
  * coming — 16 of the 24 personas make exactly one Maia policy call and
- * never search (`PersonaGrid.tsx`'s `BotWelcomeCard` doc comment).
+ * never search (`PersonaGrid.tsx`'s `BotWelcomeBubble` doc comment).
  */
 const FORBIDDEN_CLAIM_PATTERN =
   /calculat\w*|foresaw|foresee\w*|foresight|predict\w*|planned|thought ahead|knew (it|that|this|what|you'?d)|saw (it|that|this) coming/i;
 
 /**
- * Insult rule (223-CONTEXT.md prohibition: "the tease must never read as
- * mean; a line describes the board, never the player"). A short deny-list
+ * Insult rule ("the tease must never read as mean; a line describes the
+ * board, never the player"). A short deny-list
  * of words that would make a line read as an attack on the player rather
  * than a remark about the board.
  */
@@ -60,9 +60,9 @@ const INSULT_PATTERN =
   /\b(stupid|idiot(?:ic)?|dumb|moron(?:ic)?|pathetic|loser|trash|garbage|foolish|fool|clueless|lame)\b/i;
 
 /**
- * Numeric-disclosure rule (223-02-PLAN.md T-223-02-02 behavior): a line
+ * Numeric-disclosure rule: a line
  * never reports a number, unit or engine term the board does not show —
- * this is the copy-level control the STRIDE threat register (T-223-02-02)
+ * this is the copy-level control the STRIDE threat register
  * names as the mitigation for the in-game line tables' Information
  * Disclosure risk.
  */
@@ -82,7 +82,7 @@ const NUMERIC_DISCLOSURE_PATTERN = /\d+\s*(cp|centipawns?|pawns?)\b|\d+\s*%|\ben
 const TEASE_TIMING_CLAIM_PATTERN =
   /\b(for a while|a while|a whole move|too long|sat open|was (loose|open|hanging|unguarded)|i took|took it)\b/i;
 
-/** No em-dash anywhere in an authored bot line (223-CONTEXT D-08). */
+/** No em-dash anywhere in an authored bot line. */
 const EM_DASH_PATTERN = /—/;
 
 describe('BOT_LINE_TABLES — exhaustiveness', () => {
@@ -202,7 +202,7 @@ describe('ALL_SURFACES (BOT_LINE_TABLES + ROSTER_GREETINGS) — shared invariant
   });
 });
 
-describe('rosterHost / landingHost — shared daily rotation (223-02)', () => {
+describe('rosterHost / landingHost — shared daily rotation', () => {
   // 24 consecutive days is a full cycle over all 24 personas — enough to
   // prove the two rotations agree on every offset, not just one lucky date.
   const DAYS_IN_CYCLE = ALL_IDS.length;

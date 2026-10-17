@@ -1,6 +1,6 @@
 """Smoke tests for the FastAPI lifespan in app/main.py.
 
-Phase 91 Plan 05: verifies that both background tasks (reaper + eval drain)
+Verifies that both background tasks (reaper + eval drain)
 are spawned at startup and cancelled cleanly at shutdown, and that a
 drain-side exception during shutdown is logged rather than propagated.
 
@@ -16,11 +16,8 @@ import pytest
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-# Named tasks expected in the lifespan. Phase 187 / SEED-116: corrected the
-# pre-existing drift (was missing "full-eval-drain") while adding the new
-# "guest-cleanup" task. Phase 201 / SEED-132 (D-15) adds "train-reminders",
-# so this constant now reflects all 5 background tasks spawned in
-# app/main.py's lifespan.
+# Named tasks expected in the lifespan: this constant reflects all the background
+# tasks spawned in app/main.py's lifespan.
 EXPECTED_TASKS: tuple[str, ...] = (
     "periodic-orphan-reaper",
     "eval-drain",
@@ -69,7 +66,7 @@ class TestLifespanBackgroundTasks:
 
         Monkeypatches all startup hooks + all four background coroutines so
         the test runs in-process with no DB or engine connections. Named
-        "both" for historical reasons (Phase 91); now covers all EXPECTED_TASKS.
+        "both" for historical reasons; now covers all EXPECTED_TASKS.
         """
         from app.main import app
 
@@ -221,7 +218,7 @@ class TestLifespanBackgroundTasks:
         """A RuntimeError raised by run_periodic_guest_cleanup on shutdown is logged, not propagated.
 
         Mirrors test_drain_task_exception_on_shutdown_is_logged for the 4th
-        background task (SEED-116 / Phase 187): the lifespan's finally block
+        background task: the lifespan's finally block
         catches a non-CancelledError from the cancelled guest-cleanup task,
         logs it via logger.exception ("Guest cleanup task raised on shutdown"),
         and must NOT propagate it to the lifespan caller.
@@ -284,7 +281,7 @@ class TestLifespanBackgroundTasks:
 
 
 class TestBenchmarkSelectionGateAssertion:
-    """Phase 212-02 (D-09/D-10 point 3): assert_benchmark_selection_gate_ready()
+    """assert_benchmark_selection_gate_ready()
     is awaited from the lifespan before start_engine(), and fails closed when
     the gate is on but benchmark_selection is missing."""
 

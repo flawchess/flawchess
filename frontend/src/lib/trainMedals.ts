@@ -1,8 +1,8 @@
 /**
  * trainMedals — pure copy and helpers for the weekly leaderboard medals
- * (Phase 231). No React import, so the rules are testable without a DOM.
+ * No React import, so the rules are testable without a DOM.
  *
- * Copy rule (D-10 of Phase 230 carries over): medals record effort and
+ * Copy rule (same as trainLeaderboard.ts): medals record effort and
  * consistency in a week, never ability.
  */
 import { format, parseISO } from 'date-fns';
@@ -21,7 +21,7 @@ export const MEDAL_LABEL: Record<MedalKind, string> = {
   bronze: 'Bronze',
 };
 
-/** Lead-in of the podium line at the top of each tab (D-09). */
+/** Lead-in of the podium line at the top of each tab. */
 export const LAST_WEEK_PODIUM_LABEL = 'Last week:';
 
 /** Display order of medal types in a tally: best first. */
@@ -46,18 +46,18 @@ export function tallyAriaLabel(medals: LeaderboardMedals, board: LeaderboardBoar
   return `${counts} ${BOARD_LABEL[board]} ${total === 1 ? 'medal' : 'medals'}`;
 }
 
-/** The viewer's own finish last week, for a non-medal row (D-03). */
+/** The viewer's own finish last week, for a non-medal row. */
 export function lastWeekFinishCopy(rank: number): string {
   return `You finished #${rank} last week`;
 }
 
-/** Label of the dialog's primary button; the tap is also the audio-unlock gesture (D-13). */
+/** Label of the dialog's primary button; the tap is also the audio-unlock gesture. */
 export const CLAIM_BUTTON_LABEL = 'Claim';
 
-/** Delay between consecutive medals' pop-in animation in the claim dialog (D-11). */
+/** Delay between consecutive medals' pop-in animation in the claim dialog. */
 export const MEDAL_POP_STAGGER_MS = 120;
 
-/** 'You won a medal!' / 'You won 3 medals!' (D-11). */
+/** 'You won a medal!' / 'You won 3 medals!'. */
 export function medalDialogTitle(count: number): string {
   return count === 1 ? 'You won a medal!' : `You won ${count} medals!`;
 }

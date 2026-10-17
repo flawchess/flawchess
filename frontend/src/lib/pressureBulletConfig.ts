@@ -4,9 +4,9 @@
  * Domain constants keep the visual scale comparable across the 4-TC grid;
  * wide CIs render with open-ended whiskers when they overflow the axis.
  *
- * Unlike scoreBulletConfig, the neutral band is NOT module-level because it
- * varies per (TC, quintile) — callers look it up from PRESSURE_BIN_SCORE_NEUTRAL_ZONES
- * and pass it directly to pressureDeltaZoneColor.
+ * Unlike scoreBulletConfig, the neutral band is NOT module-level: callers pass it
+ * to pressureDeltaZoneColor (ScoreGapByTimePressureChart uses the TC-collapsed
+ * ±0.06 band derived from the backend's PRESSURE_BIN_SCORE_NEUTRAL_ZONES).
  */
 
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
@@ -15,7 +15,7 @@ import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 export const PRESSURE_DELTA_CENTER = 0;
 
 /** Axis half-width for the Score-Delta bullet: ±30pp covers real-world score deltas
- *  exceeding ±20pp (CONTEXT §2 A-5, 2026-05-17). The ±0.06 D-02 editorial neutral
+ *  exceeding ±20pp (2026-05-17). The ±0.06 editorial neutral
  *  cap stays unchanged; the colored side-zones widen, the neutral strip shrinks
  *  visually inside the wider axis. CIs that overflow this window render with
  *  open-ended whiskers.
@@ -36,7 +36,7 @@ export function clampDeltaCi(value: number): number {
   return value;
 }
 
-// ── Score-Gap line chart Y-axis (post-UAT 88.4) ──────────────────────────────
+// ── Score-Gap line chart Y-axis ──────────────────────────────────────────────
 
 const Y_BASE_PCT = Math.round(PRESSURE_DELTA_DOMAIN * 100); // 30
 const Y_TICK_STEP_PCT = 10;
@@ -87,7 +87,7 @@ export function computeScoreGapYAxis(points: ScoreGapAxisPoint[]): {
 }
 
 /** Pick the zone color for a score-delta relative to the per-bin neutral band.
- *  neutralMin and neutralMax come from PRESSURE_BIN_SCORE_NEUTRAL_ZONES[tc][quintile].
+ *  neutralMin and neutralMax are the caller's neutral band.
  *  Returns ZONE_SUCCESS when the user outperforms the neutral band,
  *  ZONE_DANGER when the user underperforms, ZONE_NEUTRAL in between.
  */

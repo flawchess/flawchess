@@ -17,13 +17,13 @@ export function LibraryPage({
   const location = useLocation();
   const navigate = useNavigate();
 
-  const totalGames =
+  const importedGameCount =
     profile != null
       ? profile.chess_com_game_count + profile.lichess_game_count
       : 0;
-  const noGames = profile != null && totalGames === 0;
+  const noGames = profile != null && importedGameCount === 0;
 
-  // State-dependent default subtab redirect (D-06): only redirect once profile is loaded
+  // State-dependent default subtab redirect: only redirect once profile is loaded
   // (profile != null), mirroring how Openings/Endgames gate their page-level Navigate.
   if (
     (location.pathname === '/library' || location.pathname === '/library/') &&
@@ -48,7 +48,7 @@ export function LibraryPage({
     <div data-testid="library-page" className="flex min-h-0 flex-1 flex-col bg-background">
       {/* Wrapper is a <div>, not <main>: ImportPage still renders its own <main>
           (narrower max-w-2xl import form), and App already wraps routes in a <main>.
-          A <main> here would produce nested <main> landmarks (invalid HTML, LIB-09).
+          A <main> here would produce nested <main> landmarks (invalid HTML).
           The Stats subtab (GlobalStatsPage) deliberately renders NO own <main>/max-w
           wrapper so it spans the same width as the Games/Flaws subtabs. */}
       <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-2 md:py-6 md:px-6">
@@ -145,8 +145,8 @@ export function LibraryPage({
                 </TabsTrigger>
               </TabsList>
             </div>
-            {/* mt-1 like the sibling tabs (was mt-4): 224 UAT round 2 asked for the
-                bot bubble's avatar to sit as close to the tab bar as on the bot page. */}
+            {/* mt-1 like the sibling tabs: the bot bubble's avatar sits as close to
+                the tab bar as on the bot page. */}
             <TabsContent value="import" className="mt-1">
               <ImportTab
                 onImportStarted={onImportStarted}

@@ -1,4 +1,4 @@
-"""Anchor-ladder rating-fit tests (D-04, D-05, D-06). Phase 173 Plan 03.
+"""Anchor-ladder rating-fit tests.
 
 Pure-function unit tests over `scripts.calibration_anchor_fit` — no DB, no
 engines, no TSV files on disk (small in-memory synthetic dicts only). Mirrors
@@ -8,21 +8,18 @@ pytest.mark.asyncio`) since the fit is pure stdlib math over static data.
 
 Tests cover (one function per behavior):
 - test_fit_converges: Zermelo/MM fit recovers known ground-truth pairwise
-  rating differences from a hand-built win_counts graph (D-05).
+  rating differences from a hand-built win_counts graph.
 - test_scale_fix: apply_scale_fix pins maia1500 to exactly 1500.0 and shifts
-  every other anchor by the same constant (D-05).
+  every other anchor by the same constant.
 - test_draws: build_win_counts folds a drawn game to +0.5/+0.5 — a
-  one-win-each pair and a two-draws pair yield identical win_counts (D-05).
+  one-win-each pair and a two-draws pair yield identical win_counts.
 - test_connectivity: check_connectivity raises RuntimeError on a disconnected
   graph AND on a connected graph with only 1 cross-family edge, and does NOT
-  raise on a connected graph with 2 cross-family edges (D-04).
+  raise on a connected graph with 2 cross-family edges.
 - test_bootstrap: bootstrap_ci over a well-conditioned synthetic graph returns
-  a finite (lo, hi) per anchor with lo <= point <= hi and a sane width (D-06).
+  a finite (lo, hi) per anchor with lo <= point <= hi and a sane width.
 - test_residuals: compute_residuals returns observed-minus-predicted per pair
-  and flags cross-family pairs (one maia + one sf) distinctly (D-06).
-
-This import fails until Task 2 creates scripts/calibration_anchor_fit.py —
-that ModuleNotFoundError IS the intended RED state for this task.
+  and flags cross-family pairs (one maia + one sf) distinctly.
 """
 
 from __future__ import annotations
@@ -54,7 +51,7 @@ BOOTSTRAP_MAX_WIDTH = 1500.0  # generous upper bound — not a runaway/degenerat
 
 RATING_SCALE = 400.0  # matches the Elo/Bradley-Terry 400*log10(pi) convention
 
-# Phase 180 (D-06) bot-cell fit tolerances.
+# Bot-cell fit tolerances.
 BOT_CELL_RECOVERY_TOLERANCE = 1.0  # rating points; oracle is an exact single-param BT fixed point
 G_PRESET_MIN_MAGNITUDE = 50.0  # a deliberately asymmetric fixture must yield a clearly-signed gap
 
@@ -75,7 +72,7 @@ FIXED_RATINGS = {
 
 
 def _expected_score(rating_i: float, rating_j: float) -> float:
-    """Independent oracle for the Bradley-Terry expected score (RESEARCH.md Pattern 2)."""
+    """Independent oracle for the Bradley-Terry expected score."""
     return 1.0 / (1.0 + 10.0 ** ((rating_j - rating_i) / RATING_SCALE))
 
 
@@ -86,7 +83,7 @@ def test_fit_converges() -> None:
     by a known 400-point ladder (A=1000, B=1400, C=1800), so the true ratings
     are an exact fixed point of the MM iteration up to the model's inherent
     scale indeterminacy (log-likelihood is constant along uniform rating
-    shifts — see 173-RESEARCH.md Pattern 2). Only pairwise DIFFERENCES are
+    shifts). Only pairwise DIFFERENCES are
     guaranteed invariant to that indeterminacy, so we assert differences, not
     absolute values (the absolute scale is pinned later by apply_scale_fix).
     """
@@ -130,7 +127,7 @@ def test_scale_fix() -> None:
 
 
 def test_draws() -> None:
-    """build_win_counts folds a drawn game to +0.5/+0.5 (D-05).
+    """build_win_counts folds a drawn game to +0.5/+0.5.
 
     A pair with one win each nets the SAME win_counts as a pair with two
     draws — both settle at 1.0/1.0 over 2 games.
@@ -158,7 +155,7 @@ def test_draws() -> None:
 
 
 def test_connectivity() -> None:
-    """check_connectivity enforces D-04: full reachability AND >= 2 cross-family edges."""
+    """check_connectivity enforces: full reachability AND >= 2 cross-family edges."""
     anchors = ["maia1500", "maia1900", "sf5", "sf8"]
 
     disconnected_pairs = {("maia1500", "maia1900"), ("sf5", "sf8")}
@@ -179,10 +176,10 @@ def test_connectivity() -> None:
 
 
 def test_main_single_bridge_both_orientations_fails_connectivity(tmp_path: Path) -> None:
-    """CR-01 regression: one real cross-family pairing seen in BOTH color orientations is ONE link.
+    """Regression: one real cross-family pairing seen in BOTH color orientations is ONE link.
 
     Colors alternate per game, so a single real bridge appears as both (a, b)
-    and (b, a) in the raw TSV. main() must canonicalize before its D-04
+    and (b, a) in the raw TSV. main() must canonicalize before its
     re-check — without canonicalization the duplicate orientation counted as a
     second cross-family link and a non-identifiable graph passed the guard.
     """
@@ -300,7 +297,7 @@ def _synthetic_bot_counts(
 
 
 def test_fit_bot_cell_rating_synthetic_ground_truth() -> None:
-    """Single-parameter pinned-anchor MLE recovers a KNOWN bot strength (D-06).
+    """Single-parameter pinned-anchor MLE recovers a KNOWN bot strength.
 
     The counts are generated at the model's exact expected scores against the 10
     fixed anchors, so the true rating is an exact fixed point — the fit must
@@ -315,7 +312,7 @@ def test_fit_bot_cell_rating_synthetic_ground_truth() -> None:
 
 
 def test_g_preset_sign() -> None:
-    """g_preset = rating_vs_maia - rating_vs_sf carries the fixture's asymmetry (Pitfall 3).
+    """g_preset = rating_vs_maia - rating_vs_sf carries the fixture's asymmetry.
 
     On a fabricated cell that beats the SF family HARDER than the Maia family,
     the SF-fit rating must land clearly above the Maia-fit rating, so g_preset
@@ -339,7 +336,7 @@ def test_g_preset_sign() -> None:
 
 
 def test_fit_bot_cell_rating_rejects_bad_input() -> None:
-    """fit_bot_cell_rating fails loud (T-180-02), never NaN, on empty/mis-keyed input."""
+    """fit_bot_cell_rating fails loud, never NaN, on empty/mis-keyed input."""
     # Empty games -> nothing to fit.
     with pytest.raises(ValueError):
         fit_bot_cell_rating({}, {}, FIXED_RATINGS)

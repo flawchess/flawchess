@@ -1,20 +1,18 @@
-"""Wave 0 scaffolding for Stage B hook tests.
-
-Phase 94.1 Plan 02, Task 1.
+"""Stage B hook tests.
 
 Tests cover the Stage B hook at eval_drain.py (after _mark_evals_completed commit):
-- Hook fires only when a user's pending-eval count drops to 0 (D-01)
+- Hook fires only when a user's pending-eval count drops to 0
 - No duplicate fires per user per drain batch
 - No per-user duplicate fires when multiple games for the same user in one batch
-- Exception does not crash the drain coroutine (D-04)
+- Exception does not crash the drain coroutine
 
 All tests are skipped pre-implementation via pytest.importorskip on
 app.services.user_benchmark_percentiles_service.
 
 Design decisions documented:
-- D-01: Per-batch group-by-user check; fire only when count -> 0
-- D-02: No periodic sweeper — backfill script is the safety net
-- D-04: Stage B errors must not propagate to the drain coroutine
+- Per-batch group-by-user check; fire only when count -> 0
+- No periodic sweeper — backfill script is the safety net
+- Stage B errors must not propagate to the drain coroutine
 - ix_games_evals_pending: partial index used by the count query
 """
 
@@ -49,8 +47,8 @@ async def test_stage_b_fires_only_for_users_whose_pending_count_drops_to_zero(
     - user B: 100 games needing eval (only 10 drained in first batch)
 
     Asserts:
-    - compute_stage_b called exactly once for user A (D-01)
-    - compute_stage_b NOT called for user B (D-01)
+    - compute_stage_b called exactly once for user A
+    - compute_stage_b NOT called for user B
     """
     pytest.skip("implementation pending Plans 05/06")
 
@@ -92,6 +90,6 @@ async def test_stage_b_exception_does_not_crash_drain_coroutine(
     drain coroutine. The drain continues to the next iteration normally.
 
     asyncio.create_task fire-and-forget isolates the exception from the drain
-    loop (D-04). This test pins the isolation behavior.
+    loop. This test pins the isolation behavior.
     """
     pytest.skip("implementation pending Plans 05/06")

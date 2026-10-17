@@ -1,12 +1,11 @@
-"""Unit tests for the Phase 106 library-service severity-count seam.
+"""Unit tests for the library-service severity-count seam.
 
-Phase 108 D-02 migration: chip curation tests use the game_flaws-backed API
-(_curate_chips_from_rows). The _curate_chips (FlawRecord-based) and
-_GameFlaws/_compute_tag_distribution helpers were retired. Phase 239 retired the
-flaw-stats tag distribution and rates; TestFlawStats now covers the coverage counts
-and the per-TC Flaws Timeline.
+Chip curation tests use the game_flaws-backed API (_curate_chips_from_rows);
+the FlawRecord-based _curate_chips and the _GameFlaws/_compute_tag_distribution
+helpers no longer exist. TestFlawStats covers the coverage counts and the
+per-TC Flaws Timeline (there is no flaw-stats tag distribution or rate).
 
-Wave-0 scaffold (106-01). Covers the additive `count_game_severities` kernel
+Covers the additive `count_game_severities` kernel
 helper: per-game B/M/I counts (incl. inaccuracy) restricted to the USER's moves,
 gated identically to `classify_game_flaws` (>= EVAL_COVERAGE_MIN coverage,
 else GameNotAnalyzed with reason="no_engine_analysis").
@@ -58,7 +57,7 @@ def _make_game_flaw(
     row.is_lucky = is_lucky
     row.is_reversed = is_reversed
     row.is_squandered = is_squandered
-    # Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws
+    # es_before, es_after, move_san removed from game_flaws
     row.fen = ""
     return row
 
@@ -67,7 +66,7 @@ def _as_counts(result: SeverityCounts | GameNotAnalyzed) -> SeverityCounts:
     """Narrow the union to SeverityCounts (both erase to dict at runtime).
 
     Both TypedDicts are plain dicts at runtime, so discriminate on the
-    presence of the "reason" key (RESEARCH §Code Examples note). ty cannot
+    presence of the "reason" key. ty cannot
     narrow a TypedDict union on key presence, so we cast after the check.
     """
     assert "reason" not in result, f"expected analyzed counts, got {result}"
@@ -96,8 +95,8 @@ def _make_pos(
 ) -> GamePosition:
     """Build a GamePosition with eval fields for pure unit testing (no DB flush).
 
-    Quick 260717-rbn: best_move param added (UCI, e.g. "e2e4") for the new
-    best-tier identity-comparison tests.
+    best_move is a UCI string, e.g. "e2e4" (used by the
+    best-tier identity-comparison tests).
     """
     pos = GamePosition()
     pos.ply = ply
@@ -218,7 +217,7 @@ class TestCountGameSeverities:
     def test_inaccuracy_only_game_distinct_from_not_analyzed(self) -> None:
         """An inaccuracy-only analyzed game: inaccuracy>0, mistake=0, blunder=0.
 
-        Proves the I count is NOT derived from the M+B FlawRecord set (Pitfall 3).
+        Proves the I count is NOT derived from the M+B FlawRecord set.
         """
         # White (user) makes a drop in [INACCURACY_DROP, MISTAKE_DROP).
         from app.services.flaws_service import INACCURACY_DROP
@@ -271,7 +270,7 @@ class TestCountGameSeverities:
 
 
 # ---------------------------------------------------------------------------
-# TestBestMoveTierAssembly (-k eval_series) — Phase 175 Plan 02 (BOARD-01)
+# TestBestMoveTierAssembly (-k eval_series)
 # ---------------------------------------------------------------------------
 
 
@@ -307,7 +306,7 @@ class TestBestMoveTierAssembly:
         assert eval_series[0].maia_prob == 0.35
 
     def test_eval_series_narrow_margin_row_yields_null_tier(self) -> None:
-        """Pitfall 3: a stored row with margin in [0.05, 0.10) (best_cp=77 vs
+        """A stored row with margin in [0.05, 0.10) (best_cp=77 vs
         second_cp=0 -> ES margin ~0.07) is NOT automatically a marker — row
         presence alone must not decide the tier; classify_best_move must be
         called on the raw floats and return 'neither' here (< MISTAKE_DROP)."""
@@ -323,7 +322,7 @@ class TestBestMoveTierAssembly:
         assert eval_series[0].maia_prob is None
 
     def test_eval_series_neither_row_leaves_maia_prob_null(self) -> None:
-        """Pitfall 5: a wide-margin row with maia_prob above GREAT_MAIA_MAX_PROB
+        """A wide-margin row with maia_prob above GREAT_MAIA_MAX_PROB
         classifies 'neither' -- maia_prob must NOT be populated on the EvalPoint."""
         from app.services.library_service import _build_eval_series
 
@@ -365,7 +364,7 @@ class TestBestMoveTierAssembly:
 
 
 # ---------------------------------------------------------------------------
-# TestBestGoodTiers -- Quick 260717-rbn (Task 1)
+# TestBestGoodTiers
 # ---------------------------------------------------------------------------
 
 
@@ -513,15 +512,15 @@ class TestBestGoodTiers:
 
 
 # ---------------------------------------------------------------------------
-# TestCardChips (-k chips) — chip curation (106-02, D-02 updated)
+# TestCardChips (-k chips) — chip curation
 # ---------------------------------------------------------------------------
 
 
 class TestCardChips:
     """_curate_chips_from_rows: dedupe, phase exclusion, deterministic order.
 
-    D-02 migration: updated from FlawRecord-based _curate_chips to GameFlaw
-    row-based _curate_chips_from_rows. Phase tags (opening/middlegame/endgame)
+    Chips come from GameFlaw rows (_curate_chips_from_rows). Phase tags
+    (opening/middlegame/endgame)
     are excluded via the _CHIP_ORDER constant (not encoded in GameFlaw columns).
     Tempo tags come from the integer `tempo` column via _TEMPO_INT_TO_TAG lookup.
     """
@@ -566,7 +565,7 @@ class TestCardChips:
 
 
 # ---------------------------------------------------------------------------
-# TestNoEngineAnalysis (-k no_engine_analysis) — service-level card state (106-02)
+# TestNoEngineAnalysis (-k no_engine_analysis) — service-level card state
 # ---------------------------------------------------------------------------
 
 
@@ -642,7 +641,7 @@ class TestNoEngineAnalysis:
         assert card.analysis_state == "no_engine_analysis"
         assert card.severity_counts is None  # NEVER a false 0/0/0
         assert card.chips == []
-        # Quick 260714-rj5: the LIST endpoint's payload-blowup guard holds — it
+        # The LIST endpoint's payload-blowup guard holds — it
         # keeps scoping fetch_page_eval_positions to the analyzed subset, so an
         # unanalyzed row here still gets moves=None (not the single-game path's
         # newly-populated moves list).
@@ -651,14 +650,14 @@ class TestNoEngineAnalysis:
 
     @pytest.mark.asyncio
     async def test_flawchess_game_included_when_platform_is_none(self, db_session: object) -> None:
-        """get_library_games opts flawchess back in when platform is None (D-03).
+        """get_library_games opts flawchess back in when platform is None.
 
-        Phase 167: apply_game_filters now excludes platform='flawchess' by
-        default (D-02, STORE-07). The Library Games tab is the one surface
+        apply_game_filters now excludes platform='flawchess' by
+        default. The Library Games tab is the one surface
         that should keep showing bot-practice games, so get_library_games
         must substitute an explicit platform list (including 'flawchess')
         before calling query_filtered_games when the caller passes platform=None.
-        opponent_type='all' bypasses the (separately scoped, Phase 171)
+        opponent_type='all' bypasses the (separately scoped)
         is_computer_game gate so this test isolates the platform seam alone.
         """
         import uuid
@@ -705,7 +704,7 @@ class TestNoEngineAnalysis:
 
 
 # ---------------------------------------------------------------------------
-# TestFlawStats (-k stats) — the stats-panel aggregate (106-03)
+# TestFlawStats (-k stats) — the stats-panel aggregate
 # ---------------------------------------------------------------------------
 
 
@@ -741,7 +740,7 @@ async def _seed_db_flaw(
         is_lucky=is_lucky,
         is_reversed=is_reversed,
         is_squandered=is_squandered,
-        # Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws
+        # es_before, es_after, move_san removed from game_flaws
         fen="",
     )
     sess.add(flaw)
@@ -776,15 +775,14 @@ async def _seed_db_game(
 
     ply_count defaults to 10 so the macro per-100 denominator (floor/ceil(ply_count/2))
     yields 5 user moves for a white user. The white/black oracle move-quality columns
-    feed the stats-panel inaccuracy rate (D-03) and the per-100 macro trend chart.
+    feed the stats-panel inaccuracy rate and the per-100 macro trend chart.
 
     analyzed (default True) marks the game as having full move-quality analysis:
     - Game.is_analyzed (white_blunders IS NOT NULL) — count_filtered_and_analyzed
       counts these toward analyzed_n. When analyzed and no explicit white_blunders
       is given, white_blunders defaults to 0 (analyzed, zero blunders); 0 and NULL
       are equivalent for the oracle trend.
-    - full_evals_completed_at IS NOT NULL — _analyzed_game_ids_subquery gate
-      (replaced per-ply eval-coverage recompute in quick-task 260617-pu4).
+    - full_evals_completed_at IS NOT NULL — _analyzed_game_ids_subquery gate.
     Pass analyzed=False to seed a deliberately unanalyzed (e.g. chess.com) game.
     """
     import datetime as _dt
@@ -871,7 +869,7 @@ async def _seed_db_pos(
 
 
 class TestFlawStats:
-    """get_flaw_stats: analyzed count and the per-TC Flaws Timeline (Phase 239 D-00k)."""
+    """get_flaw_stats: analyzed count and the per-TC Flaws Timeline."""
 
     @pytest.mark.asyncio
     async def test_coverage_counts(self, db_session: object) -> None:
@@ -915,7 +913,7 @@ class TestFlawStats:
 
     @pytest.mark.asyncio
     async def test_trend_by_tc_is_computed_per_time_control(self, db_session: object) -> None:
-        """Each TC's timeline is built from that TC's games only (D-00k).
+        """Each TC's timeline is built from that TC's games only.
 
         MIN_GAMES_FOR_TIMELINE blitz games with 1 oracle blunder (5 user moves ->
         20 per 100) and as many rapid games with 0 blunders, all in one ISO week.
@@ -977,7 +975,7 @@ class TestFlawStats:
 
     @pytest.mark.asyncio
     async def test_null_time_control_bucket_has_no_series(self, db_session: object) -> None:
-        """Games with a NULL time_control_bucket cannot be placed on the switch (Pitfall 8)."""
+        """Games with a NULL time_control_bucket cannot be placed on the switch."""
         import datetime as _dt
 
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -1046,15 +1044,15 @@ class TestFlawStats:
 
 
 # ---------------------------------------------------------------------------
-# TestGetLibraryGame (-k get_library_game) — single-game card (Plan 112-02, SC-7)
+# TestGetLibraryGame (-k get_library_game) — single-game card
 # ---------------------------------------------------------------------------
 
 
 class TestGetLibraryGame:
     """get_library_game: single-game card builder for the analysis-page view.
 
-    Plan 112-02 (SC-7): GET /api/library/games/{game_id} returns one GameFlawCard.
-    Quick 260717-agv: NOT owner-scoped — returns the owner's card for any game
+    GET /api/library/games/{game_id} returns one GameFlawCard.
+    NOT owner-scoped — returns the owner's card for any game
     (own or another user's), None only for a missing game (→ 404 at the router).
     No router dependency — service-level only.
     """
@@ -1095,7 +1093,7 @@ class TestGetLibraryGame:
 
     @pytest.mark.asyncio
     async def test_cross_user_returns_card(self, db_session: object) -> None:
-        """get_library_game returns the owner's card for a cross-user request (Quick 260717-agv).
+        """get_library_game returns the owner's card for a cross-user request.
 
         Seeds user A with a game. The analysis-page view is intentionally NOT
         owner-scoped, so a request for that game_id (any logged-in user) returns
@@ -1140,7 +1138,7 @@ class TestGetLibraryGame:
     ) -> None:
         """A chess.com blitz game's normalized rating is higher than the raw rating.
 
-        Phase 164 (SEED-093): white_rating_lichess_blitz reflects the
+        white_rating_lichess_blitz reflects the
         Lichess-Blitz-equivalent (via normalize_to_lichess_blitz's
         chess.com-Blitz -> Table 2 chain), while the raw white_rating field is
         untouched. Rating 1500 is a known Table 2 anchor mapping to 1780.
@@ -1181,7 +1179,7 @@ class TestGetLibraryGame:
     ) -> None:
         """A chess.com Daily (correspondence) game gets None for both normalized fields.
 
-        Phase 164 (SEED-093, Pitfall 1): is_correspondence_time_control detects the
+        is_correspondence_time_control detects the
         "1/{seconds}" separator in time_control_str regardless of the
         time_control_bucket the game landed in; raw ratings stay populated.
         """
@@ -1246,7 +1244,7 @@ class TestGetLibraryGame:
 
     @pytest.mark.asyncio
     async def test_accuracy_round_trips_from_canonical_columns(self, db_session: object) -> None:
-        """Phase 179 (D-01): white_accuracy/black_accuracy pass through from the
+        """white_accuracy/black_accuracy pass through from the
         canonical Game columns, and NULL accuracy serializes as None."""
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1307,12 +1305,11 @@ class TestGetLibraryGame:
     ) -> None:
         """A chess.com classical-bucket, non-correspondence game normalizes via rapid.
 
-        Phase 164 gap closure (WR-01 / Truth #13): a classical-bucketed
+        A classical-bucketed
         chess.com game that is a genuine long real-time game (not Daily, e.g.
         "1800+30" — no "/" separator, so is_correspondence_time_control
-        returns False) now normalizes via the rapid column instead of
-        falling back to the raw rating (which was the None-returning bug
-        this plan closes).
+        returns False) normalizes via the rapid column instead of
+        falling back to the raw rating (which returned None).
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1352,9 +1349,9 @@ class TestGetLibraryGame:
     ) -> None:
         """A flawchess bot-practice game's rating is never double-converted.
 
-        Phase 167 (RESEARCH Pitfall 3): normalize_to_lichess_blitz has only
+        normalize_to_lichess_blitz has only
         chess.com/lichess branches. A flawchess game's stored rating is ALREADY
-        lichess-blitz-equivalent (STORE-03's anchor_rating), so routing it
+        lichess-blitz-equivalent (its anchor_rating), so routing it
         through the lichess branch's Table-2 inversion for a non-blitz bucket
         (rapid here) would silently apply a second, spurious conversion.
         _build_card's platform=='flawchess' guard must pass the raw rating
@@ -1393,7 +1390,7 @@ class TestGetLibraryGame:
     async def test_unanalyzed_game_with_positions_carries_moves_and_phase_transitions(
         self, db_session: object
     ) -> None:
-        """Quick 260714-rj5: an unanalyzed game with positions gets moves + phase_transitions.
+        """An unanalyzed game with positions gets moves + phase_transitions.
 
         eval_series/flaw_markers/severity_counts stay None (no evals to synthesize),
         chips stay [], analysis_state stays 'no_engine_analysis' — this is the
@@ -1434,7 +1431,7 @@ class TestGetLibraryGame:
     async def test_unanalyzed_game_with_no_positions_has_none_moves(
         self, db_session: object
     ) -> None:
-        """Quick 260714-rj5: an unanalyzed game with zero positions gets moves=None (not [])."""
+        """An unanalyzed game with zero positions gets moves=None (not [])."""
         from sqlalchemy.ext.asyncio import AsyncSession
 
         from app.models.game import Game as GameModel
@@ -1458,7 +1455,7 @@ class TestGetLibraryGame:
 
     @pytest.mark.asyncio
     async def test_analyzed_game_moves_and_eval_series_unchanged(self, db_session: object) -> None:
-        """Quick 260714-rj5: an analyzed game's card is byte-for-byte unchanged.
+        """An analyzed game's card is byte-for-byte unchanged.
 
         Same moves, eval_series, flaw_markers, phase_transitions as before this
         plan's change — the always-fetch-positions path only affects the
@@ -1495,7 +1492,7 @@ class TestGetLibraryGame:
     async def test_known_opening_game_has_nonzero_opening_ply_count(
         self, db_session: object
     ) -> None:
-        """Phase 172 (SEED-106 D-06): a known-opening game's card carries the
+        """A known-opening game's card carries the
         trie's matched ply depth, computed on-read from moves.
 
         1. e4 e5 2. Nf3 matches C40 King's Knight Opening at ply depth 3
@@ -1551,7 +1548,7 @@ class TestGetLibraryGame:
 
 
 # ---------------------------------------------------------------------------
-# TestActiveEvalStatus — active_eval_status field on GameFlawCard (260615-q1x)
+# TestActiveEvalStatus — active_eval_status field on GameFlawCard
 # ---------------------------------------------------------------------------
 
 
@@ -1723,7 +1720,7 @@ class TestActiveEvalStatus:
 
 # ---------------------------------------------------------------------------
 # Tests for tactic per-slot suppression in the Games path (_build_card /
-# get_library_games) — Quick 260621-sm8 scenario (d).
+# get_library_games).
 # ---------------------------------------------------------------------------
 
 # TacticMotifInt values matching FAMILY_TO_MOTIF_INTS (no magic numbers).
@@ -1775,10 +1772,10 @@ async def _seed_tactic_flaw_for_game(
 
 
 class TestBuildCardTacticPerSlotSuppression:
-    """get_library_games / _build_card (Quick 260702-mnd: cards show all tactic slots).
+    """get_library_games / _build_card: cards show all tactic slots.
 
-    Quick 260702-mnd removed the filter/severity pruning from _build_card's
-    tactic_by_ply construction — a selected card is now a complete picture of
+    _build_card does not prune its tactic_by_ply by filter/severity — a
+    selected card is a complete picture of
     its own tactic tags, regardless of the active tactic/severity filter (which
     still only selects WHICH games appear, via query_filtered_games). Tests use
     separate user_id values to avoid cross-test leakage in the rollback-scoped
@@ -1794,7 +1791,7 @@ class TestBuildCardTacticPerSlotSuppression:
         Validates the FLAWS SUBTAB path (query_flaws), which still prunes
         per-slot by the active orientation/family/depth filter (each Flaws row
         IS a matching flaw — pruning is correct there). This is NOT the Games
-        card path (_build_card no longer prunes, Quick 260702-mnd) — kept
+        card path (_build_card does not prune) — kept
         unchanged as a regression guard for query_flaws.
         """
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -1932,10 +1929,10 @@ class TestBuildCardTacticPerSlotSuppression:
     async def test_single_game_shows_all_tactic_slots_depth_filter_removed(
         self, db_session: object
     ) -> None:
-        """get_library_game (the "View game" modal path) shows all slots (Quick 260702-mnd).
+        """get_library_game (the "View game" modal path) shows all slots.
 
         The single-game endpoint no longer accepts tactic filter params at all
-        (D-3 dead-param removal) — a would-have-been depth-1-2 filter has no way
+        — a would-have-been depth-1-2 filter has no way
         to reach _build_card. Both slots must be populated regardless of the
         (now nonexistent) depth range, since one slot's raw depth would have
         anchored well outside any narrow range under the old pruning behavior.
@@ -1990,7 +1987,7 @@ class TestBuildCardTacticPerSlotSuppression:
 
     @pytest.mark.asyncio
     async def test_single_game_default_filter_unaffected(self, db_session: object) -> None:
-        """get_library_game with no tactic params leaves both slots populated (Quick 260621-sm8).
+        """get_library_game with no tactic params leaves both slots populated.
 
         A direct game open (no active filter) must not suppress anything.
         """
@@ -2042,11 +2039,10 @@ class TestBuildCardTacticPerSlotSuppression:
     async def test_severity_filter_no_longer_gates_tactic_slots_in_games_response(
         self, db_session: object
     ) -> None:
-        """Severity filter selects games but no longer prunes tactic chips (Quick 260702-mnd, D-1).
+        """Severity filter selects games but does not prune tactic chips.
 
-        Reverses the pre-260702-mnd behavior: the severity gate that used to null
-        non-matching-severity tactic slots in _build_card is removed (D-1 — kept
-        consistent with context chips, which never pruned by severity). The game
+        _build_card has no severity gate that nulls non-matching-severity tactic
+        slots (consistent with context chips, which never pruned by severity). The game
         has a white blunder at ply 2 and a white mistake at ply 4, each with a
         tactic. Under EVERY flaw_severity value the game is selected (it always has
         at least one matching-severity flaw) and BOTH plies' tactics survive on the
@@ -2124,7 +2120,7 @@ class TestBuildCardTacticPerSlotSuppression:
         assert markers[4].severity == "mistake"
 
         # "Blunders only": the game is selected (has a blunder), but BOTH plies'
-        # tactics survive — severity no longer prunes tactic tags (D-1).
+        # tactics survive — severity no longer prunes tactic tags.
         assert markers[2].missed_tactic_motif == "fork"
         assert markers[4].missed_tactic_motif == "fork"
 
@@ -2142,11 +2138,11 @@ class TestBuildCardTacticPerSlotSuppression:
     async def test_single_game_shows_all_severities_severity_param_removed(
         self, db_session: object
     ) -> None:
-        """get_library_game (the "View game" modal path) shows all tactic slots (Quick 260702-mnd, D-3).
+        """get_library_game (the "View game" modal path) shows all tactic slots.
 
-        The single-game endpoint no longer accepts a severity param at all (D-3
-        dead-param removal) — both plies' tactics always survive, matching the
-        Games list's new selection-only severity semantics (D-1).
+        The single-game endpoint accepts no severity param at all — both plies'
+        tactics always survive, matching the Games list's selection-only severity
+        semantics.
         """
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -2202,14 +2198,14 @@ class TestBuildCardTacticPerSlotSuppression:
     async def test_games_filter_selects_only_card_content_shows_every_motif(
         self, db_session: object
     ) -> None:
-        """Lock-in test (Quick 260702-mnd): active tactic filter selects, never prunes.
+        """Lock-in test: active tactic filter selects, never prunes.
 
         Seeds two tactic flaws: ply 2 (fork, depth anchored in-range) matches an
         active tactic_families=["fork"] + depth [1, 2] filter (so the game is
         SELECTED via query_filtered_games' EXISTS predicate); ply 4
         (discovered-attack, depth anchored well outside the range) does NOT match
-        the filter on either axis. Under the pre-260702-mnd per-slot pruning
-        behavior, ply 4's tactic would have been nulled on the card. It must now
+        the filter on either axis. Per-slot pruning would have nulled ply 4's
+        tactic on the card; it must instead
         survive alongside ply 2's, proving the filter only selects games and no
         longer prunes card content.
         """
@@ -2286,7 +2282,7 @@ class TestBuildCardTacticPerSlotSuppression:
 
 
 # ---------------------------------------------------------------------------
-# TestOpponentTacticMarker — Quick 260628-u7d
+# TestOpponentTacticMarker
 #
 # Opponent (hollow-square) flaw markers now show their tactic motif chips,
 # sourced from fetch_page_game_flaws_both_colors. Severity counts, curated
@@ -2301,7 +2297,7 @@ _OPPONENT_MOTIF_INT = _FORK_INT  # TacticMotifInt.FORK = 1
 class TestOpponentTacticMarker:
     """Opponent flaw markers carry tactic motif chips; counts/chips stay player-gated.
 
-    Scenario (Quick 260628-u7d): game_flaws has rows for both movers (Phase 113
+    Scenario: game_flaws has rows for both movers (flaw detection
     emits FlawRecords for both). fetch_page_game_flaws is player-gated so opponent
     rows never reach counts/chips. fetch_page_game_flaws_both_colors is ungated so
     opponent rows populate tactic_by_ply for the eval-chart tooltip.
@@ -2322,7 +2318,7 @@ class TestOpponentTacticMarker:
         - GameFlaw at ply 2: user flaw with missed_motif=fork.
         - GameFlaw at ply 3: opponent flaw with allowed_motif=fork.
 
-        Assertions (Quick 260628-u7d must_haves):
+        Assertions:
         1. is_user=False marker at ply 3 has non-null allowed_tactic_motif.
         2. is_user=True marker at ply 2 still has its missed_tactic_motif (no regression).
         3. severity_counts.blunder == 1 (opponent row does NOT inflate counts).
@@ -2500,7 +2496,7 @@ class TestOpponentTacticMarker:
 
 
 class TestGameCardInitialFen:
-    """Phase 210 (SEED-042): the game-detail payload carries the game's own root.
+    """The game-detail payload carries the game's own root.
 
     /analysis game mode replays `moves` from this position. Before it existed the
     board seeded unconditionally from the standard start, which is illegal for a

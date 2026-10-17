@@ -4,24 +4,23 @@ UNLIKE other repositories in this package, `create_llm_log` opens its OWN
 async session via `async_session_maker()` and commits independently so log
 rows survive caller rollbacks. This is intentional: `llm_logs` captures LLM
 failures, and if the caller's request-scoped session rolls back (HTTPException,
-validation error, pydantic-ai crash), the log row must still persist. See
-Phase 64 CONTEXT.md D-02.
+validation error, pydantic-ai crash), the log row must still persist.
 
 `create_llm_log` also computes `cost_usd` internally via
-`genai_prices.calc_price` (D-03). On LookupError (unknown model), cost falls
+`genai_prices.calc_price`. On LookupError (unknown model), cost falls
 back to Decimal("0") and a `cost_unknown:<model>` marker is appended to the
-row's `error` column per SC #4. This is the ONLY variable interpolation in
+row's `error` column. This is the ONLY variable interpolation in
 this module. It is a stable enum-like prefix, not a dynamic error message,
-and conforms to the SC #4 contract rather than CLAUDE.md's no-interpolation
-error-reporting rule (D-08).
+so it does not fragment grouping the way CLAUDE.md's no-interpolation
+error-reporting rule guards against.
 
-`get_latest_log_by_hash` is the Phase 65 tier-1 cache-lookup. It takes a
+`get_latest_log_by_hash` is the findings-hash cache lookup. It takes a
 caller-supplied session because the read path has no durability-vs-rollback
 concern — the caller already has a session.
 
-`get_latest_successful_log_for_user` is the structural cache lookup (260425-dxh)
+`get_latest_successful_log_for_user` is the structural cache lookup
 keyed on (user_id, prompt_version, model, opponent_strength). `create_llm_log`
-remains the sole own-session entry point (write-path, D-02).
+remains the sole own-session entry point (write path).
 
 `acquire_insights_generation_lock` takes a per-user Postgres advisory xact lock so
 concurrent endgame-insights generations for one user serialize (see its docstring).
@@ -66,7 +65,7 @@ async def create_llm_log(data: LlmLogCreate) -> LlmLog:
 
     On LookupError from genai-prices (unknown model), sets cost_usd=0 and
     appends `cost_unknown:<model>` to data.error. Never swallows DB errors —
-    caller captures at the router/service layer (D-08).
+    caller captures at the router/service layer.
 
     Args:
         data: Validated LlmLogCreate DTO with all 15 caller-supplied fields.
@@ -106,7 +105,7 @@ def _finalize_cost_and_error(data: LlmLogCreate) -> tuple[Decimal, str | None]:
         return price, data.error
     # genai-prices LookupError path — model unknown.
     # This is the ONLY variable interpolation in this module; the prefix is
-    # a stable enum-like marker (SC #4), NOT a dynamic error-report string.
+    # a stable enum-like marker, NOT a dynamic error-report string.
     marker = f"{_COST_UNKNOWN_PREFIX}{data.model}"
     combined = f"{data.error}{_ERROR_JOIN_SEP}{marker}" if data.error else marker
     return Decimal("0"), combined
@@ -117,9 +116,8 @@ def _compute_cost(model: str, input_tokens: int, output_tokens: int) -> Decimal 
 
     Splits the pydantic-ai `provider:model` string on the FIRST `:` into
     provider_id + model_ref before calling genai-prices.calc_price. The split
-    form is required — Plan 01's Wave 0 smoke test confirmed the combined
-    "anthropic:claude-..." string raises LookupError inside genai-prices
-    (see Phase 64 Plan 01 SUMMARY and commit e345d36). If `model` contains
+    form is required: the combined "anthropic:claude-..." string raises
+    LookupError inside genai-prices. If `model` contains
     no colon, treats the whole string as model_ref with no provider_id, which
     will raise LookupError and fall through to the cost_unknown path.
     """
@@ -147,10 +145,10 @@ async def get_latest_log_by_hash(
     prompt_version: str,
     model: str,
 ) -> LlmLog | None:
-    """Phase 65 cache-lookup stub. Returns most recent successful log for the key.
+    """Return the most recent successful log for (findings_hash, prompt_version, model).
 
     UNLIKE create_llm_log, this read helper takes a caller-supplied session —
-    Phase 65's cache-lookup path already has one, and reads don't have the
+    the cache-lookup path already has one, and reads don't have the
     durability-across-rollback motivation that writes do.
 
     "Successful" means response_json IS NOT NULL and error IS NULL — a row
@@ -189,7 +187,7 @@ async def get_latest_successful_log_for_user(
     opponent_strength: str,
     max_age: datetime.timedelta | None,
 ) -> LlmLog | None:
-    """Structural-cache lookup (260425-dxh) — replaces get_latest_log_by_hash on the hot path.
+    """Structural-cache lookup — replaces get_latest_log_by_hash on the hot path.
 
     Returns the most recent successful log row for this user under the current
     (prompt_version, model, opponent_strength) tuple, provided it is younger

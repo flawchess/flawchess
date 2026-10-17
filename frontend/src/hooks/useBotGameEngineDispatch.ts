@@ -1,33 +1,25 @@
 /**
- * useBotGameEngineDispatch — bot-engine dispatch sub-hook of useBotGame
- * (Phase 215, SC-1). Owns the Stockfish/Maia provider lifecycle
- * (`poolRef`/`queueRef`, warm-on-mount + terminate-on-unmount), the D-16
- * honest-clock, deadline-managed `runBotTurn` dispatcher (169.5 opening
- * book, D-07/D-08 resign + draw-offer housekeeping), and the
- * `runBotTurnRef` "always call the latest closure" indirection.
+ * useBotGameEngineDispatch — bot-engine dispatch sub-hook of useBotGame.
+ * Owns the Stockfish/Maia provider lifecycle (`poolRef`/`queueRef`,
+ * warm-on-mount + terminate-on-unmount), the honest-clock, deadline-managed
+ * `runBotTurn` dispatcher (opening book, resign + draw-offer housekeeping),
+ * and the `runBotTurnRef` "always call the latest closure" indirection.
  *
- * REF-INDIRECTION PRESERVED (215-RESEARCH.md Pitfall 4): `runBotTurnRef` is
- * assigned by an effect inside this hook (`runBotTurnRef.current =
- * runBotTurn`) and returned alongside `runBotTurn` itself. The deferred
- * caller — `useBotGame.ts`'s bot-turn-trigger effect — MUST keep reading
- * `runBotTurnRef.current?.(...)`, never the hook's `runBotTurn` return
- * value directly, or the stale-closure bug this ref exists to prevent
- * reappears.
+ * `runBotTurnRef` is assigned by an effect inside this hook
+ * (`runBotTurnRef.current = runBotTurn`); only the ref is returned.
+ * `useBotGame.ts`'s bot-turn-trigger effect MUST read
+ * `runBotTurnRef.current?.(...)` so it always calls the latest closure,
+ * never a captured `runBotTurn`, or the stale-closure bug this ref exists to
+ * prevent reappears.
  *
- * FULL ENCAPSULATION where possible (same rationale as useBotGameClock.ts):
- * `poolRef`/`queueRef` never leave this module (their only external
- * consumer, `retryEngineWarm`, moved in with them). `abortControllerRef`
- * and `runBotTurnRef`, like `runBotTurnRef` itself, DO cross the boundary
- * (read by `finalizeGame`/`newGame` and the bot-turn-trigger effect, which
- * stay in `useBotGame.ts` through 215-03) — every such caller's dependency
- * array gains the ref explicitly (behaviorally inert: ref identity never
- * changes) rather than silently drifting the phase's `react-hooks/*`
- * warning count.
+ * Encapsulation follows useBotGameClock.ts: `poolRef`/`queueRef` never leave
+ * this module (their only external consumer is `retryEngineWarm`).
+ * `runBotTurnRef` crosses the boundary, and `abortControllerRef` is owned by
+ * `useBotGame.ts` and passed in; every caller lists the ref in its dependency
+ * array (behaviorally inert: ref identity never changes).
  *
- * `delay`/`buildBotMoveDeps`/`resolveBookMove`/`styleNameFor` move here,
- * non-exported: `runBotTurn` is now their only reader (215-03-PLAN.md
- * Task 2 — "move [module-level helpers] with the cluster and keep them
- * non-exported" when the new hook becomes their only reader).
+ * `delay`/`buildBotMoveDeps`/`resolveBookMove`/`styleNameFor` stay
+ * non-exported: `runBotTurn` is their only reader.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
@@ -52,28 +44,28 @@ import { createDeadlineSearch, BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlin
 import type { SearchBudget, Side } from '@/lib/engine/types';
 import type { BotGameOutcome } from '@/lib/botGameEnd';
 
-/** The D-03 reveal-delay floor as a plain awaitable (Pattern 3 — run via
- * Promise.all alongside selectBotMove, never sequentially awaited). */
+/** The reveal-delay floor as a plain awaitable (run via Promise.all
+ * alongside selectBotMove, never sequentially awaited). */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
  * Reverse-resolves a bare `BotStyleParams` object to its `Style` key by
- * identity against `BOT_STYLE_BUNDLES` (Phase 182, STYLE-01/Task 1).
+ * identity against `BOT_STYLE_BUNDLES`.
  * `BotGameSettings.style` is deliberately typed as the SAME numeric-only
  * `BotStyleParams` shape `selectBotMove.ts`'s `BotSettings.style` accepts
- * (D-01: no style names at the engine layer) — but
+ * (no style names at the engine layer) — but
  * `styleOpeningLines.ts`'s curated book-line sets are keyed by `Style` name,
  * not by the params object itself (per `botStyleBundles.ts`'s own doc
  * comment: "a bundle references its curated book set by key membership, not
  * by embedding the set here"). `resolveBookMove` needs this one-hop lookup
  * to find the right book for a given style. Every style a real caller
- * supplies is one of the 4 exported `BOT_STYLE_BUNDLES` singleton objects
- * (D-02) — reference equality is exact for those. A `BotStyleParams` value
- * NOT sourced from a bundle (a future Custom-mode literal, PERS-04, out of
- * scope this phase) resolves to `undefined`, and the caller falls back to
- * the default `maiaPolicyWeighting` — a safe, silent degrade, never a crash.
+ * supplies is one of the 4 exported `BOT_STYLE_BUNDLES` singleton objects,
+ * so reference equality is exact for those. A `BotStyleParams` value
+ * NOT sourced from a bundle (e.g. a hand-built Custom-mode literal)
+ * resolves to `undefined`, and the caller falls back to the default
+ * `maiaPolicyWeighting` — a safe, silent degrade, never a crash.
  */
 function styleNameFor(style: BotStyleParams): Style | undefined {
   return (Object.keys(BOT_STYLE_BUNDLES) as Style[]).find((name) => BOT_STYLE_BUNDLES[name] === style);
@@ -81,8 +73,8 @@ function styleNameFor(style: BotStyleParams): Style | undefined {
 
 /**
  * Assembles the deps object passed to `selectBotMove` for one bot turn — the
- * ONLY wiring point where the D-16 think deadline reaches the engine, via
- * the injectable `deps.search` seam (Phase 166 D-08). Extracted out of
+ * ONLY wiring point where the think deadline reaches the engine, via
+ * the injectable `deps.search` seam. Extracted out of
  * `runBotTurn`'s async body (that body is already dense — CLAUDE.md
  * nesting/logic-LOC limits) so the deadline wiring is isolated and easy to
  * audit in one place.
@@ -91,9 +83,9 @@ function buildBotMoveDeps(deadlineMs: number, queue: MaiaQueue, pool: WorkerPool
   return {
     policy: queue.policy,
     grade: pool.grade,
-    // Phase 226 D-18 (arm A21S): the bot splits the root exactly like the
-    // harness and the analysis board — see the paired comment on
-    // useFlawChessEngine.ts's own providers object.
+    // The bot splits the root exactly like the harness and the analysis
+    // board — see the paired comment on useFlawChessEngine.ts's own
+    // providers object.
     gradeRoot: pool.gradeRoot,
     rng: Math.random,
     search: createDeadlineSearch({ deadlineMs, minNodes: BOT_MIN_SEARCH_NODES }),
@@ -101,12 +93,12 @@ function buildBotMoveDeps(deadlineMs: number, queue: MaiaQueue, pool: WorkerPool
 }
 
 /**
- * Resolves the bot's opening-book move for this turn (169.5, PLAY-11), or
+ * Resolves the bot's opening-book move for this turn, or
  * `null` meaning "leave book" — the caller latches `hasLeftBookRef` on `null`
  * and falls through to `selectBotMove`.
  *
  * A book ply costs exactly ONE Maia policy eval (~100ms) and ZERO Stockfish
- * searches (D-02) — which is the whole point: it is near-instant, clock-cheap,
+ * searches — which is the whole point: it is near-instant, clock-cheap,
  * and it warms Maia by necessity. Extracted to module scope (beside
  * `buildBotMoveDeps`) so `runBotTurn`'s async body does not grow past
  * CLAUDE.md's nesting/logic-LOC limits.
@@ -115,7 +107,7 @@ function buildBotMoveDeps(deadlineMs: number, queue: MaiaQueue, pool: WorkerPool
  * `scripts/calibration-harness.mjs` imports `selectBotMove` directly and has
  * its own game loop that never touches this hook, so the harness staying
  * book-free is STRUCTURAL, not guard-based. Its anchor games already start
- * from mid-opening FENs (D-04) and a book would corrupt them.
+ * from mid-opening FENs and a book would corrupt them.
  */
 async function resolveBookMove(
   chess: Chess,
@@ -145,14 +137,13 @@ async function resolveBookMove(
 
   const rawPolicy = await policy(chess.fen(), botElo, side);
 
-  // Phase 182, STYLE-01/D-03/D-06: a style's curated book lines get their
-  // base Maia weight boosted (styleBookWeighting composes over
-  // maiaPolicyWeighting, never replaces it). `moveHistorySan` is curried in
-  // at construction (Pitfall 2 — BookWeightingFn's own signature has no
-  // history slot); the color set is picked from `chess.turn()` (Open
-  // Question #3). `undefined` style, or a style with no resolvable name
+  // A style's curated book lines get their base Maia weight boosted
+  // (styleBookWeighting composes over maiaPolicyWeighting, never replaces it).
+  // `moveHistorySan` is curried in at construction (BookWeightingFn's own
+  // signature has no history slot); the color set is picked from
+  // `chess.turn()`. `undefined` style, or a style with no resolvable name
   // (styleNameFor), falls through to selectBookMove's own default
-  // `maiaPolicyWeighting` — byte-identical to the pre-182 behavior (D-03).
+  // `maiaPolicyWeighting`, the same as an unstyled game.
   const styleName = style ? styleNameFor(style) : undefined;
   if (style && styleName) {
     const weighting = styleBookWeighting(styleLinesFor(styleName, side), moveHistorySan, style.bookBoost);
@@ -163,30 +154,25 @@ async function resolveBookMove(
 
 export interface UseBotGameEngineDispatchOptions {
   chessRef: RefObject<Chess>;
-  /** WR-03 idempotency latch — read via ref for the D-01 grade continuation's
+  /** Idempotency latch — read via ref for the grade continuation's
    * staleness guard against `newGame()`/`resign()` minting a new game while
    * a `pool.grade()` RPC is still in flight. */
   outcomeRef: RefObject<BotGameOutcome | null>;
-  /** D-03 (169.5) ONE-WAY leave-book latch — owned by `useBotGame.ts` (part
-   * of the snapshot/persistence cluster, Task 3), mutated here on the
-   * single decline point. */
+  /** ONE-WAY leave-book latch — owned by `useBotGameSnapshot`, mutated here
+   * on the single decline point. */
   hasLeftBookRef: RefObject<boolean>;
-  /** D-01 best-effort draw-accept score — owned by `useBotGame.ts` (Task 3),
+  /** Best-effort draw-accept score — owned by `useBotGameSnapshot`,
    * refreshed here from every SEARCHED (non-book) bot move's grade. */
   lastRootPracticalScoreRef: RefObject<number | null>;
   /**
-   * Owned by `useBotGame.ts`, NOT this hook — `finalizeGame` (defined
-   * before any sub-hook call, since the clock/draw-offer hooks both take
-   * it as an option) already aborts it directly via same-scope `useRef`
-   * access. Passing it IN here (rather than this hook owning + returning
-   * it) breaks what would otherwise be a circular dependency: this hook's
-   * OWN options include `finalizeGame`, so `finalizeGame` cannot also
-   * depend on something this hook returns.
+   * Owned by `useBotGame.ts` and also passed to `useBotGameSnapshot`, whose
+   * `finalizeGame` aborts it. Passed in (not owned here) to avoid a circular
+   * dependency: this hook takes `finalizeGame` as an option, so
+   * `finalizeGame` cannot depend on something this hook returns.
    */
   abortControllerRef: RefObject<AbortController | null>;
   /** Same reasoning as `abortControllerRef` above — owned by `useBotGame.ts`
-   * so `finalizeGame`/`newGame` can set it directly with zero cross-hook
-   * indirection; only the setter is needed here. */
+   * and also used by `useBotGameSnapshot`; only the setter is needed here. */
   setIsBotThinking: Dispatch<SetStateAction<boolean>>;
   botElo: number;
   blend: number;
@@ -207,11 +193,11 @@ export interface UseBotGameEngineDispatchOptions {
     style: BotStyleParams,
     gameAlreadyOver: boolean,
   ) => void;
-  /** From `useBotGameVoice` (Phase 223, BOTVOICE-01/02/03 seam B) — fires
+  /** From `useBotGameVoice` — fires
    * once per SEARCHED (non-book) bot move whose grade resolved, with that
    * move's bot-POV CLAMPED CENTIPAWN score and the ply it was played at, so
    * the voice hook can compute a one-move-pair swing delta with zero extra
-   * engine calls (D-01 — no second engine grading RPC is ever added here).
+   * engine calls (no second engine grading RPC is ever added here).
    * Centipawns rather than the expected score the draw gate uses: see
    * `botLineTrigger.ts`'s header for why the sigmoid cannot carry this
    * signal. The voice hook keeps the previous value itself. */
@@ -224,13 +210,12 @@ export interface UseBotGameEngineDispatchResult {
   runBotTurnRef: RefObject<
     ((budget: Omit<SearchBudget, 'elo' | 'policyTemperature'>) => void) | null
   >;
-  /** Phase 213 D-15: the manual-retry seam behind `EngineReadyGate`'s Retry
-   * button. */
+  /** The manual-retry seam behind `EngineReadyGate`'s Retry button. */
   retryEngineWarm: () => void;
 }
 
 /**
- * Bot-engine dispatch sub-hook of `useBotGame` (Phase 215). See file header.
+ * Bot-engine dispatch sub-hook of `useBotGame`. See file header.
  */
 export function useBotGameEngineDispatch(
   options: UseBotGameEngineDispatchOptions,
@@ -259,17 +244,17 @@ export function useBotGameEngineDispatch(
 
   const poolRef = useRef<WorkerPool | null>(null);
   const queueRef = useRef<MaiaQueue | null>(null);
-  /** Assigned below to the real provider bring-up + D-15/D-16 honest-clock,
+  /** Assigned below to the real provider bring-up + honest-clock,
    * deadline-managed dispatch; called with the fixed BOT_SEARCH_BUDGET
    * whenever it becomes the bot's turn. */
   const runBotTurnRef = useRef<
     ((budget: Omit<SearchBudget, 'elo' | 'policyTemperature'>) => void) | null
   >(null);
 
-  /** Phase 213 D-15 — see `UseBotGameEngineDispatchResult.retryEngineWarm`'s
+  /** See `UseBotGameEngineDispatchResult.retryEngineWarm`'s
    * doc comment. Reads `poolRef`/`queueRef` (set by the bring-up effect
-   * below) and warms BOTH providers unconditionally (G-213-19b) — every
-   * persona needs both assets, so there is no guard left to apply here. */
+   * below) and warms BOTH providers unconditionally — every persona needs
+   * both assets, so there is no guard to apply here. */
   const retryEngineWarm = useCallback((): void => {
     const pool = poolRef.current;
     const queue = queueRef.current;
@@ -277,35 +262,34 @@ export function useBotGameEngineDispatch(
     queue?.warm();
   }, []);
 
-  // ─── Provider bring-up (Pattern 1 — once per game, NOT re-run per FEN) ────
+  // ─── Provider bring-up (once per game, NOT re-run per FEN) ─────────────────
   //
-  // Phase 170 D-03: this effect MUST stay UNCONDITIONAL with `[]` deps — do
-  // NOT add a `live` guard here. Firing at mount, while a resumed game's
-  // resume gate is still on screen, IS D-03 mechanism 1: a bot with 5s left
-  // must not flag on a worker spawn, and `WorkerPool`/`MaiaQueue` cannot be
-  // warmed from OUTSIDE this hook because they are constructed HERE — there
-  // is no external handle `Bots.tsx` could warm before this hook mounts. A
-  // future reader must not "tidy" this into the `live` gate.
+  // This effect MUST stay UNCONDITIONAL with `[]` deps — do NOT add a `live`
+  // guard here. Firing at mount, while a resumed game's resume gate is still
+  // on screen, is what lets the engines spawn before the user resumes: a bot
+  // with 5s left must not flag on a worker spawn, and `WorkerPool`/`MaiaQueue`
+  // cannot be warmed from OUTSIDE this hook because they are constructed HERE
+  // — there is no external handle `Bots.tsx` could warm before this hook
+  // mounts. A future reader must not "tidy" this into the `live` gate.
   //
-  // G-213-19b (supersedes Phase 213 D-03/D-06): `pool.warm()` (the Stockfish
-  // download trigger) now fires unconditionally alongside `queue.warm()`
-  // (Maia) — both providers are warmed for EVERY persona. The accepted cost
-  // is the one D-06 refused: a blend-0 persona spends 7.3 MB of mobile data
-  // on a Stockfish binary it will never use, in exchange for one predictable
-  // download bundle instead of a persona-dependent one.
+  // `pool.warm()` (the Stockfish download trigger) fires unconditionally
+  // alongside `queue.warm()` (Maia) — both providers are warmed for EVERY
+  // persona. The accepted cost: a blend-0 persona spends 7.3 MB of mobile
+  // data on a Stockfish binary it will never use, in exchange for one
+  // predictable download bundle instead of a persona-dependent one.
 
   useEffect(() => {
     const pool = createWorkerPool();
     const queue = createMaiaQueue();
     poolRef.current = pool;
     queueRef.current = queue;
-    // SC5 (169.5): spawn both engines NOW, during the book window, so the
+    // Spawn both engines NOW, during the book window, so the
     // book's near-instant plies pay the worker-spawn cost instead of the first
     // move the bot actually has to search — which, under the book, is the first
     // move OUT of book and exactly the one we least want cold. Both are
     // idempotent (they forward to each provider's own lazy `ensureSpawned()`),
     // so a re-running effect cannot spawn a second pool. NB: `pool.grade(fen,
-    // [])` would NOT work here — it returns on the WR-05 empty-candidates guard
+    // [])` would NOT work here — it returns on the empty-candidates guard
     // before spawning anything.
     pool.warm();
     queue.warm();
@@ -321,9 +305,9 @@ export function useBotGameEngineDispatch(
     };
   }, []);
 
-  // ─── Bot turn dispatch (D-16: per-move think deadline via deps.search;
-  // D-03/D-16 reveal-delay floor clamped to the same deadline, run via
-  // Promise.all alongside the search — never Promise.race, Pattern 3) ───────
+  // ─── Bot turn dispatch (per-move think deadline via deps.search;
+  // reveal-delay floor clamped to the same deadline, run via Promise.all
+  // alongside the search — never Promise.race) ──────────────────────────────
 
   const runBotTurn = useCallback(
     (budget: Omit<SearchBudget, 'elo' | 'policyTemperature'>): void => {
@@ -331,8 +315,7 @@ export function useBotGameEngineDispatch(
       const queue = queueRef.current;
       if (!pool || !queue) return;
 
-      // Pattern 2: a fresh AbortController every turn, never one shared
-      // across turns.
+      // A fresh AbortController every turn, never one shared across turns.
       abortControllerRef.current?.abort();
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -341,22 +324,22 @@ export function useBotGameEngineDispatch(
       const fen = chess.fen();
       const mover: MoverColor = chess.turn() === 'w' ? 'white' : 'black';
 
-      // D-16: the per-move think deadline, derived from the bot's OWN
+      // The per-move think deadline, derived from the bot's OWN
       // remaining clock at dispatch time (its clock does not move again
       // until this turn resolves). This deadline reaches the engine through
       // exactly ONE seam: `deps.search` (buildBotMoveDeps), the injectable
-      // SearchRunner Phase 166 D-08 defined for exactly this purpose.
+      // SearchRunner defined for exactly this purpose.
       const incrementMs = incrementSeconds * 1000;
       const deadlineMs = computeThinkDeadlineMs(getClockBase()[mover], incrementMs);
       const deps = buildBotMoveDeps(deadlineMs, queue, pool);
 
-      // Pitfall 3: isBotThinking is derived from this real in-flight promise,
-      // never a fixed-duration animation — a 12s contested think genuinely
-      // shows 12s of thinking, not a premature "done" flicker.
+      // isBotThinking is derived from this real in-flight promise, never a
+      // fixed-duration animation — a 12s contested think genuinely shows 12s
+      // of thinking, not a premature "done" flicker.
       setIsBotThinking(true);
 
       void (async () => {
-        // 169.5: while in book, the bot answers from the ECO book — ONE Maia
+        // While in book, the bot answers from the ECO book — ONE Maia
         // policy eval, ZERO Stockfish searches, `selectBotMove` never called. A
         // `null` from the book (floor-miss, ply cap, no candidates, degenerate
         // policy, or a failed asset fetch) is its leave-book signal: the ONE-WAY
@@ -368,10 +351,9 @@ export function useBotGameEngineDispatch(
             if (bookUci !== null) return { uci: bookUci, fromBook: true };
             hasLeftBookRef.current = true;
           }
-          // STYLE-03/04 (Plan 06's selectBotMove.ts hooks): the SAME
-          // settings.style object also reaches the prior-reweighting
-          // (blend<=0) and score-shaping (search) regime branches there —
-          // undefined here is byte-identical to omitting the field (D-03).
+          // The SAME settings.style object also reaches selectBotMove's
+          // prior-reweighting (blend<=0) and score-shaping (search) regime
+          // branches — undefined here is byte-identical to omitting the field.
           const searchedUci = await selectBotMove(
             fen,
             { elo: botElo, blend, budget, style },
@@ -386,20 +368,19 @@ export function useBotGameEngineDispatch(
           [resolved] = await Promise.all([
             resolveMove(),
             // The reveal delay is still a floor run alongside the search — but
-            // clamped to the SAME deadline (D-16) so it can never itself push a
+            // clamped to the SAME deadline so it can never itself push a
             // low-clock bot past its own deadline. It is also what puts a
             // near-instant BOOK move inside the reveal band instead of snapping
             // back at zero latency.
             delay(Math.min(computeRevealDelayMs(Math.random), deadlineMs)),
           ]);
         } catch (err: unknown) {
-          // D-17: `controller.signal` is the OUTER signal. A D-16 deadline
-          // cut never reaches this catch — `createDeadlineSearch` isolates
-          // it on an INNER controller, and `selectBotMove` resolves normally
-          // with its best-so-far move for that case. So
-          // `controller.signal.aborted` here means exactly one thing: a
-          // CANCEL (resign / new game / unmount / bot flagged) — discard the
-          // turn, as before.
+          // `controller.signal` is the OUTER signal. A think-deadline cut
+          // never reaches this catch — `createDeadlineSearch` isolates it on
+          // an INNER controller, and `selectBotMove` resolves normally with
+          // its best-so-far move for that case. So `controller.signal.aborted`
+          // here means exactly one thing: a CANCEL (resign / new game /
+          // unmount / bot flagged) — discard the turn.
           if (controller.signal.aborted) return;
           Sentry.captureException(err, { tags: { source: 'bot-game' } });
           setIsBotThinking(false);
@@ -412,15 +393,15 @@ export function useBotGameEngineDispatch(
 
         const { uci, fromBook } = resolved;
 
-        // D-15/D-20/CR-01 (Plan 10 gap closure): the bot's debit is the
-        // honest, real elapsed wall-clock time of this turn (search + reveal
-        // delay), read through the pause-aware `chargeableElapsedMs` helper
-        // — never a raw now-minus-anchor read, which would charge any
-        // hidden background time the search ran through (the common case,
-        // since Web Workers keep executing when backgrounded).
+        // The bot's debit is the honest, real elapsed wall-clock time of this
+        // turn (search + reveal delay), read through the pause-aware
+        // `chargeableElapsedMs` helper — never a raw now-minus-anchor read,
+        // which would charge any hidden background time the search ran
+        // through (the common case, since Web Workers keep executing when
+        // backgrounded).
         const debitMs = chargeableElapsedMs();
 
-        // CR-02: the overrun check MUST run BEFORE chess.move() — a flagged
+        // The overrun check MUST run BEFORE chess.move() — a flagged
         // bot's move must never reach chessRef.current or the exported PGN,
         // and no best-effort grade should run for a discarded turn.
         // `finalizeGame` (called inside `flagIfOutOfTime`) already aborts
@@ -448,7 +429,7 @@ export function useBotGameEngineDispatch(
         }
 
         setIsBotThinking(false);
-        // Phase 223 UAT: latch the ply HERE, on the same synchronous tick the
+        // Bug fix: latch the ply HERE, on the same synchronous tick the
         // move was pushed, never inside the grade continuation below. That
         // continuation can resolve after the player has already replied, and
         // reading `chessRef.current.history().length` there recorded the
@@ -458,19 +439,19 @@ export function useBotGameEngineDispatch(
         const gradedPly = chess.history().length;
         // A book move is CHEAP, not FREE: it reaches this same commit through
         // the same chargeableElapsedMs() -> flagIfOutOfTime() -> commitMove()
-        // pipeline as a searched move (169 D-15/D-16/D-20), so it is debited its
+        // pipeline as a searched move, so it is debited its
         // real elapsed time (the Maia eval + the reveal delay), it gets the
         // Fischer increment, and a bot already down to nothing can still flag on
         // it. There is deliberately no second commit path and no untimed book
         // bypass.
         commitMove(move, mover, debitMs);
 
-        // D-01: best-effort refresh of the draw-accept score from the position
+        // Best-effort refresh of the draw-accept score from the position
         // the bot's own move reached (reuses the grading provider it already
         // has) — never blocks the move commit above.
         //
-        // 169.5: SUPPRESSED on book plies, so SC1's "no Stockfish evals while in
-        // book" holds literally. `lastRootPracticalScoreRef` therefore stays at
+        // SUPPRESSED on book plies, so "no Stockfish evals while in book"
+        // holds literally. `lastRootPracticalScoreRef` therefore stays at
         // its not-yet-evaluated `null` sentinel for the whole book window —
         // which is safe ONLY because `wouldBotAcceptDraw` refuses on that
         // sentinel. Do NOT "helpfully" restore a numeric default to that ref: a
@@ -482,12 +463,11 @@ export function useBotGameEngineDispatch(
         pool
           .grade(fen, [uci])
           .then((gradeMap) => {
-            // CR-02 fix (182-REVIEW.md): unlike the search/resolveMove()
-            // path above (which checks controller.signal.aborted per the
-            // D-17 two-signal contract), this continuation had NO staleness
-            // guard — a pool.grade() RPC can resolve arbitrarily late, so a
-            // grade issued for a discarded turn could land after
-            // newGame()/resign() mint a new game, corrupting
+            // Staleness guard (bug fix): unlike the search/resolveMove() path
+            // above, this continuation would otherwise have no check that
+            // its turn is still live — a pool.grade() RPC can resolve
+            // arbitrarily late, so a grade issued for a discarded turn could
+            // land after newGame()/resign() mint a new game, corrupting
             // lastRootPracticalScoreRef/consecutiveLowScoreTurnsRef with a
             // stale score and even spuriously resigning the NEW game.
             // `controller` is the SAME AbortController newGame()/resign()
@@ -500,16 +480,14 @@ export function useBotGameEngineDispatch(
               lastRootPracticalScoreRef.current = score;
               onBotMoveGraded(clampedMoverPovCp(grade.evalCp, grade.evalMate, mover), gradedPly);
 
-              // D-07/D-08 (Phase 182, STYLE-02): the resign hysteresis
-              // counter and wouldBotResign check live entirely inside this
-              // `style` guard (D-03: unstyled games never touch either) and
-              // are updated ONLY from a FRESH grade this same callback just
-              // computed — never from a stale prior-turn score (Task 3's
-              // "increments only on a fresh at/below-threshold score"
-              // must-have). Mirrors the ref-latch pattern (Pitfall 3):
-              // mutated via bumpConsecutiveLowScoreTurns
-              // (useBotGameDrawOffer), reset only in newGame() via
-              // resetDrawOfferState.
+              // The resign hysteresis counter and wouldBotResign check live
+              // entirely inside this `style` guard (unstyled games never touch
+              // either) and are updated ONLY from a FRESH grade this same
+              // callback just computed — never from a stale prior-turn score
+              // (the counter increments only on a fresh at/below-threshold
+              // score). Mirrors the ref-latch pattern: mutated via
+              // bumpConsecutiveLowScoreTurns (useBotGameDrawOffer), reset only
+              // in newGame() via resetDrawOfferState.
               if (style) {
                 const consecutiveLowScoreTurns = bumpConsecutiveLowScoreTurns(score <= style.threshold);
                 const resigns = wouldBotResign(
@@ -522,7 +500,7 @@ export function useBotGameEngineDispatch(
                 if (resigns) {
                   // The bot resigns — the user wins (mirrors resign()'s own
                   // winner logic, the confirmed-resign callback in
-                  // useBotGame.ts).
+                  // useBotGameMoves.ts).
                   finalizeGame({ reason: 'resignation', winner: userColor });
                 }
 
@@ -552,15 +530,14 @@ export function useBotGameEngineDispatch(
       lastRootPracticalScoreRef,
       bumpConsecutiveLowScoreTurns,
       applyDrawOfferUpdate,
-      // onBotMoveGraded added (Phase 223, BOTVOICE-01/02): a stable
-      // useCallback from useBotGameVoice (via useBotGame.ts) — listing it
-      // changes nothing about when runBotTurn is recreated.
+      // onBotMoveGraded is a stable useCallback from useBotGameVoice (via
+      // useBotGame.ts) — listing it changes nothing about when runBotTurn is
+      // recreated.
       onBotMoveGraded,
-      // abortControllerRef/setIsBotThinking added (215-03 Task 2): pre-split
-      // these were direct same-scope useRef/useState access, exempt from
-      // exhaustive-deps. Now stable cross-hook props passed in as options
-      // (ref identity and setState setter identity never change) — listing
-      // them changes nothing about when runBotTurn is recreated.
+      // abortControllerRef/setIsBotThinking are stable cross-hook props passed
+      // in as options (ref identity and setState setter identity never
+      // change) — listing them changes nothing about when runBotTurn is
+      // recreated.
       abortControllerRef,
       setIsBotThinking,
     ],
@@ -570,12 +547,12 @@ export function useBotGameEngineDispatch(
     runBotTurnRef.current = runBotTurn;
   }, [runBotTurn]);
 
-  // ─── Abort-on-unmount (Pattern 2) ───────────────────────────────────────────
+  // ─── Abort-on-unmount ────────────────────────────────────────────────────────
 
   useEffect(() => {
     return () => abortControllerRef.current?.abort();
-    // abortControllerRef added (215-03 Task 2) — see the runBotTurn deps
-    // comment above; this effect's cleanup is otherwise unchanged.
+    // abortControllerRef is listed for exhaustive-deps — see the runBotTurn
+    // deps comment above.
   }, [abortControllerRef]);
 
   return {

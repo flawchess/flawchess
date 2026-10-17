@@ -1,17 +1,16 @@
 /**
  * flawChessVerdict — pure, worker-free, chess.js-free classification module for
- * the FlawChess-vs-Stockfish agreement verdict on the `/analysis` page (Phase
- * 157, REVIEW-02). Compares FlawChess's practical #1 pick
+ * the FlawChess-vs-Stockfish agreement verdict on the `/analysis` page. Compares FlawChess's practical #1 pick
  * (`flawChessEngine.rankedLines[0]`) against Stockfish's objective #1 pick
  * (`engine.pvLines[0]`) and classifies the pair into one of three tiers:
- *   - aligned (D-04): the two engines pick the SAME UCI move.
- *   - safe (D-05): different moves, but the expected-score drop sacrificed by
+ *   - aligned: the two engines pick the SAME UCI move.
+ *   - safe: different moves, but the expected-score drop sacrificed by
  *     playing FlawChess's practical pick instead of Stockfish's objective best
  *     is strictly below SHARP_DROP_THRESHOLD.
- *   - sharp (D-05): different moves, expected-score drop at or above SHARP_DROP_THRESHOLD
+ *   - sharp: different moves, expected-score drop at or above SHARP_DROP_THRESHOLD
  *     (objectively best but the search expects imprecise follow-up play to squander it —
  *     NOT necessarily a "trap": in sac-for-perpetual cases it's the only good move).
- * Returns `null` (D-06) whenever either side's objective eval hasn't arrived
+ * Returns `null` whenever either side's objective eval hasn't arrived
  * yet — never a bogus tier from a partial snapshot.
  *
  * Reuses evalToExpectedScore's Lichess winning-chances sigmoid (@/lib/liveFlaw) rather
@@ -36,7 +35,7 @@ export interface FlawChessVerdictMove {
   role: 'flawchess' | 'stockfish';
   /** White-POV centipawns. Null on the FlawChess side when the pick grades to a forced mate (evalMate set instead). */
   evalCp: number | null;
-  /** White-POV mate distance, when the pick grades to a forced mate (quick 260709 threaded RankedLine.objectiveEvalMate through). */
+  /** White-POV mate distance, when the pick grades to a forced mate (threaded through from RankedLine.objectiveEvalMate). */
   evalMate: number | null;
   textColor: string;
   arrowColor: string;
@@ -46,7 +45,7 @@ export interface FlawChessVerdictResult {
   tier: FlawChessVerdictTier;
   flawChessMove: FlawChessVerdictMove;
   stockfishMove: FlawChessVerdictMove;
-  /** Expected-score drop sacrificed by the FlawChess pick vs Stockfish's objective pick, from the mover's POV. Always >= 0 (D-06). */
+  /** Expected-score drop sacrificed by the FlawChess pick vs Stockfish's objective pick, from the mover's POV. Always >= 0. */
   drop: number;
   /** Raw white-POV centipawn gap |Stockfish best − FlawChess pick| between the two DISPLAYED objective evals, or null when either side is a mate score. */
   objectiveEvalGapCp: number | null;
@@ -54,7 +53,7 @@ export interface FlawChessVerdictResult {
   nearlySameEval: boolean;
 }
 
-/** Sharp/trap at or above this expected-score drop (D-05). Imported alias, not a bare literal, so it never drifts from the generated threshold. */
+/** Sharp/trap at or above this expected-score drop. Imported alias, not a bare literal, so it never drifts from the generated threshold. */
 export const SHARP_DROP_THRESHOLD = BLUNDER_DROP;
 
 /**
@@ -71,7 +70,7 @@ export const NEARLY_SAME_EVAL_CP = 50;
 
 /**
  * Classifies the FlawChess-vs-Stockfish pick pair, or returns `null` when the
- * snapshot is incomplete (D-06): either line is missing, the FlawChess
+ * snapshot is incomplete: either line is missing, the FlawChess
  * objective eval hasn't arrived, or the Stockfish line has no eval at all.
  */
 export function computeFlawChessVerdict(
@@ -82,7 +81,7 @@ export function computeFlawChessVerdict(
   if (flawChessLine == null || stockfishLine == null) return null;
   // A forced-mate leaf grades to evalMate (cp null), so accept either — bailing on a
   // null cp alone dropped the whole verdict on mate lines, surfacing the muted
-  // "Turn on Stockfish" prompt even with Stockfish on (quick 260709).
+  // "Turn on Stockfish" prompt even with Stockfish on.
   if (flawChessLine.objectiveEvalCp == null && flawChessLine.objectiveEvalMate == null) return null;
 
   const sfMoveUci = stockfishLine.moves[0];
@@ -111,14 +110,14 @@ export function computeFlawChessVerdict(
 
   // Raw white-POV centipawn gap between the two evals the prose actually renders. Null when EITHER
   // side is a mate score (a forced mate vs a cp eval is never "nearly the same eval") — including
-  // the FlawChess side, whose objectiveEvalCp is null on a mate leaf (quick 260709).
+  // the FlawChess side, whose objectiveEvalCp is null on a mate leaf.
   const objectiveEvalGapCp =
     sfEvalCp == null || flawChessLine.objectiveEvalCp == null
       ? null
       : Math.abs(sfEvalCp - flawChessLine.objectiveEvalCp);
   const nearlySameEval = objectiveEvalGapCp != null && objectiveEvalGapCp <= NEARLY_SAME_EVAL_CP;
 
-  // D-04: aligned check is UCI-string equality, done BEFORE the drop split.
+  // Aligned check is UCI-string equality, done BEFORE the drop split.
   if (flawChessLine.rootMove === sfMoveUci) {
     return { tier: 'aligned', flawChessMove, stockfishMove, drop: 0, objectiveEvalGapCp, nearlySameEval };
   }
@@ -138,20 +137,20 @@ export function computeFlawChessVerdict(
   return { tier, flawChessMove, stockfishMove, drop, objectiveEvalGapCp, nearlySameEval };
 }
 
-// ─── computeFindabilityGate (Phase 159 ride-along, D-10/D-11/D-12) ─────────
+// ─── computeFindabilityGate ─────────────────────────────────────────────────
 
 /**
  * Margin (raw Maia probability, 0-1 scale) by which the FlawChess pick's
  * probability must exceed the Stockfish pick's probability for the safe-tier
- * "far easier to find and play" claim to render (D-10). Starting value; needs
- * UAT tuning like SHARP_DROP_THRESHOLD/NEARLY_SAME_EVAL_CP — same order of
+ * "far easier to find and play" claim to render. Starting value; needs
+ * tuning like SHARP_DROP_THRESHOLD/NEARLY_SAME_EVAL_CP — same order of
  * magnitude as INACCURACY_DROP (0.05) in generated/flawThresholds.ts.
  */
 export const FINDABILITY_MARGIN = 0.05;
 
 /**
- * Findability-claim gate (D-10). Both `pYouFc`/`pYouSf` MUST be raw Maia
- * probability at the selected ELO (D-12) — the SAME distribution the Maia
+ * Findability-claim gate. Both `pYouFc`/`pYouSf` MUST be raw Maia
+ * probability at the selected ELO — the SAME distribution the Maia
  * "Moves by Rating" chart renders beneath this prose — never the search-
  * internal temperature-adjusted prior, which this module cannot even see
  * (RankedLine has no `prior` field; this file imports nothing from
@@ -159,7 +158,7 @@ export const FINDABILITY_MARGIN = 0.05;
  * Returns false (never throws) whenever either probability is unavailable,
  * whenever the FlawChess pick isn't inside the chart's plotted candidate set
  * (`fcInPlottedSet`, from `selectCandidatesByMass`), or whenever the margin
- * isn't exceeded (D-10's AND, not OR).
+ * isn't exceeded (AND, not OR).
  */
 export function computeFindabilityGate(
   pYouFc: number | null,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Train.solveLoop.test.tsx — the end-to-end gate for Phase 190 Plan 01's
- * tracer slice (SOLV-01/SOLV-03): start a session, guess-lock the board,
+ * Train.solveLoop.test.tsx — the end-to-end gate for the Train solve loop:
+ * start a session, guess-lock the board,
  * play exactly one move, and see server-verified guess + client-graded move
  * verdicts.
  *
@@ -14,7 +14,7 @@
  *
  * A fake `globalThis.Worker` answers `uci`->`uciok`, `isready`->`readyok`,
  * and every `go` with `info ... score cp 20 ... pv e2e4` then
- * `bestmove e2e4` — the test always plays e2e4, so grading takes the D-06
+ * `bestmove e2e4` — the test always plays e2e4, so grading takes the
  * exact-match fast path (no second search needed to reach a verdict).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,16 +42,16 @@ import type {
 } from '@/types/train';
 import type { UserProfile } from '@/types/users';
 
-// FLAWCHESS-64: Train.tsx is now profile-gated (startSession() only fires
+// Train.tsx is profile-gated (startSession() only fires
 // once useUserProfile() resolves to a non-guest profile). This file's
 // `@/api/client` mock spreads `...actual`, so `apiClient` is the REAL axios
 // instance and useUserProfile would never resolve under jsdom — leaving
 // `profile` undefined and startSession() permanently unfired. A settled
 // non-guest profile keeps this tracer's existing assertions unchanged.
-// D-03 (Phase 224): `hasImportedGames` is also imported from this module by
+// `hasImportedGames` is also imported from this module by
 // Train.tsx, so the whole-module mock above must provide it too — the
 // literal `true` keeps this tracer on the has_games audience, matching every
-// pre-existing assertion in this file (defaults established in Plan 04).
+// assertion in this file.
 vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({
     data: {
@@ -134,7 +134,7 @@ const SOLVE_RESPONSE: SolveResponse = {
   session_complete: true,
 };
 
-// Phase 222 (D-12): this tracer doesn't exercise the intro stepper, so the
+// This tracer doesn't exercise the intro stepper, so the
 // default fixture reports "already seen" (a past timestamp) — otherwise the
 // solve screen's first puzzle would render the intro instead of the regular
 // guess prompt this file's assertions expect.
@@ -154,10 +154,10 @@ const SETTINGS_RESPONSE: TrainSettingsResponse = {
 const composeOrResumeSession = vi.fn(async () => SESSION_RESPONSE);
 const solvePuzzle = vi.fn(async () => SOLVE_RESPONSE);
 const markSessionEntered = vi.fn<(sessionId: number) => Promise<void>>(async () => undefined);
-// Phase 233 (D-06): the keepalive transport of every non-Next review flush
+// The keepalive transport of every non-Next review flush
 // (fires from the deferred unmount flush at RTL cleanup, so it must exist).
-// Phase 233: every review flush uses the keepalive transport (Next too, since
-// the 233 review fix WR-02); the mock splits it by `exit` into these two spies.
+// Every review flush uses the keepalive transport (Next too);
+// the mock splits it by `exit` into these two spies.
 const exitFlush = vi.fn<(sessionId: number, position: number, body: unknown) => void>();
 const nextFlush = vi.fn<(sessionId: number, position: number, body: unknown) => void>();
 const getSettings = vi.fn(async () => SETTINGS_RESPONSE);
@@ -176,7 +176,7 @@ const revealPuzzle = vi.fn(async () => ({
 // state) call useTrainProgress() -> trainApi.getProgress internally. Without
 // a resolved mock they stay in their loading skeleton forever (no queryFn ->
 // react-query never settles) — harmless for the earlier tests here (they
-// never assert on these cards), but the 260728-tgc regression test below
+// never assert on these cards), but the completed-session score regression test below
 // DOES need the 'completed' state's TrainStatsCard to actually resolve.
 const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   session_streak_count: 0,
@@ -193,7 +193,7 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
 };
 const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
 
-// Phase 230: the landing's TrainLeaderboardCard calls trainApi.getLeaderboard.
+// The landing's TrainLeaderboardCard calls trainApi.getLeaderboard.
 // Empty boards, null viewers and null pass targets keep it inert here.
 const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, pass_target: null, last_week: null };
 const getLeaderboard = vi.fn(async () => ({
@@ -204,12 +204,12 @@ const getLeaderboard = vi.fn(async () => ({
   accuracy: EMPTY_LEADERBOARD_BOARD,
 }));
 
-// Phase 231: the landing's TrainMedalDialogHost calls trainApi.getUnclaimedMedals.
+// The landing's TrainMedalDialogHost calls trainApi.getUnclaimedMedals.
 // An empty list keeps the dialog closed; claimMedals is never reached.
 const getUnclaimedMedals = vi.fn(async () => ({ medals: [] }));
 const claimMedals = vi.fn(async () => undefined);
 
-// 190-05: TrainReveal (mounted once the verdict lands) also fetches the
+// TrainReveal (mounted once the verdict lands) also fetches the
 // game card via libraryApi.getGame — mocked to reject deterministically
 // (fast, no real network call) since this tracer doesn't exercise the game
 // card itself (that's TrainReveal.test.tsx's job).
@@ -241,7 +241,7 @@ vi.mock('@/api/client', async () => {
 
 // ─── Fake Worker ────────────────────────────────────────────────────────────
 
-// 190.1-02: tracks the width from the last `setoption name MultiPV value N`
+// Tracks the width from the last `setoption name MultiPV value N`
 // message and emits one `info ... multipv K ...` line per requested rank on
 // a mount search, still emitting a single rank for width-1 searches.
 class FakeWorker {
@@ -251,7 +251,7 @@ class FakeWorker {
   private width = 1;
 
   postMessage(msg: string | { progressPort: unknown }): void {
-    // Phase 213: useStockfishEngine now also hands the worker a
+    // useStockfishEngine also hands the worker a
     // `{ progressPort }` MessageChannel port before the 'uci' handshake —
     // this fake has no progress-reporting to simulate, so it just ignores
     // any non-string payload.
@@ -295,7 +295,7 @@ async function renderTrainPage() {
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        {/* Phase 237 plan 07: the reveal bar's BoardControls use tooltips (the App shell provides this). */}
+        {/* The reveal bar's BoardControls use tooltips (the App shell provides this). */}
         <TooltipProvider>
           <TrainPage />
         </TooltipProvider>
@@ -313,7 +313,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
         return fakeWorker;
       }),
     );
-    // WR-02: the reveal action bar mounts once by breakpoint. Model a tablet width:
+    // The reveal action bar mounts once by breakpoint. Model a tablet width:
     // `sm` up (in-flow bar, btn-train-next in the DOM) but below `lg` (collapsed
     // verdict strip, as the strip assertions below expect).
     vi.stubGlobal(
@@ -337,7 +337,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
     cleanup();
     vi.unstubAllGlobals();
     sessionStorage.clear();
-    // Phase 213: useStockfishEngine now writes a
+    // useStockfishEngine writes a
     // `flawchess.engineAsset.seen.stockfish-wasm` localStorage flag on
     // readyok (markEngineAssetReady) — clear it so it cannot leak into a
     // later test's own localStorage.length assertions (jsdom's localStorage
@@ -353,14 +353,14 @@ describe('Train solve loop (end-to-end tracer)', () => {
   it('locks the board until a guess is committed, then grades exactly one move end to end', async () => {
     await renderTrainPage();
 
-    // 190-04: Train.tsx now fires the session status fetch automatically on
-    // mount (D-01 forbids auto-entering the LOOP, not this read — there is no
+    // Train.tsx fires the session status fetch automatically on
+    // mount (auto-entering the LOOP is forbidden, not this read — there is no
     // separate preview endpoint, see useTrainSession.ts). The landing screen
     // shows its loading state until that resolves.
     await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
     // The mount-time status read must not count as entering the session.
     expect(markSessionEntered).not.toHaveBeenCalled();
-    // Phase 231 (D-10): the landing asked for unclaimed medals (empty here), so
+    // The landing asked for unclaimed medals (empty here), so
     // no medal dialog shows on the landing or once the loop is entered.
     await waitFor(() => expect(getUnclaimedMedals).toHaveBeenCalled());
     expect(screen.queryByTestId('train-medal-dialog')).toBeNull();
@@ -404,7 +404,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
     expect(screen.getByTestId('train-bot-pill-move').textContent).toBe('+2');
     expect(screen.getByTestId('btn-train-next')).not.toBeNull();
 
-    // 190-05 D-08: once the reveal opens, the board snaps back to the puzzle
+    // Once the reveal opens, the board snaps back to the puzzle
     // position — the played move is reported in the verdict text above, not
     // left on the board.
     expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(START_FEN);
@@ -414,17 +414,16 @@ describe('Train solve loop (end-to-end tracer)', () => {
     expect(sessionId).toBe(1);
     expect(body).toMatchObject({ position: 1, guess: 'critical', played_move: 'e2e4', move_quality: 'good' });
 
-    // 190-05/SOLV-05: the reveal's own best-line fetch DOES fire once the
+    // The reveal's own best-line fetch DOES fire once the
     // verdict has landed — gated on the solve response being present, never
-    // before it (T-190-16). This supersedes Plan 01's "zero reveal calls
-    // ever" assertion, which predated the reveal panel this plan builds.
+    // before it.
     await waitFor(() => expect(revealPuzzle).toHaveBeenCalledTimes(1));
     expect(revealPuzzle).toHaveBeenCalledWith(1, 1);
   }, 15000);
 
-  it('resume: clicking "Resume session" enters the loop at the next unsolved puzzle (190-06 UAT bug repro)', async () => {
+  it('resume: clicking "Resume session" enters the loop at the next unsolved puzzle', async () => {
     const REMAINING_FEN = 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
-    // Bug repro (190-06 UAT): the backend's resume path (load_session_puzzles)
+    // Bug repro: the backend's resume path (load_session_puzzles)
     // returns ONLY the not-yet-attempted puzzles, ordered by position — NOT a
     // full 12-entry array with the first 7 already solved. A frontend that
     // seeds currentIndex from solved_count (7) indexes past the end of this
@@ -499,25 +498,23 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await waitFor(() => expect(screen.getByTestId('train-guess-prompt')).not.toBeNull());
     // The next puzzle has not been attempted — a reveal GET for it 409s.
     expect(revealPuzzle.mock.calls).toEqual([]);
-    // Phase 233 (D-03): the review flush for puzzle 0 went out before the loop advanced.
+    // The review flush for puzzle 0 went out before the loop advanced.
     expect(nextFlush).toHaveBeenCalledTimes(1);
     expect(nextFlush).toHaveBeenCalledWith(69, 0, expect.objectContaining({ exit: 'next' }));
     // Next set the Next-flushed guard, so the advance never also sends a keepalive flush.
     expect(exitFlush).not.toHaveBeenCalled();
   }, 15000);
 
-  it('a resumed session with server-recorded solved_results shows the resumed score and max, not a restart from zero (190.1-04 D-04)', async () => {
+  it('a resumed session with server-recorded solved_results shows the resumed score and max, not a restart from zero', async () => {
     const REMAINING_FEN = 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3';
     const RESUMED_SESSION_ID = 3;
-    // 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): the resumed score now
-    // comes entirely from the session response's own `solved_results` —
-    // server data, not a device-local localStorage tally — so the resumed
-    // sessionSolvedCount denominator (7 x TRAIN_POINTS_PER_PUZZLE = 21,
-    // SEED-119) must combine with these SERVER-RECORDED outcomes, never
+    // The resumed score comes entirely from the session response's own
+    // `solved_results` — server data, not a device-local localStorage tally —
+    // so the resumed sessionSolvedCount denominator (7 x TRAIN_POINTS_PER_PUZZLE
+    // = 21) must combine with these SERVER-RECORDED outcomes, never
     // restart from 0. Seven entries summing to 10 points (three at 2 points
     // — correct guess + inaccuracy — plus four at 1 point — correct guess +
-    // wrong move), matching the total this test used to seed via
-    // localStorage before the fix.
+    // wrong move).
     const RESUMED_SOLVED_RESULTS: SolvedResult[] = [
       { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
       { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
@@ -550,10 +547,10 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await waitFor(() => expect(screen.getByTestId('train-session-score')).not.toBeNull());
     const text = screen.getByTestId('train-session-score').textContent ?? '';
     expect(text).toContain('10');
-    expect(text).toContain('21'); // 7 already-solved x TRAIN_POINTS_PER_PUZZLE (3, SEED-119)
+    expect(text).toContain('21'); // 7 already-solved x TRAIN_POINTS_PER_PUZZLE (3)
   });
 
-  it('REGRESSION (260728-tgc): a completed session with server-recorded solved_results shows the correct non-zero score on a device that never saw the original solve responses', async () => {
+  it('REGRESSION: a completed session with server-recorded solved_results shows the correct non-zero score on a device that never saw the original solve responses', async () => {
     // The reproduced production bug: user 28, drill_sessions.id=27 — 6 solved
     // rows, 5 guess points + 9 move points = 14 of a possible 18. Before this
     // fix, `sessionScore` was seeded ONLY from a localStorage tally keyed by
@@ -592,7 +589,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await waitFor(() => expect(screen.getByTestId('train-stats-today-score')).not.toBeNull());
     expect(screen.getByTestId('train-stats-today-score').textContent).toBe('14/18Points today');
     // Never touched browser storage for the score — the whole point of this
-    // test. The streak hero's last-seen snapshot (SEED-181) is unrelated
+    // test. The streak hero's last-seen snapshot is unrelated
     // cosmetic state and is the only key allowed.
     expect(
       Object.keys(localStorage).filter((k) => !k.startsWith('flawchess_train_streak_last_seen:')),
@@ -603,7 +600,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
     // which flakes past Vitest's 5s default under the full parallel run.
   }, 15000);
 
-  // ─── 190.1 UAT round 5: Analyze -> browser back restores the solved reveal ──
+  // ─── Analyze -> browser back restores the solved reveal ──
 
   const SOLVED_FEN = START_FEN;
   const RESTORE_REMAINING_FEN =
@@ -643,7 +640,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
     };
   }
 
-  it('mounts straight into the cached solved reveal after Analyze -> back, then Next continues the resumed loop (190.1 UAT round 5)', async () => {
+  it('mounts straight into the cached solved reveal after Analyze -> back, then Next continues the resumed loop', async () => {
     const SESSION_ID = 4;
     saveTrainRevealCache(makeCachedReveal(SESSION_ID));
     // The resumed session no longer contains the solved puzzle — only the
@@ -672,16 +669,16 @@ describe('Train solve loop (end-to-end tracer)', () => {
     // next unsolved (which the general formula would report as 2 of 2).
     expect(screen.getByTestId('train-progress').textContent).toBe('1 of 2');
     // Verdicts render from the cache: guess correct, move incorrect. The restored
-    // strip is collapsed (D-08), so open it to read the pills.
+    // strip is collapsed, so open it to read the pills.
     expect(screen.getByTestId('train-verdict-strip').getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe('+1');
     fireEvent.click(screen.getByTestId('train-verdict-strip'));
     expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
     expect(screen.getByTestId('train-bot-pill-move').textContent).toBe('+0');
     // No mount grading search for an already-solved puzzle — the grading
-    // engine handshakes but never receives a `go`. Quick 260803-iv6: the
+    // engine handshakes but never receives a `go`. The
     // restored reveal's own eval bar DOES analyze the solved position (it
-    // shares the same gate — `showResultRow` — as the reveal panel itself,
+    // shares the same gate — `showReveal` — as the reveal panel itself,
     // and a restored reveal already has a landed verdict), so `goCount`
     // reaches exactly 1 from the eval bar's Worker — this harness stubs
     // every `new Worker()` call to the SAME `fakeWorker` singleton, so a

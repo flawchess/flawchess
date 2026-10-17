@@ -1,6 +1,7 @@
-"""Position bookmarks router: CRUD + reorder endpoints for position bookmarks.
+"""Position bookmarks router: CRUD, reorder and suggestions.
 
-HTTP layer only — all DB operations go through position_bookmark_repository.
+CRUD goes through position_bookmark_repository; _build_position_suggestion still
+queries game_positions/games directly (bookmarks have no service layer).
 """
 
 import io
@@ -45,13 +46,8 @@ async def _build_position_suggestion(
 ) -> PositionSuggestion | None:
     """Build one suggestion for a most-played position, or `None` to signal skip.
 
-    Extracted from get_suggestions's per-position loop body, including the FEN
-    reconstruction try/except (216-06, zero behavior change): same skip
-    conditions (no representative game row, no PGN, unparseable/malformed
-    PGN), same Sentry capture on the FEN-reconstruction exception. Kept in
-    this router module rather than a service module: position_bookmarks has
-    no existing service layer (only position_bookmark_repository), and this
-    phase is a depth fix, not a layering refactor.
+    Skips (returns `None`) when there is no representative game row, no PGN, or an
+    unparseable PGN; FEN-reconstruction errors are captured to Sentry.
     """
     # Find a representative game for this position
     stmt = (
@@ -120,9 +116,9 @@ async def get_suggestions(
 ) -> SuggestionsResponse:
     """Return up to 5 white + 5 black position bookmark suggestions from most-played openings.
 
-    Suggestions are derived from the user's most frequently played positions in ply range 6-14.
+    Suggestions are derived from the user's most frequently played positions in ply range 2-8.
     Already-bookmarked positions are excluded. Each suggestion includes FEN, SAN moves,
-    opening name/ECO, game count, and a recommended piece filter (mine vs both).
+    opening name/ECO and game count.
     """
     PLY_MIN = 2
     PLY_MAX = 8

@@ -1,15 +1,15 @@
-"""ORM models for the weekly Train leaderboard medal snapshot (Phase 231).
+"""ORM models for the weekly Train leaderboard medal snapshot.
 
 `train_weekly_standings` freezes each closed ISO week's PUBLIC final standings, one
 row per (week, board, user), so a later opt-out or account deletion never changes who
-won a past week (D-01). A row exists for the public board exactly: Points rows for
+won a past week. A row exists for the public board exactly: Points rows for
 every registered, non-hidden user with at least one solve; Accuracy rows only for
 qualified users (20+ non-filler solves). Hidden users, guests and tentative Accuracy
 users get no row.
 
 The `medal` column is written explicitly from the competition rank and is the ONLY
 medal source. Never derive a medal from `final_rank` at read time: a zero-value entry
-keeps its rank but earns no medal (D-05), which `final_rank <= 3` would get wrong.
+keeps its rank but earns no medal, which `final_rank <= 3` would get wrong.
 
 `train_weekly_finalizations` holds one marker row per finalized week, including weeks
 with no eligible entrants (those write no standings rows, so "finalized" cannot be

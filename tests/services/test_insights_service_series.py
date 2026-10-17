@@ -1,12 +1,11 @@
-"""Tests for series resampling helpers in app/services/insights_service.py (Phase 65 Plan 03).
+"""Tests for series resampling helpers in app/services/insights_service.py.
 
 Coverage:
-- D-02: SubsectionFinding.series populated for the 3 timeline subsections only
-  (type_win_rate_timeline removed in 260501-s0u).
-- D-03: last_3mo → weekly pass-through; all_time → monthly weighted-by-n mean.
-- D-04: Endgame ELO gap-only + sparse-combo filter (SPARSE_COMBO_FLOOR = 10).
+- SubsectionFinding.series populated for the 3 timeline subsections only
+- last_3mo → weekly pass-through; all_time → monthly weighted-by-n mean.
+- Endgame ELO gap-only + sparse-combo filter (SPARSE_COMBO_FLOOR = 10).
 
-All tests run against synthetic Pydantic instances (the ranked payload since Phase 238)
+All tests run against synthetic Pydantic instances (the ranked payload)
 — zero DB access.
 """
 
@@ -36,7 +35,7 @@ from tests.services.ranked_payload_fixtures import (
 )
 
 # ---------------------------------------------------------------------------
-# TestResample — D-03 resampling helper unit tests.
+# TestResample — resampling helper unit tests.
 # ---------------------------------------------------------------------------
 
 
@@ -145,7 +144,7 @@ class TestResample:
 
 
 # ---------------------------------------------------------------------------
-# TestEloCombo — D-04 gap-only + sparse-combo filter.
+# TestEloCombo — gap-only + sparse-combo filter.
 # ---------------------------------------------------------------------------
 
 
@@ -158,7 +157,7 @@ def _make_elo_combo(
 ) -> EndgameEloTimelineCombo:
     """Build a synthetic EndgameEloTimelineCombo with n_points weekly points.
 
-    Phase 87.5 (D-06): parameter name restored to endgame_elo in lockstep
+    Parameter name restored to endgame_elo in lockstep
     with the renamed Pydantic field.
     """
     points: list[EndgameEloTimelinePoint] = [
@@ -184,7 +183,7 @@ class TestEloCombo:
     """Unit tests for _series_for_endgame_elo_combo."""
 
     def test_gap_only_series(self) -> None:
-        """Gap value = endgame_elo - actual_elo for each point (D-04)."""
+        """Gap value = endgame_elo - actual_elo for each point."""
         combo = _make_elo_combo(10, endgame_elo=1500, actual_elo=1400)
         result = _series_for_endgame_elo_combo(combo, "last_3mo")
         assert result is not None
@@ -223,7 +222,7 @@ class TestEloCombo:
 
 
 # ---------------------------------------------------------------------------
-# TestSeriesForEndgameEloComboPRFields — Phase 87.6 PR field threading.
+# TestSeriesForEndgameEloComboPRFields — PR field threading.
 # ---------------------------------------------------------------------------
 
 
@@ -234,7 +233,7 @@ def _make_elo_combo_with_pr(
 ) -> EndgameEloTimelineCombo:
     """Build an EndgameEloTimelineCombo from (endgame_elo, non_endgame_elo, actual_elo) tuples.
 
-    Phase 87.6: local fixture builder for PR-field threading tests. Each tuple
+    Local fixture builder for PR-field threading tests. Each tuple
     represents one weekly bucket with distinct endgame_elo / non_endgame_elo /
     actual_elo values so tests can assert per-field pass-through independence.
     """
@@ -258,7 +257,7 @@ def _make_elo_combo_with_pr(
 
 
 class TestSeriesForEndgameEloComboPRFields:
-    """Phase 87.6: asserts endgame_elo + non_endgame_elo thread through to TimePoints.
+    """Asserts endgame_elo + non_endgame_elo thread through to TimePoints.
 
     RED gate: tests fail until Task 2 adds the two optional fields to TimePoint
     and extends the 4-tuple wiring to a 6-tuple in the service layer.
@@ -415,7 +414,7 @@ class TestSeriesForEndgameEloComboPRFields:
     def test_endgame_elo_combo_all_timepoints_have_non_endgame_elo(self) -> None:
         """Every TimePoint emitted by _series_for_endgame_elo_combo carries non_endgame_elo.
 
-        Gating contract (Phase 87.6): the payload extension must be non-None for
+        Gating contract: the payload extension must be non-None for
         every point in the series (no silent None-propagation through the 6-tuple
         threading).
         """
@@ -456,7 +455,7 @@ class TestTimelineHelpers:
 
 
 # ---------------------------------------------------------------------------
-# Integration helpers — build ranked-payload findings (Phase 238, D-04).
+# Integration helpers — build ranked-payload findings.
 # ---------------------------------------------------------------------------
 
 _AS_OF = datetime.datetime(2026, 4, 20, tzinfo=datetime.UTC)
@@ -477,11 +476,11 @@ def _make_minimal_findings() -> EndgameTabFindings:
 
 
 # ---------------------------------------------------------------------------
-# TestIntegration — D-02 end-to-end: build_findings populates series only
-# for the timeline subsections (type_win_rate_timeline removed 260501-s0u).
+# TestIntegration — end-to-end: build_findings populates series only
+# for the timeline subsections.
 # ---------------------------------------------------------------------------
 
-# Phase 88: clock_diff_timeline removed from active timeline subsections.
+# clock_diff_timeline removed from active timeline subsections.
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
@@ -491,10 +490,10 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
 
 
 class TestIntegration:
-    """Integration tests for findings series population (D-02), over the ranked payload."""
+    """Integration tests for findings series population, over the ranked payload."""
 
     def test_findings_populate_series_only_for_timelines(self) -> None:
-        """series is not None exactly for the active timeline subsection_ids (D-02)."""
+        """series is not None exactly for the active timeline subsection_ids."""
         result = _make_minimal_findings()
 
         timeline_with_series = {f.subsection_id for f in result.findings if f.series is not None}
@@ -517,9 +516,9 @@ class TestIntegration:
         )
 
     def test_score_timeline_emits_three_findings_per_window(self) -> None:
-        """Phase 68 v14 (260424-pc6): score_timeline emits THREE findings per window.
-        Phase 82 D-01/D-02: MetricId renamed to endgame_score_timeline /
-        non_endgame_score_timeline. Phase 238 (D-00h): per time control, each finding
+        """score_timeline emits THREE findings per window.
+        MetricId renamed to endgame_score_timeline /
+        non_endgame_score_timeline. Per time control, each finding
         carries ``dimension={"time_control": tc}`` (no `part` dim tag).
 
         One finding per distinct metric (endgame_score_timeline,
@@ -565,7 +564,7 @@ class TestIntegration:
         assert gap.value == pytest.approx(0.05)  # DEFAULT_METRIC_VALUES["score_gap"]
 
     def test_score_timeline_series_uses_absolute_per_side_values(self) -> None:
-        """Phase 68 v14 (260424-pc6): per-metric series values come from the
+        """Per-metric series values come from the
         matching source fields — endgame_score, non_endgame_score, and the
         signed difference respectively.
 
@@ -635,7 +634,7 @@ class TestIntegration:
 
 
 # ---------------------------------------------------------------------------
-# TestScoreTimelineIntegration — Phase 68 Plan 04 end-to-end payload guard.
+# TestScoreTimelineIntegration — end-to-end payload guard.
 # Spans build_findings → _assemble_user_prompt so a cross-plan regression
 # (e.g. backend rename landed but prompt-rendered text still references the
 # old id) surfaces here even when per-plan unit tests pass.
@@ -643,12 +642,12 @@ class TestIntegration:
 
 
 class TestScoreTimelineIntegration:
-    """Phase 68 v14 (260424-pc6): findings → prompt assembly end-to-end payload shape."""
+    """Findings → prompt assembly end-to-end payload shape."""
 
     def test_score_timeline_end_to_end_payload(self) -> None:
-        """v14 UAT-pass shape: rendered prompt has THREE summary + THREE
+        """Rendered prompt has THREE summary + THREE
         series blocks per time control (one per metric), no `score_gap_timeline`,
-        no `Framing rule`, no `part=` dim tags. Phase 238: the blocks carry the
+        no `Framing rule`, no `part=` dim tags. The blocks carry the
         ``time_control=blitz`` dim in their headers.
 
         Weekly granularity is pinned in both windows via `_series_granularity`.

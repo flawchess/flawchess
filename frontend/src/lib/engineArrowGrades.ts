@@ -1,6 +1,5 @@
 /**
- * engineArrowGrades — pure grading of live Stockfish lines for the board arrows
- * (quick 261012-a6m, D-01..D-08).
+ * engineArrowGrades — pure grading of live Stockfish lines for the board arrows.
  *
  * ONE grade pass per position feeds BOTH the arrow alpha and the move-quality badge
  * (and the badge opacity), so an arrow and its icon can never disagree. The Analysis
@@ -10,7 +9,7 @@
  * Grading reuses the app's expected-score pipeline (liveFlaw): each line's eval is
  * converted to the side-to-move's expected score and compared with the top line via
  * classifyLiveSeverity, so no new cutoff is introduced. Rank 0 is 'best'; a line that
- * is not an inaccuracy/mistake/blunder is 'good' (D-05).
+ * is not an inaccuracy/mistake/blunder is 'good'.
  *
  * Pure: no React, never throws.
  */
@@ -40,7 +39,7 @@ import {
 
 /**
  * Minimum search depth (of the top line AND the graded line) before alpha and badges
- * appear (D-02). Same value as TRAIN_LIVE_ALT_MIN_DEPTH / GRADING_DEPTH_FLOOR, but its
+ * appear. Same value as TRAIN_LIVE_ALT_MIN_DEPTH / GRADING_DEPTH_FLOOR, but its
  * own constant: trainArrows imports this module (importing back would be a cycle) and
  * retuning the bot grading ladder must not move this display gate.
  */
@@ -50,14 +49,14 @@ export type EngineArrowQuality = 'best' | 'good' | FlawSeverity;
 
 export interface EngineLineGrade {
   quality: EngineArrowQuality;
-  /** The translucent arrow's color alpha AND its badge opacity (D-08). */
+  /** The translucent arrow's color alpha AND its badge opacity. */
   alpha: number;
 }
 
 /**
  * Linear alpha for a secondary arrow from its expected-score drop vs the top line:
  * drop <= 0 gives the engine's `primaryAlpha` (the top arrow's own alpha, so an equal
- * move looks equal), drop >= BLUNDER_DROP gives MIN (D-08).
+ * move looks equal), drop >= BLUNDER_DROP gives MIN.
  */
 export function secondaryArrowAlpha(drop: number, primaryAlpha: number): number {
   const t = Math.min(Math.max(drop, 0), BLUNDER_DROP) / BLUNDER_DROP;
@@ -72,7 +71,7 @@ function isGradable(line: PvLine | undefined): line is PvLine {
 
 /**
  * Grades every line against the top line (index 0), aligned 1:1 with `lines`.
- * Everything is null until the top line is deep and scored (D-02); an individual
+ * Everything is null until the top line is deep and scored; an individual
  * secondary is null when it is itself shallow or unscored.
  */
 export function gradeEngineLines(
@@ -159,7 +158,7 @@ export function flawChessSecondaryBadgeColor(alpha: number): string {
  * The corner badge for a graded arrow target. Every badge is as translucent as the
  * arrow it sits on: `translucent` badges (on a graded secondary arrow) take the grade
  * alpha as group opacity, badges on the solid top-move arrow take that arrow's alpha
- * (STOCKFISH_PRIMARY_ALPHA, owner follow-up to quick 261012-a6m). Both are scaled by
+ * (STOCKFISH_PRIMARY_ALPHA). Both are scaled by
  * the board's ARROW_OPACITY, the extra dimming ChessBoard applies to every arrow, so the
  * badge's effective opacity equals its arrow's.
  */
@@ -199,7 +198,7 @@ export function buildRankedEngineBadges(
 }
 
 /**
- * Single collision authority (D-03): an existing marker on a square wins, and of two
+ * Single collision authority: an existing marker on a square wins, and of two
  * badges on one square the earlier (higher-ranked) one wins. Returns `existing` itself
  * when nothing is kept so memoized consumers keep a stable identity.
  */

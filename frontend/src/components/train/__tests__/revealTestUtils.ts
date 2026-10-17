@@ -1,5 +1,5 @@
 /**
- * Shared helpers for the Train reveal tests (Phase 237).
+ * Shared helpers for the Train reveal tests.
  *
  * The reveal used to be found through its line-card testids and then the
  * Your-call card; both are gone (the card lives inside the verdict strip /

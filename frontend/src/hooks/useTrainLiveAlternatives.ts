@@ -16,7 +16,7 @@ function sameMoves(a: readonly TrainFineMove[], b: readonly TrainFineMove[]): bo
 }
 
 /**
- * Quick 261010-e5l: a soft puzzle's live engine alternatives at the puzzle
+ * A soft puzzle's live engine alternatives at the puzzle
  * position, for the board arrows AND the "Also fine" text. The reveal engine
  * only searches the shown position, so the root's lines are gone as soon as
  * the user steps into a line; the last settled root list is latched per

@@ -2,16 +2,13 @@
  * useStockfishEngine — React hook wrapping Stockfish 18 lite-single WASM
  * in a Web Worker, exposing a UCI state machine as plain data.
  *
- * Rendering is deferred to Phases 137/138; this hook is data-only.
- * ENGINE-01: evalCp / evalMate
- * ENGINE-02: pvLines (MultiPV = the caller's `multiPv` option)
- * ENGINE-03: pvLines[0].moves[0] (best move UCI string)
- * ENGINE-04: isReady / isAnalyzing + enabled control input
- * ENGINE-05: adaptive debounce + go movetime 1500 nodes 2000000 + stopPendingRef
+ * This hook is data-only; rendering lives in its consumers. It exposes:
+ * - evalCp / evalMate
+ * - pvLines (MultiPV = the caller's `multiPv` option)
+ * - pvLines[0].moves[0] (best move UCI string)
+ * - isReady / isAnalyzing + enabled control input
  *
- * Architecture: RESEARCH.md Patterns 1–4
- * Pitfall refs: Pitfall 3 (stale eval race), Pitfall 4 (worker leak),
- *               Pitfall 5 (bound filtering), D-04 (tab-hide pause)
+ * Search control: adaptive debounce + go movetime 1500 nodes 2000000 + stopPendingRef.
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
@@ -42,7 +39,7 @@ const MAX_NODES = 2000000;
 const RAPID_STEP_DEBOUNCE_MS = 150;
 
 /**
- * Bug fix (quick 260731-s0z, FIX-6): trailing-throttle window for
+ * Trailing-throttle window for
  * `pvLines`/`evalCp` commits during a search. Numerically equal to
  * `RAPID_STEP_DEBOUNCE_MS` but a DISTINCT mechanism — that debounces INPUT
  * (FEN navigation), this throttles OUTPUT (pvLines commits, ~20-40 info
@@ -64,9 +61,9 @@ export interface UseStockfishEngineOptions {
   enabled: boolean;
   /**
    * Number of candidate lines per search (UCI MultiPV). The caller owns the
-   * policy (D-12): Analysis and Train free play derive it from the line/arrow
+   * policy: Analysis and Train free play derive it from the line/arrow
    * settings, the Train eval bar pins it to 1. A change re-searches the
-   * current position at the new width WITHOUT restarting the worker (D-06).
+   * current position at the new width WITHOUT restarting the worker.
    */
   multiPv: number;
 }
@@ -85,7 +82,7 @@ export interface StockfishEngineState {
   /** True once the UCI init sequence completes (uciok + readyok). */
   isReady: boolean;
   /**
-   * Code review WR-01 (196-REVIEW.md): the FEN `pvLines` was most recently
+   * The FEN `pvLines` was most recently
    * reset/committed for. Set in the SAME effect (and same `fen`-change
    * render) that clears `pvLines` to `[]`, so it lags `fen` by exactly the
    * same one render `pvLines` does — letting a consumer distinguish "pvLines
@@ -112,7 +109,7 @@ export function useStockfishEngine({
   const stateRef = useRef<EngineState>('idle');
 
   /**
-   * Layer B stale-eval guard (Pitfall 3).
+   * Layer B stale-eval guard.
    * Set to true when stop is sent; cleared when the resulting bestmove arrives
    * and is discarded without committing to pvLines.
    */
@@ -120,7 +117,7 @@ export function useStockfishEngine({
 
   /**
    * Ref-for-latest-value: keeps the most recent FEN visible inside event
-   * callbacks without closing over stale state (pattern from useTacticLine).
+   * callbacks without closing over stale state.
    */
   const currentFenRef = useRef<string | null>(null);
 
@@ -159,12 +156,12 @@ export function useStockfishEngine({
   const lastFenChangeAtRef = useRef(0);
 
   /**
-   * FIX-6 (quick 260731-s0z): handle for the pending trailing pvLines commit
+   * Handle for the pending trailing pvLines commit
    * scheduled by `commitPvSnapshotThrottled`, or null when none is scheduled.
    */
   const pvCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** FIX-6: timestamp (ms) of the last committed pvLines snapshot — drives the trailing throttle. */
+  /** Timestamp (ms) of the last committed pvLines snapshot — drives the trailing throttle. */
   const lastPvCommitAtRef = useRef(0);
 
   // ─── State ─────────────────────────────────────────────────────────────────
@@ -175,7 +172,7 @@ export function useStockfishEngine({
   const [evalMate, setEvalMate] = useState<number | null>(null);
   const [pvLines, setPvLines] = useState<PvLine[]>([]);
   const [depth, setDepth] = useState(0);
-  /** WR-01 (196-REVIEW.md): the FEN `pvLines` currently belongs to. */
+  /** The FEN `pvLines` currently belongs to. */
   const [currentFen, setCurrentFen] = useState<string | null>(null);
 
   // ─── Ref sync (ref-for-latest-value) ───────────────────────────────────────
@@ -189,7 +186,7 @@ export function useStockfishEngine({
   });
 
   /**
-   * FIX-6 (quick 260731-s0z): cancels a scheduled trailing pvLines commit, if
+   * Cancels a scheduled trailing pvLines commit, if
    * any. Declared ABOVE the FEN-change effect (and every other caller) so
    * every path that supersedes or ends the current search can reach it: the
    * FEN-change effect below, `analyze()`'s `'thinking'` stop branch, the
@@ -198,7 +195,7 @@ export function useStockfishEngine({
    * cleanup. Without clearing it on every one of those paths, a trailing
    * timer can fire between a stop and the next `analyze()`'s
    * `pvMapRef.current.clear()` and commit the previous position's lines —
-   * the same defect FIX-5 fixes, arriving by a different route. Stable
+   * the same defect the FEN-change stop below fixes, arriving by a different route. Stable
    * (empty deps) — only touches a ref.
    */
   const clearPendingPvCommit = useCallback(() => {
@@ -220,7 +217,7 @@ export function useStockfishEngine({
    * !isReadyRef.current and the debouncedFen+isReady effect re-fires once
    * isReady flips true.
    *
-   * Bug fix (quick 260803-iv6): `debouncedFen` is wrapped in a `{ fen, nonce }`
+   * Bug fix: `debouncedFen` is wrapped in a `{ fen, nonce }`
    * object (a fresh literal every commit) rather than the bare fen string.
    * A caller whose `fen` prop OSCILLATES back to a value already held in
    * `debouncedFen` — e.g. the Train eval bar's FEN briefly revisiting the
@@ -245,7 +242,7 @@ export function useStockfishEngine({
     setDebouncedTarget({ fen: nextFen, nonce: debounceNonceRef.current });
   }, []);
   useEffect(() => {
-    // Bug fix (quick 260731-s0z, FIX-5): stop a still-thinking search for the
+    // Bug fix: stop a still-thinking search for the
     // PREVIOUS position BEFORE this effect's own state clears below. Without
     // this, nothing stopped the superseded search on the RAPID (debounced)
     // path — for up to RAPID_STEP_DEBOUNCE_MS its info lines (and possibly
@@ -264,20 +261,20 @@ export function useStockfishEngine({
       stopPendingRef.current = true;
       stateRef.current = 'stopping';
     }
-    // FIX-6: cancel any pending trailing pv commit — it belongs to the
+    // Cancel any pending trailing pv commit — it belongs to the
     // position we are about to leave (same invariant every other
     // search-superseding/ending path below honors).
     clearPendingPvCommit();
 
-    // Item 2 (Quick 260627-l2z): the analyzed position changed — immediately drop the
+    // The analyzed position changed: immediately drop the
     // previous position's PV lines + eval so the board never shows orphaned arrows from
     // the prior ply. Consumers fall back to precomputed data (game main line) until the
-    // live engine reports for the new position; the grey 2nd-best reappears then.
+    // live engine reports for the new position.
     setPvLines([]);
     setEvalCp(null);
     setEvalMate(null);
     setDepth(0);
-    // WR-01 (196-REVIEW.md): committed in the SAME effect run as the
+    // Committed in the SAME effect run as the
     // `pvLines` reset above, so `currentFen` lags `fen` by exactly the same
     // one render that `pvLines` does — a consumer reading both in the same
     // render either sees them both-stale-together (safe: currentFen !==
@@ -328,7 +325,7 @@ export function useStockfishEngine({
       worker.postMessage('stop');
       stopPendingRef.current = true;
       stateRef.current = 'stopping';
-      // FIX-6 (quick 260731-s0z): this search is being superseded — cancel
+      // This search is being superseded — cancel
       // any pending trailing pv commit so it cannot land after the next
       // analyze() clears pvMapRef.
       clearPendingPvCommit();
@@ -342,7 +339,7 @@ export function useStockfishEngine({
       // nothing: the bestmove+stopPendingRef handler re-analyzes currentFenRef.current
       // (always the latest FEN) once the stale bestmove arrives. This path became
       // reachable when the adaptive debounce started firing settled moves immediately
-      // instead of serializing every change behind a 150ms timer (quick-260629-n8e).
+      // instead of serializing every change behind a 150ms timer.
       return;
     }
 
@@ -383,14 +380,14 @@ export function useStockfishEngine({
   useEffect(() => {
     if (!enabled) return;
 
-    // Phase 213-08 (G-213-35): an unmount that beats the shared fetch must
+    // An unmount that beats the shared fetch must
     // not construct (and immediately leak) a worker nobody will ever clean
     // up — this effect's own cleanup runs once, synchronously, on unmount;
     // `cancelled` lets the deferred `setupWorker` continuation below notice
     // that has already happened.
     let cancelled = false;
 
-    // CR-02 (213-REVIEW.md): register 'stockfish-wasm' as in-flight the
+    // Register 'stockfish-wasm' as in-flight the
     // moment this effect starts spawning, BEFORE any of its async
     // progress/ready messages can arrive — closes the same race
     // `workerPool.ts::ensureSpawned()` closes for its own slots (see
@@ -402,17 +399,17 @@ export function useStockfishEngine({
     function setupWorker(sharedUrl: string | null): void {
       if (cancelled) return;
 
-      // Phase 213-08 (G-213-35): construct through the shared source module
-      // rather than a bare `new Worker(ENGINE_PATH)` — a non-null `sharedUrl`
+      // Construct through the shared source module
+      // rather than a bare `new Worker(path)` — a non-null `sharedUrl`
       // routes this worker to the already-fetched-once `.wasm` via the
       // glue's own location-hash override; a null `sharedUrl` (shared fetch
       // never started or failed) still passes the versioned wasm path
-      // through that same override (D-05, quick 260905-rhc) rather than
-      // falling back to an unversioned URL (T-213-07).
+      // through that same override rather than
+      // falling back to an unversioned URL.
       const worker = createStockfishWorker(sharedUrl, 'single');
       workerRef.current = worker;
 
-      // Bug fix (CR-01, 213-REVIEW.md): an async script-load failure (404, CSP
+      // Bug fix: an async script-load failure (404, CSP
       // block, syntax error) never throws a catchable JS exception on the main
       // thread — it only surfaces here (mirrors workerPool.ts's createSlot()
       // onerror). Without this handler such a failure was completely
@@ -426,15 +423,15 @@ export function useStockfishEngine({
         markEngineAssetFailed('stockfish-wasm');
       };
 
-      // Phase 213 D-01/T-213-01/T-213-07: wire the vendored glue's own,
+      // Wire the vendored glue's own,
       // already-shipped `progressPort` protocol — same shape as
       // `workerPool.ts::createSlot()`'s wiring, copied verbatim rather than
       // reinvented, so the standalone Stockfish worker used by the analysis
       // board reports download bytes under the same 'stockfish-wasm' asset id.
       // The glue already streams the `.wasm` internally; this is wiring, not a
-      // second fetch (213-RESEARCH.md Pitfall 4). Feature-detect
+      // second fetch. Feature-detect
       // `MessageChannel` and skip the wiring when absent — a missing progress
-      // bar must never break engine spawn. Kept UNCONDITIONALLY (Phase 213-08)
+      // bar must never break engine spawn. Kept UNCONDITIONALLY
       // even on the non-null shared-URL path: it is the ONLY progress source
       // on the degraded null-URL path, and a worker built from the shared URL
       // simply reports a redundant, harmless "already done" stream.
@@ -452,22 +449,21 @@ export function useStockfishEngine({
 
     /**
      * Wires the UCI line handler and kicks off the handshake for `worker`.
-     * Split out of `setupWorker` (Phase 213-08) purely to keep that function
-     * under the CLAUDE.md nesting/LOC limits — behavior is unchanged from the
-     * pre-refactor inline body.
+     * Split out of `setupWorker` purely to keep that function
+     * under the CLAUDE.md nesting/LOC limits.
      */
     function runWorkerHandshake(worker: Worker): void {
       /**
        * Commit the current pvMapRef snapshot to state (white-POV normalized),
-       * immediately, bypassing the FIX-6 throttle below. Called by
+       * immediately, bypassing the throttle below. Called by
        * `commitPvSnapshotThrottled`'s immediate branch and trailing timer, and
        * unconditionally on the final (non-stale) `bestmove` (that flush must
        * never be delayed or dropped). The info-line stale guard (stateRef !==
        * 'thinking' || stopPendingRef) ensures the THROTTLED entry point is
        * never called for a superseded search; this function itself does no
-       * staleness check of its own, matching its pre-FIX-6 behavior.
+       * staleness check of its own.
        *
-       * Pitfall 5 note: bound filtering is intentionally relaxed — lowerbound and
+       * Note: bound filtering is intentionally relaxed — lowerbound and
        * upperbound lines paint immediately so the eval sharpens in place as depth
        * climbs. The eval may visibly bounce ~200-300ms; this is accepted
        * (lichess-style live streaming behavior).
@@ -496,7 +492,7 @@ export function useStockfishEngine({
       }
 
       /**
-       * FIX-6 (quick 260731-s0z): trailing-throttled entry point the info-line
+       * Trailing-throttled entry point the info-line
        * branch calls instead of committing on every line (~20-40 per search,
        * each one re-rendering the whole Analysis page). Immediate commit when
        * the last commit is older than PV_COMMIT_THROTTLE_MS (mirrors
@@ -533,7 +529,7 @@ export function useStockfishEngine({
         if (line === 'readyok') {
           setIsReady(true);
           isReadyRef.current = true;
-          // Phase 213 D-01: the real readiness signal for the shared asset
+          // The real readiness signal for the shared asset
           // store — this standalone worker's UCI handshake completing means
           // the .wasm is loaded and the engine is usable.
           markEngineAssetReady('stockfish-wasm');
@@ -548,7 +544,7 @@ export function useStockfishEngine({
           // its lines belong to the old position.
           if (stateRef.current !== 'thinking' || stopPendingRef.current) return;
           const parsed = parseInfoLine(line);
-          // Pitfall 5 (relaxed for live first-paint): accept lowerbound/upperbound
+          // Relaxed bound filtering for live first-paint: accept lowerbound/upperbound
           // lines too — eval bounces briefly then settles (lichess-style).
           if (parsed !== null) {
             pvMapRef.current.set(parsed.multipv, {
@@ -558,7 +554,7 @@ export function useStockfishEngine({
               evalCp: parsed.scoreCp,
               evalMate: parsed.scoreMate,
             });
-            // FIX-6: throttled, not committed on every line.
+            // Throttled, not committed on every line.
             commitPvSnapshotThrottled();
           }
           return;
@@ -566,10 +562,10 @@ export function useStockfishEngine({
 
         if (line.startsWith('bestmove')) {
           if (stopPendingRef.current) {
-            // Layer B discard (Pitfall 3): this bestmove is the termination
+            // Layer B discard: this bestmove is the termination
             // response to our stop — it reflects the previous position, not the
             // current one. Discard and re-analyze the current FEN (unless hidden).
-            // FIX-6: also cancel any pending trailing pv commit — it belongs
+            // Also cancel any pending trailing pv commit — it belongs
             // to the position being discarded here.
             clearPendingPvCommit();
             stopPendingRef.current = false;
@@ -582,8 +578,8 @@ export function useStockfishEngine({
           }
 
           // Non-stale bestmove: cancel any pending trailing commit and flush
-          // the final pvMap snapshot immediately and unconditionally (FIX-6 —
-          // the final snapshot must never be delayed or dropped), then mark idle.
+          // the final pvMap snapshot immediately and unconditionally (the
+          // final snapshot must never be delayed or dropped), then mark idle.
           clearPendingPvCommit();
           commitPvSnapshotNow();
           stateRef.current = 'idle';
@@ -603,19 +599,19 @@ export function useStockfishEngine({
 
     return () => {
       cancelled = true;
-      // Phase 213-08: the shared-URL promise may not have resolved yet — if
+      // The shared-URL promise may not have resolved yet — if
       // `setupWorker` never ran, there is no worker to stop/terminate, and
       // `cancelled` above stops the deferred continuation from constructing
       // one after this cleanup has already run.
       const worker = workerRef.current;
       if (worker) {
-        // Pitfall 4: always stop + terminate on unmount to prevent CPU/battery drain.
+        // Always stop + terminate on unmount to prevent CPU/battery drain.
         worker.postMessage('stop');
         worker.terminate();
         workerRef.current = null;
       }
       // Reset readiness + state machine so a re-enable waits for the NEW worker's
-      // readyok (which follows the `setoption MultiPV` sent on uciok). Bug (155 UAT):
+      // readyok (which follows the `setoption MultiPV` sent on uciok). Bug:
       // isReady survived the toggle, so on re-enable analyze() fired a `go` on the
       // fresh worker BEFORE it had received `setoption MultiPV` — the re-search
       // ran at MultiPV=1, painting only the best-move arrow (no 2nd-best) until
@@ -626,7 +622,7 @@ export function useStockfishEngine({
       appliedMultiPvRef.current = null;
       stateRef.current = 'idle';
       stopPendingRef.current = false;
-      // FIX-6 (quick 260731-s0z): cancel any pending trailing pv commit — a
+      // Cancel any pending trailing pv commit — a
       // worker teardown (unmount/disable) must not leave a stale timer that
       // fires after this worker (and its pvMapRef data) are gone.
       clearPendingPvCommit();
@@ -639,7 +635,7 @@ export function useStockfishEngine({
   // Using isReady as a dep ensures the effect re-fires when the engine finishes
   // its init sequence (even if debouncedFen was already set before init completed).
   //
-  // Bug fix (quick 260803-iv6): depends on `debouncedTarget` (the nonce-tagged
+  // Bug fix: depends on `debouncedTarget` (the nonce-tagged
   // object, a fresh reference every commit) rather than the derived
   // `debouncedFen` string — depending on the bare string would reintroduce the
   // exact same-value bailout `setDebouncedFen` was just fixed to avoid.
@@ -648,14 +644,14 @@ export function useStockfishEngine({
     analyze(debouncedFen);
   }, [debouncedTarget, debouncedFen, isReady, analyze]);
 
-  // ─── MultiPV change → live re-search (D-06) ────────────────────────────────
+  // ─── MultiPV change → live re-search ────────────────────────────────
 
   // A line/arrow setting changed under a running engine: re-search the current
   // position at the new width without restarting the worker (multiPv is NOT in
   // the worker-lifecycle deps — that would re-instantiate the WASM and flash
   // the asset gate). From idle, analyze() resends setoption and searches at
   // once; from thinking it stops, and the stale-bestmove handler re-analyzes
-  // (resending setoption from the idle branch, RESEARCH Pitfall 2). Before the
+  // (resending setoption from the idle branch). Before the
   // first uciok `appliedMultiPvRef` is null, so the init handshake owns the
   // first setoption and nothing is sent early.
   useEffect(() => {
@@ -665,7 +661,7 @@ export function useStockfishEngine({
     analyze(current);
   }, [multiPv, analyze]);
 
-  // ─── Tab-hide pause (D-04) ─────────────────────────────────────────────────
+  // ─── Tab-hide pause ─────────────────────────────────────────────────
 
   useEffect(() => {
     function handleVisibility(): void {
@@ -679,7 +675,7 @@ export function useStockfishEngine({
           stateRef.current = 'stopping';
         }
       } else {
-        // Visible again — re-analyze the current position (auto re-go, D-04).
+        // Visible again — re-analyze the current position (auto re-go).
         const current = currentFenRef.current;
         if (current) {
           analyzeRef.current(current);

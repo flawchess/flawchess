@@ -4,8 +4,8 @@ Tests cover:
 - classify_endgame_class: maps material_signature strings to endgame category names
 - _aggregate_endgame_stats: aggregates raw per-(game, class) rows into EndgameCategoryStats list
 - get_endgame_stats / get_endgame_games: smoke tests to catch wiring bugs (typos, import errors)
-- extract_entry_clocks: ply-parity clock extraction (Phase 54)
-- quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at via shared helpers
+- extract_entry_clocks: ply-parity clock extraction
+- WDLStats-aligned score/eval/last_played_at via shared helpers
 """
 
 import datetime
@@ -95,7 +95,7 @@ class TestClassifyEndgameClass:
 
 
 class TestClassifyEndgameBucket:
-    """Unit tests for _classify_endgame_bucket helper (REFAC-02).
+    """Unit tests for _classify_endgame_bucket helper.
 
     Covers the eval_cp threshold and eval_mate sign semantics, user-color sign flip,
     and NULL eval fallback to parity.
@@ -172,7 +172,7 @@ class TestAggregateEndgameStats:
 
     Rows use the shape: (game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
     where endgame_class_int is 1=rook, 2=minor_piece, 3=pawn, 4=queen, 5=mixed, 6=pawnless.
-    eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply (REFAC-02);
+    eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply;
     classification uses _classify_endgame_bucket(eval_cp, eval_mate, user_color).
     """
 
@@ -182,7 +182,7 @@ class TestAggregateEndgameStats:
         assert result == []
 
     def test_sorted_by_total_descending(self):
-        """D-05: Categories sorted by game count descending."""
+        """Categories sorted by game count descending."""
         # 1 rook game (endgame_class_int=1), 3 pawn games (endgame_class_int=3)
         rows = [
             # 1 rook game (win) — conversion eval
@@ -215,7 +215,7 @@ class TestAggregateEndgameStats:
         assert abs(rook.win_pct - 33.3) < 1
 
     def test_conversion_pct_per_category(self):
-        """D-08: Conversion = win rate when user entered endgame with eval >= +100cp."""
+        """Conversion = win rate when user entered endgame with eval >= +100cp."""
         rows = [
             (1, 1, "1-0", "white", 500, None),  # rook, up 500cp, won → converted
             (2, 1, "0-1", "white", 350, None),  # rook, up 350cp, lost → failed conversion
@@ -239,7 +239,7 @@ class TestAggregateEndgameStats:
         assert abs(rook.conversion.conversion_pct - 33.3) < 0.1
 
     def test_recovery_pct_per_category(self):
-        """D-09: Recovery = draw+win rate when user entered endgame with eval <= -100cp."""
+        """Recovery = draw+win rate when user entered endgame with eval <= -100cp."""
         rows = [
             (1, 1, "1-0", "white", -400, None),  # rook, down 400cp, won → recovery win
             (2, 1, "1/2-1/2", "white", -500, None),  # rook, down 500cp, draw → recovery draw
@@ -262,7 +262,7 @@ class TestAggregateEndgameStats:
         assert abs(rook.conversion.recovery_pct - 66.7) < 0.1
 
     def test_no_game_phase_breakdown(self):
-        """D-11: Single aggregate per endgame type, no opening/middlegame/endgame sub-breakdown."""
+        """Single aggregate per endgame type, no opening/middlegame/endgame sub-breakdown."""
         rows = [
             (1, 1, "1-0", "white", 100, None),  # rook, endgame_class_int=1
         ]
@@ -335,7 +335,7 @@ class TestAggregateEndgameStats:
         assert pawn.wins == 1
 
     def test_eval_below_threshold_is_parity_not_conversion(self):
-        """eval_cp below +100 threshold is parity — no persistence requirement (REFAC-02 cutover)."""
+        """eval_cp below +100 threshold is parity — no persistence requirement."""
         rows = [
             # eval_cp=50 → parity (below threshold); eval_cp=150 → conversion
             (1, 1, "1-0", "white", 50, None),
@@ -358,7 +358,7 @@ class TestAggregateEndgameStats:
         assert rook.conversion.conversion_games == 0
         assert rook.conversion.recovery_games == 0
 
-    # --- Phase 84: per-type opponent baseline via same-game mirror identity ---
+    # --- per-type opponent baseline via same-game mirror identity ---
 
     def test_per_type_opponent_baseline_symmetric_60_40(self):
         """Rook conv 6W/0D/4L (60%) + recov 2W/2D/6L (40% save-rate).
@@ -470,10 +470,9 @@ class TestAggregateEndgameStats:
 
 
 class TestPerClassScorePValue:
-    """Phase 87 follow-up: per-class Wilson score-test p_value vs 50%.
+    """Per-class Wilson score-test p_value vs 50%.
 
-    Drives the per-class Score p-value gating (score_p_value),
-    replacing the previous Conv/Recov peer-diff bullets.
+    Drives the per-class Score p-value gating (score_p_value).
     """
 
     @staticmethod
@@ -508,7 +507,7 @@ class TestPerClassScorePValue:
 
 
 class TestComputeSpanGap:
-    """Phase 87.1 (SEED-016 D-07): per-span gap helper unit tests.
+    """Per-span gap helper unit tests.
 
     Verifies the math contract:
       gap_span = exit_score - ES_sigmoid(entry_eval, user_color)
@@ -516,7 +515,7 @@ class TestComputeSpanGap:
     """
 
     def test_null_entry_eval_returns_none(self):
-        """Both entry eval fields NULL → span excluded from cohort (D-07)."""
+        """Both entry eval fields NULL → span excluded from cohort."""
         gap = compute_span_gap(
             entry_eval_cp=None,
             entry_eval_mate=None,
@@ -678,7 +677,7 @@ class TestComputeSpanGap:
 
 
 class TestAggregateEndgameStatsTypeScoreGap:
-    """Phase 87.1 (SEED-016 D-05): integration coverage on the per-class gap fields.
+    """Integration coverage on the per-class gap fields.
 
     Builds 8-tuple rows (full prod shape) and asserts the 5 new
     type_achievable_score_gap_* fields are populated according to the helper's
@@ -837,7 +836,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
         assert rook.type_achievable_score_gap_mean == pytest.approx(expected_mean, abs=1e-6)
 
     def test_ci_is_99_percent(self):
-        """The per-class gap CI is the 99% Wald CI (Phase 239 D-14), not 95%."""
+        """The per-class gap CI is the 99% Wald CI, not 95%."""
         import math
 
         from app.services.eval_utils import eval_cp_to_expected_score
@@ -899,7 +898,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
 
 
 class TestStartEndScoreMeans:
-    """quick-260519-ni3 (Task 1): per-class start/end predicted score means.
+    """Per-class start/end predicted score means.
 
     Asserts the reconciliation invariant: end_mean - start_mean == gap_mean
     (within float tolerance 1e-9) for every class over the identical span cohort.
@@ -1125,24 +1124,13 @@ def _row(result: str, user_color: str, days: int = 0):
     return (_dt(days), result, user_color)
 
 
-# --- Phase 32 tests ---
-
-
 # ---------------------------------------------------------------------------
-# Phase 54: extract_entry_clocks tests
-# ---------------------------------------------------------------------------
-# NOTE: _compute_clock_pressure, _compute_clock_pressure_timeline,
-# _build_bucket_series, and _compute_time_pressure_chart were deleted in
-# Phase 88 (Plan 88-04) when ClockPressureResponse and TimePressureChartResponse
-# were replaced by TimePressureCardsResponse. The corresponding test classes
-# (TestComputeClockPressure, TestComputeTimePressureChart,
-# TestClockPressurePerGameDenominator, TestTimePressureChartPerGameDenominator,
-# TestComputeClockPressureTimeline) were removed along with the functions.
+# extract_entry_clocks tests
 # ---------------------------------------------------------------------------
 
 
 class TestExtractEntryClocks:
-    """Unit tests for extract_entry_clocks helper (Phase 54).
+    """Unit tests for extract_entry_clocks helper.
 
     Verifies ply-parity logic: white player's clocks are at even plies (0,2,4,...),
     black player's clocks are at odd plies (1,3,5,...).
@@ -1201,7 +1189,7 @@ class TestExtractEntryClocks:
 
 
 # ---------------------------------------------------------------------------
-# quick-260417-o2l: compute_score_gap_timeline tests
+# compute_score_gap_timeline tests
 # ---------------------------------------------------------------------------
 
 
@@ -1213,15 +1201,14 @@ def _perf_row(
     """Build a row matching query_endgame_performance_rows output shape.
 
     Shape: (played_at, result, user_color, platform, time_control_bucket).
-    Phase 87.6 amendment dropped the opponent-rating columns added by the
-    earlier 87.6 PR-direct mapping; the logistic-anchored stretch reads only
-    per-side scores + Actual ELO.
+    The logistic-anchored stretch reads only per-side scores + Actual ELO, not
+    opponent-rating columns.
     """
     return (played_at, result, user_color, "chess.com", "blitz")
 
 
 class TestComputeScoreGapTimeline:
-    """Unit tests for compute_score_gap_timeline (quick-260417-o2l)."""
+    """Unit tests for compute_score_gap_timeline."""
 
     def test_empty_inputs_returns_empty(self):
         assert compute_score_gap_timeline([], [], 100) == []
@@ -1262,11 +1249,11 @@ class TestComputeScoreGapTimeline:
         assert series[0].score_difference == pytest.approx(1.0)
         assert series[0].endgame_game_count == 10
         assert series[0].non_endgame_game_count == 10
-        # UAT fix post-87.5: per_week_endgame_games tracks endgame events in the
+        # per_week_endgame_games tracks endgame events in the
         # ISO week (10 endgame rows scheduled into week 1, 10 into week 2).
         assert series[0].per_week_endgame_games == 10
         assert series[0].per_week_total_games == 20
-        # Phase 68: absolute per-side means persisted.
+        # Absolute per-side means persisted.
         assert series[0].endgame_score == pytest.approx(1.0)
         assert series[0].non_endgame_score == pytest.approx(0.0)
         assert series[1].date == "2026-01-12"
@@ -1350,14 +1337,14 @@ class TestComputeScoreGapTimeline:
 
 
 # -----------------------------------------------------------------------------
-# Phase 57 ELO-05 / Phase 87.5 — Endgame ELO additive K mapping + timeline helpers
+# Endgame ELO additive K mapping + timeline helpers
 # -----------------------------------------------------------------------------
 
 
 def _asof_arrays_from_all_rows(all_rows: list[tuple]) -> tuple[list, list[int]]:
     """Mirror the orchestrator's per-combo asof-array build for unit tests.
 
-    Row shape (Phase 57.1): (played_at, platform, time_control_bucket,
+    Row shape: (played_at, platform, time_control_bucket,
     user_color, white_rating, black_rating). The orchestrator derives the
     user's rating per-row via user_color and skips NULL-rating rows.
     """
@@ -1395,8 +1382,8 @@ def _sg_pt(
 
 
 class TestEndgameEloTimeline:
-    """Unit tests for _compute_endgame_elo_weekly_series (Phase 87.6 amendment
-    2026-05-17 — logistic stretch anchored on Actual ELO).
+    """Unit tests for _compute_endgame_elo_weekly_series (logistic stretch anchored
+    on Actual ELO).
 
     The weekly producer consumes a per-combo ScoreGapTimelinePoint list
     (already filtered to weeks where both windows hold >= MIN_GAMES_FOR_TIMELINE
@@ -1472,8 +1459,8 @@ class TestEndgameEloTimeline:
 
     def test_multi_point_series_each_point_satisfies_midpoint_identity(self):
         # Five points spanning the realistic gap range. The midpoint property
-        # must hold EXACTLY for every emitted point (Phase 87.6 amendment
-        # invariant): endgame_elo + non_endgame_elo == 2 * actual_elo.
+        # must hold EXACTLY for every emitted point (midpoint invariant):
+        # endgame_elo + non_endgame_elo == 2 * actual_elo.
         all_rows = [
             (datetime.datetime(2026, 1, 9, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
             (datetime.datetime(2026, 1, 16, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1520),
@@ -1651,8 +1638,7 @@ class TestEndgameEloTimeline:
 
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
-# Phase 87.5 (D-06): per-point field name restored to endgame_elo (Phase 87.4 had renamed it).
-# Phase 87.6: non_endgame_elo added.
+# Per-point fields are endgame_elo and non_endgame_elo.
 def test_endgame_elo_timeline_point_constructs():
     pt = EndgameEloTimelinePoint(
         date="2026-01-05",
@@ -1669,8 +1655,8 @@ def test_endgame_elo_timeline_point_constructs():
 
 
 class TestEndgameEloLogistic:
-    """Unit tests for _endgame_elo_logistic helper (Phase 87.6 amendment
-    2026-05-17 — logistic stretch anchored on Actual ELO).
+    """Unit tests for _endgame_elo_logistic helper (logistic stretch anchored
+    on Actual ELO).
 
     Formula:
         spread = 400 * log10( (s_E / (1 - s_E)) / (s_N / (1 - s_N)) )
@@ -1745,8 +1731,8 @@ class TestEndgameEloLogistic:
 
 
 def test_K_constant_deleted_from_endgame_service() -> None:
-    """Regression: Phase 87.5 K=450 and Phase 87.6 PR helper must both be gone
-    after the Phase 87.6 amendment (logistic-anchored stretch) ships.
+    """Regression: the K=450 additive mapping and the PR helper must both be gone
+    now that the logistic-anchored stretch is in use.
     """
     from pathlib import Path
 
@@ -1766,12 +1752,11 @@ def test_K_constant_deleted_from_endgame_service() -> None:
 
 
 class TestPValueReliabilityMinNConstantAndSchemaDefaults:
-    """Phase 85.1 Plan 02 Task 1 — n-gate constant + new schema fields (defaults only).
+    """n-gate constant + new schema fields (defaults only).
 
-    Task 1 is a pure scaffolding step: extracts PVALUE_RELIABILITY_MIN_N to replace
-    the four bare `10` occurrences (REVIEW IN-01 carry-forward) and adds the new
-    p-value / CI / mean fields to ScoreGapMaterialResponse + EndgamePerformanceResponse
-    with safe defaults. Wiring of real values is Task 2's job.
+    PVALUE_RELIABILITY_MIN_N replaces the bare `10` occurrences, and the new
+    p-value / CI / mean fields on ScoreGapMaterialResponse + EndgamePerformanceResponse
+    default safely.
     """
 
     def test_pvalue_reliability_min_n_constant_exposed(self) -> None:
@@ -1784,12 +1769,12 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
 
 
 # ---------------------------------------------------------------------------
-# Phase 87.2 (SEC2-ΔES-02): schema migration tests (Task 1 RED gate)
+# Per-bucket ΔES schema migration tests
 # ---------------------------------------------------------------------------
 
 
-class TestPhase872PerBucketDeltaES:
-    """Phase 87.2 (D-01/D-06/SEC2-ΔES-07): per-bucket ΔES Score Gap math.
+class TestPerBucketDeltaES:
+    """Per-bucket ΔES Score Gap math.
 
     Tests cover gaps_by_bucket accumulation in _aggregate_endgame_stats (span-grain,
     per-bucket), and the per-bucket paired-z + equal-weighted Skill aggregator wired
@@ -1842,7 +1827,7 @@ class TestPhase872PerBucketDeltaES:
         )
 
     def test_aggregate_endgame_stats_returns_tuple(self) -> None:
-        """Phase 87.2: _aggregate_endgame_stats now returns a 2-tuple
+        """_aggregate_endgame_stats now returns a 2-tuple
         (categories, gaps_by_bucket) rather than just a list of categories.
         The returned value can be unpacked: categories, gaps_by_bucket = ..."""
         rows: list[tuple[Any, ...]] = []
@@ -1885,32 +1870,32 @@ class TestPhase872PerBucketDeltaES:
         total_gaps = sum(len(v) for v in gaps_by_bucket.values())
         assert total_gaps == 1
 
-    def test_phase_87_1_outputs_unaffected_by_gaps_by_bucket(self) -> None:
+    def test_per_class_gap_outputs_unaffected_by_gaps_by_bucket(self) -> None:
         """Adding gaps_by_bucket does not perturb the per-class
-        type_achievable_score_gap_* aggregation from Phase 87.1."""
+        type_achievable_score_gap_* aggregation."""
         rows = [self._gap_row(i + 1, 1, "1-0", "white", 0, None) for i in range(10)]
         categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
         rook = next(c for c in categories if c.endgame_class == "rook")
-        # Phase 87.1 per-class gap fields must still be populated correctly.
+        # Per-class gap fields must still be populated correctly.
         assert rook.type_achievable_score_gap_n == 10
         assert rook.type_achievable_score_gap_mean is not None
         assert rook.type_achievable_score_gap_p_value is not None  # n >= 10
 
-    # Phase 87.4 (D-05): test_skill_equal_weighted_mean_three_active_buckets,
+    # test_skill_equal_weighted_mean_three_active_buckets,
     # test_skill_denominator_drop_below_floor, test_skill_all_below_floor_returns_none,
     # and test_skill_ci_propagation_variance_of_sum deleted alongside the
     # ScoreGapMaterialResponse.score_gap_skill_* field family.
 
 
-# Phase 87.4 (D-05): TestEndgameSkillRateMean class deleted alongside the
+# TestEndgameSkillRateMean class deleted alongside the
 # endgame_skill_rate_mean field on ScoreGapMaterialResponse.
 
 
-# ── Quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at fields ──
+# ── WDLStats-aligned score/eval/last_played_at fields ──
 
 
 class TestEndgameCategoryStatsWdlAlignedFields:
-    """Quick task 260519-lu0: EndgameCategoryStats now carries WDLStats-aligned
+    """EndgameCategoryStats now carries WDLStats-aligned
     score/eval/last_played_at fields populated via the same shared helpers as the
     openings stats path (_build_wdl_stats + compute_eval_confidence_bucket).
     """
@@ -2043,7 +2028,7 @@ class TestEndgameCategoryStatsWdlAlignedFields:
     # ── eval_baseline_pawns ───────────────────────────────────────────────────
 
     def test_eval_baseline_pawns_is_white_baseline(self) -> None:
-        """eval_baseline_pawns must equal EVAL_BASELINE_PAWNS_WHITE (color-agnostic, D-02)."""
+        """eval_baseline_pawns must equal EVAL_BASELINE_PAWNS_WHITE (color-agnostic)."""
         from app.services.opening_insights_constants import EVAL_BASELINE_PAWNS_WHITE
 
         rows = [(1, 1, "1-0", "white", 0, None)]
@@ -2086,17 +2071,17 @@ class TestEndgameCategoryStatsWdlAlignedFields:
         assert rook.eval_ci_high_pawns is None
 
 
-# --- Phase 94 (PCTL-02 / PCTL-06): percentile gate tests ----------------------
+# --- Percentile gate tests ----------------------
 
 
-# Phase 97 D-10: score_gap_conv_percentile, score_gap_parity_percentile, and
+# score_gap_conv_percentile, score_gap_parity_percentile, and
 # recovery_score_gap_percentile tests removed — those fields were Metrics-section-only
 # and are deleted along with EndgameMetricsSection.tsx (superseded by per-TC cards).
 # The conv/parity mean and n fields remain (statistical backbone for per-TC cards).
 
 
 class TestAggregateEndgameStatsByTc:
-    """Unit tests for aggregate_endgame_stats_by_tc (Phase 98).
+    """Unit tests for aggregate_endgame_stats_by_tc.
 
     Prod feeds per-class `entry_rows` (one row per (game, endgame_class) span,
     carrying time_control_bucket). Tests use plain tuples with the column layout:
@@ -2106,7 +2091,7 @@ class TestAggregateEndgameStatsByTc:
 
     rook=1, minor_piece=2, pawn=3, queen=4, mixed=5, pawnless=6.
     Mixed and pawnless are EXCLUDED from the output (only rook/minor/pawn/queen
-    tiles render — D-05); see test_mixed_and_pawnless_excluded.
+    tiles render); see test_mixed_and_pawnless_excluded.
     """
 
     # Conversion threshold is >=100cp for white (see _classify_endgame_bucket).

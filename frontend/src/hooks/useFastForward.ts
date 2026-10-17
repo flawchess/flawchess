@@ -1,15 +1,14 @@
 /**
- * useFastForward — animated replay to the next notable main-line ply
- * (Quick 260831-s4y).
+ * useFastForward — animated replay to the next notable main-line ply.
  *
- * Single directional command (D-03: no rewind counterpart). Replays the main
+ * Single directional command (no rewind counterpart). Replays the main
  * line forward one ply every FAST_FORWARD_STEP_MS until it lands on the next
  * "stop" ply the caller supplies (blunder/mistake/gem/great — computed by the
  * caller, this hook is agnostic to what a stop means), or, when no stop
- * remains ahead, animates all the way to the final main-line ply (D-04 —
- * there is no true no-op state short of already being on the last ply).
+ * remains ahead, animates all the way to the final main-line ply (there is
+ * no true no-op state short of already being on the last ply).
  *
- * Cancellation (D-05): any COMMITTED navigation this hook did not itself just
+ * Cancellation: any COMMITTED navigation this hook did not itself just
  * command — back/forward/reset, a move-list click, the eval-chart scrub, an
  * arrow key, the wheel — stops the in-flight run. This is implemented with a
  * single `expectedNodeIdRef` comparison against the `currentNodeId` prop, so
@@ -21,9 +20,9 @@ import type { NodeId } from '@/hooks/useAnalysisBoard';
 
 /**
  * Per-ply replay cadence in milliseconds — the ONE knob controlling how fast
- * the fast-forward replay steps through intervening moves (D-01).
+ * the fast-forward replay steps through intervening moves.
  *
- * Bug fix (quick 260901-oxh): this was 150ms, which is exactly HALF
+ * Bug fix: this was 150ms, which is exactly HALF
  * react-chessboard v5's 300ms default `animationDurationInMs`. The library's
  * position effect is keyed on `[position]` only, so a new position arriving
  * mid-slide snapped `currentPosition` to the still-pending
@@ -65,7 +64,7 @@ export const FAST_FORWARD_ANIMATION_MS = FAST_FORWARD_STEP_MS - FAST_FORWARD_ANI
  * Settle delay between LANDING on the target ply and reporting the run as
  * finished, in milliseconds.
  *
- * Bug fix (quick 260901-oxh follow-up): the replay was smooth for every
+ * Bug fix: the replay was smooth for every
  * intermediate ply but visibly hitched on the last one. `stop()` used to run in
  * the same tick as the landing `goToNode`, so React committed the arrival
  * position and `running: false` together — meaning the exact frame that starts
@@ -136,7 +135,7 @@ export interface UseFastForwardReturn {
  * Scans (currentPly, lastPly] ascending for the first ply present in
  * `stopPlies`. When none is found and there is still ground to cover
  * (lastPly > currentPly), the terminal ply itself is the implicit stop
- * (D-04 — the final position is always reachable). Returns null only when
+ * (the final position is always reachable). Returns null only when
  * there is nowhere left to go (already on the last ply).
  */
 export function nextStopPly(
@@ -168,7 +167,7 @@ export function useFastForward(options: UseFastForwardOptions): UseFastForwardRe
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const planRef = useRef<RunPlan | null>(null);
   // Names the node id the hook itself is about to (or has just) commanded —
-  // the sole cancellation signal (D-05). Seeded at start() and updated on
+  // the sole cancellation signal. Seeded at start() and updated on
   // every tick, BEFORE goToNode is called.
   const expectedNodeIdRef = useRef<NodeId | null>(null);
 
@@ -183,7 +182,7 @@ export function useFastForward(options: UseFastForwardOptions): UseFastForwardRe
   });
 
   // currentPly is null at the root, which is one ply BEFORE ply 0 — the ?? -1
-  // is load-bearing so the root can still fast-forward (D-04: disabled only
+  // is load-bearing so the root can still fast-forward (disabled only
   // at the very end).
   const canFastForward =
     enabled && mainLine.length > 0 && (currentPly ?? -1) < mainLine.length - 1;
@@ -259,9 +258,9 @@ export function useFastForward(options: UseFastForwardOptions): UseFastForwardRe
     }
     expectedNodeIdRef.current = nodeId;
     const landed = plan.cursor >= plan.target;
-    // Every step — intermediate and landing — plays the normal move sound
-    // (per checkpoint feedback: the replay should sound like actually
-    // playing through the moves, not just the arrival).
+    // Every step — intermediate and landing — plays the normal move sound, so
+    // the replay sounds like actually playing through the moves, not just the
+    // arrival.
     goToNode(nodeId);
     if (landed) {
       // `true`: the arrival slide starts on the commit this goToNode triggers,
@@ -289,19 +288,19 @@ export function useFastForward(options: UseFastForwardOptions): UseFastForwardRe
     const target = nextStopPly(cursor, stopPlies, lastPly);
     if (target === null) return;
 
-    // Bug fix (quick 260901-oxh): the run used to OPEN with a full
+    // Bug fix: the run used to OPEN with a full
     // FAST_FORWARD_STEP_MS of dead time because the first step was scheduled
     // rather than taken. The first ply is now stepped synchronously and
     // `tick`'s own self-rescheduling tail drives every later step, so pressing
     // fast-forward moves a piece immediately.
     //
-    // Every pre-existing invariant survives the reordering, and each one
-    // depends on an assignment made BELOW-but-before the tick() call:
+    // Each invariant below depends on an assignment made BELOW-but-before
+    // the tick() call:
     //  - `runningRef.current = true` is set before tick() runs, so a second
     //    start() in the same commit still hits the guard at the top of this
     //    function (no second timer chain).
     //  - `expectedNodeIdRef` is seeded here and rewritten by tick immediately
-    //    BEFORE each goToNode — it remains the sole cancellation signal (D-05).
+    //    BEFORE each goToNode — it remains the sole cancellation signal.
     //  - `planRef` is assigned before tick() reads it, so the snapshot
     //    semantics documented on RunPlan are unchanged.
     //  - tick's `landed` check still stops on arrival, which for a one-ply
@@ -322,7 +321,7 @@ export function useFastForward(options: UseFastForwardOptions): UseFastForwardRe
     tick();
   }, [enabled, mainLine, currentPly, stopPlies, currentNodeId, tick, clearSettleTimer]);
 
-  // Cancellation (D-05): fires on every committed navigation. A run in
+  // Cancellation: fires on every committed navigation. A run in
   // flight stops the instant the committed node differs from the node the
   // hook itself last commanded — covering every foreign navigation path
   // (back/forward/reset/move-list/eval-chart scrub/arrow keys/wheel) without

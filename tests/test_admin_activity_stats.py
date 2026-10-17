@@ -1,8 +1,8 @@
-"""Integration tests for GET /api/admin/activity/stats (Quick 260824-qaz, Task 1).
+"""Integration tests for GET /api/admin/activity/stats.
 
-Covers D-1 (SPA route, hard gate lives on this endpoint alone), D-2 (401 /
-403 / 403-impersonation / 200 auth ladder), D-4 (dedicated read-only engine),
-and D-5 (300s cache shared across requests, ?refresh=1 forces a rebuild).
+Covers the auth ladder (401 / 403 / 403-impersonation / 200) with the hard gate
+on this endpoint alone (the SPA route is not gated), the dedicated read-only
+engine, and the 300s cache shared across requests (?refresh=1 forces a rebuild).
 
 Helper patterns are duplicated lightweight versions of test_admin_users_search.py
 / test_impersonation.py's helpers — project convention (see those files'
@@ -136,9 +136,8 @@ async def cache_override(cache: StatsCache) -> AsyncGenerator[None, None]:
     """Point GET /admin/activity/stats at `cache` for the duration of the block.
 
     Mirrors conftest.py's override_get_async_session pattern: the dependency
-    seam (admin_activity.get_activity_cache) is exactly what Task 1's action
-    item 3 added so tests never touch settings.DATABASE_URL / the developer's
-    dev DB, and each test controls its own cache instance and TTL.
+    seam (admin_activity.get_activity_cache) lets tests avoid settings.DATABASE_URL /
+    the developer's dev DB, and each test controls its own cache instance and TTL.
     """
 
     async def _dep() -> StatsCache:
@@ -208,7 +207,7 @@ async def test_stats_superuser_gets_full_payload(test_engine):
 
 @pytest.mark.asyncio
 async def test_stats_rejects_impersonation_token(test_engine):
-    """An impersonation token minted for a non-superuser target -> 403 (D-04 re-enforced)."""
+    """An impersonation token minted for a non-superuser target -> 403."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -234,7 +233,7 @@ async def test_stats_rejects_impersonation_token(test_engine):
 
 @pytest.mark.asyncio
 async def test_stats_cached_for_ttl_then_refresh_forces_rebuild(test_engine, monkeypatch):
-    """Two successive GETs inside the TTL build the payload once; ?refresh=1 rebuilds (D-5)."""
+    """Two successive GETs inside the TTL build the payload once; ?refresh=1 rebuilds."""
     build_calls = 0
     payload = fake_payload()
 
@@ -276,13 +275,13 @@ async def test_stats_cached_for_ttl_then_refresh_forces_rebuild(test_engine, mon
 
 
 # ---------------------------------------------------------------------------
-# Range parameter (Quick 260831-p7x, Task 1)
+# Range parameter
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_stats_range_param_echoed_in_body(test_engine):
-    """?range=d30 returns 200 and echoes range == "d30" in the body (D1, D4)."""
+    """?range=d30 returns 200 and echoes range == "d30" in the body."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -320,7 +319,7 @@ async def test_stats_rejects_unknown_range_with_422_not_5xx(test_engine):
 
 @pytest.mark.asyncio
 async def test_stats_omitting_range_behaves_as_all(test_engine):
-    """Omitting `range` entirely defaults to the all-time key (D1, D4)."""
+    """Omitting `range` entirely defaults to the all-time key."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -341,7 +340,7 @@ async def test_stats_omitting_range_behaves_as_all(test_engine):
 @pytest.mark.asyncio
 async def test_stats_cache_keys_range_independently(test_engine, monkeypatch):
     """Two GETs for d30 inside the TTL build once; a d7 GET builds again; a third
-    d30 GET still reads the (separate) d30 cache entry (D4)."""
+    d30 GET still reads the (separate) d30 cache entry."""
     build_calls: dict[str, int] = {}
 
     async def fake_build_payload(_engine, request, _now_utc):
@@ -384,7 +383,7 @@ async def test_stats_cache_keys_range_independently(test_engine, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stats_refresh_invalidates_only_its_own_range(test_engine, monkeypatch):
-    """?range=d30&refresh=1 rebuilds only the d30 entry; the d7 entry survives (D4)."""
+    """?range=d30&refresh=1 rebuilds only the d30 entry; the d7 entry survives."""
     build_calls: dict[str, int] = {}
 
     async def fake_build_payload(_engine, request, _now_utc):
@@ -436,8 +435,7 @@ async def test_stats_refresh_invalidates_only_its_own_range(test_engine, monkeyp
 @pytest.mark.asyncio
 async def test_stats_custom_window_truncates_at_end_date(test_engine):
     """start/end returns range == "custom", days ending on `end`, and truncates
-    signups so a user created "today" falls outside a window ending yesterday
-    (Quick 260920-frk, Task 1 — RED before the implementation exists)."""
+    signups so a user created "today" falls outside a window ending yesterday."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -492,7 +490,7 @@ async def test_stats_custom_single_past_day(test_engine):
 async def test_stats_custom_today_only_includes_todays_signup(test_engine):
     """start == end == today returns 200, days[-1] == today, and today's own
     signup (the superuser this test registers) shows up -- proving today is
-    analysed rather than dropped as an incomplete day (FRK-03)."""
+    analysed rather than dropped as an incomplete day."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -520,7 +518,7 @@ async def test_stats_custom_today_only_includes_todays_signup(test_engine):
 @pytest.mark.asyncio
 async def test_stats_custom_window_validation_rejections(test_engine):
     """start > end, end > today, one-of-two, and a malformed date are each a
-    422, never a 5xx and never silently coerced (FRK-06)."""
+    422, never a 5xx and never silently coerced."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -590,7 +588,7 @@ async def test_stats_custom_range_literal_still_rejected(test_engine):
 async def test_stats_custom_window_cached_independently_of_presets(test_engine, monkeypatch):
     """Two requests for the SAME custom window build once; a request for a
     DIFFERENT custom window builds again; a preset request builds again --
-    three builds total (FRK-05)."""
+    three builds total."""
     build_calls = 0
 
     async def fake_build_payload(_engine, request, _now_utc):
@@ -637,7 +635,7 @@ async def test_stats_custom_window_cached_independently_of_presets(test_engine, 
 
 @pytest.mark.asyncio
 async def test_readonly_engine_refuses_writes(test_engine):
-    """build_readonly_engine's connect_args enforce a genuinely read-only session (D-4).
+    """build_readonly_engine's connect_args enforce a genuinely read-only session.
 
     End-to-end variant (plan-sanctioned alternative to introspecting
     connect_args directly): open a connection through the SAME factory the
@@ -658,12 +656,12 @@ async def test_readonly_engine_refuses_writes(test_engine):
 
 
 # ---------------------------------------------------------------------------
-# resolve_window (pure function, no DB) — Quick 260831-p7x, Task 1
+# resolve_window (pure function, no DB)
 # ---------------------------------------------------------------------------
 
 
 def test_resolve_window_all_time_covers_full_dataset():
-    """`all` spans the whole dataset: no lead-in, no clamp, index 0 (D1)."""
+    """`all` spans the whole dataset: no lead-in, no clamp, index 0."""
     data_start = datetime.date(2025, 1, 1)
     data_end = data_start + datetime.timedelta(days=399)
     now_utc = datetime.datetime.combine(
@@ -697,7 +695,7 @@ def test_resolve_window_d7_ends_today_with_lead_in():
 
 
 @pytest.mark.parametrize("range_key,span", [("d30", 30), ("d90", 90)])
-def test_resolve_window_d30_d90_end_today_inclusive(range_key, span):
+def test_resolve_window_30_and_90_day_ranges_end_today_inclusive(range_key, span):
     """A `d30`/`d90` window spans exactly `span` calendar days, today inclusive."""
     data_start = datetime.date(2025, 1, 1)
     data_end = data_start + datetime.timedelta(days=399)
@@ -769,7 +767,7 @@ def test_resolve_window_range_mapping_covers_every_literal_value():
 
 
 # ---------------------------------------------------------------------------
-# resolve_window custom start/end (Quick 260920-frk, Task 2)
+# resolve_window custom start/end
 # ---------------------------------------------------------------------------
 
 
@@ -797,7 +795,7 @@ def test_resolve_window_custom_start_end_reports_custom():
 
 def test_resolve_window_custom_single_day_mid_dataset_is_complete():
     """start == end on a past day gives exactly one visible day, and that
-    day is complete (FRK-02)."""
+    day is complete."""
     data_start = datetime.date(2025, 1, 1)
     data_end = data_start + datetime.timedelta(days=399)
     now_utc = datetime.datetime.combine(
@@ -815,8 +813,7 @@ def test_resolve_window_custom_single_day_mid_dataset_is_complete():
 
 def test_resolve_window_custom_today_only_is_selectable():
     """start == end == today, with data_end at yesterday (the realistic case:
-    user_activity has no row for today yet). Today must still be selectable
-    (FRK-03)."""
+    user_activity has no row for today yet). Today must still be selectable."""
     data_end = datetime.date(2026, 3, 15)
     data_start = data_end - datetime.timedelta(days=199)
     today = data_end + datetime.timedelta(days=1)
@@ -850,8 +847,8 @@ def test_resolve_window_custom_start_before_data_start_clamps_up():
 
 
 def test_resolve_window_custom_entirely_before_data_start_stays_safe():
-    """A custom window that ends before data_start (the lead_in_start guard
-    from Task 1): `days` is non-empty and window_start_index stays in range,
+    """A custom window that ends before data_start (the lead_in_start guard):
+    `days` is non-empty and window_start_index stays in range,
     rather than raising or rendering an empty page."""
     data_start = datetime.date(2026, 6, 1)
     data_end = data_start + datetime.timedelta(days=29)
@@ -886,7 +883,7 @@ def test_resolve_window_preset_window_end_is_data_end(range_key):
 
 
 # ---------------------------------------------------------------------------
-# fetch_train_funnel (SEED-166, D-19) — direct query test against test_engine.
+# fetch_train_funnel — direct query test against test_engine.
 # Self-contained seeding, per this file's own convention (see module
 # docstring): a drill_sessions row plus one drill_solves row per session,
 # duplicated here rather than importing tests/routers/test_train.py's
@@ -1122,7 +1119,7 @@ async def test_fetch_train_funnel_excludes_opener_whose_first_session_predates_w
 ):
     """A user whose first session predates the window never counts as an
     opener for that window, even though the same user has a later session
-    that falls squarely inside it (RESEARCH Finding J's defining case)."""
+    that falls squarely inside it."""
     window_start = datetime.date(2026, 7, 1)
     data_start = window_start - datetime.timedelta(days=90)
     window_end = window_start + datetime.timedelta(days=365)
@@ -1206,7 +1203,7 @@ async def test_fetch_train_funnel_skips_sessions_before_first_enter_stamp(test_e
 
 
 # ---------------------------------------------------------------------------
-# QTE-01..04: purged-user exclusion across the game-derived cohort queries.
+# Purged-user exclusion across the game-derived cohort queries.
 # Direct-query tests against test_engine, baseline-delta pattern (see
 # test_fetch_train_funnel_seeded_cohort's module comment above): the shared
 # engine carries rows from other tests, so every assertion is on the DELTA
@@ -1344,24 +1341,24 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_fetch_guest_train_d11_d12_semantics(test_engine):
-    """Pins D-11 (promotion cuts off guest-Train counting) and D-12 (purged
-    guests excluded) on seeded rows, baseline-delta pattern (see
+async def test_fetch_guest_train_promotion_cutoff_and_purged_exclusion(test_engine):
+    """Pins the promotion cutoff (promotion cuts off guest-Train counting) and
+    purged-guest exclusion on seeded rows, baseline-delta pattern (see
     test_fetch_train_funnel_seeded_cohort's module comment).
 
       - guest_counts: never promoted, one completed session -> counts.
       - guest_promoted: promoted mid-window; a completed session BEFORE
         promoted_at counts, a completed session ON/AFTER promoted_at does not
-        (D-11 -- it is registered activity by then).
+        (it is registered activity by then).
       - purged_guest: games_purged_at set, one completed session -> excluded
-        entirely regardless of promotion state (D-12).
+        entirely regardless of promotion state.
       - guest_bad_status: one 'open' and one 'expired' session, neither
         completed -> neither counts.
     """
     window_start = datetime.date(2019, 1, 1)
     # Far enough in the future to keep every guest seeded "now" (real wall
-    # clock) inside the window -- this test's point is D-11/D-12, not the
-    # new end-date truncation.
+    # clock) inside the window -- this test is about the promotion cutoff and
+    # purged exclusion, not the new end-date truncation.
     window_end = datetime.date(2099, 1, 1)
 
     async with test_engine.connect() as conn:
@@ -1388,7 +1385,7 @@ async def test_fetch_guest_train_d11_d12_semantics(test_engine):
     )
 
     # guest_promoted: one completed session BEFORE promoted_at (counts), one
-    # completed session ON promoted_at's date (does not -- D-11's cutoff is
+    # completed session ON promoted_at's date (does not -- the cutoff is
     # session_date < promoted_at::date).
     await _seed_funnel_session(
         test_engine,
@@ -1405,7 +1402,7 @@ async def test_fetch_guest_train_d11_d12_semantics(test_engine):
         solved=True,
     )
 
-    # purged_guest: completed session, but games_purged_at excludes it (D-12).
+    # purged_guest: completed session, but games_purged_at excludes it.
     await _seed_funnel_session(
         test_engine, purged_guest.id, datetime.date(2026, 1, 1), status="completed", solved=True
     )

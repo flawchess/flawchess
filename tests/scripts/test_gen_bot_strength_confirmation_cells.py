@@ -1,4 +1,4 @@
-"""Confirmation-cell prediction generator tests (D-11/D-12/D-13). Phase 181 Plan 02.
+"""Confirmation-cell prediction generator tests.
 
 Pure-function unit tests over `scripts.gen_bot_strength_confirmation_cells` --
 no DB, no engines, no TSV files on disk. Uses small in-memory synthetic
@@ -12,15 +12,14 @@ is pure stdlib math over static data.
 Tests cover (one function per behavior):
 - test_targets_off_grid_and_inside_range: select_confirmation_targets returns
   2-3 targets strictly inside [floor, ceiling], none equal to the endpoints
-  (D-12), for both a wide (>=3 grid step) and a narrow (<3 grid step) range.
+  for both a wide (>=3 grid step) and a narrow (<3 grid step) range.
 - test_predicted_bot_elo_not_on_measured_grid: every row's predicted_bot_elo
   in the real generated prediction payload is NOT one of its preset's 5
-  measured bot_elo grid points (D-11/D-12) -- the true test of the off-grid
+  measured bot_elo grid points -- the true test of the off-grid
   inversion.
 - test_plateau_ci_is_inverse_variance_pooled_not_lerp: interpolate_ci for a
   bot_elo inside a merged PAVA block returns the inverse-variance-pooled
-  bound, provably different from (and wider than) a plain two-bound average
-  (D-13).
+  bound, provably different from (and wider than) a plain two-bound average.
 - test_row_has_runbook_commands: every row carries target_blitz_elo,
   predicted_bot_elo, predicted_internal, ci95_lo/hi, harness_cmd, fit_cmd; the
   payload has a top-level pass_criterion.
@@ -46,7 +45,7 @@ from scripts.gen_bot_strength_curves import PRESETS, isotonic_fit, load_internal
 # Named tolerances (no magic numbers in assertions below).
 FLOAT_TOLERANCE = 1e-6  # exact-arithmetic comparisons after pure float math
 
-# Minimum row count: >=2 targets per preset, 3 presets (D-12).
+# Minimum row count: >=2 targets per preset, 3 presets.
 MIN_ROWS_PER_PRESET = 2
 PRESET_COUNT = 3
 
@@ -103,7 +102,7 @@ def test_plateau_ci_is_inverse_variance_pooled_not_lerp() -> None:
 
     # Pooled band must be at least as wide as EITHER single merged cell's own
     # CI -- a genuinely divergent plateau is less certain than either
-    # measured point alone (RESEARCH.md Pitfall 3), never narrower.
+    # measured point alone, never narrower.
     assert (hi - lo) >= (1757.77 - 1532.95)
     assert (hi - lo) >= (1604.96 - 1421.97)
 

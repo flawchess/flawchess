@@ -13,7 +13,7 @@ import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
 // from alt-tabbing or component re-mounts. Data only changes on new imports.
-const LIBRARY_STALE_TIME = 5 * 60 * 1000;
+const LIBRARY_STALE_TIME_MS = 5 * 60 * 1000;
 
 // The wire value of games.platform for a pasted game (backend
 // normalization._PASTE_PLATFORM_VALUE). Not part of the frontend `Platform`
@@ -21,8 +21,8 @@ const LIBRARY_STALE_TIME = 5 * 60 * 1000;
 // single-element platform list the 'only' pasted state sends.
 const PASTED_PLATFORM = 'pgn';
 
-// Runaway guard (Quick 260714-rj5, T-RJ5-03) for useLibraryGame's live poll:
-// stop polling an unanalyzed game after this much wall-clock time.
+// Runaway guard for useLibraryGame's live poll: stop polling an unanalyzed game
+// after this much wall-clock time.
 //
 // This is deliberately NOT GamesTab's ANALYZE_INFLIGHT_TIMEOUT_MS (120s). That
 // constant bounds only GamesTab's *optimistic* pill; the card there still
@@ -32,12 +32,12 @@ const PASTED_PLATFORM = 'pgn';
 // for any tier-1 job slower than two minutes — and a job waits on a worker
 // leasing it, which can easily exceed that when the fleet is busy or idle.
 // Sized instead to comfortably exceed a realistic tier-1 turnaround; it exists
-// only to stop a permanently-stuck job (e.g. one that ends `failed` — see the
-// deferred item in PLAN.md) from polling forever while the user sits on the page.
+// only to stop a permanently-stuck job (e.g. one that ends `failed`) from polling
+// forever while the user sits on the page.
 export const LIBRARY_GAME_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
- * Pure poll-interval decision for useLibraryGame's `live` mode (Quick 260714-rj5).
+ * Pure poll-interval decision for useLibraryGame's `live` mode.
  *
  * Returns LIBRARY_GAMES_POLL_INTERVAL_MS while the card is unanalyzed and the
  * stall backstop hasn't tripped yet; `false` (no more polling) once the card
@@ -57,25 +57,25 @@ export function libraryGamePollInterval(
 /**
  * Build shared query params for library endpoints from a FilterState.
  *
- * Mirrors buildEndgameParams from useEndgames.ts but drops color/matchSide
- * (the Games subtab shows all colors) and adds optional severity + tag filters.
+ * Mirrors buildEndgameParams from useEndgames.ts but drops matchSide, sends color
+ * only when narrowed (playedAs), and adds optional severity + tag filters.
  * severity and tag are omitted from the params object entirely when empty.
  *
- * hasGem/hasGreat (FILT-01, Phase 175) mirror rated's conditional-inclusion
+ * hasGem/hasGreat mirror rated's conditional-inclusion
  * pattern: included as has_gem/has_great only when true, omitted when false
  * so a default (unfiltered) call sends nothing. Only useLibraryGames passes
- * these — GET /library/games is the only endpoint that accepts them (Plan
- * 01); every other buildLibraryParams caller (flaw-stats, flaw-comparison,
+ * these — GET /library/games is the only endpoint that accepts them; every
+ * other buildLibraryParams caller (flaw-stats, flaw-comparison,
  * tactic-comparison, flaws) omits them by leaving the params at their false
  * default, which is a no-op for those endpoints' param types.
  *
- * include_pasted (Phase 208, D-11/D-12): every Library surface accepts this
+ * include_pasted: every Library surface accepts this
  * param, so it is threaded unconditionally here (unlike hasGem/hasGreat,
  * which are Games-tab-only args). Omitted when off, matching the
  * has_gem/has_great convention — this is the ONLY place FilterState.pasted
- * is read on the wire (D-14 containment).
+ * is read on the wire.
  *
- * The 'only' state (UAT follow-up) does NOT use include_pasted at all: it
+ * The 'only' state does NOT use include_pasted at all: it
  * sends `platform=['pgn']`, which the backend's resolve_library_platforms
  * already honors as an explicit caller selection on every Library surface.
  * `filters.platforms` is deliberately ignored in that state — the chip group
@@ -110,7 +110,7 @@ export function buildLibraryParams(
  * Fetch the paginated library game archive for the current filter + flaw filter.
  *
  * Accepts a full FlawFilterState (severity + tags) so both filter dimensions are
- * included in the query key and passed to the endpoint (D-04).
+ * included in the query key and passed to the endpoint.
  *
  * Query key: ['library-games', params, offset, limit]
  * Both offset and limit are part of the key so page changes trigger a new fetch.
@@ -126,12 +126,12 @@ export function useLibraryGames(
   limit: number,
   refetchIntervalMs: number = 0,
 ) {
-  // Bug fix: the default flaw filter (severity = blunder+mistake, no tags) used
-  // to be sent to GET /library/games, where the backend's severity EXISTS
-  // excludes every game without engine analysis — users with only unanalyzed
-  // games saw "0 games matched" with no filters set. The default state means
-  // "no flaw filtering" on the Games tab (matching the modified-dot logic), so
-  // only send severity/tags when the user actively changed the flaw filter.
+  // Send severity/tags only when the flaw filter actually narrows
+  // (isFlawFilterNonDefault): the backend's severity EXISTS excludes every game
+  // without engine analysis, so a non-narrowing filter (e.g. both tiers selected)
+  // would show "0 games matched" to users whose games are unanalyzed. The default
+  // state means "no flaw filtering" on the Games tab (matching the modified-dot
+  // logic).
   const isFiltering = isFlawFilterNonDefault(flawFilter);
   // has_gem/has_great are threaded unconditionally (not gated on isFiltering like
   // severity/tags above): they already default to false, so buildLibraryParams
@@ -143,14 +143,14 @@ export function useLibraryGames(
     flawFilter.hasGem,
     flawFilter.hasGreat,
   );
-  // Quick 260620-pza / 260621-sm8: tactic filters on the Games tab (mirrors
-  // useLibraryFlaws). Depth + orientation are now independently meaningful, so they
-  // are ALWAYS sent — gating them behind a selected family meant a depth-only or
-  // orientation-only filter never reached the backend (the bug being fixed). The
-  // family group is sent only when ≥1 is selected. The backend treats the
-  // all-inclusive default (no family, either, full range) as a no-op.
-  // Optional-chained: defensive against partial filter objects (older persisted/mocked
-  // state predating the tacticFamilies field), matching isFlawFilterNonDefault.
+  // Tactic filters on the Games tab (mirrors useLibraryFlaws). Depth + orientation
+  // are independently meaningful, so they are ALWAYS sent — gating them behind a
+  // selected family would keep a depth-only or orientation-only filter from ever
+  // reaching the backend. The family group is sent only when ≥1 is selected. The
+  // backend treats the all-inclusive default (no family, either, full range) as a
+  // no-op.
+  // Optional-chained: defensive against partial filter objects (e.g. test mocks),
+  // matching isFlawFilterNonDefault.
   const tacticFamily =
     (flawFilter.tacticFamilies?.length ?? 0) > 0 ? flawFilter.tacticFamilies : undefined;
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
@@ -166,7 +166,7 @@ export function useLibraryGames(
         offset,
         limit,
       }),
-    staleTime: LIBRARY_STALE_TIME,
+    staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     refetchInterval: refetchIntervalMs > 0 ? refetchIntervalMs : false,
   });
@@ -188,7 +188,7 @@ export function useLibraryFlawStats(
   return useQuery({
     queryKey: ['library-flaw-stats', params],
     queryFn: () => libraryApi.getFlawStats(params),
-    staleTime: LIBRARY_STALE_TIME,
+    staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,
   });
 }
@@ -199,7 +199,7 @@ export function useLibraryFlawStats(
  *
  * Query key: ['library-flaw-comparison', params]
  * Independent of ['library-flaw-stats', params] — separate endpoint, separate type.
- * Same buildLibraryParams + LIBRARY_STALE_TIME + refetchOnWindowFocus:false as
+ * Same buildLibraryParams + LIBRARY_STALE_TIME_MS + refetchOnWindowFocus:false as
  * useLibraryFlawStats (exact analog).
  */
 export function useLibraryFlawComparison(
@@ -210,7 +210,7 @@ export function useLibraryFlawComparison(
   return useQuery({
     queryKey: ['library-flaw-comparison', params],
     queryFn: () => libraryApi.getFlawComparison(params),
-    staleTime: LIBRARY_STALE_TIME,
+    staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,
   });
 }
@@ -220,7 +220,7 @@ export function useLibraryFlawComparison(
  * current filter + flaw filter.
  *
  * Self-fetch for the Library Stats Tactic motifs section. The selected time control is a
- * client-side pick over the payload (D-02), so it never enters the key, and neither does
+ * client-side pick over the payload, so it never enters the key, and neither does
  * a tactic-family list: the Stats tab always compares every family. The backend
  * `tactic_families` parameter stays available but is not sent from here.
  *
@@ -233,7 +233,7 @@ export function useTacticComparison(filters: FilterState, flawFilter: FlawFilter
   return useQuery({
     queryKey: ['library-tactic-comparison', params],
     queryFn: () => libraryApi.getTacticComparison(params),
-    staleTime: LIBRARY_STALE_TIME,
+    staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,
   });
 }
@@ -245,13 +245,10 @@ export function useTacticComparison(filters: FilterState, flawFilter: FlawFilter
  * Disabled when gameId is null — no fetch fires until the modal opens.
  * Returns the full GameFlawCard for rendering in LibraryGameCard.
  *
- * Quick 260702-mnd (D-3): the single-game card is now filter-independent — its
- * content (which tactic + context tags render) no longer changes with the active
- * flaw filter (the backend endpoint no longer accepts filter params at all; the
- * filter only affects which games are SELECTED on the Games list). Dropped the
- * flawFilter param and every derived query param.
+ * The single-game card is filter-independent: the endpoint takes no filter
+ * params, and the filter only selects which games appear on the Games list.
  *
- * Quick 260714-rj5: opt-in `live` polling. When `live` is true and the card is
+ * Opt-in `live` polling. When `live` is true and the card is
  * unanalyzed, refetches every LIBRARY_GAMES_POLL_INTERVAL_MS (via
  * libraryGamePollInterval) until analysis lands or the stall backstop trips —
  * this is what lets the Analysis game-mode board pick up a completed eval job
@@ -279,7 +276,7 @@ export function useLibraryGame(
     queryKey: ['library-game', gameId],
     queryFn: () => libraryApi.getGame(gameId!),
     enabled: gameId !== null,
-    staleTime: live ? 0 : LIBRARY_STALE_TIME,
+    staleTime: live ? 0 : LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: live,
     refetchInterval: live
       ? (query) =>
@@ -292,9 +289,8 @@ export function useLibraryGame(
  * Lazy-fetch the tactic PV walk for a specific flaw (game_id + ply).
  *
  * Query key: ['tactic-lines', gameId, ply]
- * Enabled only when `enabled` is true AND gameId/ply are non-null — gates the
- * network request until the TacticLineExplorer opens (lazy fetch on open).
- * Phase 135, Plan 03 — consumed by TacticLineExplorer.
+ * Enabled only when `enabled` is true AND gameId/ply are non-null: the Analysis
+ * page fetches a flaw's PV lazily when its line is opened or focused.
  */
 export function useTacticLines(
   gameId: number | null,
@@ -305,7 +301,7 @@ export function useTacticLines(
     queryKey: ['tactic-lines', gameId, ply],
     queryFn: () => libraryApi.getTacticLines(gameId!, ply!),
     enabled: enabled && gameId != null && ply != null,
-    staleTime: LIBRARY_STALE_TIME,
+    staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,
   });
 }
@@ -315,8 +311,8 @@ export function useTacticLines(
  *
  * Query key: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit]
  * Both offset and limit are part of the key so page changes trigger a new fetch.
- * Phase 129: tactic_orientation + max_tactic_depth appended to key so changing either
- * triggers a refetch (pitfall 4 prevention).
+ * tactic_orientation + max_tactic_depth appended to key so changing either
+ * triggers a refetch.
  */
 export function useLibraryFlaws(
   filters: FilterState,
@@ -325,12 +321,12 @@ export function useLibraryFlaws(
   limit: number,
 ) {
   const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
-  // Phase 126: tactic-motif family filter is a flaw-level Tags-panel filter (off by
+  // The tactic-motif family filter is a flaw-level Tags-panel filter (off by
   // default; applied only when ≥1 family is selected), so it lives on flawFilter, not
   // the game-metadata FilterState. Sent to /library/flaws as repeated tactic_family.
   const tacticFamily = flawFilter.tacticFamilies.length > 0 ? flawFilter.tacticFamilies : undefined;
-  // Phase 129: orientation (omit when 'either'). Quick 260620-l5k: depth is a
-  // [min, max] range in depth units — both bounds always sent.
+  // Orientation and the [min, max] depth range are always sent; the backend
+  // treats the defaults as a no-op.
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
   const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
   return useQuery({
@@ -344,7 +340,7 @@ export function useLibraryFlaws(
         offset,
         limit,
       }),
-    staleTime: LIBRARY_STALE_TIME,
+    staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,
   });
 }

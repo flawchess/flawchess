@@ -1,16 +1,15 @@
 /**
- * TrainRevealGameFooter — Phase 237 plan 08: the reveal's compact game footer,
- * extracted from TrainReveal along its seam.
+ * TrainRevealGameFooter — the reveal's compact game footer, extracted from
+ * TrainReveal along its seam.
  *
- * 190.1-03 D-03, format per 190.1 UAT round 3: "Game: <TC> · vs <opponent>
- * (<elo>) · <date>". The Analyze/Next row that used to close the reveal lives in
- * the reveal action bar, whose Analyze also replaced the footer's own
- * open-on-the-analysis-board icon (redundant beside it).
+ * Format: "Game: <TC> · vs <opponent> (<elo>) · <date>". Analyze and Next live
+ * in the reveal action bar; don't add an open-on-the-analysis-board icon to
+ * this footer (it duplicates the bar's Analyze).
  *
- * Quick 261015-s05: a second line under the footer shows the clock context of the
+ * A second line under the footer shows the clock context of the
  * flawed move ("Played after 13s, with 3:56 left."). It reads `eval_series` from the
  * same post-solve card query (no extra fetch) and is suppressed with the footer for
- * non-SR sources, so SOLV-05 / T-190-16 are unchanged.
+ * non-SR sources.
  */
 
 import type { ReactElement } from 'react';
@@ -31,27 +30,26 @@ export function TrainRevealGameFooter({
   puzzle,
   verdict,
 }: TrainRevealGameFooterProps): ReactElement | null {
-  // SOLV-05/T-190-16: the game card fetch is disabled until the solve response
+  // The game card fetch is disabled until the solve response
   // is present, never fetched speculatively. The footer only mounts once
   // `verdict` exists, so passing `puzzle.game_id` here preserves that gate.
   const gameQuery = useLibraryGame(puzzle.game_id);
 
-  // D-07 (Phase 192): a herring reveal omits this footer entirely — "vs
+  // A herring reveal omits this footer entirely — "vs
   // <opponent>" has no referent when the solver was never a participant in a
   // stranger's game, and the reveal already labels the puzzle a herring
-  // outright, so dropping the line leaks nothing new. A sharp filler (Phase 206)
+  // outright, so dropping the line leaks nothing new. A sharp filler
   // is suppressed the same way — it has no game at all (`game_id` is
   // structurally NULL). Both the error branch and the success branch sit behind
-  // the SAME `verdict.source === 'sr_item'` gate (Phase 206, D-19 — replaces the
-  // old `puzzle_type !== 'herring'` proxy, which a sharp filler's `puzzle_type:
-  // 'sharp'` would have wrongly satisfied) — gating only the success branch
-  // would leave a herring/sharp filler free to render "Failed to load the game"
-  // for a `useLibraryGame` query that (for a null `game_id`, D-09) never fired
-  // in the first place. Reads `verdict`, never `revealQuery.data` (RESEARCH
-  // Pitfall 1): `revealQuery` is a separate, asynchronously fetched query that
-  // only starts once `verdict` lands, so reading its `source` here would open a
-  // real post-solve window where a real SR puzzle briefly misrenders as
-  // suppressed.
+  // the SAME `verdict.source === 'sr_item'` gate (not a `puzzle_type !==
+  // 'herring'` check, which a sharp filler's `puzzle_type: 'sharp'` would
+  // wrongly satisfy) — gating only the success branch would leave a
+  // herring/sharp filler free to render "Failed to load the game" for a
+  // `useLibraryGame` query that (for a null `game_id`) never fired in the
+  // first place. Reads `verdict`, never `revealQuery.data`: `revealQuery` is a
+  // separate, asynchronously fetched query that only starts once `verdict`
+  // lands, so reading its `source` here would open a real post-solve window
+  // where a real SR puzzle briefly misrenders as suppressed.
   if (verdict.source !== 'sr_item') return null;
 
   // Opponent-and-rating: the side the user did NOT play.

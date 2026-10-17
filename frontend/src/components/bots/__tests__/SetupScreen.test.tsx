@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * SetupScreen.tsx tests (Phase 171 Plan 05, V-07/V-08/V-09/V-13).
+ * SetupScreen.tsx tests.
  *
  * @sentry/react is mocked (its ESM module namespace is not configurable, so
  * a real import would break any spying) — mirrors botSetupSettings.test.ts.
@@ -54,11 +54,11 @@ function eloThumb(): HTMLElement {
   return within(screen.getByTestId('setup-elo')).getByRole('slider');
 }
 
-describe('SetupScreen — defaults (V-13 setup half)', () => {
+describe('SetupScreen — defaults', () => {
   it('mounts with a normalized rating and no saved settings: ELO snaps to the ladder, blend/TC/color are the defaults', () => {
     render(<SetupScreen ownerKey={null} normalizedRating={1650} onStart={vi.fn()} />);
 
-    // resolveDefaultBotElo(1650) snaps to 1700 (Plan 04's pinned rounding).
+    // resolveDefaultBotElo(1650) snaps to 1700 (the pinned rounding).
     expect(screen.getByTestId('analysis-elo-selector-value').textContent).toBe('1700');
     // Default play-style preset is Light (blend 0.05).
     expect(screen.getByTestId('setup-play-style-summary').textContent).toBe(
@@ -108,7 +108,7 @@ describe('SetupScreen — prefill from persisted settings', () => {
   });
 });
 
-describe('SetupScreen — Start emits a fully-resolved BotGameSettings (V-07)', () => {
+describe('SetupScreen — Start emits a fully-resolved BotGameSettings', () => {
   it('selecting the 15+10 chip converts to seconds — no "15+10" string ever reaches the emitted object', () => {
     const onStart = vi.fn();
     render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={onStart} />);
@@ -133,7 +133,7 @@ describe('SetupScreen — Start emits a fully-resolved BotGameSettings (V-07)', 
   });
 });
 
-describe('SetupScreen — Random resolves to a concrete color at Start (D-12, V-08)', () => {
+describe('SetupScreen — Random resolves to a concrete color at Start', () => {
   it('a Math.random stub < 0.5 resolves to "white"', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.1);
     const onStart = vi.fn();
@@ -178,7 +178,7 @@ describe('SetupScreen — Random resolves to a concrete color at Start (D-12, V-
   });
 });
 
-describe('SetupScreen — D-10 round-trip prefill', () => {
+describe('SetupScreen — round-trip prefill', () => {
   it('unmounting and remounting with the same ownerKey prefills every control, including Random staying Random', () => {
     const { unmount } = render(
       <SetupScreen ownerKey="owner-c" normalizedRating={1500} onStart={vi.fn()} />,
@@ -193,7 +193,7 @@ describe('SetupScreen — D-10 round-trip prefill', () => {
   });
 });
 
-describe('SetupScreen — bottom-nav clearance (171 UAT gap 3, Task 1)', () => {
+describe('SetupScreen — bottom-nav clearance', () => {
   it('the setup-screen root carries pb-20 sm:pb-4 so the fixed bottom nav never occludes Start', () => {
     render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
     const className = screen.getByTestId('setup-screen').className;
@@ -202,7 +202,7 @@ describe('SetupScreen — bottom-nav clearance (171 UAT gap 3, Task 1)', () => {
   });
 });
 
-describe('mobile density (171 UAT gap 3, Task 2)', () => {
+describe('mobile density', () => {
   it('the Start button is h-12 (48px) — the tallest control on the screen', () => {
     render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
     expect(screen.getByTestId('btn-start-game').className).toContain('h-12');
@@ -226,8 +226,8 @@ describe('mobile density (171 UAT gap 3, Task 2)', () => {
   });
 });
 
-// Phase 229 (D-12): TC and color choices reach window.umami.track; re-picking the active one does not.
-describe('SetupScreen feature events (Phase 229)', () => {
+// TC and color choices reach window.umami.track; re-picking the active one does not.
+describe('SetupScreen feature events', () => {
   const track = vi.fn();
 
   beforeEach(() => {

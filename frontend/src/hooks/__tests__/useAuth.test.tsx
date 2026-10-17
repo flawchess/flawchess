@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useAuth.test.tsx — Phase 229 D-07.
+ * useAuth.test.tsx.
  *
  * logout()'s full-page navigation is also the Umami identity reset: the tracker
  * keeps the identify() id in memory with no reset API, so removing the hard

@@ -1,4 +1,4 @@
-"""Router tests for the weekly medal snapshot on GET /api/train/leaderboard (Phase 231).
+"""Router tests for the weekly medal snapshot on GET /api/train/leaderboard.
 
 Cases:
 - test_deadline_finalizes_last_week_and_shows_the_podium: tracer, the first request
@@ -9,8 +9,8 @@ Cases:
 - test_last_week_is_only_the_immediately_previous_week: no fallback to an older week
 - test_finalization_failure_still_serves_the_board: finalizer error -> 200 + Sentry
 - test_unclaimed_then_claim_round_trip: tracer for GET /medals/unclaimed + POST /medals/claim
-- test_unclaimed_order_newest_week_first_points_before_accuracy: D-11 ordering
-- test_claim_is_scoped_to_the_caller_and_idempotent: IDOR, replay, D-04 hidden, D-10 guest
+- test_unclaimed_order_newest_week_first_points_before_accuracy: newest-week-first ordering
+- test_claim_is_scoped_to_the_caller_and_idempotent: IDOR, replay, hidden user, guest
 - test_claim_validation_rejects_bad_bodies: 422 before any SQL, 401 without a token
 - test_medal_tally_counts_lifetime_medals_per_board: lifetime tally on live rows, opt-out round trip
 
@@ -22,7 +22,7 @@ before seeding and in `finally` (the FK cascades their standings rows), and dele
 users it registered in `finally`. A k is never reused. A test owns both its finalized
 week and the week its request is pinned in.
 
-k table (this plan holds k 0-19, Plan 02 holds k 20-49):
+k table (k 0-19 belong to the first group of tests, k 20-49 to the later tests):
 - k=0  test_deadline_finalizes_last_week_and_shows_the_podium (finalized week)
 - k=1  test_deadline_finalizes_last_week_and_shows_the_podium (request week)
 - k=2  test_podium_masks_hidden_now_and_deleted_users (finalized week)
@@ -35,7 +35,7 @@ k table (this plan holds k 0-19, Plan 02 holds k 20-49):
 - k=9  unused
 - k=10 test_finalization_failure_still_serves_the_board (would-be finalized week)
 - k=11 test_finalization_failure_still_serves_the_board (request week)
-- k=12-19 reserved for this plan's later additions
+- k=12-19 reserved for later additions
 - k=20 test_unclaimed_then_claim_round_trip (finalized week)
 - k=21 test_unclaimed_then_claim_round_trip (request week)
 - k=22 test_unclaimed_order_newest_week_first_points_before_accuracy (finalized week)
@@ -383,7 +383,7 @@ async def test_podium_masks_hidden_now_and_deleted_users(
             b_name,
             "Deleted user",
         ]
-        # D-04: masking only applies to what others see; A still sees their own name.
+        # Masking only applies to what others see; A still sees their own name.
         assert as_a["points"]["last_week"]["podium"][0] == {
             "medal": "gold",
             "name": a_name,
@@ -431,7 +431,7 @@ async def test_finalization_waits_for_the_grace_window(
         assert later["points"]["last_week"]["podium"] == [
             {"medal": "gold", "name": a_name, "is_viewer": True}
         ]
-        # The viewer medalled, so the "You finished #N" line stays off (D-03).
+        # The viewer medalled, so the "You finished #N" line stays off.
         assert later["points"]["last_week"]["viewer_final_rank"] is None
         assert await _marker_count(test_engine, week4) == 1
     finally:
@@ -445,7 +445,7 @@ async def test_last_week_is_only_the_immediately_previous_week(
     pin_now: Callable[[datetime.datetime], None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D-07 (k=6, 7 finalized, k=8 request): no fallback to an older finalized week."""
+    """(k=6, 7 finalized, k=8 request): no fallback to an older finalized week."""
     weeks = [_week_monday(k).date() for k in (6, 7)]
     monkeypatch.setattr(train_medals, "MEDALS_START_WEEK", weeks[0])
     pin_now(_wednesday_noon(8))
@@ -607,7 +607,7 @@ async def test_unclaimed_order_newest_week_first_points_before_accuracy(
     pin_now: Callable[[datetime.datetime], None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """D-11 (k=22, 23 finalized, k=24 request): newest week first, Points before Accuracy."""
+    """(k=22, 23 finalized, k=24 request): newest week first, Points before Accuracy."""
     week22 = _week_monday(22).date()
     week23 = _week_monday(23).date()
     monkeypatch.setattr(train_medals, "MEDALS_START_WEEK", week22)
@@ -653,7 +653,7 @@ async def test_claim_is_scoped_to_the_caller_and_idempotent(
     pin_now: Callable[[datetime.datetime], None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """IDOR, replay, D-04 and D-10 (k=25 finalized, k=26 request)."""
+    """IDOR, replay, hidden user and guest (k=25 finalized, k=26 request)."""
     week25 = _week_monday(25).date()
     monkeypatch.setattr(train_medals, "MEDALS_START_WEEK", week25)
     first_now = _wednesday_noon(26)
@@ -676,7 +676,7 @@ async def test_claim_is_scoped_to_the_caller_and_idempotent(
         await _seed_solves(test_engine, b_id, solved_at, [_GOOD_SR] * 3)
         await _seed_solves(test_engine, c_id, solved_at, [_GOOD_SR])
         b_list = await _get_unclaimed(b_token)  # finalizes week 25
-        # D-04 is about opting out AFTER the week; a user hidden at finalization gets no row.
+        # Opting out only matters AFTER the week; a user hidden at finalization gets no row.
         await _set_user_fields(test_engine, a_id, leaderboard_hidden=True)
 
         a_list = (await _get_unclaimed(a_token)).json()["medals"]
@@ -693,7 +693,7 @@ async def test_claim_is_scoped_to_the_caller_and_idempotent(
         assert len((await _get_unclaimed(a_token)).json()["medals"]) == 1
         assert await _celebrated_at(test_engine, week25, "points", a_id) is None
 
-        # A claims twice (D-04: still hidden); the second POST, at a later pinned now, is a no-op.
+        # A claims twice (still hidden); the second POST, at a later pinned now, is a no-op.
         assert (await _post_claim(a_token, [_key(week25, "points")])).status_code == 204
         pin_now(first_now + datetime.timedelta(hours=3))
         assert (await _post_claim(a_token, [_key(week25, "points")])).status_code == 204
@@ -701,7 +701,7 @@ async def test_claim_is_scoped_to_the_caller_and_idempotent(
         assert (await _get_unclaimed(a_token)).json() == {"medals": []}
         assert len((await _get_unclaimed(c_token)).json()["medals"]) == 1  # C never claimed
 
-        # D-10 (server side): a guest has no rows; GET is empty and POST is a harmless 204.
+        # Server side: a guest has no rows; GET is empty and POST is a harmless 204.
         assert (await _get_unclaimed(g_token)).json() == {"medals": []}
         assert (await _post_claim(g_token, [_key(week25, "points")])).status_code == 204
         assert await _celebrated_at(test_engine, week25, "points", c_id) is None

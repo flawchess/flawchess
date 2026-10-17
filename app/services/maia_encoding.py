@@ -19,12 +19,12 @@ matched the live UI root distribution to 0.01%
     is identical, only the dict key differs.
   - ELO ladder [600, 2600] step 100 (21 rungs); clamp_to_ladder_bounds mirrors the
     frontend clampToLadderBounds so a gem shown live and a gem stored in the DB
-    never disagree for the same position/rating (D-04).
+    never disagree for the same position/rating.
 
 This module is PURE (stdlib + python-chess only, NO numpy) and imports cleanly
 WITHOUT onnxruntime — so the encoding unit tests run in the default (no-group)
 backend suite. numpy lives only in the isolated `maia-inference` uv group alongside
-onnxruntime (GEMS-06); the ONNX session, the numpy tensor plumbing, and the parity
+onnxruntime; the ONNX session, the numpy tensor plumbing, and the parity
 gate all live in scripts/maia_parity_spike.py / tests/services/test_maia_parity.py,
 which sync that group. encode_board returns a plain list[float]; the ONNX callers
 wrap it in a numpy float32 tensor at feed time.
@@ -57,7 +57,7 @@ BASE_VOCAB_SIZE: int = NUM_SQUARES * NUM_SQUARES  # 4096
 # lane; only r/b/n index the reserved 256 slots). 4352 - 4096 = 256 = 64 x 4.
 UNDERPROMOTION_PIECE_LANES: tuple[str, ...] = ("q", "r", "b", "n")
 
-# ─── ELO ladder (CONTRACT §c; D-04) ────────────────────────────────────────────
+# ─── ELO ladder (CONTRACT §c) ──────────────────────────────────────────────────
 
 MAIA_ELO_LADDER_MIN: int = 600
 MAIA_ELO_LADDER_MAX: int = 2600
@@ -142,7 +142,7 @@ def elo_to_input(elo: float) -> float:
 
 def clamp_to_ladder_bounds(rating: float) -> float:
     """Clamp a rating to the [600, 2600] ELO ladder, mirroring the frontend
-    clampToLadderBounds exactly (D-04): min(MAX, max(MIN, rating))."""
+    clampToLadderBounds exactly: min(MAX, max(MIN, rating))."""
     return float(min(MAIA_ELO_LADDER_MAX, max(MAIA_ELO_LADDER_MIN, rating)))
 
 
@@ -162,7 +162,7 @@ def move_vocab_index(from_square: str, to_square: str, promotion: str | None) ->
     return BASE_VOCAB_SIZE + to_idx * len(UNDERPROMOTION_PIECE_LANES) + lane_idx
 
 
-# ─── Legal-move masking + softmax (MAIA-03) ────────────────────────────────────
+# ─── Legal-move masking + softmax ────────────────────────────────────
 
 
 def mask_and_softmax(policy: Sequence[float], fen: str) -> dict[str, float]:

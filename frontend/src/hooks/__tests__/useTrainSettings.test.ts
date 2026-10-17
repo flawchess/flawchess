@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * useTrainSettings.test.ts — CR-01 regression (203-REVIEW.md).
+ * useTrainSettings.test.ts — regression coverage for the guest 403.
  *
  * `useReminderResurface` mounts this hook app-wide via `ProtectedLayout`
  * (App.tsx) with no gate, so a guest account got a guaranteed 403 from
  * `_reject_guest` on `GET /train/settings` on every protected page view and
  * window refocus, each captured by the global `QueryCache.onError` Sentry
  * reporter. Covers the fix: `options.enabled` gates the query off entirely,
- * mirroring `useTrainProgress`'s existing pattern (T-191-21).
+ * mirroring `useTrainProgress`'s existing pattern.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
@@ -48,7 +48,7 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
-describe('useTrainSettings — enabled gate (CR-01 regression)', () => {
+describe('useTrainSettings — enabled gate (regression)', () => {
   afterEach(() => {
     vi.mocked(trainApi.getSettings).mockReset();
   });

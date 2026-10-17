@@ -46,7 +46,7 @@ const COPY_TACTICS_INTRO =
   '(your move handed one over), per 100 games, next to your opponents.';
 
 interface LibraryStatsSectionsProps {
-  /** Sidebar filters: every query of the Stats tab reads these (D-01). */
+  /** Sidebar filters: every query of the Stats tab reads these. */
   filters: FilterState;
   isGuest: boolean;
 }
@@ -160,7 +160,7 @@ interface LibraryStatsTcSwitchProps {
 }
 
 /**
- * The Library Stats time-control switch (D-02, D-05), bound to the one remembered Library
+ * The Library Stats time-control switch, bound to the one remembered Library
  * TC store every section reads. The page pins it in a sticky bar, so it stays in reach
  * while scrolling. Offers the flaw-comparison TCs (the tactic TCs are a subset).
  */
@@ -180,11 +180,11 @@ export function LibraryStatsTcSwitch({ filters, idPrefix }: LibraryStatsTcSwitch
   );
 }
 
-/** Flaw Stats (D-00e, D-00k): heading, coverage basis line, tiles, timeline. */
+/** Flaw Stats: heading, coverage basis line, tiles, timeline. */
 function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
   const stats = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
-  // The selected TC picks an entry out of the payload; it is never part of a query key (D-02).
+  // The selected TC picks an entry out of the payload; it is never part of a query key.
   const tcs = comparison.data?.tcs ?? NO_TCS;
   const [selectedTc] = useLibraryStatsTc(tcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
@@ -245,10 +245,11 @@ function VsOpponentsSkeleton() {
 }
 
 /**
- * You vs. your opponents (D-00f): the four context-tag cards with the full-width
- * Clock by game phase heatmap (quick 261014-pb9) after the first row, for the selected TC. It reads the same comparison query as Flaw Stats (one cache entry,
- * no extra request) and the same remembered TC store as the page's one switch (D-02).
- * Below the gate one slot replaces everything (D-03).
+ * You vs. your opponents: the four context-tag cards with the full-width Clock by
+ * game phase heatmap after the first row, for the selected TC. It reads the same
+ * comparison query as Flaw Stats (one cache entry, no extra request) and the same
+ * remembered TC store as the page's one switch.
+ * Below the gate one slot replaces everything.
  */
 function VsOpponentsSection({ filters }: { filters: FilterState }) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
@@ -300,9 +301,10 @@ function TacticsSkeleton() {
 }
 
 /**
- * Tactic motifs (D-00h, D-17): one card of the four most common tactics for the selected TC.
+ * Tactic motifs: one card of the four most common tactics for the selected TC.
  * The payload is per TC, so the TC is a client-side pick (never in the query key) bound
- * to the same remembered TC store as the other sections (D-02). Below the gate one slot replaces the card (D-03).
+ * to the same remembered TC store as the other sections. Below the gate one slot
+ * replaces the card.
  *
  * The TC comes from the flaw-comparison list, the one the page switch offers: the tactic
  * list can lack a TC (blob-pending games), and resolving against it would silently show a
@@ -349,8 +351,8 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
 
 /**
  * The redesigned top of the Library Stats tab: Flaw Stats, You vs. your opponents, then
- * Tactic motifs. The sections share one remembered TC switch (D-05). The sidebar filters
- * flow into every query (D-01).
+ * Tactic motifs. The sections share one remembered TC switch. The sidebar filters
+ * flow into every query.
  *
  * The switch pins in a StickyTcBar scoped to this wrapper on desktop, so it unpins once the
  * sections scroll away (the rating and results sections below have no TC switch). Mobile

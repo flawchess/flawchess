@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 validation rows D-00c (merged popover), D-09 (below-floor slot) and
- * D-11 (pending / not-ranked slots).
+ * The merged popover, the below-floor slot and
+ * the pending / not-ranked slots.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -37,7 +37,7 @@ function openPopover(
   return byId(`${TRIGGER_ID}-popover`);
 }
 
-describe('RankedMetricPopover body (D-00c)', () => {
+describe('RankedMetricPopover body', () => {
   it('orders WHAT, percentile sentence, disclosures, separator, footer', () => {
     const popover = openPopover(buildMetric('score_gap', { value: 0.05, percentile: 46.4 }));
     const text = popover.textContent ?? '';
@@ -53,7 +53,7 @@ describe('RankedMetricPopover body (D-00c)', () => {
     const indexes = parts.map((part) => text.indexOf(part));
     indexes.forEach((index, i) => expect(index, `missing: ${parts[i]}`).toBeGreaterThanOrEqual(0));
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
-    // 238 UAT: the Stats tab has no filters, so the filter-independence line is gone.
+    // The Stats tab has no filters, so the filter-independence line is gone.
     expect(text).not.toContain('Filters');
   });
 
@@ -114,7 +114,7 @@ describe('RankedMetricPopover body (D-00c)', () => {
     expect(rateFooter).not.toContain('p =');
   });
 
-  it('says an out-of-range percentile could be chance only when it is not significant (239 D-14)', () => {
+  it('says an out-of-range percentile could be chance only when it is not significant', () => {
     const chance = openPopover(buildMetric('score_gap', { percentile: 90, significant: false }));
     expect(chance.textContent).toContain('This could be chance');
     cleanup();
@@ -137,7 +137,7 @@ describe('RankedMetricPopover body (D-00c)', () => {
   });
 });
 
-describe('RankedMetricPopover for unranked cells (D-09, D-11)', () => {
+describe('RankedMetricPopover for unranked cells', () => {
   it('below_floor keeps WHAT, explains the floor and skips the percentile statement', () => {
     const popover = openPopover(
       buildMetric('score_gap', {
@@ -168,7 +168,7 @@ describe('RankedMetricPopover for unranked cells (D-09, D-11)', () => {
   });
 });
 
-describe('RankedMetricRow status slots (D-09, D-11)', () => {
+describe('RankedMetricRow status slots', () => {
   function renderRow(metric: RankedMetricOut) {
     const tcStats = buildRankedTc('rapid');
     return render(

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 151 Plan 05 — EloSelector tests (D-06).
+ * EloSelector tests.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';

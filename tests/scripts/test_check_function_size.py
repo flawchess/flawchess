@@ -1,8 +1,8 @@
-"""Tests for scripts.check_function_size (Phase 214, tooling for backend god-file split).
+"""Tests for scripts.check_function_size (tooling for the backend function-size gate).
 
 Pure AST-walk coverage — builds small source strings and asserts on the analyzer's
 `FunctionRecord` output rather than on stdout formatting, so assertions survive a
-cosmetic output change. Covers every bullet in 214-01-PLAN.md's `<behavior>` block:
+cosmetic output change. Covers:
 nesting depth, try/except levels, nested-def isolation, comprehension handling,
 logic-LOC exclusions (blank/comment/docstring), the CLI exit code, and directory
 walking.
@@ -100,7 +100,7 @@ def f(flag):
 
 
 def test_if_nested_directly_inside_try_body_counts_its_own_increment() -> None:
-    # CR-01 (214-REVIEW.md): the mirror case of the test above -- a `try`
+    # The mirror case of the test above -- a `try`
     # WRAPS a chain of `if`s instead of an `if` wrapping a `try`. Before the
     # fix, `_depth_of_try` called `_walk_depth` directly on each top-level
     # try-body statement instead of routing it through the same
@@ -192,7 +192,7 @@ def f(x):
 
 
 def test_multiline_signature_continuation_lines_are_not_counted_as_logic() -> None:
-    # CR-02 (214-REVIEW.md): a multi-line (kwonly-arg) signature. Before the
+    # A multi-line (kwonly-arg) signature. Before the
     # fix, `logic_loc` used `def_line + 1` as the body start, so the
     # parameter continuation lines (`a: int,`, `b: int,`, `*,`, `c: str,`,
     # `) -> int:`) between the `async def foo(` line and the real first body
@@ -321,6 +321,6 @@ def test_scan_file_reads_from_disk(tmp_path: Path) -> None:
 def test_max_nesting_depth_and_logic_loc_are_directly_importable() -> None:
     # Smoke test that the public helper names exist with the expected shape,
     # exercised indirectly above via scan_source; this just confirms the
-    # module-level symbols required by the plan's acceptance criteria exist.
+    # module-level symbols the tests rely on exist.
     assert callable(max_nesting_depth)
     assert callable(logic_loc)

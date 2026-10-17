@@ -9,7 +9,7 @@ interface PaginationProps {
 type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
 
 // Page-window constants: show all pages when <= MAX_PAGES_UNTRUNCATED,
-// otherwise keep a window of WINDOW_SIZE pages either side of the current page.
+// otherwise keep a window of WINDOW_RADIUS pages either side of the current page.
 const MAX_PAGES_UNTRUNCATED = 7;
 const WINDOW_RADIUS = 2;
 

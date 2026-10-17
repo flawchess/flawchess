@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * trainRevealCache.test.ts — round-trip, corruption, and clearing coverage
- * for the Analyze -> browser-back solution-state cache (190.1 UAT round 5).
+ * for the Analyze -> browser-back solution-state cache.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -55,7 +55,7 @@ describe('trainRevealCache', () => {
     expect(readTrainRevealCache()).toEqual(CACHED);
   });
 
-  it('Phase 233: round-trips reviewTelemetry, and an entry without it still restores', () => {
+  it('round-trips reviewTelemetry, and an entry without it still restores', () => {
     const withReview = { ...CACHED, reviewTelemetry: { visibleMs: 4300, hiddenMs: 200 } };
     saveTrainRevealCache(withReview);
     expect(readTrainRevealCache()).toEqual(withReview);
@@ -66,7 +66,7 @@ describe('trainRevealCache', () => {
     expect(restored?.reviewTelemetry).toBeUndefined();
   });
 
-  describe('Phase 237: revealTree (T-237-16)', () => {
+  describe('revealTree', () => {
     const TREE = {
       rootFocus: 'best' as const,
       currentPath: ['e2e4', 'e7e5', 'g1f3'],
@@ -88,7 +88,7 @@ describe('trainRevealCache', () => {
       expect(readTrainRevealCache()?.revealTree).toEqual(tree);
     });
 
-    it('round-trips committedPaths and tolerates their absence (WR-02)', () => {
+    it('round-trips committedPaths and tolerates their absence', () => {
       const tree = { ...TREE, committedPaths: [['e2e4', 'e7e5']] };
       saveTrainRevealCache({ ...CACHED, revealTree: tree });
       expect(readTrainRevealCache()?.revealTree).toEqual(tree);
@@ -183,7 +183,7 @@ describe('trainRevealCache', () => {
     expect(readTrainRevealCache()).toBeNull();
   });
 
-  it('SEED-119: rejects a pre-tiering cache entry whose verdict lacks move_quality', () => {
+  it('rejects a pre-tiering cache entry whose verdict lacks move_quality', () => {
     const preSeed119Verdict: Record<string, unknown> = { ...CACHED.verdict };
     delete preSeed119Verdict.move_quality;
     sessionStorage.setItem(
@@ -199,19 +199,18 @@ describe('trainRevealCache', () => {
     expect(readTrainRevealCache()).toBeNull();
   });
 
-  // Phase 205's D-10 test used to pin the rank-lines key's graceful absence;
-  // Plan 211-03 DELETED that key from GradeResult (the free-play seed now
-  // reads the SERVED vetted list instead), so this test is re-pointed at the
-  // seam that replaced it: an entry written by a pre-211 bundle still carries
-  // the stale mount-search rank array on `gradeResult` at runtime, and its
-  // verdict has no vetted-move key. D-10's locked decision is a GRACEFUL
-  // FALLBACK — no cache-key bump, no new nested shape check — because a
-  // stale entry here renders UNFIXED, not WRONG (unlike the SEED-119
-  // move_quality gap above, which this test deliberately does NOT imitate).
-  it('D-10: a pre-211 cache entry whose gradeResult still carries the deleted rank-lines key restores, and the free-play seed\'s served-list read degrades to empty', () => {
+  // GradeResult no longer has a rank-lines key (the free-play seed reads the
+  // SERVED vetted list instead), so this test covers the seam that replaced
+  // it: an entry written by an older bundle still carries the stale
+  // mount-search rank array on `gradeResult` at runtime, and its verdict has
+  // no vetted-move key. The decision is a GRACEFUL FALLBACK — no cache-key
+  // bump, no new nested shape check — because a stale entry here renders
+  // UNFIXED, not WRONG (unlike the move_quality gap above, which this test
+  // deliberately does NOT imitate).
+  it('an older cache entry whose gradeResult still carries the deleted rank-lines key restores, and the free-play seed\'s served-list read degrades to empty', () => {
     // A JSON round trip through `unknown` models what an OLDER bundle
     // actually wrote: the rank-lines key present on `gradeResult` (the
-    // Phase 205 shape) and NO `vetted_moves` key on the verdict.
+    // older shape) and NO `vetted_moves` key on the verdict.
     const pre211 = JSON.parse(JSON.stringify(CACHED)) as Record<string, unknown>;
     (pre211.gradeResult as Record<string, unknown>).lines = [
       { multipv: 1, depth: 10, moves: ['e2e4'], evalCp: 20, evalMate: null },
@@ -234,18 +233,17 @@ describe('trainRevealCache', () => {
     expect(restored?.verdict.vetted_moves ?? []).toEqual([]);
   });
 
-  // Phase 211 (RESEARCH Pitfall 1) — the same D-10 graceful-degradation
-  // pattern as above, extended to the PRE-211 bundle shape: an entry whose
-  // gradeResult still carries the DELETED client-derived fine-move key at
-  // runtime, and whose verdict has no vetted-move key at all. The shape
-  // check is deliberately shallow and UNCHANGED by Phase 211 — it must
+  // The same graceful-degradation pattern as above, extended to an older
+  // bundle shape: an entry whose gradeResult still carries the DELETED
+  // client-derived fine-move key at runtime, and whose verdict has no
+  // vetted-move key at all. The shape check is deliberately shallow — it must
   // ACCEPT such an entry (rejecting it would send the back button to the
   // start screen, a regression), the stale key is simply never read (the
   // field no longer exists on the type, so no consumer can resurrect the
   // width-4-derived list), and a consumer reading the verdict's vetted
   // moves falls back to the single `?? []` default at the consumption site
   // — never a tighter validator.
-  it('RESEARCH Pitfall 1: a pre-211 cache entry (stale fine-move key on gradeResult, no vetted-move key on the verdict) is ACCEPTED, and the vetted-move read degrades to an empty list', () => {
+  it('an older cache entry (stale fine-move key on gradeResult, no vetted-move key on the verdict) is ACCEPTED, and the vetted-move read degrades to an empty list', () => {
     const pre211 = JSON.parse(JSON.stringify(CACHED)) as Record<string, unknown>;
     (pre211.gradeResult as Record<string, unknown>).fineMoves = [
       { uci: 'd2d4', quality: 'good' },
@@ -271,7 +269,7 @@ describe('trainRevealCache', () => {
     // …but is unreadable by construction: the field no longer exists on
     // GradeResult, and the consumption-site read of the SERVED list (the
     // exact expression TrainSolveScreen's hoisted memo uses) resolves to an
-    // empty list — a restored pre-211 reveal shows NO alternatives rather
+    // empty list — a restored older reveal shows NO alternatives rather
     // than stale ones.
     expect(restored?.verdict.vetted_moves ?? []).toEqual([]);
   });

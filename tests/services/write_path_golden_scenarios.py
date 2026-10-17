@@ -1,16 +1,15 @@
-"""Shared scenario builders for the write-path golden-snapshot harness (Phase 150 WRITE-03).
+"""Shared scenario builders for the write-path golden-snapshot harness.
 
 Reused by BOTH ``scripts/gen_write_path_golden.py`` (the committed golden generator) and
 ``tests/services/test_flaw_upsert_equivalence.py`` (the drift-check equivalence test), so
 the generator and the test literally run the same setup code and can never diverge on
-scenario construction (150-01-PLAN.md D-01).
+the generator and the test literally run the same setup code and can never diverge on
 
 Every scenario drives the PRODUCTION submit entry point,
 ``app.routers.eval_remote._apply_atomic_submit`` — never a copy of the classify/write
-logic — so this harness is the exact proof Plan 04's diff/upsert swap must stay green
-against (WRITE-03). All 7 named scenarios (mirroring CONTEXT.md D-02's numbered list —
-scenario 4, the flip-IN case, is the inverse ordering of scenario 3, not an 8th scenario;
-see 150-01-SUMMARY.md deviations) end by dumping the game's ``game_flaws`` rows (every
+logic — so this harness is the exact proof the diff/upsert flaw write must stay green
+against. All 7 named scenarios (scenario 4, the flip-IN case, is the inverse ordering
+of scenario 3, not an 8th scenario) end by dumping the game's ``game_flaws`` rows (every
 content column, keyed by ``ply`` as a string) to a JSON-serializable dict. ``user_id`` /
 ``game_id`` are deliberately excluded from the dump — they vary run-to-run (autoincrement
 PKs) and would break byte-identical regeneration.
@@ -45,7 +44,7 @@ from tests.test_eval_worker_endpoints import (
     _insert_opening_cache_with_pv,
 )
 
-# ─── Named scenarios (order mirrors CONTEXT.md D-02) ──────────────────────────
+# ─── Named scenarios ──────────────────────────────────────────────────────────
 
 SCENARIO_NAMES: Final[tuple[str, ...]] = (
     "scenario_1_fresh_full_submit",
@@ -172,7 +171,7 @@ _PRESERVED_MISSED: list[dict[str, Any]] = [{"b": 20, "bm": None, "s": 8, "sm": N
 
 
 # Plies 0-5 of _SIX_PLY_PGN_142 — every scenario seeds exactly this many rows, and the
-# Phase 220 cache-clear in scenarios 3/4 must cover the same hash range.
+# cache-clear in scenarios 3/4 must cover the same hash range.
 _SIX_PLY_COUNT: Final[int] = 6
 
 
@@ -209,7 +208,7 @@ async def _scenario_2(
     session_maker: async_sessionmaker[AsyncSession], user_id: int
 ) -> tuple[int, list[int]]:
     """Residual-hole retry — a sparse second submit (no fresh blob) must preserve
-    the already-blobbed midgame flaw's blob + tactic tags (SEED-076)."""
+    the already-blobbed midgame flaw's blob + tactic tags."""
     from app.models.game_flaw import GameFlaw
 
     base = _BASE_HASH["scenario_2_residual_hole_retry"]
@@ -256,7 +255,7 @@ async def _scenario_3(
             .values(allowed_pv_lines=_PRESERVED_ALLOWED)
         )
         await s.commit()
-    # Phase 220 (CACHEFIX-12): the submit lane now writes the opening cache, and
+    # The submit lane now writes the opening cache, and
     # `_resolve_full_eval` lets a dedup hit beat the fresh engine result, so attempt 2
     # would otherwise read attempt 1's own cached blunder evals and never flip. Clear
     # the six cache rows so this scenario keeps testing the reclassify path it exists
@@ -278,7 +277,7 @@ async def _scenario_4(
 
     # Attempt 1: FLAT evals -> no flaw exists.
     await _run_atomic_submit(session_maker, game_id, list(_FLAT_SUBMIT_EVALS_142))
-    # Phase 220 (CACHEFIX-12): clear attempt 1's cache writes so attempt 2's fresh
+    # Clear attempt 1's cache writes so attempt 2's fresh
     # evals are what gets classified (see the matching note in _scenario_3).
     await _delete_opening_cache(session_maker, [base + p for p in range(_SIX_PLY_COUNT)])
     # Attempt 2: BLUNDER evals -> a fresh flaw row is inserted at ply 2 (no prior
@@ -342,7 +341,7 @@ async def _scenario_6(
 ) -> tuple[int, list[int]]:
     """Opening dedup-transplanted plies — a cache-omitted opening ply must merge its
     cached pv into engine_result_map, so the flaw's PV lines stay NULL / fillable
-    (never a permanent []-sentinel taint, quick 260703-qgp)."""
+    (never a permanent []-sentinel taint)."""
     base = _BASE_HASH["scenario_6_dedup_transplant_no_sentinel"]
     game_id = await _insert_game(session_maker, user_id, pgn=_SIX_PLY_PGN_142)
     await _insert_six_ply_positions(session_maker, user_id, game_id, base)
@@ -368,7 +367,7 @@ async def _scenario_7(
 ) -> tuple[int, list[int]]:
     """blobs_pending=True suppression — a server-found flaw the worker did not blob
     (both PV lines walkable but zero submitted blob_nodes) is suppressed to NULL,
-    never persisted raw/ungated (Phase 147 D-01/D-03)."""
+    never persisted raw/ungated."""
     base = _BASE_HASH["scenario_7_blobs_pending_suppression"]
     game_id = await _insert_game(session_maker, user_id, pgn=_SIX_PLY_PGN_142)
     await _insert_six_ply_positions(session_maker, user_id, game_id, base)
@@ -423,7 +422,7 @@ async def run_scenario(
     cache rows on the way out, whether it succeeded or raised.
 
     ``session_maker`` must be bound to an isolated test DB — this module never
-    opens its own engine/connection (D-01: caller owns DB lifecycle, whether that's
+    opens its own engine/connection (the caller owns the DB lifecycle, whether that's
     the generator script's ephemeral per-run DB or pytest's per-run test DB).
     """
     if scenario_name not in _BUILDERS:
@@ -436,8 +435,8 @@ async def run_scenario(
     mp = pytest.MonkeyPatch()
     mp.setattr(eval_remote_module, "async_session_maker", session_maker)
     mp.setattr(eval_drain_module, "async_session_maker", session_maker)
-    # Phase 150 R7: _derive_atomic_sentinel_lines opens its own internal session in
-    # eval_apply.py now (moved from eval_drain.py) — must redirect that binding too.
+    # _derive_atomic_sentinel_lines opens its own internal session in
+    # eval_apply.py — must redirect that binding too.
     mp.setattr(eval_apply_module, "async_session_maker", session_maker)
 
     game_id: int | None = None

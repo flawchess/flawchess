@@ -1,5 +1,5 @@
 """Tests for tactic per-slot suppression and independent depth/orientation in
-library_repository.py (Quick 260621-sm8).
+library_repository.py.
 
 Covers the five scenarios from the plan:
 (a) family+depth filter: allowed slot nulled when out of depth range
@@ -340,7 +340,7 @@ async def _seed_game_with_flaw(
 
 
 class TestQueryFlawsPerSlotSuppression:
-    """Integration tests for query_flaws per-slot suppression (Quick 260621-sm8).
+    """Integration tests for query_flaws per-slot suppression.
 
     Each test seeds unique user_id values to avoid cross-test leakage within the
     single rollback transaction. The db_session fixture rolls back the transaction

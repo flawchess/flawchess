@@ -1,20 +1,18 @@
 // @vitest-environment jsdom
 /**
- * TrainScoreScreen.test.tsx — Phase 191 Plan 03 Task 1 coverage (PROG-02,
- * D-15, UI-SPEC E8): the fire-once-on-mount green-band confetti burst and its
- * `prefersReducedMotion` guard. No test file existed for this component
- * before this plan (Wave 0 gap) — this is a new file, not an extension.
+ * TrainScoreScreen.test.tsx — the fire-once-on-mount green-band confetti burst and its
+ * `prefersReducedMotion` guard.
  *
  * Extended with the per-band result sound, the smaller yellow-band burst, and
  * the badge's reduced-motion animation opt-out.
  *
- * Phase 222 (D-25, SC4): extended again with the score bubble — mocks
+ * Extended again with the score bubble — mocks
  * `useTrainSettings`/`useTrainOnboarding` directly (this suite deliberately
  * stays free of a `QueryClientProvider`, mirroring the existing
  * `useTrainReminderSlot` mock immediately below) rather than reaching for
  * TrainSolveScreen.test.tsx's `trainApi.getSettings` + real-provider pattern.
  *
- * Phase 224 (S-3, S-4, GUESTACT-05): extended again with the guest branch —
+ * Extended again with the guest branch —
  * for a guest, the bubble's `actions` slot renders `SignupAskActions` (which
  * calls `useNavigate` and `useAuth`, mocked below mirroring
  * `SignupAskActions.test.tsx`'s own shape) and the reminder control/below-row
@@ -46,21 +44,21 @@ vi.mock('@/hooks/useAuth', () => ({
   }),
 }));
 
-// Phase 202 (Task 1 harness fix, Task 3 mutable extension): the reminder slot
+// The reminder slot
 // depends on a QueryClientProvider (usePushCapability/useTrainSettings both
 // call useQuery), which this suite deliberately stays free of — mocked so
 // individual tests can switch between "renders null" (the hidden-slot shape)
 // and "renders a stub btn-train-remind-me" (the both-slots shape) without
 // re-mocking per test.
 //
-// Phase 203 Plan 04 UAT round 1: `TrainScoreScreen` now calls
-// `useTrainReminderSlot()` directly (not `<TrainReminderButton />`) so it can
+// `TrainScoreScreen` calls
+// `useTrainReminderSlot()` directly (not a wrapper component) so it can
 // place `control` (the row cell) and `belowRow` (overflow content — error
 // copy, iOS instructions, the Android offer, the QR block) in two different
 // rows. Both mocks are independently controllable per test.
 const reminderSlotMock = vi.fn<() => ReactElement | null>(() => null);
 const reminderBelowRowMock = vi.fn<() => ReactElement | null>(() => null);
-vi.mock('@/components/train/TrainReminderButton', () => ({
+vi.mock('@/components/train/useTrainReminderSlot', () => ({
   useTrainReminderSlot: () => ({ control: reminderSlotMock(), belowRow: reminderBelowRowMock() }),
 }));
 
@@ -79,7 +77,7 @@ vi.mock('@/lib/sounds', () => ({
   playSound: (...args: unknown[]) => playSound(...args),
 }));
 
-// Phase 230 (D-11): the rank lines issue their own query, and this suite has no
+// The rank lines issue their own query, and this suite has no
 // QueryClientProvider, so the component is stubbed; it only needs to prove the
 // session id is passed and the element sits right under the Points line.
 vi.mock('@/components/train/TrainScoreRankLines', () => ({
@@ -88,10 +86,10 @@ vi.mock('@/components/train/TrainScoreRankLines', () => ({
   ),
 }));
 
-// Phase 222: "already seen" by default (a past timestamp on all three
+// "Already seen" by default (a past timestamp on all three
 // onboarding columns) so every PRE-EXISTING test in this file keeps seeing
 // the one-liner variant, exactly as it did before the bubble landed — mirrors
-// TrainSolveScreen.test.tsx's identical default-fixture rationale (plan 04).
+// TrainSolveScreen.test.tsx's identical default-fixture rationale.
 const PAST_TIMESTAMP = '2026-01-01T00:00:00Z';
 const SETTINGS_FIXTURE: TrainSettingsResponse = {
   timezone: 'Europe/Zurich',
@@ -156,7 +154,7 @@ function renderScoreScreen(
   );
 }
 
-describe('TrainScoreScreen rank lines (Phase 230 D-11)', () => {
+describe('TrainScoreScreen rank lines', () => {
   afterEach(() => {
     cleanup();
   });
@@ -204,7 +202,7 @@ describe('TrainScoreScreen', () => {
     expect(screen.getByTestId('train-score-percentage')).not.toBeNull();
   });
 
-  // SEED-122: the permanently-disabled "Train again" CTA was removed — it could
+  // The permanently-disabled "Train again" CTA was removed — it could
   // never enable (no same-day resume path), so it read as broken rather than as
   // a completed session. A pressable "Done" back to the landing replaced it.
   it('renders no Train-again CTA', () => {
@@ -293,7 +291,7 @@ describe('TrainScoreScreen', () => {
     );
   });
 
-  // Phase 202 Task 3 (D-04, UI-SPEC E2): row hierarchy and ordering.
+  // Row hierarchy and ordering.
   describe('the score-screen button row', () => {
     it('with the slot hidden, the row has exactly one element child and it is Done, with flex-1', () => {
       renderScoreScreen({ total: 20, max: 20 });
@@ -312,7 +310,7 @@ describe('TrainScoreScreen', () => {
       expect(row.children[1]?.getAttribute('data-testid')).toBe('btn-train-done');
     });
 
-    it('Done renders variant="default" (the brand-brown solid fill, per D-04)', () => {
+    it('Done renders variant="default" (the brand-brown solid fill)', () => {
       renderScoreScreen({ total: 20, max: 20 });
       // Asserted via a stable fragment of button.tsx's own "default" variant
       // class string, not by re-implementing the variant map.
@@ -320,10 +318,10 @@ describe('TrainScoreScreen', () => {
     });
   });
 
-  // Phase 203 Plan 04 UAT round 1: overflow content (error copy, iOS
+  // Overflow content (error copy, iOS
   // instructions, the Android offer, the QR block) never crowds into the
   // cramped two-cell row — it renders on its own full-width line below it.
-  describe('below-row overflow content (Plan 04 UAT round 1)', () => {
+  describe('below-row overflow content', () => {
     it('with no below-row content, only the row itself renders — no extra empty line', () => {
       reminderSlotMock.mockReturnValue(<div data-testid="btn-train-remind-me" />);
       renderScoreScreen({ total: 20, max: 20 });
@@ -359,11 +357,11 @@ describe('TrainScoreScreen', () => {
     });
   });
 
-  // Phase 203 Plan 04 UAT round 3: the confirmed "Reminders on…" line is
+  // The confirmed "Reminders on…" line is
   // non-interactive, so it moves below the row too — `control` is `null`
   // once subscribed, exactly like the hidden-slot shape from this screen's
   // point of view.
-  describe('confirmed-state placement — control null, Done alone spans full width (Plan 04 UAT round 3)', () => {
+  describe('confirmed-state placement — control null, Done alone spans full width', () => {
     it('with control null and below-row content present (the confirmed shape), the row has exactly one child — Done — with flex-1, and no dead space beside it', () => {
       reminderSlotMock.mockReturnValue(null);
       reminderBelowRowMock.mockReturnValue(
@@ -394,10 +392,9 @@ describe('TrainScoreScreen', () => {
     });
   });
 
-  // Phase 222 (D-04/D-12/D-25, SC4), reworked in Phase 240 (D-16..D-19, D-21):
-  // the score bubble, before the reminder ask. It carries the practice
+  // The score bubble, before the reminder ask. It carries the practice
   // rationale on the first completed session and says nothing about returns.
-  describe('the score bubble (D-25)', () => {
+  describe('the score bubble', () => {
     it('renders BEFORE the button row in the JSX return', () => {
       renderScoreScreen({ total: 20, max: 20 });
       const bubble = screen.getByTestId('train-score-bubble');
@@ -433,7 +430,7 @@ describe('TrainScoreScreen', () => {
       expect(stampMock).toHaveBeenCalledWith('sr_explained');
     });
 
-    it('BUG FIX (UAT round 5): the first-completed copy survives the stamp writing sr_explained_at back into the settings cache', () => {
+    it('the first-completed copy survives the stamp writing sr_explained_at back into the settings cache', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -482,7 +479,7 @@ describe('TrainScoreScreen', () => {
       expect(stampMock).not.toHaveBeenCalled();
     });
 
-    it('a first warm-up session carries the rationale in line 1, no return text, and stamps exactly once (D-21)', () => {
+    it('a first warm-up session carries the rationale in line 1, no return text, and stamps exactly once', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -506,7 +503,7 @@ describe('TrainScoreScreen', () => {
       expect(stampMock).not.toHaveBeenCalled();
     });
 
-    it('a first perfect session carries the rationale after "Nothing got away today." and stamps exactly once (D-17, D-21)', () => {
+    it('a first perfect session carries the rationale after "Nothing got away today." and stamps exactly once', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -563,16 +560,16 @@ describe('TrainScoreScreen', () => {
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
       // The fixture's own would-be identifiers (position/game_id/ply) never
-      // appear anywhere in SolvedResult (D-17) or the rendered text (D-18).
+      // appear anywhere in SolvedResult or the rendered text.
       expect(text).not.toMatch(/\bposition\s*\d/i);
       expect(text).not.toMatch(/\bgame\s*(id)?\s*\d/i);
       expect(text).not.toMatch(/\bply\s*\d/i);
     });
   });
 
-  // Phase 224 (S-3, S-4, GUESTACT-05): the guest branch replaces the reminder
+  // The guest branch replaces the reminder
   // ask with the sign-up ask and drops the reminder slot/QR block entirely.
-  describe('the guest branch (S-3, S-4, GUESTACT-05)', () => {
+  describe('the guest branch', () => {
     it('a guest warm-up fixture renders the sign-up ask pair inside the bubble and neither reminder stub, with both reminder mocks configured non-null', () => {
       reminderSlotMock.mockReturnValue(<div data-testid="btn-train-remind-me" />);
       reminderBelowRowMock.mockReturnValue(
@@ -612,7 +609,7 @@ describe('TrainScoreScreen', () => {
       expect(signupElements.length).toBe(0);
     });
 
-    it('quick 260926-8p5: a registered zero-game warm-up renders the Import games button in the bubble, no sign-up pair', () => {
+    it('a registered zero-game warm-up renders the Import games button in the bubble, no sign-up pair', () => {
       renderScoreScreen({ total: 0, max: 0 }, { isGuest: false, hasGames: false, isWarmup: true });
       const bubble = screen.getByTestId('train-score-bubble');
       const link = bubble.querySelector('[data-testid="btn-import-games-train-score"]');

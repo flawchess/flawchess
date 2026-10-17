@@ -2,8 +2,8 @@ import { useEffect, useSyncExternalStore } from 'react';
 import type { TimeControlBucket } from '@/types/endgames';
 
 /**
- * Time-control selection store factory, shared by the Endgame Stats tab (Phase 238) and
- * the Library Stats tab (Phase 239). Each tab gets its own store and localStorage key.
+ * Time-control selection store factory, shared by the Endgame Stats tab and
+ * the Library Stats tab. Each tab gets its own store and localStorage key.
  *
  * Each tab has one switch (pinned in a sticky bar); every section of the tab reads the
  * same module-level store, so a switch click moves every section at once. The choice is
@@ -15,13 +15,13 @@ import type { TimeControlBucket } from '@/types/endgames';
  * Tracking lives in the switch click handler.
  *
  * The default is pinned once computed (in memory only, never persisted) and reused while
- * that TC stays in the payload. Phase 238 review (FE-IN-05): re-deriving it on every
- * render let an import refetch flip every section to another TC that had just overtaken
- * the leader, with no user action.
+ * that TC stays in the payload. Re-deriving it on every
+ * render would let an import refetch flip every section to another TC that had just
+ * overtaken the leader, with no user action.
  *
  * On Library a filter change resets the pinned default: the new query key starts with no
  * data (an empty TC list), so the pin is cleared and the default is re-picked from the new
- * filters (D-04). Only returning to filters whose data is still cached keeps an earlier pin.
+ * filters. Only returning to filters whose data is still cached keeps an earlier pin.
  */
 
 /** Fastest to slowest: the default tie-break order and the switch order. */
@@ -90,7 +90,7 @@ export function createTcSelectionStore<T extends { tc: TimeControlBucket }>({
   let pinnedDefaultTc: TimeControlBucket | null = null;
   const listeners = new Set<() => void>();
 
-  /** T-238-07 / T-239-06: the stored value is user-writable, so validate it and survive a throwing storage. */
+  /** The stored value is user-writable, so validate it and survive a throwing storage. */
   function readStoredTc(): TimeControlBucket | null {
     try {
       const raw = localStorage.getItem(storageKey);

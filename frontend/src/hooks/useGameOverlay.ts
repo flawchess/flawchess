@@ -1,18 +1,19 @@
 /**
- * useGameOverlay — precomputed board overlay + eval bar for the /analysis game mode
- * (Quick 260627, Phase 140 UAT items 4 & 5).
+ * useGameOverlay — precomputed board overlay + eval bar for the /analysis game mode.
  *
  * Mirrors the LibraryGameCard miniboard: every position in the game has a precomputed
  * engine best move (eval_series[ply].best_move) and eval (eval_series[ply].eval_cp/mate),
  * plus per-ply tactic-depth badges from the flaw markers. While the board sits on the
  * main line we drive:
  *   - a BLUE best-move arrow from the precomputed best move (shown immediately, no
- *     wait for the live engine), with the missed-tactic depth label when present;
- *   - a severity-colored flaw arrow on the played move with the allowed-tactic depth
- *     label — the "tactic overlay" that shows even before any PV sideline is loaded;
+ *     wait for the live engine); at an allowed-tactic flaw it is the crimson
+ *     opponent-response arrow carrying the allowed-tactic depth label;
+ *   - a teal should-have-played arrow with the missed-tactic depth label at a
+ *     missed-tactic flaw;
+ *   - a severity glyph + severity-tinted last-move square on the played move;
  *   - the eval bar from the precomputed eval (synthetic depth so mate displays).
- * No second-best arrow is drawn here (Phase 228 retired the light-blue one; non-primary
- * engine arrows now come from useAnalysisBoardArrows, one translucent color per engine).
+ * No second-best arrow is drawn here; non-primary engine arrows come from
+ * useAnalysisBoardArrows, one translucent color per engine.
  *
  * Off the main line (sideline exploration / fork) there is no precomputed data, so the
  * live engine drives: blue = pvLines[0], eval = live engine.
@@ -42,7 +43,7 @@ import {
   MOVE_HIGHLIGHT_GOOD,
 } from '@/lib/theme';
 
-// Severity-coded last-move square overlay (item 5): inaccuracy keeps the legacy
+// Severity-coded last-move square overlay: inaccuracy keeps the legacy
 // translucent yellow; blunder/mistake get their red/orange hues at the same alpha.
 const MOVE_HIGHLIGHT_SEVERITY: Record<FlawSeverity, string> = {
   blunder: MOVE_HIGHLIGHT_BLUNDER,
@@ -59,12 +60,12 @@ export interface GameOverlay {
   /** Board arrows for game mode, or undefined when none apply. */
   boardArrows: BoardArrow[] | undefined;
   /**
-   * Severity glyph markers for the played move (item 4) — replaces the old
-   * red/orange/yellow flaw arrow. Empty off the main line or on clean moves.
+   * Severity glyph markers for the played move. Empty off the main line or on
+   * clean moves.
    */
   squareMarkers: SquareMarker[];
   /**
-   * Severity-coded color for the last-move square overlay (item 5), or undefined
+   * Severity-coded color for the last-move square overlay, or undefined
    * off the main line (ChessBoard then falls back to its default yellow).
    */
   lastMoveHighlightColor: string | undefined;
@@ -74,7 +75,7 @@ export interface GameOverlay {
   evalMate: number | null;
   /** Eval bar depth — high synthetic value when precomputed so mate renders. */
   evalDepth: number;
-  /** True when the eval bar + blue arrow are driven by precomputed game data. */
+  /** True when the eval bar is driven by precomputed game data. */
   usingPrecomputed: boolean;
 }
 
@@ -83,7 +84,7 @@ export interface UseGameOverlayParams {
   enabled: boolean;
   /**
    * Whether the Stockfish engine is toggled on. When false, the blue best-move
-   * arrow is suppressed (155 UAT) — even the precomputed
+   * arrow is suppressed — even the precomputed
    * best-move arrow, which otherwise shows independently of the live search. The
    * crimson allowed-tactic and teal missed-tactic arrows are part of the tactic
    * overlay, not live engine suggestions, so they stay regardless.
@@ -94,7 +95,7 @@ export interface UseGameOverlayParams {
   mainLine: NodeId[];
   currentNodeId: NodeId | null;
   isOnMainLine: (nodeId: NodeId) => boolean;
-  /** Move into the current node (from/to) — drives the flaw arrow on the main line. */
+  /** Move into the current node (from/to) — anchors the severity glyph and last-move tint on the main line. */
   lastMove: { from: string; to: string } | null;
   enginePvLines: PvLine[];
   engineEvalCp: number | null;
@@ -125,16 +126,16 @@ function buildPlyMaps(
   const depthByPly = new Map<number, { missed?: string; allowed?: string }>();
   for (const fm of flawMarkers ?? []) {
     severityByPly.set(fm.ply, fm.severity);
-    // Quick 260705: opponent tactic arrows (crimson allowed / teal missed) are surfaced in
+    // Opponent tactic arrows (crimson allowed / teal missed) are surfaced in
     // the eval-chart tooltip (built separately in EvalChart) but NOT on the board — suppress
     // the opponent's tactic depths here so no tactic arrow paints for them. Mirrors the same
-    // is_user gate on the move list (Quick 260628-u7d). Severity glyphs stay both-color.
+    // is_user gate on the move list. Severity glyphs stay both-color.
     if (!fm.is_user) continue;
     // tacticDepthBadge returns null for family-less / hidden motifs, so a bare depth
     // never paints on the board without its paired chip (same guard as the miniboard).
-    // anchored=false (Quick 260628-1t5 DECISION 2): on the navigable analysis board the
-    // missed and allowed depths are no longer co-anchored on one decision board, so the
-    // allowed +1 offset is dropped — allowed reads on the same plain scale as missed.
+    // anchored=false: on the navigable analysis board the missed and allowed depths are
+    // not co-anchored on one decision board, so the allowed +1 offset is dropped —
+    // allowed reads on the same plain scale as missed.
     const missed = tacticDepthBadge(fm.missed_tactic_motif, fm.missed_tactic_depth, 'missed', false);
     const allowed = tacticDepthBadge(
       fm.allowed_tactic_motif,
@@ -196,8 +197,8 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
     // is anchored to the current position. The board
     // shows mainLine[k] = the position after move k, whose stored best_move lives on the
     // NEXT eval-series row (best_move[k+1] = best move from position k+1); best_move[k] is
-    // the move that *led into* the shown position, which pointed the arrow one ply behind
-    // (UAT thl item 2). Precomputed on the main line (immediate), else live engine.
+    // the move that *led into* the shown position, which would point the arrow one ply
+    // behind. Precomputed on the main line (immediate), else live engine.
     const precomputedBest = hasPly ? maps.bestMoveByPly.get(k + 1) ?? null : null;
     // depths is anchored at the played move's decision ply k — drives the played-move
     // corner glyph's allowed-tactic label and the teal should-have-played arrow below.
@@ -205,44 +206,43 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
     // When the displayed position is an allowed-tactic flaw, the following-best arrow IS the
     // opponent's refuting response, so it carries the allowed-tactic crimson AND the allowed
     // depth label — the label belongs on the response's target square, not the played flaw
-    // square (Quick 260628-pu2 UAT round 2). Otherwise it stays the neutral best-continuation
+    // square. Otherwise it stays the neutral best-continuation
     // blue with no label. depths is anchored at the played move's decision ply k.
     const allowedDepthLabel = depths?.allowed;
     const followingBestColor = allowedDepthLabel != null ? TAC_ALLOWED : BEST_MOVE_ARROW;
     // When it carries the allowed-tactic label it's the crimson opponent-response
     // arrow (part of the tactic overlay — always shown); otherwise it's the plain
     // blue best-continuation, a Stockfish suggestion suppressed when the engine is
-    // toggled off (155 UAT).
+    // toggled off.
     const isAllowedTacticArrow = allowedDepthLabel != null;
-    let blueSquares = uciToSquares(precomputedBest);
-    if (blueSquares && (engineEnabled || isAllowedTacticArrow)) {
+    let followingBestSquares = uciToSquares(precomputedBest);
+    if (followingBestSquares && (engineEnabled || isAllowedTacticArrow)) {
       // The engine's best continuation from the displayed post-flaw position. For an allowed
       // tactic this is the opponent's response and carries the allowed depth label; the
-      // missed-tactic depth rides the teal should-have-played arrow below (Quick 260628-1t5).
+      // missed-tactic depth rides the teal should-have-played arrow below.
       arrows.push({
-        startSquare: blueSquares.from,
-        endSquare: blueSquares.to,
+        startSquare: followingBestSquares.from,
+        endSquare: followingBestSquares.to,
         color: followingBestColor,
         width: ARROW_WIDTH,
         label: allowedDepthLabel,
         labelColor: allowedDepthLabel != null ? TAC_ALLOWED_LABEL : undefined,
       });
-    } else if (!blueSquares && engineEnabled) {
+    } else if (!followingBestSquares && engineEnabled) {
       // No precomputed best (sideline / root): live engine top line drives the blue
       // (only while Stockfish is on).
-      blueSquares = uciToSquares(enginePvLines[0]?.moves[0] ?? null);
-      if (blueSquares) {
+      followingBestSquares = uciToSquares(enginePvLines[0]?.moves[0] ?? null);
+      if (followingBestSquares) {
         arrows.push({
-          startSquare: blueSquares.from,
-          endSquare: blueSquares.to,
+          startSquare: followingBestSquares.from,
+          endSquare: followingBestSquares.to,
           color: BEST_MOVE_ARROW,
           width: ARROW_WIDTH,
         });
       }
     }
 
-    // Teal should-have-played arrow at a missed-tactic flaw ply (Quick 260628-1t5
-    // DECISION 1). The displayed board mainLine[k] is the position AFTER the flaw move,
+    // Teal should-have-played arrow at a missed-tactic flaw ply. The displayed board mainLine[k] is the position AFTER the flaw move,
     // so this is a counterfactual arrow: the should-have-played move is the engine best
     // move FROM the pre-flaw DECISION position mainLine[k-1]. The eval series stores that
     // at bestMoveByPly.get(k) — because best_move[j] = best move from mainLine[j-1] (the
@@ -266,24 +266,23 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
       }
     }
 
-    // Played-move overlay — main line only. The flaw is now shown as a severity
-    // glyph in the target square's corner (item 4) plus a severity-coded last-move
-    // square highlight (item 5), replacing the old red/orange/yellow flaw arrow.
+    // Played-move overlay — main line only. The flaw is shown as a severity glyph in
+    // the target square's corner plus a severity-coded last-move square highlight.
     const squareMarkers: SquareMarker[] = [];
     let lastMoveHighlightColor: string | undefined;
     if (hasPly && lastMove) {
       const severity = maps.severityByPly.get(k);
       if (severity) {
-        // Severity glyph only — the allowed depth label now rides the crimson opponent-
-        // response arrow (its target square), not this played-flaw square (Quick 260628-pu2
-        // UAT round 2: the label was on the wrong square, and doubled when the line opened).
+        // Severity glyph only — the allowed depth label rides the crimson opponent-
+        // response arrow (its target square), not this played-flaw square (it would
+        // sit on the wrong square, and double up when the line opens).
         squareMarkers.push({
           square: lastMove.to,
           severity,
         });
         lastMoveHighlightColor = MOVE_HIGHLIGHT_SEVERITY[severity];
       } else {
-        // A clean played move on the main line reads green (item 5).
+        // A clean played move on the main line reads green.
         lastMoveHighlightColor = MOVE_HIGHLIGHT_GOOD;
       }
     }

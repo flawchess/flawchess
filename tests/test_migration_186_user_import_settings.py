@@ -1,11 +1,11 @@
-"""Tests for the Phase 186 Plan 01 Alembic migration: user_import_settings.
+"""Tests for the user_import_settings Alembic migration.
 
 Regression suite for the migration that:
 - creates `user_import_settings` (user_id PK/FK CASCADE, tc_bullet/tc_blitz/tc_rapid/
   tc_classical booleans, game_cap SmallInteger CHECK IN (1000,3000,5000), plus three
-  nullable backfill-cursor columns reserved for Plan 02).
+  nullable backfill-cursor columns reserved for the Sync backward walk).
 - grandfathers every user that exists AT MIGRATION TIME to all four TCs enabled +
-  game_cap=5000 via a one-time `INSERT ... SELECT` (D-13, checkpoint-confirmed).
+  game_cap=5000 via a one-time `INSERT ... SELECT`.
 
 Structure mirrors tests/test_migration_117.py: each test drives Alembic via
 asyncio.to_thread against this run's private per-run database, downgrades to the
@@ -173,7 +173,7 @@ async def test_migration_creates_table_with_expected_columns_and_check(test_engi
 
 
 async def test_grandfathers_existing_user_to_all_tcs_and_cap_5000(test_engine) -> None:
-    """D-13 (checkpoint-confirmed): a user present BEFORE the migration runs gets
+    """A user present BEFORE the migration runs gets
     tc_bullet=tc_blitz=tc_rapid=tc_classical=true and game_cap=5000.
 
     Strategy:
@@ -188,7 +188,7 @@ async def test_grandfathers_existing_user_to_all_tcs_and_cap_5000(test_engine) -
     await _run_downgrade(BASE_REVISION)
     await _insert_user(test_engine, user_id)
 
-    # Upgrade — triggers the D-13 grandfathering backfill.
+    # Upgrade — triggers the grandfathering backfill.
     await _run_upgrade(TARGET_REVISION)
 
     row = await _get_settings_row(test_engine, user_id)
@@ -203,7 +203,7 @@ async def test_grandfathers_existing_user_to_all_tcs_and_cap_5000(test_engine) -
 
 
 async def test_check_constraint_rejects_invalid_game_cap(test_engine) -> None:
-    """T-186-02 defense-in-depth: an invalid game_cap value is rejected at the DB level."""
+    """Defense-in-depth: an invalid game_cap value is rejected at the DB level."""
     await _run_upgrade(TARGET_REVISION)
     user_id = _TEST_USER_CHECK_CONSTRAINT
     await _insert_user(test_engine, user_id)

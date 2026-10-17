@@ -34,13 +34,12 @@ import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
 import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
 
-// Standalone component per D-05 (sibling to LibraryGameCard — do NOT import from it).
-// formatDate copied verbatim from LibraryGameCard (same display requirements; D-05 forbids shared import).
+// Standalone component (sibling to LibraryGameCard — does not import from it).
 
-// Board sizes. Desktop is enlarged (Quick 260622): the flaw grid is now 2-up
-// (more width per card), and the board spans the full card-body height with the
-// metadata + tags stacked beside it on the right. Mobile keeps the smaller base
-// (resolved to 50% viewport by useMiniBoardSize).
+// Board sizes. Desktop is enlarged: the flaw grid is 2-up (more width per card),
+// and the board spans the full card-body height with the metadata + tags stacked
+// beside it on the right. Mobile keeps the smaller base (resolved to 50% viewport
+// by useMiniBoardSize).
 const DESKTOP_BOARD_SIZE = 200;
 const MOBILE_BOARD_SIZE = 132;
 
@@ -51,7 +50,8 @@ const SEVERITY_COLOR: Record<FlawSeverity, string> = {
   inaccuracy: SEV_INACCURACY,
 };
 
-// Copied verbatim from LibraryGameCard.tsx — same display requirements (D-05 forbids shared import).
+// Copied verbatim from LibraryGameCard.tsx — same display requirements; the two
+// cards are standalone siblings and share no import.
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—';
   try {
@@ -67,7 +67,7 @@ function formatDate(dateStr: string | null): string {
 
 /**
  * Format a clock value (seconds) as mm:ss using floor division.
- * Mirrors the EvalChart formatClock local helper (D-05 forbids shared import).
+ * Mirrors the EvalChart formatClock local helper (kept local, no shared import).
  * Only called when clockSec is non-null.
  */
 function formatClock(clockSec: number): string {
@@ -80,32 +80,30 @@ function formatClock(clockSec: number): string {
 /**
  * FlawCard — one flawed-move card for the Flaws subtab grid.
  *
- * Replicates the LibraryGameCard visual language: banded header with player
- * names + ratings + exact-ply platform deep-link, 132px miniboard with the
- * flaw-move arrow, standard-notation move + user-POV eval swing, severity
- * badge, family-colored tag chips, TagLegend, and metadata.
- *
- * "View game" button/modal added in 112-04 — a right-aligned secondary "Game"
- * button lives in the card header and opens the modal.
+ * Replicates the LibraryGameCard visual language: banded header with the
+ * opponent + exact-ply platform deep-link, a miniboard with the flaw-move
+ * arrow, standard-notation move + user-POV eval swing, severity badge,
+ * family-colored tag chips, TagLegend, and metadata. An Analyze button below
+ * the body opens /analysis at the flaw ply.
  *
  * Security: user-provided strings (usernames, platform_url) are React children
  * or href (auto-escaped). platform link uses target=_blank + rel=noopener
- * noreferrer (T-112-06 reverse-tabnabbing guard).
+ * noreferrer (reverse-tabnabbing guard).
  */
 /**
  * Props for FlawCard.
  *
- * Phase 129 TACUI-07 (D-10/D-11): tacticOrientation controls which chip(s) render.
+ * tacticOrientation controls which chip(s) render.
  * Default 'either' = show both when both exist (backward-compatible).
  */
 export interface FlawCardProps {
   flaw: FlawListItem;
-  /** Phase 129 orientation filter — controls which tactic chip(s) render (D-11). */
+  /** Orientation filter — controls which tactic chip(s) render. */
   tacticOrientation?: TacticOrientation;
 }
 
 export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) {
-  // Mobile (<sm) miniboard spans 40% of the viewport width; sm+ keeps the fixed
+  // Mobile (<sm) miniboard spans 50% of the viewport width; sm+ keeps the fixed
   // size. The desktop body uses the literal DESKTOP_BOARD_SIZE instead (sm+ only).
   const mobileBoardSize = useMiniBoardSize(MOBILE_BOARD_SIZE);
 
@@ -129,15 +127,15 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // Tactic-depth badges (1-based display): the allowed tactic sits at the end of
   // the flaw-move arrow; the missed tactic at the end of the blue best-move arrow.
   // Allowed is decision-anchored (+1 vs missed) because the opponent's refutation
-  // line starts one ply after the shared pre-flaw decision board (Quick 260621-qz9).
-  // Shared resolver (Quick 260625-qbj): the family guard ensures a family-less motif
-  // (promotion, self-interference) — whose chip self-nullifies — never paints a bare
+  // line starts one ply after the shared pre-flaw decision board.
+  // Shared resolver: the family guard ensures a family-less motif
+  // (self-interference, clearance) — whose chip self-nullifies — never paints a bare
   // depth number with no chip to explain it.
   const allowedDepthLabel =
     tacticDepthBadge(flaw.allowed_tactic_motif, flaw.allowed_tactic_depth, 'allowed') ?? undefined;
   const missedDepthLabel =
     tacticDepthBadge(flaw.missed_tactic_motif, flaw.missed_tactic_depth, 'missed') ?? undefined;
-  // Arrow recolor (Quick 260628-ojq UAT): a move that belongs to a tactic carries the
+  // Arrow recolor: a move that belongs to a tactic carries the
   // tactic's color instead of the generic severity/best-move color. The played-move arrow
   // turns crimson (allowed) and the best-move arrow turns teal (missed). Gate on the same
   // orientation + motif condition that decides whether each tactic chip renders, so the
@@ -169,12 +167,12 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       : []),
   ];
 
-  // Move notation — shared primitive (D-04, no local helper).
+  // Move notation — shared primitive, no local helper.
   const moveNotation = flaw.move_san
     ? formatMoveNotation(flaw.ply, flaw.move_san)
     : `Ply ${flaw.ply}`;
 
-  // Eval swing — user-POV negated for black (Pitfall 3). Rendered as
+  // Eval swing — user-POV negated for black. Rendered as
   // "<move> <padding> <Cpu icon><before> to <after>".
   const { before: evalBefore, after: evalAfter } = formatFlawEvalParts(
     flaw.eval_cp_before,
@@ -199,8 +197,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // Square glyph: white square = white-piece side, black square = black-piece side.
   const opponentGlyph = flaw.user_color === 'white' ? '□' : '■';
 
-  // D-09 / D-06: Unified Analyze button — opens /analysis?game_id=X&ply=Y at the flaw ply.
-  // Replaces the old Explore + Game pair; the Game modal path is deleted entirely.
+  // Analyze button — opens /analysis?game_id=X&ply=Y at the flaw ply.
   const buttonRow = (
     <div className="flex gap-2">
       <Button asChild variant="brand-outline" className="flex-1">
@@ -219,7 +216,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     </div>
   );
 
-  // Platform icon + exact-ply deep link (D-12, T-112-06)
+  // Platform icon + exact-ply deep link
   const flawUrl = platformPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
   const platformIconAndLink = (
     <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
@@ -247,7 +244,6 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
   // rounded-t-md because the card uses overflowVisible (needed for any future
   // tooltip children that escape the card border).
   // Shows only the opponent: "vs <glyph><name> <rating>" on both desktop and mobile.
-  // Phase 135 D-04: viewGameButton removed from header; now lives in buttonRow below.
   const header = (
     <CardHeader as="h4" size="compact" className="rounded-t-md">
       <span className="truncate text-foreground min-w-0">
@@ -308,7 +304,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     </div>
   );
 
-  // Desktop right-column metadata — four lines stacked above the badges (Quick 260622):
+  // Desktop right-column metadata — four lines stacked above the badges:
   //   line 1: move
   //   line 2: engine eval drop
   //   line 3: clock & move-time
@@ -345,8 +341,8 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
 
   // Tags row — severity badge, then the tactic-motif chip(s), then a second
   // (basis-full) line carrying the family-colored context flaw-tag chips followed by a
-  // single brown Tags-icon legend explaining every tag listed except severity
-  // (Phase 126 UAT). Shared by the mobile (full-width row) and desktop
+  // single brown Tags-icon legend explaining every tag listed except severity.
+  // Shared by the mobile (full-width row) and desktop
   // (right-of-board column) bodies. Always rendered (every flaw has a severity).
   const tagsRow = (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -358,7 +354,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         showCount={false}
       />
 
-      {/* Tactic motif chips — Phase 129 TACUI-07 D-10/D-11 dual-chip matrix.
+      {/* Tactic motif chips — dual-chip matrix.
           Orientation controls which chip(s) render:
           'either' = both when non-null; 'missed' = missed chip only; 'allowed' = allowed chip only.
           Each chip carries the orientation prefix in its label/aria/testid. */}
@@ -366,7 +362,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         flaw.missed_tactic_motif != null && (
           <TacticMotifChip
             motif={flaw.missed_tactic_motif}
-            flawId={flaw.game_id}
+            gameId={flaw.game_id}
             orientation="missed"
           />
         )}
@@ -374,7 +370,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         flaw.allowed_tactic_motif != null && (
           <TacticMotifChip
             motif={flaw.allowed_tactic_motif}
-            flawId={flaw.game_id}
+            gameId={flaw.game_id}
             orientation="allowed"
           />
         )}
@@ -387,7 +383,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
       {(flaw.tags.length > 0 || legendMotifs.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 basis-full">
           {flaw.tags.map((tag) => (
-            <TagChip key={tag} tag={tag} gameId={flaw.game_id} definition={false} />
+            <TagChip key={tag} tag={tag} gameId={flaw.game_id} showDefinitionPopover={false} />
           ))}
           <TagLegend
             variant="icon"
@@ -424,12 +420,12 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         </div>
         <div className="basis-full">{tagsRow}</div>
       </div>
-      {/* D-04 button row (mobile, sm:hidden) — full-width row below the card body */}
+      {/* Button row (mobile, sm:hidden) — full-width row below the card body */}
       <div className="sm:hidden px-3 pb-3">{buttonRow}</div>
 
-      {/* Desktop body (Quick 260622): the enlarged board on the left spans the full
-          card-body height; the right column stacks the two-line metadata on top of the
-          severity + tactic/context tags. */}
+      {/* Desktop body: the enlarged board on the left spans the full card-body height;
+          the right column stacks the four-line metadata, the severity + tactic/context
+          tags and the Analyze button. */}
       <div className="hidden sm:flex gap-3 items-start p-3">
         <div className="shrink-0">
           <LazyMiniBoard
@@ -442,8 +438,8 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           {desktopMeta}
           {tagsRow}
-          {/* D-04 button row (desktop): a new line below the context tags inside the
-              right column, not below the board (Quick 260625). */}
+          {/* Button row (desktop): a new line below the context tags inside the
+              right column, not below the board. */}
           {buttonRow}
         </div>
       </div>

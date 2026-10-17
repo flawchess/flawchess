@@ -1,14 +1,14 @@
 /**
  * moveQuality unit tests — pure, deterministic (no engine/worker involved).
  *
- * Covers every <behavior> bullet from 151.1-02-PLAN.md Task 1:
+ * Covers:
  * - classifyMoveQuality: empty map, single entry, and the 5-bucket boundary
  *   behavior (best / good / inaccuracy / mistake / blunder), straddling each
  *   flawThresholds boundary (INACCURACY_DROP/MISTAKE_DROP/BLUNDER_DROP) so
  *   classifyLiveSeverity's inclusive `>=` semantics are exercised precisely.
  * - selectCandidatesByMass: mass-threshold accumulation, top-5 hard cap, and
  *   forced inclusion of bestSan/playedSan even when they fall outside the
- *   0.95-mass/top-5 cut (D-02/D-06/D-07), plus the empty-perElo edge case.
+ *   0.95-mass/top-5 cut, plus the empty-perElo edge case.
  * - Constant assertions (CUMULATIVE_MASS_THRESHOLD, CANDIDATE_HARD_CAP).
  */
 
@@ -153,7 +153,7 @@ describe('classifyMoveQuality', () => {
   });
 
   // ── designatedBestSan: the primary engine's best move is the reference, so
-  // the chart's "best" agrees with the eval bar + engine card (151.1 UAT). ──
+  // the chart's "best" agrees with the eval bar + engine card. ──
 
   it('honors designatedBestSan as "best" even when another candidate scores higher', () => {
     // Nf6 (the primary engine's best) scores marginally BELOW d5 in this grading
@@ -190,7 +190,7 @@ describe('classifyMoveQuality', () => {
   });
 
   it('falls back to the top scorer when designatedBestSan is not yet graded (streaming)', () => {
-    // bestSan is set but its grade hasn't streamed into gradeMap yet (D-05).
+    // bestSan is set but its grade hasn't streamed into gradeMap yet.
     const gradeMap = new Map<string, MoveGrade>([
       ['d5', gradeForEs(0.5 + 0.01)],
       ['e6', gradeForEs(0.5)],
@@ -249,7 +249,7 @@ describe('selectCandidatesByMass', () => {
     // Top-5 cap of the mass set: m1..m5. m6 falls outside the cap and is NOT
     // force-included by anything, so it must be excluded from the result.
     // bestSan = m7 (in the mass set but outside the top-5 cap) -> force-included.
-    // playedSan = m8 (outside the mass set entirely) -> force-included (D-07).
+    // playedSan = m8 (outside the mass set entirely) -> force-included.
     const result = selectCandidatesByMass(perElo, 1500, 'm8', 'm7');
     expect(result).toEqual(['m1', 'm2', 'm3', 'm4', 'm5', 'm7', 'm8']);
     expect(result).not.toContain('m6');
@@ -278,7 +278,7 @@ describe('selectCandidatesByMass', () => {
   });
 });
 
-// ─── bucketMovesByQuality (move-quality bar, quick 260705-kfg) ───────────────
+// ─── bucketMovesByQuality (move-quality bar) ───────────────
 
 describe('bucketMovesByQuality', () => {
   const perElo: MoveCurvePoint[] = [
@@ -311,7 +311,7 @@ describe('bucketMovesByQuality', () => {
     expect(buckets.get('good')!.probabilityMass).toBeCloseTo(0.58);
   });
 
-  it('folds a "gem"-quality move into the "good" bucket (Phase 163) — never the "pending" default', () => {
+  it('folds a "gem"-quality move into the "good" bucket — never the "pending" default', () => {
     const buckets = byKey(
       bucketMovesByQuality(perElo, 1500, ['Ra8'], quality({ Ra8: 'gem' })),
     );
@@ -365,11 +365,11 @@ describe('bucketMovesByQuality', () => {
 // ─── Constant assertions ────────────────────────────────────────────────────
 
 describe('constants', () => {
-  it('CUMULATIVE_MASS_THRESHOLD is 0.95 (D-02)', () => {
+  it('CUMULATIVE_MASS_THRESHOLD is 0.95', () => {
     expect(CUMULATIVE_MASS_THRESHOLD).toBe(0.95);
   });
 
-  it('CANDIDATE_HARD_CAP is 5 (D-06)', () => {
+  it('CANDIDATE_HARD_CAP is 5', () => {
     expect(CANDIDATE_HARD_CAP).toBe(5);
   });
 });

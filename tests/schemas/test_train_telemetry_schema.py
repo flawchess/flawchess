@@ -1,4 +1,4 @@
-"""Pure Pydantic tests for the Phase 233 telemetry boundary models (SEED-190)."""
+"""Pure Pydantic tests for the telemetry boundary models."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def test_review_telemetry_rejects_malformed(payload: dict[str, Any]) -> None:
 
 
 def test_review_telemetry_v2_accepts_chip_and_strip_keys() -> None:
-    """Phase 237 D-12: v2 carries the chip counts (clamped) and the strip flag."""
+    """v2 carries the chip counts (clamped) and the strip flag."""
     model = ReviewTelemetry.model_validate(
         {
             "v": 2,
@@ -99,7 +99,7 @@ def test_review_telemetry_v2_accepts_chip_and_strip_keys() -> None:
     ],
 )
 def test_review_telemetry_rejects_mixed_versions(payload: dict[str, Any]) -> None:
-    """Phase 237 D-12: v2 keys on a v1 body, or v1 card keys on a v2 body, are rejected."""
+    """v2 keys on a v1 body, or v1 card keys on a v2 body, are rejected."""
     with pytest.raises(pydantic.ValidationError):
         ReviewTelemetry.model_validate(payload)
 
@@ -113,7 +113,7 @@ def test_review_telemetry_v1_card_keys_still_valid() -> None:
 
 
 def test_versions_are_split_per_patch() -> None:
-    """RESEARCH Pitfall 4: the solve patch stays on v1 while the review patch is v2."""
+    """The solve patch stays on v1 while the review patch is v2."""
     assert TELEMETRY_SCHEMA_VERSION == 1
     assert REVIEW_TELEMETRY_SCHEMA_VERSION == 2
 

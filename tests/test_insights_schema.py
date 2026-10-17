@@ -1,10 +1,10 @@
-"""Tests for the Phase 63 findings-pipeline Pydantic schemas (app/schemas/insights.py).
+"""Tests for the findings-pipeline Pydantic schemas (app/schemas/insights.py).
 
 Covers:
-- FilterContext is GONE (Phase 238 D-04): the endgame insights take no filters
+- FilterContext is GONE: the endgame insights take no filters
 - SubsectionFinding: required + optional fields, NaN value round-trip, Literal validation
 - EndgameTabFindings: composition, required fields
-- SectionId Literal alias matches the Phase 65 prompt sections
+- SectionId Literal alias matches the prompt sections
 - Re-exports: Zone, Trend, SampleQuality, Window, MetricId, SubsectionId all come from endgame_zones
 """
 
@@ -30,7 +30,7 @@ from app.schemas.insights import (
 
 
 class TestFilterContextRemoved:
-    """Phase 238 (D-04): the insights are filter-independent; FilterContext no longer exists."""
+    """The insights are filter-independent; FilterContext no longer exists."""
 
     def test_filter_context_is_not_part_of_the_schema_module(self) -> None:
         from app.schemas import insights
@@ -110,9 +110,9 @@ class TestSubsectionFinding:
             SubsectionFinding(**kwargs)
 
     def test_field_order_locked(self) -> None:
-        """Field order is locked per the plan action (load-bearing for hash stability).
+        """Field order is locked (load-bearing for hash stability).
 
-        Phase 65 appended `series` as the final field (D-02). The ordering of
+        `series` is the final field. The ordering of
         the first 12 fields is unchanged — only `series` was appended after
         `dimension`.
         """
@@ -129,7 +129,7 @@ class TestSubsectionFinding:
             "sample_quality",
             "is_headline_eligible",
             "dimension",
-            "series",  # Phase 65 D-02: appended last for findings_hash stability
+            "series",  # Appended last for findings_hash stability
         ]
 
 
@@ -175,16 +175,16 @@ class TestEndgameTabFindings:
             "as_of",
             "findings",
             "player_profile",
-            # Phase 238 (D-04): the all_time ranked payload, appended after player_profile and
+            # The all_time ranked payload, appended after player_profile and
             # before findings_hash so the hash stays last (load-bearing for stability).
             "ranked_tcs",
-            # Phase 102 (Plan 04): per-TC metric percentiles for Section 2 ΔES-gap +
+            # Per-TC metric percentiles for Section 2 ΔES-gap +
             # raw-rate + time-pressure metrics, keyed "{metric}:{tc}".
             "per_tc_metric_percentiles",
-            # Phase 102 (Plan 05): cohort_anchors changed from dict[str, int] to
+            # cohort_anchors changed from dict[str, int] to
             # dict[str, RatingAnchorContext] — field position is unchanged.
             "cohort_anchors",
-            # Phase 102 UAT (2026-06-02): per-(class × TC) type breakdown for the
+            # Per-(class × TC) type breakdown for the
             # per-TC endgame_type_<tc> subsections. Appended after cohort_anchors,
             # before findings_hash, to preserve findings_hash stability.
             "type_categories_by_tc",
@@ -192,7 +192,7 @@ class TestEndgameTabFindings:
         ]
 
     def test_ranked_payload_replaces_the_filtered_overview_fields(self) -> None:
-        """Phase 238 (D-04): ranked_tcs is the data source; the filter-era fields are gone."""
+        """ranked_tcs is the data source; the filter-era fields are gone."""
         fields = EndgameTabFindings.model_fields
         assert "ranked_tcs" in fields
         for removed in (
@@ -222,10 +222,10 @@ class TestEndgameTabFindings:
 
 
 class TestSectionIdLiteral:
-    """SectionId Literal alias matches the four Phase 65 prompt sections."""
+    """SectionId Literal alias matches the four prompt sections."""
 
     def test_section_id_has_exactly_four_values(self) -> None:
-        """SectionId enumerates the four Phase 65 prompt sections."""
+        """SectionId enumerates the four prompt sections."""
         from typing import get_args
 
         expected = {"overall", "metrics_elo", "time_pressure", "type_breakdown"}
@@ -282,7 +282,7 @@ class TestModuleAll:
             "MetricId",
             "MetricPercentileRecord",
             "PlayerProfileEntry",
-            "RatingAnchorContext",  # Phase 102 Plan 05
+            "RatingAnchorContext",
             "SampleQuality",
             "SectionId",
             "SectionInsight",
@@ -302,7 +302,7 @@ def test_nan_constant_available_for_callers() -> None:
 
 
 class TestRatingAnchorContext:
-    """Phase 102 Plan 05: RatingAnchorContext carries platform-composition disclosure."""
+    """RatingAnchorContext carries platform-composition disclosure."""
 
     def test_basic_construction(self) -> None:
         ctx = RatingAnchorContext(
@@ -362,7 +362,7 @@ class TestRatingAnchorContext:
 
 
 # ---------------------------------------------------------------------------
-# Phase 65 schema extension tests
+# Schema extension tests
 # ---------------------------------------------------------------------------
 
 from typing import Any  # noqa: E402
@@ -377,7 +377,7 @@ from app.schemas.insights import (  # noqa: E402
 
 
 class TestTimePoint:
-    """Phase 65 D-02: TimePoint schema."""
+    """TimePoint schema."""
 
     def test_round_trip(self) -> None:
         tp = TimePoint(bucket_start="2026-02-03", value=0.42, n=12)
@@ -390,7 +390,7 @@ class TestTimePoint:
 
 
 class TestSectionInsight:
-    """Phase 65 D-19: SectionInsight shape + length bounds."""
+    """SectionInsight shape + length bounds."""
 
     def test_bullets_default_empty(self) -> None:
         s = SectionInsight(section_id="overall", headline="ok")
@@ -416,7 +416,7 @@ class TestSectionInsight:
 
 
 class TestEndgameInsightsReport:
-    """Phase 65 D-17/D-19/D-20 + INS-06: core LLM output schema."""
+    """Core LLM output schema."""
 
     def _build_section(self, section_id: SectionId) -> SectionInsight:
         return SectionInsight(section_id=section_id, headline="h", bullets=[])
@@ -471,7 +471,7 @@ class TestEndgameInsightsReport:
             )
 
     def test_unique_section_ids_validator(self) -> None:
-        """D-20: duplicate section_id raises → pydantic-ai retries upstream."""
+        """Duplicate section_id raises → pydantic-ai retries upstream."""
         with pytest.raises(ValidationError) as exc_info:
             EndgameInsightsReport(
                 summary="Endgames lift your rating; rook endings need work.",
@@ -488,7 +488,7 @@ class TestEndgameInsightsReport:
         assert "duplicate section_id" in str(exc_info.value)
 
     def test_overview_empty_string_allowed(self) -> None:
-        """INS-06 contract: backend may set overview='' when INSIGHTS_HIDE_OVERVIEW=true (D-18).
+        """Backend may set overview='' when INSIGHTS_HIDE_OVERVIEW=true.
         Schema ALLOWS empty string — the always-populate rule is enforced by
         the system prompt, not the schema. Pydantic rejects only NULL.
         """
@@ -504,7 +504,7 @@ class TestEndgameInsightsReport:
         assert r.overview == ""
 
     def test_overview_none_rejected(self) -> None:
-        """INS-06: overview is `str`, not `str | None`."""
+        """Overview is `str`, not `str | None`."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
                 summary="Endgames lift your rating; rook endings need work.",
@@ -583,7 +583,7 @@ class TestEndgameInsightsReport:
 
 
 class TestEndgameInsightsResponse:
-    """Phase 65 D-14: HTTP 200 success envelope."""
+    """HTTP 200 success envelope."""
 
     def _report(self) -> EndgameInsightsReport:
         return EndgameInsightsReport(
@@ -610,7 +610,7 @@ class TestEndgameInsightsResponse:
 
 
 class TestInsightsErrorResponse:
-    """Phase 65 D-15: HTTP 502 error envelope."""
+    """HTTP 502 error envelope."""
 
     def test_provider_error(self) -> None:
         resp = InsightsErrorResponse(error="provider_error")
@@ -626,7 +626,7 @@ class TestInsightsErrorResponse:
 
 
 class TestSubsectionFindingSeries:
-    """Phase 65 D-02: append-only extension to Phase 63 SubsectionFinding."""
+    """Append-only extension to SubsectionFinding."""
 
     def _minimal_kwargs(self) -> dict[str, Any]:
         return dict(
@@ -657,8 +657,8 @@ class TestSubsectionFindingSeries:
     def test_series_declaration_is_last_field(self) -> None:
         """Declaration order is load-bearing for findings_hash stability.
 
-        `series` was APPENDED after `dimension` in Phase 65 — it MUST be the
-        last declared field so pre-Phase-65 rows (with no `series` emitted)
+        `series` was APPENDED after `dimension` — it MUST be the
+        last declared field so older rows (with no `series` emitted)
         hash identically whether decoded by old or new code.
         """
         fields = list(SubsectionFinding.model_fields.keys())

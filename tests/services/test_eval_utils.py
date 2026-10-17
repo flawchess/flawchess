@@ -1,6 +1,6 @@
 """Unit tests for app.services.eval_utils — Stockfish eval to expected score.
 
-Covers Phase 83 D-02 / D-03 (SEED-014): user-perspective expected score derived
+Covers user-perspective expected score derived
 from Stockfish eval (signed centipawns or mate-in-N) via the Lichess winning-
 chances sigmoid (cp) and a direct 0/1 mapping (mate).
 
@@ -8,9 +8,8 @@ Sign convention (mirrors app/services/endgame_service.py _classify_endgame_bucke
   - Raw eval_cp / eval_mate are white-perspective (python-chess / Stockfish).
   - A `sign = +1 if user_color == "white" else -1` flip yields user perspective.
 
-Pitfall 1 (RESEARCH §"Pitfalls"): mate-for-user vs mate-against-user must be
-covered for BOTH colors — Phase 82 was bitten by an asymmetric sign bug that
-flat unit tests with only one color would have missed.
+Mate-for-user vs mate-against-user must be covered for BOTH colors — an
+asymmetric sign bug would be missed by flat unit tests with only one color.
 """
 
 import ast
@@ -118,7 +117,7 @@ class TestMate:
         assert eval_mate_to_expected_score(-5, "white") == 0.0
 
     def test_black_mating_black_user(self) -> None:
-        """eval_mate=-5 maps to 1.0 for a black user (Pitfall 1 — symmetric coverage)."""
+        """eval_mate=-5 maps to 1.0 for a black user (symmetric coverage)."""
         assert eval_mate_to_expected_score(-5, "black") == 1.0
 
     def test_short_mate_for_each_color(self) -> None:
@@ -150,7 +149,7 @@ class TestMate:
 
 
 class TestDeriveIsLichessEvalGame:
-    """Phase 212 D-03: the SINGLE derivation point for is_lichess_eval_game."""
+    """The SINGLE derivation point for is_lichess_eval_game."""
 
     def test_derive_is_lichess_eval_game_flag_off_true(
         self, monkeypatch: pytest.MonkeyPatch
@@ -188,7 +187,7 @@ class TestDeriveIsLichessEvalGame:
         assert derive_is_lichess_eval_game(None) is False
 
 
-# ─── AST-based regression net (Task 2's D-03 requirement) ──────────────────
+# ─── AST-based regression net ──────────────────────────────────────────────
 #
 # Keys on the ASSIGNMENT TARGET name, not the expression text, which is what
 # catches all three of the original seven sites' syntactic shapes at once --

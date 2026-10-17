@@ -22,17 +22,17 @@ interface OpeningInsightsFilters {
 }
 
 /**
- * Phase 71 (D-16, D-17): TanStack Query hook for POST /api/insights/openings.
+ * TanStack Query hook for POST /api/insights/openings.
  * Filter-driven (no Generate button — auto-fetches on filter change). The block
- * always sends color: "all" regardless of the active global color filter (D-02).
+ * always sends color: "all" regardless of the active global color filter.
  * Errors are captured by the global QueryCache.onError handler in queryClient.ts —
  * do NOT add Sentry.captureException here (CLAUDE.md frontend Sentry rules).
  */
 export function useOpeningInsights(filters?: OpeningInsightsFilters) {
   const recency = filters?.recency ?? null;
   const customRange = filters?.customRange ?? null;
-  const timeControl = filters?.timeControls ?? null;
-  const platform = filters?.platforms ?? null;
+  const timeControls = filters?.timeControls ?? null;
+  const platforms = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
   const opponentType = filters?.opponentType ?? 'both';
   const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
@@ -50,8 +50,8 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
       'openingInsights',
       dateParams.from_date ?? null,
       dateParams.to_date ?? null,
-      timeControl,
-      platform,
+      timeControls,
+      platforms,
       rated,
       opponentType,
       opponentStrength.min,
@@ -61,12 +61,12 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
       apiClient
         .post<OpeningInsightsResponse>('/insights/openings', {
           ...dateParams,
-          time_control: timeControl ?? undefined,
-          platform: platform ?? undefined,
+          time_control: timeControls ?? undefined,
+          platform: platforms ?? undefined,
           rated: rated ?? undefined,
           opponent_type: opponentType,
           ...gapParams,
-          color: 'all', // D-02: always 'all' regardless of global filter
+          color: 'all', // always 'all' regardless of global filter
         })
         .then((r) => r.data),
     // staleTime inherits 30_000 from queryClient.ts global default

@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 /**
  * TrainStartScreen.test.tsx — coverage for all six landing states
- * (D-01..D-04, D-14, plus loading/error) per 190-04-PLAN.md Task 1.
+ * (plus loading/error).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { GUEST_SIGNUP_ASK_SCORE, IMPORT_ASK_LANDING, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
-// 191-01/191-06: TrainStartScreen calls useTrainProgress() directly (for the
-// PROG-05/D-16 tailored empty states) AND renders <TrainStreakCard /> +
+// TrainStartScreen calls useTrainProgress() directly (for the
+// tailored empty states) AND renders <TrainStreakCard /> +
 // <TrainStatsCard /> internally, which call the SAME hook — mocked once here
 // with a mutable module-level object so every call site reads the identical
 // resolved value per test, mirroring App.test.tsx's `trainProgressData`
@@ -43,12 +43,12 @@ vi.mock('@/hooks/useTrainProgress', () => ({
   useTrainProgress: () => trainProgressMock,
 }));
 
-// SEED-181: the streak hero keys its last-seen snapshot on the profile email.
+// The streak hero keys its last-seen snapshot on the profile email.
 vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({ data: { email: 'user@example.com' }, isPending: false, isError: false }),
 }));
 
-// 224 UAT round 2: the guest landing bubble renders <SignupAskActions />,
+// The guest landing bubble renders <SignupAskActions />,
 // which calls useAuth (mocked mirroring SignupAskActions.test.tsx's shape).
 vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({
@@ -56,14 +56,14 @@ vi.mock('@/hooks/useAuth', () => ({
   }),
 }));
 
-// 191-04: TrainStartScreen renders <TrainScheduleSettings /> internally,
+// TrainStartScreen renders <TrainScheduleSettings /> internally,
 // which calls useTrainSettings() — mocked here with a resolved stub
 // (TrainScheduleSettings.test.tsx covers the hook's own loading/error/save
 // states in isolation) so the six pre-existing landing-state assertions keep
 // passing without a QueryClientProvider.
-// 191-06: `save` synchronously invokes its `onSuccess` callback AND updates
+// `save` synchronously invokes its `onSuccess` callback AND updates
 // `mockTrainSettingsData` in place, mirroring the real hook's "writes the
-// fresh row into its own cache on success" behavior (191-04-SUMMARY.md) —
+// fresh row into its own cache on success" behavior —
 // this lets the "onSettingsSaved wiring" test below exercise the real
 // TrainScheduleSettings -> TrainStartScreen -> caller callback chain without
 // a QueryClientProvider or real network mock. Without this, the mock's
@@ -92,7 +92,7 @@ let mockTrainSettingsData: {
   has_mobile_subscription: true,
 };
 
-// Phase 240 UAT: the guest landing sign-up ask waits until the guest has
+// The guest landing sign-up ask waits until the guest has
 // completed a session (`sr_explained_at`, stamped by its score screen).
 const SESSION_COMPLETED = {
   intro_seen_at: '2026-07-01T10:00:00Z',
@@ -126,16 +126,16 @@ vi.mock('@/hooks/useTrainSettings', () => ({
   }),
 }));
 
-// Phase 202 Plan 02: TrainScheduleSettings now also calls usePushCapability(),
+// TrainScheduleSettings also calls usePushCapability(),
 // which internally calls useQuery() — mocked here for the same reason as
 // useTrainSettings above (a real hook call would throw "No QueryClient set"
 // without a QueryClientProvider this file deliberately does not add).
 // `available: false` keeps the reminder block absent, matching this file's
-// six pre-existing landing-state assertions exactly as they were before this
-// phase (TrainScheduleSettings.test.tsx covers the reminder block itself).
+// six landing-state assertions exactly as they were (TrainScheduleSettings.test.tsx
+// covers the reminder block itself).
 //
-// WR-01 (203-REVIEW.md) made this mutable: TrainReminderResurfaceBanner now
-// gates on the capability probe too, so a banner test asserting the CTA
+// This is mutable because TrainReminderResurfaceBanner gates
+// on the capability probe too, so a banner test asserting the CTA
 // renders must ALSO say push is available. The default stays `available:
 // false` so the six landing-state assertions are untouched; only the
 // banner-ordering block below opts in.
@@ -150,7 +150,7 @@ vi.mock('@/hooks/usePushCapability', () => ({
   usePushCapability: () => capabilityMock,
 }));
 
-// Phase 203 Plan 04 (OFFER-05): TrainStartScreen mounts
+// TrainStartScreen mounts
 // <TrainReminderResurfaceBanner /> as an ADDITIVE first element, never a
 // seventh `resolveLandingState` branch — mocked here so the six pre-existing
 // landing-state assertions below stay unaffected (`shouldResurface: false`
@@ -167,7 +167,7 @@ vi.mock('@/hooks/useReminderResurface', () => ({
   TRAIN_RESURFACE_DISMISSED_KEY: 'train-resurface-dismissed',
 }));
 
-// Phase 230: the real card needs a QueryClientProvider (and, for guests, the
+// The real card needs a QueryClientProvider (and, for guests, the
 // sign-up action pair), which this suite deliberately lacks and whose
 // registered-account tests assert no btn-signup- element. A stub carrying the
 // isGuest prop is enough here; TrainLeaderboardCard.test.tsx covers the card.
@@ -177,7 +177,7 @@ vi.mock('@/components/train/TrainLeaderboardCard', () => ({
   ),
 }));
 
-// Phase 231: the real host fetches (QueryClientProvider, useUserProfile with an
+// The real host fetches (QueryClientProvider, useUserProfile with an
 // impersonation field), which this suite lacks. A stub carrying isGuest proves
 // where it mounts; TrainMedalDialogHost.test.tsx covers the host itself.
 vi.mock('@/components/train/medals/TrainMedalDialogHost', () => ({
@@ -186,7 +186,7 @@ vi.mock('@/components/train/medals/TrainMedalDialogHost', () => ({
   ),
 }));
 
-// Phase 234: the real bubble needs a QueryClientProvider (it owns a TanStack
+// The real bubble needs a QueryClientProvider (it owns a TanStack
 // mutation), which this suite deliberately lacks. A stub exposing the props
 // proves what the Train landing hands it; FeedbackAskBubble.test.tsx covers
 // the bubble itself.
@@ -227,7 +227,7 @@ afterEach(() => {
     has_mobile_subscription: true,
   };
   resurfaceMock = { shouldResurface: false };
-  // WR-01: restore the file-wide default so the banner block's opt-in cannot
+  // Restore the file-wide default so the banner block's opt-in cannot
   // leak into the six landing-state assertions above it.
   capabilityMock = {
     isResolved: true,
@@ -259,8 +259,8 @@ const BASE_SESSION: TrainSessionResponse = {
   is_warmup: false,
 };
 
-// D-04: session_id null and puzzle_count 0 is the shape that reaches the
-// 'empty' landing state, which the PROG-05/D-16 tailored bodies branch from.
+// session_id null and puzzle_count 0 is the shape that reaches the
+// 'empty' landing state, which the tailored bodies branch from.
 const EMPTY_SESSION: TrainSessionResponse = {
   ...BASE_SESSION,
   session_id: null,
@@ -291,7 +291,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
   return { onEnterLoop, onSettingsSaved };
 }
 
-describe('TrainStartScreen — refetch after a schedule save (SEED-181 review)', () => {
+describe('TrainStartScreen — refetch after a schedule save', () => {
   it('keeps the landing (and the open schedule card) mounted, with Start disabled until the fresh session lands', () => {
     const props = {
       session: BASE_SESSION,
@@ -344,7 +344,7 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.queryByTestId('train-session-loading')).toBeNull();
   });
 
-  it('empty: session_id null and puzzle_count 0 renders the plain D-04 placeholder, no crash, no action button', () => {
+  it('empty: session_id null and puzzle_count 0 renders the plain placeholder, no crash, no action button', () => {
     renderScreen({
       session: { ...BASE_SESSION, session_id: null, puzzle_count: 0, solved_count: 0, blob_pending_count: 0 },
     });
@@ -353,7 +353,7 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
   });
 
-  // 193 UAT round 3: the puzzle count moved off its own loose line INTO the
+  // The puzzle count lives INSIDE the
   // button label, matching the shape 'resume' already used. The state
   // distinction that used to live in two different count sentences ("waiting"
   // vs. "ready") is now carried solely by the still-being-analyzed notice.
@@ -394,8 +394,8 @@ describe('TrainStartScreen — six landing states', () => {
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6, expires_on: '2026-08-01' },
       sessionScore: 9,
     });
-    // 193 UAT round 2: the max is puzzle_count * TRAIN_POINTS_PER_PUZZLE (3),
-    // not the stale hardcoded * 2 this assertion used to bake in.
+    // The max is puzzle_count * TRAIN_POINTS_PER_PUZZLE (3),
+    // not a hardcoded * 2.
     expect(screen.getByTestId('train-stats-today-score').textContent).toBe('9/18Points today');
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
@@ -403,7 +403,7 @@ describe('TrainStartScreen — six landing states', () => {
   });
 
   it('completed (lazy-eviction shape): solved < puzzle_count but no puzzles left still shows the recap, never a dead Resume button', () => {
-    // WR-02: a session can be marked completed with an unsolved lazily-evicted
+    // A session can be marked completed with an unsolved lazily-evicted
     // row, so the completed-in-window response carries solved_count <
     // puzzle_count and an empty puzzles array.
     renderScreen({
@@ -416,7 +416,7 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
   });
 
-  it('222 UAT round 6: Tank the Ox speaks the greeting in a bot bubble, and the old "Train" heading is gone', () => {
+  it('Tank the Ox speaks the greeting in a bot bubble, and the old "Train" heading is gone', () => {
     renderScreen();
     expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox');
     expect(screen.getByTestId('train-tagline').textContent).toBe(
@@ -449,14 +449,14 @@ describe('TrainStartScreen — six landing states', () => {
     );
   });
 
-  it('D-13: the schedule settings block renders after the Start CTA in the fresh state', () => {
+  it('the schedule settings block renders after the Start CTA in the fresh state', () => {
     renderScreen();
     const btn = screen.getByTestId('btn-train-start');
     const settings = screen.getByTestId('train-schedule-settings');
     expect(btn.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('quick 261004-dta: the schedule card sits above the leaderboard (fresh and completed)', () => {
+  it('the schedule card sits above the leaderboard (fresh and completed)', () => {
     renderScreen();
     const isBefore = (a: HTMLElement, b: HTMLElement): boolean =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -470,7 +470,7 @@ describe('TrainStartScreen — six landing states', () => {
     ).toBe(true);
   });
 
-  it('quick 261004-dta: the host bubble is phone-hidden once the intro is seen, but Tank\'s intro stays', () => {
+  it('the host bubble is phone-hidden once the intro is seen, but Tank\'s intro stays', () => {
     renderScreen();
     expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
     cleanup();
@@ -479,7 +479,7 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.getByTestId('train-landing-host').className).toContain('max-sm:hidden');
   });
 
-  it('Phase 240 UAT: the sign-up and import asks keep the host bubble on phones', () => {
+  it('the sign-up and import asks keep the host bubble on phones', () => {
     const hostClass = (): string => screen.getByTestId('train-landing-host').className;
     mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED };
     renderScreen({ isGuest: true });
@@ -498,11 +498,11 @@ describe('TrainStartScreen — six landing states', () => {
     expect(hostClass()).toContain('max-sm:hidden');
   });
 
-  it('191-06 UAT bug fix: a persisted schedule-settings edit calls onSettingsSaved, so the stale mount-time session gets re-fetched', async () => {
+  it('a persisted schedule-settings edit calls onSettingsSaved, so the stale mount-time session gets re-fetched', async () => {
     const { onSettingsSaved } = renderScreen();
     expect(onSettingsSaved).not.toHaveBeenCalled();
 
-    // SEED-181: the schedule card starts collapsed.
+    // The schedule card starts collapsed.
     fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
     fireEvent.click(screen.getByTestId('filter-weekday-fr'));
     await act(async () => {
@@ -514,7 +514,7 @@ describe('TrainStartScreen — six landing states', () => {
   });
 });
 
-describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign-up ask in the host bubble', () => {
+describe('TrainStartScreen — no warm-up info card, guest sign-up ask in the host bubble', () => {
   it('is_warmup true: renders no warm-up card and the plain Start CTA', () => {
     renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true },
@@ -546,7 +546,7 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
     expect(screen.getByTestId('btn-signup-free-train-landing')).not.toBeNull();
   });
 
-  // Phase 240 UAT: a reload around the end of the session skips the score
+  // A reload around the end of the session skips the score
   // screen and its sr_explained stamp; today's completed landing still counts.
   it('guest: a completed session today shows the ask even without the sr_explained stamp', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED, sr_explained_at: null };
@@ -560,7 +560,7 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
     expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
   });
 
-  it('Phase 240 UAT: guest who has not completed a session (first visit, or tour done mid-session): no sign-up sentence or buttons', () => {
+  it('guest who has not completed a session (first visit, or tour done mid-session): no sign-up sentence or buttons', () => {
     renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
@@ -597,7 +597,7 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
   });
 
-  it('Phase 240 D-22: no reminder sentence until the whole three-part tour is done (stage 2 is not enough)', () => {
+  it('no reminder sentence until the whole three-part tour is done (stage 2 is not enough)', () => {
     mockTrainSettingsData = {
       ...mockTrainSettingsData,
       intro_seen_at: '2026-07-01T10:00:00Z',
@@ -622,7 +622,7 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
   });
 });
 
-describe('TrainStartScreen — quick 260926-8p5: import ask for a registered zero-game account', () => {
+describe('TrainStartScreen — import ask for a registered zero-game account', () => {
   it('registered, no games: import sentence + Import games button, and it replaces the reminder ask', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
     renderScreen({ isGuest: false, hasGames: false, session: { ...BASE_SESSION, is_warmup: true } });
@@ -656,7 +656,7 @@ describe('TrainStartScreen — quick 260926-8p5: import ask for a registered zer
   });
 });
 
-describe('TrainStartScreen — PROG-05/D-16 tailored cold/exhausted empty states (191-06)', () => {
+describe('TrainStartScreen — tailored cold/exhausted empty states', () => {
   it('no_material: renders the cold-start heading/subtitle and an Import games link to /library/import, with no progress row', () => {
     trainProgressMock = {
       data: { ...DEFAULT_TRAIN_PROGRESS, pool_state: 'no_material' },
@@ -740,11 +740,11 @@ describe('TrainStartScreen — PROG-05/D-16 tailored cold/exhausted empty states
   });
 });
 
-describe('TrainStartScreen — OFFER-05/D-16 re-surface banner (additive, not a seventh state)', () => {
-  // WR-01: the banner also gates on the push-capability probe, so every
+describe('TrainStartScreen — re-surface banner (additive, not a seventh state)', () => {
+  // The banner also gates on the push-capability probe, so every
   // "banner renders" assertion here needs push to actually be available.
   // Without this the block would be asserting that a push CTA appears while
-  // claiming push is unavailable — the inconsistency WR-01's fix exposed.
+  // claiming push is unavailable.
   beforeEach(() => {
     capabilityMock = {
       isResolved: true,
@@ -759,7 +759,7 @@ describe('TrainStartScreen — OFFER-05/D-16 re-surface banner (additive, not a 
     expect(screen.queryByTestId('resurface-banner')).toBeNull();
   });
 
-  it('shouldResurface true but the capability probe unresolved: still nothing (WR-01)', () => {
+  it('shouldResurface true but the capability probe unresolved: still nothing', () => {
     resurfaceMock = { shouldResurface: true };
     capabilityMock = {
       isResolved: false,
@@ -802,7 +802,7 @@ describe('TrainStartScreen — OFFER-05/D-16 re-surface banner (additive, not a 
   });
 });
 
-describe('TrainStartScreen — Phase 230 D-08: weekly leaderboard card position', () => {
+describe('TrainStartScreen — weekly leaderboard card position', () => {
   function expectOrder(...testIds: string[]): void {
     for (let i = 0; i < testIds.length - 1; i += 1) {
       const a = screen.getByTestId(testIds[i]!);
@@ -843,7 +843,7 @@ describe('TrainStartScreen — Phase 230 D-08: weekly leaderboard card position'
   });
 });
 
-describe('TrainStartScreen — Phase 231 D-10: medal dialog host mount', () => {
+describe('TrainStartScreen — medal dialog host mount', () => {
   it('mounts in the empty branch', () => {
     renderScreen({ session: EMPTY_SESSION });
     expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
@@ -880,7 +880,7 @@ describe('TrainStartScreen — Phase 231 D-10: medal dialog host mount', () => {
   });
 });
 
-describe('TrainStartScreen: Phase 234 milestone feedback ask', () => {
+describe('TrainStartScreen: milestone feedback ask', () => {
   const INTRO_DONE = '2026-07-01T10:00:00Z';
   const ASK_DAYS = 7;
 
@@ -888,7 +888,7 @@ describe('TrainStartScreen: Phase 234 milestone feedback ask', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: INTRO_DONE };
   });
 
-  it('D-04: intro done + active ask renders Hilda (large) instead of the host, visible on phones', () => {
+  it('intro done + active ask renders Hilda (large) instead of the host, visible on phones', () => {
     renderScreen({ feedbackAskDays: ASK_DAYS });
     const stub = screen.getByTestId('feedback-ask-train-landing');
     expect(stub.getAttribute('data-active-days')).toBe(String(ASK_DAYS));
@@ -897,14 +897,14 @@ describe('TrainStartScreen: Phase 234 milestone feedback ask', () => {
     expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
   });
 
-  it('SEED-191 #10: the ask outranks the reminder-install ask', () => {
+  it('the ask outranks the reminder-install ask', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
     renderScreen({ feedbackAskDays: ASK_DAYS });
     expect(screen.getByTestId('feedback-ask-train-landing')).not.toBeNull();
     expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
 
-  it('D-04: while the intro is not completed Tank still hosts and no ask renders', () => {
+  it('while the intro is not completed Tank still hosts and no ask renders', () => {
     mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: null };
     renderScreen({ feedbackAskDays: ASK_DAYS });
     expect(screen.queryByTestId('feedback-ask-train-landing')).toBeNull();

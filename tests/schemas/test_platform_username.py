@@ -1,5 +1,4 @@
-"""Schema tests for pasted chess.com/lichess profile-URL username normalization
-(quick 260809-iq1, D-01/D-03/D-04).
+"""Schema tests for pasted chess.com/lichess profile-URL username normalization.
 
 Covers the shared `extract_platform_username` helper plus the two schemas that
 wire it in: `ImportRequest.username` and `UserProfileUpdate.chess_com_username`
@@ -109,7 +108,7 @@ def test_user_profile_update_none_does_not_crash() -> None:
 
 def test_user_profile_update_field_pinned_to_its_own_platform() -> None:
     # A chess.com URL pasted into lichess_username is left unchanged -- the
-    # per-field validator only recognizes that field's own platform (D-03).
+    # per-field validator only recognizes that field's own platform.
     update = UserProfileUpdate(lichess_username="https://lichess.org/@/foo")
     assert update.lichess_username == "foo"
 

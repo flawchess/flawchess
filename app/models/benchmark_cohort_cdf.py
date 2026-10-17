@@ -1,6 +1,6 @@
 """SQLAlchemy model for the ``benchmark_cohort_cdf`` table.
 
-LONG layout (CONTEXT D-01): one row per breakpoint.
+LONG layout: one row per breakpoint.
 Primary key: (metric, anchor_elo, tc, percentile).
 
 Cell reconstruction: fetching the 99 rows for a given (metric, anchor_elo, tc)
@@ -13,7 +13,7 @@ Audit columns:
     because early seeds may lack this count.
   snapshot_month: the benchmark snapshot month that produced these breakpoints
     (e.g. "2026-05"). NULLable plain audit column, NOT part of any idempotency
-    gate (CONTEXT note #1).
+    gate.
 
 ~123k rows total (11 metrics × ≤ 36 anchor_elo grid points × 4 TC buckets
 × 99 percentiles, minus grid cells that lack the K=200 user floor).

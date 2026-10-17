@@ -1,0 +1,8 @@
+old	new	kind	absent_paths	ref	canon_paths
+DesktopTree	VerticalTree	component	frontend/src	INVENTORY s5 VariationTree.tsx:891	frontend/src/components/analysis/VariationTree.tsx
+MobileTree	WrapTree	component	frontend/src	INVENTORY s5 VariationTree.tsx:808	frontend/src/components/analysis/VariationTree.tsx
+PlayerBar	AnalysisPlayerBar	component	-	INVENTORY s5 AnalysisPlayerBar.tsx:190	frontend/src/components/analysis/AnalysisPlayerBar.tsx,frontend/src/components/analysis/AnalysisBoardStage.tsx,frontend/src/pages/Analysis.tsx
+PlayerBarProps	AnalysisPlayerBarProps	type	-	INVENTORY s5 AnalysisPlayerBar.tsx:190	frontend/src/components/analysis/AnalysisPlayerBar.tsx,frontend/src/components/analysis/AnalysisBoardStage.tsx,frontend/src/pages/Analysis.tsx
+formatScore	formatEval	function	frontend/src/components/analysis,frontend/src/components/train	INVENTORY s5 EngineLines.tsx:183	frontend/src/components/analysis/EngineLines.tsx,frontend/src/components/analysis/FlawChessEngineLines.tsx,frontend/src/components/analysis/FlawChessAgreementVerdict.tsx,frontend/src/components/train/TrainLineChips.tsx,frontend/src/components/analysis/__tests__/FlawChessEngineLines.test.tsx
+storedTierByPly	storedGemGreatByPly	variable	frontend/src	INVENTORY s5 pages/Analysis.tsx:659	frontend/src/pages/Analysis.tsx,frontend/src/hooks/analysis/useAnalysisEngineLines.ts,frontend/src/hooks/analysis/useAnalysisGemMarkers.ts,frontend/src/hooks/useGemSweep.ts,frontend/src/hooks/analysis/__tests__/useAnalysisEngineLines.test.ts
+storedTierByPlySize	storedGemGreatByPlySize	variable	frontend/src	INVENTORY s5 pages/Analysis.tsx:659 (param in useAnalysisGemMarkers.ts:231)	frontend/src/hooks/analysis/useAnalysisGemMarkers.ts

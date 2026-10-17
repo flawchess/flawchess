@@ -31,13 +31,11 @@ function isGuestTokenRejected(error: unknown): boolean {
  * imported games. When a guest is still logged in, apiClient's interceptor replaces the
  * header with the stored auth_token, which is that same guest.
  *
- * Bug fix (quick 261016-fwd): promotion used to need a one-shot `promote_intent` flag set
- * by the "save my data" CTAs, consumed before the Google redirect. A guest who logged out
- * first, or backed out of the Google screen and retried, lost the flag, so the plain flow
- * created a duplicate account and orphaned the guest's games (~20 accounts in prod). The
- * flag only existed because the promote callback used to lock a returning registered user
- * with a stale guest_token out with EMAIL_ALREADY_REGISTERED (2026-06-23). The backend
- * now signs that user into their account instead, so the flag is gone.
+ * Don't gate promotion on a one-shot client flag: a guest who logged out first, or backed
+ * out of the Google screen and retried, lost it, and the plain flow created a duplicate
+ * account that orphaned the guest's games. The backend signs a returning registered user
+ * with a stale guest_token into their own account, so promoting on any saved guest token
+ * is safe.
  *
  * Only a rejected guest token (401, or 403 "Not a guest user") falls back to plain sign-in. A network error or 5xx
  * is re-thrown so the caller asks the user to retry: falling back on a transient error is

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * FlawsTab vitest suite — tests the three key scenarios from Plan 108-07:
+ * FlawsTab vitest suite — tests the three key scenarios:
  *
  * 1. Deep-link (?tag=reversed) pre-populates the flaw filter control
  * 2. isError branch renders the mandatory error copy
@@ -14,9 +14,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Mock } from 'vitest';
 
-// Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
-// [Rule 1 - Bug] FlawFilterControl now renders ToggleGroup (via showTacticFilter);
-// the Radix use-size hook calls ResizeObserver which jsdom doesn't provide.
+// Stub ResizeObserver — required by Radix UI ToggleGroup: FlawFilterControl renders
+// a ToggleGroup (via showTacticFilter) and the Radix use-size hook calls
+// ResizeObserver, which jsdom doesn't provide.
 beforeAll(() => {
   if (typeof window.ResizeObserver === 'undefined') {
     window.ResizeObserver = class ResizeObserver {
@@ -147,7 +147,7 @@ vi.mock('@/hooks/useLibrary', () => ({
 
 // We need a controllable store: the real store is module-level and persists
 // between tests. Instead, mock the entire module with React state.
-// Phase 129 / Quick 260620-l5k: include tacticOrientation + depth range defaults.
+// Include tacticOrientation + depth range defaults.
 let mockStoreState = {
   severity: ['blunder', 'mistake'] as ('blunder' | 'mistake')[],
   tags: [] as string[],
@@ -465,7 +465,7 @@ describe('FlawsTab', () => {
       // Even with a restrictive flaw filter applied, the analyzed_n probe must
       // run unfiltered — otherwise a zero-match filter set yields analyzed_n=0
       // and falsely shows the no-engine-analysis message.
-      // Phase 129: include all FlawFilterState fields so FlawsTab doesn't crash.
+      // Include all FlawFilterState fields so FlawsTab doesn't crash.
       mockStoreState = {
         severity: ['blunder'],
         tags: ['miss'],
@@ -486,7 +486,7 @@ describe('FlawsTab', () => {
       expect(probeFlawFilter.tags).toEqual([]);
     });
 
-    it('shows the no-engine-analysis state when no games are analyzed (quick-260610-vru)', () => {
+    it('shows the no-engine-analysis state when no games are analyzed', () => {
       mockFlawsResult = {
         data: { flaws: [], matched_count: 0, offset: 0, limit: 20 },
         isLoading: false,
@@ -519,7 +519,7 @@ describe('FlawsTab', () => {
 
     it('reflects store state with tags in the FlawFilterControl (tag button selected)', () => {
       // Set store to have a tag pre-selected (simulating deep-link result).
-      // Phase 129: include all FlawFilterState fields so FlawsTab doesn't crash.
+      // Include all FlawFilterState fields so FlawsTab doesn't crash.
       mockStoreState = {
         severity: ['blunder', 'mistake'],
         tags: ['miss'],

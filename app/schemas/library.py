@@ -1,17 +1,17 @@
-"""Library (Games-surface) schemas — Phase 106 (SEED-036, LIBG-08).
+"""Library (Games-surface) schemas.
 
 The card payload for the Games subtab: a paginated archive where each game
 carries its per-game B/M/I severity counts plus a curated, deduped set of
 tag-chips, and an explicit analysis-state so chess.com / unanalyzed-lichess
-games surface "no engine analysis" rather than a false 0/0/0 (LIBG-02).
+games surface "no engine analysis" rather than a false 0/0/0.
 
 GameFlawCard mirrors GameRecord's fields (so the front-end reuses the same
 game-card shape) and never includes any *_hash field (V5 information
 disclosure — API responses expose FEN/usernames only, never internal hashes).
 
-Phase 108 Plan 05: FlawListItem + LibraryFlawsResponse for GET /library/flaws.
+FlawListItem + LibraryFlawsResponse for GET /library/flaws.
 Per-flaw flat list (one row per flawed position), ordered recent-first
-(g.played_at DESC, f.ply), paginated (page size 20 per D-08). Never exposes
+(g.played_at DESC, f.ply), paginated (page size 20). Never exposes
 internal *_hash columns (CLAUDE.md V5).
 """
 
@@ -27,13 +27,13 @@ from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
 
 # ---------------------------------------------------------------------------
-# Phase 109 eval chart models (LIBG-10) — defined before GameFlawCard so
-# the three new fields below resolve without forward references.
+# Eval chart models — defined before GameFlawCard so
+# the eval-chart fields below resolve without forward references.
 # ---------------------------------------------------------------------------
 
 
 class EvalPoint(BaseModel):
-    """One ply's white-perspective ES datapoint for the eval chart line (Phase 109, LIBG-10)."""
+    """One ply's white-perspective ES datapoint for the eval chart line."""
 
     ply: int
     es: float | None  # white-perspective ES in (0,1); null = missing eval
@@ -46,12 +46,12 @@ class EvalPoint(BaseModel):
     # Engine's best move FROM the position at this ply (UCI, e.g. "e2e4" / "e7e8q").
     # None for lichess-eval-only games (no PV captured) and the final position.
     best_move: str | None = None
-    # Phase 175 (BOARD-01): pre-classified gem/great tier from the authoritative
+    # Pre-classified gem/great tier from the authoritative
     # classify_best_move (app.services.best_move_candidates), computed server-side
     # from the stored game_best_moves row. Null when no candidate row exists for
     # this ply OR the row classifies "neither" — the board never does its own
-    # cp/margin math for the stored path (D-03).
-    # Quick 260717-rbn: widened with two more tiers, both computed live in
+    # cp/margin math for the stored path.
+    # The 'best' and 'good' tiers are computed live in
     # _build_eval_series (no stored row involved). 'best' = the played move
     # identity-equals the stored game_positions.best_move (out of book, not
     # gem/great). 'good' = the mover-POV expected-score drop is below
@@ -62,26 +62,24 @@ class EvalPoint(BaseModel):
     best_move_tier: Literal["gem", "great", "best", "good"] | None = None
     # Maia policy probability for the popover "X% of rating-peers" stat. Populated
     # ONLY alongside a non-null gem/great best_move_tier — never set from a
-    # "neither" row (Pitfall 5, D-03a) nor for best/good (they are not a Maia
+    # "neither" row nor for best/good (they are not a Maia
     # rarity stat).
     maia_prob: float | None = None
 
 
 class FlawMarker(BaseModel):
-    """One flaw dot for the eval chart — both colors, B/M/I (Phase 109, LIBG-10).
+    """One flaw dot for the eval chart — both colors, B/M/I.
 
     is_user=True → filled circle (player); is_user=False → hollow circle (opponent).
-    tags is empty for inaccuracies (D-03).
-    Phase 126 (TACUI-01): tactic chip fields surfaced; None when below
-    MIN_TACTIC_CHIP_CONFIDENCE or when tactic column is NULL in DB.
-    Phase 128 (D-07/D-10): both orientation column sets exposed orientation-labeled.
-    The narration matrix (allowed×is_opponent, missed×is_opponent) is a Phase 129
-    concern; 128 just keeps the schema labeled so 129 can apply it.
+    tags is empty for inaccuracies.
+    Tactic chip fields are None when below
+    MIN_TACTIC_CHIP_CONFIDENCE or when the tactic column is NULL in DB.
+    Both orientation column sets are exposed, orientation-labeled.
     """
 
     ply: int
     severity: FlawSeverity
-    tags: list[FlawTag]  # empty for inaccuracies (D-03)
+    tags: list[FlawTag]  # empty for inaccuracies
     is_user: bool  # True = filled dot (player), False = hollow dot (opponent)
     move_san: str | None  # SAN of the flawed move (positions[ply].move_san) — tooltip move label
     # allowed_* fields: tactic allowed to the flaw-maker's opponent (refutation PV)
@@ -97,14 +95,14 @@ class FlawMarker(BaseModel):
 
 
 class PhaseTransitions(BaseModel):
-    """First ply of middlegame and endgame phases — at most two phase lines (Phase 109, D-06)."""
+    """First ply of middlegame and endgame phases — at most two phase lines."""
 
     middlegame_ply: int | None  # None = middlegame never reached
     endgame_ply: int | None  # None = endgame never reached
 
 
 class GameFlawCard(BaseModel):
-    """A single game card for the Games subtab archive (LIBG-08).
+    """A single game card for the Games subtab archive.
 
     Mirrors GameRecord's display fields, extended with per-game severity counts,
     curated tag-chips, and an analysis state. Never exposes internal hashes.
@@ -120,7 +118,7 @@ class GameFlawCard(BaseModel):
     black_username: str | None
     white_rating: int | None
     black_rating: int | None
-    # Phase 164 additions (SEED-093): nullable Lichess-Blitz-normalized ratings,
+    # Nullable Lichess-Blitz-normalized ratings,
     # a pure transform of (platform, time_control_bucket, rating) for Maia ELO
     # slider conditioning. None for correspondence games, chess.com classical,
     # NULL ratings, or NULL time_control_bucket. Raw white_rating/black_rating
@@ -134,11 +132,10 @@ class GameFlawCard(BaseModel):
     termination: str | None = None
     time_control_str: str | None = None
     result_fen: str | None = None
-    # Phase 106 additions:
     # severity_counts is None (never 0/0/0) for unanalyzed games — discriminated
     # by analysis_state.
     severity_counts: SeverityCounts | None
-    # Phase 179 additions (SEED-112, D-01): canonical Phase 178 per-color
+    # Canonical per-color
     # accuracy (0-100), sourced ONLY from Game.white_accuracy/black_accuracy —
     # never the *_accuracy_imported columns. None when not yet computed
     # (e.g. eval-coverage gate not satisfied).
@@ -146,7 +143,7 @@ class GameFlawCard(BaseModel):
     black_accuracy: float | None = None
     chips: list[FlawTag]
     analysis_state: Literal["analyzed", "no_engine_analysis"]
-    # Phase 109 additions — null for unanalyzed games (analysis_state === 'no_engine_analysis'):
+    # Null for unanalyzed games (analysis_state === 'no_engine_analysis'):
     eval_series: list[EvalPoint] | None = None
     flaw_markers: list[FlawMarker] | None = None
     phase_transitions: PhaseTransitions | None = None
@@ -155,7 +152,7 @@ class GameFlawCard(BaseModel):
     # replaying moves[0..i] yields the position whose eval is eval_series[i].es.
     # Null for unanalyzed games / games without positions.
     moves: list[str] | None = None
-    # Phase 210 (SEED-042): the position `moves` is replayed FROM. Null means the
+    # The position `moves` is replayed FROM. Null means the
     # standard start, which is the overwhelming majority. Non-null for chess.com
     # thematic/custom-position games and pasted [SetUp] PGNs — replaying their
     # SANs from the standard start is illegal and used to crash the analysis
@@ -165,7 +162,7 @@ class GameFlawCard(BaseModel):
     # (unanalyzed-and-unqueued, or already analyzed). The partial unique index
     # uq_eval_jobs_game_active guarantees at most one active row per game.
     active_eval_status: Literal["pending", "leased"] | None = None
-    # Phase 172 (SEED-106 D-06): 1-based ply depth of the deepest opening-book
+    # 1-based ply depth of the deepest opening-book
     # match, computed on-read from `moves` (no column, no migration/backfill).
     # 0 means no known opening prefix matched. Gates the gem sweep and marks
     # theory plies with the book badge on every surface gems already render.
@@ -173,34 +170,33 @@ class GameFlawCard(BaseModel):
 
 
 class FlawListItem(BaseModel):
-    """One row in the Flaws subtab — one flawed position (Plan 108-05, D-07/D-08).
+    """One row in the Flaws subtab — one flawed position.
 
     Carries the full display payload for the miniboard list: board position,
     marked move, severity, reconstructed tags (from typed game_flaws columns),
     before/after raw eval (from game_positions join), and the game metadata
     needed for the row header (opponent, ratings, date, result).
 
-    Phase 112 (SC-2 + SC-4): adds white_rating/black_rating and before/after
-    eval fields (eval_cp/eval_mate); drops es_before/es_after (now dead — D-07).
-    move_san is now join-sourced from game_positions (D-08).
+    Also carries white_rating/black_rating and before/after eval fields
+    (eval_cp/eval_mate). move_san is join-sourced from game_positions.
     Never exposes *_hash fields (CLAUDE.md V5).
     """
 
     game_id: int
     ply: int
     fen: str
-    move_san: str | None  # from game_positions join at ply=N (D-08, Phase 112)
-    severity: FlawSeverity  # "mistake" | "blunder" (M+B only, D-03)
+    move_san: str | None  # from game_positions join at ply=N
+    severity: FlawSeverity  # "mistake" | "blunder" (M+B only)
     tags: list[FlawTag]  # reconstructed from typed columns in deterministic order
-    # Before/after eval from game_positions join (D-05, Phase 112).
+    # Before/after eval from game_positions join.
     # eval_cp_before / eval_mate_before: game_positions at ply=N-1 (white-POV).
     # eval_cp_after  / eval_mate_after:  game_positions at ply=N   (white-POV).
-    # All nullable: LEFT JOIN; ply=0 has no ply-1 row; chess.com has no eval.
+    # All nullable: LEFT JOIN; ply=0 has no ply-1 row; a ply may lack an eval.
     eval_cp_before: int | None
     eval_mate_before: int | None
     eval_cp_after: int | None
     eval_mate_after: int | None
-    # Player ratings from the games join (D-03, Phase 112).
+    # Player ratings from the games join.
     white_rating: int | None
     black_rating: int | None
     # Game metadata for the row header
@@ -217,7 +213,7 @@ class FlawListItem(BaseModel):
     white_username: str | None
     black_username: str | None
     user_color: str
-    # Clock context for the flaw card (plan 260610-vru).
+    # Clock context for the flaw card.
     # clock_seconds: mover's remaining clock AFTER the flawed move; null = no %clk (chess.com).
     # move_seconds: time spent on the flawed move (1dp); null when prior clock unknown.
     clock_seconds: float | None
@@ -226,12 +222,10 @@ class FlawListItem(BaseModel):
     # "e2e4"). None for lichess-eval-only games (no PV captured). The Flaws-tab
     # miniboard draws it as a blue arrow next to the (red) flaw-move arrow.
     best_move: str | None = None
-    # Tactic chip fields (Phase 126, TACUI-01; Phase 128 D-07 — both orientation column sets).
+    # Tactic chip fields (both orientation column sets).
     # allowed_*: tactic allowed to flaw-maker's opponent (refutation PV, flaw_ply+1).
     # missed_*:  tactic the flaw-maker missed (the "instead-of" PV, flaw_ply).
-    # Each pair is None when below _TACTIC_CHIP_CONFIDENCE_MIN or when the DB column is NULL.
-    # Phase 129 applies the narration matrix (orientation × is_opponent_expr) to select
-    # which fields to surface in the chip and comparison; 128 just exposes both labeled.
+    # Each pair is None when below MIN_TACTIC_CHIP_CONFIDENCE or when the DB column is NULL.
     allowed_tactic_motif: str | None = None
     allowed_tactic_confidence: int | None = None
     # 0-based ply depth of each tactic; None when the corresponding motif chip is
@@ -244,7 +238,7 @@ class FlawListItem(BaseModel):
 
 
 class LibraryFlawsResponse(BaseModel):
-    """Response for GET /api/library/flaws — paginated per-flaw list (Plan 108-05).
+    """Response for GET /api/library/flaws — paginated per-flaw list.
 
     Mirrors LibraryGamesResponse's pagination shape (flaws / matched_count /
     offset / limit). matched_count reflects all matching flaw rows before
@@ -258,7 +252,7 @@ class LibraryFlawsResponse(BaseModel):
 
 
 class LibraryGamesResponse(BaseModel):
-    """Response for GET /api/library/games — paginated game archive (LIBG-08).
+    """Response for GET /api/library/games — paginated game archive.
 
     Mirrors EndgameGamesResponse's pagination shape (games / matched_count /
     offset / limit); matched_count reflects all matching games before pagination.
@@ -271,7 +265,7 @@ class LibraryGamesResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Stats panel schemas (LIBG-09) — GET /api/library/flaw-stats
+# Stats panel schemas — GET /api/library/flaw-stats
 # ---------------------------------------------------------------------------
 
 
@@ -294,14 +288,14 @@ class FlawTrendPoint(BaseModel):
 
 
 class FlawTrendTc(BaseModel):
-    """One time control's Flaws Timeline series (Phase 239 D-00k)."""
+    """One time control's Flaws Timeline series."""
 
     tc: TimeControlBucket
     points: list[FlawTrendPoint]
 
 
 class FlawStatsResponse(BaseModel):
-    """Response for GET /api/library/flaw-stats (LIBG-09, Phase 239 D-00k).
+    """Response for GET /api/library/flaw-stats.
 
     trend_by_tc: one Flaws Timeline series per time control that has trend points,
         ordered bullet, blitz, rapid, classical; the client picks the selected TC's
@@ -312,8 +306,8 @@ class FlawStatsResponse(BaseModel):
         total_n instead. trend_window is the rolling window size (games) used for the
         trend chart.
 
-    Phase 239 removed the severity counts, severity rates, tag distribution and pooled
-    trend: nothing renders them any more (the tiles read the flaw-comparison bullets).
+    There are no severity counts, severity rates, tag distribution or pooled
+    trend: nothing renders them (the tiles read the flaw-comparison bullets).
     """
 
     trend_by_tc: list[FlawTrendTc]
@@ -322,17 +316,17 @@ class FlawStatsResponse(BaseModel):
 
 
 class FlawBullet(BaseModel):
-    """Per-bullet data for one of the 12 flaw-delta metrics (Phase 115, FLAWCMP-01/03)."""
+    """Per-bullet data for one of the 12 flaw-delta metrics."""
 
     tag: FlawDeltaMetric
     delta: (
         float | None
     )  # mean per-game delta (per 100 of user's moves); None = both sides zero events
-    # 99% CI on delta (per 100 moves, D-14); None for zero-event bullets and below
+    # 99% CI on delta (per 100 moves); None for zero-event bullets and below
     # two games (score_confidence.compute_paired_difference_test n-gates).
     ci_low: float | None
     ci_high: float | None
-    # Per-player rates (Phase 115 UAT): mean per-game flaw rate per 100 of the
+    # Per-player rates: mean per-game flaw rate per 100 of the
     # user's moves, for player and opponent separately. Both opponent and player
     # counts are normalized by the user's move count per game so that
     # player_rate - opp_rate == delta exactly (the comparison stays paired).
@@ -346,13 +340,13 @@ class FlawBullet(BaseModel):
     player_events: int  # total player-side tag events across analyzed games
     opp_events: int  # total opponent-side tag events across analyzed games
     # Typical-range bounds from the per-TC FLAW_DELTA_ZONES registry: a band
-    # symmetric around 0 (±IQR/2 of the measured quartiles, Phase 239 D-15).
+    # symmetric around 0 (±IQR/2 of the measured quartiles).
     zone_lo: float
     zone_hi: float
     # Always True: every flaw metric has a band. Kept so FlawBullet and TacticBullet
     # share one shape (tactic family-sides without a viable band send False).
     has_zone: bool = True
-    # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
+    # True when the 99% CI on delta excludes 0. Only a significant cell
     # outside the band gets a red/green verdict; the backend owns the test.
     significant: bool
 
@@ -370,11 +364,11 @@ TEMPO_PHASE_PHASES: Final[tuple[FlawPhaseMetric, ...]] = (
 
 
 class TempoPhaseCell(BaseModel):
-    """One crossed tempo x game-phase cell of the flaw comparison (quick 261014-pb9).
+    """One crossed tempo x game-phase cell of the flaw comparison.
 
     Counts only flaws carrying BOTH the tempo tag and the phase tag, on the same
     paired per-100-user-moves basis as FlawBullet (same CI, p-value, significance).
-    Quick 261014-qj8 / 261014-rux: 7 of the 9 cells carry a per-TC benchmark band from
+    7 of the 9 cells carry a per-TC benchmark band from
     TEMPO_PHASE_ZONES (has_zone True, symmetric zone bounds). low_clock x opening and
     low_clock x middlegame are not zone-viable and have none (has_zone False, zone bounds 0). Flaws with NULL tempo (no
     clock data) are in no cell. Deliberately NOT part of FLAW_DELTA_METRICS, which drives
@@ -398,14 +392,14 @@ class TempoPhaseCell(BaseModel):
 
 
 class FlawComparisonTc(BaseModel):
-    """One time control's you-vs-opponent flaw comparison (Phase 239 D-02/D-03).
+    """One time control's you-vs-opponent flaw comparison.
 
     tc: the time control bucket these bullets were computed over.
     analyzed_n: analyzed games of this TC after the current filter set.
     total_n: all games of this TC after the current filter set, analyzed or not; the
              coverage denominator of the Flaw Stats basis line (analyzed_n <= total_n).
     below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
-                populated so tiles can show rates (D-03).
+                populated so tiles can show rates.
     bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
     tempo_phase_cells: always 9 crossed tempo x phase cells, phase-major (opening,
                        middlegame, endgame_phase; low_clock, hasty, unrushed inside each).
@@ -421,13 +415,13 @@ class FlawComparisonTc(BaseModel):
 
 
 class FlawComparisonResponse(BaseModel):
-    """Response for GET /api/library/flaw-comparison (Phase 115, Phase 239 D-02).
+    """Response for GET /api/library/flaw-comparison.
 
     tcs: one entry per time control that the sidebar time-control filter allows and
          that has at least one analyzed game under the current filters, ordered
-         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted (D-02), so an
-         empty list means no analyzed games at all. Below-gate TCs keep their bullets
-         (D-03). No request parameter selects a TC: the switch is client-side.
+         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted, so an
+         empty list means no analyzed games at all. Below-gate TCs keep their bullets.
+         No request parameter selects a TC: the switch is client-side.
     analyzed_gate: minimum analyzed games per TC (library_service.FLAW_COMPARISON_GATE),
         exposed so the frontend can render "X of N" without hardcoding the gate.
     total_n: all games (analyzed or not) under the current filters, summed over the TCs
@@ -441,14 +435,14 @@ class FlawComparisonResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Phase 126 — Tactic comparison schemas (TACCMP-01/02/03)
+# Tactic comparison schemas
 # ---------------------------------------------------------------------------
 
 
 class TacticBullet(BaseModel):
-    """Per-family, per-side data for one tactic motif cell (Phase 126, 129, 239).
+    """Per-family, per-side data for one tactic motif cell.
 
-    Rates are mean tactic counts per 100 games (Phase 239 D-00h): a 1-vs-0 single-game
+    Rates are mean tactic counts per 100 games: a 1-vs-0 single-game
     difference reads 100.0. The p-value is scale-invariant and unchanged by the scaling.
     Sign convention: positive delta = you have MORE of these tactics than the opponent
     (mirrors FlawBullet; for both Missed and Allowed that is the bad direction).
@@ -459,7 +453,7 @@ class TacticBullet(BaseModel):
     you_rate: float | None  # mean count per 100 games (player side); None = zero events
     opp_rate: float | None  # mean count per 100 games (opponent side); None = zero events
     delta: float | None  # you_rate - opp_rate per 100 games; None = both sides zero events
-    # 99% CI on delta (per 100 games, D-14) and the two-sided p vs H0: delta == 0.
+    # 99% CI on delta (per 100 games) and the two-sided p vs H0: delta == 0.
     # None for zero events; the CI below two games and p below CONFIDENCE_MIN_N (10)
     # games (score_confidence.compute_paired_difference_test n-gates).
     ci_low: float | None
@@ -468,25 +462,25 @@ class TacticBullet(BaseModel):
     you_events: int  # raw event count (player side)
     opp_events: int  # raw event count (opponent side)
     # Typical-range bounds from the tactic zone registry (per 100 games), via the zone TC
-    # (blitz/bullet read rapid, silently): symmetric ±IQR/2 around 0 (D-15).
+    # (blitz/bullet read rapid, silently): symmetric ±IQR/2 around 0.
     # 0.0 / 0.0 / False when the family-side has no viable band.
     zone_lo: float
     zone_hi: float
     has_zone: bool
-    # Phase 239 D-14: True when the 99% CI on delta excludes 0. With a band, only a
+    # True when the 99% CI on delta excludes 0. With a band, only a
     # significant cell outside the band gets a red/green verdict; without one
-    # (has_zone False, D-16) the cell is judged on this flag alone. The backend owns
+    # (has_zone False) the cell is judged on this flag alone. The backend owns
     # the test.
     significant: bool
 
 
 class TacticComparisonTc(BaseModel):
-    """One time control's tactic comparison (Phase 239 D-02/D-03).
+    """One time control's tactic comparison.
 
     tc: the time control bucket these bullets were computed over.
     analyzed_n: analyzed games of this TC after the current filter set.
     below_gate: True when analyzed_n < TACTIC_COMPARISON_GATE; the bullets are still
-                populated so the UI can decide what to show (D-03).
+                populated so the UI can decide what to show.
     bullets: always 38 entries: every family in FAMILY_TO_MOTIF_INTS order, missed
              before allowed.
     """
@@ -498,15 +492,15 @@ class TacticComparisonTc(BaseModel):
 
 
 class TacticComparisonResponse(BaseModel):
-    """Response for GET /api/library/tactic-comparison (Phase 126, Phase 239 D-02/D-00h).
+    """Response for GET /api/library/tactic-comparison.
 
     tcs: one entry per time control that the sidebar time-control filter allows and
          that has at least one analyzed game under the current filters, ordered
          bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted, so an empty
-         list means no analyzed games at all. Below-gate TCs keep their bullets
-         (D-03). No request parameter selects a TC: the switch is client-side.
+         list means no analyzed games at all. Below-gate TCs keep their bullets.
+         No request parameter selects a TC: the switch is client-side.
     Each TC carries all 19 families x 2 sides in fixed FAMILY_TO_MOTIF_INTS order,
-    missed before allowed. There is no ranking or top-N selection (D-00h).
+    missed before allowed. There is no ranking or top-N selection.
     analyzed_gate: minimum analyzed games per TC (library_service.TACTIC_COMPARISON_GATE),
         exposed so the frontend can render "X of N" without hardcoding the gate.
     """
@@ -516,12 +510,12 @@ class TacticComparisonResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Phase 135 — Tactic Line Explorer schema
+# Tactic Line Explorer schema
 # ---------------------------------------------------------------------------
 
 
 class TacticLinesResponse(BaseModel):
-    """PV walk data for the TacticLineExplorer (Phase 135, Plan 01).
+    """PV walk data for the TacticLineExplorer.
 
     Both orientations' SAN move lists, raw 0-based depths, motif strings, and
     the decision-position FEN for chess.js board initialization.
@@ -539,7 +533,7 @@ class TacticLinesResponse(BaseModel):
                   move at index 0, so the refutation punchline lands one index
                   deeper (at flaw_ply+1). The SAN ladder highlights that move.
 
-    Never exposes internal Zobrist hashes (CLAUDE.md V5 / T-135-03).
+    Never exposes internal Zobrist hashes (CLAUDE.md V5).
     """
 
     # Missed line: SAN from the decision position (flaw_ply PV).

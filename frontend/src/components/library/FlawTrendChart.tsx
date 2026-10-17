@@ -177,7 +177,7 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
                     type="button"
                     onClick={() => {
                       handleLegendClick(s.key);
-                      // A hidden series becomes shown (on), a shown one hidden (off). No series key (D-04).
+                      // A hidden series becomes shown (on), a shown one hidden (off). No series key.
                       trackFeature('toggle', { target: 'flaw-trend-legend', value: onOff(isHidden) });
                     }}
                     className={`inline-flex min-w-0 items-center gap-1.5 cursor-pointer ${isHidden ? 'opacity-50 line-through' : ''}`}

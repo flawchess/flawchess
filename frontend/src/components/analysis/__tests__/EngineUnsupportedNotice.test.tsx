@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * EngineUnsupportedNotice (SEED-158, 2026-09-07): the Maia and FlawChess cards
- * must explain the iOS gate instead of pulsing forever, and must render their
+ * EngineUnsupportedNotice: the Maia and FlawChess cards must explain the
+ * unsupported-device state instead of pulsing forever, and must render their
  * normal body in every other store status.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

@@ -1,6 +1,6 @@
 /**
  * analysisTactics — shared tactic-sideline helpers for the /analysis page
- * cluster (215 code review WR-05).
+ * cluster.
  *
  * `forkPlyForOrientation`, `flawKey`, `bestSanFromPv` and the `TacticRef`/
  * `OpenLine` types previously existed as up to four independent copies
@@ -10,8 +10,8 @@
  * time as "hooks must not depend on page-level modules," but one copy
  * (`useAnalysisBoardArrows.ts`'s `forkPlyForOrientation`) had already
  * textually diverged from the other three (logically equivalent today, but
- * a silent drift risk the moment the fork rule changes again — the Quick
- * 260628-pu2 UAT history shows this rule HAS changed once already), and
+ * a silent drift risk the moment the fork rule changes again — this rule has
+ * changed before), and
  * `flawKey` is the `openLines` Map key, so three independent copies of a
  * key-format function was a lookup-miss bug waiting to happen. This module
  * is a lib file (not a page or hook), so every reader — page, hook, or
@@ -31,7 +31,7 @@ export type TacticRef = { ply: number; orientation: 'missed' | 'allowed' };
 export type OpenLine = { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' };
 
 /**
- * Main-line ply the tactic PV sideline forks from, by orientation (Quick 260628-pu2 UAT).
+ * Main-line ply the tactic PV sideline forks from, by orientation.
  *
  * Missed lines fork at the pre-flaw DECISION board (flawPly-1) and replay the
  * should-have-played PV. Allowed lines fork at the FLAW position itself (flawPly): the
@@ -44,7 +44,7 @@ export function forkPlyForOrientation(flawPly: number, orientation: 'missed' | '
 }
 
 /**
- * Stable key for a tactic line (Quick 260703-kyb multi-line state): identifies which
+ * Stable key for a tactic line (multi-line state): identifies which
  * flaw a chip / open line belongs to. Used as the openLines Map key and as an
  * activePvKeys entry so VariationTree can read chip "on" state by membership.
  */
@@ -54,7 +54,7 @@ export function flawKey(flaw: { ply: number; orientation: 'missed' | 'allowed' }
 
 /**
  * The engine's top-line first move (UCI) converted to SAN at `baseFen` — feeds
- * MovesByRatingChart's `bestSan` emphasis (Plan 06, SURF-01). Returns null for no
+ * MovesByRatingChart's `bestSan` emphasis. Returns null for no
  * PV yet or an illegal/malformed replay (never throws).
  */
 export function bestSanFromPv(baseFen: string, uci: string | null): string | null {

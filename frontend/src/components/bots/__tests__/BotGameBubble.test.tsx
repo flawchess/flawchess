@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /**
- * BotGameBubble.test.tsx — Phase 223 Plan 01 Task 2 (BOTVOICE-01/02,
- * Wave 0). Renders with a real persona from `PERSONA_REGISTRY` (not a
+ * BotGameBubble.test.tsx — renders with a real persona from `PERSONA_REGISTRY` (not a
  * fabricated object) so the avatar idiom is exercised for real; the copy
  * assertion compares against `botLineCopy`'s own return, never a
  * hard-coded string, so re-authored copy can never break this file.
@@ -56,10 +55,9 @@ describe('BotGameBubble — copy', () => {
   });
 
   it("keeps this persona's game-start line within the phone copy budget (BOT_LINE_MAX_CHARS)", () => {
-    // The exhaustive-over-every-persona budget test is Wave 0's
-    // `botGameCopy.test.ts` (a later plan); this is the single-persona
-    // sanity check that also gives `BOT_LINE_MAX_CHARS` a real consumer in
-    // this plan (knip flags an export with zero readers).
+    // The exhaustive-over-every-persona budget test lives in
+    // `botGameCopy.test.ts`; this is the single-persona
+    // sanity check on the rendered bubble's copy.
     expect(botLineCopy('game-start', PERSONA.id).length).toBeLessThanOrEqual(BOT_LINE_MAX_CHARS);
   });
 
@@ -75,7 +73,7 @@ describe('BotGameBubble — copy', () => {
   });
 });
 
-describe('BotGameBubble — silent state (Phase 223 UAT)', () => {
+describe('BotGameBubble — silent state', () => {
   it('hides the bubble box (invisible, still laid out) when there is no line and no actions', () => {
     render(<BotGameBubble persona={PERSONA} line={null} />);
     expect(screen.getByTestId('bot-game-bubble-box').className).toContain('invisible');

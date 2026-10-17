@@ -1,9 +1,9 @@
 import type { ImpersonationContext } from '@/types/admin';
 import type { Platform, TimeControl } from '@/types/api';
 
-/** Provenance of a recent-games-derived current-strength estimate (Quick
- * 260811-u11, SEED-147). `converted` is False only for a native Lichess
- * blitz rung; every other rung was mapped onto the Lichess blitz scale. */
+/** Provenance of a recent-games-derived current-strength estimate.
+ * `converted` is False only for a native Lichess blitz rung; every other rung
+ * was mapped onto the Lichess blitz scale. */
 export interface CurrentStrengthRung {
   platform: Platform;
   time_control_bucket: TimeControl;
@@ -12,23 +12,22 @@ export interface CurrentStrengthRung {
   converted: boolean;
 }
 
-/** The opponent-matching current-strength estimate (Quick 260811-u11,
- * SEED-147), replacing `lichess_blitz_equivalent_rating`. `rung` is
- * non-null exactly when `source === 'recent_games'`. */
+/** The opponent-matching current-strength estimate. `rung` is non-null
+ * exactly when `source === 'recent_games'`. */
 export interface CurrentStrength {
   rating: number;
   source: 'recent_games' | 'rating_anchor';
   rung: CurrentStrengthRung | null;
 }
 
-/** Phase 234 (SEED-191): the server-decided milestone feedback ask. There is no
- * round field because D-02 keeps one copy for both rounds; the client only
- * renders when `active` is true (false for guests and impersonation). */
+/** The server-decided milestone feedback ask. There is no round field because
+ * one copy serves both rounds; the client only renders when `active` is true
+ * (false for guests and impersonation). */
 export interface FeedbackAskView {
   active: boolean;
 }
 
-/** Body of POST /users/me/feedback-ask (Phase 234). */
+/** Body of POST /users/me/feedback-ask. */
 export type FeedbackAskAction = 'view' | 'snooze' | 'done';
 
 export interface UserProfile {
@@ -43,23 +42,21 @@ export interface UserProfile {
   lichess_game_count: number;
   chess_com_last_sync_at: string | null;
   lichess_last_sync_at: string | null;
-  // D-22: populated by backend when the request carries an impersonation JWT.
-  // Frontend uses this to render the header pill (Plan 05).
+  // Populated by backend when the request carries an impersonation JWT.
+  // Frontend uses this to render the header pill.
   impersonation: ImpersonationContext | null;
-  // BETA-01: beta feature flag (e.g. Endgame Insights in v1.11). Default false; flipped via direct DB op.
+  // Beta feature flag (e.g. Endgame Insights). Default false; flipped via direct DB op.
   beta_enabled: boolean;
-  // Phase 230 D-16: opt-out from the weekly Train leaderboards, written via PUT /users/me/profile.
+  // Opt-out from the weekly Train leaderboards, written via PUT /users/me/profile.
   leaderboard_hidden: boolean;
-  // Quick 260811-u11 (SEED-147): the opponent-matching current-strength
-  // estimate, replacing `lichess_blitz_equivalent_rating`. Null for guests,
-  // for users with no anchor at all, and for users with anchors only in
-  // non-blitz buckets and no qualifying recent games — the frontend falls
-  // back to 1500. UI DEFAULT ONLY — never fed into bot move selection
-  // (BOT-03).
+  // The opponent-matching current-strength estimate. Null for guests, for
+  // users with no anchor at all, and for users with anchors only in non-blitz
+  // buckets and no qualifying recent games — the frontend falls back to 1500.
+  // UI DEFAULT ONLY — never fed into bot move selection.
   current_strength: CurrentStrength | null;
-  // Phase 234 (SEED-191): distinct UTC activity days up to and including today,
-  // the number quoted in the ask copy.
+  // Distinct UTC activity days up to and including today, the number quoted
+  // in the ask copy.
   active_days: number;
-  // Phase 234 (SEED-191): whether Hilda's feedback ask should show right now.
+  // Whether Hilda's feedback ask should show right now.
   feedback_ask: FeedbackAskView;
 }

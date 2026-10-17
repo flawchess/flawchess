@@ -49,7 +49,7 @@ describe('deviceClass', () => {
     stubUserAgent(MAC_SAFARI_UA);
     stubTouchPoints(IPAD_TOUCH_POINTS);
     expect(telemetryClient()).toBe('mobile');
-    // The install-prompt gate is unchanged (D-06).
+    // The install-prompt gate is unchanged.
     expect(isMobileUserAgent()).toBe(false);
   });
 

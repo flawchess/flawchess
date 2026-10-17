@@ -11,8 +11,7 @@ function Drawer({
 
 /**
  * Wrapper around vaul's NestedRoot for rendering a nested bottom sheet inside
- * the FilterPanel drawer. Used by CustomRangeDrawer (Phase 92 Plan 05).
- * @knipignore — wired in Plan 05; no consumer exists yet in this wave.
+ * the FilterPanel drawer. Used by CustomRangeDrawer.
  */
 function DrawerNested({
   ...props

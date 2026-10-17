@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { trainApi } from '@/api/client';
 import type { MedalKey, UnclaimedMedalsResponse } from '@/types/train';
 
-/** Query key for GET /train/medals/unclaimed (Phase 231). */
+/** Query key for GET /train/medals/unclaimed. */
 export const TRAIN_UNCLAIMED_MEDALS_QUERY_KEY = ['train', 'medals', 'unclaimed'] as const;
 
 /**
@@ -30,7 +30,7 @@ export function useUnclaimedMedals(options: { enabled: boolean }) {
  * per-mount closed state, but a refetch has no reason to run here either.
  *
  * A failed claim changes nothing: the rows stay unclaimed server-side and the
- * medals reappear on the next visit (D-13). No Sentry capture here: the global
+ * medals reappear on the next visit. No Sentry capture here: the global
  * MutationCache.onError already reports failed mutations.
  */
 export function useClaimMedals() {

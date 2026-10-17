@@ -1,26 +1,22 @@
 """Repository for user_benchmark_percentiles: UPSERT + per-user SELECT.
 
-Phase 94.1 Plan 04 — implements the write/read path for materialised
+Implements the write/read path for materialised
 canonical-slice percentile rows.
 
-Phase 94.1 Plan 13 (gap-closure): ``n_cells_floor`` column dropped.
-Row existence implies above-floor — no row is written for below-floor
-(user, metric, tc) triples.
+The PK is (user_id, metric, time_control_bucket); a row exists only for
+above-floor cells, so no row is written for below-floor (user, metric, tc)
+triples. ``upsert_percentile`` takes ``time_control_bucket`` as a keyword arg
+and uses a 3-column index_elements on the ON CONFLICT clause.
+``fetch_for_user`` returns a nested dict:
+``dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]``.
 
-Phase 94.4 D-01: composite PK widens to
-(user_id, metric, time_control_bucket). ``upsert_percentile`` takes
-``time_control_bucket`` as a keyword arg and uses a 3-column index_elements
-on the ON CONFLICT clause. ``fetch_for_user`` returns a nested dict
-(RESEARCH Pattern 5 Option B): ``dict[CdfMetricId, dict[TimeControlBucket,
-PercentileRow]]``.
-
-Phase 94.4 D-08: ``PercentileRow`` gains ``n_games: int`` so the API shaper
-(Plan 05c) can compute the game-count-weighted mean of per-TC percentiles
-when producing aggregated page-level chips.
+``PercentileRow`` carries ``n_games: int`` so the API shaper can compute the
+game-count-weighted mean of per-TC percentiles when producing aggregated
+page-level chips.
 
 V4 Information Disclosure mitigation: ``fetch_for_user`` requires ``user_id``
-as a keyword argument. The caller in Plan 07 passes ``current_user.id`` from
-the FastAPI-Users dependency. Never accept ``user_id`` as a query parameter.
+as a keyword argument. Callers pass ``current_user.id`` from the FastAPI-Users
+dependency. Never accept ``user_id`` as a query parameter.
 """
 
 from __future__ import annotations
@@ -45,12 +41,12 @@ class PercentileRow:
     Used by ``fetch_for_user`` to return structured data with attribute access.
     Frozen dataclass (immutable) per CLAUDE.md internal-structured-data rule.
 
-    Row existence implies above-floor (Plan 13): callers need not check
-    ``n_cells_floor``; if the row is present, the user passed the floor.
+    Row existence implies above-floor: if the row is present, the user passed
+    the floor.
 
-    Phase 94.4 D-08: ``n_games`` is required on this dataclass — the API shaper
-    in Plan 05c needs it to compute a game-count-weighted mean of per-TC
-    percentiles when surfacing aggregated page-level ΔES chips.
+    ``n_games`` is required on this dataclass — the API shaper needs it to
+    compute a game-count-weighted mean of per-TC percentiles when surfacing
+    aggregated page-level ΔES chips.
     """
 
     value: float
@@ -82,11 +78,11 @@ async def upsert_percentile(
     produce no row — callers must skip the upsert when the per-(metric, tc)
     compute returns None.
 
-    Phase 94.4 D-01: the PK now includes ``time_control_bucket``, so the
-    index_elements on the ON CONFLICT clause widens from 2 to 3 columns. A
-    single user has at most one row per (metric, tc) cell.
+    The PK includes ``time_control_bucket``, so the index_elements on the ON
+    CONFLICT clause has 3 columns. A single user has at most one row per
+    (metric, tc) cell.
 
-    Phase 94.2 (D-9-amend) / 94.4 D-08: the ``n_games`` parameter is required
+    The ``n_games`` parameter is required
     and participates in both the insert values and the on-conflict update so
     refreshed UPSERTs replace the prior count. See
     ``UserBenchmarkPercentile`` class docstring for the per-metric mapping.
@@ -94,7 +90,7 @@ async def upsert_percentile(
     Args:
         session: AsyncSession. Caller commits.
         user_id: Internal user PK.
-        metric: One of the 8 CdfMetricId values (Phase 94.4 D-13).
+        metric: A CdfMetricId value.
         time_control_bucket: One of bullet/blitz/rapid/classical.
         value: User's pooled metric value (above-floor by construction).
         n_games: Per-(metric, tc) pooled count.
@@ -136,9 +132,6 @@ async def has_any_rows(session: AsyncSession, *, user_id: int) -> bool:
     ``on_conflict_do_update`` set), so a row's presence is a post-commit signal
     with no Stage-B race against ``asyncio.create_task(compute_stage_b())``.
 
-    Uses a bounded-count query (``LIMIT 1``) rather than an unbounded scan or a
-    Python-side ``len(rows)``, so it exits after finding the first matching row.
-
     Args:
         session: AsyncSession.
         user_id: Authenticated user's internal PK. Keyword-only to match the
@@ -166,12 +159,11 @@ async def fetch_for_user(
     user's ID (from FastAPI-Users dep ``current_user.id``); never accept
     ``user_id`` as a query parameter from the client.
 
-    Phase 94.4 D-01: return shape is a nested dict per RESEARCH Pattern 5
-    Option B — ``result[metric][tc] = PercentileRow``. Missing outer keys
-    mean the user has no above-floor cell for that metric on any TC;
-    missing inner keys mean the user is below floor (or not yet computed)
-    for the (metric, tc) pair specifically. The chip suppresses naturally
-    when the nested lookup misses (Plan 13 gap-closure).
+    The return shape is a nested dict — ``result[metric][tc] = PercentileRow``.
+    Missing outer keys mean the user has no above-floor cell for that metric on
+    any TC; missing inner keys mean the user is below floor (or not yet
+    computed) for the (metric, tc) pair specifically. The chip suppresses
+    naturally when the nested lookup misses.
 
     Args:
         session: AsyncSession.

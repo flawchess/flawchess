@@ -46,7 +46,7 @@ describe('SquareMarkerGroup', () => {
     expect(nestedIcon.length).toBe(1);
   });
 
-  // Phase 172 (SEED-106 D-08): book marker on the board corner marker.
+  // Book marker on the board corner marker.
   it('renders the muted book badge with a BookOpen glyph for a book marker', () => {
     const { container } = renderMarker({ square: 'e4', book: true });
 
@@ -73,7 +73,7 @@ describe('SquareMarkerGroup', () => {
     expect(circle?.getAttribute('fill')).not.toBe(BOOK_MARKER_COLOR);
   });
 
-  // Phase 175 (SEED-108 D-01/D-02): great marker on the board corner marker.
+  // Great marker on the board corner marker.
   it('renders the blue great badge with a "!" glyph (GreatMoveIcon-equivalent) for a great marker', () => {
     const { container } = renderMarker({ square: 'e4', great: true });
 
@@ -110,7 +110,7 @@ describe('SquareMarkerGroup', () => {
     expect(circle?.getAttribute('fill')).not.toBe(BOOK_MARKER_COLOR);
   });
 
-  // Phase 237: the Train reveal dims badges outside the focused move.
+  // The Train reveal dims badges outside the focused move.
   it('puts the marker opacity on its root <g> (dim, never hide)', () => {
     const { container } = renderMarker({ square: 'e4', best: true, opacity: 0.32 });
     const root = container.querySelector('svg > g');

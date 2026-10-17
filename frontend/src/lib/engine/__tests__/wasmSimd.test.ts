@@ -1,5 +1,5 @@
 /**
- * wasmSimd.ts unit tests (Phase 213-01 D-13) — proves the probe returns a
+ * wasmSimd.ts unit tests — proves the probe returns a
  * plain boolean in every case (accepted, rejected, throwing, or absent) and
  * NEVER throws, since it runs synchronously at the top of every Maia
  * `ensureSpawned()` call, before any Worker is constructed.

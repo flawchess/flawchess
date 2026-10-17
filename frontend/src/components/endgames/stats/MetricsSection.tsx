@@ -14,7 +14,7 @@ interface MetricsSectionProps {
 }
 
 /**
- * Endgame Metrics (D-00d, D-00h): one card per material bucket for the selected
+ * Endgame Metrics: one card per material bucket for the selected
  * time control, every number from the ranked sample. The TC comes from the
  * shared selection store, so the switch here also switches every other section.
  */

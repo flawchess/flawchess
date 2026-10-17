@@ -1,9 +1,9 @@
 /**
- * expectedScoreToWhitePovCp table test (Phase 155 Plan 01, D-06 / DISPLAY-03).
+ * expectedScoreToWhitePovCp table test.
  *
  * Verifies the inverse-sigmoid conversion from a 0-1 root-STM expected score
  * (RankedLine.practicalScore) to a white-POV centipawn value, including the
- * mate-boundary guards (Pitfall 2 regression guard — a naive log-odds inversion
+ * mate-boundary guards (regression guard: a naive log-odds inversion
  * produces ±Infinity/NaN at es<=0 / es>=1).
  */
 

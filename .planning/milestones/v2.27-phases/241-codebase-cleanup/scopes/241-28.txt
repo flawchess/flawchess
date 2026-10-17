@@ -1,0 +1,10 @@
+frontend/src/hooks/useBotGame.ts
+frontend/src/hooks/useBotGameClock.ts
+frontend/src/hooks/useBotGameDrawOffer.ts
+frontend/src/hooks/useBotGameEngineDispatch.ts
+frontend/src/hooks/useBotGameMoves.ts
+frontend/src/hooks/useBotGameSnapshot.ts
+frontend/src/hooks/useBotGameVoice.ts
+frontend/src/hooks/useBotPersonaWins.ts
+frontend/src/hooks/useStoreBotGame.ts
+frontend/src/hooks/useWinCelebrationHold.ts

@@ -1,6 +1,5 @@
 /**
- * botLineTrigger.test.ts — Phase 223 Plan 01 Task 2 / Plan 04 Task 2
- * (BOTVOICE-01/02/03, Wave 0). Pure-module test, no jsdom directive.
+ * botLineTrigger.ts unit tests. Pure-module test, no jsdom directive.
  *
  * `baseInput` returns a fully-populated `ResolveBotLineInput` with every
  * flag off EXCEPT `botMovesSinceLastLine`, which defaults to
@@ -39,7 +38,7 @@ function baseInput(overrides: Partial<ResolveBotLineInput> = {}): ResolveBotLine
   };
 }
 
-describe('resolveBotLine — full precedence chain (BOTVOICE-02/03)', () => {
+describe('resolveBotLine — full precedence chain', () => {
   it('returns the game-start key when the greeting is pending and nothing else is', () => {
     expect(resolveBotLine(baseInput({ gameStartPending: true }))).toBe('game-start');
   });
@@ -64,22 +63,22 @@ describe('resolveBotLine — full precedence chain (BOTVOICE-02/03)', () => {
     expected: BotLineKey;
   }> = [
     {
-      name: 'a large positive swing yields the earned tease (BOTVOICE-03, D-03)',
+      name: 'a large positive swing yields the earned tease',
       overrides: { swingCp: 900 },
       expected: 'earned-tease',
     },
     {
-      name: 'a live regret latch that RECOVERED yields got-away (Phase 223 UAT)',
+      name: 'a live regret latch that RECOVERED yields got-away',
       overrides: { recoveryCp: BOT_LINE_SWING_THRESHOLD_CP },
       expected: 'got-away',
     },
     {
-      name: 'a live regret latch that did NOT recover yields nice-move (Phase 223 UAT)',
+      name: 'a live regret latch that did NOT recover yields nice-move',
       overrides: { recoveryCp: 0 },
       expected: 'nice-move',
     },
     {
-      name: 'a swing magnitude exceeding BOT_LINE_SWING_THRESHOLD_CP yields the earned tease (BOTVOICE-03)',
+      name: 'a swing magnitude exceeding BOT_LINE_SWING_THRESHOLD_CP yields the earned tease',
       overrides: { swingCp: BOT_LINE_SWING_THRESHOLD_CP + 50 },
       expected: 'earned-tease',
     },
@@ -89,27 +88,27 @@ describe('resolveBotLine — full precedence chain (BOTVOICE-02/03)', () => {
       expected: 'earned-tease',
     },
     {
-      name: 'a pending first capture yields the first-capture key (BOTVOICE-02)',
+      name: 'a pending first capture yields the first-capture key',
       overrides: { firstCapturePending: true },
       expected: 'first-capture',
     },
     {
-      name: "the bot's own live outgoing draw offer yields the draw-offer key (BOTVOICE-02, D-12)",
+      name: "the bot's own live outgoing draw offer yields the draw-offer key",
       overrides: { drawOfferLive: true },
       expected: 'draw-offer',
     },
     {
-      name: 'a win outcome yields the bot-won key (BOTVOICE-02)',
+      name: 'a win outcome yields the bot-won key',
       overrides: { outcomeKind: 'win' },
       expected: 'bot-won',
     },
     {
-      name: 'a loss outcome yields the bot-lost key (BOTVOICE-02)',
+      name: 'a loss outcome yields the bot-lost key',
       overrides: { outcomeKind: 'loss' },
       expected: 'bot-lost',
     },
     {
-      name: 'a draw outcome yields the game-drawn key (BOTVOICE-02)',
+      name: 'a draw outcome yields the game-drawn key',
       overrides: { outcomeKind: 'draw' },
       expected: 'game-drawn',
     },
@@ -124,7 +123,7 @@ describe('resolveBotLine — full precedence chain (BOTVOICE-02/03)', () => {
   });
 });
 
-describe('resolveBotLine — swing arm edge cases (BOTVOICE-03, D-01/D-04)', () => {
+describe('resolveBotLine — swing arm edge cases', () => {
   it('yields no swing key for a null delta, and falls through to a lower-priority arm', () => {
     // The book window, a failed grade, an aborted turn, or a resumed game's
     // first reply all surface as `swingCp: null` — never treated as a
@@ -146,7 +145,7 @@ describe('resolveBotLine — swing arm edge cases (BOTVOICE-03, D-01/D-04)', () 
 
   it(
     'a swing AGAINST the bot never speaks from this resolver — it latches instead ' +
-      '(Phase 223 UAT: the bot must not announce its own blunder before the player takes it)',
+      '(the bot must not announce its own blunder before the player takes it)',
     () => {
       expect(resolveBotLine(baseInput({ swingCp: -900 }))).toBeNull();
       // ...and it still lets a lower-priority arm through, so latching costs
@@ -164,7 +163,7 @@ describe('resolveBotLine — swing arm edge cases (BOTVOICE-03, D-01/D-04)', () 
 
   it(
     'an Attacker persona sacrifice — a flat delta despite the bot being down material — ' +
-      'yields no key at all (D-01: the signal is the score, never the captured material)',
+      'yields no key at all (the signal is the score, never the captured material)',
     () => {
       expect(resolveBotLine(baseInput({ swingCp: 0 }))).toBeNull();
     },
@@ -227,7 +226,7 @@ describe('resolveBotLine — pacing (Claude Discretion: BOT_LINE_MIN_SPACING_MOV
     ).toBeNull();
   });
 
-  it('never paces the settle of a live regret latch (223-REVIEW CR-01)', () => {
+  it('never paces the settle of a live regret latch', () => {
     // The hook clears the latch on this grade either way, so a paced settle
     // was a dropped acknowledgement, not a delayed one.
     expect(

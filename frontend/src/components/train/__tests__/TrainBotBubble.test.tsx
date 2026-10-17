@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 /**
- * TrainBotBubble.test.tsx — Phase 222 Plan 01 Task 2 (D-07).
- *
  * The presentational contract: avatar (real-art vs emoji fallback), name,
  * actions slot, testids, and `data-state`/`data-nudge`. Asserts the nudge
  * through the copy swap and the `data-nudge` attribute, never through the
- * animation class (RESEARCH Finding G / Pitfall 5) — an animation-class
+ * animation class — an animation-class
  * assertion would be environment-dependent on whether `window.matchMedia`
  * is stubbed, which this isolated component test deliberately does not do.
  */
@@ -85,10 +83,10 @@ describe('TrainBotBubble', () => {
     expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
-  // Plan 06 UAT (SC1 during the intro): `resolveBubbleState` ranks `intro`
+  // During the intro, `resolveBubbleState` ranks `intro`
   // above `drop-nudge`, so a drop while Hilda's guess step is up keeps the
-  // intro copy — the bubble must still pulse (plan 04: "nudges the bubble
-  // without destroying the current intro step"). No matchMedia stub in this
+  // intro copy — the bubble must still pulse (it nudges the bubble
+  // without destroying the current intro step). No matchMedia stub in this
   // file, so `prefersReducedMotion()` is false and the class is observable.
   it('pulses on an intro-state nudge without the nudge border or data-nudge', () => {
     const { container } = render(
@@ -143,7 +141,7 @@ describe('TrainBotBubble', () => {
     expect(screen.getByTestId('train-bot-bubble').getAttribute('data-nudge')).toBeNull();
   });
 
-  it('re-keys on nudgeNonce so a repeated nudge remounts the bubble element (RESEARCH Pitfall 3)', () => {
+  it('re-keys on nudgeNonce so a repeated nudge remounts the bubble element', () => {
     const { rerender } = render(
       <TrainBotBubble persona={PERSONA} state="drop-nudge" nudgeNonce={1}>
         Decide first, then move.
@@ -165,7 +163,7 @@ describe('TrainBotBubble', () => {
   });
 });
 
-// ─── TrainBotStepper (Phase 222 Plan 01 Task 3) ────────────────────────────
+// ─── TrainBotStepper ────────────────────────────
 
 describe('TrainBotStepper', () => {
   it('renders a Next button on every step except the last, calling onNext when clicked', () => {

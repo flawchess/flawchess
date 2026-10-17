@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * EvalCoverageBadge tests (Phase 118-03 UAT fixes, updated Phase 119-03).
+ * EvalCoverageBadge tests.
  *
  * Covers the states:
  * 1. Normal: "N of M analyzed" count render
@@ -11,8 +11,8 @@
  * 6. High-coverage guest: CTA hidden
  * 7. InfoPopover trigger rendered
  *
- * Note: "· K in progress" text and the inFlightCount prop were removed in
- * Phase 119-03. The CPU icon pulse is now the sole "analysis running" signal.
+ * Note: "· K in progress" text and the inFlightCount prop no longer exist.
+ * The CPU icon pulse is the sole "analysis running" signal.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';

@@ -4,7 +4,7 @@ import { Switch as SwitchPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 /**
- * Hand-rolled Switch primitive (Phase 155 Plan 01, D-03) — mirrors checkbox.tsx's
+ * Hand-rolled Switch primitive — mirrors checkbox.tsx's
  * hand-rolled Radix-wrapper convention (data-slot + cn() className merge + unstyled
  * {...props} passthrough) rather than pulling `npx shadcn add switch`, to match
  * every other ui/ primitive and avoid re-theming a shadcn preset.

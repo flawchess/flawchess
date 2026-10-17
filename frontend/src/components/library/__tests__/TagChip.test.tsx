@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * TagChip vitest suite — tests Plan 110-05 D-05/D-06/D-07 requirements:
+ * TagChip vitest suite:
  *
  * 1. Hover/tap opens the Radix popover; body shows bold tag-name + definition substring
  * 2. Active-filter ring is applied when the tag matches the useFlawFilterStore state
@@ -59,7 +59,7 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('TagChip', () => {
-  describe('D-06: no navigation', () => {
+  describe('no navigation', () => {
     it('renders as a <span> element (not <button>) — Popover trigger, not nav', () => {
       renderTagChip('miss', 1);
       const chip = screen.getByTestId('chip-miss-1');
@@ -83,7 +83,7 @@ describe('TagChip', () => {
     });
   });
 
-  describe('D-07: popover with bold tag heading + definition', () => {
+  describe('popover with bold tag heading + definition', () => {
     it('chip carries the aria-label "Tag: {tag} — {definition-prefix}"', () => {
       renderTagChip('miss', 2);
       const chip = screen.getByTestId('chip-miss-2');
@@ -125,7 +125,7 @@ describe('TagChip', () => {
     });
   });
 
-  describe('D-05: active-filter ring', () => {
+  describe('active-filter ring', () => {
     it('applies ring class when tag is in useFlawFilterStore.tags', () => {
       mockFlawFilterState = { severity: ['blunder', 'mistake'], tags: ['reversed'] };
       renderTagChip('reversed', 11);

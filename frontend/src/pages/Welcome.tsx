@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
 
-// ─── Four-delta copy (Phase 224 S-5) ──────────────────────────────────────────
+// ─── Four-delta copy ──────────────────────────────────────────
 
 const INTRO = 'Everything stays completely free.';
 
@@ -19,17 +19,16 @@ const DELTAS = [DELTA_1, DELTA_2, DELTA_3, DELTA_4];
 
 // ─── WelcomePage ──────────────────────────────────────────────────────────────
 
-// 224 UAT round 1: on phones the two buttons share one row (Back left, Sign
+// On phones the two buttons share one row (Back left, Sign
 // up free right) at the 48px Train touch height; desktop keeps the compact
 // auto-width buttons.
 const WELCOME_BUTTON_CLASS = cn(TRAIN_BUTTON_CLASS, 'flex-1 sm:flex-none');
 
 /**
- * Reachable only from a "What changes?" button or a typed URL (Phase 224 S-1, D-05) —
- * never a forced redirect. DISCRETION (this phase): a registered visitor
- * renders the same four deltas with no sign-up button and no redirect; a
- * dead-end redirect on a page reachable only by a typed URL is worse than an
- * honest explanation.
+ * Reachable only from a "What changes?" button or a typed URL — never a forced
+ * redirect. A registered visitor renders the same four deltas with no sign-up
+ * button and no redirect; a dead-end redirect on a page reachable only by a
+ * typed URL is worse than an honest explanation.
  */
 export function WelcomePage() {
   const navigate = useNavigate();

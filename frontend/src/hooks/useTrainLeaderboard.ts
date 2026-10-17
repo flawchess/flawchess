@@ -3,7 +3,7 @@ import { trainApi } from '@/api/client';
 import type { TrainLeaderboardResponse } from '@/types/train';
 
 /**
- * Query key for GET /train/leaderboard (Phase 230). The landing variant uses
+ * Query key for GET /train/leaderboard. The landing variant uses
  * it as-is; the score-screen variant extends it with `'session'` and the id,
  * so invalidating this prefix refreshes both (TrainDevClock, the week rollover).
  */
@@ -23,7 +23,7 @@ interface UseTrainLeaderboardOptions {
  *
  * Landing variant: `refetchOnMount: 'always'`. Done after a session unmounts
  * and remounts the landing, so every return shows fresh standings without the
- * page having to invalidate anything (RESEARCH Pattern 6). Score-screen
+ * page having to invalidate anything. Score-screen
  * variant: staleTime 0 and its own key, because the before/after rank is only
  * meaningful when read at the same moment as the finished session.
  *

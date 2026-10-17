@@ -15,7 +15,7 @@ interface GapRowProps {
 /**
  * One metric row: the label, then the gap bar with the hint on the words line and the
  * popover trigger after the words. From md up the hint sits top left, level with the words,
- * above a full-width bar. The bar owns the verdict and its significance gate (D-14).
+ * above a full-width bar. The bar owns the verdict and its significance gate.
  */
 export function GapRow({ label, hint, cell, popover, testId }: GapRowProps) {
   return (

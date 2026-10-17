@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * useAnalysisEngineLines — focused unit test for the `qualityBySanWithGem`
- * memo's WAIT-FOR-COMPLETE guard (Phase 219-03, D-12, T-219-12). The rest of
+ * memo's WAIT-FOR-COMPLETE guard. The rest of
  * this hook's reconciliation surface is exercised indirectly through
  * Analysis.test.tsx; this file exists specifically to prove the
  * `maia.isLadderComplete` gate on the live gem/great classification path is
@@ -88,15 +88,15 @@ function baseOptions(isLadderComplete: boolean): UseAnalysisEngineLinesOptions {
     maia: baseMaia(isLadderComplete),
     grading: baseGrading(),
     pinnedEloForMover: () => 1500,
-    storedTierByPly: new Map(),
+    storedGemGreatByPly: new Map(),
     gameHasStoredBestMoveData: false,
     fcLineCount: DEFAULT_LINES,
     sfRankCount: DEFAULT_LINES,
   };
 }
 
-describe('useAnalysisEngineLines — qualityBySanWithGem (Phase 219-03, D-12)', () => {
-  it('LOAD-BEARING (T-219-12): an 11-rung coarse result (isLadderComplete: false) never gets live gem/great classification', () => {
+describe('useAnalysisEngineLines — qualityBySanWithGem', () => {
+  it('LOAD-BEARING: an 11-rung coarse result (isLadderComplete: false) never gets live gem/great classification', () => {
     const { result } = renderHook(() => useAnalysisEngineLines(baseOptions(false)));
 
     expect(result.current.reconciledBestSan).toBe('Nf3');
@@ -113,7 +113,7 @@ describe('useAnalysisEngineLines — qualityBySanWithGem (Phase 219-03, D-12)', 
     expect(result.current.qualityBySanWithGem.get('Nf3')?.quality).toBe('gem');
   });
 
-  it('WR-02 fix (Phase 219 review): a DB-authoritative stored gem/great tier applies even while the ladder is incomplete (Maia-independent, Phase 175)', () => {
+  it('a DB-authoritative stored gem/great tier applies even while the ladder is incomplete (Maia-independent)', () => {
     // A two-node mainline: currentNodeId is the root move, the next mainline
     // ply (index 1) is the reconciled-best candidate ('Nf3') the user played.
     const rootNodeId: NodeId = 0;
@@ -125,7 +125,7 @@ describe('useAnalysisEngineLines — qualityBySanWithGem (Phase 219-03, D-12)', 
         { id: nextNodeId, san: 'Nf3', fen: START_FEN, from: 'g1', to: 'f3', parentId: rootNodeId },
       ],
     ]);
-    const storedTierByPly = new Map<number, { tier: 'gem' | 'great'; maiaProb: number }>([
+    const storedGemGreatByPly = new Map<number, { tier: 'gem' | 'great'; maiaProb: number }>([
       [1, { tier: 'gem', maiaProb: 0.01 }],
     ]);
 
@@ -135,7 +135,7 @@ describe('useAnalysisEngineLines — qualityBySanWithGem (Phase 219-03, D-12)', 
       nodes,
       mainLine: [rootNodeId, nextNodeId],
       isOnMainLine: () => true,
-      storedTierByPly,
+      storedGemGreatByPly,
       gameHasStoredBestMoveData: true,
     };
     const { result } = renderHook(() => useAnalysisEngineLines(options));
@@ -178,7 +178,7 @@ function fourCandidateGrading(): StockfishGradingEngineState {
   return grading;
 }
 
-describe('useAnalysisEngineLines — display counts follow the settings (Phase 228, D-16)', () => {
+describe('useAnalysisEngineLines — display counts follow the settings', () => {
   it('reconciledRankedLines is sliced to fcLineCount, in rankedLines order', () => {
     const flawChessEngine = { ...baseFlawChessEngine(), rankedLines: FOUR_RANKED_LINES };
     const three = renderHook(() =>

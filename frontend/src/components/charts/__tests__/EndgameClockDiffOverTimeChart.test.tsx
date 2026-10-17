@@ -135,7 +135,7 @@ describe('EndgameClockDiffOverTimeChart', () => {
     ).toBeTruthy();
   });
 
-  it('renders exactly one grey typical-band ReferenceArea (D-00f)', () => {
+  it('renders exactly one grey typical-band ReferenceArea', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );
@@ -173,7 +173,7 @@ describe('EndgameClockDiffOverTimeChart', () => {
     expect(computeYDomain([-45, 5])).toEqual([-45, 30]);
   });
 
-  it('draws a neutral line with zone-colored dots (238 UAT)', () => {
+  it('draws a neutral line with zone-colored dots', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );

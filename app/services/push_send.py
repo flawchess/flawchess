@@ -1,48 +1,27 @@
 """Web Push send path: VAPID signing + aes128gcm encryption + the outbound POST.
 
-Phase 201 (PUSH-01/PUSH-02/PUSH-03/PUSH-04, D-01/D-02/D-03/D-04).
-`app.services.push_crypto` (D-01) does the VAPID JWT signing and RFC 8291
+`app.services.push_crypto` does the VAPID JWT signing and RFC 8291
 aes128gcm payload encryption in-process; this module owns the actual
-`httpx.AsyncClient` POST to the browser-supplied endpoint -- the whole point
-of D-01 is that no blocking HTTP client (e.g. `requests`, which PUSH-04
-forbids on this path) ever touches the event loop.
+`httpx.AsyncClient` POST to the browser-supplied endpoint. No blocking HTTP
+client (e.g. `requests`) may ever touch the event loop on this path.
 
-D-03: an unset VAPID keypair means push is gracefully disabled everywhere in
+An unset VAPID keypair means push is gracefully disabled everywhere in
 this module -- never an exception at import time, never a startup abort.
 
-D-04: only a 404/410 response means "prune this subscription" (PUSH-02).
-Every other non-2xx status, and every transport error, is logged +
-`sentry_sdk.capture_exception`-ed and left alone -- no retry, no deletion.
+Only a 404/410 response means "prune this subscription". The prune branch logs
+a warning and sends an info-level `capture_message` (never `capture_exception`:
+404/410 is the normal end of a subscription's life, so do not restore an
+error-level capture). Its context carries `push_host` (the endpoint's HOST
+only, via `urlsplit().hostname` -- never the path, which is a bearer
+capability and must never reach Sentry or a log record), `user_agent`,
+`user_id` and the subscription id; the message is a fixed literal. Every other
+non-2xx status and every transport error is logged and
+`sentry_sdk.capture_exception`-ed, with no retry and no deletion.
 
-SEED-135 D1 (2026-08-03): the prune branch itself is now ALSO logged +
-captured before the row is deleted -- a prod incident had to be diagnosed
-entirely by inference because this branch, uniquely, deletes state while
-emitting nothing. The capture never carries the endpoint (a bearer
-capability) or any variable data in its message; only the status code and
-the (about-to-be-deleted) subscription id go into `set_context`.
-
-SEED-138 (2026-08-05): D1's first real firing (Sentry FLAWCHESS-9J) showed
-the capture was mis-graded and un-diagnosable. A 404/410 is the *designed*
-end of a subscription's life (PWA removed, browser reinstall, token
-rotation) -- not an error -- so the prune branch now calls
-`sentry_sdk.capture_message(..., level="info")` instead of synthesizing a
-RuntimeError; `capture_exception` is NEVER called on this path. Do not
-"restore" the error-level capture. The context also now carries `push_host`
-(the endpoint's HOST only, via `urlsplit().hostname` -- never the path,
-which remains the bearer capability and must never reach Sentry or a log
-record) plus the about-to-be-deleted row's `user_agent` and `user_id`, so a
-future prune can actually be diagnosed instead of proven only by
-elimination.
-
-Phase 204 D5 (2026-08-03): `_PUSH_TTL_SECONDS = 0` was wrong. D-08 already
-declares the scheduler's own hour gate unbounded within the local day --
-asking the push service for zero retention contradicted that stated bound,
-and a discarded (TTL-0, device unreachable) message returns 201 exactly
-like a real delivery, making "sent" mean nothing measurable. `ttl_seconds`
-is now a keyword-only, defaulted parameter (mirroring D1's `subscription_id`
-threading) computed once by the caller via
-`train_scheduler.seconds_until_end_of_local_day` and passed down -- this
-module still does no timezone arithmetic of its own.
+`ttl_seconds` is computed by the caller
+(`train_scheduler.seconds_until_end_of_local_day`); this module does no
+timezone arithmetic. Do not use a TTL of 0: a discarded TTL-0 message returns
+201 exactly like a delivery, so "sent" would mean nothing measurable.
 
 VAPID key rotation: see `docs/push-vapid-rotation-runbook.md` for the full
 operator procedure (when to rotate, what breaks, and how devices recover).
@@ -70,16 +49,15 @@ logger = logging.getLogger(__name__)
 _VAPID_EXPIRATION_SECONDS = 12 * 60 * 60
 
 # Status codes meaning "the push service will never accept this endpoint
-# again" (PUSH-02, RFC 8030 Sec. 7) -- everything else is either a bug in our
-# own send path (400/401/403/413) or transient (429/5xx), per D-04.
+# again" (RFC 8030 Sec. 7) -- everything else is either a bug in our
+# own send path (400/401/403/413) or transient (429/5xx).
 _PRUNE_STATUS_CODES = frozenset({404, 410})
 
 # Bounded so one slow/unreachable push service can never stall a fan-out.
 _PUSH_TIMEOUT_SECONDS = 10.0
 
-# RFC 8030 Sec. 5.2 TTL. Phase 204 D5/D-02: this default exists ONLY so a
-# caller that omits `ttl_seconds` cannot silently reintroduce the
-# discard-immediately bug that `_PUSH_TTL_SECONDS = 0` used to be -- a TTL of
+# RFC 8030 Sec. 5.2 TTL. This default exists ONLY so a caller that omits
+# `ttl_seconds` cannot silently send a TTL of 0 -- a TTL of
 # 0 tells the push service to deliver only if the device is reachable right
 # now, and a discarded message returns 201 just like a real delivery,
 # indistinguishable server-side. The one production caller
@@ -101,7 +79,7 @@ class PushFanoutResult:
 
 
 def is_push_configured() -> bool:
-    """True only when both VAPID key settings are non-empty (D-03)."""
+    """True only when both VAPID key settings are non-empty."""
     return bool(settings.VAPID_PUBLIC_KEY) and bool(settings.VAPID_PRIVATE_KEY)
 
 
@@ -111,7 +89,7 @@ def application_server_key() -> str | None:
     Derived from `VAPID_PUBLIC_KEY` at call time rather than stored as a
     fourth env var -- a PEM and a hand-pasted base64url value that drift
     apart would silently 403 every send. Returns None when push is
-    unconfigured (D-03).
+    unconfigured.
     """
     if not settings.VAPID_PUBLIC_KEY:
         return None
@@ -119,7 +97,7 @@ def application_server_key() -> str | None:
 
 
 def _push_host(endpoint: str) -> str | None:
-    """The endpoint's host only (SEED-138 D-02) -- safe to report to Sentry
+    """The endpoint's host only -- safe to report to Sentry
     because the bearer capability is the endpoint PATH, not the host."""
     return urlsplit(endpoint).hostname
 
@@ -127,7 +105,7 @@ def _push_host(endpoint: str) -> str | None:
 def push_http_client() -> httpx.AsyncClient:
     """Build the outbound client for push sends.
 
-    `follow_redirects=False` is an SSRF mitigation (T-201-01, ASVS V4): the
+    `follow_redirects=False` is an SSRF mitigation (ASVS V4): the
     endpoint is client-supplied, so an outbound redirect must never be
     chased to a different host.
     """
@@ -148,38 +126,33 @@ async def send_to_subscription(
 ) -> bool:
     """Send one push message. Returns True if the subscription should be pruned.
 
-    D-04: only 404/410 return True (prune). Every other non-2xx is logged +
+    Only 404/410 return True (prune). Every other non-2xx is logged +
     reported to Sentry and left alone -- no retry, no deletion.
 
     Args:
         subscription_id: The row's PK, threaded in so the prune capture's
-            `set_context` can identify which row was deleted (SEED-135 D1)
-            without ever carrying the endpoint. Keyword-only and defaulted to
-            None rather than required -- `send_to_subscription` is exported
-            in `__all__` and called directly by 10 tests in
-            tests/test_push_send.py with the pre-D1 signature. Must be set
-            BEFORE `capture_exception` fires (setting it at the
-            `send_to_user` call site would attach to a later event), which
-            is why it is threaded in rather than set outside.
+            `set_context` can identify which row was deleted without ever
+            carrying the endpoint. Keyword-only and defaulted to None so
+            direct callers need not pass it. It must be in hand when the
+            prune capture fires (setting it at the `send_to_user` call site
+            would attach to a later event), which is why it is threaded in
+            rather than set outside.
         user_agent: The device's stored User-Agent, threaded in so the prune
-            capture's `set_context` can identify WHICH device died (SEED-138)
+            capture's `set_context` can identify WHICH device died
             -- `send_to_user` deletes the row moments later, taking
-            `user_agent` with it. Keyword-only and defaulted to None for the
-            same backward-compatibility reason as `subscription_id`.
+            `user_agent` with it. Likewise keyword-only and defaulted to None.
         user_id: The subscription's owning user's internal PK, threaded in
-            for the same SEED-138 diagnosability reason as `user_agent`.
+            for the same diagnosability reason as `user_agent`.
             Keyword-only and defaulted to None.
         ttl_seconds: RFC 8030 Sec. 5.2 `Ttl` header value, in seconds.
-            Keyword-only and defaulted (Phase 204 D-02) for the same
-            backward-compatibility reason as `subscription_id` -- the
-            existing test callers must keep compiling unmodified. The
+            Likewise keyword-only and defaulted. The
             CALLER computes this value; this module never derives it. Only
             `train_reminder_service._process_candidate` passes a real
             value (via `train_scheduler.seconds_until_end_of_local_day`);
             every other caller gets the module default.
     """
     if not is_push_configured():
-        return False  # D-03: VAPID unconfigured, no-op
+        return False  # VAPID unconfigured, no-op
     encrypted = push_crypto.encrypt_aes128gcm(
         payload=json.dumps(payload).encode(), p256dh=p256dh, auth=auth
     )
@@ -204,16 +177,14 @@ async def send_to_subscription(
         return False
 
     if resp.status_code in _PRUNE_STATUS_CODES:
-        # SEED-135 D1: this branch permanently deletes a push_subscriptions
-        # row (via send_to_user below) -- it must never be the one silent
-        # branch. The `logger.warning` line is what satisfies D1's
-        # never-delete-state-silently requirement.
+        # This branch permanently deletes a push_subscriptions row (via
+        # send_to_user below), so it must never be silent: the `logger.warning`
+        # line below makes the deletion visible.
         #
-        # SEED-138 (2026-08-05): a 404/410 is normal device lifecycle (PWA
-        # removed, browser reinstall, token rotation), not an error, so this
-        # is graded `level="info"` via `capture_message` -- never
-        # `capture_exception`. The fixed literal string is unchanged so the
-        # existing Sentry issue keeps its grouping. The context carries
+        # A 404/410 is normal device lifecycle (PWA removed, browser
+        # reinstall, token rotation), not an error, so this is graded
+        # `level="info"` via `capture_message` -- never `capture_exception`.
+        # The fixed literal string keeps the existing Sentry issue's grouping. The context carries
         # `push_host` (HOST ONLY, via `_push_host()` -- never the endpoint
         # PATH, which remains the bearer capability and must never reach
         # Sentry or a log record) plus `user_agent`/`user_id`, read here
@@ -237,7 +208,7 @@ async def send_to_subscription(
     # endpoint), so a 3xx arrives here as an unfollowed redirect and the message
     # was NOT delivered. A >= 400 bound let 3xx fall through and return False,
     # making a silent non-delivery indistinguishable from a real 201.
-    if resp.status_code >= 300:  # 3xx unfollowed redirect + 400/401/403/413/429/5xx per D-04
+    if resp.status_code >= 300:  # 3xx unfollowed redirect + 400/401/403/413/429/5xx
         logger.warning("Push send failed with status %d", resp.status_code)
         sentry_sdk.set_tag("source", "push_send")
         sentry_sdk.set_context("push_send", {"status_code": resp.status_code})
@@ -252,7 +223,7 @@ async def send_to_user(
     payload: dict[str, object],
     ttl_seconds: int = _DEFAULT_PUSH_TTL_SECONDS,
 ) -> PushFanoutResult:
-    """Fan `payload` out to every one of `user_id`'s live subscriptions (D-05).
+    """Fan `payload` out to every one of `user_id`'s live subscriptions.
 
     Opens ONE `push_http_client()` for the whole fan-out (connection pooling
     across a user's devices). Iterates subscriptions sequentially -- never
@@ -268,7 +239,7 @@ async def send_to_user(
             `app.services.train_reminder_service.build_reminder_payload`).
         ttl_seconds: RFC 8030 Sec. 5.2 `Ttl` header value, threaded straight
             into every `send_to_subscription` call in the fan-out below.
-            Keyword-only and defaulted (Phase 204 D-02), same contract as
+            Keyword-only and defaulted, same contract as
             `send_to_subscription`'s own `ttl_seconds`. This module NEVER
             computes it -- the value is derived by the CALLER, which already
             holds the user's timezone and the current instant; `push_send`
@@ -310,7 +281,7 @@ async def send_to_user(
                 )
                 pruned += 1
             # else: either delivered, or a non-prune failure already logged
-            # + captured inside send_to_subscription (D-04: leave it alone).
+            # + captured inside send_to_subscription (leave it alone).
     await session.commit()
     return PushFanoutResult(attempted=attempted, pruned=pruned, failed=failed)
 

@@ -73,7 +73,7 @@
 }
 .activity-dash .seg button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow)}
 .activity-dash .seg button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
-/* Custom date range inputs (Quick 260920-frk) live in their own .seg pill
+/* Custom date range inputs live in their own .seg pill
    next to the preset one, so they inherit the same font/size/padding scale
    as the preset buttons rather than the browser's native date-input chrome. */
 .activity-dash .seg input[type="date"]{

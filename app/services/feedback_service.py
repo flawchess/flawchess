@@ -24,7 +24,7 @@ _ELO_FLOOR = 800
 
 
 def elo_bucket(rating: int) -> int | None:
-    """Map an integer rating to the nearest ELO bucket anchor.
+    """Map an integer rating to its ELO bucket floor (the highest anchor at or below it).
 
     Mirrors the SQL CASE WHEN expression in canonical_slice_sql.elo_bucket_expr:
     < 800 → None (sub-floor); <1200 → 800; <1600 → 1200; <2000 → 1600;
@@ -41,16 +41,15 @@ def elo_bucket(rating: int) -> int | None:
 async def push_sentry_signal(session: AsyncSession, user: User, data: FeedbackCreate) -> None:
     """Derive cohort context from the authenticated user and emit a Sentry push signal.
 
-    Uses capture_message (non-exception, D-05) with a static message string.
+    Uses capture_message (non-exception) with a static message string.
     Variable data goes in tags (filterable: source/feedback_source/platform/elo_bucket) and
     set_context (structured: user_id/page_url/rating). Never embed variables
-    in the message string — that would fragment Sentry grouping (CLAUDE.md rule,
-    Pitfall 2 from RESEARCH.md).
+    in the message string — that would fragment Sentry grouping (CLAUDE.md rule).
 
-    ELO bucket: highest anchor_rating across all TCs (ASSUMED A1 from RESEARCH.md).
+    ELO bucket: highest anchor_rating across all TCs.
     Platform: derived from user.chess_com_username / user.lichess_username.
     """
-    # Derive ELO bucket from the user's highest anchor across all time controls (A1)
+    # Derive ELO bucket from the user's highest anchor across all time controls
     anchors = await fetch_anchors_for_user(session, user_id=user.id)
     max_rating = max((a.anchor_rating for a in anchors.values()), default=None)
     bucket = elo_bucket(max_rating) if max_rating is not None else None
@@ -63,7 +62,7 @@ async def push_sentry_signal(session: AsyncSession, user: User, data: FeedbackCr
     else:
         platform = "none"
 
-    # Set tags (filterable dimensions for Sentry cohort filtering per D-05)
+    # Set tags (filterable dimensions for Sentry cohort filtering)
     sentry_sdk.set_tag("source", "feedback")
     # Distinct tag (not an overload of "source"): one of two enumerated literals, so it
     # cannot fragment grouping.

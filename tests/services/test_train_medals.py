@@ -1,4 +1,4 @@
-"""Unit tests for app.services.train_medals.due_weeks (Phase 231). DB-free.
+"""Unit tests for app.services.train_medals.due_weeks. DB-free.
 
 Every test name carries the due_weeks rule token so the VALIDATION map can select them
 with pytest -k due_weeks. Each passes `start` explicitly (the production value is

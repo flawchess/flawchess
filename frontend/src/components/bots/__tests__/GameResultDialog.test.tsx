@@ -1,18 +1,12 @@
 // @vitest-environment jsdom
 /**
- * GameResultDialog.test.tsx (Phase 171 Plan 07, V-16/V-17; Quick 260714-rj5
- * retires V-17) — the D-20 "Saved to your Library" link + guest
+ * GameResultDialog.test.tsx — the "Saved to your Library" link + guest
  * not-auto-analyzed caveat render strictly gated on `storeSucceeded`/`isGuest`.
  *
- * V-17 RETIRED: the Phase 169 "Analyze this game" is never gated on the
- * store" invariant no longer holds. Quick 260714-rj5 makes Analyze
- * store-gated (`analyzeBusy`) — it now needs the server-assigned game_id to
- * enqueue tier-1 analysis and open the game-mode board directly. The
- * describe block below covers the NEW invariant: disabled + spinner while
- * busy, enabled and firing onAnalyze once settled.
- *
- * Mirrors `GameResultStrip.test.tsx` case-for-case — the strip is the
- * mobile/dismissed surface (CLAUDE.md: apply every change to both).
+ * "Analyze this game" is store-gated (`analyzeBusy`): it needs the
+ * server-assigned game_id to enqueue tier-1 analysis and open the game-mode
+ * board directly. The describe block below covers that invariant: disabled +
+ * spinner while busy, enabled and firing onAnalyze once settled.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -64,7 +58,7 @@ function renderDialog(overrides: Partial<Parameters<typeof GameResultDialog>[0]>
   return { onDismiss, onNewGame, onAnalyze, onRematch };
 }
 
-describe('GameResultDialog — Saved to Library + guest caveat (V-16)', () => {
+describe('GameResultDialog — Saved to Library + guest caveat', () => {
   it('renders neither the save link nor the guest caveat when storeSucceeded is false (idle/pending/error)', () => {
     renderDialog({ storeSucceeded: false, isGuest: false });
 
@@ -98,7 +92,7 @@ describe('GameResultDialog — Saved to Library + guest caveat (V-16)', () => {
   });
 });
 
-describe('GameResultDialog — Analyze is store-gated (Quick 260714-rj5, retires V-17)', () => {
+describe('GameResultDialog — Analyze is store-gated', () => {
   it('"Analyze this game" is disabled while analyzeBusy is true — click does not fire onAnalyze', () => {
     const { onAnalyze } = renderDialog({ analyzeBusy: true });
 
@@ -132,7 +126,7 @@ describe('GameResultDialog — Analyze is store-gated (Quick 260714-rj5, retires
   });
 });
 
-describe('GameResultDialog — persona-named copy + Rematch/New opponent (Phase 183, D-06/D-08)', () => {
+describe('GameResultDialog — persona-named copy + Rematch/New opponent', () => {
   const BOT_LOSS_OUTCOME: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
 
   it('renders the generic title and NO Rematch button for a Custom game (personaName null)', () => {
@@ -160,7 +154,7 @@ describe('GameResultDialog — persona-named copy + Rematch/New opponent (Phase 
   });
 });
 
-describe('GameResultDialog — footer stacks the actions (Quick 260722-nlm)', () => {
+describe('GameResultDialog — footer stacks the actions', () => {
   it('never lays the actions out in a row at sm+, so a long "Rematch <Persona>" cannot overflow the dialog', () => {
     renderDialog({ personaName: 'Miko the Magpie' });
 
@@ -177,7 +171,7 @@ describe('GameResultDialog — footer stacks the actions (Quick 260722-nlm)', ()
   });
 });
 
-describe('GameResultDialog — the bot\'s parting line lives in here (Phase 223 UAT)', () => {
+describe('GameResultDialog — the bot\'s parting line lives in here', () => {
   it('renders the persona bubble when both a persona and a terminal line are supplied', () => {
     renderDialog({ persona: PERSONA_FIXTURE, botLine: 'bot-won', personaName: PERSONA_FIXTURE.name });
     expect(screen.queryByTestId('result-dialog-bubble')).not.toBeNull();
@@ -195,10 +189,10 @@ describe('GameResultDialog — the bot\'s parting line lives in here (Phase 223 
   });
 });
 
-// Phase 229 (D-12 group 3): result-dialog actions reach window.umami.track
+// Result-dialog actions reach window.umami.track
 // through the real analytics module. Targets are fixed literals; no persona
 // name, game id or result string ever enters the payload.
-describe('GameResultDialog feature events (Phase 229)', () => {
+describe('GameResultDialog feature events', () => {
   const track = vi.fn();
 
   beforeEach(() => {

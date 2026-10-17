@@ -54,30 +54,28 @@ import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
 
-// First React.lazy boundary in the app — keeps the Stockfish JS/WASM bundle off
-// every other route (ROUTE-01 / D-07). Analysis.tsx uses export default (Pitfall 1).
+// Lazy-loaded so the Stockfish JS/WASM bundle stays off every other route.
+// Analysis.tsx uses export default (React.lazy needs a default export), unlike
+// every other route component.
 const AnalysisPage = lazy(() => import('./pages/Analysis'));
-// Phase 169 D-14: lazy-loaded, unlinked-from-nav /bots route. Bots.tsx also
-// uses export default (mirrors AnalysisPage's Pitfall 1 divergence).
+// Lazy-loaded /bots route. Bots.tsx also uses export default (like AnalysisPage).
 const BotsPage = lazy(() => import('./pages/Bots'));
-// Phase 190 Plan 01: lazy-loaded because it pulls the Stockfish WASM grading
-// worker. Train.tsx also uses export default (mirrors Analysis/Bots).
+// Lazy-loaded because it pulls the Stockfish WASM grading worker. Train.tsx also
+// uses export default (like Analysis/Bots).
 const TrainPage = lazy(() => import('./pages/Train'));
-// Quick 260824-qaz: lazy-loaded because Tasks 2-3 attach a ~30 KB dashboard
-// stylesheet and two chart scripts to this page — none of that belongs in
-// the main bundle. ActivityPage.tsx also uses export default (mirrors
-// Analysis/Bots/Train's Pitfall 1 divergence).
+// Lazy-loaded because it attaches a ~30 KB dashboard stylesheet and two chart
+// scripts that don't belong in the main bundle. ActivityPage.tsx also uses
+// export default (like Analysis/Bots/Train).
 const ActivityPage = lazy(() => import('./pages/activity/ActivityPage'));
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
-// Phase 222 ship: a NEW key (not the retired pre-Phase-191 first-visit dot's)
-// so every existing account, including ones that already used Train, sees the
-// dot once more and gets drawn to the reworked bot-narrated Train. Cleared on
-// the first /train visit after this release.
+// A dedicated key (not a reused older first-visit one) so every existing
+// account, including ones that already used Train, sees the dot once more and
+// gets drawn to the bot-narrated Train. Cleared on the first /train visit.
 const FLAG_TRAIN_BOTS_VISITED = 'train_bots_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
-// SCHD-02/D-06/D-07: waiting-count badge display cap — anything above this
+// Waiting-count badge display cap — anything above this
 // renders as `${NAV_BADGE_MAX_DISPLAY}+` rather than the exact count.
 const NAV_BADGE_MAX_DISPLAY = 99;
 
@@ -97,15 +95,15 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
-// Phase 208 (PASTE-08): NAV_ITEMS and BOTTOM_NAV_ITEMS are now INTENTIONALLY
-// different — NAV_ITEMS feeds NavHeader (desktop) and MobileMoreDrawer
-// (mobile "More"), while BOTTOM_NAV_ITEMS feeds MobileBottomBar only.
-// /analysis is deliberately absent from BOTTOM_NAV_ITEMS (D-09): it has no
-// bottom-bar slot and reaching it via the More drawer is the intended path.
-// This divergence must NOT be "fixed" into a single shared array — see WR-07
-// below, the shipped bug from nav surfaces silently disagreeing with each
-// other, which is exactly the failure mode a well-meaning unification would
-// reintroduce.
+// NAV_ITEMS and BOTTOM_NAV_ITEMS are INTENTIONALLY different — NAV_ITEMS feeds
+// NavHeader (desktop) and MobileMoreDrawer (mobile "More"), while
+// BOTTOM_NAV_ITEMS feeds MobileBottomBar only.
+// /analysis is deliberately absent from BOTTOM_NAV_ITEMS: it has no bottom-bar
+// slot and reaching it via the More drawer is the intended path.
+// This divergence must NOT be "fixed" into a single shared array — see
+// IMPORT_EXEMPT_ROUTES below, the shipped bug from nav surfaces silently
+// disagreeing with each other, which is exactly the failure mode a well-meaning
+// unification would reintroduce.
 const NAV_ITEMS = [
   { to: '/library', label: 'Library', Icon: FolderOpen },
   { to: '/train', label: 'Train', Icon: Puzzle },
@@ -115,8 +113,8 @@ const NAV_ITEMS = [
   { to: '/analysis', label: 'Analysis', Icon: Search },
 ] as const;
 
-// Phase 208 (PASTE-08): see the comment on NAV_ITEMS above — this array stays
-// at its original 5 entries by design; /analysis is NOT added here.
+// See the comment on NAV_ITEMS above — this array stays at 5 entries by design;
+// /analysis is NOT added here.
 const BOTTOM_NAV_ITEMS = [
   { to: '/library', label: 'Library', Icon: FolderOpen },
   { to: '/train', label: 'Train', Icon: Puzzle },
@@ -125,14 +123,13 @@ const BOTTOM_NAV_ITEMS = [
   { to: '/endgames', label: 'Endgame', Icon: TrophyIcon },
 ] as const;
 
-// D-16: Admin nav item appended at render time when profile.is_superuser === true.
+// Admin nav item appended at render time when profile.is_superuser === true.
 // Kept out of the `as const` NAV_ITEMS tuple so the conditional spread below does
 // not widen the type; declared here so both NavHeader and MobileMoreDrawer share
 // the same object literal and icon.
 const ADMIN_NAV_ITEM = { to: '/admin', label: 'Admin', Icon: Shield } as const;
-// Quick 260824-qaz (D-7/D-8): hosted Activity Pulse dashboard, superuser-only
-// like ADMIN_NAV_ITEM above — same conditional-append pattern on both nav
-// surfaces below.
+// Hosted Activity Pulse dashboard, superuser-only like ADMIN_NAV_ITEM above —
+// same conditional-append pattern on both nav surfaces below.
 const ACTIVITY_NAV_ITEM = { to: '/activity', label: 'Activity', Icon: Activity } as const;
 
 const ROUTE_TITLES: Record<string, string> = {
@@ -152,20 +149,21 @@ const ROUTE_TITLES: Record<string, string> = {
  * Routes reachable regardless of import state:
  * - `/library` — where you GO to import, so it can never be import-gated.
  * - `/admin` — superuser-only, gated by SuperuserRoute instead.
- * - `/bots` — D-17: free bot play, whose audience IS guests and zero-game users.
- * - `/analysis` — Phase 208 D-10: the paste-a-FEN-or-PGN entry point is already
- *   ungated and guest-friendly (SEED-144 Integration Point 2 — a pasted game
- *   contributes to neither chess_com_game_count nor lichess_game_count, so it
- *   cannot accidentally unlock the import-gated nav either). A locked nav
- *   entry pointing at an open route would be incoherent.
- * - `/activity` — Quick 260824-qaz: superuser-only like `/admin`, gated by
- *   SuperuserRoute instead. An import-gate on top of the superuser gate would
- *   be incoherent for the same reason `/admin` is exempt.
+ * - `/bots` — free bot play, whose audience IS guests and zero-game users.
+ * - `/analysis` — the paste-a-FEN-or-PGN entry point is already ungated and
+ *   guest-friendly (a pasted game contributes to neither chess_com_game_count
+ *   nor lichess_game_count, so it cannot accidentally unlock the import-gated
+ *   nav either). A locked nav entry pointing at an open route would be
+ *   incoherent.
+ * - `/activity` — superuser-only like `/admin`, gated by SuperuserRoute
+ *   instead. An import-gate on top of the superuser gate would be incoherent
+ *   for the same reason `/admin` is exempt.
+ * - `/train` — every account may train with zero games (composition serves red
+ *   herrings and filler without game input).
  *
- * WR-07: this gate used to be copy-pasted into all three nav surfaces with
- * DIVERGENT clause lists (MobileBottomBar's copy omitted `/admin`), and Phase
- * 171 had to patch every one of them to add `/bots`. One definition now, so the
- * next exempt route is a one-line edit and the surfaces cannot disagree.
+ * One definition shared by all three nav surfaces. Don't copy this check into a
+ * surface: divergent copies let the surfaces disagree about which routes are
+ * locked.
  */
 const IMPORT_EXEMPT_ROUTES: ReadonlySet<string> = new Set(['/library', '/admin', '/bots', '/analysis', '/activity', '/train']);
 
@@ -185,11 +183,6 @@ function isActive(to: string, pathname: string): boolean {
   return pathname === to;
 }
 
-// ─── Nav header (desktop) ─────────────────────────────────────────────────────
-
-// Exported (additive) so App.test.tsx can render each nav surface directly —
-// a full <App /> render owns its own BrowserRouter/AuthProvider/QueryClientProvider,
-// which makes route control and hook mocking impractical from the outside.
 // ─── Nav indicators (red dots + Train badge) ──────────────────────────────────
 
 interface NavIndicators {
@@ -206,14 +199,14 @@ interface NavIndicators {
 // disagree about which item carries a dot or a badge.
 function useNavIndicators(): NavIndicators {
   const { data: profile } = useUserProfile();
-  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
-  const noGames = profile != null && totalGames === 0;
+  const importedGameCount = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && importedGameCount === 0;
   // Nav unlocks only once the user has games AND import phase 1 (Tier 1) is
-  // complete — matching the "Explore Openings" button. tier1 alone is true for a
-  // fresh zero-game account (no job in-flight), and games alone appear mid-import
-  // before phase 1 finishes; both gates together avoid unlocking too early.
+  // complete. tier1 alone is true for a fresh zero-game account (no job
+  // in-flight), and games alone appear mid-import before phase 1 finishes; both
+  // gates together avoid unlocking too early.
   const { tier1 } = useReadiness();
-  const navUnlocked = totalGames > 0 && tier1;
+  const navUnlocked = importedGameCount > 0 && tier1;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
   const trainBotsVisited = useUserFlag(FLAG_TRAIN_BOTS_VISITED, profile?.email);
@@ -221,24 +214,23 @@ function useNavIndicators(): NavIndicators {
   // Endgames dot is gated behind the Openings dot — we want users to discover
   // Openings first, then Endgames after that dot is cleared.
   const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
-  // SCHD-02/D-06/D-07/D-08: numeric waiting-puzzles badge replaces the old
-  // first-visit Train dot. Gated off for guests and locked-nav accounts —
-  // Phase 224 D-02 (Claude's discretion): kept as-is even though Train itself
-  // is now open to zero-game accounts, because `waiting_count` is provably 0
-  // for every warm-up-only account (no own blunders yet to surface).
+  // Numeric waiting-puzzles badge; it outranks the Train dot (see showTrainDot
+  // below). Gated off for guests and locked-nav accounts: waiting_count is 0 for
+  // every warm-up-only account (no own blunders yet to surface), even though
+  // Train itself is open to zero-game accounts.
   const trainProgressQuery = useTrainProgress({ enabled: navUnlocked && profile != null && !profile.is_guest });
   const trainWaitingCount = trainProgressQuery.data?.waiting_count ?? 0;
-  // Phase 193 D-09/D-10: server-computed badge visibility (scheduled-day gating,
-  // with an open-unfinished-session carve-out) — fails closed (undefined data
-  // while pending/errored, or a payload missing the field) rather than guessing.
+  // Server-computed badge visibility (scheduled-day gating, with an
+  // open-unfinished-session carve-out) — fails closed (undefined data while
+  // pending/errored, or a payload missing the field) rather than guessing.
   // No client-side schedule-mask/timezone math is performed here.
   const trainBadgeVisible = trainProgressQuery.data?.badge_visible ?? false;
   const showTrainBadge = trainWaitingCount > 0 && trainBadgeVisible;
   const trainBadgeLabel = showTrainBadge
     ? (trainWaitingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : String(trainWaitingCount))
     : null;
-  // Phase 222 ship: "reworked Train" dot. The numeric waiting badge wins the
-  // slot when both apply — it is already red and already says "go to Train".
+  // First-visit Train dot. The numeric waiting badge wins the slot when both
+  // apply — it is already red and already says "go to Train".
   const showTrainDot = navUnlocked && !trainBotsVisited && !showTrainBadge;
   return { navUnlocked, noGames, showOpeningsDot, showEndgamesDot, showTrainDot, trainBadgeLabel };
 }
@@ -271,26 +263,18 @@ function TrainBadge({ label, mobile }: { label: string; mobile: boolean }) {
   }
   return (
     <span
-      // UAT bug fix (191-06): the desktop `<header>` has
-      // `overflow-hidden`; the old `-top-1` offset
-      // pushed the badge above the stretched Link's top edge —
-      // i.e. above the header's own content box — where it got
-      // clipped. `top-0` keeps it inside those bounds ("a bit
-      // lower"); the smaller h-3.5/min-w-3.5/px-0.5 footprint
-      // ("a bit smaller") is a size-only reduction — `text-sm`
-      // is unchanged (CLAUDE.md's font-size floor). Mobile's
-      // badge (above) is unaffected: it was
-      // reported fine and sits inside a differently-shaped
-      // column item with no clipping ancestor.
-      // `leading-none` is required for the digit to sit centered:
-      // the default line-height overflowed the 14px circle, so the
-      // glyph rode high. Collapsing the line box to the font size
-      // lets `items-center` actually centre it. `text-xs` is a
-      // deliberate exception to CLAUDE.md's text-sm floor — the
-      // digit has to fit a 14px counter badge.
-      // `pt-0.5` is an optical nudge: digits sit above the em box's
-      // vertical middle (the descender space is unused), so exact
-      // box-centering still reads high.
+      // The desktop `<header>` is overflow-hidden, so `top-0` keeps the badge
+      // inside its box (a negative top offset would be clipped). Mobile's
+      // badge (above) sits inside a differently-shaped column item with no
+      // clipping ancestor.
+      // `leading-none` is required for the digit to sit centered: the default
+      // line-height overflowed the 14px circle, so the glyph rode high.
+      // Collapsing the line box to the font size lets `items-center` actually
+      // centre it. `text-xs` is a deliberate exception to the text-sm floor —
+      // the digit has to fit a 14px counter badge.
+      // `pt-0.5` is an optical nudge: digits sit above the em box's vertical
+      // middle (the descender space is unused), so exact box-centering still
+      // reads high.
       className="absolute top-0 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 pt-0.5 text-xs leading-none font-semibold text-white"
       data-testid="train-notification-badge"
     >
@@ -317,13 +301,18 @@ function NavIndicator({ to, ind, mobile }: { to: string; ind: NavIndicators; mob
   return ind.showTrainDot ? <NavDot testid={`train-notification-dot${suffix}`} mobile={mobile} /> : null;
 }
 
+// ─── Nav header (desktop) ─────────────────────────────────────────────────────
+
+// Exported so App.test.tsx can render each nav surface directly —
+// a full <App /> render owns its own BrowserRouter/AuthProvider/QueryClientProvider,
+// which makes route control and hook mocking impractical from the outside.
 export function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
   const ind = useNavIndicators();
   const { navUnlocked } = ind;
-  // D-16: Admin tab rightmost for superusers, absent otherwise.
+  // Admin and Activity tabs appended (rightmost) for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
 
   return (
@@ -375,8 +364,8 @@ export function NavHeader() {
           {profile?.impersonation && (
             <ImpersonationPill impersonation={profile.impersonation} />
           )}
-          {/* D-01: icon-only cogwheel, deliberately NOT in NAV_ITEMS (it is a utility,
-              not main navigation). Opens a modal, never navigates (228 UAT). */}
+          {/* Icon-only cogwheel, deliberately NOT in NAV_ITEMS (it is a utility,
+              not main navigation). Opens a modal, never navigates. */}
           <SettingsDialogButton testId="nav-settings" />
           <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
             Logout
@@ -440,8 +429,8 @@ export function AnalysisMobileHeader() {
       data-testid="analysis-mobile-header"
       className="block sm:hidden shrink-0 pt-safe flex items-center gap-2 px-2 py-1 bg-background border-b border-border overflow-hidden"
     >
-      {/* Quick 260628-cjp: wider tap target (w-16) so the back button matches the
-          generous board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
+      {/* Wider tap target (w-16) so the back button matches the generous
+          board-control footer buttons (flat flex-1 h-12), not a 48px square. */}
       <Button
         variant="ghost"
         size="icon"
@@ -453,7 +442,7 @@ export function AnalysisMobileHeader() {
         <ArrowLeft className="h-6 w-6" />
       </Button>
       <span className="text-sm font-medium text-foreground">Analysis</span>
-      {/* D-03: opens the settings sheet in place (no navigation, so the board and any
+      {/* Opens the settings sheet in place (no navigation, so the board and any
           unsaved free-play tree stay put). ml-auto pins it top right, like the bot game. */}
       <SettingsSheetButton testId="btn-analysis-settings" className="ml-auto h-12 w-12" />
     </header>
@@ -468,11 +457,9 @@ const MOBILE_BOTTOM_BAR_CLASSES =
   'fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe';
 
 /**
- * Phase 223 (BOTVOICE-05): a payload without `onResign` (Train, Analysis,
- * Openings) still needs `BoardControls`'s required `onReset` prop; the bot
- * game's payload omits it deliberately (D-10, no Reset action). Extracted to
- * its own function so `MobileBottomBar`'s own branch count only grows by the
- * one ternary that picks which bar to render.
+ * A payload may omit `onReset` (the bot game has no Reset action), but
+ * BoardControls and TrainRevealActionBar need a callback, so fall back to a
+ * no-op.
  */
 function resolveBoardControlsReset(onReset: (() => void) | undefined): () => void {
   return onReset ?? (() => {});
@@ -480,8 +467,8 @@ function resolveBoardControlsReset(onReset: (() => void) | undefined): () => voi
 
 /**
  * The three bars a published payload can select, in precedence order: the Train
- * reveal's (Phase 237, `onNext` present), the bot game's four-action bar
- * (Phase 223, `onResign` present), else the shared `BoardControls` row.
+ * reveal's (`onNext` present), the bot game's four-action bar
+ * (`onResign` present), else the shared `BoardControls` row.
  * Extracted from `MobileBottomBar` so the component stays shallow.
  */
 function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElement {
@@ -498,17 +485,15 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
         analyzeTo={boardControls.analyzeTo ?? null}
         onAnalyzeClick={boardControls.onAnalyzeClick ?? (() => {})}
         onNext={boardControls.onNext}
-        // Phase 240 UAT: the tour's Analyze step spotlights the Analyze button alone.
+        // The tour's Analyze step spotlights the Analyze button alone.
         spotlightAnalyze={boardControls.spotlightAnalyze === true}
         className="flex-1"
       />
     );
   }
   if (boardControls.onResign != null) {
-    // Phase 223 (BOTVOICE-05, D-10): a payload carrying a resign action
-    // is the bot game's — swap in its four-action bar instead of the
-    // shared BoardControls row (which cannot gain a fifth prop/branch;
-    // see resolveBoardControlsReset's comment above).
+    // A payload carrying a resign action is the bot game's: swap in its
+    // four-action bar instead of the shared BoardControls row.
     return (
       <BotGameMobileBar
         onResign={boardControls.onResign}
@@ -539,7 +524,7 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
 }
 
 export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
-  // Quick 260809-g0n: a Train puzzle in free-move mode takes over the bar the
+  // A Train puzzle in free-move mode takes over the bar the
   // way the /analysis route takes over the whole mobile shell — while a
   // payload is published, board controls replace the main nav buttons.
   const boardControls = useMobileBoardControls();
@@ -607,7 +592,7 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
 /**
  * Report a More-drawer nav tap. navDestinationOf returns null for the
  * superuser-only /admin and /activity items, so they are never named in
- * analytics (D-14). Called from onClick, never via data-umami-event on a Link.
+ * analytics. Called from onClick, never via data-umami-event on a Link.
  */
 function trackMoreDrawerNav(to: string): void {
   const target = navDestinationOf(to);
@@ -618,12 +603,12 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
-  const noGames = profile != null && totalGames === 0;
-  // See NavHeader — unlock only once games exist AND import phase 1 is complete.
+  const importedGameCount = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && importedGameCount === 0;
+  // Same unlock rule as useNavIndicators: games exist AND import phase 1 is complete.
   const { tier1 } = useReadiness();
-  const navUnlocked = totalGames > 0 && tier1;
-  // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
+  const navUnlocked = importedGameCount > 0 && tier1;
+  // Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const openSettings = (): void => {
@@ -677,10 +662,10 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
                 );
               })}
             </nav>
-            {/* D-02: testid deliberately NOT drawer-nav-* (that prefix is collected by
+            {/* testid deliberately NOT drawer-nav-* (that prefix is collected by
                 the exact-order nav tests and Settings is not in NAV_ITEMS). */}
-            {/* Opens the settings sheet in place of this drawer, never navigates (228 UAT:
-                a /settings page lost the puzzle or game the user came from). */}
+            {/* Opens the settings sheet in place of this drawer, never navigates (a
+                /settings page lost the puzzle or game the user came from). */}
             <button
               type="button"
               onClick={openSettings}
@@ -735,23 +720,18 @@ function ProtectedLayout() {
   const playActive = usePlayActive();
   const refreshedRef = useRef(false);
 
-  // OFFER-05/D-16: the standalone launch's active route push to /train. The
-  // manifest start_url is '/', so a qualifying standalone launch (iOS
-  // install intent recorded, no push subscription on this device yet) never
-  // lands on Train by itself — see useReminderResurface.ts for the fail-safe
-  // decision and the once-per-mount navigate guard.
+  // The standalone launch's active route push to /train. The manifest
+  // start_url is '/', so a qualifying standalone launch (iOS install intent
+  // recorded, no push subscription on this device yet) never lands on Train by
+  // itself — see useReminderResurface.ts for the fail-safe decision and the
+  // once-per-mount navigate guard.
   //
-  // CR-01 FIX (203-REVIEW.md): this runs on EVERY protected route for EVERY
-  // account. Gate its underlying GET /train/settings off for guests (and
-  // while `profile` hasn't resolved yet). Originally this avoided the
-  // guaranteed 403 from the since-removed `_reject_guest` gate that the
-  // global QueryCache.onError reporter was capturing to Sentry on every page
-  // view and refocus. Since Phase 224 guests get 200 from /train/settings,
-  // but the gate stays: guests have no reminder slot or push subscription
-  // (Phase 224 D-13), so neither hook has anything to do for them.
+  // Runs on every protected route for every account, so gate it off for guests
+  // (and while `profile` is unresolved): guests have no reminder slot or push
+  // subscription, so neither hook has anything to do.
   useReminderResurfaceRedirect({ enabled: profile != null && !profile.is_guest });
-  // Phase 204 D-07: a device whose push_subscriptions row was pruned
-  // re-registers itself on the next app load, with no user gesture.
+  // A device whose push_subscriptions row was pruned re-registers itself on the
+  // next app load, with no user gesture.
   useDevicePushResync({ enabled: profile != null && !profile.is_guest });
 
   // Identify the Umami session with users.id (JWT sub) plus the guest/registered
@@ -759,7 +739,7 @@ function ProtectedLayout() {
   // claim (distinctIdFromToken returns null) and profile.impersonation
   // (umamiAccountTypeOf returns null), so the admin's browser is never
   // attributed to the target. Admins identify normally and are excluded at
-  // analysis time (Phase 229 D-10).
+  // analysis time.
   const umamiAccountType = umamiAccountTypeOf(profile);
   const umamiDistinctId = distinctIdFromToken(token);
   useEffect(() => {
@@ -796,7 +776,7 @@ function ProtectedLayout() {
     }
   }, []);
 
-  // HANDOFF-02/D-12: capture the desktop→phone QR handoff marker as early as
+  // Capture the desktop→phone QR handoff marker as early as
   // possible on first load — ProtectedLayout is the stable mount point that
   // sees the raw URL on arrival, before Google's redirect chain strips the
   // query string.
@@ -804,7 +784,7 @@ function ProtectedLayout() {
     captureHandoffMarker(window.location.search);
   }, []);
 
-  // GUEST-05: Refresh guest JWT on each visit, resetting the 30-day expiry.
+  // Refresh guest JWT on each visit, resetting the 30-day expiry.
   // Uses refreshAuthToken (not loginWithToken) to avoid clearing the query cache
   // on the same user — otherwise useUserProfile refetches mid-keystroke on the
   // Import page and the focused username input loses focus after the first char.
@@ -817,41 +797,38 @@ function ProtectedLayout() {
     }
   }, [profile?.is_guest, refreshAuthToken]);
 
-  // Quick 260926-9bg: remember where a signed-out visitor was heading (and
+  // Remember where a signed-out visitor was heading (and
   // forget it once they are signed in), so HomePage can return them there.
   useReturnToTracking(token, location.pathname + location.search);
 
   if (!token) {
-    // Quick 260926-9bg: a newsletter link to /train used to bounce cold
-    // visitors onto a bare /login form (no guest option, no way back). Send
-    // them to the home page instead, which offers guest start and sign-up.
+    // Send signed-out visitors (e.g. from a newsletter link to /train) to the
+    // home page, which offers guest start and sign-up, rather than a bare
+    // /login form with no guest option and no way back.
     return <Navigate to="/" replace />;
   }
   if (isAnalysisRoute) {
     return (
       <>
-        {/* Phase 161 (SEED-088), D-01/D-05/D-06/D-09: the shell is LOCKED
-            (h-[100dvh]) by default. This covers both the mobile tab-takeover UI
-            (Analysis renders it below MOBILE_BREAKPOINT_PX = 768px — its tab
-            content relies on this to fill the space above the in-flow
-            board-controls footer, per D-05) AND the desktop 3-column grid
-            (>=desk3col, D-01/D-07) so its move list / board+chart column scroll
-            internally instead of the page.
+        {/* The shell is LOCKED (h-[100dvh]) by default. This covers both the
+            mobile tab-takeover UI (Analysis renders it below
+            MOBILE_BREAKPOINT_PX = 768px — its tab content relies on this to
+            fill the space above the in-flow board-controls footer) AND the
+            desktop 3-column grid (>=desk3col) so its move list / board+chart
+            column scroll internally instead of the page.
             Two range-scoped variants UNLOCK it: `md:max-desk3col:` (the
             768-desk3col two-column band — that layout is a scrolling page) and
-            `short:` (<560px tall, D-09, a safety-valve override at ANY width).
+            `short:` (<560px tall, a safety-valve override at ANY width).
             The unlock lower bound (`md:` = 768px) MUST track MOBILE_BREAKPOINT_PX
             in Analysis.tsx: below it the mobile takeover renders and needs the
             lock; at/above it the two-column layout scrolls. Applied at this shell
-            level only — the min-h-0 chain further down does not repeat it
-            (RESEARCH.md Pattern 4).
+            level only — the min-h-0 chain further down does not repeat it.
             A compound range variant (`md:max-desk3col:`) is used rather than a
             bare `md:` because `desk3col:` (a custom @theme breakpoint) compiles
             to an EARLIER media block than the built-in `md:` in this Tailwind
             build, so a bare `md:h-auto` would win the cascade at >=1200px and
             silently keep desktop unlocked. Scoping to the explicit [768,1200)
-            range sidesteps that ordering dependency entirely (see
-            161-01-SUMMARY.md). */}
+            range sidesteps that ordering dependency entirely. */}
         <div className="flex flex-col h-[100dvh] md:max-desk3col:h-auto md:max-desk3col:block short:h-auto short:block">
           <NavHeader />
           <AnalysisMobileHeader />
@@ -860,14 +837,14 @@ function ProtectedLayout() {
           </main>
         </div>
         <InstallPromptBanner />
-        {/* 164 UAT: the floating feedback button overlaps the analysis tab content
+        {/* The floating feedback button overlaps the analysis tab content
             (e.g. the ELO slider) in the mobile takeover, so it's hidden across that
             range (below md = MOBILE_BREAKPOINT_PX) on this route; shown at/above md
             (two-column + desktop layouts) where there's room. */}
         <div className="hidden md:block">
           <FeedbackButton />
         </div>
-        {/* Phase 234: the milestone ask's modal opens on every viewport (phones
+        {/* The milestone ask's modal opens on every viewport (phones
             included, where the button above is hidden), so it sits outside the
             wrapper. Renders nothing while closed. */}
         <FeedbackAskModalHost />
@@ -893,7 +870,7 @@ function ProtectedLayout() {
           and the result dialog's actions, so it's hidden on both immersive
           board screens (`playActive`: a live bot game, the Train solve loop). */}
       {!playActive && <FeedbackButton />}
-      {/* Phase 234: the milestone ask's modal must not be gated on `playActive`
+      {/* The milestone ask's modal must not be gated on `playActive`
           (it opens from a bubble, never during play) and renders nothing while
           closed. */}
       <FeedbackAskModalHost />
@@ -905,8 +882,7 @@ function ProtectedLayout() {
 
 /**
  * Locks non-Import pages until the user has imported games AND import phase 1
- * (Tier 1) is complete — the same gate as the nav links and the "Explore
- * Openings" button. This keeps a fresh zero-game account out (no games) and an
+ * (Tier 1) is complete — the same gate as the nav links. This keeps a fresh zero-game account out (no games) and an
  * in-progress import out (tier1=false), and re-locks after deleting all games.
  * The isLoading guard prevents a redirect flash while the first fetches resolve.
  */
@@ -935,7 +911,7 @@ function ImportRequiredRoute({ children }: { children: React.ReactNode }) {
 // ─── Superuser route guard ────────────────────────────────────────────────────
 
 /**
- * Redirects non-superusers to /openings (D-18). Profile query loading flicker
+ * Redirects non-superusers to /openings. Profile query loading flicker
  * falls through to an explicit loading state so we do not briefly show /admin
  * to someone whose profile has not resolved yet.
  */
@@ -954,15 +930,14 @@ function SuperuserRoute({ children }: { children: React.ReactNode }) {
 
 /**
  * Thin wrapper that reads the `?line=` search param and keys AnalysisPage by it,
- * so a second entry-point navigation to /analysis?line=Y remounts the page and
- * re-seeds the free-play opening main line (the loadMainLine effect's
- * hasLoadedMainLine ref is reset by the remount — Pitfall 2).
+ * so a second navigation to /analysis?line=Y remounts the page and re-seeds the
+ * free-play main line from the new param.
  *
  * useSearchParams is not in scope at the <Routes> site, so a scoped wrapper
- * keeps the param-driven re-render off all other routes (RESEARCH Pattern A).
+ * keeps the param-driven re-render off all other routes.
  *
- * Not wrapped in ImportRequiredRoute — free-play is valid for zero-game users
- * (D-05 / RESEARCH A2). Not wrapped in SuperuserRoute.
+ * Not wrapped in ImportRequiredRoute — free-play is valid for zero-game users.
+ * Not wrapped in SuperuserRoute.
  */
 function AnalysisRoute() {
   const [params] = useSearchParams();
@@ -990,7 +965,7 @@ function AppRoutes() {
   const queryClient = useQueryClient();
   const { token } = useAuth();
 
-  // Growth item 16: submit the stored first touch once the visitor has an account.
+  // Submit the stored first touch once the visitor has an account.
   useFirstTouchSync(token);
 
   // Restore active jobs from server on mount (and after re-login when token changes)
@@ -1002,7 +977,7 @@ function AppRoutes() {
   if (restoredForTokenRef.current !== token) {
     restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
     hasRestoredRef.current = false; // eslint-disable-line react-hooks/refs
-    // Phase 62: an admin who impersonates swaps their token — their in-flight job
+    // An admin who impersonates swaps their token — their in-flight job
     // ids belong to the admin, not the target. Drop them so we do not poll 404s.
     setActiveJobIds([]);
     setCompletedJobIds(new Set());
@@ -1037,14 +1012,14 @@ function AppRoutes() {
     queryClient.invalidateQueries({ queryKey: ['games'] });
     queryClient.invalidateQueries({ queryKey: ['gameCount'] });
     queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-    // Bug fix (quick 260611): the Library tab queries use 5-minute staleTime
-    // with refetchOnWindowFocus disabled, so without invalidation newly
-    // imported games only appeared after a hard page reload.
+    // The Library tab queries use 5-minute staleTime with refetchOnWindowFocus
+    // disabled, so without invalidation newly imported games only appeared after
+    // a hard page reload.
     queryClient.invalidateQueries({ queryKey: ['library-games'] });
     queryClient.invalidateQueries({ queryKey: ['library-game'] });
     queryClient.invalidateQueries({ queryKey: ['library-flaws'] });
     queryClient.invalidateQueries({ queryKey: ['library-flaw-stats'] });
-    // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
+    // The percentile background tasks (Stage A on
     // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
     // asynchronously after the job completes. Without invalidating endgameOverview
     // here, the 30s queryClient staleTime serves the stale pre-import response and
@@ -1053,8 +1028,8 @@ function AppRoutes() {
     queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
     // Refetch the endgame insights report so a user whose first report does not
     // exist yet (cache null) re-arms the one-time auto-generate after the import.
-    // An existing report is never replaced by an import (quick 261012-qiz): the
-    // server keeps serving it until the user clicks "Update Insights".
+    // An existing report is never replaced by an import: the server keeps
+    // serving it until the user clicks "Update Insights".
     queryClient.invalidateQueries({ queryKey: ['endgame-insights'] });
   }, [queryClient]);
 
@@ -1078,8 +1053,8 @@ function AppRoutes() {
         <Route path="/" element={<HomePage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/login" element={<AuthPage />} />
-        {/* Self-serve password reset (Phase 207) — public, a user is by
-            definition logged out (or resetting from a second device). */}
+        {/* Self-serve password reset — public, a user is by definition logged
+            out (or resetting from a second device). */}
         <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         {/* Google OAuth callback — reads token from URL fragment */}
@@ -1094,11 +1069,11 @@ function AppRoutes() {
           <Route path="/welcome" element={<WelcomePage />} />
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
-          {/* Phase 224 (D-01): every account, guest or registered, may open Train
-              with zero games — composition already serves red herrings and sharp
-              filler with no rating and no game input, so there is nothing behind
-              this route that requires an import. Added to IMPORT_EXEMPT_ROUTES;
-              no ImportRequiredRoute wrapper. */}
+          {/* Every account, guest or registered, may open Train with zero games —
+              composition already serves red herrings and sharp filler with no
+              rating and no game input, so there is nothing behind this route that
+              requires an import. In IMPORT_EXEMPT_ROUTES; no ImportRequiredRoute
+              wrapper. */}
           <Route
             path="/train/*"
             element={
@@ -1114,11 +1089,11 @@ function AppRoutes() {
             }
           />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
-          {/* Quick 260824-qaz: hosted Activity Pulse dashboard. Lazy-loaded
-              (Tasks 2-3 attach a ~30 KB stylesheet + two chart scripts), gated
-              like /admin by SuperuserRoute — the hard gate lives on the data
-              endpoint (D-1), this is defense-in-depth against briefly
-              rendering the route shell before the profile query resolves. */}
+          {/* Hosted Activity Pulse dashboard. Lazy-loaded (it attaches a ~30 KB
+              stylesheet + two chart scripts), gated like /admin by
+              SuperuserRoute — the hard gate lives on the data endpoint, this is
+              defense-in-depth against briefly rendering the route shell before
+              the profile query resolves. */}
           <Route
             path="/activity"
             element={
@@ -1136,10 +1111,9 @@ function AppRoutes() {
             }
           />
           <Route path="/analysis" element={<AnalysisRoute />} />
-          {/* Phase 169 D-14: real /bots route, lazy-loaded, UNLINKED from nav this
-              phase (Phase 171 adds the nav entry). Not wrapped in ImportRequiredRoute
-              or SuperuserRoute — same guest-friendly access posture as /analysis, since
-              free bot play is valid for zero-game/guest users this milestone. */}
+          {/* Lazy-loaded /bots route. Not wrapped in ImportRequiredRoute or
+              SuperuserRoute: free bot play is open to guests and zero-game users
+              (same posture as /analysis). */}
           <Route
             path="/bots"
             element={

@@ -7,10 +7,10 @@ export type SidebarStateApi = {
   sidebarOpen: SidebarPanel | null;
   setSidebarOpen: (panel: SidebarPanel | null) => void;
   // Mobile drawers
-  filterSidebarOpen: boolean;
-  setFilterSidebarOpen: (open: boolean) => void;
-  bookmarkSidebarOpen: boolean;
-  setBookmarkSidebarOpen: (open: boolean) => void;
+  filterDrawerOpen: boolean;
+  setFilterDrawerOpen: (open: boolean) => void;
+  bookmarkDrawerOpen: boolean;
+  setBookmarkDrawerOpen: (open: boolean) => void;
   // Onboarding hints (persisted in localStorage)
   playedAsHintDismissed: boolean;
   filtersHintDismissed: boolean;
@@ -24,8 +24,8 @@ export type SidebarStateApi = {
  */
 export function useSidebarState(): SidebarStateApi {
   const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
-  const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
-  const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useState(false);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [bookmarkDrawerOpen, setBookmarkDrawerOpen] = useState(false);
 
   const [playedAsHintDismissed, setPlayedAsHintDismissed] = useState(
     () => localStorage.getItem('played-as-hint-dismissed') === 'true',
@@ -49,10 +49,10 @@ export function useSidebarState(): SidebarStateApi {
   return {
     sidebarOpen,
     setSidebarOpen,
-    filterSidebarOpen,
-    setFilterSidebarOpen,
-    bookmarkSidebarOpen,
-    setBookmarkSidebarOpen,
+    filterDrawerOpen,
+    setFilterDrawerOpen,
+    bookmarkDrawerOpen,
+    setBookmarkDrawerOpen,
     playedAsHintDismissed,
     filtersHintDismissed,
     setFiltersHintDismissed,

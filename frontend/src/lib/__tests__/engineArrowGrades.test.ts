@@ -46,7 +46,7 @@ function line(
   return { multipv, depth, moves: [firstMove, 'e7e5'], evalCp, evalMate };
 }
 
-describe('secondaryArrowAlpha (D-08)', () => {
+describe('secondaryArrowAlpha', () => {
   it('drop 0 and a negative drop give the primary alpha (no gap to the top arrow)', () => {
     expect(secondaryArrowAlpha(0, STOCKFISH_PRIMARY_ALPHA)).toBe(STOCKFISH_PRIMARY_ALPHA);
     expect(secondaryArrowAlpha(-0.2, STOCKFISH_PRIMARY_ALPHA)).toBe(STOCKFISH_PRIMARY_ALPHA);
@@ -229,7 +229,7 @@ describe('buildRankedEngineBadges', () => {
   });
 });
 
-describe('mergeEngineBadges (D-03)', () => {
+describe('mergeEngineBadges', () => {
   it('an existing marker on the same square wins', () => {
     const existing: SquareMarker[] = [{ square: 'e4', severity: 'mistake' }];
     const merged = mergeEngineBadges(existing, [{ square: 'e4', best: true }, { square: 'd4', good: true }]);

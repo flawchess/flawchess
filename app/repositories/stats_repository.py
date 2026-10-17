@@ -29,7 +29,7 @@ from app.models.game import Game
 from app.models.game_position import MAX_EXPLORER_PLY, GamePosition
 from app.repositories.query_utils import apply_game_filters
 
-# D-08: trim |eval_cp| >= 2000 (>= ±20 pawns) from eval mean. Decisive positions
+# Trim |eval_cp| >= 2000 (>= ±20 pawns) from eval mean. Decisive positions
 # are statistically uninformative for "typical opening character".
 EVAL_OUTLIER_TRIM_CP: int = 2000
 
@@ -40,26 +40,26 @@ class OpeningPhaseEntryMetrics:
     middlegame entry (phase=1).
 
     Per-phase partition invariant: for every opening with at least one
-    phase-entry row, ``eval_n + mate_n + null_eval_n + outlier_n`` equals the
-    phase-entry-row count. The four buckets are mutually exclusive at the
-    phase-entry row:
+    phase-entry row, ``eval_n_mg + mate_n_mg + null_eval_n_mg + outlier_n_mg``
+    equals the phase-entry-row count. The four buckets are mutually exclusive at
+    the phase-entry row:
 
-    - ``eval_n``      — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| < 2000 (continuous, in-domain)
-    - ``mate_n``      — eval_mate IS NOT NULL (forced-mate; excluded from mean)
-    - ``null_eval_n`` — eval_cp IS NULL AND eval_mate IS NULL (no score available)
-    - ``outlier_n``   — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| >= 2000 (D-08 trim)
+    - ``eval_n_mg``      — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| < 2000 (continuous, in-domain)
+    - ``mate_n_mg``      — eval_mate IS NOT NULL (forced-mate; excluded from mean)
+    - ``null_eval_n_mg`` — eval_cp IS NULL AND eval_mate IS NULL (no score available)
+    - ``outlier_n_mg``   — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| >= 2000 (outlier trim)
 
     Note: trimmed rows are NOT counted as null_eval; they are explicitly
-    classified as outlier_n so the partition invariant remains testable.
+    classified as outlier_n_mg so the partition invariant remains testable.
     """
 
-    # MG-entry pillar (D-01, D-04, D-08)
+    # MG-entry pillar
     eval_sum_mg: float  # signed user-perspective sum, in centipawns
     eval_sumsq_mg: float  # sum of squared signed eval_cp values
     eval_n_mg: int  # phase=1 rows with continuous in-domain eval
     mate_n_mg: int  # phase=1 rows with eval_mate IS NOT NULL
     null_eval_n_mg: int  # phase=1 rows with both eval_cp and eval_mate NULL
-    outlier_n_mg: int  # phase=1 rows with |eval_cp| >= 2000 (D-08)
+    outlier_n_mg: int  # phase=1 rows with |eval_cp| >= 2000
 
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
@@ -283,10 +283,9 @@ async def query_top_openings_sql_wdl(
     Counts distinct games passing through each named opening's position
     (`game_positions.full_hash`), not games tagged with that opening name. This
     matches the count displayed in the UI (which is also position-based — see
-    `query_position_wdl_batch` in the service layer) so ranking and display
-    agree. Without this, the deepest-name-tag aggregation pre-PRE-01 happened
-    to look right only because the parity filter coincidentally hid most deep
-    sub-variation rows.
+    `query_position_wdl_batch` below) so ranking and display agree. Aggregating
+    by deepest name tag instead would look right only because the parity filter
+    coincidentally hides most deep sub-variation rows.
 
     Returns (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
     tuples. `display_name` equals `name` when the opening's defining ply parity
@@ -294,7 +293,7 @@ async def query_top_openings_sql_wdl(
     per condition — game-level columns are stable across a game's
     `game_positions` rows so DISTINCT collapses correctly.
     """
-    # SEED-041 §A1 (fix #2): materialize the user's qualifying games FIRST, then
+    # Materialize the user's qualifying games FIRST, then
     # join positions against that CTE. The MATERIALIZED optimizer fence forces a
     # hash join over the user's ~30-55k games instead of the planner's nested loop
     # of ~187k random games_pkey probes (80% of the old plan's buffers). Raising
@@ -333,9 +332,9 @@ async def query_top_openings_sql_wdl(
         and_(user_games.c.result == "1-0", user_games.c.user_color == "black"),
     )
 
-    # 2026-04-26 (PRE-01): off-color rows are surfaced with `vs. ` prefix so
-    # labels read naturally without dropping coverage. White openings end on
-    # odd ply (white's last move), black on even ply.
+    # Off-color rows are surfaced with a `vs. ` prefix so labels read naturally
+    # without dropping coverage. White openings end on odd ply (white's last
+    # move), black on even ply.
     user_parity = 1 if color == "white" else 0
     display_name_col = case(
         (
@@ -366,7 +365,7 @@ async def query_top_openings_sql_wdl(
             and_(
                 GamePosition.full_hash == _openings_dedup.c.full_hash,
                 # Match the (user_id, full_hash) partial index — keeps the JOIN cheap.
-                # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
+                # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used.
                 GamePosition.user_id == user_id,
                 GamePosition.ply <= MAX_EXPLORER_PLY,
             ),
@@ -467,7 +466,7 @@ async def query_position_wdl_batch(
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(hashes),
-            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used.
             # The explorer is capped at this depth so hashes past this boundary never appear.
             GamePosition.ply <= MAX_EXPLORER_PLY,
         )
@@ -517,23 +516,23 @@ async def query_opening_phase_entry_metrics_batch(
     opponent_gap_max: int | None = None,
     hash_column: Literal["full", "white", "black"] = "full",
 ) -> dict[int, OpeningPhaseEntryMetrics]:
-    """Return {full_hash: OpeningPhaseEntryMetrics} for games passing through each position.
+    """Return {hash: OpeningPhaseEntryMetrics} for games passing through each position.
 
     Aggregates middlegame-entry (phase=1) eval metrics in a single SQL pass. The
     phase-entry row per game is identified via DISTINCT ON
     ``(game_id, phase ORDER BY ply)`` filtered to phase=1.
 
     Outlier trim: |eval_cp| >= EVAL_OUTLIER_TRIM_CP rows are excluded from the eval mean
-    and counted separately as outlier_n (D-08). Mate rows (eval_mate IS NOT NULL) are
-    excluded and counted as mate_n. This preserves the per-phase partition invariant:
-    eval_n + mate_n + null_eval_n + outlier_n == phase_entry_row_count.
+    and counted separately as outlier_n_mg. Mate rows (eval_mate IS NOT NULL) are
+    excluded and counted as mate_n_mg. This preserves the per-phase partition invariant:
+    eval_n_mg + mate_n_mg + null_eval_n_mg + outlier_n_mg == phase_entry_row_count.
 
     Sign convention: eval_cp is signed at SQL level via ``case(user_color='white', 1, else=-1) * eval_cp``
     matching the endgame_service._classify_endgame_bucket convention.
 
-    Performance note: uses GROUP BY + JOIN shape (not IN(subquery)) — the IN(subquery) form
-    caused planner Nested Loop hangs on heavy users (see endgame_repository.py:687-692 for
-    the original bug report and fix rationale). Run EXPLAIN ANALYZE on heavy users pre-merge.
+    Performance note: the dedup set is a CTE referenced twice (Postgres materializes it);
+    phase_entry is restricted via IN over that CTE, then JOINed back. Run EXPLAIN ANALYZE
+    on heavy users pre-merge.
 
     Uses apply_game_filters() from query_utils — same filter set as query_position_wdl_batch
     (CLAUDE.md "Shared Query Filters"). AsyncSession is not safe for concurrent use — callers
@@ -563,7 +562,7 @@ async def query_opening_phase_entry_metrics_batch(
     #   user 43 ( 229 games): CTE   28ms  vs  subquery   41ms  (+45%, high variance)
     dedup_select = (
         select(
-            hash_col.label("full_hash"),
+            hash_col.label("position_hash"),
             Game.id.label("game_id"),
             Game.user_color.label("user_color"),
         )
@@ -571,7 +570,7 @@ async def query_opening_phase_entry_metrics_batch(
         .where(
             GamePosition.user_id == user_id,
             hash_col.in_(hashes),
-            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used.
             GamePosition.ply <= MAX_EXPLORER_PLY,
         )
         .distinct(hash_col, Game.id)
@@ -615,7 +614,7 @@ async def query_opening_phase_entry_metrics_batch(
     sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
     user_eval_expr = sign_expr * phase_entry_subq.c.eval_cp  # signed cp; NULL when eval_cp NULL
 
-    # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP (D-08).
+    # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP.
     has_continuous_in_domain_eval = and_(
         phase_entry_subq.c.eval_cp.isnot(None),
         phase_entry_subq.c.eval_mate.is_(None),
@@ -634,7 +633,7 @@ async def query_opening_phase_entry_metrics_batch(
 
     agg_select = (
         select(
-            dedup_subq.c.full_hash,
+            dedup_subq.c.position_hash,
             # --- MG-entry aggregations (phase=1, filtered upstream) ---
             func.coalesce(
                 func.sum(user_eval_expr).filter(has_continuous_in_domain_eval),
@@ -651,7 +650,7 @@ async def query_opening_phase_entry_metrics_batch(
         )
         .select_from(dedup_subq)
         .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
-        .group_by(dedup_subq.c.full_hash)
+        .group_by(dedup_subq.c.position_hash)
     )
 
     result = await session.execute(agg_select)

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * push.test.ts — branch matrix for the shared `ensureDeviceSubscribed()`
- * routine (Phase 202 Plan 01 Task 2, PERM-01/PERM-02). Every arm is asserted
+ * routine. Every arm is asserted
  * on both its returned status and on which browser/API calls did and did
  * not happen — the negative assertions are what keep the one-shot
  * permission unspendable without a user gesture and keep decline state
@@ -35,7 +35,7 @@ import {
 
 const VAPID_KEY = 'test-vapid-key';
 
-// Phase 204 D4: `options.applicationServerKey` matches VAPID_KEY's own bytes
+// `options.applicationServerKey` matches VAPID_KEY's own bytes
 // and an `unsubscribe` double is present so pre-existing tests that reuse
 // this fixture as an "already subscribed" double still take the reuse path
 // (not the repair path) after `ensureDeviceSubscribed` started comparing
@@ -86,9 +86,9 @@ afterEach(() => {
 });
 
 /**
- * Regression matrix for CR-01 / WR-01 (phase 202 code review).
+ * Regression matrix for the never-rejects and always-reports contracts.
  *
- * CR-01: `ensureDeviceSubscribed` must NEVER reject. It used to open its
+ * `ensureDeviceSubscribed` must NEVER reject. It used to open its
  * `try` after the `Notification.requestPermission()` await, so a rejection
  * there escaped to callers that have no catch — leaving the score-screen
  * button and the Settings switch permanently disabled with the one-shot
@@ -96,11 +96,11 @@ afterEach(() => {
  * narrowed back: an escaping rejection turns `await ensureDeviceSubscribed()`
  * into a thrown error and `.resolves` fails.
  *
- * WR-01: every failure arm must reach Sentry. Nothing else can report it —
+ * Every failure arm must reach Sentry. Nothing else can report it —
  * neither caller routes this through a TanStack mutation, so the global
  * `MutationCache.onError` never fires for it.
  */
-describe('ensureDeviceSubscribed — never rejects (CR-01) and reports (WR-01)', () => {
+describe('ensureDeviceSubscribed — never rejects and reports', () => {
   it('resolves to error when Notification.requestPermission() rejects', async () => {
     const boom = new TypeError('permission API unavailable in this context');
     const { subscribe } = stubBrowserGlobals({
@@ -162,7 +162,7 @@ describe('ensureDeviceSubscribed — never rejects (CR-01) and reports (WR-01)',
     expect(Sentry.captureException).toHaveBeenCalledWith(boom, { tags: { source: 'push' } });
   });
 
-  it('does not report a dismissed prompt — a decline is not an error (PERM-02)', async () => {
+  it('does not report a dismissed prompt — a decline is not an error', async () => {
     stubBrowserGlobals({
       permission: 'default',
       requestPermission: vi.fn().mockResolvedValue('default'),
@@ -172,7 +172,7 @@ describe('ensureDeviceSubscribed — never rejects (CR-01) and reports (WR-01)',
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  it('does not report a denial — a denial is not an error (D-11)', async () => {
+  it('does not report a denial — a denial is not an error', async () => {
     stubBrowserGlobals({
       permission: 'default',
       requestPermission: vi.fn().mockResolvedValue('denied'),
@@ -241,7 +241,7 @@ describe('ensureDeviceSubscribed', () => {
     expect(pushApi.subscribe).not.toHaveBeenCalled();
   });
 
-  it('prompt dismissed: status is "dismissed", not "denied", and no subscribe happens (PERM-02)', async () => {
+  it('prompt dismissed: status is "dismissed", not "denied", and no subscribe happens', async () => {
     const { subscribe } = stubBrowserGlobals({
       requestPermission: vi.fn().mockResolvedValue('default'),
     });
@@ -266,11 +266,11 @@ describe('ensureDeviceSubscribed', () => {
     expect(pushApi.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  // Phase 204 D4 — the gesture-path repair. `matchingKeyBytes` is derived
+  // The gesture-path repair. `matchingKeyBytes` is derived
   // from the module's own `urlBase64ToUint8Array` over the same VAPID_KEY
   // string these tests already use, so the fixture cannot drift from the
   // implementation it is meant to pin.
-  describe('D4: key-mismatch repair vs key-match reuse', () => {
+  describe('key-mismatch repair vs key-match reuse', () => {
     const matchingKeyBytes = urlBase64ToUint8Array(VAPID_KEY);
 
     function existingSubscriptionDouble(options: {
@@ -391,7 +391,7 @@ describe('ensureDeviceSubscribed', () => {
     });
   });
 
-  // D-13: `lib/push.ts` never imports `@sentry/react` (verified structurally
+  // `lib/push.ts` never imports `@sentry/react` (verified structurally
   // — grep the file), so these arms cannot report to Sentry from inside
   // `ensureDeviceSubscribed`. A caller routing the result through a
   // TanStack mutation gets one free capture via the global
@@ -414,7 +414,7 @@ describe('ensureDeviceSubscribed', () => {
   });
 });
 
-describe('PERM-02: no decline state is ever persisted', () => {
+describe('no decline state is ever persisted', () => {
   it('the dismissed and denied arms never call localStorage.setItem', async () => {
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
 
@@ -460,7 +460,7 @@ describe('urlBase64ToUint8Array', () => {
 });
 
 describe('subscriptionKeyMatches', () => {
-  // Phase 204 D-04 detection half. Derive the matching bytes by running the
+  // Detection half. Derive the matching bytes by running the
   // module's own urlBase64ToUint8Array over the test VAPID string so the
   // fixture cannot drift from the implementation.
   const currentVapidKey = 'ZmFrZS12YXBpZC1rZXk';
@@ -529,7 +529,7 @@ describe('resyncExistingSubscription', () => {
     });
   });
 
-  it('a rejecting pushApi.subscribe: resolves false, reports once, and never leaks the endpoint (T-204-02)', async () => {
+  it('a rejecting pushApi.subscribe: resolves false, reports once, and never leaks the endpoint', async () => {
     const boom = new Error('503 push unavailable');
     vi.mocked(pushApi.subscribe).mockRejectedValue(boom);
 
@@ -553,7 +553,7 @@ describe('resyncExistingSubscription', () => {
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 
-  // Phase 204 D-04/D-05: the destroy-and-recreate repair is confined to
+  // The destroy-and-recreate repair is confined to
   // ensureDeviceSubscribed (the gesture path) — the passive re-sync path
   // must never call unsubscribe(), even when the subscription it receives
   // happens to expose one.

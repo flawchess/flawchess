@@ -1,7 +1,7 @@
 """Unit tests for app/services/normalization.py helpers.
 
-Covers is_correspondence_time_control and normalize_flawchess_game (Phase 167
-STORE-01/02) — no DB required, pure unit tests.
+Covers is_correspondence_time_control and normalize_flawchess_game — no DB
+required, pure unit tests.
 """
 
 import pytest
@@ -68,7 +68,7 @@ _PGN_WITH_TERMINATION_HEADER = (
     "4. Qxf7# {[%clk 0:02:54]} 1-0\n"
 )
 
-# CR-02: same clean checkmate line but with a crafted, UNRECOGNIZED [Termination]
+# Same clean checkmate line but with a crafted, UNRECOGNIZED [Termination]
 # header longer than games.termination_raw's String(50) bound. Before the fix,
 # termination_raw stored this raw header string verbatim regardless of
 # recognition, crashing _flush_batch's INSERT with a Postgres DataError (500)
@@ -83,7 +83,7 @@ _PGN_WITH_OVERSIZED_UNRECOGNIZED_TERMINATION_HEADER = (
 )
 
 
-# WR-02: a client-supplied SetUp/FEN header pair starting from a Black-to-move
+# A client-supplied SetUp/FEN header pair starting from a Black-to-move
 # position. All 5 real-color plies (Black: e5, Nc6, exd4; White: Nf3, d4) carry
 # a [%clk] annotation, so this is a valid submission that must normalize.
 _BLACK_TO_MOVE_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1"
@@ -95,7 +95,7 @@ _PGN_BLACK_TO_MOVE_BOTH_CLOCKS = (
 )
 
 # Same Black-to-move start, but [%clk] is present ONLY on the real White plies
-# (Nf3, d4) — the real Black plies (e5, Nc6, exd4) have none. Pre-WR-02-fix,
+# (Nf3, d4) — the real Black plies (e5, Nc6, exd4) have none. Before the labeling fix,
 # the even/odd-index-to-color mapping assumed White moves first, so this
 # PGN's real-color clock presence would be mislabeled internally (though the
 # final combined AND-gate decision happens to be unaffected here — see
@@ -108,7 +108,7 @@ _PGN_BLACK_TO_MOVE_WHITE_CLOCK_ONLY = (
 
 
 class TestClockPresenceByColor:
-    """WR-02: _clock_presence_by_color must derive per-color clock presence from
+    """_clock_presence_by_color must derive per-color clock presence from
     the true starting side-to-move, not assume White always moves first.
     """
 
@@ -177,10 +177,10 @@ class TestIsCorrespondenceTimeControl:
 
 
 class TestNormalizeFlawchessGame:
-    """Phase 167 STORE-01/02 — PGN-only normalizer + [%clk]/result/termination gating."""
+    """PGN-only normalizer + [%clk]/result/termination gating."""
 
     def test_happy_path_white_user(self) -> None:
-        """Both-color clocks + valid Result -> NormalizedGame with D-08 placement."""
+        """Both-color clocks + valid Result -> NormalizedGame with player-color placement."""
         normalized = normalize_flawchess_game(
             _PGN_BOTH_CLOCKS_CHECKMATE,
             _TEST_GAME_UUID,
@@ -197,12 +197,12 @@ class TestNormalizeFlawchessGame:
         assert normalized.rated is False
         assert normalized.is_computer_game is True
         assert normalized.result == "1-0"
-        # D-08: player-color (white) rating column = converted player rating;
+        # Player-color (white) rating column = converted player rating;
         # opponent-color (black) = bot nominal ELO.
         assert normalized.white_rating == _TEST_PLAYER_RATING
         assert normalized.black_rating == _TEST_BOT_ELO
         assert normalized.black_username == FLAWCHESS_BOT_USERNAME
-        # quick-260714-pnk: the caller-resolved player_username reaches the
+        # The caller-resolved player_username reaches the
         # player-color (white) username column.
         assert normalized.white_username == _TEST_PLAYER_USERNAME
 
@@ -222,12 +222,12 @@ class TestNormalizeFlawchessGame:
         assert normalized.black_rating == _TEST_PLAYER_RATING
         assert normalized.white_rating == _TEST_BOT_ELO
         assert normalized.white_username == FLAWCHESS_BOT_USERNAME
-        # quick-260714-pnk: the caller-resolved player_username reaches the
+        # The caller-resolved player_username reaches the
         # player-color (black) username column.
         assert normalized.black_username == _TEST_PLAYER_USERNAME
 
     def test_happy_path_bot_username_defaults_to_flawchess_bot(self) -> None:
-        """quick-260722-ucc: no bot_username kwarg -> the Custom-mode fallback."""
+        """No bot_username kwarg -> the Custom-mode fallback."""
         normalized = normalize_flawchess_game(
             _PGN_BOTH_CLOCKS_CHECKMATE,
             _TEST_GAME_UUID,
@@ -242,7 +242,7 @@ class TestNormalizeFlawchessGame:
         assert normalized.black_username == FLAWCHESS_BOT_USERNAME
 
     def test_persona_bot_username_and_calibrated_rating_white_user(self) -> None:
-        """quick-260722-ucc: a persona name + calibrated rating go in the
+        """A persona name + calibrated rating go in the
         bot-color (black, since user_color='white') columns."""
         calibrated_rating = 800
         normalized = normalize_flawchess_game(
@@ -263,7 +263,7 @@ class TestNormalizeFlawchessGame:
         assert normalized.white_rating == _TEST_PLAYER_RATING
 
     def test_persona_bot_username_and_calibrated_rating_black_user(self) -> None:
-        """quick-260722-ucc: mirrored placement when user_color='black' — the
+        """Mirrored placement when user_color='black' — the
         persona name + calibrated rating go in the white columns."""
         calibrated_rating = 800
         normalized = normalize_flawchess_game(
@@ -284,7 +284,7 @@ class TestNormalizeFlawchessGame:
         assert normalized.black_rating == _TEST_PLAYER_RATING
 
     def test_no_anchor_player_rating_none(self) -> None:
-        """player_rating=None (no anchor, D-06) flows through to the games row untouched."""
+        """player_rating=None (no anchor) flows through to the games row untouched."""
         normalized = normalize_flawchess_game(
             _PGN_BOTH_CLOCKS_CHECKMATE,
             _TEST_GAME_UUID,
@@ -299,7 +299,7 @@ class TestNormalizeFlawchessGame:
         assert normalized.white_rating is None
 
     def test_white_missing_clock_returns_none(self) -> None:
-        """No [%clk] on black's plies -> None (STORE-02/D-15)."""
+        """No [%clk] on black's plies -> None."""
         normalized = normalize_flawchess_game(
             _PGN_WHITE_CLOCK_ONLY,
             _TEST_GAME_UUID,
@@ -313,7 +313,7 @@ class TestNormalizeFlawchessGame:
         assert normalized is None
 
     def test_black_missing_clock_returns_none(self) -> None:
-        """No [%clk] on white's plies -> None (STORE-02/D-15)."""
+        """No [%clk] on white's plies -> None."""
         normalized = normalize_flawchess_game(
             _PGN_BLACK_CLOCK_ONLY,
             _TEST_GAME_UUID,
@@ -387,7 +387,7 @@ class TestNormalizeFlawchessGame:
     def test_unrecognized_oversized_termination_header_falls_back_to_board_derived(
         self,
     ) -> None:
-        """CR-02: an unrecognized [Termination] header longer than the
+        """An unrecognized [Termination] header longer than the
         termination_raw String(50) DB column must never be stored verbatim —
         termination_raw must fall back to the closed-vocabulary board-derived
         value (here "checkmate"), never the raw ~60-char header string.
@@ -408,7 +408,7 @@ class TestNormalizeFlawchessGame:
         assert len(normalized.termination_raw) <= 50
 
     def test_black_to_move_setup_with_both_clocks_normalizes(self) -> None:
-        """WR-02: a SetUp/FEN Black-to-move PGN with clocks on both real colors
+        """A SetUp/FEN Black-to-move PGN with clocks on both real colors
         must normalize successfully — the clock gate must not misidentify a
         valid submission as invalid due to a wrong even=White/odd=Black
         assumption.
@@ -426,8 +426,8 @@ class TestNormalizeFlawchessGame:
         assert normalized is not None
 
     def test_black_to_move_setup_missing_real_black_clock_returns_none(self) -> None:
-        """WR-02: a SetUp/FEN Black-to-move PGN missing [%clk] on the real Black
-        plies must still be rejected (STORE-02/D-15) under the fixed labeling.
+        """A SetUp/FEN Black-to-move PGN missing [%clk] on the real Black
+        plies must still be rejected under the fixed labeling.
         """
         normalized = normalize_flawchess_game(
             _PGN_BLACK_TO_MOVE_WHITE_CLOCK_ONLY,

@@ -1,10 +1,10 @@
-"""Tests for scripts/engine_search_fixes_allowance.py — Phase 225 D-02 allowance calculator.
+"""Tests for scripts/engine_search_fixes_allowance.py — allowance calculator.
 
 Pure-function unit tests over `scripts.engine_search_fixes_allowance` — no DB, no
 engines. `load_root_trace_deltas` is exercised against small tmp_path TSV files
 shaped like `scripts/engine-dispatch-stop-rule.mjs --root-trace` output.
 
-Covers every bullet in 225-01-PLAN.md's Task 1 `<behavior>` block:
+Covers:
 - percentile matches statistics.quantiles(..., method="inclusive")[pct - 1];
   fewer than 2 values raises ValueError.
 - round_up_to_step avoids the float-artifact bump (0.07/0.01) but still rounds

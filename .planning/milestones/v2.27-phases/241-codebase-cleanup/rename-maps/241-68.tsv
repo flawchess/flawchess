@@ -1,0 +1,4 @@
+old	new	kind	absent_paths	ref	canon_paths
+_EvalTarget	_EntryPlyEvalTarget	identifier	app tests scripts docs .claude/skills	X8	
+_apply_eval_results	_apply_entry_eval_results	identifier	app tests scripts docs .claude/skills	X9	
+PRESET_THRESHOLD	SIMILAR_THRESHOLD	identifier	app frontend/src tests	X2	

@@ -4,10 +4,10 @@
  * WHY: the browser's native `scrollBy`/`scrollTo({ behavior: 'smooth' })` has
  * no duration knob — its timing is entirely UA-owned (Chrome runs it at
  * roughly 300-400ms for a few-hundred-pixel delta, with no way to tune it).
- * Quick task 260914-uer (QUICK-03) asked to slow down the Train walkthrough's
- * step-1 scroll-into-view, which requires an explicit, tunable animation
- * instead. This module is that single tween; the one caller today is
- * `useTrainWalkthrough.ts`'s `WALKTHROUGH_CARD_SCROLL_DURATION_MS`.
+ * Slowing down the Train tour's step-1 scroll-into-view requires an
+ * explicit, tunable animation instead. This module is that single tween; the
+ * one caller today is `useTrainTour.ts`'s
+ * `TOUR_SCROLL_DURATION_MS`.
  */
 
 /** Ease-in-out cubic — accelerates then decelerates, approximating the native

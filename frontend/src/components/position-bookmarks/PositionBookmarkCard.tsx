@@ -9,7 +9,7 @@ import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark, useUpdateMat
 import { onOff, trackFeature } from '@/lib/analytics';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { MatchSide } from '@/types/api';
-import { MiniBoard } from './MiniBoard';
+import { BookmarkMiniBoard } from './BookmarkMiniBoard';
 
 interface Props {
   bookmark: PositionBookmarkResponse;
@@ -27,7 +27,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
 
   const [isEditing, setIsEditing] = useState(false);
   const [labelValue, setLabelValue] = useState(bookmark.label);
-  const isDirtyRef = useRef(false);
+  const skipBlurSaveRef = useRef(false);
 
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: bookmark.id,
@@ -44,13 +44,13 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
   };
 
   const handleLabelBlur = () => {
-    if (!isDirtyRef.current && isEditing) {
+    if (!skipBlurSaveRef.current && isEditing) {
       const trimmed = labelValue.trim();
       if (trimmed && trimmed !== bookmark.label) {
         updateLabel.mutate({ id: bookmark.id, data: { label: trimmed } });
       }
     }
-    isDirtyRef.current = false;
+    skipBlurSaveRef.current = false;
     setIsEditing(false);
   };
 
@@ -62,19 +62,19 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
       if (trimmed && trimmed !== bookmark.label) {
         updateLabel.mutate({ id: bookmark.id, data: { label: trimmed } });
       }
-      isDirtyRef.current = true; // prevent double-save from subsequent blur
+      skipBlurSaveRef.current = true; // prevent double-save from subsequent blur
       setIsEditing(false);
     } else if (e.key === 'Escape') {
-      isDirtyRef.current = true;
+      skipBlurSaveRef.current = true;
       setLabelValue(bookmark.label);
       setIsEditing(false);
     }
   };
 
   const handleLoad = () => {
-    isDirtyRef.current = true;
+    skipBlurSaveRef.current = true;
     onLoad(bookmark);
-    // Never the bookmark id (D-04): the target is a fixed literal.
+    // Never the bookmark id: the target is a fixed literal.
     trackFeature('action', { target: 'bookmark-load' });
   };
 
@@ -141,7 +141,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
       data-testid={`bookmark-mini-board-${bookmark.id}`}
       style={{ opacity: updateMatchSide.isPending ? 0.6 : 1, transition: 'opacity 0.15s' }}
     >
-      <MiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={84} />
+      <BookmarkMiniBoard fen={bookmark.fen} flipped={bookmark.is_flipped} size={84} />
     </div>
   );
 
@@ -202,7 +202,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
       <Tooltip content="Load bookmark">
         <Button variant="ghost" size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          onMouseDown={() => { isDirtyRef.current = true; }}
+          onMouseDown={() => { skipBlurSaveRef.current = true; }}
           onClick={handleLoad}
           data-testid={`bookmark-btn-load-${bookmark.id}`}
           aria-label="Load bookmark">
@@ -213,7 +213,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
       <Tooltip content={`Delete bookmark: ${bookmark.label}`}>
         <Button variant="ghost" size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          onMouseDown={() => { isDirtyRef.current = true; }}
+          onMouseDown={() => { skipBlurSaveRef.current = true; }}
           onClick={handleDelete}
           disabled={deleteBookmark.isPending}
           data-testid={`bookmark-btn-delete-${bookmark.id}`}

@@ -38,9 +38,8 @@ interface LibraryFilterPanelProps {
   /** Called when the flaw filter changes (severity or tags). Required only when showFlawFilter is true. */
   onFlawFilterChange?: (next: FlawFilterState) => void;
   /**
-   * When false, render only the game-metadata filters and omit the FlawFilterControl
-   * (used by the Flaws subtab, which hosts the flaw filter in its own separate panel).
-   * Default true so existing callers (Games subtab) keep the combined layout.
+   * When false (every current caller), render only the game-metadata filters; both
+   * Library tabs host FlawFilterControl in their own Tags panel.
    */
   showFlawFilter?: boolean;
   /**
@@ -54,10 +53,8 @@ interface LibraryFilterPanelProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * LibraryFilterPanel composes FlawFilterControl (severity × tag-family multi-select)
- * ABOVE the existing FilterPanel (game-metadata: platform/TC/rated/recency/opponent).
- *
- * D-01: the boolean severity toggle is removed; FlawFilterControl replaces it.
+ * LibraryFilterPanel composes an optional FlawFilterControl (severity × tag-family
+ * multi-select) ABOVE the FilterPanel (game-metadata: platform/TC/rated/recency/opponent).
  *
  * Desktop: rendered inside a <aside> sidebar.
  * Mobile: rendered inside the Drawer (same component, no separate mobile copy).
@@ -80,13 +77,12 @@ export function LibraryFilterPanel({
     onChange(resetFilterState(filters));
   };
 
-  // Only render the flaw control when requested AND its handlers are supplied. The
-  // Flaws subtab hosts the flaw filter in a separate sidebar panel, so it passes
-  // showFlawFilter={false} here and renders FlawFilterControl on its own.
+  // Only render the flaw control when requested AND its handlers are supplied. Both
+  // Library tabs pass showFlawFilter={false} and render FlawFilterControl on their own.
   const flawControl =
     showFlawFilter && flawFilter && onFlawFilterChange ? (
       <>
-        {/* FlawFilterControl — severity × tag-family toggle above standard filters (D-01) */}
+        {/* FlawFilterControl — severity × tag-family toggle above standard filters */}
         <FlawFilterControl
           severity={flawFilter.severity}
           tags={flawFilter.tags}
@@ -104,7 +100,7 @@ export function LibraryFilterPanel({
 
       {/* Standard metadata filters (time control, platform, recency, more).
           hideReset=true: LibraryFilterPanel owns the Reset+Apply footer below.
-          showPastedChip: Phase 208 (D-14). LibraryFilterPanel is the ONLY caller
+          showPastedChip: LibraryFilterPanel is the ONLY caller
           that sets this true — it renders the same component instance for both
           the desktop sidebar and the mobile drawer, so setting it here covers
           both surfaces with no separate mobile copy to patch. Openings, Endgames
@@ -117,7 +113,7 @@ export function LibraryFilterPanel({
         showPastedChip
       />
 
-      {/* Reset + Apply footer — Reset clears game-metadata FilterState only (D-01).
+      {/* Reset + Apply footer — Reset clears game-metadata FilterState only.
           Omitted when hideActions (mobile drawer renders a pinned footer instead). */}
       {!hideActions && (
         <FilterActions

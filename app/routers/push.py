@@ -1,12 +1,11 @@
-"""Push router: subscribe / unsubscribe / VAPID public key / dev trigger (Phase 201).
+"""Push router: subscribe / unsubscribe / VAPID public key / dev trigger.
 
-D-03 (LOCKED): an unconfigured VAPID keypair means push is gracefully
-disabled -- `GET /vapid-public-key` 404s, `POST /subscribe` 503s.
+An unconfigured VAPID keypair means push is gracefully disabled -- `GET /vapid-public-key`
+404s, `POST /subscribe` 503s.
 
 Every handler scopes to `current_active_user.id` -- never a client-supplied
-`user_id` (V4/IDOR guard, T-201-03). The dev trigger endpoint (D-17) never
-accepts a target user id in body, path, or query, and is unreachable outside
-`ENVIRONMENT == "development"` (T-201-04), mirroring
+`user_id` (V4/IDOR guard). The dev trigger endpoint never accepts a target user id in body,
+path, or query, and is unreachable outside `ENVIRONMENT == "development"`, mirroring
 `app/core/dev_clock.py`'s fail-closed gate.
 """
 
@@ -43,9 +42,9 @@ async def subscribe(
     user: Annotated[User, Depends(current_active_user)],
     user_agent: Annotated[str | None, Header(alias="User-Agent")] = None,
 ) -> PushSubscribeResponse:
-    """Store a browser push subscription against the calling user (PUSH-01).
+    """Store a browser push subscription against the calling user.
 
-    Returns 503 when VAPID is unconfigured (D-03) -- a subscription stored
+    Returns 503 when VAPID is unconfigured -- a subscription stored
     with no keypair to sign sends with would be dead on arrival.
     """
     if not push_send.is_push_configured():
@@ -96,7 +95,7 @@ async def unsubscribe(
 async def vapid_public_key() -> VapidPublicKeyResponse:
     """Return the application server key `PushManager.subscribe()` needs.
 
-    404 when VAPID is unconfigured (D-03) -- there is no key to hand out.
+    404 when VAPID is unconfigured -- there is no key to hand out.
     """
     key = push_send.application_server_key()
     if key is None:
@@ -109,14 +108,13 @@ async def dev_trigger_reminder(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> DevTriggerReminderResponse:
-    """Fire the Train reminder for the calling user immediately (REMIND-08, D-17).
+    """Fire the Train reminder for the calling user immediately.
 
     Dev-only (mirrors `app/core/dev_clock.py`'s fail-closed gate) so a forged
     call against production is inert. Bypasses the hour/weekday/already-
     trained/already-sent checks deliberately, and never writes
     `train_settings.reminder_last_sent_on` -- firing it cannot consume the
-    real scheduler's daily claim (plan 201-04 owns that column), so firing it
-    twice sends twice, on purpose.
+    real scheduler's daily claim, so firing it twice sends twice, on purpose.
     """
     if settings.ENVIRONMENT != "development":
         raise HTTPException(status_code=404)

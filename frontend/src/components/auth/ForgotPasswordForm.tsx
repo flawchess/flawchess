@@ -16,7 +16,7 @@ import {
 import { apiClient } from '@/api/client';
 
 /**
- * Anti-enumeration contract (RESET-02): this component has exactly ONE
+ * Anti-enumeration contract: this component has exactly ONE
  * success rendering with no branch on the response. `handleSubmit` only
  * distinguishes "the request resolved" (any status) from "the request
  * rejected at transport level" — it never inspects `response.status` or

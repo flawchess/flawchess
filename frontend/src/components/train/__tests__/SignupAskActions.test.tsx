@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 /**
- * SignupAskActions.test.tsx — Phase 224 (S-4, D-05, D-07; GUESTACT-11).
- *
  * Covers the shared "What changes?" + "Sign up free" action pair rendered for
  * both host surfaces: the umami attribute contract (What changes? carries none, Sign up
  * free carries `signup-cta` + the per-surface source) and the promotion
@@ -98,7 +96,7 @@ describe('SignupAskActions', () => {
     expect(signUp.getAttribute('data-umami-event-source')).toBe('import-promo');
   });
 
-  it('with source="train-landing" (224 UAT round 2, guest Train landing bubble) the testids and umami source follow suit', () => {
+  it('with source="train-landing" (guest Train landing bubble) the testids and umami source follow suit', () => {
     render(<SignupAskActions source="train-landing" />);
     expect(screen.getByTestId('btn-signup-why-train-landing')).not.toBeNull();
     const signUp = screen.getByTestId('btn-signup-free-train-landing');

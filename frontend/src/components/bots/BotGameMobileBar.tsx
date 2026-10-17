@@ -23,28 +23,25 @@ export interface BotGameMobileBarProps {
 }
 
 /**
- * BotGameMobileBar — Phase 223 (BOTVOICE-05, D-10): the mobile bot game's
+ * BotGameMobileBar: the mobile bot game's
  * fixed four-action bottom bar (Resign / Back / Forward / Flip), published
  * through the `usePublishMobileBoardControls` seam in place of the main nav.
  *
- * A NEW component, never a prop on the shared `BoardControls` row — that row
- * measures cyclomatic complexity 16 against its own pinned ceiling of 16
- * (`frontend/eslint.config.js`), so one more branch there would fail lint.
+ * A new component rather than a prop on the shared `BoardControls` row, so the
+ * bot-only branches stay out of that shared row.
  *
- * The Resign trigger and its two-step confirm dialog are copied verbatim
- * from `GameControls.tsx` (same three testids: `board-btn-resign`,
- * `resign-confirm-dialog`, `board-btn-resign-confirm`), so every existing
- * assertion against them keeps matching after the move. Back/Forward/Flip
- * reuse the shipped `board-btn-back` / `board-btn-forward` / `board-btn-flip`
- * testids from `BoardControls` for the same reason.
+ * The Resign trigger and its two-step confirm dialog mirror `GameControls.tsx`
+ * (same three testids: `board-btn-resign`, `resign-confirm-dialog`,
+ * `board-btn-resign-confirm`). Back/Forward/Flip reuse the
+ * `board-btn-back` / `board-btn-forward` / `board-btn-flip` testids from
+ * `BoardControls`.
  *
- * Phase 223 UAT: all four actions now render in the MAIN NAV's shape —
- * icon over label, `flex-1` columns across the bar — so the bar the bot game
- * swaps in reads as the same furniture as the bar it replaced, instead of one
- * worded outline button beside three bare glyphs. Resign is the only action
- * whose glyph is new (`Flag`, the universal resign affordance); the labels
- * stay at the project's `text-sm` floor rather than copying the main nav's
- * pre-existing `text-xs` (frontend/CLAUDE.md typography rule).
+ * All four actions render in the MAIN NAV's shape — icon over label, `flex-1`
+ * columns across the bar — so the bar the bot game swaps in reads as the same
+ * furniture as the bar it replaces. Resign is the only action whose glyph is
+ * new (`Flag`, the universal resign affordance); the labels stay at the
+ * project's `text-sm` floor rather than copying the main nav's `text-xs`
+ * (frontend/CLAUDE.md typography rule).
  */
 
 /** Icon-over-label column, matching `MobileBottomBar`'s main-nav items. */
@@ -66,7 +63,7 @@ export function BotGameMobileBar({
   };
 
   return (
-    // `pb-2` (Phase 223 UAT): on phones without a bottom safe-area inset the
+    // `pb-2`: on phones without a bottom safe-area inset the
     // bar's own `pb-safe` is 0, so Resign sat flush against the browser's
     // bottom toolbar; this keeps a small gap under the buttons.
     <div data-testid="bot-game-mobile-bar" className="flex flex-1 items-center gap-1 pb-2">

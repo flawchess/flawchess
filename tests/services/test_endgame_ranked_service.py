@@ -1,7 +1,7 @@
-"""Pure (no DB) tests for the ranked Endgame Stats service (Phase 238).
+"""Pure (no DB) tests for the ranked Endgame Stats service.
 
-Built on synthetic ``RankedInputs``: rank-status matrix (D-09 / D-10 / D-11),
-bucket W/D/L vs rate consistency (D-00b), TC listing (D-14) and the popover
+Built on synthetic ``RankedInputs``: rank-status matrix,
+bucket W/D/L vs rate consistency, TC listing and the popover
 statistics shapes. Numeric parity with the Stage A/B CTEs lives in
 ``test_endgame_ranked_parity.py``.
 """
@@ -289,11 +289,11 @@ def _metric(
     return _tc(response, tc).metrics[metric]
 
 
-# ── Rank status matrix (D-09 / D-10 / D-11) ──────────────────────────────────
+# ── Rank status matrix ──────────────────────────────────
 
 
 def test_status_below_floor_anchor() -> None:
-    """D-09: no anchor and 18 non-Daily games -> every metric below_floor, '18 of 30'."""
+    """No anchor and 18 non-Daily games -> every metric below_floor, '18 of 30'."""
     inputs = RankedInputs(games_by_tc={"blitz": _games(_BELOW_ANCHOR_GAMES)})
     tc_stats = _tc(build_ranked_stats(inputs))
     assert tc_stats.anchor is None
@@ -319,7 +319,7 @@ def test_status_daily_excluded_from_anchor_count() -> None:
 
 
 def test_status_pending() -> None:
-    """D-11: eval-dependent metric with no value while evals are pending -> pending."""
+    """Eval-dependent metric with no value while evals are pending -> pending."""
     inputs = _full_inputs(eval_pending=True, with_evals=False)
     response = build_ranked_stats(inputs)
     for metric_id in EVAL_DEPENDENT_METRICS:
@@ -331,7 +331,7 @@ def test_status_pending() -> None:
 
 
 def test_status_clock_unranked() -> None:
-    """D-11: eval-independent clock metric with a value and no persisted row -> unranked."""
+    """Eval-independent clock metric with a value and no persisted row -> unranked."""
     inputs = _full_inputs(eval_pending=True, with_evals=False)
     response = build_ranked_stats(inputs)
     for metric_id in _CLOCK_METRICS:
@@ -380,7 +380,7 @@ def test_status_since_window_never_ranked() -> None:
         assert metric.status != "ranked"
 
 
-# ── TC listing (D-14, D-10) ──────────────────────────────────────────────────
+# ── TC listing ──────────────────────────────────────────────────
 
 
 def test_tcs_listed_order_and_omission() -> None:
@@ -397,13 +397,13 @@ def test_tcs_listed_order_and_omission() -> None:
 
 
 def test_tcs_listed_empty_sample() -> None:
-    """D-10: an empty ranked sample returns tcs == []."""
+    """An empty ranked sample returns tcs == []."""
     assert build_ranked_stats(RankedInputs(games_by_tc={})).tcs == []
     empty = RankedInputs(games_by_tc={"bullet": [], "blitz": [], "rapid": [], "classical": []})
     assert build_ranked_stats(empty).tcs == []
 
 
-# ── Bucket WDL vs rate (D-00b) ───────────────────────────────────────────────
+# ── Bucket WDL vs rate ───────────────────────────────────────────────
 
 
 def test_bucket_rate_consistency() -> None:
@@ -429,7 +429,7 @@ def test_bucket_rate_consistency() -> None:
 
 
 def test_ci_p_shapes() -> None:
-    """Rates: Wilson CI only; every other metric (net_flag_rate too, D-14): CI and p (n >= 10)."""
+    """Rates: Wilson CI only; every other metric (net_flag_rate too): CI and p (n >= 10)."""
     metrics = _tc(build_ranked_stats(_full_inputs())).metrics
     for metric_id in ("conversion_rate", "parity_rate", "recovery_rate"):
         metric = metrics[metric_id]
@@ -454,7 +454,7 @@ def test_ci_p_shapes() -> None:
         assert metric.p_value is not None, metric_id
 
 
-# ── Timelines (D-03) ─────────────────────────────────────────────────────────
+# ── Timelines ─────────────────────────────────────────────────────────
 
 _TIMELINE_GAMES_PER_SIDE = 80
 _TIMELINE_START = datetime.datetime(2026, 1, 5, tzinfo=datetime.timezone.utc)
@@ -541,7 +541,7 @@ def test_build_endgame_elo_combos_matches_overview_path() -> None:
     assert [c.time_control for c in combos] == ["blitz"]
 
 
-# ── Time pressure curve, Clock Gap timeline, type categories (D-05 / D-06) ───
+# ── Time pressure curve, Clock Gap timeline, type categories ───
 
 _QUINTILE_COUNT = 5
 _TYPE_ROOK = 1
@@ -623,7 +623,7 @@ def test_type_categories_per_tc() -> None:
     inputs = _type_inputs()
     response = build_ranked_stats(inputs)
     blitz = _tc(response, "blitz")
-    # The ranked rows add only the D-14 significance flags to the shared aggregator's rows.
+    # The ranked rows add only the significance flags to the shared aggregator's rows.
     gates = {
         "conversion_significant",
         "recovery_significant",
@@ -645,7 +645,7 @@ def test_type_categories_empty_without_endgames() -> None:
     assert _tc(response, "blitz").type_categories == []
 
 
-# ── Phase 239 D-14: the red/green significance gate ──────────────────────────
+# ── The red/green significance gate ──────────────────────────
 
 
 def _core(value: float, ci_low: float | None, ci_high: float | None) -> _MetricCore:

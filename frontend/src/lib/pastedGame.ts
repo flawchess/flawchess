@@ -1,39 +1,39 @@
 /**
- * Sniffs pasted textarea input as either a bare FEN or a PGN game (Phase 208,
- * D-01/D-21/D-22). One textarea, no format toggle — this module decides which
+ * Sniffs pasted textarea input as either a bare FEN or a PGN game. One
+ * textarea, no format toggle — this module decides which
  * format the pasted text is, deterministically and without retaining state
- * across calls (a pure function of its input string, per SC-3's concurrency
- * probe — no module-level mutable chess.js instance).
+ * across calls (a pure function of its input string, safe under concurrent
+ * calls — no module-level mutable chess.js instance).
  *
- * Sniffing order (measured against the project's chess.js 1.4, CONTEXT.md):
+ * Sniffing order (measured against the project's chess.js 1.4):
  *   1. Normalize (BOM strip, CRLF/CR fold to LF, NBSP-family fold to a plain
  *      space, typographic-quote fold to ASCII, trim).
  *   2. Empty after normalization -> `{ kind: 'empty' }`.
- *   3. Over the length cap -> `{ kind: 'error' }` (T-208-02, before any parse
+ *   3. Over the length cap -> `{ kind: 'error' }` (before any parse
  *      reaches chess.js).
  *   4. Attempt `loadPgn` on a fresh `Chess()` instance.
- *      - THROWS: the D-21 landmine — chess.js retains the moves that parsed
+ *      - THROWS: the chess.js landmine — it retains the moves that parsed
  *        before throwing, readable via `history()` on that same instance.
  *        The instance is discarded UNREAD here; fall through to the bare-FEN
  *        attempt below rather than risk loading a truncated game.
  *      - SUCCEEDS with 0 moves: empty movetext and headers-only PGN both
- *        parse successfully with no moves (CONTEXT.md's measured table) —
+ *        parse successfully with no moves (measured) —
  *        reject explicitly, since the throw-based error path never fires for
  *        either case.
  *      - SUCCEEDS with >=1 move: read `history()`/`getHeaders()` from a
  *        SECOND, freshly constructed instance (never the one whose `loadPgn`
  *        call could have thrown) and return `{ kind: 'pgn', ... }`.
  *   5. `loadPgn` threw: try `parseAnalysisFenParam` (already chess.js-validated)
- *      -> `{ kind: 'fen' }` on success, `{ kind: 'error' }` otherwise (D-22:
- *      one generic message, never raw chess.js parser text).
+ *      -> `{ kind: 'fen' }` on success, `{ kind: 'error' }` otherwise (one generic
+ *      message, never raw chess.js parser text).
  */
 
 import { Chess } from 'chess.js';
 import { parseAnalysisFenParam } from '@/lib/analysisUrl';
 
 /** Hard cap on pasted input length — mirrors the backend's MAX_PASTED_PGN_LENGTH
- *  bound (Plan 03). Enforced both as the textarea's `maxLength` and here, so a
- *  paste larger than this never reaches chess.js's parser (T-208-02). */
+ *  bound. Enforced both as the textarea's `maxLength` and here, so a
+ *  paste larger than this never reaches chess.js's parser. */
 export const MAX_PASTED_INPUT_LENGTH = 100_000;
 
 /** Standard chess starting position — the free-play root when a PGN carries no
@@ -69,7 +69,7 @@ export interface PastedGameHeaders {
 }
 
 /** Discriminated union over the four sniffed outcomes — the paste modal's
- *  four-state machine (UI-SPEC § Interaction Contract 4) branches on `kind`
+ *  four-state machine branches on `kind`
  *  directly. */
 export type PasteParseResult =
   | { kind: 'empty' }
@@ -130,7 +130,7 @@ function buildHeaders(chess: Chess): PastedGameHeaders {
 function sniffPgn(normalized: string): PasteParseResult | null {
   try {
     // Detection-only instance: only its throw/no-throw outcome is used. Its
-    // history() is NEVER read (D-21 landmine — a throw leaves a truncated
+    // history() is NEVER read (chess.js landmine — a throw leaves a truncated
     // prefix behind), so it is discarded unconditionally after this block.
     new Chess().loadPgn(normalized);
   } catch {
@@ -144,7 +144,7 @@ function sniffPgn(normalized: string): PasteParseResult | null {
   const sans = fresh.history();
   if (sans.length === 0) {
     // Empty movetext or headers-only both parse successfully with zero moves
-    // (CONTEXT.md's measured chess.js table) — there is no game to load.
+    // (measured chess.js behavior) — there is no game to load.
     return { kind: 'error' };
   }
 

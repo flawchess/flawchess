@@ -1,5 +1,5 @@
 /**
- * botStyle.ts unit tests (Phase 182, STYLE-01/03/04/05).
+ * botStyle.ts unit tests.
  *
  * Pure unit tests — no mocks, no providers. `Move` fixtures are either real
  * `chess.js` verbose moves (natural game sequences or small hand-built FENs,
@@ -182,7 +182,7 @@ describe('classifyMoveFeatures', () => {
 // ─── BotStyleParams structural invariant ───────────────────────────────────
 
 describe('BotStyleParams', () => {
-  it('is a plain data object with no function-typed field (BOT-03 Tampering guard)', () => {
+  it('is a plain data object with no function-typed field', () => {
     const style = makeStyle();
     for (const [key, value] of Object.entries(style)) {
       if (typeof value === 'object' && value !== null) {
@@ -196,7 +196,7 @@ describe('BotStyleParams', () => {
   });
 });
 
-// ─── applyStylePriorReweighting (STYLE-03) ─────────────────────────────────
+// ─── applyStylePriorReweighting ─────────────────────────────────
 
 describe('applyStylePriorReweighting', () => {
   const FEN = '4k3/8/8/8/8/8/p7/R3K3 w - - 0 1'; // Rxa2 (capture) vs Rb1 (quiet)
@@ -237,7 +237,7 @@ describe('applyStylePriorReweighting', () => {
   });
 });
 
-// ─── applyStyleScoreShaping (STYLE-04) ─────────────────────────────────────
+// ─── applyStyleScoreShaping ─────────────────────────────────────
 
 describe('applyStyleScoreShaping', () => {
   it('adds the flat scoreBonus plus a variance term when childScoreSpread is non-null', () => {
@@ -300,7 +300,7 @@ describe('applyStyleScoreShaping', () => {
     });
   });
 
-  it('preserves modalPath/modalStats as accessor properties after shaping and never invokes the underlying builder (Phase 194 JANK-03 landmine fix)', () => {
+  it('preserves modalPath/modalStats as accessor properties after shaping and never invokes the underlying builder', () => {
     const style = makeStyle({ scoreBonus: 0.05 });
     // A call-count oracle behind the getter, standing in for the real
     // `buildModalPath`/`modalPathBuilder` (treeCommon.ts) — the assertion
@@ -362,7 +362,7 @@ describe('applyStyleScoreShaping', () => {
   });
 });
 
-// ─── styleBookWeighting (STYLE-01) ──────────────────────────────────────────
+// ─── styleBookWeighting ──────────────────────────────────────────
 
 describe('styleBookWeighting', () => {
   it('boosts a candidate whose FULL joined history+san prefix is in the style set, leaves others at base weight', () => {
@@ -382,7 +382,7 @@ describe('styleBookWeighting', () => {
     expect(result.c2c4).toBeCloseTo(0.15);
   });
 
-  it('needs the JOINED prefix, not the bare SAN (Pitfall 2): the same san only boosts under the matching history', () => {
+  it('needs the JOINED prefix, not the bare SAN: the same san only boosts under the matching history', () => {
     const styleLinePrefixes = new Set(['d4 Nf6 Nf3']); // only THIS specific history+san boosts
     const candidate: BookCandidate[] = [{ uci: 'g1f3', san: 'Nf3' }];
     const rawPolicy = { g1f3: 0.1 };
@@ -404,7 +404,7 @@ describe('styleBookWeighting', () => {
     expect(result).toEqual({});
   });
 
-  it('behaves identically to maiaPolicyWeighting for an empty style-prefix set (STYLE-01 empty edge)', () => {
+  it('behaves identically to maiaPolicyWeighting for an empty style-prefix set', () => {
     const candidates: BookCandidate[] = [
       { uci: 'e2e4', san: 'e4' },
       { uci: 'd2d4', san: 'd4' },

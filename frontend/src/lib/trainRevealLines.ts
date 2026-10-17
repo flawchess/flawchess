@@ -1,17 +1,17 @@
 /**
  * trainRevealLines — the pure chip/line model behind the Train reveal's single
- * move tree (Phase 237, SEED-194). React-free so it unit-tests without a DOM.
+ * move tree. React-free so it unit-tests without a DOM.
  *
  * The reveal shows up to three "role" lines: Your move, Best move and the move
- * Played in game. Roles whose first move coincides merge into ONE chip (D-02:
- * "Move = Best"); each chip contributes ONLY its first move as a root branch of
- * one `useAnalysisBoard` tree (SEED-197). Everything after that move is an
+ * Played in game. Roles whose first move coincides merge into ONE chip
+ * ("Move = Best"); each chip contributes ONLY its first move as a root branch of
+ * one `useAnalysisBoard` tree. Everything after that move is an
  * ordinary free node, and the engine continuation is a dimmed preview that is
  * never stored in the tree (`trainRevealPreview.ts`). Which tree nodes belong to
  * which chip is never stored on a node: it is derived by walking each chip's
  * first move through the tree (`walkLinePath`) and attributing the subtree under
  * it to that chip, so child reuse and a hand-played move that happens to match
- * a chip's move all fall out of the same code (RESEARCH Pattern 1).
+ * a chip's move all fall out of the same code.
  */
 
 import { Chess } from 'chess.js';
@@ -21,7 +21,7 @@ import type { GradeResult, TrainEngineLine } from '@/hooks/useTrainGradingEngine
 import type { InstantGradeState } from '@/hooks/trainGradingSupport';
 import type { TrainMoveQuality } from '@/lib/trainArrows';
 
-/** 190.1-03 D-03: role keys for the three reveal lines, in their canonical
+/** Role keys for the three reveal lines, in their canonical
  * display AND key-precedence order (your > best > game). */
 export type RoleKey = 'your' | 'best' | 'game';
 
@@ -35,12 +35,12 @@ export const ROLE_SHORT_LABELS: Record<RoleKey, string> = {
 };
 
 /** The chip whose arrow is lit when the reveal opens, and what rewinding to the
- * puzzle position restores when no chip is focused (RESEARCH A1). */
+ * puzzle position restores when no chip is focused. */
 export const DEFAULT_ROOT_FOCUS: RoleKey = 'your';
 
 /**
- * Local discriminated state for the reveal-time "played in game" search
- * (190.1-01/03). Only ever populated for a STANDALONE 'game' chip — the
+ * Local discriminated state for the reveal-time "played in game" search.
+ * Only ever populated for a STANDALONE 'game' chip — the
  * dispatching effect skips the search entirely when the game move coincides
  * with `playedMoveUci` or `gradeResult.bestLine.moves[0]`.
  */
@@ -67,7 +67,7 @@ export interface ChipGroup {
   /** The line to display, or null while it is not known yet (see `pending`). */
   line: TrainEngineLine | null;
   /** 'loading' while the line is still being searched, 'failed' once the search
-   * gave up. Null for a ready chip (Phase 236 D-14/D-15). */
+   * gave up. Null for a ready chip. */
   pending: 'loading' | 'failed' | null;
   /** Quality of the chip's first move: 'best' whenever the best move is in the
    * chip, else the played move's own quality, else the game move's. */
@@ -87,7 +87,7 @@ export interface BuildChipGroupsInput {
 
 /** UCI ("e2e4"/"e7e8q") -> SAN via chess.js from `fen`, or null on a null/
  * malformed/illegal input — a chip falls back to its bare mark rather than
- * rendering a broken token (190.1-03 Task 1). */
+ * rendering a broken token. */
 export function sanFromUci(fen: string, uci: string | null): string | null {
   if (uci === null || uci.length < 4) return null;
   try {
@@ -104,7 +104,7 @@ export function sanFromUci(fen: string, uci: string | null): string | null {
 }
 
 /**
- * Phase 236: the best-move UCI the reveal shows. The graded result's key line
+ * The best-move UCI the reveal shows. The graded result's key line
  * once the phone grade has landed, else the key the instant path carries while
  * it is pending; null when neither exists. Primitive, so effect deps built on
  * it do not re-fire when the grade object replaces the pending state.
@@ -113,7 +113,7 @@ export function revealBestUciOf(
   gradeResult: GradeResult | null,
   instantGrade: InstantGradeState | null,
 ): string | null {
-  // WR-01: read `bestMoveUci`, not `bestLine.moves[0]`. The Analyze stand-in grade
+  // Read `bestMoveUci`, not `bestLine.moves[0]`. The Analyze stand-in grade
   // (gradeFromServerPair) can carry an EMPTY bestLine when the anchor had not
   // settled, so moves[0] was undefined and the Best chip vanished while the board
   // arrow (which already used bestMoveUci) still drew it. One predicate now.
@@ -138,7 +138,7 @@ function resolveChipLine(
 }
 
 /**
- * Phase 236: a your/best chip with no line yet is waiting on the background
+ * A your/best chip with no line yet is waiting on the background
  * search (or gave up), never the game-move search. A STANDALONE game chip is
  * 'loading' until its own search is ready and 'failed' when that search errored.
  */
@@ -157,8 +157,8 @@ function resolveChipPending(
 }
 
 /**
- * Groups the up-to-three role lines by coincident first-move UCI (190.1-03
- * D-03 / Phase 237 D-02). Chips come out in canonical your > best > game order.
+ * Groups the up-to-three role lines by coincident first-move UCI.
+ * Chips come out in canonical your > best > game order.
  */
 export function buildChipGroups(input: BuildChipGroupsInput): ChipGroup[] {
   const {
@@ -171,7 +171,7 @@ export function buildChipGroups(input: BuildChipGroupsInput): ChipGroup[] {
     gameMoveQuality,
   } = input;
   const uciByRole: Partial<Record<RoleKey, string>> = {};
-  // Phase 236: on the instant path the verdict lands before the phone grade, so
+  // On the instant path the verdict lands before the phone grade, so
   // the your/best roles exist from the server verdict and the key alone.
   if ((gradeResult !== null || instantGrade !== null) && playedMoveUci !== null) {
     uciByRole.your = playedMoveUci;
@@ -180,7 +180,7 @@ export function buildChipGroups(input: BuildChipGroupsInput): ChipGroup[] {
   if (bestUci !== null) uciByRole.best = bestUci;
   if (gameMoveUci !== null) uciByRole.game = gameMoveUci;
 
-  // 190.1 UAT round 5: the display order is ALWAYS canonical — Your move first —
+  // The display order is ALWAYS canonical — Your move first —
   // so the user's own move is the first thing read regardless of the verdict.
   const chips: ChipGroup[] = [];
   const consumed = new Set<RoleKey>();
@@ -341,10 +341,10 @@ function mainLineFrom(nodes: Map<NodeId, MoveNode>, firstId: NodeId): NodeId[] {
 
 /**
  * The list the user sees for the active chip: its first move followed by the
- * first-added continuation chain as the main line (analysis-board semantics,
- * SEED-197), the later-added children as ordinary sidelines, and the free root
+ * first-added continuation chain as the main line (analysis-board semantics),
+ * the later-added children as ordinary sidelines, and the free root
  * forks (rendered before move 1). The other chips' subtrees are excluded. With
- * no active chip (D-04) the list is only the user's own root-fork subtrees.
+ * no active chip the list is only the user's own root-fork subtrees.
  */
 export function buildTreeListView(
   nodes: Map<NodeId, MoveNode>,
@@ -374,9 +374,9 @@ export interface ForwardTargetInput {
 /**
  * Where › (and ArrowRight) goes through EXISTING nodes. NOT
  * useAnalysisBoard.goForward, whose lowest-id / pv-first rule would step into the
- * wrong chip at the root (RESEARCH Pitfall 3):
+ * wrong chip at the root:
  * - at the puzzle position: the ACTIVE chip's first move (`linePaths` is read only
- *   here; with no active chip, D-04: the last-visited root fork, else the first);
+ *   here; with no active chip, the last-visited root fork, else the first);
  * - below the root: the last-visited child, else the lowest-id child (the main
  *   line continuation).
  * Null when the node has no children; the caller then commits the preview.
@@ -411,7 +411,7 @@ export function resolveForwardTarget({
 /**
  * Bounds on a persisted tree snapshot. The snapshot is a per-tab navigation aid
  * (it rides on the Analyze -> Back reveal cache), so it is capped when built AND
- * when replayed: a tampered or runaway entry cannot balloon the tree (T-237-05).
+ * when replayed: a tampered or runaway entry cannot balloon the tree.
  */
 export const REVEAL_TREE_SNAPSHOT_MAX_PATHS = 32;
 export const REVEAL_TREE_SNAPSHOT_MAX_PLIES = 64;
@@ -433,7 +433,7 @@ export interface RevealTreeSnapshot {
   sidelinePaths: string[][];
   /**
    * UCIs from the puzzle position to each node COMMITTED from the engine preview
-   * (never graded, SEED-197). The node-id based committed set does not survive a
+   * (never graded). The node-id based committed set does not survive a
    * rebuild (ids differ), so a restore re-resolves these paths to re-mark the
    * regrafted nodes. Omitted when nothing was committed (and by older bundles),
    * which restores with nothing marked.

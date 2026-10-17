@@ -5,20 +5,20 @@
  * Composes two TanStack Query mutations (`composeOrResumeSession`,
  * `solvePuzzle`) with the derived puzzle-queue state: the frozen `puzzles`
  * array from the session response, and `currentIndex` seeded to 0 — NEVER
- * `solved_count` (bug fix, 190-06 UAT checkpoint; see below).
+ * `solved_count` (see below).
  *
- * Bug fix (190-06 UAT): `currentIndex` used to seed from
- * `TrainSessionResponse.solved_count` on the theory that `puzzles` was always
- * the FULL session array and solved_count was the number to skip over. That
+ * Bug fix: `currentIndex` must not seed from
+ * `TrainSessionResponse.solved_count`, which would assume `puzzles` is always
+ * the FULL session array and solved_count the number to skip over. That
  * is wrong for a resumed session: the backend's resume path
  * (`load_session_puzzles`, `app/repositories/train_repository.py`) returns
  * ONLY the not-yet-attempted puzzles (`drill_solves.solved_at IS NULL`),
  * ordered by position — never the already-solved ones. So `puzzles.length`
  * on resume is `puzzle_count - solved_count`, and indexing at `solved_count`
  * overshoots the array, leaving `currentPuzzle` permanently null — the
- * "Resume session — N of M done" button rendered correctly (it reads
- * `solved_count`/`puzzle_count` directly) but clicking it did nothing,
- * because `Train.tsx`'s `showLoop` gate never turned true.
+ * "Resume session — N of M done" button renders correctly (it reads
+ * `solved_count`/`puzzle_count` directly) but clicking it does nothing,
+ * because `Train.tsx`'s `showLoop` gate never turns true.
  * `puzzles[0]` IS the correct resume point in BOTH the fresh case (the full
  * array, so index 0 is the first puzzle) and the resume case (already only
  * the remaining puzzles, so index 0 is the next unsolved one) — the array's
@@ -29,37 +29,33 @@
  * session, not the puzzles already solved before it loaded.
  *
  * `POST /train/sessions` is the ONLY endpoint that can tell the landing
- * screen (190-04, D-01..D-04/D-14) whether the user has a fresh/short/
+ * screen whether the user has a fresh/short/
  * resumable/completed/empty session — there is no separate preview GET. The
  * call is resume-safe (idempotent per local day, see
  * `compose_and_materialize_session`'s docstring), so `Train.tsx` fires
- * `startSession()` automatically on mount as a STATUS fetch; D-01's "no
- * auto-start on visit" is about never skipping straight into the solve loop
+ * `startSession()` automatically on mount as a STATUS fetch; "no
+ * auto-start on visit" means never skipping straight into the solve loop
  * UI, not about avoiding this read. Pressing Start/Resume only flips local
  * loop-entry state — it does not call this again.
  *
- * UAT bug fix (191-06): `startSession()` IS re-fired once more, from
+ * `startSession()` IS re-fired once more, from
  * `TrainScheduleSettings`'s `onSaved` callback (threaded through
  * `TrainStartScreen`'s `onSettingsSaved` prop to `Train.tsx`'s own
  * `startSession`) after a schedule-settings save actually persists. Without
  * this, an untouched session composed at mount under the OLD
- * `puzzles_per_session` stayed frozen at the stale size for the rest of the
+ * `puzzles_per_session` would stay frozen at the stale size for the rest of the
  * visit even after the setting changed — the backend's own resize-discard
  * (`_discard_if_untouched_and_resized`) only runs on the NEXT compose call,
  * and nothing else on this page ever makes one.
  *
- * `sessionScore` (190-04 D-03, replaced 260728-tgc/BUGFIX-TRAIN-SCORE-CROSSDEVICE):
- * seeded from the session response's `solved_results` — the server-returned
+ * `sessionScore`: seeded from the session response's `solved_results` — the server-returned
  * per-puzzle outcomes — via the same `scorePuzzle` + `aggregateSessionScore`
  * pair from `@/lib/trainScore` that grades a live solve, then accumulated in
- * memory as the loop progresses. This replaces a client-accumulated,
- * localStorage-backed tally keyed by `session_id`, which read "0 of N" on any
- * device that had not itself seen the original solve responses — reproduced
- * in production (user 28, session 27: 14/18 on the solving device, 0/18 on a
- * second device). `solved_results` is server data, so the recap is now
- * correct everywhere.
+ * memory as the loop progresses. Don't persist the score per device: it must
+ * come from the server's `solved_results` so the recap is correct on every
+ * device.
  *
- * Block-and-retry solve persistence (190-04 Task 3, T-190-12/T-190-15): a
+ * Block-and-retry solve persistence: a
  * failed solve POST must never silently cost the user's spaced-repetition
  * progress. `advance()` is a no-op until the CURRENT puzzle's solve mutation
  * has actually succeeded (tracked via `solvedPositions`, keyed by
@@ -91,7 +87,7 @@ export interface UseTrainSessionResult {
   /** Index into `puzzles`. Null before any session has been composed or when
    * `puzzles` is empty. Always seeded to 0 on load — `puzzles` is already
    * ordered to start at "the next thing to solve" in both the fresh and the
-   * resume case (see module docstring; 190-06 UAT bug fix). NOT the same
+   * resume case (see module docstring). NOT the same
    * thing as how many puzzles the user has solved overall — see
    * `session.solved_count` for that. */
   currentIndex: number | null;
@@ -112,27 +108,25 @@ export interface UseTrainSessionResult {
   sessionScore: number;
   /**
    * The number of puzzles actually scored so far in the session — the
-   * session score's denominator (190.1-04, D-04). Computed as the session
+   * session score's denominator. Computed as the session
    * response's `solved_results.length` (puzzles solved before this frontend
    * session loaded, per the server's own record) plus `solvedPositions.size`
    * (puzzles solved so far within it), updating on exactly the same tick as
    * `sessionScore` (both in the solve mutation's success path) — unlike
    * `currentIndex`, which only moves when Next is pressed and would read
-   * stale on the very screen the score is shown (190.1-RESEARCH.md Open
-   * Question 3). Both the numerator and this denominator's base now come
-   * from the same server-side `solved_results` list (260728-tgc), so they
-   * can no longer disagree across devices.
+   * stale on the very screen the score is shown. Both the numerator and this
+   * denominator's base come from the same server-side `solved_results` list,
+   * so they cannot disagree across devices.
    */
   sessionSolvedCount: number;
   /**
-   * Every item solved this session (Phase 222 D-17/D-18, RESEARCH Finding
-   * C) — the score screen's sole source for "what returns and when". Seeded
+   * Every item solved this session — the score screen's sole source for "what returns and when". Seeded
    * from `data.solved_results` in the session mutation's `onSuccess` and
    * appended in the solve mutation's `onSuccess` from the live
    * `SolveResponse`, which already carries `source`/`item_status`/
    * `due_date`. The server's `solved_results` is EMPTY for a session
    * composed and completed in one sitting (the exact first-time-user
-   * population this phase serves), so the live append is what makes the
+   * population), so the live append is what makes the
    * score screen truthful there; the seed is what makes it survive a
    * reload or a phone handoff. Reseeded (never accumulated) on every fresh
    * `startSession()` call, exactly like `solvedPositions` above.
@@ -158,14 +152,14 @@ export interface UseTrainSessionResult {
    * reveal GET fired in that window 409s ("Puzzle not yet attempted"). */
   lastSolvedPosition: number | null;
   /** Re-submits the exact same payload as the last `solvePuzzle` call
-   * (T-190-12/T-190-15) — a no-op until a solve attempt has been made. */
+   * — a no-op until a solve attempt has been made. */
   retrySolve: () => void;
   /** Clears the solve mutation's data/error state — called on every puzzle
    * transition so a previous puzzle's verdict/error never bleeds into the
    * next one's initial render. */
   resetSolve: () => void;
   /** Advance to the next puzzle in the frozen queue. A no-op while the
-   * current puzzle's solve mutation has not succeeded (T-190-12 block-and-
+   * current puzzle's solve mutation has not succeeded (block-and-
    * retry) — a lost solve must never silently let the user move on. */
   advance: () => void;
 }
@@ -175,13 +169,13 @@ export function useTrainSession(): UseTrainSessionResult {
   const [session, setSession] = useState<TrainSessionResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
   const [sessionScore, setSessionScore] = useState(0);
-  // T-190-12: positions whose solve mutation has succeeded — advance() gates
+  // Positions whose solve mutation has succeeded — advance() gates
   // on membership rather than trusting isSolveError's absence alone (defense
   // in depth: a stale/never-attempted state must also block).
   const [solvedPositions, setSolvedPositions] = useState<ReadonlySet<number>>(new Set());
-  // T-190-15: the exact payload to re-submit on retry — never re-derived.
+  // The exact payload to re-submit on retry — never re-derived.
   const [lastSolvePayload, setLastSolvePayload] = useState<SolveRequest | null>(null);
-  // Phase 222 (D-17/D-18, RESEARCH Finding C): the live per-solve outcome
+  // The live per-solve outcome
   // accumulator — see the `UseTrainSessionResult.solvedOutcomes` doc comment.
   const [solvedOutcomes, setSolvedOutcomes] = useState<SolvedResult[]>([]);
 
@@ -189,14 +183,13 @@ export function useTrainSession(): UseTrainSessionResult {
     mutationFn: trainApi.composeOrResumeSession,
     onSuccess: (data) => {
       setSession(data);
-      // 190-06 UAT bug fix: ALWAYS seed at 0, never at solved_count — see
+      // ALWAYS seed at 0, never at solved_count — see
       // module docstring. `puzzles` already starts at the resume point in
       // both the fresh (full array) and resume (remaining-only array) cases.
       setCurrentIndex(data.puzzles.length > 0 ? 0 : null);
-      // 260728-tgc (BUGFIX-TRAIN-SCORE-CROSSDEVICE): seed the score from the
-      // server's own solved_results via the shared scorePuzzle/
-      // aggregateSessionScore pair, instead of a device-local
-      // localStorage tally — this is the cross-device fix.
+      // Seed the score from the server's own solved_results via the shared
+      // scorePuzzle/aggregateSessionScore pair, not a device-local tally, so it
+      // is correct across devices.
       setSessionScore(
         aggregateSessionScore(
           data.solved_results.map((r) => scorePuzzle(r.correct_guess, r.move_quality)),
@@ -206,12 +199,12 @@ export function useTrainSession(): UseTrainSessionResult {
       // has recorded, so a solvedPositions set left over from an earlier
       // loop on this same mount would double-count against the score just
       // seeded above. Safe to clear unconditionally: startSession only fires
-      // from the landing screen (mount, and the 191-06 settings-saved
+      // from the landing screen (mount, and the settings-saved
       // re-fire) — never mid-puzzle — so this can never strand advance()'s
-      // block-and-retry gate (T-190-12), since the puzzle in front of the
+      // block-and-retry gate, since the puzzle in front of the
       // user was never in solvedPositions to begin with.
       setSolvedPositions(new Set());
-      // Phase 222 (RESEARCH Finding C): reseed, never accumulate — same
+      // Reseed, never accumulate — same
       // discipline as `setSolvedPositions` above, for the same reason
       // (startSession only fires from the landing screen, never mid-puzzle).
       // This covers the resume/reload/phone-handoff path; a session played
@@ -225,19 +218,18 @@ export function useTrainSession(): UseTrainSessionResult {
     mutationFn: ({ sessionId, body }: { sessionId: number; body: SolveRequest }) =>
       trainApi.solvePuzzle(sessionId, body),
     onSuccess: (data, variables) => {
-      // SEED-119: the single scorePuzzle formula, never re-derived here.
+      // The single scorePuzzle formula, never re-derived here.
       const points = scorePuzzle(data.correct_guess, data.move_quality);
-      // 260728-tgc: in-memory accumulation only now, so the in-loop counter
-      // still ticks live on every solve — no localStorage persistence. A
-      // reload now refetches truth (solved_results) instead of replaying a
-      // device-local cache.
+      // In-memory accumulation only, so the in-loop counter ticks live on
+      // every solve with no localStorage persistence. A reload refetches truth
+      // (solved_results) instead of replaying a device-local cache.
       setSessionScore((prev) => prev + points);
       setSolvedPositions((prev) => {
         const next = new Set(prev);
         next.add(variables.body.position);
         return next;
       });
-      // Phase 222 (RESEARCH Finding C, Example 4): appended straight from the
+      // Appended straight from the
       // live SolveResponse — never re-derived, mirrors the "never re-derived
       // here" discipline `sessionScore` already follows above.
       setSolvedOutcomes((prev) => [
@@ -250,7 +242,7 @@ export function useTrainSession(): UseTrainSessionResult {
           due_date: data.due_date,
         },
       ]);
-      // 193 UAT: invalidate on EVERY solve, not just the last one. The nav
+      // Invalidate on EVERY solve, not just the last one. The nav
       // badge's waiting_count is `puzzle_count - solved_count` server-side
       // (get_waiting_puzzle_count branch 1), so it drops by one on each
       // solve — gating this on session_complete left the counter frozen at
@@ -290,7 +282,7 @@ export function useTrainSession(): UseTrainSessionResult {
   }, [sessionId, mutateEntered]);
 
   const advance = useCallback(() => {
-    // T-190-12 block-and-retry: never advance past a puzzle whose solve has
+    // Block-and-retry: never advance past a puzzle whose solve has
     // not succeeded — a pending/errored mutation, or one that has not even
     // been attempted for the CURRENT puzzle yet, blocks the index bump.
     setCurrentIndex((idx) => {
@@ -323,7 +315,7 @@ export function useTrainSession(): UseTrainSessionResult {
   );
 
   const retrySolve = useCallback(() => {
-    // T-190-15: re-submit the IDENTICAL payload — never re-derive/re-grade a
+    // Re-submit the IDENTICAL payload — never re-derive/re-grade a
     // new verdict on retry, so a retry cannot change the answer.
     if (lastSolvePayload === null) return;
     void solvePuzzle(lastSolvePayload);
@@ -343,11 +335,10 @@ export function useTrainSession(): UseTrainSessionResult {
     isSessionPending: sessionMutation.isPending,
     isSessionError: sessionMutation.isError,
     sessionScore,
-    // 260728-tgc: base comes from solved_results.length (server-side, same
-    // source the score numerator seeds from), not the separate solved_count
-    // field — solved_count stays on the response for its other consumer
-    // (TrainStartScreen's landing-state resolution) but is no longer the
-    // base here.
+    // Base comes from solved_results.length (server-side, same source the
+    // score numerator seeds from), not the separate solved_count field —
+    // solved_count stays on the response for its other consumer
+    // (TrainStartScreen's landing-state resolution).
     sessionSolvedCount: (session?.solved_results.length ?? 0) + solvedPositions.size,
     solvedOutcomes,
     solvePuzzle,

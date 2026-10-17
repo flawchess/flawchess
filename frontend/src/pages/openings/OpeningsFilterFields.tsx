@@ -25,7 +25,7 @@ export type OpeningsFilterFieldsProps = {
   /**
    * Mobile drawer uses a taller (min-h-11) 44px tap target for the piece-filter
    * toggle group; desktop does not. A layout decision, kept independent of
-   * `testIdSuffix` (215 code review WR-06) — that prop is purely a
+   * `testIdSuffix`: that prop is purely a
    * browser-automation contract, so a future testid change (or a third call
    * site with its own suffix) must not silently change tap-target sizing.
    * Defaults to false (desktop).
@@ -48,9 +48,7 @@ export function OpeningsFilterFields({
   tallTapTargets = false,
 }: OpeningsFilterFieldsProps) {
   // Mobile drawer uses a taller (min-h-11) tap target; desktop does not.
-  // Preserved exactly from the two pre-split call sites (not a new choice) —
-  // now driven by the explicit tallTapTargets prop rather than testIdSuffix
-  // (215 code review WR-06).
+  // Driven by the explicit tallTapTargets prop, not testIdSuffix.
   const toggleItemClassName = tallTapTargets ? 'flex-1 min-h-11 text-sm' : 'flex-1 text-sm';
 
   return (

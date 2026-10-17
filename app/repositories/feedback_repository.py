@@ -1,7 +1,7 @@
 """Feedback repository: async DB operations for feedback persistence.
 
 Exposes module-level async functions. Never calls session.commit() —
-get_async_session auto-commits on success (Pitfall 3 from RESEARCH.md).
+get_async_session auto-commits on success.
 """
 
 from sqlalchemy import exists, select

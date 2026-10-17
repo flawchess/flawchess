@@ -27,7 +27,7 @@ export interface PvLine {
  * Whether the info line's score is a definitive (exact) measurement or a
  * search bound that must not be displayed.
  *
- * Pitfall 5: lowerbound/upperbound scores from alpha-beta cause eval jitter
+ * lowerbound/upperbound scores from alpha-beta cause eval jitter
  * if displayed — only commit to state on 'exact'.
  */
 export type UCIScoreBound = 'exact' | 'lowerbound' | 'upperbound';
@@ -99,7 +99,7 @@ export function parseInfoLine(line: string): ParsedInfoLine | null {
           scoreCp = null;
         }
         // Check for optional bound modifier immediately after the score value.
-        // Pitfall 5: lowerbound/upperbound must not be committed to displayed eval.
+        // lowerbound/upperbound must not be committed to displayed eval.
         const boundToken = tokens[i + 3];
         if (boundToken === 'lowerbound') {
           bound = 'lowerbound';
@@ -196,13 +196,11 @@ export function parseBestmove(line: string): string | null {
 /** Find the settled mount-search rank whose first move is `uci`, or null.
  * Rank lines are rooted at the puzzle FEN and share one search with rank 1,
  * so an eval taken from here can never invert against the best move's eval
- * (190.1 UAT round 9). Exact-UCI match (including any promotion suffix) —
+ * Exact-UCI match (including any promotion suffix) —
  * deliberately STRICTER than its squares-only twin,
- * `trainArrows.ts`'s `vettedMoveForSquares` (Phase 211, which replaced the
- * rank-line squares matcher that used to live below); the two contracts
+ * `trainArrows.ts`'s `vettedMoveForSquares`; the two contracts
  * must never be allowed to silently converge (see that function's own doc
- * comment for why a squares-only match exists at all). Relocated here from
- * `useTrainGradingEngine.ts` (Phase 205 D-04 — body unchanged). */
+ * comment for why a squares-only match exists at all). */
 export function rankLineForMove(lines: PvLine[], uci: string): PvLine | null {
   return lines.find((l) => l.moves[0] === uci) ?? null;
 }

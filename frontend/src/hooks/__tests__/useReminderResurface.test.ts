@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * useReminderResurface.test.ts — Phase 203 Plan 04 (OFFER-05/D-16). Covers
+ * useReminderResurface.test.ts — covers
  * the pure `shouldResurface` decision plus `useReminderResurfaceRedirect`'s
  * once-per-mount route push, per the fail-safe-to-false contract every
- * unresolved/unavailable/throwing iOS signal must satisfy (CONTEXT.md D-01).
+ * unresolved/unavailable/throwing iOS signal must satisfy.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -264,7 +264,7 @@ describe('useReminderResurfaceRedirect', () => {
     expect(navigateSpy).not.toHaveBeenCalled();
   });
 
-  it('CR-01 regression: propagates enabled: false down to useTrainSettings, so a guest never fires GET /train/settings', async () => {
+  it('regression: propagates enabled: false down to useTrainSettings, so a guest never fires GET /train/settings', async () => {
     currentPathname = '/library';
     mockInstallPrompt(true);
     vi.mocked(getDeviceSubscription).mockResolvedValue(null);
@@ -295,7 +295,7 @@ describe('useReminderResurfaceRedirect', () => {
     });
 
     // `ProtectedLayout` mounts this hook unconditionally on every protected
-    // route for every account — before the CR-01 fix, `useTrainSettings` was
+    // route for every account — before the fix, `useTrainSettings` was
     // called with no arguments at all here, so a guest's `GET
     // /train/settings` fired unconditionally and its guaranteed 403
     // (`_reject_guest`) landed in Sentry on every page view.

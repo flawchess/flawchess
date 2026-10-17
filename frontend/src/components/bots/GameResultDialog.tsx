@@ -18,10 +18,7 @@ import type { Persona } from '@/lib/personas/personaRegistry';
 import type { BotLineKey } from '@/lib/botGameCopy';
 import { trackFeature } from '@/lib/analytics';
 
-/** D-20/D-21 copy, exported so `GameResultStrip` renders the EXACT same
- * strings rather than re-typing them — a divergence risk on the "apply
- * changes to mobile too" surface (the strip is the mobile/dismissed
- * surface). Verbatim from 171-UI-SPEC.md's Copywriting Contract. */
+/** Exported for the tests. */
 export const BOT_GAME_SAVED_COPY = 'Saved to your Library';
 export const GUEST_NOT_AUTO_ANALYZED_COPY =
   "Guest games aren't analyzed automatically. Use 'Analyze this game' above, or sign up for automatic analysis of every game.";
@@ -31,42 +28,39 @@ interface GameResultDialogProps {
   userColor: MoverColor;
   open: boolean;
   onDismiss: () => void;
-  /** D-08: relabeled "New opponent" (verbatim `onNewGame` — the existing
-   * single path back to the setup view, now the persona grid by default). */
+  /** The "New opponent" action: the single path back to the setup view (the
+   * persona grid by default). */
   onNewGame: () => void;
   onAnalyze: () => void;
-  /** Phase 183 (D-06/D-08): the persona's name for a persona game, or `null`
+  /** The persona's name for a persona game, or `null`
    * for a Custom game — resolved once by the caller via the shared
    * `personaFor` lookup. Drives both the persona-named title (via
    * `resultCopy`) and whether the "Rematch <Persona>" action renders. */
   personaName: string | null;
-  /** Phase 223 UAT: the persona itself (not just its name), so the dialog can
+  /** The persona itself (not just its name), so the dialog can
    * carry the bot's face and its parting line. `null` for a Custom game,
    * which renders no bubble at all. */
   persona: Persona | null;
   /** The terminal line (`'bot-won'`/`'bot-lost'`/`'game-drawn'`) the voice
    * hook resolved for this ending. The board-side bubble hides once the game
-   * is over, so this dialog is the ONLY place the line is read — that is the
-   * whole point of moving it in here (Phase 223 UAT: "put the avatar with the
-   * speech bubble inside the modal, so the player can read the phrase"). */
+   * is over, so this dialog is the ONLY place the line is read. */
   botLine: BotLineKey | null;
-  /** D-08: starts a new game with the SAME pinned settings (same
+  /** Starts a new game with the SAME pinned settings (same
    * personaId/botElo/blend/color/TC) via the caller's `handleStart` — the
    * single existing start path, never a second one. Only rendered/callable
    * for a persona game (`personaName !== null`). */
   onRematch: () => void;
-  /** D-21: true only once the finish-time store mutation has CONFIRMED
+  /** True only once the finish-time store mutation has CONFIRMED
    * (`useStoreBotGame().isSuccess`) — this row never renders on
-   * idle/pending/error (no partial-store hedge copy, per UI-SPEC). */
+   * idle/pending/error (no partial-store hedge copy). */
   storeSucceeded: boolean;
-  /** SC4: guests additionally see the not-auto-analyzed caveat below the
+  /** Guests additionally see the not-auto-analyzed caveat below the
    * save confirmation; non-guests never see it. */
   isGuest: boolean;
-  /** Quick 260714-rj5: true while the store POST is still settling (neither
+  /** True while the store POST is still settling (neither
    * succeeded nor failed yet) OR the tier-1 enqueue triggered by clicking
    * Analyze is itself in flight — disables the button and shows a spinner.
-   * See the D-20/D-21 retirement note on the button below for why the
-   * Analyze CTA is now store-gated (it wasn't before this plan). */
+   * See the note on the Analyze button below for why it is store-gated. */
   analyzeBusy: boolean;
 }
 
@@ -78,13 +72,11 @@ function titleColorFor(outcome: BotGameOutcome, userColor: MoverColor): string {
 }
 
 /**
- * Dismissible game-end result dialog (Phase 169 D-11). The title is the
+ * Dismissible game-end result dialog. The title is the
  * verbatim `resultCopy` string (never re-derived here) colored by the WDL
  * token matching the outcome — text color only, no full-dialog tint. No body
- * prose beyond the title (popover-copy-minimalism). Dismissing via the
- * existing `Dialog`'s X/outside-click reveals the final board position
- * underneath; `GameResultStrip` (rendered by the page once dismissed) keeps
- * both actions reachable afterward.
+ * prose beyond the title (popover-copy-minimalism). Dismissing (X / outside
+ * click / Esc) calls `onDismiss`, which returns to the bot roster.
  */
 export function GameResultDialog({
   outcome,
@@ -128,7 +120,7 @@ export function GameResultDialog({
             <BotGameBubble persona={persona} line={botLine} />
           </div>
         )}
-        {/* D-20: only renders once the finish-time store has CONFIRMED (never
+        {/* Only renders once the finish-time store has CONFIRMED (never
             on idle/pending/error). Must stay ABOVE DialogFooter: the footer
             bleeds to the dialog edges (-mx-4 -mb-4, rounded-b-xl, border-t)
             and only renders correctly as the last child — anything after it
@@ -149,21 +141,18 @@ export function GameResultDialog({
             )}
           </div>
         )}
-        {/* Quick 260722-nlm: the shared footer's `sm:flex-row` put all three
+        {/* The shared footer's `sm:flex-row` would put all three
             actions on one line, and "Analyze this game" + "New opponent" +
-            "Rematch <Persona>" overflow the dialog's `sm:max-w-sm` width —
-            the buttons visibly bled outside the dialog border. Persona names
-            are variable-length, so a row layout can never be made safe;
+            "Rematch <Persona>" overflow the dialog's `sm:max-w-sm` width.
+            Persona names are variable-length, so a row layout can never be made safe;
             keeping `flex-col-reverse` at every breakpoint stacks them (primary
             on top, Analyze at the bottom) and lets each stretch full width. */}
         <DialogFooter className="sm:flex-col-reverse sm:justify-start">
-          {/* D-21 RETIRED (Quick 260714-rj5): the Phase 169 invariant "the
-              Analyze CTA is never gated on the store" no longer holds. Analyze
-              now needs the server-assigned game_id (from the finish-time
+          {/* Analyze needs the server-assigned game_id (from the finish-time
               store) to enqueue tier-1 analysis and open the game-mode board
               directly, so it's disabled with a spinner until the store
               settles. A store failure falls back to the free-play ?line= URL
-              (Bots.tsx's handleAnalyze) — the user is never stranded. */}
+              (Bots.tsx's handleAnalyze), so the user is never stranded. */}
           <Button
             variant="brand-outline"
             className={BOT_ACTION_BUTTON_CLASS}
@@ -179,8 +168,8 @@ export function GameResultDialog({
             {analyzeBusy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Analyze this game
           </Button>
-          {/* D-08: "New opponent" reuses the existing onNewGame path (the
-              persona grid is now the default setup view) — no new route.
+          {/* "New opponent" reuses the existing onNewGame path (the
+              persona grid is the default setup view) — no new route.
               Primary/secondary per CLAUDE.md: with Rematch present (a
               persona game), Rematch is the single high-emphasis CTA and New
               opponent steps down to brand-outline; for a Custom game (no
@@ -190,7 +179,7 @@ export function GameResultDialog({
             className={BOT_ACTION_BUTTON_CLASS}
             onClick={() => {
               onNewGame();
-              // Phase 229: local state reset only (Bots.tsx handleNewGame), no backend write.
+              // Local state reset only (Bots.tsx handleNewGame), no backend write.
               trackFeature('action', { target: 'bot-new-game' });
             }}
             data-testid="btn-new-game"
@@ -203,7 +192,7 @@ export function GameResultDialog({
               className={BOT_ACTION_BUTTON_CLASS}
               onClick={() => {
                 onRematch();
-                // Phase 229: starts a local game (Bots.tsx handleStart); the game row is
+                // Starts a local game (Bots.tsx handleStart); the game row is
                 // only stored at finish, so the click itself is not DB-known.
                 trackFeature('action', { target: 'bot-rematch' });
               }}

@@ -1,4 +1,4 @@
-"""Quick task 260902-rmn: broad `except Exception` fallbacks must reach Sentry.
+"""Broad `except Exception` fallbacks must reach Sentry.
 
 Each function below replays a *stored* PGN (already parsed at import), so a
 parse that raises is a bug or data corruption, not user input. Before this task

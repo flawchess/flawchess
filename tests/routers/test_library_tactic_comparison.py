@@ -1,7 +1,7 @@
-"""Integration tests for GET /api/library/tactic-comparison (Phase 126).
+"""Integration tests for GET /api/library/tactic-comparison.
 
 Coverage:
-- test_200_shape              : authenticated request returns 200 with per-TC tcs[] and analyzed_gate (Phase 239)
+- test_200_shape              : authenticated request returns 200 with per-TC tcs[] and analyzed_gate
 - test_401_unauthenticated    : no-auth returns 401
 - test_422_date_guard         : from_date > to_date returns 422
 - test_tactic_families_filter : tactic_families param accepted, response is valid
@@ -86,7 +86,7 @@ async def _seed_games(
                         if analyzed
                         else None
                     ),
-                    # WR-01: the tactic population also requires blobs_completed_at.
+                    # The tactic population also requires blobs_completed_at.
                     blobs_completed_at=(
                         datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
                         if analyzed
@@ -117,7 +117,7 @@ async def _delete_games(test_engine, game_ids: list[int]) -> None:
 
 @pytest.mark.asyncio
 async def test_200_shape(test_engine) -> None:
-    """Authenticated request returns 200 with the per-TC response keys (Phase 239 D-02)."""
+    """Authenticated request returns 200 with the per-TC response keys."""
     email = f"tac-cmp-router-shape-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_ids = await _seed_games(test_engine, user_id, count=3, analyzed=True)
@@ -138,7 +138,7 @@ async def test_200_shape(test_engine) -> None:
         assert [tc["tc"] for tc in body["tcs"]] == ["blitz"]
         blitz = body["tcs"][0]
         assert blitz["analyzed_n"] == 3
-        assert blitz["below_gate"] is True  # 3 < gate, bullets are still emitted (D-03)
+        assert blitz["below_gate"] is True  # 3 < gate, bullets are still emitted
         assert len(blitz["bullets"]) == 38
         for bullet in blitz["bullets"]:
             assert bullet["orientation"] in ("missed", "allowed")

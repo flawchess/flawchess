@@ -1,6 +1,6 @@
 /**
  * nextLineFen — the FEN the user is most likely to show next on the analysis
- * board: the following ply on the current line (quick 260906-gu2, feeds
+ * board: the following ply on the current line (feeds
  * `useMaiaEngine`'s `prefetchFen`).
  *
  * On the main line (or at the root) that is the next main-line node; on a

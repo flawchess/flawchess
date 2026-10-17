@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useBotGameVoice unit tests (Phase 223, BOTVOICE-01/02/03).
+ * useBotGameVoice unit tests.
  *
  * Behaviors verified:
  * 1. The game-start greeting fires once on a live, fresh (initialPly 0) game.
@@ -9,7 +9,7 @@
  * 4. `onMoveCommitted` leaves the line untouched when the mover is the bot.
  * 5. A graded swing FOR the bot (both establishing and reportable calls)
  *    produces the earned-tease key.
- * 5b. Phase 223 UAT, the regret latch: a swing AGAINST the bot stays silent
+ * 5b. The regret latch: a swing AGAINST the bot stays silent
  *    on the bot's own move, then resolves as punished-mistake when the
  *    player captures, as got-away when the bot's next move recovers, and as
  *    nice-move when it does not.
@@ -20,8 +20,8 @@
  *    callback ever fired.
  * 9. A draw offer produces its key immediately, with no grade involved.
  *
- * The `'player-threat'` cases that used to sit at 7-8 were retired in Phase
- * 223 UAT along with the arm and its `lib/botThreat.ts` detector — see
+ * The `'player-threat'` cases that used to sit at 7-8 were retired
+ * along with the arm and its `lib/botThreat.ts` detector — see
  * `lib/botLineTrigger.ts`'s file header for why. The hook no longer reads the
  * board at all, which is why `onMoveCommitted` takes two arguments here.
  */
@@ -48,7 +48,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 0,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -61,7 +61,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 12,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -75,7 +75,7 @@ describe('useBotGameVoice', () => {
           userColor: USER_COLOR,
           initialPly: 0,
           live,
-          botDrawOffer: false,
+          botDrawOfferPending: false,
           outcome: null,
         }),
       { initialProps: { live: false } },
@@ -92,7 +92,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 0,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -110,7 +110,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 0,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -128,7 +128,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 12,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -162,7 +162,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 12,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -176,7 +176,7 @@ describe('useBotGameVoice', () => {
     expect(result.current.botLine).toBeNull();
   });
 
-  describe('regret latch (Phase 223 UAT)', () => {
+  describe('regret latch', () => {
     /** Mounts a resumed (non-greeting) game and establishes a grade baseline
      * at ply 4, so the very next grade can produce a reportable pair delta. */
     function renderWithBaseline() {
@@ -185,7 +185,7 @@ describe('useBotGameVoice', () => {
           userColor: USER_COLOR,
           initialPly: 12,
           live: true,
-          botDrawOffer: false,
+          botDrawOfferPending: false,
           outcome: null,
         }),
       );
@@ -212,7 +212,7 @@ describe('useBotGameVoice', () => {
       act(() => {
         result.current.onBotMoveGraded(-400, 6);
       });
-      // The beat the UAT round is about: the reaction lands on the PLAYER's
+      // The beat under test: the reaction lands on the PLAYER's
       // capture, which the engine itself scores as a near-non-event.
       act(() => {
         result.current.onMoveCommitted(move('n'), USER_COLOR);
@@ -268,7 +268,7 @@ describe('useBotGameVoice', () => {
         userColor: USER_COLOR,
         initialPly: 12,
         live: true,
-        botDrawOffer: false,
+        botDrawOfferPending: false,
         outcome: null,
       }),
     );
@@ -304,7 +304,7 @@ describe('useBotGameVoice', () => {
           userColor: USER_COLOR,
           initialPly: 12,
           live: true,
-          botDrawOffer: false,
+          botDrawOfferPending: false,
           outcome,
         }),
       { initialProps: { outcome: null } },
@@ -317,19 +317,19 @@ describe('useBotGameVoice', () => {
 
   it('a draw offer produces its key immediately, with no grade involved', () => {
     const { result, rerender } = renderHook(
-      ({ botDrawOffer }: { botDrawOffer: boolean }) =>
+      ({ botDrawOfferPending }: { botDrawOfferPending: boolean }) =>
         useBotGameVoice({
           userColor: USER_COLOR,
           initialPly: 12,
           live: true,
-          botDrawOffer,
+          botDrawOfferPending,
           outcome: null,
         }),
-      { initialProps: { botDrawOffer: false } },
+      { initialProps: { botDrawOfferPending: false } },
     );
     expect(result.current.botLine).toBeNull();
 
-    rerender({ botDrawOffer: true });
+    rerender({ botDrawOfferPending: true });
     expect(result.current.botLine).toBe('draw-offer');
   });
 });

@@ -11,7 +11,7 @@ interface MoveListPanelProps {
   /** Ply of the actual live game position (never moves except via new moves). */
   liveGamePly: number;
   /** Ply currently displayed on the board — may differ from liveGamePly during
-   * view-only scroll-back (D-13). */
+   * view-only scroll-back. */
   viewedPly: number;
   /** Navigate the displayed (view-only) position without affecting the live game. */
   onViewPly: (ply: number) => void;
@@ -25,12 +25,12 @@ interface MoveListPanelProps {
 }
 
 /**
- * Linear SAN move list for the bot-game board (Phase 169 Plan 05). Reuses
+ * Linear SAN move list for the bot-game board. Reuses
  * MoveList.tsx's item-mapping shape near-verbatim; the active-ply highlight
- * always marks the LIVE game position (brand-brown, per UI-SPEC), while
+ * always marks the LIVE game position (brand-brown), while
  * clicking a row or using arrow keys navigates a separate view-only
  * `viewedPly` cursor — the board never disables silently, a "Return to live
- * position" affordance is always shown while scrolled back (D-13).
+ * position" affordance is always shown while scrolled back.
  */
 export function MoveListPanel({
   moveHistory,
@@ -71,7 +71,7 @@ export function MoveListPanel({
       numberLabel: isWhite ? `${moveNumber}.` : null,
       san,
       // The active highlight always marks the LIVE game position, not the
-      // view-only scroll-back cursor (UI-SPEC).
+      // view-only scroll-back cursor.
       isCurrent: liveGamePly === ply,
       testId: `move-${ply}`,
       ariaLabel: `Move ${moveNumber}. ${san} (${isWhite ? 'white' : 'black'})`,

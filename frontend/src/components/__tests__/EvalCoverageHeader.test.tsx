@@ -17,7 +17,7 @@ describe('EvalCoverageHeader', () => {
   });
   it('is hidden when not pending', () => {
     (useEvalCoverage as Mock).mockReturnValue({
-      isPending: false,
+      hasPendingEvals: false,
       pendingCount: 0,
       totalCount: 100,
       pct: 100,
@@ -30,7 +30,7 @@ describe('EvalCoverageHeader', () => {
 
   it('renders compact "Quick Scan: N / M games" copy when multiple games are pending', () => {
     (useEvalCoverage as Mock).mockReturnValue({
-      isPending: true,
+      hasPendingEvals: true,
       pendingCount: 1432,
       totalCount: 11000,
       pct: 87,
@@ -45,7 +45,7 @@ describe('EvalCoverageHeader', () => {
 
   it('renders compact copy when only 1 game total', () => {
     (useEvalCoverage as Mock).mockReturnValue({
-      isPending: true,
+      hasPendingEvals: true,
       pendingCount: 1,
       totalCount: 1,
       pct: 0,
@@ -61,7 +61,7 @@ describe('EvalCoverageHeader', () => {
     // pending > total if the rows are read before the inserts commit. Defensive
     // floor at 0 prevents a negative count from rendering.
     (useEvalCoverage as Mock).mockReturnValue({
-      isPending: true,
+      hasPendingEvals: true,
       pendingCount: 10,
       totalCount: 5,
       pct: 0,
@@ -74,7 +74,7 @@ describe('EvalCoverageHeader', () => {
 
   it('has role="status" and data-testid on root element', () => {
     (useEvalCoverage as Mock).mockReturnValue({
-      isPending: true,
+      hasPendingEvals: true,
       pendingCount: 5,
       totalCount: 10,
       pct: 50,

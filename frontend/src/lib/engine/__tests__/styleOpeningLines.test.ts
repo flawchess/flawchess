@@ -1,11 +1,11 @@
 /**
- * styleOpeningLines.ts unit tests (Phase 182, STYLE-01/D-05).
+ * styleOpeningLines.ts unit tests.
  *
  * Two independent things are proven here:
  * 1. Corpus validation: EVERY curated prefix string across all 4 styles x 2
  *    colors is a genuine member of the real `frontend/public/openings.tsv`
  *    prefix set — a curated string absent from the corpus could never be
- *    booked (D-05). Mirrors `openings.test.ts`'s real-TSV fetch-stub +
+ *    booked. Mirrors `openings.test.ts`'s real-TSV fetch-stub +
  *    `vi.resetModules()` pattern so this test reads the SAME asset the
  *    production `openings.ts` module parses, not a hand-written fixture.
  * 2. `styleLinesFor(style, side)` resolves the color-correct set per style
@@ -60,7 +60,7 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe('curated prefixes are genuine ECO-corpus members (D-05)', () => {
+describe('curated prefixes are genuine ECO-corpus members', () => {
   it('every curated prefix string, across all 4 styles x 2 colors, is a member of the real openings.tsv prefix set', async () => {
     const prefixSet = await loadRealPrefixSet();
 

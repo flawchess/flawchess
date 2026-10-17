@@ -1,4 +1,4 @@
-"""Bots router: POST /api/bots/games endpoint (Phase 167, STORE-01..06).
+"""Bots router: POST /api/bots/games endpoint.
 
 HTTP layer only — validation, auth, service call, response/422 mapping. All
 persistence/rating-derivation logic lives in store_bot_game_service.
@@ -32,11 +32,11 @@ async def store_game(
     """Persist a finished bot game as a platform='flawchess' Library game.
 
     user_id is derived from the authenticated JWT — never from the request
-    body (ASVS V4). current_active_user covers guests too (D-13) — same
+    body (ASVS V4). current_active_user covers guests too — same
     dependency, no special-casing.
 
     Returns 422 when the PGN is invalid: unparseable, missing per-move
-    [%clk] on either color (STORE-02/D-15), or no recognized Result header.
+    [%clk] on either color, or no recognized Result header.
     The body carries a closed-vocabulary `reason` (FlawchessRejectReason)
     alongside the static message: the frontend captures the response `detail`
     into its Sentry event (lib/queryClient.ts), and without a reason every
@@ -58,7 +58,7 @@ async def get_persona_wins(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> PersonaWinsResponse:
-    """Return per-persona win counts for the authenticated user (Phase 185, T-185-02).
+    """Return per-persona win counts for the authenticated user.
 
     user_id is derived from the authenticated JWT — never from a request
     parameter (ASVS V4). No cross-user win-count leakage: current_active_user

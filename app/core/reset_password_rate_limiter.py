@@ -7,11 +7,12 @@ by email keeps this limiter meaningful even if the call site ever moves).
 In-process limiter resets on restart — acceptable for single-process Uvicorn
 deployment (mirrors feedback_limiter's posture).
 
-Deviation from both existing call sites (guest_create_limiter, feedback_limiter):
-this instance's call site deliberately does NOT raise on rejection. Both of
-those reject with an HTTP "too many requests" error when is_allowed() returns
-False. Here, a rejected request must return the router's identical 202 with
-zero enumeration signal (RESET-02) — the caller silently skips the send instead.
+Unlike the rejecting limiters (guest_create_limiter, feedback_limiter,
+login_failure_limiter), which answer a rejection with an HTTP 429, this
+instance's call site deliberately does NOT raise: a rejected request must return
+the router's identical 202 with zero enumeration signal, so the caller silently
+skips the send. The call site in app/users.py points here for why it deviates
+from the other limiter call sites.
 """
 
 from app.core.ip_rate_limiter import _SlidingWindowRateLimiter

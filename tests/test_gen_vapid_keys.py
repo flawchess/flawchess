@@ -1,7 +1,7 @@
 """The keygen script must emit .env lines that actually parse back to a usable PEM.
 
 Regression guard for the silent-disable trap: a raw multi-line PEM pasted under
-a bare `VAPID_PRIVATE_KEY=` parses as an empty string, and D-03 then turns push
+a bare `VAPID_PRIVATE_KEY=` parses as an empty string, and an empty key turns push
 off with no error anywhere. These tests round-trip the script's real output
 through python-dotenv (the parser pydantic-settings uses for `.env`) and hand
 the result to the production key loaders.

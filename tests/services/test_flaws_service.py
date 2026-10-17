@@ -1,10 +1,10 @@
 """Unit tests for app.services.flaws_service.
 
-Covers Phase 105 LIBG-02/06/07: severity classification, 8 attribution tags,
+Covers severity classification, 8 attribution tags,
 TypedDict output contract, eval coverage gate, mate Option B, FEN recomputation.
 No DB required — all tests construct GamePosition objects in memory.
 
-Phase 113 additions: TestIsOpponentExpr (parity helper), TestClassifyBothColors
+Both-mover coverage: TestIsOpponentExpr (parity helper), TestClassifyBothColors
 (both-mover kernel), TestOpponentLuckyTag (per-mover subject_result).
 
 Sign convention: eval_cp / eval_mate are white-perspective (Stockfish / python-chess).
@@ -113,9 +113,9 @@ _PGN_THREE_MOVES = "1. e4 e5 2. Nf3 *"
 
 
 class TestConstants:
-    """Verify that the named constants have the locked values from CONTEXT.md §Severity."""
+    """Verify that the named constants have the locked values."""
 
-    """Verify that the named constants have the locked values from CONTEXT.md §Severity."""
+    """Verify that the named constants have the locked values."""
 
     def test_inaccuracy_drop_value(self) -> None:
         """INACCURACY_DROP must equal 0.05 (Lichess 0.10 halved for [0,1] ES scale)."""
@@ -168,7 +168,7 @@ class TestTypeContract:
             "es_before": 0.65,
             "es_after": 0.40,
             "move_san": "Qxf7",
-            # Phase 128: renamed tactic_* → allowed_tactic_*; added missed_tactic_* (D-01/D-02).
+            # Renamed tactic_* → allowed_tactic_*; added missed_tactic_*.
             "allowed_tactic_motif_int": None,
             "allowed_tactic_piece": None,
             "allowed_tactic_confidence": None,
@@ -521,7 +521,7 @@ class TestEvalCoverageGate:
         assert _compute_eval_coverage([_make_pos(0)]) == 0.0
 
     def test_short_fully_analyzed_game_clears_gate(self) -> None:
-        """Regression (260615-rb1): a 7-ply fully-analyzed game clears the gate.
+        """Regression: a 7-ply fully-analyzed game clears the gate.
 
         7 movable positions all eval'd + 1 terminal null position (8 total, a 7-ply
         game) = 7/(8-1) = 1.0. Before the fix this was 7/8 = 0.875 < 0.90, which
@@ -534,7 +534,7 @@ class TestEvalCoverageGate:
         assert coverage >= EVAL_COVERAGE_MIN
 
     def test_short_checkmate_clears_gate(self) -> None:
-        """Regression (260927-ajg): a fully-analyzed Scholar's mate clears the gate.
+        """Regression: a fully-analyzed Scholar's mate clears the gate.
 
         The row before the mating move carries the eval of the mated position, which
         the engine cannot score. Before the fix it counted against coverage: 6/7 =
@@ -593,13 +593,11 @@ def _scholars_mate_positions() -> list[GamePosition]:
 
 
 class TestFenRecompute:
-    """Tests for _recompute_fen_map — PGN replay using board.fen() (Phase 148 D-02).
+    """Tests for _recompute_fen_map — PGN replay using board.fen().
 
-    BUGFIX (Phase 148): this map used to store board.board_fen() (piece placement
+    BUGFIX: this map used to store board.board_fen() (piece placement
     only), dropping side-to-move/castling/en-passant state and corrupting PV replay
-    for ep/castling flaws. These tests were inverted to encode the fixed (full-FEN)
-    contract as correct — see 148-RESEARCH.md's inversion table; the pre-fix
-    assertions below are expected fallout, not a regression.
+    for ep/castling flaws. These tests encode the fixed (full-FEN) contract.
     """
 
     def test_initial_position_at_ply_zero(self) -> None:
@@ -654,7 +652,7 @@ class TestFenRecompute:
             assert len(ranks) == 8, f"ply {ply_n}: expected 8 rank fields, got {len(ranks)}: {fen}"
 
     def test_replay_failure_captured_to_sentry(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """WR-03: a replay failure is captured to Sentry, not silently swallowed.
+        """A replay failure is captured to Sentry, not silently swallowed.
 
         We make board.fen() raise inside the replay loop and assert capture_exception
         fired exactly once while the partial map (ply 0) is still returned. fen() is
@@ -693,7 +691,7 @@ _EP_CAPTURE_PGN = "1. e4 Nf6 2. e5 d5 3. exd6 *"  # 3. exd6 is an en-passant cap
 
 
 class TestFenMapEpCapture:
-    """Bug B (Phase 148 D-02): full-FEN fen_map replays en-passant flaws correctly.
+    """Full-FEN fen_map replays en-passant flaws correctly.
 
     Before the fix, _recompute_fen_map stored board.board_fen() (piece placement
     only), dropping the en-passant target square. Reconstructing a chess.Board from
@@ -827,7 +825,7 @@ class TestClassifyGameFlaws:
         assert result["reason"] == "no_engine_analysis"
 
     def test_short_fully_analyzed_game_not_marked_unanalyzed(self) -> None:
-        """Regression (260615-rb1): a short fully-analyzed game is NOT GameNotAnalyzed.
+        """Regression: a short fully-analyzed game is NOT GameNotAnalyzed.
 
         _SHORT_PGN is "1. e4 e5 *" (a 2-ply game): 2 movable positions both eval'd +
         1 terminal null = coverage 2/(3-1) = 1.0 >= EVAL_COVERAGE_MIN. Before the fix
@@ -902,7 +900,7 @@ class TestClassifyGameFlaws:
         assert flaw["side"] == "white"
         assert flaw["fen"] != ""  # FEN recomputed from PGN
         assert flaw["es_before"] > flaw["es_after"], "Blunder worsens ES"
-        assert isinstance(flaw["tags"], list)  # tags populated in plan 02
+        assert isinstance(flaw["tags"], list)  # tags populated
 
     def test_fen_is_decision_point_before_flawed_move(self) -> None:
         """Regression: flaw['fen'] is the position BEFORE the flawed move, and the
@@ -934,8 +932,8 @@ class TestClassifyGameFlaws:
         assert flaw["move_san"] == "Ba4"
 
         fen_map = _recompute_fen_map(pgn)
-        # flaw["fen"] is the persisted, API-facing piece-placement-only field (Phase
-        # 148 D-02 keeps this contract unchanged); fen_map now stores the full FEN
+        # flaw["fen"] is the persisted, API-facing piece-placement-only field (this
+        # contract is unchanged); fen_map now stores the full FEN
         # (detector-internal). The decision point is board after `ply` half-moves.
         assert flaw["fen"] == fen_map[6].split(" ")[0]
         # And playing the flawed move from it reaches the next ply's board.
@@ -967,12 +965,12 @@ class TestClassifyGameFlaws:
         assert flaw["es_before"] > flaw["es_after"]
 
     def test_opponent_flaws_in_result_for_white_user(self) -> None:
-        """Phase 113 (D-06): both movers' flaws appear in the result.
+        """Both movers' flaws appear in the result.
 
         After dropping the mover != user_color filter, classify_game_flaws emits
         FlawRecords for BOTH movers. An opponent (black) blunder at ply 3 must
         appear alongside any player (white) flaws. Readers that need player-only
-        rows use is_opponent_expr() at query time (CONTEXT D-01).
+        rows use is_opponent_expr() at query time.
         """
         pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
         game = _make_game(pgn=pgn, user_color="white")
@@ -988,7 +986,7 @@ class TestClassifyGameFlaws:
 
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
-        # Phase 113: both sides emitted — the opponent (black) blunder must appear
+        # Both sides emitted — the opponent (black) blunder must appear
         black_flaws = [f for f in result if f["side"] == "black"]
         assert len(black_flaws) >= 1, (
             "Phase 113 kernel change: opponent (black) flaw at ply 3 must appear in result. "
@@ -1067,7 +1065,7 @@ class TestTempoTags:
         assert result == "hasty"
 
     def test_move_time_clamps_negative_to_none(self) -> None:
-        """WR-05: a clock anomaly producing a negative move time returns None.
+        """A clock anomaly producing a negative move time returns None.
 
         Same-side clock is two plies back. If the clock 'gains' more than the
         increment between the player's own moves (corrupt data), the raw formula
@@ -1643,7 +1641,7 @@ class TestOracleCloseness:
         flaws = classify_game_flaws(game, positions)
         assert isinstance(flaws, list)
 
-        # Phase 113: kernel emits both movers. Filter to white side only for oracle comparison.
+        # Kernel emits both movers. Filter to white side only for oracle comparison.
         # (Oracle counts are per-color; derive_blunders must match the white-only subset.)
         white_flaws = [f for f in flaws if f["side"] == "white"]
         derived_blunders = sum(1 for f in white_flaws if f["severity"] == "blunder")
@@ -1689,7 +1687,7 @@ class TestOracleCloseness:
         flaws = classify_game_flaws(game, positions)
         assert isinstance(flaws, list)
 
-        # Phase 113: kernel emits both movers. Filter to black side only for oracle comparison.
+        # Kernel emits both movers. Filter to black side only for oracle comparison.
         black_flaws = [f for f in flaws if f["side"] == "black"]
         derived_blunders = sum(1 for f in black_flaws if f["severity"] == "blunder")
         derived_mistakes = sum(1 for f in black_flaws if f["severity"] == "mistake")
@@ -1715,7 +1713,7 @@ class TestOracleCloseness:
 
 
 # ---------------------------------------------------------------------------
-# Phase 113 tests: is_opponent_expr, both-mover kernel, per-mover lucky tag
+# Tests for is_opponent_expr, both-mover kernel, per-mover lucky tag
 # ---------------------------------------------------------------------------
 
 # PLY_EVEN / PLY_ODD: named constants so tests do not scatter bare magic numbers.
@@ -1728,8 +1726,8 @@ class TestIsOpponentExpr:
     """Mandatory parity gate: is_opponent_expr must return the correct boolean for
     all 4 (ply parity × user_color) combinations evaluated against the real DB.
 
-    Code-reading alone is insufficient — a prior off-by-one bug lived here
-    (CONTEXT D-01; RESEARCH Pitfall 1). Only a live SQL evaluation closes the trap.
+    Code-reading alone is insufficient — an off-by-one bug once lived here.
+    Only a live SQL evaluation closes the trap.
 
     Convention:
         even ply → white mover → is_opponent when user_color == 'black'
@@ -1773,7 +1771,7 @@ class TestIsOpponentExpr:
 
 
 class TestClassifyBothColors:
-    """classify_game_flaws emits FlawRecords for BOTH movers (Phase 113 FLAWX-02).
+    """classify_game_flaws emits FlawRecords for BOTH movers.
 
     After dropping the mover != user_color filter, the kernel must return at
     least one FlawRecord for each color when both colors make mistakes/blunders.
@@ -1879,13 +1877,13 @@ class TestClassifyBothColors:
 class TestOpponentLuckyTag:
     """Per-mover subject_result drives the lucky end-of-game rule correctly.
 
-    After Phase 113, classify_game_flaws passes derive_user_result(game.result, mover)
-    to _build_tags instead of the pre-resolved user_result. This means:
+    classify_game_flaws passes derive_user_result(game.result, mover)
+    to _build_tags instead of the pre-resolved mover_result. This means:
     - An opponent end-of-game blunder where the OPPONENT LOST must NOT carry 'lucky'
       (subject_result for the opponent is 'loss'; lucky requires subject_result != 'loss').
     - A genuinely unpunished blunder (opponent erred in reply) still gets 'lucky'.
 
-    RESEARCH Pitfall 2: The prior code passed user_result='win' (player won) to _build_tags
+    The prior code passed mover_result='win' (player won) to _build_tags
     for all flaws, incorrectly tagging opponent end-of-game blunders as 'lucky'.
     """
 
@@ -1991,8 +1989,8 @@ class TestOpponentLuckyTag:
         )
 
 
-class TestSeed044PostMoveConvention:
-    """SEED-044 regression: engine-game flaws are detected only under the POST-MOVE
+class TestPostMoveEvalConvention:
+    """Regression: engine-game flaws are detected only under the POST-MOVE
     eval convention. Before the fix the engine drain stored eval_cp for the PRE-PUSH
     position (eval BEFORE the move), so this classifier — which assumes eval AFTER the
     move — was off-by-one for every chess.com game and missed (or misattributed) real
@@ -2001,7 +1999,7 @@ class TestSeed044PostMoveConvention:
     sequence does not put a blunder at the true decision ply).
     """
 
-    # Prod fixture 1420780 (chess.com engine, user 99), seed proof table:
+    # Prod fixture 1420780 (chess.com engine, user 99), proof table:
     #   1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6 4.b3 Bc5 5.Bb2 d6 6.Ng5 O-O 7.O-O Ng4 8.h3?? Bxf2+
     # h3 is white's 8th move = ply 14 (0-indexed; white plays even plies). After h3,
     # ...Bxf2+ wins material/initiative for black. AS-IS (pre-push read as post-move):
@@ -2018,7 +2016,7 @@ class TestSeed044PostMoveConvention:
         Roughly level through the opening, then a decisive swing against white the
         instant h3 (ply 14) is played: positions[13] (after ...Ng4) ~ level; positions[14]
         (after h3) ~ black winning. The exact prod centipawns are not reconstructable
-        from the seed, so we encode the documented swing magnitude that reproduces it.
+        from the record, so we encode the documented swing magnitude that reproduces it.
         """
         evals = [25, 20, 30, 18, 28, 15, 22, 12, 26, 10, 24, 8, 20, 15]  # plies 0..13 (level)
         evals += [-650, -640, -600]  # ply 14 (after h3??), 15 (after Bxf2+), 16 (after Rxf2)
@@ -2092,7 +2090,7 @@ class TestSeed044PostMoveConvention:
 
 
 # ---------------------------------------------------------------------------
-# Phase 124 tests: tactic detection integration (TACDET-04)
+# Tactic detection integration tests
 # ---------------------------------------------------------------------------
 
 
@@ -2124,17 +2122,17 @@ def _make_pos_with_pv(
 
 
 class TestTacticIntegration:
-    """Phase 124 (TACDET-04): detect_tactic_motif runs inside _build_flaw_record.
+    """detect_tactic_motif runs inside _build_flaw_record.
 
     Tests verify:
     1. Both-color population: allowed_tactic_motif_int is non-None for BOTH a white flaw
-       AND a black flaw in the same game (Phase 113 both-color coverage).
+       AND a black flaw in the same game (both-color coverage).
     2. None-PV guard: a flaw whose positions[n+1].pv is None yields a FlawRecord
        with allowed_tactic_motif_int=None and no exception raised.
     3. Malformed move_san guard: a flaw with an invalid move_san leaves tactic
        fields None without raising.
 
-    Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
+    The tactic fields on FlawRecord are named allowed_tactic_*.
 
     PGN: '1. e4 e5 2. Bc4 d5 3. f3 Bg4 *'  (6 half-moves)
 
@@ -2184,7 +2182,7 @@ class TestTacticIntegration:
     def test_both_color_detection(self) -> None:
         """Both-color coverage: white AND black flaws both have tactic_motif_int populated.
 
-        Proves that the Phase 113 both-color all-moves pass flows through to
+        Proves that the both-color all-moves pass flows through to
         tactic detection: _build_flaw_record runs detect_tactic_motif for every
         FlawRecord regardless of color, so both sides' flaws carry a non-None motif.
         """
@@ -2205,7 +2203,7 @@ class TestTacticIntegration:
         )
 
         # Both sides must have allowed_tactic_motif_int populated (non-None)
-        # Phase 128: renamed tactic_motif_int → allowed_tactic_motif_int (D-02).
+        # The tactic field on FlawRecord is named allowed_tactic_motif_int.
         white_with_motif = [f for f in white_flaws if f["allowed_tactic_motif_int"] is not None]
         black_with_motif = [f for f in black_flaws if f["allowed_tactic_motif_int"] is not None]
 
@@ -2223,8 +2221,8 @@ class TestTacticIntegration:
 
         This represents a lichess-eval-only flaw (no full_evals_completed_at): the
         pv column is NULL for that position. The detector must leave all three tactic
-        fields None without raising (T-124-07 guard).
-        Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
+        fields None without raising.
+        The tactic fields on FlawRecord are named allowed_tactic_*.
         """
         game = _make_game(pgn=self._PGN, user_color="white", result="1-0")
         positions = self._build_both_color_positions()
@@ -2251,7 +2249,7 @@ class TestTacticIntegration:
         The try/except (ValueError, chess.IllegalMoveError) guard in
         _detect_tactic_for_flaw ensures parse failures do not propagate. The
         FlawRecord is still emitted (severity/tags unaffected); only the three
-        tactic fields stay None (T-124-07).
+        tactic fields stay None.
 
         Guard path: pv and fen_before are both set (truthy) so the early-exit
         guard does not fire; the exception happens inside board.parse_san(move_san).
@@ -2272,7 +2270,7 @@ class TestTacticIntegration:
             f"Expected a white FlawRecord at ply 4. Got: {[(f['side'], f['ply']) for f in result]}"
         )
         # All three tactic fields must be None due to malformed move_san
-        # Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
+        # The tactic fields on FlawRecord are named allowed_tactic_*.
         assert white_ply4["allowed_tactic_motif_int"] is None, (
             "Malformed move_san must leave allowed_tactic_motif_int=None (no exception raised)"
         )
@@ -2280,7 +2278,7 @@ class TestTacticIntegration:
         assert white_ply4["allowed_tactic_confidence"] is None
 
     def test_pv_by_ply_override_tags_when_positions_pv_is_none(self) -> None:
-        """260618-aiq: pv_by_ply override tags flaws even when positions[n+1].pv is NULL.
+        """pv_by_ply override tags flaws even when positions[n+1].pv is NULL.
 
         This is the in-process eval-drain scenario: at classify time the freshly
         computed PVs are NOT yet written to game_positions, so positions[n+1].pv is
@@ -2299,7 +2297,7 @@ class TestTacticIntegration:
         assert isinstance(control, list)
         control_white = next(f for f in control if f["side"] == "white" and f["ply"] == 4)
         control_black = next(f for f in control if f["side"] == "black" and f["ply"] == 5)
-        # Phase 128: renamed tactic_* → allowed_tactic_* in FlawRecord (D-02).
+        # The tactic fields on FlawRecord are named allowed_tactic_*.
         assert control_white["allowed_tactic_motif_int"] is None
         assert control_black["allowed_tactic_motif_int"] is None
 
@@ -2323,7 +2321,7 @@ class TestTacticIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Phase 128 tests: orientation-parametrized _detect_tactic_for_flaw (Plan 02)
+# Orientation-parametrized _detect_tactic_for_flaw tests
 # ---------------------------------------------------------------------------
 
 # PGN reference (same as TestTacticIntegration):
@@ -2334,7 +2332,7 @@ class TestTacticIntegration:
 #   fen_map[5]: 'rnbqkbnr/ppp2ppp/8/3pp3/2B1P3/5P2/PPPP2PP/RNBQK1NR'  (after 3.f3, black to move)
 #   fen_map[6]: 'rn1qkbnr/ppp2ppp/8/3pp3/2B1P1b1/5P2/PPPP2PP/RNBQK1NR' (after 3...Bg4, white to move)
 #
-# Missed-pass fixture (Plan 02, D-03):
+# Missed-pass fixture:
 #   At ply 5 (black flaw = 3...Bg4??), board_before has fen_map[5], turn=BLACK.
 #   White's Bc4 on c4 is undefended (white has no defender of c4 after 3.f3).
 #   Black's missed-pass PV at flaw_ply=5 is 'd5c4' (dxc4, capturing the hanging Bc4).
@@ -2353,7 +2351,7 @@ _FEN_MAP_128 = {
 
 
 def _make_positions_128() -> list[GamePosition]:
-    """12 positions for Plan 02 orientation tests.
+    """12 positions for the orientation tests.
 
     White blunder at ply 4 (even=white mover): 3.f3?? allows dxc4 (hanging Bc4).
     Black blunder at ply 5 (odd=black mover): 3...Bg4?? misses dxc4 (hanging Bc4).
@@ -2370,7 +2368,7 @@ def _make_positions_128() -> list[GamePosition]:
 
 
 class TestDetectTacticForFlawOrientation:
-    """Phase 128 Plan 02 (D-03/D-06): _detect_tactic_for_flaw orientation parameter.
+    """_detect_tactic_for_flaw orientation parameter.
 
     Tests verify:
     (a) orientation='allowed' is unchanged: identical to today's behavior on an
@@ -2447,14 +2445,14 @@ class TestDetectTacticForFlawOrientation:
 
 
 class TestDetectTacticForFlawForcedMatePov:
-    """Phase 148 code-review CR-01 regression: has_forced_mate honors eval_mate's
+    """Regression: has_forced_mate honors eval_mate's
     white-perspective sign convention for black-POV flaws.
 
     GamePosition.eval_mate is stored white-perspective-absolute (positive = white
     mates, negative = black mates). The has_forced_mate flag passed to
     detect_tactic_motif must be True iff the POV side (the mover for 'missed', the
     refuter for 'allowed') has the forced mate — which requires converting to that
-    side's POV before the sign test. The original Phase 148 wiring compared the raw
+    side's POV before the sign test. The original wiring compared the raw
     stored value against 0, inverting the result for every black-POV flaw (~half of
     all plies). These tests pin the corrected conversion by capturing the flag value
     detect_tactic_motif receives.
@@ -2538,14 +2536,14 @@ class TestDetectTacticForFlawForcedMatePov:
 
 
 # ---------------------------------------------------------------------------
-# Phase 128 Plan 02 Task 2: _build_flaw_record calls both passes (D-06)
+# _build_flaw_record calls both passes
 # ---------------------------------------------------------------------------
 
 
 class TestBuildFlawRecordBothOrientations:
-    """Phase 128 Plan 02 Task 2 (D-06): _build_flaw_record calls both passes.
+    """_build_flaw_record calls both passes.
 
-    Tests verify the neither/one/both matrix for the four cases from the plan:
+    Tests verify the neither/one/both matrix for the four cases:
     (1) Both PVs present: both allowed_* and missed_* 4-tuples are non-None.
     (2) Only flaw_ply+1 PV (allowed PV): allowed_* set, missed_* all None.
     (3) Only flaw_ply PV (missed PV): missed_* set, allowed_* all None.
@@ -2697,12 +2695,12 @@ class TestBuildFlawRecordBothOrientations:
 
 
 # ---------------------------------------------------------------------------
-# Phase 143 Plan 02 Task 1: _classify_tactic_gated wrapper + _solver_color_for
+# _classify_tactic_gated wrapper + _solver_color_for
 # ---------------------------------------------------------------------------
 
 
 class TestSolverColorFor:
-    """_solver_color_for maps (ply parity, orientation) to solver color (D-02, SC4).
+    """_solver_color_for maps (ply parity, orientation) to solver color.
 
     Convention (matches flaws_service.py line 444-446):
       Even ply: white moved (made the flaw).
@@ -2734,7 +2732,7 @@ class TestSolverColorFor:
 
 
 class TestClassifyTacticGated:
-    """Phase 143 Plan 02 Task 1 (D-02, SC4): _classify_tactic_gated wrapper contract.
+    """_classify_tactic_gated wrapper contract.
 
     Uses the 'black flaw at ply 5' fixture from TestDetectTacticForFlawOrientation
     (PGN "1. e4 e5 2. Bc4 d5 3. f3 Bg4 *"). _detect_tactic_for_flaw(5, ..., "allowed")
@@ -2752,7 +2750,7 @@ class TestClassifyTacticGated:
         """pv_blob=None: gate is skipped; raw _detect_tactic_for_flaw result returned.
 
         Gate condition is `pv_blob is not None` (not truthiness). None means a
-        pre-Phase-142 row with no stored blob — backward compatibility preserved.
+        row with no stored blob (older data) — backward compatibility preserved.
         """
         positions = _make_positions_128()
         motif, piece, conf, depth = _classify_tactic_gated(
@@ -2771,13 +2769,12 @@ class TestClassifyTacticGated:
         assert depth == 0
 
     def test_sentinel_empty_blob_skips_gate_returns_kernel_result(self) -> None:
-        """pv_blob=[]: D-06 sentinel — gate is SKIPPED, raw kernel result returned.
+        """pv_blob=[]: sentinel — gate is SKIPPED, raw kernel result returned.
 
-        An empty list is the D-06 un-fillable sentinel (a flaw whose PV blob could
+        An empty list is the un-fillable sentinel (a flaw whose PV blob could
         not be assembled, e.g. single-legal-move position or analysis gap). The gate
         condition must be `pv_blob is not None and len(pv_blob) > 0` so that [] is
-        treated the same as None (gate skipped, no suppression). This supersedes the
-        Phase-143 Pitfall-2 wording which treated [] as a gate-eligible blob.
+        treated the same as None (gate skipped, no suppression).
         """
         positions = _make_positions_128()
         motif, piece, conf, depth = _classify_tactic_gated(
@@ -2853,17 +2850,16 @@ class TestClassifyTacticGated:
         assert depth is None
 
     # -----------------------------------------------------------------
-    # Phase 221 TAGFIX-02 (D-04): the gate no longer skips merely because
+    # The gate does not skip merely because
     # pre_flaw_eval_cp is None -- the already-winning reject is derived from
     # eval_mate instead.
     # -----------------------------------------------------------------
 
-    def test_tagfix02_gate_runs_on_none_cp_non_forcing_blob_suppressed(self) -> None:
-        """Behavioural proof the gate-skip conjunct is gone (T-221-04-02 acceptance).
+    def test_gate_runs_on_none_cp_non_forcing_blob_suppressed(self) -> None:
+        """Behavioural proof the gate-skip conjunct is gone.
 
-        Before this task: pre_flaw_eval_cp=None skipped the gate entirely, so a
-        non-forcing blob was credited raw. After: the gate always runs on a
-        non-empty blob, so the same non-forcing blob is now SUPPRESSED.
+        pre_flaw_eval_cp=None does not skip the gate: the gate always runs on a
+        non-empty blob, so a non-forcing blob is SUPPRESSED rather than credited raw.
         """
         positions = _make_positions_128()
         non_forcing_blob: list[PvNode] = [
@@ -2887,8 +2883,8 @@ class TestClassifyTacticGated:
         assert conf is None
         assert depth is None
 
-    def test_tagfix02_forced_mate_for_solver_rejects_non_mate_motif_white(self) -> None:
-        """A forced mate for the (white) solver before the flaw already-winning rejects (D-04)."""
+    def test_forced_mate_for_solver_rejects_non_mate_motif_white(self) -> None:
+        """A forced mate for the (white) solver before the flaw already-winning rejects."""
         positions = _make_positions_128()
         positions[4].eval_mate = 3  # white-perspective +3 = white (the solver) mates
         forced_blob: list[PvNode] = [
@@ -2908,7 +2904,7 @@ class TestClassifyTacticGated:
             "a forced mate for the solver before the flaw must reject a non-mate motif"
         )
 
-    def test_tagfix02_forced_mate_for_solver_rejects_non_mate_motif_black(self) -> None:
+    def test_forced_mate_for_solver_rejects_non_mate_motif_black(self) -> None:
         """Same as above, mirrored to a black solver (n=4, allowed -> solver='black')."""
         positions = _make_positions_128()
         positions[3].eval_mate = -3  # white-perspective -3 = black (the solver) mates
@@ -2927,15 +2923,15 @@ class TestClassifyTacticGated:
         )
         assert motif is None, "mirrored black-solver case: a forced mate for the solver must reject"
 
-    def test_tagfix02_mate_motif_exempt_via_forced_mate_firing_node(self) -> None:
+    def test_mate_motif_exempt_via_forced_mate_firing_node(self) -> None:
         """A firing node that is ITSELF a forced mate is exempt from the already-winning reject.
 
-        Mirrors the gate's own forced-mate carve-out (Phase 144): the mate-adjacent
+        Mirrors the gate's own forced-mate carve-out: the mate-adjacent
         already-winning reject from eval_mate must not fire when the blob's own
         firing node delivers a forced mate for the solver.
         """
         positions = _make_positions_128()
-        positions[4].eval_mate = 3  # would otherwise reject via D-04
+        positions[4].eval_mate = 3  # would otherwise reject as already-winning
         mate_firing_blob: list[PvNode] = [
             {"b": None, "bm": 2, "s": 500, "sm": None, "su": "d1h5"},  # firing node: mate-in-2
             {"b": 0, "bm": None, "s": -100, "sm": None, "su": "g8f6"},
@@ -2955,7 +2951,7 @@ class TestClassifyTacticGated:
         assert conf == TACTIC_CONFIDENCE_HIGH
         assert depth == 0
 
-    def test_tagfix02_both_pre_flaw_cp_and_mate_none_gate_still_runs(self) -> None:
+    def test_both_pre_flaw_cp_and_mate_none_gate_still_runs(self) -> None:
         """Both cp and mate absent: no already-winning reject fires, but the gate still runs."""
         positions = _make_positions_128()
         # positions[4].eval_mate is already None by default in _make_positions_128.
@@ -2974,7 +2970,7 @@ class TestClassifyTacticGated:
         )
         assert motif is None, "the gate must still run and reject a non-forcing blob"
 
-    def test_tagfix02_mate_against_solver_not_an_already_winning_reject(self) -> None:
+    def test_mate_against_solver_not_an_already_winning_reject(self) -> None:
         """A pre-flaw mate favoring the OPPONENT is not an already-winning reject (sign check)."""
         positions = _make_positions_128()
         positions[4].eval_mate = -3  # black (opponent) mates; white is the solver
@@ -2996,11 +2992,11 @@ class TestClassifyTacticGated:
         )
 
     # -----------------------------------------------------------------
-    # Phase 221 TAGFIX-01 / D-03: blob-missing fallback floor from
+    # Blob-missing fallback floor from
     # game_positions, applied via the same tier-floor map as the blob path.
     # -----------------------------------------------------------------
 
-    def test_d03_fallback_allowed_below_floor_suppressed(self) -> None:
+    def test_fallback_allowed_below_floor_suppressed(self) -> None:
         """Blob None, allowed orientation: positions[n] below the tier floor -> suppressed."""
         positions = _make_positions_128()
         positions[5].eval_cp = -50  # solver='white' at n=5 allowed; below 0-floor
@@ -3014,7 +3010,7 @@ class TestClassifyTacticGated:
         )
         assert motif is None, "D-03: a below-floor allowed fallback eval must suppress"
 
-    def test_d03_fallback_missed_below_floor_suppressed(self) -> None:
+    def test_fallback_missed_below_floor_suppressed(self) -> None:
         """Blob None, missed orientation: positions[n-1] below the tier floor -> suppressed.
 
         Uses a DIFFERENT stored value than the allowed test above at the OTHER
@@ -3034,7 +3030,7 @@ class TestClassifyTacticGated:
         )
         assert motif is None, "D-03: a below-floor missed fallback eval must suppress"
 
-    def test_d03_fallback_allowed_winning_eval_credited(self) -> None:
+    def test_fallback_allowed_winning_eval_credited(self) -> None:
         """Blob None, allowed orientation: a winning fallback eval is credited."""
         positions = _make_positions_128()
         # positions[5].eval_cp is already 300 (winning for white solver) by default.
@@ -3050,7 +3046,7 @@ class TestClassifyTacticGated:
             "D-03: a winning fallback eval must be credited"
         )
 
-    def test_d03_fallback_missed_winning_eval_credited(self) -> None:
+    def test_fallback_missed_winning_eval_credited(self) -> None:
         """Blob None, missed orientation: a winning fallback eval is credited."""
         positions = _make_positions_128()
         # positions[4].eval_cp is -500 (white-perspective); solver='black' -> solver_cp=500.
@@ -3067,7 +3063,7 @@ class TestClassifyTacticGated:
             "D-03: a winning missed-orientation fallback eval must be credited"
         )
 
-    def test_d03_fallback_both_columns_none_credited(self) -> None:
+    def test_fallback_both_columns_none_credited(self) -> None:
         """Blob None, no fallback eval available at all: never suppressed for lacking data."""
         positions = _make_positions_128()
         positions[5].eval_cp = None
@@ -3084,8 +3080,8 @@ class TestClassifyTacticGated:
             "D-03: an unreadable fallback (both columns None) must never suppress"
         )
 
-    def test_d03_sentinel_empty_blob_with_losing_eval_still_credited(self) -> None:
-        """pv_blob=[] keeps its unconditional skip-everything semantics (D-03 does not apply)."""
+    def test_sentinel_empty_blob_with_losing_eval_still_credited(self) -> None:
+        """pv_blob=[] keeps its unconditional skip-everything semantics (the fallback does not apply)."""
         positions = _make_positions_128()
         positions[5].eval_cp = -500  # would fail the floor if the fallback ran
         motif, piece, conf, depth = _classify_tactic_gated(
@@ -3102,12 +3098,12 @@ class TestClassifyTacticGated:
 
 
 # ---------------------------------------------------------------------------
-# Phase 147 Plan 01 Task 2: blobs_pending suppression branch (D-01, D-03)
+# blobs_pending suppression branch
 # ---------------------------------------------------------------------------
 
 
 class TestClassifyTacticGatedBlobsPending:
-    """blobs_pending=True suppresses cp-based tags with no blob yet (D-01, D-03).
+    """blobs_pending=True suppresses cp-based tags with no blob yet.
 
     Uses the same n=5 "allowed" fixture as TestClassifyTacticGated: raw kernel
     result is HANGING_PIECE (TACTIC_CONFIDENCE_HIGH, depth=0).
@@ -3118,7 +3114,7 @@ class TestClassifyTacticGatedBlobsPending:
 
         The continuation blob is deferred (tier-4 pass); the gate cannot yet
         run, so the raw ungated motif must NOT be persisted (self-heals later
-        via the D-07 gated retag once the blob lands).
+        via the gated retag once the blob lands).
         """
         positions = _make_positions_128()
         motif, piece, conf, depth = _classify_tactic_gated(
@@ -3138,7 +3134,7 @@ class TestClassifyTacticGatedBlobsPending:
     def test_blobs_pending_true_mate_adjacent_keeps_raw(self) -> None:
         """blobs_pending=True, pre_flaw_eval_cp=None (mate-adjacent): raw tag KEPT.
 
-        Mate-adjacent flaw plies are a FINAL case (D-06 KEEP rule) — there is no
+        Mate-adjacent flaw plies are a FINAL case (KEEP rule) — there is no
         cp value to gate-check against even once a blob eventually arrives, so
         suppression must never apply here.
         """
@@ -3160,7 +3156,7 @@ class TestClassifyTacticGatedBlobsPending:
         assert depth == 0
 
     def test_blobs_pending_true_sentinel_empty_blob_keeps_raw(self) -> None:
-        """blobs_pending=True, pv_blob=[] (D-06 sentinel): raw tag KEPT.
+        """blobs_pending=True, pv_blob=[] (sentinel): raw tag KEPT.
 
         The []-sentinel is a FINAL un-fillable case. Suppression must key off
         `pv_blob is None`, NOT falsy, so [] is never re-suppressed here.
@@ -3206,18 +3202,18 @@ class TestClassifyTacticGatedBlobsPending:
 
 
 # ---------------------------------------------------------------------------
-# Phase 221 TAGFIX-06 (D-09, D-10): missed-orientation parity -- the missed
+# Missed-orientation parity -- the missed
 # pass carries a one-move stack (the opponent's previous move), unblocking
 # detect_intermezzo's k=2 branch and detect_hanging_piece's recapture
 # exclusion on the missed side. These tests MUST live here (not in
 # test_tactic_detector.py): the detector-level fixture harness builds bare
-# stackless boards and structurally cannot observe a move stack (Pitfall 3).
+# stackless boards and structurally cannot observe a move stack.
 # ---------------------------------------------------------------------------
 
 
 class TestMissedOrientationParity:
     """The missed pass builds board_before the way the allowed pass does: position
-    plus a one-move stack (the opponent's previous move, D-09), so cook's two
+    plus a one-move stack (the opponent's previous move), so cook's two
     move-stack predicates (intermezzo k=2, hanging-piece recapture exclusion)
     can fire on the missed side exactly as they do on the allowed side.
     """
@@ -3288,7 +3284,7 @@ class TestMissedOrientationParity:
         assert depth == 2
 
     def test_missed_hanging_piece_suppressed_on_equal_value_recapture(self) -> None:
-        """D-10: a missed hanging-piece whose previous move was an equal-or-greater-value
+        """A missed hanging-piece whose previous move was an equal-or-greater-value
         recapture is suppressed to NULL (cook's recapture exclusion, now reachable on
         the missed side).
 
@@ -3368,7 +3364,7 @@ class TestMissedOrientationParity:
     def test_degradation_paths_return_same_result_as_stackless(self) -> None:
         """All three degradation cases (ply 0, malformed SAN, missing fen_map entry) return
         the SAME four-tuple the stackless build returns -- asserted explicitly, not merely
-        by absence of an exception (T-221-04-03 acceptance criterion).
+        by absence of an exception.
         """
         n = 5
         positions = _make_positions_128()

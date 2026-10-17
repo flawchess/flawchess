@@ -15,7 +15,7 @@ import {
 } from '@/lib/highlightPulse';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { WdlConfidenceTooltip } from '@/components/insights/WdlConfidenceTooltip';
+import { ScoreConfidenceTooltip } from '@/components/insights/ScoreConfidenceTooltip';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
 import type { NextMoveEntry, Color } from '@/types/api';
@@ -46,7 +46,14 @@ interface MoveExplorerProps {
   onHighlightConsumed?: () => void;
 }
 
-const IS_TOUCH = typeof window !== 'undefined' && 'ontouchstart' in window;
+// Touch-primary devices only. Bug fix (SEED-202 item 8): this used
+// `'ontouchstart' in window`, which Chrome defines on any touch-capable desktop
+// (touchscreen laptop, touch monitor), so a mouse click there only highlighted a
+// row instead of playing it. Same heuristic ChessBoard.tsx documents.
+const IS_TOUCH =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(pointer: coarse)').matches;
 
 // Background-tint pulse for the highlighted row. The keyframe lives in
 // index.css (`@keyframes row-highlight-pulse`); MoveRow supplies the three
@@ -68,12 +75,12 @@ export function MoveExplorer({
 
   // Derive side-just-moved once from the parent FEN's side-to-move token.
   // The parent's side TO MOVE is the side that plays each candidate move in
-  // `moves`, so it's also the side that just moved on the resulting position
-  // (D-10). Defensive throw: callers must pass a full FEN — a board-only
-  // placement string has no side-to-move token and would silently produce
-  // wrong results (RESEARCH.md Pitfall 7). This check runs BEFORE the
-  // `moveMap` useMemo so its friendly error message wins over chess.js's
-  // generic "must contain six space-delimited fields" complaint.
+  // `moves`, so it's also the side that just moved on the resulting position.
+  // Defensive throw: callers must pass a full FEN — a board-only placement
+  // string has no side-to-move token and would silently produce wrong results.
+  // This check runs BEFORE the `moveMap` useMemo so its friendly error message
+  // wins over chess.js's generic "must contain six space-delimited fields"
+  // complaint.
   const sideJustMoved: Color = useMemo(() => {
     const tokens = position.split(' ');
     const sideToken = tokens[1];
@@ -254,9 +261,8 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
 }) {
   const hasWdl = entry.win_pct > 0 || entry.draw_pct > 0 || entry.loss_pct > 0;
   const isUnreliable = entry.game_count < MIN_GAMES_FOR_RELIABLE_STATS;
-  // Phase 77 D-06: inline troll-face icon when the resulting position is in
-  // the curated set for the side that just moved. Pure synchronous lookup —
-  // no useMemo (RESEARCH.md anti-pattern note).
+  // Inline troll-face icon when the resulting position is in the curated set
+  // for the side that just moved. Pure synchronous lookup, so no useMemo.
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
 
   // Score-text font gate. Paint the Score % in the zone color only when:
@@ -303,10 +309,6 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
     (rowStyle as React.CSSProperties & Record<`--${string}`, string>)['--row-highlight-rest'] = restStop;
   }
 
-  // The highlighted row reuses the existing data-testid (`move-explorer-row-${san}`) —
-  // no NEW interactive element is added (the row remains the same <tr>), so per
-  // CLAUDE.md "data-testid on every interactive element" is already satisfied.
-
   return (
     <tr
       ref={rowRef}
@@ -317,7 +319,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         // selected backgrounds beat the inline score-zone tint set via
         // `style.backgroundColor` (`rowStyle`). Without `!` on `bg-foreground/10`,
         // the inline tint wins and the selected row looks identical to its
-        // unselected siblings on green/red zones (quick task 260508-r61).
+        // unselected siblings on green/red zones.
         // hover:bg-foreground/10 sticks on mobile after tap, causing two highlighted rows
         !IS_TOUCH && 'hover:bg-foreground/10!',
         selectedMove === entry.move_san && 'bg-foreground/10!',
@@ -421,10 +423,9 @@ function TranspositionInfo({ moveSan, transpositionCount, gameCount }: {
 }
 
 /**
- * Tap/hover-friendly score-confidence info icon for the Score cell. Replaces
- * the prior hover-only Tooltip wrapper around the `%` text so the popover is
- * usable on touch devices (Radix popover handles tap natively; the 100ms
- * hover delay is the desktop accelerator). Quick task 260508-r61.
+ * Tap/hover-friendly score-confidence info icon for the Score cell. Popover,
+ * not Tooltip: a Tooltip never opens on touch (Radix popover handles tap
+ * natively; the 100ms hover delay is the desktop accelerator).
  */
 function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
   const [open, setOpen] = useState(false);
@@ -468,7 +469,7 @@ function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
             'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <WdlConfidenceTooltip
+          <ScoreConfidenceTooltip
             level={entry.confidence}
             pValue={entry.p_value}
             score={entry.score}
@@ -483,11 +484,9 @@ function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
 }
 
 /**
- * Tap/hover-friendly troll-opening info icon. Was a hover-only Tooltip; on
- * mobile that broke the troll-icon UX entirely (no hover, and the Tooltip
- * passed taps straight through to the row click that plays the move). Same
- * Radix popover pattern as TranspositionInfo and ScoreInfo. Quick task
- * 260508-r61.
+ * Tap/hover-friendly troll-opening info icon. Popover, not Tooltip: a Tooltip
+ * never opens on touch and passes taps through to the row click that plays the
+ * move. Same Radix popover pattern as TranspositionInfo and ScoreInfo.
  */
 function TrollIcon({ moveSan }: { moveSan: string }) {
   const [open, setOpen] = useState(false);

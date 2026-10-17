@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 /**
- * TrainVerdictStrip.test.tsx — Phase 237 plan 08 (D-07/D-08/D-14).
- *
  * The strip is collapsed on mount, expands on a tap, and fires the Umami
  * `panel-open` / `train-verdict-strip` event exactly once per OPEN (from the click
  * handler: never on mount, never on collapse). The expansion carries the shared

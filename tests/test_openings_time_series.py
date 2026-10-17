@@ -9,14 +9,14 @@ Key mechanics under test:
   the trailing ROLLING_WINDOW_SIZE entries to compute the chess score
   (W + 0.5·D) / N.
 - data_by_date keeps only the LAST game's rolling window per calendar day.
-- Date-windowed emission (D-19 amendment): when from_date/to_date are given,
+- Date-windowed emission: when from_date/to_date are given,
   only points whose played_at is inside the window are emitted, and WDL totals
   count only in-window games. The rolling average is warmed from games before
   the window start (warm-up preserved).
 
 Coverage:
-- TestTimeSeriesRequestSchema: TimeSeriesRequest has no recency field (D-19);
-  exposes from_date and to_date (D-19 amendment)
+- TestTimeSeriesRequestSchema: TimeSeriesRequest has no recency field;
+  exposes from_date and to_date
 - TestRollingWindow: single game, two same-day games, multi-day sequence, empty position
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
 - TestDateWindowedTimeSeries: from_date/to_date windowing + warm-up preservation
@@ -40,23 +40,23 @@ from app.services.openings_service import (
 )
 
 # ---------------------------------------------------------------------------
-# TestTimeSeriesRequestSchema — D-19: recency field removed from TimeSeriesRequest
-# D-19 amendment: from_date/to_date added for date-windowed totals + emission
+# TestTimeSeriesRequestSchema — recency field removed from TimeSeriesRequest
+# from_date/to_date added for date-windowed totals + emission
 # ---------------------------------------------------------------------------
 
 
 class TestTimeSeriesRequestSchema:
-    """Verify TimeSeriesRequest exposes from_date/to_date but NOT recency (D-19 + amendment)."""
+    """Verify TimeSeriesRequest exposes from_date/to_date but NOT recency."""
 
     def test_no_recency_field_in_schema(self) -> None:
-        """TimeSeriesRequest model fields must not include 'recency' (D-19)."""
+        """TimeSeriesRequest model fields must not include 'recency'."""
         assert "recency" not in TimeSeriesRequest.model_fields, (
             "TimeSeriesRequest must not have a 'recency' field — D-19 removes it "
             "so the time-series endpoint uses resolved date bounds, not preset labels."
         )
 
     def test_from_date_field_exists(self) -> None:
-        """TimeSeriesRequest must expose from_date (D-19 amendment)."""
+        """TimeSeriesRequest must expose from_date."""
         assert "from_date" in TimeSeriesRequest.model_fields, (
             "TimeSeriesRequest must have a 'from_date' field (D-19 amendment: "
             "totals + emitted points are now date-windowed while the rolling "
@@ -64,7 +64,7 @@ class TestTimeSeriesRequestSchema:
         )
 
     def test_to_date_field_exists(self) -> None:
-        """TimeSeriesRequest must expose to_date (D-19 amendment)."""
+        """TimeSeriesRequest must expose to_date."""
         assert "to_date" in TimeSeriesRequest.model_fields, (
             "TimeSeriesRequest must have a 'to_date' field (D-19 amendment)."
         )
@@ -508,12 +508,12 @@ class TestMultipleBookmarks:
 
 
 # ---------------------------------------------------------------------------
-# TestDateWindowedTimeSeries — D-19 amendment: from_date/to_date windowing
+# TestDateWindowedTimeSeries — from_date/to_date windowing
 # ---------------------------------------------------------------------------
 
 
 class TestDateWindowedTimeSeries:
-    """Verify date-windowed totals + warm-up rolling emission (D-19 amendment).
+    """Verify date-windowed totals + warm-up rolling emission.
 
     Key invariants tested:
     - Totals (total_wins/draws/losses/total_games) count only in-window games.

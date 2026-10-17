@@ -1,6 +1,4 @@
 /**
- * TacticDepthFilter — Quick 260620-l5k (Phase 130).
- *
  * Two-handle RANGE filter over tactic depth (0-based ply, domain 0..11). The
  * slider domain IS the API/DB domain — no full-move ↔ half-ply conversion.
  * min === max (e.g. 0..0) is selectable. Presentation is delegated to the
@@ -13,6 +11,7 @@ import type { PresetOption } from './PresetRangeFilter';
 import { trackFeature } from '@/lib/analytics';
 import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 import {
+  DEPTH_DEFAULT_PRESET,
   DEPTH_MIN,
   DEPTH_MAX,
   DEPTH_STEP,
@@ -48,8 +47,8 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
     [onChange],
   );
 
-  // Tracked on commit (Radix onValueCommit), never per drag step (Phase 229
-  // Pitfall 2), and debounced to one event per adjustment burst because Radix also
+  // Tracked on commit (Radix onValueCommit), never per drag step, and
+  // debounced to one event per adjustment burst because Radix also
   // commits on every keyboard step. Only the matching preset or 'custom' is sent,
   // never the bounds.
   const handleSliderCommit = useCallback(
@@ -77,9 +76,10 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
     [onChange, activePreset],
   );
 
-  // The summary goes text-toggle-active when the active range is not the
-  // always-on Medium default (preset null/custom or non-medium).
-  const isSummaryActive = activePreset !== 'medium';
+  // The summary goes text-toggle-active when the range narrows from the default
+  // (High, the full range). It compared against 'medium' after the default moved
+  // to High, so the summary lit up at the default and dimmed when narrowed to Medium.
+  const isSummaryActive = activePreset !== DEPTH_DEFAULT_PRESET;
 
   return (
     <PresetRangeFilter

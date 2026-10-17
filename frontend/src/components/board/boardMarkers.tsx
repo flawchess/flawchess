@@ -1,6 +1,6 @@
 /**
  * Shared SVG overlay primitives for the analysis ChessBoard and the games-card
- * MiniBoard (Quick 260627-r9g): a top-left depth-number label and a top-right
+ * MiniBoard: a top-left depth-number label and a top-right
  * severity glyph badge. Kept in one place so both boards render identical marks.
  */
 
@@ -20,19 +20,12 @@ import { squareToCoords } from './arrowGeometry';
  * the played-move blunder/mistake/inaccuracy arrow. Optional `label` renders the
  * move's depth in the top-left corner, matching the arrow depth-label style.
  *
- * `gem` is an additive, mutually-exclusive alternative to `severity` (Phase 163,
- * SEED-092): when set, the badge renders the violet gem icon instead of the
- * severity NAG glyph. `great` is a fourth, equally mutually-exclusive
- * alternative (Phase 175, SEED-108): when set, the badge renders the blue
- * "great move" icon instead of severity/gem/book. `book` is a third, equally
- * mutually-exclusive alternative (Phase 172, SEED-106 D-08): when set, the
- * badge renders the muted book icon instead of severity or gem/great. `best`
- * and `good` are two more, equally mutually-exclusive alternatives (Quick
- * 260717-rbn): when set, the badge renders a green star (best) / green
- * thumbs-up (good) icon instead of severity/gem/great/book. No runtime
- * assertion enforces the exclusivity across all six — callers only ever set
- * one by construction (the guard lives in `Analysis.tsx`'s
- * `boardSquareMarkers` memo).
+ * `gem`, `great`, `book`, `best` and `good` are mutually-exclusive alternatives to
+ * `severity`: when set, the badge renders the violet gem / blue "great move" /
+ * muted book / green star (best) / green thumbs-up (good) icon instead of the
+ * severity NAG glyph. No runtime assertion enforces the exclusivity across all
+ * six — callers only ever set one by construction (the guard lives in
+ * useAnalysisBoardArrows's `boardSquareMarkers` memo).
  */
 export interface SquareMarker {
   square: string;
@@ -70,7 +63,7 @@ export interface SquareMarker {
   /** Fill color for the depth label. Defaults to white. */
   labelColor?: string;
   /**
-   * Phase 237: an explicit group opacity. The Train reveal dims badges outside
+   * An explicit group opacity. The Train reveal dims badges outside
    * the focused move instead of hiding them. Omitted = fully opaque (no
    * attribute rendered), so every other caller is unchanged.
    */
@@ -91,7 +84,7 @@ const DEPTH_LABEL_CORNER_INSET = 0.08; // inset from the corner so the badge cle
 // circle diameter (r=11 in a 24-unit viewBox) so font sizing reuses SEVERITY_GLYPH ratios.
 // Small (mini) boards get a bigger radius so the glyph stays legible, and the badge
 // is pulled onto the square's top-right corner so it straddles (overlaps) it rather
-// than sitting fully inside (Quick 260627-r9g follow-up).
+// than sitting fully inside.
 const SMALL_BOARD_SQ_PX = 40; // squares narrower than this are mini boards
 const MARKER_RADIUS = 0.18; // fraction of a square — large boards (analysis)
 const MARKER_RADIUS_SMALL = 0.24; // mini boards (games card) — bumped for legibility, but kept compact
@@ -180,12 +173,12 @@ function SquareMarkerBadge({
   }
 
   if (marker.great) {
-    // Same ratio as the gem badge — reused verbatim (UI-SPEC: no new geometry constant).
+    // Same ratio as the gem badge, reused verbatim.
     const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
     return (
       <g>
         <circle cx={cx} cy={cy} r={r} fill={GREAT_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
-        {/* Same "!" glyph markup as GreatMoveIcon.tsx (D-02) so the two never drift. */}
+        {/* Same "!" glyph markup as GreatMoveIcon.tsx so the two never drift. */}
         <svg
           x={cx - iconSize / 2}
           y={cy - iconSize / 2}
@@ -201,7 +194,7 @@ function SquareMarkerBadge({
   }
 
   if (marker.book) {
-    // Same ratio as the gem badge — reused verbatim (UI-SPEC: no new geometry constant).
+    // Same ratio as the gem badge, reused verbatim.
     const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
     return (
       <g>
@@ -218,7 +211,7 @@ function SquareMarkerBadge({
   }
 
   if (marker.best) {
-    // Same ratio/geometry as the gem badge — reused verbatim (Quick 260717-rbn).
+    // Same ratio/geometry as the gem badge, reused verbatim.
     const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
     return (
       <g>
@@ -237,7 +230,7 @@ function SquareMarkerBadge({
   }
 
   if (marker.good) {
-    // Same ratio/geometry as the gem badge — reused verbatim (Quick 260717-rbn).
+    // Same ratio/geometry as the gem badge, reused verbatim.
     const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
     return (
       <g>

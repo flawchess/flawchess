@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * SEED-163 2d: the named empty state shown on Openings/Endgames/GlobalStats
- * when the new Human+Rated analytics defaults (SEED-163 2a) are the ONLY
+ * The named empty state shown on Openings/Endgames/GlobalStats
+ * when the Human+Rated analytics defaults are the ONLY
  * thing that emptied the population.
  */
 import { describe, it, expect, afterEach } from 'vitest';

@@ -11,7 +11,7 @@ from app.models.import_job import ImportJob
 class ImportJobNotFound(Exception):
     """Raised by update_import_job when must_exist=True and the row is missing.
 
-    Phase 90 / CR-01: closes the silent-data-loss window when a failure-state
+    Closes the silent-data-loss window when a failure-state
     UPDATE is issued before the bootstrap scope committed the job row. Retrying
     cannot help — the row truly does not exist — so callers should log + capture
     to Sentry and stop.
@@ -67,7 +67,7 @@ async def update_import_job(
         must_exist: When True, raise ImportJobNotFound if the row is missing
             instead of silently no-op'ing. Used by failure-state recording in
             run_import so a missing row (bootstrap scope never committed) is
-            surfaced rather than silently dropped (Phase 90 / CR-01).
+            surfaced rather than silently dropped.
         **kwargs: Field names and values to update (e.g., status='completed').
     """
     job = await get_import_job(session, job_id)
@@ -137,7 +137,7 @@ async def get_active_job_for_user_platform(
 ) -> ImportJob | None:
     """Return the single active (pending or in_progress) job for a user+platform.
 
-    Phase 149 PRUNE-05: used by start_import's IntegrityError handler to
+    Used by start_import's IntegrityError handler to
     re-fetch the existing job after the partial unique index rejects a
     concurrent duplicate insert. The status set here MUST stay textually
     identical to the `uq_import_jobs_user_platform_active` index predicate
@@ -218,9 +218,8 @@ async def fail_orphaned_jobs(
     """Mark any pending/in_progress jobs as failed (orphaned after server restart).
 
     None = no threshold (startup behavior): every non-terminal job is reaped.
-    non-None = only reap jobs older than threshold (used by periodic reaper,
-    Phase 90, SEED-017). The threshold prevents the periodic reaper from killing
-    a live healthy import (Pitfall 3 in 90-RESEARCH.md).
+    non-None = only reap jobs older than threshold (used by periodic reaper).
+    The threshold prevents the periodic reaper from killing a live healthy import.
 
     Args:
         session: AsyncSession to use.
@@ -230,10 +229,9 @@ async def fail_orphaned_jobs(
     Returns:
         Number of jobs marked as failed.
     """
-    # Bug fix (Phase 90, SEED-017): extended to accept an age threshold so the
-    # periodic reaper (run_periodic_reaper) can safely call this function during
-    # a live import without killing healthy in-flight jobs. The startup call
-    # passes None (no threshold) because no in-flight tasks survive a restart.
+    # The periodic reaper (run_periodic_reaper) passes a threshold so a live
+    # import is never reaped; startup passes None because no in-flight task
+    # survives a restart.
     where_clause = ImportJob.status.in_(["pending", "in_progress"])
     if orphan_age_threshold is not None:
         cutoff = datetime.now(timezone.utc) - orphan_age_threshold
@@ -278,8 +276,8 @@ async def get_latest_completed_import_with_games_at(
     """Return MAX(completed_at) for the user's completed imports that fetched
     new games (games_imported > 0), or None if none exist.
 
-    Used as the cache-invalidation timestamp for the structural insights cache
-    (260425-dxh): a cached LLM log row is invalid iff its created_at is older
+    Used as the cache-invalidation timestamp for the structural insights cache:
+    a cached LLM log row is invalid iff its created_at is older
     than this timestamp. No-op resyncs (games_imported = 0) are intentionally
     excluded so daily syncs that fetch zero games do NOT bust the cache.
     """

@@ -1,25 +1,23 @@
 /**
- * trainBotCopy — Phase 222 (TRAINBOT-01..08): all bot-narrated Train copy and
+ * trainBotCopy — all bot-narrated Train copy and
  * the pure casting/resolver functions that select it. No React import
  * (mirrors `lib/trainGuessLabels.ts` / `lib/trainScore.ts`'s pure-module
  * convention) — every function here is a total function of values already
  * present on `SolveResponse` / `TrainSessionResponse` / `PERSONA_REGISTRY`.
  *
- * D-06 (LOCKED): copy is authored PER OUTCOME BUCKET with a few variants,
+ * LOCKED: copy is authored PER OUTCOME BUCKET with a few variants,
  * never per persona/bot. Bot identity carries only the face and name —
  * `pickBot` selects WHO speaks; the copy tables below say WHAT is said,
- * completely independent of the picked persona. This was ONE scoped
- * exception (2026-09-14, owner's call) for the /train LANDING greeting
- * (`landingHost`); Phase 223 generalised per-persona copy into the RULE for
- * every bot-voice surface (`lib/botGameCopy.ts` owns the `/bots` game and
- * roster surfaces), so `landingHost` is no longer this module's one
- * exception — it is simply /train's OWN per-persona rotation, sharing its
- * epoch and id order (below, both exported) with `botGameCopy.ts`'s
- * `rosterHost` so the same bot greets a user on /train and /bots on a given
- * day structurally, not coincidentally. Every OTHER /train surface
- * (prompts, verdicts, score bubble) still stays per-outcome, unaffected.
+ * completely independent of the picked persona. The one exception is the
+ * /train LANDING greeting (`landingHost`), which is /train's OWN per-persona
+ * rotation, sharing its epoch and id order (below, both exported) with
+ * `botGameCopy.ts`'s `rosterHost` so the same bot greets a user on /train
+ * and /bots on a given day structurally, not coincidentally (per-persona
+ * copy is the rule for the `/bots` game and roster surfaces, which
+ * `lib/botGameCopy.ts` owns). Every OTHER /train surface
+ * (prompts, verdicts, score bubble) stays per-outcome, unaffected.
  *
- * Casting (D-01..D-05): `BY_TEMPERAMENT` groups all 24 `PERSONA_REGISTRY`
+ * Casting: `BY_TEMPERAMENT` groups all 24 `PERSONA_REGISTRY`
  * entries by their `temperament` field — never a hand-maintained id list, so
  * adding/removing a persona can never silently starve a pool as long as the
  * registry itself stays exhaustive (`Record<PersonaId, Persona>`).
@@ -35,19 +33,19 @@ import type { TrainMoveTier, TrainRatingBand } from '@/lib/trainScore';
 import type { RevealTourStage } from '@/types/train';
 
 /**
- * D-05: the fixed teacher for the intro stepper and the reveal tour parts.
+ * The fixed teacher for the intro stepper and the reveal tour parts.
  * Always Hilda — never randomly cast.
  */
 export const HILDA_ID: PersonaId = 'wall-1800';
 
 /**
- * D-05: the fixed host for intro step 1 only. Always Tank — never randomly
+ * The fixed host for intro step 1 only. Always Tank — never randomly
  * cast.
  */
 export const TANK_ID: PersonaId = 'grinder-1600';
 
 /**
- * The /train landing greeting per persona (the D-06 exception documented in
+ * The /train landing greeting per persona (the exception documented in
  * the module header). Each line is TWO sentences in the bot's own voice: a
  * personal opener, then an in-voice statement that the puzzles come from
  * the user's own games — the landing bubble is the only explanation of what
@@ -74,7 +72,7 @@ export const LANDING_GREETINGS: Record<PersonaId, string> = {
   'grinder-1000': "I dug up the old positions from your games. The leaky ones are today's puzzles.",
   'grinder-1200': "Nice and calm now. We'll paddle back to the spots where your games went under.",
   'grinder-1400': "Take your time. Your own mistakes are waiting, and they aren't going anywhere.",
-  // Phase 237 UAT: Tank's first-visit greeting, no app name yet (intro step 1 names it).
+  // Tank's first-visit greeting, no app name yet (intro step 1 names it).
   'grinder-1600':
     "Welcome to boot camp, recruit! You'll learn from the mistakes in your own games and " +
     'train your instinct for when a position hides a tactic.',
@@ -89,7 +87,7 @@ export const LANDING_GREETINGS: Record<PersonaId, string> = {
 
 /**
  * Rotation order for `landingHost`: the authored order of `LANDING_GREETINGS`.
- * Exported (223-02) so `botGameCopy.ts`'s `rosterHost` imports this SAME id
+ * Exported so `botGameCopy.ts`'s `rosterHost` imports this SAME id
  * order rather than declaring its own — "the same bot greets you on /train
  * and /bots today" is then structural, not two coincidentally-identical
  * lists that could silently drift apart.
@@ -98,7 +96,7 @@ export const LANDING_HOST_IDS: readonly PersonaId[] = Object.keys(LANDING_GREETI
 
 /**
  * Day-zero for the landing rotation's day counter. Any fixed date works;
- * the epoch keeps the arithmetic obvious. Exported (223-02) for the same
+ * the epoch keeps the arithmetic obvious. Exported for the same
  * reason as `LANDING_HOST_IDS` above — `rosterHost` imports this exact
  * epoch so the two rotations can never disagree about which day is which.
  */
@@ -107,7 +105,7 @@ export const LANDING_ROTATION_EPOCH = parseISO('1970-01-01');
 export interface LandingHostInput {
   /** `TrainSessionResponse.session_date` (ISO `YYYY-MM-DD`), or null while
    * the session is loading/errored. Server-supplied so this module keeps its
-   * D-15 "no `new Date()`" rule and the Train dev clock drives the pick. */
+   * "no `new Date()`" rule and the Train dev clock drives the pick. */
   sessionDate: string | null;
   /** `TrainSettingsResponse.intro_seen_at`; null (or undefined while the
    * settings query is pending/failed) means the intro has not been seen. */
@@ -119,13 +117,13 @@ export interface LandingHost {
   copy: string;
 }
 
-/** Phase 237 UAT: appended to Tank's greeting until the intro is completed,
+/** Appended to Tank's greeting until the intro is completed,
  * since Hilda hosts every onboarding step. Not on Tank's rotation day: a
  * returning user has already met her. */
 export const LANDING_HILDA_HANDOFF = 'Hilda will show you the ropes.';
 
 /**
- * Picks the /train landing host + greeting. Tank (D-05) until the intro
+ * Picks the /train landing host + greeting. Tank until the intro
  * stepper has been completed (his boot-camp welcome is the first-visit
  * greeting) — after that, one persona
  * per calendar day, cycling through all 24 in `LANDING_GREETINGS` order via
@@ -151,7 +149,7 @@ export function landingHost(input: LandingHostInput): LandingHost {
 }
 
 /**
- * All 24 `PERSONA_REGISTRY` entries partitioned by `temperament` (D-01).
+ * All 24 `PERSONA_REGISTRY` entries partitioned by `temperament`.
  * Built once at module load by reducing `Object.values(PERSONA_REGISTRY)` —
  * NOT a hand-maintained id list — so the three pools always reflect the
  * registry's current `temperament` assignments.
@@ -168,7 +166,7 @@ export const BY_TEMPERAMENT: Record<Temperament, Persona[]> = (() => {
  * Picks a random persona from `temperament`'s pool. `rng` defaults to
  * `Math.random` but is injectable so unit tests are deterministic without
  * patching the global (component tests may still prefer `vi.spyOn(Math,
- * 'random')` for the rendered cast — RESEARCH "do both" recommendation).
+ * 'random')` for the rendered cast).
  *
  * `noUncheckedIndexedAccess` is on: the computed index is narrowed via a
  * local before being trusted, never asserted with `!`.
@@ -187,7 +185,7 @@ export function pickBot(temperament: Temperament, rng: () => number = Math.rando
 }
 
 /**
- * Phase 237 UAT: the puzzle host is drawn from EVERY persona (not one
+ * The puzzle host is drawn from EVERY persona (not one
  * temperament pool) and speaks both the prompt and the verdict. Hilda is left
  * out while the first-reveal tour is pending (`excludeHilda`), because she
  * narrates that tour from the board overlay and must not also be the host.
@@ -200,18 +198,17 @@ export function pickPuzzleHost(excludeHilda: boolean, rng: () => number = Math.r
 }
 
 /**
- * D-22 regular guess prompt, spoken by the random smart host on every
- * puzzle after the first (and inside Hilda's step-3 intro bubble on the
- * very first). `sideToMove` is always the puzzle's own `side_to_move`.
+ * The guess question, shown in the solve screen's prompt bubble and reused by
+ * dropNudgeCopy. `sideToMove` is always the puzzle's own `side_to_move`.
  */
 export function promptCopy(sideToMove: 'white' | 'black'): string {
   return `You play ${sideToMove}. Is there only one good move, or several?`;
 }
 
 /**
- * D-22 move prompt, spoken by the SAME host bubble once the guess is
- * committed (D-07: one persisting chat-row slot, copy swaps in place).
- * Phase 222 UAT: the prompt echoes the call just made (`guess`), in the
+ * Move prompt, spoken by the SAME host bubble once the guess is
+ * committed (one persisting chat-row slot, copy swaps in place).
+ * The prompt echoes the call just made (`guess`), in the
  * reveal card's own "Your call: …" vocabulary, so the answer stays on screen
  * while the move is chosen. `null` (no call recorded) drops the echo.
  */
@@ -221,17 +218,17 @@ export function movePromptCopy(sideToMove: 'white' | 'black', guess: Guess | nul
   return `Your call: ${GUESS_CALL_LABELS[guess]}. ${movePrompt}`;
 }
 
-/** D-22 grading copy — shown while the move is being checked. */
+/** Grading copy — shown while the move is being checked. */
 export const GRADING_COPY = 'Checking your move…';
 
-/** Phase 235 (D-12): shown instead of GRADING_COPY while the disagreement
+/** Shown instead of GRADING_COPY while the disagreement
  * re-check runs (a few extra seconds on the rare sharp off-key good move). */
 export const RECHECK_COPY = 'Taking a closer look…';
 
 /**
  * Phone copy budget for every stepper bubble (intro + first-reveal
- * walkthrough), in characters. Calibrated in the browser at 375x667 (plan 06
- * UAT): the board column sits at its 240px floor there, the bubble copy is
+ * tour), in characters. Calibrated in the browser at 375x667:
+ * the board column sits at its 240px floor there, the bubble copy is
  * 204px wide, and the phone base font renders `text-sm` at 16px/24px, so a
  * line holds ~24 characters. With the progress row, the 240px board, the
  * compact avatar header and a 48px button row, seven 24px lines is the most
@@ -244,13 +241,13 @@ export const RECHECK_COPY = 'Taking a closer look…';
 export const STEPPER_COPY_MAX_CHARS = 145;
 
 /**
- * D-03 (Phase 224): the two orthogonal flags every games-less Train string
+ * The two orthogonal flags every games-less Train string
  * branches on. `hasGames` (from `useUserProfile().data` game counts, via the
  * shared `hasImportedGames` helper) selects "import your games" wording for
  * ANY zero-game account; `isGuest` (also from `useUserProfile().data`, NEVER
  * `useAuth().user` — FLAWCHESS-64) appends the sign-up ask on top of that.
- * A guest WITH games gets its own bucket (`has_games_guest`, quick
- * 261015-pjr): guest games are never analyzed automatically, so the
+ * A guest WITH games gets its own bucket (`has_games_guest`):
+ * guest games are never analyzed automatically, so the
  * registered-account "we're analyzing your games" copy would be a promise
  * that never comes true.
  */
@@ -260,43 +257,43 @@ export interface TrainCopyAudience {
 }
 
 /**
- * The four audience buckets every D-03 copy record keys on. Module-private:
+ * The four audience buckets every audience-keyed copy record uses. Module-private:
  * callers pass a `TrainCopyAudience`, never this key, so `audienceKey` stays
  * the single place the two flags collapse into one lookup key.
  */
 type CopyAudienceKey = 'has_games' | 'has_games_guest' | 'no_games' | 'no_games_guest';
 
 function audienceKey(audience: TrainCopyAudience): CopyAudienceKey {
-  // Quick 261015-pjr: Phase 224 D-03 let `hasGames` win over `isGuest`, so a
-  // guest who imported games was told three times per session that their
-  // games were being analyzed. The eval queue skips guest games (only a
-  // manual per-game Analyze click runs), so their own mistakes never arrived.
+  // `hasGames` must not win over `isGuest` outright: a guest who imported
+  // games would be told three times per session that their games were being
+  // analyzed. The eval queue skips guest games (only a manual per-game
+  // Analyze click runs), so their own mistakes never arrive.
   if (audience.hasGames) return audience.isGuest ? 'has_games_guest' : 'has_games';
   if (audience.isGuest) return 'no_games_guest';
   return 'no_games';
 }
 
 /**
- * D-22 intro stepper step index. Phase 240 D-01: two steps (welcome, then the
+ * Intro stepper step index: two steps (welcome, then the
  * closing prompt with the guess buttons) for every audience and for warm-up
  * sessions alike.
  */
 export type IntroStep = 0 | 1;
 
 /**
- * Phase 240 D-01: the intro always has exactly two bubbles. The count never
+ * The intro always has exactly two bubbles. The count never
  * varies with warm-up or audience (only the welcome copy does).
  */
 export const INTRO_STEP_COUNT = 2;
 
-/** D-22: the first-session intro stepper's speaking persona + copy per step. */
+/** The first-session intro stepper's speaking persona + copy per step. */
 export interface IntroStepCopy {
   personaId: PersonaId;
   copy: string;
 }
 
 /**
- * Phase 240 UAT: the intro welcome. It opens with a plain "Hi there!" (Tanks
+ * The intro welcome. It opens with a plain "Hi there!" (Tanks
  * already welcomes the user to Train on the start screen) and carries no
  * import or sign-up ask, so a new user is not sent away before the first
  * puzzle; the score screen makes that ask instead. A warm-up session says so
@@ -306,24 +303,25 @@ const INTRO_WELCOME_COPY = 'Hi there! You will improve by solving puzzles create
 const INTRO_WARMUP_WELCOME_COPY =
   "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.";
 
-/** Phase 240 UAT: the guess vocabulary, phrased as a legend for the "Only one"
+/** The guess vocabulary, phrased as a legend for the "Only one"
  * and "Several" buttons it sits above (see `introSteps`). */
 const INTRO_GUESS_LEGEND =
   'Only one: a single move works, the others are mistakes. Several: there are at least two good moves.';
 
 /**
- * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the
+ * Intro stepper, all Hilda, two steps: the
  * welcome, then the closing prompt that carries the guess buttons (so it
  * takes `sideToMove` like `promptCopy`). The guiding rule is to act within one
  * or two taps and read later; the practice rationale waits for the first
  * score screen. `isWarmup` (`TrainSessionResponse.is_warmup`) selects the
  * welcome variant.
  *
- * Phase 240 UAT: the closing prompt defines the two calls next to their
- * buttons (`INTRO_GUESS_LEGEND`). Tour part 1 was meant to teach them after the
- * first move, but that step was cut as repeating the verdict box, which on
- * phones only opens on a tap, so nothing defined the game's central question
- * for a new user. The legend replaces the bare question, so no step is added.
+ * The closing prompt defines the two calls next to their buttons
+ * (`INTRO_GUESS_LEGEND`). The tour does not teach them after the first move
+ * (its verdict-box step was cut as repeating the verdict box, which on phones
+ * only opens on a tap), so this prompt is the only place that defines the
+ * game's central question for a new user. The legend replaces the bare
+ * question, so no step is added.
  */
 export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): IntroStepCopy[] {
   return [
@@ -350,7 +348,7 @@ export function introCopy(
 }
 
 /**
- * D-08/D-22: the "decide first" nudge shown when a piece is dropped before
+ * The "decide first" nudge shown when a piece is dropped before
  * the guess. Reuses `promptCopy` for the question half so the two never
  * drift apart.
  */
@@ -358,7 +356,7 @@ export function dropNudgeCopy(sideToMove: 'white' | 'black'): string {
   return `Decide first, then move. ${promptCopy(sideToMove)}`;
 }
 
-/** D-23: the verdict bubble's structured copy — an opener, the scoring
+/** The verdict bubble's structured copy — an opener, the scoring
  * clause, and (for the 0-1 point buckets only) the look-closer line. The
  * return tail is resolved SEPARATELY by `returnPhrase` — this type carries
  * no return-date knowledge. */
@@ -368,7 +366,7 @@ export interface VerdictCopy {
   lookCloser: string | null;
 }
 
-/** D-23 openers, two variants per point bucket. */
+/** Openers, two variants per point bucket. */
 const VERDICT_OPENERS: Record<0 | 1 | 2 | 3, readonly [string, string]> = {
   0: ['Not this time.', 'Not quite.'],
   1: ['Close.', 'Halfway there.'],
@@ -376,12 +374,12 @@ const VERDICT_OPENERS: Record<0 | 1 | 2 | 3, readonly [string, string]> = {
   3: ['Good job!', 'Clean.'],
 };
 
-/** D-23: shown only for the 0 and 1 point buckets. */
+/** Shown only for the 0 and 1 point buckets. */
 const LOOK_CLOSER_LINE = 'Step through the best line and your own move to see why.';
 
 /** The verdict clause's two labeled phrases with their point values. One table
  * drives every surface (strip line, expanded verdict, desktop bubble), so the
- * vocabulary can never drift between them (Phase 237 D-06). */
+ * vocabulary can never drift between them. */
 export interface VerdictClauseParts {
   guessLabel: string;
   guessPoints: 0 | 1;
@@ -390,7 +388,7 @@ export interface VerdictClauseParts {
 }
 
 /**
- * Phase 237 (D-05/D-06): the clause's guess and move halves. The move half is
+ * The clause's guess and move halves. The move half is
  * four words at most: "best move" (the best move, a good-tier move that is the
  * engine's top choice), "good move" (good tier, not the best), "decent move"
  * (inaccuracy), "wrong move" (mistake/blunder). `isBest` only selects wording,
@@ -400,56 +398,56 @@ export interface VerdictClauseParts {
  */
 export function verdictClauseParts(
   correctGuess: boolean,
-  moveQuality: TrainMoveTier,
+  moveTier: TrainMoveTier,
   isBest: boolean,
 ): VerdictClauseParts {
   const guessLabel = correctGuess ? 'Right call' : 'Wrong call';
   const guessPoints: 0 | 1 = correctGuess ? GUESS_POINTS : 0;
-  const movePoints = MOVE_TIER_POINTS[moveQuality] as 0 | 1 | 2;
-  if (moveQuality === 'good') {
+  const movePoints = MOVE_TIER_POINTS[moveTier] as 0 | 1 | 2;
+  if (moveTier === 'good') {
     const base = isBest ? 'best move' : 'good move';
     const moveLabel = correctGuess ? base : `but ${isBest ? 'the' : 'a'} ${base}`;
     return { guessLabel, guessPoints, moveLabel, movePoints };
   }
-  if (moveQuality === 'inaccuracy') {
+  if (moveTier === 'inaccuracy') {
     return { guessLabel, guessPoints, moveLabel: 'decent move', movePoints };
   }
   return { guessLabel, guessPoints, moveLabel: 'wrong move', movePoints };
 }
 
-/** D-23's scoring clause with bracketed point values ("Right call [+1], best
+/** The scoring clause with bracketed point values ("Right call [+1], best
  * move [+2]."), built from `verdictClauseParts`. */
-function verdictClause(correctGuess: boolean, moveQuality: TrainMoveTier, isBest: boolean): string {
-  const parts = verdictClauseParts(correctGuess, moveQuality, isBest);
+function verdictClause(correctGuess: boolean, moveTier: TrainMoveTier, isBest: boolean): string {
+  const parts = verdictClauseParts(correctGuess, moveTier, isBest);
   return `${parts.guessLabel} [+${parts.guessPoints}], ${parts.moveLabel} [+${parts.movePoints}].`;
 }
 
 /** The article `verdictClauseParts` puts after "but" (`but the` / `but a`). */
 const STRIP_ARTICLE_PATTERN = /^but (the|a) /;
 
-/** Phase 237 (D-05): the phone strip's one line, the clause without the
- * point brackets ("Right call, best move"). Phase 240 UAT: the strip drops
+/** The phone strip's one line, the clause without the
+ * point brackets ("Right call, best move"). The strip drops
  * the article after "but" ("Wrong call, but best move") to keep it short;
  * the full clause in the details keeps it. */
 export function verdictStripLine(
   correctGuess: boolean,
-  moveQuality: TrainMoveTier,
+  moveTier: TrainMoveTier,
   isBest: boolean,
 ): string {
-  const parts = verdictClauseParts(correctGuess, moveQuality, isBest);
+  const parts = verdictClauseParts(correctGuess, moveTier, isBest);
   return `${parts.guessLabel}, ${parts.moveLabel.replace(STRIP_ARTICLE_PATTERN, 'but ')}`;
 }
 
 /**
- * D-23: resolves the verdict bubble's opener + clause + optional
+ * Resolves the verdict bubble's opener + clause + optional
  * look-closer line. `points` comes from `scorePuzzle(correctGuess,
- * moveQuality)` at the call site — never re-derived here (Option B, LOCKED).
+ * moveTier)` at the call site — never re-derived here (Option B, LOCKED).
  * `rng` is injectable per the `pickBot` convention above.
  */
 export function verdictCopy(
   points: 0 | 1 | 2 | 3,
   correctGuess: boolean,
-  moveQuality: TrainMoveTier,
+  moveTier: TrainMoveTier,
   isBest: boolean,
   rng: () => number = Math.random,
 ): VerdictCopy {
@@ -457,22 +455,22 @@ export function verdictCopy(
   const opener = rng() < 0.5 ? openers[0] : openers[1];
   return {
     opener,
-    clause: verdictClause(correctGuess, moveQuality, isBest),
+    clause: verdictClause(correctGuess, moveTier, isBest),
     lookCloser: points <= 1 ? LOOK_CLOSER_LINE : null,
   };
 }
 
-/** D-23's look-closer line, exported so callers can render it identically
+/** The look-closer line, exported so callers can render it identically
  * to `verdictCopy`'s own `lookCloser` field without re-typing the string. */
 export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
   return points <= 1 ? LOOK_CLOSER_LINE : null;
 }
 
-/** D-23 return tails (D-15/D-16). */
+/** Return tails. */
 const NEXT_SESSION_TAIL = "We'll try this one again in the next session.";
 const MASTERED_TAIL = "Three in a row. You have this one down, it won't come back.";
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to positions that stick.';
-/** Quick 260915-sht: the non-return lines for a herring/filler solved in a
+/** The non-return lines for a herring/filler solved in a
  * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
  * sources unconditionally, so a user with plenty of SR items was told a
  * routine red herring "was a warm-up" and that "your own positions will"
@@ -483,15 +481,15 @@ const HERRING_TAIL = "That one was a red herring, so it won't come back.";
 const FILLER_TAIL = "That one was a tactics puzzle, not from your games, so it won't come back.";
 
 /** Inputs for `returnPhrase` — every field optional so a pre-206 cached
- * reveal (RESEARCH Pitfall 7) or an incomplete fixture degrades to an empty
+ * reveal or an incomplete fixture degrades to an empty
  * string rather than a throw or a TypeScript error at the call site. */
 export interface ReturnPhraseInput {
   source?: 'sr_item' | 'red_herring' | 'sharp_filler';
   item_status?: 'active' | 'mastered' | 'parked' | null;
   due_date?: string | null;
   /** `TrainSessionResponse.is_warmup` — the SESSION is a warm-up (zero
-   * surviving SR items at composition, Phase 206 D-06/D-07). A warm-up
-   * herring/filler gets no tail at all (Phase 240 UAT). */
+   * surviving SR items at composition). A warm-up
+   * herring/filler gets no tail at all. */
   is_warmup?: boolean;
   /** `TrainSessionResponse.session_date` — the session's own calendar date. */
   session_date?: string;
@@ -501,19 +499,19 @@ export interface ReturnPhraseInput {
 }
 
 /**
- * D-15/D-16: the return-date phrase for a single solved item. Herrings and
+ * The return-date phrase for a single solved item. Herrings and
  * fillers never return: in a warm-up SESSION (`is_warmup`) they get no tail,
- * else a neutral non-return line. Phase 240 UAT dropped the warm-up tail
+ * else a neutral non-return line. There is no warm-up tail
  * ("That one was a warm-up, so it won't come back. ... your own positions
  * will."): repeated on every warm-up puzzle, it was one more import/sign-up
  * ask during the first session, and the score screen already says the
  * session was warm-ups. Status is
  * checked strictly BEFORE any date comparison — `due_date` is a STALE value
- * for mastered/parked items (RESEARCH Finding E: `apply_result` leaves it
+ * for mastered/parked items (`apply_result` leaves it
  * untouched on both branches), so phrasing it as a return date would lie.
  * Guard-clause returns, no nesting, no `new Date()`/`Date.now()` anywhere in
- * this module (D-15) — day arithmetic uses `differenceInCalendarDays` +
- * `parseISO`, which are DST-exact (verified in RESEARCH §Finding E).
+ * this module — day arithmetic uses `differenceInCalendarDays` +
+ * `parseISO`, which are DST-exact.
  */
 export function returnPhrase(input: ReturnPhraseInput): string {
   const neverReturns = input.source === 'red_herring' || input.source === 'sharp_filler';
@@ -532,11 +530,11 @@ export function returnPhrase(input: ReturnPhraseInput): string {
 }
 
 /**
- * Phase 240 (D-06): the first-reveal tour ids. The Phase 237 six-step tour is
+ * The first-reveal tour ids. The six-step tour is
  * split into three parts that run on consecutive reveals (at most one per
- * reveal, D-07): part 0 is the result, part 1 the chips + stepping, part 2
+ * reveal): part 0 is the result, part 1 the chips + stepping, part 2
  * sidelines, "understand, don't memorize" and Analyze. Part N finishing stamps
- * the server's `reveal_tour_stage` to N + 1. Phase 240 UAT dropped part 0's
+ * the server's `reveal_tour_stage` to N + 1. Part 0 has no
  * "Next takes you to the next puzzle." step: the user had to press Next to
  * reach it, so it taught nothing.
  */
@@ -564,39 +562,39 @@ export function tourPartForStage(stage: RevealTourStage): TourPart | null {
   return stage >= TOUR_PART_COUNT ? null : (stage as TourPart);
 }
 
-/** True once all three parts are done (D-22 also gates the landing reminder ask on it). */
+/** True once all three parts are done (it also gates the landing reminder ask). */
 export function isRevealTourDone(stage: RevealTourStage): boolean {
   return stage >= TOUR_PART_COUNT;
 }
 
 /**
- * D-24 (Phase 240 D-03): what a tour step spotlights.
+ * What a tour step spotlights.
  *  - `verdict`: the one-line strip on phones, the verdict bubble on desktop.
- *  - `chips`: the chips row (spotlit too since D-20; the active chip keeps its
+ *  - `chips`: the chips row (the active chip keeps its
  *    own selection ring). `tree`: the move list. `lines`: the chips-plus-list
  *    region (the understand step).
  *  - `board`: the board row (free play / sidelines).
- *  - `analyze`: the Analyze button alone (Phase 240 UAT: not the whole action
+ *  - `analyze`: the Analyze button alone (not the whole action
  *    bar), in flow on sm+ and in the fixed phone bar on phones (carried there
  *    by the published payload's `spotlightAnalyze` flag).
  */
-export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'analyze';
+export type TourTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'analyze';
 
-/** D-24: one tour step's copy + the element it spotlights. */
-export interface WalkthroughStepCopy {
+/** One tour step's copy + the element it spotlights. */
+export interface TourStepCopy {
   copy: string;
-  spotlightTarget: WalkthroughTarget;
+  spotlightTarget: TourTarget;
 }
 
 /**
- * Phase 237 plan 10 (D-09/D-11): the puzzle facts the copy may branch on.
+ * The puzzle facts the copy may branch on.
  * `analyzeOpens`: Analyze opens the whole game for a puzzle from one of the
  * user's own games, otherwise just the puzzle position. `isDesktop`: only the
  * result step reads it, to tell phone users the collapsed verdict strip opens
- * on tap (the desktop card is always open). Never the chip set (Phase 240
- * UAT): every string must hold for every combination of chips.
+ * on tap (the desktop card is always open). Never the chip set:
+ * every string must hold for every combination of chips.
  */
-export interface WalkthroughContext {
+export interface TourContext {
   analyzeOpens: 'game' | 'position';
   isDesktop: boolean;
 }
@@ -611,49 +609,48 @@ export const TOUR_ICON_TOKEN: Record<TourIcon, string> = {
   forward: '{forward}',
 };
 
-// Phase 240 UAT: the result bubble only points at the verdict box. It used to
-// teach what "only one" vs "several" meant for the position just solved
-// (D-19), which repeated the box's own guess feedback. No points sentence
-// (D-05): the strip and the verdict already show the points. On phones the
-// verdict is a collapsed strip, so the bubble says it opens on tap.
+// The result bubble only points at the verdict box. It does not teach what
+// "only one" vs "several" meant for the position just solved, which would
+// repeat the box's own guess feedback. No points sentence: the strip and the
+// verdict already show the points. On phones the verdict is a collapsed
+// strip, so the bubble says it opens on tap.
 //
-// Phase 240 UAT: every other tour string is true on phone AND desktop and for
-// every chip set the reveal can show, so no other step branches on the device. The old
-// phone/desktop pairs named the bar's location ("in the bar", "under the
-// board"), keys a phone lacks, and "tap" alone; the chips step assumed three
-// chips and a second one to tap, though the Game chip is often missing and a
-// merged chip can be the only one.
+// Every other tour string is true on phone AND desktop and for every chip set
+// the reveal can show, so no other step branches on the device. Don't name
+// the bar's location ("in the bar", "under the board"), keys a phone lacks,
+// or "tap" alone; don't assume three chips and a second one to tap, since the
+// Game chip is often missing and a merged chip can be the only one.
 const TOUR_RESULT_DESKTOP = 'Your result is in the highlighted box. Proceed with Next when ready.';
 const TOUR_RESULT_PHONE =
   'Your result is in the highlighted box. Tap it for details. Proceed with Next when ready.';
 const TOUR_ANALYZE_GAME =
   'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
 const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
-const WALKTHROUGH_CHIPS =
+const TOUR_CHIPS =
   "Each chip is a line: your Move, the engine's Best, and your Game move if known. " +
   'Same moves share a chip. Tap or click a chip to show its line.';
-// Phase 237 UAT: the bar's buttons are named by icon tokens, which the tour
-// renders as the bar's real lucide icons (`TourCopy`). Glyphs drifted from the
-// bar: ⏮ has two triangles, the bar's rewind (SkipBack) one. The icons are the
+// The bar's buttons are named by icon tokens, which the tour renders as the
+// bar's real lucide icons (`TourCopy`). Don't use glyphs: they drift from the
+// bar (⏮ has two triangles, the bar's rewind (SkipBack) one). The icons are the
 // pointer, so the copy names no location (the phone bar sits at the bottom of
 // the screen, not under the board).
-const WALKTHROUGH_STEP =
+const TOUR_STEP =
   `Step through the line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward}, or tap or click a move in the list.`;
-const WALKTHROUGH_BOARD =
+const TOUR_BOARD =
   `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} takes you back to the puzzle position.`;
-const WALKTHROUGH_UNDERSTAND =
+const TOUR_UNDERSTAND =
   'Understanding why a move works or fails by analyzing the lines is what makes ' +
   "the pattern stick. Don't just memorize the answer.";
 
 
 /**
- * D-24 (Phase 240 D-06/D-07): the Hilda tour of the reveal, three parts on
+ * The Hilda tour of the reveal, three parts on
  * consecutive reveals, at most one per reveal. Each step stays within the phone
  * copy budget (`STEPPER_COPY_MAX_CHARS`) and only describes what is on screen
- * for this context (Phase 237 D-09): no cards, no Solution button, and the same
- * words on phone and desktop (Phase 240 UAT).
+ * for this context: no cards, no Solution button, and the same
+ * words on phone and desktop.
  */
-export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): WalkthroughStepCopy {
+export function tourStepCopy(step: TourStepId, ctx: TourContext): TourStepCopy {
   switch (step) {
     case 'result':
       return {
@@ -661,13 +658,13 @@ export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): Walkthr
         copy: ctx.isDesktop ? TOUR_RESULT_DESKTOP : TOUR_RESULT_PHONE,
       };
     case 'chips':
-      return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS };
+      return { spotlightTarget: 'chips', copy: TOUR_CHIPS };
     case 'stepping':
-      return { spotlightTarget: 'tree', copy: WALKTHROUGH_STEP };
+      return { spotlightTarget: 'tree', copy: TOUR_STEP };
     case 'sidelines':
-      return { spotlightTarget: 'board', copy: WALKTHROUGH_BOARD };
+      return { spotlightTarget: 'board', copy: TOUR_BOARD };
     case 'understand':
-      return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
+      return { spotlightTarget: 'lines', copy: TOUR_UNDERSTAND };
     case 'analyze':
       return {
         spotlightTarget: 'analyze',
@@ -677,19 +674,19 @@ export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): Walkthr
 }
 
 /**
- * D-21 named three must-survive messages for the first completed session:
+ * Three messages must survive the first completed session:
  * origin ("these come from your own mistakes"), goal ("understanding, not
- * memorizing") and habit. Phase 222 UAT round 6 cut the first two from the
- * score bubble (five lines pushed the session score below the fold on a
- * phone; the origin/goal messages are told by the intro and the reveal tour).
- * Phase 240 D-16 brings the practice rationale back into LINE 1 as one short
- * sentence (`PRACTICE_RATIONALE`), so the bubble stays at two lines. The habit
- * sentence stays as the lead-in to the reminder ask in line 2.
+ * memorizing") and habit. The score bubble carries only the habit one (five
+ * lines pushed the session score below the fold on a phone; the origin/goal
+ * messages are told by the intro and the reveal tour). The practice rationale
+ * is in LINE 1 as one short sentence (`PRACTICE_RATIONALE`), so the bubble
+ * stays at two lines. The habit sentence is the lead-in to the reminder ask in
+ * line 2.
  */
 const MUST_SURVIVE_HABIT = 'Reminders build the habit that makes Train work.';
 
-/** Phase 240 D-16/D-19: why Train practices at all, said once in line 1 of
- * the first completed session (every branch, D-17). */
+/** Why Train practices at all, said once in line 1 of
+ * the first completed session (every branch). */
 const PRACTICE_RATIONALE =
   'Practice teaches you when to calculate and when a quick good move is enough.';
 
@@ -714,10 +711,10 @@ const WARMUP_REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
 };
 
 /**
- * D-03 (Phase 224): the second half of the warm-up score bubble's opening
+ * The second half of the warm-up score bubble's opening
  * line, keyed by audience. `has_games` is today's clause verbatim; the
  * zero-game variants name import instead of a running analysis, and the
- * guest variant adds sign-up after import (ROADMAP SC 7).
+ * guest variant adds sign-up after import.
  */
 const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
   has_games: 'Once your games are analyzed, your own mistakes take over.',
@@ -725,40 +722,40 @@ const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
   // line, so this clause only states why there are no own mistakes yet.
   has_games_guest: 'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
   no_games: 'Import your games and your own mistakes take over.',
-  // UAT 240: empty on purpose. The sign-up line below already says the guest's
+  // Empty on purpose. The sign-up line below already says the guest's
   // own blunders replace the warm-ups; repeating it here read as a double ask.
   no_games_guest: '',
 };
 
 /**
- * S-3/D-04 (Phase 224): replaces the warm-up reminder ask on the score screen
- * for a guest — a guest gets no reminder slot (D-13), so the ask is sign-up
- * instead. Persona-neutral (D-04): one tunable sentence, not a per-persona
+ * Replaces the warm-up reminder ask on the score screen
+ * for a guest — a guest gets no reminder slot, so the ask is sign-up
+ * instead. Persona-neutral: one tunable sentence, not a per-persona
  * table. Truthful because promotion is an in-place `UPDATE users`
- * (`promote_guest_with_password` / `promote_guest_with_google`,
- * RESEARCH Finding F) — the same row, so the streak and every solved item
+ * (`promote_guest_with_password` / `promote_guest_with_google`)
+ * — the same row, so the streak and every solved item
  * genuinely stay exactly where they are.
  */
 export const GUEST_SIGNUP_ASK_SCORE =
   'Sign up free and your own blunders come back instead of warm-ups. Your streak and ' +
   'everything you have solved stay exactly where they are.';
 
-/** 2026-09-18: the landing bubble's reminder ask for a registered account with
+/** The landing bubble's reminder ask for a registered account with
  * no push subscription from a phone (`has_mobile_subscription === false`). The
  * only other landing CTA is the guest sign-up ask, so the two never co-occur. */
 export const REMINDER_INSTALL_ASK =
   "Install the FlawChess app on your phone and set up reminders so you don't miss a session.";
 
-/** Quick task 260926-8p5: the landing bubble's import ask for a registered
+/** The landing bubble's import ask for a registered
  * account with zero imported games. Replaces the reminder ask there (a
  * reminder is pointless until the user's own blunders exist), paired with
  * `ImportAskActions`. Guests keep the sign-up ask instead. */
 export const IMPORT_ASK_LANDING =
   'Import your games from chess.com or lichess, and your own mistakes become your puzzles.';
 
-/** Every session's opener comments on the result (Phase 222 UAT round 5:
- * first, later and warm-up sessions alike; the nothing-missed variant is its
- * own comment), in D-21's voice: about the session, never about the user,
+/** Every session's opener comments on the result (first, later and warm-up
+ * sessions alike; the nothing-missed variant is its
+ * own comment), in the bot's voice: about the session, never about the user,
  * and always forward-looking. A `null` band (nothing scored) falls back to
  * the neutral opener. */
 const SESSION_OPENER: Record<TrainRatingBand, string> = {
@@ -779,10 +776,10 @@ export interface ScoreBubbleInput {
    * drives the "nothing missed" variant. */
   missedCount: number;
   isFirstCompletedSession: boolean;
-  /** D-25: a warm-up session has zero surviving SR items — mirrors
+  /** A warm-up session has zero surviving SR items — mirrors
    * `TrainSessionResponse.is_warmup`. */
   isWarmup: boolean;
-  /** Phase 222 UAT round 5: which reminder ask closes the first-session and
+  /** Which reminder ask closes the first-session and
    * warm-up variants. `remind_me` names the row button (mobile, standalone);
    * `scan_qr` points at the phone QR block the desktop score screen renders
    * below the row (desktop push only fires while the browser is running);
@@ -793,9 +790,9 @@ export interface ScoreBubbleInput {
    * variant except nothing-missed — `null` when nothing was scored
    * (`max === 0`). */
   band: TrainRatingBand | null;
-  /** D-03/S-3 (Phase 224): selects the warm-up variant's copy AND, when
+  /** Selects the warm-up variant's copy AND, when
    * `isGuest` is true, replaces the warm-up reminder ask with
-   * `GUEST_SIGNUP_ASK_SCORE` (D-13: a guest gets no reminder slot). */
+   * `GUEST_SIGNUP_ASK_SCORE` (a guest gets no reminder slot). */
   audience: TrainCopyAudience;
 }
 
@@ -803,17 +800,17 @@ export interface ScoreBubbleCopy {
   lines: string[];
 }
 
-/** 2026-09-28: closes a perfect later session when there is no reminder ask
+/** Closes a perfect later session when there is no reminder ask
  * left to make (`none`). A clean sheet invites memorizing the answer, so the
- * slot restates the walkthrough's "understand, don't memorize" goal. */
+ * slot restates the tour's "understand, don't memorize" goal. */
 const NOTHING_MISSED_UNDERSTANDING_TIP =
   'Remember to analyze why the moves work or fail, not just memorize the best move.';
 
 /**
- * Phase 222 UAT round 6 bug fix: a perfect session used to end on the return
- * counts alone, so a desktop user who missed nothing never got the "scan the
- * code below" install ask (or the "Remind me" ask on a phone) — the one
- * variant that skipped it. The ask closes this variant too: a first
+ * Don't end a perfect session on the return counts alone: a desktop user who
+ * missed nothing would never get the "scan the code below" install ask (or the
+ * "Remind me" ask on a phone), the one variant that skipped it. The ask closes
+ * this variant too: a first
  * completed session keeps the habit sentence in front of it (the user has
  * never heard about reminders yet); later sessions get the ask on its own,
  * and skip it entirely when there is nothing left to ask for (`none`).
@@ -827,12 +824,12 @@ function nothingMissedReminderAsk(input: ScoreBubbleInput): string[] {
 }
 
 /**
- * D-25/D-19: the score screen's bubble copy — four mutually exclusive
+ * The score screen's bubble copy — four mutually exclusive
  * variants, evaluated in this precedence order: warm-up session, nothing
  * missed, first completed session (result + the practice rationale, then the
- * habit sentence and reminder ask), later session (one-liner). Phase 240
- * D-16/D-17: the rationale sits in line 1 of the first completed session in
- * the warm-up, perfect and regular branches alike. D-18: no variant says how
+ * habit sentence and reminder ask), later session (one-liner). The
+ * rationale sits in line 1 of the first completed session in
+ * the warm-up, perfect and regular branches alike. No variant says how
  * many puzzles come back or when (the per-puzzle verdict tails still do). The
  * bubble never exceeds two lines.
  */
@@ -841,7 +838,7 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
   if (input.isWarmup) {
     const key = audienceKey(input.audience);
     const opener = sessionOpener(input.band);
-    // UAT 240: a guest's sign-up line already says "instead of warm-ups", so
+    // A guest's sign-up line already says "instead of warm-ups", so
     // the guest opening skips the warm-up note rather than saying it twice.
     const warmupNote = input.audience.isGuest
       ? ''
@@ -851,7 +848,7 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
     const opening = [opener, first ? PRACTICE_RATIONALE : '', warmupNote, WARMUP_SCORE_CLAUSE[key]]
       .filter((part) => part !== '')
       .join(' ');
-    // Quick task 260926-8p5: a registered zero-game account gets the
+    // A registered zero-game account gets the
     // "Import games" button in the bubble instead of a second line. The
     // reminder ask ("so the habit is there when they arrive") promised
     // mistakes that cannot arrive before an import exists.

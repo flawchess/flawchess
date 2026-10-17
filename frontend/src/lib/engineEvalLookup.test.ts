@@ -1,8 +1,7 @@
 /**
  * engineEvalLookup unit tests — pure, deterministic (no jsdom/worker involved).
  *
- * Covers every <behavior> bullet from 162-01-PLAN.md Task 1 (grading-first
- * precedence, SEED-090):
+ * Covers (grading-first precedence):
  * - both-sources: a UCI present in both pvLines and gradeMapBySan resolves to
  *   the grading value, not the free-run value.
  * - not-yet-graded: a UCI present ONLY in pvLines still resolves to the
@@ -35,7 +34,7 @@ function grade(evalCp: number | null, evalMate: number | null = null, depth = 8)
   return { evalCp, evalMate, depth };
 }
 
-describe('buildEvalLookup — grading-first precedence (SEED-090, Phase 162 D-01)', () => {
+describe('buildEvalLookup — grading-first precedence', () => {
   it('a move present in BOTH pvLines and gradeMap resolves to the grading value', () => {
     const pvLines = [pvLine('e2e4', 30, null, 20)];
     const gradeMapBySan = new Map<string, MoveGrade>([['e4', grade(999, null, 5)]]);
@@ -102,7 +101,7 @@ describe('getBySan', () => {
     const lookup = buildEvalLookup(pvLines, gradeMapBySan, START_FEN);
 
     expect(getBySan(lookup, START_FEN, 'e4')).toEqual(getByUci(lookup, 'e2e4'));
-    // Free-run entries retain their PV (162 UAT card re-source).
+    // Free-run entries retain their PV.
     expect(getBySan(lookup, START_FEN, 'e4')).toEqual({ evalCp: 30, evalMate: null, depth: 20, pv: ['e2e4'] });
   });
 
@@ -112,7 +111,7 @@ describe('getBySan', () => {
   });
 });
 
-describe('resolveReconciledBest (Phase 162 D-03)', () => {
+describe('resolveReconciledBest', () => {
   it('argmax picks the highest-expected-score UCI', () => {
     // White-POV cp values, mover white: higher cp -> higher expected score.
     const gradeMapBySan = new Map<string, MoveGrade>([
@@ -173,7 +172,7 @@ describe('resolveReconciledBest (Phase 162 D-03)', () => {
   });
 });
 
-describe('rankReconciledCandidates (162 UAT card re-source)', () => {
+describe('rankReconciledCandidates', () => {
   it('returns every resolvable candidate sorted by descending expected score, skipping unresolved UCIs', () => {
     const gradeMapBySan = new Map<string, MoveGrade>([
       ['e4', grade(50)],
@@ -207,7 +206,7 @@ describe('rankReconciledCandidates (162 UAT card re-source)', () => {
   });
 
   it('mixed sources rank together: a grading candidate outranks a free-run-only line, and each entry carries its own pv', () => {
-    // The UAT screenshot shape: the free run's top line (Rad1-analog e2e4,
+    // The observed shape: the free run's top line (Rad1-analog e2e4,
     // +4.2) is outranked by a grading-union candidate (Bc1-analog d2d4, +4.3)
     // that the free run never searched.
     const pvLines = [pvLine('e2e4', 420, null, 19)];

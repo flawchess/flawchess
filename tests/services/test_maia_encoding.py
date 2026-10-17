@@ -7,8 +7,8 @@ onnxruntime). The ONNX-session parity gate lives separately in
 scripts/maia_parity_spike.py / tests/services/test_maia_parity.py (which importorskip
 numpy + onnxruntime, both in the isolated maia-inference group).
 
-Port target contract (151-MAIA-CONTRACT.md, re-verified by the 2026-07-10 headless
-repro that matched the live UI to 0.01%):
+Port target contract (re-verified by a headless repro that matched the live UI to
+0.01%):
   - 12-plane order: white P,N,B,R,Q,K (0-5), black p,n,b,r,q,k (6-11)
   - square index s = row*8 + file, row = rank-1 (a1=0, h8=63)
   - Black to move -> mirror piece placement (flip ranks, swap case) BEFORE encoding

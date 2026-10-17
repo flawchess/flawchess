@@ -10,13 +10,13 @@ from typing import Literal
 
 # Preset thresholds (Elo gap, opponent − user) used to map between the four
 # preset shortcuts (any / stronger / similar / weaker) and the gap-based
-# range filter. PRESET_THRESHOLD bounds Similar (±100). STRONG_WEAK_THRESHOLD
+# range filter. SIMILAR_THRESHOLD bounds Similar (±100). STRONG_WEAK_THRESHOLD
 # bounds Stronger (≥+50) and Weaker (≤-50). Decoupled so the Similar window
 # can be widened without narrowing the Stronger/Weaker tails — overlap in the
 # 50–100 gap range is intentional (a custom slider value in that band returns
 # "custom" rather than a preset, since neither (50, None) nor (-100, 100)
 # matches exactly).
-PRESET_THRESHOLD = 100
+SIMILAR_THRESHOLD = 100
 STRONG_WEAK_THRESHOLD = 50
 
 OpponentStrengthPreset = Literal["any", "stronger", "similar", "weaker", "custom"]
@@ -31,7 +31,7 @@ def preset_to_range(
     if preset == "stronger":
         return (STRONG_WEAK_THRESHOLD, None)
     if preset == "similar":
-        return (-PRESET_THRESHOLD, PRESET_THRESHOLD)
+        return (-SIMILAR_THRESHOLD, SIMILAR_THRESHOLD)
     return (None, -STRONG_WEAK_THRESHOLD)
 
 
@@ -54,7 +54,7 @@ def derive_preset(
         return "any"
     if opponent_gap_min == STRONG_WEAK_THRESHOLD and opponent_gap_max is None:
         return "stronger"
-    if opponent_gap_min == -PRESET_THRESHOLD and opponent_gap_max == PRESET_THRESHOLD:
+    if opponent_gap_min == -SIMILAR_THRESHOLD and opponent_gap_max == SIMILAR_THRESHOLD:
         return "similar"
     if opponent_gap_min is None and opponent_gap_max == -STRONG_WEAK_THRESHOLD:
         return "weaker"

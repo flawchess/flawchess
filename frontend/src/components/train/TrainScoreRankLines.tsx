@@ -5,14 +5,14 @@ import { scoreRankLines } from '@/lib/trainLeaderboard';
 
 /**
  * TrainScoreRankLines — compact rank-change lines under "Points: x/y" on the
- * session score screen (Phase 230 D-11, D-12). One GET /train/leaderboard
- * request carrying this session's id, made when the score screen mounts: the
- * server returns the viewer's rank with and without this session, so the
- * client never recomputes anything.
+ * session score screen. One GET /train/leaderboard request carrying this
+ * session's id, made when the score screen mounts: the server returns the
+ * viewer's rank with and without this session, so the client never
+ * recomputes anything.
  *
  * All branching lives here and in the pure `scoreRankLines` copy rules, not in
- * TrainScoreScreen (which sits at its complexity cap). It renders no buttons:
- * the score bubble's guest ask is the only sign-up CTA (D-17).
+ * TrainScoreScreen. It renders no buttons: the score bubble's guest ask is
+ * the only sign-up CTA.
  */
 export function TrainScoreRankLines({ sessionId }: { sessionId: number | null }): ReactElement | null {
   // Hook first and unconditionally (rules of hooks); it is disabled for a null id.

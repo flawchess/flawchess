@@ -1,4 +1,4 @@
-"""Material tally sanity tests (Phase 61).
+"""Material tally sanity tests.
 
 Verifies that position_classifier's pure functions correctly compute material
 metrics from python-chess boards. These tests catch regressions in piece

@@ -19,11 +19,9 @@ async def fetch_game_positions_ordered(
 
     user_id is included in the WHERE clause as an ownership guard — the
     composite PK is (game_id, user_id, ply), so this filter is index-backed.
-    A different user_id returns an empty list, preventing cross-user data access
-    (STRIDE T-105-03: Information Disclosure mitigation).
+    A different user_id returns an empty list, preventing cross-user data access.
 
-    No SQL string interpolation — all filters are parameterized SQLAlchemy binds
-    (STRIDE T-105-04: Tampering via SQL injection mitigation).
+    No SQL string interpolation — all filters are parameterized SQLAlchemy binds.
 
     SQLAlchemy 2.x select() API only (no legacy session.query).
     """

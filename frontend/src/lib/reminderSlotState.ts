@@ -1,13 +1,11 @@
 /**
- * reminderSlotState — the pure five-state (+ hidden) resolver `OFFER-01`
- * requires. Replaces `TrainReminderButton`'s old eight-condition early-return
- * null cascade (`TrainReminderButton.tsx:67-78` before Phase 203 Plan 03)
- * with a single ordered `if/else-if` chain over injected capability flags.
+ * reminderSlotState — the pure five-state (+ hidden) resolver for the Train
+ * reminder slot: a single ordered `if/else-if` chain over injected capability
+ * flags, instead of a cascade of early-return nulls in `useTrainReminderSlot`.
  * No hook, no storage, no clock, no DOM — the module imports nothing, which
  * is what makes every branch here unit-testable without mocking a browser.
  *
- * Fixed priority order (a UI contract per 203-UI-SPEC.md § Interaction
- * Contract 2, not just logic): `subscribed` -> `ios-tabbed` ->
+ * Fixed priority order (a UI contract, not just logic): `subscribed` -> `ios-tabbed` ->
  * `standalone-unsubscribed` -> `android-tabbed-unsubscribed` ->
  * `desktop-unsubscribed`, with `hidden` as the fallthrough for every
  * still-resolving or blocked case.
@@ -17,8 +15,8 @@
  * `isResolved`/`available`/`vapidPublicKey`/`permission`/`deniedNow`/
  * `settingsLoaded`) because `isPushSupported()` returns `false` on iOS in a
  * tab (no `PushManager` there at all) — gating `ios-tabbed` on `available`
- * would reproduce the exact `null` render OFFER-03 exists to remove. Per
- * UI-SPEC row 31, `ios-tabbed` depends only on synchronous UA/media-query
+ * would reproduce the empty `null` render this resolver exists to remove.
+ * `ios-tabbed` depends only on synchronous UA/media-query
  * signals (`isIOS`, `isStandalone`) and must render immediately, tolerating
  * `settingsLoaded === false` rather than waiting on any async probe the way
  * the other four states do.
@@ -50,7 +48,7 @@ export interface ReminderSlotInput {
   /** `usePushCapability().permission` — the live, unmemoized
    * `Notification.permission` read. */
   permission: NotificationPermission;
-  /** A fresh in-session denial (`TrainReminderButton`'s own `deniedNow`
+  /** A fresh in-session denial (`useTrainReminderSlot`'s own `deniedNow`
    * state) — must hide the slot immediately, without waiting for a remount
    * to re-read `permission`. */
   deniedNow: boolean;
@@ -75,7 +73,7 @@ export interface ReminderSlotInput {
 }
 
 /**
- * Resolves the five-state (+ hidden) `TrainReminderButton` slot from
+ * Resolves the five-state (+ hidden) `useTrainReminderSlot` slot from
  * injected capability/platform flags alone. See the module docstring for
  * the fixed priority order and the `ios-tabbed` asymmetry.
  */

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * handoffMarker.test.ts — Phase 203 Plan 02 (HANDOFF-02, D-11/D-12). Covers
+ * handoffMarker.test.ts covers
  * the one-shot sessionStorage marker's exact-match capture, OAuth-redirect
  * survival (no query string on the later read), and explicit clear.
  */

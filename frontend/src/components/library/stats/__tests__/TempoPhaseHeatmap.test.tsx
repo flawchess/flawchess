@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Quick 261014-pb9 + 261014-qj8: the Clock by game phase 3x3 heatmap (cells in order,
+ * The Clock by game phase 3x3 heatmap (cells in order,
  * gap-bar colour rule, empty cell, popover trigger and body, legend). A banded cell is
  * coloured only when its gap is outside the band AND significant; the zoneless
  * low-clock opening cell on significance alone. jsdom does not reliably keep color-mix(),

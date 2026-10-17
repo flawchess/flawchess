@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 215 Plan 07 — Openings.tsx render-level characterization test.
+ * Openings.tsx render-level characterization test.
  *
  * This is the FIRST render-level oracle for OpeningsPage. No other test file
  * in the repository mounts `OpeningsPage` — `Openings.statsBoard.test.tsx`
@@ -219,7 +219,7 @@ describe('OpeningsPage render characterization', () => {
     await waitFor(() => screen.getByTestId('drawer-filter-sidebar'));
 
     // Both open at once — the desktop and `-sidebar` testids are different
-    // strings by design (Pitfall 3, 215-RESEARCH.md) and must coexist.
+    // strings by design and must coexist.
     expect(screen.getByTestId('filter-piece-filter')).toBeTruthy();
     expect(screen.getByTestId('filter-piece-filter-sidebar')).toBeTruthy();
     expect(screen.getByTestId('filter-piece-filter')).not.toBe(

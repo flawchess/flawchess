@@ -1,6 +1,6 @@
 /**
  * Gem badge icon — a white lucide `Gem` icon on a violet (`MAIA_ACCENT`) dot,
- * marking a "gem move" (Phase 163, SEED-092): a played move that is both hard
+ * marking a "gem move": a played move that is both hard
  * for a human to find and the only good move in the position.
  *
  * Shape-compatible with `SeverityGlyphIconProps` (`className`, `style`,
@@ -45,7 +45,7 @@ export function GemIcon({
       aria-hidden={ariaHidden}
       role="img"
     >
-      {/* Accessible name (163-REVIEW IN-02): aria-hidden defaults to true, but a
+      {/* Accessible name: aria-hidden defaults to true, but a
           caller passing false would otherwise expose an UNNAMED role="img" to
           screen readers — the badge conveys meaning only via color/shape. */}
       <title>Gem move</title>

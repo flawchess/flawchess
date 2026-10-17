@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * TrainLeaderboardCard.test.tsx — Phase 230 weekly leaderboard card.
+ * TrainLeaderboardCard.test.tsx — weekly leaderboard card.
  *
  * Spies on the real axios instance (`apiClient.get`) so client.ts, the hook
  * and the card are all exercised together; the wire fixtures mirror
@@ -266,7 +266,7 @@ const TABBED_RESPONSE = makeResponse({
   },
 });
 
-describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
+describe('TrainLeaderboardCard tabs', () => {
   it('opens on Points on first render, with the Accuracy helper hidden', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();
@@ -387,7 +387,7 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
     expect(screen.queryByTestId('train-leaderboard-pass-target')).toBeNull();
   });
 
-  it('D-19: a viewer with Points entries but no Accuracy entry gets the not-entered line', async () => {
+  it('a viewer with Points entries but no Accuracy entry gets the not-entered line', async () => {
     respondWith(
       makeResponse({
         points: { rows: [makeRow()], viewer: VIEWER, pass_target: null, last_week: null },
@@ -411,7 +411,7 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
   });
 });
 
-describe('TrainLeaderboardCard Umami tab-switch (Phase 229 registry)', () => {
+describe('TrainLeaderboardCard Umami tab-switch', () => {
   it('a hand switch sends tab-switch once with the leaderboard target', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();
@@ -432,7 +432,7 @@ describe('TrainLeaderboardCard Umami tab-switch (Phase 229 registry)', () => {
   });
 });
 
-describe('TrainLeaderboardCard countdown and private rows (D-02, D-13, D-14)', () => {
+describe('TrainLeaderboardCard countdown and private rows', () => {
   it('shows the server remainder in the header right after load', async () => {
     respondWith(makeResponse({ seconds_remaining: 388800 }));
     renderCard();
@@ -484,7 +484,7 @@ describe('TrainLeaderboardCard countdown and private rows (D-02, D-13, D-14)', (
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
-  it('retries the rollover while the refetch still carries the old week, then stops on the new week (WR-03)', async () => {
+  it('retries the rollover while the refetch still carries the old week, then stops on the new week', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const stuck = makeResponse({ seconds_remaining: 0 });
@@ -515,7 +515,7 @@ describe('TrainLeaderboardCard countdown and private rows (D-02, D-13, D-14)', (
     }
   });
 
-  it('caps the rollover retries when the server keeps returning the old week (WR-03)', async () => {
+  it('caps the rollover retries when the server keeps returning the old week', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       respondWith(makeResponse({ seconds_remaining: 0 }));
@@ -583,7 +583,7 @@ function lastWeekOf(
   return { week_start: LAST_WEEK_START, podium, viewer_final_rank: viewerFinalRank };
 }
 
-describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => {
+describe('TrainLeaderboardCard last-week podium', () => {
   it('lists every podium entry in server order after the "Last week:" label', async () => {
     respondWith(
       makeResponse({
@@ -639,14 +639,14 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
     expect(screen.getByTestId('train-leaderboard-podium').textContent).toContain('accy');
   });
 
-  it('renders no podium when last_week is null (D-08)', async () => {
+  it('renders no podium when last_week is null', async () => {
     respondWith(makeResponse({ points: { ...EMPTY_BOARD, rows: [makeRow()] } }));
     renderCard();
     await screen.findByTestId('train-leaderboard-rows');
     expect(screen.queryByTestId('train-leaderboard-podium')).toBeNull();
   });
 
-  it('renders no podium when the podium is empty, even with a viewer_final_rank (D-07)', async () => {
+  it('renders no podium when the podium is empty, even with a viewer_final_rank', async () => {
     respondWith(
       makeResponse({ points: { ...EMPTY_BOARD, rows: [makeRow()], last_week: lastWeekOf([], 4) } }),
     );
@@ -655,7 +655,7 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
     expect(screen.queryByTestId('train-leaderboard-podium')).toBeNull();
   });
 
-  it('renders a name containing markup as literal text (T-231-14)', async () => {
+  it('renders a name containing markup as literal text', async () => {
     respondWith(
       makeResponse({
         points: {
@@ -672,7 +672,7 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
   });
 });
 
-describe('TrainLeaderboardCardView (Phase 231 seam)', () => {
+describe('TrainLeaderboardCardView', () => {
   it('renders the podium and rows from props alone, with no fetching and no query client', () => {
     const data = makeResponse({
       points: {
@@ -686,7 +686,7 @@ describe('TrainLeaderboardCardView (Phase 231 seam)', () => {
         data={data}
         isPending={false}
         isError={false}
-        remaining={3600}
+        secondsRemaining={3600}
         tab="points"
         onTabChange={() => undefined}
         isGuest={false}
@@ -699,7 +699,7 @@ describe('TrainLeaderboardCardView (Phase 231 seam)', () => {
   });
 });
 
-describe('TrainLeaderboardCard lifetime medal tally (Phase 231)', () => {
+describe('TrainLeaderboardCard lifetime medal tally', () => {
   it('sits inside the name block after the name and before the hidden cue', async () => {
     respondWith(
       makeResponse({
@@ -791,7 +791,7 @@ describe('TrainLeaderboardCard lifetime medal tally (Phase 231)', () => {
   });
 });
 
-describe('TrainLeaderboardCard last-week finish line (Phase 231, D-03)', () => {
+describe('TrainLeaderboardCard last-week finish line', () => {
   it('sits below this week\'s hint on the Points tab', async () => {
     respondWith(
       makeResponse({

@@ -34,7 +34,7 @@ function apply(payload){
   D=payload;
   DAYS=payload.days; NDAYS=DAYS.length;
   // Fifth field `e` is the entrant flag: 1 when this user's global first
-  // tracked day falls on or after the selected window's start (D3's cohort).
+  // tracked day falls on or after the selected window's start (the entrant cohort).
   ACT=payload.activity.map(([u,d,g,h,e])=>({u,d,g,h,e}));
   SIGNUPS=payload.signups; BOT=payload.bot; TRAIN=payload.train; SOLVES=payload.solves;
   IMPORTS=payload.imports; PERSONA=payload.persona; ELO=payload.elo;
@@ -90,7 +90,7 @@ function rolling(s,win){ return s.map((_,i)=>{const u=new Set();
 const hoursPerDay=()=>{ const h=new Array(NDAYS).fill(0); ACT.forEach(a=>{if(keep(a)) h[a.d]+=a.h;}); return h; };
 
 /* return-within-N-days curve, per cohort. Only ENTRANTS (first tracked day
-   inside the selected window, per D3) are counted, so the cohort follows
+   inside the selected window) are counted, so the cohort follows
    forward to today rather than being windowed on the return-visit date. */
 function retention(g){
   const byUser=new Map();
@@ -105,7 +105,7 @@ function retention(g){
     const elig=users.filter(u=>u.first+n<=NDAYS-1);
     // Eligibility shrinks monotonically as N grows, so once nobody is
     // eligible at N, nobody will be at N+1 either — stop and return the
-    // shorter series rather than fabricating a zero point (D3).
+    // shorter series rather than fabricating a zero point.
     if(!elig.length) break;
     const back=elig.filter(u=>u.days.some(d=>d>u.first&&d<=u.first+n)).length;
     out.push(back/elig.length);
@@ -295,7 +295,7 @@ function renderBotCard(){
 
 function renderTrainCard(){
   const c=C();
-  // D-10b/D-11/D-12: the guest-cohort reading is independent of whether the
+  // The guest-cohort reading is independent of whether the
   // registered-only chart/table above has any rows, so it is written on both
   // branches below rather than only on the populated path.
   const g=GUESTTRAIN;
@@ -321,11 +321,11 @@ function renderTrainCard(){
   $("#tr-guest-note").textContent=guestNote;
 }
 
-// SEED-166 (D-19): first-session 0-solve share and second-session return
+// First-session 0-solve share and second-session return
 // share, cohorted by first-session date inside the selected window, plus a
 // live all-time control line. Point-in-time ratios, not a time series, so
 // this is text/big-number only -- no chart primitive, no new layout-harness
-// fixture (RESEARCH Assumptions Log A3).
+// fixture.
 function renderTrainFunnelCard(){
   const f=TRAINFUN||{};
   const starters=f.starters||0, zero=f.zero_solve_users||0;

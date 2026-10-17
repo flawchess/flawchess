@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * Tests for ResumeGate (Phase 170 Plan 05) — the "Resume game?" overlay on
- * `/bots`. Covers the D-04 identity line, the Resume/Discard actions, and
- * the D-05 discard-confirms-first flow. The cancel-does-not-discard case is
+ * Tests for ResumeGate — the "Resume game?" overlay on
+ * `/bots`. Covers the identity line, the Resume/Discard actions, and
+ * the discard-confirms-first flow. The cancel-does-not-discard case is
  * the load-bearing one: an accidental discard destroys an in-progress game
- * with no server-side trace (SC2).
+ * with no server-side trace.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
@@ -51,7 +51,8 @@ describe('ResumeGate', () => {
     const gate = screen.getByTestId('resume-gate');
     expect(gate.textContent).toContain('Blitz 5+3');
     expect(gate.textContent).toContain('1500');
-    expect(gate.textContent).toContain('14 moves');
+    // plyCount is half-moves: 14 plies = 7 full moves.
+    expect(gate.textContent).toContain('7 moves');
     expect(gate.textContent).toContain('just now');
   });
 
@@ -228,9 +229,9 @@ describe('ResumeGate', () => {
   });
 });
 
-// Phase 229 (D-12 group 3): Resume and the CONFIRMED discard are tracked; the
+// Resume and the CONFIRMED discard are tracked; the
 // first Discard click only opens the confirm dialog and sends nothing.
-describe('ResumeGate feature events (Phase 229)', () => {
+describe('ResumeGate feature events', () => {
   const track = vi.fn();
 
   beforeEach(() => {

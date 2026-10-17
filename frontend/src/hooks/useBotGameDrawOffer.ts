@@ -1,16 +1,14 @@
 /**
- * useBotGameDrawOffer — draw-offer sub-hook of useBotGame (Phase 215,
- * SC-1). Owns both directions of the bot-game draw exchange: the
- * user-initiated `drawOfferPending` resolution (accept/decline against the
- * bot's `wouldBotAcceptDraw` gate) and the bot's own OUTGOING draw offer
- * (Phase 183, D-07 — `botDrawOffer`/`acceptBotDraw`/`declineBotDraw`), plus
- * the per-game resign-hysteresis counter (`consecutiveLowScoreTurnsRef`)
- * that shares the same `pool.grade().then()` seam in `runBotTurn`.
+ * useBotGameDrawOffer — draw-offer sub-hook of useBotGame. Owns both
+ * directions of the bot-game draw exchange: the user-initiated
+ * `drawOfferPending` resolution (accept/decline against the bot's
+ * `wouldBotAcceptDraw` gate) and the bot's own OUTGOING draw offer
+ * (`botDrawOfferPending`/`acceptBotDraw`/`declineBotDraw`), plus the per-game
+ * resign-hysteresis counter (`consecutiveLowScoreTurnsRef`) that shares the
+ * same `pool.grade().then()` seam in `runBotTurn`.
  *
- * `resolveBotDrawOfferUpdate` (Phase 183) moves here, non-exported: its
- * only reader is now `applyDrawOfferUpdate` below (215-03-PLAN.md Task 2 —
- * "move [module-level helpers] with the cluster and keep them
- * non-exported" when the new hook becomes their only reader).
+ * `resolveBotDrawOfferUpdate` stays non-exported: its only reader is
+ * `applyDrawOfferUpdate` below.
  *
  * `bumpConsecutiveLowScoreTurns`/`applyDrawOfferUpdate` are the two seams
  * `useBotGameEngineDispatch.ts`'s `runBotTurn` calls into from its
@@ -20,18 +18,14 @@
  * `gameAlreadyOver` true for the draw-offer check that follows), so
  * `useBotGame.ts` wires `useBotGameDrawOffer()` BEFORE
  * `useBotGameEngineDispatch()` and passes these two functions in as
- * options, matching the relative order the draw-offer cluster's own
- * effect/callbacks already occupied in the pre-split file (ahead of the
- * provider bring-up effect and `runBotTurn`).
+ * options.
  *
- * FULL ENCAPSULATION (same rationale as useBotGameClock.ts): every ref
- * this hook owns that still needs cross-boundary access (`botDrawOfferRef`
- * for `commitMove`'s clear-on-user-move check, `movesSinceLastDeclineRef`
- * for `buildSnapshot`) is returned directly — `react-hooks/exhaustive-deps`
- * cannot prove a returned ref stable, so every such caller's dependency
- * array gains that ref explicitly (behaviorally inert: ref identity never
- * changes) rather than silently drifting the phase's `react-hooks/*`
- * warning count.
+ * Encapsulation follows useBotGameClock.ts, except that the refs which need
+ * cross-boundary access (`botDrawOfferPendingRef` for `commitMove`'s
+ * clear-on-user-move check, `movesSinceLastDeclineRef` for the snapshot
+ * writers) are returned directly. `react-hooks/exhaustive-deps` cannot prove
+ * a returned ref stable, so every such caller lists that ref in its
+ * dependency array (behaviorally inert: ref identity never changes).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -45,8 +39,8 @@ import type { BotStyleParams } from '@/lib/engine/botStyle';
 import type { BotGameSnapshot } from '@/lib/botGameSnapshot';
 
 /**
- * D-07 (Phase 183): pure decision + counter update for the bot's own
- * outgoing draw offer, extracted out of the `pool.grade().then()` callback
+ * Pure decision + counter update for the bot's own outgoing draw offer,
+ * extracted out of the `pool.grade().then()` callback
  * (already dense — CLAUDE.md nesting/logic-LOC limits) so this one seam is
  * isolated and easy to audit. Mirrors `wouldBotResign`'s caller-owned
  * counter discipline: this function holds no state itself — the caller
@@ -57,7 +51,7 @@ import type { BotGameSnapshot } from '@/lib/botGameSnapshot';
  * grade turn resigned), the cooldown counter is simply advanced — never
  * reset — and no new offer is raised, even if `wouldBotOfferDraw` would
  * otherwise say yes. Raising a fresh offer always resets the counter to 0
- * (D-07: "the cooldown restarts").
+ * (the cooldown restarts).
  */
 function resolveBotDrawOfferUpdate(
   score: number,
@@ -77,60 +71,60 @@ function resolveBotDrawOfferUpdate(
 }
 
 export interface UseBotGameDrawOfferOptions {
-  /** Phase 170 D-10: an optional snapshot to seed movesSinceLastDeclineRef from. */
+  /** An optional snapshot to seed movesSinceLastDeclineRef from. */
   resume?: BotGameSnapshot;
   /** Set once the game has ended; null while in progress — `offerDraw`'s guard. */
   outcome: BotGameOutcome | null;
-  /** WR-03 idempotency latch, read via ref for stale-closure safety — the
+  /** Idempotency latch, read via ref for stale-closure safety — the
    * resolution effect and `acceptBotDraw` both bail out if already set. */
   outcomeRef: RefObject<BotGameOutcome | null>;
-  /** D-04 throttle — precomputed by `useBotGame.ts` from `movesSinceLastDecline`
-   * state (which stays there; multiple clusters touch it). */
+  /** Draw-offer throttle — precomputed by `useBotGame.ts` from
+   * `movesSinceLastDecline` state (which stays there; `attemptMove`,
+   * `newGame` and this hook all touch it). */
   canOfferDraw: boolean;
   chessRef: RefObject<Chess>;
-  /** D-01 best-effort draw-accept score, owned by the (future) snapshot
-   * cluster; passed through here for `wouldBotAcceptDraw`'s near-equal check. */
+  /** Best-effort draw-accept score, owned by `useBotGameSnapshot`; passed
+   * through here for `wouldBotAcceptDraw`'s near-equal check. */
   lastRootPracticalScoreRef: RefObject<number | null>;
   style?: BotStyleParams;
   finalizeGame: (finished: BotGameOutcome) => void;
-  /** `movesSinceLastDecline` (state, stays in `useBotGame.ts` — also
-   * incremented by `attemptMove` and reset by `newGame`) — the resolution
-   * effect resets it to 0 on a bot decline. */
+  /** Setter for `movesSinceLastDecline` (state, owned by `useBotGame.ts` —
+   * also incremented by `attemptMove` and reset by `newGame`) — the
+   * resolution effect resets it to 0 on a bot decline. */
   setMovesSinceLastDecline: Dispatch<SetStateAction<number>>;
   /** The `movesSinceLastDecline` state value itself — kept in sync onto
-   * `movesSinceLastDeclineRef` by an internal effect (WR-05 pattern), since
-   * the ref now lives here while the state stays in `useBotGame.ts`. */
+   * `movesSinceLastDeclineRef` by an internal effect, since the ref lives
+   * here while the state stays in `useBotGame.ts`. */
   movesSinceLastDecline: number;
 }
 
 export interface UseBotGameDrawOfferResult {
   /** True while a user-initiated draw offer is being resolved. */
   drawOfferPending: boolean;
-  /** True while the BOT has a live OUTGOING draw offer (Phase 183, D-07). */
-  botDrawOffer: boolean;
-  /** Source-of-truth latch for `botDrawOffer`, read directly (never
-   * `botDrawOffer` state) by `commitMove`'s stale-closure-safe clear check. */
-  botDrawOfferRef: RefObject<boolean>;
-  setBotDrawOffer: Dispatch<SetStateAction<boolean>>;
-  /** Mirror of `movesSinceLastDecline` state, read by `buildSnapshot`
-   * (stays in `useBotGame.ts` for now — moves to the snapshot cluster in
-   * Task 3) via ref for safety outside render. */
+  /** True while the BOT has a live OUTGOING draw offer. */
+  botDrawOfferPending: boolean;
+  /** Source-of-truth latch for `botDrawOfferPending`, read directly (never
+   * `botDrawOfferPending` state) by `commitMove`'s stale-closure-safe clear check. */
+  botDrawOfferPendingRef: RefObject<boolean>;
+  setBotDrawOfferPending: Dispatch<SetStateAction<boolean>>;
+  /** Mirror of `movesSinceLastDecline` state, read outside render by the
+   * snapshot writers (`commitMove`, the hide-time write), which pass it to
+   * `buildSnapshot`. */
   movesSinceLastDeclineRef: RefObject<number>;
   offerDraw: () => void;
   acceptBotDraw: () => void;
   declineBotDraw: () => void;
-  /** Resets every per-game draw-offer/resign-hysteresis latch — the
-   * `newGame()` replacement for four separate inline resets. */
+  /** Resets every per-game draw-offer/resign-hysteresis latch. Called from
+   * `newGame()`. */
   resetDrawOfferState: () => void;
-  /** D-08 (Phase 182, STYLE-02): bumps (or, on a non-hit, resets) the
-   * resign-hysteresis counter and returns its new value — called from
-   * `runBotTurn`'s `pool.grade().then()` continuation, BEFORE
-   * `applyDrawOfferUpdate` (a resignation there can end the game, which
-   * `applyDrawOfferUpdate`'s `gameAlreadyOver` parameter must see). */
+  /** Bumps (or, on a non-hit, resets) the resign-hysteresis counter and
+   * returns its new value — called from `runBotTurn`'s
+   * `pool.grade().then()` continuation, BEFORE `applyDrawOfferUpdate` (a
+   * resignation there can end the game, which `applyDrawOfferUpdate`'s
+   * `gameAlreadyOver` parameter must see). */
   bumpConsecutiveLowScoreTurns: (scoreAtOrBelowThreshold: boolean) => number;
-  /** D-07: applies one `pool.grade()`-seeded draw-offer decision — the
-   * `runBotTurn` replacement for the inline `resolveBotDrawOfferUpdate`
-   * call plus its two ref/state writes. */
+  /** Applies one `pool.grade()`-seeded draw-offer decision (the ref and state
+   * writes behind `resolveBotDrawOfferUpdate`). Called from `runBotTurn`. */
   applyDrawOfferUpdate: (
     score: number,
     chess: Chess,
@@ -140,7 +134,7 @@ export interface UseBotGameDrawOfferResult {
 }
 
 /**
- * Draw-offer sub-hook of `useBotGame` (Phase 215). See file header.
+ * Draw-offer sub-hook of `useBotGame`. See file header.
  */
 export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBotGameDrawOfferResult {
   const {
@@ -156,36 +150,35 @@ export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBot
     movesSinceLastDecline,
   } = options;
 
-  const botDrawOfferRef = useRef(false);
+  const botDrawOfferPendingRef = useRef(false);
   const movesSinceOwnOfferRef = useRef(0);
   const movesSinceLastDeclineRef = useRef(resume?.movesSinceLastDecline ?? DRAW_OFFER_COOLDOWN_MOVES);
 
   /** Mirror of `movesSinceLastDecline` state, kept fresh by this sync
-   * effect (WR-05 pattern) — Plan 04's snapshot writes (`buildSnapshot`,
-   * staying in `useBotGame.ts`) need a fresh read of this value from an
-   * event handler that does not want to depend on (and re-run per) the
-   * state itself. Moved here with `movesSinceLastDeclineRef` (215-03
-   * Task 2) — the ref and its sync effect must live together. */
+   * effect — the snapshot writers (`commitMove`, the hide-time write in
+   * `useBotGame.ts`) need a fresh read of this value from an event handler
+   * that does not want to depend on (and re-run per) the state itself. The
+   * ref and its sync effect must live together. */
   useEffect(() => {
     movesSinceLastDeclineRef.current = movesSinceLastDecline;
   }, [movesSinceLastDecline]);
-  /** D-08 (Phase 182, STYLE-02): per-game hysteresis counter for a styled
-   * bot's resign check — consecutive OWN turns (not plies) whose FRESH
-   * practicalScore graded at/below `settings.style.threshold`. Mutated
-   * ONLY via `bumpConsecutiveLowScoreTurns`, called from the same
+  /** Per-game hysteresis counter for a styled bot's resign check —
+   * consecutive OWN turns (not plies) whose FRESH practicalScore graded
+   * at/below `settings.style.threshold`. Mutated ONLY via
+   * `bumpConsecutiveLowScoreTurns`, called from the same
    * `pool.grade(...).then(...)` callback that updates
    * `lastRootPracticalScoreRef`. Reset to 0 by `resetDrawOfferState()`
    * (`newGame()`). */
   const consecutiveLowScoreTurnsRef = useRef(0);
 
   const [drawOfferPending, setDrawOfferPending] = useState(false);
-  /** D-07 (Phase 183): render-facing mirror of `botDrawOfferRef`. */
-  const [botDrawOffer, setBotDrawOffer] = useState(false);
+  /** Render-facing mirror of `botDrawOfferPendingRef`. */
+  const [botDrawOfferPending, setBotDrawOfferPending] = useState(false);
 
-  /** D-01: resolves the ALREADY-set `drawOfferPending` flag — accept ends the
+  /** Resolves the ALREADY-set `drawOfferPending` flag — accept ends the
    * game, decline resets the cooldown counter and fires the notification
    * sound. Split from `offerDraw` so `drawOfferPending` is real, observable
-   * state (not collapsed into the same synchronous call). WR-03: this effect
+   * state (not collapsed into the same synchronous call). This effect
    * can fire AFTER the game has already ended (e.g. a bot move delivering
    * mate while the offer was pending) — it must bail via `outcomeRef` (not
    * the `outcome` state, which this effect's own closure could hold stale)
@@ -197,12 +190,12 @@ export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBot
       setDrawOfferPending(false);
       return;
     }
-    // Sentinel contract (169.5): a `null` score means the bot has evaluated
+    // Sentinel contract: a `null` score means the bot has evaluated
     // nothing this game (e.g. it is still in book, which runs zero Stockfish
     // evals) and `wouldBotAcceptDraw` refuses outright — the bot never accepts
     // a draw off an evaluation it did not run.
-    // D-09 (Phase 182, STYLE-02): undefined style ⇒ contempt 0 ⇒ the exact
-    // pre-182 accept target (0.5), unchanged for every unstyled caller.
+    // Undefined style ⇒ contempt 0 ⇒ the standard accept target (0.5) for
+    // every unstyled caller.
     const contempt = style?.contempt ?? 0;
     const accepts = wouldBotAcceptDraw(lastRootPracticalScoreRef.current, chessRef.current, contempt);
     if (accepts) {
@@ -213,10 +206,8 @@ export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBot
     }
     setDrawOfferPending(false);
     // outcomeRef/chessRef/lastRootPracticalScoreRef/setMovesSinceLastDecline
-    // added (215-03 Task 2): pre-split these were direct same-scope
-    // useRef/useState access, exempt from exhaustive-deps. Now stable
-    // cross-hook props (refs/setters never change identity) — listing them
-    // changes nothing about when this effect re-runs.
+    // are stable cross-hook props (refs/setters never change identity) —
+    // listing them changes nothing about when this effect re-runs.
   }, [
     drawOfferPending,
     finalizeGame,
@@ -229,44 +220,42 @@ export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBot
 
   const offerDraw = useCallback((): void => {
     if (outcome) return;
-    if (!canOfferDraw) return; // D-04 throttle gates the button itself
+    if (!canOfferDraw) return; // the cooldown throttle gates the button itself
     setDrawOfferPending(true);
   }, [outcome, canOfferDraw]);
 
-  /** D-07 (Phase 183): accepts the bot's own outgoing draw offer. Guards on
+  /** Accepts the bot's own outgoing draw offer. Guards on
    * `outcomeRef` first, mirroring the user-offer resolution effect above —
    * a stale accept firing after the game already ended some other way
    * (e.g. the user flagged, or the offer itself is stale UI) is a no-op. */
   const acceptBotDraw = useCallback((): void => {
     if (outcomeRef.current) return;
-    botDrawOfferRef.current = false;
-    setBotDrawOffer(false);
+    botDrawOfferPendingRef.current = false;
+    setBotDrawOfferPending(false);
     finalizeGame({ reason: 'draw', drawReason: 'agreement' });
-    // outcomeRef added (215-03 Task 2) — see the resolution effect's comment.
+    // outcomeRef is listed for exhaustive-deps — see the resolution effect's
+    // comment.
   }, [finalizeGame, outcomeRef]);
 
-  /** D-07 (Phase 183): dismisses the bot's own outgoing draw offer without
+  /** Dismisses the bot's own outgoing draw offer without
    * ending the game. The own-offer cooldown already restarted (reset to 0)
    * the moment the offer was raised, so declining only needs to clear the
    * pending flag — no separate cooldown reset here. */
   const declineBotDraw = useCallback((): void => {
-    botDrawOfferRef.current = false;
-    setBotDrawOffer(false);
+    botDrawOfferPendingRef.current = false;
+    setBotDrawOfferPending(false);
   }, []);
 
-  /** See `UseBotGameDrawOfferResult.resetDrawOfferState`. Folds the same
-   * five operations `newGame()` ran inline (four adjacent + the separate
-   * `setDrawOfferPending(false)` further down its body) into one call —
-   * all independent setState/ref writes batched into the same commit, so
-   * the reordering is behaviorally inert. */
+  /** See `UseBotGameDrawOfferResult.resetDrawOfferState`. All independent
+   * setState/ref writes, batched into the same commit. */
   const resetDrawOfferState = useCallback((): void => {
-    // D-08 (Phase 182, STYLE-02): a fresh game's resign hysteresis starts
-    // clean — never leaks a prior game's consecutive-low-score streak.
+    // A fresh game's resign hysteresis starts clean — never leaks a prior
+    // game's consecutive-low-score streak.
     consecutiveLowScoreTurnsRef.current = 0;
-    // D-07 (Phase 183): a fresh game has no live bot offer and no leaked
-    // own-offer cooldown streak.
-    botDrawOfferRef.current = false;
-    setBotDrawOffer(false);
+    // A fresh game has no live bot offer and no leaked own-offer cooldown
+    // streak.
+    botDrawOfferPendingRef.current = false;
+    setBotDrawOfferPending(false);
     movesSinceOwnOfferRef.current = 0;
     setDrawOfferPending(false);
   }, []);
@@ -282,25 +271,24 @@ export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBot
   /** See `UseBotGameDrawOfferResult.applyDrawOfferUpdate`. */
   const applyDrawOfferUpdate = useCallback(
     (score: number, chess: Chess, drawStyle: BotStyleParams, gameAlreadyOver: boolean): void => {
-      // D-07 (Phase 183, PERS-02/CR-02 discipline): the bot's own OUTGOING
-      // draw offer, checked at the same grade seam runBotTurn already
-      // computed a fresh score from — never a second pool.grade() call
-      // site. If a resignation just ended the game, `gameAlreadyOver`
-      // (outcomeRef.current !== null, read by the caller) is already true,
-      // so `resolveBotDrawOfferUpdate` naturally refuses to raise an offer
-      // on the same turn.
+      // The bot's own OUTGOING draw offer, checked at the same grade seam
+      // runBotTurn already computed a fresh score from — never a second
+      // pool.grade() call site. If a resignation just ended the game,
+      // `gameAlreadyOver` (outcomeRef.current !== null, read by the caller)
+      // is already true, so `resolveBotDrawOfferUpdate` naturally refuses to
+      // raise an offer on the same turn.
       const offerUpdate = resolveBotDrawOfferUpdate(
         score,
         chess,
         drawStyle,
         movesSinceOwnOfferRef.current,
-        botDrawOfferRef.current,
+        botDrawOfferPendingRef.current,
         gameAlreadyOver,
       );
       movesSinceOwnOfferRef.current = offerUpdate.nextMovesSinceOwnOffer;
       if (offerUpdate.raiseOffer) {
-        botDrawOfferRef.current = true;
-        setBotDrawOffer(true);
+        botDrawOfferPendingRef.current = true;
+        setBotDrawOfferPending(true);
       }
     },
     [],
@@ -308,9 +296,9 @@ export function useBotGameDrawOffer(options: UseBotGameDrawOfferOptions): UseBot
 
   return {
     drawOfferPending,
-    botDrawOffer,
-    botDrawOfferRef,
-    setBotDrawOffer,
+    botDrawOfferPending,
+    botDrawOfferPendingRef,
+    setBotDrawOfferPending,
     movesSinceLastDeclineRef,
     offerDraw,
     acceptBotDraw,

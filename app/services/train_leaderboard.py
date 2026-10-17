@@ -1,28 +1,27 @@
-"""Weekly Train leaderboards: week window, ranking, slicing, visibility (Phase 230).
+"""Weekly Train leaderboards: week window, ranking, slicing, visibility.
 
 The repository returns one aggregate per user for the ISO week; everything
 viewer-specific happens here in pure Python so each rule is unit-testable
 without a database:
 
-- D-02: the week is a UTC ISO week, half-open [Monday 00:00, next Monday 00:00),
-  keyed on `drill_solves.solved_at`. `week_window` is standalone so a later medals
+- The week is a UTC ISO week, half-open [Monday 00:00, next Monday 00:00),
+  keyed on `drill_solves.solved_at`. `week_window` is standalone so the medals
   snapshot can reuse it. Time only ever arrives as the `now_utc` argument (the
   router injects it from the `dev_now_utc` dependency), never the wall clock.
-- D-03 / D-19 (amended by quick 261004-8rt, which superseded D-03's interleaved
-  ranking): the Accuracy board lists everyone with at least one non-filler solve.
+- The Accuracy board lists everyone with at least one non-filler solve.
   Users with 20+ non-filler solves are qualified and ranked first by accuracy; users
   under 20 are tentative, listed below every qualified user with no rank, ordered by
   puzzles desc, then accuracy desc, then name.
-- D-04: competition ranks (1, 1, 1, 4) among qualified entries; display order within
+- Competition ranks (1, 1, 1, 4) among qualified entries; display order within
   equal value is puzzles desc, then name, then an internal key. Top 5 plus the viewer
   with 2 neighbours.
-- D-05 / D-15: display name is the lichess username, else chess.com, else
+- Display name is the lichess username, else chess.com, else
   "Anonymous". No verification (impersonation is an accepted risk).
-- D-06 / D-13 / D-14: other users' rows and ranks are computed only from registered,
+- Other users' rows and ranks are computed only from registered,
   non-hidden users. A hidden viewer sees a private would-be row, a guest viewer a
   ghost row, each ranked among the visible users.
 
-Phase 231 adds the closed-week side: `final_standings` / `medal_for` freeze a week's
+The closed-week side: `final_standings` / `medal_for` freeze a week's
 public standings with the SAME `_entry_for` / `_tiered_order` as the live board (no
 second ranking implementation), and `build_last_week` turns the stored rows into the
 previous week's podium.
@@ -64,7 +63,7 @@ PERCENT_SCALE: Final = 100
 ANONYMOUS_DISPLAY_NAME: Final = "Anonymous"
 # Must stay equal to the literal in migration e3a8c5f17b20's erase-name trigger (pinned by tests).
 DELETED_USER_DISPLAY_NAME: Final = "Deleted user"
-# Olympic rule (D-02/D-06): the competition rank that earns each medal.
+# Olympic rule: the competition rank that earns each medal.
 MEDAL_BY_RANK: Final[Mapping[int, Medal]] = MappingProxyType(
     {1: Medal.GOLD, 2: Medal.SILVER, 3: Medal.BRONZE}
 )
@@ -123,11 +122,11 @@ class PodiumEntry:
 
 @dataclass(frozen=True)
 class LastWeek:
-    """The immediately previous week on one board (D-07): podium plus the viewer's own rank."""
+    """The immediately previous week on one board: podium plus the viewer's own rank."""
 
     week_start: datetime.date
     podium: tuple[PodiumEntry, ...]
-    viewer_final_rank: int | None  # only for a viewer row that carries no medal (D-03)
+    viewer_final_rank: int | None  # only for a viewer row that carries no medal
 
 
 @dataclass(frozen=True)
@@ -172,7 +171,7 @@ class _Entry:
 
 
 def week_window(now_utc: datetime.datetime) -> tuple[datetime.datetime, datetime.datetime]:
-    """ISO week [Monday 00:00 UTC, next Monday 00:00 UTC) containing now_utc (D-02)."""
+    """ISO week [Monday 00:00 UTC, next Monday 00:00 UTC) containing now_utc."""
     today = now_utc.astimezone(datetime.UTC).date()
     monday = today - datetime.timedelta(days=today.weekday())  # Monday == 0
     start = datetime.datetime.combine(monday, datetime.time.min, tzinfo=datetime.UTC)
@@ -180,27 +179,27 @@ def week_window(now_utc: datetime.datetime) -> tuple[datetime.datetime, datetime
 
 
 def display_name(lichess_username: str | None, chess_com_username: str | None) -> str:
-    """Lichess username, else chess.com, else "Anonymous"; blank counts as missing (D-05)."""
+    """Lichess username, else chess.com, else "Anonymous"; blank counts as missing."""
     for candidate in (lichess_username, chess_com_username):
         if candidate is not None and candidate.strip():
             return candidate.strip()
     return ANONYMOUS_DISPLAY_NAME
 
 
-def accuracy_percent(nf_points: int, nf_puzzles: int) -> int | None:
+def accuracy_percent(non_filler_points: int, non_filler_puzzles: int) -> int | None:
     """Pooled non-filler accuracy as a floored integer percent, None with no puzzles.
 
     Same flooring as the client's displaySessionPercentage, so the ordering never
     contradicts the number shown and ties are visible ties (no float equality).
     """
-    if nf_puzzles == 0:
+    if non_filler_puzzles == 0:
         return None
-    return (PERCENT_SCALE * nf_points) // (TRAIN_POINTS_PER_PUZZLE * nf_puzzles)
+    return (PERCENT_SCALE * non_filler_points) // (TRAIN_POINTS_PER_PUZZLE * non_filler_puzzles)
 
 
-def puzzles_to_qualify(nf_puzzles: int) -> int:
-    """Non-filler puzzles still needed to leave the tentative Accuracy state (D-03)."""
-    return max(0, ACCURACY_QUALIFY_MIN_PUZZLES - nf_puzzles)
+def puzzles_to_qualify(non_filler_puzzles: int) -> int:
+    """Non-filler puzzles still needed to leave the tentative Accuracy state."""
+    return max(0, ACCURACY_QUALIFY_MIN_PUZZLES - non_filler_puzzles)
 
 
 def resolve_viewer_visibility(*, is_guest: bool, leaderboard_hidden: bool) -> LeaderboardVisibility:
@@ -212,21 +211,21 @@ def resolve_viewer_visibility(*, is_guest: bool, leaderboard_hidden: bool) -> Le
 
 
 def _entry_for(kind: LeaderboardBoardKind, aggregate: WeeklyAggregate) -> _Entry | None:
-    """The user's entry on one board, or None when they have no place on it (D-19)."""
+    """The user's entry on one board, or None when they have no place on it."""
     totals = aggregate.totals
     name = display_name(aggregate.lichess_username, aggregate.chess_com_username)
     is_public = not aggregate.is_guest and not aggregate.leaderboard_hidden
     if kind == "points":
         return _Entry(aggregate.user_id, name, totals.points, totals.puzzles, False, is_public)
-    percent = accuracy_percent(totals.nf_points, totals.nf_puzzles)
+    percent = accuracy_percent(totals.non_filler_points, totals.non_filler_puzzles)
     if percent is None:
         return None
     return _Entry(
         aggregate.user_id,
         name,
         percent,
-        totals.nf_puzzles,
-        totals.nf_puzzles < ACCURACY_QUALIFY_MIN_PUZZLES,
+        totals.non_filler_puzzles,
+        totals.non_filler_puzzles < ACCURACY_QUALIFY_MIN_PUZZLES,
         is_public,
     )
 
@@ -254,10 +253,9 @@ def _competition_ranks(ordered: Sequence[_Entry]) -> list[int]:
 def _tiered_order(combined: Sequence[_Entry]) -> tuple[list[_Entry], list[int | None]]:
     """Qualified entries first (ranked), then tentative entries (rank None).
 
-    Fix (quick 261004-8rt): tentative entries used to be ranked and interleaved with
-    qualified ones by raw percentage, so a single 1/1 solve at 100% sat at #1 above every
-    qualified player (prod 2026-10-04, top 5 rows all 100% on 1 puzzle). Qualified
-    entries now rank first; tentative ones follow unranked.
+    Don't rank tentative entries among qualified ones: interleaving them by raw
+    percentage put a single 1/1 solve at 100% at #1 above every qualified player.
+    Qualified entries rank first; tentative ones follow unranked.
     """
     qualified = sorted((e for e in combined if not e.tentative), key=_order_key)
     tentative = sorted((e for e in combined if e.tentative), key=_tentative_order_key)
@@ -295,12 +293,12 @@ def _pass_target(
 
 
 def totals_without(total: SolveTotals, contribution: SolveTotals) -> SolveTotals:
-    """`total` minus `contribution`, each field clamped at 0 (D-12)."""
+    """`total` minus `contribution`, each field clamped at 0."""
     return SolveTotals(
         points=max(0, total.points - contribution.points),
         puzzles=max(0, total.puzzles - contribution.puzzles),
-        nf_points=max(0, total.nf_points - contribution.nf_points),
-        nf_puzzles=max(0, total.nf_puzzles - contribution.nf_puzzles),
+        non_filler_points=max(0, total.non_filler_points - contribution.non_filler_points),
+        non_filler_puzzles=max(0, total.non_filler_puzzles - contribution.non_filler_puzzles),
     )
 
 
@@ -310,14 +308,14 @@ def _rank_without(
     viewer_aggregate: WeeklyAggregate,
     contribution: SolveTotals,
 ) -> int | None:
-    """The viewer's rank with one session's solves removed (D-12), None if nothing remains.
+    """The viewer's rank with one session's solves removed, None if nothing remains.
 
     Counted against `entries` filtered to the same visible others `rank` is computed
     against (public, qualified and not the viewer), never the combined list, which
     holds the viewer's full entry. None when the viewer is tentative without the
     session, so the client never computes a delta across the qualification cutoff.
     Points can only worsen without a session; Accuracy can improve, and the value is
-    returned as computed, never clamped to the real rank (D-18: the "(up N)" copy rule
+    returned as computed, never clamped to the real rank (the "(up N)" copy rule
     is the client's).
     """
     remaining = totals_without(viewer_aggregate.totals, contribution)
@@ -333,7 +331,7 @@ def _rank_without(
 
 
 def medal_for(rank: int, value: int) -> Medal | None:
-    """Olympic medal for a competition rank (D-02/D-06); none for a zero value (D-05).
+    """Olympic medal for a competition rank; none for a zero value.
 
     Deliberate refinement of "no participation floor": one point is enough, but a
     0-point or 0% entry keeps its rank and earns no medal.
@@ -346,7 +344,7 @@ def medal_for(rank: int, value: int) -> Medal | None:
 def final_standings(
     kind: LeaderboardBoardKind, aggregates: Sequence[WeeklyAggregate]
 ) -> list[FinalStanding]:
-    """The public final standings of one closed week on one board (D-01, D-02).
+    """The public final standings of one closed week on one board.
 
     Equals the board every public viewer saw at the deadline: `build_board` ranks
     `combined = public entries (+ the viewer)`, which for a public viewer is exactly
@@ -376,7 +374,7 @@ def _podium_order_key(row: StandingRow) -> tuple[int, int, str]:
 
 
 def _podium_name(row: StandingRow, viewer_id: int) -> str:
-    """The name others may see for a stored row, decided at read time (D-04, D-09).
+    """The name others may see for a stored row, decided at read time.
 
     Eligibility was decided at finalization; masking is only about who looks now.
     "Deleted user" for an erased account, "Anonymous" for a user hidden now unless the
@@ -398,8 +396,8 @@ def build_last_week(
 ) -> LastWeek | None:
     """The previous week's podium and the viewer's own non-medal rank on one board.
 
-    None when there is nothing to show (D-08): no medal awarded and no non-medal
-    viewer row. Every tied name is listed (D-06/D-09).
+    None when there is nothing to show: no medal awarded and no non-medal
+    viewer row. Every tied name is listed.
     """
     board_rows = [r for r in rows if r.board == kind]
     medal_rows = sorted((r for r in board_rows if r.medal is not None), key=_podium_order_key)
@@ -451,8 +449,8 @@ def visible_keys(
 ) -> list[int]:
     """User ids behind the rows `build_board` shows for the same inputs (internal use only).
 
-    Used to scope the one grouped tally COUNT to rows already visible to this viewer
-    (T-231-12). The ids never leave the service layer.
+    Used to scope the one grouped tally COUNT to rows already visible to this viewer.
+    The ids never leave the service layer.
     """
     ranked = _rank_board(kind, aggregates, viewer_id=viewer_id)
     return [ranked.ordered[i].key for i in ranked.indices]
@@ -492,7 +490,7 @@ def build_board(
     """Rank one board for one viewer.
 
     Others are only registered, non-hidden users, filtered before ranking so a hidden
-    user or guest can surface in no row, rank or pass target (D-06/D-13/D-14). The
+    user or guest can surface in no row, rank or pass target. The
     viewer's own entry (any visibility) joins them to form the combined list.
 
     `medal_tallies` is keyed by the internal user key, read here to fill each row's
@@ -565,7 +563,7 @@ def build_leaderboard(
     return WeeklyLeaderboard(
         week_start=week_start,
         week_end=week_end,
-        # WR-03 (phase 230 review): round UP. Truncating let the client's countdown
+        # Round UP. Truncating let the client's countdown
         # reach 0 up to ~1 s before the real deadline, so its rollover refetch could
         # land while the old week was still current.
         seconds_remaining=max(0, math.ceil((week_end - now_utc).total_seconds())),
@@ -603,7 +601,7 @@ async def get_weekly_leaderboard(
 
     With `session_id`, the viewer's own in-window solves of that session are fetched
     after the aggregate and passed on so each board also reports the viewer's rank
-    without them (D-12). The fetch is scoped to the viewer, so a foreign id is inert.
+    without them. The fetch is scoped to the viewer, so a foreign id is inert.
     """
     week_start, week_end = week_window(now_utc)
     aggregates = await fetch_week_aggregates(session, week_start=week_start, week_end=week_end)
@@ -626,7 +624,7 @@ async def get_weekly_leaderboard(
     tally_rows = (
         await fetch_medal_tallies(session, user_ids=sorted(visible_ids)) if visible_ids else []
     )
-    # D-07: only the immediately previous ISO week. Before the first deadline (and
+    # Only the immediately previous ISO week. Before the first deadline (and
     # during the finalize grace window) no rows exist, so both blocks come back None.
     previous_week = (week_start - datetime.timedelta(days=DAYS_PER_WEEK)).date()
     standing_rows = await fetch_last_week_rows(

@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Phase 137 Plan 03: VariationTree render tests.
- * Phase 140 Plan 02: Two-level nesting, inline flaw chips, blunder/mistake markers.
- * Quick 260703-kyb: rewritten to the flat-sibling multi-line contract (replaces
+ * VariationTree render tests.
+ * Two-level nesting, inline flaw chips, blunder/mistake markers.
+ * Rewritten to the flat-sibling multi-line contract (replaces
  * the old singleton pvLine / Level-2 nesting model).
  *
  * Fixture A: 3-node main line (1.e4 1...e5 2.Nf3) + one variation (1...d5
  * branching from node 1). Tests cover both dual-DOM paths (mobile + desktop),
- * main-line rendering, variation rendering (BOARD-05), active node
+ * main-line rendering, variation rendering, active node
  * aria-current, click → onNodeClick, and the empty state.
  *
  * Fixture B: 3-node main line (1.e4 1...e5 2.Nf3) + TWO flat sibling lines off
@@ -136,7 +136,7 @@ function buildFixture(): {
  *   20: Bc4 (parentId=2)
  *
  * Both lines are flat siblings off DIFFERENT mainLine forks and render
- * simultaneously, regardless of currentNodeId (Quick 260703-kyb).
+ * simultaneously, regardless of currentNodeId.
  */
 function buildPvFixture(): {
   nodes: Map<NodeId, MoveNode>;
@@ -236,7 +236,7 @@ describe('VariationTree', () => {
     expect(screen.getByTestId('variation-tree-desktop')).toBeTruthy();
   });
 
-  it("(1b) variant='wrap' renders only the wrapping mobile list at every width (Phase 237)", () => {
+  it("(1b) variant='wrap' renders only the wrapping mobile list at every width", () => {
     const { nodes, mainLine } = buildFixture();
     const onNodeClick = vi.fn();
     render(
@@ -279,7 +279,7 @@ describe('VariationTree', () => {
     expect(nf3Buttons.length).toBeGreaterThan(0);
   });
 
-  it('(3) variation node renders when currentNodeId is on a variation (BOARD-05)', () => {
+  it('(3) variation node renders when currentNodeId is on a variation', () => {
     const { nodes, mainLine } = buildFixture();
     render(
       <VariationTree
@@ -381,7 +381,7 @@ describe('VariationTree', () => {
     expect(emptyTexts.length).toBeGreaterThan(0);
   });
 
-  // ─── Quick 260703-kyb: flat sibling blocks, × delete, inline chips + markers ──
+  // ─── Flat sibling blocks, × delete, inline chips + markers ──
 
   it('(7) both variation-pv-section (tactic) and variation-freemove-section render simultaneously, regardless of currentNodeId', () => {
     const { nodes, mainLine, pvNodeIds } = buildPvFixture();
@@ -395,7 +395,7 @@ describe('VariationTree', () => {
       />,
     );
     // Both flat sibling blocks render — sidelines are always-visible, not tied to
-    // where the board is currently parked (Quick 260703-kyb truth #1).
+    // where the board is currently parked.
     expect(screen.getByTestId('variation-pv-section')).toBeTruthy();
     expect(screen.getByTestId('variation-freemove-section')).toBeTruthy();
     // Both lines' nodes are present.
@@ -427,7 +427,7 @@ describe('VariationTree', () => {
     expect(screen.queryByTestId('btn-delete-line-10')).toBeNull();
   });
 
-  it('(9) flaw-inline-tag-missed-{nodeId} shows the motif name + depth (UAT 260627)', () => {
+  it('(9) flaw-inline-tag-missed-{nodeId} shows the motif name + depth', () => {
     const { nodes, mainLine } = buildPvFixture();
     const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
       [2, { missedMotif: 'fork', allowedMotif: null, missedDepth: 1, allowedDepth: null, severity: 'blunder', ply: 1 }],
@@ -453,7 +453,7 @@ describe('VariationTree', () => {
     expect(chip.textContent).not.toContain('Missed');
   });
 
-  it('(9b) flaw-inline-tag-allowed-{nodeId} shows the motif name + depth (UAT 260627)', () => {
+  it('(9b) flaw-inline-tag-allowed-{nodeId} shows the motif name + depth', () => {
     const { nodes, mainLine } = buildPvFixture();
     const flawMarkerByNodeId = new Map<NodeId, FlawMarkerEntry>([
       [3, { missedMotif: null, allowedMotif: 'pin', missedDepth: null, allowedDepth: 1, severity: 'mistake', ply: 2 }],
@@ -468,7 +468,7 @@ describe('VariationTree', () => {
         onNodeClick={vi.fn()}
       />,
     );
-    // Quick 260628-1t5 DECISION 2: the move list is a navigable surface, so the allowed
+    // The move list is a navigable surface, so the allowed
     // +1 decision-anchor offset is dropped (anchored=false). depth 1 → display 2 (raw + 1),
     // reading on the same scale as missed (was 3 when anchored).
     const chip = screen.getByTestId('flaw-inline-tag-allowed-3');
@@ -529,8 +529,8 @@ describe('VariationTree', () => {
 
   it('(11) inaccuracy severity renders no chip and no marker', () => {
     // Use the mainLine-only fixture (no sidelines at all) so the SVG count is not
-    // contaminated by a free-move block's × delete-icon — Quick 260703-kyb renders
-    // sidelines unconditionally now, not just when currentNodeId is inside one.
+    // contaminated by a free-move block's × delete-icon — the tree renders
+    // sidelines unconditionally, not just when currentNodeId is inside one.
     const { nodes, mainLine } = buildFixture();
     const mainLineOnlyNodes = new Map(
       [...nodes].filter(([id]) => mainLine.includes(id)),
@@ -550,7 +550,7 @@ describe('VariationTree', () => {
     // No chip for inaccuracy.
     expect(screen.queryByTestId('flaw-inline-tag-missed-2')).toBeNull();
     expect(screen.queryByTestId('flaw-inline-tag-allowed-2')).toBeNull();
-    // No SVG icon for inaccuracy (D-03).
+    // No SVG icon for inaccuracy.
     const desktopTree = screen.getByTestId('variation-tree-desktop');
     const svgs = desktopTree.querySelectorAll('svg');
     expect(svgs.length).toBe(0);
@@ -619,7 +619,7 @@ describe('VariationTree', () => {
     expect(errorText).toBeTruthy();
   });
 
-  // Quick 260628-1t5 item 1: a freely-played move the live engine grades as a
+  // A freely-played move the live engine grades as a
   // blunder/mistake injects a severity-only entry keyed by the CURRENT (variation/free)
   // node. The move list must paint the matching glyph there, mirroring the board.
   it('(14) injected live severity on the CURRENT variation node renders the glyph', () => {
@@ -661,13 +661,13 @@ describe('VariationTree', () => {
         onNodeClick={vi.fn()}
       />,
     );
-    // Quick 260628-r5v UAT: the glyph now persists on every explored sideline move, not just
+    // The glyph persists on every explored sideline move, not just
     // the current one — node 10's blunder entry still paints its glyph while node 11 is current.
     const desktopTree = screen.getByTestId('variation-tree-desktop');
     expect(desktopTree.querySelectorAll('svg').length).toBeGreaterThan(0);
   });
 
-  // Phase 172 (SEED-106 D-08): book marker precedence `severity > gem > book`.
+  // Book marker precedence `severity > gem > book`.
   it('(16) book-only entry renders BookIcon (plain icon, not the gem popover)', () => {
     const { nodes, mainLine } = buildFixture();
     const mainLineOnlyNodes = new Map(
@@ -693,7 +693,7 @@ describe('VariationTree', () => {
     expect(screen.queryByTestId('gem-move-popover')).toBeNull();
   });
 
-  it('(17) severity + book: severity wins, book icon does not render (D-08)', () => {
+  it('(17) severity + book: severity wins, book icon does not render', () => {
     const { nodes, mainLine } = buildFixture();
     const mainLineOnlyNodes = new Map(
       [...nodes].filter(([id]) => mainLine.includes(id)),
@@ -718,7 +718,7 @@ describe('VariationTree', () => {
     expect(titles).not.toContain('Opening theory');
   });
 
-  it('(18) gem + book: gem icon renders, not book (D-08 — never arises in production per D-04)', () => {
+  it('(18) gem + book: gem icon renders, not book (never arises in production)', () => {
     const { nodes, mainLine } = buildFixture();
     const mainLineOnlyNodes = new Map(
       [...nodes].filter(([id]) => mainLine.includes(id)),
@@ -762,9 +762,9 @@ describe('VariationTree', () => {
     expect(desktopTree.querySelectorAll('svg').length).toBe(0);
   });
 
-  // ─── SEED-197: dimmed preview (wrap variant only) ───────────────────────────
+  // ─── Dimmed preview (wrap variant only) ───────────────────────────
 
-  describe('preview (SEED-197)', () => {
+  describe('preview', () => {
     const SANS = ['Nc6', 'Bb5'];
 
     function renderWrap(preview?: { anchorId: NodeId }) {
@@ -804,7 +804,7 @@ describe('VariationTree', () => {
         expect(token.className).toContain('text-muted-foreground');
         expect(token.getAttribute('aria-current')).toBeNull();
       }
-      // SEED-197 UAT: the live eval lives in the Stockfish row, not the move list.
+      // The live eval lives in the Stockfish row, not the move list.
       expect(screen.queryByTestId('variation-preview-eval')).toBeNull();
       // Document order: Nf3 chip, then the preview tokens.
       const nf3 = screen.getByTestId('variation-node-3');

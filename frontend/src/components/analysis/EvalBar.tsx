@@ -1,6 +1,5 @@
 /**
- * EvalBar — vertical sigmoid centipawn bar (Phase 137; Quick 260627: now follows
- * board orientation).
+ * EvalBar — vertical sigmoid centipawn bar that follows the board orientation.
  *
  * The bar matches the board's perspective: the side sitting at the bottom of the
  * board occupies the bottom of the bar. In White's view (not flipped) White is at
@@ -26,7 +25,7 @@ function computeWhiteFraction(
   depth: number,
   whiteFraction?: number,
 ): number {
-  // whiteFraction override (Maia expected-score bar, Plan 05 SURF-04/D-04/D-05):
+  // whiteFraction override (Maia expected-score bar):
   // bypasses the evalCp/evalMate/depth sigmoid entirely and drives the fill directly.
   if (whiteFraction !== undefined) return Math.min(1, Math.max(0, whiteFraction));
   if (evalMate !== null && depth >= 8) {
@@ -59,11 +58,11 @@ export interface EvalBarProps {
    * the bottom of the bar; when true (Black's view) Black sits at the bottom.
    */
   flipped?: boolean;
-  /** Caller (Phase 138 page shell) may override width/height via className. */
+  /** Caller may override width/height via className. */
   className?: string;
   /**
    * Override the fill fraction directly (0..1), bypassing evalCp/evalMate/depth
-   * entirely — used by the Maia bar (Plan 05), which supplies
+   * entirely — used by the Maia bar, which supplies
    * `expectedScoreAtSelectedElo` (W + 0.5*D) instead of a centipawn eval. Clamped
    * to 0..1. The `flipped` orientation behavior is unchanged.
    */
@@ -71,9 +70,9 @@ export interface EvalBarProps {
   /** Distinct data-testid so two EvalBar instances (Stockfish + Maia) can coexist. */
   testId?: string;
   /**
-   * Source accent (Phase 151.1 UAT): tints the advantage (white-share) fill and the
-   * bar frame so the Stockfish bar (blue) and Maia bar (red) are distinguishable at a
-   * glance. When omitted the bar keeps the neutral grayscale palette. The dark
+   * Source accent: tints the advantage (white-share) fill and the
+   * bar frame so the bars' sources (e.g. Stockfish blue vs Maia violet) are
+   * distinguishable at a glance. When omitted the bar keeps the neutral grayscale palette. The dark
    * (other-side) fill stays `EVAL_BAR_BLACK` as the track under either accent.
    */
   accentColor?: string;
@@ -119,9 +118,9 @@ export function EvalBar({
         accentColor ? 'border-2' : 'border border-border',
         className,
       )}
-      // Accent tints the frame so the bar's source (Stockfish blue / Maia red) is
+      // Accent tints the frame so the bar's source (e.g. Stockfish blue / Maia violet) is
       // identifiable while the fills keep the white/black advantage semantics
-      // (Phase 151.1 UAT: the white area stays visible).
+      // (the white area stays visible).
       style={accentColor ? { borderColor: accentColor } : undefined}
     >
       {/* White (advantage-share) fill — always the light grey so the white area reads. */}

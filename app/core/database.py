@@ -42,7 +42,7 @@ def get_engine() -> AsyncEngine:
     ``get_async_session`` runs ``session.commit()`` after its ``yield``, outside
     any handler try/except: after a timed-out (cancelled) ``SELECT 1`` that commit
     would run unbounded on a cancelled asyncpg connection and turn the intended
-    503 into a 500 or a hang (Phase 216 code review, BLOCKER). Tests override this
+    503 into a 500 or a hang. Tests override this
     dependency to inject the per-run test engine or a stub.
     """
     return engine

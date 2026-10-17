@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * Phase 137 Plan 02 — EvalBar render tests.
+ * EvalBar render tests.
  *
  * Verifies:
  *  (a) positive evalCp → taller white fill than negative evalCp
  *  (b) evalMate=3 with depth=10 → M3 mate label rendered
- *  (c) evalMate=3 with depth=5 → NO mate label (depth-8 gate, D-04)
+ *  (c) evalMate=3 with depth=5 → NO mate label (depth-8 gate)
  *  (d) both null → no mate label and balanced (0.5) fill
  */
 
@@ -119,7 +119,7 @@ describe('EvalBar', () => {
     expect(whiteFill.style.top).toBe('0px');
   });
 
-  describe('whiteFraction override (Maia expected-score bar, Plan 05)', () => {
+  describe('whiteFraction override (Maia expected-score bar)', () => {
     it('whiteFraction=0.75 drives ~75% white fill regardless of evalCp', () => {
       // evalCp is a strongly negative eval — without the override this would yield
       // a low white fraction, proving the override truly bypasses the sigmoid.

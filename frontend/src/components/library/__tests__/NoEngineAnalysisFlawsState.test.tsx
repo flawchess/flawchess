@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * NoEngineAnalysisFlawsState guest CTA (quick 261016-fwd): the button used to
+ * NoEngineAnalysisFlawsState guest CTA: the button used to
  * navigate('/login?tab=register') while the guest was still signed in, so AuthPage
  * bounced them to / and nothing happened. It must drop the guest session first
  * (keeping guest_token for promotion) and hard-navigate to the register tab.

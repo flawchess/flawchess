@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Tests for the /welcome page (Phase 224 S-5, GUESTACT-08).
+ * Tests for the /welcome page.
  *
  * Covers:
  * 1. Page container and the four-delta list render
@@ -10,7 +10,7 @@
  * 4. The Back affordance is present for both fixtures and carries no umami
  *    attribute
  * 5. The dismissal checkbox no longer exists
- * 6. Button order (224 UAT round 1): Back on the left, Sign up free on the right
+ * 6. Button order: Back on the left, Sign up free on the right
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -115,7 +115,7 @@ describe('WelcomePage rendering', () => {
     expect(backRegistered.getAttribute('data-umami-event')).toBeNull();
   });
 
-  it('renders Back before Sign up free in the actions row (UAT round 1: Back left, Sign up right)', () => {
+  it('renders Back before Sign up free in the actions row (Back left, Sign up right)', () => {
     profileState.is_guest = true;
     renderWelcome();
     const buttons = screen.getByTestId('welcome-actions').querySelectorAll('button');

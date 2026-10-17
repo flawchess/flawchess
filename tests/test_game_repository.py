@@ -15,10 +15,10 @@ async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
 
-    # 601-606: TestGetCurrentRatingByPlatform (MAIA-04 / 151-03).
-    # 701-702: TestCountBacklogByPlatformAndTc (Phase 186 Plan 01 / IMPORT-04).
-    # 711-713: TestCountImportedByPlatformAndTc (Plan 03 UAT follow-up).
-    # 801-802: TestGetPlatformGameIdsForUser (Phase 186 CR-01 fix).
+    # 601-606: TestGetCurrentRatingByPlatform.
+    # 701-702: TestCountBacklogByPlatformAndTc.
+    # 711-713: TestCountImportedByPlatformAndTc.
+    # 801-802: TestGetPlatformGameIdsForUser.
     for uid in [1, 2, 42, 55, 601, 602, 603, 604, 605, 606, 701, 702, 711, 712, 713, 801, 802]:
         await ensure_test_user(db_session, uid)
 
@@ -105,6 +105,65 @@ class TestBulkInsertGames:
         ids = await bulk_insert_games(db_session, [row])
         assert len(ids) == 1
         assert ids[0] > 0
+
+    async def test_platform_accuracy_lands_in_imported_columns(self, db_session):
+        """Normalized platform accuracy/ACPL goes to *_imported, never the computed columns.
+
+        SEED-202 item 2: the import path inserts NormalizedGame.model_dump() as-is, so a
+        field named white_accuracy wrote the platform value into our canonical column.
+        """
+        from sqlalchemy import select
+
+        from app.models.game import Game
+        from app.repositories.game_repository import bulk_insert_games
+        from app.services.normalization import normalize_lichess_game
+
+        lichess_game = {
+            "id": f"acc{uuid.uuid4().hex[:8]}",
+            "variant": "standard",
+            "speed": "blitz",
+            "rated": True,
+            "status": "mate",
+            "winner": "white",
+            "createdAt": 1700000000000,
+            "lastMoveAt": 1700000600000,
+            "clock": {"initial": 300, "increment": 0},
+            "pgn": '[Event "Rated Blitz game"]\n[White "testuser"]\n[Black "Opp"]\n'
+            '[Result "1-0"]\n\n1. e4 e5 1-0',
+            "players": {
+                "white": {
+                    "user": {"name": "testuser"},
+                    "rating": 1600,
+                    "analysis": {"accuracy": 91, "acpl": 12},
+                },
+                "black": {
+                    "user": {"name": "Opp"},
+                    "rating": 1500,
+                    "analysis": {"accuracy": 74, "acpl": 40},
+                },
+            },
+        }
+        normalized = normalize_lichess_game(lichess_game, "testuser", user_id=1)
+        assert normalized is not None
+
+        ids = await bulk_insert_games(db_session, [normalized.model_dump()])
+        assert len(ids) == 1
+        row = (
+            await db_session.execute(
+                select(
+                    Game.white_accuracy,
+                    Game.black_accuracy,
+                    Game.white_acpl,
+                    Game.black_acpl,
+                    Game.white_accuracy_imported,
+                    Game.black_accuracy_imported,
+                    Game.white_acpl_imported,
+                    Game.black_acpl_imported,
+                ).where(Game.id == ids[0])
+            )
+        ).one()
+        assert row[:4] == (None, None, None, None)
+        assert row[4:] == (91, 74, 12, 40)
 
     async def test_different_users_can_import_same_game(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
@@ -327,7 +386,7 @@ class TestImportJobRepository:
         now = datetime.datetime.now(tz=datetime.timezone.utc)
 
         # Create two completed jobs. Each is transitioned to "completed"
-        # before the next is created (Phase 149 PRUNE-05: only one active
+        # before the next is created (only one active
         # pending/in_progress row per user+platform is allowed by
         # uq_import_jobs_user_platform_active — two simultaneously-pending
         # rows for the same user+platform would raise IntegrityError).
@@ -391,7 +450,7 @@ class TestImportJobRepository:
         assert result is None
 
 
-# ─── D-118: coverage / in-flight count functions ─────────────────────────────
+# ─── Coverage / in-flight count functions ────────────────────────────────────
 
 
 class TestCountFullyAnalyzedGames:
@@ -495,12 +554,12 @@ class TestCountFullyAnalyzedGames:
 
 
 # ---------------------------------------------------------------------------
-# Phase 186 Plan 01 (IMPORT-04): count_backlog_by_platform_and_tc
+# count_backlog_by_platform_and_tc
 # ---------------------------------------------------------------------------
 
 
 class TestCountBacklogByPlatformAndTc:
-    """Tests for count_backlog_by_platform_and_tc (D-01/D-02/D-15)."""
+    """Tests for count_backlog_by_platform_and_tc."""
 
     def _make_game_row(
         self,
@@ -533,7 +592,7 @@ class TestCountBacklogByPlatformAndTc:
 
     async def test_counts_pre_anchor_games_per_platform_and_tc(self, db_session):
         """Pre-anchor games across two platforms and multiple TCs yield correct
-        per-(platform, TC) counts; a NULL-bucket game is omitted entirely (D-15).
+        per-(platform, TC) counts; a NULL-bucket game is omitted entirely.
         """
         from app.repositories.game_repository import (
             bulk_insert_games,
@@ -550,7 +609,7 @@ class TestCountBacklogByPlatformAndTc:
         ] + [
             self._make_game_row("cc-rapid-1", user_id, "chess.com", "rapid", pre_anchor),
             self._make_game_row("lc-blitz-1", user_id, "lichess", "blitz", pre_anchor),
-            # NULL-bucket game: must NOT appear in any platform's dict (D-15).
+            # NULL-bucket game: must NOT appear in any platform's dict.
             self._make_game_row("cc-null-1", user_id, "chess.com", None, pre_anchor),
         ]
         await bulk_insert_games(db_session, rows)
@@ -563,7 +622,7 @@ class TestCountBacklogByPlatformAndTc:
         }
 
     async def test_excludes_post_anchor_games(self, db_session):
-        """Games played AT/AFTER the anchor are excluded from the counts (D-02)."""
+        """Games played AT/AFTER the anchor are excluded from the counts."""
         from app.repositories.game_repository import (
             bulk_insert_games,
             count_backlog_by_platform_and_tc,
@@ -596,7 +655,7 @@ class TestCountBacklogByPlatformAndTc:
 
 
 # ---------------------------------------------------------------------------
-# UAT follow-up to Plan 03: count_imported_by_platform_and_tc
+# count_imported_by_platform_and_tc
 # ---------------------------------------------------------------------------
 
 
@@ -685,12 +744,12 @@ class TestCountImportedByPlatformAndTc:
 
 
 # ---------------------------------------------------------------------------
-# Phase 186 CR-01 fix: get_platform_game_ids_for_user
+# get_platform_game_ids_for_user
 # ---------------------------------------------------------------------------
 
 
 class TestGetPlatformGameIdsForUser:
-    """Tests for get_platform_game_ids_for_user (CR-01 backward-walk dedup fix)."""
+    """Tests for get_platform_game_ids_for_user (backward-walk dedup)."""
 
     def _make_game_row(
         self,

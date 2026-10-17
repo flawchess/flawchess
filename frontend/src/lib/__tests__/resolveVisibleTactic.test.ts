@@ -1,5 +1,5 @@
 /**
- * resolveVisibleTactic unit tests — Quick 260625-qbj.
+ * resolveVisibleTactic unit tests.
  *
  * resolveVisibleTactic is the single source of truth deciding whether a tactic slot's
  * chip AND depth badge render. These tests pin it to two contracts:
@@ -16,7 +16,7 @@ import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 // A family-having motif (Advanced family 'sacrifice') and a family-less one
-// (self-interference maps to no family — D-09).
+// (self-interference maps to no family).
 const SACRIFICE = 'sacrifice';
 const FAMILYLESS = 'self-interference';
 
@@ -55,7 +55,7 @@ describe('resolveVisibleTactic — family guard (no filter)', () => {
     expect(resolveVisibleTactic('allowed', SACRIFICE, 2)?.depthLabel).toBe('4');
   });
 
-  // anchored=false (Quick 260628-1t5 DECISION 2): navigable surfaces drop the allowed +1
+  // anchored=false: navigable surfaces drop the allowed +1
   // offset on the DISPLAY depth only. The filter predicate is untouched (see below).
   it('anchored=false drops the allowed offset on the depth label (display only)', () => {
     // allowed display depth without anchor = raw + 1 (reads like missed).

@@ -1,12 +1,12 @@
 /**
- * useReminderResurface — OFFER-05/D-16: closes the iOS install→reminder
+ * useReminderResurface — closes the iOS install→reminder
  * two-session cliff. A user who tapped the iOS install affordance
- * (`TrainReminderButton`'s `ios-tabbed` branch, Plan 04 Task 1) recorded
+ * (`useTrainReminderSlot`'s `ios-tabbed` branch) recorded
  * `reminder_intent_at` server-side and left the tab — the next time they
  * open the installed PWA (a standalone launch), this is the only mechanism
  * left to route them back to actually granting reminders.
  *
- * Fail-safe by construction (CONTEXT.md D-01): this iOS branch ships without
+ * Fail-safe by construction: this iOS branch ships without
  * real-device verification, so every signal here — `isStandalone`, the
  * settings fetch, the subscription probe — must positively resolve to the
  * qualifying value before `shouldResurface` can be true. Any unresolved,
@@ -19,7 +19,7 @@
  *   it can be unit tested — and consumed by `TrainReminderResurfaceBanner`
  *   — without a Router wrapper.
  * - `useReminderResurfaceRedirect` adds the router-only "push to /train"
- *   wiring `App.tsx`'s `ProtectedLayout` calls with zero arguments, kept
+ *   wiring `App.tsx`'s `ProtectedLayout` calls with a guest gate, kept
  *   separate so the decision hook above stays router-free.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -28,7 +28,7 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { getDeviceSubscription } from '@/lib/push';
 
-/** Per-device dismiss flag — its OWN key, distinct from both the D-04
+/** Per-device dismiss flag — its OWN key, distinct from both the
  * install-cooldown keys (`lib/installCooldown.ts`) and the server-side
  * `reminder_intent_at` field. Three different lifetimes, three different
  * keys: install cooldown is per-device/per-surface cadence, the intent flag
@@ -66,16 +66,16 @@ export interface UseReminderResurfaceResult {
 }
 
 /**
- * The OFFER-05/D-16 decision: `shouldResurface` is true only when ALL of —
+ * The resurface decision: `shouldResurface` is true only when ALL of —
  * standalone, `reminder_intent_at` non-null, the subscription probe resolved
  * to null (no subscription on this device), dismiss flag absent. Every other
  * combination, including any unresolved or thrown probe, returns `false`.
  *
- * `options.enabled` (CR-01 fix, 203-REVIEW.md) threads down to
+ * `options.enabled` threads down to
  * `useTrainSettings` so a caller mounted app-wide (see
  * `useReminderResurfaceRedirect` below) can gate the underlying
- * `GET /train/settings` off for guests, who get a guaranteed 403 from
- * `_reject_guest`. Defaults to enabled, so the pre-existing
+ * `GET /train/settings` off for guests, who have no reminder slot or push
+ * subscription. Defaults to enabled, so the pre-existing
  * `TrainReminderResurfaceBanner` call site (already Train-page-scoped,
  * guests cannot reach it without games) is unaffected.
  */
@@ -129,7 +129,7 @@ export function useReminderResurface(options?: { enabled?: boolean }): UseRemind
 }
 
 /**
- * D-16's active route push. The manifest `start_url` is `/`
+ * The active route push. The manifest `start_url` is `/`
  * (`vite.config.ts`), so a standalone launch never lands on Train by
  * itself — this hook makes the push explicit, at most once per mount (a ref
  * guard, not a re-firing effect), and only when the user is not already
@@ -140,12 +140,12 @@ export function useReminderResurface(options?: { enabled?: boolean }): UseRemind
  * and independently testable without a Router wrapper. `ProtectedLayout`
  * calls this once per render.
  *
- * CR-01 FIX (203-REVIEW.md): `ProtectedLayout` mounts this hook
+ * `ProtectedLayout` mounts this hook
  * unconditionally on EVERY protected route for EVERY account, including
  * guests — `options.enabled` lets the caller thread its own guest check
  * down through `useReminderResurface` to `useTrainSettings`, so the
- * underlying `GET /train/settings` never fires for a guest at all (rather
- * than firing and having its guaranteed 403 land in Sentry). Kept as an
+ * underlying `GET /train/settings` never fires for a guest at all (guests
+ * have no reminder slot or push subscription). Kept as an
  * explicit caller-supplied flag (not a `useUserProfile()` call inside this
  * hook) so this file's existing test suite — which mocks
  * `useTrainSettings`/`useInstallPrompt` but not `useUserProfile` or a

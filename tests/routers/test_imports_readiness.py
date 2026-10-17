@@ -1,6 +1,6 @@
 """Integration tests for GET /api/imports/readiness.
 
-Phase 96 Plan 01 Task 2 — SC-1 truth-table tests for both tiers.
+Truth-table tests for both tiers.
 
 Covers:
 - test_readiness_requires_auth: unauthenticated request returns 401
@@ -239,7 +239,7 @@ async def user_b_client(test_engine) -> AsyncGenerator[tuple[int, str], None]:
 
 @pytest.mark.asyncio
 async def test_readiness_requires_auth() -> None:
-    """T-96-03: GET /api/imports/readiness without token returns 401."""
+    """GET /api/imports/readiness without token returns 401."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -463,7 +463,7 @@ async def test_tier2_false_while_stage_b_computing(
 ) -> None:
     """Drained games + percentile row, but user mid-Stage-B → tier2=False.
 
-    Quick 260529-015: identical DB state to the tier2=True case (pending==0,
+    Identical DB state to the tier2=True case (pending==0,
     has_any_rows True), but the in-memory Stage-B registry mark forces
     tier2=False so the page does not unlock with missing/stale badges before
     compute_stage_b finishes writing the eval-dependent rows.
@@ -533,7 +533,7 @@ async def test_readiness_scoped_to_user(
     user_b_client: tuple[int, str],
     test_engine,
 ) -> None:
-    """T-96-01: User B sees only their own readiness state.
+    """User B sees only their own readiness state.
 
     User A has an active import job and no percentile rows.
     User B has no active import and a percentile row.

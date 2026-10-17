@@ -1,8 +1,8 @@
 /**
- * Pure, synchronous, React-free clock and pacing math for bot games (Phase 169).
+ * Pure, synchronous, React-free clock and pacing math for bot games.
  *
- * Extracted to a standalone module so the trickiest timing logic in the phase
- * (the D-16 per-move think deadline, the PLAY-04 wall-clock model) is
+ * Extracted to a standalone module so the trickiest timing logic of bot play
+ * (the per-move think deadline, the wall-clock model) is
  * directly unit-testable with fake timers and zero DOM/React, mirroring
  * analysisUrl.ts's "extracted for unit-testability" precedent.
  *
@@ -10,46 +10,43 @@
  * recomputed from `Date.now()` deltas (never accumulated `setInterval` tick
  * counts, which drift under background-tab throttling — see
  * useFlawChessEngine.ts's identical `Date.now() - anchor` discipline used for
- * its FEN debounce). `useBotGame` (plan 04, amended plan 09) and
- * `botPlayerRow.ts` (Phase 223, replacing the retired `ClockDisplay` from
- * plan 05) compose these helpers; neither owns its own timing math.
+ * its FEN debounce). `useBotGame` and `botPlayerRow.ts` compose these helpers;
+ * neither owns its own timing math.
  *
- * D-15 (2026-07-13, SUPERSEDES 168.5 D-02/D-04/D-05 — reversed, not
- * refined): the bot's clock is HONEST. Its debit is exactly the real
+ * The bot's clock is HONEST. Its debit is exactly the real
  * wall-clock time its turn consumed (search + reveal delay) plus the Fischer
  * increment on commit — the same rule `applyIncrementMs` + `computeElapsedMs`
  * already give the user. There is no synthetic fraction-of-remaining debit
- * helper and no never-flag clamp constant anywhere in this module (the old
- * 168.5 D-02 machinery converged to a ~6s equilibrium at the shipped 5+3
- * preset and is DELETED here, not guarded — do not reintroduce a
+ * helper and no never-flag clamp constant anywhere in this module (an earlier
+ * synthetic-debit design converged to a ~6s equilibrium at the shipped 5+3
+ * preset and was deleted, not guarded — do not reintroduce a
  * synthetic-debit or never-flag concept under any name). The bot CAN lose on
- * time exactly like the user (ROADMAP SC1, amended). As of Plan 10 (gap
- * closure, CR-02) this invariant is ENFORCED at the commit site: `useBotGame`
- * calls `hasFlaggedOnDebit` before applying either mover's move, and only
+ * time exactly like the user. This invariant is ENFORCED at the commit site:
+ * `useBotGame` calls `hasFlaggedOnDebit` before applying either mover's move, and only
  * commits when it returns false. `applyIncrementMs`'s floor-at-zero is an
  * increment guard against a negative starting value, NOT a debit clamp — it
  * must never be used to forgive an overrun.
  *
- * D-16: an honest clock with a *fixed* search budget is degenerate (a bot
+ * An honest clock with a *fixed* search budget is degenerate (a bot
  * that always spends ~5.4s median against a 3s increment bleeds net time
  * every move). So the bot manages its clock via `computeThinkDeadlineMs`
  * below, a per-move think deadline derived from its own remaining time, that
- * `deadlineSearch.ts` (plan 08 task 2) enforces from OUTSIDE the frozen
+ * `deadlineSearch.ts` enforces from OUTSIDE the frozen
  * search core by cutting the in-flight search and returning its best-so-far
  * result — ONLY WHEN `deps.search` is actually consulted (`blend > 0`). At
- * `blend = 0` (SEED-100, Phase 171 D-03) `selectBotMove.ts` returns from a
+ * `blend = 0` `selectBotMove.ts` returns from a
  * single Maia policy sample BEFORE `deps.search` is ever called, so this
  * deadline is computed (`useBotGame.ts` still calls `computeThinkDeadlineMs`
  * and builds `deadlineSearch` unconditionally) but never enforced — a
  * Human-preset bot has an honest, flaggable clock with NO pacing mechanism of
  * its own; its speed is governed entirely by `computeRevealDelayMs`'s
- * reveal-delay floor (D-02) and the measured ~0.09s Maia inference cost, both
- * of which stay well under any realistic blitz/rapid budget (see SEED-100).
+ * reveal-delay floor and the measured ~0.09s Maia inference cost, both
+ * of which stay well under any realistic blitz/rapid budget.
  * Pinned by `selectBotMove.test.ts`'s blend=0 "deps.search zero times"
  * assertion — do not restore a smaller ad-hoc claim here.
  *
- * D-19 (must-read before retuning ANY constant below or in botBudget.ts): the
- * bot's calibrated ELO (168.5's fixed 50-node budget, measured by
+ * Must-read before retuning ANY constant below or in botBudget.ts: the
+ * bot's calibrated ELO (the fixed 50-node budget, measured by
  * scripts/calibration-harness.mjs, which never runs a clock) holds ONLY at
  * the full node budget. When `computeThinkDeadlineMs` cuts a think short in
  * time trouble, `deadlineSearch.ts` returns a best-so-far snapshot built from
@@ -62,7 +59,7 @@
  *
  * NOTE: formatClockLabel is a DISPLAY formatter ("m:ss" / "m:ss.d" tenths). It
  * is NOT the PGN `[%clk h:mm:ss]` formatter used for the finished-game export
- * — that lives in botGamePgn.ts (plan 02), which follows lichess's PGN
+ * — that lives in botGamePgn.ts, which follows lichess's PGN
  * convention instead of this module's UI-facing shorthand.
  */
 
@@ -71,32 +68,32 @@ import type { MoverColor } from '@/lib/liveFlaw';
 // ─── Named constants ─────────────────────────────────────────────────────────
 
 /** Minimum synthetic "thinking" reveal delay so near-instant bot moves (e.g.
- * blend=0 resolving in ~0.09s per 168.5 measurement) don't feel robotic. D-03. */
+ * blend=0 resolving in ~0.09s per the search-cost measurement) don't feel robotic. */
 export const REVEAL_DELAY_MIN_MS = 500;
 
-/** Maximum synthetic reveal delay — keeps the ~0.5-1.5s ballpark 168.5 locked
- * so a 5+0 blitz game still paces plausibly. D-03. */
+/** Maximum synthetic reveal delay — keeps the ~0.5-1.5s ballpark
+ * so a 5+0 blitz game still paces plausibly. */
 export const REVEAL_DELAY_MAX_MS = 1500;
 
 /** Below this remaining-time threshold the clock display switches to tenths
- * precision and urgent styling (lichess-style low-time display). D-07. */
+ * precision and urgent styling (lichess-style low-time display). */
 export const LOW_TIME_THRESHOLD_MS = 10000;
 
 /**
- * D-16 think-deadline divisor: `remainingMs / BOT_MOVES_TO_GO` is the
+ * Think-deadline divisor: `remainingMs / BOT_MOVES_TO_GO` is the
  * baseline per-move time slice, the standard "moves-to-go" chess-engine
- * time-management convention. Tuned by feel against the 168.5-04 measured
+ * time-management convention. Tuned by feel against the measured
  * search cost (median ~5.4s, worst-case ~12.7s per move at the locked
  * 50-node budget): 30 gives a full-clock 5+3 bot a ~10s baseline slice —
  * comfortably above the median so contested opening/middlegame thinks run to
  * completion — while still shrinking fast enough in the endgame (fewer
  * moves realistically remain, but this constant intentionally does NOT
- * adapt to game phase — Claude's-discretion simplicity) that the bot is
+ * adapt to game phase, for simplicity) that the bot is
  * forced to speed up well before its clock actually empties.
  */
 export const BOT_MOVES_TO_GO = 30;
 
-/** Share of the Fischer increment folded into the D-16 think deadline
+/** Share of the Fischer increment folded into the think deadline
  * (`incrementMs * BOT_THINK_INCREMENT_SHARE`). Less than 1.0 so the bot
  * banks a small margin of every increment toward the NEXT move's deadline
  * rather than spending the whole increment on the move that earned it —
@@ -104,17 +101,17 @@ export const BOT_MOVES_TO_GO = 30;
  * increments accumulate faster than the clock drains. Tuned by feel. */
 export const BOT_THINK_INCREMENT_SHARE = 0.7;
 
-/** D-16 deadline band floor — even in genuine time trouble the bot gets at
- * least this long to think, so the D-18 min-node floor below has a
+/** Deadline band floor — even in genuine time trouble the bot gets at
+ * least this long to think, so the min-node floor (`BOT_MIN_SEARCH_NODES`) has a
  * realistic chance of being reached before a deadline abort fires. Tuned by
  * feel: comfortably above `BOT_MOVE_OVERHEAD_MS` so the band floor and the
  * affordability cap (see `computeThinkDeadlineMs`) rarely fight each other. */
 export const BOT_THINK_DEADLINE_MIN_MS = 800;
 
-/** D-16 deadline band ceiling — caps the think deadline from a very full or
+/** Deadline band ceiling — caps the think deadline from a very full or
  * very long-format clock so the bot doesn't sit and "overthink" a settled
  * position; also keeps a single move's deadline from ever exceeding the
- * 168.5-04 measured worst-case-plus-margin search cost (~12.7s) by very
+ * measured worst-case-plus-margin search cost (~12.7s) by very
  * much, since nothing is gained past that point (the search would have
  * finished naturally on its own budget anyway). Tuned by feel. */
 export const BOT_THINK_DEADLINE_MAX_MS = 15000;
@@ -123,9 +120,9 @@ export const BOT_THINK_DEADLINE_MAX_MS = 15000;
  * schedule a think, so a scheduled deadline (plus normal move-commit/PGN
  * bookkeeping overhead) can never itself push the bot's clock to exactly
  * zero or below by construction. This is the affordability cap in
- * `computeThinkDeadlineMs`, NOT a never-flag clamp (D-15): a bot whose
+ * `computeThinkDeadlineMs`, NOT a never-flag clamp: a bot whose
  * remaining clock is already below this reserve gets a deadline of 0 (an
- * immediate cut, gated only by the D-18 node floor in `deadlineSearch.ts`)
+ * immediate cut, gated only by the min-node floor in `deadlineSearch.ts`)
  * and can still flag if the floor overruns what little clock remains — that
  * is the intended, honest behavior. Tuned by feel. */
 export const BOT_MOVE_OVERHEAD_MS = 300;
@@ -151,7 +148,7 @@ export function applyIncrementMs(remainingMs: number, incrementMs: number): numb
 
 /**
  * Elapsed time recomputed from a wall-clock anchor, never from accumulated
- * tick counts (PLAY-04) — safe across background-tab throttling.
+ * tick counts — safe across background-tab throttling.
  */
 export function computeElapsedMs(anchorMs: number, nowMs: number): number {
   return nowMs - anchorMs;
@@ -159,14 +156,14 @@ export function computeElapsedMs(anchorMs: number, nowMs: number): number {
 
 /**
  * Shifts a turn's wall-clock anchor forward by the hidden-tab pause duration
- * so zero time is charged while the tab was hidden (PLAY-04).
+ * so zero time is charged while the tab was hidden.
  */
 export function shiftAnchorForPause(anchorMs: number, pausedForMs: number): number {
   return anchorMs + pausedForMs;
 }
 
 /**
- * D-20 (Plan 10 gap closure, CR-01): the SINGLE "elapsed time that may be
+ * The SINGLE "elapsed time that may be
  * charged to a clock" function. When `pausedAtMs` is null the tab is
  * visible and this is identical to `computeElapsedMs(anchorMs, nowMs)`; when
  * it is non-null the tab is hidden RIGHT NOW, and elapsed time is FROZEN at
@@ -190,12 +187,12 @@ export function computeChargeableElapsedMs(
 }
 
 /**
- * D-15 (Plan 10 gap closure, CR-02): the commit-time flag test. The caller
+ * The commit-time flag test. The caller
  * MUST consult this BEFORE applying a move and end the game as a timeout
  * when it returns true. Forgiving the overrun by flooring the subtraction at
  * zero and then applying the Fischer increment is the never-flag backdoor
- * D-15 forbids — it resurrects a mover that had already lost on time. The
- * D-18 node-floor overrun makes this reachable by design, not merely
+ * the honest clock forbids — it resurrects a mover that had already lost on time. The
+ * min-node-floor overrun makes this reachable by design, not merely
  * theoretical.
  */
 export function hasFlaggedOnDebit(remainingMs: number, debitMs: number): boolean {
@@ -203,7 +200,7 @@ export function hasFlaggedOnDebit(remainingMs: number, debitMs: number): boolean
 }
 
 /**
- * D-16: derives the bot's per-move think deadline from its own remaining
+ * Derives the bot's per-move think deadline from its own remaining
  * clock time and the increment it plays with. Engine-convention formula,
  * applied in this exact order:
  *
@@ -217,8 +214,8 @@ export function hasFlaggedOnDebit(remainingMs: number, debitMs: number): boolean
  * The result shrinks monotonically as `remainingMs` shrinks (holding
  * `incrementMs` fixed) — this is what makes the bot speed up in time
  * trouble. The ONLY remaining flag path once this deadline is enforced by
- * `deadlineSearch.ts` is the D-18 node-floor overrun, which is intended
- * (D-15/D-18) — this function itself never clamps toward "never flag".
+ * `deadlineSearch.ts` is the min-node-floor overrun, which is intended
+ * — this function itself never clamps toward "never flag".
  */
 export function computeThinkDeadlineMs(remainingMs: number, incrementMs: number): number {
   const raw = remainingMs / BOT_MOVES_TO_GO + incrementMs * BOT_THINK_INCREMENT_SHARE;
@@ -228,7 +225,7 @@ export function computeThinkDeadlineMs(remainingMs: number, incrementMs: number)
 }
 
 /**
- * Randomized reveal-delay floor (D-03) within
+ * Randomized reveal-delay floor within
  * [REVEAL_DELAY_MIN_MS, REVEAL_DELAY_MAX_MS). `rng` must return a value in
  * [0, 1) — inject a stubbed rng in tests, `Math.random` in the app.
  */
@@ -236,7 +233,7 @@ export function computeRevealDelayMs(rng: () => number): number {
   return REVEAL_DELAY_MIN_MS + rng() * (REVEAL_DELAY_MAX_MS - REVEAL_DELAY_MIN_MS);
 }
 
-/** Whether remaining time is below the low-time display threshold (D-07). */
+/** Whether remaining time is below the low-time display threshold. */
 export function isLowTime(remainingMs: number): boolean {
   return remainingMs < LOW_TIME_THRESHOLD_MS;
 }
@@ -251,11 +248,11 @@ function foldElapsedIntoClockBase(remainingMs: number, elapsedMs: number): numbe
 }
 
 /**
- * Phase 170 D-01/D-02: the SINGLE place the leave/resume clock-fold
- * asymmetry is expressed. D-01 ("bill think time"): when the USER is the
+ * The SINGLE place the leave/resume clock-fold
+ * asymmetry is expressed. "Bill think time": when the USER is the
  * active side, their in-turn `chargeableElapsedMs` is folded into their own
  * clock base before the snapshot is written, so a user who thinks 40s and
- * closes the tab resumes with those 40s spent. D-02 ("refund away time"):
+ * closes the tab resumes with those 40s spent. "Refund away time":
  * when the BOT is the active side, its clock base is returned unchanged as
  * of its last commit — the bot's in-flight search dies with the Web Workers
  * on unload, so billing it for thrown-away work would be wrong (no user
@@ -282,7 +279,7 @@ export function foldClockBasesForSnapshot(
 
 /**
  * Formats remaining time for display: "m:ss" normally, "m:ss.d" (tenths) once
- * isLowTime is true (D-07, lichess-style low-time display). Negative/zero
+ * isLowTime is true (lichess-style low-time display). Negative/zero
  * remaining time clamps to "0:00".
  */
 export function formatClockLabel(remainingMs: number): string {

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * useInstallPrompt.test.ts — Phase 203 Plan 02 (INSTALL-01/04/05, D-07/D-11).
+ * useInstallPrompt.test.ts.
  * Wave-0 gap: this hook had zero automated coverage before this phase.
  * Covers the three shipped-bug fixes (event retention on dismiss, the
  * isStandalone OR, and the cooldown replacing the permanent-veto boolean)
- * plus the D-11 handoff bypass and the D-06 desktop UA gate.
+ * plus the handoff bypass and the desktop UA gate.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
@@ -73,14 +73,14 @@ describe('useInstallPrompt', () => {
     localStorage.clear();
     sessionStorage.clear();
     vi.restoreAllMocks();
-    // CR-02: the captured `beforeinstallprompt` event now lives in a
+    // The captured `beforeinstallprompt` event now lives in a
     // module-level singleton (shared across every hook instance) rather than
     // per-instance state — it must be reset between tests or it leaks across
     // `it()` blocks within this file.
     resetInstallPromptStateForTests();
   });
 
-  it('event retention (INSTALL-04): dismissing keeps the captured event alive for a later triggerInstall()', async () => {
+  it('event retention: dismissing keeps the captured event alive for a later triggerInstall()', async () => {
     const { result } = renderHook(() => useInstallPrompt());
     const { event, prompt } = makeMockEvent('dismissed');
 
@@ -121,7 +121,7 @@ describe('useInstallPrompt', () => {
     expect(result.current.canInstall).toBe(false);
   });
 
-  describe('isStandalone truth table (INSTALL-05)', () => {
+  describe('isStandalone truth table', () => {
     it('standalone=true, mediaQuery=false -> true', () => {
       stubStandalone(true);
       stubMatchMedia(false);
@@ -151,7 +151,7 @@ describe('useInstallPrompt', () => {
     });
   });
 
-  it('hides the drawer once attemptCount is at the cap, even with a live captured event (D-04)', () => {
+  it('hides the drawer once attemptCount is at the cap, even with a live captured event', () => {
     localStorage.setItem(INSTALL_ATTEMPT_COUNT_KEY, String(INSTALL_MAX_ATTEMPTS));
     localStorage.setItem(INSTALL_DISMISSED_AT_KEY, String(Date.now() - 365 * 24 * 60 * 60 * 1000));
     const { result } = renderHook(() => useInstallPrompt());
@@ -162,7 +162,7 @@ describe('useInstallPrompt', () => {
     expect(result.current.showAndroidPrompt).toBe(false);
   });
 
-  it('shows the drawer when the handoff marker is active despite an in-window dismissal (D-11)', () => {
+  it('shows the drawer when the handoff marker is active despite an in-window dismissal', () => {
     localStorage.setItem(INSTALL_DISMISSED_AT_KEY, String(Date.now()));
     localStorage.setItem(INSTALL_ATTEMPT_COUNT_KEY, '1');
     sessionStorage.setItem(HANDOFF_MARKER_KEY, '1');
@@ -174,7 +174,7 @@ describe('useInstallPrompt', () => {
     expect(result.current.showAndroidPrompt).toBe(true);
   });
 
-  it('a desktop UA yields showAndroidPrompt === false even with a live captured event and no dismissal history (D-06)', () => {
+  it('a desktop UA yields showAndroidPrompt === false even with a live captured event and no dismissal history', () => {
     stubUserAgent(DESKTOP_UA);
     const { result } = renderHook(() => useInstallPrompt());
     const { event } = makeMockEvent('dismissed');
@@ -184,12 +184,12 @@ describe('useInstallPrompt', () => {
     expect(result.current.showAndroidPrompt).toBe(false);
   });
 
-  describe('cross-instance event sharing (CR-02 regression)', () => {
+  describe('cross-instance event sharing (regression)', () => {
     it('a consumer mounting AFTER the event already fired still observes canInstall === true', () => {
       // No hook is mounted yet — the module-level listener (registered at
       // import time, not inside a component effect) is what captures this,
       // which is exactly the fix: a late-mounting consumer (e.g.
-      // TrainReminderButton's score-screen instance) must not need its OWN
+      // useTrainReminderSlot's score-screen instance) must not need its OWN
       // listener to have been live when the browser fired the event.
       const { event } = makeMockEvent('dismissed');
       act(() => {
@@ -218,7 +218,7 @@ describe('useInstallPrompt', () => {
     });
   });
 
-  describe('UAT item 3 regression: "Not now" must end the handoff override, not just record the cooldown', () => {
+  describe('regression: "Not now" must end the handoff override, not just record the cooldown', () => {
     it('dismissAndroid clears the handoff marker, so showAndroidPrompt drops to false on the very next render', () => {
       sessionStorage.setItem(HANDOFF_MARKER_KEY, '1');
       const { result } = renderHook(() => useInstallPrompt());

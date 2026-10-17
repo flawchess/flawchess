@@ -1,4 +1,4 @@
-"""Weekly Train leaderboard aggregate query (Phase 230).
+"""Weekly Train leaderboard aggregate query.
 
 One `GROUP BY user_id` over the week window returns a few hundred rows at most.
 Ranking, slicing and visibility live in `app.services.train_leaderboard`.
@@ -26,8 +26,8 @@ class SolveTotals:
 
     points: int
     puzzles: int
-    nf_points: int  # non-filler (source != SHARP_FILLER)
-    nf_puzzles: int
+    non_filler_points: int  # non-filler (source != SHARP_FILLER)
+    non_filler_puzzles: int
 
 
 @dataclass(frozen=True)
@@ -44,8 +44,8 @@ class WeeklyAggregate:
 
 # Per-row points: 1 for a correct guess plus the move tier points. The move CASE is
 # built from MOVE_QUALITY_TIER / MOVE_TIER_POINTS (guarded by the parity test), not
-# from the raw move_quality value. A NULL move_quality is a pre-SEED-119 legacy row
-# and scores 0 move points (else branch).
+# from the raw move_quality value. A NULL move_quality is a legacy row recorded
+# before the three-way tier existed and scores 0 move points (else branch).
 _GUESS_POINTS_EXPR: ColumnElement[int] = case(
     (DrillSolve.correct_guess.is_(True), GUESS_POINTS), else_=0
 )
@@ -91,8 +91,8 @@ async def fetch_week_aggregates(
             totals=SolveTotals(
                 points=int(row[1]),
                 puzzles=int(row[2]),
-                nf_points=int(row[3]),
-                nf_puzzles=int(row[4]),
+                non_filler_points=int(row[3]),
+                non_filler_puzzles=int(row[4]),
             ),
             lichess_username=row[5],
             chess_com_username=row[6],
@@ -111,9 +111,9 @@ async def fetch_session_contribution(
     week_start: datetime,
     week_end: datetime,
 ) -> SolveTotals:
-    """One session's in-window totals for one user (D-12 session delta).
+    """One session's in-window totals for one user (session delta).
 
-    Scoping by the caller's user id is the IDOR guard (T-230-04): a session id the
+    Scoping by the caller's user id is the IDOR guard: a session id the
     caller does not own matches no rows, contributes SolveTotals(0, 0, 0, 0) and
     reveals nothing about that session. A session spanning the Sunday deadline only
     contributes its in-window solves, matching what the weekly aggregate counted.
@@ -131,7 +131,10 @@ async def fetch_session_contribution(
     )
     row = (await session.execute(stmt)).one()
     return SolveTotals(
-        points=int(row[0]), puzzles=int(row[1]), nf_points=int(row[2]), nf_puzzles=int(row[3])
+        points=int(row[0]),
+        puzzles=int(row[1]),
+        non_filler_points=int(row[2]),
+        non_filler_puzzles=int(row[3]),
     )
 
 

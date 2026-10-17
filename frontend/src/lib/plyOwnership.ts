@@ -1,5 +1,5 @@
 /**
- * Ply ownership by mover parity (Phase 175 Plan 06 fix).
+ * Ply ownership by mover parity.
  *
  * Even ply = White's move, odd ply = Black's move — the same convention used by
  * EvalChart's formatMoveLabel and Analysis.tsx's per-ply clock logic
@@ -31,7 +31,7 @@ export function isUserPly(ply: number, userColor: 'white' | 'black' | string): b
  * Black, the same parity convention `isUserPly` uses above. Unlike
  * `isUserPly` (which answers "is this the user's move" relative to a given
  * `userColor`), this answers "which color made this move" unconditionally —
- * needed by the Move Stats component (Phase 179, D-08) to bucket BOTH
+ * needed by the Move Stats component to bucket BOTH
  * players' counts, not just the user's.
  */
 export function moverColorAtPly(ply: number): 'white' | 'black' {

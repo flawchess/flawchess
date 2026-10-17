@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 234 plan 02 (FBASK-07, D-03): the Import page shows Hilda's feedback ask
+ * The Import page shows Hilda's feedback ask
  * instead of the ImportBotBubble whenever the server says the ask is active,
  * for both the welcome and the explore variants.
  */
@@ -86,7 +86,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));
@@ -130,7 +130,7 @@ function renderImport() {
 const ASK_ACTIVE = { feedback_ask: { active: true } };
 const ASK_INACTIVE = { feedback_ask: { active: false } };
 
-describe('Import page feedback ask (FBASK-07, D-03)', () => {
+describe('Import page feedback ask', () => {
   it('shows the ask instead of the explore bubble after a completed import', () => {
     profileState.data = { ...COMPLETED_IMPORT_PROFILE, ...ASK_ACTIVE };
 

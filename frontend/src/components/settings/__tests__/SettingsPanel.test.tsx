@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * SettingsPanel.test.tsx: Phase 228 panel contract (D-07..D-10), including the
- * pre-Phase-223 persisted mute value and the Umami once-per-real-change rule.
+ * SettingsPanel.test.tsx: the panel contract, including the
+ * legacy persisted mute value and the Umami once-per-real-change rule.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,7 @@ import { MUTE_KEY } from '@/lib/sounds';
 const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }));
 vi.mock('@/lib/analytics', () => ({ trackEvent: trackEventMock }));
 
-// Phase 230 D-16: the real card needs a QueryClientProvider; this suite renders the panel bare.
+// The real card needs a QueryClientProvider; this suite renders the panel bare.
 vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
   LeaderboardPrivacyCard: () => <section data-testid="settings-section-privacy" />,
 }));
@@ -27,7 +27,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe('SettingsPanel layout (D-07, D-09)', () => {
+describe('SettingsPanel layout', () => {
   it('renders the three sections in order Sound, Stockfish, FlawChess engine', () => {
     render(<SettingsPanel />);
     const sound = screen.getByTestId('settings-section-sound');
@@ -83,7 +83,7 @@ describe('Sound switch (legacy mute key)', () => {
   });
 });
 
-describe('count controls (D-08, D-10)', () => {
+describe('count controls', () => {
   it('persists a change and fires settings-change exactly once; a re-tap does nothing', () => {
     render(<SettingsPanel />);
     fireEvent.click(screen.getByTestId('settings-fc-arrows-3'));
@@ -106,7 +106,7 @@ describe('count controls (D-08, D-10)', () => {
   });
 });
 
-describe('Reset to defaults (D-09, D-10)', () => {
+describe('Reset to defaults', () => {
   it('is disabled at defaults, enabled after a change, and restores everything with one event', () => {
     localStorage.setItem(MUTE_KEY, '1');
     render(<SettingsPanel />);

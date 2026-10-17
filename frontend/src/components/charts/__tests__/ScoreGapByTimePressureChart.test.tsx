@@ -103,7 +103,7 @@ function makeBin(
     ci_low: opts.ci_low !== undefined ? opts.ci_low : (n > 0 ? -0.02 : null),
     ci_high: opts.ci_high !== undefined ? opts.ci_high : (n > 0 ? 0.02 : null),
     opp_score: opts.opp_score !== undefined ? opts.opp_score : (n > 0 ? 0.5 : null),
-    // D-14: true by default so out-of-band fixture dots keep their zone colours.
+    // True by default so out-of-band fixture dots keep their zone colours.
     significant: opts.significant ?? true,
   };
 }
@@ -124,7 +124,7 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(screen.getByTestId('score-gap-by-time-pressure-chart-bullet')).toBeTruthy();
   });
 
-  // Test 2: exactly one grey typical band (D-00f)
+  // Test 2: exactly one grey typical band
   it('shows an empty-state line instead of a blank plot when no bin has games', () => {
     const empty = FOUR_BIN_FIXTURE.map((bin) => ({ ...bin, n: 0 }));
     render(<ScoreGapByTimePressureChart quintiles={empty} tc="rapid" />);
@@ -141,7 +141,7 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(bands[0]?.getAttribute('fill')).toBe(TYPICAL_BAND_FILL);
   });
 
-  // Test 2b: zone bands span the full chart width (recharts 3 regression guard — D-01 Wave 6 UAT)
+  // Test 2b: zone bands span the full chart width (recharts 3 regression guard)
   //
   // The hidden "bleed" XAxis requires dataKey="__bleed__" in recharts 3 so that
   // combineAxisDomain does NOT fall into the early-return "isCategorical && dataKey==null"
@@ -169,7 +169,7 @@ describe('ScoreGapByTimePressureChart', () => {
     }
   });
 
-  // Test 3: neutral line, zone-colored dots (238 UAT brought the dot colors back)
+  // Test 3: neutral line, zone-colored dots
   it('draws a neutral line with dots colored by zone against the ±6% band', () => {
     const { container } = render(
       <ScoreGapByTimePressureChart
@@ -191,7 +191,7 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(fills).toEqual([ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS, ZONE_NEUTRAL]);
   });
 
-  it('keeps an out-of-band dot neutral when its 99% CI covers 0 (D-14)', () => {
+  it('keeps an out-of-band dot neutral when its 99% CI covers 0', () => {
     const { container } = render(
       <ScoreGapByTimePressureChart
         quintiles={[
@@ -260,7 +260,7 @@ describe('ScoreGapByTimePressureChart', () => {
   });
 
   // Test 8: tooltip surfaces per-bucket stats — renders the REAL exported
-  // production tooltip (no reimplementation). Fixes REVIEW.md IN-01 tautology.
+  // production tooltip (no reimplementation).
   it('tooltip: range header, You/Opp split, greyed p-value, italic test+CI, no verdict', () => {
     const { getByTestId, getByText } = render(
       <ScoreGapTooltipContent
@@ -382,7 +382,7 @@ describe('ScoreGapByTimePressureChart', () => {
   });
 });
 
-describe('ScoreGapByTimePressureChart — computeScoreGapYAxis (post-UAT 88.4)', () => {
+describe('ScoreGapByTimePressureChart — computeScoreGapYAxis', () => {
   const approx = (xs: number[]) => xs.map((v) => Math.round(v * 1e6) / 1e6);
 
   it('keeps the ±30% envelope and 10% ticks when no point clips', () => {

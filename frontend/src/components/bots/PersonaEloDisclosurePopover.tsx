@@ -1,6 +1,6 @@
 /**
- * PersonaEloDisclosurePopover — the D-08 measurement-disclosure popover
- * (Phase 184, CAL-05) mounted on every persona's detail-surface ELO label.
+ * PersonaEloDisclosurePopover — the measurement-disclosure popover
+ * mounted on every persona's detail-surface ELO label.
  * Mirrors `RankedMetricPopover.tsx`'s hover/tap shell (100ms hover-open
  * delay, `PopoverPrimitive` Root/Trigger/Portal/Content, `side="top"
  * sideOffset={4}`, identical animation classes, `text-xs` body — the
@@ -9,11 +9,11 @@
  * Discloses what the calibrated label means: a measured value from
  * bot-vs-engine games on FlawChess's internal anchor ladder, converted to an
  * approximate blitz scale — never a live, calibrated-against-humans rating.
- * The `isFloorRung` variant (D-06) appends the bottom-rung (~900 floor)
+ * The `isFloorRung` variant appends the bottom-rung (~900 floor)
  * acknowledgment line: the weakest personas sit at or beyond the directly
- * measured range and are extrapolated. Per D-08, this disclosure surface
- * overrides the general popover-copy-minimalism convention (mirrors the
- * RankedMetricPopover percentile-disclosure precedent).
+ * measured range and are extrapolated. This disclosure surface overrides the
+ * general popover-copy-minimalism convention (mirrors the RankedMetricPopover
+ * percentile-disclosure precedent).
  *
  * While `PERSONA_CALIBRATION_MEASURED` is false the generated labels are
  * provisional (`--bootstrap` fit: approx_blitz = rung), so BOTH the measured
@@ -38,7 +38,7 @@ const HOVER_OPEN_DELAY_MS = 100;
 const PERSONA_ELO_DISCLOSURE_TESTID = 'persona-elo-disclosure';
 
 export interface PersonaEloDisclosurePopoverProps {
-  /** True for the bottom-rung (800) persona — appends the D-06 ~900
+  /** True for the bottom-rung (800) persona — appends the ~900
    * measured-floor acknowledgment line. */
   isFloorRung: boolean;
   ariaLabel: string;

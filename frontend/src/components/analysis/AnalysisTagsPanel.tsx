@@ -13,18 +13,17 @@ import { trackFeature } from '@/lib/analytics';
 /**
  * Flaw-tags panel for the /analysis page (game mode) — mirrors the Library game
  * card's MoveStats table + 3-column (Missed | Allowed | Context) tactic/context
- * chip block (Phase 179 Plan 03, migrated from the original per-badge-row layout
- * per quick-260702-nm8). A standalone component (does NOT import from or modify
+ * chip block. A standalone component (does NOT import from or modify
  * LibraryGameCard, which stays untouched — the card is well-tested).
  *
  * Clicking a MoveStats cell or a tactic/context chip cycles the board through
  * that flaw's positions via `onCyclePly`, mirroring the Library card's
  * click-to-cycle behavior but WITHOUT the card's outlinedRef machinery (no
- * filter store on /analysis — resolved decision 3).
+ * filter store on /analysis).
  */
 
 // Re-declared locally (trivially safe copies from LibraryGameCard — not shared
-// extractions, per the plan's resolved decision 4).
+// extractions).
 type TacticChipOrientation = 'missed' | 'allowed';
 const TACTIC_ORIENTATIONS: readonly TacticChipOrientation[] = ['missed', 'allowed'];
 const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
@@ -35,12 +34,11 @@ const TACTIC_ORIENTATION_LABELS: Record<TacticChipOrientation, string> = {
 type FlawRef =
   | { kind: 'tag'; tag: FlawTag }
   | { kind: 'motif'; motif: string; orientation: TacticChipOrientation }
-  // Move Stats (category × side) cell (Phase 179 Plan 03, D-09) — replaces the
-  // former separate 'severity'/'bestMove' kinds, mirroring LibraryGameCard's
-  // identical rework (each file keeps its own copy per this component's
-  // existing "trivially safe copies, not shared extractions" convention — see
-  // the file header docstring). side is the literal board color of the mover
-  // (moverColorAtPly), NOT user-relative — D-08 surfaces both players' cells.
+  // Move Stats (category × side) cell, mirroring LibraryGameCard's identical
+  // kind (each file keeps its own copy per this component's "trivially safe
+  // copies, not shared extractions" convention — see the file header docstring).
+  // side is the literal board color of the mover (moverColorAtPly), NOT
+  // user-relative — both players' cells are surfaced.
   | { kind: 'category'; category: MoveStatCategory; side: MoveStatSide };
 
 function sameFlawRef(a: FlawRef, b: FlawRef): boolean {
@@ -72,14 +70,14 @@ interface AnalysisTagsPanelProps {
    */
   onCyclePly: (ply: number, orientation?: TacticChipOrientation) => void;
   /**
-   * Optional desktop hover-highlight (Task 3, resolved decision 5): reports the set
+   * Optional desktop hover-highlight: reports the set
    * of plies matching the hovered badge/chip so the caller can dim non-matching
    * eval-chart markers, mirroring LibraryGameCard's highlightedPlies. null clears the
    * highlight. Omitted on mobile (the chart lives on a different tab there).
    */
   onHighlightChange?: (plies: Set<number> | null) => void;
   /**
-   * Which slice of the panel to render (UAT 179):
+   * Which slice of the panel to render:
    * - `'panel'` (default) — MoveStats + the tags container stacked (mobile/mid,
    *   where they live together in one tab).
    * - `'stats'` — the MoveStats card only (desktop right column).
@@ -170,12 +168,11 @@ export function AnalysisTagsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.flaw_markers]);
 
-  // Move Stats (category × side) ascending ply lists (Phase 179 Plan 03, D-09),
+  // Move Stats (category × side) ascending ply lists,
   // for the MoveStats cells' click-to-cycle. Folds BOTH flaw_markers (I/M/B
   // severities) and eval_series (gem/great/best/good tiers) into one map keyed
-  // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since D-08
-  // deliberately surfaces both players' cells here (replaces the former
-  // user-only severityPlies/bestMovePlies memos).
+  // by (category, side) via moverColorAtPly — NOT is_user/isUserPly, since both
+  // players' cells are deliberately surfaced here.
   const categoryPlies = useMemo(() => {
     const m = new Map<string, number[]>();
     const push = (category: MoveStatCategory, side: MoveStatSide, ply: number): void => {
@@ -199,7 +196,7 @@ export function AnalysisTagsPanel({
   // Click-to-cycle state: clicking a ref advances through its ply list, wrapping;
   // clicking a different ref restarts at position 0.
   const [cycle, setCycle] = useState<{ ref: FlawRef; pos: number } | null>(null);
-  // Transient hover state (desktop only — Task 3, resolved decision 5).
+  // Transient hover state (desktop only).
   const [highlight, setHighlight] = useState<FlawRef | null>(null);
 
   const pliesForRef = (ref: FlawRef): number[] => {
@@ -232,7 +229,7 @@ export function AnalysisTagsPanel({
     const ref = highlight ?? cycle?.ref ?? null;
     if (!ref) return null;
     // Move Stats (category × side) plies come straight from the categoryPlies
-    // map (D-09) — both sides, not gated by is_user (D-08).
+    // map — both sides, not gated by is_user.
     if (ref.kind === 'category')
       return new Set(categoryPlies.get(categoryPliesKey(ref.category, ref.side)) ?? []);
     const set = new Set<number>();
@@ -255,9 +252,9 @@ export function AnalysisTagsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightedPlies]);
 
-  // D-03/Pitfall 2: mount condition is exactly analysis_state === 'analyzed' — no
+  // The mount condition is exactly analysis_state === 'analyzed' — no
   // markers/tiers emptiness clause. A flawless analyzed game (zero flaw markers
-  // AND zero gem/great plies) now renders the full all-zero 7-row MoveStats
+  // AND zero gem/great plies) renders the full all-zero 7-row MoveStats
   // table instead of returning null. Belt-and-suspenders: the Analysis page
   // already gates mounting this component on evalChartReady (which implies
   // flaw_markers/eval_series present), but the guard stays here too.
@@ -272,7 +269,7 @@ export function AnalysisTagsPanel({
             tag={tag}
             gameId={game.game_id}
             count={tagCounts.get(tag)}
-            definition={false}
+            showDefinitionPopover={false}
             onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
             onActivate={() => handleActivate({ kind: 'tag', tag })}
           />
@@ -285,8 +282,8 @@ export function AnalysisTagsPanel({
     ) : null;
 
   // MoveStats (category × side) wiring — always the full (non-collapsed) table
-  // on /analysis (no mobile collapse per SEED-112), no filter ring (no filter
-  // store on /analysis, resolved decision 3 — mirrors the tactic chips'
+  // on /analysis (no mobile collapse), no filter ring (no filter
+  // store on /analysis — mirrors the tactic chips'
   // `filterRingActive: false` below).
   const handleMoveStatsCellActivate = (ref: MoveStatsCellRef): void =>
     handleActivate({ kind: 'category', category: ref.category, side: ref.side });
@@ -312,7 +309,7 @@ export function AnalysisTagsPanel({
   );
 
   // Tags in a charcoal container, 2-column label|chips rows (ChipColumn `inline` —
-  // the label sits left of its chips), mirroring the Library game card (UAT 179).
+  // the label sits left of its chips), mirroring the Library game card.
   const tagsBlock = hasTags ? (
     <div
       className="charcoal-texture rounded-md p-2 flex flex-col gap-y-2"
@@ -330,7 +327,7 @@ export function AnalysisTagsPanel({
             motifs={groupMotifs.map(({ motif }) => ({
               motif,
               count: motifPlies.get(motifPliesKey(orientation, motif))?.length ?? 0,
-              // No filter store on /analysis (resolved decision 3) — never ring.
+              // No filter store on /analysis — never ring.
               filterRingActive: false,
             }))}
             onChipHover={(motif, active) =>

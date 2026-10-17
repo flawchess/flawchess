@@ -1,4 +1,4 @@
-"""Pure truth table for resolve_feedback_ask (SEED-191 #1, #6, #7). No DB, no clock."""
+"""Pure truth table for resolve_feedback_ask. No DB, no clock."""
 
 import datetime
 

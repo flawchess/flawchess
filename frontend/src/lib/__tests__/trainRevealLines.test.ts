@@ -1,6 +1,6 @@
 /**
- * trainRevealLines tests (Phase 237 Plan 02): the pure chip/line model behind the
- * Train reveal's single move tree. buildChipGroups lifts the Phase 190.1 / 236
+ * trainRevealLines tests: the pure chip/line model behind the
+ * Train reveal's single move tree. buildChipGroups lifts the
  * buildLineBoxes grouping (its TrainReveal.test.tsx cases are ported here at the
  * data level); the tree helpers are exercised on hand-built node maps.
  */
@@ -98,7 +98,7 @@ describe('buildChipGroups', () => {
     expect(merged?.quality).toBe('inaccuracy');
   });
 
-  it('game == best merges generically under the best key (D-02 rule, not designed around)', () => {
+  it('game == best merges generically under the best key (a general rule, not designed around)', () => {
     const chips = buildChipGroups(
       input({
         playedMoveUci: 'd2d4',
@@ -148,7 +148,7 @@ describe('buildChipGroups', () => {
     expect(chips.map((c) => c.key)).toEqual(['best']);
   });
 
-  describe('Phase 236 instant path', () => {
+  describe('instant path', () => {
     const pendingKey = (keyLine: TrainEngineLine | null, status: InstantGradeState['status']) => ({
       status,
       keyUci: 'e2e4',
@@ -239,7 +239,7 @@ describe('sanFromUci / revealBestUciOf', () => {
     expect(revealBestUciOf(null, null)).toBeNull();
   });
 
-  it('reads bestMoveUci so an empty stand-in bestLine still yields the key (WR-01)', () => {
+  it('reads bestMoveUci so an empty stand-in bestLine still yields the key', () => {
     // gradeFromServerPair shape: bestMoveUci = instant key, bestLine empty.
     const standIn: GradeResult = { ...gradeResult([], []), bestMoveUci: 'e2e4' };
     expect(standIn.bestLine.moves).toEqual([]);
@@ -382,7 +382,7 @@ describe('buildTreeListView', () => {
     expect(view.mainLine).toEqual(f.game);
   });
 
-  it('no active chip (D-04): an empty main line and only the root-fork subtrees', () => {
+  it('no active chip: an empty main line and only the root-fork subtrees', () => {
     const f = fixture();
 
     const view = buildTreeListView(f.nodes, f.linePaths, f.owners, null);
@@ -511,7 +511,7 @@ describe('buildRevealTreeSnapshot', () => {
     ]);
   });
 
-  it('persists the UCI path of each committed node, omitting the field when none (WR-02)', () => {
+  it('persists the UCI path of each committed node, omitting the field when none', () => {
     const nodes = new Map<NodeId, MoveNode>();
     const your = addLine(nodes, null, ['e2e4']);
     const [e5, nf3] = addLine(nodes, your[0]!, ['e7e5', 'g1f3']);
@@ -549,7 +549,7 @@ describe('buildRevealTreeSnapshot', () => {
     ]);
   });
 
-  it('round trip: grafting the paths in order rebuilds the same main line (Pitfall 1)', () => {
+  it('round trip: grafting the paths in order rebuilds the same main line', () => {
     // e4 chip; e5, Nf3, step back, Bc4, go to Nf3 and play Nc6: the main line is
     // e4 e5 Nf3 Nc6 (first-added chain). Leaf-id order would graft Bc4 first and
     // flip the main line to e4 e5 Bc4.

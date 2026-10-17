@@ -1,8 +1,8 @@
 /**
  * EloSelector — interactive control driving the "you are here" ELO used by the
- * FlawChess and Maia engines (Phase 151 Plan 05, D-06; moved between the FlawChess
- * and Maia cards in 164 UAT since it drives both). A single-thumb Slider snapped to
- * the Maia ELO ladder (MAIA_ELO_LADDER, 600-2600 step 100 per UAT quick 260705-bm3) —
+ * FlawChess and Maia engines (it sits between the FlawChess and Maia cards since
+ * it drives both). A single-thumb Slider snapped to
+ * the Maia ELO ladder (MAIA_ELO_LADDER, 600-2600 step 100) —
  * bounds and step derive from the ladder, never hard-coded, so a future contract
  * revision (a wider/narrower ladder) doesn't require touching this component.
  */
@@ -14,7 +14,7 @@ import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 import { trackFeature } from '@/lib/analytics';
 import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 
-/** ChessGoals rating-comparison study backing the Lichess-Blitz normalization (Phase 164). */
+/** ChessGoals rating-comparison study backing the Lichess-Blitz normalization. */
 const CHESSGOALS_RATING_URL = 'https://chessgoals.com/rating-comparison/';
 
 export interface EloSelectorProps {
@@ -24,7 +24,7 @@ export interface EloSelectorProps {
   onChange: (elo: number) => void;
   /**
    * The players' derived default ELO. When provided and different from `value`,
-   * an inline reset control appears to snap back to it (164 UAT). Omit to hide it.
+   * an inline reset control appears to snap back to it. Omit to hide it.
    */
   defaultElo?: number;
   /** Resets the slider to `defaultElo`. Required for the reset control to render. */
@@ -104,7 +104,7 @@ export function EloSelector({
     onChange(snapToLadder(next, ladder));
   };
 
-  // Pitfall 2: track on commit, never per slider tick, and debounced to one event
+  // Track on commit, never per slider tick, and debounced to one event
   // per adjustment burst (Radix commits on every keyboard step). The value is
   // always a ladder rung, so the event carries a bounded set of strings.
   const handleValueCommit = (values: number[]): void => {
@@ -118,8 +118,8 @@ export function EloSelector({
     trackFeature('board-tool', { target: 'elo-reset' });
   };
 
-  // Reset control shows only once the user has moved off the players' default (164
-  // UAT): inline in the row so it costs no vertical space, and vanishes at default.
+  // Reset control shows only once the user has moved off the players' default:
+  // inline in the row so it costs no vertical space, and vanishes at default.
   const canReset = onReset !== undefined && defaultElo !== undefined && value !== defaultElo;
 
   return (

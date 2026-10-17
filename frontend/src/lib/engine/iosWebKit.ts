@@ -2,7 +2,7 @@
  * iosWebKit — a synchronous "is this iOS/iPadOS WebKit?" probe, consulted by
  * `maiaWorkerHost.ts` in `spawn()` to pick the iOS Maia worker shape.
  *
- * SEED-158 (2026-09-07, final): iOS/iPadOS runs Maia on the CPU wasm backend
+ * iOS/iPadOS runs Maia on the CPU wasm backend
  * (`spawnOnIosWebKit()`: no WebGPU probe, no asyncify download), the backend
  * maiachess.com ships to the same phone. Measured on the reference iPhone 14
  * Pro (iOS 26.6.1, Safari) on the real /analysis page with Stockfish and the
@@ -11,9 +11,8 @@
  * after `ready` (FLAWCHESS-AW), while the wasm backend survived full sessions
  * at one AND two wasm threads on both versions. Neither the ORT version nor
  * the page footprint was the lever; the thread count is left to
- * `chooseWasmThreadCount()`. Earlier readings (the 2026-09-06 blanket gate,
- * "wasm inference kills the page") were taken next to the pre-260906-p54 4 GB
- * memory reservation and are superseded; the seed file keeps the history.
+ * `chooseWasmThreadCount()`. Older readings ("wasm inference kills the page")
+ * were taken with the 4 GB wasm memory reservation and no longer apply.
  * Reopen only on an iOS `maia_failure:page-killed` Sentry event with
  * `backend:wasm` (see `maiaPageKillSentinel.ts`).
  *

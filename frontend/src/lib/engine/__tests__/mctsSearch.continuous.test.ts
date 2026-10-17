@@ -1,10 +1,10 @@
 /**
- * mctsSearch.ts — Phase 227 continuous dispatch (D-08..D-11), tests.
+ * mctsSearch.ts — continuous dispatch tests.
  *
- * `reports/continuous-dispatch-227/design.md` (reviewed SOUND, round 2) is the
+ * `reports/continuous-dispatch-227/design.md` is the
  * spec. This file holds, in order:
  *
- *   1. PRE-EXTRACTION GOLDENS (design 2.4, R1B-4). Captured from the round loop
+ *   1. PRE-EXTRACTION GOLDENS (design 2.4). Captured from the round loop
  *      BEFORE `applyAndReport` / `discoverDeadEnd` / the search-state record
  *      were extracted from it, so a defect in a helper both loops now share
  *      cannot hide behind a live round-vs-continuous equality (both arms would
@@ -14,13 +14,12 @@
  *      by running this exact capture against the unrefactored `mctsSearch`;
  *      round mode at c = 1 AND c = 4 must keep matching them after the
  *      extraction, and continuous mode at c = 1 must match the c = 1 ones.
- *      They live inline (not in a .snap or reports/ file) because the accept
- *      rule's content assertion 2 pins the set of files this plan may change.
+ *      They live inline, not in a .snap or reports/ file.
  *
  * Mutation-check rule (project rule, `mctsSearch.roundFill.test.ts` style):
  * every guard test below is proven by REVERTING the guard it names, watching
- * the test fail, and restoring it. The reverts and the failing tests are
- * recorded in 227-10-SUMMARY.md, never claimed from grep or symbol presence.
+ * the test fail, and restoring it. Each revert is run for real,
+ * never claimed from grep or symbol presence.
  */
 
 import { createHash } from 'node:crypto';
@@ -121,7 +120,7 @@ const FIXTURES: Fixture[] = [
     makeProviders: () => withVariedGrade(simplePolicy()),
   },
   {
-    // maxPlies 2: every depth-2 node is a WR-05 depth-ceiling dead end (budgetExhausted, visit bumps, closure).
+    // maxPlies 2: every depth-2 node is a depth-ceiling dead end (budgetExhausted, visit bumps, closure).
     name: 'dead-ends',
     rootFen: SIMPLE_WHITE_FEN,
     maxNodes: 40,
@@ -137,7 +136,7 @@ const FIXTURES: Fixture[] = [
     makeProviders: () => withVariedGrade(makeFixedPolicy({})),
   },
   {
-    // WR-04: the child after e2e4 gets an empty candidate set -> degenerate close, no node, no snapshot.
+    // The child after e2e4 gets an empty candidate set -> degenerate close, no node, no snapshot.
     name: 'degenerate',
     rootFen: SIMPLE_WHITE_FEN,
     maxNodes: 12,
@@ -169,7 +168,7 @@ const FIXTURES: Fixture[] = [
     makeProviders: () => withVariedGrade(simplePolicy()),
   },
   {
-    // Phase 226 D-18: the root's one grade call routes to gradeRoot.
+    // The root's one grade call routes to gradeRoot.
     name: 'grade-root',
     rootFen: SIMPLE_WHITE_FEN,
     maxNodes: 8,
@@ -197,7 +196,7 @@ const FIXTURES: Fixture[] = [
     makeProviders: () => withVariedGrade(simplePolicy()),
   },
   {
-    // SEED-170 item 2 shape: a broad root over one-candidate chains, so interior nodes with only a pending child
+    // A broad root over one-candidate chains, so interior nodes with only a pending child
     // exercise the isBlocked machinery at c > 1.
     name: 'peaked',
     rootFen: ITALIAN_FEN,
@@ -388,7 +387,7 @@ describe('mctsSearch round loop — pre-extraction goldens (design 2.4, R1B-4)',
   }
 });
 
-// ─── 2. Task 1: continuous dispatch behind the flag ──────────────────────────
+// ─── 2. Continuous dispatch behind the flag ──────────────────────────
 
 /** Different artificial resolution delays for the two arms of an identity comparison. */
 const JITTER_ROUND_ARM: JitterPlan = { policy: [3, 0, 2, 1], grade: [1, 2, 0, 3] };
@@ -403,7 +402,7 @@ function fixtureNamed(name: string): Fixture {
   return fixture;
 }
 
-describe('mctsSearch continuous — c=1 identity with round mode (D-11, design 2.4)', () => {
+describe('mctsSearch continuous — c=1 identity with round mode', () => {
   for (const fixture of FIXTURES) {
     it(`${fixture.name} at c=1: continuous equals round and the pre-extraction golden under different jitter`, async () => {
       const round = await runCapture(fixture, 'round', 1, JITTER_ROUND_ARM);
@@ -418,7 +417,7 @@ describe('mctsSearch continuous — c=1 identity with round mode (D-11, design 2
   }
 });
 
-describe('mctsSearch — dispatchMode omitted is round mode (D-11)', () => {
+describe('mctsSearch — dispatchMode omitted is round mode', () => {
   for (const name of ['plain', 'stop-rule', 'chains']) {
     it(`omitted, explicit 'round' and the pre-extraction golden agree at c=4 on ${name}`, async () => {
       const fixture = fixtureNamed(name);
@@ -517,7 +516,7 @@ function visitedRootMove(snapshot: EngineSnapshot): string | undefined {
   return snapshot.rankedLines.find((line) => line.visits > 0)?.rootMove;
 }
 
-describe('mctsSearch continuous — arrival order (D-08, SEED-171 item 5)', () => {
+describe('mctsSearch continuous — arrival order', () => {
   it('arrival order: the expansion that settles first is applied first, not the one dispatched first', async () => {
     const { search, ctl, snapshots, controller } = startControlled({ concurrency: 2 });
     await flushTurns();
@@ -626,7 +625,7 @@ describe('mctsSearch continuous — c=1 external abort while an expansion is in 
   });
 });
 
-// ─── 5. Task 2: one guard test per continuous-mode invariant ─────────────────
+// ─── 5. One guard test per continuous-mode invariant ─────────────────
 
 /** Stop rule that fires the moment `nodesEvaluated` reaches 2 over all-neutral grades (every child ties at 0.5). */
 const STOP_AT_TWO_RULE = {
@@ -661,7 +660,7 @@ async function driveToCompletion(run: ControlledRun): Promise<Settlement<EngineS
   return settlesWithin(run.search);
 }
 
-describe('mctsSearch continuous — no result is applied after abort or early stop (D-09, L-2)', () => {
+describe('mctsSearch continuous — no result is applied after abort or early stop', () => {
   it('after abort: grades that settle after the outer abort are never applied', async () => {
     const run = startControlled({ concurrency: 2 });
     await flushTurns();
@@ -721,7 +720,7 @@ describe('mctsSearch continuous — no result is applied after abort or early st
     }
     expect(run.snapshots.map((s) => s.nodesEvaluated)).toEqual([1, 2]); // call 2's result was queued behind the stop
     expect(run.ctl.calls).toHaveLength(4); // no refill after the stop
-    // D-09 / T-227-18: every grade the stopped search handed out was cancelled through the inner controller.
+    // Every grade the stopped search handed out was cancelled through the inner controller.
     for (const call of run.ctl.calls) expect(call.signal?.aborted).toBe(true);
 
     run.ctl.settleNeutral(3); // the stale grade settles later: never applied
@@ -772,7 +771,7 @@ interface ProviderStats {
   maxOpen: number;
   policyCalls: number;
   gradeCalls: number;
-  /** Expansions whose provider chain ended empty: they spend a provider call but no node (WR-04, 8XN-7). */
+  /** Expansions whose provider chain ended empty: they spend a provider call but no node. */
   degenerate: number;
   /** Max over dispatches of (dispatches so far minus degenerate expansions already settled). Invariant I bounds it by maxNodes. */
   maxDispatchLoad: number;
@@ -842,7 +841,7 @@ async function runTracked(
   return { final, stats, openAtMaxNodes };
 }
 
-describe('mctsSearch continuous — node budget (D-10, claim (b))', () => {
+describe('mctsSearch continuous — node budget', () => {
   for (const name of ['plain', 'degenerate', 'empty-grade']) {
     for (const [label, jitter] of [
       ['jitter A', JITTER_C4_A],
@@ -883,7 +882,7 @@ describe('mctsSearch continuous — root guard (Y-9)', () => {
   });
 });
 
-describe('mctsSearch continuous — pending exclusion (D-08)', () => {
+describe('mctsSearch continuous — pending exclusion', () => {
   it('arrival order: no leaf is ever dispatched twice (a pending leaf is excluded from selection)', async () => {
     const run = startControlled({ concurrency: 3, maxNodes: 8, maxPlies: 3 });
 
@@ -896,7 +895,7 @@ describe('mctsSearch continuous — pending exclusion (D-08)', () => {
   });
 });
 
-describe('mctsSearch continuous — fill (D-08, SEED-170 item 2)', () => {
+describe('mctsSearch continuous — fill', () => {
   it('fill: a peaked non-root policy keeps concurrency-many expansions in flight after the root commits', async () => {
     const { final, stats } = await runTracked(fixtureNamed('peaked'), 4, JITTER_C4_A);
 
@@ -1086,7 +1085,7 @@ function spyOnAbortListeners(signal: AbortSignal): { added: () => number; remove
   return { added: () => abortCalls(add.mock.calls), removed: () => abortCalls(remove.mock.calls) };
 }
 
-describe('mctsSearch continuous — listener hygiene (Pitfall 7)', () => {
+describe('mctsSearch continuous — listener hygiene', () => {
   it('listener: the outer signal ends with exactly the one abort listener it was given removed, after resolving', async () => {
     const outer = new AbortController();
     const spy = spyOnAbortListeners(outer.signal);

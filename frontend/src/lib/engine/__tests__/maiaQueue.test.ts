@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 /**
  * maiaQueue.ts unit tests, driven via a mocked `maiaWorkerHost` lease
- * (quick 260729-sod, FIX 3 — this module no longer constructs a Worker
+ * (this module no longer constructs a Worker
  * directly; it acquires a `priority: false` lease from the shared host).
  *
- * Task 1 covers the requestPolicy pipeline (POOL-03/D-04): dedup, batching,
- * the (fen,elo)-keyed cache, SAN->UCI entry-count parity (Pitfall 4), and the
- * no-drop async FIFO queue (Open Question 2).
+ * Covers the requestPolicy pipeline: dedup, batching,
+ * the (fen,elo)-keyed cache, SAN->UCI entry-count parity, and the
+ * no-drop async FIFO queue.
  *
- * Task 2 covered worker lifecycle (lazy spawn, terminate) and graceful
- * degradation (POOL-04/D-02) — Sentry error forwarding + webgpu-unavailable
- * respawn are now entirely owned by `maiaWorkerHost.ts` (see
- * maiaWorkerHost.test.ts); this module's own remaining self-heal contract is
- * the `onFatal` callback settling every stranded pending request to `{}`.
+ * Worker lifecycle (lazy spawn, terminate) is covered here; Sentry error
+ * forwarding + webgpu-unavailable respawn are entirely owned by
+ * `maiaWorkerHost.ts` (see maiaWorkerHost.test.ts); this module's own
+ * remaining self-heal contract is the `onFatal` callback settling every
+ * stranded pending request to `{}`.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -20,7 +20,7 @@ import * as Sentry from '@sentry/react';
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 import { createMaiaQueue, type MaiaQueue } from '../maiaQueue';
-import { acquireMaiaWorker, ENGINE_PATH } from '../maiaWorkerHost';
+import { acquireMaiaWorker, MAIA_WORKER_PATH } from '../maiaWorkerHost';
 import type { AcquireMaiaWorkerOptions, MaiaAnalyzeResult, MaiaWorkerLease } from '../maiaWorkerHost';
 import type { EngineProviders } from '../types';
 import { maskAndSoftmax, POLICY_VOCAB_SIZE } from '@/lib/maiaEncoding';
@@ -135,7 +135,7 @@ const TEST_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
 
 // Verified (chess.js) to expose exactly the move-type each label claims:
 // PROMOTION_FEN has a promotion move, CASTLE_FEN has a castling move, EP_FEN
-// has a legal en-passant capture (Pitfall 4 coverage — no silent sanToUci drop).
+// has a legal en-passant capture (no silent sanToUci drop).
 const PROMOTION_FEN = '6k1/4P3/8/8/8/8/8/4K3 w - - 0 1';
 const CASTLE_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/5N2/PPPPBPPP/RNBQK2R w KQkq - 0 1';
 const EN_PASSANT_FEN = 'rnbqkbnr/pp2pppp/8/2ppP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3';
@@ -210,8 +210,8 @@ function fenVariant(n: number): string {
 describe('createMaiaQueue', () => {
   beforeEach(() => {
     stubHost();
-    // The policy cache is a module-scoped singleton (Phase 194 CACHE-05,
-    // shared with useMaiaEngine's write-through) — clear it so no test in
+    // The policy cache is a module-scoped singleton (shared with
+    // useMaiaEngine's write-through) — clear it so no test in
     // this file (or a sibling suite importing the same module) leaks state.
     clearMaiaPolicyCache();
   });
@@ -221,7 +221,7 @@ describe('createMaiaQueue', () => {
     vi.clearAllMocks();
   });
 
-  // ─── D-02: lazy spawn ──────────────────────────────────────────────────
+  // ─── Lazy spawn ──────────────────────────────────────────────────
 
   it('does not acquire a lease until the first policy() call', () => {
     createMaiaQueue();
@@ -237,11 +237,11 @@ describe('createMaiaQueue', () => {
     );
   });
 
-  it('ENGINE_PATH now lives on maiaWorkerHost (D-04 reversal) and carries a ?v=<digits> version suffix', () => {
-    expect(ENGINE_PATH).toMatch(/^\/maia\/maia-worker\.js\?v=\d+$/);
+  it('MAIA_WORKER_PATH now lives on maiaWorkerHost and carries a ?v=<digits> version suffix', () => {
+    expect(MAIA_WORKER_PATH).toMatch(/^\/maia\/maia-worker\.js\?v=\d+$/);
   });
 
-  // ─── Prewarm (Phase 169.5, SC5) ────────────────────────────────────────
+  // ─── Prewarm ────────────────────────────────────────
 
   it('warm() acquires the lease without enqueueing an analyze', () => {
     const queue = createMaiaQueue();
@@ -258,7 +258,7 @@ describe('createMaiaQueue', () => {
     expect(createdLeases).toHaveLength(1);
   });
 
-  // ─── D-04: dedup + narrow ELOs ─────────────────────────────────────────
+  // ─── Dedup + narrow ELOs ─────────────────────────────────────────
 
   it('requests only the distinct ELOs needed, collapsing two same-ELO requests into one analyze call', async () => {
     const queue = createMaiaQueue();
@@ -288,7 +288,7 @@ describe('createMaiaQueue', () => {
     expect(calls[0]?.eloInputs).toEqual([1200, 1800]);
   });
 
-  // ─── Pitfall 4: SAN->UCI entry-count parity, no silent drops ───────────
+  // ─── SAN->UCI entry-count parity, no silent drops ───────────
 
   it.each([
     ['promotion', PROMOTION_FEN],
@@ -356,7 +356,7 @@ describe('createMaiaQueue', () => {
   });
 
   it(
-    'caps the shared policy cache at MAIA_POLICY_CACHE_MAX entries (LRU eviction, Phase 194 CACHE-01/02)',
+    'caps the shared policy cache at MAIA_POLICY_CACHE_MAX entries (LRU eviction)',
     async () => {
       const queue = createMaiaQueue();
       const lease = (): FakeLease => createdLeases[0]!;
@@ -380,9 +380,9 @@ describe('createMaiaQueue', () => {
     15000,
   );
 
-  // ─── CACHE-05: shared cache short-circuit ──────────────────────────────
+  // ─── Shared cache short-circuit ──────────────────────────────
 
-  // ─── Pending-policy coordination (quick 260906-gu2) ─────────────────────
+  // ─── Pending-policy coordination ─────────────────────
 
   it('policy() awaits a (fen, elo) another producer marked pending — zero analyze() calls of its own, resolves with the produced policy', async () => {
     markPolicyPending(TEST_FEN, 1500);
@@ -461,7 +461,7 @@ describe('createMaiaQueue', () => {
     expect(analyzeMessages(lease)).toHaveLength(3);
   });
 
-  // ─── D-02: terminate + re-spawn ─────────────────────────────────────────
+  // ─── Terminate + re-spawn ─────────────────────────────────────────
 
   it('terminate() releases the lease; a later policy() acquires a fresh one', async () => {
     const queue = createMaiaQueue();
@@ -605,7 +605,7 @@ describe('createMaiaQueue', () => {
     expect(typeof providerPolicy).toBe('function');
   });
 
-  // ─── whenReady() forwarding (Phase 213-01, D-01) ───────────────────────
+  // ─── whenReady() forwarding ───────────────────────
 
   it('whenReady() is still pending before the lease reports ready, and resolves with the backend once it does', async () => {
     const queue = createMaiaQueue();
@@ -632,14 +632,14 @@ describe('createMaiaQueue', () => {
   });
 });
 
-// ─── Throw containment in the fulfilment handler (Phase 194 code-review WR-03) ──
+// ─── Throw containment in the fulfilment handler ──
 //
 // `handleResult` runs inside `.then(onFulfilled, onRejected)`'s FULFILMENT arm,
 // so a throw there is NOT caught by the sibling rejection handler — it becomes
 // an unhandled rejection and every request in the batch hangs forever, freezing
 // the search with no telemetry. The realistic trigger is `maskAndSoftmaxUci`,
 // which reads chess.js's PRIVATE `_moves()` under a `^1.4.0` caret range.
-describe('createMaiaQueue: handleResult throw containment (code-review WR-03)', () => {
+describe('createMaiaQueue: handleResult throw containment', () => {
   beforeEach(() => {
     stubHost();
     clearMaiaPolicyCache();

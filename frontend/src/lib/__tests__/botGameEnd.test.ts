@@ -63,12 +63,12 @@ describe('resultCopy', () => {
     expect(resultCopy(lost, 'black')).toBe('You lost on time');
   });
 
-  it('shows "You resigned" for a user resignation (bot never resigns, D-03)', () => {
+  it('shows "You resigned" for a user resignation (bot never resigns)', () => {
     const resigned: BotGameOutcome = { reason: 'resignation', winner: 'black' };
     expect(resultCopy(resigned, 'white')).toBe('You resigned');
   });
 
-  it('shows "You won — the bot resigned" only in the (D-03-unreachable) opposite case', () => {
+  it('shows "You won — the bot resigned" only in the (unreachable) opposite case', () => {
     const opponentResigned: BotGameOutcome = { reason: 'resignation', winner: 'white' };
     expect(resultCopy(opponentResigned, 'white')).toBe('You won — the bot resigned');
   });
@@ -84,7 +84,7 @@ describe('resultCopy', () => {
   });
 });
 
-describe('resultCopy — persona-named bot-actor copy (Phase 183, D-06)', () => {
+describe('resultCopy — persona-named bot-actor copy', () => {
   const PERSONA_NAME = 'Riko the Raccoon';
 
   it('substitutes the persona name into the bot-actor checkmate-loss copy', () => {
@@ -97,7 +97,7 @@ describe('resultCopy — persona-named bot-actor copy (Phase 183, D-06)', () => 
     expect(resultCopy(lost, 'white', PERSONA_NAME)).toBe('Riko the Raccoon wins on time');
   });
 
-  it('substitutes the persona name into the (D-03-unreachable) bot-resigned win copy', () => {
+  it('substitutes the persona name into the (unreachable) bot-resigned win copy', () => {
     const opponentResigned: BotGameOutcome = { reason: 'resignation', winner: 'white' };
     expect(resultCopy(opponentResigned, 'white', PERSONA_NAME)).toBe(
       'You won — Riko the Raccoon resigned',
@@ -124,7 +124,7 @@ describe('resultCopy — persona-named bot-actor copy (Phase 183, D-06)', () => 
     );
   });
 
-  it('returns the exact pre-183 generic strings when personaName is omitted/null/undefined (Custom game)', () => {
+  it('returns the exact generic strings when personaName is omitted/null/undefined (Custom game)', () => {
     const lost: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
     expect(resultCopy(lost, 'white')).toBe('You lost — checkmate');
     expect(resultCopy(lost, 'white', null)).toBe('You lost — checkmate');

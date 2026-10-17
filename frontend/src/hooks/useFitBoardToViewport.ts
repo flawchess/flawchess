@@ -3,15 +3,15 @@
  * board column (everything the column renders around the board, plus a bottom
  * gutter) fully inside a short viewport.
  *
- * Bug fix (191 UAT): the Train solve screen used to size its board column with
- * a CSS-only `min(MAX, max(MIN, calc(100dvh - RESERVED)))`, where RESERVED was
- * one hard-coded estimate of the vertical chrome around the board. A single
+ * The Train solve screen sizes its board column with this hook rather than a
+ * CSS-only `min(MAX, max(MIN, calc(100dvh - RESERVED)))`: RESERVED would be
+ * one hard-coded estimate of the vertical chrome around the board, and a single
  * constant cannot know what the page renders ABOVE the column (most visibly
  * the dev-only time-travel strip, but equally a taller mobile button row or an
- * extra prompt line), so on a short window it under-reserved and the
- * Solution/Analyze/Next row ended up flush against the bottom edge. This hook
- * measures the real chrome instead, so the gutter below the board stays honest
- * at every viewport height and in every build.
+ * extra prompt line), so on a short window it would under-reserve and the
+ * Solution/Analyze/Next row would end up flush against the bottom edge. This
+ * hook measures the real chrome instead, so the gutter below the board stays
+ * honest at every viewport height and in every build.
  *
  * The measurement converges in one pass rather than feeding back on itself:
  * both inputs — `column.offsetHeight - board.offsetHeight` (everything in the
@@ -41,11 +41,10 @@ export interface FitBoardToViewportOptions {
   gutterPx: number;
   /**
    * `false` switches the height fit off and returns `maxPx` — the board is
-   * then width-bound by its container alone. Phase 222 UAT: on phones the
-   * Train column under the board (bot bubble, action row) is tall enough that
-   * a height fit shrank the board to its floor and left wide empty margins
-   * beside it; the page is expected to scroll there instead. Defaults to
-   * `true`.
+   * then width-bound by its container alone. On phones the Train column under
+   * the board (bot bubble, action row) is tall enough that a height fit would
+   * shrink the board to its floor and leave wide empty margins beside it; the
+   * page is expected to scroll there instead. Defaults to `true`.
    */
   enabled?: boolean;
 }

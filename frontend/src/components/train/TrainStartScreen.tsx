@@ -1,22 +1,21 @@
 /**
- * TrainStartScreen — the six pre-loop landing states for /train (D-01..D-04,
- * D-14). `Train.tsx` fetches session status automatically on mount (a status
- * fetch, not a "start" — D-01 only forbids jumping straight into the solve
- * loop on visit) and renders this component whenever the loop is not active.
+ * TrainStartScreen: the pre-loop landing states for /train. `Train.tsx`
+ * fetches session status automatically on mount (a status fetch, not a
+ * "start": visiting must not jump straight into the solve loop) and renders
+ * this component whenever the loop is not active.
  *
  * State selection is a single ordered branch chain (`resolveLandingState`),
- * not scattered inline ternaries — the six states are mutually exclusive and
+ * not scattered inline ternaries — the states are mutually exclusive and
  * exactly one always matches.
  *
- * Phase 230 (D-08): wherever a `TrainStreakCard` renders, the weekly
- * `TrainLeaderboardCard` follows it (before `TrainStatsCard`). Quick
- * 261004-dta: the schedule card now sits between the streak card and the
- * leaderboard on the completed and start/resume landings.
+ * Wherever a `TrainStreakCard` renders, the weekly `TrainLeaderboardCard`
+ * follows it (before `TrainStatsCard`). The schedule card sits between the
+ * streak card and the leaderboard on the completed and start/resume landings.
  *
- * Phase 231 (D-10): `TrainMedalDialogHost` is the first child of the empty,
- * completed and fresh/resume/warmup landings (not loading or error). Train.tsx
- * renders this component only outside the solve loop and the score screen is
- * separate, so the medal dialog never appears mid-session.
+ * `TrainMedalDialogHost` is the first child of the empty, completed and
+ * fresh/resume/warmup landings (not loading or error). Train.tsx renders this
+ * component only outside the solve loop and the score screen is separate, so
+ * the medal dialog never appears mid-session.
  */
 
 import type { ReactElement } from 'react';
@@ -55,51 +54,48 @@ export interface TrainStartScreenProps {
   isError: boolean;
   /**
    * The session's score, seeded server-side from `TrainSessionResponse.solved_results`
-   * (260728-tgc) — see `useTrainSession`'s `sessionScore` docstring. Only
-   * consumed by the 'completed' state.
+   * — see `useTrainSession`'s `sessionScore` docstring. Only consumed by the
+   * 'completed' state.
    */
   sessionScore: number;
   /** Enter the solve loop at the already-seeded resume index. Does not
    * re-fetch — the session/puzzles were already loaded by the status fetch. */
   onEnterLoop: () => void;
   /**
-   * UAT bug fix (191-06): re-fires the session status fetch after a
+   * Re-fires the session status fetch after a
    * `TrainScheduleSettings` save actually persists, so an untouched session
    * composed under a now-stale `puzzles_per_session` (or `weekday_mask`) is
    * corrected on THIS visit rather than staying frozen until the next page
    * load — see `TrainScheduleSettings`'s `onSaved` prop docstring.
    */
   onSettingsSaved: () => void;
-  /** D-03/D-13 (Phase 224): from `useUserProfile().data`, never
-   * `useAuth().user` (FLAWCHESS-64). Puts the sign-up ask (sentence +
+  /** From `useUserProfile().data`, never `useAuth().user` (FLAWCHESS-64). Puts the sign-up ask (sentence +
    * "What changes?"/"Sign up free" buttons) into the host bubble and hides
    * the reminder/QR section on `TrainScheduleSettings`. */
   isGuest: boolean;
-  /** Quick task 260926-8p5: `hasImportedGames(useUserProfile().data)`. A
-   * registered account without games gets the import ask + "Import games"
+  /** `hasImportedGames(useUserProfile().data)`. A registered account without games gets the import ask + "Import games"
    * button in the host bubble instead of the reminder ask. */
   hasGames: boolean;
-  /** Phase 234 (SEED-191): non-null while the server says the milestone feedback
-   * ask is active, the user's active days for Hilda's copy. From
+  /** Non-null while the server says the milestone feedback ask is active:
+   * the user's active days for Hilda's copy. From
    * `feedbackAskDays(useUserProfile().data)`. */
   feedbackAskDays: number | null;
 }
 
 /**
- * 191.1 UAT: the landing ("title") page is the same content column as the
- * Import page — `mx-auto w-full max-w-2xl` on top of the page-level
- * `px-4 py-6 md:px-6` (see Import.tsx's `<main>` and Train.tsx). Without the
- * max-width the settings chips stretched edge-to-edge on a wide window while
- * the text sat flush against the left gutter. Text stays left-aligned inside
- * the column (earlier 191-06 UAT round).
+ * The landing page is the same content column as the Import page —
+ * `mx-auto w-full max-w-2xl` on top of the page-level `px-4 py-6 md:px-6`
+ * (see Import.tsx's `<main>` and Train.tsx). Without the max-width the
+ * settings chips stretch edge-to-edge on a wide window while the text sits
+ * flush against the left gutter. Text stays left-aligned inside the column.
  *
  * Only the landing states use this — `TrainSolveScreen` is a two-column lg
  * layout that must keep the full page width.
  *
- * 193 UAT round 3: `py-12` dropped to `py-6 md:py-8` — stacked on the page's
- * own `py-6` it put 72px of dead space above the title on a phone.
- * Later: the phone title is hidden for returning users, so the streak card
- * sat 48px below the app header; `max-sm:pt-0` leaves just the page's 24px.
+ * Vertical padding is `py-6 md:py-8`, not `py-12`: stacked on the page's own
+ * `py-6` that would put 72px of dead space above the first card on a phone.
+ * The phone host bubble is hidden for returning users, so `max-sm:pt-0`
+ * leaves just the page's 24px above the streak card.
  */
 const LANDING_CONTAINER_CLASS =
   'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 py-6 text-left max-sm:pt-0 md:py-8';
@@ -113,25 +109,23 @@ type LandingState =
   | { kind: 'resume'; solved: number; total: number; isWarmup: boolean }
   | { kind: 'warmup'; puzzleCount: number }
   | { kind: 'fresh'; puzzleCount: number };
-// 224 UAT round 2: 'warmup' and 'fresh' (and `resume.isWarmup`) now render
-// identically — the "Warm-up session" info card that branched on them is gone
-// (see `TrainHeader`). The discriminant is kept because the server flag is
-// still the documented contract and the warm-up copy lives on in the intro
-// stepper and the score screen.
+// 'warmup' and 'fresh' (and `resume.isWarmup`) render identically. The
+// discriminant is kept because the server flag is still the documented
+// contract and the warm-up copy lives on in the intro stepper and the score
+// screen.
 
 /**
- * Single explicit resolution of the six landing states. Order matters:
+ * Single explicit resolution of the landing states. Order matters:
  * loading/error must be checked first; empty (no session_id) before any
  * puzzle-count math; completed/resume (both require solved_count > 0, or
  * solved_count === puzzle_count) before warmup/fresh (both require
- * solved_count === 0) — see 190-04-PLAN.md's must_haves.
+ * solved_count === 0).
  *
- * Phase 206 (D-06/D-07/D-08): the 'warmup' kind replaces the dead 'short'
- * kind (F-03: a sharp-filler backfill means a session is now always full,
- * so puzzle_count < requested_count never legitimately fires). The
- * discriminant is the server-persisted TrainSessionResponse.is_warmup
- * boolean — a single equality check, no client arithmetic over counts
- * (T-191-24). is_warmup is ALSO carried on the 'resume' variant (not only
+ * The 'warmup' discriminant is the server-persisted
+ * TrainSessionResponse.is_warmup boolean — a single equality check, no
+ * client arithmetic over counts. (There is no 'short' kind: a sharp-filler
+ * backfill keeps a session full, so puzzle_count < requested_count never
+ * legitimately fires.) is_warmup is ALSO carried on the 'resume' variant (not only
  * a standalone 'warmup' kind): a partially-solved session resolves to
  * 'resume', never 'warmup', so without isWarmup on 'resume' too the label
  * would be dropped the moment the user solves one puzzle — contradicting
@@ -144,18 +138,18 @@ function resolveLandingState(
   sessionScore: number,
 ): LandingState {
   // Only the FIRST load blanks the landing. A schedule save re-fetches the
-  // session (191-06) while the old one is still in hand; showing "Loading…"
+  // session while the old one is still in hand; showing "Loading…"
   // then unmounted the whole landing and snapped the schedule card shut
-  // mid-edit (SEED-181 review). The old session keeps rendering instead, with
-  // Start disabled until the fresh one lands.
+  // mid-edit. The old session keeps rendering instead, with Start disabled
+  // until the fresh one lands.
   if (isLoading && session === null) return { kind: 'loading' };
   if (isError) return { kind: 'error' };
   // Per TrainSessionResponse's own contract, session_id is null exactly when
-  // no eligible puzzle was found (puzzle_count is then always 0 too) — D-04.
+  // no eligible puzzle was found (puzzle_count is then always 0 too).
   if (session === null || session.session_id === null) return { kind: 'empty' };
   // A session with progress but NO puzzles left to serve is also completed:
-  // the backend marks a session 'completed' excluding lazily-evicted rows
-  // (WR-02), so a completed-in-window response can legitimately carry
+  // the backend marks a session 'completed' excluding lazily-evicted rows,
+  // so a completed-in-window response can legitimately carry
   // solved_count < puzzle_count with an empty puzzles array. Without this
   // clause that shape fell through to 'resume', rendering a Resume button
   // with nothing behind it.
@@ -167,10 +161,9 @@ function resolveLandingState(
     return {
       kind: 'completed',
       score: sessionScore,
-      // 193 UAT round 2 bug fix: this was a hardcoded `* 2`, left behind when
-      // SEED-119 raised the per-puzzle max to 3 (1 guess + 0-2 move tier).
-      // A 3-puzzle session therefore reported "0/6" while the in-loop score
-      // screen — which reads the shared constant — reported "0/9".
+      // Use the shared per-puzzle max (3: 1 guess + 0-2 move tier), not a
+      // hardcoded `* 2`: a 3-puzzle session would report "0/6" while the
+      // in-loop score screen, which reads the same constant, reports "0/9".
       totalPoints: session.puzzle_count * TRAIN_POINTS_PER_PUZZLE,
       nextSessionDate: session.expires_on,
     };
@@ -192,44 +185,37 @@ function resolveLandingState(
 /**
  * The landing page's opener: a bot speaking a greeting in the same
  * `TrainBotBubble` the solve loop and score screen use. Tank the Ox hosts
- * until the intro stepper has been completed (D-05: he also opens intro
+ * until the intro stepper has been completed (he also opens intro
  * step 1, so the landing page introduces the same host the first puzzle
  * does); afterwards the host rotates daily through all 24 personas, keyed
  * on the server-supplied `session_date` (see `landingHost`). Only the
  * session date is read, so the header renders identically for every
  * landing state on a given day.
  *
- * History: this was an `<h1>Train</h1>` plus a muted tagline line beneath it
- * (191.1 UAT: tagline directly under the title in EVERY landing state;
- * 193 UAT round 3: the two grouped as one `gap-1` unit). 222 UAT round 6
- * replaced the tagline with a fixed Tank bubble and then dropped the heading
- * outright: the bubble already says what the page is, and the nav tab
- * carries the "Train" label. 2026-09-14: the fixed Tank line became the
- * per-persona daily rotation.
+ * There is no page heading: the bubble already says what the page is, and
+ * the nav tab carries the "Train" label.
  *
- * 224 UAT round 2: for a guest the bubble also carries the sign-up ask, the
- * SAME sentence and action pair the guest score screen ends on
- * (`GUEST_SIGNUP_ASK_SCORE` + `SignupAskActions`), so the one prompt a guest
- * sees on landing and on finishing are literally the same words. This
- * replaced the "Warm-up session" info card, which told guests their games
- * were being analyzed although nothing is analyzed for a guest.
- * Phase 240 UAT: hidden until the guest has completed a session (today's, or
- * an earlier one stamped `sr_explained_at`), and shown on phones too.
+ * For a guest the bubble also carries the sign-up ask, the SAME sentence and
+ * action pair the guest score screen ends on (`GUEST_SIGNUP_ASK_SCORE` +
+ * `SignupAskActions`), so the one prompt a guest sees on landing and on
+ * finishing are literally the same words. It is hidden until the guest has
+ * completed a session (today's, or an earlier one stamped `sr_explained_at`),
+ * and shown on phones too.
  *
- * 2026-09-18: a registered account with no push subscription from a phone
+ * A registered account with no push subscription from a phone
  * (`has_mobile_subscription === false`, account-wide) gets the reminder ask
  * instead. Desktop subscriptions deliberately don't count: the ask is about
  * the phone app. Strict `=== false`: while settings are still loading the
  * sentence stays hidden rather than flashing in and out. Guests never see it
- * (they get the sign-up ask, and D-13 gives a guest no reminder slot).
- * Phase 237 UAT: hidden until the reveal walkthrough is completed.
+ * (they get the sign-up ask, and a guest has no reminder slot). It is hidden
+ * until the reveal tour is completed.
  *
- * Phase 234 (D-04, SEED-191): once the intro stepper is completed and the
+ * Once the intro stepper is completed and the
  * milestone feedback ask is active, Hilda's `FeedbackAskBubble` replaces the
  * whole host bubble (daily rotating host plus the sign-up/import/reminder
  * asks), on phones too. Tank's intro is never displaced.
  */
-function TrainHeader({
+function TrainLandingHost({
   session,
   isGuest,
   hasGames,
@@ -248,46 +234,46 @@ function TrainHeader({
     sessionDate: session?.session_date ?? null,
     introSeenAt: settings?.intro_seen_at,
   });
-  // Quick task 260926-8p5: a registered zero-game account gets the import ask
-  // in place of the reminder ask, the first step before Train has anything of
-  // its own to serve.
+  // A registered zero-game account gets the import ask in place of the
+  // reminder ask, the first step before Train has anything of its own to
+  // serve.
   const showImportAsk = !isGuest && !hasGames;
-  // Phase 237 UAT: the install/reminder ask waits until onboarding is over, so a
-  // first visit only reads Tank's welcome. Phase 240 D-22: that means the whole
-  // three-part reveal tour is done, not just its first part.
+  // The install/reminder ask waits until onboarding is over, so a first visit
+  // only reads Tank's welcome. That means the whole three-part reveal tour is
+  // done, not just its first part.
   const onboardingDone = settings !== undefined && isRevealTourDone(settings.reveal_tour_stage);
   const showReminderAsk =
     !isGuest && !showImportAsk && onboardingDone && settings?.has_mobile_subscription === false;
-  // Phase 240 UAT: the guest sign-up ask (sentence and buttons) waits until the
+  // The guest sign-up ask (sentence and buttons) waits until the
   // guest has completed a session, so they try Train before being asked to
   // sign up. `sr_explained_at` is stamped by the first completed session's
   // score screen, warm-up sessions included, but a reload around the end of
   // the session skips that screen (and its stamp), so today's completed
   // landing counts on its own.
   const showSignupAsk = isGuest && (sessionCompleted || settings?.sr_explained_at != null);
-  // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
+  // On a phone the avatar + bubble pushed the streak card and
   // its Start button below the fold, so the bubble is phone-hidden. Tank's intro
   // (intro stepper not yet completed) keeps it there, and so do the sign-up and
-  // import asks (Phase 240 UAT: their buttons are the next step for a guest or a
+  // import asks (their buttons are the next step for a guest or a
   // zero-game account, worth the push-down). The reminder-install ask stays
   // desktop-only. Gated on loaded settings so a returning user's bubble never
   // flashes in before hiding.
   const isIntroHost = settings != null && settings.intro_seen_at == null;
   const keepOnPhone = isIntroHost || showSignupAsk || showImportAsk;
-  // D-04: Tank's intro wins; Hilda takes the host only once the intro stepper is
+  // Tank's intro wins; Hilda takes the host only once the intro stepper is
   // completed. Requiring LOADED settings also means no view is counted on a
   // render that would flip to Tank a moment later.
   const introDone = settings?.intro_seen_at != null;
   const askDays = introDone ? feedbackAskDays : null;
   return (
     <div
-      // SEED-191 #3: the ask shows on phones while active, accepting that it
+      // The feedback ask shows on phones while active, accepting that it
       // pushes the streak card down; otherwise the phone-hiding rule is unchanged.
       className={cn('w-full', !keepOnPhone && askDays == null && 'max-sm:hidden')}
       data-testid="train-landing-host"
     >
       {askDays != null ? (
-        // SEED-191 #10: the ask takes the whole bubble, so it outranks the
+        // The ask takes the whole bubble, so it outranks the
         // reminder-install ask (shown indefinitely to anyone without a phone
         // push subscription) and the import ask.
         <FeedbackAskBubble surface="train-landing" activeDays={askDays} avatarSize="large" />
@@ -319,9 +305,9 @@ function landingActions(showSignupAsk: boolean, showImportAsk: boolean): ReactEl
 }
 
 /**
- * PROG-05/D-16: the two tailored empty-state bodies (cold-start / exhausted)
- * plus the Phase-190 generic fallback — chosen purely from the server-computed
- * `pool_state` discriminant (T-191-24). The client performs no arithmetic over
+ * The two tailored empty-state bodies (cold-start / exhausted)
+ * plus the generic fallback — chosen purely from the server-computed
+ * `pool_state` discriminant. The client performs no arithmetic over
  * `mastered_count`/`waiting_count`/`blob_pending_count` to pick between them;
  * a pending or errored progress query falls back to the generic copy rather
  * than guessing.
@@ -430,7 +416,7 @@ export function TrainStartScreen({
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainMedalDialogHost isGuest={isGuest} />
         <TrainReminderResurfaceBanner />
-        <TrainHeader
+        <TrainLandingHost
           session={session}
           isGuest={isGuest}
           hasGames={hasGames}
@@ -449,24 +435,22 @@ export function TrainStartScreen({
     );
   }
 
-  // 193 UAT round 3: the fresh/warmup states' puzzle count moved OFF its own
-  // loose line and into the label, matching the shape 'resume' already used.
-  // Two states describing the same button no longer disagree on where the
-  // number lives, and the fresh state drops a whole line above the CTA.
+  // The fresh/warmup puzzle count lives in the label, matching the shape
+  // 'resume' uses, so the two states describing the same button agree on where
+  // the number lives and no loose line sits above the CTA.
   const buttonLabel =
     state.kind === 'resume'
       ? `Resume session — ${state.solved} of ${state.total} done`
       : `Start session — ${state.puzzleCount} ${state.puzzleCount === 1 ? 'puzzle' : 'puzzles'}`;
 
-  // SEED-181 (sketch 006 A): the CTA lives INSIDE the streak hero, beside the
-  // flame, so the one action on the page and the number it feeds share a
-  // glance above the fold on a phone. (193 UAT round 2 had already moved it
-  // above the cards; this folds it into the first one.)
+  // The CTA lives INSIDE the streak hero, beside the flame, so the one action
+  // on the page and the number it feeds share a glance above the fold on a
+  // phone.
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainMedalDialogHost isGuest={isGuest} />
       <TrainReminderResurfaceBanner />
-      <TrainHeader
+      <TrainLandingHost
         session={session}
         isGuest={isGuest}
         hasGames={hasGames}

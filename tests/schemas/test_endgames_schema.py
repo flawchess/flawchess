@@ -1,7 +1,7 @@
 """Schema tests for the endgame API contract.
 
-Phase 87.5 D-06: EndgameEloTimelinePoint exposes endgame_elo, not conversion_elo.
-Phase 238 D-00h: the filtered overview and its aggregated cross-TC chip fields are
+EndgameEloTimelinePoint exposes endgame_elo, not conversion_elo.
+The filtered overview and its aggregated cross-TC chip fields are
 gone from the wire; the ranked payload carries per-TC percentiles only.
 """
 
@@ -17,7 +17,7 @@ from app.schemas.endgames import (
     RankedTcStats,
 )
 
-# Aggregated cross-TC fields (and the per-TC chip value fields) retired by D-00h.
+# Aggregated cross-TC fields (and the per-TC chip value fields) retired.
 RETIRED_AGGREGATED_FIELDS = {
     "score_gap_percentile",
     "achievable_score_gap_percentile",
@@ -29,7 +29,7 @@ RETIRED_AGGREGATED_FIELDS = {
 
 
 class TestOverviewSchemasRetired:
-    """D-00h: the overview response, its per-TC breakdown and the cards payloads are gone."""
+    """The overview response, its per-TC breakdown and the cards payloads are gone."""
 
     # Substrings of the retired class names (kept partial so this guard does not
     # reintroduce the full retired identifiers into the codebase).
@@ -50,7 +50,7 @@ class TestOverviewSchemasRetired:
 
 
 class TestAggregatedChipFieldsRetired:
-    """D-00h: no aggregated cross-TC percentile field on the ranked payload."""
+    """No aggregated cross-TC percentile field on the ranked payload."""
 
     def test_ranked_tc_stats_has_no_aggregated_fields(self) -> None:
         leaked = RETIRED_AGGREGATED_FIELDS & set(RankedTcStats.model_fields.keys())
@@ -62,7 +62,7 @@ class TestAggregatedChipFieldsRetired:
 
 
 class TestEndgameEloTimelinePointFieldRename:
-    """SC#6 (Phase 87.5): EndgameEloTimelinePoint exposes endgame_elo, not conversion_elo."""
+    """SC#6: EndgameEloTimelinePoint exposes endgame_elo, not conversion_elo."""
 
     def test_point_has_endgame_elo_field(self) -> None:
         pt = EndgameEloTimelinePoint(
@@ -78,7 +78,7 @@ class TestEndgameEloTimelinePointFieldRename:
         assert pt.actual_elo == 1500
 
     def test_point_rejects_legacy_conversion_elo(self) -> None:
-        # The Phase 87.4 field name must no longer satisfy validation. Pydantic
+        # The legacy field name must no longer satisfy validation. Pydantic
         # raises ValidationError because endgame_elo is now required and
         # conversion_elo would be either missing-required or unknown-extra.
         with pytest.raises(pydantic.ValidationError):

@@ -2,7 +2,7 @@
  * Extracts the bare username when a user pastes (or types) a chess.com / lichess
  * profile URL into a username field. Users routinely copy their profile URL
  * rather than their handle; without this, that string is sent verbatim to the
- * platform API and the import fails with an unhelpful "user not found" (D-01).
+ * platform API and the import fails with an unhelpful "user not found".
  *
  * Mirrors `app/core/platform_usernames.py` case-for-case — keep the two
  * implementations structurally identical when editing either.
@@ -42,7 +42,7 @@ const PLATFORM_REGEXES: Record<UsernamePlatform, RegExp> = {
  * Extracts the bare username from `input` for the given `platform`. When
  * `input` is not a recognized profile URL for that platform (including a
  * profile URL for the OTHER platform), it is returned trimmed and unchanged
- * (D-01) — the field is then rejected by the API with its normal error.
+ * — the field is then rejected by the API with its normal error.
  */
 export function extractPlatformUsername(input: string, platform: UsernamePlatform): string {
   const trimmed = input.trim();

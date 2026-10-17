@@ -1,23 +1,23 @@
-"""Integration tests for the Train router (Phase 189, Plans 01 + 04 + 05).
+"""Integration tests for the Train router.
 
 Coverage:
 - test_compose_session_serves_own_blunder : a qualifying own blunder is served as
                                              one puzzle, 200, full 6-field FEN
 - test_opponent_flaw_excluded             : an opponent-side flaw never enters the pool
 - test_null_blob_excluded                 : a blunder with no missed_pv_lines blob is excluded
-- test_empty_blob_excluded                : 189-06 gap closure — a non-NULL EMPTY
-                                             missed_pv_lines (`[]`, the D-06 un-fillable
+- test_empty_blob_excluded                : a non-NULL EMPTY
+                                             missed_pv_lines (`[]`, the un-fillable
                                              sentinel) is excluded, same as a NULL blob
 - test_below_winnability_floor_excluded   : a hopeless pre-flaw position is excluded
-- test_guest_composes_session_200         : Phase 224 (D-01/S-2) — a guest composes a
+- test_guest_composes_session_200         : a guest composes a
                                              filler-only warm-up session like any zero-game
                                              account, 200
 - test_401_unauthenticated                : no auth token returns 401
-- test_pre_attempt_payload_shape          : the puzzle dict's key set is exactly the POOL-10 six
+- test_pre_attempt_payload_shape          : the puzzle dict's key set is exactly the documented wire set
 - test_drill_items_fk_targets             : drill_items' FK referenced-table set is {users, games}
-- test_compose_twice_returns_same_session_id      : D-12 resume over real HTTP
+- test_compose_twice_returns_same_session_id      : resume over real HTTP
 - test_concurrent_compose_yields_one_open_session : uq_drill_sessions_user_open holds
-                                             under two simultaneous requests (T-189-14)
+                                             under two simultaneous requests
 
 Dev clock override (app/core/dev_clock.py) — unit coverage in tests/test_dev_clock.py:
 - test_dev_clock_header_shifts_composition_in_development : the shifted instant reaches
@@ -25,18 +25,18 @@ Dev clock override (app/core/dev_clock.py) — unit coverage in tests/test_dev_c
 - test_dev_clock_header_ignored_outside_development : the fail-closed gate — a forged
                                              header cannot shift a real deployment's calendar
 
-Plan 02 (190-02, SOLV-02/SOLV-05 payload additions):
+Payload additions (last_move_uci):
 - test_last_move_uci_matches_pgn_at_ply_minus_one : last_move_uci is the game's own
                                              PGN half-move at ply-1
 - test_ply_zero_puzzle_serialises_last_move_uci_as_null : ply=0 -> null, not "" or a
                                              fabricated move
 
-190.1-03 (Task 3, D-01/D-05 — best_move/best_move_san/pv retired from the reveal):
+best_move/best_move_san/pv are not part of the reveal:
 - test_reveal_key_set_excludes_stored_answer_key_fields : the exact response key
                                              set is the standing assertion that no
                                              stored engine line/eval creeps back in
 
-Plan 05 (POOL-08/POOL-10, solve/reveal/settings):
+Solve/reveal/settings:
 - test_solve_records_and_advances_streak / test_solve_masters_item_at_three /
   test_solve_wrong_resets_streak_and_counts_fail / test_solve_parks_item_at_three_never_correct :
       the interval ladder advances exactly per app.services.train_scheduler.apply_result
@@ -44,32 +44,30 @@ Plan 05 (POOL-08/POOL-10, solve/reveal/settings):
 - test_correct_guess_computed_server_side  : the guess verdict is server-computed, never
                                               client-asserted (parametrized 2 guesses x 2 types)
 - test_solve_is_idempotent_per_position / test_concurrent_solve_advances_streak_once :
-      the claiming UPDATE's solved_at IS NULL guard is the whole concurrency story (T-189-19)
-- test_solve_foreign_session_404 / test_solve_unknown_position_404 : IDOR guard (T-189-16)
+      the claiming UPDATE's solved_at IS NULL guard is the whole concurrency story
+- test_solve_foreign_session_404 / test_solve_unknown_position_404 : IDOR guard
 - test_last_solve_completes_session : session_complete flips once every puzzle is recorded
 - test_reveal_409_before_attempt / test_reveal_200_after_attempt /
   test_reveal_herring_reports_herring_type / test_reveal_foreign_session_404 /
   test_reveal_unknown_position_404 / test_reveal_has_tactic_lines_flag :
-      the reveal gate (T-189-17) and its POOL-02/tactic-lines-pointer fields
+      the reveal gate and its tactic-lines-pointer fields
 - test_get_settings_creates_defaults_on_first_touch / test_get_settings_is_idempotent /
   test_put_settings_persists_and_round_trips / test_put_settings_rejects_bad_timezone_422 /
   test_put_settings_rejects_out_of_range_mask_422 / test_guest_settings_round_trip_200 /
-  test_session_size_follows_settings : the D-06/D-07/D-08 settings surface
+  test_session_size_follows_settings : the settings surface
 
-Phase 201 Plan 03 (REMIND-01, D-18) — reminder_enabled/reminder_hour on
-GET/PUT /train/settings:
+reminder_enabled/reminder_hour on GET/PUT /train/settings:
 - test_get_settings_creates_defaults_on_first_touch (extended) : first-touch
   reminder_enabled/reminder_hour defaults (False/18)
 - test_put_settings_persists_and_round_trips (extended) : reminder fields
   round-trip through PUT then GET
 - test_put_settings_rejects_out_of_range_reminder_hour_422 : reminder_hour
-  outside [0, 23] is rejected 422 on both boundaries (T-201-14)
-- test_guest_settings_round_trip_200 (Phase 224) : the guest gate is gone —
+  outside [0, 23] is rejected 422 on both boundaries
+- test_guest_settings_round_trip_200 : the guest gate is gone —
   a guest may set reminder_enabled=True on the settings row, but the
   reminder fan-out itself still excludes guests (train_reminder_repository.py)
 
-Phase 203 Plan 01 (OFFER-03/OFFER-05, D-02) — reminder_intent_at on
-GET/PUT /train/settings:
+reminder_intent_at on GET/PUT /train/settings:
 - test_put_settings_writes_and_round_trips_reminder_intent_at : a PUT'd
   instant round-trips through the next GET exactly
 - test_put_settings_rejects_missing_reminder_intent_at_422 : a body omitting
@@ -77,38 +75,35 @@ GET/PUT /train/settings:
 - test_put_settings_clears_reminder_intent_at : an explicit null PUT after a
   non-null PUT reads back null
 
-Phase 191 Plan 01 (PROG-01/PROG-04, D-18) — GET /train/progress:
+GET /train/progress:
 - test_progress_returns_200_with_all_eleven_fields : an authenticated non-guest
                                                       account gets a full payload
-- test_guest_progress_200                          : Phase 224 (D-01/S-2) — a guest
+- test_guest_progress_200                          : a guest
                                                       gets the same full payload, 200
 
-Phase 211 (VETFINE-02/VETFINE-03, D-01/D-03/D-07) — server-vetted moves +
+Server-vetted moves +
 key-move grading on the solve response:
 - test_solve_response_key_set_is_exactly_the_wire_contract : EQUALITY key-set
-  assertion for the solve body (the pre-211 nine fields plus
+  assertion for the solve body (the nine base fields plus
   vetted_moves/graded_es_before/graded_es_after) — a future widening fails loudly
 - test_solve_key_move_override_at_http_boundary : a deliberately-wrong client
   tier for the certified key move loses to the server at the HTTP boundary
   (server tier, one-entry vetted_moves, non-null graded ES)
 - test_vetted_move_material_absent_from_request_and_pre_attempt_schemas :
   the request body and pre-attempt payload stay free of key material in both
-  directions (schema-level, beside the P-01/P-02 field assertions)
+  directions (schema-level, beside the other field assertions)
 - test_reveal_key_set_excludes_stored_answer_key_fields (extended) : the
-  reveal body's key set stays byte-identical to its pre-211 nine fields —
-  no vetted-move material moves through the reveal GET (discharges RESEARCH
-  Assumption A4: the 409 race stays moot)
+  reveal body's key set stays byte-identical to its nine base fields —
+  no vetted-move material moves through the reveal GET (so the 409 race stays moot)
 
-Phase 222 Plan 02 (TRAINBOT-05, D-11/D-12/D-13/D-14) —
 POST /train/onboarding/{step} + GET/PUT /train/settings extension:
 - test_get_settings_creates_defaults_on_first_touch (extended) : the three
   onboarding-seen fields default to None (no backfill)
 - test_put_settings_persists_and_round_trips (extended) : the three fields
   appear on the PUT response body, still None
-- test_guest_onboarding_stamp_200 : Phase 224 (GUESTACT-14) — a guest gets
-  200 on the stamp endpoint, no D-05 gate any more
-- test_guest_zero_game_warmup_end_to_end : Phase 224 (GUESTACT-04, ROADMAP
-  SC 2) — a zero-game guest composes, solves to streak 1, and round-trips
+- test_guest_onboarding_stamp_200 : a guest gets
+  200 on the stamp endpoint, no guest gate
+- test_guest_zero_game_warmup_end_to_end : a zero-game guest composes, solves to streak 1, and round-trips
   the weekday cadence, all over HTTP in one test
 - test_onboarding_unknown_step_422_no_db_write : an unrecognized step name
   422s via FastAPI's Literal path-param validation, no DB write
@@ -118,9 +113,9 @@ POST /train/onboarding/{step} + GET/PUT /train/settings extension:
 - test_onboarding_each_step_writes_only_its_own_column : all three steps,
   independently
 - test_get_settings_exposes_all_three_onboarding_timestamps
-- test_put_settings_cannot_smuggle_onboarding_seen_timestamp : D-12 — the
+- test_put_settings_cannot_smuggle_onboarding_seen_timestamp : the
   write schema cannot smuggle a server-owned field
-- test_onboarding_stamp_scoped_to_caller : ASVS V4/IDOR
+- test_onboarding_stamp_scoped_to_caller : IDOR
 """
 
 from __future__ import annotations
@@ -152,17 +147,17 @@ from app.services.sharp_filler import SharpPuzzle
 
 ENDPOINT = "/api/train/sessions"
 
-# POOL-02 puzzle-type fixtures: a "sharp" blob has a wide best-vs-second gap
+# Puzzle-type fixtures: a "sharp" blob has a wide best-vs-second gap
 # (>= SHARP_GAP_ES == MISTAKE_DROP == 0.10). The module's default
 # _MISSED_PV_LINES blob is deliberately "soft".
 _SHARP_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "g8f6"}]
 
-# Phase 235 (D-19): a sharp blob whose runner-up `su` is LEGAL at _FLAW_PLY_WHITE
+# A sharp blob whose runner-up `su` is LEGAL at _FLAW_PLY_WHITE
 # (white to move after 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6: b5a4 and b5c6 are both legal),
 # so the answer key's legality check keeps it on the wire.
 _SHARP_KEYED_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "b5c6"}]
 
-# Phase 236 (D-08): a soft blob whose `su` is legal at _FLAW_PLY_WHITE and inside
+# A soft blob whose `su` is legal at _FLAW_PLY_WHITE and inside
 # the good band (gap ~0.009 < INACCURACY_DROP), so a stored best move b5a4 gives
 # the server-graded set [b5a4 good, b5c6 good].
 _SOFT_KEYED_PV_LINES = [{"b": 40, "bm": None, "s": 30, "sm": None, "su": "b5c6"}]
@@ -176,13 +171,11 @@ _FLAW_PLY_WHITE = 6
 # ply=7 (odd -> black mover): position before black's 4th move (Nf6).
 _FLAW_PLY_BLACK = 7
 
-# Phase 205 (dead-band exclusion, D-05/D-11): the ORIGINAL blob here was
-# {"b": 40, "s": -30}, gap ~0.0643 -- squarely inside the new
-# [INACCURACY_DROP, BLUNDER_DROP) = [0.05, 0.15) band, so `pool_entry_stmt`
-# would no longer admit it. Moved `s` from -30 to 30 (holding `b` at 40),
+# Soft-fixture blob (dead-band exclusion): {"b": 40, "s": -30} has gap ~0.0643,
+# squarely inside the [INACCURACY_DROP, BLUNDER_DROP) = [0.05, 0.15) band, so
+# `pool_entry_stmt` would not admit it. `s` is 30 (holding `b` at 40) instead,
 # giving a gap of ~0.0092 -- comfortably below INACCURACY_DROP -- so the
-# fixture stays exactly as "soft" as before (the old drop was already below
-# SHARP_GAP_ES = 0.10) with no assertion elsewhere shifting.
+# fixture is "soft" (below SHARP_GAP_ES = 0.10) and stays admissible.
 _MISSED_PV_LINES = [{"b": 40, "bm": None, "s": 30, "sm": None, "su": "g8f6"}]
 
 # A comfortably winnable eval for White (well above WINNABILITY_FLOOR_ES=0.20).
@@ -190,7 +183,7 @@ _WINNABLE_CP = 300
 # A hopeless eval for White (well below the floor).
 _HOPELESS_CP = -2000
 
-# Phase 206: a small deterministic sharp-filler fixture, sibling to
+# A small deterministic sharp-filler fixture, sibling to
 # tests/repositories/test_train_repository.py's identically-shaped constant.
 _TEST_SHARP_PUZZLES: tuple[SharpPuzzle, ...] = tuple(
     SharpPuzzle(
@@ -212,7 +205,7 @@ def _install_sharp_fixture(
     monkeypatch: pytest.MonkeyPatch, puzzles: tuple[SharpPuzzle, ...] = _TEST_SHARP_PUZZLES
 ) -> None:
     """Install a small deterministic sharp-filler fixture in place of the
-    committed data file (Phase 206) — sibling to
+    committed data file — sibling to
     tests/repositories/test_train_repository.py's identically-named helper.
     Both `sharp_filler.SHARP_SET`/`SHARP_SET_BY_ID` (read at call time by
     `pick_sharp_fillers`) and `train_repository.SHARP_SET_BY_ID` (bound by
@@ -227,10 +220,10 @@ def _install_sharp_fixture(
 
 @pytest.fixture(autouse=True)
 def _default_empty_sharp_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Phase 206: every test in this file defaults to an EMPTY sharp-filler
+    """Every test in this file defaults to an EMPTY sharp-filler
     set unless it opts in via `_install_sharp_fixture` — see the identically
     documented fixture in tests/repositories/test_train_repository.py for
-    why this is needed (D-05: composition never returns an empty session
+    why this is needed (composition never returns an empty session
     once real material exists in `SHARP_SET`, which would otherwise mask
     every pre-existing pool-entry-gate test's "zero material -> zero
     puzzles" assertion)."""
@@ -354,7 +347,7 @@ async def _seed_flaw_best_move(
 ) -> None:
     """Seed the `game_positions` row AT the flaw ply carrying `best_move`.
 
-    Phase 235 (D-05/D-06): the SR answer key is `game_positions.best_move` at
+    The SR answer key is `game_positions.best_move` at
     the flaw ply. Hashes are distinct from `_seed_game_with_blunder`'s prior
     (ply-1) row (1000/2000/3000 + game_id).
     """
@@ -375,7 +368,7 @@ async def _seed_flaw_best_move(
 
 
 async def _seed_game_with_pgn(test_engine, user_id: int, pgn: str, label: str) -> int:
-    """Seed a bare Game row with a CUSTOM PGN (190.1-01 promotion-UCI test —
+    """Seed a bare Game row with a CUSTOM PGN (promotion-UCI test —
     the default `_PGN` fixture never reaches a promotable position)."""
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
@@ -414,12 +407,12 @@ async def _delete_games(test_engine, game_ids: list[int]) -> None:
 
 async def _delete_sessions(test_engine, session_ids: list[int]) -> None:
     """Explicit cleanup for a directly-seeded drill_sessions row that has no
-    backing `game_id` to clean up via `_delete_games` (Phase 206: a
+    backing `game_id` to clean up via `_delete_games` (a
     SHARP_FILLER-only session, `game_id` structurally None throughout).
     `drill_solves` rows cascade-delete with their `drill_sessions` parent.
     Required so a real committed SHARP_FILLER row (source=2) does not
     survive into an unrelated later test in the same per-worker DB clone
-    that downgrades Alembic past this phase's CHECK-widening migration.
+    that downgrades Alembic past a CHECK-widening migration.
     """
     if not session_ids:
         return
@@ -439,7 +432,7 @@ async def _set_guest(test_engine, user_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plan 05 helpers — direct seeding of drill_items/drill_sessions/drill_solves
+# Helpers — direct seeding of drill_items/drill_sessions/drill_solves
 # gives each test full control over the pre-solve SR state (streak/fail_count/
 # ever_correct) without needing to control the endpoint's real wall-clock
 # `now_utc` across multiple composed sessions.
@@ -496,7 +489,7 @@ async def _seed_herring_pool_row(
     fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
     arriving_move_uci: str | None = "e2e4",
 ) -> int:
-    """Seed one `herring_pool` row attached to `game_id` (Phase 192, sibling
+    """Seed one `herring_pool` row attached to `game_id` (sibling
     to tests/repositories/test_train_repository.py's `_seed_herring_pool_row`,
     duplicated here for this file's `test_engine`-based seeding style rather
     than the repository suite's rollback-scoped `db_session` fixture).
@@ -524,10 +517,10 @@ async def _delete_herring_pool_rows(test_engine, herring_pool_ids: list[int]) ->
     """Explicit cleanup for herring_pool test rows (mirrors
     tests/services/test_train_pool.py's identically-named helper).
 
-    `_delete_games`'s FK is `ondelete="SET NULL"` (D-01), NOT `CASCADE` —
+    `_delete_games`'s FK is `ondelete="SET NULL"`, NOT `CASCADE` —
     deleting the backing game nulls out the pool row's `user_id`/`game_id`
     but does not remove it. `herring_stmt`/`get_waiting_puzzle_count` are
-    deliberately identity-blind (D-10, no `HerringPool.user_id` filter), so
+    deliberately identity-blind (no `HerringPool.user_id` filter), so
     an orphaned row from an earlier test leaks into every later test's
     results in this shared per-run DB. Must be called BEFORE `_delete_games`
     in a test's `finally` block.
@@ -583,7 +576,7 @@ async def _seed_session(
     `entries` is a list of `(game_id, ply, source)` tuples, one per frozen
     position (0-based, in list order) — mirrors exactly what
     `compose_and_materialize_session` would have pre-inserted. `game_id` is
-    `int | None` (Phase 206: a SHARP_FILLER entry passes `None`, mirroring
+    `int | None` (a SHARP_FILLER entry passes `None`, mirroring
     the structural guarantee `_ReconstructedPuzzle` enforces).
 
     `requested_count` defaults to `None` (the "pre-migration row / direct
@@ -594,12 +587,12 @@ async def _seed_session(
     composition call would have produced under a specific
     `puzzles_per_session`.
 
-    `herring_pool_ids` (Phase 192) maps a 0-based `position` to the
+    `herring_pool_ids` maps a 0-based `position` to the
     `herring_pool.id` that entry's `RED_HERRING` row should carry — omitted
-    entirely (default `None`) for every pre-Phase-192 caller of this helper,
-    which never needed a real pool link.
+    entirely (default `None`) for every caller that never needed a real pool link,
+    which is most of them.
 
-    `sharp_puzzle_ids` (Phase 206) maps a 0-based `position` to the
+    `sharp_puzzle_ids` maps a 0-based `position` to the
     `sharp_puzzle_id` that entry's `SHARP_FILLER` row should carry — mirrors
     `herring_pool_ids`'s shape exactly.
     """
@@ -649,7 +642,7 @@ async def _seed_position_meta(
 ) -> None:
     """Seed a game_positions row carrying `best_move`/`move_san`/`pv`.
 
-    190.1-03: the reveal endpoint itself only reads `move_san` now (the
+    The reveal endpoint itself only reads `move_san` now (the
     in-game move) — `best_move`/`pv` are written here purely because they are
     real, non-nullable-adjacent `game_positions` columns other features
     (gem/great detection, tactic lines) still depend on; `pv` defaults to
@@ -784,7 +777,7 @@ async def _seed_completed_session_router(
 
 
 async def _seed_pool_eligible_since_router(test_engine, user_id: int, since: datetime.date) -> None:
-    """Directly stamp the D-06 eligibility watermark via test_engine
+    """Directly stamp the eligibility watermark via test_engine
     (mirrors the repository test suite's `_seed_pool_eligible_since`, for
     the router test file's HTTP-registered users). Creates a default
     train_settings row first if one does not already exist, mirroring
@@ -873,7 +866,7 @@ async def test_compose_session_serves_own_blunder(test_engine) -> None:
         fen_fields = puzzle["fen"].split(" ")
         assert len(fen_fields) == 6, f"Expected a full 6-field FEN, got: {puzzle['fen']!r}"
         assert body["session_id"] is not None
-        # Quick task 260728-tgc: the wire response carries solved_results —
+        # The wire response carries solved_results —
         # empty here since nothing has been solved in this freshly composed
         # session yet.
         assert body["solved_results"] == []
@@ -885,7 +878,7 @@ async def test_compose_session_serves_own_blunder(test_engine) -> None:
 async def test_session_response_exposes_is_warmup(
     test_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """WARM-01/WARM-02: TrainSessionResponse.is_warmup round-trips over
+    """TrainSessionResponse.is_warmup round-trips over
     HTTP for both values — True for a filler-only composition (zero SR
     material, backfilled entirely from the sharp set), False for a
     composition carrying the user's own qualifying blunder."""
@@ -974,8 +967,8 @@ async def test_null_blob_excluded(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_empty_blob_excluded(test_engine) -> None:
-    """189-06 gap closure: a blunder with a non-NULL EMPTY missed_pv_lines
-    (`[]`, the eval pipeline's D-06 un-fillable sentinel) is excluded from the
+    """A blunder with a non-NULL EMPTY missed_pv_lines
+    (`[]`, the eval pipeline's un-fillable sentinel) is excluded from the
     served pool exactly like test_null_blob_excluded's true-NULL case."""
     email = f"train-emptyblob-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1017,7 +1010,7 @@ async def test_below_winnability_floor_excluded(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_guest_composes_session_200(test_engine, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Phase 224 (D-01/S-2): a guest account composes a session like any other
+    """A guest account composes a session like any other
     zero-game account — no 403 gate, filler-only warm-up session, 200."""
     email = f"train-guest-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1045,13 +1038,13 @@ async def test_guest_composes_session_200(test_engine, monkeypatch: pytest.Monke
 async def test_guest_zero_game_warmup_end_to_end(
     test_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """GUESTACT-04, ROADMAP SC 2 (Phase 224 D-01/S-2): a zero-game guest
+    """A zero-game guest
     composes a warm-up session, completes it, sees its streak advance 0 -> 1
     on /train/progress, and round-trips a weekday mask through
     /train/settings — all over HTTP, no game and no drill item seeded.
 
-    `SolveResponse.streak` is null for every puzzle here by design (Finding
-    C / `test_solve_sharp_filler_touches_no_drill_item`): a herring or
+    `SolveResponse.streak` is null for every puzzle here by design (see
+    `test_solve_sharp_filler_touches_no_drill_item`): a herring or
     sharp-filler solve carries no per-item SR bookkeeping, unlike an SR_ITEM
     solve. The account-level streak this test proves lives on
     `TrainProgressResponse.session_streak_count`, ticked by
@@ -1129,13 +1122,12 @@ async def test_401_unauthenticated() -> None:
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_shape(test_engine) -> None:
-    """The puzzle dict's key set is EXACTLY the six POOL-10 fields plus the
-    three Phase 235 answer-key fields (D-05) plus the Phase 236 server-graded
-    set (D-03/D-08).
+    """The puzzle dict's key set is EXACTLY the six base fields plus the
+    three answer-key fields plus the server-graded set.
 
     Equality, not membership (`set(...) == {...}`, never `in`/`assertIn`): the
-    key/type/runner-up and server_graded_moves widenings are deliberate
-    (SEED-192 D-05, SEED-193 D-03/D-08), and any FURTHER addition (best_move,
+    key/type/runner-up and server_graded_moves widenings are deliberate, and any
+    FURTHER addition (best_move,
     pv, source) must still fail this test.
     """
     email = f"train-shape-{uuid.uuid4().hex[:8]}@example.com"
@@ -1170,7 +1162,7 @@ async def test_pre_attempt_payload_shape(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_carries_server_graded_moves(test_engine) -> None:
-    """Phase 236 (D-03/D-08): a soft keyed SR puzzle arrives with its server-graded
+    """A soft keyed SR puzzle arrives with its server-graded
     set [best (the key) good, su good], tier only (no ES values)."""
     email = f"train-sgm-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1198,7 +1190,7 @@ async def test_pre_attempt_payload_carries_server_graded_moves(test_engine) -> N
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_no_key_sends_no_server_graded_moves(test_engine) -> None:
-    """Phase 236 (D-08): with NO stored best move the key is null while the blob's
+    """With NO stored best move the key is null while the blob's
     `su` b5c6 is legal and good, so ONLY the no-key rule empties the set."""
     email = f"train-sgm-nokey-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1222,7 +1214,7 @@ async def test_pre_attempt_payload_no_key_sends_no_server_graded_moves(test_engi
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_carries_sr_answer_key(test_engine) -> None:
-    """Phase 235 (D-05/D-06/D-19): a sharp SR puzzle arrives with the stored
+    """A sharp SR puzzle arrives with the stored
     best move as its key, puzzle_type "sharp" and the blob's `su` as runner-up."""
     email = f"train-key-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1242,7 +1234,7 @@ async def test_pre_attempt_payload_carries_sr_answer_key(test_engine) -> None:
         assert puzzle["key_move_uci"] == "b5a4"
         assert puzzle["puzzle_type"] == "sharp"
         assert puzzle["runner_up_uci"] == "b5c6"
-        # Phase 236 (D-08): a sharp node grades only its runner-up, as a mistake.
+        # A sharp node grades only its runner-up, as a mistake.
         assert puzzle["server_graded_moves"] == [{"uci": "b5c6", "tier": "wrong"}]
     finally:
         await _delete_games(test_engine, [game_id])
@@ -1250,7 +1242,7 @@ async def test_pre_attempt_payload_carries_sr_answer_key(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_key_is_null_without_best_move(test_engine) -> None:
-    """Phase 235 (D-07): an SR item with no stored best move is still served,
+    """An SR item with no stored best move is still served,
     with a null key (the client keeps today's root-search grading)."""
     email = f"train-nokey-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1276,7 +1268,7 @@ async def test_pre_attempt_payload_key_is_null_without_best_move(test_engine) ->
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_illegal_key_and_runner_up_are_null(test_engine) -> None:
-    """Phase 235 (D-07): a stored best move / runner-up that is not legal in the
+    """A stored best move / runner-up that is not legal in the
     served FEN is sent as null (the puzzle is still served, type unchanged)."""
     email = f"train-illegalkey-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1302,7 +1294,7 @@ async def test_pre_attempt_payload_illegal_key_and_runner_up_are_null(test_engin
 
 @pytest.mark.asyncio
 async def test_last_move_uci_matches_pgn_at_ply_minus_one(test_engine) -> None:
-    """last_move_uci (190-02, SOLV-02) is the game's own PGN half-move at ply-1."""
+    """last_move_uci is the game's own PGN half-move at ply-1."""
     email = f"train-lastmove-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     # _FLAW_PLY_WHITE == 6; _PGN's half-move at index 5 (0-based) is "a6" (a7a6).
@@ -1332,10 +1324,10 @@ async def test_ply_zero_puzzle_serialises_last_move_uci_as_null(test_engine) -> 
     entry at ply=0 exercises the same fen_and_last_move_at_ply(pgn, 0) call
     the composition path uses.
 
-    Phase 192 (D-03): a red herring's resume FEN/last-move now come
+    A red herring's resume FEN/last-move now come
     EXCLUSIVELY off its `herring_pool` row, never `fen_and_last_move_at_ply`
     — so this uses an SR item (the source this call still applies to) rather
-    than the RED_HERRING source the pre-Phase-192 version of this test used.
+    than a RED_HERRING source.
     """
     email = f"train-ply0-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1360,7 +1352,7 @@ async def test_ply_zero_puzzle_serialises_last_move_uci_as_null(test_engine) -> 
 
 @pytest.mark.asyncio
 async def test_drill_items_fk_targets(test_engine) -> None:
-    """drill_items' FK referenced-table set is exactly {users, games} (D-02 proof)."""
+    """drill_items' FK referenced-table set is exactly {users, games}."""
     async with test_engine.connect() as conn:
         result = await conn.execute(
             text(
@@ -1382,7 +1374,7 @@ async def test_drill_items_fk_targets(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_compose_twice_returns_same_session_id(test_engine) -> None:
-    """D-12: a second POST inside an open session's window resumes it (real HTTP)."""
+    """A second POST inside an open session's window resumes it (real HTTP)."""
     email = f"train-resume-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
@@ -1406,7 +1398,7 @@ async def test_compose_twice_returns_same_session_id(test_engine) -> None:
 async def test_resume_solved_results_carry_source_item_status_due_date_no_answer_key(
     test_engine,
 ) -> None:
-    """Phase 222 (TRAINBOT-04, D-17): the resume response body carries
+    """The resume response body carries
     source/item_status/due_date per solved_results entry, and every entry's
     key set still excludes position/game_id/ply/best_move — no new
     answer-key exposure."""
@@ -1499,7 +1491,7 @@ async def test_dev_clock_header_ignored_outside_development(test_engine, monkeyp
     The fail-closed gate matters here specifically: an honoured header would
     let a client fabricate streak weeks and due-date advances at will. With
     ENVIRONMENT != "development" the second POST must simply resume the same
-    open session (D-12), exactly as an unshifted request would.
+    open session, exactly as an unshifted request would.
     """
     monkeypatch.setattr(config_settings, "ENVIRONMENT", "production")
     email = f"train-devclock-prod-{uuid.uuid4().hex[:8]}@example.com"
@@ -1527,7 +1519,7 @@ async def test_dev_clock_header_ignored_outside_development(test_engine, monkeyp
 
 @pytest.mark.asyncio
 async def test_concurrent_compose_yields_one_open_session(test_engine) -> None:
-    """T-189-14: two simultaneous POSTs leave exactly one open drill_sessions row.
+    """Two simultaneous POSTs leave exactly one open drill_sessions row.
 
     Two independent httpx.AsyncClient instances (each request gets its own DB
     session via the FastAPI dependency) — NOT the forbidden shared-AsyncSession
@@ -1571,7 +1563,7 @@ async def test_concurrent_compose_yields_one_open_session(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plan 05 Task 1 — POST /sessions/{session_id}/solve
+# POST /sessions/{session_id}/solve
 # ---------------------------------------------------------------------------
 
 
@@ -1615,7 +1607,7 @@ async def test_solve_records_and_advances_streak(test_engine) -> None:
 async def test_solve_move_quality_round_trips_with_derived_correct_move(
     test_engine, move_quality: str, expected_correct_move: bool
 ) -> None:
-    """SEED-119: each of the three tiers round-trips in the response, with
+    """Each of the three tiers round-trips in the response, with
     correct_move derived as move_quality != "wrong" (good/inaccuracy both
     pass the SR ladder, only wrong fails it)."""
     email = f"train-tier-{move_quality}-{uuid.uuid4().hex[:8]}@example.com"
@@ -1656,7 +1648,7 @@ async def test_solve_rejects_unrecognised_move_quality(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_solve_masters_item_at_three(test_engine) -> None:
-    """The third consecutive correct solve masters the item (POOL-05)."""
+    """The third consecutive correct solve masters the item."""
     email = f"train-master-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
@@ -1684,7 +1676,7 @@ async def test_solve_masters_item_at_three(test_engine) -> None:
 @pytest.mark.asyncio
 async def test_solve_wrong_resets_streak_and_counts_fail(test_engine) -> None:
     """A wrong solve resets streak to 0 and increments the lifetime fail count
-    (SEED-154: fail_count accrues unconditionally, not gated on ever_correct)."""
+    (fail_count accrues unconditionally, not gated on ever_correct)."""
     email = f"train-wrong-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
@@ -1714,7 +1706,7 @@ async def test_solve_wrong_resets_streak_and_counts_fail(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_solve_parks_item_at_three_never_correct(test_engine) -> None:
-    """The third never-correct failure parks the item (POOL-06)."""
+    """The third never-correct failure parks the item."""
     email = f"train-park-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
@@ -1767,7 +1759,7 @@ async def test_solve_herring_touches_no_drill_item(test_engine) -> None:
 async def test_solve_sharp_filler_touches_no_drill_item(
     test_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """WARM-04: a sharp-filler solve returns puzzle_type "sharp", source
+    """A sharp-filler solve returns puzzle_type "sharp", source
     "sharp_filler", null item_status/streak/due_date (mirrors a herring's SR
     bookkeeping absence exactly), and creates/modifies no drill_items row —
     a sharp filler has no games row at all (game_id is None)."""
@@ -1819,7 +1811,7 @@ async def test_correct_guess_computed_server_side(
     guess: str,
     expected_correct_guess: bool,
 ) -> None:
-    """P-02: the guess verdict is graded server-side from the live blob, never client-asserted."""
+    """The guess verdict is graded server-side from the live blob, never client-asserted."""
     assert "correct_guess" not in SolveRequest.model_fields
     assert "puzzle_type" not in SolveRequest.model_fields
 
@@ -1843,9 +1835,8 @@ async def test_correct_guess_computed_server_side(
 
 @pytest.mark.asyncio
 async def test_solve_response_key_set_is_exactly_the_wire_contract(test_engine) -> None:
-    """Phase 211: the solve body's key set is EXACTLY the pre-211 nine fields
-    plus vetted_moves/graded_es_before/graded_es_after. Phase 235 (D-14/D-15)
-    adds `disagreement`.
+    """The solve body's key set is EXACTLY the nine base fields
+    plus vetted_moves/graded_es_before/graded_es_after and `disagreement`.
 
     Equality, not membership (`set(...) == {...}`, never `in`) — mirroring
     test_pre_attempt_payload_shape's rationale: a future answer-key widening
@@ -1883,7 +1874,7 @@ async def test_solve_response_key_set_is_exactly_the_wire_contract(test_engine) 
 
 @pytest.mark.asyncio
 async def test_solve_key_move_override_at_http_boundary(test_engine) -> None:
-    """Phase 211 (D-03/D-07): a solve POST asserting the WRONG tier for the
+    """A solve POST asserting the WRONG tier for the
     certified key move (`_MISSED_PV_LINES`'s `su` "g8f6") comes back with the
     SERVER's tier, a one-entry vetted_moves, and a non-null graded-ES pair —
     the override is observable at the HTTP boundary, not just in the
@@ -1912,14 +1903,14 @@ async def test_solve_key_move_override_at_http_boundary(test_engine) -> None:
 
 
 def test_vetted_move_material_absent_from_request_and_pre_attempt_schemas() -> None:
-    """Phase 211 (P-01/P-02 both directions): the request body and the
+    """The request body and the
     pre-attempt payload must stay free of vetted-move material — beside the
     existing `correct_guess`/`puzzle_type` field assertions in
     test_correct_guess_computed_server_side."""
     for field in ("vetted_moves", "graded_es_before", "graded_es_after"):
         assert field not in SolveRequest.model_fields
         assert field not in TrainPuzzle.model_fields
-    # Phase 236 (D-03): the one new pre-attempt wire type is tier-only, the
+    # The one new pre-attempt wire type is tier-only, the
     # expected scores never cross the wire.
     assert set(ServerGradedMove.model_fields) == {"uci", "tier"}
 
@@ -1958,7 +1949,7 @@ async def test_solve_is_idempotent_per_position(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_concurrent_solve_advances_streak_once(test_engine) -> None:
-    """T-189-19: two concurrent solves of the same puzzle advance the streak exactly once."""
+    """Two concurrent solves of the same puzzle advance the streak exactly once."""
     email = f"train-concurrent-solve-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
@@ -2006,7 +1997,7 @@ async def test_concurrent_solve_advances_streak_once(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_solve_foreign_session_404(test_engine) -> None:
-    """A session_id belonging to another user returns 404, not that user's data (T-189-16)."""
+    """A session_id belonging to another user returns 404, not that user's data."""
     email_a = f"train-owner-{uuid.uuid4().hex[:8]}@example.com"
     user_a, token_a = await _register_and_login(email_a)
     email_b = f"train-attacker-{uuid.uuid4().hex[:8]}@example.com"
@@ -2054,7 +2045,7 @@ async def test_last_solve_completes_session(test_engine) -> None:
     game_id_sr = await _seed_game_with_blunder(test_engine, user_id, ply=_FLAW_PLY_WHITE)
     game_id_herring = await _seed_bare_game(test_engine, user_id, "complete-herring")
     await _seed_drill_item(test_engine, user_id, game_id_sr, _FLAW_PLY_WHITE)
-    # SEED-123: the herring MUST carry a real pool row, or it is unservable and
+    # The herring MUST carry a real pool row, or it is unservable and
     # correctly excluded from `remaining` — the session would then complete on
     # the first solve and this test would assert nothing about the last one.
     pool_id = await _seed_herring_pool_row(test_engine, user_id, game_id_herring, 8)
@@ -2087,7 +2078,7 @@ async def test_last_solve_completes_session(test_engine) -> None:
 async def test_session_completes_when_sr_item_flaw_row_vanishes_under_reclassification(
     test_engine,
 ) -> None:
-    """WR-02 fix: an SR-source puzzle whose backing `game_flaws` row is
+    """An SR-source puzzle whose backing `game_flaws` row is
     reclassified away (lazy eviction, mirroring `load_session_puzzles`'s own
     posture) must not block session completion forever, even though its
     `drill_solves` row stays `solved_at IS NULL`. Deleting the `GameFlaw` row
@@ -2099,7 +2090,7 @@ async def test_session_completes_when_sr_item_flaw_row_vanishes_under_reclassifi
     game_id_sr = await _seed_game_with_blunder(test_engine, user_id, ply=_FLAW_PLY_WHITE)
     game_id_herring = await _seed_bare_game(test_engine, user_id, "complete-evicted-herring")
     await _seed_drill_item(test_engine, user_id, game_id_sr, _FLAW_PLY_WHITE)
-    # SEED-123: a real pool row keeps the herring servable, so this test still
+    # A real pool row keeps the herring servable, so this test still
     # isolates the SR-eviction path it exists to pin (an unservable herring
     # would complete the session on its own and mask the eviction).
     pool_id = await _seed_herring_pool_row(test_engine, user_id, game_id_herring, 8)
@@ -2141,13 +2132,13 @@ async def test_session_completes_when_sr_item_flaw_row_vanishes_under_reclassifi
 
 
 # ---------------------------------------------------------------------------
-# Plan 05 Task 2 — GET /sessions/{session_id}/puzzles/{position}/reveal
+# GET /sessions/{session_id}/puzzles/{position}/reveal
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_reveal_409_before_attempt(test_engine) -> None:
-    """The reveal gate returns 409 with no answer-key fields before the attempt (T-189-17)."""
+    """The reveal gate returns 409 with no answer-key fields before the attempt."""
     email = f"train-reveal-409-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
@@ -2162,8 +2153,8 @@ async def test_reveal_409_before_attempt(test_engine) -> None:
         body = resp.json()
         assert "best_move" not in body
         assert "puzzle_type" not in body
-        assert "pv" not in body  # 190-02: the stored best line is no exception to the gate
-        # 190.1-01: the game move's UCI counterpart is no exception either.
+        assert "pv" not in body  # The stored best line is no exception to the gate
+        # The game move's UCI counterpart is no exception either.
         assert "played_in_game_move_uci" not in body
     finally:
         await _delete_games(test_engine, [game_id])
@@ -2171,7 +2162,7 @@ async def test_reveal_409_before_attempt(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_reveal_played_in_game_move_uci_normal_move(test_engine) -> None:
-    """A normal (4-char) move_san reveals its 4-character UCI (190.1-01, D-05)."""
+    """A normal (4-char) move_san reveals its 4-character UCI."""
     email = f"train-reveal-uci-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id, missed_pv_lines=_SHARP_PV_LINES)
@@ -2206,12 +2197,12 @@ _PROMOTION_PLY = 8
 
 @pytest.mark.asyncio
 async def test_reveal_played_in_game_move_uci_promotion(test_engine) -> None:
-    """A 5-char promotion move_san reveals its 5-character UCI (190.1-01, D-05).
+    """A 5-char promotion move_san reveals its 5-character UCI.
 
-    Phase 192 (D-03): a red herring's reveal FEN now comes EXCLUSIVELY off
+    A red herring's reveal FEN now comes EXCLUSIVELY off
     its `herring_pool` row (never `game.pgn`), so this uses an SR item — the
     source this PGN-derived-FEN path still applies to — rather than the
-    RED_HERRING source the pre-Phase-192 version of this test used. The UCI
+    RED_HERRING source. The UCI
     derivation logic under test is source-agnostic.
     """
     email = f"train-reveal-uci-promo-{uuid.uuid4().hex[:8]}@example.com"
@@ -2242,7 +2233,7 @@ async def test_reveal_played_in_game_move_uci_promotion(test_engine) -> None:
 async def test_reveal_200_after_attempt(test_engine) -> None:
     """Once solved, reveal returns 200 with the correct puzzle_type/source.
 
-    190.1-03: no best_move/best_move_san/pv assertions here — see
+    No best_move/best_move_san/pv assertions here — see
     test_reveal_key_set_excludes_stored_answer_key_fields for the standing
     exact-key-set assertion covering their removal.
     """
@@ -2272,14 +2263,14 @@ async def test_reveal_200_after_attempt(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_reveal_key_set_excludes_stored_answer_key_fields(test_engine) -> None:
-    """190.1-03 T-190.1-12: the reveal response's key set is the standing assertion
+    """The reveal response's key set is the standing assertion
     that no stored engine line/eval (best_move/best_move_san/pv) ever creeps
     back in — the client grading engine is the sole source of those numbers.
 
-    Phase 211 (VETFINE-02): the same equality assertion now ALSO proves the
+    The same equality assertion now ALSO proves the
     reveal body stays byte-identical to its pre-211 nine fields — no
     vetted-move material moves through this endpoint (the solve response is
-    the only carrier), which is what discharges RESEARCH Assumption A4: the
+    the only carrier), so the
     reveal GET's 409 race stays moot because there is no key material here
     to race for.
     """
@@ -2318,7 +2309,7 @@ async def test_reveal_key_set_excludes_stored_answer_key_fields(test_engine) -> 
 @pytest.mark.asyncio
 async def test_reveal_herring_reports_herring_type(test_engine) -> None:
     """A solved red herring reveals puzzle_type "herring", source
-    "red_herring", and (Task 3, D-20) motif null — no motif taxonomy exists
+    "red_herring", and motif null — no motif taxonomy exists
     for a herring."""
     email = f"train-reveal-herring-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -2345,7 +2336,7 @@ async def test_reveal_herring_reports_herring_type(test_engine) -> None:
 async def test_reveal_sharp_filler_reports_sharp_filler_source(
     test_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """WARM-06/D-15/D-20: a solved sharp filler reveals source "sharp_filler",
+    """A solved sharp filler reveals source "sharp_filler",
     puzzle_type "sharp", has_tactic_lines false, game_id null, and a
     non-empty fen — the four-site three-way branch in reveal_for_puzzle."""
     _install_sharp_fixture(monkeypatch)
@@ -2382,14 +2373,13 @@ async def test_reveal_sharp_filler_reports_sharp_filler_source(
 async def test_reveal_cross_user_herring_hides_game_move_and_no_owner_scope_leak(
     test_engine,
 ) -> None:
-    """Quick 260902-qf7 (REVERSES D-06/T-192-02): a herring drawn from user
+    """A herring drawn from user
     B's game, solved by user A, reveals with NO in-game move. `herring_pool`
-    is globally shared and identity-blind (D-10), so a herring's `game_id`
-    usually points at a stranger's game; D-06 read the resulting None as a
-    silent degradation and widened the `GamePosition` lookup to the source
-    game's OWNER, which made the reveal label a move user A never played
-    "Played in game" (observed in prod as the card "Best move / Played in
-    game: a3"). Ownership is now the gate: B's move stays hidden from A.
+    is globally shared and identity-blind, so a herring's `game_id`
+    usually points at a stranger's game; widening the `GamePosition` lookup
+    to the source game's OWNER would make the reveal label a move user A never
+    played "Played in game" (observed in prod as the card "Best move / Played in
+    game: a3"). Ownership is the gate: B's move stays hidden from A.
     The response key set stays exactly the standing `PuzzleRevealResponse`
     contract.
     """
@@ -2446,7 +2436,7 @@ async def test_reveal_cross_user_herring_hides_game_move_and_no_owner_scope_leak
 
 @pytest.mark.asyncio
 async def test_reveal_own_game_herring_still_shows_game_move(test_engine) -> None:
-    """Quick 260902-qf7 companion to the cross-user test above: the gate is
+    """Companion to the cross-user test above: the gate is
     OWNERSHIP, not "suppress the label for every herring". A herring drawn
     from the solving user's OWN game is a position they really did play, so
     the in-game move is still reported. Without this test the ownership fix
@@ -2489,10 +2479,10 @@ async def test_reveal_own_game_herring_still_shows_game_move(test_engine) -> Non
 
 @pytest.mark.asyncio
 async def test_reveal_survives_source_game_deletion(test_engine) -> None:
-    """D-01/D-03/D-05: a herring's source game deletion nulls `game_id` (real
+    """A herring's source game deletion nulls `game_id` (real
     `ON DELETE SET NULL`) but the reveal still succeeds — FEN comes off the
     `herring_pool` row, `game_id` reports `None`, and `played_in_game_san`
-    degrades to `None` (D-08) rather than the reveal 404ing.
+    degrades to `None` rather than the reveal 404ing.
     """
     email = f"train-reveal-orphan-herring-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -2535,8 +2525,8 @@ async def test_reveal_survives_source_game_deletion(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_reveal_orphaned_sr_row_returns_not_found(test_engine) -> None:
-    """D-05: an SR item solved BEFORE its source game is deleted returns
-    `"not_found"` on reveal after the deletion — the exact pre-D-05 CASCADE
+    """An SR item solved BEFORE its source game is deleted returns
+    `"not_found"` on reveal after the deletion — the same outcome as the former CASCADE
     outcome (the whole `drill_solves` row, and therefore this query's
     result, used to not exist at all). There is no "reveal an orphaned SR
     item" state; the puzzle simply cannot be re-shown once its source game
@@ -2563,7 +2553,7 @@ async def test_reveal_orphaned_sr_row_returns_not_found(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_reveal_foreign_session_404(test_engine) -> None:
-    """A session id belonging to a second registered user returns 404 (T-189-16)."""
+    """A session id belonging to a second registered user returns 404."""
     email_a = f"train-reveal-owner-{uuid.uuid4().hex[:8]}@example.com"
     user_a, token_a = await _register_and_login(email_a)
     email_b = f"train-reveal-attacker-{uuid.uuid4().hex[:8]}@example.com"
@@ -2616,7 +2606,7 @@ async def test_reveal_has_tactic_lines_flag(test_engine) -> None:
     )
     solved_tagged = await _solve(token, session_tagged, 0, move_quality="good")
     assert solved_tagged.status_code == 200
-    # Single-puzzle session -> immediately completed, freeing the D-12
+    # Single-puzzle session -> immediately completed, freeing the
     # at-most-one-open-session slot before the second session is seeded.
     assert solved_tagged.json()["session_complete"] is True
 
@@ -2641,27 +2631,27 @@ async def test_reveal_has_tactic_lines_flag(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Plan 05 Task 3 — GET/PUT /train/settings
+# GET/PUT /train/settings
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None:
-    """First GET creates and returns the D-06/D-07/D-08 defaults in one call."""
+    """First GET creates and returns the defaults in one call."""
     email = f"train-settings-default-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
     resp = await _get_settings(token)
     assert resp.status_code == 200
-    # 191-06: defaults changed from (weekday_mask=0, puzzles_per_session=12)
-    # to (127, 6) — see app.services.train_scheduler.DEFAULT_WEEKDAY_MASK.
-    # Phase 201 (REMIND-01): reminder_enabled/reminder_hour default to
+    # Defaults: weekday_mask=127, puzzles_per_session=6 — see
+    # app.services.train_scheduler.DEFAULT_WEEKDAY_MASK.
+    # reminder_enabled/reminder_hour default to
     # False/18 — see DEFAULT_REMINDER_ENABLED/DEFAULT_REMINDER_HOUR.
-    # Phase 203 (OFFER-03): reminder_intent_at defaults to None — a brand-new
+    # reminder_intent_at defaults to None — a brand-new
     # user has never expressed install intent.
-    # Phase 222 (TRAINBOT-05): intro_seen_at/sr_explained_at default to None
-    # and Phase 240 (D-09) reveal_tour_stage defaults to 0 — a brand-new user
-    # has never seen any onboarding stepper (D-13, no backfill).
+    # intro_seen_at/sr_explained_at default to None
+    # and reveal_tour_stage defaults to 0 — a brand-new user
+    # has never seen any onboarding stepper (no backfill).
     assert resp.json() == {
         "timezone": "UTC",
         "weekday_mask": 127,
@@ -2678,7 +2668,7 @@ async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None
 
 @pytest.mark.asyncio
 async def test_get_settings_reports_mobile_subscription_from_user_agent(test_engine) -> None:
-    """Phase 222 UAT round 5: `has_mobile_subscription` is derived from the
+    """`has_mobile_subscription` is derived from the
     stored User-Agent of the account's push subscriptions — a desktop UA keeps
     it False, a phone UA flips it True, and the fact is account-wide (the GET
     carries no device context of its own)."""
@@ -2802,7 +2792,7 @@ async def test_put_settings_rejects_out_of_range_mask_422(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_put_settings_rejects_out_of_range_reminder_hour_422(test_engine) -> None:
-    """T-201-14: a reminder_hour outside [0, 23] is rejected 422 by Pydantic
+    """A reminder_hour outside [0, 23] is rejected 422 by Pydantic
     before any SQL runs, on both boundaries."""
     email = f"train-settings-badhour-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -2830,7 +2820,7 @@ async def test_put_settings_rejects_out_of_range_reminder_hour_422(test_engine) 
 
 @pytest.mark.asyncio
 async def test_guest_settings_round_trip_200(test_engine) -> None:
-    """Phase 224 (D-01/S-2): a guest account gets 200 on both GET and PUT
+    """A guest account gets 200 on both GET and PUT
     /train/settings, and the PUT's echoed weekday_mask/puzzles_per_session
     match what was sent."""
     email = f"train-settings-guest-{uuid.uuid4().hex[:8]}@example.com"
@@ -2848,7 +2838,6 @@ async def test_guest_settings_round_trip_200(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 222 Plan 02 Task 2 (TRAINBOT-05, D-11/D-12/D-13/D-14) —
 # POST /train/onboarding/{step}
 # ---------------------------------------------------------------------------
 
@@ -2864,7 +2853,7 @@ async def _stamp_onboarding(token: str, step: str) -> httpx.Response:
 
 @pytest.mark.asyncio
 async def test_guest_onboarding_stamp_200(test_engine) -> None:
-    """Phase 224 (D-01/S-2, GUESTACT-14): a guest gets 200 on the stamp
+    """A guest gets 200 on the stamp
     endpoint, and a second GET /train/settings shows the stamped column
     non-null."""
     email = f"train-onboarding-guest-{uuid.uuid4().hex[:8]}@example.com"
@@ -2959,7 +2948,7 @@ async def test_onboarding_each_step_writes_only_its_own_column(test_engine) -> N
 
 @pytest.mark.asyncio
 async def test_onboarding_reveal_tour_advances_in_order(test_engine) -> None:
-    """D-09: reveal_tour_1, _2, _3 advance the stage 0 -> 1 -> 2 -> 3."""
+    """reveal_tour_1, _2, _3 advance the stage 0 -> 1 -> 2 -> 3."""
     email = f"train-onboarding-tour-order-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
@@ -2978,7 +2967,7 @@ async def test_onboarding_reveal_tour_advances_in_order(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_onboarding_reveal_tour_out_of_order_is_noop(test_engine) -> None:
-    """D-09: a stage advances to N only from N-1, so POSTing reveal_tour_2 or
+    """A stage advances to N only from N-1, so POSTing reveal_tour_2 or
     _3 on a stage-0 account returns 200 and leaves the stage at 0."""
     email = f"train-onboarding-tour-skip-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -2993,7 +2982,7 @@ async def test_onboarding_reveal_tour_out_of_order_is_noop(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_onboarding_reveal_tour_replay_never_moves_backwards(test_engine) -> None:
-    """D-09: a replayed reveal_tour_1 leaves stage 1; at stage 3 a stale
+    """A replayed reveal_tour_1 leaves stage 1; at stage 3 a stale
     reveal_tour_1 (or _2) leaves stage 3 — the stage never moves backwards."""
     email = f"train-onboarding-tour-replay-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -3013,7 +3002,7 @@ async def test_onboarding_reveal_tour_replay_never_moves_backwards(test_engine) 
 
 @pytest.mark.asyncio
 async def test_onboarding_retired_walkthrough_step_is_422(test_engine) -> None:
-    """D-11: the Phase 222 walkthrough step name left the Literal on purpose
+    """The retired `reveal_walkthrough` step name left the Literal on purpose
     (hard cut, no compat shim), so FastAPI 422s it and nothing is written."""
     email = f"train-onboarding-retired-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -3049,7 +3038,7 @@ async def test_get_settings_exposes_onboarding_state(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_put_settings_cannot_smuggle_onboarding_seen_timestamp(test_engine) -> None:
-    """D-12 / T-240-01: a PUT /train/settings body carrying intro_seen_at or
+    """A PUT /train/settings body carrying intro_seen_at or
     reveal_tour_stage (fields the write schema does not even declare) does not
     change the stored values — the write schema cannot smuggle a server-owned
     field."""
@@ -3093,7 +3082,7 @@ async def test_put_settings_cannot_smuggle_onboarding_seen_timestamp(test_engine
 
 @pytest.mark.asyncio
 async def test_onboarding_stamp_scoped_to_caller(test_engine) -> None:
-    """ASVS V4/IDOR: stamping one user's onboarding step never touches a
+    """IDOR: stamping one user's onboarding step never touches a
     second registered user's row."""
     email_a = f"train-onboarding-idor-a-{uuid.uuid4().hex[:8]}@example.com"
     email_b = f"train-onboarding-idor-b-{uuid.uuid4().hex[:8]}@example.com"
@@ -3110,7 +3099,7 @@ async def test_onboarding_stamp_scoped_to_caller(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 203 Plan 01 Task 2 (OFFER-03/OFFER-05, D-02) — reminder_intent_at
+# reminder_intent_at
 # contract: write-and-round-trip, loud-failure-on-omission, clear-to-null.
 # ---------------------------------------------------------------------------
 
@@ -3145,7 +3134,7 @@ async def test_put_settings_writes_and_round_trips_reminder_intent_at(test_engin
 async def test_put_settings_rejects_missing_reminder_intent_at_422(test_engine) -> None:
     """A PUT body that omits the reminder_intent_at key entirely returns 422 —
     the full-replace contract fails loudly rather than silently clearing a
-    previously-set intent (D-02). Calls the endpoint directly rather than via
+    previously-set intent. Calls the endpoint directly rather than via
     the _put_settings helper, since the helper always supplies the key."""
     email = f"train-settings-intent-omit-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
@@ -3228,7 +3217,7 @@ async def test_session_size_follows_settings(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_untouched_open_session_recomposes_after_size_change(test_engine) -> None:
-    """UAT bug fix (191-06 checkpoint round): `Train.tsx` auto-fires
+    """`Train.tsx` auto-fires
     `POST /train/sessions` as a status read on page MOUNT (see
     `useTrainSession.ts`'s module docstring) — BEFORE the user has a chance
     to edit `TrainScheduleSettings` on the same visit. Pressing Start/Resume
@@ -3283,8 +3272,7 @@ async def test_untouched_open_session_recomposes_after_size_change(test_engine) 
 
 
 # ---------------------------------------------------------------------------
-# Phase 193 (PROG-01/PROG-04, per-day tick + depletable shield) —
-# GET /train/progress
+# GET /train/progress (per-day tick + depletable shield)
 # ---------------------------------------------------------------------------
 
 
@@ -3321,7 +3309,7 @@ async def test_progress_returns_200_with_all_eleven_fields(test_engine) -> None:
     assert body["waiting_count"] == 0
     assert body["pool_state"] == "no_material"
     assert body["next_due_date"] is None
-    # (Plan 02, D-09/D-10) waiting_count == 0 -> badge_visible is always
+    # waiting_count == 0 -> badge_visible is always
     # False regardless of schedule; still assert its type here since a
     # brand-new account is the cheapest place to pin "key present, boolean".
     assert isinstance(body["badge_visible"], bool)
@@ -3360,7 +3348,7 @@ async def test_put_settings_settles_elapsed_days_with_old_mask_before_get(test_e
 
 @pytest.mark.asyncio
 async def test_guest_progress_200(test_engine) -> None:
-    """Phase 224 (D-01/S-2): a guest account gets 200 with the documented
+    """A guest account gets 200 with the documented
     progress payload key set."""
     email = f"train-progress-guest-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -3443,7 +3431,7 @@ async def test_enter_session_rejects_other_users_session(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 233: per-puzzle telemetry (SEED-190)
+# per-puzzle telemetry
 # ---------------------------------------------------------------------------
 
 
@@ -3479,7 +3467,7 @@ async def _seed_herring_session(test_engine, label: str) -> tuple[int, str, int,
 
 @pytest.mark.asyncio
 async def test_telemetry_solve_without_telemetry_stays_sql_null(test_engine) -> None:
-    """D-01: a solve that carries no telemetry leaves the column SQL NULL, not JSON null."""
+    """A solve that carries no telemetry leaves the column SQL NULL, not JSON null."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "none")
     try:
         resp = await _solve(token, session_id, 0)
@@ -3492,7 +3480,7 @@ async def test_telemetry_solve_without_telemetry_stays_sql_null(test_engine) -> 
 
 @pytest.mark.asyncio
 async def test_telemetry_solve_with_telemetry_stores_object(test_engine) -> None:
-    """D-01: valid telemetry is stored as exactly the sent keys, a JSON object."""
+    """Valid telemetry is stored as exactly the sent keys, a JSON object."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "store")
     payload: dict[str, object] = {
         "v": 1,
@@ -3515,7 +3503,7 @@ async def test_telemetry_solve_with_telemetry_stores_object(test_engine) -> None
 
 @pytest.mark.asyncio
 async def test_telemetry_solve_clamps_and_rounds(test_engine) -> None:
-    """D-04: durations are rounded and clamped into [0, cap] server-side."""
+    """Durations are rounded and clamped into [0, cap] server-side."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "clamp")
     try:
         resp = await _solve(
@@ -3546,7 +3534,7 @@ async def test_telemetry_solve_clamps_and_rounds(test_engine) -> None:
 async def test_telemetry_invalid_telemetry_still_solves(
     test_engine, bad_telemetry: dict[str, object]
 ) -> None:
-    """D-02: malformed telemetry never costs the solve; only the telemetry is dropped."""
+    """Malformed telemetry never costs the solve; only the telemetry is dropped."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "bad")
     try:
         resp = await _solve(token, session_id, 0, telemetry=bad_telemetry)
@@ -3567,7 +3555,7 @@ async def test_telemetry_invalid_telemetry_still_solves(
 
 @pytest.mark.asyncio
 async def test_telemetry_does_not_change_grading(test_engine) -> None:
-    """D-05: the response and the SR ladder are identical with and without telemetry."""
+    """The response and the SR ladder are identical with and without telemetry."""
     game_ids: list[int] = []
     responses: list[dict[str, object]] = []
     cases: list[tuple[str, dict[str, object] | None]] = [
@@ -3631,7 +3619,7 @@ async def _review(
 
 @pytest.mark.asyncio
 async def test_review_flush_merges_into_solved_row(test_engine) -> None:
-    """D-01/D-03: the flush adds the review keys and leaves the solve keys intact."""
+    """The flush adds the review keys and leaves the solve keys intact."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "rmerge")
     try:
         solve_patch: dict[str, object] = {"v": 1, "guess_ms": 1200, "client": "mobile"}
@@ -3653,7 +3641,7 @@ async def test_review_flush_merges_into_solved_row(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_review_flush_v2_body_is_stored(test_engine) -> None:
-    """Phase 237 D-12: a v2 chip/strip body is merged next to the v1-shaped solve keys."""
+    """A v2 chip/strip body is merged next to the v1-shaped solve keys."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "rv2")
     try:
         solve_patch: dict[str, object] = {"v": 1, "guess_ms": 1200, "client": "mobile"}
@@ -3738,7 +3726,7 @@ async def test_review_flush_rejects_unsolved_row(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_review_flush_rejects_other_users_row(test_engine) -> None:
-    """T-233-01: another user's solved row is a 404 and the owner's telemetry is unchanged."""
+    """Another user's solved row is a 404 and the owner's telemetry is unchanged."""
     _, owner_token, game_id, session_id = await _seed_herring_session(test_engine, "rowner")
     _, intruder_token = await _register_and_login(
         f"train-tel-intruder-{uuid.uuid4().hex[:8]}@example.com"
@@ -3804,7 +3792,7 @@ async def test_review_flush_accepts_completed_and_expired_session(test_engine) -
         {"v": 1, "exit": "close"},
         {"v": 3, "exit": "next"},
         {"v": 1, "exit": "next", "review_explored": 1},
-        # Phase 237 D-12: a body mixing the v1 card keys and the v2 chip keys is a 422.
+        # A body mixing the v1 card keys and the v2 chip keys is a 422.
         {"v": 1, "exit": "next", "review_chips_total": 2},
         {"v": 2, "exit": "next", "review_cards_opened": 1},
     ],
@@ -3821,7 +3809,7 @@ async def test_review_flush_rejects_bad_body(test_engine, bad_body: dict[str, ob
 
 @pytest.mark.asyncio
 async def test_review_flush_path_bounds(test_engine) -> None:
-    """T-233-03: int2/int4 overflow in the path is a 422 before any SQL runs."""
+    """int2/int4 overflow in the path is a 422 before any SQL runs."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "rpath")
     try:
         body: dict[str, object] = {"v": 1, "exit": "next"}
@@ -3832,10 +3820,10 @@ async def test_review_flush_path_bounds(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 235: server-graded sharp runner-up and phone disagreement re-check
+# server-graded sharp runner-up and phone disagreement re-check
 # ---------------------------------------------------------------------------
 
-# D-11/D-13: a confirmed re-check where the phone's own numbers rate the played
+# A confirmed re-check where the phone's own numbers rate the played
 # move as good as the key at both budgets (key - played = -0.02 and 0.01, both
 # below INACCURACY_DROP).
 _CONFIRMED_RECHECK: dict[str, object] = {
@@ -3892,7 +3880,7 @@ async def _seed_sharp_keyed_session(test_engine, label: str) -> tuple[int, str, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("guess", ["critical", "several"])
 async def test_recheck_confirmed_on_sharp_credits_either_guess(test_engine, guess: str) -> None:
-    """D-14: a confirmed re-check on a live sharp puzzle earns the guess point for
+    """A confirmed re-check on a live sharp puzzle earns the guess point for
     BOTH guesses, records tier good, flags disagreement, and stores the record
     with accepted true."""
     _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, f"ok-{guess}")
@@ -3921,7 +3909,7 @@ async def test_recheck_confirmed_on_sharp_credits_either_guess(test_engine, gues
 
 @pytest.mark.asyncio
 async def test_solve_without_recheck_stays_sql_null_and_grades_as_before(test_engine) -> None:
-    """D-20 / stale bundle: no recheck -> graded as before (several is wrong on a
+    """Stale bundle: no recheck -> graded as before (several is wrong on a
     sharp puzzle), no disagreement credit, and the column is SQL NULL (not a JSON
     null value)."""
     _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "none")
@@ -3941,7 +3929,7 @@ async def test_solve_without_recheck_stays_sql_null_and_grades_as_before(test_en
 
 @pytest.mark.asyncio
 async def test_recheck_resolved_is_stored_unaccepted(test_engine) -> None:
-    """D-17: a "resolved" re-check (the phone agreed with the key after all) is
+    """A "resolved" re-check (the phone agreed with the key after all) is
     stored with accepted false, grants nothing, and the client tier is recorded."""
     _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "resolved")
     recheck = {**_CONFIRMED_RECHECK, "outcome": "resolved"}
@@ -3972,8 +3960,8 @@ async def test_recheck_resolved_is_stored_unaccepted(test_engine) -> None:
 async def test_recheck_confirmed_on_soft_puzzle_grants_nothing(
     test_engine, guess: str, expected_correct: bool
 ) -> None:
-    """D-14 / Pitfall 4: the LIVE puzzle type decides. A confirmed claim on a soft
-    puzzle is stored with accepted false and grades as normal (P-02: several is
+    """The LIVE puzzle type decides. A confirmed claim on a soft
+    puzzle is stored with accepted false and grades as normal (several is
     right, critical is wrong); it is never a 422."""
     user_id, token = await _register_and_login(
         f"train-rck-soft-{guess}-{uuid.uuid4().hex[:8]}@example.com"
@@ -4046,7 +4034,7 @@ async def test_recheck_resubmit_keeps_first_record(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 236: phone grade audit record (SEED-193)
+# phone grade audit record
 # ---------------------------------------------------------------------------
 
 _PHONE_GRADE: dict[str, object] = {
@@ -4079,7 +4067,7 @@ async def _phone_grade_row(
 
 @pytest.mark.asyncio
 async def test_phone_grade_on_solve_is_stored_verbatim(test_engine) -> None:
-    """D-01/D-13: a solve POST carrying phone_grade stores the record as a JSON object."""
+    """A solve POST carrying phone_grade stores the record as a JSON object."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-store")
     try:
         resp = await _solve(token, session_id, 0, phone_grade=_PHONE_GRADE)
@@ -4094,7 +4082,7 @@ async def test_phone_grade_on_solve_is_stored_verbatim(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_solve_without_phone_grade_stays_sql_null(test_engine) -> None:
-    """D-01: a solve with no record leaves the column SQL NULL, never a JSON null."""
+    """A solve with no record leaves the column SQL NULL, never a JSON null."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-none")
     try:
         resp = await _solve(token, session_id, 0)
@@ -4109,7 +4097,7 @@ async def test_solve_without_phone_grade_stays_sql_null(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_phone_grade_is_never_a_grading_input(test_engine) -> None:
-    """D-02: a fabricated phone_grade changes nothing about how the solve is graded;
+    """A fabricated phone_grade changes nothing about how the solve is graded;
     the stored record keeps the client's tier verbatim while move_quality stays the
     server's effective tier."""
     _, token_a, game_a, session_a = await _seed_sharp_keyed_session(test_engine, "pg-gradeA")
@@ -4155,7 +4143,7 @@ async def test_phone_grade_is_never_a_grading_input(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_review_flush_writes_phone_grade_column_not_telemetry(test_engine) -> None:
-    """D-12: the flush's record lands in its own column and never in telemetry."""
+    """The flush's record lands in its own column and never in telemetry."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-rev")
     try:
         assert (await _solve(token, session_id, 0)).status_code == 200
@@ -4180,7 +4168,7 @@ async def test_review_flush_writes_phone_grade_column_not_telemetry(test_engine)
 
 @pytest.mark.asyncio
 async def test_review_flush_phone_grade_is_write_once(test_engine) -> None:
-    """D-12: a second flush with a different record keeps the first record, still
+    """A second flush with a different record keeps the first record, still
     returns 204 and still merges its own telemetry keys."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-once")
     try:
@@ -4211,7 +4199,7 @@ async def test_review_flush_phone_grade_is_write_once(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_review_flush_never_overwrites_solve_time_phone_grade(test_engine) -> None:
-    """D-12/D-13: a record stored by the solve POST survives a later flush's record."""
+    """A record stored by the solve POST survives a later flush's record."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-keep")
     try:
         assert (await _solve(token, session_id, 0, phone_grade=_PHONE_GRADE)).status_code == 200
@@ -4234,7 +4222,7 @@ async def test_review_flush_never_overwrites_solve_time_phone_grade(test_engine)
 
 @pytest.mark.asyncio
 async def test_review_flush_malformed_phone_grade_keeps_telemetry(test_engine) -> None:
-    """D-01: a malformed record is dropped; the flush still 204s and merges telemetry."""
+    """A malformed record is dropped; the flush still 204s and merges telemetry."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-bad")
     try:
         assert (await _solve(token, session_id, 0)).status_code == 200
@@ -4261,7 +4249,7 @@ async def test_review_flush_malformed_phone_grade_keeps_telemetry(test_engine) -
 
 @pytest.mark.asyncio
 async def test_review_flush_without_phone_grade_leaves_column_null(test_engine) -> None:
-    """D-12: a stale-bundle flush (no field) behaves as in Phase 233, column stays NULL."""
+    """A stale-bundle flush (no field) leaves the column NULL, as before the field existed."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-stale")
     try:
         assert (await _solve(token, session_id, 0)).status_code == 200
@@ -4276,7 +4264,7 @@ async def test_review_flush_without_phone_grade_leaves_column_null(test_engine) 
 
 @pytest.mark.asyncio
 async def test_phone_grade_resubmit_keeps_first_record(test_engine) -> None:
-    """D-13: a re-submit of an already-solved position with a different record keeps
+    """A re-submit of an already-solved position with a different record keeps
     the first stored record."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-resub")
     try:
@@ -4294,8 +4282,8 @@ async def test_phone_grade_resubmit_keeps_first_record(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_phone_grade_never_earns_disagreement_credit(test_engine) -> None:
-    """T-236-01: a record claiming a good pair earns no disagreement credit; only a
-    sanity-checked recheck can (P-02: several on a sharp puzzle is not correct)."""
+    """A record claiming a good pair earns no disagreement credit; only a
+    sanity-checked recheck can (several on a sharp puzzle is not correct)."""
     _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "pg-nocredit")
     try:
         resp = await _solve(

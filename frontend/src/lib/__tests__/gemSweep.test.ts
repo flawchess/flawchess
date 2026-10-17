@@ -1,20 +1,17 @@
 /**
  * gemSweep unit tests — pure, deterministic (no engine/worker involved).
  *
- * Wave 0 gap identified in 172-VALIDATION.md. Traces 1:1 to the plan's
- * <behavior> contract for `selectSweepCandidates` (D-04 free prefilter) and
- * `nextSweepDispatch` (D-05 yield-to-cursor scheduler decision).
+ * Covers `selectSweepCandidates` (free prefilter) and `nextSweepDispatch`
+ * (yield-to-cursor scheduler decision).
  *
  * Two cases are load-bearing and are the project's regression guard against
- * the phase's two silent-failure modes (see 172-RESEARCH.md Common Pitfalls
- * 2 and 4, and the project's mutation-test-gap-closure memory: prove a gap
- * fix by REVERTING it and confirming tests fail, not by grep/symbol
- * presence):
+ * the two silent-failure modes (prove a gap fix by REVERTING it and
+ * confirming tests fail, not by grep/symbol presence):
  *   1. The SAN-vs-UCI case — a naive string compare would silently drop
  *      every candidate.
- *   2. The `liveBusy` case — the D-05 yield-to-cursor invariant. Deleting
+ *   2. The `liveBusy` case — the yield-to-cursor invariant. Deleting
  *      the `liveBusy` guard from `nextSweepDispatch` MUST turn this test
- *      red; see the manually-recorded revert proof in 172-02-SUMMARY.md.
+ *      red.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -56,7 +53,7 @@ function fenAfter(moves: string[]): (i: number) => string | null {
 // ─── selectSweepCandidates ──────────────────────────────────────────────────
 
 describe('selectSweepCandidates', () => {
-  it('LOAD-BEARING (RESEARCH Pitfall 2): a SAN played move ("Nf3") whose UCI equivalent ("g1f3") matches best_move survives — a naive string compare would drop it', () => {
+  it('LOAD-BEARING: a SAN played move ("Nf3") whose UCI equivalent ("g1f3") matches best_move survives — a naive string compare would drop it', () => {
     const moves = ['Nf3'];
     const evalSeries = [evalPoint({ ply: 0, best_move: 'g1f3' })];
     const result = selectSweepCandidates(moves, evalSeries, 0, fenAfter(moves));
@@ -78,7 +75,7 @@ describe('selectSweepCandidates', () => {
     expect(result).toHaveLength(0);
   });
 
-  it('D-04/D-06/D-08: a ply with index < openingPlyCount is dropped even when the played move IS the best move (book gate)', () => {
+  it('a ply with index < openingPlyCount is dropped even when the played move IS the best move (book gate)', () => {
     const moves = ['e4'];
     const evalSeries = [evalPoint({ ply: 0, best_move: 'e2e4' })]; // played === best
     const result = selectSweepCandidates(moves, evalSeries, 1, fenAfter(moves)); // openingPlyCount=1 covers ply 0
@@ -148,7 +145,7 @@ function baseInput(overrides: Partial<import('../gemSweep').SweepDispatchInput> 
 }
 
 describe('nextSweepDispatch', () => {
-  it('LOAD-BEARING (D-05 yield-to-cursor invariant): returns idle when liveBusy is true, even with unresolved candidates present and nothing in flight — deleting the liveBusy guard MUST turn this test red', () => {
+  it('LOAD-BEARING (yield-to-cursor invariant): returns idle when liveBusy is true, even with unresolved candidates present and nothing in flight — deleting the liveBusy guard MUST turn this test red', () => {
     const result = nextSweepDispatch(baseInput({ liveBusy: true, inFlight: null }));
     expect(result).toEqual({ kind: 'idle' });
   });
@@ -192,7 +189,7 @@ describe('nextSweepDispatch', () => {
   });
 });
 
-// ─── resolveGemVerdict (CR-01 precedence) ───────────────────────────────────
+// ─── resolveGemVerdict (precedence) ───────────────────────────────────
 
 interface Detail {
   maiaProbability: number;
@@ -202,7 +199,7 @@ interface Detail {
 const GEM: Detail = { maiaProbability: 0.01, elo: 1500, byOpponent: false };
 
 describe('resolveGemVerdict', () => {
-  it("LOAD-BEARING (CR-01): a live null rejection wins over the sweep's gem for the SAME node/ply — the sweep is NEVER consulted once gemByNode has an answer; reverting to a `?? ` collapse MUST turn this red", () => {
+  it("LOAD-BEARING: a live null rejection wins over the sweep's gem for the SAME node/ply — the sweep is NEVER consulted once gemByNode has an answer; reverting to a `?? ` collapse MUST turn this red", () => {
     // The live path graded this node and REJECTED it (null). The background
     // sweep, grading at a 4x-shorter movetime, disagreed and stamped a gem for
     // the same mainline ply. The deeper live rejection must win.
@@ -210,7 +207,7 @@ describe('resolveGemVerdict', () => {
     const gemByPly = new Map<number, Detail | null>([[2, GEM]]);
 
     // With the buggy `gemByNode.get(2) ?? gemByPly.get(2)` collapse this returns
-    // GEM (`null ?? GEM === GEM`) — the exact wrong-badge bug CR-01 fixes.
+    // GEM (`null ?? GEM === GEM`) — the exact wrong-badge bug this guards against.
     expect(resolveGemVerdict(gemByNode, gemByPly, 2, 2)).toBeNull();
   });
 

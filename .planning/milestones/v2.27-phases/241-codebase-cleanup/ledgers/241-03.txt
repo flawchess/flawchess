@@ -1,0 +1,3 @@
+INV-L351: APPLIED app/main.py finally-block comment now says "any background task" / "cancel all tasks before awaiting any" (six tasks are cancelled and awaited); the drain-spawn comment says stop_engine() runs after all background tasks are awaited. Re-verified against lifespan().
+INV-L352: APPLIED app/main.py insights-Agent comment rewritten: validate before orphan cleanup, startup failure is a deploy-blocker, UserError aborts uvicorn startup. Re-verified: get_insights_agent() runs before cleanup_orphaned_jobs().
+INV-L392: APPLIED app/users.py _verify_credentials docstring now points at guest_service.create_guest_user and promote_guest_with_google (both still set hashed_password=""); the stale line numbers are gone.

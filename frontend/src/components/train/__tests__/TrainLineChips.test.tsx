@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * TrainLineChips tests (Phase 237 Plan 04): every chip state the old line cards
- * carried (mark, SAN, eval, Phase 236 loading/failed, SAN-only game move) plus
- * the D-02 merged labels. ChipGroup fixtures are built directly.
+ * TrainLineChips tests: every chip state the old line cards
+ * carried (mark, SAN, eval, loading/failed, SAN-only game move) plus
+ * the merged labels. ChipGroup fixtures are built directly.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -79,11 +79,11 @@ describe('TrainLineChips', () => {
     expect(screen.getByTestId('train-chip-game-quality').getAttribute('data-quality')).toBe('blunder');
   });
 
-  it('labels the chip eval as the graded reading (SEED-197)', () => {
+  it('labels the chip eval as the graded reading', () => {
     renderChips([chip({ key: 'your' })]);
     const pill = screen.getByTestId('train-chip-your-eval');
     expect(pill.getAttribute('title')).toBe('Graded eval');
-    // IN-05: title never shows on touch and aria-label on a role-less span is not
+    // The title never shows on touch and aria-label on a role-less span is not
     // announced reliably, so the label is real (visually hidden) text.
     expect(pill.getAttribute('aria-label')).toBeNull();
     const hidden = pill.querySelector('.sr-only');
@@ -91,13 +91,13 @@ describe('TrainLineChips', () => {
     expect(pill.textContent).toBe('Graded eval +1.2');
   });
 
-  it('hides the eval pill for an eval-less stand-in line instead of a permanent "…" (WR-01)', () => {
+  it('hides the eval pill for an eval-less stand-in line instead of a permanent "…"', () => {
     renderChips([chip({ key: 'your', line: { moves: [], evalCp: null, evalMate: null } })]);
     expect(screen.getByTestId('train-chip-your')).toBeTruthy();
     expect(screen.queryByTestId('train-chip-your-eval')).toBeNull();
   });
 
-  it('a merged your + best chip renders ONE button labelled "Move = Best" (D-02)', () => {
+  it('a merged your + best chip renders ONE button labelled "Move = Best"', () => {
     renderChips([chip({ key: 'your', roles: ['your', 'best'], label: 'Move = Best', quality: 'best' })]);
     const buttons = within(screen.getByTestId('train-line-chips')).getAllByRole('button');
     expect(buttons).toHaveLength(1);
@@ -105,7 +105,7 @@ describe('TrainLineChips', () => {
     expect(buttons[0]?.getAttribute('data-roles')).toBe('your best');
   });
 
-  it('a merged your + game chip renders "Move = Game" (D-02)', () => {
+  it('a merged your + game chip renders "Move = Game"', () => {
     renderChips([
       chip({ key: 'your', roles: ['your', 'game'], label: 'Move = Game' }),
       chip({ key: 'best', uci: 'd2d4', san: 'd4' }),
@@ -125,7 +125,7 @@ describe('TrainLineChips', () => {
     expect(screen.getByTestId('train-chip-your').className).not.toContain('ring-brand-brown');
   });
 
-  it('no chip is pressed when none is active (D-04)', () => {
+  it('no chip is pressed when none is active', () => {
     renderChips(THREE, { activeChip: null });
     for (const key of ['your', 'best', 'game']) {
       expect(screen.getByTestId(`train-chip-${key}`).getAttribute('aria-pressed')).toBe('false');
@@ -139,7 +139,7 @@ describe('TrainLineChips', () => {
     expect(onSelect).toHaveBeenCalledWith('game');
   });
 
-  it('a loading chip shows a spinner instead of an eval (Phase 236 D-14)', () => {
+  it('a loading chip shows a spinner instead of an eval', () => {
     renderChips([chip({ key: 'your', pending: 'loading', line: null })]);
     const button = screen.getByTestId('train-chip-your');
     expect(button.getAttribute('data-line-status')).toBe('loading');
@@ -148,7 +148,7 @@ describe('TrainLineChips', () => {
     expect(screen.getByTestId('train-chip-your-san').textContent).toBe('e4');
   });
 
-  it('a failed chip keeps SAN and mark but renders no eval and no spinner (Phase 236 D-15)', () => {
+  it('a failed chip keeps SAN and mark but renders no eval and no spinner', () => {
     renderChips([chip({ key: 'your', pending: 'failed', line: null })]);
     expect(screen.getByTestId('train-chip-your').getAttribute('data-line-status')).toBe('failed');
     expect(screen.getByTestId('train-chip-your-san').textContent).toBe('e4');
@@ -177,7 +177,7 @@ describe('TrainLineChips', () => {
     expect(screen.getByTestId('train-chip-your-quality').getAttribute('data-quality')).toBe('inaccuracy');
   });
 
-  // Phase 237 UAT: the row itself never carries a ring (the tour used to ring it).
+  // The row itself never carries a ring.
   it('the row root never carries a ring', () => {
     renderChips(THREE);
     expect(screen.getByTestId('train-line-chips').className).not.toContain('ring-');

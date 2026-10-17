@@ -5,10 +5,9 @@ import { DepthLabel, SquareMarkerGroup } from './boardMarkers';
 import type { SquareMarker } from './boardMarkers';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
-// Fine-arrow proportions, distinct from ChessBoard.tsx's normalized 0..1 width
-// scale. MiniBoard arrows are decorative pointers ("which move scored well/
-// poorly?"), so they stay visually thin even on small boards. All values are
-// fractions of a single square's pixel size.
+// Fixed arrow proportions (fractions of a square), unlike ChessBoard's
+// frequency-scaled widths: MiniBoard arrows are decorative pointers ("which move
+// scored well/poorly?"), so they stay visually thin even on small boards.
 const MINI_SHAFT_WIDTH = 0.27;
 const MINI_HEAD_WIDTH = 0.75;
 const MINI_HEAD_LENGTH_RATIO = 0.7;
@@ -16,7 +15,7 @@ const MINI_ARROW_OPACITY = 0.65;
 const MINI_TIP_OVERSHOOT = 0.16;
 
 // Depth-label badges and severity corner markers render via ./boardMarkers, shared
-// with the analysis ChessBoard so both boards draw identical marks (Quick 260627-r9g).
+// with the analysis ChessBoard so both boards draw identical marks.
 
 interface MiniBoardArrow {
   from: string;
@@ -47,11 +46,11 @@ interface MiniBoardProps {
   flipped?: boolean;
   arrows?: ReadonlyArray<MiniBoardArrow>;
   cornerDot?: MiniBoardCornerDot;
-  /** Severity glyph badges drawn in a square's top-right corner (item 4). */
+  /** Severity glyph badges drawn in a square's top-right corner. */
   squareMarkers?: ReadonlyArray<SquareMarker>;
   /** From/to squares of the move that reached this position — highlighted like the Openings board. */
   lastMove?: { from: string; to: string };
-  /** Last-move overlay color; defaults to the shared translucent yellow (item 5). */
+  /** Last-move overlay color; defaults to the shared translucent yellow. */
   lastMoveColor?: string;
 }
 
@@ -167,7 +166,7 @@ function MiniArrowOverlay({
         );
       })}
       {/* Depth-label badges drawn last so they sit on top of the arrowheads
-          (top-left corner, shared geometry — Quick 260627-r9g item 6). */}
+          (top-left corner, shared geometry). */}
       {arrows.map((a) =>
         a.label ? (
           <DepthLabel
@@ -194,8 +193,8 @@ export function MiniBoard({
   lastMove,
   lastMoveColor,
 }: MiniBoardProps) {
-  // Highlight the move's from/to squares. Severity-coded on the games card
-  // (item 5); default translucent yellow (MOVE_HIGHLIGHT_SQUARE) elsewhere.
+  // Highlight the move's from/to squares. Severity-coded on the games card;
+  // default translucent yellow (MOVE_HIGHLIGHT_SQUARE) elsewhere.
   const lastFrom = lastMove?.from ?? null;
   const lastTo = lastMove?.to ?? null;
   const highlightColor = lastMoveColor ?? MOVE_HIGHLIGHT_SQUARE;

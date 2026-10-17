@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 Plan 07 — Endgames filter visibility (D-02).
+ * Endgames filter visibility.
  *
  * The filter UI (desktop sidebar strip + panel, mobile Filters button + drawer) is
  * hidden while the Stats tab is active and comes back on the Games tab. Hiding it
  * must never touch the applied filters: the shared store value is referentially
  * equal after a Stats round trip, and a half-edited pending draft is discarded
- * rather than committed. The Games tab reads GET /endgames/stats (D-01).
+ * rather than committed. The Games tab reads GET /endgames/stats.
  */
 
 import { useEffect } from 'react';
@@ -19,7 +19,7 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import type { EndgameStatsResponse } from '@/types/endgames';
 
-// ── Data hooks: the Games tab data comes from useEndgameStats (D-01).
+// ── Data hooks: the Games tab data comes from useEndgameStats.
 const statsHookSpy = vi.fn();
 const STATS: EndgameStatsResponse = {
   total_games: 100,
@@ -66,7 +66,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));
@@ -183,7 +183,7 @@ const SEEDED: FilterState = {
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('Endgames filter visibility (D-02)', () => {
+describe('Endgames filter visibility', () => {
   it('renders no filter UI on the Stats tab', () => {
     renderAt('/endgames/stats');
     expect(screen.queryByTestId('btn-open-filter-drawer')).toBeNull();
@@ -260,7 +260,7 @@ describe('Endgames filter visibility (D-02)', () => {
   });
 });
 
-describe('Endgames Games tab data (D-01)', () => {
+describe('Endgames Games tab data', () => {
   it('requests the filtered stats with the applied filters and the Tier-2 gate', () => {
     renderAt('/endgames/games');
     act(() => probe.setApplied(SEEDED));
@@ -270,7 +270,7 @@ describe('Endgames Games tab data (D-01)', () => {
     expect(lastCall[1]).toEqual({ enabled: true });
   });
 
-  it('does not fire the Games-tab stats query while the Stats tab is active (FE-IN-03)', () => {
+  it('does not fire the Games-tab stats query while the Stats tab is active', () => {
     renderAt('/endgames/stats');
     expect(statsHookSpy.mock.calls.at(-1)![1]).toEqual({ enabled: false });
     go('test-go-games');

@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 /**
- * stockfishWorkerSource.ts unit tests (Phase 213-08, G-213-35).
+ * stockfishWorkerSource.ts unit tests.
  *
  * Covers the shared-fetch memoisation (single fetch for N concurrent/repeat
  * callers), the streaming-reader progress reporting through
  * `engineAssetProgress`, every failure-mode degradation to `null`, the
  * location-hash worker-construction contract, and the source gate proving
- * the shared module is the only Stockfish Worker construction site
- * (extended in Task 3).
+ * the shared module is the only Stockfish Worker construction site.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
@@ -150,7 +149,7 @@ function stubWorkerCtor(): void {
   );
 }
 
-// ─── In-memory CacheStorage double (Phase 213-12, D-20) ────────────────────
+// ─── In-memory CacheStorage double ────────────────────
 //
 // Mirrors ortRuntimeSource.test.ts / engineAssetCache.test.ts's own double:
 // stores RAW BYTES, not Response objects — a real Cache API constructs a
@@ -273,7 +272,7 @@ describe('ensureStockfishWorkerUrl — single-fetch memoisation', () => {
   });
 });
 
-// ─── Cache provenance (Phase 213-12, D-20) ─────────────────────────────────
+// ─── Cache provenance ─────────────────────────────────
 //
 // ensureStockfishWorkerUrl() stays memoised for the WHOLE page session (the
 // published object URL must — replaceDeadSlot() depends on it staying valid
@@ -319,7 +318,7 @@ describe('ensureStockfishWorkerUrl — cache provenance across module sessions',
   });
 });
 
-describe('ensureStockfishWorkerUrl — CR-02 synchronous pending registration', () => {
+describe('ensureStockfishWorkerUrl — synchronous pending registration', () => {
   it('registers stockfish-wasm as pending synchronously, before any chunk can arrive', () => {
     const { reader } = createControlledReader([new Uint8Array([1, 2, 3])]); // never released in this test
     const fetchMock = vi.fn().mockResolvedValue(makeResponse({ contentLength: '3', reader }));
@@ -418,7 +417,7 @@ describe('ensureStockfishWorkerUrl — published Blob', () => {
   });
 });
 
-describe('ensureStockfishWorkerUrl — failure degradation (T-213-07)', () => {
+describe('ensureStockfishWorkerUrl — failure degradation', () => {
   it('a rejected fetch resolves null, reports to Sentry once, and never rejects/throws', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
 
@@ -492,7 +491,7 @@ describe('createStockfishWorker — construction contract', () => {
     stubWorkerCtor();
   });
 
-  it('a null shared URL appends STOCKFISH_ENGINE_WASM_PATH as an encoded location hash (D-05)', () => {
+  it('a null shared URL appends STOCKFISH_ENGINE_WASM_PATH as an encoded location hash', () => {
     const worker = createStockfishWorker(null, 'single') as unknown as MockWorker;
 
     expect(worker.url).toBe(
@@ -516,7 +515,7 @@ describe('createStockfishWorker — construction contract', () => {
   });
 });
 
-// ─── Source gate (Task 3, Phase 213-08, G-213-35) ──────────────────────────
+// ─── Source gate ──────────────────────────
 //
 // Proves the shared module is the ONLY Stockfish Worker construction site
 // left under `frontend/src` — a symbol-presence check would pass even if a
@@ -566,7 +565,7 @@ describe('source gate: only stockfishWorkerSource.ts constructs a Stockfish Work
   });
 });
 
-// ─── Accounting assertion (Task 3) ──────────────────────────────────────────
+// ─── Accounting assertion ──────────────────────────────────────────
 
 describe('ensureStockfishWorkerUrl — accounting: numerator equals denominator for one transfer', () => {
   it('after a full simulated download and constructing several workers, stockfish-wasm total and loaded both equal one transfer worth of bytes', async () => {

@@ -1,7 +1,5 @@
 /**
- * PlayStyleControl — preset-only play-style control for the Bots setup screen
- * (Phase 171 D-01, PLAY-02; reworked to three-button segmented control,
- * quick 260717-lr9).
+ * PlayStyleControl — preset-only play-style control for the Bots setup screen.
  *
  * Three discrete presets, no slider: Human (blend 0) / Light (blend 0.05,
  * default) / Deep (blend 0.5). They are named by CALCULATION BEHAVIOR, not by
@@ -85,7 +83,7 @@ export function PlayStyleControl({ blend, onChange }: PlayStyleControlProps) {
             key={preset.key}
             type="button"
             onClick={() => {
-              // Phase 229 D-12: one component serves both setup surfaces; re-picking the
+              // One component serves both setup surfaces; re-picking the
               // active preset is not a change.
               if (activePreset !== preset.key) {
                 trackFeature('option-change', { target: 'play-style', value: preset.key });

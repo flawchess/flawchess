@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 /**
- * Phase 87.5 (Plan 02 Wave 0) — Endgame ELO Timeline section render tests.
+ * Endgame ELO Timeline section render tests.
  *
- * Phase 87.6 extension: adds tests for the 3-line + signed-band layout,
+ * Covers the 3-line + signed-band layout,
  * gradient ID uniqueness, hidden-combo cleanup, and tooltip content.
  *
- * 260530-pll: replaces computeDefaultHidden tests with computeDefaultHiddenByPrimaryTc
- * tests. Default visibility is now based on the primary TC (computePrimaryTc heuristic),
- * not the old active-weeks / top-1-by-games heuristic.
+ * Default visibility (computeDefaultHiddenByPrimaryTc) is based on the
+ * primary TC (computePrimaryTc heuristic).
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -194,11 +193,10 @@ describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
     expect(areas.length).toBe(1);
   });
 
-  it('renders Endgame ELO as dashed and Non-Endgame ELO as dotted (UAT 87.6 2026-05-17)', () => {
-    // Per UAT feedback: use dashed lines for Endgame ELO and dotted lines for
+  it('renders Endgame ELO as dashed and Non-Endgame ELO as dotted', () => {
+    // Use dashed lines for Endgame ELO and dotted lines for
     // Non-Endgame ELO so the two PR lines are distinguishable from each other
-    // and from the bold solid Actual ELO line at a glance. Phase 87.5's "no
-    // dashed line" rule is rescinded.
+    // and from the bold solid Actual ELO line at a glance.
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponse()}
@@ -323,11 +321,10 @@ describe('EndgameEloTimelineSection — gradient ID uniqueness', () => {
   });
 });
 
-// ── 260530-pll: primary-TC default visibility tests ───────────────────────────
-// These replace the old computeDefaultHidden (active-weeks/top-1-by-games)
-// tests. The new heuristic uses computePrimaryTc via computeDefaultHiddenByPrimaryTc.
+// ── Primary-TC default visibility tests ───────────────────────────
+// The heuristic uses computePrimaryTc via computeDefaultHiddenByPrimaryTc.
 
-describe('EndgameEloTimelineSection — primary-TC default visibility (260530-pll)', () => {
+describe('EndgameEloTimelineSection — primary-TC default visibility', () => {
   it('shows primary-TC combo visible and non-primary hidden by default', () => {
     // rapid is primary (60 * 600 = 36000 weight) vs blitz (36 * 180 = 6480).
     render(
@@ -525,7 +522,7 @@ describe('EndgameEloTimelineSection — info popover content', () => {
   });
 });
 
-describe('EndgameEloTimelineSection — legend toggle tracking (Phase 229 D-12)', () => {
+describe('EndgameEloTimelineSection — legend toggle tracking', () => {
   const track = vi.fn();
 
   beforeEach(() => {

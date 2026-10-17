@@ -1,11 +1,11 @@
 """Integration tests for position bookmark repository.
 
 Coverage:
-- TestCRUD: BKM-01 - create, list, update, delete position bookmarks
-- TestReorder: BKM-02 - drag-reorder support with sort_order reassignment
-- TestIsolation: BKM-05 - per-user isolation enforced at repository layer
-- TestSuggestions: AUTOBKM-01..04 - suggestion query, deduplication, match_side heuristic
-- TestMatchSideUpdate: AUTOBKM-03 - update_match_side with target_hash recomputation
+- TestCRUD: create, list, update, delete position bookmarks
+- TestReorder: drag-reorder support with sort_order reassignment
+- TestIsolation: per-user isolation enforced at repository layer
+- TestSuggestions: suggestion query, deduplication, match_side heuristic
+- TestMatchSideUpdate: update_match_side with target_hash recomputation
 """
 
 import uuid
@@ -78,7 +78,7 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TestCRUD — BKM-01
+# TestCRUD
 # ---------------------------------------------------------------------------
 
 
@@ -157,7 +157,7 @@ class TestCRUD:
 
 
 # ---------------------------------------------------------------------------
-# TestReorder — BKM-02
+# TestReorder
 # ---------------------------------------------------------------------------
 
 
@@ -208,7 +208,7 @@ class TestReorder:
 
 
 # ---------------------------------------------------------------------------
-# TestIsolation — BKM-05
+# TestIsolation
 # ---------------------------------------------------------------------------
 
 
@@ -316,7 +316,7 @@ async def _seed_game_with_positions(
 
 
 # ---------------------------------------------------------------------------
-# TestSuggestions — AUTOBKM-01, AUTOBKM-02, AUTOBKM-04
+# TestSuggestions
 # ---------------------------------------------------------------------------
 
 
@@ -510,7 +510,7 @@ class TestSuggestions:
 
 
 # ---------------------------------------------------------------------------
-# TestMatchSideHeuristic — AUTOBKM-04
+# TestMatchSideHeuristic
 # ---------------------------------------------------------------------------
 
 
@@ -604,7 +604,7 @@ class TestMatchSideHeuristic:
 
 
 # ---------------------------------------------------------------------------
-# TestMatchSideUpdate — AUTOBKM-03
+# TestMatchSideUpdate
 # ---------------------------------------------------------------------------
 
 

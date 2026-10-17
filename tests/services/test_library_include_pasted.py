@@ -1,7 +1,7 @@
-"""Tests for resolve_library_platforms and the include_pasted wire param (Phase 208).
+"""Tests for resolve_library_platforms and the include_pasted wire param.
 
-Plan 208-04 (PASTE-05/09, D-11/D-12). Covers:
-- Pure unit tests over resolve_library_platforms for every <behavior> bullet.
+Covers:
+- Pure unit tests over resolve_library_platforms for every input combination.
 - Two integration tests through the router (GET /library/games, GET /library/flaws)
   proving the end-to-end wiring, not just the resolver in isolation.
 
@@ -52,7 +52,7 @@ class TestResolveLibraryPlatforms:
 
     def test_analytics_default_equals_analytics_included_platforms(self) -> None:
         """No explicit platform, include_pasted=False, surface="analytics": the explicit-list
-        equivalent of the platform=None default (Plan 02's invariant)."""
+        equivalent of the platform=None default."""
         result = resolve_library_platforms(None, include_pasted=False, surface="analytics")
 
         assert result == list(ANALYTICS_INCLUDED_PLATFORMS)
@@ -103,7 +103,7 @@ class TestResolveLibraryPlatforms:
         assert result is not original
 
     def test_library_games_base_platforms_never_contains_pgn(self) -> None:
-        """D-11: the Library Games tab's default list must never gain "pgn"."""
+        """The Library Games tab's default list must never gain "pgn"."""
         assert "pgn" not in LIBRARY_GAMES_BASE_PLATFORMS
 
 
@@ -267,7 +267,7 @@ class TestIncludePastedThroughRouter:
 
             # include_pasted=true reveals the pgn flaw but NEVER newly admits
             # flawchess — the analytics surface's own default excludes bot games
-            # regardless of the pasted opt-in (D-11/D-12).
+            # regardless of the pasted opt-in.
             assert game_ids["pgn"] in pasted_game_ids
             assert game_ids["flawchess"] not in pasted_game_ids
         finally:

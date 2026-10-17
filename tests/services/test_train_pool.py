@@ -1,5 +1,4 @@
-"""Tests for app.services.train_pool's classifier + red-herring source query
-(Phase 189, Plan 03).
+"""Tests for app.services.train_pool's classifier + red-herring source query.
 
 Coverage:
 - TestExpectedScoreFor       : the Python twin of expected_score_sql — cp-only,
@@ -11,19 +10,19 @@ Coverage:
                                 second-move sentinel, and mate-node coverage
                                 for both colors.
 - test_soft_blob_still_enters_pool : DB-backed regression guard proving the
-                                classifier is never an entry gate (POOL-02).
-- test_empty_blob_excluded_from_pool_entry : 189-06 gap closure — a non-NULL
-                                EMPTY missed_pv_lines (`[]`, the D-06
+                                classifier is never an entry gate.
+- test_empty_blob_excluded_from_pool_entry : a non-NULL
+                                EMPTY missed_pv_lines (`[]`, the eval pipeline's
                                 un-fillable sentinel) is excluded from
                                 pool_entry_stmt exactly like true NULL.
-- test_empty_blob_not_counted_as_blob_pending : 189-06 D-GAP-01 — the same
+- test_empty_blob_not_counted_as_blob_pending : the same
                                 `[]` sentinel is counted in NEITHER
                                 pool_entry_stmt NOR blob_pending_stmt.
 - herring_stmt tests         : user-scoping (IDOR), tier exclusion (gem AND
                                 large-gap-but-easy-to-find), ply-parity,
                                 winnability floor, already-served exclusion +
                                 exhaustion fallback, and deterministic
-                                recency ordering (POOL-03).
+                                recency ordering.
 """
 
 from __future__ import annotations
@@ -215,7 +214,7 @@ class TestClassifyPuzzleType:
 
 
 # ---------------------------------------------------------------------------
-# TestAnswerKeyFor / TestLegalAnswerKey (Phase 235, SEED-192, D-05/D-06/D-07/D-19)
+# TestAnswerKeyFor / TestLegalAnswerKey
 # — the single pure derivation of the server's answer key, plus the python-chess
 # legality check that degrades an unplayable key to null.
 # ---------------------------------------------------------------------------
@@ -363,7 +362,7 @@ class TestAnswerKeyFor:
 
 
 class TestLegalAnswerKey:
-    """legal_answer_key — D-07: an unplayable key or runner-up degrades to None."""
+    """legal_answer_key: an unplayable key or runner-up degrades to None."""
 
     @pytest.mark.parametrize(
         ("key", "fen", "expected"),
@@ -411,7 +410,7 @@ class TestLegalAnswerKey:
 
 
 # ---------------------------------------------------------------------------
-# TestVettedMoves (Phase 211, D-01) — server-side "also fine" certification
+# TestVettedMoves — server-side "also fine" certification
 # from the SR blob node and the herring ladder, both through the shared
 # `_vetted_move` good-band predicate (strict `< INACCURACY_DROP`).
 # ---------------------------------------------------------------------------
@@ -419,8 +418,7 @@ class TestLegalAnswerKey:
 
 class TestVettedMovesFromPvNode:
     """vetted_moves_from_pv_node — soft certification: the deep best (when its
-    UCI is known) plus the second-best `su`, best-first (D-01 as amended
-    2026-08-16)."""
+    UCI is known) plus the second-best `su`, best-first."""
 
     def test_gap_just_below_band_certifies_su_as_good(self) -> None:
         best_cp = _boundary_best_cp(INACCURACY_DROP) - 1.0
@@ -433,10 +431,10 @@ class TestVettedMovesFromPvNode:
         assert vetted[0].es_after == expected_score_for(0, None, "white")
 
     def test_best_uci_prepends_deep_best_entry(self) -> None:
-        """The operator's exact Task 3 checkpoint scenario (2026-08-16, round
+        """The operator's exact verification scenario (2026-08-16, round
         2): a soft blob whose certified `su` coincided with the client's
         best/played move left the "several fine moves" copy with an EMPTY
-        "Also fine" row. D-01 amendment: when `game_positions.best_move` is
+        "Also fine" row. When `game_positions.best_move` is
         known, the deep best is served as a vetted entry too — quality
         "best", first in the list (best-first order is a documented contract
         of the vetted list), its ES pair being the best eval against itself.
@@ -454,7 +452,7 @@ class TestVettedMovesFromPvNode:
 
     def test_missing_best_uci_degrades_to_su_only(self) -> None:
         """`game_positions.best_move` NULL/unavailable → today's behavior
-        (su only), never a failure (D-01 amendment degrade rule)."""
+        (su only), never a failure."""
         node: dict[str, Any] = {"b": 4, "bm": None, "s": 0, "sm": None, "su": "d1a4"}
         assert [(v.uci, v.quality) for v in vetted_moves_from_pv_node(node, "white")] == [
             ("d1a4", "good")
@@ -472,8 +470,8 @@ class TestVettedMovesFromPvNode:
         assert [(v.uci, v.quality) for v in vetted] == [("d1a4", "good")]
 
     def test_sharp_node_stays_empty_even_with_best_uci(self) -> None:
-        """Sharp certification is UNCHANGED by the D-01 amendment and the
-        WR-01 fix: a sharp node's `su` never clears the band, and the WR-01
+        """Sharp certification is unaffected by serving the deep best: a sharp
+        node's `su` never clears the band, and the
         lone-best fallback re-applies classify_puzzle_type's exact sharp gate
         (`>= SHARP_GAP_ES`), so the list stays empty and no lone best entry
         appears."""
@@ -486,7 +484,7 @@ class TestVettedMovesFromPvNode:
         assert vetted_moves_from_pv_node(no_su, "white", best_uci="d2d4") == []
 
     def test_soft_node_uncertified_su_serves_lone_best_entry(self) -> None:
-        """WR-01 regression (code review 2026-08-16): a live `su` gap in
+        """Regression: a live `su` gap in
         `[INACCURACY_DROP, SHARP_GAP_ES)` is still classified "soft" by
         classify_puzzle_type (strict `< SHARP_GAP_ES`) but fails
         `_vetted_move`'s strict good band (`< INACCURACY_DROP`). The known
@@ -496,7 +494,7 @@ class TestVettedMovesFromPvNode:
         mid_gap = (INACCURACY_DROP + SHARP_GAP_ES) / 2
         best_cp = _boundary_best_cp(mid_gap)
         node: dict[str, Any] = {"b": best_cp, "bm": None, "s": 0, "sm": None, "su": "g8f6"}
-        # Prove the exact WR-01 combination: soft classification + a su gap
+        # Prove the exact combination: soft classification + a su gap
         # that fails certification.
         assert classify_puzzle_type([node], "white") == "soft"
         best_es = expected_score_for(best_cp, None, "white")  # ty: ignore[invalid-argument-type]
@@ -509,7 +507,7 @@ class TestVettedMovesFromPvNode:
         assert vetted[0].es_after == best_es  # the best move against itself: drop 0
 
     def test_soft_node_uncertified_su_without_best_uci_stays_empty(self) -> None:
-        """The unchanged WR-01 degradation: same `[INACCURACY_DROP,
+        """The unchanged lone-best degradation: same `[INACCURACY_DROP,
         SHARP_GAP_ES)` gap window, but with no known best UCI there is
         nothing servable — `[]` exactly as before the fix."""
         mid_gap = (INACCURACY_DROP + SHARP_GAP_ES) / 2
@@ -616,7 +614,7 @@ class TestVettedMovesFromLadder:
 
 
 # ---------------------------------------------------------------------------
-# TestFenAndLastMoveAtPly (190-02, SOLV-02) — the shared PGN-replay helper
+# TestFenAndLastMoveAtPly — the shared PGN-replay helper
 # behind TrainPuzzle.last_move_uci and full_fen_at_ply's delegation.
 # ---------------------------------------------------------------------------
 
@@ -655,7 +653,7 @@ class TestFenAndLastMoveAtPly:
 
 
 # ---------------------------------------------------------------------------
-# Phase 235 (D-02): server-graded moves — graded_moves_from_vetted and
+# server-graded moves — graded_moves_from_vetted and
 # sharp_runner_up_graded_move.
 # ---------------------------------------------------------------------------
 
@@ -732,7 +730,7 @@ class TestSharpRunnerUpGradedMove:
 
 
 # ---------------------------------------------------------------------------
-# TestServerGradedMovesFor / TestLegalServerGradedMoves (Phase 236, SEED-193, D-08)
+# TestServerGradedMovesFor / TestLegalServerGradedMoves
 # — the single derivation shared by composition and the solve path, plus the
 # composition-only legality / no-key filter.
 # ---------------------------------------------------------------------------
@@ -846,7 +844,7 @@ class TestServerGradedMovesFor:
         assert _graded_for(source=DrillSource.SHARP_FILLER, solution="d2d4") == []
 
     def test_matches_the_building_blocks_for_a_soft_node(self) -> None:
-        """Parity with the pieces the solve path used before Phase 236 (no grading change)."""
+        """Parity with the building blocks the solve path used before server-side grading (no grading change)."""
         expected = graded_moves_from_vetted(
             vetted_moves_from_pv_node(_SOFT_NODE, "white", best_uci="g1f3")
         )
@@ -896,7 +894,7 @@ class TestLegalServerGradedMoves:
 
 
 # ---------------------------------------------------------------------------
-# TestPickOnePerGame (quick task 260728-pgp) — pure, no DB.
+# TestPickOnePerGame — pure, no DB.
 # ---------------------------------------------------------------------------
 
 
@@ -1065,7 +1063,7 @@ async def _seed_blunder_game(
 @pytest.mark.asyncio
 async def test_soft_blob_still_enters_pool(test_engine) -> None:
     """A blunder whose node-0 gap is below SHARP_GAP_ES (soft) still passes
-    pool_entry_stmt — the classifier is a label, never an entry gate (POOL-02)."""
+    pool_entry_stmt — the classifier is a label, never an entry gate."""
     user_id, _ = await _register_and_login(f"train-softblob-{uuid.uuid4().hex[:8]}@example.com")
     soft_node = {"b": 50, "bm": None, "s": 50, "sm": None, "su": "e2e4"}
     game_id = await _seed_blunder_game(test_engine, user_id, missed_pv_lines=[soft_node])
@@ -1083,8 +1081,8 @@ async def test_soft_blob_still_enters_pool(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_empty_blob_excluded_from_pool_entry(test_engine) -> None:
-    """189-06 gap closure: a non-NULL EMPTY missed_pv_lines (`[]`, the eval
-    pipeline's D-06 un-fillable sentinel) is excluded from pool_entry_stmt
+    """A non-NULL EMPTY missed_pv_lines (`[]`, the eval
+    pipeline's un-fillable sentinel) is excluded from pool_entry_stmt
     exactly like a true SQL NULL blob — the verifier's reproduction."""
     user_id, _ = await _register_and_login(f"train-emptyblob-{uuid.uuid4().hex[:8]}@example.com")
     game_id = await _seed_blunder_game(test_engine, user_id, missed_pv_lines=[])
@@ -1100,7 +1098,7 @@ async def test_empty_blob_excluded_from_pool_entry(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_empty_blob_not_counted_as_blob_pending(test_engine) -> None:
-    """189-06 D-GAP-01: the `[]` sentinel is counted in NEITHER
+    """The `[]` sentinel is counted in NEITHER
     pool_entry_stmt NOR blob_pending_stmt — it is terminal, not "still
     analyzing" material, so it is invisible to both signals by design."""
     user_id, _ = await _register_and_login(f"train-emptypend-{uuid.uuid4().hex[:8]}@example.com")
@@ -1118,8 +1116,8 @@ async def test_empty_blob_not_counted_as_blob_pending(test_engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TestDeadBandAdmissible (Phase 205, ORACLE-03/ORACLE-04) — dead_band_admissible
-# applied at pool_entry_stmt. Both boundaries, both D-03 degenerate paths, the
+# TestDeadBandAdmissible — dead_band_admissible
+# applied at pool_entry_stmt. Both boundaries, both degenerate paths, the
 # JSON-null node, black-mover parity, and the SQL/Python twin agreement at the
 # boundary.
 # ---------------------------------------------------------------------------
@@ -1129,7 +1127,7 @@ def _band_node(gap: float) -> dict[str, Any]:
     """A missed_pv_lines node-0 dict whose best-vs-second expected-score gap
     is >= `gap`, built on `_boundary_best_cp`'s exact sigmoid-inverse
     construction. The second move is held at cp=0 (es=0.5), with a real
-    second-move UCI so the D-03 no-second-move sentinel is never accidentally
+    second-move UCI so the no-second-move sentinel is never accidentally
     hit by these fixtures."""
     return {"b": _boundary_best_cp(gap), "bm": None, "s": 0, "sm": None, "su": "e2e4"}
 
@@ -1203,7 +1201,7 @@ class TestDeadBandAdmissible:
 
     @pytest.mark.asyncio
     async def test_no_second_move_sentinel_is_absent(self, test_engine) -> None:
-        """D-03 path 1: su == "" (no legal second move) is excluded."""
+        """su == "" (no legal second move) is excluded."""
         user_id, _ = await _register_and_login(
             f"train-band-nosecond-{uuid.uuid4().hex[:8]}@example.com"
         )
@@ -1216,7 +1214,7 @@ class TestDeadBandAdmissible:
 
     @pytest.mark.asyncio
     async def test_non_dict_node_is_absent(self, test_engine) -> None:
-        """D-03 path 2: a non-object node 0 is excluded, not raising."""
+        """A non-object node 0 is excluded, not raising."""
         user_id, _ = await _register_and_login(
             f"train-band-nondict-{uuid.uuid4().hex[:8]}@example.com"
         )
@@ -1228,7 +1226,7 @@ class TestDeadBandAdmissible:
 
     @pytest.mark.asyncio
     async def test_node_with_no_second_move_keys_is_absent(self, test_engine) -> None:
-        """D-03 path 2: a node 0 missing s/sm/su entirely is excluded, not raising."""
+        """A node 0 missing s/sm/su entirely is excluded, not raising."""
         user_id, _ = await _register_and_login(
             f"train-band-nokeys-{uuid.uuid4().hex[:8]}@example.com"
         )
@@ -1242,7 +1240,7 @@ class TestDeadBandAdmissible:
     @pytest.mark.asyncio
     async def test_json_null_node_is_absent_and_raises_nothing(self, test_engine) -> None:
         """A blob whose single element is a JSON null (the asyncpg None-binding
-        gotcha's shape, RESEARCH Pitfall 3) is excluded, not raising."""
+        gotcha's shape) is excluded, not raising."""
         user_id, _ = await _register_and_login(
             f"train-band-jsonnull-{uuid.uuid4().hex[:8]}@example.com"
         )
@@ -1326,7 +1324,7 @@ class TestDeadBandAdmissible:
 
 
 # ---------------------------------------------------------------------------
-# TestSecondBestNotWinningAdmissible (SEED-141) — second_best_not_winning_admissible
+# TestSecondBestNotWinningAdmissible — second_best_not_winning_admissible
 # applied at pool_entry_stmt. `_still_winning_node`'s "b" is fixed at 900 cp
 # (ES ~0.965), large enough that best-vs-second always clears BLUNDER_DROP for
 # every "s" value used below (400 down to -400) — dead_band_admissible stays
@@ -1549,12 +1547,12 @@ class TestSecondBestNotWinningAdmissible:
 
 
 # ---------------------------------------------------------------------------
-# Phase 192 (POOL-03 amended) — herring_pool source-swap seed/cleanup helpers
+# herring_pool source-swap seed/cleanup helpers
 # ---------------------------------------------------------------------------
 
 # A default 5-entry MultiPV-5 ladder (white POV, best-first) for pool-row
 # fixtures that don't care about the exact ladder shape. Deliberately clears
-# BOTH of herring_stmt's Phase 192 (192-04) query-time gates so a fixture
+# BOTH of herring_stmt's query-time gates so a fixture
 # using this default is, by construction, a valid non-degenerate herring:
 # PV0/PV1/PV2 all fall within INACCURACY_DROP (0.05 ES) of PV0 (3 qualifying
 # moves, above HERRING_MIN_QUALIFYING_MOVES=2), and PV0-to-PV4 is ~0.092 ES,
@@ -1573,7 +1571,7 @@ async def _seed_bare_game(
 ) -> int:
     """Seed a Game row with no game_best_moves/game_flaws attached — a bare FK
     target for herring_pool fixtures (the pool row carries everything the
-    query needs; the game exists only to satisfy the composite FK, D-01)."""
+    query needs; the game exists only to satisfy the composite FK)."""
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         async with session.begin():
@@ -1642,7 +1640,7 @@ async def _seed_served_herring_by_pool_id(
 ) -> None:
     """Insert a DrillSession + DrillSolve(source=RED_HERRING, herring_pool_id=...)
     marking a pool row as already served. Uses a `ply` distinct from the pool
-    row's own `ply` to prove the exclusion keys on `herring_pool_id` (D-04),
+    row's own `ply` to prove the exclusion keys on `herring_pool_id`,
     never on `(game_id, ply)` coincidence."""
     served_ply_sentinel = 999
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -1672,10 +1670,10 @@ async def _seed_served_herring_by_pool_id(
 async def _delete_herring_pool_rows(test_engine, herring_pool_ids: list[int]) -> None:
     """Explicit cleanup for herring_pool test rows.
 
-    `_delete_games`'s FK is `ondelete="SET NULL"` (D-01), NOT `CASCADE` —
+    `_delete_games`'s FK is `ondelete="SET NULL"`, NOT `CASCADE` —
     deleting the backing game nulls out the pool row's `user_id`/`game_id`
     but does not remove it. `herring_stmt` is deliberately identity-blind
-    (D-10, no `HerringPool.user_id` filter), so an orphaned row from an
+    (no `HerringPool.user_id` filter), so an orphaned row from an
     earlier test would leak into every later test's results in this shared
     per-run DB. Must be cleaned up explicitly, before `_delete_games`.
     """
@@ -1689,8 +1687,8 @@ async def _delete_herring_pool_rows(test_engine, herring_pool_ids: list[int]) ->
 
 @pytest.mark.asyncio
 async def test_herring_selects_pool_row(test_engine) -> None:
-    """Phase 192 source swap: herring_stmt returns a HerringPool row directly
-    — not a two-tuple carrying a joined Game row (the superseded shape)."""
+    """herring_stmt returns a HerringPool row directly
+    — not a two-tuple carrying a joined Game row."""
     user_id, _ = await _register_and_login(f"herring-poolrow-{uuid.uuid4().hex[:8]}@example.com")
     game_id = await _seed_bare_game(test_engine, user_id)
     pool_id = await _seed_pool_row(test_engine, user_id, game_id, ply=10)
@@ -1712,7 +1710,7 @@ async def test_herring_selects_pool_row(test_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_herring_excludes_already_served_by_pool_id(test_engine) -> None:
-    """D-04: the exclude_served pair keys on herring_pool_id, not (game_id, ply)."""
+    """The exclude_served pair keys on herring_pool_id, not (game_id, ply)."""
     user_id, _ = await _register_and_login(f"herring-servedpool-{uuid.uuid4().hex[:8]}@example.com")
     game_id = await _seed_bare_game(test_engine, user_id)
     pool_id = await _seed_pool_row(test_engine, user_id, game_id, ply=10)
@@ -1735,25 +1733,24 @@ async def test_herring_excludes_already_served_by_pool_id(test_engine) -> None:
 
 
 def test_loose_band_exceeds_tight_gate() -> None:
-    """D-15: the generation-time loose band must sit comfortably above the
+    """The generation-time loose band must sit comfortably above the
     query-time tight gate (INACCURACY_DROP), or the generator could reject
     at write time a candidate the (retuned-downward) query-time gate would
     otherwise have accepted — defeating the whole loose-gen/tight-query
-    split's "retunable with zero re-analysis" promise (192-03 Task 2)."""
+    split's "retunable with zero re-analysis" promise."""
     assert HERRING_LOOSE_BAND_ES > INACCURACY_DROP
 
 
 def test_degenerate_min_gap_is_a_real_positive_discriminator() -> None:
-    """D-17: the query-time degenerate-exclusion floor must be a real,
+    """The query-time degenerate-exclusion floor must be a real,
     positive threshold (0 would exclude nothing — every position has a
     PV0-PV4 gap >= 0) and small relative to the full [0, 1] expected-score
-    range, matching D-17's "trim the tail, not the body" intent (192-03
-    Task 2)."""
+    range, matching the "trim the tail, not the body" intent."""
     assert 0 < HERRING_DEGENERATE_MIN_GAP_ES < 1.0
 
 
 # ---------------------------------------------------------------------------
-# herring_stmt query-time gate tests (Phase 192, Plan 04)
+# herring_stmt query-time gate tests
 #
 # The nine tests this block replaces exercised the pre-Phase-192 source
 # (best/second gap + tier exclusion). Three of the behaviors they protected
@@ -1761,15 +1758,15 @@ def test_degenerate_min_gap_is_a_real_positive_discriminator() -> None:
 # not omissions:
 #   - The winnability floor now lives in the generator's own selection frame
 #     (WINNABILITY_FLOOR_ES against the generator's own MultiPV[0] on its own
-#     searched board — scripts/gen_red_herring_pool.py, pinned by 192-03's
+#     searched board — scripts/gen_red_herring_pool.py, pinned by the generator's
 #     tests). A served HerringPool row is winnable by construction; this
 #     query never re-checks it.
 #   - "Mover is the opponent" ply-parity exclusion is now settled by the
 #     stored `HerringPool.mover_color` (the side to move on the generator's
-#     own searched board, D-16) rather than re-derived from `Game.user_color`
+#     own searched board) rather than re-derived from `Game.user_color`
 #     plus ply parity at query time — there is no `Game` join on the happy
 #     path at all.
-#   - The other-users'-games exclusion is DELIBERATELY GONE: D-10 explicitly
+#   - The other-users'-games exclusion is DELIBERATELY GONE: the pool design explicitly
 #     permits (and this pool is identity-blind about) serving a user a
 #     herring drawn from someone else's — or their own — game. Adding it
 #     back would cost a join to prevent a harmless coincidence.
@@ -1811,8 +1808,8 @@ def _boundary_cp(
     exceeds `target_gap`. One cp step back TOWARD `best_cp` has a strictly
     SMALLER gap — so this is the tightest INCLUSIVE-boundary value for any
     `>=`-style gate, and the first EXCLUDED value for any strict `<`-style
-    gate. Constructs the gap in expected-score space per 192-04-PLAN.md's
-    instruction, rather than picking a cp offset and hoping it lands right.
+    gate. Constructs the gap in expected-score space, rather than picking a cp
+    offset and hoping it lands right.
     """
     best_es = expected_score_for(best_cp, None, mover_color)
     assert best_es is not None
@@ -2047,7 +2044,7 @@ async def test_herring_allows_repeats_when_exhausted(test_engine) -> None:
     """With every pool row already served, `exclude_served=True` returns
     empty and `exclude_served=False` returns them — the exhaustion contract,
     carried over unchanged from the pre-Phase-192 source and re-expressed
-    against the `herring_pool_id` key (D-04)."""
+    against the `herring_pool_id` key."""
     user_id, _ = await _register_and_login(f"herring-exhausted-{uuid.uuid4().hex[:8]}@example.com")
     game_id = await _seed_bare_game(test_engine, user_id)
     ladder = _ladder_with_qualifying_count(HERRING_MIN_QUALIFYING_MOVES)

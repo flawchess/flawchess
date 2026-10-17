@@ -1,11 +1,11 @@
 /**
- * One popover per you-vs-opponents gap (D-00c), on the shared MetricInfoPopover shell:
+ * One popover per you-vs-opponents gap, on the shared MetricInfoPopover shell:
  * a plain definition + "Fewer is better.", the You/Opponents rates with their unit, the
  * typical gap range in words with the verdict, the basis, then the counts, 99% CI and
- * p-value greyed below a separator. It says flaws, blunders or mistakes, never "events"
- * (D-00d). A zoneless cell has no range line (D-11); an out-of-band gap that is not
- * significant says it could be chance instead of a verdict (D-14). The benchmark basis
- * (including the D-08 stopgap) is deliberately silent here (D-09).
+ * p-value greyed below a separator. It says flaws, blunders or mistakes, never "events".
+ * A zoneless cell has no range line; an out-of-band gap that is not
+ * significant says it could be chance instead of a verdict. The benchmark basis
+ * (including the blitz/bullet-reads-rapid stopgap) is deliberately silent here.
  */
 
 import { MetricInfoPopover } from '@/components/ui/metric-info-popover';
@@ -24,7 +24,7 @@ const FOOTER_SEPARATOR = ' · ';
 /** Rates read to two decimals, like the tiles ("5.46 per 100 moves"). */
 const RATE_DECIMALS = 2;
 const COPY_SAME = 'The same as the players you faced.';
-// D-16, defensive: all four shown tactic families have bands today, but a §5 refresh could drop one.
+// Defensive: all four shown tactic families have bands today, but a benchmark refresh could drop one.
 const COPY_ZONELESS_SIGNIFICANT =
   'There is no typical range for this tactic, but the gap is too large to be chance.';
 
@@ -37,7 +37,7 @@ const VERDICT_SENTENCE: Record<GapVerdict, string> = {
 };
 
 interface GapPopoverProps {
-  /** `library-gap-{metric-key}-tc-{tc}`: only metric keys and the TC segment, never free values. */
+  /** `gap-popover-{metric-key}-tc-{tc}`: only metric keys and the TC segment, never free values. */
   testId: string;
   label: string;
   /** One plain sentence about what the metric counts; "Fewer is better." is appended. */
@@ -48,7 +48,7 @@ interface GapPopoverProps {
   /** The "Based on your N analyzed rapid games in the current filters." line. */
   basis: string;
   cell: GapCell;
-  /** Overrides the D-16 sentence of a zoneless significant cell (default names the tactic). */
+  /** Overrides the significance sentence of a zoneless significant cell (default names the tactic). */
   zonelessSignificantCopy?: string;
 }
 
@@ -62,7 +62,7 @@ function gapSentence(delta: number): string {
   return words === GAP_SAME_WORD ? COPY_SAME : `That is ${words} than the players you faced.`;
 }
 
-/** The typical-range line; for a zoneless cell (D-11) only the D-16 significance line. */
+/** The typical-range line; for a zoneless cell only the significance line. */
 function rangeLine(cell: GapCell, zonelessSignificantCopy: string): string | null {
   if (!cell.hasZone) return effectiveVerdict(cell) === null ? null : zonelessSignificantCopy;
   const range = `Typical gap for players at your level: ${gapWords(cell.zoneLo)} to ${gapWords(cell.zoneHi)}.`;

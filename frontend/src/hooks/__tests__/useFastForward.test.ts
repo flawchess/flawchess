@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useFastForward unit tests (Quick 260831-s4y).
+ * useFastForward unit tests.
  *
  * Fake-timer discipline: `vi.useFakeTimers()` in beforeEach / `vi.useRealTimers()`
  * in afterEach, ticks driven with `act(() => vi.advanceTimersByTime(...))`. No bare
@@ -319,7 +319,7 @@ describe('useFastForward', () => {
     expect(result.current.isRunning).toBe(false);
   });
 
-  it('no stop ahead (D-04): with empty stopPlies on a five-ply main line, the run animates through every remaining ply and lands on the last one', () => {
+  it('no stop ahead: with empty stopPlies on a five-ply main line, the run animates through every remaining ply and lands on the last one', () => {
     const goToNode = vi.fn();
     const mainLine: NodeId[] = [100, 101, 102, 103, 104];
     const { result } = renderHook((props: UseFastForwardOptions) => useFastForward(props), {

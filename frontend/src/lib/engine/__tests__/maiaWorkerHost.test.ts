@@ -1,12 +1,12 @@
 /**
- * maiaWorkerHost.ts unit tests (quick 260729-sod, FIX 3).
+ * maiaWorkerHost.ts unit tests.
  *
  * Covers: one Worker shared across leases, refcount-to-zero termination +
  * re-spawn, single-in-flight serialisation, priority queue-jumping (without
  * preempting an in-flight request), worker-death settlement (queued +
  * in-flight rejected, onFatal fired for every lease), the
- * webgpu-unavailable respawn moved here from Task 2's per-consumer suites,
- * and (Phase 213-09, G-213-35) the async-at-the-seam runtime-fetch spawn:
+ * webgpu-unavailable respawn moved here from the per-consumer suites,
+ * and the async-at-the-seam runtime-fetch spawn:
  * single spawn under concurrent `ensureSpawned()`, queued requests during
  * the in-flight fetch, the null-buffer degrade, the SIMD-fail zero-fetch
  * path, the respawn requesting wasm-only directly, and the both-surfaces
@@ -15,14 +15,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as Sentry from '@sentry/react';
-import { acquireMaiaWorker, resetMaiaWorkerHostForTests, ENGINE_PATH } from '../maiaWorkerHost';
+import { acquireMaiaWorker, resetMaiaWorkerHostForTests, MAIA_WORKER_PATH } from '../maiaWorkerHost';
 import { getEngineAssetsSnapshot, resetEngineAssetsForTests } from '../engineAssetProgress';
 import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime } from '../ortRuntimeSource';
 import { ENGINE_ASSET_CACHE_NAME, ENGINE_ASSET_VERSION_QUERY } from '../engineAssetCache';
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn(), addBreadcrumb: vi.fn(), setContext: vi.fn() }));
 
-// ─── ortRuntimeSource mock (Phase 213-09, G-213-35) ────────────────────────
+// ─── ortRuntimeSource mock ────────────────────────
 //
 // `spawn()` now awaits the shared onnxruntime-web runtime fetch before
 // constructing a Worker. This file's job is the HOST's own dispatch/queue/
@@ -103,7 +103,7 @@ function stubWorkerCtor(): void {
 }
 
 function driveReady(worker: MockWorker, backend: 'webgpu' | 'wasm' = 'wasm'): void {
-  // Phase 219 (D-08): `numThreads` is now a required field on the `ready`
+  // `numThreads` is now a required field on the `ready`
   // message; this file's job is dispatch/queue/respawn logic, not the
   // thread-count formula itself (covered by maiaWorkerScript.test.ts), so a
   // fixed value is sufficient here.
@@ -140,7 +140,7 @@ describe('maiaWorkerHost', () => {
   afterEach(() => {
     resetMaiaWorkerHostForTests();
     resetEngineAssetsForTests();
-    // BUG FIX (Phase 213-12, test isolation): `vi.clearAllMocks()` below
+    // Test isolation: `vi.clearAllMocks()` below
     // clears call history but does NOT reset an implementation installed via
     // `mockReturnValue`/`mockImplementation` (only `mockReset()` does) — a
     // test that sets a PERSISTENT (not `-Once`) override on these two mocks
@@ -157,7 +157,7 @@ describe('maiaWorkerHost', () => {
     vi.clearAllMocks();
   });
 
-  it('constructs the worker at ENGINE_PATH lazily, not at acquireMaiaWorker', () => {
+  it('constructs the worker at MAIA_WORKER_PATH lazily, not at acquireMaiaWorker', () => {
     acquireMaiaWorker({ source: 'maia-worker', priority: true });
     expect(createdWorkers).toHaveLength(0);
   });
@@ -171,7 +171,7 @@ describe('maiaWorkerHost', () => {
     void lease2.whenReady();
     // Still one worker — the second lease shares the already-spawned instance.
     expect(createdWorkers).toHaveLength(1);
-    expect(vi.mocked(Worker)).toHaveBeenCalledWith(ENGINE_PATH);
+    expect(vi.mocked(Worker)).toHaveBeenCalledWith(MAIA_WORKER_PATH);
   });
 
   it('refcount reaching zero terminates the worker, and a later acquire re-spawns', () => {
@@ -298,7 +298,7 @@ describe('maiaWorkerHost', () => {
     await expect(p1).resolves.toBeDefined();
   });
 
-  it('SEED-195: a pre-ready OOM capture tags the spawn path (auto-wasm vs webgpu-failed-wasm)', async () => {
+  it('a pre-ready OOM capture tags the spawn path (auto-wasm vs webgpu-failed-wasm)', async () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     const p1 = lease.analyze(TEST_FEN, [1500]);
     const oom = 'no available backend found. ERR: [wasm] RangeError: Out of memory';
@@ -328,7 +328,7 @@ describe('maiaWorkerHost', () => {
     );
   });
 
-  it('WR-01 (Phase 219 review): a threaded-init timeout retries ONCE pinned to single-thread, preserving the queue', async () => {
+  it('a threaded-init timeout retries ONCE pinned to single-thread, preserving the queue', async () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     const p1 = lease.analyze(TEST_FEN, [1500]);
     const worker1 = createdWorkers[0]!;
@@ -365,7 +365,7 @@ describe('maiaWorkerHost', () => {
     await expect(p1).resolves.toBeDefined();
   });
 
-  it('WR-01 (Phase 219 review): a SECOND threaded-init timeout (already single-threaded) is terminal — no infinite retry loop', async () => {
+  it('a SECOND threaded-init timeout (already single-threaded) is terminal — no infinite retry loop', async () => {
     const onFatal = vi.fn();
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true, onFatal });
     const p1 = lease.analyze(TEST_FEN, [1500]);
@@ -431,7 +431,7 @@ describe('maiaWorkerHost', () => {
     await expect(p2).resolves.toBeDefined();
   });
 
-  it('WR-03 (Phase 219 review): lastReportedNumThreads resets on respawn — a pre-ready failure of the REPLACEMENT worker never reports the dead worker\'s thread count', async () => {
+  it('lastReportedNumThreads resets on respawn — a pre-ready failure of the REPLACEMENT worker never reports the dead worker\'s thread count', async () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     const p1 = lease.analyze(TEST_FEN, [1500]);
     const worker1 = createdWorkers[0]!;
@@ -443,7 +443,7 @@ describe('maiaWorkerHost', () => {
     await expect(p1).rejects.toThrow();
     const replacement = createdWorkers[1]!;
 
-    // The replacement fails BEFORE its own `ready` message — before the WR-03
+    // The replacement fails BEFORE its own `ready` message — before the
     // fix, `lastReportedNumThreads` still held worker #1's `4` here (never
     // reset on respawn), so this capture would wrongly attach `numThreads: 4`
     // to a worker that never got that far.
@@ -465,7 +465,7 @@ describe('maiaWorkerHost', () => {
     expect(engineDeviceContext.numThreads).toBeUndefined();
   });
 
-  it('WR-02: a mid-inference webgpu respawn resets maia-model to not-done in the store, even though it was already marked ready', async () => {
+  it('a mid-inference webgpu respawn resets maia-model to not-done in the store, even though it was already marked ready', async () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease.analyze(TEST_FEN, [1500]).catch(() => {});
     const worker1 = createdWorkers[0]!;
@@ -511,7 +511,7 @@ describe('maiaWorkerHost', () => {
     expect(lease.getBackend()).toBe('webgpu');
   });
 
-  // ─── Phase 213-01: progress/ready forwarding into engineAssetProgress.ts ──
+  // ─── Progress/ready forwarding into engineAssetProgress.ts ──
 
   it('forwards a worker progress message into the engineAssetProgress store', () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
@@ -532,7 +532,7 @@ describe('maiaWorkerHost', () => {
     expect(snapshot.status).toBe('ready');
   });
 
-  // ─── D-13 choke point: no WASM SIMD -> zero Workers, ever ────────────────
+  // ─── Choke point: no WASM SIMD -> zero Workers, ever ────────────────
 
   it('a device without WASM SIMD never constructs a Worker, and the store reports unsupported', () => {
     vi.spyOn(WebAssembly, 'validate').mockReturnValue(false);
@@ -556,7 +556,7 @@ describe('maiaWorkerHost', () => {
     expect(getEngineAssetsSnapshot().status).not.toBe('unsupported');
   });
 
-  // ─── SEED-158 (2026-09-07): iOS WebKit -> wasm backend, ORT 1.23.0, one thread ──
+  // ─── iOS WebKit -> wasm backend, ORT 1.23.0, one thread ──
   //
   // Measured on the reference iPhone: every WebGPU shape (1.27.0 and 1.23.0)
   // is killed by WebKit seconds after `ready`; the CPU wasm backend on the
@@ -578,7 +578,7 @@ describe('maiaWorkerHost', () => {
     vi.mocked(ensureOrtRuntime).mockImplementation(() => syncThenable({ backend, buffer: null }));
   }
 
-  // ─── SEED-158 (2026-09-07): the iOS spawn shape — CPU wasm, no WebGPU probe ──
+  // ─── The iOS spawn shape — CPU wasm, no WebGPU probe ──
   //
   // Measured on the reference iPhone: every WebGPU shape is killed by WebKit
   // seconds after `ready`; the wasm backend survives at one AND two threads.
@@ -632,7 +632,7 @@ describe('maiaWorkerHost', () => {
     await expect(pending).resolves.toMatchObject({ fen: TEST_FEN, backend: 'wasm' });
   });
 
-  it('WR-01 still applies on iOS: a threaded wasm init timeout retries ONCE pinned to single-thread, on the wasm-only runtime', () => {
+  it('the threaded-init retry still applies on iOS: a threaded wasm init timeout retries ONCE pinned to single-thread, on the wasm-only runtime', () => {
     stubIphone();
     vi.spyOn(console, 'info').mockImplementation(() => {});
 
@@ -706,7 +706,7 @@ describe('maiaWorkerHost', () => {
     expect(vi.mocked(fetchWasmOnlyOrtRuntime)).not.toHaveBeenCalled();
   });
 
-  // ─── SEED-158 (2026-09-07): the page-kill sentinel ──────────────────────
+  // ─── The page-kill sentinel ──────────────────────
 
   const SENTINEL_KEY = 'flawchess:maia:page-session';
 
@@ -752,7 +752,7 @@ describe('maiaWorkerHost', () => {
     expect(localStorage.getItem(SENTINEL_KEY)).toBeNull();
   });
 
-  // ─── Phase 213-04 D-14/D-15: failure routing into engineAssetProgress ────
+  // ─── Failure routing into engineAssetProgress ────
 
   it('a pre-ready error (second consecutive fetch failure) marks the store failed', () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
@@ -806,7 +806,7 @@ describe('maiaWorkerHost', () => {
 
     expect(getEngineAssetsSnapshot().status).not.toBe('failed');
   });
-  // ─── G-213-8 RETIRED (Phase 213-12, D-20): no more model-buffer handoff ────
+  // ─── No model-buffer handoff ────
   //
   // Every spawn now reads the model from CacheStorage instead (proven
   // end-to-end in maiaWorkerScript.test.ts and engineAssetCache.test.ts) —
@@ -884,7 +884,7 @@ describe('maiaWorkerHost', () => {
     });
   });
 
-  // ─── Phase 213-09 (G-213-35): async-at-the-seam runtime-fetch spawn ────────
+  // ─── Async-at-the-seam runtime-fetch spawn ────────
   //
   // These tests override the module-mock's default synchronous-thenable
   // `ensureOrtRuntime()`/`fetchWasmOnlyOrtRuntime()` with a REAL,
@@ -903,7 +903,7 @@ describe('maiaWorkerHost', () => {
     return { promise, resolve };
   }
 
-  it('T-213-09-03: concurrent ensureSpawned() calls during the in-flight runtime fetch issue exactly ONE fetch and construct exactly ONE Worker', async () => {
+  it('concurrent ensureSpawned() calls during the in-flight runtime fetch issue exactly ONE fetch and construct exactly ONE Worker', async () => {
     const deferred = createDeferred<{ backend: 'webgpu' | 'wasm'; buffer: ArrayBuffer | null }>();
     vi.mocked(ensureOrtRuntime).mockImplementationOnce(() => deferred.promise);
 
@@ -924,7 +924,7 @@ describe('maiaWorkerHost', () => {
     expect(vi.mocked(ensureOrtRuntime)).toHaveBeenCalledTimes(1); // still just once
   });
 
-  it('T-213-09-03: an analyze() issued while the runtime fetch is still in flight is QUEUED and resolves once the worker becomes ready — never dropped', async () => {
+  it('an analyze() issued while the runtime fetch is still in flight is QUEUED and resolves once the worker becomes ready — never dropped', async () => {
     const deferred = createDeferred<{ backend: 'webgpu' | 'wasm'; buffer: ArrayBuffer | null }>();
     vi.mocked(ensureOrtRuntime).mockImplementationOnce(() => deferred.promise);
 
@@ -949,7 +949,7 @@ describe('maiaWorkerHost', () => {
     await expect(p2).resolves.toBeDefined();
   });
 
-  it('T-213-09-02: a null runtime buffer (degraded fetch) still spawns the worker — init carries no runtimeBuffer field', async () => {
+  it('a null runtime buffer (degraded fetch) still spawns the worker — init carries no runtimeBuffer field', async () => {
     vi.mocked(ensureOrtRuntime).mockReturnValueOnce(
       Promise.resolve({ backend: 'webgpu', buffer: null }),
     );
@@ -965,7 +965,7 @@ describe('maiaWorkerHost', () => {
     expect(init.runtimeBuffer).toBeUndefined();
   });
 
-  it('D-13: a device without WASM SIMD issues ZERO runtime-fetch calls — the SIMD gate precedes the fetch, not the other way around', () => {
+  it('a device without WASM SIMD issues ZERO runtime-fetch calls — the SIMD gate precedes the fetch, not the other way around', () => {
     vi.spyOn(WebAssembly, 'validate').mockReturnValue(false);
 
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
@@ -991,7 +991,7 @@ describe('maiaWorkerHost', () => {
     const replacement = createdWorkers[1]!;
     const init = replacement.messages.find((m) => m.type === 'init')!;
     expect(init).toMatchObject({ type: 'init', backend: 'wasm' });
-    expect(init).not.toHaveProperty('modelBuffer'); // G-213-8 retired (Phase 213-12, D-20) — every spawn reads the model from CacheStorage instead
+    expect(init).not.toHaveProperty('modelBuffer'); // every spawn reads the model from CacheStorage instead
   });
 
   it('the webgpu-unavailable respawn resets ort-runtime for refetch — the replacement is a DIFFERENT binary', () => {
@@ -1024,13 +1024,13 @@ describe('maiaWorkerHost', () => {
     expect(createdWorkers).toHaveLength(1); // one shared worker serves both leases
   });
 
-  it("CR-02: registers 'ort-runtime' pending in the SAME synchronous call as 'maia-model' — neither is reachable without the other", () => {
+  it("registers 'ort-runtime' pending in the SAME synchronous call as 'maia-model' — neither is reachable without the other", () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease.whenReady().catch(() => {});
 
     // Synchronously right after the spawn — no await, no microtask flush
     // (the default mock's synchronous thenable already resolved by now, but
-    // CR-02's own guarantee is that BOTH ids are registered before either
+    // The guarantee is that BOTH ids are registered before either
     // async continuation could have arrived).
     const snapshot = getEngineAssetsSnapshot();
     expect(snapshot.assets['maia-model']).toBeDefined();
@@ -1050,7 +1050,7 @@ describe('maiaWorkerHost', () => {
     expect(getEngineAssetsSnapshot().assets['ort-runtime']?.done).toBe(true);
   });
 
-  // ─── G-213-36: the actual /analysis -> /bots regression ─────────────────
+  // ─── The actual /analysis -> /bots regression ─────────────────
   //
   // `ortRuntimeSource` is mocked wholesale in this file (its own real
   // behavior is `ortRuntimeSource.test.ts`'s job), so these tests prove the
@@ -1061,7 +1061,7 @@ describe('maiaWorkerHost', () => {
   // a real browser `Worker.postMessage(msg, transfer)`), that a SECOND
   // worker's init message actually LANDS with a genuinely usable buffer, not
   // merely "no error was thrown".
-  it('G-213-36 THE ACTUAL REGRESSION: teardown + respawn (the /analysis -> /bots navigation) delivers a valid, non-detached init message to the SECOND worker', async () => {
+  it('THE ACTUAL REGRESSION: teardown + respawn (the /analysis -> /bots navigation) delivers a valid, non-detached init message to the SECOND worker', async () => {
     const bufferA = new Uint8Array([1, 2, 3, 4, 5]).buffer;
     const bufferB = new Uint8Array([6, 7, 8, 9, 10]).buffer;
     // Simulates the FIXED ortRuntimeSource: retain-and-copy hands out a
@@ -1085,7 +1085,7 @@ describe('maiaWorkerHost', () => {
 
     // Simulate the REAL browser behavior of the transfer list
     // `constructWorker` passed to `postMessage` — this is the step that
-    // detached the memoised buffer before the G-213-36 fix.
+    // detached the memoised buffer before the fix.
     structuredClone(bufferA, { transfer: [bufferA] });
     expect(bufferA.byteLength).toBe(0); // sanity: worker1's own transfer really did detach it
 
@@ -1151,25 +1151,25 @@ describe('maiaWorkerHost', () => {
     expect(() => structuredClone(init2.runtimeBuffer, { transfer: [init2.runtimeBuffer as ArrayBuffer] })).toThrow();
   });
 
-  // ─── G-213-37 (D-20): assetCacheName threaded through the init message ────
+  // ─── assetCacheName threaded through the init message ────
   //
   // `maiaWorkerHost` no longer duplicates the cache-name literal — it must
   // send `ENGINE_ASSET_CACHE_NAME` (imported for direct comparison, not
   // re-derived) on EVERY spawn, on both the 'auto' and the 'wasm' respawn
   // branch, so `maia-worker.js` reaches the SAME versioned cache by name.
 
-  it("G-213-37: the init message carries assetCacheName on the normal ('auto') spawn branch", () => {
+  it("the init message carries assetCacheName on the normal ('auto') spawn branch", () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease.whenReady().catch(() => {});
 
     const init = createdWorkers[0]!.messages.find((m) => m.type === 'init')!;
     expect(init.assetCacheName).toBe(ENGINE_ASSET_CACHE_NAME);
-    // Quick 260905-rhc: the same object literal that sets assetCacheName also
+    // The same object literal that sets assetCacheName also
     // sets assetVersionQuery — one assignment covers both.
     expect(init.assetVersionQuery).toBe(ENGINE_ASSET_VERSION_QUERY);
   });
 
-  it("G-213-37: the init message carries assetCacheName on the wasm-pinned respawn branch too", () => {
+  it("the init message carries assetCacheName on the wasm-pinned respawn branch too", () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease.analyze(TEST_FEN, [1500]).catch(() => {});
     const worker1 = createdWorkers[0]!;
@@ -1179,15 +1179,15 @@ describe('maiaWorkerHost', () => {
     const replacement = createdWorkers[1]!;
     const init = replacement.messages.find((m) => m.type === 'init')!;
     expect(init.assetCacheName).toBe(ENGINE_ASSET_CACHE_NAME);
-    // Quick 260905-rhc: also asserted on the wasm-pinned respawn branch.
+    // Also asserted on the wasm-pinned respawn branch.
     expect(init.assetVersionQuery).toBe(ENGINE_ASSET_VERSION_QUERY);
   });
 
-  it('G-213-37: a second spawn after resetModuleState() teardown still delivers an init message the worker RECEIVES — asserted on the received message, not the absence of a throw', () => {
-    // Mirrors G-213-36's own standard: G-213-36 was silent because
+  it('a second spawn after resetModuleState() teardown still delivers an init message the worker RECEIVES — asserted on the received message, not the absence of a throw', () => {
+    // Mirrors the standard of the teardown-respawn regression test above: that bug was silent because
     // `new Worker()` succeeded and the failure happened inside a `.then()` —
     // asserting only "no error thrown" would not have caught it. The same
-    // discipline applies to this plan's own new wiring: prove the SECOND
+    // discipline applies to this new wiring: prove the SECOND
     // worker (post-teardown) actually received a well-formed init message.
     const lease1 = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease1.whenReady().catch(() => {});

@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * ortRuntimeMemoryCap.test.ts — proves the 1 GB wasm memory reservation cap
- * (quick 260906-p54, FLAWCHESS-9V) is present in BOTH vendored ORT glue
+ * (FLAWCHESS-9V) is present in BOTH vendored ORT glue
  * loaders and stays there.
  *
  * WebKit lets one page hold only three large wasm memory reservations before

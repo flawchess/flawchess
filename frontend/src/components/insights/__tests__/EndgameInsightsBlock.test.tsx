@@ -86,7 +86,7 @@ const RESPONSE_FRESH: EndgameInsightsResponse = {
   status: 'fresh',
 };
 
-/** The report card starts collapsed (238 UAT): open it to reach the body. */
+/** The report card starts collapsed: open it to reach the body. */
 function expandReport() {
   fireEvent.click(screen.getByTestId('insights-block-trigger'));
 }
@@ -95,8 +95,8 @@ describe('EndgameInsightsBlock', () => {
   it('renders Shelly bubble with Generate button when idle and no report', () => {
     render(
       <EndgameInsightsBlock
-        rendered={null}
-        mutation={makeMutation()}
+        insights={null}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -115,8 +115,8 @@ describe('EndgameInsightsBlock', () => {
   it('pending with no prior report: bubble shows progress copy and a disabled busy button', () => {
     render(
       <EndgameInsightsBlock
-        rendered={null}
-        mutation={makeMutation({ isPending: true })}
+        insights={null}
+        generateState={makeMutation({ isPending: true })}
         onGenerate={vi.fn()}
       />,
     );
@@ -133,8 +133,8 @@ describe('EndgameInsightsBlock', () => {
     vi.mocked(useActiveJobs).mockReturnValueOnce({ data: [{}] } as ReturnType<typeof useActiveJobs>);
     render(
       <EndgameInsightsBlock
-        rendered={null}
-        mutation={makeMutation()}
+        insights={null}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -147,8 +147,8 @@ describe('EndgameInsightsBlock', () => {
   it('hides the bubble once a report is rendered', () => {
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation()}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -159,8 +159,8 @@ describe('EndgameInsightsBlock', () => {
   it('regenerating keeps the report card with its inline spinner (no bubble)', () => {
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation({ isPending: true })}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation({ isPending: true })}
         onGenerate={vi.fn()}
       />,
     );
@@ -173,8 +173,8 @@ describe('EndgameInsightsBlock', () => {
   it('renders overview + Update Insights button when report landed', () => {
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation()}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -189,8 +189,8 @@ describe('EndgameInsightsBlock', () => {
   it('shows the report summary as a quoted header, collapsed by default with a details hint', () => {
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation()}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -206,8 +206,8 @@ describe('EndgameInsightsBlock', () => {
   it('v9: renders player profile, data analysis, and recommendations as stacked cards', () => {
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation()}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -227,15 +227,15 @@ describe('EndgameInsightsBlock', () => {
     expect(studyLink.getAttribute('target')).toBe('_blank');
   });
 
-  it('hides overview paragraph when empty string (BETA-02)', () => {
+  it('hides overview paragraph when empty string', () => {
     const response: EndgameInsightsResponse = {
       ...RESPONSE_FRESH,
       report: { ...RESPONSE_FRESH.report, overview: '' },
     };
     render(
       <EndgameInsightsBlock
-        rendered={response}
-        mutation={makeMutation()}
+        insights={response}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -244,13 +244,13 @@ describe('EndgameInsightsBlock', () => {
     expect(screen.queryByTestId('btn-generate-insights')).not.toBeNull();
   });
 
-  it('does NOT render a cache-mismatch indicator (parent gates the rendered prop)', () => {
+  it('does NOT render a cache-mismatch indicator (parent gates the insights prop)', () => {
     // The report is filter-free (one per user), so the component has no notion
     // of "outdated" and never shows that indicator.
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation()}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation()}
         onGenerate={vi.fn()}
       />,
     );
@@ -260,8 +260,8 @@ describe('EndgameInsightsBlock', () => {
   it('renders error state in the bubble with Try again', () => {
     render(
       <EndgameInsightsBlock
-        rendered={null}
-        mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
+        insights={null}
+        generateState={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={vi.fn()}
       />,
     );
@@ -278,8 +278,8 @@ describe('EndgameInsightsBlock', () => {
   it('error outranks a rendered report (failed regenerate falls back to the bubble)', () => {
     render(
       <EndgameInsightsBlock
-        rendered={RESPONSE_FRESH}
-        mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
+        insights={RESPONSE_FRESH}
+        generateState={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={vi.fn()}
       />,
     );
@@ -292,8 +292,8 @@ describe('EndgameInsightsBlock', () => {
     const onGenerate = vi.fn();
     render(
       <EndgameInsightsBlock
-        rendered={null}
-        mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
+        insights={null}
+        generateState={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={onGenerate}
       />,
     );
@@ -308,7 +308,7 @@ describe('EndgameInsightsBlock', () => {
 
   it('page filters never block Generate (the report is filter-free)', () => {
     const onGenerate = vi.fn();
-    render(<EndgameInsightsBlock rendered={null} mutation={makeMutation()} onGenerate={onGenerate} />);
+    render(<EndgameInsightsBlock insights={null} generateState={makeMutation()} onGenerate={onGenerate} />);
     fireEvent.click(screen.getByTestId('btn-generate-insights'));
     expect(onGenerate).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('insights-blocked-reason')).toBeNull();

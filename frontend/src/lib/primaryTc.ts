@@ -1,5 +1,5 @@
 /**
- * Phase 98 (D-09/D-10/D-11): Shared primary-TC heuristic utility.
+ * Shared primary-TC heuristic utility.
  *
  * Computes which time control is the user's "primary" TC by selecting the TC
  * with the highest time-weighted game count. The NOMINAL_DURATION weights
@@ -7,7 +7,7 @@
  * bullet games is considered a blitz player (500×180=90 000 > 600×60=36 000).
  *
  * Placed in frontend/src/lib/ so the Endgame ELO Timeline can later consume it
- * without importing from charts/ (D-11 placement decision).
+ * without importing from charts/.
  */
 
 export const NOMINAL_DURATION: Record<

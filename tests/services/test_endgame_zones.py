@@ -1,5 +1,5 @@
 """Tests for endgame_zones.py: assign_zone direction handling, NaN guard,
-boundary semantics, bucketed-metric lookup (D-10 recovery band), and
+boundary semantics, bucketed-metric lookup (recovery band), and
 registry sanity.
 """
 
@@ -19,7 +19,7 @@ class TestAssignZone:
     """Unit tests for assign_zone direction handling and NaN guard."""
 
     def test_higher_is_better_above_upper_is_strong(self) -> None:
-        # Phase 87.4 (D-05): endgame_skill retired. Test repointed to win_rate
+        # endgame_skill retired. Test repointed to win_rate
         # which shares the same [0.45, 0.55] band so the boundary semantics
         # remain covered. Original assertion: assign_zone("endgame_skill", 0.61).
         assert assign_zone("win_rate", 0.61) == "strong"
@@ -56,9 +56,9 @@ class TestAssignZone:
         assert assign_zone("net_timeout_rate", -8.0) == "weak"
 
     def test_nan_returns_typical(self) -> None:
-        """NaN must not raise. Plan 03 findings use is_headline_eligible=False
+        """NaN must not raise. Findings use is_headline_eligible=False
         to signal missing data, not zone="weak"."""
-        # Phase 87.4 (D-05): endgame_skill retired; win_rate now covers the
+        # endgame_skill retired; win_rate now covers the
         # higher_is_better NaN guard with the same [0.45, 0.55] band shape.
         assert assign_zone("score_gap", float("nan")) == "typical"
         assert assign_zone("win_rate", float("nan")) == "typical"
@@ -68,8 +68,8 @@ class TestAssignZone:
 class TestAssignBucketedZone:
     """Unit tests for per-bucket zone lookup (FIXED_GAUGE_ZONES equivalent)."""
 
-    def test_recovery_band_after_d10(self) -> None:
-        """D-10 re-centered recovery band to [0.25, 0.35]. 0.30 is now typical."""
+    def test_recovery_band_contains_030_as_typical(self) -> None:
+        """0.30 falls in the recovery typical band."""
         assert assign_bucketed_zone("recovery_save_pct", "recovery", 0.30) == "typical"
 
     def test_recovery_below_band_is_weak(self) -> None:
@@ -79,7 +79,7 @@ class TestAssignBucketedZone:
         assert assign_bucketed_zone("recovery_save_pct", "recovery", 0.40) == "strong"
 
     def test_conversion_band_unchanged(self) -> None:
-        """Conversion band stays [0.65, 0.75] per D-11 (only recovery changed)."""
+        """Conversion band is [0.65, 0.75]."""
         assert assign_bucketed_zone("conversion_win_pct", "conversion", 0.70) == "typical"
         assert assign_bucketed_zone("conversion_win_pct", "conversion", 0.80) == "strong"
         assert assign_bucketed_zone("conversion_win_pct", "conversion", 0.50) == "weak"
@@ -101,7 +101,7 @@ class TestSampleQuality:
         assert sample_quality("overall", 500) == "rich"
 
     def test_results_by_endgame_type_smaller_bands(self) -> None:
-        """Per-type bands are 5x smaller than overall (D-16 rationale):
+        """Per-type bands are 5x smaller than overall:
         5-way split keeps denominators honest."""
         assert sample_quality("results_by_endgame_type", 5) == "thin"
         assert sample_quality("results_by_endgame_type", 20) == "adequate"
@@ -109,12 +109,12 @@ class TestSampleQuality:
 
 
 class TestNewMetricZones:
-    """Boundary tests for Phase 82 D-08/D-10 new ZoneSpec entries.
+    """Boundary tests for the new ZoneSpec entries.
 
     entry_eval_pawns: typical = [-0.60, +0.60], higher_is_better.
     endgame_score: typical = [0.45, 0.55], higher_is_better.
-    Both replace old score-timeline no-op entries (D-01/D-02 rename) and
-    register the new endgame_start_vs_end subsection metrics (D-03/D-04).
+    Both replace old score-timeline no-op entries (rename) and
+    register the new endgame_start_vs_end subsection metrics.
     """
 
     # --- entry_eval_pawns boundaries ---
@@ -172,7 +172,7 @@ class TestNewMetricZones:
     def test_endgame_start_vs_end_adequate_at_10(self) -> None:
         """Boundary: n=10 is the strict-`<` floor for thin; must be `adequate`.
 
-        Phase 82 IN-03: paired with test_tile1_at_n_eval_10_is_populated_adequate
+        Paired with test_tile1_at_n_eval_10_is_populated_adequate
         in test_insights_service.py — both pin the off-by-one between the
         emitter's `< 10` empty gate and the band classifier so a future band
         shift cannot produce an emitted finding (n=10 not empty) that is then
@@ -202,38 +202,38 @@ class TestRegistrySanity:
         """ZONE_REGISTRY covers exactly the scalar metrics (bucketed metrics
         live in BUCKETED_ZONE_REGISTRY).
 
-        Phase 82 (D-01..D-04, D-08, D-10): `endgame_score` / `non_endgame_score`
+        The old `endgame_score` / `non_endgame_score` entries
         are renamed to `endgame_score_timeline` / `non_endgame_score_timeline`
         (no-op [0, 1] band preserved). Two new entries added:
         `entry_eval_pawns` (±0.75 band) and `endgame_score` (repurposed, [0.45,
         0.55] band). See `_format_zone_bounds` in insights_llm.py for the
         matching bounds-suppression guard on timeline metrics.
 
-        Phase 83 (D-14..D-17): `entry_expected_score` ([0.45, 0.55] band)
+        `entry_expected_score` ([0.45, 0.55] band)
         added — Lichess-sigmoid expected score at endgame entry over the user's
-        cohort, surfaced as the "achievable score" row of the new Tile 1 (Plan
-        83-03). Source: reports/benchmarks-2026-05-11.md §7.
+        cohort, surfaced as the "achievable score" row of Tile 1.
+        Source: reports/benchmarks-2026-05-11.md §7.
 
-        260514-kei: `achievable_score_gap` (±0.05 band) added — dedicated band
+        `achievable_score_gap` (±0.05 band) added — dedicated band
         for the Card 3 Achievable row so it can tighten to ±5pp without
         affecting the Endgame Score Gap row (which stays on `score_gap` at
         ±10pp). Source: reports/benchmarks-latest.md §3.1.5.
 
-        Phase 87.1 (SEED-016 D-02/D-04): `endgame_type_achievable_score_gap`
+        `endgame_type_achievable_score_gap`
         (placeholder ±0.05 band) added — per-span, per-type version of
         achievable_score_gap, surfaced in the Endgame Type breakdown
-        (Plan 03) and through the LLM type_breakdown payload (Plan 04).
+        and through the LLM type_breakdown payload.
         Bands calibrate from benchmarks SKILL.md §3.4.2.
 
-        Phase 87.2 (SEC2-ΔES-03): `score_gap_{conv,parity,recov,skill}`
+        `score_gap_{conv,parity,recov,skill}`
         (placeholder ±0.05 bands) added — per-bucket ΔES Score Gap metrics
         powering the four Section 2 cards. Bands calibrate from benchmarks
         SKILL.md §3.4.4.
         """
-        # Phase 87.5 (D-06): metric name restored to endgame_elo_gap
+        # Metric name restored to endgame_elo_gap
         # (additive-K formula; the gap is now actual_elo + K · eg_score_gap,
-        # not the Phase 87.4 affine-recentered Conv ΔES).
-        # Phase 88: clock_gap_pct added for the Clock Gap bullet on the
+        # not the affine-recentered Conv ΔES).
+        # clock_gap_pct added for the Clock Gap bullet on the
         # time-pressure cards. LLM narration deferred (insights_service.py
         # uses a named allow-list; no auto-finding is registered for this
         # metric).
@@ -244,7 +244,7 @@ class TestRegistrySanity:
             "entry_eval_pawns",
             "entry_expected_score",
             "endgame_score",
-            # Phase 102 UAT: scalar Non-Endgame Score, same [0.45, 0.55] band as
+            # Scalar Non-Endgame Score, same [0.45, 0.55] band as
             # endgame_score (the UI colors both Games with/without Endgame cards
             # identically).
             "non_endgame_score",
@@ -268,7 +268,7 @@ class TestRegistrySanity:
         assert spec.typical_lower == -NEUTRAL_TIMEOUT_THRESHOLD
 
     def test_clock_gap_pct_registry_entry(self) -> None:
-        """Phase 88: clock_gap_pct is registered with higher_is_better direction
+        """clock_gap_pct is registered with higher_is_better direction
         and finite typical_lower < typical_upper.
 
         LLM narration is deferred; this test confirms only the zone registry
@@ -282,7 +282,7 @@ class TestRegistrySanity:
         assert not (spec.typical_upper != spec.typical_upper)  # not NaN
 
     def test_pressure_bin_zones_shape(self) -> None:
-        """Phase 88 D-02: PRESSURE_BIN_SCORE_NEUTRAL_ZONES covers all 4 TCs x 5 quintiles.
+        """PRESSURE_BIN_SCORE_NEUTRAL_ZONES covers all 4 TCs x 5 quintiles.
 
         Invariants:
         - Keys are exactly the 4 TC strings.
@@ -291,7 +291,7 @@ class TestRegistrySanity:
         - Half-width <= PRESSURE_BIN_NEUTRAL_CAP (editorial cap enforced).
 
         Test uses PRESSURE_BIN_NEUTRAL_CAP constant (not hardcoded 0.06) so it
-        stays green when Plan 08 swaps in real benchmark-calibrated values that
+        stays green when real benchmark-calibrated values replace the current ones that
         may use a different cap.
 
         Iterates directly over the mapping's typed keys to satisfy ty's
@@ -317,9 +317,9 @@ class TestRegistrySanity:
                 )
 
     def test_bucketed_recovery_matches_benchmark(self) -> None:
-        """260503: recovery typical band tightened to [0.24, 0.36] — pooled
-        p25/p75 = [0.243, 0.364] from reports/benchmarks-2026-05-03.md (was
-        [0.25, 0.40], 260501-s0u). All three buckets share the same band."""
+        """Recovery typical band is [0.24, 0.36] — pooled
+        p25/p75 = [0.243, 0.364] from reports/benchmarks-2026-05-03.md.
+        All three buckets share the same band."""
         for bucket in ("conversion", "parity", "recovery"):
             spec = BUCKETED_ZONE_REGISTRY["recovery_save_pct"][bucket]
             assert spec.typical_lower == 0.24

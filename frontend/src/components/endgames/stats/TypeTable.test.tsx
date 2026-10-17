@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 validation rows D-00e / D-05: the Endgame Type Breakdown table shows a
+ * The Endgame Type Breakdown table shows a
  * grey typical range with a colored "you" dot per conversion / recovery / vs.-engine
- * cell, red below and green above the range when significant (239 D-14), stacked rows on mobile.
+ * cell, red below and green above the range when significant, stacked rows on mobile.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,7 +41,7 @@ interface CategoryOptions {
   recoveryPct?: number;
   conversionGames?: number;
   gap?: number | null;
-  /** 239 D-14 gate for every cell of the row; true by default so out-of-band cells colour. */
+  /** Significance gate for every cell of the row; true by default so out-of-band cells colour. */
   significant?: boolean;
 }
 
@@ -141,7 +141,7 @@ function normalizedColor(color: string): string {
 }
 
 const ROOK_RAPID = PER_CLASS_TC_GAUGE_ZONES.rook.rapid;
-// Conversion cell domain 0.4-1.0 (D-00e): band [0.69, 0.83] -> left 48.33%, width 23.33%.
+// Conversion cell domain 0.4-1.0: band [0.69, 0.83] -> left 48.33%, width 23.33%.
 const CONVERSION_DOMAIN_MIN = 0.4;
 const CONVERSION_DOMAIN_SPAN = 0.6;
 
@@ -248,7 +248,7 @@ describe('TypeTable typical-range cells', () => {
     );
   });
 
-  it('keeps an out-of-band cell neutral when it is not significant (239 D-14)', () => {
+  it('keeps an out-of-band cell neutral when it is not significant', () => {
     const tc = buildRankedTc('rapid', {
       type_categories: [
         buildCategory('rook', 'Rook', { conversionPct: 50, significant: false }),

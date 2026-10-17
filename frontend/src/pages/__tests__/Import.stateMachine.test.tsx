@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Phase 96 Plan 02 — Import page polling/copy contract tests.
+ * Import page polling/copy contract tests.
  *
- * Verifies (post-UAT):
+ * Verifies:
  * 1. The hot-import "done" message no longer says "Imported N games from {platform}".
  * 2. The polling invalidation set includes ['imports','readiness'].
  *
@@ -87,7 +87,7 @@ vi.mock('@/hooks/useImport', () => ({
   useImportPolling: () => ({ data: null }),
 }));
 
-// Phase 186 Plan 03: ImportPage (and the ImportFilterCard it now mounts) call
+// ImportPage (and the ImportFilterCard it mounts) call
 // useImportSettings/useUpdateImportSettings, which use the real @tanstack/react-query
 // useQuery/useMutation — mock them so this test file's QueryClient-less render still works.
 vi.mock('@/hooks/useImportSettings', async () => {
@@ -117,7 +117,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
     pendingCount: 0,
     totalCount: 0,
     pct: 100,
-    isPending: false,
+    hasPendingEvals: false,
     isLoading: false,
   }),
 }));
@@ -149,11 +149,11 @@ afterEach(() => {
 import { ImportPage } from '../Import';
 
 // ── Render helper ──────────────────────────────────────────────────────────────
-// Quick 260826-qdl: ImportPage now unconditionally mounts PasteModal, whose
+// ImportPage unconditionally mounts PasteModal, whose
 // useSavePastedGame calls the REAL @tanstack/react-query useMutation, which
 // internally calls the library's OWN (unmocked) useQueryClient — a module
 // mock of the named export does not reach that internal cross-file call, so
-// a real QueryClientProvider is required instead of the previous stub.
+// a real QueryClientProvider is required.
 function renderImport() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -195,8 +195,8 @@ describe('Import page render contract', () => {
   });
 });
 
-// Quick 260809-iq1: pasting a chess.com/lichess profile URL into either
-// username field extracts the bare username (D-02).
+// Pasting a chess.com/lichess profile URL into either
+// username field extracts the bare username.
 describe('Import page profile-URL extraction', () => {
   it('extracts the bare username on paste into the chess.com field', () => {
     renderImport();

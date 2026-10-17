@@ -1,25 +1,22 @@
 /**
- * useGemSweep — the background gem-sweep cascade (Phase 172, SEED-106 D-04/D-05).
+ * useGemSweep — the background gem-sweep cascade.
  *
- * ─── DEMOTED to a fallback-only mechanism (Phase 175, SEED-108 D-01/D-01a) ──
+ * ─── Fallback-only mechanism ───────────────────────────────────────────────
  *
- * An analyzed game's mainline is no longer swept: it is rendered directly
+ * An analyzed game's mainline is not swept: it is rendered directly
  * from the backend's stored `game_best_moves` / `EvalPoint.best_move_tier`
- * data (Analysis.tsx's `storedTierByPly`/`resolveMarkerFor`), which is
+ * data (Analysis.tsx's `storedGemGreatByPly`/`resolveMarkerFor`), which is
  * instant and requires no Maia/Stockfish round-trip. This hook's own
  * candidates (below) are computed from `eval_series`, so its `enabled` gate
  * is ANDed with `!gameHasStoredBestMoveData` at the call site
- * (Analysis.tsx) — the sweep now only ever has real work for a game whose
- * mainline eval data exists but has NOT yet had `best_move_tier` populated
- * (pre-Phase-176-backfill), which does not happen through this hook's own
- * candidate source once that data is present. The dedicated-worker
- * machinery below is kept intact, NOT deleted (D-01), as the documented
- * fallback for exactly that "no stored tier available" case — SEED-107 (the
- * original sweep-starvation seed) closes as superseded by this design.
+ * (Analysis.tsx) — the sweep only has real work for a game whose
+ * mainline eval data exists but has NOT yet had `best_move_tier` populated.
+ * The dedicated-worker machinery below is kept intact, NOT deleted, as the
+ * documented fallback for exactly that "no stored tier available" case.
  *
  * Runs the SAME resolution `Analysis.tsx`'s live gem badge already performs
  * (Maia C1 -> Stockfish parent-grade C2), one candidate at a time, AHEAD of
- * the cursor instead of AT it — for every ply that survived the D-04 free
+ * the cursor instead of AT it — for every ply that survived the free
  * prefilter (`gemSweep.ts#selectSweepCandidates`).
  *
  * ─── Dedicated hook instances, never merged into one (the load-bearing decision) ─
@@ -27,33 +24,30 @@
  * This hook calls `useMaiaEngine` and `useStockfishGradingEngine` itself,
  * driven ONLY by sweep state — dedicated HOOK CALLS, separate from
  * `Analysis.tsx`'s `maia` / `grading` / `gemGrading` calls, each keeping its
- * OWN `pendingFenRef`/single-FEN discipline. (Transport is a different axis:
- * quick 260729-sod, FIX 3 collapsed the underlying Maia WORKER to one shared
+ * OWN single-FEN discipline. (Transport is a different axis:
+ * the underlying Maia WORKER is one shared
  * instance behind `maiaWorkerHost` — this hook's `useMaiaEngine` call passes
  * `priority: false` and gets its own lease, but on /analysis it is the SAME
  * physical Worker the live chart uses. Stockfish grading remains fully
  * separate; nothing below changes for it.) Two structural reasons the HOOK
  * CALLS cannot be merged into one:
  *
- *  1. `useMaiaEngine.analyze()` keeps a SINGLE inference in flight and
- *     silently DROPS a second concurrent `analyze()` call rather than
- *     queuing it (useMaiaEngine.ts:180-187). Driving the live curve's
- *     instance with a sweep FEN would occupy the only in-flight slot and
- *     inject the sweep's full inference latency onto the live path.
+ *  1. `useMaiaEngine` keeps a SINGLE request in flight and re-plans against the
+ *     latest inputs on completion, so driving the live curve's instance with a
+ *     sweep FEN would occupy that slot and inject the sweep's inference
+ *     latency onto the live path.
  *  2. `useStockfishGradingEngine` is a single-FEN state machine with no
- *     queue and no priority (prepareSearch, ~line 213). Feeding it a
+ *     queue and no priority (see prepareSearch). Feeding it a
  *     background FEN would make the sweep and the live grade `stop`/re-`go`
  *     each other's in-flight WASM search on every prop change.
  *
  * A dedicated instance makes starvation of the live path STRUCTURALLY
- * impossible instead of merely unlikely — see 172-04-PLAN.md's objective for
- * the full dedicated-workers-vs-workerPool.ts-priority-queue rationale.
+ * impossible instead of merely unlikely.
  *
- * ─── Yield semantics — the one deviation from RESEARCH's suggested design ──
+ * ─── Yield semantics ─────────────────────────────────────────────────────
  *
- * RESEARCH.md suggested aborting the in-flight sweep search on every cursor
- * change. This hook does NOT do that: a user stepping briskly through the
- * mainline (the exact behavior this phase exists to serve) would cancel the
+ * The sweep does NOT abort its in-flight search on every cursor change: a user
+ * stepping briskly through the mainline would cancel the
  * sweep continuously and it would never finish. Instead the sweep yields at
  * the DISPATCH gate ONLY — `nextSweepDispatch` (gemSweep.ts) never lets a NEW
  * candidate START while the live path is busy — and the cost of work already
@@ -66,10 +60,10 @@
  * and harmless." A stale sweep Maia/Stockfish result is simply written to
  * this hook's own map, never forced onto the live display.
  *
- * ─── Cache (Pitfall 4) ───────────────────────────────────────────────────────
+ * ─── Cache ───────────────────────────────────────────────────────
  *
  * `gemByPly` is this hook's OWN state, bounded by `candidates.length`
- * (mainline-only, D-02) and deliberately NEVER FIFO-capped like
+ * (mainline-only) and deliberately NEVER FIFO-capped like
  * `Analysis.tsx`'s `gemByNode`/`maiaCurveByFen` (a 256-entry cap that is a
  * budget SHARED by four maps and free-variation exploration) — a swept
  * move-8 gem must not be evicted before the user reaches move 60.
@@ -98,14 +92,14 @@ import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
  * requires the played move to beat the runner-up by at least `MISTAKE_DROP`
  * (a large expected-score gap), not a fine one, so a shallower search still
  * resolves it correctly the vast majority of the time. 1000ms is roughly the
- * live free-run's own `MOVETIME_MS` order of magnitude (RESEARCH.md's
- * recommendation), a deliberately different constant from the live grading
+ * live free-run's own `MOVETIME_MS` order of magnitude, a deliberately
+ * different constant from the live grading
  * path's cap, never a reuse of it.
  */
 export const SWEEP_GRADING_MOVETIME_MS = 1000;
 
 /**
- * CR-03 (Phase 172, SEED-106): per-candidate watchdog cap (ms). A candidate
+ * Per-candidate watchdog cap (ms). A candidate
  * that never resolves — a dead dedicated worker (silent `onerror`), a stuck
  * ONNX inference, a missed terminal `bestmove` — must not pin the single
  * in-flight slot for the rest of the session (the scheduler's first line is
@@ -119,7 +113,7 @@ export const SWEEP_CANDIDATE_TIMEOUT_MS = 30_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
-/** Mirrors Analysis.tsx's private `GemDetail` shape exactly, so plan 05's
+/** Mirrors Analysis.tsx's private `GemDetail` shape exactly, so the
  *  display merge (sweep-resolved gems + the live per-node resolution) is a
  *  straight union of the two maps' value types. */
 export interface SweepGemDetail {
@@ -133,9 +127,9 @@ export interface UseGemSweepOptions {
   enabled: boolean;
   /** The game id — resets all sweep state (gemByPly + any in-flight candidate) on change. */
   sweepKey: number | null;
-  /** All plies that survived the D-04 free prefilter for this game, ascending ply order. */
+  /** All plies that survived the free prefilter for this game, ascending ply order. */
   candidates: SweepCandidate[];
-  /** Each candidate is classified at ITS OWN mover's pinned rung (D-01) — supplied by the
+  /** Each candidate is classified at ITS OWN mover's pinned rung — supplied by the
    *  caller; this hook never reads a slider value. */
   pinnedEloForPly: (plyIndex: number) => number;
   /** True while the live free-run / grading engines are busy on the user's current node. */
@@ -146,13 +140,13 @@ export interface UseGemSweepOptions {
 
 export interface UseGemSweepState {
   /** Sweep-resolved gems (confirmed) or explicit misses (null), keyed by ply index.
-   *  Bounded by `candidates.length`, never FIFO-capped (Pitfall 4). */
+   *  Bounded by `candidates.length`, never FIFO-capped. */
   gemByPly: Map<number, SweepGemDetail | null>;
   /** True while a candidate is mid-cascade (Maia or Stockfish stage). */
   isSweeping: boolean;
 }
 
-/** Which tier of the D-04 cascade the in-flight candidate is currently in. */
+/** Which tier of the cascade the in-flight candidate is currently in. */
 type SweepStage = 'maia' | 'grade';
 
 /** Captured at the moment C1 passes — the expensive tier's inputs, since
@@ -181,16 +175,16 @@ export function useGemSweep({
   const [gradeContext, setGradeContext] = useState<GradeContext | null>(null);
   const [tabHidden, setTabHidden] = useState(() => document.visibilityState === 'hidden');
 
-  // Resolved-ply set (scheduler input + WR-02 teardown predicate). Declared
+  // Resolved-ply set (scheduler input + teardown predicate). Declared
   // here — above the engine-enabled computation — because `hasWork` reads it.
   const resolvedPlyIndices = useMemo(() => new Set(gemByPly.keys()), [gemByPly]);
 
-  // Device gate (T-172-07): computed once — a device's core count / pointer
+  // Device gate: computed once — a device's core count / pointer
   // type does not change across this hook's lifetime.
   const lowPowerDevice = useMemo(() => isLowPowerDevice(), []);
   const effectiveEnabled = enabled && !lowPowerDevice;
-  // WR-02 (Phase 172, SEED-106): "UNRESOLVED candidates remain", NOT
-  // `candidates.length > 0`. The old predicate kept both dedicated worker
+  // "UNRESOLVED candidates remain", NOT
+  // `candidates.length > 0`, which would keep both dedicated worker
   // instances (a full Stockfish WASM worker + a multi-MB Maia ONNX model) alive
   // for the entire remaining page lifetime AFTER the sweep had finished. Keying
   // on unresolved-remaining tears both down the moment the last candidate
@@ -200,7 +194,7 @@ export function useGemSweep({
 
   // Refs-for-latest-value, read inside the idle-callback closure (which must
   // re-check the cursor/live state that may have moved between scheduling
-  // and running, per D-05).
+  // and running).
   const liveBusyRef = useRef(liveBusy);
   const effectiveEnabledRef = useRef(effectiveEnabled);
   useEffect(() => {
@@ -236,22 +230,22 @@ export function useGemSweep({
 
   // ─── Resolve a candidate: stamp gemByPly and clear in-flight state ───────
 
-  // WR-06 (172-deferred-review-findings.md): resolveCandidate touches only
+  // resolveCandidate touches only
   // stable setState setters (setGemByPly/setInFlight/setStage/setGradeContext),
   // so an empty-dep useCallback identity is correct and stable across
-  // renders. Previously a plain function re-created every render and called
-  // from four effects (C1, C2, CR-03 watchdog, CR-03 fast-fail) with NO
+  // renders. A plain function would be re-created every render and called
+  // from four effects (C1, C2, watchdog, fast-fail) with NO
   // dependency-array entry and no eslint-disable — a latent stale-closure
   // trap if its body ever grew to read a prop/state closed over from a
-  // stale render. Now a stable reference, listed explicitly in every effect
+  // stale render. So it is a stable reference, listed explicitly in every effect
   // that calls it.
   const resolveCandidate = useCallback((plyIndex: number, detail: SweepGemDetail | null): void => {
     setGemByPly((prev) => {
       if (prev.has(plyIndex)) return prev; // already resolved — first wins
       const next = new Map(prev);
       next.set(plyIndex, detail);
-      // Pitfall 4: deliberately NOT FIFO-capped — bounded by candidates.length
-      // (mainline-only, D-02), never Analysis.tsx's shared FIFO-evicted maps.
+      // Deliberately NOT FIFO-capped — bounded by candidates.length
+      // (mainline-only), never Analysis.tsx's shared FIFO-evicted maps.
       return next;
     });
     setInFlight(null);
@@ -270,20 +264,19 @@ export function useGemSweep({
     // Only perElo (the full per-rung curve) is consumed below — selectedElo
     // only affects the hook's own wdl/expectedScoreAtSelectedElo fields,
     // which this hook never reads (the pinned rung comes from nearestByElo
-    // against perElo directly, per D-01).
+    // against perElo directly).
     selectedElo: maiaSelectedElo,
-    // priority: false (quick 260729-sod, FIX 3) — the background sweep shares
+    // priority: false — the background sweep shares
     // the /analysis Maia worker host and must yield to the live chart's
     // priority lease; a background sweep candidate queuing behind the live
-    // path is the whole point (see D-05 dispatch-gate doc comment above),
+    // path is the whole point (see the dispatch-gate doc comment above),
     // never the other way around.
     priority: false,
-    // ladderOnly (quick 260906-gu2): the sweep skips the exact-rung phase and
-    // the prefetch — no phase 1/2 round trip. It still goes through the D-11
-    // coarse/fill split for phase 3 (Phase 219-03), but the C1 effect below
+    // ladderOnly: the sweep skips the exact-rung phase and
+    // the prefetch — no phase 1/2 round trip. It still goes through the
+    // coarse/fill split for phase 3, but the C1 effect below
     // gates on `maia.isLadderComplete`, so gem classification only ever acts
-    // once the full 21-rung ladder has landed — byte-identical to before this
-    // phase's coarse-paint split.
+    // once the full 21-rung ladder has landed.
     ladderOnly: true,
   });
 
@@ -301,13 +294,11 @@ export function useGemSweep({
   // ─── C1: Maia completion -> pass to grade stage, or resolve a miss ───────
 
   useEffect(() => {
-    // WAIT-FOR-COMPLETE (Phase 219-03, D-12, T-219-12): gem classification
-    // must never act on a coarse (11-rung) ladder. This restores the intent
-    // the `ladderOnly` comment above already documents; the guard used to
-    // rely on `resultFen` matching alone, which was safe only while
-    // non-empty implied complete under the old all-or-nothing contract.
+    // WAIT-FOR-COMPLETE: gem classification must never act on a coarse
+    // (11-rung) ladder. `resultFen` matching alone is not enough, since it
+    // matches while the ladder is still partial.
     if (inFlight === null || stage !== 'maia' || !maia.isLadderComplete) return;
-    // WR-03 guard: only act once the displayed curve actually belongs to the
+    // Guard: only act once the displayed curve actually belongs to the
     // in-flight candidate's parent FEN — never key on this hook's own
     // "current" value.
     if (maia.resultFen !== inFlight.parentFen) return;
@@ -338,7 +329,7 @@ export function useGemSweep({
 
   useEffect(() => {
     if (inFlight === null || stage !== 'grade' || gradeContext === null) return;
-    // WR-03 guard, mirrors the C1 effect above.
+    // Same guard as the C1 effect above.
     if (grading.gradeMapFen !== inFlight.parentFen) return;
     if (grading.isGrading) return;
     if (grading.gradeMap.size === 0) return;
@@ -371,7 +362,7 @@ export function useGemSweep({
     resolveCandidate,
   ]);
 
-  // ─── CR-03: per-candidate watchdog — never let one candidate pin the queue ─
+  // ─── Per-candidate watchdog — never let one candidate pin the queue ─
 
   useEffect(() => {
     if (inFlight === null) return;
@@ -379,15 +370,15 @@ export function useGemSweep({
     // Abandon a candidate that never resolves (dead worker, stuck inference,
     // missed terminal bestmove) as an explicit miss, so the single-in-flight
     // scheduler advances instead of deadlocking for the rest of the session.
-    // Re-armed on every inFlight change; resolveCandidate is now a stable
-    // useCallback([]) identity (WR-06), listed below.
+    // Re-armed on every inFlight change; resolveCandidate is a stable
+    // useCallback([]) identity, listed below.
     const timer = window.setTimeout(() => {
       resolveCandidate(plyIndex, null);
     }, SWEEP_CANDIDATE_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
   }, [inFlight, resolveCandidate]);
 
-  // ─── CR-03: fast failure path — abandon a candidate whose dedicated engine
+  // ─── Fast failure path — abandon a candidate whose dedicated engine
   //     reported a silent worker-load failure, without waiting out the watchdog.
 
   useEffect(() => {
@@ -396,7 +387,7 @@ export function useGemSweep({
     if (failed) resolveCandidate(inFlight.plyIndex, null);
   }, [inFlight, stage, maia.hasFailed, grading.hasFailed, resolveCandidate]);
 
-  // ─── D-05 scheduler: decide whether to dispatch the next candidate ───────
+  // ─── Scheduler: decide whether to dispatch the next candidate ────────────
 
   useEffect(() => {
     if (inFlight !== null) return; // one candidate at a time — already busy
@@ -409,7 +400,7 @@ export function useGemSweep({
       tabHidden,
       enabled: effectiveEnabled,
     });
-    // IN-03 (172-deferred-review-findings.md): 'idle' ("nothing to dispatch
+    // 'idle' ("nothing to dispatch
     // right now — yielding, disabled, or hidden") and 'done' ("every
     // candidate has been resolved") are deliberately NOT distinguished here.
     // Both are simple no-ops for this scheduler effect — nothing downstream
@@ -421,7 +412,7 @@ export function useGemSweep({
 
     const candidate = decision.candidate;
 
-    // Pitfall 3: requestIdleCallback is not implemented in every Safari
+    // requestIdleCallback is not implemented in every Safari
     // version — feature-detect, no existing in-repo precedent to copy.
     const scheduleIdle: (cb: () => void) => number =
       typeof window.requestIdleCallback === 'function'
@@ -436,7 +427,7 @@ export function useGemSweep({
     const handle = scheduleIdle(() => {
       idleHandleRef.current = null;
       // Re-check the cursor/live state — it may have moved between
-      // scheduling and this callback actually running (D-05).
+      // scheduling and this callback actually running.
       if (!liveBusyRef.current && effectiveEnabledRef.current) {
         setInFlight(candidate);
         setStage('maia');

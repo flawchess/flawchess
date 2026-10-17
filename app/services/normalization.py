@@ -1,6 +1,6 @@
 """Platform-agnostic normalization utilities.
 
-Converts chess.com and lichess game objects into NormalizedGame Pydantic models (D-01).
+Converts chess.com and lichess game objects into NormalizedGame Pydantic models.
 """
 
 import datetime
@@ -203,9 +203,9 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResu
     The actual game outcome is "1-0" if white won, "0-1" if black won,
     "1/2-1/2" for draws.
 
-    Returns None (PRUNE-03 / D-07) when neither side's result string is
+    Returns None when neither side's result string is
     recognized as a win or a draw. The public GameResult literal is
-    intentionally NOT widened with an "unknown" member (D-07) — None signals
+    intentionally NOT widened with an "unknown" member — None signals
     the unknown case out-of-band so the caller can skip the game instead.
     """
     if white_result in _CHESSCOM_WIN_RESULTS:
@@ -215,7 +215,7 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResu
     elif white_result in _CHESSCOM_DRAW_RESULTS or black_result in _CHESSCOM_DRAW_RESULTS:
         return "1/2-1/2"
     else:
-        # FIX (PRUNE-03): this branch used to silently return "1/2-1/2" as a
+        # FIX: this branch used to silently return "1/2-1/2" as a
         # fallback, fabricating a draw for any unrecognized white/black result
         # pair. That corrupted the position-precise WDL stats this product is
         # built on (a malformed/unmapped chess.com result string looked exactly
@@ -225,9 +225,9 @@ def _normalize_chesscom_result(white_result: str, black_result: str) -> GameResu
 
 
 def normalize_chesscom_game(game: dict, username: str, user_id: int) -> NormalizedGame | None:
-    """Normalize a chess.com JSON game object to a dict matching Game model columns.
+    """Normalize a chess.com JSON game object to a NormalizedGame.
 
-    Returns None if the game is not a standard chess variant.
+    Returns None for a non-standard variant or an unrecognized result combination.
 
     Args:
         game: Raw chess.com game object from their API.
@@ -268,7 +268,7 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
     black_result_str = black.get("result", "")
     result = _normalize_chesscom_result(white_result_str, black_result_str)
     if result is None:
-        # PRUNE-03: unrecognized white/black result combination. Skip the game
+        # Unrecognized white/black result combination. Skip the game
         # (flows through the same `if normalized is not None` gate in
         # chesscom_client.py that already skips non-standard variants) rather
         # than persisting a fabricated draw. Variables go in set_context only —
@@ -305,8 +305,8 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
 
     # Engine analysis: game-level accuracy (only present for analyzed games)
     accuracies = game.get("accuracies", {})
-    white_accuracy: float | None = accuracies.get("white")
-    black_accuracy: float | None = accuracies.get("black")
+    white_accuracy_imported: float | None = accuracies.get("white")
+    black_accuracy_imported: float | None = accuracies.get("black")
 
     return NormalizedGame(
         user_id=user_id,
@@ -331,8 +331,8 @@ def normalize_chesscom_game(game: dict, username: str, user_id: int) -> Normaliz
         black_rating=black.get("rating"),
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=white_accuracy,
-        black_accuracy=black_accuracy,
+        white_accuracy_imported=white_accuracy_imported,
+        black_accuracy_imported=black_accuracy_imported,
         played_at=played_at,
         initial_fen=extract_initial_fen(pgn_str),
     )
@@ -478,10 +478,10 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
         black_rating=black_player.get("rating"),
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=white_analysis.get("accuracy"),
-        black_accuracy=black_analysis.get("accuracy"),
-        white_acpl=white_analysis.get("acpl"),
-        black_acpl=black_analysis.get("acpl"),
+        white_accuracy_imported=white_analysis.get("accuracy"),
+        black_accuracy_imported=black_analysis.get("accuracy"),
+        white_acpl_imported=white_analysis.get("acpl"),
+        black_acpl_imported=black_analysis.get("acpl"),
         white_inaccuracies=white_analysis.get("inaccuracy"),
         black_inaccuracies=black_analysis.get("inaccuracy"),
         white_mistakes=white_analysis.get("mistake"),
@@ -493,13 +493,13 @@ def normalize_lichess_game(game: dict, username: str, user_id: int) -> Normalize
     )
 
 
-# Phase 167 (STORE-01..06): fixed bot username, never a magic string inline (D-08).
+# Fixed bot username, never a magic string inline.
 FLAWCHESS_BOT_USERNAME = "FlawChess Bot"
-# Phase quick-260714-pnk: fallback used for the player-color username column
+# Fallback used for the player-color username column
 # when the caller-resolved player_username is unavailable — the caller
 # (store_bot_game_service.resolve_player_username) prefers the user's own
 # lichess/chess.com username and only falls through to this literal when
-# neither is set (D-08 fallback decision).
+# neither is set.
 FLAWCHESS_PLAYER_FALLBACK_USERNAME = "You"
 
 # chess.com/lichess-recognized game result strings (mirrors _CHESSCOM_WIN_RESULTS/
@@ -507,8 +507,7 @@ FLAWCHESS_PLAYER_FALLBACK_USERNAME = "You"
 _VALID_GAME_RESULTS: frozenset[str] = frozenset({"1-0", "0-1", "1/2-1/2"})
 
 # A PGN [Termination "..."] header, when present, maps 1:1 to the Termination
-# Literal (RESEARCH Open Question 1 / plan Assumption A1 — Phase 169 coordination
-# point: the request schema (D-14) has no explicit termination field, so this is
+# Literal (the request schema has no explicit termination field, so this is
 # the only channel for resignation/timeout/abandoned; checkmate/draw are also
 # derivable from the final board state as a fallback below).
 _FLAWCHESS_TERMINATION_HEADER_MAP: dict[str, Termination] = {
@@ -526,7 +525,7 @@ def _clock_presence_by_color(
 ) -> tuple[bool, bool]:
     """Return (white_has_clock, black_has_clock) for a mainline's per-node clock presence.
 
-    WR-02 fix: `clock_present[i]` is a per-ply flag in mainline order; which color
+    `clock_present[i]` is a per-ply flag in mainline order; which color
     played ply `i` depends on `start_white_to_move` (from `game.board().turn`), NOT
     a fixed even=White/odd=Black assumption. A client-supplied SetUp/FEN header pair
     can start the mainline from a Black-to-move position, which would otherwise
@@ -553,26 +552,26 @@ def normalize_flawchess_game_or_reason(
     game_uuid: str,
     user_id: int,
     user_color: Color,
-    bot_elo: int,
+    bot_rating: int,
     player_rating: int | None,
     player_username: str,
     tc_str: str,
     *,
     bot_username: str = FLAWCHESS_BOT_USERNAME,
 ) -> NormalizedGame | FlawchessRejectReason:
-    """Build a NormalizedGame from a client-POSTed finished bot-game PGN (D-14).
+    """Build a NormalizedGame from a client-POSTed finished bot-game PGN.
 
     PGN-only normalizer — unlike normalize_chesscom_game/normalize_lichess_game,
     there is no platform JSON payload. Every derived field (result, termination,
-    clocks-presence gate, ply_count, result_fen, opening) comes from a single
-    chess.pgn.read_game() parse; the remaining fields (user_color, bot_elo,
+    clocks-presence gate, opening) comes from a single
+    chess.pgn.read_game() parse; the remaining fields (user_color, bot_rating,
     player_rating, tc_str) are supplied by the caller (store_bot_game_service),
-    which derives player_rating server-side from user_rating_anchors (D-05/D-06)
+    which derives player_rating server-side from user_rating_anchors
     and never trusts the client for it.
 
     Returns a FlawchessRejectReason string — never raises past this function —
     when the PGN is unparseable, has no mainline moves, is missing per-move
-    [%clk] on either color (STORE-02/D-15), or has no recognized Result header
+    [%clk] on either color, or has no recognized Result header
     ("1-0"/"0-1"/"1/2-1/2"); the router maps that reason into the 422 body.
     These are expected validation outcomes, NOT bugs: no Sentry capture for
     them (only for a genuinely unexpected parse exception). The union is
@@ -582,18 +581,17 @@ def normalize_flawchess_game_or_reason(
     Args:
         pgn_text: The client-submitted PGN (already length-bounded by the
             request schema's MAX_BOT_PGN_LENGTH).
-        game_uuid: Client-minted UUID; becomes platform_game_id (D-14, drives
-            idempotency via uq_games_user_platform_game_id, D-11).
-        user_id: Internal user PK (server-derived from the JWT upstream, D-13).
+        game_uuid: Client-minted UUID; becomes platform_game_id (drives
+            idempotency via uq_games_user_platform_game_id).
+        user_id: Internal user PK (server-derived from the JWT upstream).
         user_color: The human player's color in this game.
-        bot_elo: The bot's rating for the opponent-color rating column (D-08).
+        bot_rating: The bot's rating for the opponent-color rating column.
             For a Custom-mode game this is the raw engine dial; for a persona
             game the caller (store_bot_game_service) passes the persona's
-            CALIBRATED ELO instead (quick-260722-ucc) — this function itself
+            CALIBRATED ELO instead — this function itself
             has no opinion, it just places whatever value it receives.
         player_rating: Server-computed converted rating for the player-color
-            column, or None when the user has no anchor for this TC bucket
-            (D-05/D-06).
+            column, or None when the user has no anchor for this TC bucket.
         player_username: The human player's display name for the player-color
             username column, already resolved by the caller (store_bot_game_
             service.resolve_player_username: lichess_username -> chess_com_
@@ -605,12 +603,12 @@ def normalize_flawchess_game_or_reason(
             display label.
         bot_username: The bot-color username column value (keyword-only,
             default FLAWCHESS_BOT_USERNAME). The caller passes the persona's
-            name for a persona game (quick-260722-ucc); any other caller is
+            name for a persona game; any other caller is
             unaffected by the default.
 
     Returns:
         A NormalizedGame on success — platform="flawchess", rated=False,
-        is_computer_game=True (D-04) — or a FlawchessRejectReason on any
+        is_computer_game=True — or a FlawchessRejectReason on any
         invalid-input case above.
     """
     try:
@@ -629,8 +627,8 @@ def normalize_flawchess_game_or_reason(
     if not nodes:
         return "no_moves"  # expected 422 case
 
-    # [%clk] presence gate (STORE-02/D-15) — require at least one clock reading
-    # for BOTH colors. WR-02 fix: derive the starting side-to-move from the
+    # [%clk] presence gate — require at least one clock reading
+    # for BOTH colors. Derive the starting side-to-move from the
     # board (game.board().turn) instead of assuming White always moves first —
     # a client-supplied SetUp/FEN header pair can start the mainline from a
     # Black-to-move position, which would otherwise silently swap the
@@ -648,8 +646,8 @@ def normalize_flawchess_game_or_reason(
         return "invalid_result"  # expected 422 case
     result: GameResult = cast(GameResult, result_str)
 
-    # Termination: prefer a closed-vocab [Termination "..."] header (Phase 169
-    # coordination point); else derive from the final board state; else "unknown".
+    # Termination: prefer a closed-vocab [Termination "..."] header; else derive
+    # from the final board state; else "unknown".
     board = game.end().board()
     termination_header = game.headers.get("Termination")
     termination: Termination
@@ -657,10 +655,10 @@ def normalize_flawchess_game_or_reason(
         termination = _FLAWCHESS_TERMINATION_HEADER_MAP[termination_header]
         termination_raw = termination_header
     else:
-        # CR-02 fix: an unrecognized [Termination "..."] header used to be stored
-        # verbatim into termination_raw, unbounded by the length/vocabulary check
+        # An unrecognized [Termination "..."] header must not be stored verbatim
+        # into termination_raw: it is unbounded by the length/vocabulary check
         # that gates the `termination` enum. A crafted header longer than 50 chars
-        # (games.termination_raw is String(50)) reached the INSERT and crashed
+        # (games.termination_raw is String(50)) would reach the INSERT and crash
         # _flush_batch with an unhandled Postgres DataError (500) instead of a 422.
         # Never trust an unrecognized/unbounded header string for termination_raw —
         # fall back to the closed-vocabulary board-derived `termination` value.
@@ -681,22 +679,24 @@ def normalize_flawchess_game_or_reason(
     base_time_seconds, increment_seconds = parse_base_and_increment(tc_str)
 
     # ply_count / result_fen are NOT NormalizedGame fields — _flush_batch's Stage 5
-    # (_collect_position_rows -> process_game_pgn) re-parses the PGN and bulk-UPDATEs
-    # both columns for every newly inserted game, this one included (D-09 reuse).
+    # (_insert_games_and_build_position_rows -> process_game_pgn) re-parses the PGN and bulk-UPDATEs
+    # both columns for every newly inserted game, this one included.
     opening_eco, opening_name = find_opening(pgn_text)
 
-    # D-08: converted player rating goes in the player-color column; the bot's
-    # nominal ELO goes in the opponent-color column. Bot username is fixed;
-    # player username is the caller-resolved platform username (or "You").
+    # Converted player rating goes in the player-color column; the bot's
+    # rating (nominal dial, or a persona's calibrated rating) goes in the
+    # opponent-color column. Bot username is caller-supplied (persona name or the
+    # generic bot name); player username is the caller-resolved platform username
+    # (or "You").
     if user_color == "white":
         white_username = player_username
         black_username = bot_username
         white_rating = player_rating
-        black_rating = bot_elo
+        black_rating = bot_rating
     else:
         white_username = bot_username
         black_username = player_username
-        white_rating = bot_elo
+        white_rating = bot_rating
         black_rating = player_rating
 
     return NormalizedGame(
@@ -722,10 +722,10 @@ def normalize_flawchess_game_or_reason(
         black_rating=black_rating,
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         played_at=datetime.datetime.now(datetime.timezone.utc),
-        # Phase 210 (SEED-042): bot games are always played from the standard
+        # Bot games are always played from the standard
         # start — the Bots page has no custom-position entry point — so this
         # stays NULL rather than being derived from the generated PGN.
         initial_fen=None,
@@ -737,7 +737,7 @@ def normalize_flawchess_game(
     game_uuid: str,
     user_id: int,
     user_color: Color,
-    bot_elo: int,
+    bot_rating: int,
     player_rating: int | None,
     player_username: str,
     tc_str: str,
@@ -756,7 +756,7 @@ def normalize_flawchess_game(
         game_uuid,
         user_id,
         user_color,
-        bot_elo,
+        bot_rating,
         player_rating,
         player_username,
         tc_str,
@@ -766,7 +766,7 @@ def normalize_flawchess_game(
 
 
 # ---------------------------------------------------------------------------
-# Pasted-PGN normalization (Phase 208, PASTE-05 / D-16)
+# Pasted-PGN normalization
 # ---------------------------------------------------------------------------
 # Each ply becomes a game_positions row (_flush_batch Stage 5), so this is a
 # named write-amplification ceiling on a pasted game's mainline length — no
@@ -774,7 +774,7 @@ def normalize_flawchess_game(
 # serious game.
 MAX_PASTED_PGN_PLIES = 1000
 
-# The one value normalize_pasted_game ever writes to games.platform (D-05).
+# The one value normalize_pasted_game ever writes to games.platform.
 _PASTE_PLATFORM_VALUE: Platform = "pgn"
 
 # Fallback username when a [White]/[Black] header is absent or the PGN
@@ -789,14 +789,14 @@ _PGN_UNSET_HEADER_PLACEHOLDER = "?"
 
 def canonical_root_fen(fen: str) -> str:
     """Return the identity-relevant subset of *fen*: piece placement, side to
-    move, and castling rights only (D-16).
+    move, and castling rights only.
 
     The halfmove clock and fullmove number are counters, not identity, and
     the en-passant field is inconsistently produced in the wild — some
     producers emit the ep square on every pawn double-step, others only when
     a capture is actually available. Two sources publishing the same
     [SetUp] position can therefore emit different FEN strings for an
-    identical position, which would otherwise defeat D-16's dedup.
+    identical position, which would otherwise defeat the pasted-game dedup.
 
     Accepted consequence: a root where an en-passant capture is genuinely
     available hashes identically to the same root without it.
@@ -808,7 +808,7 @@ def canonical_root_fen(fen: str) -> str:
     return " ".join(fields[:3])
 
 
-# Phase 210 (SEED-042): the [SetUp "1"]/[FEN "..."] header pair that marks a
+# The [SetUp "1"]/[FEN "..."] header pair that marks a
 # PGN as starting from a non-standard position. Both are required — per the PGN
 # spec a [FEN] tag without [SetUp "1"] does not establish a custom start, and
 # some producers emit a stray [FEN] alongside a standard game.
@@ -817,9 +817,9 @@ _PGN_FEN_HEADER_RE = re.compile(r'\[\s*FEN\s+"([^"]*)"\s*\]')
 
 
 def non_standard_root_fen(fen: str) -> str | None:
-    """Return *fen* if it is a genuinely non-standard start, else None (D-05).
+    """Return *fen* if it is a genuinely non-standard start, else None.
 
-    Phase 210 (SEED-042). The single place that decides "is this root actually
+    The single place that decides "is this root actually
     custom?", shared by `extract_initial_fen` (header-sourced, chess.com and
     lichess) and `normalize_pasted_game` (board-sourced, already parsed). An
     unparseable FEN is treated as standard: NULL is the safe reading, since the
@@ -844,13 +844,13 @@ def non_standard_root_fen(fen: str) -> str | None:
 def extract_initial_fen(pgn: str) -> str | None:
     """Return the game's non-standard starting FEN, or None for a standard start.
 
-    Phase 210 (SEED-042). `games.initial_fen IS NULL` is the canonical "this game
+    `games.initial_fen IS NULL` is the canonical "this game
     starts from the standard position" predicate, so this returns None for every
     game that is *effectively* standard, not merely for games lacking the header:
 
     - No `[SetUp "1"]` marker, or no `[FEN]` header → None.
-    - A `[SetUp "1"]`/`[FEN]` pair naming the standard starting position → None
-      (D-05). Producers do emit this, and such a game is not custom-start: it
+    - A `[SetUp "1"]`/`[FEN]` pair naming the standard starting position → None.
+      Producers do emit this, and such a game is not custom-start: it
       must stay eligible as an opening-transition sample representative.
     - An unparseable FEN → None rather than a raise (a malformed header is not
       worth failing an import over, and NULL is the safe reading: the game keeps
@@ -860,9 +860,9 @@ def extract_initial_fen(pgn: str) -> str | None:
     and the inconsistently-emitted en-passant field can't make a standard start
     look custom.
 
-    This is the single source of truth for the header shape. The Phase 210
+    This is the single source of truth for the header shape. The
     migration's SQL backfill mirrors it and is pinned by a test asserting the two
-    agree on the same inputs (D-06).
+    agree on the same inputs.
     """
     if not _PGN_SETUP_MARKER_RE.search(pgn):
         return None
@@ -875,14 +875,14 @@ def extract_initial_fen(pgn: str) -> str | None:
 
 
 def pasted_game_identity_hash(root_fen: str, sans: Sequence[str]) -> str:
-    """Return a deterministic SHA-256 hex digest identifying a pasted game (D-16).
+    """Return a deterministic SHA-256 hex digest identifying a pasted game.
 
     The input is the canonical root FEN, a "|" separator, and the mainline
     SAN moves joined by single spaces. Headers are deliberately EXCLUDED: the
     seed's corpus evidence records one player spelled twelve ways, so any
     header-inclusive hash would mean the same game re-pasted from a
-    different source produces a second row, defeating D-16's whole point.
-    user_color is deliberately excluded too (D-18). Move numbers, annotation
+    different source produces a second row, defeating the whole point of the dedup.
+    user_color is deliberately excluded too. Move numbers, annotation
     glyphs and comments never enter the input because the SAN list is
     expected to come from python-chess's own node.san(), which is a function
     of the position alone.
@@ -903,7 +903,7 @@ _PGN_UNKNOWN_DATE_MARKER = "?"
 
 
 def parse_pgn_played_at(headers: Mapping[str, str]) -> datetime.datetime | None:
-    """Derive a tz-aware UTC played_at from PGN headers, or None (D-16 support).
+    """Derive a tz-aware UTC played_at from PGN headers, or None.
 
     Prefers UTCDate (+ UTCTime when present and parseable), else falls back
     to Date. Never falls back to the current wall-clock time the way the
@@ -961,19 +961,19 @@ def normalize_pasted_game(
     user_id: int,
     user_color: Color,
 ) -> NormalizedGame | None:
-    """Build a NormalizedGame from an arbitrary pasted PGN (Phase 208, D-05/D-07/D-16).
+    """Build a NormalizedGame from an arbitrary pasted PGN.
 
     Derived from normalize_flawchess_game with deliberate divergences: no
-    [%clk]-for-both-colors gate (a pasted PGN is untimed by definition,
-    D-07), every time-control field forced to None, a deterministic
-    D-16 identity hash instead of a caller-supplied UUID, and termination
+    [%clk]-for-both-colors gate (a pasted PGN is untimed by definition),
+    every time-control field forced to None, a deterministic
+    identity hash instead of a caller-supplied UUID, and termination
     ALWAYS derived from the final board state (never a header string,
-    CR-02's exact bug class — an untrusted pasted PGN is precisely the
-    source that would reproduce it).
+    the bug class documented in normalize_flawchess_game — an untrusted pasted
+    PGN is precisely the source that would reproduce it).
 
     Returns None (never raises past this function) when the PGN is
     unparseable, has no mainline moves, exceeds MAX_PASTED_PGN_PLIES
-    (T-208-07 write-amplification bound), or has no honest result (no
+    (write-amplification bound), or has no honest result (no
     recognized [Result] header AND a non-terminal final board). These are
     expected validation outcomes, NOT bugs: no Sentry capture for them
     (only for a genuinely unexpected parse exception), matching
@@ -981,10 +981,10 @@ def normalize_pasted_game(
 
     Args:
         pgn_text: The pasted PGN text (already length-bounded by the request
-            schema, T-208-07's outer bound).
+            schema).
         user_id: Internal user PK.
-        user_color: The side the user is studying (D-06 default White,
-            D-18 updatable in place on a hash hit without affecting the
+        user_color: The side the user is studying (default White;
+            updatable in place on a hash hit without affecting the
             hash itself).
 
     Returns:
@@ -1009,12 +1009,12 @@ def normalize_pasted_game(
         return None  # no moves — expected case, no Sentry capture
 
     if len(nodes) > MAX_PASTED_PGN_PLIES:
-        return None  # T-208-07 write-amplification bound — expected case
+        return None  # Write-amplification bound — expected case
 
-    # WR-02: derive the root FEN from game.board() (honors [SetUp]/[FEN],
+    # Derive the root FEN from game.board() (honors [SetUp]/[FEN],
     # including a Black-to-move root) rather than assuming the standard
     # start. SANs come from node.san() — a function of the position alone,
-    # never the raw movetext (D-16: no move numbers/glyphs/comments).
+    # never the raw movetext (no move numbers/glyphs/comments).
     root_fen = game.board().fen()
     sans = [node.san() for node in nodes]
 
@@ -1037,13 +1037,13 @@ def normalize_pasted_game(
     else:
         # No recognized [Result] header and a non-terminal final board — no
         # honest value exists (games.result is NOT NULL over a 3-value enum,
-        # unlike GameResult which stays unwidened per D-07 elsewhere in this
+        # unlike GameResult which stays unwidened elsewhere in this
         # module). Expected case for an unfinished broadcast game — no
         # Sentry capture.
         return None
 
     # Termination: ALWAYS the board-derived closed-vocabulary value, never a
-    # [Termination] header lookup (CR-02 fix carried forward — an
+    # [Termination] header lookup (an
     # unrecognized/oversized header string reaching termination_raw crashed
     # the INSERT with an unhandled Postgres DataError instead of a
     # validation failure, and arbitrary pasted PGN is exactly the untrusted
@@ -1087,14 +1087,14 @@ def normalize_pasted_game(
         black_rating=_parse_optional_elo(game.headers.get("BlackElo")),
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         # Never fall back to wall-clock time (unlike normalize_flawchess_game)
         # — a pasted historical game must carry its own date; today's date
         # would sort it wrongly in the Library and misrepresent the game.
         played_at=parse_pgn_played_at(game.headers),
-        # Phase 210 (SEED-042): root_fen is already derived from game.board()
-        # above (WR-02, honoring [SetUp]/[FEN]) for the identity hash — persist
+        # root_fen is already derived from game.board()
+        # above (honoring [SetUp]/[FEN]) for the identity hash — persist
         # it here too, so a pasted custom-start game seeds /analysis from its own
         # root. Board-sourced rather than header-sourced, so it only needs the
         # standard-start check, not the header parse.

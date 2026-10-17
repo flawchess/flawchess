@@ -1,19 +1,13 @@
-"""Pooled-per-user CTE builders for Phase 94.2.
+"""Per-TC, one-point-per-user CTE builders for the canonical benchmark slice.
 
-Phase 94.2 (this module's current state) replaces the per-cell stratified
-methodology from Phase 94.1 with a *one-point-per-user pooled* model. Each
-subject (a cohort user during CDF construction; an app user during per-user
-lookup) contributes a single ``metric_value`` and ``n_games`` aggregate to
-the output, computed over their recent-3000-per-TC × 36-month game window
-pooled across all time controls.
+Each subject (a cohort user during CDF construction; an app user during
+per-user lookup) contributes a single ``metric_value`` and ``n_games``
+aggregate to the output, computed over their most recent 3000 games in ONE
+time control within a 36-month recency window. Every builder takes a
+``TimeControlBucket``; there is no cross-TC pooled form.
 
-Methodology source-of-truth:
-``.planning/notes/per-user-percentile-pooled-redesign.md`` and the locked
-decisions in ``.planning/phases/94.2-pooled-per-user-percentile-redesign/
-94.2-CONTEXT.md`` (D-1, D-5, D-6, D-8, D-10).
-
-Consumers (call into the same builders to keep the CDF and per-user lookup
-structurally aligned — D-10 "drift remains structurally impossible"):
+Consumers (both call the same builders, so the CDF and the per-user lookup
+cannot drift apart):
 
 1. ``scripts/gen_global_percentile_cdf.py`` — benchmark CDF generation.
    Calls every builder with ``source="benchmark"`` and a CLI-supplied
@@ -32,55 +26,46 @@ Structural diff between the two sources (the ONLY documented diff):
   - ``"benchmark"``: deduped cohort. Joins ``benchmark_selected_users``
     grouped by ``lower(lichess_username)`` (one row per username) and
     drops users whose ONLY selection slot is ``(rating_bucket=2400,
-    tc_bucket='classical')`` per D-1. Emits ``user_id`` only — downstream
-    pooled CTEs no longer need ``tc_bucket`` / ``selection_rating_bucket``
-    / ``median_elo`` projections.
+    tc_bucket='classical')``. Emits ``user_id`` only.
 
   - ``"single_user"``: scalar single-row CTE projecting an explicit
-    SQLAlchemy bindparam ``CAST(:user_id AS int)`` (V5 security mitigation).
-    The explicit-CAST form is required so SQLAlchemy's ``text()`` tokeniser
-    actually detects the parameter (94.1 Plan 09 fix — preserved load-bearing).
+    SQLAlchemy bindparam ``CAST(:user_id AS int)``. The explicit-CAST form
+    is required so SQLAlchemy's ``text()`` tokeniser actually detects the
+    parameter.
 
-Pooled-aggregate shape (identical on both sources, per D-5):
+Per-user aggregate shape (identical on both sources):
 
-* ``recent_capped``: per-(user, TC) ``ROW_NUMBER() OVER … ORDER BY
-  played_at DESC <= 3000`` with the universal filter (rated, non-computer,
-  both ratings non-null, equal-footing ±100) and the 36-month recency
-  predicate.
+* ``recent_capped``: ``ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY
+  played_at DESC) <= 3000`` over one time control, with the universal
+  filter (rated, non-computer, both ratings non-null, equal-footing ±100)
+  and the 36-month recency predicate.
 
 * Metric-specific aggregation (endgame/non-endgame split, span derivation,
   bucket gating) over ``recent_capped``.
 
 * ``per_user``: ``GROUP BY user_id`` (no ``elo_bucket`` / ``tc_bucket``
-  projection per D-5) with a ``HAVING`` inclusion-floor gate of ≥30 of the
-  metric-relevant unit (D-6).
+  projection) with a ``HAVING`` inclusion-floor gate of ≥30 of the
+  metric-relevant unit.
 
-* ``per_user_values``: emits exactly ``(metric_value, n_games)``.
-  ``n_games`` is the metric-relevant count on the pooled set per the
-  amendment to D-9 (endgame games for ``score_gap``; eval'd entry games
-  for ``achievable_score_gap``; bucket spans for ``score_gap_bucket_*``).
+* ``per_user_values``: emits ``(user_id, metric_value, n_games)``.
+  ``n_games`` is the metric-relevant count on the per-TC set (endgame games
+  for ``score_gap``; eval'd entry games for ``achievable_score_gap``;
+  bucket spans for ``score_gap_bucket_*``).
 
-Removed in 94.2:
+Below-floor users produce no row, so the caller stores no row and the chip
+is suppressed.
 
-* The ``apply_floor`` dual-mode argument (D-8). Below-floor → CTE emits no
-  row → caller stores no row → chip suppressed. The 94.1 ``percentile=NULL +
-  value stored`` rationale is moot because the cell-based model that
-  motivated it is gone.
+Sparse-cell exclusion is a cohort-selection concern, applied by
+``selected_users_cte(source="benchmark")`` only.
 
-* Per-row ``sparse_exclusion_sql`` invocations inside ``per_user_cte_*``
-  (D-1). Sparse-cell exclusion is now a cohort-selection concern, applied
-  by ``selected_users_cte(source="benchmark")`` only. The helper is still
-  exported because ``tests/services/test_canonical_slice_sql.py`` still
-  references it for column-substitution coverage.
-
-Security note (V5 — T-94.2-01-01 / T-94.2-01-02):
+Security note:
 
 All SQL fragments contain STATIC SQL plus one bindparam (``:user_id``) and
-one Python-formatted ISO date string (``snapshot_date``). The bindparam
-seam is preserved verbatim from 94.1. The ``snapshot_date`` parameter is a
-build-time ``date | None`` controlled by Plan 02's CLI; Python's
-``date.isoformat()`` produces only ``YYYY-MM-DD`` digits, so the f-string
-into SQL has no injection vector. Never f-string ``user_id`` here.
+one Python-formatted ISO date string (``snapshot_date``). The
+``snapshot_date`` parameter is a build-time ``date | None`` supplied by the
+CDF generator CLI; Python's ``date.isoformat()`` produces only
+``YYYY-MM-DD`` digits, so the f-string into SQL has no injection vector.
+Never f-string ``user_id`` here.
 """
 
 from __future__ import annotations
@@ -93,12 +78,12 @@ from app.services.chesscom_to_lichess import (
     composed_chesscom_to_lichess_grid,
 )
 
-# Per-TC bucket identifier — used by Phase 94.3 per-TC builders so the leading
-# positional argument is type-checked (CLAUDE.md type-safety rule per D-8).
+# Per-TC bucket identifier, used by the per-TC builders so the leading
+# positional argument is type-checked (CLAUDE.md type-safety rule).
 TimeControlBucket: TypeAlias = Literal["bullet", "blitz", "rapid", "classical"]
 
 # FlawChess TimeControlBucket -> chess.com source TC for the anchor-conversion
-# lookup (quick-260529-js1). Each bucket's chess.com games carry a NATIVE rating
+# lookup. Each bucket's chess.com games carry a NATIVE rating
 # on that source TC's scale; the composed grid is keyed on native ratings so the
 # nearest-anchor SQL join converts correctly. classical->rapid: chess.com has no
 # classical category, and chess.com games bucketed `classical` carry rapid
@@ -116,38 +101,38 @@ _BUCKET_TO_CHESSCOM_SOURCE_TC: Final[Mapping[TimeControlBucket, ChessComSourceTC
 # Module-level constants (CLAUDE.md no-magic-numbers).
 # ---------------------------------------------------------------------------
 
-# Per-metric inclusion floors on the pooled set (D-6 — all 4 metrics ≥30).
+# Per-metric inclusion floors on the per-TC set (all 4 metrics ≥30).
 SCORE_GAP_MIN_ENDGAME_N: int = 30
 SCORE_GAP_MIN_NON_ENDGAME_N: int = 30
 ACHIEVABLE_MIN_GAMES: int = 30
 SCORE_GAP_BUCKET_MIN_SPANS: int = 30
 
-# Pooled-window shape (D-5).
+# Window shape.
 RECENT_GAMES_PER_TC_CAP: int = 3000
 RECENCY_WINDOW_MONTHS: int = 36
 
-# Phase 94.3 per-TC time-pressure builder thresholds (CONTEXT D-6).
+# Per-TC time-pressure builder thresholds.
 # `TIME_PRESSURE_CLOCK_PCT_THRESHOLD` defines the "under time pressure"
 # cutoff applied to each side's clock fraction at endgame entry: clock_pct
 # < 0.40 = pressured. The remaining three constants are the inclusion
-# floors gated via HAVING on the pooled per-user aggregate (≥30 mirrors
-# Phase 94.2 D-6 for every other metric in this module).
+# floors gated via HAVING on the per-user aggregate (≥30, like every other
+# metric in this module).
 TIME_PRESSURE_CLOCK_PCT_THRESHOLD: float = 0.40
 TIME_PRESSURE_MIN_PRESSURED_N: int = 30
 CLOCK_GAP_MIN_POOL_N: int = 30
 NET_FLAG_RATE_MIN_POOL_N: int = 30
 
-# Phase 99: per-(rate metric, TC) chip-inclusion floor — minimum number of
+# Per-(rate metric, TC) chip-inclusion floor — minimum number of
 # endgame spans in the relevant bucket (conversion / parity / recovery) for a
 # user's rate chip to render. Same value as SCORE_GAP_BUCKET_MIN_SPANS (both
 # ≥30) but named separately so future tuning of one does not silently move
 # the other (CLAUDE.md no-magic-numbers).
 MINIMUM_RATE_BUCKET_SPANS: int = 30
 
-# Phase 94.4 D-04: per-(user, TC) median rating anchor inclusion floor.
+# Per-(user, TC) median rating anchor inclusion floor.
 # 30 games is the lower bound for a stable per-TC median on the recent-3000
-# pool (CLAUDE.md no-magic-numbers); tighter floors should be planner-tuned
-# post-Plan-04 regen report. Used as the default `min_games` in
+# pool (CLAUDE.md no-magic-numbers); a tighter floor is a tuning decision
+# for the CDF regen report. Used as the default `min_games` in
 # `per_user_cte_median_anchor` below.
 MEDIAN_ANCHOR_MIN_GAMES: Final[int] = 30
 
@@ -156,9 +141,8 @@ _EQUAL_FOOTING_TOL: int = 100
 _SPARSE_CELL_ELO: int = 2400
 _SPARSE_CELL_TC: str = "classical"
 _SUB_800_FLOOR: int = 800
-# Phase 238: public alias so the on-read ranked service applies the exact same
-# sub-800 exclusion floor as the rate / bucket-gap CTEs below (an added name; it
-# does not change any builder output).
+# Public alias so the on-read ranked service applies the exact same
+# sub-800 exclusion floor as the rate / bucket-gap CTEs below.
 SUB_800_FLOOR: Final[int] = _SUB_800_FLOOR
 
 
@@ -182,7 +166,7 @@ def _recency_window_sql(snapshot_date: date | None) -> str:
     construction path, anchored at the benchmark DB snapshot month so the
     window does not slide with the operator's clock).
 
-    Security note (T-94.2-01-02): ``snapshot_date.isoformat()`` emits only
+    Security note: ``snapshot_date.isoformat()`` emits only
     digits and dashes — no SQL-injection surface. Use this rendering instead
     of a SQLAlchemy bindparam because the snapshot date is a build-time
     artifact, not user input (consistent with how ``BENCHMARK_DB_SNAPSHOT_MONTH``
@@ -201,14 +185,14 @@ def _recency_window_sql(snapshot_date: date | None) -> str:
 def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
     """Return the ``selected_users`` CTE block.
 
-    ``source="benchmark"`` → deduped cohort (D-1). Groups
+    ``source="benchmark"`` → deduped cohort. Groups
     ``benchmark_selected_users`` by ``lower(lichess_username)`` and keeps
     only usernames that have at least one non-``(2400, classical)``
     selection slot. Joins to ``users`` for the surrogate ``user_id`` the
     pooled aggregates need.
 
     ``source="single_user"`` → scalar SELECT with ``CAST(:user_id AS int)``
-    bindparam (V5 — load-bearing per 94.1 Plan 09 fix).
+    bindparam (the explicit CAST form is load-bearing).
     """
     if source == "benchmark":
         return f"""selected_users AS (
@@ -225,10 +209,10 @@ def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
     HAVING bool_or(NOT (bsu.rating_bucket = {_SPARSE_CELL_ELO} AND bsu.tc_bucket = '{_SPARSE_CELL_TC}'))
   ) deduped ON lower(u.lichess_username) = deduped.lname
 )"""
-    # single_user: scalar bindparam; pools across all TCs (D-5). The explicit
-    # CAST() form is load-bearing — see 94.1 Plan 09 — SQLAlchemy's text()
-    # tokeniser silently drops `:user_id::int` and raises ArgumentError at
-    # .bindparams() time. CAST(:user_id AS int) is parsed correctly.
+    # single_user: scalar bindparam. The explicit CAST() form is load-bearing:
+    # SQLAlchemy's text() tokeniser silently drops `:user_id::int` and raises
+    # ArgumentError at .bindparams() time. CAST(:user_id AS int) is parsed
+    # correctly.
     return "selected_users AS (SELECT CAST(:user_id AS int) AS user_id)"
 
 
@@ -238,9 +222,8 @@ def elo_bucket_expr(user_elo_alias: str) -> str:
     Returns NULL for sub-800 ratings (callers gate with
     ``WHERE user_elo_at_game >= 800``).
 
-    Retained for ``scripts/gen_global_percentile_cdf.py:_build_per_bucket_sanity_query``
-    (a diagnostic over the per-cell shape) and tests; NOT invoked by the
-    pooled ``per_user_cte_*`` builders.
+    Retained only for tests/services/test_canonical_slice_sql.py; NOT invoked
+    by any builder or script.
     """
     return (
         f"(CASE WHEN {user_elo_alias} < {_SUB_800_FLOOR} THEN NULL "
@@ -265,15 +248,14 @@ def equal_footing_filter_sql() -> str:
     )
 
 
-# D-1: NO LONGER invoked in per_user_cte_*; retained for the per-bucket sanity
-# diagnostic and the column-substitution test reference. Sparse-cell exclusion
-# under the pooled methodology lives in selected_users_cte("benchmark") only.
+# Not invoked by per_user_cte_*: sparse-cell exclusion lives in
+# selected_users_cte("benchmark") only.
 def sparse_exclusion_sql(elo_col: str, tc_col: str) -> str:
     """SQL fragment to exclude the sparse ``(2400, classical)`` cell.
 
-    Retained for ``_build_per_bucket_sanity_query`` (a per-cell diagnostic
-    in the regen report) and for ``tests/services/test_canonical_slice_sql.py
-    ::test_sparse_exclusion_sql_parametrises_columns``.
+    Retained only for tests/services/test_canonical_slice_sql.py
+    (``::test_sparse_exclusion_sql_parametrises_columns``); NOT invoked by any
+    builder or script.
 
     Column names are SQL identifiers provided by the caller (never user input).
     """
@@ -281,12 +263,12 @@ def sparse_exclusion_sql(elo_col: str, tc_col: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Pooled per-user CTE builders (D-5 / D-6 / D-8).
+# Per-TC per-user CTE builders.
 # ---------------------------------------------------------------------------
 
 
 def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket) -> str:
-    """Phase 94.3 per-TC ``recent_capped`` CTE (PATTERNS.md lines 120-147).
+    """Per-TC ``recent_capped`` CTE.
 
     Restricts the canonical slice to a single ``time_control_bucket`` so the
     per-TC percentile chips can be computed against a per-TC pooled set.
@@ -299,7 +281,7 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
     2. ``ROW_NUMBER() OVER (PARTITION BY g.user_id ...)`` — the per-(user, TC)
        partition collapses to per-user because the inner set is already
        restricted to one TC. The 3000-cap then means "most recent 3000 games
-       of this TC per user" (RESEARCH §Pattern 1).
+       of this TC per user".
     """
     recency = _recency_window_sql(snapshot_date)
     return f"""recent_capped AS (
@@ -321,13 +303,13 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
 
 
 def ranked_games_sql(tc: TimeControlBucket) -> str:
-    """Phase 238: the per-TC ranked sample (the games Stage A/B rank) with display columns.
+    """The per-TC ranked sample (the games Stage A/B rank) with display columns.
 
-    The ``WITH`` chain is the unchanged ``selected_users_cte("single_user")`` +
+    The ``WITH`` chain is the same ``selected_users_cte("single_user")`` +
     ``_recent_capped_per_tc_cte(None, tc)`` prelude every ``per_user_cte_*``
     builder uses, so the on-read ranked games are exactly the games the
-    persisted percentiles were computed from (D-07). Only the outer ``SELECT``
-    is new. No existing builder body is edited.
+    persisted percentiles were computed from. Only the outer ``SELECT`` is
+    specific to this function.
 
     Columns: ``game_id``, ``played_at``, ``platform``, ``time_control_str``
     (the anchor count must exclude chess.com Daily, ``time_control_str LIKE
@@ -335,7 +317,7 @@ def ranked_games_sql(tc: TimeControlBucket) -> str:
     metrics drop sub-800 games), ``eval_pending`` (entry evals not yet
     completed for the game).
 
-    Security (T-238-01): ``tc`` is interpolated by ``_recent_capped_per_tc_cte``
+    Security: ``tc`` is interpolated by ``_recent_capped_per_tc_cte``
     and is safe only because it is the 4-value ``TimeControlBucket`` Literal,
     enforced by ty at every call site. ``user_id`` flows only through the
     ``CAST(:user_id AS int)`` bindparam inside ``selected_users_cte``; callers
@@ -354,19 +336,18 @@ def ranked_games_sql(tc: TimeControlBucket) -> str:
 
 
 def _endgame_entry_clocks_cte() -> str:
-    """Per-game endgame-entry clock derivation for the three Phase 94.3 per-TC builders.
+    """Per-game endgame-entry clock derivation for the three per-TC builders.
 
-    Mirrors the Python ``extract_entry_clocks`` logic (``app/services/endgame_service.py``
-    lines 1626-1647): for each game that reached an endgame phase (≥6 endgame
-    plies under the whole-game rule, quick-260414-pv4), aggregate the first
-    non-null ``clock_seconds`` per ply parity:
+    Mirrors ``endgame_service.extract_entry_clocks``: for each game that
+    reached an endgame phase (≥6 endgame plies under the whole-game rule),
+    aggregate the first non-null ``clock_seconds`` per ply parity:
 
     - white_entry_clock = first non-null clock at an even ply (white just moved)
     - black_entry_clock = first non-null clock at an odd ply (black just moved)
 
     The user/opp assignment then collapses by ``rc.user_color`` in the
-    consumer's ``joined`` CTE. Centralised here because all three Phase 94.3
-    per-TC builders need the identical derivation.
+    consumer's ``joined`` CTE. Centralised here because all three per-TC
+    builders need the identical derivation.
 
     All three callers prepend ``_recent_capped_per_tc_cte`` immediately before
     this CTE in the WITH chain, so ``recent_capped`` is always in scope.
@@ -401,7 +382,7 @@ def per_user_cte_time_pressure_score_gap(
 ) -> str:
     """Pooled ``per_user_values(metric_value, n_games)`` for ``time_pressure_score_gap_{tc}``.
 
-    Per-TC version of the SEED-025 / D-6 time-pressure score gap. Restricted
+    Per-TC time-pressure score gap. Restricted
     to one ``time_control_bucket`` via ``_recent_capped_per_tc_cte`` and gated
     on a *dual* ≥30 floor: both ≥30 endgame-entry games where the USER hit
     clock_pct < 0.40 AND ≥30 endgame-entry games where the OPPONENT hit
@@ -415,9 +396,9 @@ def per_user_cte_time_pressure_score_gap(
     ``n_games`` = ``least(user_pressured_n, opp_pressured_n)`` — the binding
     floor on the dual-HAVING gate.
 
-    No per-row sparse-cell exclusion (D-1); cohort dedup lives in
+    No per-row sparse-cell exclusion; cohort dedup lives in
     ``selected_users_cte("benchmark")``. ``source`` is accepted for API
-    symmetry but does not alter the pooled body (D-10).
+    symmetry but does not alter the pooled body.
 
     Security: ``tc`` is constrained to a 4-value ``Literal`` so the f-string
     interpolation has no injection vector; ``snapshot_date.isoformat()``
@@ -493,9 +474,9 @@ def per_user_cte_clock_gap(
     over endgame-entry games in the restricted TC.
     ``n_games`` = pooled-set count (the binding floor per ``CLOCK_GAP_MIN_POOL_N``).
 
-    No per-row sparse-cell exclusion (D-1); cohort dedup lives in
+    No per-row sparse-cell exclusion; cohort dedup lives in
     ``selected_users_cte("benchmark")``. ``source`` is accepted for API
-    symmetry but does not alter the pooled body (D-10).
+    symmetry but does not alter the pooled body.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
@@ -555,12 +536,11 @@ def per_user_cte_net_flag_rate(
     ``NET_FLAG_RATE_MIN_POOL_N``).
 
     Verified column: ``games.termination`` is an ENUM whose time-forfeit value
-    is the string literal ``'timeout'`` (per 94.3-01 SUMMARY "Verified column
-    names"; NOT ``'time forfeit'`` as the RESEARCH sketch suggested).
+    is the string literal ``'timeout'``, NOT ``'time forfeit'``.
 
-    No per-row sparse-cell exclusion (D-1); cohort dedup lives in
+    No per-row sparse-cell exclusion; cohort dedup lives in
     ``selected_users_cte("benchmark")``. ``source`` is accepted for API
-    symmetry but does not alter the pooled body (D-10).
+    symmetry but does not alter the pooled body.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
@@ -602,15 +582,12 @@ per_user_values AS (
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 03 Task 2 — 4 new per-TC ΔES builders.
+# Per-TC ΔES builders for the 4 page-level ΔES metric families. The cohort
+# CDF builds at (metric, anchor, tc) granularity, so every metric family
+# must be available per-TC.
 #
-# These mirror the Phase 94.3 per-TC builder pattern (above) for the 4
-# page-level ΔES metric families previously only available pooled across
-# all TCs. The cohort CDF (Plan 04) builds at (metric, anchor, tc) granularity
-# so every metric family must be available per-TC.
-#
-# All 4 new builders project user_id in per_user_values (Pitfall 1 — the
-# cohort-CDF JOIN against per_user_anchor needs user identity).
+# All 4 project user_id in per_user_values (the cohort-CDF JOIN against
+# per_user_anchor needs user identity).
 # ---------------------------------------------------------------------------
 
 
@@ -635,13 +612,12 @@ def per_user_cte_score_gap_tc(
     digits and dashes via ``_recency_window_sql``. Bindparams are confined
     to ``:user_id`` inside ``selected_users_cte("single_user")``.
 
-    Source-mode parity (D-10): the pooled body is byte-identical between
+    Source-mode parity: the pooled body is byte-identical between
     ``source='benchmark'`` and ``source='single_user'``. The cohort
     difference lives entirely inside ``selected_users_cte``.
 
-    Pitfall 1 (RESEARCH lines 1168-1177): ``per_user_values`` projects
-    ``user_id`` so the cohort-CDF JOIN (Plan 04) against ``per_user_anchor``
-    can locate users by ID.
+    ``per_user_values`` projects ``user_id`` so the cohort-CDF JOIN against
+    ``per_user_anchor`` can locate users by ID.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
@@ -698,10 +674,10 @@ def per_user_cte_achievable_tc(
     Per-TC ``achievable_score_gap`` builder. Restricted to one
     ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
     formula is ``avg(d_i)`` where d_i is the per-game score-vs-Lichess-sigmoid
-    gap at endgame entry; HAVING gate is ≥30 d_i-non-null games per D-6.
+    gap at endgame entry; HAVING gate is ≥30 d_i-non-null games.
 
     Security and source-mode parity identical to ``per_user_cte_score_gap_tc``.
-    Pitfall 1 user_id widening applied.
+    ``per_user_values`` also projects ``user_id``.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
@@ -782,13 +758,13 @@ def per_user_cte_score_gap_bucket_tc(
     signed by user_color) and per-bucket HAVING ≥30 floor mirror the
     pooled-TC form.
 
-    The ``bucket_label`` Literal includes ``'recovery'`` (Phase 94.4 Plan 03
-    Task 2) for the recovery-rescue cohort: rows where the user entered the
+    The ``bucket_label`` Literal includes ``'recovery'`` for the
+    recovery-rescue cohort: rows where the user entered the
     endgame down material (entry_eval signed by user_color <= -100 cp, or
     entry_eval_mate < 0 signed).
 
     Security and source-mode parity identical to ``per_user_cte_score_gap_tc``.
-    Pitfall 1 user_id widening applied.
+    ``per_user_values`` also projects ``user_id``.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     ueag = _user_elo_at_game_expr()
@@ -894,14 +870,14 @@ def per_user_cte_conv_rate_tc(
 
     No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
     not ΔES delta. Terminal-span semantics: one row per endgame span; the game
-    result is the exit-score proxy (verified: endgame_service.py lines 2562-2574).
+    result is the exit-score proxy.
 
     Security: ``tc`` is a 4-value Literal; ty enforces the closed set at every
-    call site — no user string is interpolated (T-99-SQLi identical to existing
-    builders, canonical_slice_sql.py lines 76-83).
+    call site — no user string is interpolated (identical to the other
+    builders; see the module docstring).
 
     Source-mode parity: ``_ = source`` — cohort difference lives entirely in
-    ``selected_users_cte``; pooled body is byte-identical for both sources (SC-2).
+    ``selected_users_cte``; pooled body is byte-identical for both sources.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     ueag = _user_elo_at_game_expr()
@@ -965,7 +941,7 @@ def per_user_cte_parity_rate_tc(
     span count (the binding floor ≥ MINIMUM_RATE_BUCKET_SPANS).
 
     No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
-    not ΔES delta (D-09 research verified: endgame_service.py lines 2562-2574).
+    not ΔES delta.
 
     Source-mode parity and security identical to ``per_user_cte_conv_rate_tc``.
     """
@@ -1044,7 +1020,7 @@ def per_user_cte_recovery_rate_tc(
     ≥ MINIMUM_RATE_BUCKET_SPANS).
 
     No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
-    not ΔES delta (D-09 research verified: endgame_service.py lines 2562-2574).
+    not ΔES delta.
 
     Source-mode parity and security identical to ``per_user_cte_conv_rate_tc``.
     """
@@ -1124,7 +1100,7 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
     This is the standard PostgreSQL CTE VALUES pattern — the column names are
     declared in the CTE name clause, not via an alias on the VALUES expression.
 
-    Bug fix (quick-260529-js1): the previous implementation keyed the table on
+    Bug fix: the previous implementation keyed the table on
     chess.com BLITZ anchors and read ``CHESSCOM_BLITZ_TO_LICHESS`` directly. The
     nearest-anchor LATERAL join then matched every chess.com game's native rating
     against blitz-scale anchors regardless of the game's actual TC, skipping the
@@ -1135,7 +1111,7 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
 
     Security: the rows are generated from a Python-controlled snapshot via the
     converter — all values are Python ``int`` literals with no user-input
-    injection surface (T-94.4-10-02).
+    injection surface.
 
     Raises:
         ValueError: if the composed grid is empty for ``target_tc`` (defensive —
@@ -1162,11 +1138,9 @@ def per_user_cte_median_anchor(
 ) -> str:
     """Per-(user, TC) median rating anchor over the recent-3000-per-TC × 36-month pool.
 
-    Phase 94.4 D-04 / RESEARCH Pattern 6 (lines 622-666). Substrate for the
-    peer-relative percentile chip lookup: the median anchor per (user, TC) is
-    persisted in ``user_rating_anchors`` and later joined against the cohort
-    CDF artifact to read the percentile (Plan 04 benchmark-side; Plan 05
-    single-user-side).
+    Substrate for the peer-relative percentile chip lookup: the median anchor
+    per (user, TC) is persisted in ``user_rating_anchors`` and later joined
+    against the cohort CDF artifact to read the percentile.
 
     Two modes, selected by ``blend``:
 
@@ -1181,15 +1155,11 @@ def per_user_cte_median_anchor(
     The ``platform`` parameter restricts the join to a single platform:
 
     * ``None`` → no platform filter (both Lichess and chess.com games
-      contribute to the median; the cohort CDF generator in Plan 04 uses
+      contribute to the median; the cohort CDF generator uses
       this form on the benchmark DB which is Lichess-only by construction).
     * ``'lichess'`` / ``'chesscom'`` → emit ``AND g.platform = '<value>'``.
-      The Plan 05 Python wrapper drove the Lichess-precedence policy
-      (D-12 original) by calling this builder first with ``platform='lichess'``
-      and falling back to ``platform='chesscom'`` — this policy is superseded
-      by the D-12 Reversal Amendment (see blend mode below).
 
-    **Blended mode** (``blend=True``, D-12 Reversal Amendment 2026-05-27):
+    **Blended mode** (``blend=True``):
 
     Output CTE: ``per_user_anchor(user_id, anchor_rating INT, n_chesscom_games INT,
     n_lichess_games INT, chesscom_median_native INT, lichess_median_native INT)``.
@@ -1203,8 +1173,8 @@ def per_user_cte_median_anchor(
     nearest anchor row via
     ``ORDER BY ABS(rating_at_game_time - chesscom_anchor) LIMIT 1`` and the
     ``lichess_equiv`` is used as the blended rating. The native-rating keying
-    means the nearest-anchor match applies the correct intra-TC inversion
-    (quick-260529-js1 fix). Lichess games pass through their native rating
+    means the nearest-anchor match applies the correct intra-TC inversion.
+    Lichess games pass through their native rating
     unchanged. The per-user median of the combined (converted + native) pool is
     the blended ``anchor_rating``.
 
@@ -1212,57 +1182,52 @@ def per_user_cte_median_anchor(
     ``ValueError`` — blended mode pools both platforms inherently; a platform
     filter would defeat the purpose.
 
-    Suppression rule (§Suppression rule of the D-12 Reversal Amendment):
+    Suppression rule:
     the HAVING clause applies to the POOLED count (n_chesscom_games +
     n_lichess_games >= min_games). A chess.com-Daily-only user in the
     ``classical`` bucket has zero qualifying games and produces no row.
 
-    Worked example (from ``.planning/notes/percentile-anchor-d12-reversal.md``):
+    Worked example:
     4000 chess.com games @ 2200 (→ ~2050 lichess-equiv) + 100 lichess games
     @ 1900 → pooled median ≈ 2046 (game-weighted; heavy chess.com side dominates).
 
     ``n_chesscom_games``: count of non-Daily chess.com games in the pooled window.
     ``n_lichess_games``: count of lichess games in the pooled window.
     ``chesscom_median_native``: median of RAW chess.com ratings (pre-conversion);
-      NULL when n_chesscom_games = 0. Tooltip-disclosure source (D-07 bullet 4).
+      NULL when n_chesscom_games = 0. Tooltip-disclosure source.
     ``lichess_median_native``: median of native lichess ratings; NULL when
       n_lichess_games = 0. Tooltip-disclosure source.
 
     **Common documentation (both modes)**:
 
-    Daily-classical drop (RESEARCH Pitfall 11): chess.com Daily games are
-    bucketed ``classical`` by the import pipeline but are excluded from the
-    median anchor via ``WHERE NOT (g.platform = 'chess.com' AND
-    g.time_control_str LIKE '1/%')``. The drop is unconditional on ``tc`` for
-    structural symmetry — Daily games are filtered out everywhere, not just
-    when ``tc='classical'`` (RESEARCH Pitfall 2). As a result, classical
-    anchors may be absent for users who play only chess.com Daily, and the
-    chip suppresses naturally for that (user, classical) cell (D-04
-    suppression semantics).
+    Daily-classical drop: chess.com Daily games are bucketed ``classical`` by
+    the import pipeline but are excluded from the median anchor via
+    ``WHERE NOT (g.platform = 'chess.com' AND g.time_control_str LIKE '1/%')``.
+    The drop is unconditional on ``tc`` for structural symmetry — Daily games
+    are filtered out everywhere, not just when ``tc='classical'``. As a
+    result, classical anchors may be absent for users who play only chess.com
+    Daily, and the chip suppresses naturally for that (user, classical) cell.
 
     The ``source`` parameter is accepted for API symmetry with the other
     pooled builders (the cohort difference lives entirely in
-    ``selected_users_cte``); the pooled body is identical on both paths
-    (D-10 "drift remains structurally impossible").
+    ``selected_users_cte``); the pooled body is identical on both paths, so
+    the CDF and the per-user lookup cannot drift apart.
 
     Security: ``tc`` and ``platform`` are ``Literal`` parameters constrained
     by ty + Pydantic to the closed value set (4-value × 3-value matrix of
     known strings), so the f-string interpolation has no SQL-injection
-    surface (T-94.4-02-01 / T-94.4-02-02 / T-94.4-10-01). ``min_games`` is
-    an ``int``, safe to embed directly. ``snapshot_date.isoformat()`` emits
-    only digits and dashes via the existing ``_recency_window_sql`` helper.
+    surface. ``min_games`` is an ``int``, safe to embed directly.
+    ``snapshot_date.isoformat()`` emits only digits and dashes via the
+    existing ``_recency_window_sql`` helper.
     The ``_chesscom_conversion_values_sql`` output is generated from
     Python-controlled snapshot data (a ``Final`` constant of Python ints) —
-    no user-input injection surface (T-94.4-10-02). ``user_id`` flows through
-    ``.bindparams()`` in the caller; never f-stringed here (V5).
+    no user-input injection surface. ``user_id`` flows through
+    ``.bindparams()`` in the caller; never f-stringed here.
 
     f-string ``%`` convention: ``time_control_str LIKE '1/%'`` uses a single
     ``%`` — this module's builders return raw SQL passed to asyncpg via
     SQLAlchemy ``text()`` with ``:name``-style bindparams, NOT with Python
     ``%``-style formatting, so no ``%%`` doubling is required.
-
-    Design-decision record: D-12 Reversal Amendment (CONTEXT 2026-05-27) and
-    ``.planning/notes/percentile-anchor-d12-reversal.md``.
     """
     if blend and platform is not None:
         raise ValueError(
@@ -1274,14 +1239,13 @@ def per_user_cte_median_anchor(
     if blend:
         return _per_user_cte_median_anchor_blended(tc, snapshot_date, min_games)
 
-    # --- Non-blend mode (byte-for-byte unchanged from pre-Task-1 baseline) ---
+    # --- Non-blend mode ---
     # ``platform`` is the AnchorSource Literal ('lichess' | 'chesscom') used by
     # the user_rating_anchors model, but the games table stores the chess.com
     # platform string with a dot (``platform='chess.com'``). Translate before
     # emitting the SQL filter so the (AnchorSource) → (games.platform) mapping
-    # is the only place we paper over the discrepancy. Bug found in Plan 05b
-    # (#94.4-05b-Rule1): the benchmark DB is Lichess-only so the chess.com path
-    # was never exercised by Plan 02's tests.
+    # is the only place we paper over the discrepancy. The benchmark DB is
+    # Lichess-only, so the chess.com path is not exercised there.
     if platform is None:
         platform_filter = ""
     elif platform == "chesscom":
@@ -1326,8 +1290,8 @@ def _per_user_cte_median_anchor_blended(
       per_user_anchor (6 columns)
 
     The LATERAL nearest-anchor join is bounded by the recent-3000-per-TC cap
-    (3000 games × ~50 lookup rows ≈ 150K comparisons per user per TC) —
-    T-94.4-10-04 accept disposition.
+    (3000 games × ~50 lookup rows ≈ 150K comparisons per user per TC), which
+    is acceptable.
     """
     elo_expr = _user_elo_at_game_expr()
     conv_values = _chesscom_conversion_values_sql(tc)

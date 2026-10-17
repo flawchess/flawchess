@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * EvalChart gem/great dot layer tests (Phase 175 Plan 06).
+ * EvalChart gem/great dot layer tests.
  *
  * `bestMoveDotSpec` is tested directly as a pure function rather than by mounting
  * recharts' custom `dot` render prop and inspecting rendered <circle> attributes:
@@ -101,7 +101,7 @@ describe('bestMoveDotSpec (color/tier binding)', () => {
     expect(bestMoveDotSpec(evalPoint({ best_move_tier: null }))).toBeNull();
   });
 
-  // Quick 260717-rbn regression: best/good are board/card-only tiers. Before the
+  // Regression: best/good are board/card-only tiers. Before the
   // isRareMoveTier gate they fell into the "not gem → great" branch and painted a
   // blue dot mislabeled "Great" on the eval chart.
   it('renders nothing for a best-tier ply (board/card-only, not the eval chart)', () => {

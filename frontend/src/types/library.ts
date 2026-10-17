@@ -1,5 +1,5 @@
 /**
- * TypeScript mirrors of the Phase 106 + Phase 107 library backend schemas
+ * TypeScript mirrors of the library backend schemas
  * (app/schemas/library.py + app/services/flaws_service.py).
  *
  * Literal unions only — no loose `string` types.
@@ -29,7 +29,7 @@ export type FlawTag =
 export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
 
 /**
- * Tactic orientation filter (Phase 129 TACUI-06, D-06/D-07).
+ * Tactic orientation filter.
  * Mirrors backend TacticOrientation Literal["either","missed","allowed"].
  * 'either' = OR across both missed+allowed column sets (the default).
  */
@@ -65,8 +65,8 @@ export interface GameFlawCard {
   black_username: string | null;
   white_rating: number | null;
   black_rating: number | null;
-  // Phase 164 additions — Lichess-blitz-normalized ratings; optional + nullable so
-  // existing fixtures compile and a missing/older value falls back to raw (Pitfall 5).
+  // Lichess-blitz-normalized ratings; optional + nullable so
+  // existing fixtures compile and a missing/older value falls back to raw.
   white_rating_lichess_blitz?: number | null;
   black_rating_lichess_blitz?: number | null;
   opening_name: string | null;
@@ -76,17 +76,16 @@ export interface GameFlawCard {
   termination: string | null;
   time_control_str: string | null;
   result_fen: string | null;
-  // Phase 106 flaw fields — discriminated by analysis_state:
+  // Flaw fields, discriminated by analysis_state:
   // severity_counts is null (never 0/0/0) for unanalyzed games.
   severity_counts: SeverityCountsData | null;
-  // Phase 179 additions (SEED-112, D-01): canonical Phase 178 per-color
-  // accuracy (0-100). Null when not yet computed. No ACPL field (D-02) and no
-  // per-side count fields (D-05 — counts are client-derived in Plan 02).
+  // Canonical per-color accuracy (0-100). Null when not yet computed. No ACPL
+  // field and no per-side count fields (counts are client-derived).
   white_accuracy: number | null;
   black_accuracy: number | null;
   chips: FlawTag[];
   analysis_state: AnalysisState;
-  // Phase 109 additions — null for unanalyzed games (analysis_state === 'no_engine_analysis'):
+  // Null for unanalyzed games (analysis_state === 'no_engine_analysis'):
   eval_series: EvalPoint[] | null;
   flaw_markers: FlawMarker[] | null;
   phase_transitions: PhaseTransitions | null;
@@ -94,7 +93,7 @@ export interface GameFlawCard {
   // ply i, so replaying moves[0..i] yields the position at eval_series[i].
   // Null for unanalyzed games. Drives the live miniboard on eval-chart hover.
   moves: string[] | null;
-  // Phase 210 (SEED-042): the position `moves` is replayed FROM. Null means the
+  // The position `moves` is replayed FROM. Null means the
   // standard start (the overwhelming majority); non-null for chess.com
   // thematic/custom-position games and pasted [SetUp] PGNs. Anything replaying
   // `moves` must seed from this, not from STARTING_FEN.
@@ -102,7 +101,7 @@ export interface GameFlawCard {
   // Active eval-job state for the on-demand analyze pill; null when no active job
   // (unanalyzed-and-unqueued, or already analyzed).
   active_eval_status: 'pending' | 'leased' | null;
-  // Phase 172 (SEED-106 D-06): 1-based ply depth of the deepest opening-book
+  // 1-based ply depth of the deepest opening-book
   // match, computed on-read by the backend from `moves` (no column, no
   // migration/backfill). 0 = no known opening prefix matched. Always present
   // (backend field defaults to 0, never omitted) — non-optional, non-nullable.
@@ -122,18 +121,18 @@ export interface EvalPoint {
   // when no PV was captured. moves[i] / MoveNode.san are SAN (e.g. "Nf3"): a
   // direct `played === best_move` string comparison silently never matches.
   // Convert first via sanToUci() (frontend/src/lib/sanToSquares.ts) — this is
-  // the free prefilter's data source for Phase 172's gem sweep (SEED-106 D-04).
+  // the free prefilter's data source for the gem sweep.
   best_move: string | null;
-  // Pre-classified gem/great tier for this ply's stored mainline move (Phase
-  // 175, SEED-108), computed server-side from `game_best_moves` via the
-  // authoritative classify_best_move. Null when no candidate row exists OR the
+  // Pre-classified gem/great tier for this ply's stored mainline move, computed
+  // server-side from `game_best_moves` via the authoritative
+  // classify_best_move. Null when no candidate row exists OR the
   // row classifies "neither" — the board never re-derives this from cp/margin
   // math for an analyzed game (that's the fallback-only classifyGem/
-  // classifyGreat path in gemMove.ts, D-03c).
+  // classifyGreat path in gemMove.ts).
   //
-  // Quick 260717-rbn: widened with two more tiers, both computed live
-  // server-side (no stored row involved). 'best' = the played move
-  // identity-equals the stored best_move (out of book, not gem/great).
+  // The 'best' and 'good' tiers are computed live server-side (no stored row
+  // involved). 'best' = the played move identity-equals the stored best_move
+  // (out of book, not gem/great).
   // 'good' = the mover-POV expected-score drop is below INACCURACY_DROP (out
   // of book, not best/gem/great). Precedence gem > great > best > good > null.
   // maia_prob stays null for best/good — it is a gem/great-only rarity stat.
@@ -145,7 +144,7 @@ export interface EvalPoint {
 }
 
 /** The two "rare move" tiers (gem/great) that surface as eval-chart dots and a
- *  tooltip row. The best/good tiers (Quick 260717-rbn) are analysis-board /
+ *  tooltip row. The best/good tiers are analysis-board /
  *  library-card only and MUST NOT appear on the eval chart — gate every
  *  eval-chart tier read on this guard so a widened `best_move_tier` never leaks
  *  best/good into the chart's `=== 'gem' ? … : great` fallback. */
@@ -157,8 +156,6 @@ export function isRareMoveTier(tier: EvalPoint['best_move_tier']): tier is RareM
 /**
  * One flaw dot for the eval chart (both colors, B/M/I).
  * is_user=true → filled circle (player); is_user=false → hollow circle (opponent).
- * Phase 128 D-07: both orientation column sets exposed orientation-labeled.
- * Phase 129 wires the UI toggle to select which orientation to surface in chips.
  */
 export interface FlawMarker {
   ply: number;
@@ -222,9 +219,9 @@ export interface FlawTrendTc {
 /**
  * Response for GET /api/library/flaw-stats (mirrors backend FlawStatsResponse).
  *
- * Phase 239 D-00k: the timeline comes per time control (`trend_by_tc`, one entry per TC
- * that has analyzed games); the severity band, tag distribution and overall aggregates
- * are gone. trend_window = rolling window size (games). analyzed_n is the filter-scoped
+ * The timeline comes per time control (`trend_by_tc`, one entry per TC that has analyzed
+ * games); there is no severity band, tag distribution or overall aggregate.
+ * trend_window = rolling window size (games). analyzed_n is the filter-scoped
  * analyzed-game count (FlawsTab reads it).
  */
 export interface FlawStatsResponse {
@@ -238,31 +235,28 @@ export interface FlawStatsResponse {
 /**
  * One row in the Flaws subtab — one flawed position (mirrors backend FlawListItem).
  * Carries full miniboard display payload + game metadata. No *_hash fields.
- *
- * Phase 112 (SC-2 + SC-4): added white_rating/black_rating and before/after raw eval;
- * dropped es_before/es_after (D-07). move_san now join-sourced from game_positions (D-08).
  */
 export interface FlawListItem {
   game_id: number;
   ply: number;
   fen: string;
-  /** SAN of the flawed move — sourced from game_positions at ply=N (Phase 112, D-08). */
+  /** SAN of the flawed move — sourced from game_positions at ply=N. */
   move_san: string | null;
   severity: 'mistake' | 'blunder';
   tags: FlawTag[];
-  /** Before/after eval from game_positions join (white-POV). Phase 112, D-05. */
+  /** Before/after eval from game_positions join (white-POV). */
   eval_cp_before: number | null;
   eval_mate_before: number | null;
   eval_cp_after: number | null;
   eval_mate_after: number | null;
-  /** Player ratings from the games join (Phase 112, D-03). */
+  /** Player ratings from the games join. */
   white_rating: number | null;
   black_rating: number | null;
   // Game metadata row header
   user_result: 'win' | 'draw' | 'loss';
   played_at: string | null;
   time_control_bucket: string | null;
-  /** Game-info line parity with the Games card (Phase 112 follow-up). */
+  /** Game-info line parity with the Games card. */
   time_control_str: string | null;
   ply_count: number | null;
   termination: string | null;
@@ -271,17 +265,17 @@ export interface FlawListItem {
   white_username: string | null;
   black_username: string | null;
   user_color: string;
-  /** Mover's remaining clock AFTER the flawed move; null = no %clk (chess.com). Plan 260610-vru. */
+  /** Mover's remaining clock AFTER the flawed move; null = no %clk (chess.com). */
   clock_seconds: number | null;
-  /** Time spent on the flawed move (1dp); null when prior clock unknown. Plan 260610-vru. */
+  /** Time spent on the flawed move (1dp); null when prior clock unknown. */
   move_seconds: number | null;
-  /** Tactic allowed to flaw-maker's opponent (refutation PV, flaw_ply+1). Null below confidence gate. Phase 128 D-07. */
+  /** Tactic allowed to flaw-maker's opponent (refutation PV, flaw_ply+1). Null below confidence gate. */
   allowed_tactic_motif: string | null;
   /** Confidence for allowed_tactic_motif (0-100). Null when no motif assigned. */
   allowed_tactic_confidence: number | null;
   /** 0-based ply depth of the allowed tactic; null when its motif chip is hidden. Display as depth+1. */
   allowed_tactic_depth: number | null;
-  /** Tactic the flaw-maker missed (the "instead-of" PV, flaw_ply). Null below confidence gate. Phase 128 D-07. */
+  /** Tactic the flaw-maker missed (the "instead-of" PV, flaw_ply). Null below confidence gate. */
   missed_tactic_motif: string | null;
   /** Confidence for missed_tactic_motif (0-100). Null when no motif assigned. */
   missed_tactic_confidence: number | null;
@@ -321,7 +315,7 @@ export type FlawDeltaMetric =
  *
  * snake_case field names to match the JSON payload exactly. delta and CI fields are null
  * when both player_events and opp_events are zero. `significant` is the server-side 99%
- * test (CI excludes 0) that an out-of-band verdict needs (D-14); `has_zone` is always true
+ * test (CI excludes 0) that an out-of-band verdict needs; `has_zone` is always true
  * for flaw bullets.
  */
 export interface FlawBullet {
@@ -368,7 +362,7 @@ export interface FlawComparisonTc {
   /** All games of this TC in the current filters, analyzed or not (coverage denominator). */
   total_n: number;
   below_gate: boolean;
-  /** 12 bullets, also below the gate (D-03: the tile numbers stay visible). */
+  /** 12 bullets, also below the gate (the tile numbers stay visible). */
   bullets: FlawBullet[];
   /** 9 crossed tempo x phase cells, phase-major (opening, middlegame, endgame_phase; low_clock, hasty, unrushed inside each). */
   tempo_phase_cells: TempoPhaseCell[];
@@ -380,7 +374,7 @@ export interface FlawComparisonTc {
 export type TacticSide = 'missed' | 'allowed';
 
 /**
- * One tactic family on one side (mirrors backend TacticBullet, Phase 239).
+ * One tactic family on one side (mirrors backend TacticBullet).
  *
  * Rates and delta are per 100 games. Sign convention: positive delta = you have MORE of
  * these tactics than your opponents = bad, for both sides. Rate, delta, CI and p-value
@@ -392,15 +386,15 @@ export interface TacticBullet {
   you_rate: number | null;     // per 100 games, player side
   opp_rate: number | null;     // per 100 games, opponent side
   delta: number | null;        // you_rate - opp_rate per 100 games
-  ci_low: number | null;       // 99% CI lower bound on delta (D-14)
-  ci_high: number | null;      // 99% CI upper bound on delta (D-14)
+  ci_low: number | null;       // 99% CI lower bound on delta
+  ci_high: number | null;      // 99% CI upper bound on delta
   p_value: number | null;      // two-sided p vs H0: delta === 0
   you_events: number;          // raw flaw count, player side
   opp_events: number;          // raw flaw count, opponent side
   zone_lo: number;             // typical-range bounds per 100 games; 0.0 when has_zone is false
   zone_hi: number;
-  has_zone: boolean;           // false when this family-side has no viable benchmark band (D-11)
-  significant: boolean;        // 99% CI on delta excludes 0 (D-14)
+  has_zone: boolean;           // false when this family-side has no viable benchmark band
+  significant: boolean;        // 99% CI on delta excludes 0
 }
 
 /** One time control's tactic comparison (mirrors backend TacticComparisonTc). */
@@ -416,7 +410,7 @@ export interface TacticComparisonTc {
  * Response for GET /api/library/tactic-comparison (mirrors backend TacticComparisonResponse).
  *
  * tcs: one entry per time control with analyzed games in the current filters, in
- *      LIBRARY_TC_ORDER. The TC switch is client-side over this list (D-02).
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list.
  * analyzed_gate: minimum analyzed games per TC; exposed so the frontend renders "N of 20"
  *                without hardcoding.
  */
@@ -429,7 +423,7 @@ export interface TacticComparisonResponse {
  * Response for GET /api/library/flaw-comparison (mirrors backend FlawComparisonResponse).
  *
  * tcs: one entry per time control with analyzed games in the current filters, in
- *      LIBRARY_TC_ORDER. The TC switch is client-side over this list (D-02).
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list.
  * analyzed_gate: minimum analyzed games per TC (constant = 20); exposed so the frontend
  *                can render "N of 20" without hardcoding.
  */
@@ -443,7 +437,7 @@ export interface FlawComparisonResponse {
 // ─── Tactic Lines (GET /api/library/flaws/{game_id}/{ply}/tactic-lines) ────────
 
 /**
- * PV walk data for the TacticLineExplorer (Phase 135).
+ * PV walk data for the TacticLineExplorer.
  * Mirrors backend TacticLinesResponse Pydantic model field-for-field.
  *
  * missed_moves: SAN from the decision position (flaw_ply PV). Null when PV is NULL.

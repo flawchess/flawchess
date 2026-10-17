@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 /**
- * ImportBotBubble.test.tsx — Phase 224 (S-6, D-06; GUESTACT-07) + UAT round 1.
+ * ImportBotBubble.test.tsx
  *
- * Covers both variants: the `welcome` bubble (copy, the /bots link, NO
- * buttons) and the `signup-ask` bubble (copy, the S-4 button pair with D-02's
- * no-third-button rule proven by an exact button count, the umami attribute
- * contract on the sign-up button), plus persona stability across a re-render
- * (the `useMemo(() => pickBot('friendly'), [])` memo).
+ * Covers the three variants: the `welcome` bubble (copy, the /bots link, NO
+ * buttons), the `explore` bubble (tab tour links) and the `signup-ask` bubble
+ * (copy, the button pair with the no-third-button rule proven by an exact
+ * button count, the umami attribute contract on the sign-up button), plus
+ * persona stability across a re-render (the
+ * `useMemo(() => pickBot('friendly'), [])` memo).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -107,7 +108,7 @@ describe('ImportBotBubble (signup-ask)', () => {
     expect(screen.getByTestId('import-bot-bubble').querySelectorAll('a')).toHaveLength(5);
   });
 
-  it('renders exactly two buttons: btn-signup-why-import-promo and btn-signup-free-import-promo (D-02: no third button)', () => {
+  it('renders exactly two buttons: btn-signup-why-import-promo and btn-signup-free-import-promo (no third button)', () => {
     renderBubble('signup-ask');
     const bubble = screen.getByTestId('import-bot-bubble');
     expect(bubble.querySelectorAll('button')).toHaveLength(2);

@@ -5,7 +5,7 @@ import { apiClient } from '@/api/client';
 import { LoadError } from '@/components/ui/load-error';
 import type { ActivityRangeKey, ActivityStatsPayload } from '@/types/activity';
 
-/** An explicit, Apply-committed start/end window (Quick 260920-frk). `null`
+/** An explicit, Apply-committed start/end window. `null`
  * means the page is in preset mode, driven by `range` instead. */
 interface AppliedWindow {
   start: string;
@@ -104,18 +104,18 @@ function useDashboardFonts() {
 export default function ActivityPage() {
   useDashboardFonts();
 
-  // D-6: the hosted page never polls. queryFn reads this ref instead of a
+  // The hosted page never polls. queryFn reads this ref instead of a
   // second variable in the query key, so "Refresh now" can force a server-side
   // cache bypass (?refresh=1) via the SAME refetch() call TanStack Query
   // already exposes, rather than a parallel fetch path.
   const forceRefreshRef = useRef(false);
   const handleRef = useRef<ReturnType<NonNullable<Window['__fcApp']>['mount']> | null>(null);
 
-  // D6: range is React state and the second element of the query key (not a
+  // Range is React state and the second element of the query key (not a
   // constant single-element array), so each range gets its own cache entry.
   const [range, setRange] = useState<ActivityRangeKey>('d30');
 
-  // Quick 260920-frk: the two date inputs are uncommitted, edited freely; the
+  // The two date inputs are uncommitted, edited freely; the
   // fetch only reacts to `applied`, set by the Apply button. Starting both on
   // today means the single most likely custom request -- analyse today -- is
   // one click. `applied` stays null in preset mode.

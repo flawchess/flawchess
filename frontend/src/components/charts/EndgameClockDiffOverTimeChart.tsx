@@ -1,26 +1,21 @@
 /**
- * Phase 88.2 / Plan 88-15 (CONTEXT §2 A-2) — restored "Average Clock Difference
- * over Time" line chart. Plots the rolling-window mean of
+ * Average Clock Difference over Time line chart. Plots the rolling-window mean of
  * (user_clock - opp_clock) / base_clock at endgame entry, per ISO Monday,
  * with per-week game volume rendered as muted bars behind the line. One grey
- * "typical" band spans ±NEUTRAL_PCT_THRESHOLD (Phase 238 D-00f); the line is
- * neutral and the dots keep their zone colors (238 UAT brought them back).
- *
- * Restored after the Phase 88-07 cleanup deleted the pre-existing chart —
- * user-approved scope amendment to ROADMAP Phase 88 SC #1 (bullet cards
- * STAY, line chart RETURNS alongside).
+ * "typical" band spans ±NEUTRAL_PCT_THRESHOLD; the line is neutral and the dots
+ * keep their zone colors.
  *
  * Unit lock: avg_clock_diff_pct is in PERCENT (50.0, not 0.5).
  * NEUTRAL_PCT_THRESHOLD is in PERCENT (5.0). Chart Y-axis is in PERCENT.
- * All three share the same unit — NO conversion at the chart layer (B-5 lock).
+ * All three share the same unit, so there is NO conversion at the chart layer.
  *
- * Visual design re-aligned with the pre-deletion chart (main branch reference):
- *   - vertical "Clock diff %" Y-axis label on desktop, hidden on mobile
+ * Visual design:
+ *   - vertical "Clock Gap" Y-axis label on desktop, hidden on mobile
  *   - dynamic Y domain expands past ±30% to include any point that would
  *     otherwise be clipped (Math.max/Math.min around the data extremes)
- *   - one grey typical band (Phase 238 D-00f, replaces the red/blue/green zone bands)
+ *   - one grey typical band instead of red/blue/green zone bands
  *   - neutral line, zone-colored dots (red / blue / green), dot radius 2.5
- *   - detailed info-popover copy mirroring the previous component
+ *   - detailed info-popover copy
  */
 
 import { useEffect, useState } from 'react';
@@ -80,10 +75,10 @@ function useIsMobile(): boolean {
 }
 
 /**
- * Zone color for a point vs the neutral threshold. Phase 238 made the dots neutral;
- * the 238 UAT asked for the colored dots back, so only the line and band stay neutral.
- * This weekly trend line has no CI, so it is deliberately exempt from the 239 D-14
- * significance gate: the dots colour on the threshold alone.
+ * Zone color for a point vs the neutral threshold. Only the line and band stay
+ * neutral; the dots are colored.
+ * This weekly trend line has no CI, so it is deliberately exempt from the
+ * significance gate the other charts use: the dots colour on the threshold alone.
  */
 function zoneColor(diffPct: number): string {
   if (diffPct > NEUTRAL_PCT_THRESHOLD) return ZONE_SUCCESS;
@@ -93,8 +88,7 @@ function zoneColor(diffPct: number): string {
 
 /**
  * Compute a Y-axis domain that expands past the ±30% baseline when needed to
- * include any data point that would otherwise be clipped. Mirrors the pre-
- * deletion chart's behavior (main branch).
+ * include any data point that would otherwise be clipped.
  * @internal Exported only for unit-testing the domain-expansion logic.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for unit test only; not a component
@@ -204,8 +198,7 @@ export function EndgameClockDiffOverTimeChart({
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {/* Vertical Y-axis label on desktop only. Plain HTML rotated via CSS —
             Recharts' SVG `label` with position='insideLeft' + angle produces
-            NaN plot-area rects when the chart is responsive (legacy bug from
-            the pre-deletion implementation). */}
+            NaN plot-area rects when the chart is responsive. */}
         {!isMobile && (
           <div
             className="flex items-center text-sm text-muted-foreground shrink-0 pt-32 -mr-1"
@@ -225,8 +218,8 @@ export function EndgameClockDiffOverTimeChart({
           >
             {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
             <CartesianGrid vertical={false} yAxisId="value" />
-            {/* One grey typical band: dots, line and tooltip stay neutral, so the
-                chart shows where the typical range lies without a verdict. */}
+            {/* One grey typical band; the line stays neutral while the dots and the
+                tooltip swatch take zone colors. */}
             <ReferenceArea
               yAxisId="value"
               y1={-NEUTRAL_PCT_THRESHOLD}

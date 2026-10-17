@@ -1,5 +1,5 @@
 /**
- * playerName.ts unit tests (quick-260714-pnk).
+ * playerName.ts unit tests.
  *
  * Pure logic, no DOM — no `@vitest-environment jsdom` needed.
  */

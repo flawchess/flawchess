@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useAnalysisBoardArrows — Phase 228 (D-14, D-15): each engine draws its chosen
+ * useAnalysisBoardArrows — each engine draws its chosen
  * number of arrows, read rank-by-rank from the SAME ranking that feeds its
  * card; rank 1 is the solid primary, ranks 2..N share one translucent per-engine
  * color, widths stay per engine, and the primary is pushed last so it paints on
@@ -123,7 +123,7 @@ function byKey(arrows: BoardArrow[], key: string): BoardArrow | undefined {
   return arrows.find((a) => a.layerKey === key);
 }
 
-describe('useAnalysisBoardArrows — Stockfish arrows 1..N from the reconciled ranking (D-14)', () => {
+describe('useAnalysisBoardArrows — Stockfish arrows 1..N from the reconciled ranking', () => {
   it('sfArrowCount 3 draws three DISTINCT moves, rank k reading line k', () => {
     const sf = arrowsFor('sf', { sfArrowCount: 3 });
     expect(sf).toHaveLength(3);
@@ -176,7 +176,7 @@ describe('useAnalysisBoardArrows — Stockfish arrows 1..N from the reconciled r
   });
 });
 
-describe('useAnalysisBoardArrows — FlawChess arrows (D-15)', () => {
+describe('useAnalysisBoardArrows — FlawChess arrows', () => {
   it('fcArrowCount 2 draws solid gold then translucent gold, equal width, wider than Stockfish', () => {
     const { result } = renderHook(() =>
       useAnalysisBoardArrows(baseOptions({ fcArrowCount: 2, sfArrowCount: 1 })),
@@ -204,7 +204,7 @@ describe('useAnalysisBoardArrows — FlawChess arrows (D-15)', () => {
   });
 });
 
-describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 261012-a6m)', () => {
+describe('useAnalysisBoardArrows — Stockfish arrow grades and badges', () => {
   const grades = gradeEngineLines(GRADED_SF_LINES, START_FEN);
 
   function markersFor(overrides: Partial<UseAnalysisBoardArrowsOptions>) {
@@ -242,7 +242,7 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     expect(onE4).toEqual([{ square: 'e4', severity: 'mistake' }]);
   });
 
-  it('D-07: the move-quality hover replaces the arrows and the engine badges', () => {
+  it('the move-quality hover replaces the arrows and the engine badges', () => {
     const { boardSquareMarkers } = markersFor({
       sfArrowCount: 3,
       hoveredQualityMoves: [{ san: 'e4', color: '#ff0000' }],
@@ -250,12 +250,12 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     expect(boardSquareMarkers).toEqual([]);
   });
 
-  it('D-07: sfArrowCount 0 or the engine off gives no engine badges', () => {
+  it('sfArrowCount 0 or the engine off gives no engine badges', () => {
     expect(markersFor({ sfArrowCount: 0 }).boardSquareMarkers).toEqual([]);
     expect(markersFor({ engineEnabled: false, sfArrowCount: 3 }).boardSquareMarkers).toEqual([]);
   });
 
-  it('D-01: FlawChess arrows get no badge; secondaries fade with their practical-score drop', () => {
+  it('FlawChess arrows get no badge; secondaries fade with their practical-score drop', () => {
     const { boardArrows, boardSquareMarkers } = markersFor({ sfArrowCount: 0, fcArrowCount: 3 });
     expect(boardSquareMarkers).toEqual([]);
     const fc = (boardArrows ?? []).filter((a) => a.layerKey?.startsWith('fc-'));

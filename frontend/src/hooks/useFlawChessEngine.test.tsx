@@ -1,5 +1,5 @@
 /**
- * useFlawChessEngine bot-profile constant tests (Phase 168.5 D-07/D-09).
+ * useFlawChessEngine bot-profile constant tests.
  *
  * A lightweight, hook-free vitest module — no React render harness needed
  * (the existing `src/hooks/__tests__/useFlawChessEngine.test.ts` already
@@ -26,16 +26,16 @@ import {
 const FLAWCHESS_ENGINE_MAX_NODES = 400;
 const FLAWCHESS_ENGINE_MAX_PLIES = 8;
 
-describe('useFlawChessEngine — bot-play budget profile (D-07/D-09)', () => {
+describe('useFlawChessEngine — bot-play budget profile', () => {
   it('FLAWCHESS_BOT_MAX_NODES is a smaller, distinct budget from the analysis-board constant', () => {
     expect(FLAWCHESS_BOT_MAX_NODES).toBeLessThan(FLAWCHESS_ENGINE_MAX_NODES);
   });
 
-  it('FLAWCHESS_BOT_MAX_PLIES matches the locked [6,10] ply-depth band (unchanged default, D-07 "keep")', () => {
+  it('FLAWCHESS_BOT_MAX_PLIES matches the locked [6,10] ply-depth band (unchanged default)', () => {
     expect(FLAWCHESS_BOT_MAX_PLIES).toBe(FLAWCHESS_ENGINE_MAX_PLIES);
   });
 
-  it('FLAWCHESS_BOT_CONCURRENCY is a pinned positive constant (D-09 — never device-adaptive like computePoolSize)', () => {
+  it('FLAWCHESS_BOT_CONCURRENCY is a pinned positive constant (never device-adaptive like computePoolSize)', () => {
     expect(FLAWCHESS_BOT_CONCURRENCY).toBeGreaterThanOrEqual(1);
     expect(Number.isInteger(FLAWCHESS_BOT_CONCURRENCY)).toBe(true);
   });
@@ -45,7 +45,7 @@ describe('useFlawChessEngine — bot-play budget profile (D-07/D-09)', () => {
     expect(FLAWCHESS_BOT_STOP_RULE.stabilityWindow).toBeGreaterThan(0);
     expect(FLAWCHESS_BOT_STOP_RULE.marginThreshold).toBeGreaterThanOrEqual(0);
     expect(FLAWCHESS_BOT_STOP_RULE.epsilonThreshold).toBeGreaterThanOrEqual(0);
-    // Phase 225 D-01/D-02: the guard-window allowance must be a real,
+    // The guard-window allowance must be a real,
     // non-negative number — a NaN/negative value would silently widen or
     // corrupt the guard window every stopRuleSatisfied check computes.
     expect(Number.isFinite(FLAWCHESS_BOT_STOP_RULE.rootGuardBoostAllowance)).toBe(true);

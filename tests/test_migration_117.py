@@ -1,18 +1,18 @@
-"""Tests for Phase 117 Alembic migration: eval_jobs table, new columns, D-117-10 backfill.
+"""Tests for the eval_jobs Alembic migration: eval_jobs table, new columns, backfill.
 
 Regression suite for the migration that adds:
-- `game_positions.best_move VARCHAR(5) NULL` (EVAL-04 / D-117-01/03)
-- `game_positions.pv TEXT NULL` (EVAL-04 / D-117-02)
-- `games.lichess_evals_at TIMESTAMPTZ NULL` (D-117-06 provenance)
-- `games.full_pv_completed_at TIMESTAMPTZ NULL` (D-117-12)
+- `game_positions.best_move VARCHAR(5) NULL`
+- `game_positions.pv TEXT NULL`
+- `games.lichess_evals_at TIMESTAMPTZ NULL` (provenance)
+- `games.full_pv_completed_at TIMESTAMPTZ NULL`
 - partial index `ix_games_full_pv_pending ON games(id) WHERE full_pv_completed_at IS NULL`
-  (dropped again at head by c3a9e1f70003, quick-260916-gj7: it was dead in prod)
+  (dropped again at head by c3a9e1f70003: it was dead in prod)
 - `eval_jobs` table with columns: id, tier, user_id, game_id, status, leased_by,
   lease_expiry, created_at, completed_at
 - partial unique `uq_eval_jobs_game_active ON eval_jobs(game_id) WHERE status IN ('pending','leased')`
 - `ix_eval_jobs_pick ON eval_jobs(tier, user_id, created_at) WHERE status='pending'`
 - `ix_eval_jobs_leased ON eval_jobs(lease_expiry) WHERE status='leased'`
-- D-117-10 backfill: SET lichess_evals_at = COALESCE(imported_at, NOW())
+- backfill: SET lichess_evals_at = COALESCE(imported_at, NOW())
   WHERE white_blunders IS NOT NULL AND lichess_evals_at IS NULL
 
 Structure mirrors tests/test_migration_116_full_evals.py exactly: each test drives Alembic
@@ -33,18 +33,18 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
 
 # ─── Constants (CLAUDE.md: no magic numbers) ─────────────────────────────────
-# Re-upgrade must restore the FULL schema (true head), not just Phase 117. The
+# Re-upgrade must restore the FULL schema (true head), not just this migration. The
 # downgrade below drops every migration from head down to BASE_REVISION on this
 # worker's shared per-run DB; re-upgrading only to the 117 revision would leave
-# later columns (e.g. games.entry_eval_lease_expiry, Phase 123) missing, breaking
+# later columns (e.g. games.entry_eval_lease_expiry) missing, breaking
 # every subsequent ORM games insert that lands on the same xdist worker (flaky
 # UndefinedColumnError). Use "head" to match test_migration_91/116.
 TARGET_REVISION: str = "head"
-BASE_REVISION: str = "20260612120000"  # down_revision of our migration (Phase 116 head)
+BASE_REVISION: str = "20260612120000"  # down_revision of our migration (full_evals_completed_at)
 
 # Index names added by this migration
 # ix_games_full_pv_pending is created here but dropped again by c3a9e1f70003
-# (quick-260916-gj7, dead index), so at head it must be ABSENT. The tests below
+# (dead index), so at head it must be ABSENT. The tests below
 # run at head (TARGET_REVISION), hence the negative assertions for it.
 GAMES_PV_PENDING_INDEX: str = "ix_games_full_pv_pending"
 EVAL_JOBS_GAME_ACTIVE_INDEX: str = "uq_eval_jobs_game_active"
@@ -233,10 +233,10 @@ async def test_migration_adds_columns_and_eval_jobs_table(test_engine) -> None:
     """After upgrade, all four new columns + eval_jobs table exist; after downgrade, all gone.
 
     Covers:
-    - game_positions.best_move and game_positions.pv (EVAL-04 / D-117-01/02/03)
-    - games.lichess_evals_at (D-117-06)
-    - games.full_pv_completed_at (D-117-12)
-    - eval_jobs table with all expected columns (QUEUE-01/06)
+    - game_positions.best_move and game_positions.pv
+    - games.lichess_evals_at
+    - games.full_pv_completed_at
+    - eval_jobs table with all expected columns
     """
     # Ensure we are at head
     await _run_upgrade(TARGET_REVISION)
@@ -345,7 +345,7 @@ async def test_migration_adds_all_indexes(test_engine) -> None:
 
 
 async def test_backfill_sets_lichess_evals_at_for_analyzed_game(test_engine) -> None:
-    """D-117-10: game with white_blunders IS NOT NULL gets lichess_evals_at set by backfill.
+    """Game with white_blunders IS NOT NULL gets lichess_evals_at set by backfill.
 
     Strategy:
     1. Downgrade to base (lichess_evals_at column absent).
@@ -363,7 +363,7 @@ async def test_backfill_sets_lichess_evals_at_for_analyzed_game(test_engine) -> 
         test_engine, user_id, "migration117-analyzed-game", white_blunders=2
     )
 
-    # Upgrade — triggers D-117-10 backfill
+    # Upgrade — triggers the backfill
     await _run_upgrade(TARGET_REVISION)
 
     ts = await _get_lichess_evals_at(test_engine, user_id, game_id)
@@ -375,7 +375,7 @@ async def test_backfill_sets_lichess_evals_at_for_analyzed_game(test_engine) -> 
 
 
 async def test_backfill_leaves_lichess_evals_at_null_for_unanalyzed_game(test_engine) -> None:
-    """D-117-10: game with white_blunders IS NULL is NOT touched by the backfill.
+    """Game with white_blunders IS NULL is NOT touched by the backfill.
 
     Strategy:
     1. Downgrade to base.

@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /**
- * PlayStyleControl.tsx unit tests (Phase 171 Plan 04, D-01/V-09;
- * reworked to preset-only, quick 260717-lr9).
+ * PlayStyleControl.tsx unit tests (preset-only control).
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -126,8 +125,8 @@ describe('PlayStyleControl', () => {
   });
 });
 
-// Phase 229 (D-12): option-change reaches window.umami.track through the real analytics module.
-describe('PlayStyleControl feature events (Phase 229)', () => {
+// Option-change reaches window.umami.track through the real analytics module.
+describe('PlayStyleControl feature events', () => {
   const track = vi.fn();
 
   beforeEach(() => {

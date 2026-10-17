@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 /**
- * TrainInstallQr.test.tsx — HANDOFF-01..04 (Phase 203 Plan 03, Task 3).
  * Mocks the lazy-loaded `qrcode.react` module with a plain stub element so
  * assertions target the encoded payload and DOM shape, not the library's
- * internal SVG-rendering details (203-RESEARCH.md Assumption A4: the real
- * export/prop shape — `QRCodeSVG`, `value`, `size` — was confirmed against
- * the installed package's shipped `.d.ts`, not assumed from memory).
+ * internal SVG-rendering details (the real export/prop shape — `QRCodeSVG`,
+ * `value`, `size` — was confirmed against the installed package's shipped
+ * `.d.ts`, not assumed from memory).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';

@@ -1,4 +1,4 @@
-"""Unit tests for app.services.email_service (Phase 207, RESET-04).
+"""Unit tests for app.services.email_service.
 
 Structured like tests/test_push_send.py: a `_mock_client` helper building an
 AsyncMock whose `.post` is an AsyncMock, and `monkeypatch.setattr` against the

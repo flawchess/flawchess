@@ -1,4 +1,4 @@
-"""Weekly leaderboard medal snapshot reads and writes (Phase 231).
+"""Weekly leaderboard medal snapshot reads and writes.
 
 Finalization claims a week through the marker table, writes that week's standings,
 and the board reads the previous week's podium rows back. Ranking, masking and
@@ -170,9 +170,9 @@ async def fetch_last_week_rows(
 async def fetch_unclaimed(session: AsyncSession, *, user_id: int, limit: int) -> list[UnclaimedRow]:
     """The caller's medals with `celebrated_at` NULL, newest week first, Points before Accuracy.
 
-    Scoping by the caller's user id is the IDOR guard (T-231-10): the endpoint takes no
+    Scoping by the caller's user id is the IDOR guard: the endpoint takes no
     user parameter, so nobody can read another user's medals. `leaderboard_hidden` is
-    deliberately not consulted (D-04): a user who opted out after the week still sees
+    deliberately not consulted: a user who opted out after the week still sees
     and claims their own medals. `shared` is true when another row of the same week,
     board and medal exists, i.e. the medal was tied.
     """
@@ -183,7 +183,7 @@ async def fetch_unclaimed(session: AsyncSession, *, user_id: int, limit: int) ->
         other.medal == TrainWeeklyStanding.medal,
         other.id != TrainWeeklyStanding.id,
     )
-    # Alphabetical order would put 'accuracy' first; the Points board leads (D-11).
+    # Alphabetical order would put 'accuracy' first; the Points board leads.
     board_order = case((TrainWeeklyStanding.board == "points", 0), else_=1)
     stmt = (
         select(
@@ -223,10 +223,10 @@ async def mark_celebrated(
 ) -> int:
     """Stamp `celebrated_at` on the caller's own unclaimed medals among `keys`.
 
-    The WHERE clause is the IDOR guard (T-231-09): rows are matched by the caller's
+    The WHERE clause is the IDOR guard: rows are matched by the caller's
     user id AND the posted (week_start, board) pairs, so a foreign or unknown key
     matches nothing. `celebrated_at IS NULL` makes a replay a no-op and keeps the
-    first stamp (T-231-13). Only the posted keys are claimed, never "all unclaimed".
+    first stamp. Only the posted keys are claimed, never "all unclaimed".
     Returns the number of rows stamped; an empty `keys` issues no SQL.
     """
     if not keys:
@@ -249,7 +249,7 @@ async def fetch_medal_tallies(
 ) -> list[TallyCount]:
     """Lifetime medal counts per (board, user, medal) for the given users, one grouped query.
 
-    The caller passes only ids already visible to the viewer (T-231-12), and nothing but
+    The caller passes only ids already visible to the viewer, and nothing but
     counts leaves the service. Celebrated medals count too. The user_id index serves the
     IN filter. An empty `user_ids` issues no SQL.
     """

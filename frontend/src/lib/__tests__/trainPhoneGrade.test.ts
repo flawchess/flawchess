@@ -35,7 +35,7 @@ describe('buildPhoneGradePayload', () => {
     expect(payload.played_depth).toBe(0);
   });
 
-  it('has exactly the six wire keys and no device or engine field (D-07)', () => {
+  it('has exactly the six wire keys and no device or engine field', () => {
     const payload = buildPhoneGradePayload({
       tier: 'wrong',
       keyEs: 0.7,
@@ -54,7 +54,7 @@ describe('buildPhoneGradePayload', () => {
   });
 });
 
-describe('instantServerTier (Phase 236 D-09/D-10)', () => {
+describe('instantServerTier', () => {
   const MOVES: ServerGradedMove[] = [
     { uci: 'd2d4', tier: 'good' },
     { uci: 'e2e4', tier: 'inaccuracy' },
@@ -64,7 +64,7 @@ describe('instantServerTier (Phase 236 D-09/D-10)', () => {
     expect(instantServerTier(MOVES, 'e2e4', null)).toBeNull();
   });
 
-  it('is null when the played move is the key, even while the key is listed (D-13/D-05)', () => {
+  it('is null when the played move is the key, even while the key is listed', () => {
     expect(instantServerTier(MOVES, 'd2d4', 'd2d4')).toBeNull();
   });
 

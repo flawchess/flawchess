@@ -17,7 +17,7 @@ export function useUserProfile() {
 }
 
 /**
- * Phase 230 D-16: persist the weekly-leaderboard opt-out through the profile
+ * Persist the weekly-leaderboard opt-out through the profile
  * PUT. The response is the full profile, so it replaces the cached profile
  * directly (the switch reads the server's answer), and the cached boards are
  * invalidated so the landing re-ranks without a reload. No Sentry call: the
@@ -40,7 +40,7 @@ export function useSetLeaderboardHidden() {
 }
 
 /**
- * The single definition of the zero-game test (Phase 224 D-03): true when the
+ * The single definition of the zero-game test: true when the
  * account has imported at least one game from either platform. Shared by the
  * Home redirect and the Train games-less copy branch — never re-derive this
  * sum inline elsewhere.

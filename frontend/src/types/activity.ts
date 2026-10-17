@@ -9,11 +9,10 @@
  */
 
 /**
- * The four presets the global time-range filter offers (Quick 260831-p7x,
- * D1). Mirrors `app.services.activity_queries.RangeKey`. These are the only
- * preset keys — an explicit start/end pair (Quick 260920-frk) is not a fifth
- * preset; it is reported back as `ActivitySelectedRange`'s extra "custom"
- * value.
+ * The four presets the global time-range filter offers. Mirrors
+ * `app.services.activity_queries.RangeKey`. These are the only preset keys:
+ * an explicit start/end pair is not a fifth preset; it is reported back as
+ * `ActivitySelectedRange`'s extra "custom" value.
  */
 export type ActivityRangeKey = 'all' | 'd90' | 'd30' | 'd7';
 
@@ -58,5 +57,10 @@ export interface ActivityStatsPayload {
   stick: (string | number | null)[][];
   conversion: Record<string, number | string>;
   conversion_compare: (string | number | null)[][];
+  /** Train sessions completed while the user was still a guest (`fetch_guest_train`). */
+  guest_train: {
+    sessions_completed: number;
+    users: number;
+  };
   purged_excluded: Record<string, number>;
 }

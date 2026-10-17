@@ -1,8 +1,8 @@
 """ORM for the benchmark_ingest_checkpoints table (benchmark DB only).
 
-Phase 69 INGEST-04. Per-(user, TC) outer-loop checkpoint for the ingestion
-orchestrator. Created via Base.metadata.create_all() against the benchmark
-engine -- NOT in the canonical Alembic chain (preserves INFRA-02).
+Per-(user, TC) outer-loop checkpoint for the ingestion orchestrator.
+Created via Base.metadata.create_all() against the benchmark engine -- NOT in
+the canonical Alembic chain (benchmark-only tables stay out of dev/prod/test).
 
 Status lifecycle:
     pending -> completed   (run_import succeeded with games_imported >= min)
@@ -17,7 +17,7 @@ The orchestrator distinguishes two terminal-status sets:
     from the candidate pool until the cell hits its useful-user target.
 
 The 'skipped' status is now used for low-yield users (< min_useful_games);
-historically it also marked users with >=20k games (D-14), now superseded by
+historically it also marked users with >=20k games, now superseded by
 lichess server-side ``max=`` truncation. Both meanings coexist as
 "checkpointed but not useful for benchmarks."
 

@@ -1,4 +1,4 @@
-"""Unit tests for stamp_bot_game_headers (quick-260714-qaj).
+"""Unit tests for stamp_bot_game_headers.
 
 Pure, no DB, no session — NormalizedGame fixtures are constructed directly.
 Every assertion re-parses the returned PGN string with chess.pgn.read_game and
@@ -31,7 +31,7 @@ _PGN_CHECKMATE = (
     "4. Qxf7# {[%clk 0:02:54]} 1-0\n"
 )
 
-# The exact D-03 order, for the happy-path anchored/user=white case.
+# The exact header order, for the happy-path anchored/user=white case.
 _EXPECTED_ORDER_WHITE_ANCHORED = [
     "Event",
     "Site",
@@ -89,8 +89,8 @@ def _make_normalized(
         black_rating=black_rating,
         opening_name=opening_name,
         opening_eco=opening_eco,
-        white_accuracy=None,
-        black_accuracy=None,
+        white_accuracy_imported=None,
+        black_accuracy_imported=None,
         played_at=played_at,
     )
 
@@ -102,7 +102,7 @@ def _reparse(pgn_text: str) -> chess.pgn.Game:
 
 
 class TestHappyPath:
-    def test_full_d03_header_block(self) -> None:
+    def test_full_header_block(self) -> None:
         normalized = _make_normalized()
         pgn = stamp_bot_game_headers(
             normalized=normalized,
@@ -135,7 +135,7 @@ class TestHappyPath:
         assert headers["RatingSource"] == "blended"
         assert headers["PlayStyleBlend"] == "0.50"
 
-    def test_header_order_matches_d03_exactly(self) -> None:
+    def test_header_order_matches_expected_exactly(self) -> None:
         normalized = _make_normalized()
         pgn = stamp_bot_game_headers(
             normalized=normalized,
@@ -147,11 +147,11 @@ class TestHappyPath:
         reparsed = _reparse(pgn)
         keys = list(reparsed.headers.keys())
         assert keys == _EXPECTED_ORDER_WHITE_ANCHORED
-        # D-06: non-standard tags emitted LAST.
+        # Non-standard tags emitted LAST.
         assert keys[-2:] == ["RatingSource", "PlayStyleBlend"]
 
 
-class TestD05Omission:
+class TestNoAnchorOmission:
     def test_no_anchor_omits_white_elo_and_rating_source(self) -> None:
         normalized = _make_normalized(white_rating=None)
         pgn = stamp_bot_game_headers(

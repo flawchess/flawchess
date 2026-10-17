@@ -11,7 +11,7 @@ import { reloadAutomatically } from "@/lib/autoReload";
 import { captureFirstTouch } from "@/lib/firstTouch";
 import { identifyFromStoredToken, installUmamiBeforeSend } from "@/lib/analytics";
 
-// SEED-158: a page killed while Maia was running (iOS Safari's silent
+// A page killed while Maia was running (iOS Safari's silent
 // per-page memory-limit termination) leaves a record in localStorage — report
 // it now that Sentry is initialised.
 reportMaiaPageKillFromPreviousSession();
@@ -19,7 +19,7 @@ reportMaiaPageKillFromPreviousSession();
 // FLAWCHESS-C0: reload once when a lazy chunk from the previous deploy is gone.
 installStalePreloadReload();
 
-// Growth item 16: remember where this browser first arrived from (referrer host,
+// Remember where this browser first arrived from (referrer host,
 // utm tags, landing path) before the router rewrites the URL.
 captureFirstTouch();
 
@@ -31,7 +31,7 @@ installUmamiBeforeSend();
 // Identify before the deferred tracker's first pageview (it waits for
 // readyState complete) so the landing pageview carries the id on Umami 3.4+,
 // where the distinct id is part of the session hash. Memory-only: a reload or
-// logout wipes it (Phase 229 D-16/D-09).
+// logout wipes it.
 identifyFromStoredToken();
 
 // ── Service Worker update handling ────────────────────────────────────────
@@ -47,7 +47,7 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing) return;
       refreshing = true;
-      // Quick 261004-rmc: marked as automatic so Umami drops the reload's pageview.
+      // Marked as automatic so Umami drops the reload's pageview.
       reloadAutomatically();
     });
   }

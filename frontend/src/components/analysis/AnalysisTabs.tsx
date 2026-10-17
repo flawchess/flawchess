@@ -32,25 +32,16 @@ import type { GameFlawCard } from '@/types/library';
 
 /**
  * AnalysisTabs — the mobile/mid tabbed panel (Moves | Eval | Maia | FlawChess |
- * Stats) and the shared render fragments it composes, extracted from
- * `Analysis.tsx`'s `variationTree`/`boardControls`/`evalChart`/`tagsPanel`/
- * `eloSelector`/`renderFlawChessCard`/`humanTab`/`flawChessTab`/
- * `mobileEngineLines`/`evalTab`/`moveListHeaderContent`/`movesTab`/`statsTab`/
- * `analysisTabs` render helpers (215-06).
+ * Stats) and the shared render fragments it composes.
  *
  * Several of these fragments (`VariationTreePanel`, `BoardControls`,
  * `EvalChartPanel`, `TagsPanel`, `EloSelectorPanel`, `FlawChessCard`,
  * `MoveListHeaderContent`) are also consumed by the desktop board-stage/cards
- * components 215-06 extracts to `AnalysisBoardStage.tsx`/
- * `AnalysisDesktopCards.tsx` — they import from here rather than duplicating.
+ * components `AnalysisBoardStage.tsx`/`AnalysisDesktopCards.tsx`, which import
+ * from here rather than duplicating.
  */
 
-/**
- * Header info tooltip for the FlawChess Engine card. Private duplicate of
- * Analysis.tsx's own module-level `FlawChessInfoTooltip` (this file's `FlawChessCard`
- * is its only NEW reader; `stockfishCard`, the other pre-existing reader of
- * `EngineToggleHeader`, does not read this one).
- */
+/** Header info tooltip for the FlawChess Engine card. */
 function FlawChessInfoTooltip(): ReactElement {
   return (
     <InfoPopover ariaLabel="About the FlawChess Engine" testId="flawchess-info-popover">
@@ -81,9 +72,7 @@ export type VariationTreePanelProps = Omit<
   /**
    * Gates the six game-mode-only VariationTree props below (initialAlignPly,
    * pvNodeIds, onPvChipClick, activePvKeys, pvFetchPending/Error) — computed
-   * INSIDE this component rather than at each call site, so the ternary lives
-   * in VariationTreePanel's own complexity count, not Analysis()'s (the same
-   * seam BoardHeaderRow uses for its showPlayerBars branch, 215-06 Task 1).
+   * INSIDE this component rather than at each call site.
    */
   isGameMode: boolean;
   initialAlignPly: VariationTreeProps['initialPly'];
@@ -124,7 +113,7 @@ export function VariationTreePanel({
 
 export type BoardControlsProps = {
   flat?: boolean;
-  /** Phase 223 UAT: icon-over-label columns for the mobile footer. */
+  /** Icon-over-label columns for the mobile footer. */
   labels?: boolean;
   size?: 'sm' | 'md' | 'lg';
   onBack: () => void;
@@ -137,17 +126,16 @@ export type BoardControlsProps = {
   /**
    * Fast-forward is game-mode only; this component owns the `isGameMode` gate
    * itself (rather than a caller-computed `isGameMode ? fastForward.start :
-   * undefined`) so the ternary lives in BoardControls's own complexity count,
-   * not Analysis()'s — same seam as VariationTreePanel's `isGameMode` prop.
+   * undefined`), same as VariationTreePanel's `isGameMode` prop.
    */
   isGameMode: boolean;
   onFastForwardStart: () => void;
   canFastForward: boolean;
 };
 
-// Board controls — shared. The desktop panel sits in the move-list card's darker
-// footer band (flat, compact sm icons evenly spread); the mobile footer passes flat
-// with no size so the buttons fill the width like the main nav (Quick 260628-dgv).
+// Board controls — shared. Desktop/mid render them under the board in
+// DesktopBoardStage (flat, sm); the mobile footer passes flat with no size so the
+// buttons fill the width like the main nav.
 export function BoardControls({
   flat = false,
   labels = false,
@@ -191,7 +179,7 @@ export type EvalChartPanelProps = {
   gameId: number | null;
   gameData: GameFlawCard | undefined;
   initialPly: number | null;
-  onHoverPlyChange: (ply: number | null) => void;
+  onActivePlyChange: (ply: number | null) => void;
   evalChartPly: number | null;
   tagCommandedPly: number | null;
   tagCommandSeq: number;
@@ -209,7 +197,7 @@ export function EvalChartPanel({
   gameId,
   gameData,
   initialPly,
-  onHoverPlyChange,
+  onActivePlyChange,
   evalChartPly,
   tagCommandedPly,
   tagCommandSeq,
@@ -232,7 +220,7 @@ export function EvalChartPanel({
         heightClass={heightClass}
         initialPly={initialPly}
         flipped={gameData.user_color === 'black'}
-        // User-scope the gem/great dot layer (Plan 06 fix): best_move_tier is
+        // User-scope the gem/great dot layer: best_move_tier is
         // position-scoped, so pass user_color to exclude the opponent's gems/greats.
         userColor={
           gameData.user_color === 'white' || gameData.user_color === 'black'
@@ -241,7 +229,7 @@ export function EvalChartPanel({
         }
         sliderTestId="analysis-eval-chart-slider"
         disableHoverScrub
-        onHoverPlyChange={onHoverPlyChange}
+        onActivePlyChange={onActivePlyChange}
         syncPly={evalChartPly}
         commandedPly={tagCommandedPly}
         commandSeq={tagCommandSeq}
@@ -272,7 +260,7 @@ export type TagsPanelProps = {
   setTagsHighlightedPlies?: Dispatch<SetStateAction<Set<number> | null>>;
 };
 
-// The flaw-tags panel (game mode only, quick-260702-nm8) — MoveStats card + Missed |
+// The flaw-tags panel (game mode only) — MoveStats card + Missed |
 // Allowed | Context tags. Cycling a cell/chip reuses the exact goToNode pattern the
 // move list uses — a single call auto-syncs board + move list + eval-chart crosshair.
 export function TagsPanel({
@@ -295,7 +283,7 @@ export function TagsPanel({
       game={gameData}
       section={section}
       onCyclePly={(ply, orientation) => {
-        // T-140-02b: L-8 guard for noUncheckedIndexedAccess.
+        // Guard for noUncheckedIndexedAccess.
         const nodeId = mainLine[ply];
         // The ply the board should rest on: a missed line forks at ply-1 (the decision
         // board), an allowed line at ply; context tags / Move Stats cells navigate to the
@@ -304,7 +292,7 @@ export function TagsPanel({
         if (orientation !== undefined && nodeId !== undefined) {
           // Missed/allowed tactic badge: unfold its sideline AND navigate to the decision
           // fork (ply-1 for missed, flaw ply for allowed). Unlike the move-list chip, the
-          // tags-card badge NEVER folds an already-open line (UAT): if the sideline is
+          // tags-card badge NEVER folds an already-open line: if the sideline is
           // already unfolded, just navigate to the fork instead of toggling it shut.
           const key = flawKey({ ply, orientation });
           if (openLines.has(key)) {
@@ -320,7 +308,7 @@ export function TagsPanel({
         // list (with an unfolded sideline visible below), not clipped at the bottom.
         setMoveListTopAlignSeq((s) => s + 1);
         // Surface the eval-chart tooltip on the board's RESTING ply (the fork for a missed
-        // line), NOT the raw flaw ply: the command's onHoverPlyChange re-navigates the
+        // line), NOT the raw flaw ply: the command's onActivePlyChange re-navigates the
         // board, so commanding the flaw ply would yank the cursor one move past a missed
         // line's decision fork on a repeat click.
         setTagCommandedPly(restPly);
@@ -341,9 +329,9 @@ export type EloSelectorPanelProps = {
 };
 
 // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
-// sits BETWEEN the two cards (164 UAT); each mobile tab (FlawChess / Maia) renders
+// sits BETWEEN the two cards; each mobile tab (FlawChess / Maia) renders
 // its own copy since they're separate screens. The reset control snaps back to the
-// players' rating once the user has dragged off it (164 UAT).
+// players' rating once the user has dragged off it.
 export function EloSelectorPanel({ value, onChange, defaultElo, onReset }: EloSelectorPanelProps): ReactElement {
   return (
     <div className="px-2 flex flex-col gap-2" data-testid="analysis-elo-selector-row">
@@ -360,13 +348,13 @@ export type FlawChessCardProps = {
   compact?: boolean;
   flawChessEnabled: boolean;
   setFlawChessEnabled: (enabled: boolean) => void;
-  /** FlawChess lines setting (1-5): card rows and skeleton rows (Phase 228 D-16). */
+  /** FlawChess lines setting (1-5): card rows and skeleton rows. */
   fcLines: number;
   selectedElo: number;
   flawChessLoading: boolean;
   reconciledRankedLines: RankedLine[];
   flawChessIsSearching: boolean;
-  /** Running MCTS expansion count for the current position (quick 260906-i5e);
+  /** Running MCTS expansion count for the current position;
    *  0 until the first snapshot lands, resets on every FEN change. */
   flawChessNodesEvaluated: number;
   position: string;
@@ -386,9 +374,9 @@ export type FlawChessCardProps = {
   setTemperature: (temperature: number) => void;
 };
 
-// FlawChess Engine card (D-01, DISPLAY-04) — a fixed-height charcoal Card stacked
+// FlawChess Engine card — a fixed-height charcoal Card stacked
 // directly above MaiaHumanPanel, reused verbatim in BOTH the desktop human column
-// and the mobile "FlawChess" tab (mobile-parity). `footer` (164 UAT): mobile passes
+// and the mobile "FlawChess" tab (mobile-parity). `footer`: mobile passes
 // the ELO slider so it sits inside the card; desktop omits it (the slider is a
 // standalone row between the two cards there).
 export function FlawChessCard({
@@ -418,8 +406,8 @@ export function FlawChessCard({
   temperature,
   setTemperature,
 }: FlawChessCardProps): ReactElement {
-  // SEED-158: the FlawChess Engine needs Maia; on a device that can never
-  // start it the card stayed blank (or on its skeleton) forever.
+  // The FlawChess Engine needs Maia; on a device that can never start it the
+  // card would stay blank (or on its skeleton) forever.
   const unsupportedNotice = useEngineUnsupportedNotice('flawchess');
   return (
     <Card data-testid="analysis-flawchess-panel">
@@ -433,8 +421,8 @@ export function FlawChessCard({
           icon={compact ? undefined : ChessKnight}
         >
           {/* ELO = the mover's rating (or the slider override), the strength the
-              engine is playing at (155 UAT). Nodes = the running MCTS expansion
-              count for this position (quick 260906-i5e), the FlawChess analogue of
+              engine is playing at. Nodes = the running MCTS expansion
+              count for this position, the FlawChess analogue of
               the Stockfish card's "Depth N" — same `> 0` gate, so it stays hidden
               until the first snapshot lands and disappears on every FEN change. */}
           FlawChess, {selectedElo} ELO
@@ -463,11 +451,10 @@ export function FlawChessCard({
               terminalOutcome={flawChessTerminalOutcome}
               onMoveClick={onMoveClick}
             />
-            {/* Agreement verdict (Phase 157-02, REVIEW-02; Phase 158 SEED-087 SC4;
-                Phase 162 SEED-090 D-13): the Stockfish side is the TRUE global
+            {/* Agreement verdict: the Stockfish side is the TRUE global
                 reconciled argmax, falling back to enginePvLines[0] pre-grading so
-                first paint still resolves. Hidden in a terminal position (quick
-                260709): the terminal badge above says it all. */}
+                first paint still resolves. Hidden in a terminal position: the
+                terminal badge above says it all. */}
             {flawChessTerminalOutcome == null && (
               <FlawChessAgreementVerdict
                 flawChessLine={reconciledRankedLines[0] ?? null}
@@ -482,7 +469,7 @@ export function FlawChessCard({
                 onPlayMove={onPlayMove}
               />
             )}
-            {/* Phase 159 D-08: the Human <-> Stockfish play-style slider lives at the
+            {/* The Human <-> Stockfish play-style slider lives at the
                 bottom of the FlawChess Engine card (it only reshapes this engine's
                 policy). */}
             <div className="mt-2 px-2">
@@ -490,7 +477,7 @@ export function FlawChessCard({
             </div>
           </>
         )}
-        {/* Mobile-only ELO slider inside the card (164 UAT); always shown, even when
+        {/* Mobile-only ELO slider inside the card; always shown, even when
             the engine is off, since it also drives the Maia surfaces. */}
         {footer !== undefined && <div className="mt-2">{footer}</div>}
       </CardBody>
@@ -504,10 +491,10 @@ export type MoveListHeaderContentProps = {
   onOpenPasteModal: () => void;
 };
 
-// Move-list header row content (Phase 208, D-19/D-20): shared between the
-// mobile/mid movesTab header and the desktop movesCard CardHeader — the Paste
-// trigger reaches every layout, not just desktop (SC-9 requires the whole flow to
-// work at 375px). Rendered unconditionally, including ?game_id= game mode (D-20).
+// Move-list header row content: shared between the
+// mobile/mid MovesTab header and the desktop MovesCard CardHeader — the Paste
+// trigger reaches every layout, not just desktop (the whole flow must work at
+// 375px). Rendered unconditionally, including ?game_id= game mode.
 export function MoveListHeaderContent({ onOpenPasteModal }: MoveListHeaderContentProps): ReactElement {
   return (
     <>
@@ -534,9 +521,9 @@ export function MoveListHeaderContent({ onOpenPasteModal }: MoveListHeaderConten
 
 export type HumanTabProps = {
   selectedElo: number;
-  /** PAINT-LIVE (Phase 219-03, D-12, consumer group 4) — a pure pass-through to MaiaHumanPanel. */
+  /** useMaiaEngine's perElo (may hold a partial ladder) — a pure pass-through to MaiaHumanPanel. */
   maiaPerElo: UseMaiaEngineState['perElo'];
-  /** useMaiaEngine's isLadderComplete (Phase 219-03, D-12) — passed through to MaiaHumanPanel. */
+  /** useMaiaEngine's isLadderComplete — passed through to MaiaHumanPanel. */
   maiaIsLadderComplete: UseMaiaEngineState['isLadderComplete'];
   playedSan: string | null;
   reconciledBestSan: string | null;
@@ -553,10 +540,10 @@ export type HumanTabProps = {
   eloSelector: ReactNode;
 };
 
-// The mobile "Maia" tab content (D-03, LIC-02) — shared across every mobile tab
+// The mobile "Maia" tab content — shared across every mobile tab
 // layout, so this JSX isn't duplicated. The FlawChess card lives in its own
 // adjacent tab (FlawChessTab) rather than here; the ELO slider sits inside the
-// Maia card (as its footer) on mobile since it drives both engines (164 UAT).
+// Maia card (as its footer) on mobile since it drives both engines.
 export function HumanTab({
   selectedElo,
   maiaPerElo,
@@ -583,7 +570,7 @@ export function HumanTab({
           perElo={maiaPerElo}
           isLadderComplete={maiaIsLadderComplete}
           playedSan={playedSan}
-          // 162-REVIEW WR-02: the chart's emphasized stroke follows the SAME
+          // The chart's emphasized stroke follows the SAME
           // reconciled Best the quality color/label/verdict designate, not the
           // raw free-run pick (raw bestSan still feeds selectCandidatesByMass
           // above so the free-run pick stays plotted).
@@ -613,7 +600,7 @@ export type FlawChessTabProps = {
 
 // The mobile "FlawChess" tab content — the FlawChess Engine card, in its own tab to
 // the right of the Maia tab. The ELO slider sits inside the card (as its footer) on
-// mobile (164 UAT), since this is a separate screen from the Maia tab.
+// mobile, since this is a separate screen from the Maia tab.
 export function FlawChessTab({ flawChessCard }: FlawChessTabProps): ReactElement {
   return (
     <TabsContent value="flawchess" className="min-h-0 overflow-y-auto thin-scrollbar">
@@ -625,7 +612,7 @@ export function FlawChessTab({ flawChessCard }: FlawChessTabProps): ReactElement
 // ─── MobileEngineLines ──────────────────────────────────────────────────────────
 
 export type MobileEngineLinesProps = {
-  /** Stockfish lines setting (1-5): rows and skeleton rows, no mobile cap (Phase 228 D-16). */
+  /** Stockfish lines setting (1-5): rows and skeleton rows, no mobile cap. */
   sfLines: number;
   engineLoading: boolean;
   engineEnabled: boolean;
@@ -658,7 +645,7 @@ export function MobileEngineLines({
       ) : !engineEnabled ? (
         <div className="flex h-full items-center px-2 text-sm text-muted-foreground">Engine off</div>
       ) : (
-        // 162 UAT: reconciled top-N over the full grading union, mobile parity
+        // Reconciled top-N over the full grading union, mobile parity
         // with the desktop card (CLAUDE.md mobile-parity rule).
         <EngineLines
           pvLines={reconciledPvLines}
@@ -715,7 +702,7 @@ export type MovesTabProps = {
   variationTree: ReactNode;
 };
 
-// The mobile "Moves" tab content — a CardHeader (Phase 208: carrying the Paste
+// The mobile "Moves" tab content — a CardHeader (carrying the Paste
 // trigger) over the vertical variation tree in a charcoal container, matching the
 // surrounding tab surfaces. Shared across the mobile tab layouts and the mid-range
 // right column.
@@ -798,7 +785,7 @@ export function AnalysisTabs({
   statsTab,
 }: AnalysisTabsProps): ReactElement {
   return (
-    // D-02: Radix fires onValueChange on user selection only, never on mount.
+    // Radix fires onValueChange on user selection only, never on mount.
     <Tabs
       defaultValue="moves"
       onValueChange={(tab) => {

@@ -1,0 +1,8 @@
+old	new	kind	absent_paths	ref	canon_paths
+user_result	mover_result	parameter	-	INVENTORY §5 services-import-train-tactics (flaws_service.py:954/_build_tags)	app/services/flaws_service.py
+p_total	player_total	parameter	-	INVENTORY §5 services-import-train-tactics (library_service.py _build_flaw_bullet)	app/services/library_service.py
+o_total	opp_total	parameter	-	INVENTORY §5 services-import-train-tactics (library_service.py _build_flaw_bullet)	app/services/library_service.py
+game_dict	game	variable	-	INVENTORY §5 services-import-train-tactics (import_service.py _run_forward_pass loop)	app/services/import_service.py
+_collect_position_rows	_insert_games_and_build_position_rows	function	app/services/import_service.py,app/services/normalization.py,tests/services/test_import_service.py	INVENTORY §5 services-import-train-tactics (import_service.py)	
+board_after_flaw	pv_start_board	parameter	-	INVENTORY §5 services-import-train-tactics (tactic_detector.py detect_tactic_motif/_parse_pv params)	app/services/tactic_detector.py
+bot_elo	bot_rating	parameter	-	INVENTORY §5 services-import-train-tactics (normalization.py normalize_flawchess_game[_or_reason] params)	app/services/normalization.py

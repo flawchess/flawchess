@@ -1,15 +1,15 @@
-"""PGN header stamping for stored bot games (quick-260714-qaj).
+"""PGN header stamping for stored bot games.
 
 This module is the SINGLE writer of the header block stamped onto a stored
-`platform='flawchess'` bot game's PGN. Per D-01: the header block is stamped
+`platform='flawchess'` bot game's PGN. The header block is stamped
 SERVER-SIDE, from server-derived data only. Whatever the client sent for the
 Seven Tag Roster (or any other header) is OVERWRITTEN, never trusted — see
-`stamp_bot_game_headers`'s clear-then-rebuild recipe (F-1).
+`stamp_bot_game_headers`'s clear-then-rebuild recipe.
 
-Per D-03/D-05/D-06: the target header block is a lichess-comparable Seven Tag
+The target header block is a lichess-comparable Seven Tag
 Roster plus GameId/UTCDate/UTCTime/Elo/Title/Variant/TimeControl/ECO/Opening/
 Termination, followed by two non-standard tags (RatingSource, PlayStyleBlend)
-LAST — D-06 requires these to come after every standard/lichess-recognized tag.
+LAST, after every standard/lichess-recognized tag.
 """
 
 import datetime
@@ -44,7 +44,7 @@ def build_bot_game_url(game_id: int) -> str:
     """Canonical public URL of a stored bot game — the in-app analysis board.
 
     The single source of truth for a bot game's own URL. It is written to TWO
-    places, which must never diverge: the PGN's `[Site]` header (D-03) and the
+    places, which must never diverge: the PGN's `[Site]` header and the
     `games.platform_url` column. A bot game's "originating platform" IS
     FlawChess, so unlike chess.com/lichess this URL is self-referential and
     points back into the app.
@@ -58,7 +58,7 @@ def build_bot_game_url(game_id: int) -> str:
 
     Args:
         game_id: The row's internal auto-increment `games.id`, known only
-            post-INSERT (D-07).
+            post-INSERT.
 
     Returns:
         An absolute URL, e.g. `https://flawchess.com/analysis?game_id=693117`.
@@ -75,7 +75,7 @@ def _build_header_pairs(
     play_style_blend: float,
     played_at: datetime.datetime,
 ) -> list[tuple[str, str]]:
-    """Build the D-03 ordered header pairs, omitting D-05 absent-value tags.
+    """Build the ordered header pairs, omitting absent-value tags.
 
     `played_at` is passed in already non-None (the caller narrows it) so `ty`
     can verify the `.strftime` calls without a redundant guard here.
@@ -95,7 +95,7 @@ def _build_header_pairs(
         ("UTCTime", played_at.strftime(_PGN_TIME_FORMAT)),
     ]
 
-    if normalized.white_rating is not None:  # D-05: omit, never "?"/"0"
+    if normalized.white_rating is not None:  # Omit, never "?"/"0"
         pairs.append(("WhiteElo", str(normalized.white_rating)))
     if normalized.black_rating is not None:
         pairs.append(("BlackElo", str(normalized.black_rating)))
@@ -114,10 +114,10 @@ def _build_header_pairs(
     if normalized.opening_name is not None:
         pairs.append(("Opening", normalized.opening_name))
 
-    # D-04: FlawChess closed vocab, NOT lichess's flat "Normal".
+    # FlawChess closed vocab, NOT lichess's flat "Normal".
     pairs.append(("Termination", normalized.termination))
 
-    if rating_source is not None:  # D-05: omit when no anchor
+    if rating_source is not None:  # Omit when no anchor
         pairs.append(("RatingSource", rating_source))
     pairs.append(("PlayStyleBlend", f"{play_style_blend:.{_PLAY_STYLE_BLEND_DECIMALS}f}"))
 
@@ -132,11 +132,11 @@ def stamp_bot_game_headers(
     rating_source: RatingSource | None,
     play_style_blend: float,
 ) -> str:
-    """Return `normalized.pgn` re-serialized with the full D-03 header block.
+    """Return `normalized.pgn` re-serialized with the full header block.
 
     Re-parses `normalized.pgn`, clears every existing header (defeating any
-    client-supplied Event/Site/White/Black/Elo/Title — T-qaj-01), then assigns
-    the D-03-ordered header pairs and re-serializes via `str(game)` (F-1). The
+    client-supplied Event/Site/White/Black/Elo/Title), then assigns
+    the ordered header pairs and re-serializes via `str(game)`. The
     per-move `[%clk]` comments on the mainline survive unchanged.
 
     Args:
@@ -144,12 +144,12 @@ def stamp_bot_game_headers(
             only — this function never re-derives anything from raw request
             data).
         game_id: The row's real auto-increment `games.id`, known only
-            post-INSERT (D-07) — used to build the `Site` deep link.
+            post-INSERT — used to build the `Site` deep link.
         tc_preset: The request's original `base+inc` seconds string (e.g.
             "600+0"). F-3: NOT `normalized.time_control_str`, which strips a
             zero increment.
         rating_source: The derived rating provenance, or None when the user
-            has no rating anchor for this TC bucket (D-05).
+            has no rating anchor for this TC bucket.
         play_style_blend: The Maia/Stockfish blend in [0, 1].
 
     Returns:
@@ -179,9 +179,9 @@ def stamp_bot_game_headers(
         played_at=normalized.played_at,
     )
 
-    # F-1: clear every existing header (including the Seven Tag Roster) before
+    # Clear every existing header (including the Seven Tag Roster) before
     # rebuilding, so non-STR client tags (e.g. TimeControl/Termination) don't
-    # land ahead of the newly-added ones and break D-06's tag order.
+    # land ahead of the newly-added ones and break the tag order.
     for key in list(game.headers.keys()):
         del game.headers[key]
     for key, value in pairs:

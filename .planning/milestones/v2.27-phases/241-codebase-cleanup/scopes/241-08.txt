@@ -1,0 +1,7 @@
+app/repositories/feedback_ask_repository.py
+app/repositories/feedback_repository.py
+app/repositories/push_repository.py
+app/repositories/train_leaderboard_repository.py
+app/repositories/train_medals_repository.py
+app/repositories/train_reminder_repository.py
+app/repositories/train_repository.py

@@ -1,30 +1,29 @@
-"""Pure stdlib port of Lichess's game accuracy + ACPL formulas (D-08..D-11).
+"""Pure stdlib port of Lichess's game accuracy + ACPL formulas.
 
-This is the SINGLE shared compute path for the four canonical `games` columns
-(`white_accuracy`, `black_accuracy`, `white_acpl`, `black_acpl`). Both the live
-full-eval-completion hook (`eval_apply.py::_classify_and_fill_oracle`, Plan 03)
-and the corpus backfill script (Plan 04) call `compute_game_accuracy_acpl` —
-formula logic lives here exactly once (D-06/SEED-110 §4).
+This is the single compute path for the four canonical `games` accuracy/ACPL
+columns (`white_accuracy`, `black_accuracy`, `white_acpl`, `black_acpl`); the live
+writer is `eval_apply.refresh_game_flaw_counts_and_accuracy`. The archived corpus
+backfill script and `scripts/validate_accuracy_acpl.py` call `compute_game_accuracy_acpl`
+too — formula logic lives here exactly once.
 
-Sourced from scalachess/lila (see .planning/seeds/SEED-110-lichess-compatible-accuracy-acpl.md
-and 178-RESEARCH.md § "Formula Port (D-08..D-11)" for citations):
+Sourced from scalachess/lila (the `AccuracyPercent` and `Cp.CEILING` definitions):
 
-  - Win% (D-08): centipawn -> winning-chances via the Lichess sigmoid
+  - Win%: centipawn -> winning-chances via the Lichess sigmoid
     (`LICHESS_K`, imported from `eval_utils` — single source, no re-declared
     magic number), ceiled to +/-CP_CEILING BEFORE the sigmoid, then the
     winning-chances value is clamped to [-1, 1] before scaling to [0, 100].
-  - Per-move accuracy (D-09): an exponential decay of the Win% drop, with a
+  - Per-move accuracy: an exponential decay of the Win% drop, with a
     trailing "+1" uncertainty bonus. A move that does not worsen the position
     scores exactly 100.
-  - Game-level accuracy (D-10): a windowed-volatility-weighted aggregation —
+  - Game-level accuracy: a windowed-volatility-weighted aggregation —
     (weightedMean(accuracy, weight) + harmonicMean(accuracy)) / 2 per color,
     where each move's weight is the population stddev (clamped) of a sliding
     window over the *White-POV* Win% sequence (not the mover-POV values).
-  - ACPL (D-11): a plain arithmetic mean of per-move centipawn losses
+  - ACPL: a plain arithmetic mean of per-move centipawn losses
     (mover-POV, each eval capped +/-CP_CEILING first) — NOT the windowed
     aggregation used for accuracy.
 
-Eval semantics (post-move shift, RESEARCH § "Eval Semantics"): `game_positions`
+Eval semantics (post-move shift): `game_positions`
 row `ply=P` stores the eval of the position AFTER the move departing from ply
 P, i.e. the eval of position `P+1`. Position 0 (the initial position, before
 any move) has no stored eval and is seeded at `INITIAL_SEED_CP` (15 cp, the
@@ -46,10 +45,10 @@ from app.services.eval_utils import LICHESS_K
 # --- Named constants (CLAUDE.md "no magic numbers") -------------------------
 
 # Lichess Cp.CEILING: the pre-sigmoid centipawn cap applied to both cp evals
-# and mate-mapped evals (D-08). Also the ACPL per-move loss cap (D-11).
+# and mate-mapped evals. Also the ACPL per-move loss cap.
 CP_CEILING = 1000
 
-# Lichess AccuracyPercent coefficients (D-09). The trailing "+1" uncertainty
+# Lichess AccuracyPercent coefficients. The trailing "+1" uncertainty
 # bonus below is applied separately and is NOT baked into MOVE_ACC_C.
 MOVE_ACC_A = 103.1668100711649
 MOVE_ACC_B = -0.04354415386753951
@@ -60,7 +59,7 @@ MOVE_ACC_C = -3.166924740191411
 # Without this seed, White's first-move loss (and Win% baseline) is undefined.
 INITIAL_SEED_CP = 15
 
-# D-10 sliding-window bounds (in moves) and per-window weight clamp bounds.
+# Sliding-window bounds (in moves) and per-window weight clamp bounds.
 MIN_WINDOW = 2
 MAX_WINDOW = 8
 MIN_WEIGHT = 0.5
@@ -84,7 +83,7 @@ class PositionLike(Protocol):
 
 @dataclass(frozen=True)
 class AccuracyAcplResult:
-    """Per-color computed accuracy (D-10) and ACPL (D-11) for one game."""
+    """Per-color computed accuracy and ACPL for one game."""
 
     white_accuracy: float | None
     black_accuracy: float | None
@@ -100,7 +99,7 @@ def _clamp(value: float, lo: float, hi: float) -> float:
 
 
 def _pop_stddev(xs: Sequence[float]) -> float:
-    """Population standard deviation (divide by N, not N-1) — matches D-10."""
+    """Population standard deviation (divide by N, not N-1), as lichess does."""
     mean = sum(xs) / len(xs)
     variance = sum((x - mean) ** 2 for x in xs) / len(xs)
     return math.sqrt(variance)
@@ -111,7 +110,7 @@ def _weighted_mean(xs: Sequence[float], weights: Sequence[float]) -> float:
 
 
 def _harmonic_mean(xs: Sequence[float]) -> float:
-    """Harmonic mean, guarded against a literal 0.0 accuracy (Pitfall 5 / T-178-02-D).
+    """Harmonic mean, guarded against a literal 0.0 accuracy.
 
     A harmonic mean containing a true 0 is mathematically 0 in the limit, but
     the direct `len/sum(1/x)` formula raises ZeroDivisionError at x == 0.
@@ -134,17 +133,17 @@ def _mover_at(ply: int, start_color: Color) -> Color:
     return start_color if ply % 2 == 0 else _other_color(start_color)
 
 
-# --- D-08: Win% ---------------------------------------------------------------
+# --- Win% ---------------------------------------------------------------------
 
 
 def win_pct(cp: int) -> float:
-    """White-POV Win% in [0, 100] from a White-POV centipawn eval (D-08).
+    """White-POV Win% in [0, 100] from a White-POV centipawn eval.
 
     Ceils `cp` to +/-CP_CEILING BEFORE the sigmoid, then clamps the resulting
     winning-chances value to [-1, 1] before scaling — this is the dedicated
     clamped path lichess uses for accuracy/ACPL; it deliberately does NOT
     reuse `eval_utils.eval_cp_to_expected_score`, which has no pre-sigmoid
-    ceiling and would diverge at large |cp| (RESEARCH § "Formula Port").
+    ceiling and would diverge at large |cp|.
     """
     c = _clamp(cp, -CP_CEILING, CP_CEILING)
     winning_chances = 2.0 / (1.0 + math.exp(-LICHESS_K * c)) - 1.0
@@ -166,16 +165,16 @@ def _resolve_white_pov_cp(eval_cp: int | None, eval_mate: int | None) -> int:
     return int(_clamp(eval_cp, -CP_CEILING, CP_CEILING))
 
 
-# --- D-09: per-move accuracy ---------------------------------------------------
+# --- Per-move accuracy ---------------------------------------------------------
 
 
 def move_accuracy(before_win: float, after_win: float) -> float:
-    """Per-move accuracy in [0, 100] from mover-POV before/after Win% (D-09).
+    """Per-move accuracy in [0, 100] from mover-POV before/after Win%.
 
     A move that does not worsen the mover's position (after >= before) scores
     exactly 100. Otherwise an exponential decay of the Win% drop, with the
-    trailing "+1" uncertainty bonus kept intact (Pitfall 3 — easy to drop and
-    shifts results by 1-3 points).
+    trailing "+1" uncertainty bonus kept intact (easy to drop; it shifts
+    results by 1-3 points).
     """
     if after_win >= before_win:
         return 100.0
@@ -183,16 +182,16 @@ def move_accuracy(before_win: float, after_win: float) -> float:
     return _clamp(raw, 0.0, 100.0)
 
 
-# --- D-10: windowed game-level accuracy ----------------------------------------
+# --- Windowed game-level accuracy ----------------------------------------------
 
 
 def compute_color_accuracy(win_seq_white_pov: Sequence[float], color: Color) -> float | None:
-    """Windowed-volatility-weighted game accuracy for one color (D-10).
+    """Windowed-volatility-weighted game accuracy for one color.
 
     `win_seq_white_pov` is the White-POV Win% at every position 0..n_moves
     (length n_moves + 1), seeded at position 0. Per-move weights are derived
     from a sliding window over this SAME White-POV sequence for both colors
-    (RESEARCH: pinned by the lichess accuracy fixture — not an independent
+    (pinned by the lichess accuracy fixture — not an independent
     per-color window). Returns None if this color made zero moves.
     """
     n_moves = len(win_seq_white_pov) - 1
@@ -219,11 +218,11 @@ def compute_color_accuracy(win_seq_white_pov: Sequence[float], color: Color) -> 
     return (_weighted_mean(accuracies, weights) + _harmonic_mean(accuracies)) / 2.0
 
 
-# --- D-11: ACPL -----------------------------------------------------------------
+# --- ACPL -----------------------------------------------------------------------
 
 
 def compute_color_acpl(losses: list[int]) -> int | None:
-    """Plain arithmetic-mean ACPL for one color, rounded to int (D-11).
+    """Plain arithmetic-mean ACPL for one color, rounded to int.
 
     Deliberately NOT the windowed/harmonic aggregation used for accuracy.
     """
@@ -256,9 +255,9 @@ def _resolve_after_cp(pair: tuple[int | None, int | None] | None, mover: Color) 
 
     A missing pair only occurs at the final move (guaranteed by the hole-free
     gate for every interior move): the mover's move ended the game, so treat
-    it as a delivered mate in the mover's favor (RESEARCH § "Terminal /
-    checkmate handling" — both the +/-CP_CEILING treatment and skipping the
-    move give the same aggregate to <0.5%; this module takes the former).
+    it as a delivered mate in the mover's favor (both the +/-CP_CEILING
+    treatment and skipping the move give the same aggregate to <0.5%; this
+    module takes the former).
     """
     cp, mate = pair if pair is not None else (None, None)
     if cp is None and mate is None:
@@ -293,13 +292,13 @@ def compute_game_accuracy_acpl(
     *,
     start_color: Color = "white",
 ) -> AccuracyAcplResult | None:
-    """Compute per-color accuracy (D-10) and ACPL (D-11) for one game, or None.
+    """Compute per-color accuracy and ACPL for one game, or None.
 
     `positions` must be ordered arbitrarily but keyed by explicit `.ply`
     (never by list index — a defensive habit that survives a rare missing
     row). Returns None (all four values NULL) when:
       - `positions` is empty or has zero moves (0-move game), or
-      - any interior eval is missing (Complete-Sequence Gate, Pitfall 6 — a
+      - any interior eval is missing (Complete-Sequence Gate — a
         completion stamp does NOT guarantee hole-free; this gate is the only
         authority).
 

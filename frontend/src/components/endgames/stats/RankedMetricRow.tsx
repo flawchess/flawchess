@@ -17,8 +17,8 @@ interface RankedMetricRowProps {
 /**
  * One peer-ranked metric: the label with its Search popover trigger to the right, the
  * uncolored value, then the percentile bar (or its status slot). The bar is no
- * trigger (238 UAT). A pending cell shows only its analyzing line in place of
- * value and bar (D-11); the trigger stays so the popover still explains why.
+ * trigger. A pending cell shows only its analyzing line in place of
+ * value and bar; the trigger stays so the popover still explains why.
  */
 export function RankedMetricRow({ metric, tcStats, testId, label }: RankedMetricRowProps) {
   const showValue = metric.status !== 'pending';

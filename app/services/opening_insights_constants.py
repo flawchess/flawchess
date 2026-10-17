@@ -1,4 +1,4 @@
-"""Phase 75 (v1.14) opening insights constants.
+"""Opening insights constants.
 
 Single source of truth for thresholds shared between the repository
 (SQL HAVING clause) and the service (Python classifier + confidence
@@ -10,40 +10,34 @@ imports these constants, and the service imports from the repository,
 so the constants cannot live in either file.
 """
 
-# Entry-position bounds — Phase 70 used [3, 16]; lowered to [0, 16] so opening
-# insights also surface findings at white's first move (entry_ply=0), black's
-# first response (entry_ply=1), and white's second move (entry_ply=2). At
+# Entry-position bounds [0, 16]: opening insights also surface findings at
+# white's first move (entry_ply=0), black's first response (entry_ply=1), and
+# white's second move (entry_ply=2). At
 # entry_ply=0 the entry position is the starting position and entry_san_sequence
 # is empty — _replay_san_sequence handles this by returning the starting FEN.
 OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 0
 OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
 
-# Discovery floor. Was 20 → 10 per INSIGHT-SCORE-05 / D-04 (confidence badge
-# replaces hard-floor gate), then back to 20 (quick task 260506) after the
-# eval-bullet rollout exposed that small-N findings are dominated by
-# post-selection inference noise: the SQL pre-filter on score <= 0.45 OR
-# score >= 0.55 selects the very statistic the score-vs-50% test then uses,
-# so at n in 10..19 the test was anti-conservative under the previous Wald
-# formulation. Quick task 260507-aw5 migrated the p-value from Wald to the
-# Wilson score test (null SE = 0.5/sqrt(n)), which is less sensitive to the
-# selection (null SE doesn't depend on observed score), but the floor stays
-# at 20 — the empirical finding rate at n=10..19 was the original motivation
-# and lowering it again is a separate decision.
+# Discovery floor. Small-N findings (n in 10..19) are dominated by
+# post-selection noise: the SQL pre-filter on score <= 0.45 OR score >= 0.55
+# selects the very statistic the score-vs-50% test then uses. The Wilson score
+# test (null SE = 0.5/sqrt(n)) is less sensitive to that selection (null SE
+# doesn't depend on observed score), but the floor stays at 20; lowering it is a
+# separate decision.
 # Decoupled from the explorer's MIN_GAMES_FOR_COLOR (frontend, still 10) —
 # the explorer arrow palette can tolerate weaker evidence than a surfaced
 # "weakness" card on the Insights tab.
 OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 20
 
-# Score classifier — replaces the Phase 70 LIGHT_THRESHOLD / DARK_THRESHOLD
-# pair. Pivot is fixed at 0.50; effect-size gate is symmetric on both sides.
-# See .planning/notes/opening-insights-v1.14-design.md for rationale.
+# Score classifier. Pivot is fixed at 0.50; effect-size gate is symmetric on
+# both sides.
 OPENING_INSIGHTS_SCORE_PIVOT: float = 0.50
 OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| >= 0.05 → minor
 OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 
 # Confidence buckets — two-sided p-value thresholds plus N>=10 gate, unified
-# across both the score-vs-50% test (score_confidence.py — Wilson score test
-# as of quick 260507-aw5) and the eval-mean-vs-0 test (eval_confidence.py —
+# across both the score-vs-50% test (score_confidence.py — Wilson score test)
+# and the eval-mean-vs-0 test (eval_confidence.py —
 # Wald-z, Wilson does not apply to continuous one-sample mean tests). With
 # N < 10, confidence is forced to "low" regardless of p-value: small samples
 # already carry the unreliable-stats opacity dim in the UI, and the bucket
@@ -52,33 +46,31 @@ OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 # Threshold rationale: p < 0.01 ("high") demands strong evidence —
 # < 1% chance of seeing the observed signal under H0 by chance alone.
 # p < 0.05 ("medium") is the conventional weak-evidence cutoff.
-# Two-sided framing matches industry convention; the one-sided framing
-# previously used for the score test (halving the p) made "high confidence"
-# at p_one_sided < 0.05 effectively equivalent to p_two_sided < 0.10, which
-# was a weaker bar than the eval test was held to.
+# Two-sided framing matches industry convention and holds the score test to the
+# same bar as the eval test (a one-sided p < 0.05 would be equivalent to a
+# two-sided p < 0.10).
 OPENING_INSIGHTS_CONFIDENCE_MIN_N: int = 10
 OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.01
 OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.05
 
 # Two-sided 95% normal-approximation z-score (z = 1.96). Used by
-# `opening_insights_service._wilson_bounds` to construct the Wilson 95% score
-# interval that drives within-section ranking in `_rank_section` (quick task
-# 260428-v9i, replacing the earlier Wald CI). The same z value is also the
-# implicit threshold for the p < 0.05 "high" confidence bucket above;
-# collocating it keeps both 95%-normal-approximation parameters in one place.
-# Note: the Wilson score-test p-value used by
-# `score_confidence.compute_confidence_bucket` (since quick 260507-aw5) and
-# the Wilson CI bound are inversions of one another — they share this z but
-# are still two separate computations.
+# `score_confidence.wilson_bounds` (default z) to construct the Wilson 95% score
+# interval that drives within-section ranking in `_rank_section`. The same z
+# value is also the implicit threshold for the p < 0.05 "medium" confidence
+# bucket above; collocating it keeps both 95%-normal-approximation parameters in
+# one place. Note: the Wilson score-test p-value used by
+# `score_confidence.compute_confidence_bucket` and the Wilson CI bound are
+# inversions of one another — they share this z but are still two separate
+# computations.
 OPENING_INSIGHTS_CI_Z_95: float = 1.96
 
-# --- Phase 80 MG-entry eval test (decoupled from WDL score test) ----------
+# --- MG-entry eval test (decoupled from WDL score test) ----------
 # These constants are eval-specific and not shared with score_confidence.
 
 # Engine-asymmetry MG-entry tick-mark positions (in pawns, signed
 # user-perspective). Symmetric ±BASELINE around 0 cp, derived from the 2026-05-04
 # Lichess benchmark v3 deduplicated per-physical-game mean of +25.18 cp
-# (n=1.25M trimmed games — see reports/benchmarks-2026-05-04.md §3a).
+# (n=1.25M trimmed games, 2026-05-04 Lichess benchmark).
 #
 # The previous per-color asymmetric values (+0.315 / -0.189) were a sampling
 # artefact of the per-(user, color) slice: white-user and black-user rows
@@ -89,7 +81,7 @@ OPENING_INSIGHTS_CI_Z_95: float = 1.96
 #
 # Used only as a visual reference tick on the MG-entry bullet chart, NOT as
 # the H0 reference for the z-test. The test runs against 0 cp (engine-balanced)
-# regardless of color (quick task 260504-rvh).
+# regardless of color.
 EVAL_BASELINE_PAWNS_WHITE: float = 0.25
 EVAL_BASELINE_PAWNS_BLACK: float = -0.25
 

@@ -1,12 +1,11 @@
 /**
- * personaRegistry.ts unit tests (Phase 183, PERS-03, AVAT-01/02).
+ * personaRegistry.ts unit tests.
  *
  * Structural + identity invariants over the 24-slot persona registry —
  * mirrors `botStyleBundles.test.ts`'s cross-entry data-shape assertion
- * style. Also encodes the assumption_delta_decision invariant test from
- * 183-01-PLAN.md: every persona slot is a total function to a playable
- * opponent (botElo in ladder, blend in {HUMAN,LIGHT,DEEP}, style === a
- * BOT_STYLE_BUNDLES singleton by reference).
+ * style. Also encodes the invariant that every persona slot is a total
+ * function to a playable opponent (botElo in ladder, blend in
+ * {HUMAN,LIGHT,DEEP}, style === a BOT_STYLE_BUNDLES singleton by reference).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -81,7 +80,7 @@ describe('PERSONA_REGISTRY', () => {
     });
   });
 
-  it('every persona.botElo is a member of MAIA_ELO_LADDER (Phase 184 D-01: retargeted, no longer === rung)', () => {
+  it('every persona.botElo is a member of MAIA_ELO_LADDER (retargeted, no longer === rung)', () => {
     for (const persona of Object.values(PERSONA_REGISTRY)) {
       expect(MAIA_ELO_LADDER, persona.id).toContain(persona.botElo);
     }
@@ -120,15 +119,15 @@ describe('PERSONA_REGISTRY', () => {
     }
   });
 
-  it('no persona ships an avatarSrc yet (D-16 — placeholders only this phase)', () => {
+  it('no persona ships an avatarSrc yet (placeholders only)', () => {
     for (const persona of Object.values(PERSONA_REGISTRY)) {
       expect(persona.avatarSrc, persona.id).toBeUndefined();
     }
   });
 });
 
-// Phase 222 (D-01, TRAINBOT-07): the Train bot-casting temperament axis.
-describe('temperament (Phase 222 D-01)', () => {
+// The Train bot-casting temperament axis.
+describe('temperament', () => {
   const ALL_TEMPERAMENTS: Temperament[] = ['stern', 'friendly', 'smart'];
 
   it('every persona carries a valid temperament', () => {
@@ -152,18 +151,18 @@ describe('temperament (Phase 222 D-01)', () => {
     expect(counts).toEqual({ stern: 8, smart: 7, friendly: 9 });
   });
 
-  it("wall-1800 (Hilda, the fixed D-05 teacher) is 'smart'", () => {
+  it("wall-1800 (Hilda, the fixed teacher) is 'smart'", () => {
     const persona = personaForId('wall-1800' as PersonaId);
     expect(persona?.temperament).toBe('smart');
   });
 
-  it("grinder-1600 (Tank, the D-05 intro-step-1 host) is 'stern'", () => {
+  it("grinder-1600 (Tank, the intro-step-1 host) is 'stern'", () => {
     const persona = personaForId('grinder-1600' as PersonaId);
     expect(persona?.temperament).toBe('stern');
   });
 });
 
-describe('CAL-05 calibrated label honesty (Phase 184)', () => {
+describe('calibrated label honesty', () => {
   /** Parses a `~NNNN` calibrated label back to its numeric value. */
   function parseLabel(label: string): number {
     return Number(label.replace('~', ''));
@@ -177,7 +176,7 @@ describe('CAL-05 calibrated label honesty (Phase 184)', () => {
     }
   });
 
-  it('every calibratedLabel is a tilde-prefixed integer, rounded to the nearest 50 (D-03)', () => {
+  it('every calibratedLabel is a tilde-prefixed integer, rounded to the nearest 50', () => {
     for (const persona of Object.values(PERSONA_REGISTRY)) {
       expect(persona.calibratedLabel, persona.id).toMatch(/^~\d+$/);
       const value = parseLabel(persona.calibratedLabel);
@@ -185,13 +184,13 @@ describe('CAL-05 calibrated label honesty (Phase 184)', () => {
     }
   });
 
-  it('no calibratedLabel exceeds the ~1800 global ceiling (D-07)', () => {
+  it('no calibratedLabel exceeds the ~1800 global ceiling', () => {
     for (const persona of Object.values(PERSONA_REGISTRY)) {
       expect(parseLabel(persona.calibratedLabel), persona.id).toBeLessThanOrEqual(1800);
     }
   });
 
-  it('every bottom-rung (800) persona carries a defined, non-blank label — the floor is acknowledged, never dropped (D-06)', () => {
+  it('every bottom-rung (800) persona carries a defined, non-blank label — the floor is acknowledged, never dropped', () => {
     const floorPersonas = Object.values(PERSONA_REGISTRY).filter((p) => p.rung === 800);
     expect(floorPersonas).toHaveLength(4);
     for (const persona of floorPersonas) {
@@ -200,7 +199,7 @@ describe('CAL-05 calibrated label honesty (Phase 184)', () => {
     }
   });
 
-  it('calibratedLabel is non-decreasing by rung within each style column (D-04 monotonicity spot-check)', () => {
+  it('calibratedLabel is non-decreasing by rung within each style column (monotonicity spot-check)', () => {
     for (const style of ALL_STYLES) {
       const personas = personasForSection(style);
       const values = personas.map((p) => parseLabel(p.calibratedLabel));

@@ -52,7 +52,7 @@ describe('useEndgameStats', () => {
     vi.mocked(endgameApi.getStats).mockResolvedValue({} as never);
   });
 
-  // Quick 260529-015: while the endgame page is locked (tier2=false) the stats
+  // While the endgame page is locked (tier2=false) the stats
   // must NOT fetch — a fetch during the locked phase caches a pre-Stage-B
   // response that the 5min staleTime then keeps serving after the unlock.
   it('does NOT fetch while disabled (page locked, tier2=false)', async () => {

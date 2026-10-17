@@ -20,15 +20,15 @@ MIN_GAMES_PER_ELO: Final[int] = 10
 # "Imported a real library" threshold for the last funnel stage.
 FUNNEL_GAMES_THRESHOLD: Final[int] = 100
 
-# The four presets the global time-range filter offers (Quick 260831-p7x, D1).
-# These are the only preset keys -- ?range= never accepts anything else. An
-# explicit start/end pair (Quick 260920-frk) is not a fifth preset key; it is
-# reported back to the client as SelectedRange's extra "custom" value.
+# The four presets the global time-range filter offers. These are the only
+# preset keys -- ?range= never accepts anything else. An explicit start/end
+# pair is not a fifth preset key; it is reported back to the client as
+# SelectedRange's extra "custom" value.
 RangeKey = Literal["all", "d90", "d30", "d7"]
 
 # What the payload's `range` field reports back: the four presets, plus
 # "custom" when the caller supplied an explicit start/end pair instead of a
-# preset key (Quick 260920-frk).
+# preset key.
 SelectedRange = Literal["all", "d90", "d30", "d7", "custom"]
 
 # Window length in calendar days per range key, `None` for the all-time key
@@ -65,8 +65,8 @@ _PROMOTED_GUEST = "u.promoted_at IS NOT NULL"
 _GUEST_COHORT = "(u.is_guest OR u.promoted_at IS NOT NULL)"
 
 # fetch_train_funnel's all-time control line must keep meaning "all time" even
-# when the windowed run is bounded to an explicit end date -- see step 6's
-# note on that helper.
+# when the windowed run is bounded to an explicit end date (see
+# fetch_train_funnel's docstring).
 _ALL_TIME_END: Final[datetime.date] = datetime.date(9999, 12, 31)
 
 
@@ -258,18 +258,17 @@ async def fetch_activity(
     window_start: datetime.date,
     window_end: datetime.date,
 ) -> list[list[int]]:
-    """One row per (user, day): [day_index, is_guest, active_hours, is_entrant].
+    """One row per (user, day): [dense_user_index, day_index, is_guest, active_hours, is_entrant].
 
     ``is_entrant`` is 1 when the user's global first tracked day -- computed
     over the WHOLE `user_activity` table, not just the rows scanned here -- is
     on or after `window_start`. That is what lets render.js's `retention()`
-    treat "first tracked day inside the selected window" as the cohort per D3;
+    treat "first tracked day inside the selected window" as the cohort;
     it is 1 for every row when the range is all-time, since `window_start`
     then equals `data_start`.
 
-    The user id is dropped — the page only needs distinct-user counts per day,
-    which it derives from the row identity, so no account identifier leaves the
-    database.
+    The real user id is replaced by a per-request dense index (used only for
+    distinct-user counting), so no account identifier leaves the database.
     """
     rows = await _rows(
         conn,
@@ -395,13 +394,12 @@ async def fetch_train_funnel(
     data_start: datetime.date,
     window_end: datetime.date,
 ) -> dict[str, Any]:
-    """First-session 0-solve share and second-session return share (SEED-166, D-19).
+    """First-session 0-solve share and second-session return share.
 
     Two cohorts, both keyed on a user's FIRST session (by `session_date`, then
     `id`) landing on or after the cutoff and on or before the selected end
     date. A user whose first session predates the cutoff is excluded
-    entirely, even if a later session falls inside the window (RESEARCH
-    Finding J).
+    entirely, even if a later session falls inside the window.
 
     Zero-solve cohort (`starters`): the first session the user actually
     ENTERED, i.e. has `entered_at` (Start/Resume pressed) or a solved puzzle.
@@ -571,14 +569,11 @@ async def fetch_funnel(
 ) -> list[list[Any]]:
     """Signup -> import funnel stages, counted for registered and guest cohorts.
 
-    Four stages -- the phantom platform-username-linked stage that used to
-    sit between "Account created" and "Import started" is gone: ``linked``
-    is written one line before the ``import_jobs`` row is created, inside
-    the same request (``app/routers/imports.py::start_import``), so it was
-    never a distinct user action. ``started`` keeps ``OR u.linked`` as the
-    legacy fallback for pre-migration rows, since ``linked`` provably
-    implies an import was started even though ``first_import_started_at``
-    was NULL at the time.
+    Four stages. There is no separate "linked" stage: ``linked`` (a platform
+    username is set) is written by the same ``start_import`` request that
+    creates the ``import_jobs`` row (``app/routers/imports.py``), so it is
+    not a distinct user action. ``started`` keeps ``OR u.linked`` as a
+    fallback for rows predating ``first_import_started_at``.
 
     A user whose games/import_jobs were purged (guest 30-day cleanup or
     ``DELETE /api/games``) is excluded entirely via
@@ -587,11 +582,9 @@ async def fetch_funnel(
 
     Cohort split uses ``_GUEST_COHORT`` (``is_guest OR promoted_at IS NOT
     NULL``) rather than raw ``is_guest``, so a promoted guest stays in the
-    GUEST columns instead of jumping to the REGISTERED columns mid-cohort
-    (this is a deliberate behavior change -- see the commit message for the
-    historical-number-shift note).
+    GUEST columns instead of jumping to the REGISTERED columns mid-cohort.
 
-    Cohort card (D3): the ``users.created_at`` predicate below constrains the
+    Cohort card: the ``users.created_at`` predicate below constrains the
     window on BOTH sides, by cohort ENTRY. The joined `games` CTE stays
     unfiltered so a user who entered inside the window is followed forward to
     today — do not add a date filter to that CTE.
@@ -682,7 +675,7 @@ async def fetch_time_to_import(
     Cohort split uses ``_GUEST_COHORT`` for the same reason ``fetch_funnel``
     does: a promoted guest stays in the GUEST columns.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    Cohort card: windowed on ``users.created_at`` (entry) only, bounded
     on both sides.
     """
     row = (
@@ -743,7 +736,7 @@ async def fetch_stickiness(
     ``_GUEST_COHORT`` switch, so a promoted guest still lands in the
     "Registered" row here.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    Cohort card: windowed on ``users.created_at`` (entry) only, bounded
     on both sides; the joined `user_activity` CTE stays unfiltered so
     entrants are followed forward to today — do not add a date filter to
     that CTE.
@@ -779,7 +772,7 @@ async def fetch_conversion(
 ) -> dict[str, Any]:
     """Guest -> registered conversion, from the stamped promoted_at column.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    Cohort card: windowed on ``users.created_at`` (entry) only, bounded
     on both sides; the joined `user_activity` CTE stays unfiltered so
     entrants are followed forward to today — do not add a date filter to
     that CTE.
@@ -815,13 +808,13 @@ async def fetch_conversion(
 async def fetch_guest_train(
     conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> dict[str, Any]:
-    """Train sessions completed while a user was still a guest (D-10b, D-11, D-12).
+    """Train sessions completed while a user was still a guest.
 
-    This is a NEW query rather than a filter tweak on ``fetch_train`` -- that
+    This is a separate query rather than a filter on ``fetch_train`` -- that
     function's `drill_sessions` scan carries no `users` join at all, so it has
     no way to know whether a session's owner was a guest at the time.
 
-    D-11: a "guest Train session completed" is `drill_sessions.status =
+    A "guest Train session completed" is `drill_sessions.status =
     'completed'` for a user in `_GUEST_COHORT` (guest, or a guest who has
     since been promoted) created in the window, dated STRICTLY BEFORE that
     user's `promoted_at` (or forever, via the `'infinity'` coalesce, for a
@@ -829,7 +822,7 @@ async def fetch_guest_train(
     after `promoted_at` -- count as registered activity, not guest activity,
     and are excluded here.
 
-    D-12: a user with `games_purged_at` set is excluded entirely, the same
+    A user with `games_purged_at` set is excluded entirely, the same
     predicate the funnel cards use. This card's exclusion count is already
     footnoted by ``fetch_purged_excluded``'s ``guest`` key -- no separate
     counter is kept.
@@ -866,7 +859,7 @@ async def fetch_conversion_compare(
     (which deliberately keeps every guest, since ``promoted_at`` survives a
     purge) -- see ``fetch_purged_excluded`` for the count this drops.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    Cohort card: windowed on ``users.created_at`` (entry) only, bounded
     on both sides; the joined `bot_game_settings`/`user_activity` CTEs stay
     unfiltered so entrants are followed forward to today — do not add a date
     filter to those CTEs.

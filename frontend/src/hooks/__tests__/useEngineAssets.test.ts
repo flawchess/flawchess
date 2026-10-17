@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useEngineAssets.ts unit tests — Phase 213-10 (G-213-35 third part): the
+ * useEngineAssets.ts unit tests: the
  * narrow `useEngineAssetStatus()` companion hook.
  *
  * The pre-existing `useEngineAssets` byte-weighted aggregate is covered by
@@ -41,7 +41,7 @@ describe('useEngineAssetStatus', () => {
     expect(result.current).toBe('downloading');
   });
 
-  it('does NOT re-render on a byte-only progress report, but DOES re-render on a status transition (render count, not merely the returned value — G-213-35)', () => {
+  it('does NOT re-render on a byte-only progress report, but DOES re-render on a status transition (render count, not merely the returned value)', () => {
     let renderCount = 0;
     const { result } = renderHook(() => {
       renderCount += 1;

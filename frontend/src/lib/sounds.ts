@@ -1,5 +1,5 @@
 /**
- * Client-side sound-effect module for bot play (Phase 169, PLAY-08).
+ * Client-side sound-effect module for bot play.
  *
  * Plays the clips under `public/sound/`: the self-authored CC0 "Walnut" set
  * plus a sounddino `Move` cut (provenance and licenses in README.md
@@ -33,34 +33,33 @@
  * buffers are ready long before the first click and one page uses exactly one
  * playback mechanism.
  *
- * Quick 260723-tqn: added `game-win`/`game-loss`/`game-draw`, which play
- * outcome-specific clips instead of the single undiscriminated `game-end`
- * (Checkmate) fired for every outcome. `game-end` itself is kept (still
- * iterated by `unlockAudio`) since callers may still reference it.
+ * `game-win`/`game-loss`/`game-draw` play outcome-specific clips instead of
+ * the single undiscriminated `game-end` (Checkmate) fired for every outcome.
+ * `game-end` itself is kept (still iterated by `unlockAudio`) since callers
+ * may still reference it.
  *
- * Mute persistence (D-10) deliberately does NOT reuse `useUserFlag.ts` — that
+ * Mute persistence deliberately does NOT reuse `useUserFlag.ts` — that
  * hook is a one-shot, per-user-email-scoped, set-only-to-true flag (used for
  * "has seen X" nav dots). This module needs real two-way toggle semantics and
  * a flat, non-email-scoped key so guests (no account) still get a persisted
  * mute preference. It mirrors useUserFlag's `useSyncExternalStore` + listener
  * shape but inverts the storage sense: `'1'` = muted, absence/`'0'` = unmuted
- * (default ON per D-10), and `setMuted` accepts both `true` and `false`.
+ * (default ON), and `setMuted` accepts both `true` and `false`.
  *
- * `useBotGame` (plan 04) fires these events on game state transitions.
- * `useMuted`/`setMuted` currently have NO production caller: Phase 223 moved
- * the mute toggle out of the game and then, at UAT, retired the account-menu
- * switch as well. Sounds always play until a later phase ships a proper
- * disable option; the plumbing stays so that phase does not rebuild it, and
- * `playSound` still honours a persisted `'1'` from before the switch left.
+ * `useBotGame` fires these events on game state transitions.
+ * `useMuted`/`setMuted` currently have NO production caller: the mute toggle
+ * is neither in the game nor in the account menu. Sounds always play until a
+ * proper disable option ships; the plumbing stays so that work does not
+ * rebuild it, and `playSound` still honours a persisted `'1'` from before the
+ * switch left.
  */
 
 import { useSyncExternalStore } from 'react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-/** Every event this module can render a sound for. The `game-end` and
- * `low-time`/`draw-declined` (D-09) events are single, undiscriminated
- * members — callers do not get separate win/loss/draw variants here. */
+/** Every event this module can render a sound for. `game-end` is the legacy
+ * undiscriminated outcome; prefer `game-win`/`game-loss`/`game-draw`. */
 export type SoundEvent =
   | 'move'
   | 'capture'
@@ -82,45 +81,44 @@ export type SoundEvent =
 export const MUTE_KEY = 'flawchess_bot_sound_muted';
 
 /** Value written to localStorage when muted. Absence or any other value
- * (including the never-written `'0'`) reads as unmuted (default ON, D-10). */
+ * (including the never-written `'0'`) reads as unmuted (default ON). */
 const MUTED_VALUE = '1';
 
 /** Maps each SoundEvent to its clip filename (without extension) under
  * `frontend/public/sound/`. `game-end` still uses `Checkmate` (kept for any
  * remaining undiscriminated caller). `game-win` uses `WinChime`, a gentle
- * chime chosen over a fanfare, which read as too aggressive for bot games (and,
- * per 190.1 UAT round 7, for the Train reveal's perfect-score moment too — the
- * short-lived `victory` event was removed again). Quick 260814-b narrowed `game-win` to
+ * chime chosen over a fanfare, which read as too aggressive for bot games and
+ * for the Train reveal's perfect-score moment too. `game-win` is reserved for
  * the two end-of-everything wins (a bot-game win, and a green Train SESSION);
- * the per-puzzle full score moved to `score-full`. */
+ * the per-puzzle full score plays `score-full`. */
 const SOUND_FILES: Record<SoundEvent, string> = {
   move: 'Move',
   capture: 'Capture',
   check: 'Check',
   'game-end': 'Checkmate',
   'low-time': 'LowTime',
-  // Quick 260814-b: `draw-declined` and `game-draw` share one clip. Both are
+  // `draw-declined` and `game-draw` share one clip. Both are
   // "the game did not resolve" moments. Keep the two events separate (not one
   // merged event) so either can be re-pointed on its own.
   'draw-declined': 'Notify',
   'game-win': 'WinChime',
   'game-loss': 'Defeat',
   'game-draw': 'Notify',
-  // Quick 260813-oae: fired from `BotsPage`'s `handleStart` (the single start
+  // Fired from `BotsPage`'s `handleStart` (the single start
   // path). Deliberately a longer clip (~0.78s of pieces being set out) than the
   // sub-100ms one-shots above — it marks a one-time event, not a per-move tick.
   'game-start': 'GameStart',
-  // Quick 260814: the "mixed result" sound — a partial per-puzzle Train score
+  // The "mixed result" sound — a partial per-puzzle Train score
   // and the yellow session-verdict band. It used to share a clip with
   // `low-time`, but a clock warning made no sense on a Train score. Keep them
   // separate if either is re-cut.
   'score-partial': 'PartialScore',
-  // Quick 260814-b: the per-puzzle FULL score. This used to play `game-win`
-  // (WinChime), which made the reward for solving one puzzle sound identical
-  // to the reward for the whole session. WinChime is now reserved for the two
-  // end-of-everything wins — a green (>=75%) Train session and a bot-game win
-  // — and a solved puzzle gets its own shorter phrase, level-matched to the
-  // WinChime it took over from so the reveal does not jump in loudness.
+  // The per-puzzle FULL score. It does not play `game-win` (WinChime), which
+  // would make the reward for solving one puzzle sound identical to the reward
+  // for the whole session. WinChime is reserved for the two end-of-everything
+  // wins — a green (>=75%) Train session and a bot-game win — and a solved
+  // puzzle gets its own shorter phrase, level-matched to WinChime so the
+  // reveal does not jump in loudness.
   'score-full': 'FullScore',
 };
 
@@ -140,7 +138,7 @@ function getAudio(event: SoundEvent): HTMLAudioElement {
 }
 
 /** Plays from the start, swallowing autoplay-blocked rejections (e.g. before
- * `unlockAudio` has run on iOS Safari — Pitfall 4) rather than surfacing an
+ * `unlockAudio` has run on iOS Safari) rather than surfacing an
  * unhandled promise rejection. */
 function safePlay(audio: HTMLAudioElement): void {
   try {
@@ -187,7 +185,7 @@ export function useMuted(): boolean {
 /** Toggles and persists the mute preference (real two-way semantics, unlike
  * `useUserFlag`'s set-only-to-true design). Wrapped in try/catch so a
  * localStorage failure (private mode, quota) degrades to default-unmuted
- * rather than crashing playback (T-169-02). */
+ * rather than crashing playback. */
 export function setMuted(muted: boolean): void {
   try {
     localStorage.setItem(MUTE_KEY, muted ? MUTED_VALUE : '0');
@@ -330,15 +328,16 @@ export function playSound(event: SoundEvent): void {
 
 /**
  * iOS Safari (and mobile Chrome) block `audio.play()` calls that aren't
- * triggered by a user gesture, until the page has received at least one
- * (Pitfall 4). Call this once from the first user gesture (e.g. the user's
- * own first move, or a "Start game" tap) to unlock playback for the rest of
- * the session — plays then immediately pauses each preloaded clip.
+ * triggered by a user gesture, until the page has received at least one.
+ * Call this once from the first user gesture (e.g. the user's own first move,
+ * or a "Start game" tap) to unlock playback for the rest of the session:
+ * resumes the Web Audio context with a silent one-sample kick, or, on the
+ * element fallback, plays then immediately pauses each preloaded clip.
  */
 export function unlockAudio(): void {
   // Web Audio: resume the (load-time) context inside the gesture and start a
-  // silent source through it. NO media element is touched on this path — see
-  // the module comment for the iOS sample-rate trap that rules that out.
+  // silent source through it. NO media element is touched on this path: see
+  // the module comment (one page uses exactly one playback mechanism).
   const context = audioContext;
   if (context !== null) {
     requestPlaybackAudioSession();
@@ -348,8 +347,8 @@ export function unlockAudio(): void {
   }
   for (const event of SOUND_EVENTS) {
     const audio = getAudio(event);
-    // Never interrupt a clip that is already sounding. `game-start` (Quick
-    // 260813-oae) is ~0.78s and fires from the Start click, so a pointerdown
+    // Never interrupt a clip that is already sounding. `game-start`
+    // is ~0.78s and fires from the Start click, so a pointerdown
     // inside the game view moments later would otherwise reach this loop and
     // pause it mid-clip. Tested `=== false`, not `!audio.paused`, so an
     // environment where `paused` is undefined still gets unlocked — failing to

@@ -1,39 +1,33 @@
 /**
  * useBoardStageSize — the desktop/mid board-stage sizing cluster of
- * `Analysis()` (Phase 215 Plan 05, third of three hooks that clear the
- * remaining arrow-level complexity breaches — see `useAnalysisBoardArrows.ts`
- * and `useAnalysisGemMarkers.ts`'s headers for the first two).
+ * `Analysis()` (see `useAnalysisBoardArrows.ts` and `useAnalysisGemMarkers.ts`
+ * for the sibling hooks).
  *
  * Owns `boardStageRef`, `boardWidth`, `boardStageHeight` and the
  * `ResizeObserver`-driven measurement effect that fits the board into the
- * locked desktop/mid layout's available width/height budget (Phase 161 UAT,
- * UAT 179's 20px desktop reduction, Phase 161's mid-layout tab-panel height
- * match). Checked FIRST against `useFitBoardToViewport.ts` and
- * `useMiniBoardSize.ts` (per the plan's own instruction) — neither already
- * does this job: `useFitBoardToViewport` fits a board COLUMN into a short
- * viewport via a completely different budget (column chrome vs. viewport
- * height, no width/height "locked" band concept), and `useMiniBoardSize`
- * only resolves a fixed desktop size vs. a flat 50%-viewport mobile
- * fraction — neither measures a stage element via `ResizeObserver` against
- * `computeBoardSize`'s width/height dual-constraint solver the way this
- * cluster does. This hook is therefore genuinely new, not a duplicate.
+ * locked desktop/mid layout's available width/height budget (including the
+ * 20px desktop reduction and the mid-layout tab-panel height match). Neither
+ * `useFitBoardToViewport.ts` nor `useMiniBoardSize.ts` does this job:
+ * `useFitBoardToViewport` fits a board COLUMN into a short viewport via a
+ * completely different budget (column chrome vs. viewport height, no
+ * width/height "locked" band concept), and `useMiniBoardSize` only resolves a
+ * fixed desktop size vs. a flat 50%-viewport mobile fraction. Neither measures
+ * a stage element via `ResizeObserver` against `computeBoardSize`'s
+ * width/height dual-constraint solver the way this cluster does.
  *
- * `BOARD_WIDTH_LOCK_MIN_PX`/`BOARD_HEIGHT_LOCK_MIN_PX` below are private,
- * intentionally duplicated copies of `Analysis.tsx`'s module-level constants
- * of the same name — this hook is their sole reader after this extraction
- * (mirrors `useAnalysisBoardArrows.ts`'s arrow-width-constant precedent).
+ * `BOARD_WIDTH_LOCK_MIN_PX`/`BOARD_HEIGHT_LOCK_MIN_PX` below are owned here
+ * (this hook is their only reader); `Analysis.tsx`'s `DESK3COL_BREAKPOINT_PX`
+ * shares the 1200 literal for a different concern (which layout tree renders).
  * `BOARD_EVAL_BARS_ALLOWANCE_PX`, `EVAL_SLIDER_SLACK_PX` and
- * `DESKTOP_BOARD_SIZE_REDUCTION_PX` are NOT private copies (215 code review
- * WR-04): `Analysis.tsx`'s `DESKTOP_GRID_MAX_WIDTH_PX` calc and the desktop
- * board-group JSX (215-06's scope) also read them, and they are not
- * independent knobs — this hook subtracts the allowance from the stage width
- * to compute `boardWidth`, while `AnalysisBoardStage.tsx` adds it back to
- * that same `boardWidth` for the board group's `maxWidth`. A page-level
- * module still can't be the shared home (hooks must not depend on page-level
- * modules — the same rule `useAnalysisEngineLines.ts`/
- * `useAnalysisGemMarkers.ts` document), so all three live in
- * `boardSize.ts` (already imported here for `BOARD_MAX_WIDTH`/
- * `BOARD_MIN_WIDTH`/`computeBoardSize`) and every reader imports from there.
+ * `DESKTOP_BOARD_SIZE_REDUCTION_PX` are shared: `Analysis.tsx`'s
+ * `DESKTOP_GRID_MAX_WIDTH_PX` calc and the desktop board-group JSX also read
+ * them, and they are not independent knobs — this hook subtracts the allowance
+ * from the stage width to compute `boardWidth`, while `AnalysisBoardStage.tsx`
+ * adds it back to that same `boardWidth` for the board group's `maxWidth`.
+ * A page-level module can't be the shared home (hooks must not depend on
+ * page-level modules), so all three live in `boardSize.ts` (already imported
+ * here for `BOARD_MAX_WIDTH`/`BOARD_MIN_WIDTH`/`computeBoardSize`) and every
+ * reader imports from there.
  *
  * `AnalysisLayoutMode` below is a private duplicate of `Analysis.tsx`'s
  * page-local type of the same name — this hook only ever compares/re-runs on
@@ -59,8 +53,7 @@ type AnalysisLayoutMode = 'mobile' | 'mid' | 'desktop';
 /** The board's height budget only binds in the locked desktop layout, i.e. at/above the
  *  desk3col width breakpoint AND at/above the `short` height-unlock threshold. Both mirror
  *  the CSS tokens in index.css (`--breakpoint-desk3col: 1200px`, `short` = max-height
- *  559.98px). Outside that band the page scrolls, so the board is width-driven. Private
- *  duplicate of `Analysis.tsx`'s constants of the same name — see this file's header. */
+ *  559.98px). Outside that band the page scrolls, so the board is width-driven. */
 const BOARD_WIDTH_LOCK_MIN_PX = 1200;
 const BOARD_HEIGHT_LOCK_MIN_PX = 560;
 
@@ -92,7 +85,7 @@ export interface UseBoardStageSizeResult {
 export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardStageSizeResult {
   const { layoutMode, containerRef, isGameMode, gameData } = options;
 
-  // Desktop board sizing (Phase 161 UAT, UAT 179): the stage box is a fixed-size, locked
+  // Desktop board sizing: the stage box is a fixed-size, locked
   // band that never resizes with the board — inside it, the board fits to whichever of
   // width or height binds first via computeBoardSize, the same helper ChessBoard uses.
   // The height budget only binds inside the locked band; outside it the page scrolls and
@@ -134,7 +127,7 @@ export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardSt
       const widthBudget = el.clientWidth - BOARD_EVAL_BARS_ALLOWANCE_PX - EVAL_SLIDER_SLACK_PX * 2;
       const heightBudget = locked ? el.clientHeight - chrome : Infinity;
       const raw = computeBoardSize(widthBudget, heightBudget, BOARD_MAX_WIDTH);
-      // UAT 179: draw the desktop board 20px smaller than its natural fit (floored at
+      // Draw the desktop board 20px smaller than its natural fit (floored at
       // BOARD_MIN_WIDTH). Applied to the final size so it's visible whichever constraint
       // binds; mid/mobile (isDesktopWidth false) are untouched.
       const desktopBoard = Math.max(BOARD_MIN_WIDTH, raw - DESKTOP_BOARD_SIZE_REDUCTION_PX);
@@ -164,7 +157,7 @@ export function useBoardStageSize(options: UseBoardStageSizeOptions): UseBoardSt
     // ASYNChronously once the game loads, but the ResizeObserver watches the fixed-size
     // stage box and never fires on that inner growth — so without a re-measure here the
     // board stays sized for the pre-load (chrome-less) group and the now-taller group
-    // overflows the stage, producing a spurious vertical scrollbar (Phase 161 UAT). Re-run
+    // overflows the stage, producing a spurious vertical scrollbar. Re-run
     // on those transitions so the height budget re-subtracts the real chrome and refits.
     // layoutMode (not just isMobile): the desktop stage mounts in BOTH the mid and desktop
     // trees, so crossing the desk3col breakpoint remounts it — re-run to re-observe the new

@@ -1,14 +1,13 @@
 /**
- * useIsDesktop — a shared `matchMedia`-based desktop/mobile gate (Phase 200,
- * D-06/D-08/D-09). Promotes the page-local pattern already proven in
- * `Bots.tsx` (`useIsDesktop` there, `DESKTOP_BREAKPOINT_PX = 800`) to a
- * reusable hook, at Tailwind's own default `lg` breakpoint (1024px) instead
- * of a page-specific value — so this JS gate always agrees with a caller's
+ * useIsDesktop — a shared `matchMedia`-based desktop/mobile gate. Same pattern
+ * as the page-local `useIsDesktop` in `Bots.tsx` (`DESKTOP_BREAKPOINT_PX = 800`),
+ * but at Tailwind's own default `lg` breakpoint (1024px) instead of a
+ * page-specific value — so this JS gate always agrees with a caller's
  * `lg:` CSS split (e.g. `TrainSolveScreen.tsx`'s `lg:flex-row` desktop/mobile
  * layout), never drifting from it under a differently-tuned threshold.
  *
  * Used by `TrainReveal.tsx` to decide whether the legend spotlight is driven
- * by whole-card hover (desktop, D-06) or glyph tap (mobile, D-08).
+ * by whole-card hover (desktop) or glyph tap (mobile).
  */
 import { useEffect, useState } from 'react';
 

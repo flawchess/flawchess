@@ -1,13 +1,13 @@
-"""Unit tests for app/services/maia_engine.py (Phase 174 Plan 04, GEMS-03).
+"""Unit tests for app/services/maia_engine.py.
 
 Covers the five lifecycle/inference behaviors:
-  1. start_maia() with onnxruntime absent -> no raise, _session stays None (D-03a).
+  1. start_maia() with onnxruntime absent -> no raise, _session stays None.
   2. start_maia() twice with onnxruntime present -> idempotent, one session.
   3. stop_maia() without a prior start -> no-op, no raise.
   4. score_move() with _session None -> None.
   5. score_move() with a session -> played move's policy probability in [0, 1].
 
-The D-03a no-op test forces the ImportError by inserting a None sentinel into
+The no-op test forces the ImportError by inserting a None sentinel into
 sys.modules (the documented way to make `import onnxruntime` raise ImportError
 WITHOUT uninstalling the group). The real-session tests are guarded with
 pytest.importorskip so the default no-group suite skips them cleanly.
@@ -39,14 +39,14 @@ def _reset_session() -> Iterator[None]:
     maia_engine._session = None
 
 
-# ─── D-03a: lean image boots without onnxruntime ──────────────────────────────
+# ─── Lean image boots without onnxruntime ─────────────────────────────────────
 
 
 async def test_noop_without_onnxruntime(monkeypatch: pytest.MonkeyPatch) -> None:
     """A backend image booted WITHOUT the maia-inference group MUST NOT crash:
     start_maia() catches ImportError, disables Maia, leaves the session None."""
     # A None sentinel in sys.modules makes `import onnxruntime` raise ImportError,
-    # forcing the D-03a guard path even when the package is installed locally.
+    # forcing the guard path even when the package is installed locally.
     monkeypatch.setitem(sys.modules, "onnxruntime", None)
     maia_engine._session = None
 
@@ -74,7 +74,7 @@ async def test_stop_maia_without_start_is_noop() -> None:
     assert maia_engine._session is None
 
 
-# ─── Model-pin integrity (T-174-09) ───────────────────────────────────────────
+# ─── Model-pin integrity ───────────────────────────────────────────
 
 
 def test_model_sha256_pin_matches_vendored_file() -> None:

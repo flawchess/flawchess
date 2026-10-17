@@ -41,7 +41,7 @@ function rowWithRank(rank: number | null): LeaderboardRow {
   };
 }
 
-describe('firstUnrankedRowIndex (quick 261004-8rt)', () => {
+describe('firstUnrankedRowIndex', () => {
   it('returns the index of the first row with a null rank', () => {
     expect(firstUnrankedRowIndex([rowWithRank(1), rowWithRank(2), rowWithRank(null), rowWithRank(null)])).toBe(2);
   });
@@ -78,7 +78,7 @@ describe('puzzleCountLabel', () => {
   });
 });
 
-describe('parseLeaderboardTab (D-09, T-230-10)', () => {
+describe('parseLeaderboardTab', () => {
   it.each(['points', 'accuracy'] as const)('passes %s through', (tab) => {
     expect(parseLeaderboardTab(tab)).toBe(tab);
   });
@@ -177,7 +177,7 @@ describe('viewerHint', () => {
     expect(viewerHint('accuracy', data)).toBeNull();
   });
 
-  it('accuracy: a specific not-on-this-board line when only the points viewer exists (D-19)', () => {
+  it('accuracy: a specific not-on-this-board line when only the points viewer exists', () => {
     const hint = viewerHint('accuracy', response({ viewer: VIEWER }, {}));
     expect(hint?.id).toBe('accuracy-not-entered');
     expect(hint?.text).toContain("tactics puzzles don't count");
@@ -193,14 +193,14 @@ describe('viewerHint', () => {
   });
 });
 
-describe('copy never frames the board as ability (D-10)', () => {
+describe('copy never frames the board as ability', () => {
   it('lib source and helper copy contain no "skill"', () => {
     const copy = Object.values(leaderboardLib).filter((v): v is string => typeof v === 'string');
     for (const text of copy) expect(text.toLowerCase()).not.toContain('skill');
   });
 });
 
-describe('remainingSeconds (D-02: server remainder minus time since fetch)', () => {
+describe('remainingSeconds (server remainder minus time since fetch)', () => {
   it('subtracts the whole seconds elapsed since the fetch', () => {
     expect(remainingSeconds(388800, 1_000_000, 1_000_000 + 60_000)).toBe(388740);
   });
@@ -234,13 +234,13 @@ describe('formatCountdown', () => {
 });
 
 describe('private row labels', () => {
-  it('uses the D-13 and D-14 wording', () => {
+  it('uses the hidden-row and guest-row wording', () => {
     expect(leaderboardLib.HIDDEN_FROM_OTHERS_LABEL).toBe('Hidden from others');
     expect(leaderboardLib.GUEST_ROW_LABEL).toBe('You (guest)');
   });
 });
 
-describe('rankLineCopy, public viewers (D-11, D-12)', () => {
+describe('rankLineCopy, public viewers', () => {
   it('first entry of the week reads "#N this week"', () => {
     expect(rankLineCopy('points', { ...VIEWER, rank: 12, rank_without_session: null })).toBe(
       'Points board: #12 this week',
@@ -276,8 +276,8 @@ describe('scoreRankLines (public viewers)', () => {
   });
 });
 
-describe('rankLineCopy, guest, tentative and worse-rank variants (D-11, D-17, D-18)', () => {
-  it('a guest gets the hypothetical line with no delta (D-17)', () => {
+describe('rankLineCopy, guest, tentative and worse-rank variants', () => {
+  it('a guest gets the hypothetical line with no delta', () => {
     const guest = { ...VIEWER, rank: 7, rank_without_session: 9, visibility: 'guest' as const };
     expect(rankLineCopy('points', guest)).toBe("Points board: You'd be #7");
   });
@@ -305,7 +305,7 @@ describe('rankLineCopy, guest, tentative and worse-rank variants (D-11, D-17, D-
     );
   });
 
-  it('a worse Accuracy rank after the session shows the plain rank and never "down" (D-18)', () => {
+  it('a worse Accuracy rank after the session shows the plain rank and never "down"', () => {
     const viewer = { ...VIEWER, rank: 5, rank_without_session: 3 };
     const text = rankLineCopy('accuracy', viewer);
     expect(text).toBe('Accuracy: #5');
@@ -324,8 +324,8 @@ describe('rankLineCopy, guest, tentative and worse-rank variants (D-11, D-17, D-
   });
 });
 
-describe('scoreRankLines, not-entered and hidden rules (D-13, D-19)', () => {
-  it('a Points viewer with no Accuracy viewer gets the not-entered line (D-19)', () => {
+describe('scoreRankLines, not-entered and hidden rules', () => {
+  it('a Points viewer with no Accuracy viewer gets the not-entered line', () => {
     const lines = scoreRankLines(response({ viewer: VIEWER }, {}));
     expect(lines).toEqual([
       { id: 'points', text: 'Points board: #7 this week' },

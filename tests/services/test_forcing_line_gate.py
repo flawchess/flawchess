@@ -1,25 +1,25 @@
 """Unit tests for app.services.forcing_line_gate -- pure forcing-line gate.
 
-Covers Phase 141 GATE-01 and GATE-02 (D-01, D-07..D-10):
-  - GATE-01 (D-07): only-move win-prob margin over solver nodes; solver-only
-    uniqueness (defender nodes have no uniqueness requirement, D-10).
-  - GATE-02 (D-08): already-winning reject when pre-flaw eval > 600 cp (Phase 144;
-    forced mates exempt).
-  - GATE-02 (D-09): still-winning floor stops extension below 200 cp (Phase 144:
-    conversion tail only -- the firing node is exempt).
-  - GATE-02 (D-10): trailing-only-move strip and one-mover discard (forced mates exempt).
-  - Phase 144 (sigmoid-saturation): the only-move check also passes on a large raw
+Covers the gate behavior of the forcing-line filter:
+  - Only-move win-prob margin over solver nodes; solver-only
+    uniqueness (defender nodes have no uniqueness requirement).
+  - Already-winning reject when pre-flaw eval > 800 cp
+    (forced mates exempt).
+  - Still-winning floor stops extension below 200 cp (conversion tail only,
+    the firing node is exempt).
+  - Trailing-only-move strip and one-mover discard (forced mates exempt).
+  - Sigmoid-saturation escape: the only-move check also passes on a large raw
     centipawn gap (ONLY_MOVE_CP_GAP_THRESHOLD), not just the win-prob margin.
-  - D-01 (pulled forward from Phase 143): full mate-priority hierarchy:
+  - Full mate-priority hierarchy:
     only-best-is-mate forced; both-mates shorter-distance forced; mate-in-1
     never suppressed; fall through to win-prob margin otherwise.
 
-Sign convention (D-05): blob cp values are white-perspective.  The gate converts
+Sign convention: blob cp values are white-perspective.  The gate converts
 to side-to-move perspective at read time.  Mate tests cover both colors to catch
-the asymmetric-sign bug class (Pitfall 1, mitigated by T-141-04).
+the asymmetric-sign bug class.
 
 This module is intentionally free of database sessions, async fixtures, and
-Stockfish worker processes -- their absence IS the Phase 141 success criterion #2 guarantee.
+Stockfish worker processes, so the gate stays pure and fast.
 """
 
 from app.services.forcing_line_gate import (
@@ -68,27 +68,27 @@ def _only_move_node(b: int) -> PvNode:
 
 
 class TestConstants:
-    """Assert that the three gate constants have the locked starting values (D-07..D-09)."""
+    """Assert that the three gate constants have the locked starting values."""
 
     def test_only_move_win_prob_margin(self) -> None:
         """ONLY_MOVE_WIN_PROB_MARGIN is 0.35 -- lichess-puzzler +0.7 translated to 0..1."""
         assert ONLY_MOVE_WIN_PROB_MARGIN == 0.35
 
     def test_already_winning_cp_threshold(self) -> None:
-        """ALREADY_WINNING_CP_THRESHOLD is 800 cp (D-08, raised in Phase 144 VALID-02)."""
+        """ALREADY_WINNING_CP_THRESHOLD is 800 cp."""
         assert ALREADY_WINNING_CP_THRESHOLD == 800
 
     def test_still_winning_floor_cp(self) -> None:
-        """STILL_WINNING_FLOOR_CP is 200 cp (D-09 still-winning floor)."""
+        """STILL_WINNING_FLOOR_CP is 200 cp."""
         assert STILL_WINNING_FLOOR_CP == 200
 
     def test_firing_floor_constants(self) -> None:
-        """FIRING_FLOOR_TIER3_CP is 200, FIRING_FLOOR_GEOMETRIC_CP is 0 (D-01, TAGFIX-01)."""
+        """FIRING_FLOOR_TIER3_CP is 200, FIRING_FLOOR_GEOMETRIC_CP is 0."""
         assert FIRING_FLOOR_TIER3_CP == 200
         assert FIRING_FLOOR_GEOMETRIC_CP == 0
 
     def test_floor_cp_for_motif_representative_ints(self) -> None:
-        """floor_cp_for_motif returns 0 / 200 / None for one representative int each (D-01)."""
+        """floor_cp_for_motif returns 0 / 200 / None for one representative int each."""
         assert floor_cp_for_motif(int(TacticMotifInt.FORK)) == 0  # geometric
         assert floor_cp_for_motif(int(TacticMotifInt.SACRIFICE)) == 200  # tier-3
         assert floor_cp_for_motif(int(TacticMotifInt.PROMOTION)) == 200  # move-type
@@ -106,12 +106,12 @@ class TestConstants:
 
 
 # ---------------------------------------------------------------------------
-# TestOnlyMoveMargin: GATE-01 -- is_solver_node_forced cp cases (D-07)
+# TestOnlyMoveMargin: is_solver_node_forced cp cases
 # ---------------------------------------------------------------------------
 
 
 class TestOnlyMoveMargin:
-    """Coverage for the centipawn win-prob margin branch of is_solver_node_forced (D-07)."""
+    """Coverage for the centipawn win-prob margin branch of is_solver_node_forced."""
 
     def test_large_gap_passes_for_white_solver(self) -> None:
         """A wide best-vs-second cp gap exceeds 0.35 margin and is forced (white solver)."""
@@ -121,7 +121,7 @@ class TestOnlyMoveMargin:
         assert is_solver_node_forced(node, "white") is True
 
     def test_large_gap_passes_for_black_solver(self) -> None:
-        """Same gap flipped to black perspective is also forced (Pitfall 1 symmetry)."""
+        """Same gap flipped to black perspective is also forced (color symmetry)."""
         # White-perspective: best=-800cp means black is ahead by 800.
         # From black's perspective: p(-800,"black") - p(-100,"black") > 0.35.
         node = _cp_node(b=-800, s=-100)
@@ -182,7 +182,7 @@ class TestOnlyMoveMargin:
         assert apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0) is True
 
     def test_defender_ambiguity_does_not_kill_line(self) -> None:
-        """Defender node with a second-best move does not trigger the uniqueness check (D-10).
+        """Defender node with a second-best move does not trigger the uniqueness check.
 
         A line that branches at a defender ply but has forced solver moves is valid.
         """
@@ -198,20 +198,20 @@ class TestOnlyMoveMargin:
 
 
 # ---------------------------------------------------------------------------
-# TestDepthAwareForcedness: Bug B -- forcedness only through the firing depth
+# TestDepthAwareForcedness: forcedness only through the firing depth
 # ---------------------------------------------------------------------------
 
 
 class TestDepthAwareForcedness:
-    """Bug B: only solver nodes up to the firing depth must be forced.
+    """Only solver nodes up to the firing depth must be forced.
 
-    Models report case 27 (game 681358 ply 16): a real depth-0 fork whose firing
+    Models a real game (681358 ply 16): a real depth-0 fork whose firing
     node is a unique only-move, followed by a winning conversion whose deep solver
     nodes have several near-equal moves. The legacy whole-line check rejected it;
     the depth-aware check credits it.
     """
 
-    # A case-27-shaped line: forced firing node at idx0, a NON-forced deep solver
+    # A line of that shape: forced firing node at idx0, a NON-forced deep solver
     # node at idx2 (small gap, still above the +200 floor so it is not truncated),
     # and a forced node at idx4. pre_flaw_eval_cp=0 avoids the already-winning reject.
     _CASE_27_LINE: list[PvNode] = [
@@ -227,7 +227,7 @@ class TestDepthAwareForcedness:
         assert apply_forcing_line_filter(self._CASE_27_LINE, "white", pre_flaw_eval_cp=0) is False
 
     def test_depth0_survives_despite_deep_non_forced_nodes(self) -> None:
-        """firing_depth=0 checks only the firing node (idx0, forced) -> credited (Bug B)."""
+        """firing_depth=0 checks only the firing node (idx0, forced) -> credited."""
         assert (
             apply_forcing_line_filter(
                 self._CASE_27_LINE, "white", pre_flaw_eval_cp=0, firing_depth=0
@@ -273,15 +273,15 @@ class TestDepthAwareForcedness:
 
 
 # ---------------------------------------------------------------------------
-# TestMatePriority: D-01 -- mate-priority hierarchy, both colors (T-141-04)
+# TestMatePriority: mate-priority hierarchy, both colors
 # ---------------------------------------------------------------------------
 
 
 class TestMatePriority:
-    """Coverage for the mate-priority branch of is_solver_node_forced (D-01).
+    """Coverage for the mate-priority branch of is_solver_node_forced.
 
     Both solver colors are exercised for every case to catch the asymmetric-sign
-    bug class (Pitfall 1 / T-141-04 -- Phase 82 was bitten by a single-color gap).
+    bug class (a single-color gap once slipped through).
     """
 
     # --- only-best-is-mate ---
@@ -332,7 +332,7 @@ class TestMatePriority:
         assert is_solver_node_forced(node, "black") is True
 
     def test_mate_in_1_vs_second_cp_white_solver(self) -> None:
-        """Mate-in-1 for white vs a strong second-best cp is still forced (D-01 guarantee)."""
+        """Mate-in-1 for white vs a strong second-best cp is still forced."""
         node = PvNode(b=None, bm=1, s=900, sm=None, su="e2e4")
         assert is_solver_node_forced(node, "white") is True
 
@@ -360,12 +360,12 @@ class TestMatePriority:
 
 
 # ---------------------------------------------------------------------------
-# TestAlreadyWinning: D-08 -- pre-flaw already-winning reject (GATE-02)
+# TestAlreadyWinning: pre-flaw already-winning reject
 # ---------------------------------------------------------------------------
 
 
 class TestAlreadyWinning:
-    """Coverage for the already-winning reject (D-08, apply_forcing_line_filter)."""
+    """Coverage for the already-winning reject (apply_forcing_line_filter)."""
 
     def _valid_two_move_line_white(self) -> list[PvNode]:
         """Minimal valid two-solver-move line for a white solver (positive cp = white winning)."""
@@ -384,12 +384,12 @@ class TestAlreadyWinning:
         ]
 
     def test_pre_flaw_above_threshold_white_solver_rejected(self) -> None:
-        """pre_flaw_eval_cp=900 (white solver ahead by 900 > 800) -> reject (D-08)."""
+        """pre_flaw_eval_cp=900 (white solver ahead by 900 > 800) -> reject."""
         line = self._valid_two_move_line_white()
         assert apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=900) is False
 
     def test_pre_flaw_above_threshold_black_solver_rejected(self) -> None:
-        """pre_flaw_eval_cp=-900 (black solver ahead by 900 > 800) -> reject (D-08).
+        """pre_flaw_eval_cp=-900 (black solver ahead by 900 > 800) -> reject.
 
         The already-winning check fires before any floor truncation, so the line
         content is irrelevant for this test.
@@ -423,12 +423,12 @@ class TestAlreadyWinning:
 
 
 # ---------------------------------------------------------------------------
-# TestStillWinningFloor: D-09 -- extension stops below 200 cp (GATE-02)
+# TestStillWinningFloor: extension stops below 200 cp
 # ---------------------------------------------------------------------------
 
 
 class TestStillWinningFloor:
-    """Coverage for the still-winning floor truncation (D-09)."""
+    """Coverage for the still-winning floor truncation."""
 
     def test_solver_node_below_floor_truncates_line_white(self) -> None:
         """A solver node with b=150cp (white) is below 200cp floor: truncated, leaving one solver node -> one-mover discard."""
@@ -478,7 +478,7 @@ class TestStillWinningFloor:
 
         In practice, a MultiPV=2 search at a mate position typically yields a second-best
         cp move (all non-mate moves are losing, but they still exist as legal options).
-        The mate-in-N node passes is_solver_node_forced via only-best-is-mate (D-01).
+        The mate-in-N node passes is_solver_node_forced via only-best-is-mate.
         """
         # S0: mate-in-3 as best; second-best is a 200cp move (not a mate — only-best-is-mate).
         # S1: mate-in-2 as best; second-best is a 150cp move.
@@ -495,12 +495,12 @@ class TestStillWinningFloor:
 
 
 # ---------------------------------------------------------------------------
-# TestLineStripping: D-10 -- trailing strip, one-mover discard, defender re-convergence
+# TestLineStripping: trailing strip, one-mover discard, defender re-convergence
 # ---------------------------------------------------------------------------
 
 
 class TestLineStripping:
-    """Coverage for trailing-only-move strip and one-mover discard (D-10)."""
+    """Coverage for trailing-only-move strip and one-mover discard."""
 
     def test_trailing_only_move_stripped_leaving_two_solver_nodes(self) -> None:
         """A trailing solver only-move is stripped; two genuine solver nodes remain -> passes."""
@@ -551,7 +551,7 @@ class TestLineStripping:
         assert apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0) is True
 
     def test_defender_re_convergence_does_not_kill_line(self) -> None:
-        """Defender ambiguity (multiple equal replies) does NOT disqualify a forced line (D-10).
+        """Defender ambiguity (multiple equal replies) does NOT disqualify a forced line.
 
         A line that branches at a defender ply but re-converges to a single
         forcing continuation is valid; only solver-side ambiguity kills a line.
@@ -580,15 +580,15 @@ class TestLineStripping:
 
 
 # ---------------------------------------------------------------------------
-# TestDefenderBranching: GATE-04 / SC3 -- multi-ply branch-then-reconverge
+# TestDefenderBranching: multi-ply branch-then-reconverge
 # ---------------------------------------------------------------------------
 
 
 class TestDefenderBranching:
-    """Coverage for the multi-ply defender branch-then-reconverge case (GATE-04, SC3).
+    """Coverage for the multi-ply defender branch-then-reconverge case.
 
-    Residual gap from Phase 141: existing defender tests cover only a 3-node line
-    with a single ambiguous defender node.  SC3 requires a 5-node line where BOTH
+    Existing defender tests cover only a 3-node line
+    with a single ambiguous defender node.  The test below uses a 5-node line where BOTH
     defender nodes are ambiguous (branch-then-reconverge at D0 AND D1).
     """
 
@@ -597,7 +597,7 @@ class TestDefenderBranching:
 
         [S0=forced, D0=ambiguous, S1=forced, D1=ambiguous, S2=forced] — branch-then-reconverge
         at BOTH D0 and D1; solver continuations S0/S1/S2 are all forced.  The line must pass.
-        Residual SC3 gap (Phase 143 GATE-04): the existing tests cover only single-node defender
+        Existing tests cover only single-node defender
         ambiguity; this verifies the multi-ply branch-then-reconverge case.
         """
         line: list[PvNode] = [
@@ -611,20 +611,20 @@ class TestDefenderBranching:
 
 
 # ---------------------------------------------------------------------------
-# TestMarginParam: D-03 -- margin parameter honored by both gate functions
+# TestMarginParam: margin parameter honored by both gate functions
 # ---------------------------------------------------------------------------
 
 
 class TestMarginParam:
-    """Verify that is_solver_node_forced and apply_forcing_line_filter honor the margin arg (D-03).
+    """Verify that is_solver_node_forced and apply_forcing_line_filter honor the margin arg.
 
-    The margin parameter was added in Phase 143 Plan 01 so the re-tagger CLI can sweep
+    The margin parameter lets the re-tagger CLI sweep
     thresholds without mutating the module-level constant (worker-pool-safe, spawn workers
     re-import the module with the original constant).
     """
 
     def test_margin_param_is_respected_by_is_solver_node_forced(self) -> None:
-        """is_solver_node_forced respects a passed-in margin rather than the module constant (D-03).
+        """is_solver_node_forced respects a passed-in margin rather than the module constant.
 
         Node with a win-prob delta of 0.143: forced at margin=0.1 but NOT forced at margin=0.5.
         p(300,"white") - p(120,"white") ≈ 0.751 - 0.609 = 0.143. The 180cp gap would trip the
@@ -635,7 +635,7 @@ class TestMarginParam:
         assert is_solver_node_forced(node, "white", margin=0.5, cp_gap=10_000) is False
 
     def test_apply_filter_margin_param_is_respected(self) -> None:
-        """apply_forcing_line_filter threads the margin param to is_solver_node_forced (D-03).
+        """apply_forcing_line_filter threads the margin param to is_solver_node_forced.
 
         apply_forcing_line_filter uses the default cp-gap escape (100), so the node keeps a
         90cp gap (< 100, escape inert) with solver_cp 290 (>= 200 floor). delta 0.068 sits
@@ -651,7 +651,7 @@ class TestMarginParam:
 
 
 # ---------------------------------------------------------------------------
-# TestCpGapEscape: Phase 144 -- sigmoid-saturation centipawn-gap escape
+# TestCpGapEscape: sigmoid-saturation centipawn-gap escape
 # ---------------------------------------------------------------------------
 
 
@@ -664,7 +664,7 @@ class TestCpGapEscape:
     """
 
     def test_cp_gap_threshold_constant(self) -> None:
-        """ONLY_MOVE_CP_GAP_THRESHOLD is 100 cp (Phase 144 VALID-02 hand-check)."""
+        """ONLY_MOVE_CP_GAP_THRESHOLD is 100 cp."""
         assert ONLY_MOVE_CP_GAP_THRESHOLD == 100
 
     def test_saturated_large_cp_gap_forced_white(self) -> None:
@@ -693,15 +693,15 @@ class TestCpGapEscape:
 
 
 # ---------------------------------------------------------------------------
-# TestForcedMateExemptions: Phase 144 -- mates skip already-winning + one-mover discard
+# TestForcedMateExemptions: mates skip already-winning + one-mover discard
 # ---------------------------------------------------------------------------
 
 
 class TestForcedMateExemptions:
     """A solver-winning forced mate at the firing node is decisive regardless of context.
 
-    It is exempt from the already-winning reject (D-08) and the one-mover discard (D-10),
-    but still subject to the only-move check (mate priority, D-01). A/B case 29: an allowed
+    It is exempt from the already-winning reject and the one-mover discard,
+    but still subject to the only-move check (mate priority). An allowed
     back-rank mate-in-1 played when the solver was already +8, which has a single solver node.
     """
 
@@ -751,7 +751,7 @@ class TestForcedMateExemptions:
 
 
 # ---------------------------------------------------------------------------
-# TestFloorScopedToConversionTail: Phase 144 -- floor exempts the firing node
+# TestFloorScopedToConversionTail: floor exempts the firing node
 # ---------------------------------------------------------------------------
 
 
@@ -800,13 +800,13 @@ class TestFloorScopedToConversionTail:
 
 
 # ---------------------------------------------------------------------------
-# TestWinningFloorAtFiring: Phase 221 TAGFIX-01 (D-01) -- per-tier floor at the
+# TestWinningFloorAtFiring: per-tier floor at the
 # firing node, on top of the pre-existing gate criteria.
 # ---------------------------------------------------------------------------
 
 
 class TestWinningFloorAtFiring:
-    """The firing node must clear its motif's per-tier winning floor (D-01).
+    """The firing node must clear its motif's per-tier winning floor.
 
     Every test builds a line that already passes every OTHER gate criterion
     (only-move, truncation, one-mover discard) so a failure isolates the floor
@@ -817,14 +817,14 @@ class TestWinningFloorAtFiring:
     # --- direct _solver_eval_at_firing / _passes_winning_floor coverage ---
 
     def test_solver_eval_at_firing_reads_bm_before_b(self) -> None:
-        """bm wins over b when both are present (D-01)."""
+        """bm wins over b when both are present."""
         from app.services.forcing_line_gate import _solver_eval_at_firing
 
         node = PvNode(b=100, bm=3, s=None, sm=None, su="")
         assert _solver_eval_at_firing([node], "white", firing_depth=0) == (3, None)
 
     def test_solver_eval_at_firing_rounds_odd_depth_up(self) -> None:
-        """An odd firing_depth reads idx = firing_depth + 1, the solver node (D-01)."""
+        """An odd firing_depth reads idx = firing_depth + 1, the solver node."""
         from app.services.forcing_line_gate import _solver_eval_at_firing
 
         line: list[PvNode] = [
@@ -835,7 +835,7 @@ class TestWinningFloorAtFiring:
         assert _solver_eval_at_firing(line, "white", firing_depth=1) == (None, 250)
 
     def test_solver_eval_at_firing_placeholder_node_unreadable(self) -> None:
-        """An all-None placeholder node (slim blob) returns (None, None) -- unreadable (D-03)."""
+        """An all-None placeholder node (slim blob) returns (None, None) -- unreadable."""
         from app.services.forcing_line_gate import _solver_eval_at_firing
 
         placeholder = PvNode(b=None, bm=None, s=None, sm=None, su="")
@@ -849,7 +849,7 @@ class TestWinningFloorAtFiring:
         assert _solver_eval_at_firing(line, "white", firing_depth=6) == (None, None)
 
     def test_passes_winning_floor_unreadable_node_never_rejects(self) -> None:
-        """An unreadable firing node (out of range) never causes the floor to reject (D-03).
+        """An unreadable firing node (out of range) never causes the floor to reject.
 
         The out-of-range firing_depth IS rejected end-to-end by the pre-existing
         firing-node-survives-truncation check in apply_forcing_line_filter, not
@@ -1059,21 +1059,21 @@ class TestWinningFloorAtFiring:
 
 
 # ---------------------------------------------------------------------------
-# TestSlimBlobGateBehavior: SEED-079 -- slim blobs (all-None odd placeholders)
+# TestSlimBlobGateBehavior: slim blobs (all-None odd placeholders)
 # ---------------------------------------------------------------------------
 
 
 def _placeholder_node() -> PvNode:
-    """The SEED-079 slim-blob odd-index (defender) placeholder: all-None, su=''."""
+    """The slim-blob odd-index (defender) placeholder: all-None, su=''."""
     return PvNode(b=None, bm=None, s=None, sm=None, su="")
 
 
 class TestSlimBlobGateBehavior:
-    """SEED-079: gate behavior on slim blobs (odd defender indices are all-None placeholders).
+    """Gate behavior on slim blobs (odd defender indices are all-None placeholders).
 
     The gate reads only solver (even) nodes, so slim and fat blobs gate identically for
     even-firing tactics. The one exception is _is_forced_mate_firing at an ODD
-    firing_depth (WR-02 k-1 quirk): on a slim blob it reads a placeholder and returns
+    firing_depth (a k-1 quirk): on a slim blob it reads a placeholder and returns
     False -- the forced-mate exemption conservatively degrades to non-exempt (accepted,
     documented on the function; NOT normalized to an even index because that would read
     a different node and change fat-blob outcomes). Fat blobs are unaffected.

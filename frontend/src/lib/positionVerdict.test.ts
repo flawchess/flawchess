@@ -22,7 +22,7 @@ function rung(moveProbabilities: Record<string, number>): MoveCurvePoint[] {
 }
 
 /** computePositionVerdict defaults to a white mover in every pre-existing test below —
- *  this suite predates the mover param (quick 260709-o72) and its fixtures are already
+ *  this suite predates the mover param and its fixtures are already
  *  white-POV, so passing 'white' keeps every prior assertion unchanged. */
 const WHITE = 'white' as const;
 
@@ -250,7 +250,7 @@ describe('formatVerdictEval — white-POV eval formatting', () => {
   });
 });
 
-describe('classifyStanding — standing-band boundaries (quick 260709-o72)', () => {
+describe('classifyStanding — standing-band boundaries', () => {
   it('white mover: mate>0 -> mate-for-you', () => {
     expect(classifyStanding(null, 4, 'white')).toBe('mate-for-you');
   });
@@ -320,7 +320,7 @@ describe('classifyStanding — standing-band boundaries (quick 260709-o72)', () 
   });
 });
 
-describe('computePositionVerdict — standing + bestMove (quick 260709-o72)', () => {
+describe('computePositionVerdict — standing + bestMove', () => {
   it('a black-mover white-POV +M4 position classifies mate-against, standingEvalMate re-signs to "-M4"', () => {
     const grades = new Map<string, VerdictMoveGrade>([
       ['Qxc1', { quality: 'best', evalCp: null, evalMate: 4 }],

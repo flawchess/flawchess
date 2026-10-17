@@ -9,8 +9,8 @@ Bucketing rule under test (unified two-sided standard, 260505):
 p_value is the two-sided Wald z-test p for H0: mean == 0 cp, computed as
 erfc(|z| / sqrt(2)) where z = mean / se. The helper takes an optional
 baseline_cp parameter for arithmetic generality (default 0); no production
-caller passes a non-zero value (quick task 260504-rvh decoupled the per-color
-visual baseline from the test H0).
+caller passes a non-zero value (the per-color visual baseline is decoupled
+from the test H0).
 
 The helper returns a 4-tuple (confidence, p_value, mean, ci_half_width).
 ci_half_width = 1.96 * se (95% CI half-width for the bullet chart whisker),
@@ -216,14 +216,14 @@ def test_two_sided_p_value_symmetric() -> None:
     assert ci_pos == pytest.approx(ci_neg, abs=1e-9)
 
 
-# --- baseline_cp default-equivalence (260504-rvh) ------------------------
+# --- baseline_cp default-equivalence ------------------------
 
 
 def test_baseline_cp_default_equals_explicit_zero() -> None:
     """Passing baseline_cp=0.0 explicitly produces the same result as omitting it.
 
-    Locks the parameter's default behavior after quick task 260504-rvh removed
-    all production callers that passed a non-zero baseline_cp.
+    Locks the parameter's default behavior now that no production caller passes
+    a non-zero baseline_cp.
     """
     n = 100
     mean_cp = 25.0
@@ -237,7 +237,7 @@ def test_baseline_cp_default_equals_explicit_zero() -> None:
     assert omitted == explicit
 
 
-# --- White-color signal at +31.5 cp now reads as "high" (260504-rvh) -----
+# --- White-color signal at +31.5 cp now reads as "high" -----
 
 
 def test_mean_at_white_engine_baseline_reads_significant() -> None:

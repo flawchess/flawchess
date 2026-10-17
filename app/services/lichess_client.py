@@ -1,6 +1,6 @@
 """lichess API client.
 
-Fetches games for a user via NDJSON streaming and yields normalized game dicts.
+Fetches games for a user via NDJSON streaming and yields NormalizedGame objects.
 Supports incremental sync via the ``since`` millisecond timestamp parameter.
 """
 
@@ -53,8 +53,7 @@ def _raise_for_status(response: httpx.Response, username: str) -> None:
     """Raise if `response`'s status signals not-found, a retryable failure, or a fatal error.
 
     Returns normally on 200. Extracted from fetch_lichess_games's status-code
-    branch chain (216-06, zero behavior change): same exception types, same
-    ordering, same status codes as the inline code it replaces.
+    branch chain.
     """
     if response.status_code == 404:
         raise ValueError(f"lichess user '{username}' not found")
@@ -87,10 +86,9 @@ def _raise_for_status(response: httpx.Response, username: str) -> None:
 def _normalize_line(line: str, username: str, user_id: int) -> NormalizedGame | None:
     """Parse and normalize one NDJSON line, or return `None` to signal skip.
 
-    Extracted from fetch_lichess_games's per-line parse+normalize block
-    (216-06, zero behavior change): swallows exactly `json.JSONDecodeError`
-    (malformed line) and `Exception` (normalization failure, captured to
-    Sentry), same as the inline code it replaces.
+    Extracted from fetch_lichess_games's per-line parse+normalize block:
+    swallows exactly `json.JSONDecodeError` (malformed line) and `Exception`
+    (normalization failure, captured to Sentry).
     """
     try:
         game = json.loads(line)
@@ -98,7 +96,7 @@ def _normalize_line(line: str, username: str, user_id: int) -> NormalizedGame | 
         # Skip malformed lines without aborting the stream
         return None
 
-    # Item 4 (Phase 148): normalize_lichess_game does direct
+    # normalize_lichess_game does direct
     # dict lookups (e.g. game["players"]) with no fallback,
     # so a single structurally-malformed (but valid-JSON)
     # game raised an uncaught KeyError that aborted the
@@ -130,13 +128,13 @@ async def _stream_one_attempt(
     """Stream and normalize one attempt's NDJSON games, raising on status/stream failure.
 
     Extracted from fetch_lichess_games's semaphore+stream+per-line loop
-    (216-06) so the outer retry loop's try/except and fetched-game callback
-    stay under the depth-4 gate (D-13/D-14): two helpers alone (`_raise_for_status`,
+    so the outer retry loop's try/except and fetched-game callback
+    stay under the depth-4 gate: two helpers alone (`_raise_for_status`,
     `_normalize_line`) still left the outer generator's yield+callback chain at
-    depth 5, so this third helper takes the per-NDJSON-line seam further, per
-    the plan's own escape valve ("take the second seam further rather than
-    adding a pragma"). Zero behavior change: the same exception types raised by
-    `_raise_for_status` propagate unchanged to the caller's retry handling.
+    depth 5, so this third helper takes the per-NDJSON-line seam further
+    rather than adding a pragma. Status and stream errors (the exception types
+    raised by `_raise_for_status`) propagate unchanged to the caller's retry
+    loop.
     """
     async with (
         get_lichess_semaphore(),
@@ -173,12 +171,12 @@ async def fetch_lichess_games(
     Args:
         client: Shared httpx.AsyncClient instance.
         username: The lichess username to fetch games for.
-        user_id: Internal database user ID (denormalized into each game dict).
+        user_id: Internal database user ID (denormalized into each NormalizedGame).
         since_ms: If provided, only games created at or after this Unix millisecond
             timestamp are returned (lichess ``since`` parameter).
         until_ms: If provided, only games played at or before this Unix millisecond
-            timestamp are returned (lichess ``until`` parameter). Phase 186 Plan 02
-            (IMPORT-03, D-06): used by the backward-fetch backlog walk. Purely
+            timestamp are returned (lichess ``until`` parameter). Used by the
+            backward-fetch backlog walk. Purely
             additive to the existing streaming/retry loop — lichess defaults to
             ``sort=dateDesc`` (newest-first), so combined with ``max_games`` the
             LAST game yielded in a bounded call is the OLDEST one in that chunk;
@@ -192,10 +190,10 @@ async def fetch_lichess_games(
             perfTypes (``bullet``/``blitz``/``rapid``/``classical``/``correspondence``/...).
             Opt-in because this filter silently truncates: e.g. a bare
             ``perfType=classical`` excludes correspondence, chess960, and imported
-            (fromPosition) games server-side (D-14). Benchmark ingest and the
+            (fromPosition) games server-side. Benchmark ingest and the
             backward-walk want that server-side truncation as a bandwidth
             optimization; forward/incremental user-facing imports leave this
-            ``None`` and rely solely on the post-fetch TC filter (D-02).
+            ``None`` and rely solely on the post-fetch TC filter.
         on_game_fetched: Optional callback called once per yielded game.
 
     Raises:
@@ -204,9 +202,7 @@ async def fetch_lichess_games(
             429 after retries, or unexpected non-200 such as 401/403). Raising
             halts the import so the job is marked ``failed`` and ``last_synced_at``
             is preserved — preventing silent data loss when an error body would
-            otherwise be parsed as "0 games" and the cursor advanced. See
-            ``.planning/debug/prod-import-missed-games.md`` for the chess.com
-            sibling of this bug.
+            otherwise be parsed as "0 games" and the cursor advanced.
     """
     params: dict[str, str | bool] = {
         "pgnInJson": True,
@@ -269,7 +265,7 @@ async def fetch_lichess_games(
             # body raises (a DB write in import_service can), and the semaphore +
             # open HTTP stream now live in the inner generator's frame. Without this
             # their release would wait for GC of two abandoned generators instead of
-            # unwinding deterministically as it did before the extraction (216 review WR-01).
+            # unwinding deterministically.
             async with aclosing(
                 _stream_one_attempt(client, url, params, headers, username, user_id)
             ) as stream:
@@ -287,7 +283,7 @@ async def fetch_lichess_games(
             # imported games.
             # Sentry capture omitted for stream errors — last-attempt error
             # propagates to run_import() top-level handler which calls
-            # capture_exception (per D-02). The same holds for 429 (FLAWCHESS-BX).
+            # capture_exception. The same holds for 429 (FLAWCHESS-BX).
             last_attempt_error = exc
             continue
 

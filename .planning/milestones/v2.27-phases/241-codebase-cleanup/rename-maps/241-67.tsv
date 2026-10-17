@@ -1,0 +1,17 @@
+old	new	kind	absent_paths	ref	canon_paths
+_TACTIC_CHIP_CONFIDENCE_MIN	MIN_TACTIC_CHIP_CONFIDENCE	identifier	app tests scripts docs .claude/skills	X4	
+on_path_c_capacity_reached	on_attempt_cap_reached	identifier	app tests scripts docs .claude/skills	X6	
+_log_path_c_capacity_reached	_log_path_c_attempt_cap_reached	identifier	app tests scripts docs .claude/skills	X6	
+_report_path_c_capacity_reached	_report_path_c_attempt_cap_reached	identifier	app tests scripts docs .claude/skills	X6	
+eg_w	a_w	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+eg_d	a_d	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+eg_l	a_l	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+eg_n	a_n	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+ne_w	b_w	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+ne_d	b_d	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+ne_l	b_l	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+ne_n	b_n	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+score_eg	score_a	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+score_ne	score_b	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+var_eg	var_a	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py
+var_ne	var_b	identifier	app/services/score_confidence.py	X7	app/services/score_confidence.py,tests/services/test_score_confidence.py

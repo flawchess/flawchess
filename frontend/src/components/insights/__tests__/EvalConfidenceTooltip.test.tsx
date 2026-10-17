@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 96 Plan 03: Tests for EvalConfidenceTooltip after removing the
+ * Tests for EvalConfidenceTooltip after removing the
  * pending-analysis caveat (Constraint 7).
  *
  * The eval-pending-caveat block (data-testid="eval-pending-caveat") has been
@@ -8,9 +8,9 @@
  * are now the only in-progress signals. This file asserts the caveat is gone
  * under all prop combinations the component still accepts.
  *
- * History: the caveat block was added in Phase 91 Plan 07 and removed here.
- * The previous test cases testing caveat visibility have been replaced by
- * assertions that confirm the caveat element is absent from the DOM.
+ * The caveat block no longer exists.
+ * The tests assert
+ * the caveat element is absent from the DOM.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';

@@ -1,6 +1,6 @@
 /**
- * Player display-name resolution for the /bots clock caption
- * (quick-260714-pnk). Mirrors the backend's
+ * Player display-name resolution for the /bots clock caption.
+ * Mirrors the backend's
  * store_bot_game_service.resolve_player_username precedence chain exactly —
  * this is the ONLY place the chain is written on the frontend.
  */

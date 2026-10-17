@@ -1,14 +1,12 @@
-"""Phase 70 (v1.13) opening insights service.
+"""Opening insights service.
 
 Single public entry point: compute_insights(session, user_id, request).
 Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
-dedupe within color section -> rank (severity desc, n_games desc) ->
-cap per section (5 weaknesses, 3 strengths). No precompute, no caching
-(D-29) — partial-index-backed query keeps even Hikaru-class users <1 s.
-
-See .planning/phases/70-backend-opening-insights-service/70-CONTEXT.md
-for D-01..D-34 locked decisions.
+dedupe within color section and across continuations -> rank (Wilson 95%
+bound, direction-aware) -> cap per section (10 weaknesses, 10 strengths).
+No precompute, no caching — partial-index-backed query keeps even
+Hikaru-class users <1 s.
 """
 
 import ctypes
@@ -16,7 +14,7 @@ import datetime
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from types import SimpleNamespace  # Phase 80.1: adapter for resulting-position W/D/L
+from types import SimpleNamespace  # Adapter for resulting-position W/D/L
 from typing import Any, Literal
 
 import chess
@@ -28,7 +26,7 @@ from app.models.opening import Opening
 from app.repositories.openings_repository import (
     query_opening_transitions,
     query_openings_by_hashes,
-    query_resulting_position_wdl,  # Phase 80.1 D-03: resulting-position WDL
+    query_resulting_position_wdl,  # Resulting-position WDL
     query_transition_prefixes,
 )
 from app.repositories.stats_repository import (
@@ -51,23 +49,21 @@ from app.services.opening_insights_constants import (
 from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
 
 # ---------------------------------------------------------------------------
-# Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and Wilson
-# score-test confidence buckets (D-05, D-06; migrated from trinomial Wald in
-# quick 260507-aw5) are imported from app.services.opening_insights_constants
+# Thresholds. The score-based effect-size gate and Wilson score-test
+# confidence buckets are imported from app.services.opening_insights_constants
 # above. The CI consistency test
 # (tests/services/test_opening_insights_arrow_consistency.py) keeps the
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-# Phase 71 UAT: caps raised to 10 (was 5 weak / 3 strong) so the FE can render
-# 5 visible cards per section with a "X more" toggle expanding up to 10, all in
-# a single roundtrip.
+# Caps of 10 let the FE render 5 visible cards per section with a "X more"
+# toggle expanding up to 10, all in a single roundtrip.
 WEAKNESS_CAP_PER_COLOR: int = 10
 STRENGTH_CAP_PER_COLOR: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 
-# Phase 80.1: surfaced when the resulting-position WDL lookup misses a
+# Surfaced when the resulting-position WDL lookup misses a
 # resulting_full_hash that came back from query_opening_transitions. Should be
 # zero under correct filter parity; non-zero indicates a divergence between the
 # two query call sites that needs investigation.
@@ -82,13 +78,12 @@ logger = logging.getLogger(__name__)
 def _classify_row(
     row: Any,
 ) -> tuple[Literal["weakness", "strength"], Literal["minor", "major"]] | None:
-    """Classify a transition row by chess score against the 0.50 pivot (D-11).
+    """Classify a transition row by chess score against the 0.50 pivot.
 
     Score is (W + 0.5·D) / N. Effect-size thresholds are symmetric:
       - weakness: score <= 0.45 → minor; <= 0.40 → major
       - strength: score >= 0.55 → minor; >= 0.60 → major
-    Strict <= / >= boundaries (D-03). Returns None for neutral positions.
-    Phase 75 D-09 promoted score from informative to canonical metric.
+    Strict <= / >= boundaries. Returns None for neutral positions.
 
     Compare score directly against precomputed pivot ± effect thresholds rather
     than against `delta = score - PIVOT`. The literal score values produced by
@@ -114,14 +109,14 @@ def _classify_row(
 
 
 def _compute_score(row: Any) -> float:
-    """Compute score = (W + D/2) / n (Phase 75 D-09: canonical classification metric)."""
+    """Compute score = (W + D/2) / n (the canonical classification metric)."""
     return (row.w + row.d / 2) / row.n
 
 
 def _replay_san_sequence(san_sequence: list[str]) -> str:
     """Replay a SAN sequence from the start position.
 
-    Implements D-25 entry-FEN reconstruction by replaying the exact moves
+    Reconstructs the entry FEN by replaying the exact moves
     the user played up to the entry position. With MIN_ENTRY_PLY=0 an empty
     sequence is valid and corresponds to the starting position itself
     (entry_ply=0, where the candidate is white's first move).
@@ -141,8 +136,7 @@ def _apply_display_name_parity(
 
     A white-defined opening has odd ply_count (white's move last);
     a black-defined opening has even ply_count. When the finding's color
-    disagrees with the opening's parity, prefix with 'vs. ' per RESEARCH.md
-    Pitfall 4 and stats_repository.py lines 250-260.
+    disagrees with the opening's parity, prefix with 'vs. '.
     """
     user_parity = 1 if finding_color == "white" else 0
     if opening_ply_count % 2 != user_parity:
@@ -163,7 +157,7 @@ def _signed_full_hash(board: chess.Board) -> int:
 def _compute_prefix_hashes(san_sequence: list[str]) -> list[int]:
     """Return the full_hash for every proper prefix (deepest first).
 
-    BLOCKER-2: hashes MUST be converted via ctypes.c_int64(...).value to
+    Hashes MUST be converted via ctypes.c_int64(...).value to
     match the signed int64 stored on GamePosition.full_hash. Without this
     conversion, lookups against the openings table (whose Opening.full_hash
     is also signed via the same path) would silently miss every match.
@@ -184,11 +178,11 @@ def _attribute_finding(
     parents_by_hash: dict[int, Opening],
     finding_color: Literal["white", "black"],
 ) -> tuple[str, str, str] | None:
-    """Attribute a finding to an opening name (BLOCKER-1 / D-22 / D-23 / D-34).
+    """Attribute a finding to an opening name.
 
     Returns (opening_name, opening_eco, display_name) or None when no match
     is found at any lineage depth — None causes the finding to be DROPPED
-    per D-34 (never surfaced with a sentinel name).
+    (never surfaced with a sentinel name).
 
     Attribution path:
     1. Direct: look up entry_hash in openings_by_hash.
@@ -235,7 +229,7 @@ def _attribute_finding(
             )
             return result_opening.name, result_opening.eco, display_name
 
-    # No match at any depth — D-34: drop this finding
+    # No match at any depth — drop this finding
     return None
 
 
@@ -244,10 +238,10 @@ def _dedupe_within_section(
 ) -> list[tuple[OpeningInsightFinding, float]]:
     """Deduplicate by resulting_full_hash within a section, keeping the deepest entry.
 
-    D-24: when two findings share resulting_full_hash in the same color section,
+    When two findings share resulting_full_hash in the same color section,
     keep the one with the higher attribution ply_count (deeper opening wins).
 
-    Quick task 260428-tgg: also threads `se` through. Returns (finding, se) tuples
+    Also threads `se` through. Returns (finding, se) tuples
     — opening_ply_count is consumed here and does not flow downstream to ranking.
     """
     best: dict[str, tuple[OpeningInsightFinding, int, float]] = {}
@@ -286,28 +280,25 @@ def _dedupe_continuations(
 ) -> dict[str, list[tuple[OpeningInsightFinding, float]]]:
     """Collapse each line to its single most-robust finding.
 
-    Phase 71 UAT fix: when consecutive moves in the same line are all weak
+    When consecutive moves in the same line are all weak
     (or all strong), deeper findings crowd the block with the same opening
     line (e.g. Caro-Kann B10: 3.exd5, 3...cxd5, 4.d4 all surfacing as
-    separate cards). Originally we kept the SHALLOWEST entry per chain on
-    the assumption that earlier-in-the-line is more actionable, but with
-    MIN_ENTRY_PLY=0 a low-signal ply=1 finding (CI straddling 0.50) would
-    pre-empt a high-signal ply=4 finding in the same line.
+    separate cards). Don't keep the shallowest entry per chain: with
+    MIN_ENTRY_PLY=0 a low-signal shallow finding (CI straddling 0.50) would
+    pre-empt a high-signal deeper one.
 
     Rule: iterate findings most-robust-first (Wilson-bound directional
     signal); a finding is dropped if its full_path = entry + [candidate] is
     prefix-related (either direction) to any already-kept finding's
     full_path. Two findings share a line iff one full_path is a prefix of
     the other. Tie-breaks (after `-robustness`): shallower depth, major
-    severity, higher n_games — matches the legacy ordering when
-    robustness ties so behavior is unchanged for findings that were
-    indistinguishable under the old rule.
+    severity, higher n_games.
 
     Applied globally across all four sections so chains crossing color
     boundaries (white candidate → black candidate → white candidate) still
     consolidate.
 
-    Quick task 260428-tgg: payload is `(finding, se)` so SE survives this
+    Payload is `(finding, se)` so SE survives this
     stage and reaches _rank_section.
     """
     flat: list[tuple[str, OpeningInsightFinding, float]] = [
@@ -333,7 +324,7 @@ def _dedupe_continuations(
             )
             if not shares_line:
                 continue
-            # D-21 exception: same exact transition reached from different
+            # Exception: same exact transition reached from different
             # color perspectives is two distinct findings (e.g. user plays
             # both colors → "as white, opponents respond with X" and "as
             # black, you play X" both clear the gates). Keep both.
@@ -365,18 +356,18 @@ def _rank_section(
     - strength: descending Wilson lower bound — the row whose score is
       most-confidently-above-0.5 (largest plausible worst case) sorts first.
 
-    Wilson replaces the earlier Wald `score +/- 1.96 * SE` formula (quick task
-    260428-v9i). Wald degenerates at boundary scores (e.g. 0/11 -> SE=0, CI
-    width=0, claiming 100% certainty); Wilson is well-defined for any p in
-    [0, 1] and tighter for small n, so small-N extreme findings no longer
-    outrank large-N moderate findings purely on score.
+    Wilson rather than a Wald `score +/- 1.96 * SE` formula: Wald degenerates
+    at boundary scores (e.g. 0/11 -> SE=0, CI width=0, claiming 100% certainty);
+    Wilson is well-defined for any p in [0, 1] and tighter for small n, so
+    small-N extreme findings do not outrank large-N moderate findings purely on
+    score.
 
     The `(finding, se)` tuple shape is preserved upstream because SE is still
     produced by compute_confidence_bucket for the UI confidence badge, but
     Wilson uses only `finding.score` and `finding.n_games` — the SE component
     of the tuple is intentionally ignored here.
 
-    Confidence bucket is no longer part of the sort key (260428-tgg follow-up):
+    Confidence bucket is not part of the sort key:
     the CI bound already mixes effect size and sample size, so a high-N
     moderate-effect row that lives in the "medium" bucket can legitimately
     rank above a small-N extreme-effect row in the "high" bucket when its
@@ -396,7 +387,7 @@ def _rank_section(
 
 
 # ---------------------------------------------------------------------------
-# MG-entry eval helpers (quick task 260506-u2b — parity with OpeningWDL)
+# MG-entry eval helpers (parity with OpeningWDL)
 # ---------------------------------------------------------------------------
 
 
@@ -406,9 +397,9 @@ def _apply_eval_metrics_to_finding(
 ) -> OpeningInsightFinding:
     """Populate the six MG-entry eval fields on a finding from phase-entry metrics.
 
-    Mirrors the finalizer logic in stats_service._phase80_item_from_metrics so
+    Mirrors the finalizer logic in stats_service._bookmark_phase_entry_item so
     there is a single source of eval math without duplicating SQL or confidence
-    bucket computation. The H0 is 0 cp (engine-balanced) per quick task 260504-rvh.
+    bucket computation. The H0 is 0 cp (engine-balanced).
     """
     if pe.eval_n_mg <= 0:
         return finding
@@ -431,10 +422,10 @@ def _apply_eval_metrics_to_finding(
 
 
 # ---------------------------------------------------------------------------
-# compute_insights stage helpers (quick task 260509-gm9 mechanical extraction)
+# compute_insights stage helpers
 #
 # compute_insights reads as a short pipeline:
-#   1. _collect_attribution_hashes  — pass-1 transitions + direct openings lookup
+#   1. _fetch_attribution_context  — pass-1 transitions + direct openings lookup
 #   2. _fetch_position_wdl_per_color — pass-2 parent walk + per-color WDL fetch
 #   3. _build_sections              — classify → attribute → dedupe → rank → cap → eval enrich
 # Each helper is module-private and called sequentially; no behavior changes.
@@ -480,7 +471,7 @@ def _wrap_transition_row(
 
     Returns None on either of two distinct, deliberately separate drop reasons:
 
-    1. No standard-start sample. Phase 210 (SEED-042) filters the sample aggregate
+    1. No standard-start sample. The sample aggregate is filtered
        to `initial_fen IS NULL`, so a group in which EVERY game is custom-start
        yields a NULL `sample_pair`. There is no replayable SAN path to this
        position, so the group cannot be rendered.
@@ -489,7 +480,7 @@ def _wrap_transition_row(
        wrong (a corrupt PGN, an unmarked custom start).
 
     Both are expected, handled conditions rather than errors, so both report at
-    warning level (D-07). Keeping them as separate messages matters: collapsing
+    warning level. Keeping them as separate messages matters: collapsing
     them would make the Sentry payload lie about which one fired.
     """
     # sample_pair is ARRAY[ply, game_id] from one real STANDARD-START row in the
@@ -525,13 +516,13 @@ def _wrap_transition_row(
         board.push_san(raw_row.move_san)
         resulting_full_hash = _signed_full_hash(board)
     except (chess.IllegalMoveError, chess.InvalidMoveError, ValueError, AssertionError) as exc:
-        # SAN prefix is unreachable from chess.Board(). Phase 210 (SEED-042)
-        # removed the systematic cause (custom-start games being preferred as the
-        # sample representative), so this is now a defensive residual rather than
-        # the common path.
+        # SAN prefix is unreachable from chess.Board(). The systematic cause
+        # (custom-start games being preferred as the sample representative) is
+        # filtered out upstream, so this is a defensive residual rather than the
+        # common path.
         #
-        # Demoted from capture_exception to a warning-level capture_message
-        # (D-07): this models a handled, expected drop, and as an exception it
+        # Use a warning-level capture_message, not capture_exception: this
+        # models a handled, expected drop, and as an exception it
         # escalated a non-bug into the issue list 74 times (FLAWCHESS-5E) while
         # the two genuinely actionable production issues sat below it. Rate
         # visibility is preserved; the escalation is not. Per CLAUDE.md the
@@ -574,7 +565,7 @@ def _wrap_transition_row(
 class _AttributionContext:
     """Pass-1 attribution context: per-color transition rows + direct openings lookup.
 
-    Carried between _collect_attribution_hashes and _fetch_position_wdl_per_color.
+    Carried between _fetch_attribution_context and _fetch_position_wdl_per_color.
     """
 
     rows_by_color: dict[str, list[_TransitionRow]] = field(default_factory=dict)
@@ -599,7 +590,7 @@ class _PipelineContext:
     ]
 
 
-async def _collect_attribution_hashes(
+async def _fetch_attribution_context(
     session: AsyncSession,
     user_id: int,
     request: OpeningInsightsRequest,
@@ -637,8 +628,14 @@ async def _collect_attribution_hashes(
             opponent_gap_max=request.opponent_gap_max,
         )
         # Unpack ARRAY[ply, game_id] into (game_id, ply) — sample_pair is paired
-        # so each (game_id, ply) refers to a real row in the SQL group.
-        samples = [(int(r.sample_pair[1]), int(r.sample_pair[0])) for r in raw_rows]
+        # so each (game_id, ply) refers to a real row in the SQL group. Skip NULL
+        # pairs (all-custom-start groups): this ran before _wrap_transition_row's
+        # None guard, so such a group raised TypeError and failed compute_insights.
+        samples = [
+            (int(r.sample_pair[1]), int(r.sample_pair[0]))
+            for r in raw_rows
+            if r.sample_pair is not None
+        ]
         prefixes = await query_transition_prefixes(session, user_id, samples)
         wrapped: list[_TransitionRow] = []
         for r in raw_rows:
@@ -674,11 +671,11 @@ async def _fetch_position_wdl_per_color(
     """Stage 2: parent-lineage attribution + per-color resulting-position WDL.
 
     First walks parent prefix hashes for any entry hashes that missed direct
-    attribution (BLOCKER-1 / D-34), then fetches per-color resulting-position
-    W/D/L (Phase 80.1 D-03/D-05) — aggregated across ALL move orders
+    attribution, then fetches per-color resulting-position
+    W/D/L — aggregated across ALL move orders
     (transposition-inclusive). Sequential awaits per CLAUDE.md AsyncSession rule.
 
-    WR-01: queries per color, scoped to that color's resulting_full_hash set,
+    Queries per color, scoped to that color's resulting_full_hash set,
     and passes color=color to query_resulting_position_wdl so the denominator
     matches query_opening_transitions' Game.user_color filter (avoids blending
     white-perspective and black-perspective games).
@@ -686,7 +683,7 @@ async def _fetch_position_wdl_per_color(
     rows_by_color = ctx.rows_by_color
     openings_by_hash = ctx.openings_by_hash
 
-    # Pass 2: parent-lineage attribution for unmatched (BLOCKER-1 / D-34).
+    # Pass 2: parent-lineage attribution for unmatched entry hashes.
     unmatched_parent_hashes: set[int] = set()
     for rows in rows_by_color.values():
         for r in rows:
@@ -696,10 +693,10 @@ async def _fetch_position_wdl_per_color(
                 unmatched_parent_hashes.update(_compute_prefix_hashes(r.entry_san_sequence))
     parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
-    # Phase 80.1 D-03/D-05: aggregate W/D/L per resulting_full_hash across
+    # Aggregate W/D/L per resulting_full_hash across
     # ALL move orders (transposition-inclusive). Surfacing gate already ran
     # in query_opening_transitions HAVING n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
-    # on move-played n (per D-04). The values below feed _classify_row /
+    # on move-played n. The values below feed _classify_row /
     # _compute_score / compute_confidence_bucket / wilson_bounds /
     # OpeningInsightFinding via a SimpleNamespace adapter so those helpers
     # don't change.
@@ -746,17 +743,17 @@ def _row_to_finding(
     """Convert one _TransitionRow into a (finding, ply_count, se) tuple, or None.
 
     Returns None when the row is neutral (classify miss) or when attribution
-    fails at every depth (D-34 drop). Mirrors the inner-loop body of the
+    fails at every depth (dropped). Mirrors the inner-loop body of the
     original compute_insights pipeline byte-for-byte.
     """
-    # Phase 80.1 D-03: feed _classify_row / _compute_score /
+    # Feed _classify_row / _compute_score /
     # compute_confidence_bucket / wilson_bounds / OpeningInsightFinding
     # the resulting-position W/D/L via a SimpleNamespace adapter so
     # those helpers stay byte-identical. Non-WDL fields (move_san,
     # entry_*, resulting_full_hash) come from the typed _TransitionRow.
     pos = pos_wdl_for_color.get(row.resulting_full_hash)
     if pos is None:
-        # Filter mismatch defensive fallback (RESEARCH.md Pitfall 4).
+        # Filter mismatch defensive fallback.
         # Should not fire when query_resulting_position_wdl filters
         # mirror query_opening_transitions; logged for diagnosis.
         logger.warning(
@@ -780,19 +777,19 @@ def _row_to_finding(
         return None
     classification, severity = cls
 
-    # BLOCKER-1: single attribution path. None => DROP per D-34.
+    # Single attribution path. None => DROP.
     attribution = _attribute_finding(row, openings_by_hash, parents_by_hash, color_literal)
     if attribution is None:
         sentry_sdk.set_tag("openings.attribution.unmatched_dropped", True)
         return None
     opening_name, opening_eco, display_name = attribution
 
-    # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the SAN sequence.
+    # entry_fen is reconstructed by replaying the SAN sequence.
     # entry_san_sequence is already a list[str] on _TransitionRow; no None coercion needed.
     # ply=0 entries have [] and legitimately replay zero moves → starting FEN.
     entry_fen = _replay_san_sequence(row.entry_san_sequence)
 
-    # Carry the matched Opening.ply_count alongside for D-24
+    # Carry the matched Opening.ply_count alongside for the
     # deeper-entry-wins dedupe; use 0 for parent-only matches
     # (parent-matched entries have lower specificity than direct matches).
     # ply=0 entries attribute via resulting_full_hash, so mirror
@@ -814,9 +811,9 @@ def _row_to_finding(
         opening_eco=opening_eco,
         display_name=display_name,
         entry_fen=entry_fen,
-        # Phase 71 (D-13): SAN sequence start→entry; empty for entry_ply=0 (no preceding moves).
+        # SAN sequence start→entry; empty for entry_ply=0 (no preceding moves).
         entry_san_sequence=row.entry_san_sequence,
-        # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
+        # Stringify 64-bit ints at the API boundary.
         entry_full_hash=str(row.entry_hash),
         candidate_move_san=row.move_san,
         resulting_full_hash=str(row.resulting_full_hash),
@@ -829,7 +826,7 @@ def _row_to_finding(
         p_value=p_value,
         ci_low=ci_low,
         ci_high=ci_high,
-        # Quick task 260508-r61: MAX(played_at) across all games
+        # MAX(played_at) across all games
         # visiting the resulting position (transposition-inclusive,
         # color-filtered). Falls back to the move-played MAX from
         # query_opening_transitions when the resulting-position
@@ -851,18 +848,19 @@ async def _build_sections(
     """Stage 3: classify → attribute → assemble → dedupe → rank → cap → enrich.
 
     Builds the four sections (white/black × weaknesses/strengths), runs
-    per-section transposition dedupe (D-24) and global continuation dedupe
-    (Phase 71 UAT fix), ranks each section by Wilson 95% CI bound, caps per
-    D-02, then enriches surviving findings with MG-entry eval metrics
+    per-section transposition dedupe and global continuation dedupe, ranks
+    each section by Wilson 95% CI bound, caps per section
+    (WEAKNESS_CAP_PER_COLOR / STRENGTH_CAP_PER_COLOR), then enriches surviving
+    findings with MG-entry eval metrics
     (sequential per-color batch awaits per CLAUDE.md AsyncSession rule).
     """
     # ---- Build sections ----
     # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
-    # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
+    # - ply_count drives the deeper-entry-wins dedupe in _dedupe_within_section
     #   (consumed there and not propagated downstream).
     # - se threads through dedupe stages but is ignored by _rank_section under
-    #   the Wilson 95% CI bound (quick task 260428-v9i — replaces Wald to fix
-    #   small-N degeneracy). SE is still produced for the UI confidence badge.
+    #   the Wilson 95% CI bound (Wald degenerates at small N). SE is still
+    #   produced for the UI confidence badge.
     sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
         "white_weaknesses": [],
         "black_weaknesses": [],
@@ -888,12 +886,11 @@ async def _build_sections(
             )
             sections[section_key].append((finding, opening_ply_count, se))
 
-    # Per-section transposition dedupe (D-24) → global continuation dedupe
-    # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
-    # Quick 260428-v9i: ranks by Wilson 95% CI bound (direction-aware),
-    # using (score, n_games) and ignoring SE — replaces the earlier Wald
-    # CI to fix small-N degeneracy. Confidence bucket is no longer part of
-    # the sort key, only a UI badge.
+    # Per-section transposition dedupe → global continuation dedupe
+    # → rank → cap (WEAKNESS_CAP_PER_COLOR / STRENGTH_CAP_PER_COLOR).
+    # Ranks by Wilson 95% CI bound (direction-aware),
+    # using (score, n_games) and ignoring SE (Wald degenerates at small N).
+    # Confidence bucket is not part of the sort key, only a UI badge.
     deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
         key: _dedupe_within_section(items) for key, items in sections.items()
     }
@@ -996,13 +993,13 @@ async def compute_insights(
     """Compute four-section opening insights for one user under a filter set.
 
     Returns OpeningInsightsResponse with white_weaknesses, black_weaknesses,
-    white_strengths, black_strengths — each capped per CONTEXT.md D-08.
+    white_strengths, black_strengths — each capped per section.
     See module docstring for pipeline details.
     """
     from_date: datetime.date | None = request.from_date
     to_date: datetime.date | None = request.to_date
 
-    # D-12 optimization: when the user narrows to a single color, skip the
+    # Optimization: when the user narrows to a single color, skip the
     # off-color SQL query entirely (~50% latency saving).
     colors_to_query: list[Literal["white", "black"]]
     if request.color == "all":
@@ -1010,11 +1007,11 @@ async def compute_insights(
     else:
         colors_to_query = [request.color]
 
-    # WARN-1: the full pipeline (queries + classify + attribute + dedupe +
+    # The full pipeline (queries + classify + attribute + dedupe +
     # rank + cap) is wrapped in a single try/except so any exception in
     # pure-Python stages also gets the Sentry context + tags.
     try:
-        attribution_ctx = await _collect_attribution_hashes(
+        attribution_ctx = await _fetch_attribution_context(
             session, user_id, request, from_date, to_date, colors_to_query
         )
         pipeline_ctx = await _fetch_position_wdl_per_color(

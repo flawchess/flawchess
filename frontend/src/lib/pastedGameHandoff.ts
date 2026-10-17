@@ -1,6 +1,6 @@
 /**
  * pastedGameHandoff — sessionStorage handoff carrying a sniffed FEN/PGN paste
- * from the Import tab to the analysis board (Quick 260826-qdl).
+ * from the Import tab to the analysis board.
  *
  * Exists because `?line=` cannot express what a paste can carry: it replays
  * UCI from the STANDARD START only, so a `[SetUp]`/custom-root PGN is

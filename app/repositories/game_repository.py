@@ -12,18 +12,15 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.schemas.normalization import Color
 
+# Imported by the bulk-insert test to pin the chunk boundary.
+_POSITION_CHUNK_SIZE: int = 1700
+
 # Explicit column list for asyncpg copy_records_to_table. Must be set-equal to
 # {c.name for c in GamePosition.__table__.columns if c.name != "id"} — enforced
 # by test_bulk_insert_positions_column_coverage. The ordering here is the
 # functional contract: each row tuple is built by iterating over this tuple, so
 # if a future column is added to GamePosition without updating this constant the
-# CI test will fail and surfaced as a column-drift error before any data is written.
-# IN-01 fix: promote the chunk size to a module-level constant so the test file
-# can import it instead of duplicating the literal (`_CHUNK_SIZE = 1700` in
-# tests/test_game_repository_bulk_insert_positions.py). Keeps the chunking
-# boundary test honest if this value is ever tuned.
-_POSITION_CHUNK_SIZE: int = 1700
-
+# CI test will fail and surface as a column-drift error before any data is written.
 POSITION_COPY_COLUMNS: tuple[str, ...] = (
     "game_id",
     "user_id",
@@ -77,12 +74,11 @@ async def get_game_id_by_platform_game_id(
 ) -> int | None:
     """Return the game id for (user_id, platform, platform_game_id), or None.
 
-    Phase 167 (STORE-01/05): `_flush_batch` (bulk_insert_games's ON CONFLICT DO
-    NOTHING path) returns only a *count* of newly inserted games, never an id —
-    on EITHER the newly-inserted or the idempotent-duplicate path. This single
-    lookup serves both: the caller always does one follow-up SELECT keyed on
-    the uq_games_user_platform_game_id columns to get the id for the response
-    and for the bot_game_settings insert (RESEARCH Pitfall 2).
+    `_flush_batch` (bulk_insert_games's ON CONFLICT DO NOTHING path) returns only
+    a *count* of newly inserted games, never an id — on EITHER the newly-inserted
+    or the idempotent-duplicate path. This single lookup serves both: the caller
+    always does one follow-up SELECT keyed on the uq_games_user_platform_game_id
+    columns to get the id for the response and for the bot_game_settings insert.
 
     Args:
         session: AsyncSession to use.
@@ -109,10 +105,10 @@ async def get_pasted_game_by_identity(
     user_id: int,
     platform_game_id: str,
 ) -> Game | None:
-    """Return the caller's existing pasted-game row for a D-16 identity hash, or None.
+    """Return the caller's existing pasted-game row for an identity hash, or None.
 
-    Phase 208 (D-17): the pre-insert identity lookup that makes a re-paste of
-    the same game reuse its existing row instead of colliding on
+    The pre-insert identity lookup that makes a re-paste of the same game reuse
+    its existing row instead of colliding on
     uq_games_user_platform_game_id. Scoped by BOTH user_id and platform_game_id
     (the hash) so ownership is enforced at the query level — two users pasting
     the same game never see each other's row.
@@ -120,7 +116,7 @@ async def get_pasted_game_by_identity(
     Args:
         session: AsyncSession to use.
         user_id: Internal user PK (scopes the lookup — never cross-user).
-        platform_game_id: The D-16 SHA-256 identity hash.
+        platform_game_id: The SHA-256 identity hash.
 
     Returns:
         The matching Game row, or None if no pasted row exists for this
@@ -139,7 +135,7 @@ async def get_pasted_game_by_identity(
 async def update_game_user_color(
     session: AsyncSession, *, game_id: int, user_id: int, user_color: Color
 ) -> None:
-    """Update a game's user_color in place (Phase 208, D-18).
+    """Update a game's user_color in place.
 
     Filtered on BOTH id and user_id so a caller can never repoint another
     user's row's orientation. Does NOT commit — the caller owns the
@@ -164,14 +160,14 @@ async def update_game_user_color(
 async def update_bot_game_pgn_and_url(
     session: AsyncSession, game_id: int, pgn: str, platform_url: str
 ) -> None:
-    """Write a stored bot game's `pgn` + `platform_url` (quick-260714-qaj / D-07).
+    """Write a stored bot game's `pgn` + `platform_url`.
 
     Both values embed the row's own auto-increment `games.id` (the PGN's
     `[Site]` header, and the column itself), which does not exist at
     `normalize_flawchess_game` time — so both are written in a single targeted
     UPDATE after the INSERT. They come from the same
     `bot_game_pgn.build_bot_game_url`, so they cannot diverge. Does NOT commit
-    — the caller owns the transaction (D-10).
+    — the caller owns the transaction.
 
     Args:
         session: AsyncSession to use.
@@ -231,7 +227,7 @@ async def count_fully_analyzed_games(session: AsyncSession, user_id: int) -> int
     return result.scalar_one()
 
 
-async def users_with_zero_pending(
+async def users_with_no_pending_evals_or_imports(
     session: AsyncSession,
     user_ids: Sequence[int],
 ) -> list[int]:
@@ -240,15 +236,15 @@ async def users_with_zero_pending(
     1. Pending-eval count is zero (no games with evals_completed_at IS NULL), AND
     2. No active (pending or in_progress) import_jobs row exists for the user.
 
-    Both conditions must hold to fire Stage B (Plan 13 gap-closure). Without
+    Both conditions must hold to fire Stage B. Without
     condition 2, Stage B fires multiple times during an active import as eval
     batches drain and the per-user pending-eval count flickers between zero and
     non-zero. Each re-fire produces a different intermediate value because the
     canonical-slice CTE input set has grown. User 28's achievable_score_gap was
     observed to flip between -0.0511 and +0.1204 in a 20-second window due to
-    this re-fire pattern (documented in 94.1-13-PLAN.md gap_source).
+    this re-fire pattern.
 
-    Issued as ONE aggregated SQL statement (WR-01 contract preserved). Construction:
+    Issued as ONE aggregated SQL statement. Construction:
     an inline VALUES table over ``user_ids``, WHERE NOT EXISTS (active import),
     LEFT JOIN'd to ``games`` on (uid = games.user_id AND
     games.evals_completed_at IS NULL), GROUP BY uid, HAVING count(games.id) = 0.
@@ -272,9 +268,9 @@ async def users_with_zero_pending(
     uid_col = sa.column("uid", sa.Integer)
     uids_vt = sa.values(uid_col, name="input_uids").data([(int(u),) for u in user_ids])
 
-    # Plan 13 Stage B gate: exclude users with an active (pending/in_progress) import.
+    # Stage B gate: exclude users with an active (pending/in_progress) import.
     # Without this gate, Stage B fires during transient eval-drain states mid-import,
-    # producing partial intermediate values visible on the chip (94.1-13-PLAN.md).
+    # producing partial intermediate values visible on the chip.
     active_import_exists = sa.exists(
         sa.select(sa.literal(1)).where(
             sa.and_(
@@ -323,12 +319,12 @@ async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
 
 
 async def update_bot_game_persona_id(session: AsyncSession, game_id: int, persona_id: str) -> None:
-    """Write a stored bot game's `persona_id` (Phase 185, T-185-01).
+    """Write a stored bot game's `persona_id`.
 
     Mirrors update_bot_game_pgn_and_url's shape exactly — a single-column
-    targeted UPDATE. Does NOT commit — the caller owns the transaction (D-10).
+    targeted UPDATE. Does NOT commit — the caller owns the transaction.
     Called only from the `if created:` branch of store_bot_game_service, so a
-    duplicate resubmit never re-writes persona_id (D-11 idempotency).
+    duplicate resubmit never re-writes persona_id (idempotency).
 
     Args:
         session: AsyncSession to use.
@@ -340,11 +336,11 @@ async def update_bot_game_persona_id(session: AsyncSession, game_id: int, person
 
 
 async def count_wins_by_persona(session: AsyncSession, user_id: int) -> dict[str, int]:
-    """Return win counts grouped by persona_id for the given user (Phase 185, T-185-02).
+    """Return win counts grouped by persona_id for the given user.
 
     Excludes draws, losses, and rows where persona_id IS NULL (custom-mode
     games never earn a persona win). The `platform == "flawchess"` predicate
-    is defense-in-depth (Open Question 2 in 185-RESEARCH.md) — persona_id is
+    is defense-in-depth — persona_id is
     only ever set on flawchess-platform rows, but this guards against a future
     bug where persona_id might accidentally get set on a non-flawchess path.
 
@@ -373,8 +369,8 @@ async def count_wins_by_persona(session: AsyncSession, user_id: int) -> dict[str
             Game.platform == "flawchess",
         )
         .group_by(Game.persona_id)
-        # WR-01 fix: without this HAVING, a persona group with played-but-never-won
-        # games still produced a ("persona_id", 0) row, contradicting the docstring
+        # Without this HAVING, a persona group with played-but-never-won games
+        # would still produce a ("persona_id", 0) row, contradicting the docstring
         # above ("zero-win personas are simply absent") — filter them out in SQL
         # rather than just correcting the prose, since the docstring's contract is
         # also what the response payload should uphold.
@@ -399,14 +395,12 @@ async def count_backlog_by_platform_and_tc(
 ) -> dict[str, dict[str, int]]:
     """Return {platform: {tc_bucket: count}} for the user's PRE-ANCHOR backlog.
 
-    Phase 186 Plan 01 (IMPORT-04, D-01/D-02/D-15). `anchor` is `users.created_at`
-    -- the per-user backlog boundary (D-02): games played AT/AFTER the anchor are
-    always imported uncapped and never counted here. Derived aggregate over the
-    existing `games` table -- no denormalized counter (186-RESEARCH.md Pattern 1,
-    Don't-Hand-Roll). Used for the settings response's backlog-count chips (Plan
-    03 UI) and, later, the backward walk's per-(platform, TC) stop condition.
+    `anchor` is `users.created_at` -- the per-user backlog boundary: games played
+    AT/AFTER the anchor are always imported uncapped and never counted here.
+    Derived aggregate over the existing `games` table -- no denormalized counter.
+    Used by the backward walk's per-(platform, TC) stop condition.
 
-    NULL-bucket games are omitted entirely from the result (D-15 -- they bypass
+    NULL-bucket games are omitted entirely from the result (they bypass
     the TC filter and count against no budget).
 
     Args:
@@ -428,7 +422,7 @@ async def count_backlog_by_platform_and_tc(
     out: dict[str, dict[str, int]] = {}
     for platform, tc_bucket, count in result.all():
         if tc_bucket is None:
-            continue  # D-15: NULL-bucket games count against no budget
+            continue  # NULL-bucket games count against no budget
         out.setdefault(platform, {})[tc_bucket] = count
     return out
 
@@ -438,8 +432,7 @@ async def count_imported_by_platform_and_tc(
 ) -> dict[str, dict[str, int]]:
     """Return {platform: {tc_bucket: count}} for ALL of the user's imported games.
 
-    UAT follow-up to Phase 186 Plan 03: unlike
-    ``count_backlog_by_platform_and_tc`` (which counts only the pre-anchor,
+    Unlike ``count_backlog_by_platform_and_tc`` (which counts only the pre-anchor,
     cap-eligible backlog and drives the backward-walk stop condition), this is
     the true per-(platform, TC) distribution of everything the user has
     imported -- no `created_at` anchor filter. It backs the settings response's
@@ -448,7 +441,7 @@ async def count_imported_by_platform_and_tc(
     two functions are intentionally distinct: the display wants "what do I
     have", the import walk wants "what still counts against the cap".
 
-    NULL-bucket games (untimed chess.com bot/coach games with no clock, D-15)
+    NULL-bucket games (untimed chess.com bot/coach games with no clock)
     are reported under the pseudo-bucket key "untimed" so the chips sum to the
     header's raw total. "untimed" is a display-only key — it is NOT a value of
     the time_control_bucket enum and never enters the TC filter or cap budgets.
@@ -479,13 +472,12 @@ async def get_platform_game_ids_for_user(
 ) -> frozenset[str]:
     """Return every `platform_game_id` already stored for (user_id, platform).
 
-    Bug fix (CR-01, code-review 186): the backward-walk budget counter used to
-    increment for every TC-matching game *fetched*, even ones the forward pass
-    (or a prior sync) had already imported -- `bulk_insert_games`'s
+    The backward-walk budget counter must not increment for TC-matching games the
+    forward pass (or a prior sync) had already imported -- `bulk_insert_games`'s
     `ON CONFLICT DO NOTHING` silently no-ops those, but the fetch-time counter
-    had no way to know that. Loading the full existing-id set once per backward
-    pass (this query) lets the per-game counter (`_record_backward_game`) skip
-    true duplicates in real time, which the D-07 stop-condition semantics
+    has no way to know that. Loading the full existing-id set once per backward
+    pass (this query) lets the per-game counter (`_admit_backward_game`) skip
+    true duplicates in real time, which the stop-condition semantics
     require (the walk must react mid-fetch, not only after a batch flush).
     Served by the `uq_games_user_platform_game_id` unique index (user_id,
     platform, platform_game_id prefix), so this is a single indexed scan.
@@ -536,9 +528,9 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     # driver_connection is the asyncpg.Connection inside SQLAlchemy's async wrapper.
     # It is always set after get_raw_connection() when using the asyncpg dialect.
     raw_conn = raw_wrapper.driver_connection
-    # IN-03 fix: explicit runtime check (not `assert`) so the guard survives
-    # `python -O` / `PYTHONOPTIMIZE=1`, which strips asserts. Under -O the
-    # original `assert` would silently call `.copy_records_to_table` on None
+    # Explicit runtime check (not `assert`) so the guard survives
+    # `python -O` / `PYTHONOPTIMIZE=1`, which strips asserts. Under -O an
+    # `assert` would silently call `.copy_records_to_table` on None
     # and raise an unhelpful AttributeError. This branch should be unreachable
     # in practice (SQLAlchemy's asyncpg adapter always sets driver_connection
     # after get_raw_connection()), but if the adapter ever changes we get a

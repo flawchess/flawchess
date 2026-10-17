@@ -1,13 +1,11 @@
 /**
  * ProseSpan — content-agnostic hover-intent + click-to-play interactive move
- * span shell (Phase 157, extracted from `MaiaMoveQualityBar`'s private
- * `ProseMoveSpan`, quick 260705-m3z/260705-mth). The button/Popover/ref wiring
- * is identical to the original — only the popover body is now parameterized
- * via `children` so a second consumer (`FlawChessAgreementVerdict.tsx`, Phase
- * 157-02) can supply its own D-10 two-line popover content without
- * duplicating the hover-intent/click-to-play mechanics.
+ * span shell. The popover body is parameterized via `children`, so each
+ * consumer (`MaiaMoveQualityBar`, `FlawChessAgreementVerdict.tsx`) can supply
+ * its own popover content without duplicating the hover-intent/click-to-play
+ * mechanics.
  *
- * Interaction contract (unchanged from the original `ProseMoveSpan`):
+ * Interaction contract:
  * - Hover opens the popover after a short intent delay (`onOpenDelayed`);
  *   focus/tap opens it immediately (`onOpenNow`).
  * - A content-bridge (`onMouseEnter`/`onMouseLeave` on the popover body too)

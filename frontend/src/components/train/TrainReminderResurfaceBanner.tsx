@@ -1,20 +1,20 @@
 /**
- * TrainReminderResurfaceBanner — OFFER-05/D-16: the standalone re-surface
- * prompt that closes the iOS install→reminder two-session cliff. A user who
- * tapped the iOS install affordance (`TrainReminderButton`'s `ios-tabbed`
- * branch, Plan 04 Task 1) recorded `reminder_intent_at` server-side and left
+ * TrainReminderResurfaceBanner — the standalone re-surface prompt that
+ * closes the iOS install→reminder two-session cliff. A user who
+ * tapped the iOS install affordance (`useTrainReminderSlot`'s `ios-tabbed`
+ * branch) recorded `reminder_intent_at` server-side and left
  * the tab; on their next standalone launch, `App.tsx`'s `ProtectedLayout`
  * (via `useReminderResurfaceRedirect`) has already routed them to `/train`,
  * and this banner is the visible prompt that greets them there.
  *
  * Self-contained: computes its own mount decision via `useReminderResurface`
  * and renders nothing until every gating signal has resolved to the
- * qualifying combination — never a placeholder, never a skeleton (fail-safe
- * per CONTEXT.md D-01: an unresolved or unavailable iOS signal degrades to
- * today's behavior, not a broken or half-rendered state).
+ * qualifying combination — never a placeholder, never a skeleton (fail-safe:
+ * an unresolved or unavailable iOS signal degrades to rendering nothing, not
+ * a broken or half-rendered state).
  *
  * Reuses `ensureDeviceSubscribed` — the ONE call site for the browser
- * permission APIs (`lib/push.ts`) — and `TrainReminderButton`'s existing
+ * permission APIs (`lib/push.ts`) — and `useTrainReminderSlot`'s existing
  * `ERROR_COPY` string, so this app has one subscribe code path and one error
  * string for this exact failure, never two of either.
  *
@@ -26,7 +26,7 @@ import { useState, type ReactElement } from 'react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ERROR_COPY } from '@/components/train/TrainReminderButton';
+import { ERROR_COPY } from '@/components/train/useTrainReminderSlot';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { useReminderResurface } from '@/hooks/useReminderResurface';
 import { trackFeature } from '@/lib/analytics';
@@ -40,17 +40,16 @@ export function TrainReminderResurfaceBanner(): ReactElement | null {
   const capability = usePushCapability();
   const [status, setStatus] = useState<ResurfaceStatus>('idle');
 
-  // WR-01 (203-REVIEW.md): this used to gate on `shouldResurface` alone, so the
-  // CTA rendered while `usePushCapability`'s VAPID-key lookup — a real network
-  // round-trip — was still in flight. A user who tapped inside that window got
-  // the permanent-looking ERROR_COPY even though push was about to be
-  // available a moment later. Gate on the capability probe too, mirroring
-  // `reminderSlotState`'s `hidden` gate: structural absence until push is known
-  // to be usable, which is also what this module's own fail-safe contract
-  // (docstring above) already claimed to do.
+  // Gating on `shouldResurface` alone would render the CTA while
+  // `usePushCapability`'s VAPID-key lookup — a real network round-trip — is
+  // still in flight, and a user who tapped inside that window would get the
+  // permanent-looking ERROR_COPY even though push is about to be available.
+  // Gate on the capability probe too, mirroring `reminderSlotState`'s
+  // `hidden` gate: structural absence until push is known to be usable (the
+  // fail-safe contract in the docstring above).
   if (!shouldResurface || !capability.isResolved || !capability.available) return null;
 
-  // Phase 229 D-12: the dismiss flag is a per-device localStorage key
+  // The dismiss flag is a per-device localStorage key
   // (useReminderResurface), never a backend write, so the click is not DB-known.
   const handleDismiss = (): void => {
     dismiss();
@@ -62,12 +61,12 @@ export function TrainReminderResurfaceBanner(): ReactElement | null {
     if (vapidPublicKey === null) {
       // Unreachable in practice — the `available` gate above already implies a
       // non-empty key — but keeps TypeScript's narrowing honest below. Same
-      // idiom as TrainReminderButton's equivalent guard.
+      // idiom as useTrainReminderSlot's equivalent guard.
       setStatus('error');
       return;
     }
     setStatus('pending');
-    // CR-01 precedent (TrainReminderButton): `ensureDeviceSubscribed`
+    // Same backstop as useTrainReminderSlot: `ensureDeviceSubscribed`
     // catches everything internally, but a rejection escaping it would skip
     // every branch below and leave this button disabled forever.
     const result = await ensureDeviceSubscribed(vapidPublicKey).catch(
@@ -83,8 +82,8 @@ export function TrainReminderResurfaceBanner(): ReactElement | null {
       return;
     }
     if (result.status === 'dismissed') {
-      // Not an error, nothing written — the banner stays standing (PERM-02
-      // precedent), same as the score-screen button's own dismissed path.
+      // Not an error, nothing written — the banner stays standing, same as
+      // the score-screen button's own dismissed path.
       setStatus('idle');
       return;
     }

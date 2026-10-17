@@ -1,4 +1,4 @@
-"""Motif -> lichess-theme map for the tagger validation harness (D-10).
+"""Motif -> lichess-theme map for the tagger validation harness.
 
 Maps each FlawChess tactic motif string to the set of lichess puzzle theme names
 that correspond to it. Lichess themes are camelCase (e.g. 'discoveredAttack'),
@@ -6,7 +6,7 @@ multi-label (a single puzzle can carry many themes), and space-separated in the
 CSV 'Themes' column.
 
 A precision hit is credited when the detector's motif is in the puzzle's theme
-set via this map (D-10 multi-label matching): any intersection between our motif's
+set via this map (multi-label matching): any intersection between our motif's
 theme set and the puzzle's Themes counts as a true positive.
 
 Sources:
@@ -38,7 +38,7 @@ UNVALIDATED_MOTIFS: frozenset[str]
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Motif -> lichess theme map (D-10 multi-label)
+# Motif -> lichess theme map (multi-label)
 # ---------------------------------------------------------------------------
 
 MOTIF_TO_THEMES: dict[str, tuple[str, ...]] = {
@@ -73,15 +73,15 @@ MOTIF_TO_THEMES: dict[str, tuple[str, ...]] = {
     # capturingDefender confirmed in HuggingFace README.
     "capturing-defender": ("capturingDefender",),
     "sacrifice": ("sacrifice",),
-    # --- Move-type family (Phase 128.1-02, D-02) ---
-    # Detected + stored for lichess parity; chip-surfacing is Phase 129 (D-09).
+    # --- Move-type family ---
+    # Detected + stored for lichess parity.
     "en-passant": ("enPassant",),
     "promotion": ("promotion",),
     "under-promotion": ("underPromotion",),
 }
 
 # ---------------------------------------------------------------------------
-# Unvalidated motifs — no confirmed lichess theme equivalent (D-10)
+# Unvalidated motifs — no confirmed lichess theme equivalent
 # ---------------------------------------------------------------------------
 
 UNVALIDATED_MOTIFS: frozenset[str] = frozenset(

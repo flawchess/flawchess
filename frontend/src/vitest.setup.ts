@@ -18,8 +18,8 @@ const ASYNC_UTIL_TIMEOUT_MS = 5000;
 configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 
 // jsdom has no ResizeObserver, and the Radix Slider measures its thumb with one
-// on mount. Quick 261002-8xb put a Slider on the Train schedule card, which
-// broke every test that mounts that card (TrainStartScreen, Train page) with
+// on mount. The Slider on the Train schedule card would otherwise break every
+// test that mounts that card (TrainStartScreen, Train page) with
 // "ResizeObserver is not defined". A guarded no-op stub here covers them all;
 // files that install their own stub still win, since they assign afterwards.
 if (typeof globalThis.ResizeObserver !== 'function') {

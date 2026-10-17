@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * ortRuntimeSource.ts unit tests (Phase 213-09, G-213-35 second half).
+ * ortRuntimeSource.ts unit tests.
  *
  * Covers the adapter-driven backend selection (every malformed/absent shape
- * falls safe to wasm), the single-fetch memoisation, the CR-02 synchronous
+ * falls safe to wasm), the single-fetch memoisation, the synchronous
  * pending registration, streamed progress reporting under the `ort-runtime`
  * asset id with the build-matching fallback byte count, failure degradation
  * to a null buffer, the standalone `fetchWasmOnlyOrtRuntime()` respawn path,
@@ -136,7 +136,7 @@ function stubGpuThrowingFeatureCheck(): void {
   });
 }
 
-// ─── In-memory CacheStorage double (Phase 213-12, D-20) ────────────────────
+// ─── In-memory CacheStorage double ────────────────────
 //
 // Mirrors engineAssetCache.test.ts's own double: stores RAW BYTES, not
 // Response objects — a real Cache API's match() constructs a FRESH Response
@@ -221,7 +221,7 @@ describe('ensureOrtRuntime — backend selection falls safe to wasm', () => {
     expect(fetchMock).toHaveBeenCalledWith(ORT_RUNTIME_ASYNCIFY_PATH);
   });
 
-  it('probes the adapter ORT itself will use — requestAdapter({ powerPreference: "high-performance" }) (SEED-158)', async () => {
+  it('probes the adapter ORT itself will use — requestAdapter({ powerPreference: "high-performance" })', async () => {
     // Bug fix: an option-less requestAdapter() can return a DIFFERENT adapter
     // than onnxruntime-web's native WebGPU EP (which always asks for
     // high-performance) — on a multi-GPU box the probe then said "webgpu" for
@@ -341,9 +341,9 @@ describe('ensureOrtRuntime — single-fetch memoisation', () => {
   });
 });
 
-// ─── CR-02 ──────────────────────────────────────────────────────────────────
+// ─── Synchronous pending registration ───────────────────────────────────────
 
-describe('ensureOrtRuntime — CR-02 synchronous pending registration', () => {
+describe('ensureOrtRuntime — synchronous pending registration', () => {
   it('registers ort-runtime as pending synchronously, before the adapter probe resolves', () => {
     stubGpuWithFeature(false);
     const { reader } = createControlledReader([new Uint8Array([1, 2, 3])]); // never released
@@ -353,8 +353,8 @@ describe('ensureOrtRuntime — CR-02 synchronous pending registration', () => {
 
     // Synchronously right after the call returns — no await, no microtask flush.
     // The exact `total` figure the store's own placeholder uses is owned by
-    // `engineAssetProgress.ts`'s `ENGINE_ASSET_FALLBACK_BYTES` table (Task 3
-    // registers 'ort-runtime' there) — this test only proves the ENTRY exists
+    // `engineAssetProgress.ts`'s `ENGINE_ASSET_FALLBACK_BYTES` table, where
+    // 'ort-runtime' is registered — this test only proves the ENTRY exists
     // synchronously, before the adapter probe (itself async) can resolve.
     const snapshot = getEngineAssetsSnapshot();
     expect(snapshot.assets['ort-runtime']).toMatchObject({ loaded: 0, done: false });
@@ -420,7 +420,7 @@ describe('ensureOrtRuntime — streamed progress reporting', () => {
 
 // ─── Failure degradation ────────────────────────────────────────────────────
 
-describe('ensureOrtRuntime — failure degradation (T-213-09-02)', () => {
+describe('ensureOrtRuntime — failure degradation', () => {
   it('a rejected fetch resolves a null buffer, reports to Sentry once, and never rejects', async () => {
     stubGpuWithFeature(false);
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
@@ -460,7 +460,7 @@ describe('ensureOrtRuntime — failure degradation (T-213-09-02)', () => {
   });
 });
 
-// ─── G-213-36: retain-and-copy across a second call ────────────────────────
+// ─── Retain-and-copy across a second call ────────────────────────
 //
 // The actual regression: `runtimePromise` is memoised for the whole page
 // session, so the ORDINARY /analysis -> /bots navigation calls
@@ -470,7 +470,7 @@ describe('ensureOrtRuntime — failure degradation (T-213-09-02)', () => {
 // that received a malformed init message and simply never came ready. These
 // tests assert the delivered buffer is actually usable.
 
-describe('ensureOrtRuntime — G-213-36 retain-and-copy (second call after the first buffer is detached)', () => {
+describe('ensureOrtRuntime — retain-and-copy (second call after the first buffer is detached)', () => {
   it('two sequential calls both yield non-detached buffers of the right length, from exactly ONE fetch', async () => {
     stubGpuWithFeature(false);
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
@@ -601,13 +601,13 @@ describe('fetchWasmOnlyOrtRuntime — the webgpu->wasm respawn path', () => {
   });
 });
 
-// ─── ensureOrtRuntime — cache provenance (Phase 213-12, D-20) ──────────────
+// ─── ensureOrtRuntime — cache provenance ──────────────
 //
 // The pair that distinguishes a real cache read from a retained in-memory
 // buffer: populated -> zero fetches; cleared -> one additional fetch. Only
 // asserting one direction cannot tell the two apart.
 
-describe('ensureOrtRuntime — cache provenance (Phase 213-12, D-20)', () => {
+describe('ensureOrtRuntime — cache provenance', () => {
   it('a populated cache: a second call fetches ZERO times', async () => {
     stubGpuWithFeature(false);
     const bytes = new Uint8Array([1, 2, 3]);
@@ -648,7 +648,7 @@ describe('ensureOrtRuntime — cache provenance (Phase 213-12, D-20)', () => {
 // literal `true` and re-running this file: the "an adapter NOT reporting
 // shader-f16 selects wasm" test above failed (asserted 'webgpu' instead of
 // 'wasm', requested the asyncify URL). Reverted immediately after
-// confirming the failure — see 213-09-SUMMARY.md for the recorded revert.
+// confirming the failure.
 describe('ensureOrtRuntime — f16 predicate is load-bearing (see mutation proof note above)', () => {
   it('a non-f16 adapter never requests the asyncify URL', async () => {
     stubGpuWithFeature(false);

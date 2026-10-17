@@ -1,6 +1,4 @@
 /**
- * trainBubbleState.test.ts — Phase 222 Plan 01 Task 2 (D-07).
- *
  * Asserts the seven-way precedence chain resolveBubbleState implements:
  * verdict > grading > submitting > move > intro > drop-nudge > prompt. Pure-module test
  * template (mirrors trainScore.test.ts).
@@ -40,8 +38,8 @@ describe('resolveBubbleState', () => {
     expect(resolveBubbleState({ ...BASE, isGrading: true })).toEqual({ kind: 'grading', recheck: false });
   });
 
-  // Phase 235 (D-12): the same grading state carries the re-check flag.
-  it('grading state carries recheck: true while the disagreement re-check runs (D-12)', () => {
+  // The same grading state carries the re-check flag.
+  it('grading state carries recheck: true while the disagreement re-check runs', () => {
     expect(resolveBubbleState({ ...BASE, isGrading: true, isRechecking: true })).toEqual({
       kind: 'grading',
       recheck: true,
@@ -54,8 +52,8 @@ describe('resolveBubbleState', () => {
     ).toEqual({ kind: 'verdict' });
   });
 
-  // Phase 236 (D-16): the instant solve POST round trip.
-  it('submitting state while the instant solve POST is in flight (D-16)', () => {
+  // The instant solve POST round trip.
+  it('submitting state while the instant solve POST is in flight', () => {
     expect(resolveBubbleState({ ...BASE, guessMade: true, isSubmitting: true })).toEqual({
       kind: 'submitting',
     });

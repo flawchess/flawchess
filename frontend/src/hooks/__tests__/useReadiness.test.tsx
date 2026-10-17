@@ -22,7 +22,7 @@ import { useReadiness } from '../useReadiness';
 // (READINESS_BACKOFF_LADDER_MS / READINESS_BACKOFF_BUDGET_MS, not exported —
 // the hook keeps its scheduling constants module-private). The interval-
 // sequence assertions below are what actually verifies these values are
-// wired into the emitted schedule, not this mirrored declaration (D-05).
+// wired into the emitted schedule, not this mirrored declaration.
 const BACKOFF_LADDER_MS = [15_000, 60_000, 300_000] as const;
 const BACKOFF_BUDGET_MS = 30 * 60_000;
 
@@ -157,8 +157,8 @@ describe('useReadiness', () => {
   });
 
   it('emits the backoff interval sequence once tier1 is true', async () => {
-    // This is the SURGE-01 artifact — it must fail if the backoff never
-    // engages (D-05, D-07). MUTATION PROOF: see SUMMARY.md.
+    // This is the backoff-sequence artifact — it must fail if the backoff never
+    // engages.
     const mock = setupTimestampRecordingMock({
       tier1: false,
       tier2: false,

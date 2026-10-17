@@ -52,7 +52,7 @@ describe('Umami globals', () => {
   });
 });
 
-describe('umamiBeforeSend after an automatic reload (Quick 261004-rmc)', () => {
+describe('umamiBeforeSend after an automatic reload', () => {
   const PAGEVIEW = { website: 'w', url: '/train' };
   const originalLocation = window.location;
 
@@ -254,7 +254,7 @@ describe('feature-event registry', () => {
     window.history.pushState({}, '', '/');
   });
 
-  // Events that predate the registry: D-05 forbids renaming or reusing them.
+  // Events that predate the registry: renaming or reusing them is forbidden.
   const LEGACY_EVENT_NAMES = [
     'signup-cta',
     'import-cta',
@@ -372,7 +372,7 @@ describe('feature-event registry', () => {
   });
 
   it.each(['leaderboard-points', 'leaderboard-accuracy'] as const)(
-    'trackFeature sends the %s tab-switch target with page train (Phase 230)',
+    'trackFeature sends the %s tab-switch target with page train',
     (target) => {
       window.history.pushState({}, '', '/train');
       analytics.trackFeature('tab-switch', { target });

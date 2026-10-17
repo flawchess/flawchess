@@ -1,17 +1,17 @@
 /**
- * selectBotMove.ts unit tests (Phase 166 BOT-01/BOT-02/BOT-03/BOT-04).
+ * selectBotMove.ts unit tests.
  *
  * Covers, all via stubbed `deps.policy`/`deps.search`/`deps.grade` and a
- * seeded `mulberry32` rng (D-08's "unit tests can pass a stub returning
- * canned RankedLine[]"):
- * - blend=0: exactly one deps.policy call, zero deps.search calls (BOT-02).
+ * seeded `mulberry32` rng (unit tests can pass a stub returning
+ * canned RankedLine[]):
+ * - blend=0: exactly one deps.policy call, zero deps.search calls.
  * - blend=1: argmax over practicalScore, deterministic regardless of rng.
  * - blend=0.5: one deps.search call with a real no-op onSnapshot function
- *   reference (Pitfall 5), tau=0.05, deterministic under a fixed seed.
- * - budget.elo is always symmetric {w: elo, b: elo} (BOT-03), regardless of
- *   any other input; no policyTemperature set on the budget (D-02).
+ *   reference, tau=0.05, deterministic under a fixed seed.
+ * - budget.elo is always symmetric {w: elo, b: elo}, regardless of
+ *   any other input; no policyTemperature set on the budget.
  * - budget.maxNodes/maxPlies/concurrency pass through unchanged.
- * - degenerate policy/rankedLines -> fallbackMove yields a legal move (BOT-04).
+ * - degenerate policy/rankedLines -> fallbackMove yields a legal move.
  * - side is derived from the FEN and passed to deps.policy on blend=0.
  * - signal defaults to a never-aborting AbortSignal; a provided signal is
  *   forwarded to deps.search on blend>0 paths.
@@ -44,7 +44,7 @@ function makeLine(
   };
 }
 
-// ─── Style fixtures (Phase 182, Plan 06) ────────────────────────────────────
+// ─── Style fixtures ────────────────────────────────────
 
 const NEUTRAL_FEATURE_MULTIPLIERS: FeatureMultipliers = {
   isCheck: 1,
@@ -110,7 +110,7 @@ function baseDeps(overrides: Partial<BotMoveDeps> = {}): BotMoveDeps {
   };
 }
 
-// ─── blend=0 — single Maia inference, no search (BOT-02) ───────────────────
+// ─── blend=0 — single Maia inference, no search ───────────────────
 
 describe('selectBotMove — blend=0 (full-human)', () => {
   it('calls deps.policy exactly once and deps.search zero times', async () => {
@@ -149,7 +149,7 @@ describe('selectBotMove — blend=0 (full-human)', () => {
     expect(seenSides).toEqual(['w', 'b']);
   });
 
-  it('falls back to a legal move when the policy is empty/degenerate (BOT-04)', async () => {
+  it('falls back to a legal move when the policy is empty/degenerate', async () => {
     const policy = vi.fn(async (): Promise<Record<string, number>> => ({}));
     const settings: BotSettings = { elo: 1500, blend: 0, budget: baseBudget() };
     const deps = baseDeps({ policy, rng: mulberry32(1) });
@@ -159,7 +159,7 @@ describe('selectBotMove — blend=0 (full-human)', () => {
   });
 });
 
-// ─── blend=1 — deterministic argmax over practicalScore (BOT-01) ───────────
+// ─── blend=1 — deterministic argmax over practicalScore ───────────
 
 describe('selectBotMove — blend=1 (full-stockfish)', () => {
   it('calls deps.search once and returns the argmax-practicalScore move, regardless of rng', async () => {
@@ -177,7 +177,7 @@ describe('selectBotMove — blend=1 (full-stockfish)', () => {
     }
   });
 
-  it('falls back to a legal move when rankedLines is empty (BOT-04)', async () => {
+  it('falls back to a legal move when rankedLines is empty', async () => {
     const { search } = stubSearch([]);
     const settings: BotSettings = { elo: 1800, blend: 1, budget: baseBudget() };
     const deps = baseDeps({ search, rng: mulberry32(1) });
@@ -192,7 +192,7 @@ describe('selectBotMove — blend=1 (full-stockfish)', () => {
 describe('selectBotMove — blend=0.5 (mixed)', () => {
   it('calls deps.search once with a real onSnapshot function reference and a tau=0.05 softmax', async () => {
     // The previous version of this test recomputed the tau formula inside
-    // the test (tautological, WR-05) — tau is instead observed through the
+    // the test (tautological) — tau is instead observed through the
     // sampling distribution: with scores {a1a2: 0.3, b1b2: 0.9}, a1a2's
     // softmax mass is exp(-0.6/tau)/(1 + exp(-0.6/tau)): ~6.1e-6 at the
     // correct tau=0.05 but ~2.5e-3 at tau=0.1. The constant draws below
@@ -228,7 +228,7 @@ describe('selectBotMove — blend=0.5 (mixed)', () => {
   });
 
   it('short-circuits to argmax when tau <= TAU_EPSILON (blend just below 1)', async () => {
-    // IN-02: blend = 1 - 1e-9 gives tau = TAU_MAX * 1e-9 = 1e-10, at or
+    // blend = 1 - 1e-9 gives tau = TAU_MAX * 1e-9 = 1e-10, at or
     // below TAU_EPSILON (1e-9) — the orchestrator must take the argmax
     // short-circuit (previously the only untested branch), returning the
     // max-practicalScore move regardless of rng, mirroring the blend=1 test.
@@ -256,7 +256,7 @@ describe('selectBotMove — blend=0.5 (mixed)', () => {
   });
 });
 
-// ─── blend domain clamping (IN-03) ──────────────────────────────────────────
+// ─── blend domain clamping ──────────────────────────────────────────
 
 describe('selectBotMove — blend clamping', () => {
   it('clamps a NaN blend to 1 (deterministic argmax) instead of a NaN-tau softmax', async () => {
@@ -278,9 +278,9 @@ describe('selectBotMove — blend clamping', () => {
   });
 });
 
-// ─── Symmetric ELO (BOT-03) ─────────────────────────────────────────────────
+// ─── Symmetric ELO ─────────────────────────────────────────────────
 
-describe('selectBotMove — symmetric ELO (BOT-03)', () => {
+describe('selectBotMove — symmetric ELO', () => {
   it('builds budget.elo = {w: elo, b: elo} regardless of other input, and omits policyTemperature', async () => {
     const lines = [makeLine('a1a2', 0.5)];
     const settings: BotSettings = { elo: 1732, blend: 0.7, budget: baseBudget() };
@@ -297,8 +297,8 @@ describe('selectBotMove — symmetric ELO (BOT-03)', () => {
     expect(capturedBudget?.policyTemperature).toBeUndefined();
   });
 
-  it('rejects policyTemperature on BotSettings.budget at the type level (D-02/WR-04)', () => {
-    // The D-02 invariant is structural: Omit<SearchBudget, 'elo' |
+  it('rejects policyTemperature on BotSettings.budget at the type level', () => {
+    // The invariant is structural: Omit<SearchBudget, 'elo' |
     // 'policyTemperature'> makes threading the analysis board's temperature
     // into the bot budget a compile error at any production call site
     // (enforced by tsc -b on src). The @ts-expect-error below documents the
@@ -309,7 +309,7 @@ describe('selectBotMove — symmetric ELO (BOT-03)', () => {
       blend: 0.5,
       budget: {
         ...baseBudget(),
-        // @ts-expect-error — policyTemperature is excluded by type (D-02/WR-04)
+        // @ts-expect-error — policyTemperature is excluded by type
         policyTemperature: 1.5,
       },
     };
@@ -317,7 +317,7 @@ describe('selectBotMove — symmetric ELO (BOT-03)', () => {
   });
 });
 
-// ─── Terminal position — genuine throw (BOT-04/D-14) ────────────────────────
+// ─── Terminal position — genuine throw ────────────────────────
 
 describe('selectBotMove — terminal position', () => {
   it('throws when the position is checkmate and the fallback path is reached', async () => {
@@ -356,9 +356,9 @@ describe('selectBotMove — signal', () => {
   });
 });
 
-// ─── Style hooks (Phase 182, STYLE-03/04/05) ────────────────────────────────
+// ─── Style hooks ────────────────────────────────
 
-describe('selectBotMove — style undefined regression (D-03 baseline invariant)', () => {
+describe('selectBotMove — style undefined regression (baseline invariant)', () => {
   it('blend<=0: an omitted style samples the raw policy exactly as before the field existed', async () => {
     // WHITE_FEN has no captures/checks/exchanges/retreats among its 6 legal
     // moves, but e2e3/e2e4 ARE pawn advances — a style boosting
@@ -394,7 +394,7 @@ describe('selectBotMove — style undefined regression (D-03 baseline invariant)
   });
 });
 
-describe('selectBotMove — styled blend<=0 (STYLE-03 prior reweighting)', () => {
+describe('selectBotMove — styled blend<=0 (prior reweighting)', () => {
   it('a style favoring isPawnAdvance shifts the sampled move toward a pawn push vs the undefined-style baseline', async () => {
     const rawPolicy = { e1d1: 1, e1d2: 1, e1f1: 1, e1f2: 1, e2e3: 1, e2e4: 1 };
     const policy = vi.fn(async (): Promise<Record<string, number>> => rawPolicy);
@@ -413,7 +413,7 @@ describe('selectBotMove — styled blend<=0 (STYLE-03 prior reweighting)', () =>
   });
 });
 
-describe('selectBotMove — styled search branch (STYLE-04 score shaping)', () => {
+describe('selectBotMove — styled search branch (score shaping)', () => {
   it('a style score bonus on one line changes the argmax pick vs the undefined-style baseline', async () => {
     const lines = [makeLine('a1a2', 0.5, 0.5), makeLine('b1b2', 0.52, 0)];
     const { search, calls } = stubSearch(lines);
@@ -430,29 +430,29 @@ describe('selectBotMove — styled search branch (STYLE-04 score shaping)', () =
     // above) — the style must pick a DIFFERENT, higher-spread line.
     expect(move).toBe('a1a2');
     expect(move).not.toBe('b1b2');
-    // BOT-03: budget.elo stays symmetric regardless of style.
+    // budget.elo stays symmetric regardless of style.
     expect(calls[0]?.budget.elo).toEqual({ w: 1800, b: 1800 });
   });
 });
 
-// ─── D-10d: order-invariant under any rankedLines permutation (Phase 225) ──
+// ─── Order-invariant under any rankedLines permutation ──
 
-describe('selectBotMove — D-10d: order-invariant under any rankedLines permutation (item 3 proof)', () => {
-  // Phase 225 item 3 (the V_fallback findability pull) changes ONLY the
+describe('selectBotMove — order-invariant under any rankedLines permutation', () => {
+  // The V_fallback findability pull changes ONLY the
   // SORT ORDER buildRankedLines produces — never practicalScore, never
   // which moves are present. Bot play reads practicalScore through
-  // argmaxLine (scans every line, D-06) or botSampling.ts's UCI-sorted
-  // weightedPick (D-12) — neither trusts array order. Proving
+  // argmaxLine (scans every line) or botSampling.ts's UCI-sorted
+  // weightedPick — neither trusts array order. Proving
   // selectBotMove picks the IDENTICAL move for every permutation of the
-  // same lines is exactly the proof that item 3 cannot change bot moves.
-  // This permutation proof stands in for D-10d's literal "old vs new rankScore
+  // same lines is exactly the proof that the findability pull cannot change bot moves.
+  // This permutation proof stands in for a literal "old vs new rankScore
   // on the same snapshot" comparison: old and new rankScore only produce two
   // different orders of the same lines, so invariance under every order is the
   // more general claim and covers that comparison as a special case.
   const IDENTITY = [makeLine('e2e3', 0.3), makeLine('e2e4', 0.9), makeLine('e1d2', 0.6)];
   const REVERSED = [...IDENTITY].reverse();
   const ROTATED = [IDENTITY[2]!, IDENTITY[0]!, IDENTITY[1]!];
-  // "findability-like": lowest practicalScore first — the shape item 3's
+  // "findability-like": lowest practicalScore first — the shape the
   // sort can actually produce (a hard-to-find high-V move no longer always
   // sorts first; a low-V move can precede a high-V one).
   const FINDABILITY_LIKE = [...IDENTITY].sort((a, b) => a.practicalScore - b.practicalScore);

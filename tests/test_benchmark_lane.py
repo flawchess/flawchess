@@ -1,4 +1,4 @@
-"""Phase 212 BENCHLANE-01/05/06: scripts/benchmark_lane.py
+"""scripts/benchmark_lane.py
 `select`/`snapshot`/`status`/`record` subcommands.
 
 Mock-session unit tests mirroring tests/test_benchmark_ingest.py::
@@ -23,7 +23,7 @@ class _CursorInvalidatedError(RuntimeError):
 
     A real server-side cursor dies the moment its own session commits --
     "cursor cannot be created outside of a transaction". _FakeStreamResult
-    reproduces that so the mock tests can catch the 212-09 bug, where the
+    reproduces that so the mock tests can catch the bug where the
     batched commit ran on the same session that owned the stream.
     """
 
@@ -64,7 +64,7 @@ def _make_fake_engine_and_stream_session(
     stream_rows: list[tuple[int, int, int | None, int | None]],
 ) -> tuple[MagicMock, MagicMock, list["benchmark_lane.BenchmarkLichessEvalSnapshot"], MagicMock]:
     """Build a fake engine + session pair for snapshot_lichess_evals's
-    two-session shape (212-09): a read session that owns the streaming
+    two-session shape: a read session that owns the streaming
     cursor, and a separate write session that takes the adds and the batched
     commits. ``async_sessionmaker`` is called once per session, so the fake
     maker hands out a fresh context manager on each call -- read first,
@@ -322,7 +322,7 @@ async def test_snapshot_captures_eval_mate_rows() -> None:
 
 
 async def test_snapshot_batched_commit_does_not_invalidate_the_stream() -> None:
-    """Regression, 212-09: crossing SNAPSHOT_COMMIT_BATCH_SIZE mid-stream must
+    """Regression: crossing SNAPSHOT_COMMIT_BATCH_SIZE mid-stream must
     not kill the server-side cursor.
 
     The batched commit has to land on the write session, never on the session

@@ -30,7 +30,7 @@ export function useImportTrigger() {
   });
 }
 
-/** Poll a single import job. Stops when status is 'done' or 'error'. */
+/** Poll a single import job. Stops when status is 'completed' or 'failed'. */
 export function useImportPolling(jobId: string | null) {
   return useQuery<ImportStatusResponse, Error>({
     queryKey: ['import', jobId],

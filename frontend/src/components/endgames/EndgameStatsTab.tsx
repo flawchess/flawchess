@@ -230,8 +230,8 @@ function EndgameConceptsAccordion() {
 // Renders a per-section insight (headline + 0-2 bullets) at the top of each H2
 // group, under the section question, when the backend returned a matching
 // section_id. Returns null when no matching data exists, e.g. pre-generate state,
-// or any section the LLM chose to omit (Phase 65 min=1/max=4). 238 UAT: the
-// headline is Shelly's italic quote and the bullets start collapsed.
+// or any section the LLM chose to omit. The headline is Shelly's italic quote and
+// the bullets start collapsed.
 function SectionInsightSlot({
   sectionId,
   data,
@@ -302,15 +302,15 @@ interface EndgameStatsTabProps {
 }
 
 /**
- * The Endgame Stats tab (Phase 238): the Shelly block, the concepts accordion and
- * the five sections, all driven by the ranked-sample payload and the synced time
+ * The Endgame Stats tab: the Shelly block, the concepts accordion and
+ * the four sections, all driven by the ranked-sample payload and the synced time
  * control switch. The tab takes no filter state: filters only apply on the Games tab.
  */
 export function EndgameStatsTab({ tier2, onCategorySelect }: EndgameStatsTabProps) {
   const ranked = useEndgameRankedStats({ enabled: tier2 });
   const tcs = ranked.data?.tcs ?? [];
   // Auto-generate only once the ranked sample has games to narrate.
-  const { generateState, matchingInsights, handleGenerateInsights, sectionBySection } =
+  const { generateState, insights, handleGenerateInsights, insightBySection } =
     useEndgameInsightsState({ autoGenerate: tcs.length > 0 });
 
   let body: ReactNode;
@@ -323,7 +323,7 @@ export function EndgameStatsTab({ tier2, onCategorySelect }: EndgameStatsTabProp
   } else if (ranked.isError) {
     body = <LoadError variant="centered" resource="endgame stats" />;
   } else if (tcs.length === 0) {
-    // D-10: no qualifying game in any TC. Name what counts and point to the Games tab.
+    // No qualifying game in any TC. Name what counts and point to the Games tab.
     body = (
       <EmptyState
         layout="page"
@@ -343,23 +343,23 @@ export function EndgameStatsTab({ tier2, onCategorySelect }: EndgameStatsTabProp
     body = (
       <>
         <EndgameConceptsAccordion />
-        {/* One TC switch for every section (D-00h), pinned while the sections scroll. */}
+        {/* One TC switch for every section, pinned while the sections scroll. */}
         <div>
           <StickyTcBar testId="endgame-stats-tc-bar">
             <EndgameStatsTcSwitch tcs={tcs} />
           </StickyTcBar>
           <div className="flex flex-col gap-4">
             <OverallSection tcs={tcs}>
-              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
+              <SectionInsightSlot sectionId="overall" data={insightBySection.overall} />
             </OverallSection>
             <MetricsSection tcs={tcs}>
-              <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
+              <SectionInsightSlot sectionId="metrics_elo" data={insightBySection.metrics_elo} />
             </MetricsSection>
             <TimePressureSection tcs={tcs}>
-              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
+              <SectionInsightSlot sectionId="time_pressure" data={insightBySection.time_pressure} />
             </TimePressureSection>
             <TypeTable tcs={tcs} onCategorySelect={onCategorySelect}>
-              <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
+              <SectionInsightSlot sectionId="type_breakdown" data={insightBySection.type_breakdown} />
             </TypeTable>
           </div>
         </div>
@@ -370,8 +370,8 @@ export function EndgameStatsTab({ tier2, onCategorySelect }: EndgameStatsTabProp
   return (
     <div className="flex flex-col gap-4" data-testid="endgame-stats-tab">
       <EndgameInsightsBlock
-        rendered={matchingInsights}
-        mutation={generateState}
+        insights={insights}
+        generateState={generateState}
         onGenerate={handleGenerateInsights}
       />
       {body}

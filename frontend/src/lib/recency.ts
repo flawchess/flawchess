@@ -1,5 +1,5 @@
 /**
- * Preset-to-date-range conversion utilities for the recency filter (Phase 92).
+ * Preset-to-date-range conversion utilities for the recency filter.
  *
  * The `Recency` closed string union has been renamed `RecencyPreset` to emphasise
  * that it is UI-only — the API wire shape uses `from_date`/`to_date` strings
@@ -11,7 +11,7 @@
  * queryKey would change on every render (millisecond precision), triggering
  * continuous refetches. Memoising on `(preset, today-as-YYYY-MM-DD-local)`
  * keeps query keys stable within a calendar day and produces a new key only
- * at midnight (Phase 92 §Pitfall 1).
+ * at midnight.
  */
 
 import {
@@ -119,7 +119,7 @@ export function dateRangeToWireParams(
  * Resolve the active date range from a FilterState.
  *
  * - When `filters.recency === 'custom'`, returns `filters.customRange ?? {}`
- *   (the user has selected a custom calendar range — Plan 04 sets this).
+ *   (the user has selected a custom calendar range).
  * - Otherwise, delegates to `presetToDates(filters.recency)` which memoises
  *   on (preset, today-string) for TanStack Query key stability.
  */

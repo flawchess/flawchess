@@ -1,5 +1,5 @@
 /**
- * trainRecheck — pure rules for the Phase 235 disagreement re-check (SEED-192).
+ * trainRecheck — pure rules for the disagreement re-check.
  *
  * The phone grades a played move against the server key with two same-horizon
  * 1.5 s searches. When that reading says a SHARP off-key move is good (the key
@@ -7,7 +7,7 @@
  * inaccuracy (the short search may have under-read it), the solve screen looks
  * again for 3 s per search before posting. Everything here is pure and
  * takes camelCase parameters: the snake_case TrainPuzzle fields (the key, the
- * puzzle type, the runner-up) are read only in TrainSolveScreen.tsx (D-05).
+ * puzzle type, the runner-up) are read only in TrainSolveScreen.tsx.
  * No engine, no React, so it is cheap to test and the hook can share it.
  */
 
@@ -24,18 +24,17 @@ export interface ShouldRecheckInput {
   runnerUpUci: string | null;
   playedUci: string;
   tier: TrainMoveTier;
-  /** D-11 (Phase 236): the UCIs of `TrainPuzzle.server_graded_moves`. */
+  /** The UCIs of `TrainPuzzle.server_graded_moves`. */
   serverGradedUcis: readonly string[];
 }
 
 /**
- * D-10/D-19: re-check a keyed puzzle's off-key, off-runner-up move in two cases:
+ * Re-check a keyed puzzle's off-key, off-runner-up move in two cases:
  *
- * - a SHARP puzzle whose move the 1.5 s grade rated good (Phase 235): the
+ * - a SHARP puzzle whose move the 1.5 s grade rated good: the
  *   answer key may be the weaker side of the disagreement, and the confirmed
  *   claim can earn the guess point server-side;
- * - ANY keyed puzzle whose move the 1.5 s grade rated inaccuracy (quick task
- *   261008-ob1): the short lite search under-reads some sound moves by a few
+ * - ANY keyed puzzle whose move the 1.5 s grade rated inaccuracy: the short lite search under-reads some sound moves by a few
  *   tenths, which pushes a borderline drop (just under INACCURACY_DROP at
  *   depth) over the line and costs a move point. Prod repro: Nc6 read -0.8 at
  *   1.5 s, -1.2 at depth 12-24 against a -1.8 key. The noise is
@@ -44,9 +43,9 @@ export interface ShouldRecheckInput {
  * A wrong (mistake/blunder) reading is never re-checked: a 1.5 s search rarely
  * overstates a drop of 0.10 or more enough to flip the verdict, and it would
  * add the ~6 s wait to a large share of solves. The sharp runner-up is
- * excluded because the server grades it from its own blob (D-02), so a
+ * excluded because the server grades it from its own blob, so a
  * re-check would burn 6 s on a result the server overrides. The same holds for
- * every move in the puzzle's server-graded set (Phase 236 D-11): the server
+ * every move in the puzzle's server-graded set: the server
  * discards the phone tier for it, so the ~6 s re-check would buy nothing.
  */
 export function shouldRecheck(input: ShouldRecheckInput): boolean {
@@ -60,7 +59,7 @@ export function shouldRecheck(input: ShouldRecheckInput): boolean {
   return input.puzzleType === 'sharp' && input.tier === 'good';
 }
 
-/** D-13: the re-check is confirmed iff the 3 s reading rates the played move
+/** The re-check is confirmed iff the 3 s reading rates the played move
  * good. For an inaccuracy-triggered re-check that means the move was upgraded;
  * the two trigger populations stay separable by the 1.5 s pair in the record. */
 export function recheckOutcome(tier: TrainMoveTier): RecheckOutcome {

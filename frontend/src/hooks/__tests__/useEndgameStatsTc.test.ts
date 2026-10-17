@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 238 D-12 / D-13 / D-14: default TC, localStorage persistence and the
+ * Default TC, localStorage persistence and the
  * shared (synced) selection store. The store is module-level state, so each
  * test loads a fresh copy of the module.
  */
@@ -25,7 +25,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe('pickDefaultTc (D-12)', () => {
+describe('pickDefaultTc', () => {
   it('picks the TC with the most ranked games', () => {
     const tcs = [
       buildRankedTc('blitz', { ranked_games: 180 }),
@@ -64,13 +64,13 @@ describe('pickDefaultTc (D-12)', () => {
   });
 });
 
-describe('useEndgameStatsTc (D-13, D-14)', () => {
+describe('useEndgameStatsTc', () => {
   const tcs: RankedTcStats[] = [
     buildRankedTc('blitz', { ranked_games: 180 }),
     buildRankedTc('rapid', { ranked_games: 871 }),
   ];
 
-  it('defaults to the D-12 TC when nothing is stored', () => {
+  it('defaults to the most-played TC when nothing is stored', () => {
     const { result } = renderHook(() => store.useEndgameStatsTc(tcs));
     expect(result.current[0]).toBe('rapid');
   });
@@ -116,7 +116,7 @@ describe('useEndgameStatsTc (D-13, D-14)', () => {
     expect(localStorage.getItem(store.ENDGAME_STATS_TC_STORAGE_KEY)).toBe('blitz');
   });
 
-  it('keeps the un-chosen default when a refetch makes another TC the leader (FE-IN-05)', () => {
+  it('keeps the un-chosen default when a refetch makes another TC the leader', () => {
     const { result, rerender } = renderHook(({ list }) => store.useEndgameStatsTc(list), {
       initialProps: { list: tcs },
     });

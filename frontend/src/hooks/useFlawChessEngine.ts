@@ -1,17 +1,13 @@
 /**
  * useFlawChessEngine — React hook driving the frozen `SearchRunner`
- * (`mctsSearch`) against the real Phase 154 providers (`createWorkerPool()` +
+ * (`mctsSearch`) against the real providers (`createWorkerPool()` +
  * `createMaiaQueue()`), exposing a live-refining ranked-lines snapshot.
  *
- * This is the anytime-emit engine behind DISPLAY-01: `mctsSearch`'s
+ * This is the anytime-emit engine behind the live ranked-lines card: `mctsSearch`'s
  * `onSnapshot` fires after every completed backup; the hook throttles those
  * commits into React state at a fixed ~150ms cadence WITHOUT delaying the
  * first paint (a throttle, not a debounce — see the onSnapshot throttle
- * section below, D-09, 155-RESEARCH.md Pattern 3 / Pitfall 3).
- *
- * Architecture: 155-RESEARCH.md Patterns 1-4, Pitfall 1 (abort does not free
- * the Stockfish pool — must also call `pool.stopAll()`), Pitfall 3 (a
- * debounce is the wrong tool for the live-refine cadence).
+ * section below).
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
@@ -27,36 +23,34 @@ import type { EngineSnapshot, SearchBudget, EngineProviders, RankedLine } from '
 
 /**
  * Rapid-step FEN-navigation debounce window (ms) AND the onSnapshot throttle
- * window (ms) — the SAME value, reused for two DISTINCT mechanisms (D-09):
+ * window (ms) — the SAME value, reused for two DISTINCT mechanisms:
  * one debounces navigation input, the other throttles snapshot output. Do
  * not conflate the two; see the onSnapshot throttle below.
  */
 const RAPID_STEP_DEBOUNCE_MS = 150;
 
 /**
- * Node-expansion budget cap (D-09: one node = one expansion event). Tunable —
- * revisit after SC4 real-device mobile-memory UAT (155-RESEARCH.md D-02).
+ * Node-expansion budget cap (one node = one expansion event). Tunable —
+ * revisit after real-device mobile-memory testing.
  */
 const FLAWCHESS_ENGINE_MAX_NODES = 400;
 
 /**
- * Search-tree ply depth cap. Must stay in the locked [6,10] band (SEED-082) —
+ * Search-tree ply depth cap. Must stay in the locked [6,10] band —
  * do not change this without revisiting the milestone's ply-depth lock.
  */
 const FLAWCHESS_ENGINE_MAX_PLIES = 8;
 
-// ─── Bot-play budget (D-07/D-09) ────────────────────────────────────────────
+// ─── Bot-play budget ────────────────────────────────────────────
 //
-// ADDITIVE profile for Phase 169's clocked bot games (168.5-RESEARCH.md
-// Pattern 1) — sits ALONGSIDE the analysis-board constants above, never
-// replacing them: retuning FLAWCHESS_ENGINE_MAX_NODES in place would
-// silently degrade the live /analysis engine card, an unrelated regression
-// (Pitfall 1). The values themselves live in the dependency-light
+// ADDITIVE profile for clocked bot games — sits ALONGSIDE the analysis-board
+// constants above, never replacing them: retuning FLAWCHESS_ENGINE_MAX_NODES
+// in place would silently degrade the live /analysis engine card, an unrelated
+// regression. The values themselves live in the dependency-light
 // `@/lib/engine/botBudget` so the calibration harness imports the SAME
 // definition instead of hand-maintaining a mirror (a divergence would
-// calibrate a bot that does not ship, T-168.5-04-01); re-exported here for
-// app callers (Phase 169's `useBotGame`, which most plausibly calls
-// `selectBotMove` directly, harness-style, not this hook).
+// calibrate a bot that does not ship); re-exported here for
+// useFlawChessEngine.test.tsx only, app code imports `@/lib/engine/botBudget` directly.
 export {
   FLAWCHESS_BOT_MAX_NODES,
   FLAWCHESS_BOT_MAX_PLIES,
@@ -73,24 +67,23 @@ export interface UseFlawChessEngineOptions {
   /** When false, the WorkerPool/MaiaQueue are not created and no search runs. */
   enabled: boolean;
   /**
-   * Shared per-side ELO for the practical model (D-07/Open Question 2):
-   * `budget.elo = { w: elo, b: elo }`. True self/opponent asymmetry is
-   * deferred to Phase 157's game-review overlay.
+   * Shared per-side ELO for the practical model:
+   * `budget.elo = { w: elo, b: elo }`. Free analysis does not model a
+   * self/opponent asymmetry.
    */
   elo: number;
   /**
-   * Phase 159 D-06/D-07 (Thread A): reshapes the root-mover's-own-side Maia
+   * Reshapes the root-mover's-own-side Maia
    * policy before search. Omitted defaults to `DEFAULT_POLICY_TEMPERATURE`
    * (a true no-op) at THIS call site — kept visible here, not hidden inside
    * `mctsSearch`, so the search-orchestrator layer's no-op short-circuit
-   * (Pitfall 1/T-159-08) stays legible from the hook's own call site.
+   * stays legible from the hook's own call site.
    */
   policyTemperature?: number;
   /**
-   * Phase 196 (INJECT-03/INJECT-04): root-only UCI moves (never SANs)
+   * Root-only UCI moves (never SANs)
    * unioned with Maia's top-k at the root. Omitted or `undefined` produces a
-   * `SearchBudget.extraRootMoves` of `undefined` — byte-identical to
-   * pre-phase behaviour for every existing caller (e.g. `useBotGame`).
+   * `SearchBudget.extraRootMoves` of `undefined`, which leaves the search unchanged.
    * This field is in the search-trigger effect's dependency array below, so
    * an identity change aborts the in-flight search and starts a fresh one —
    * the CALLER owns referential stability (see `Analysis.tsx`'s
@@ -103,14 +96,14 @@ export interface UseFlawChessEngineOptions {
 export interface FlawChessEngineState {
   /** Top ranked root candidates, pre-sorted descending by practicalScore. */
   rankedLines: RankedLine[];
-  /** D-09: count of expansion events consumed by the current/last search. */
+  /** Count of expansion events consumed by the current/last search. */
   nodesEvaluated: number;
   /** True once maxNodes/maxPlies stopped the search (not an abort). */
   budgetExhausted: boolean;
   /** True while a search is in flight for the current position. */
   isSearching: boolean;
   /**
-   * Phase 213 D-01: true once BOTH engine providers' underlying workers have
+   * True once BOTH engine providers' underlying workers have
    * finished loading their assets and are ready to serve — not merely once
    * `createWorkerPool()`/`createMaiaQueue()` have been constructed. This
    * hook's `isReady` has exactly ONE consumer in the codebase
@@ -120,7 +113,7 @@ export interface FlawChessEngineState {
    */
   isReady: boolean;
   /**
-   * Code review WR-01 (196-REVIEW.md): the FEN `rankedLines` was most
+   * The FEN `rankedLines` was most
    * recently reset/committed for. Set in the SAME effect (and same render)
    * that clears `snapshot` to `INITIAL_SNAPSHOT` on every `fen` change, so it
    * lags `fen` by exactly the same one render `rankedLines` does — letting a
@@ -168,15 +161,15 @@ export function useFlawChessEngine({
   const [isReady, setIsReady] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [snapshot, setSnapshot] = useState<EngineSnapshot>(INITIAL_SNAPSHOT);
-  /** WR-01 (196-REVIEW.md): the FEN `snapshot.rankedLines` currently belongs to. */
+  /** The FEN `snapshot.rankedLines` currently belongs to. */
   const [currentFen, setCurrentFen] = useState<string | null>(null);
 
-  // ─── Provider lifecycle (Pattern 1) — created once per enabled-lifetime ────
+  // ─── Provider lifecycle — created once per enabled-lifetime ──────────────
   //
   // Mirrors useStockfishEngine's Worker-lifecycle effect gated on `enabled`:
   // the WorkerPool + MaiaQueue are created ONCE while the switch is ON and
-  // terminated on cleanup — never recreated per FEN (that would break Phase
-  // 154's lazy-spawn-once + FEN cache).
+  // terminated on cleanup — never recreated per FEN (that would break the
+  // lazy-spawn-once + FEN cache).
 
   useEffect(() => {
     if (!enabled) return;
@@ -185,9 +178,9 @@ export function useFlawChessEngine({
     poolRef.current = pool;
     queueRef.current = queue;
 
-    // Phase 213 D-01: isReady must reflect real asset readiness, not merely
+    // isReady must reflect real asset readiness, not merely
     // that the pool/queue objects were constructed. Await BOTH providers —
-    // unlike bot play (D-06's per-persona asymmetry, which does NOT apply on
+    // unlike bot play (whose per-persona asymmetry does NOT apply on
     // this surface), the FlawChess Engine card always runs mctsSearch over
     // BOTH providers.policy (Maia) AND providers.grade (Stockfish), so both
     // assets are genuinely required before the card can search.
@@ -256,11 +249,11 @@ export function useFlawChessEngine({
     };
   }, [enabled]); // re-run only if enabled toggles
 
-  // ─── Adaptive debounce on FEN navigation (Pattern 2) ───────────────────────
+  // ─── Adaptive debounce on FEN navigation ───────────────────────
 
   const [debouncedFen, setDebouncedFen] = useState<string | null>(null);
   useEffect(() => {
-    // Bug fix (quick 260731-s0z, FIX-5): abort the OLD search's controller
+    // Bug fix: abort the OLD search's controller
     // and cancel any pending trailing onSnapshot commit HERE, not only in
     // the debounced search-trigger effect below (up to RAPID_STEP_DEBOUNCE_MS
     // later on the rapid path) or the abort-on-disable cleanup. Without this,
@@ -268,9 +261,9 @@ export function useFlawChessEngine({
     // pendingTimerRef could still fire a trailing commit of the OLD
     // position's snapshot AFTER setSnapshot(INITIAL_SNAPSHOT) below had
     // already cleared it for the new position. Deliberately minimal: no
-    // `pool.stopAll()` call here — ABORT-01 already forwards this signal
-    // into providers.grade, and an extra stop would now also arm Task 2's
-    // (quick 260731-s0z FIX-4) stop-watchdogs; `lastCommitAtRef` is left
+    // `pool.stopAll()` call here — the abort signal already reaches
+    // providers.grade, and an extra stop would also arm the pool's
+    // stop-watchdogs; `lastCommitAtRef` is left
     // alone, owned by the search-trigger effect below, which already resets it.
     abortControllerRef.current?.abort();
     if (pendingTimerRef.current) {
@@ -282,7 +275,7 @@ export function useFlawChessEngine({
     // orphaned rankedLines from the prior ply while the new search spins up
     // (mirrors useStockfishEngine's identical FEN-effect clearing behavior).
     setSnapshot(INITIAL_SNAPSHOT);
-    // WR-01 (196-REVIEW.md): committed in the SAME effect run as the
+    // Committed in the SAME effect run as the
     // `snapshot` reset above, so `currentFen` lags `fen` by exactly the same
     // one render that `snapshot.rankedLines` does — see useStockfishEngine's
     // identical `currentFen` field for the full rationale.
@@ -304,13 +297,13 @@ export function useFlawChessEngine({
     return () => clearTimeout(timer);
   }, [fen]);
 
-  // ─── onSnapshot throttle (Pattern 3 — NOT a debounce, Pitfall 3) ───────────
+  // ─── onSnapshot throttle (NOT a debounce) ───────────────────────────────────
   //
   // Commit immediately if the last commit was more than RAPID_STEP_DEBOUNCE_MS
   // ago (this is what makes the FIRST snapshot of every search paint near-
   // instantly); otherwise schedule exactly one trailing commit of the LATEST
   // snapshot, clearing any previously scheduled one. A plain debounce here
-  // would delay first paint and violate DISPLAY-01's "appear immediately".
+  // would delay first paint, which must appear immediately.
   const handleSnapshot = useCallback((next: EngineSnapshot) => {
     const now = Date.now();
     const sinceLast = now - lastCommitAtRef.current;
@@ -330,16 +323,15 @@ export function useFlawChessEngine({
     }, RAPID_STEP_DEBOUNCE_MS - sinceLast);
   }, []); // stable — only accesses refs and a stable state setter
 
-  // ─── Debounced FEN → mctsSearch (Pattern 2, Pitfall 1 regression guard) ────
+  // ─── Debounced FEN → mctsSearch ─────────────────────────────────────────────
 
   useEffect(() => {
     const pool = poolRef.current;
     const queue = queueRef.current;
     if (!debouncedFen || !enabled || !pool || !queue) return;
 
-    // Pitfall 1 (STALE as of Phase 194 ABORT-01, updated 8XN-2):
     // dispatchExpansion forwards this signal into BOTH providers.grade()'s
-    // and (as of 8XN-2) providers.policy()'s signal parameter, so the
+    // and providers.policy()'s signal parameter, so the
     // abort() below already reaches WorkerPool.grade's dequeue/stop handling
     // AND maiaQueue.policy()'s own not-yet-dispatched-request drop on its
     // own. The explicit pool.stopAll() call is kept as redundant, idempotent
@@ -356,7 +348,7 @@ export function useFlawChessEngine({
 
     // Reset the onSnapshot throttle so the FIRST snapshot of this fresh
     // search always commits immediately, regardless of the previous search's
-    // throttle state (D-09 first-paint guarantee).
+    // throttle state (first-paint guarantee).
     if (pendingTimerRef.current) {
       clearTimeout(pendingTimerRef.current);
       pendingTimerRef.current = null;
@@ -367,26 +359,24 @@ export function useFlawChessEngine({
       maxNodes: FLAWCHESS_ENGINE_MAX_NODES,
       maxPlies: FLAWCHESS_ENGINE_MAX_PLIES,
       concurrency: computePoolSize(),
-      // D-07/Open Question 2: both colors share the single on-page ELO in
-      // free analysis; true self/opponent asymmetry is deferred to Phase 157.
+      // Both colors share the single on-page ELO in free analysis (no
+      // self/opponent asymmetry).
       elo: { w: elo, b: elo },
-      // Phase 196 (INJECT-03): threaded straight through from this hook's own
-      // options — stays `undefined` for every caller that does not pass it,
-      // so existing callers' (e.g. useBotGame) budgets are byte-identical.
+      // Threaded straight through from this hook's own options; stays
+      // `undefined` when the caller passes none, which leaves the search unchanged.
       extraRootMoves,
-      // Phase 159 D-06/D-07 (Thread A): defaulted at THIS call site (not
+      // Defaulted at THIS call site (not
       // inside mctsSearch) so the no-op short-circuit stays visible at the
-      // orchestrator layer (Pitfall 1/T-159-08).
+      // orchestrator layer.
       policyTemperature: policyTemperature ?? DEFAULT_POLICY_TEMPERATURE,
-      // Phase 227 D-13: the shared dispatch-mode constant, same one the bot
-      // budget carries ('continuous' since the owner's ship decision).
+      // The shared dispatch-mode constant, same one the bot budget carries.
       dispatchMode: FLAWCHESS_DISPATCH_MODE,
     };
-    // Phase 226 D-18 (arm A21S): the analysis board splits the root exactly
+    // The analysis board splits the root exactly
     // like the harness — gradeRoot fans the root's one grade call across
     // whatever slots are idle at call time; every other leaf, and every
-    // provider that lacked gradeRoot before this plan, keeps the unchanged
-    // grade() path (mctsSearch.ts's dispatchExpansion routing line, 226-10).
+    // provider without gradeRoot, uses the plain
+    // grade() path (mctsSearch.ts's dispatchExpansion routing).
     const providers: EngineProviders = {
       policy: queue.policy,
       grade: pool.grade,
@@ -408,15 +398,14 @@ export function useFlawChessEngine({
       .catch((err: unknown) => {
         // A rejection (worker crash, or grade()/policy() throwing after a
         // concurrent state change tore down the pool/queue) must not become
-        // an unhandled promise rejection nor leave isSearching stuck true —
-        // see WR-01, 155-REVIEW.md.
+        // an unhandled promise rejection nor leave isSearching stuck true.
         if (controller.signal.aborted) return;
         Sentry.captureException(err, { tags: { source: 'flawchess-engine' } });
         setIsSearching(false);
       });
   }, [debouncedFen, enabled, elo, policyTemperature, extraRootMoves, handleSnapshot]);
 
-  // ─── Abort-on-disable guard (WR-02, 155-REVIEW.md) ─────────────────────────
+  // ─── Abort-on-disable guard ─────────────────────────────────────────────────
   //
   // The search-trigger effect above only calls abortControllerRef.current
   // ?.abort() at the TOP of its guarded body, which is skipped whenever the

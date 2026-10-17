@@ -66,12 +66,10 @@ class LastActivityMiddleware:
         # (including body) is sent and DI dependency cleanup has completed.
         await self.app(scope, receive, send_wrapper)  # ty: ignore[invalid-argument-type] — send_wrapper matches the ASGI Send protocol
 
-        # D-07: skip last_activity writes for impersonated requests. Without
-        # this, an admin's long impersonation session would silently keep
-        # bumping the target user's activity counter — exposing impersonation
-        # via "active now" spikes and corrupting admin dashboards. CONTEXT.md
-        # D-08 ("last_activity isn't written yet") was stale; commit 2beabd3
-        # wired the writes, and phase 62 adds the impersonation skip here.
+        # Skip last_activity writes for impersonated requests. Without this, an
+        # admin's long impersonation session would silently keep bumping the
+        # target user's activity counter — exposing impersonation via "active now"
+        # spikes and corrupting admin dashboards.
         # Now safe to UPDATE the same User row — the route handler's
         # transaction has already committed and released its row lock.
         if status_code is None or status_code >= 400 or user_id is None or is_impersonation:
@@ -116,8 +114,8 @@ class LastActivityMiddleware:
             # NOTE: last_activity is the tier-3 idle-drain priority key — claim_eval_job
             # orders the backlog by users.last_activity DESC, so keeping it fresh here is
             # what nudges an active user's games to the front of the background eval queue.
-            # The tier-2 auto-enqueue that used to fire here was removed in Phase 118
-            # (tier-3 ordering already covers "active users first").
+            # Don't auto-enqueue evals from this middleware: the tier-3 ordering above
+            # already covers "active users first".
         except Exception:
             # Never let activity tracking break a request
             logger.debug("Failed to update last_activity for user %s", user_id, exc_info=True)
@@ -139,7 +137,7 @@ def _extract_user_id_and_impersonation(request: Request) -> tuple[int | None, bo
     """Decode JWT from Authorization header and return (user_id, is_impersonation).
 
     Returns (None, False) for missing/invalid tokens. The is_impersonation flag
-    lets the caller short-circuit D-07: neither the target's nor the admin's
+    lets the caller short-circuit: neither the target's nor the admin's
     last_activity is updated when the request carries an impersonation token.
     """
     auth_header = request.headers.get("authorization", "")

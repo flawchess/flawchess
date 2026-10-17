@@ -11,7 +11,7 @@ async function postSavePastedGame(
 }
 
 /**
- * Mutation for "Analyze full game" (Phase 208, PASTE-04). The endpoint
+ * Mutation for "Analyze full game". The endpoint
  * performs save + tier-1 enqueue in one call (no id-then-enqueue chain like
  * useTier1EnqueueForGame needs), so onSuccess reuses the same invalidation
  * list a tier-1 enqueue triggers.

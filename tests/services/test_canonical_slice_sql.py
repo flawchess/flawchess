@@ -1,20 +1,18 @@
-"""Tests for ``app.services.canonical_slice_sql`` — Phase 94.2 pooled shape.
+"""Tests for ``app.services.canonical_slice_sql`` — pooled shape.
 
-These tests assert the pooled-per-user contract (D-5 / D-6 / D-8 / D-1 in
-``.planning/phases/94.2-pooled-per-user-percentile-redesign/94.2-CONTEXT.md``).
-They replace the Phase 94.1 per-cell tests that asserted ``apply_floor``,
+These tests assert the pooled-per-user contract.
+They replace the earlier per-cell tests that asserted ``apply_floor``,
 ``elo_bucket`` projections, and ``g.time_control_bucket::text = su.tc_bucket``
 predicates.
 
-Preserved verbatim from 94.1:
+Preserved verbatim from the per-cell tests:
 
 * ``test_sparse_exclusion_sql_parametrises_columns`` — the helper is the
-  only remaining consumer post-refactor (per RESEARCH §State of the Art /
-  92.4 Pitfall 2).
+  only remaining consumer post-refactor.
 
 Substring matching is the assertion style throughout. Byte-identical SQL
 matching is enforced separately by
-``tests/scripts/test_gen_global_percentile_cdf_unchanged.py`` in Plan 02.
+``tests/scripts/test_gen_global_percentile_cdf_unchanged.py``.
 """
 
 from __future__ import annotations
@@ -48,11 +46,11 @@ from app.services.canonical_slice_sql import (
 from app.services.chesscom_to_lichess import composed_chesscom_to_lichess_grid
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 10 Task 1.0 — Baseline SQL for the non-blend regression guard.
+# Baseline SQL for the non-blend regression guard.
 #
 # Captured from ``per_user_cte_median_anchor('rapid', source='benchmark')``
-# at the pre-Task-1 git state (a9d5431a). This constant is the regression
-# pin for Plan 04's cohort-CDF benchmark-side call path. Test A1 asserts
+# at the git state before blend mode was added (a9d5431a). This constant is the regression
+# pin for the cohort-CDF benchmark-side call path. Test A1 asserts
 # byte-for-byte equality against this string — any drift in the non-blend
 # code path (whitespace, column reorder, helper extraction, comment change)
 # trips the test deterministically.
@@ -103,14 +101,14 @@ _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "singl
 
 
 # ---------------------------------------------------------------------------
-# Negative regression guards — repointed to per_user_cte_score_gap_tc (D-1/D-5).
+# Negative regression guards — repointed to per_user_cte_score_gap_tc.
 # ---------------------------------------------------------------------------
 
 
 class TestPooledShapeNegativeGuards:
-    """Negative-property regression guards for the live per-TC builders (D-1/D-5).
+    """Negative-property regression guards for the live per-TC builders.
 
-    The dead non-per-TC builders (removed in 260529-gl0) are gone. These
+    The non-per-TC builders no longer exist. These
     guards are repointed to ``per_user_cte_score_gap_tc`` as a
     representative live builder — it uses the same SQL-generation path, so a
     regression that injects elo_bucket/tc_bucket/sparse-cell into the per-TC
@@ -121,7 +119,7 @@ class TestPooledShapeNegativeGuards:
     def test_no_elo_bucket_in_live_tc_builder(
         self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """``elo_bucket`` must not appear in the live per-TC builder output (D-5)."""
+        """``elo_bucket`` must not appear in the live per-TC builder output."""
         sql = per_user_cte_score_gap_tc("bullet", source=source)
         assert "elo_bucket" not in sql, (
             f"elo_bucket leaked into per_user_cte_score_gap_tc/bullet/{source} (D-5)"
@@ -131,7 +129,7 @@ class TestPooledShapeNegativeGuards:
     def test_no_tc_bucket_leak_in_live_tc_builder(
         self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """``tc_bucket`` must not appear outside the time_control_bucket filter in the live builder (D-5)."""
+        """``tc_bucket`` must not appear outside the time_control_bucket filter in the live builder."""
         sql = per_user_cte_score_gap_tc("bullet", source=source)
         # The per-TC predicate uses time_control_bucket (OK); tc_bucket is the per-cell artifact.
         non_window_tc = sql.replace("time_control_bucket", "")
@@ -143,7 +141,7 @@ class TestPooledShapeNegativeGuards:
     def test_no_per_tc_join_predicate_from_old_schema(
         self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """``g.time_control_bucket::text = su.tc_bucket`` must be absent (D-5).
+        """``g.time_control_bucket::text = su.tc_bucket`` must be absent.
 
         Regression guard: this join predicate was the per-cell schema artifact.
         The live per-TC builders use ``AND g.time_control_bucket = '{tc}'``
@@ -158,7 +156,7 @@ class TestPooledShapeNegativeGuards:
     def test_no_sparse_cell_literal_in_live_tc_builder(
         self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """Per-row sparse-cell exclusion is gone from the live per-TC builder (D-1).
+        """Per-row sparse-cell exclusion is gone from the live per-TC builder.
 
         Sparse-cell exclusion lives in ``selected_users_cte("benchmark")`` only.
         """
@@ -194,7 +192,7 @@ def test_cap_appears_once_per_builder_output() -> None:
 
 
 class TestCohortDedup:
-    """Selected-users CTE — benchmark dedup (D-1), single_user CAST preserved."""
+    """Selected-users CTE — benchmark dedup, single_user CAST preserved."""
 
     def test_benchmark_cohort_groups_by_lower_username(self) -> None:
         sql = selected_users_cte(source="benchmark")
@@ -216,7 +214,7 @@ class TestCohortDedup:
         # No hard absence assertion — the next test class covers this.
 
     def test_single_user_cte_uses_cast_form(self) -> None:
-        """V5 security: ``CAST(:user_id AS int)`` is load-bearing (94.1 Plan 09)."""
+        """Security: ``CAST(:user_id AS int)`` is load-bearing."""
         sql = selected_users_cte(source="single_user")
         assert "CAST(:user_id AS int) AS user_id" in sql
 
@@ -245,7 +243,7 @@ class TestCohortDedup:
 
 
 # ---------------------------------------------------------------------------
-# Test class: exported helpers (preserved from 94.1).
+# Test class: exported helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -274,10 +272,10 @@ class TestExportedHelpers:
         assert "user_elo_at_game" not in expr_alt
 
     def test_sparse_exclusion_sql_parametrises_columns(self) -> None:
-        """Preserved verbatim from 94.1 — column-substitution + injection-vector guard.
+        """Column-substitution + injection-vector guard.
 
         The function itself is no longer invoked by ``per_user_cte_*``
-        (D-1 — sparse exclusion lives at cohort selection now). It IS still
+        (sparse exclusion lives at cohort selection now). It IS still
         used by ``scripts/gen_global_percentile_cdf.py:_build_per_bucket_sanity_query``,
         and the test verifies the substitution contract for that consumer.
         """
@@ -302,7 +300,7 @@ class TestExportedHelpers:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.3 Plan 02 — per-TC pooled-aggregate builders.
+# per-TC pooled-aggregate builders.
 # ---------------------------------------------------------------------------
 
 _TIME_PRESSURE_TCS: tuple[TimeControlBucket, ...] = (
@@ -319,7 +317,7 @@ _PER_TC_METRIC_FAMILIES: tuple[str, ...] = (
 
 
 class TestPerTcConstants:
-    """Module-level constants for per-TC builders (Plan B Task 1; CONTEXT D-6)."""
+    """Module-level constants for per-TC builders."""
 
     def test_time_pressure_clock_pct_threshold_is_locked_to_040(self) -> None:
         assert TIME_PRESSURE_CLOCK_PCT_THRESHOLD == 0.40
@@ -335,7 +333,7 @@ class TestPerTcConstants:
 
 
 class TestRecentCappedPerTcCte:
-    """The per-TC ``recent_capped`` CTE (Plan B Task 1)."""
+    """The per-TC ``recent_capped`` CTE."""
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     def test_emits_per_tc_predicate(self, tc: TimeControlBucket) -> None:
@@ -376,12 +374,12 @@ class TestRecentCappedPerTcCte:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.3 Plan 02 — per-TC builders + dispatcher widening.
+# per-TC builders + dispatcher widening.
 # ---------------------------------------------------------------------------
 
 
 class TestPerTcBuilders:
-    """The three new per-TC builder families (Plan B Task 2)."""
+    """The three new per-TC builder families."""
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     @pytest.mark.parametrize("source", _SOURCES)
@@ -441,7 +439,7 @@ class TestPerTcBuilders:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 02 — per_user_cte_median_anchor SQL builder.
+# per_user_cte_median_anchor SQL builder.
 # ---------------------------------------------------------------------------
 
 
@@ -449,10 +447,10 @@ _MEDIAN_ANCHOR_TCS: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid",
 
 
 class TestPerUserCteMedianAnchor:
-    """Phase 94.4 D-04 / RESEARCH Pattern 6 — per-(user, TC) median rating anchor."""
+    """Per-(user, TC) median rating anchor."""
 
     def test_median_anchor_min_games_constant_is_30(self) -> None:
-        """MEDIAN_ANCHOR_MIN_GAMES constant locked to 30 per D-04."""
+        """MEDIAN_ANCHOR_MIN_GAMES constant locked to 30."""
         assert MEDIAN_ANCHOR_MIN_GAMES == 30
 
     @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
@@ -463,18 +461,18 @@ class TestPerUserCteMedianAnchor:
 
     @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
     def test_median_anchor_uses_percentile_cont(self, tc: TimeControlBucket) -> None:
-        """SQL uses percentile_cont(0.5) WITHIN GROUP (RESEARCH Pattern 6)."""
+        """SQL uses percentile_cont(0.5) WITHIN GROUP."""
         sql = per_user_cte_median_anchor(tc, source="benchmark")
         assert "percentile_cont(0.5)" in sql, f"median aggregate missing for tc={tc!r}"
         assert "WITHIN GROUP" in sql, f"WITHIN GROUP clause missing for tc={tc!r}"
 
     @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
     def test_daily_classical_drop_present_for_all_tcs(self, tc: TimeControlBucket) -> None:
-        """Daily-classical drop (RESEARCH Pitfall 11) is unconditional on tc.
+        """Daily-classical drop is unconditional on tc.
 
         The drop runs symmetrically for ALL 4 TCs: chess.com Daily games are
         bucketed `classical` by the import pipeline but the median anchor
-        excludes them everywhere for structural symmetry (Pitfall 2).
+        excludes them everywhere for structural symmetry.
         """
         sql = per_user_cte_median_anchor(tc, source="benchmark")
         assert "g.platform = 'chess.com'" in sql, (
@@ -492,8 +490,7 @@ class TestPerUserCteMedianAnchor:
     def test_platform_filter_chesscom_emits_clause(self) -> None:
         """platform='chesscom' translates to AND g.platform = 'chess.com'.
 
-        Phase 94.4 Plan 05b (Rule 1 auto-fix in canonical_slice_sql): the
-        AnchorSource Literal value ``'chesscom'`` is mapped to the games
+        The AnchorSource Literal value ``'chesscom'`` is mapped to the games
         table's storage literal ``'chess.com'`` (with the dot, per
         ``app/services/normalization.py``) at SQL-emit time. The builder
         accepts the dotless caller-side literal; the emitted SQL uses the
@@ -549,8 +546,8 @@ class TestPerUserCteMedianAnchor:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 03 Task 1 — Pitfall 1 user_id widening on EXISTING 94.3
-# per-TC builders. The cohort-CDF JOIN in Plan 04 requires user_id on the
+# user_id widening on the existing per-TC
+# builders. The cohort-CDF JOIN requires user_id on the
 # per_user_values projection of every per-TC builder so the (user_id) JOIN
 # with per_user_anchor stays well-defined.
 # ---------------------------------------------------------------------------
@@ -566,7 +563,7 @@ _PITFALL_1_EXISTING_94_3_BUILDERS: tuple[str, ...] = (
 def _per_user_values_block(sql: str) -> str:
     """Return the substring starting at the ``per_user_values AS`` CTE.
 
-    Used by the Pitfall 1 assertions to scope the ``SELECT user_id,`` probe
+    Used by the user_id-widening assertions to scope the ``SELECT user_id,`` probe
     to the metric-emitting CTE rather than upstream CTEs (which may project
     ``user_id`` for unrelated reasons such as the per_user GROUP BY).
     """
@@ -575,16 +572,16 @@ def _per_user_values_block(sql: str) -> str:
     return sql[idx:]
 
 
-class TestPitfall1UserIdWideningExistingBuilders:
-    """Phase 94.4 Plan 03 Task 1 — widen the 3 existing 94.3 per-TC builders.
+class TestUserIdWideningExistingBuilders:
+    """Widen the 3 existing per-TC builders.
 
-    RESEARCH Pitfall 1 (lines 1168-1177): the cohort-CDF JOIN (Plan 04) joins
+    The cohort-CDF JOIN joins
     ``per_user_values`` against ``per_user_anchor`` on ``user_id``. Without
     ``user_id`` exposed in ``per_user_values``, the JOIN loses user identity
     and the K=200 ranking by anchor distance is undefined.
 
     The widening is mechanical: prepend ``user_id,`` to the SELECT projection
-    of ``per_user_values`` inside the 3 existing 94.3 per-TC builders
+    of ``per_user_values`` inside the 3 existing per-TC builders
     (``per_user_cte_time_pressure_score_gap``, ``per_user_cte_clock_gap``,
     ``per_user_cte_net_flag_rate``). The upstream ``per_user`` CTE already
     GROUP BYs user_id (it's a per-user aggregate by construction) so no
@@ -598,7 +595,7 @@ class TestPitfall1UserIdWideningExistingBuilders:
     ) -> None:
         """``per_user_values`` projects ``user_id`` on every (existing-family × TC) cell.
 
-        Parametrised: 3 existing 94.3 builders × 4 TCs = 12 cases.
+        Parametrised: 3 existing builders × 4 TCs = 12 cases.
         """
         from app.services.canonical_slice_sql import (
             per_user_cte_clock_gap,
@@ -624,13 +621,13 @@ class TestPitfall1UserIdWideningExistingBuilders:
 
     @pytest.mark.parametrize("builder_family", _PITFALL_1_EXISTING_94_3_BUILDERS)
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
-    def test_per_user_values_has_pitfall_1_comment_for_existing_builders(
+    def test_per_user_values_has_user_id_widening_comment_for_existing_builders(
         self, builder_family: str, tc: TimeControlBucket
     ) -> None:
-        """Each widened ``per_user_values`` body carries a Pitfall 1 provenance comment.
+        """Each widened ``per_user_values`` body carries a user_id-widening provenance comment.
 
         The comment is grep-able so future readers can trace the user_id
-        projection to its source decision (RESEARCH Pitfall 1).
+        projection to its source decision.
         """
         from app.services.canonical_slice_sql import (
             per_user_cte_clock_gap,
@@ -686,8 +683,8 @@ class TestPitfall1UserIdWideningExistingBuilders:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 03 Task 2 — 4 new per-TC ΔES builders + score-gap-bucket bucket_label
-# extension to include 'recovery'. RESEARCH Pattern 6 lines 569-669.
+# 4 new per-TC ΔES builders + score-gap-bucket bucket_label
+# extension to include 'recovery'.
 # ---------------------------------------------------------------------------
 
 
@@ -700,7 +697,7 @@ _SCORE_GAP_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
 
 
 class TestPerUserCteScoreGapTc:
-    """``per_user_cte_score_gap_tc(tc, *, source, snapshot_date)`` (Task 2.1)."""
+    """``per_user_cte_score_gap_tc(tc, *, source, snapshot_date)``."""
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
     @pytest.mark.parametrize("source", _SOURCES)
@@ -740,7 +737,7 @@ class TestPerUserCteScoreGapTc:
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
     def test_having_floors_match_non_per_tc_analog(self, tc: TimeControlBucket) -> None:
-        """HAVING gates both ≥30 (endgame + non-endgame) per D-6."""
+        """HAVING gates both ≥30 (endgame + non-endgame)."""
         from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
 
         sql = per_user_cte_score_gap_tc(tc, source="benchmark")
@@ -748,8 +745,8 @@ class TestPerUserCteScoreGapTc:
         assert "AND count(*) FILTER (WHERE NOT has_endgame) >= 30" in sql
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    def test_pitfall_1_comment_present(self, tc: TimeControlBucket) -> None:
-        """Per-TC builders emitted in Task 2 also carry the Pitfall 1 comment."""
+    def test_user_id_widening_comment_present(self, tc: TimeControlBucket) -> None:
+        """Per-TC builders also carry the user_id-widening comment."""
         from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
 
         sql = per_user_cte_score_gap_tc(tc, source="benchmark")
@@ -769,7 +766,7 @@ class TestPerUserCteScoreGapTc:
 
 
 class TestPerUserCteAchievableTc:
-    """``per_user_cte_achievable_tc(tc, *, source, snapshot_date)`` (Task 2.2)."""
+    """``per_user_cte_achievable_tc(tc, *, source, snapshot_date)``."""
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
     @pytest.mark.parametrize("source", _SOURCES)
@@ -797,14 +794,14 @@ class TestPerUserCteAchievableTc:
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
     def test_having_floor_matches_non_per_tc_analog(self, tc: TimeControlBucket) -> None:
-        """HAVING gate ≥30 on count(d_i IS NOT NULL) per D-6."""
+        """HAVING gate ≥30 on count(d_i IS NOT NULL)."""
         from app.services.canonical_slice_sql import per_user_cte_achievable_tc
 
         sql = per_user_cte_achievable_tc(tc, source="benchmark")
         assert "HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 30" in sql
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    def test_pitfall_1_comment_present(self, tc: TimeControlBucket) -> None:
+    def test_user_id_widening_comment_present(self, tc: TimeControlBucket) -> None:
         from app.services.canonical_slice_sql import per_user_cte_achievable_tc
 
         sql = per_user_cte_achievable_tc(tc, source="benchmark")
@@ -820,7 +817,7 @@ class TestPerUserCteAchievableTc:
 
 
 class TestPerUserCteSection2Tc:
-    """``per_user_cte_score_gap_bucket_tc(tc, *, source, snapshot_date, bucket_label)`` (Task 2.4)."""
+    """``per_user_cte_score_gap_bucket_tc(tc, *, source, snapshot_date, bucket_label)``."""
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
     @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
@@ -895,8 +892,8 @@ class TestPerUserCteSection2Tc:
         assert bm == su
 
 
-class TestPitfall1UserIdWideningNewBuilders:
-    """The 4 new Task 2 per-TC builders all project user_id (Pitfall 1).
+class TestUserIdWideningNewBuilders:
+    """The 4 new per-TC builders all project user_id.
 
     This class covers the new builders explicitly so a regression in any
     one is caught even if the per-builder test classes above are restructured.
@@ -934,24 +931,24 @@ class TestPitfall1UserIdWideningNewBuilders:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 10 Task 2 — Blend-mode SQL builder tests.
+# Blend-mode SQL builder tests.
 #
 # Tests A1-A8 cover the new blend=True mode and the byte-identical regression
-# guard for the non-blend path (Plan 04 cohort-CDF call path).
+# guard for the non-blend path (cohort-CDF call path).
 # ---------------------------------------------------------------------------
 
 
 class TestPerUserCteMedianAnchorBlendMode:
-    """Phase 94.4 D-12 Reversal Amendment — blend=True SQL builder tests."""
+    """blend=True SQL builder tests."""
 
     def test_a1_non_blend_byte_identical_to_baseline(self) -> None:
         """A1 (BYTE-IDENTICAL regression guard): non-blend SQL is byte-for-byte identical
-        to the pre-Task-1 captured baseline.
+        to the captured baseline.
 
-        Regression guard for Plan 04's cohort-CDF benchmark-side call path. Any
+        Regression guard for the cohort-CDF benchmark-side call path. Any
         drift in the non-blend code path (whitespace, column reorder, helper
-        extraction) trips this test. The baseline was captured at the pre-Task-1
-        git state in Task 1.0 and pinned as a module-level constant; the
+        extraction) trips this test. The baseline was captured before blend
+        mode was added and pinned as a module-level constant; the
         byte-identical comparison ensures the regression guard is anchored to
         actual production code, not a hand-reconstruction from memory.
         """
@@ -1005,10 +1002,10 @@ class TestPerUserCteMedianAnchorBlendMode:
         """A6 (snapshot-row assertion): _chesscom_conversion_values_sql('rapid') includes
         a VALUES row from composed_chesscom_to_lichess_grid('rapid', 'rapid').
 
-        Post quick-260529-js1 the rapid table is keyed on NATIVE chess.com RAPID
+        The rapid table is keyed on NATIVE chess.com RAPID
         ratings (not chess.com Blitz anchors), so the row is read dynamically
         from the composed grid. The test self-updates if the snapshot or grid
-        step changes (RESEARCH Pattern 8b discipline).
+        step changes.
         """
         grid = composed_chesscom_to_lichess_grid("rapid", "rapid")
         assert grid, "composed grid for ('rapid','rapid') is empty"
@@ -1042,28 +1039,19 @@ class TestPerUserCteMedianAnchorBlendMode:
 
 
 # ---------------------------------------------------------------------------
-# Phase 99 Wave 0 — Rate builder tests (SC-1 / SC-2).
+# Rate builder tests.
 #
 # These tests import per_user_cte_conv_rate_tc, per_user_cte_parity_rate_tc,
 # per_user_cte_recovery_rate_tc and MINIMUM_RATE_BUCKET_SPANS from
 # app.services.canonical_slice_sql via deferred imports inside each test method.
-#
-# INTENDED RED: these symbols do not yet exist (Plan 02 adds them). Each test
-# that calls the import will raise ImportError until Wave 1 lands — that is the
-# correct Wave 0 RED state. The deferred import (inside the method body rather
-# than at module level) allows pytest to collect the existing tests in this file
-# and fail only the Phase 99 tests themselves, rather than failing collection of
-# the entire module.
-#
-# Once Plan 02 ships the builders, all tests in these classes must pass.
 # ---------------------------------------------------------------------------
 
 
 class TestConvRateTcBuilder:
-    """Phase 99 SC-1 / SC-2: per_user_cte_conv_rate_tc floor and source-parity."""
+    """per_user_cte_conv_rate_tc floor and source-parity."""
 
     def test_per_user_cte_conv_rate_tc_floor(self) -> None:
-        """SC-1: conversion rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
+        """Conversion rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
         from app.services.canonical_slice_sql import MINIMUM_RATE_BUCKET_SPANS
         from app.services.canonical_slice_sql import per_user_cte_conv_rate_tc
 
@@ -1074,7 +1062,7 @@ class TestConvRateTcBuilder:
         )
 
     def test_per_user_cte_conv_rate_tc_source_parity(self) -> None:
-        """SC-2: benchmark and single_user paths must produce byte-identical SQL bodies.
+        """Benchmark and single_user paths must produce byte-identical SQL bodies.
 
         The cohort difference lives entirely in selected_users_cte; the pooled
         body is identical for both sources (``_ = source`` idiom). Drift between
@@ -1090,11 +1078,11 @@ class TestConvRateTcBuilder:
         )
 
     def test_per_user_cte_conv_rate_tc_metric_value_formula(self) -> None:
-        """SC-2: per_user_values must project (user_id, metric_value, n_games) with wins/spans."""
+        """per_user_values must project (user_id, metric_value, n_games) with wins/spans."""
         from app.services.canonical_slice_sql import per_user_cte_conv_rate_tc
 
         sql = per_user_cte_conv_rate_tc("bullet", source="benchmark")
-        # user_id projection — mandatory per Phase 94.4 Pitfall 1
+        # user_id projection — mandatory for the cohort-CDF JOIN
         assert "user_id" in sql, "per_user_values must project user_id (Pitfall 1)"
         # metric_value must be wins / spans (conversion = only wins count)
         assert "metric_value" in sql, "per_user_values must alias metric_value"
@@ -1104,10 +1092,10 @@ class TestConvRateTcBuilder:
 
 
 class TestParityRateTcBuilder:
-    """Phase 99 SC-1 / SC-2: per_user_cte_parity_rate_tc floor and source-parity."""
+    """per_user_cte_parity_rate_tc floor and source-parity."""
 
     def test_per_user_cte_parity_rate_tc_floor(self) -> None:
-        """SC-1: parity rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
+        """Parity rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
         from app.services.canonical_slice_sql import MINIMUM_RATE_BUCKET_SPANS
         from app.services.canonical_slice_sql import per_user_cte_parity_rate_tc
 
@@ -1118,7 +1106,7 @@ class TestParityRateTcBuilder:
         )
 
     def test_per_user_cte_parity_rate_tc_source_parity(self) -> None:
-        """SC-2: benchmark and single_user paths must produce byte-identical SQL bodies."""
+        """Benchmark and single_user paths must produce byte-identical SQL bodies."""
         from app.services.canonical_slice_sql import per_user_cte_parity_rate_tc
 
         sql_benchmark = per_user_cte_parity_rate_tc("blitz", source="benchmark")
@@ -1129,7 +1117,7 @@ class TestParityRateTcBuilder:
         )
 
     def test_per_user_cte_parity_rate_tc_metric_value_formula(self) -> None:
-        """SC-2: per_user_values must project (user_id, metric_value, n_games) with chess-score formula."""
+        """per_user_values must project (user_id, metric_value, n_games) with chess-score formula."""
         from app.services.canonical_slice_sql import per_user_cte_parity_rate_tc
 
         sql = per_user_cte_parity_rate_tc("rapid", source="benchmark")
@@ -1141,10 +1129,10 @@ class TestParityRateTcBuilder:
 
 
 class TestRecoveryRateTcBuilder:
-    """Phase 99 SC-1 / SC-2: per_user_cte_recovery_rate_tc floor and source-parity."""
+    """per_user_cte_recovery_rate_tc floor and source-parity."""
 
     def test_per_user_cte_recovery_rate_tc_floor(self) -> None:
-        """SC-1: recovery rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
+        """Recovery rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
         from app.services.canonical_slice_sql import MINIMUM_RATE_BUCKET_SPANS
         from app.services.canonical_slice_sql import per_user_cte_recovery_rate_tc
 
@@ -1155,7 +1143,7 @@ class TestRecoveryRateTcBuilder:
         )
 
     def test_per_user_cte_recovery_rate_tc_source_parity(self) -> None:
-        """SC-2: benchmark and single_user paths must produce byte-identical SQL bodies."""
+        """Benchmark and single_user paths must produce byte-identical SQL bodies."""
         from app.services.canonical_slice_sql import per_user_cte_recovery_rate_tc
 
         sql_benchmark = per_user_cte_recovery_rate_tc("classical", source="benchmark")
@@ -1166,7 +1154,7 @@ class TestRecoveryRateTcBuilder:
         )
 
     def test_per_user_cte_recovery_rate_tc_metric_value_formula(self) -> None:
-        """SC-2: per_user_values must project (user_id, metric_value, n_games) with saves formula."""
+        """per_user_values must project (user_id, metric_value, n_games) with saves formula."""
         from app.services.canonical_slice_sql import per_user_cte_recovery_rate_tc
 
         sql = per_user_cte_recovery_rate_tc("bullet", source="benchmark")
@@ -1178,12 +1166,12 @@ class TestRecoveryRateTcBuilder:
 
 
 # ---------------------------------------------------------------------------
-# Phase 238 D-07 guard: golden SHA-256 of every EXISTING canonical builder.
+# Golden SHA-256 of every EXISTING canonical builder.
 #
-# Captured from HEAD BEFORE any Phase 238 edit to canonical_slice_sql.py. The
+# Captured before the on-read ranked slice was added to canonical_slice_sql.py. The
 # existing source-mode parity tests only assert benchmark == single_user, so an
 # edit applied to both sides would pass them. This golden catches that: the
-# on-read ranked slice (238) and the persisted Stage A/B percentiles must keep
+# on-read ranked slice and the persisted Stage A/B percentiles must keep
 # ranking the exact same SQL text. The benchmark side is guarded separately by
 # tests/scripts/test_gen_global_percentile_cdf_unchanged.py.
 #
@@ -1294,7 +1282,7 @@ def _current_builder_sha256() -> dict[str, str]:
 
 
 def test_existing_builders_golden_sha256() -> None:
-    """D-07: every pre-Phase-238 canonical builder emits byte-identical SQL."""
+    """Every canonical builder that predates the ranked slice emits byte-identical SQL."""
     current = _current_builder_sha256()
     assert current.keys() == _GOLDEN_BUILDER_SHA256.keys()
     drifted = sorted(k for k, v in current.items() if v != _GOLDEN_BUILDER_SHA256[k])
@@ -1303,7 +1291,7 @@ def test_existing_builders_golden_sha256() -> None:
 
 @pytest.mark.parametrize("tc", ["bullet", "blitz", "rapid", "classical"])
 def test_ranked_games_sql_reuses_canonical_prelude(tc: TimeControlBucket) -> None:
-    """D-07: ranked_games_sql composes the unchanged Stage A/B prelude and binds user_id."""
+    """ranked_games_sql composes the unchanged Stage A/B prelude and binds user_id."""
     sql = ranked_games_sql(tc)
     prelude = (
         "WITH "
@@ -1312,5 +1300,5 @@ def test_ranked_games_sql_reuses_canonical_prelude(tc: TimeControlBucket) -> Non
         + _recent_capped_per_tc_cte(None, tc)
     )
     assert sql.startswith(prelude)
-    # user_id only through the bindparam seam (T-238-01): .bindparams must not raise.
+    # user_id only through the bindparam seam: .bindparams must not raise.
     text(sql).bindparams(user_id=1)

@@ -4,10 +4,9 @@
  * tunable degradation knobs, the pool's own types (`QueuedGradeRequest`/
  * `PoolWorkerSlot`/`GradeCache`), and the pure priority-queue/pool-sizing/
  * predicate functions (`enqueue`/`dequeueHighestPriority`/`sideToMove`/
- * `isLowPowerDevice`/`computePoolSize`/`noLiveSlotRemains`) — Phase 215-02
- * (SC-1/SC-2), extracted from `createWorkerPool()`'s 596-655 state bindings;
- * consolidated here (215 code review WR-01) so the module graph is a real
- * DAG instead of a facade↔stage cycle (see below).
+ * `isLowPowerDevice`/`computePoolSize`/`noLiveSlotRemains`), extracted from
+ * `createWorkerPool()`'s state bindings and consolidated here so the module
+ * graph is a real DAG instead of a facade↔stage cycle (see below).
  *
  * This module imports NOTHING from `workerPool.ts` or the three stage
  * modules (`workerPoolWatchdog.ts`, `workerPoolDispatch.ts`,
@@ -19,30 +18,19 @@
  * makes the graph `workerPool.ts` -> `{watchdog,dispatch,lifecycle}.ts` ->
  * `workerPoolState.ts` — a DAG, not a cycle.
  *
- * WR-01 history: before this consolidation, `workerPoolState.ts` type-only
- * imported `PoolWorkerSlot`/`QueuedGradeRequest`/`GradeCache` FROM
- * `workerPool.ts`, while `workerPool.ts` (and every stage module) imported
- * runtime bindings (constants, `enqueue`/`dequeueHighestPriority`,
- * `sideToMove`, `computePoolSize`, `noLiveSlotRemains`) BACK from
- * `workerPool.ts` — a real facade<->stage import cycle that this file's own
- * header used to (incorrectly) deny, claiming the `PoolOps` dispatch table
- * was "what lets sibling modules call into each other without an import
- * cycle." That claim was true only for the STAGE<->STAGE calls the table
- * actually exists for (watchdog -> lifecycle's `replaceDeadSlot`, lifecycle's
- * `createSlot` -> dispatch's `handleLine`, dispatch -> watchdog's re-arm) —
- * it said nothing about the separate facade<->stage cycle in the constant/
- * type imports, which was runtime-safe only because every cross-module
- * binding was read inside a function body, never at module-evaluation time.
- * Moving the shared leaf definitions here (rather than adding a new
- * `workerPoolCore.ts`) keeps every stage module's existing `from
- * './workerPoolState'` import path unchanged for the `PoolState`/`PoolOps`
- * types they already imported.
+ * Keep the shared leaf definitions here: if this file imported from
+ * `workerPool.ts`, the facade and the stage modules would form a real import
+ * cycle (runtime-safe only because every cross-module binding is read inside
+ * a function body, never at module-evaluation time). The `PoolOps` dispatch
+ * table below only removes the STAGE<->STAGE cycle (watchdog -> lifecycle's
+ * `replaceDeadSlot`, lifecycle's `createSlot` -> dispatch's `handleLine`,
+ * dispatch -> watchdog's re-arm); it does not touch the facade<->stage
+ * constant/type imports.
  *
- * `PoolState` bundles the twelve mutable bindings `createWorkerPool()` used
- * to close over directly; each field below keeps its original Phase
- * 213/CR-01 doc comment verbatim, since that comment carries load-bearing
- * decision history (race-condition guards, respawn-generation invalidation,
- * readiness/failure settlement) rather than just a type description.
+ * `PoolState` bundles the twelve mutable bindings `createWorkerPool()`
+ * closes over; each field below carries a doc comment on the
+ * race-condition guards, respawn-generation invalidation and
+ * readiness/failure settlement it exists for.
  *
  * `PoolOps` is a nine-field dispatch table, not a plain data object: every
  * field is a function one stage module may need to call into another
@@ -56,32 +44,29 @@
  * dispatch. Late binding through one shared table is what lets sibling
  * STAGE modules call into each other without an import cycle BETWEEN
  * THEMSELVES: `createWorkerPool` builds one `ops` object, wiring each field
- * to whichever module actually owns that stage's implementation. This does
- * not (and never did) apply to the separate facade<->stage constant/type
- * imports fixed above.
+ * to whichever module actually owns that stage's implementation. The
+ * separate facade<->stage constant/type imports are avoided by defining
+ * them in this file.
  */
 
 import type { MoveGrade } from './types';
 
-// ─── Tunable constants (SC4 degradation knobs — tunable without touching logic) ──
+// ─── Tunable constants (degradation knobs — tunable without touching logic) ──
 //
-// Phase 213-08 (G-213-35): the removed `ENGINE_PATH` constant (formerly in
-// `workerPool.ts`) routed worker construction through
-// `createStockfishWorker()` (`stockfishWorkerSource.ts`), which owns the
-// served glue path. Confirmed via repo-wide grep (including `scripts/*.mjs`)
-// that nothing outside that file imported the removed export.
+// Worker construction goes through `createStockfishWorker()`
+// (`stockfishWorkerSource.ts`), which owns the served glue path.
 
 /**
  * Pool-level grade-cache cap, counted in `(fen, gradingDepth)` entries. A full
  * 400-node analysis-board search touches a measured 352-386 distinct FENs
- * (194-RESEARCH.md Pattern 4) — 256 was small enough that a single search
+ * — 256 was small enough that a single search
  * thrashed its own cache before cross-search reuse was even possible. 1024 is
  * the next power of two above roughly 2.6x the measured 386-FEN ceiling: one
  * full search's working set plus about 1.6 searches worth of navigation
- * history (Phase 194 CACHE-01).
+ * history.
  *
- * Phase 195 caveat (195-06 review WR-02): entries are keyed by `(fen, depth)`,
- * not by FEN alone, so a position reached at two different ladder rungs now
+ * Caveat: entries are keyed by `(fen, depth)`,
+ * not by FEN alone, so a position reached at two different ladder rungs
  * occupies two slots. The shipped ladder spans two distinct depths (14 and the
  * floor), so the true worst case is up to 2x the FEN count above — still well
  * inside 1024 for one search, but the headroom for navigation history is
@@ -90,7 +75,7 @@ import type { MoveGrade } from './types';
  */
 export const GRADE_CACHE_MAX = 1024;
 
-/** Per-worker `Hash` UCI option cap (MB) — Pitfall 1 mitigation: shallow searchmoves-restricted grading doesn't benefit from a large hash table, and N workers at default Hash settings multiplies mobile memory pressure for no search-quality gain. */
+/** Per-worker `Hash` UCI option cap (MB): shallow searchmoves-restricted grading doesn't benefit from a large hash table, and N workers at default Hash settings multiplies mobile memory pressure for no search-quality gain. */
 export const WORKER_HASH_MB = 8;
 
 /** Desktop pool-size floor (also the DESKTOP_POOL_MIN/undefined-cores fallback). */
@@ -102,21 +87,20 @@ export const DESKTOP_POOL_MAX = 4;
 /** Cores reserved for the main thread + Maia worker when sizing the desktop pool. */
 export const DESKTOP_HEADROOM_CORES = 2;
 
-/** Mobile pool size — fixed, not derived from cores (D-01). */
+/** Mobile pool size — fixed, not derived from cores. */
 export const MOBILE_POOL_SIZE = 2;
 
-/** `hardwareConcurrency` at or below this counts as "mobile" (D-01). */
+/** `hardwareConcurrency` at or below this counts as "mobile". */
 export const MOBILE_CORE_THRESHOLD = 4;
 
 /**
- * Host-side grading watchdog (ms, D-06) — mirrors the calibration harness's
+ * Host-side grading watchdog (ms) — mirrors the calibration harness's
  * own `GRADING_WATCHDOG_TIMEOUT_MS` (`scripts/lib/calibration-providers.mjs`).
  * A worker-FAULT detector, not a quality knob: it exists to bound a slot that
  * never emits `bestmove` after `sendGo` (a genuinely hung/wedged worker), not
  * to cap a merely slow position. Sized at 60s so it fires only on the former
- * — replaces the removed `GRADING_MOVETIME_SAFETY_CAP_MS` wall-clock bound
- * (D-05), which capped EVERY search regardless of whether the worker was
- * healthy. That "fault, not slowness" intent is only actually ENFORCED by the
+ * — instead of a wall-clock bound, which would cap EVERY search regardless of
+ * whether the worker was healthy. That "fault, not slowness" intent is only actually ENFORCED by the
  * three re-arm gates in `fireWatchdog` (see `GRADING_WATCHDOG_SUSPEND_FACTOR`,
  * `GRADING_WATCHDOG_LIVENESS_MS` and `MAX_WATCHDOG_HIDDEN_REARMS`); this
  * constant alone cannot tell the two apart, which is what FLAWCHESS-9G was.
@@ -150,7 +134,7 @@ export const MAX_WATCHDOG_SUSPEND_REARMS = 3;
  * per-root-move `currmove` reports once an iteration passes ~3s), so a slot
  * that produced a line recently is demonstrably ALIVE — its 60s deadline then
  * says nothing about worker health, only that this position is slow on this
- * machine, which `go depth N` explicitly permits (D-05 removed the wall-clock
+ * machine, which `go depth N` explicitly permits (there is no wall-clock
  * bound). Killing such a slot is a false positive.
  *
  * 20s is a judgement call, not a measurement: comfortably wider than the
@@ -184,7 +168,7 @@ export const GRADING_WATCHDOG_LIVENESS_MS = 20_000;
 export const MAX_WATCHDOG_LIVENESS_REARMS = 3;
 
 /**
- * Bug fix (FLAWCHESS-9G, third pass, SEED-180): per-dispatch cap on re-arms
+ * Bug fix (FLAWCHESS-9G, third pass): per-dispatch cap on re-arms
  * granted because the tab is hidden. Chrome and Safari throttle a background
  * tab's workers hard enough that they go silent while the host `setTimeout`
  * still fires on time, so neither earlier gate sees it: the fire is not late
@@ -203,12 +187,12 @@ export const MAX_WATCHDOG_LIVENESS_REARMS = 3;
 export const MAX_WATCHDOG_HIDDEN_REARMS = 10;
 
 /**
- * Bug fix (quick 260731-s0z, FIX-4): host-side "stop-bestmove" watchdog (ms),
+ * Bug fix: host-side "stop-bestmove" watchdog (ms),
  * armed instead of a bare `clearSlotWatchdog` whenever this pool sends `stop`
  * to a slot (the abort in-flight branch and `stopAll()`'s thinking branch).
  * Without it, a slot parked in `'stopping'` whose worker never answers with a
  * `bestmove` (a genuinely hung worker) was lost permanently: not marked
- * `dead`, so it also blinded `noLiveSlotRemains()` / the FIX-3 dead-pool
+ * `dead`, so it also blinded `noLiveSlotRemains()` / the dead-pool
  * guard, and nothing reached Sentry. A `stop` must produce `bestmove`
  * near-immediately (the search polls the stop flag between nodes), so this
  * bound is an order of magnitude tighter than `GRADING_WATCHDOG_TIMEOUT_MS` —
@@ -240,7 +224,7 @@ export const MAX_SLOT_RESPAWNS = 8;
 /**
  * Bug fix (2026-08-23): bound (ms) on a REPLACEMENT slot's UCI init handshake.
  *
- * Respawning re-opened a hang that the FIX-3 dead-pool guard used to close by
+ * Respawning re-opened a hang that the dead-pool guard used to close by
  * accident. Once every slot was dead, `grade()` resolved new requests empty
  * immediately; now a fresh slot sits in the pool, so `noLiveSlotRemains()` is
  * false and the request enqueues. That is correct as long as the replacement
@@ -263,17 +247,17 @@ export const INIT_WATCHDOG_TIMEOUT_MS = 30_000;
 export interface QueuedGradeRequest {
   fen: string;
   candidateUcis: string[];
-  /** Higher = more urgent. Derived by the caller from the root ancestor's current practicalScore (POOL-02). */
+  /** Higher = more urgent. Currently always 0 (FIFO among equal priority); the field is reserved. */
   priority: number;
-  /** Tie-break 2: shallower depth-from-root wins. Dispatch-priority tie-break (dead until Phase 198) — NOT the resolved Stockfish search depth; see `gradingDepth` below for that. */
+  /** Dispatch-priority tie-break (shallower wins), currently always 0. NOT the Stockfish search depth; see `gradingDepth` below for that. */
   depth: number;
-  /** The resolved Stockfish SEARCH depth for this request (LADDER-02/D-01), distinct from the `depth` tie-break field above. Composed into the `go` line via `buildGradeGoCommand`. */
+  /** The resolved Stockfish SEARCH depth for this request, distinct from the `depth` tie-break field above. Composed into the `go` line via `buildGradeGoCommand`. */
   gradingDepth: number;
   resolve: (grades: Map<string, MoveGrade>) => void;
   /**
-   * Root-split shard flag (Phase 226 D-18/L-3). Absent or `true` (grade()'s
+   * Root-split shard flag. Absent or `true` (grade()'s
    * default) reads the shared `GradeCache` before this request is even
-   * enqueued, exactly as before this plan. `gradeRoot()`'s per-shard
+   * enqueued. `gradeRoot()`'s per-shard
    * requests set this `false`: a shard's cache-read gate must never fire
    * mid-split, since a subset of the root's candidates is not the same
    * request the cache was ever asked about — the group's own success-only
@@ -282,7 +266,7 @@ export interface QueuedGradeRequest {
    */
   readCache?: boolean;
   /**
-   * Root-split shard flag (Phase 226 D-18/L-3). Absent or `true` (grade()'s
+   * Root-split shard flag. Absent or `true` (grade()'s
    * default) preserves the single-write-site rule: the `bestmove` branch in
    * `handleLine` writes this request's accumulator straight into the shared
    * `GradeCache`. `gradeRoot()`'s per-shard requests set this `false` — a
@@ -292,7 +276,7 @@ export interface QueuedGradeRequest {
    */
   writeCache?: boolean;
   /**
-   * Root-split completion flag (Phase 226 L-2). Set `true` ONLY by
+   * Root-split completion flag. Set `true` ONLY by
    * `handleLine`'s `bestmove` branch, the instant a request settles via a
    * real terminal `bestmove` — every other settle path (abort, `stopAll`,
    * `terminate`, watchdog fire) resolves the promise without ever touching
@@ -314,13 +298,13 @@ export interface PoolWorkerSlot {
   stopPending: boolean;
   /** True once this slot's UCI init sequence (uciok -> Hash -> isready -> readyok) completes. */
   isReady: boolean;
-  /** True once this slot's worker has failed (an `error` event, WR-04, or a watchdog fire) — out of service. The slot itself is replaced by `replaceDeadSlot`; this flag gates dispatch until then and stays set on the discarded slot object forever. */
+  /** True once this slot's worker has failed (an `error` event, an async script-load failure, or a watchdog fire) — out of service. The slot itself is replaced by `replaceDeadSlot`; this flag gates dispatch until then and stays set on the discarded slot object forever. */
   dead: boolean;
   /** The request currently assigned to this slot, or null when free. */
   current: QueuedGradeRequest | null;
   /** In-flight grades accumulated from `info` lines for `current`, keyed by pv[0] (UCI). */
   accumulator: Map<string, MoveGrade>;
-  /** D-06: handle for the in-flight `GRADING_WATCHDOG_TIMEOUT_MS` timer, or null when idle/no timer running. Started in `sendGo`, cleared by every path that takes the slot out of the `thinking` state. */
+  /** Handle for the in-flight `GRADING_WATCHDOG_TIMEOUT_MS` timer, or null when idle/no timer running. Started in `sendGo`, cleared by every path that takes the slot out of the `thinking` state. */
   watchdogTimer: ReturnType<typeof setTimeout> | null;
   /** FLAWCHESS-9G: wall-clock stamp of the moment the grading watchdog was (re-)armed. Only meaningful while a grading watchdog is in flight. */
   armedAtMs: number;
@@ -336,7 +320,7 @@ export interface PoolWorkerSlot {
 
 /**
  * The public surface `createGradeCache()` returns — the shipped grade-outcome
- * cache, extracted from `createWorkerPool`'s closure (INJECT-05) so a Node
+ * cache, extracted from `createWorkerPool`'s closure so a Node
  * measurement harness (`scripts/engine-root-injection.mjs`) can read/write
  * through the EXACT same read gate, keying, LRU touch, and merge semantics
  * the browser pool uses, rather than a harness-local reimplementation that
@@ -346,9 +330,9 @@ export interface PoolWorkerSlot {
 export interface GradeCache {
   /**
    * Reads a cached grade subset for `(fen, gradingDepth)` restricted to
-   * `candidateUcis`. Returns `null` on any miss (CACHE-04/LADDER-03
-   * all-or-nothing: a cached entry that lacks even one requested UCI is
-   * still a miss). INJECT-05: increments `stats().misses` on every `null`
+   * `candidateUcis`. Returns `null` on any miss (all-or-nothing: a cached
+   * entry that lacks even one requested UCI is
+   * still a miss). Increments `stats().misses` on every `null`
    * return and `stats().hits` on every non-null return — these are cache
    * OUTCOME counters, not Stockfish-dispatch counters. The caller
    * (`createWorkerPool.grade()`) may still resolve empty AFTER a counted
@@ -357,11 +341,11 @@ export interface GradeCache {
    * needed"), so the harness's reported denominator stays unambiguous.
    */
   read(fen: string, candidateUcis: string[], gradingDepth: number): Map<string, MoveGrade> | null;
-  /** Merges `grades` into the existing `(fen, gradingDepth)` entry (CACHE-03), never replacing it wholesale. */
+  /** Merges `grades` into the existing `(fen, gradingDepth)` entry, never replacing it wholesale. */
   write(fen: string, gradingDepth: number, grades: Map<string, MoveGrade>): void;
-  /** INJECT-05: exact hit/miss counts since cache creation (or since the last `resetCacheStats()` call). */
+  /** Exact hit/miss counts since cache creation (or since the last `resetCacheStats()` call). */
   stats(): { hits: number; misses: number };
-  /** INJECT-05: resets the hit/miss counters to zero WITHOUT evicting any cached entry — a subsequent identical request still reports a hit via `cacheStats()`. */
+  /** Resets the hit/miss counters to zero WITHOUT evicting any cached entry — a subsequent identical request still reports a hit via `cacheStats()`. */
   resetCacheStats(): void;
 }
 
@@ -372,7 +356,7 @@ export interface PoolState {
   readonly gradeCache: GradeCache;
   spawned: boolean;
   /**
-   * Phase 213-08 (G-213-35): true from the moment `ensureSpawned()` starts
+   * True from the moment `ensureSpawned()` starts
    * until the construction loop (the `ensureStockfishWorkerUrl()`
    * continuation) has run. While true, `grade()`'s first zero-slot guard
    * must NOT short-circuit — a request arriving during this window is
@@ -380,7 +364,7 @@ export interface PoolState {
    */
   spawnInFlight: boolean;
   /**
-   * Phase 213-08: bumped by `terminate()` and captured by `ensureSpawned()`
+   * Bumped by `terminate()` and captured by `ensureSpawned()`
    * before its `ensureStockfishWorkerUrl()` await — a spawn continuation
    * that resolves after a `terminate()` ran mid-fetch compares its captured
    * generation against the current one and constructs nothing if they no
@@ -389,7 +373,7 @@ export interface PoolState {
    */
   spawnGeneration: number;
   /**
-   * Phase 213-08: the shared `.wasm` URL once `ensureStockfishWorkerUrl()`
+   * The shared `.wasm` URL once `ensureStockfishWorkerUrl()`
    * resolves (or `null` on the degraded/failed path) — set once by the
    * initial spawn's continuation and reused by every later
    * `replaceDeadSlot()` respawn, which must never re-await the shared fetch.
@@ -397,10 +381,10 @@ export interface PoolState {
   resolvedSharedUrl: string | null;
   /** Respawns consumed so far — see `MAX_SLOT_RESPAWNS`. */
   slotRespawns: number;
-  /** Phase 213 D-01: true once ANY slot has completed its UCI init handshake. Reset by `terminate()`. */
+  /** True once ANY slot has completed its UCI init handshake. Reset by `terminate()`. */
   poolReady: boolean;
   /**
-   * CR-01 (213-REVIEW.md): true once the pool has been marked irrecoverably
+   * True once the pool has been marked irrecoverably
    * dead by `markPoolFailed()` (with no `readyok` ever having landed). Lets a
    * `whenReady()` call arriving AFTER that point (e.g. `warm()` triggered the
    * failure earlier, before any consumer awaited readiness) reject
@@ -413,7 +397,7 @@ export interface PoolState {
   /** Callers awaiting `whenReady()` before the first slot has reported `readyok`. */
   readonly poolReadyWaiters: (() => void)[];
   /**
-   * CR-01 (213-REVIEW.md): callers awaiting `whenReady()` to be REJECTED once
+   * Callers awaiting `whenReady()` to be REJECTED once
    * the pool can never dispatch another request — settled by `markPoolFailed()`
    * below, the same moment `markEngineAssetFailed('stockfish-wasm')` fires.
    * Parallel array to `poolReadyWaiters`, same index per pending `whenReady()`
@@ -439,24 +423,17 @@ export interface PoolOps {
   ensureSpawned: () => void;
 }
 
-// ─── Priority queue (POOL-02): plain array, linear max-scan ────────────────
+// ─── Priority queue: plain array, linear max-scan ────────────────
 //
 // No maintained priority-queue library fits this workload's scale (hundreds
 // of pending grades per search, not millions) — a hand-rolled O(n) linear
-// scan is both correct and fast enough. Phase 227 D-19: among equal
+// scan is both correct and fast enough. Among equal
 // `priority` and `depth`, requests are served in ARRIVAL order (FIFO), matching
 // the Node harness pool (`scripts/lib/stockfish-pool.mjs`).
 //
-// WR-02: `priority`/`depth` are populated by a caller that computes
-// per-root-line practical scores. Every request built by `grade()` today
-// still carries `priority: 0, depth: 0` (see below) because Phase 155's MCTS
-// orchestrator dispatches at most `computePoolSize()` concurrent expansions
-// per round — dispatch capacity always keeps pace with demand, so this
-// ordering logic is correct and tested in isolation but has no discriminating
-// input to act on yet. Phase 198 (mctsSearch continuous dispatch) is the
-// consumer that will populate real priority values once in-flight expansions
-// can exceed free worker slots, making dispatch order matter for the first
-// time. Deliberately retained, not dead code (Phase 194 CACHE-06).
+// Every request built by `grade()` carries priority 0 / depth 0, so dispatch
+// is FIFO in practice; the ordering logic is tested in isolation and kept for
+// a future caller that ranks requests.
 
 /** Push a new request onto the pending array. */
 export function enqueue(pending: QueuedGradeRequest[], req: QueuedGradeRequest): void {
@@ -469,12 +446,11 @@ export function enqueue(pending: QueuedGradeRequest[], req: QueuedGradeRequest):
  * the earliest-enqueued request (lowest `pending` index) wins. Returns
  * undefined on an empty array.
  *
- * Phase 227 D-19 / N-3 fix: ties used to break by the first candidate UCI
- * string, so on a pool of 2 with concurrency 4 a queued grade could keep
- * losing to newer requests whose first move sorts lower (an unbounded wait
- * once dispatch is continuous; round mode bounded it to one round). The Node
- * harness pool was already FIFO, so the pool-2 gate could not see it. Every
- * request is still priority 0 / depth 0 (Phase 227 activates no priorities).
+ * Don't break ties by the first candidate UCI string: on a pool of 2 with
+ * concurrency 4 a queued grade could keep losing to newer requests whose
+ * first move sorts lower (an unbounded wait once dispatch is continuous;
+ * round mode bounds it to one round). Every request is currently priority 0 /
+ * depth 0.
  */
 export function dequeueHighestPriority(
   pending: QueuedGradeRequest[],
@@ -496,22 +472,22 @@ export function dequeueHighestPriority(
   return best;
 }
 
-// ─── Adaptive pool sizing (POOL-04/D-01): plain function, not a React hook ──
+// ─── Adaptive pool sizing: plain function, not a React hook ──
 //
 // Because this module is explicitly NOT a React hook, sizing is a plain,
-// non-reactive function computed ONCE at lazy-spawn time (D-02), not a
+// non-reactive function computed ONCE at lazy-spawn time, not a
 // useIsMobile()-style hook with re-render-on-resize semantics.
 // Deliberately not user-agent-string sniffing and not reading the
-// unavailable/coarse-on-Safari device-memory navigator field (both rejected
-// by D-01 as brittle/unreliable signals).
+// unavailable/coarse-on-Safari device-memory navigator field (both are
+// brittle/unreliable signals).
 
 /**
  * True on a "mobile" device: `hardwareConcurrency <= MOBILE_CORE_THRESHOLD` OR
  * a coarse pointer. Deliberately not user-agent-string sniffing and not
  * reading the unavailable/coarse-on-Safari device-memory navigator field
- * (both rejected by D-01 as brittle/unreliable signals).
+ * (both are brittle/unreliable signals).
  *
- * Extracted from `computePoolSize()` in Phase 172 (SEED-106 D-05) so the
+ * Shared with `computePoolSize()` so the
  * background gem sweep (`useGemSweep.ts`) can gate itself off on the same
  * devices the Stockfish pool already downsizes for, via ONE heuristic instead
  * of two copies that could drift.
@@ -536,7 +512,7 @@ export function computePoolSize(): number {
 
 // ─── Pool factory helpers: N worker slots + priority-queued dispatch ───────
 
-/** Side-to-move literal read directly off a FEN string (D-08). */
+/** Side-to-move literal read directly off a FEN string. */
 export function sideToMove(fen: string): 'w' | 'b' {
   return fen.split(' ')[1] === 'b' ? 'b' : 'w';
 }
@@ -544,7 +520,7 @@ export function sideToMove(fen: string): 'w' | 'b' {
 /**
  * True once every slot currently in the pool is dead — no worker will
  * service a request until one is replaced. A plain module-level predicate
- * over `PoolState` (Phase 215-02) rather than a `PoolOps` field: it is pure
+ * over `PoolState` rather than a `PoolOps` field: it is pure
  * and read-only, needed identically by the dispatch stage's `grade()` and
  * the lifecycle stage's own `replaceDeadSlot()`, and taking `state` directly
  * (like `enqueue`/`dequeueHighestPriority` above) avoids growing the

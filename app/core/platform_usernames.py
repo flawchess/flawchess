@@ -5,7 +5,7 @@ bar) into a username field instead of their bare handle. Sent verbatim, that
 string fails the downstream platform API lookup with an unhelpful "user not
 found". This module is the single normalizer shared by `ImportRequest.username`
 (app/schemas/imports.py) and `UserProfileUpdate.chess_com_username` /
-`.lichess_username` (app/schemas/users.py) (D-03).
+`.lichess_username` (app/schemas/users.py).
 
 Mirrors `frontend/src/lib/platformUsername.ts` case-for-case — keep the two
 implementations structurally identical when editing either.
@@ -50,10 +50,10 @@ def extract_platform_username(value: str, platform: UsernamePlatform | None = No
 
     When `platform` is given, only that platform's URL shape is recognized;
     an unrecognized string (including a profile URL for the OTHER platform)
-    is returned stripped and unchanged (D-01).
+    is returned stripped and unchanged.
 
     When `platform` is None, both platforms' URL shapes are tried in a fixed
-    order (chess.com, then lichess) — the D-03 fallback for the case where the
+    order (chess.com, then lichess) — the fallback for the case where the
     schema itself couldn't determine the platform (e.g. `ImportRequest.platform`
     failed its own validation).
 

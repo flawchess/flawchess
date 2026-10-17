@@ -1,14 +1,13 @@
 /**
- * Phase 88.4 / Plan 88.4-01 (SC-3) — Score Gap by Time Pressure line chart.
+ * Score Gap by Time Pressure line chart.
  *
  * A single horizontal ComposedChart over the 4 ordinal pressure-bucket labels
- * (Q0–Q3; Q4 filtered as per Plan 88-13 A-4), mounted by TimePressureSection for the
+ * (Q0–Q3; the low-signal Q4 tail is filtered), mounted by TimePressureSection for the
  * selected time control. One grey ReferenceArea marks the TC-collapsed typical range
- * [-0.06, +0.06] derived from benchmarks-latest.md §3.3.3.b (opp-quintile rerun,
- * 2026-05-17). The line is neutral (Phase 238 D-00f); the dots and tooltip swatch keep
- * their zone colors relative to that range (238 UAT brought them back). The statistical
- * detail (p-value, CI) lives in the tooltip, greyed. CI whiskers render via Recharts
- * ErrorBar.
+ * [-0.06, +0.06] derived from reports/benchmark/benchmarks-latest.md §3.3.3. The line
+ * is neutral; the dots and tooltip swatch keep their zone colors relative to that
+ * range. The statistical detail (p-value, CI) lives in the tooltip, greyed. CI
+ * whiskers render via Recharts ErrorBar.
  *
  * Visual pattern: mirrors EndgameClockDiffOverTimeChart (grey typical band, neutral
  * line, zone-colored dots, 0-line reference). Built as a self-contained component — not a
@@ -60,12 +59,13 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-// TC-collapsed neutral band for the score-gap line chart.
-// Derived from PRESSURE_BIN_SCORE_NEUTRAL_ZONES TC-collapse: all 20 (TC, quintile)
-// cells cap at ±0.06 under opp-quintile semantics.
-// Source: reports/benchmarks-latest.md §3.3.3.b (opp-quintile rerun, 2026-05-17).
-// The PRESSURE_BIN_NEUTRAL_CAP = 0.06 fully dominates; raw IQR widths (0.166–0.370)
-// are swamped by the cap, so TC differences in the neutral band cannot be observed.
+// TC-collapsed neutral band for the score-gap line chart: the ±0.06 editorial
+// cap (PRESSURE_BIN_NEUTRAL_CAP), i.e. the widest band any (TC, quintile) cell
+// allows. Of the 20 per-cell bands in PRESSURE_BIN_SCORE_NEUTRAL_ZONES
+// (app/services/endgame_zones.py), 12 sit at the cap on both edges (all of
+// classical plus the Q0/Q4 extremes elsewhere); the other 8 are narrower on at
+// least one edge, by at most 0.022, which this one-band chart does not show.
+// Source: reports/benchmark/benchmarks-latest.md §3.3.3.
 export const PRESSURE_SCORE_GAP_NEUTRAL_MIN = -0.06;
 export const PRESSURE_SCORE_GAP_NEUTRAL_MAX = 0.06;
 
@@ -73,15 +73,14 @@ export const PRESSURE_SCORE_GAP_NEUTRAL_MAX = 0.06;
 // (computeScoreGapYAxis) so this component file only exports React
 // components — keeps Fast Refresh / react-refresh lint happy.
 
-// Q4 (80-100% clock remaining) is a low-signal tail — hidden per Plan 88-13 A-4.
+// Q4 (80-100% clock remaining) is a low-signal tail, so it is hidden.
 // The chart displays only Q0–Q3 (4 datapoints).
 const MAX_VISIBLE_QUINTILE_INDEX = 3;
 
 // Ordinal x-axis labels for the 4 displayed quintile buckets.
-// Post-UAT (88.4): bucket *center* values (the midpoint of each 20%-wide
+// Bucket *center* values (the midpoint of each 20%-wide
 // clock-remaining band), no "Time" suffix — the section/axis already conveys
-// "Remaining Time". Declared here to keep this chart self-contained per the
-// "build independently" guidance.
+// "Remaining Time". Declared here to keep this chart self-contained.
 const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   0: '10%',
   1: '30%',
@@ -91,7 +90,7 @@ const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
 
 // Full bucket *range* — shown in the tooltip header ("Time Bucket: 0-20%")
 // where there's room for the precise band, while the x-axis stays compact
-// with the center value (post-UAT 88.4).
+// with the center value.
 const PRESSURE_RANGE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   0: '0-20%',
   1: '20-40%',
@@ -99,7 +98,7 @@ const PRESSURE_RANGE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   3: '60-80%',
 };
 
-// Post-UAT (88.4): inset the first/last datapoints from the chart edges so the
+// Inset the first/last datapoints from the chart edges so the
 // line doesn't touch the y-axis / right border. Recharts category-axis padding.
 const X_AXIS_EDGE_PADDING = 24;
 
@@ -109,7 +108,6 @@ const X_AXIS_EDGE_PADDING = 24;
 // of the two. DOT_RADIUS is the base radius at parity (n == n_opp); the
 // scaled radius is clamped to [MIN, MAX] so a lopsided bucket can't produce
 // an invisible or oversized marker.
-// Post-UAT (88.4): base radius bumped for readability (was 2.5).
 const DOT_RADIUS = 4.5;
 const DOT_RADIUS_MIN = 3;
 const DOT_RADIUS_MAX = 7;
@@ -159,7 +157,7 @@ function formatPValue(p: number): string {
 
 /**
  * Zone color for a score-gap dot relative to the TC-collapsed typical band. A dot whose
- * 99% CI covers 0 stays neutral even outside the band (Phase 239 D-14).
+ * 99% CI covers 0 stays neutral even outside the band.
  */
 function zoneDotColor(delta: number, significant: boolean): string {
   if (!significant) return ZONE_NEUTRAL;
@@ -175,7 +173,7 @@ function bandZoneColor(delta: number): string {
   );
 }
 
-/** Outside the typical band but not significant: it could be chance (239 D-14). */
+/** Outside the typical band but not significant: it could be chance. */
 function isChanceGap(point: ChartPoint): boolean {
   return !point.significant && bandZoneColor(point.delta) !== ZONE_NEUTRAL;
 }
@@ -216,20 +214,17 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
 
 /**
  * Tooltip body for a single bucket. Exported so the test renders the REAL
- * production tooltip instead of a reimplementation (REVIEW.md IN-01 tautology
- * fix). Post-UAT 88.4: header is the full bucket range ("Time Bucket: 0-20%");
+ * production tooltip instead of a reimplementation. The header is the full bucket
+ * range ("Time Bucket: 0-20%");
  * You/Opp/Games collapse to one muted block; the p-value (greyed) and the
- * statistical test + CI methodology render below. No verdict sentence: the
- * per-metric z-test verdict left the visible UI in Phase 238 (D-00c). An out-of-band
- * bucket that is not significant says it could be chance, like RankedMetricPopover
- * (239 D-14).
+ * statistical test + CI methodology render below. No verdict sentence. An out-of-band
+ * bucket that is not significant says it could be chance, like RankedMetricPopover.
  *
  * Font-size note: this Recharts hover tooltip deliberately uses `text-xs` to
  * match the sibling "Clock Gap at Endgame Entry"
  * (EndgameClockDiffOverTimeChart)
  * tooltip — a compact, transient, opt-in hover surface, the same rationale as
- * the CLAUDE.md popover-layer exception. User-directed (post-UAT 88.4),
- * superseding the earlier WR-01 text-sm bump; do not re-flag.
+ * the CLAUDE.md popover-layer exception. User-directed: keep `text-xs` here.
  */
 export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
   const userScore = point.opp_score != null ? point.opp_score + point.delta : null;
@@ -286,8 +281,8 @@ export function ScoreGapByTimePressureChart({
   const { domain: yDomain, ticks: yTicks } = computeScoreGapYAxis(data);
   const isMobile = useIsMobile();
 
-  // Phase 238 review (FE-IN-04): with no clock data every bin is filtered out and the
-  // chart drew only its axis frame and grey band, with no hint why it was blank.
+  // With no clock data every bin is filtered out and the chart would draw only
+  // its axis frame and grey band, with no hint why it is blank.
   if (data.length === 0) {
     return (
       <p
@@ -334,8 +329,8 @@ export function ScoreGapByTimePressureChart({
               borders), so a category-bound band would inherit that inset and
               leave uncolored gutters. Binding the bands to this unpadded
               [0,1] axis instead makes them full-bleed: flush to the y-axis on
-              the left and the chart border on the right (post-UAT 88.4).
-              Recharts 3 fix (D-01 / Wave 6 UAT): recharts 3 categorises any
+              the left and the chart border on the right.
+              Recharts 3 behavior: recharts 3 categorises any
               xAxis in a horizontal ComposedChart as "categorical" in the axis
               domain selector. When dataKey is absent, combineAxisDomain
               returns range(0, dataLength) = [0,1,2,3] instead of the
@@ -372,7 +367,7 @@ export function ScoreGapByTimePressureChart({
             }}
           />
           {/* Category x-axis — 4 bucket-center labels. Edge padding insets the
-              first/last datapoints off the chart borders (post-UAT 88.4). */}
+              first/last datapoints off the chart borders. */}
           <XAxis
             dataKey="label"
             type="category"
@@ -395,7 +390,7 @@ export function ScoreGapByTimePressureChart({
             ticks={yTicks}
             // interval={0} forces every 10% tick (and its CartesianGrid line)
             // to render — Recharts otherwise auto-thins ticks/grid lines when
-            // the expanded domain produces many ticks (post-UAT 88.4).
+            // the expanded domain produces many ticks.
             interval={0}
             width={48}
             tickFormatter={(v: number) =>
@@ -450,7 +445,7 @@ export function ScoreGapByTimePressureChart({
               );
             }}
           >
-            {/* ErrorBar as child of Line — recharts 2.15.x pattern.
+            {/* ErrorBar as child of Line.
                 dataKey="ciError" points to [downOffset, upOffset] pre-computed
                 in toChartData(). undefined ciError suppresses the whisker. */}
             <ErrorBar

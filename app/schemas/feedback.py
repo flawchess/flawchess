@@ -19,9 +19,9 @@ FeedbackSource = Literal["floating_button", "milestone_ask"]
 class FeedbackCreate(BaseModel):
     """Request body for submitting user feedback."""
 
-    # D-07: length guard at the boundary; min_length=1 ensures empty text yields 422 (D-03)
+    # Length guard at the boundary; min_length=1 ensures empty text yields 422
     text: str = Field(min_length=1, max_length=_MAX_FEEDBACK_LEN)
-    # D-03: rating is optional (1-5 stars) — keeps submission friction low
+    # Rating is optional (1-5 stars) — keeps submission friction low
     rating: int | None = Field(default=None, ge=_MIN_RATING, le=_MAX_RATING)
     # min_length=1 mirrors the text guard: reject empty page_url from direct API callers
     page_url: str = Field(min_length=1, max_length=_MAX_PAGE_URL_LEN)

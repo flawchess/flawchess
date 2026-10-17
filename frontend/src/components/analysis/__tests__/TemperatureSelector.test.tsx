@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 159 Plan 04 — TemperatureSelector tests (D-08/D-09, Pitfall 7).
+ * TemperatureSelector tests.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe('TemperatureSelector mapping helpers', () => {
-  it('sliderPositionToTemperature(0) === 1 (strict — Pitfall 7 center exactness)', () => {
+  it('sliderPositionToTemperature(0) === 1 (strict — center exactness)', () => {
     expect(sliderPositionToTemperature(0)).toBe(1);
   });
 
@@ -57,7 +57,7 @@ describe('TemperatureSelector mapping helpers', () => {
     expect(sliderPositionToTemperature(-1)).toBe(0.5);
   });
 
-  it('temperatureToSliderPosition(1) === 0 (strict — Pitfall 7 center exactness)', () => {
+  it('temperatureToSliderPosition(1) === 0 (strict — center exactness)', () => {
     expect(temperatureToSliderPosition(1)).toBe(0);
   });
 
@@ -81,7 +81,7 @@ describe('TemperatureSelector mapping helpers', () => {
     expect(TEMPERATURE_DEFAULT).toBe(1.0);
   });
 
-  it('TEMPERATURE_DEFAULT === DEFAULT_POLICY_TEMPERATURE (search no-op value, T-159-08)', () => {
+  it('TEMPERATURE_DEFAULT === DEFAULT_POLICY_TEMPERATURE (search no-op value)', () => {
     expect(TEMPERATURE_DEFAULT).toBe(DEFAULT_POLICY_TEMPERATURE);
   });
 });

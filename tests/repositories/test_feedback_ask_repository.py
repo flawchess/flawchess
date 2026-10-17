@@ -1,4 +1,4 @@
-"""Transition matrix for the feedback-ask repository against real Postgres (SEED-191 #6-#8).
+"""Transition matrix for the feedback-ask repository against real Postgres.
 
 Each transition is one guarded ``UPDATE ... RETURNING`` on ``users.prompt_state``; these
 tests call the repository directly with explicit ``today`` / ``active_days`` so no clock

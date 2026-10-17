@@ -3,7 +3,7 @@ import { TacticMotifChip } from './TacticMotifChip';
 import { ChipColumn } from './ChipColumn';
 import { trackFeature } from '@/lib/analytics';
 
-// Quick 260620-sep: how many tactic chips a single orientation group shows before
+// How many tactic chips a single orientation group shows before
 // collapsing the rest behind a "+N more" toggle. Beginner games can span many distinct
 // motifs; capping keeps the Games-tab card height bounded. Each group now sits in its own
 // ~1/3-width column, so a handful before collapsing is plenty.
@@ -17,11 +17,11 @@ interface TacticMotifGroupProps {
   /** Game id — keeps chip + control testids unique within a card. */
   gameId: number;
   /**
-   * Distinct motifs for this orientation, with per-motif occurrence count. Quick
-   * 260702-mnd (D-2): optional `filterRingActive` overrides the store-derived ring
-   * with the caller's precise all-axes (family+orientation+depth) match — passed
-   * through unconditionally so a `false` value (a chip that fails the depth filter)
-   * suppresses the ring rather than falling back to the coarser store match.
+   * Distinct motifs for this orientation, with per-motif occurrence count. Optional
+   * `filterRingActive` overrides the store-derived ring with the caller's precise
+   * all-axes (family+orientation+depth) match — passed through unconditionally so a
+   * `false` value (a chip that fails the depth filter) suppresses the ring rather
+   * than falling back to the coarser store match.
    */
   motifs: { motif: string; count: number; filterRingActive?: boolean }[];
   /** Hover a chip → parent highlights this motif's eval-chart markers. */
@@ -29,10 +29,9 @@ interface TacticMotifGroupProps {
   /** Activate a chip → parent cycles the eval chart through this motif's plies. */
   onChipActivate: (motif: string) => void;
   /** Optional legend tooltip icon, pinned to the right of the group label so each
-   *  orientation explains only its own motifs (Quick 260620: per-column legends). */
+   *  orientation explains only its own motifs. */
   legend?: React.ReactNode;
-  /** Optional node rendered below the chips inside this column lane (Quick 260625: the
-   *  desktop game-card Explore button is pinned under the Missed column). */
+  /** Optional node rendered below the chips inside this column lane. */
   footer?: React.ReactNode;
   /** Keep the label + chips inline (flex-wrap) at every width instead of stacking into a
    *  column at md+. Forwarded to ChipColumn — used by the /analysis tags rail. */
@@ -40,9 +39,9 @@ interface TacticMotifGroupProps {
 }
 
 /**
- * Quick 260620-sep: one orientation group ("Allowed" / "Missed") of tactic motif chips
- * on the Library Games-tab card. Replaces the old flat, prefix-per-chip row — the group
- * label conveys orientation so chips render prefix-free (hidePrefix) with a count. Caps
+ * One orientation group ("Allowed" / "Missed") of tactic motif chips
+ * on the Library Games-tab card. The group label conveys orientation, so chips render
+ * prefix-free (hidePrefix) with a count. Caps
  * the visible chips at TACTIC_CHIP_CAP_PER_GROUP with a "+N more" / "Show less" toggle so
  * busy beginner games don't grow the card unbounded.
  */
@@ -81,7 +80,7 @@ export function TacticMotifGroup({
           orientation={orientation}
           hidePrefix
           count={count}
-          flawId={gameId}
+          gameId={gameId}
           filterRingActive={filterRingActive}
           onHover={(active) => onChipHover(motif, active)}
           onActivate={() => onChipActivate(motif)}
@@ -92,7 +91,7 @@ export function TacticMotifGroup({
           type="button"
           className="text-sm font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           onClick={() => {
-            // Discovery only: track the expand, never the collapse (D-13). No game id (D-04).
+            // Discovery only: track the expand, never the collapse. No game id.
             if (!expanded) trackFeature('panel-open', { target: 'tactic-motifs-more' });
             setExpanded((v) => !v);
           }}

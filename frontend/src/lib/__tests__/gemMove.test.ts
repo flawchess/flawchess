@@ -1,10 +1,9 @@
 /**
  * gemMove unit tests — pure, deterministic (no engine/worker involved).
  *
- * Traces 1:1 to 163-RESEARCH.md's Phase Requirements → Test map: D-01 (lost-
- * position best-try still qualifies), D-02 (no opening-ply guard — there is
- * no ply argument to gate on), D-04 (mover-agnostic — no color parameter),
- * D-07 (GEM_MAIA_MAX_PROB constant), plus the two free-lunch guards
+ * Covers: a lost-position best-try still qualifies, no opening-ply guard (there
+ * is no ply argument to gate on), mover-agnostic classification (no color
+ * parameter), the GEM_MAIA_MAX_PROB constant, plus the two free-lunch guards
  * (saturation, forced recapture) and summarizeForGem's argmax/runner-up/empty
  * reduction.
  */
@@ -38,7 +37,7 @@ function gradeForEs(es: number): GemGrade {
 // ─── classifyGem ────────────────────────────────────────────────────────────
 
 describe('classifyGem', () => {
-  it('D-01: a lost-position best-try still qualifies (no still-losing exclusion)', () => {
+  it('a lost-position best-try still qualifies (no still-losing exclusion)', () => {
     expect(
       classifyGem({
         maiaProbability: 0.02,
@@ -49,8 +48,8 @@ describe('classifyGem', () => {
     ).toBe(true);
   });
 
-  it('D-02: qualifying inputs classify true regardless of ply — classifyGem takes no ply argument, so no opening guard can ever gate it', () => {
-    // Same qualifying inputs as D-01, re-asserted to document there is no ply
+  it('qualifying inputs classify true regardless of ply — classifyGem takes no ply argument, so no opening guard can ever gate it', () => {
+    // Same qualifying inputs as above, re-asserted to document there is no ply
     // parameter in the classifyGem signature to gate on.
     expect(
       classifyGem({
@@ -62,11 +61,11 @@ describe('classifyGem', () => {
     ).toBe(true);
   });
 
-  it('D-07 (Phase 172): GEM_MAIA_MAX_PROB is exactly 0.2', () => {
+  it('GEM_MAIA_MAX_PROB is exactly 0.2', () => {
     expect(GEM_MAIA_MAX_PROB).toBe(0.2);
   });
 
-  it('D-07 (Phase 172): a maiaProbability of 0.15 with a passing C2 now classifies as a gem (would have failed C1 at the old 0.1 threshold)', () => {
+  it('a maiaProbability of 0.15 with a passing C2 now classifies as a gem (would have failed C1 at the old 0.1 threshold)', () => {
     expect(
       classifyGem({
         maiaProbability: 0.15,
@@ -173,7 +172,7 @@ describe('classifyGem', () => {
 // ─── classifyGreat ──────────────────────────────────────────────────────────
 
 describe('classifyGreat', () => {
-  it('D-01: qualifying inputs in the (0.20, 0.50] band with a passing C2 margin classify as great', () => {
+  it('qualifying inputs in the (0.20, 0.50] band with a passing C2 margin classify as great', () => {
     expect(
       classifyGreat({
         maiaProbability: 0.35,
@@ -296,7 +295,7 @@ describe('summarizeForGem', () => {
     expect(result.secondBestEs).toBeCloseTo(0.5);
   });
 
-  it('D-04: classifies identically regardless of mover — symmetric best/second-best for white and black', () => {
+  it('classifies identically regardless of mover — symmetric best/second-best for white and black', () => {
     const gradeBySan = new Map<string, GemGrade>([
       ['e4', { evalCp: 100, evalMate: null }],
       ['d4', { evalCp: 300, evalMate: null }],
@@ -313,9 +312,9 @@ describe('summarizeForGem', () => {
     expect(blackResult.bestEs).toBeCloseTo(evalToExpectedScore(-50, null, BLACK));
   });
 
-  // ── Ungraded (null/null) entries — 163-REVIEW WR-02 ──────────────────────
+  // ── Ungraded (null/null) entries ──────────────────────
 
-  it('WR-02: skips ungraded null/null entries — a phantom 0.5 must not displace the real argmax in a lost position (D-01)', () => {
+  it('skips ungraded null/null entries — a phantom 0.5 must not displace the real argmax in a lost position', () => {
     // All REAL evals are losing (es < 0.5); the ungraded entry would otherwise
     // read as a fabricated 0.5 and steal bestSan from the genuine best try.
     const gradeBySan = new Map<string, GemGrade>([
@@ -329,7 +328,7 @@ describe('summarizeForGem', () => {
     expect(result.secondBestEs).toBeCloseTo(0.05);
   });
 
-  it('WR-02: an ungraded entry never becomes secondBestEs in a winning position (no spurious C2 gap)', () => {
+  it('an ungraded entry never becomes secondBestEs in a winning position (no spurious C2 gap)', () => {
     // With one real grade + one ungraded entry, the phantom 0.5 must not serve
     // as the runner-up — secondBestEs stays null, so classifyGem cannot pass C2
     // on fabricated data.
@@ -342,7 +341,7 @@ describe('summarizeForGem', () => {
     expect(result.secondBestEs).toBeNull();
   });
 
-  it('WR-02: an all-ungraded map reduces to all-null fields (same as empty)', () => {
+  it('an all-ungraded map reduces to all-null fields (same as empty)', () => {
     const gradeBySan = new Map<string, GemGrade>([
       ['e4', { evalCp: null, evalMate: null }],
       ['d4', { evalCp: null, evalMate: null }],

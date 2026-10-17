@@ -1,0 +1,4 @@
+app/repositories/flaws_repository.py
+app/repositories/game_flaws_repository.py
+app/repositories/library_repository.py
+app/repositories/query_utils.py

@@ -1,6 +1,6 @@
 /**
  * leaderboardMedalsDemoData — client-side fixtures for the admin "Leaderboard
- * medals demo" (Phase 231). Typed as the real wire types so tsc catches drift
+ * medals demo". Typed as the real wire types so tsc catches drift
  * from the backend schema. No API call, no query hook: the demo renders the
  * production TrainLeaderboardCardView and MedalClaimDialog from these objects.
  */

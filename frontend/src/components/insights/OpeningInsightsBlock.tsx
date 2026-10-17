@@ -34,7 +34,7 @@ interface SectionMeta {
   findingsKey: FindingsKey;
 }
 
-// Order locked by D-01: white-weaknesses, black-weaknesses, white-strengths, black-strengths.
+// Fixed order: white-weaknesses, black-weaknesses, white-strengths, black-strengths.
 const SECTIONS: SectionMeta[] = [
   {
     key: 'white-weaknesses',
@@ -164,7 +164,7 @@ function SectionsContent({
 
   // Sections stack vertically full-width. Within each section, finding cards
   // render in a 2-column grid on lg+ (single column on mobile) — mirrors the
-  // Stats subtab layout. Section order is locked by D-01:
+  // Stats subtab layout. Section order is fixed:
   // white-weaknesses → black-weaknesses → white-strengths → black-strengths.
   return (
     <div className="flex flex-col gap-6">
@@ -267,7 +267,7 @@ function FindingsSection({
             <button
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 px-2"
               onClick={() => {
-                // Discovery only: track the expand, never the collapse (D-13).
+                // Discovery only: track the expand, never the collapse.
                 if (!expanded) trackFeature('panel-open', { target: 'opening-insights-more' });
                 setExpanded((prev) => !prev);
               }}

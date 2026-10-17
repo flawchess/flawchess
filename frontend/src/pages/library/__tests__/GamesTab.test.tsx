@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * GamesTab vitest suite — tests the key migration scenarios from Plan 108-08:
+ * GamesTab vitest suite — tests the key scenarios:
  *
- * 1. Panel receives flawFilter from useFlawFilterStore (D-04)
+ * 1. Panel receives flawFilter from useFlawFilterStore
  * 2. Changing the flaw filter resets the page offset (calls useLibraryGames with offset 0)
- * 3. GamesTab does NOT URL-sync flaw filter (D-04)
+ * 3. GamesTab does NOT URL-sync flaw filter
  * 4. isError branch renders the mandatory error copy
  */
 
@@ -42,7 +42,7 @@ vi.mock('@/components/filters/LibraryFilterPanel', () => ({
 // Stub FlawFilterControl — capture severity/tags for assertion. The flaw filter is
 // now hosted in its own separate sidebar panel (not inside LibraryFilterPanel).
 let capturedFlawFilter: { severity: string[]; tags: string[] } | null = null;
-// Quick 260620-pza: capture showTacticFilter to assert the Games tab now enables the
+// Capture showTacticFilter to assert the Games tab enables the
 // tactic-filter section (parity with the Flaws tab).
 let capturedShowTacticFilter: boolean | undefined;
 
@@ -195,7 +195,7 @@ describe('GamesTab', () => {
     });
   });
 
-  describe('D-04: shared flaw filter (no URL sync)', () => {
+  describe('shared flaw filter (no URL sync)', () => {
     it('passes flawFilter from useFlawFilterStore to the flaw filter control', () => {
       mockFlawFilterState = { severity: ['blunder'], tags: ['miss'] };
       renderGamesTab();
@@ -205,7 +205,7 @@ describe('GamesTab', () => {
       expect(capturedFlawFilter?.tags).toEqual(['miss']);
     });
 
-    it('enables the tactic-filter section on the Games tab (Quick 260620-pza)', () => {
+    it('enables the tactic-filter section on the Games tab', () => {
       capturedShowTacticFilter = undefined;
       mockFlawFilterState = { severity: ['blunder'], tags: [] };
       renderGamesTab();

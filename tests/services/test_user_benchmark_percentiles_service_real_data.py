@@ -1,9 +1,8 @@
 """Real-data integration tests for user_benchmark_percentiles_service.
 
-Phase 94.1 Plan 09 — gap-closure for VERIFICATION.md gap #1 (missing[1]):
-"Add an integration test that runs compute_stage_a / compute_stage_b
+These tests run compute_stage_a / compute_stage_b
 end-to-end against a real test DB with a seeded user that DOES have
-canonical-slice games — asserts row IS written."
+canonical-slice games, and assert the row IS written.
 
 These tests seed a user with games that satisfy the canonical slice
 (SKILL.md §1: status='completed', ±100 ELO equal footing, NON-sparse cell,
@@ -19,7 +18,7 @@ Cell-existence verification:
   NON-sparse cell — confirmed in reports/global-percentile-cdf-latest.md
   (1600/blitz appears with 501 users; 1500 bucket also appears).
 
-Fallback policy (per Plan 09 Task 3 action step 2): if (1500, 'blitz')
+Fallback policy: if (1500, 'blitz')
 ever stops producing a row, fall back to (1600, 'blitz') or
 (1500, 'rapid'); both are confirmed non-sparse in the CDF report.
 """
@@ -48,7 +47,7 @@ from app.services.user_benchmark_percentiles_service import (
 
 _TEST_USER_ELO: int = 1500
 _OPP_ELO_WITHIN_BAND: int = 1550  # within ±100 of _TEST_USER_ELO
-# Phase 94.4 D-08: typed as TimeControlBucket so fetch_for_user nested
+# Typed as TimeControlBucket so fetch_for_user nested
 # inner-dict lookups (dict[TimeControlBucket, PercentileRow]) type-check
 # without widening to str.
 from app.models.user_rating_anchors import TimeControlBucket as _TimeControlBucket  # noqa: E402
@@ -310,17 +309,17 @@ async def test_compute_stage_a_writes_row_for_qualifying_user(real_data_user) ->
     async with test_session_maker() as session:
         result = await fetch_for_user(session, user_id=user_id)
 
-    # Phase 94.4 D-08: fetch_for_user returns nested
+    # fetch_for_user returns nested
     # dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]. The
     # canonical-slice seed uses _TC_BUCKET='blitz' so the per-TC row lives
     # under result[STAGE_A_METRIC]['blitz'].
     #
-    # Plan 05c (94.4): the percentile may legitimately be None for this
-    # fixture under the post-Plan 04 cohort CDF — the regenerated
+    # The percentile may legitimately be None for this
+    # fixture under the cohort CDF — the regenerated
     # COHORT_PERCENTILE_CDF does not currently ship breakpoints for
     # ('score_gap', anchor≈1500, blitz) (the benchmark ingest was
     # rapid/classical-skewed). The row's value MUST be populated;
-    # percentile-None is the Plan 13 "no cohort cell" suppression path,
+    # percentile-None is the "no cohort cell" suppression path,
     # not a Stage A failure. CDF coverage gap tracked separately.
     # fmt: off
     assert STAGE_A_METRIC in result and _TC_BUCKET in result[STAGE_A_METRIC] and result[STAGE_A_METRIC][_TC_BUCKET].value is not None, f"Stage A failed to write a row with non-null value for score_gap blitz (got {result.get(STAGE_A_METRIC)!r})"  # noqa: E501
@@ -353,7 +352,7 @@ async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
         with_evals=True,
     )
 
-    # Plan 05c (94.4): Stage B reads anchors from user_rating_anchors via
+    # Stage B reads anchors from user_rating_anchors via
     # fetch_anchors_for_user — Stage A is the canonical anchor writer
     # (compute_anchors_for_user fires inside compute_stage_a). Without a
     # prior Stage A run, no anchors exist and Stage B no-ops (line 510 of
@@ -364,7 +363,7 @@ async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
     async with test_session_maker() as session:
         result = await fetch_for_user(session, user_id=user_id)
 
-    # Phase 94.4 D-08: nested per-(metric, TC) shape; canonical-slice seed
+    # Nested per-(metric, TC) shape; canonical-slice seed
     # uses _TC_BUCKET='blitz'. Percentile may be None when the cohort CDF
     # has no breakpoint for (achievable_score_gap, anchor, blitz) — see
     # test_compute_stage_a_writes_row_for_qualifying_user for the
@@ -400,7 +399,7 @@ async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
         n_non_endgame=_NON_ENDGAME_GAMES_ABOVE_FLOOR,
     )
 
-    # Phase 94.4 D-08: nested per-(metric, TC) shape; the per-TC row lives
+    # Nested per-(metric, TC) shape; the per-TC row lives
     # under result[STAGE_A_METRIC][_TC_BUCKET].
     await compute_stage_a(user_id, session_maker=test_session_maker)
     async with test_session_maker() as session:
@@ -423,10 +422,10 @@ async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
 async def test_compute_stage_a_below_floor_writes_no_row(
     real_data_user,
 ) -> None:
-    """When a user has zero floor-passing cells, NO row is written (Plan 13).
+    """When a user has zero floor-passing cells, NO row is written.
 
     Seeds 5 endgame games (below the 30-game floor) and 5 non-endgame games.
-    Plan 13 correctness fix: the service now uses a single CTE with
+    The service uses a single CTE with
     apply_floor=True. With 5 endgame games, the CTE returns no rows for the
     floor-passing query, so no row is written at all. The chip suppresses
     naturally because fetch_for_user returns an empty dict.
@@ -448,7 +447,7 @@ async def test_compute_stage_a_below_floor_writes_no_row(
     async with test_session_maker() as session:
         result = await fetch_for_user(session, user_id=user_id)
 
-    # Plan 13: below-floor users must have NO row. The chip suppresses naturally.
+    # Below-floor users must have NO row. The chip suppresses naturally.
     assert STAGE_A_METRIC not in result, (
         f"Plan 13: below-floor users must NOT have a row in user_benchmark_percentiles "
         f"(got {result.get(STAGE_A_METRIC)!r}). The floor-respecting CTE should return "
@@ -456,14 +455,14 @@ async def test_compute_stage_a_below_floor_writes_no_row(
     )
 
 
-# ── Tombstone: removed in Phase 94.2 (D-8) ─────────────────────────────────────
+# ── Tombstone: per-cell floor test removed ─────────────────────────────────────
 #
 # The ``test_user_28_shape_floor_respecting_value_excludes_below_floor_cells``
 # test (and its supporting per-cell constants and the
-# ``_seed_endgame_games_for_elo`` helper) were a Plan 13 regression guard
+# ``_seed_endgame_games_for_elo`` helper) were a regression guard
 # against the per-cell ``apply_floor=False`` bug.
 #
-# Under the Phase 94.2 pooled-per-user model (D-5 / D-8) the cell-based
+# Under the pooled-per-user model the cell-based
 # methodology is gone — there are no per-(elo_bucket, tc_bucket) cells to
 # include or exclude. The user-28 cell-correctness scenario is intrinsically
 # untranslatable to the pooled model: the user-28 setup is 1 + 3 + 25 = 29

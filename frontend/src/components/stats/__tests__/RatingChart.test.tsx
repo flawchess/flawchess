@@ -2,10 +2,10 @@
 /**
  * Regression tests for RatingChart.
  *
- * 1. Inactivity-gap annotation (SC-4 Task 3): Palmtree break annotation for >90-day
+ * 1. Inactivity-gap annotation: Palmtree break annotation for >90-day
  *    gaps, no-op for gap-free fixtures, and out-of-order date handling.
  *
- * 2. Empty-series omission (#260606-jvg Task 1): series and legend entries for TCs
+ * 2. Empty-series omission: series and legend entries for TCs
  *    with no data points are omitted; filter prop (enabledTimeControls) still wins
  *    even when data for the filtered TC exists.
  */
@@ -121,7 +121,7 @@ describe('RatingChart inactivity gap annotations', () => {
   });
 });
 
-// ── Empty-series omission (#260606-jvg Task 1) ─────────────────────────────
+// ── Empty-series omission ─────────────────────────────
 
 /** Blitz and Rapid data only — no Bullet or Classical points. */
 const BLITZ_RAPID_DATA: RatingDataPoint[] = [
@@ -177,7 +177,7 @@ describe('RatingChart empty-series omission', () => {
   });
 });
 
-// ── Daily game-count bars (Phase 239 UAT) ──────────────────────────────────
+// ── Daily game-count bars ──────────────────────────────────
 
 /** Day 1: 3 blitz + 3 bullet games. Day 2: 6 blitz games. */
 const VOLUME_DATA: RatingDataPoint[] = [

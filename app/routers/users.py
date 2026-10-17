@@ -1,6 +1,7 @@
-"""Users router: profile GET/PUT endpoints and user account stats.
+"""Users router: profile, import settings and account stats.
 
-HTTP layer only — all DB access via user_repository and game_repository.
+DB access goes through the repositories (one direct session.get(User) for the
+impersonation context).
 """
 
 import datetime
@@ -21,7 +22,7 @@ from app.repositories import (
     user_rating_anchors_repository,
     user_repository,
 )
-from app.repositories.user_import_settings_repository import _import_scope_expanded
+from app.repositories.user_import_settings_repository import import_scope_expanded
 from app.schemas.admin import ImpersonationContext
 from app.schemas.feedback_ask import FeedbackAskActionRequest, FeedbackAskView
 from app.schemas.users import (
@@ -53,9 +54,9 @@ async def _get_impersonation_context(
 ) -> ImpersonationContext | None:
     """Re-decode the Authorization-header JWT and return impersonation context, or None.
 
-    D-22 Option A (RESEARCH.md §"Detecting 'am I impersonating?'"): simpler
-    than threading state through the auth strategy, and the decode cost is
-    negligible compared to the DB round-trips already in /me/profile.
+    Re-decoding the header is simpler than threading state through the auth
+    strategy, and the decode cost is negligible compared to the DB round-trips
+    already in /me/profile.
     """
     auth_header = request.headers.get("authorization", "")
     if not auth_header.lower().startswith("bearer "):
@@ -87,9 +88,9 @@ async def _build_profile_response(
 ) -> UserProfileResponse:
     """Build the profile response shared by GET and PUT /me/profile.
 
-    One builder so the two routes can never drift (234-RESEARCH Pitfall 2: the
-    leaderboard toggle writes the PUT response straight into the frontend profile
-    cache, so a PUT missing a field would drop it there).
+    One builder so the two routes can never drift (the leaderboard toggle writes
+    the PUT response straight into the frontend profile cache, so a PUT missing a
+    field would drop it there).
     """
     counts = await game_repository.count_games_by_platform(session, user.id)
     last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
@@ -131,7 +132,7 @@ async def get_profile(
     """Return the authenticated user's platform usernames and game counts.
 
     When the request carries an impersonation JWT, `impersonation` is populated
-    with the admin_id and target_email so the frontend can render the pill (D-22).
+    with the admin_id and target_email so the frontend can render the pill.
     For regular + guest tokens, `impersonation` is null.
     """
     profile = await user_repository.get_profile(session, user.id)
@@ -145,15 +146,15 @@ async def update_profile(
     body: UserProfileUpdate,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    # Phase 234: PUT now carries the impersonation context like GET (it used to be
-    # null, which also dropped the impersonation pill from the cached profile).
+    # Carries the impersonation context like GET, so the PUT response keeps the
+    # impersonation pill in the cached profile.
     impersonation: Annotated[ImpersonationContext | None, Depends(_get_impersonation_context)],
     now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
 ) -> UserProfileResponse:
     """Update the authenticated user's platform usernames and leaderboard_hidden flag.
 
     Omitted (None) fields are left unchanged; `leaderboard_hidden` false un-hides
-    the user from the weekly Train leaderboards (Phase 230 D-16).
+    the user from the weekly Train leaderboards.
     """
     updated = await user_repository.update_profile(session, user.id, body.model_dump())
     return await _build_profile_response(
@@ -166,7 +167,7 @@ async def get_import_settings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> ImportSettingsResponse:
-    """Return the authenticated user's import settings (create-on-first-touch, D-16).
+    """Return the authenticated user's import settings (create-on-first-touch).
 
     A user with no settings row yet gets the app-layer defaults (bullet=false,
     blitz/rapid/classical=true, game_cap=1000) persisted and returned in one
@@ -192,25 +193,25 @@ async def update_import_settings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> ImportSettingsResponse:
-    """Persist the authenticated user's import settings (D-09 auto-save on toggle).
+    """Persist the authenticated user's import settings (auto-save on toggle).
 
     Never accepts a user id from the body or path -- always scoped to
-    `current_active_user.id` (T-186-01 mitigation).
+    `current_active_user.id`.
     """
     previous = await user_import_settings_repository.get_settings(session, user_id=user.id)
     settings_row = await user_import_settings_repository.upsert_settings(
         session, user_id=user.id, **body.model_dump()
     )
-    # Bug fix (UAT 186): the backfill cursor is per-platform, not per-(platform,
+    # Bug fix: the backfill cursor is per-platform, not per-(platform,
     # TC), so months/chunks already attempted under the OLD scope silently
     # skipped games that only the NEW scope wants (a newly enabled TC's games in
     # already-walked months, or over-cap games dropped by the backward pass's
     # budget gate). Reset the cursors whenever the scope EXPANDS (a TC turned
     # on, or the cap raised) so the next Sync re-walks from the top; re-fetching
-    # is budget-safe because already-imported games are deduped (CR-01) and
+    # is budget-safe because already-imported games are deduped and
     # no-op'd on insert. Narrowing (TC off, cap lowered) keeps the cursors --
     # nothing previously skipped becomes wanted.
-    if previous is not None and _import_scope_expanded(previous, settings_row):
+    if previous is not None and import_scope_expanded(previous, settings_row):
         await user_import_settings_repository.reset_backfill_cursors(session, user_id=user.id)
     imported_counts = await game_repository.count_imported_by_platform_and_tc(session, user.id)
     return ImportSettingsResponse(
@@ -253,7 +254,7 @@ async def feedback_ask_action(
     impersonation: Annotated[ImpersonationContext | None, Depends(_get_impersonation_context)],
     now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
 ) -> FeedbackAskView:
-    """Report a view, snooze or done for the milestone feedback ask (SEED-191).
+    """Report a view, snooze or done for the milestone feedback ask.
 
     The user id comes only from current_active_user (V4). Always 200 and idempotent:
     an ineligible, guest, impersonated or stale-tab call is a no-op that returns the

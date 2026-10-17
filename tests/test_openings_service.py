@@ -1,12 +1,12 @@
 """Unit and integration tests for the openings service.
 
 Coverage:
-- ANL-03: derive_user_result for all 6 result × color combinations
-- ANL-03: W/D/L stats computed correctly from seeded data
-- RES-01, RES-02: GameRecord includes opponent, result, date, time_control, platform_url
-- RES-03: matched_count reflects total before pagination
+- derive_user_result for all 6 result × color combinations
+- W/D/L stats computed correctly from seeded data
+- GameRecord includes opponent, result, date, time_control, platform_url
+- matched_count reflects total before pagination
 - Zero-match edge case: all-zero stats, empty list, no error
-- MEXP-04, MEXP-05, MEXP-10: get_next_moves W/D/L aggregation, sorting, result_fen
+- get_next_moves W/D/L aggregation, sorting, result_fen
 """
 
 import datetime
@@ -99,7 +99,7 @@ async def _seed_game(
 
 
 # ---------------------------------------------------------------------------
-# TestDeriveUserResult — ANL-03 support
+# TestDeriveUserResult
 # ---------------------------------------------------------------------------
 
 
@@ -126,7 +126,7 @@ class TestDeriveUserResult:
 
 
 # ---------------------------------------------------------------------------
-# TestWDLStats — ANL-03
+# TestWDLStats
 # ---------------------------------------------------------------------------
 
 WDL_HASH = 44444444
@@ -152,7 +152,7 @@ class TestWDLStats:
         assert response.stats.win_pct == pytest.approx(33.3, abs=0.1)
         assert response.stats.draw_pct == pytest.approx(33.3, abs=0.1)
         assert response.stats.loss_pct == pytest.approx(33.3, abs=0.1)
-        # score / confidence / CI regression check (quick task 260504-ttq)
+        # score / confidence / CI regression check
         # W=1, D=1, L=1, N=3 → score = (1 + 0.5) / 3 ≈ 0.5
         assert 0.0 <= response.stats.score <= 1.0
         assert response.stats.confidence in {"low", "medium", "high"}
@@ -177,7 +177,7 @@ class TestWDLStats:
 
 
 # ---------------------------------------------------------------------------
-# TestGameRecord — RES-01, RES-02
+# TestGameRecord
 # ---------------------------------------------------------------------------
 
 RECORD_HASH = 55555555
@@ -221,7 +221,7 @@ class TestGameRecord:
 
     @pytest.mark.asyncio
     async def test_platform_url_present(self, db_session: AsyncSession) -> None:
-        """RES-02: platform_url is populated on every GameRecord."""
+        """platform_url is populated on every GameRecord."""
         url = "https://www.chess.com/game/live/77777"
         await _seed_game(db_session, platform_url=url, full_hash=RECORD_HASH)
 
@@ -233,7 +233,7 @@ class TestGameRecord:
 
 
 # ---------------------------------------------------------------------------
-# TestPaginationResponse — RES-03
+# TestPaginationResponse
 # ---------------------------------------------------------------------------
 
 PAGINATION_HASH = 66666666
@@ -258,7 +258,7 @@ class TestPaginationResponse:
 
 
 # ---------------------------------------------------------------------------
-# TestEvalFields — quick task 260508-f9o
+# TestEvalFields
 # ---------------------------------------------------------------------------
 
 
@@ -323,7 +323,7 @@ async def _seed_game_with_mg_eval(
 
 
 class TestAnalyzeEvalFields:
-    """Quick task 260508-f9o: analyze() populates MG-entry eval fields and
+    """analyze() populates MG-entry eval fields and
     OpeningsResponse.eval_baseline_pawns from the position's phase=1 rows."""
 
     @pytest.mark.asyncio
@@ -461,7 +461,7 @@ async def _seed_game_with_positions(
 
 
 # ---------------------------------------------------------------------------
-# TestGetNextMoves — MEXP-04, MEXP-05, MEXP-10
+# TestGetNextMoves
 # ---------------------------------------------------------------------------
 
 
@@ -512,7 +512,7 @@ class TestGetNextMoves:
         assert move_map["d4"].game_count == 1
         assert move_map["d4"].losses == 1
 
-        # position_stats score / confidence / p_value / CI fields (quick task 260504-ttq)
+        # position_stats score / confidence / p_value / CI fields
         ps = response.position_stats
         # W=1, D=0, L=1, N=2 → score = 0.5
         assert ps.score == pytest.approx((1 + 0.5 * 0) / 2)
@@ -559,7 +559,7 @@ class TestGetNextMoves:
     async def test_position_stats_score_ci(self, db_session: AsyncSession) -> None:
         """W=8, D=0, L=2, N=10: score=0.8, CI brackets 0.8, bounds in [0,1].
 
-        Verifies quick task 260504-ttq: position_stats includes Wald 95% CI.
+        Verifies position_stats includes Wald 95% CI.
         """
         SOURCE_HASH = 98765432
         RESULT_HASH = 98765400
@@ -627,7 +627,7 @@ class TestGetNextMoves:
 
 
 # ---------------------------------------------------------------------------
-# TestNextMovesSorting — MEXP-04
+# TestNextMovesSorting
 # ---------------------------------------------------------------------------
 
 
@@ -725,12 +725,12 @@ class TestNextMovesSorting:
 
 
 # ---------------------------------------------------------------------------
-# TestNextMovesScoreConfidence — Phase 76 D-05/D-13
+# TestNextMovesScoreConfidence
 # ---------------------------------------------------------------------------
 
 
 class TestNextMovesScoreConfidence:
-    """Phase 76 D-05/D-13: each NextMoveEntry carries score, confidence, p_value
+    """Each NextMoveEntry carries score, confidence, p_value
     computed via the shared score_confidence.compute_confidence_bucket helper.
     """
 
@@ -774,7 +774,7 @@ class TestNextMovesScoreConfidence:
         assert entry.confidence in ("low", "medium", "high")
         assert 0.0 <= entry.p_value <= 1.0
 
-        # Phase 80.1: wins+draws+losses is resulting-position N; game_count is
+        # wins+draws+losses is resulting-position N; game_count is
         # move-played N. When no transposition is seeded (as in this fixture),
         # the two are equal, but compute the helper input from pos_n explicitly
         # to document the new contract.
@@ -789,14 +789,14 @@ class TestNextMovesScoreConfidence:
 
 
 # ---------------------------------------------------------------------------
-# TestNextMovesTranspositionWdl — Phase 80.1 D-01/D-02
+# TestNextMovesTranspositionWdl
 # ---------------------------------------------------------------------------
 
 
-# Hash range reserved for Phase 80.1 Plan 02 transposition fixtures.
-# 0xAA** / 0xBB** are reserved by Plan 80.1-01 (TestQueryTranspositionWdl /
+# Hash range reserved for transposition fixtures.
+# 0xAA** / 0xBB** are reserved by the repository tests (TestQueryTranspositionWdl /
 # TestQueryResultingPositionWdl). 0xCC** is the per-test isolation namespace
-# for Plan 80.1-02 service-level integration tests.
+# for the service-level integration tests.
 _TWDL_SOURCE_HASH = 0xCC01
 _TWDL_OTHER_SOURCE_HASH = 0xCC02
 _TWDL_RESULT_HASH = 0xCC03
@@ -808,10 +808,10 @@ _TWDL_FP_RESULT_HASH = 0xCC08
 
 
 class TestNextMovesTranspositionWdl:
-    """Phase 80.1 D-01/D-02: Move Explorer rows show resulting-position WDL.
+    """Move Explorer rows show resulting-position WDL.
 
-    game_count stays move-played per D-01; wins+draws+losses reflects all
-    games visiting result_hash (transposition-inclusive) per D-02.
+    game_count stays move-played; wins+draws+losses reflects all
+    games visiting result_hash (transposition-inclusive).
     """
 
     @pytest.mark.asyncio
@@ -852,9 +852,9 @@ class TestNextMovesTranspositionWdl:
         assert len(response.moves) == 1
         entry = response.moves[0]
         assert entry.move_san == "e4"
-        # game_count is move-played (D-01): only Game A played e4 from SOURCE.
+        # game_count is move-played: only Game A played e4 from SOURCE.
         assert entry.game_count == 1
-        # W/D/L are resulting-position (D-02): both games visit RESULT_HASH.
+        # W/D/L are resulting-position: both games visit RESULT_HASH.
         assert entry.wins == 1
         assert entry.draws == 0
         assert entry.losses == 1
@@ -891,7 +891,7 @@ class TestNextMovesTranspositionWdl:
     async def test_transposition_wdl_filter_parity(self, db_session: AsyncSession) -> None:
         """Validation case #2: a filter applied to query_next_moves and
         query_transposition_wdl must drop the same games from BOTH counts
-        (filter parity invariant). Threat T-80.1-05 mitigation.
+        (filter parity invariant).
 
         Setup: Game A (rated=True) plays e4 from SOURCE → RESULT. Game B
         (rated=False) is a transposition reaching the same RESULT via

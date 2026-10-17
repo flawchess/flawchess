@@ -12,9 +12,7 @@ interface ChipColumnProps {
    *  icon), so each column's explanations sit next to its own label rather than inline
    *  among the chips. */
   labelTrailing?: React.ReactNode;
-  /** Optional node rendered below the chips, inside the column lane (e.g. the desktop
-   *  Explore button pinned to the Missed column). Renders even when the column is empty,
-   *  so the control stays visible regardless of whether the column has chips. */
+  /** Optional node rendered below the chips, inside the column lane. */
   footer?: React.ReactNode;
   /**
    * Keep the mobile inline layout (label + chips share one flex-wrap line) at EVERY
@@ -27,7 +25,7 @@ interface ChipColumnProps {
 }
 
 /**
- * Quick 260620-sep follow-up: a labeled chip container used for the Games-card
+ * A labeled chip container used for the Games-card
  * "Allowed" / "Missed" / "Context" columns. Lightweight on purpose — a small uppercase
  * section label over a flex-wrap chip row, no Card chrome (borders/shadow would clutter
  * the already-dense card). The parent lays these out in a responsive grid so they span
@@ -46,7 +44,7 @@ export function ChipColumn({
   // Missed/Allowed/Context section adds no information and just clutters the card/rail.
   if (isEmpty) return null;
 
-  // `inline` (UAT 179): a strict 2-column row — a fixed-width label column and a
+  // `inline`: a strict 2-column row — a fixed-width label column and a
   // flex-wrap chips column that wraps WITHIN its own column. Because the chips live in
   // their own flex child (not `contents`), a wrapped chip lands under the first chip,
   // not back under the label. `items-start` keeps the label pinned to the top when the
@@ -67,7 +65,7 @@ export function ChipColumn({
   return (
     // Mobile: label + chips share one flex-wrap line (tags float beside the label). Desktop
     // (md+): label stacks above the chips so the 3-column grid reads as labeled columns.
-    // The md breakpoint matches the game card's mobile→desktop body switch (Quick 260625).
+    // The md breakpoint is where the label stacks above the chips.
     <div
       className="flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0 md:flex-col md:items-start"
       data-testid={testId}

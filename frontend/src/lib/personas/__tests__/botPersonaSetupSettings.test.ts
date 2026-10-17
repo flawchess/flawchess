@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * botPersonaSetupSettings.ts unit tests (Phase 183, D-05).
+ * botPersonaSetupSettings.ts unit tests.
  *
  * jsdom supplies a real `localStorage`; @sentry/react is mocked (mirrors
  * botSetupSettings.test.ts — the ESM module namespace is not configurable).

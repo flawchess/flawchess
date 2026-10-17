@@ -1,39 +1,38 @@
 /**
- * botStyle — the pure, synchronous bot-style transform module (Phase 182,
- * STYLE-01/03/04/05). Holds the `BotStyleParams` raw-numeric-knob data type
- * (D-01: engine code consumes ONLY numbers — no style names, no player
- * derivation, BOT-03), the cheap chess.js move-feature classifier, and (in
- * later plan tasks landing in this same file) the three pure transforms
- * that hook `selectBotMove`'s existing seams: prior reweighting (STYLE-03,
- * Human rungs), score shaping (STYLE-04, Light/Deep rungs), and
- * opening-book weighting (STYLE-01, composed over `openingBook.ts`'s
- * `maiaPolicyWeighting`).
+ * botStyle — the pure, synchronous bot-style transform module. Holds the
+ * `BotStyleParams` raw-numeric-knob data type (engine code consumes ONLY
+ * numbers — no style names, no player derivation), the cheap chess.js
+ * move-feature classifier, and the three pure transforms that hook
+ * `selectBotMove`'s existing seams: prior reweighting (Human rungs), score
+ * shaping (Light/Deep rungs), and opening-book weighting (composed over
+ * `openingBook.ts`'s `maiaPolicyWeighting`).
  *
- * DEVIATION from `openingBook.ts`'s "no chess.js import" purity convention:
- * this module DOES import `chess.js` — `classifyMoveFeatures` needs the
+ * Unlike `openingBook.ts` (which imports no chess.js), this module DOES import
+ * `chess.js` — `classifyMoveFeatures` needs the
  * verbose `Move` object's `.san`/`.flags`/`.piece`/`.captured`/`.from`/`.to`
  * fields (checks, captures, pawn geometry) to derive per-move style
  * features. Every function here otherwise stays synchronous, has no I/O,
  * and touches no React/provider state — the same "pure engine module"
  * contract every sibling in this directory follows.
  *
- * Every knob on `BotStyleParams` is `[ASSUMED]`/hand-tuned per D-12 —
- * magnitudes are set by Plan 05's bundles, iterated against the
- * `scripts/style-lever-measurement.mjs` measurement script, not derived
+ * Every knob on `BotStyleParams` is hand-tuned ([ASSUMED]) —
+ * magnitudes are set by the bundles in `botStyleBundles.ts`, iterated against
+ * the `scripts/style-lever-measurement.mjs` measurement script, not derived
  * analytically. This module only defines the SHAPE and the pure transforms;
- * it ships no named style bundle itself (that is Plan 05's
+ * it ships no named style bundle itself (those live in
  * `botStyleBundles.ts`).
  *
- * Forward pointers — the exact call sites that will consume these exports:
+ * Call sites that consume these exports:
  *   - `applyStylePriorReweighting`: `selectBotMove.ts`'s `blend<=0` branch,
- *     between `deps.policy()` and `botSampling.ts`'s `samplePolicy` (Plan 06).
+ *     between `deps.policy()` and `botSampling.ts`'s `samplePolicy`.
  *   - `applyStyleScoreShaping`: `selectBotMove.ts`'s search branch, between
- *     `search()` and `argmaxLine`/`sampleRankedLines` (Plan 06).
- *   - `styleBookWeighting`: `useBotGame.ts`'s `resolveBookMove`, passed as
- *     `openingBook.ts`'s `selectBookMove` `weighting` argument (Plan 07).
- *   - `BotStyleParams`: `BotSettings.style?` (Plan 06) and
- *     `BotGameSettings.style?` (Plan 07) — always optional; `undefined`
- *     everywhere runs today's exact code path (D-03).
+ *     `search()` and `argmaxLine`/`sampleRankedLines`.
+ *   - `styleBookWeighting`: `hooks/useBotGameEngineDispatch.ts`'s
+ *     `resolveBookMove`, passed as `openingBook.ts`'s `selectBookMove`
+ *     `weighting` argument.
+ *   - `BotStyleParams`: `BotSettings.style?` and
+ *     `BotGameSettings.style?` — always optional; `undefined`
+ *     everywhere runs today's exact code path.
  */
 
 import { Chess, type Move } from 'chess.js';
@@ -41,10 +40,10 @@ import type { RankedLine } from './types';
 import { cloneRankedLineWith } from './treeCommon';
 import { maiaPolicyWeighting, type BookCandidate, type BookWeightingFn } from './openingBook';
 
-// ─── BotStyleParams (D-01: raw numeric knobs, no function fields) ─────────
+// ─── BotStyleParams (raw numeric knobs, no function fields) ────────────────
 
 /**
- * Per-`MoveFeatures`-flag prior-reweighting multiplier (D-01/STYLE-03).
+ * Per-`MoveFeatures`-flag prior-reweighting multiplier.
  * Keyed 1:1 with `MoveFeatures`' boolean flags. A feature that is `false`
  * for a given move contributes no multiplier (the move's raw weight is left
  * as-is for that flag); a `true` flag multiplies the raw weight by the
@@ -61,20 +60,21 @@ export interface FeatureMultipliers {
 }
 
 /**
- * A plain data object (D-01/BOT-03 Tampering guard — deliberately NO
- * function-typed field anywhere in this interface) holding every numeric
- * knob a style needs across the three levers this phase builds. Populated
- * only from Plan 05's exported bundle constants; never derived from player
- * state (BOT-03) and never merged into `selectBotMove`'s `SearchBudget`
- * (STYLE-05 — stays a sibling of `budget`, not a member of it).
+ * A plain data object (deliberately NO
+ * function-typed field anywhere in this interface: a style is data, never
+ * behavior) holding every numeric
+ * knob a style needs across the three levers. Populated
+ * only from the exported bundle constants in `botStyleBundles.ts`; never derived from player
+ * state and never merged into `selectBotMove`'s `SearchBudget`
+ * (it stays a sibling of `budget`, not a member of it).
  */
 export interface BotStyleParams {
-  /** D-01/STYLE-03: per-move-feature Maia-prior multiplier, applied inside
+  /** Per-move-feature Maia-prior multiplier, applied inside
    * `applyStylePriorReweighting` (Human rungs, `blend<=0`). */
   featureMultipliers: FeatureMultipliers;
   /**
-   * D-01/D-12/STYLE-04: flat additive score-shaping bonus (small
-   * expected-score units, e.g. +/-0.02 to 0.05 per D-12) applied to EVERY
+   * Flat additive score-shaping bonus (small
+   * expected-score units, e.g. +/-0.02 to 0.05) applied to EVERY
    * `RankedLine.practicalScore` during `applyStyleScoreShaping` (Light/Deep
    * rungs). Positive = this style generally prefers being in the kind of
    * position the search already found; negative = a malus. Uniform across
@@ -83,42 +83,41 @@ export interface BotStyleParams {
    */
   scoreBonus: number;
   /**
-   * D-01/D-10/STYLE-04: multiplier applied to `RankedLine.childScoreSpread`
+   * Multiplier applied to `RankedLine.childScoreSpread`
    * (the variance/"sharpness" proxy) — added to `practicalScore` only when
-   * `childScoreSpread` is non-null (D-10's null boundary: no spread signal,
+   * `childScoreSpread` is non-null (a null spread means no signal,
    * no variance term). Positive = prefers wider-spread/sharper
    * continuations (e.g. Trickster); negative = prefers flat/quiet ones
    * (e.g. Wall).
    */
   varianceBonus: number;
   /**
-   * D-01/D-09: signed draw-value shift, in expected-score units. The
+   * Signed draw-value shift, in expected-score units. The
    * draw-accept gate (`botDrawGate.ts`'s `wouldBotAcceptDraw`) treats a draw
-   * as worth `0.5 - contempt`. Positive = avoids draws (wants more before
+   * as worth `0.5 + contempt`. Positive = avoids draws (wants more before
    * settling, e.g. Grinder); negative = welcomes them slightly early
    * (e.g. Wall). Consumed directly by `botDrawGate.ts`, not by any function
    * in this module.
    */
   contempt: number;
-  /** D-01/D-08: the `practicalScore` floor a Light/Deep-rung bot must stay
+  /** The `practicalScore` floor a Light/Deep-rung bot must stay
    * at or below, on its own turns, before resignation becomes eligible.
    * Consumed by `botDrawGate.ts`'s `wouldBotResign`, not by this module. */
   threshold: number;
-  /** D-01/D-08: consecutive own-turn count at/below `threshold` required
+  /** Consecutive own-turn count at/below `threshold` required
    * before the bot actually resigns (hysteresis — avoids resigning off one
    * bad grade). Consumed by `botDrawGate.ts`'s `wouldBotResign`, not by
    * this module. */
   hysteresisFloor: number;
-  /** D-01/D-06: opening-book boost multiplier (~x20-50 per D-06) applied to
-   * a style-line candidate's base Maia weight inside `styleBookWeighting`
-   * (added to this file by this phase's Task 3). */
+  /** Opening-book boost multiplier (~x20-50) applied to
+   * a style-line candidate's base Maia weight inside `styleBookWeighting`. */
   bookBoost: number;
 }
 
 // ─── Move-feature classification (the one genuinely new piece of logic) ───
 
 /** Per-move style features, cheaply derived from a chess.js verbose `Move`
- * (Phase 182, STYLE-03 — the classifier `applyStylePriorReweighting` reads). */
+ * (the classifier `applyStylePriorReweighting` reads). */
 export interface MoveFeatures {
   /** `move.san` carries a `+` (check) or `#` (checkmate) suffix. */
   isCheck: boolean;
@@ -148,20 +147,20 @@ export const PIECE_VALUE: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 
 /** The max value gap (in `PIECE_VALUE` units) between the captured piece and
  * the capturing piece for a capture to still count as `isExchange` (a
  * "roughly even trade") rather than a material-winning/losing capture.
- * [ASSUMED] hand-tuned per D-12; a pawn-for-pawn or minor-for-minor trade
+ * [ASSUMED] hand-tuned; a pawn-for-pawn or minor-for-minor trade
  * both clear this (gap 0), a minor-for-rook or minor-for-queen does not. */
 export const EXCHANGE_VALUE_GAP = 1;
 
 /** The board rank (1-8) at/beyond which a pawn advance counts as having
  * crossed into the opponent's half — White storms at rank >= 5, Black
- * storms at rank <= (9 - 5) = 4 (the board-rank mirror). [ASSUMED] per
- * D-12; the halfway point of an 8-rank board. */
+ * storms at rank <= (9 - 5) = 4 (the board-rank mirror). [ASSUMED]:
+ * the halfway point of an 8-rank board. */
 const WHITE_STORM_MIN_RANK = 5;
 const BLACK_STORM_MAX_RANK = 4;
 
 /**
  * Classifies a single legal chess.js verbose `Move` into `MoveFeatures`
- * (Phase 182, STYLE-03). White/Black geometry is mirrored correctly for the
+ * White/Black geometry is mirrored correctly for the
  * two color-dependent flags (`isPawnStorm`, `isRetreat`) — "forward" for a
  * pawn storm and "backward" for a retreat both depend on which way the
  * mover's own back rank sits. Pure, synchronous, no board re-derivation
@@ -189,7 +188,7 @@ export function classifyMoveFeatures(move: Move): MoveFeatures {
   return { isCheck, isCapture, isPawnAdvance, isPawnStorm, isExchange, isRetreat };
 }
 
-// ─── STYLE-03: prior reweighting (Human rungs, blend<=0) ──────────────────
+// ─── Prior reweighting (Human rungs, blend<=0) ────────────────────────────
 
 /** Product of every `true` `MoveFeatures` flag's corresponding
  * `FeatureMultipliers` value; a move matching no features returns `1`
@@ -210,7 +209,7 @@ function featureMultiplierProduct(
 
 /**
  * Multiplies each raw Maia policy weight by its move's style feature
- * multiplier product (D-01/STYLE-03). Returns an UNNORMALIZED
+ * multiplier product. Returns an UNNORMALIZED
  * `Record<string, number>` — `botSampling.ts`'s `samplePolicy` (via its
  * internal `weightedPick`) already walks unnormalized weights correctly
  * (see `openingBook.ts`'s `maiaPolicyWeighting` doc comment for the same
@@ -244,12 +243,12 @@ export function applyStylePriorReweighting(
   return reweighted;
 }
 
-// ─── STYLE-04: score shaping (Light/Deep rungs, search branch) ────────────
+// ─── Score shaping (Light/Deep rungs, search branch) ──────────────────────
 
 /** Clamps `value` into `[0, 1]`. `NaN` propagates through unchanged (both
  * `Math.max`/`Math.min` comparisons against `NaN` are false), matching the
  * "a non-finite shaped score falls through to `weightedPick`'s
- * `Number.isFinite` guard" contract (STYLE-04 precision edge) — this
+ * `Number.isFinite` guard" contract — this
  * function does not itself special-case non-finite input beyond what the
  * clamp naturally does (an infinite bonus clamps to a finite bound; a NaN
  * bonus stays NaN for the downstream guard to catch). */
@@ -261,8 +260,8 @@ function clampUnitInterval(value: number): number {
  * Returns a new `RankedLine[]` with each line's `practicalScore` additively
  * adjusted by `style.scoreBonus` plus a variance term
  * (`style.varianceBonus * line.childScoreSpread`) — the variance term is
- * applied ONLY when `childScoreSpread` is non-null (D-10's null boundary:
- * no spread signal, no variance term, per STYLE-04's must-have). The result
+ * applied ONLY when `childScoreSpread` is non-null (null means no spread
+ * signal, so no variance term). The result
  * is clamped into `[0, 1]`. Every other `RankedLine` field
  * (`rootMove`/`objectiveEvalCp`/`objectiveEvalMate`/`modalPath`/
  * `modalStats`/`visits`/`childScoreSpread`) is copied unchanged — this
@@ -270,15 +269,15 @@ function clampUnitInterval(value: number): number {
  * `argmaxLine`/`sampleRankedLines` (`botSampling.ts`) read the shaped score
  * off the exact same `RankedLine` shape they already consume.
  *
- * Phase 194 JANK-03 fix: this function is called from `selectBotMove.ts` for
+ * This function is called from `selectBotMove.ts` for
  * EVERY persona bot move (every rung carries a `style`) — exactly the case
- * lazy `modalPath`/`modalStats` accessors exist to make free. The previous
- * implementation did `{ ...line, practicalScore: ... }`: an object spread
+ * lazy `modalPath`/`modalStats` accessors exist to make free. Don't build the
+ * shaped line with `{ ...line, practicalScore: ... }`: an object spread
  * reads every own enumerable property, accessor or not, and bakes the
  * getter's CURRENT value into a plain data property on the new object —
  * silently forcing eager evaluation of `modalPath`/`modalStats` for every
  * one of the (up to `ROOT_CANDIDATE_HARD_CAP`) root candidates, on every bot
- * move, defeating JANK-03 for the exact "bot play: 100% waste" case the
+ * move, defeating the lazy accessors for the exact "bot play: 100% waste" case the
  * optimization targets. `Object.getOwnPropertyDescriptors` copies the
  * DESCRIPTOR (getter identity + laziness), not the current value, so the
  * shaped line's `modalPath`/`modalStats` stay unevaluated accessors.
@@ -295,19 +294,19 @@ export function applyStyleScoreShaping(
   });
 }
 
-// ─── STYLE-01: opening-book weighting (composes over maiaPolicyWeighting) ─
+// ─── Opening-book weighting (composes over maiaPolicyWeighting) ───────────
 
 /**
  * Factory returning a `BookWeightingFn` that composes `openingBook.ts`'s
- * `maiaPolicyWeighting` (D-06: a style re-weights what is on the menu, it
+ * `maiaPolicyWeighting` (a style re-weights what is on the menu, it
  * never replaces the base restriction-to-candidates logic — reused here,
  * never reimplemented). Each candidate whose FULL joined move-history
  * prefix (`[...moveHistorySan, candidate.san].join(' ')`) is a member of
  * `styleLinePrefixes` gets its base Maia weight multiplied by
  * `boostMultiplier`; every other candidate keeps its base weight unchanged.
  *
- * `moveHistorySan` is curried in at construction time (Pitfall 2,
- * 182-RESEARCH.md): `BookWeightingFn`'s own signature only receives
+ * `moveHistorySan` is curried in at construction time:
+ * `BookWeightingFn`'s own signature only receives
  * `candidates`/`rawPolicy` for the CURRENT ply, never the history, and this
  * factory deliberately does NOT change that signature — `maiaPolicyWeighting`'s
  * existing 2-arg shape must keep compiling unchanged. A naive
@@ -316,16 +315,15 @@ export function applyStyleScoreShaping(
  * joined prefix to disambiguate between lines that share an opening move.
  *
  * `selectBookMove`'s RAW-policy floor check (`BOOK_POLICY_FLOOR`) runs
- * BEFORE this — or any — `weighting` function is ever invoked (Pitfall 1;
- * see `openingBook.ts`'s own "order of operations is load-bearing"
+ * BEFORE this — or any — `weighting` function is ever invoked (see
+ * `openingBook.ts`'s own "order of operations is load-bearing"
  * comment). This factory has no visibility into that check and cannot
  * affect it: a boosted-but-implausible style line still leaves book exactly
  * as an unboosted one would.
  *
  * An empty `styleLinePrefixes` set makes every candidate fail the
  * membership test, so the returned function behaves identically to
- * `maiaPolicyWeighting` for the same `candidates`/`rawPolicy` (STYLE-01
- * empty-set edge).
+ * `maiaPolicyWeighting` for the same `candidates`/`rawPolicy`.
  */
 export function styleBookWeighting(
   styleLinePrefixes: ReadonlySet<string>,

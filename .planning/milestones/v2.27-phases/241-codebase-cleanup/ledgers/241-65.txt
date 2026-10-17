@@ -1,0 +1,2 @@
+# Plan 241-65 ledger: INVENTORY section 6 rows deferred here by 241-42
+INV-L960: APPLIED TacticMotifChip.tsx gameId prop JSDoc now reads "The game id used to make data-testid unique per card. Mirrors the gameId param in TagChip."; re-verified: every caller passes a game id (FlawCard flaw.game_id, TacticMotifGroup gameId) and TagChip has a gameId prop; applied in the same commit as the flawId -> gameId rename

@@ -1,11 +1,11 @@
-"""Pytest wrapper for the Phase 174 D-02 Maia parity gate (GEMS-04).
+"""Pytest wrapper for the Maia parity gate.
 
 Runs the SAME tier-stability + epsilon assertions as scripts/maia_parity_spike.py,
 but uses pytest.importorskip("onnxruntime") so the default (no-group) suite skips
 cleanly while a group-synced run (`uv sync --group maia-inference`) exercises the
-gate. The standalone script remains the canonical D-02 runner; this wrapper wires
+gate. The standalone script remains the canonical runner; this wrapper wires
 the gate into CI/the normal pytest flow so a future onnxruntime/model bump that
-breaks parity is caught by the suite, not only by a manual script run (Pitfall 2).
+breaks parity is caught by the suite, not only by a manual script run.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def test_parity_tier_and_epsilon(maia_session, entry: dict) -> None:
     py_prob = _python_maia_prob(maia_session, entry)
     exp_prob = float(entry["expected_maia_prob"])
 
-    # (1) Tier-stability — the load-bearing D-01 check.
+    # (1) Tier-stability — the load-bearing check.
     assert classify_tier(py_prob) == entry["expected_tier"], (
         f"{entry['played_san']}@{entry['pinned_elo']}: python prob {py_prob:.6f} -> "
         f"{classify_tier(py_prob)}, expected tier {entry['expected_tier']}"

@@ -4,18 +4,18 @@ All tests use a real PostgreSQL database through the db_session fixture,
 which wraps each test in a rolled-back transaction for isolation.
 
 Coverage:
-- ANL-02: match_side routes to correct hash column (white/black/full)
-- FLT-01: time_control filter
-- FLT-02: rated filter
-- FLT-03: recency filter
-- FLT-04: color filter
+- match_side routes to correct hash column (white/black/full)
+- time_control filter
+- rated filter
+- recency filter
+- color filter
 - Combined filters (intersection behavior)
 - Transposition deduplication (game counted once even with multi-ply match)
 - Pagination (offset, limit, total count)
-- MEXP-04: query_next_moves returns per-move W/D/L aggregation
-- MEXP-05: transposition dedup (same game at multiple plies counted once per move)
-- MEXP-10: batch transposition counts (derived from query_resulting_position_wdl
-  since quick task 260512-p5p collapsed the trio into one query)
+- query_next_moves returns per-move W/D/L aggregation
+- transposition dedup (same game at multiple plies counted once per move)
+- batch transposition counts (derived from query_resulting_position_wdl
+  since a single query replaced the trio)
 """
 
 import datetime
@@ -141,7 +141,7 @@ async def _add_position(
 
 
 # ---------------------------------------------------------------------------
-# TestMatchSide — ANL-02
+# TestMatchSide
 # ---------------------------------------------------------------------------
 
 
@@ -246,7 +246,7 @@ class TestMatchSide:
 
 
 # ---------------------------------------------------------------------------
-# TestFilters — FLT-01 through FLT-04
+# TestFilters — time control, rated, recency and color filters
 # ---------------------------------------------------------------------------
 
 TARGET_HASH = 42424242  # shared hash value for filter tests
@@ -257,7 +257,7 @@ class TestFilters:
 
     @pytest.mark.asyncio
     async def test_time_control_filter(self, db_session: AsyncSession) -> None:
-        """FLT-01: Only games matching the requested time_control bucket returned."""
+        """Only games matching the requested time_control bucket returned."""
         await _seed_game(db_session, time_control_bucket="bullet", full_hash=TARGET_HASH)
         await _seed_game(db_session, time_control_bucket="blitz", full_hash=TARGET_HASH)
         await _seed_game(db_session, time_control_bucket="rapid", full_hash=TARGET_HASH)
@@ -284,7 +284,7 @@ class TestFilters:
 
     @pytest.mark.asyncio
     async def test_rated_filter(self, db_session: AsyncSession) -> None:
-        """FLT-02: Only rated (or unrated) games returned when filter applied."""
+        """Only rated (or unrated) games returned when filter applied."""
         await _seed_game(db_session, rated=True, full_hash=TARGET_HASH)
         await _seed_game(db_session, rated=False, full_hash=TARGET_HASH)
 
@@ -310,7 +310,7 @@ class TestFilters:
 
     @pytest.mark.asyncio
     async def test_recency_filter(self, db_session: AsyncSession) -> None:
-        """FLT-03: Games played before the from_date are excluded."""
+        """Games played before the from_date are excluded."""
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         two_years_ago = now - datetime.timedelta(days=730)
         from_date = (now - datetime.timedelta(days=30)).date()
@@ -339,7 +339,7 @@ class TestFilters:
 
     @pytest.mark.asyncio
     async def test_color_filter(self, db_session: AsyncSession) -> None:
-        """FLT-04: Only games where user played the requested color returned."""
+        """Only games where user played the requested color returned."""
         await _seed_game(db_session, user_color="white", full_hash=TARGET_HASH)
         await _seed_game(db_session, user_color="black", full_hash=TARGET_HASH)
 
@@ -537,7 +537,7 @@ class TestPagination:
 
 
 # ---------------------------------------------------------------------------
-# TestTimeSeries — BKM-03, BKM-04
+# TestTimeSeries
 # ---------------------------------------------------------------------------
 
 TS_HASH = 12345  # fixed Zobrist hash for all time-series tests
@@ -548,7 +548,7 @@ class TestTimeSeries:
 
     @pytest.mark.asyncio
     async def test_returns_monthly_buckets(self, db_session: AsyncSession) -> None:
-        """BKM-03: 3 games in Jan 2025 (2W 1L) and 2 games in Mar 2025 (1W 1D) → 2 rows."""
+        """3 games in Jan 2025 (2W 1L) and 2 games in Mar 2025 (1W 1D) → 2 rows."""
         from app.repositories.openings_repository import query_time_series
 
         jan = datetime.datetime(2025, 1, 15, tzinfo=datetime.timezone.utc)
@@ -598,7 +598,7 @@ class TestTimeSeries:
 
     @pytest.mark.asyncio
     async def test_gap_months(self, db_session: AsyncSession) -> None:
-        """BKM-04: Feb 2025 has no games — it must NOT appear in results."""
+        """Feb 2025 has no games — it must NOT appear in results."""
         from app.repositories.openings_repository import query_time_series
 
         jan = datetime.datetime(2025, 1, 20, tzinfo=datetime.timezone.utc)
@@ -688,7 +688,7 @@ class TestTimeSeries:
 
 
 # ---------------------------------------------------------------------------
-# TestNextMoves — MEXP-04
+# TestNextMoves
 # ---------------------------------------------------------------------------
 
 NM_SOURCE_HASH = 100  # queried source position hash
@@ -697,7 +697,7 @@ NM_D4_HASH = 300  # result hash after d4
 
 
 class TestNextMoves:
-    """MEXP-04: query_next_moves returns per-move W/D/L aggregation."""
+    """query_next_moves returns per-move W/D/L aggregation."""
 
     @pytest.mark.asyncio
     async def test_basic_next_moves(self, db_session: AsyncSession) -> None:
@@ -773,7 +773,7 @@ class TestNextMoves:
 
     @pytest.mark.asyncio
     async def test_next_moves_last_played_at_max(self, db_session: AsyncSession) -> None:
-        """Quick task 260508-r61: query_next_moves returns MAX(games.played_at)
+        """query_next_moves returns MAX(games.played_at)
         per (move_san, result_hash) so the FE can render the
         "Last played: <relative>" line in the Score popover.
         """
@@ -817,7 +817,7 @@ class TestNextMoves:
 
 
 # ---------------------------------------------------------------------------
-# TestNextMovesTranspositions — MEXP-05
+# TestNextMovesTranspositions
 # ---------------------------------------------------------------------------
 
 NM_TRANS_SOURCE_HASH = 400
@@ -825,7 +825,7 @@ NM_TRANS_RESULT_HASH = 401
 
 
 class TestNextMovesTranspositions:
-    """MEXP-05: game with same move_san at multiple plies counted once per move."""
+    """Game with same move_san at multiple plies counted once per move."""
 
     @pytest.mark.asyncio
     async def test_transposition_counted_once(self, db_session: AsyncSession) -> None:
@@ -887,7 +887,7 @@ class TestNextMovesTranspositions:
 
 
 # ---------------------------------------------------------------------------
-# TestNextMovesFilters — MEXP-04 filter application
+# TestNextMovesFilters — filter application
 # ---------------------------------------------------------------------------
 
 NM_FILTER_HASH = 500
@@ -983,17 +983,17 @@ class TestNextMovesFilters:
 
 
 # ---------------------------------------------------------------------------
-# TestTranspositionCounts — MEXP-10
+# TestTranspositionCounts
 # ---------------------------------------------------------------------------
 
 TC_RESULT_HASH = 600
 
 
 class TestTranspositionCounts:
-    """MEXP-10: transposition counts derived from query_resulting_position_wdl.
+    """Transposition counts derived from query_resulting_position_wdl.
 
-    Post quick task 260512-p5p (Task 1): query_transposition_counts was deleted
-    in favor of deriving total = w + d + lo from query_resulting_position_wdl.
+    query_transposition_counts no longer exists; the total is derived as
+    total = w + d + lo from query_resulting_position_wdl.
     These tests preserve the batch-count coverage on the surviving query.
     """
 
@@ -1122,7 +1122,7 @@ class TestQueryWDLCounts:
     """query_wdl_counts() returns correct (total, wins, draws, losses) from SQL aggregation.
 
     Coverage:
-    - BOPT-01: SQL aggregation returns same W/D/L as manual Python counting
+    - SQL aggregation returns same W/D/L as manual Python counting
     - target_hash=None (all-games mode) returns correct counts
     - Filter parameters (time_control, color) narrow counts correctly
     - No matching games returns (0, 0, 0, 0)
@@ -1366,7 +1366,7 @@ class TestQueryWDLCounts:
 
 
 # ---------------------------------------------------------------------------
-# TestQueryTranspositionWdl — Phase 80.1 D-02
+# TestQueryTranspositionWdl
 # ---------------------------------------------------------------------------
 
 # Unique hashes for the new transposition WDL tests (avoid collisions with
@@ -1415,10 +1415,10 @@ async def _seed_path_to_result_hash(
 
 
 class TestQueryTranspositionWdl:
-    """Phase 80.1 D-02: resulting-position WDL via query_resulting_position_wdl.
+    """Resulting-position WDL via query_resulting_position_wdl.
 
-    Post quick task 260512-p5p (Task 1): query_transposition_wdl was deleted
-    after query_resulting_position_wdl converged on the same SQL shape with
+    query_transposition_wdl no longer exists: query_resulting_position_wdl has
+    the same SQL shape with
     one extra column (last_played_at). These tests preserve coverage by
     targeting the surviving function and slicing the 4-tuple to compare W/D/L.
     """
@@ -1427,7 +1427,7 @@ class TestQueryTranspositionWdl:
     async def test_query_transposition_wdl_convergence_two_games(
         self, db_session: AsyncSession
     ) -> None:
-        """Phase 80.1 D-02 / Validation case #1: convergence.
+        """Convergence.
 
         Game A plays e4 from SOURCE_HASH → RESULT_HASH (win, white).
         Game B plays d4 from OTHER_SOURCE_HASH → RESULT_HASH (loss, white) via
@@ -1633,7 +1633,7 @@ class TestQueryTranspositionWdl:
 
 
 # ---------------------------------------------------------------------------
-# TestDefaultPlatformExclusion — SEED-163 §1
+# TestDefaultPlatformExclusion
 # ---------------------------------------------------------------------------
 
 # Dedicated hash so this class cannot collide with TS_HASH or any other fixed
@@ -1657,7 +1657,7 @@ class TestDefaultPlatformExclusion:
         # discriminator here: if the flawchess row were flagged as a computer
         # game, the default opponent_type="human" filter would hide the leak,
         # which is exactly the accident that has been masking this defect in
-        # production (SEED-163 §1).
+        # production.
         await _seed_game(
             db_session,
             platform="chess.com",
@@ -1731,7 +1731,7 @@ class TestDefaultPlatformExclusion:
     async def test_explicit_flawchess_opt_in_reaches_excluded_rows_both_functions(
         self, db_session: AsyncSession
     ) -> None:
-        """platform=["flawchess"]: only the flawchess row, through both functions (D-03)."""
+        """platform=["flawchess"]: only the flawchess row, through both functions."""
         from app.repositories.openings_repository import query_time_series
 
         await self._seed_three_platforms(db_session)

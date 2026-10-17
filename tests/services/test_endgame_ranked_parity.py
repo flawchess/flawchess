@@ -1,4 +1,4 @@
-"""DB-backed parity gate for the on-read ranked Endgame Stats (Phase 238).
+"""DB-backed parity gate for the on-read ranked Endgame Stats.
 
 The on-read values served by ``get_ranked_stats`` must equal what the persisted
 Stage A/B CTEs compute for the same user, family and time control
@@ -454,7 +454,7 @@ def _tc_stats(response: EndgameRankedStatsResponse, tc: TimeControlBucket) -> Ra
 
 @pytest.mark.parametrize("family", _ALL_FAMILIES)
 async def test_on_read_value_matches_canonical_cte(ranked_parity_user, family: CdfMetricId) -> None:
-    """D-00b / D-07: on-read value and n equal the Stage A/B CTE for the same user and TC."""
+    """On-read value and n equal the Stage A/B CTE for the same user and TC."""
     user_id, session_maker = ranked_parity_user
     async with session_maker() as session:
         oracle = await _compute_metric_for_user_per_tc(session, user_id, family, _TC)
@@ -480,7 +480,7 @@ async def test_entry_flow_actual_minus_expected_is_achievable_gap(ranked_parity_
 
 
 async def test_bucket_wdl_consistent_with_rates(ranked_parity_user) -> None:
-    """D-00b: conversion / parity / recovery rate == W/D/L-derived value of the same bucket."""
+    """Conversion / parity / recovery rate == W/D/L-derived value of the same bucket."""
     user_id, session_maker = ranked_parity_user
     async with session_maker() as session:
         ranked = await get_ranked_stats(session, user_id=user_id)
@@ -501,7 +501,7 @@ async def test_bucket_wdl_consistent_with_rates(ranked_parity_user) -> None:
 
 
 async def test_ranked_timelines_populated_for_seeded_tc(ranked_parity_user) -> None:
-    """D-03: the seeded TC carries a Score Gap timeline and ELO combos built from ranked rows."""
+    """The seeded TC carries a Score Gap timeline and ELO combos built from ranked rows."""
     user_id, session_maker = ranked_parity_user
     async with session_maker() as session:
         ranked = await get_ranked_stats(session, user_id=user_id)
@@ -515,7 +515,7 @@ async def test_ranked_timelines_populated_for_seeded_tc(ranked_parity_user) -> N
 
 
 async def test_ranked_curve_and_type_rows_for_seeded_tc(ranked_parity_user) -> None:
-    """D-05 / D-06: the seeded TC has a five-bullet pressure curve and type rows."""
+    """The seeded TC has a five-bullet pressure curve and type rows."""
     user_id, session_maker = ranked_parity_user
     async with session_maker() as session:
         ranked = await get_ranked_stats(session, user_id=user_id)
@@ -552,7 +552,7 @@ async def small_ranked_user(test_engine) -> AsyncIterator[tuple[int, async_sessi
 
 
 async def test_below_floor_families_still_carry_value_and_n(small_ranked_user) -> None:
-    """A family the CTE drops (below its floor) still has an on-read value with n < 30 (D-09)."""
+    """A family the CTE drops (below its floor) still has an on-read value with n < 30."""
     user_id, session_maker = small_ranked_user
     async with session_maker() as session:
         for family in ("score_gap", "conversion_rate", "achievable_score_gap"):
@@ -569,7 +569,7 @@ async def test_below_floor_families_still_carry_value_and_n(small_ranked_user) -
 
 
 async def test_ranked_stats_two_user_isolation(test_engine) -> None:
-    """T-238-02: each user's ranked stats carry only that user's games, values and percentile."""
+    """Each user's ranked stats carry only that user's games, values and percentile."""
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     user_ids: list[int] = []
     try:

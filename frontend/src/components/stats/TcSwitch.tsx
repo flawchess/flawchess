@@ -53,7 +53,7 @@ export function TcSwitch({ idPrefix, tcs, selected, onSelect, trackTarget }: TcS
             variant={isSelected ? 'default' : 'brand-outline'}
             aria-pressed={isSelected}
             // Tighter padding and icon gap on mobile so all four TCs fit on one row
-            // at 360px (238 UAT); desktop keeps the stock button spacing.
+            // at 360px; desktop keeps the stock button spacing.
             className="min-h-11 gap-1 px-2 sm:min-h-0 sm:gap-1.5 sm:px-2.5"
             onClick={() => handleClick(tc)}
             data-testid={`tc-switch-${idPrefix}-${tc}`}

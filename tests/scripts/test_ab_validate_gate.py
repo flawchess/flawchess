@@ -1,6 +1,6 @@
-"""A/B gate-validation harness tests (Phase 144, Plan 01).
+"""A/B gate-validation harness tests.
 
-Tests six Nyquist properties for scripts/ab_validate_gate.py:
+Tests six properties for scripts/ab_validate_gate.py:
 
  1. test_ungated_arm_bypasses_gate  — ungated arm NEVER calls apply_forcing_line_filter
  2. test_both_arms_use_same_blobs   — no EnginePool / chess.engine import; no DB writes
@@ -173,7 +173,7 @@ async def ab_fixture(
 
         # Seed positions at ply 0 (pre-flaw), ply 1 (flaw) and ply 2 (refutation).
         # ply 0: board BEFORE the flaw move; eval_cp feeds the gate's already-winning
-        #        reject (Bug A fix: pre_flaw_eval_cp = positions[ply-1].eval_cp).
+        #        reject (pre_flaw_eval_cp = positions[ply-1].eval_cp).
         # ply 1: the flaw position (black to move); PV = best missed move.
         # ply 2: after black's bad move (white to move); PV=None so allowed detection = None.
         session.add(
@@ -272,7 +272,7 @@ async def ab_fixture(
 
 
 class TestUngatedArmBypassesGate:
-    """(1) VALID-01: ungated arm calls _detect_tactic_for_flaw directly, never the gate."""
+    """(1) Ungated arm calls _detect_tactic_for_flaw directly, never the gate."""
 
     @pytest.mark.asyncio
     async def test_ungated_arm_bypasses_gate(
@@ -345,7 +345,7 @@ class TestUngatedArmBypassesGate:
 
 
 class TestBothArmsUseSameBlobs:
-    """(2) VALID-01: both arms read the same stored blobs; no engine, no DB writes."""
+    """(2) Both arms read the same stored blobs; no engine, no DB writes."""
 
     def test_both_arms_use_same_blobs(self) -> None:
         """Harness source must reference neither EnginePool nor chess.engine."""
@@ -368,7 +368,7 @@ class TestBothArmsUseSameBlobs:
 
 
 class TestGatedLteUngated:
-    """(3) VALID-01: gated tag count <= ungated tag count for every orientation."""
+    """(3) Gated tag count <= ungated tag count for every orientation."""
 
     @pytest.mark.asyncio
     async def test_gated_lte_ungated(
@@ -399,7 +399,7 @@ class TestGatedLteUngated:
 
 
 class TestReportOutput:
-    """(4) VALID-02: harness writes a committed-markdown report with required sections."""
+    """(4) Harness writes a committed-markdown report with required sections."""
 
     @pytest.mark.asyncio
     async def test_report_output(
@@ -439,7 +439,7 @@ class TestReportOutput:
 
 
 class TestDroppedCaseFields:
-    """(5) VALID-02: dropped-case list exposes all required fields including analysis URL."""
+    """(5) Dropped-case list exposes all required fields including analysis URL."""
 
     @pytest.mark.asyncio
     async def test_dropped_case_fields(

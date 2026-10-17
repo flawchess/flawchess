@@ -1,6 +1,6 @@
 /**
- * Bullet-chart zone bounds for the "Avg eval at MG entry" cell in
- * MostPlayedOpeningsTable (Phase 80, D-07).
+ * Bullet-chart zone bounds for the "Avg eval at MG entry" cell on the
+ * Openings cards.
  *
  * Calibrated from reports/benchmarks-2026-05-04-section-3.md (per-(user, color)
  * centered, n=3,496 user-color pairs >=20 games each). Pooled centered
@@ -16,7 +16,7 @@
  * color. The per-color engine asymmetry (symmetric ±0.25 pawns, white's
  * first-move tempo, recalibrated from the 2026-05-04 v3 deduped benchmark)
  * is rendered as a small reference tick on the bullet chart, not as the
- * chart's center or the test H0 (260504-rvh).
+ * chart's center or the test H0.
  */
 
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';

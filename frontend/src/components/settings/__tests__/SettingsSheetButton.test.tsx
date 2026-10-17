@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * SettingsSheetButton.test.tsx: Phase 228 D-06 contract. The trigger opens a
+ * SettingsSheetButton.test.tsx: the trigger opens a
  * sheet holding the FULL SettingsPanel, changes persist live, close works, and
  * nothing navigates.
  */
@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 
-// Phase 230 D-16: the real card needs a QueryClientProvider; this suite renders the panel bare.
+// The real card needs a QueryClientProvider; this suite renders the panel bare.
 vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
   LeaderboardPrivacyCard: () => null,
 }));

@@ -1,9 +1,9 @@
 /**
- * maiaWorkerErrors.ts unit tests (quick 260729-sod, FIX 2).
+ * maiaWorkerErrors.ts unit tests.
  *
  * Load-bearing case: the real FLAWCHESS-92 prod string matches BOTH the OOM
  * and the load patterns — classification order must put OOM first, since
- * memory exhaustion is the true root cause (see FINDINGS.md §1).
+ * memory exhaustion is the true root cause.
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -92,7 +92,7 @@ describe('captureMaiaWorkerError', () => {
     );
   });
 
-  it('SEED-195: tags the spawn path and attaches live Stockfish worker counts', () => {
+  it('tags the spawn path and attaches live Stockfish worker counts', () => {
     const pooled = { terminate: vi.fn() } as unknown as Worker;
     trackStockfishWorker(pooled, 'pool');
     trackStockfishWorker({ terminate: vi.fn() } as unknown as Worker, 'grading');
@@ -114,7 +114,7 @@ describe('captureMaiaWorkerError', () => {
     );
   });
 
-  it('SEED-195: tags maia_spawn_path as unknown when the caller has no spawn path', () => {
+  it('tags maia_spawn_path as unknown when the caller has no spawn path', () => {
     captureMaiaWorkerError('Load failed', { source: 'maia-queue-worker', backend: null });
 
     const [, opts] = vi.mocked(Sentry.captureException).mock.calls[0]!;

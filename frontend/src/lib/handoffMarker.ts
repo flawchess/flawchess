@@ -1,11 +1,11 @@
 /**
  * handoffMarker — one-shot tab-scoped marker for the desktop->phone QR
- * handoff (Phase 203, HANDOFF-01..04, D-11/D-12).
+ * handoff.
  *
  * A phone that scans the Settings/score-screen QR lands on
  * `/train?src=handoff`. Captured on arrival, this marker overrides the
- * Train-route install-drawer suppression (D-07) AND the re-offer cadence
- * (D-04) for that one load — the QR scan is an explicit "I came here to
+ * Train-route install-drawer suppression AND the re-offer cadence
+ * for that one load — the QR scan is an explicit "I came here to
  * install" signal, so a prior on-device dismissal is irrelevant.
  *
  * The marker must survive the Google SSO redirect chain (the scanning

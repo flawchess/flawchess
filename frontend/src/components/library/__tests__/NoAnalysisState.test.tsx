@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * NoAnalysisState tests (Phase 118-03, updated 260615-q1x, 260616-ey1).
+ * NoAnalysisState tests.
  *
- * Tests the four branches (isGuest prop removed in 260616-ey1 — guests now get
+ * Tests the four branches (there is no isGuest prop — guests get
  * the Analyze button just like authenticated users):
  * 1. Not-analyzed, not in-flight, no active job → "Analyze" button with btn-analyze-game-{gameId}
  *    fires the tier-1 mutation on click; onInFlightChange(true) called optimistically before mutate
@@ -10,8 +10,8 @@
  * 3. Not-analyzed, activeEvalStatus="leased" → pulsing "Analyzing…" span (worker running)
  * 4. Already analyzed → returns null (no DOM)
  *
- * 260615-q1x: three-state pill: Analyze button → Pending… (optimistic/pending) → Analyzing… (leased)
- * 260616-ey1: remove guest sign-up CTA; guests see Analyze button for their own games (QUEUE-08).
+ * Three-state pill: Analyze button → Pending… (optimistic/pending) → Analyzing… (leased)
+ * Guests see the Analyze button for their own games (no sign-up CTA).
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';

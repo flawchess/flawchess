@@ -1,10 +1,10 @@
-"""Tests for app.services.sharp_filler (Phase 206, D-10/D-14).
+"""Tests for app.services.sharp_filler.
 
 Coverage:
 - TestLoadSharpSet    : the fail-closed loader — missing file and
                         header-only (zero data row) file both raise
-                        RuntimeError (T-206-03).
-- TestPickSharpFillers: D-14's exhaustion contract — ascending puzzle-id
+                        RuntimeError.
+- TestPickSharpFillers: the exhaustion contract — ascending puzzle-id
                         order, user_id-independence, exclude-served,
                         repeat-on-exhaustion.
 - test_served_sharp_ids_stmt_* : the DB-backed exclusion source, scoped by
@@ -13,14 +13,14 @@ Coverage:
                         committed app/data/sharp_filler_puzzles.csv loads
                         successfully at import time (a live smoke test for
                         the fail-closed loader's happy path).
-- TestCommittedSharpSetDataIntegrity : Task 2 (206-02) — re-verifies every
-                        D-12/D-13/D-18 constraint against the REAL committed
+- TestCommittedSharpSetDataIntegrity : re-verifies every
+                        data-integrity constraint against the REAL committed
                         200+ row file, not a monkeypatched fixture. `SHARP_SET`
                         is a module-level constant loaded once per process, so
                         each `uv run pytest ...` invocation re-parses whatever
                         is currently on disk at SHARP_FILLER_DATA_PATH — the
                         mutation checks below rely on exactly this.
-- TestNoAppRuntimeReferenceToTaggerFixtures : D-11's own mechanical review —
+- TestNoAppRuntimeReferenceToTaggerFixtures : a mechanical review —
                         no module under app/ may reference the tactic-tagger
                         fixture directory path.
 """
@@ -57,14 +57,14 @@ from scripts.gen_sharp_filler_set import (
 )
 from tests.conftest import ensure_test_user
 
-# Task 2 acceptance criterion: "between 12 and PER_MOTIF_CAP inclusive" — the
-# measured floor for the thinnest-supply motifs after the D-13 engine gate,
+# Acceptance criterion: "between 12 and PER_MOTIF_CAP inclusive" — the
+# measured floor for the thinnest-supply motifs after the engine gate,
 # not a hard requirement the authoring script itself enforces (it targets
 # PER_MOTIF_CAP; this is the data-integrity re-check's own acceptance floor).
 _MIN_MOTIF_ROWS: int = 12
 
-# D-12's mate exclusion plus every named mate-pattern theme RESEARCH Pitfall 4
-# measured as fully subsumed by it (each is also tagged mateIn2 in-band).
+# The mate exclusion plus every named mate-pattern theme measured as fully
+# subsumed by it (each is also tagged mateIn2 in-band).
 _EXCLUDED_MATE_THEMES: frozenset[str] = frozenset(
     {
         "mateIn1",
@@ -141,7 +141,7 @@ class TestPickSharpFillers:
         assert [p.puzzle_id for p in picks] == ["a1", "b2", "c3"]
 
     def test_user_id_independent_signature(self) -> None:
-        """pick_sharp_fillers takes no user_id argument at all — D-14's
+        """pick_sharp_fillers takes no user_id argument at all — its
         determinism is structural, not merely observed."""
         import inspect
 
@@ -235,7 +235,7 @@ def test_sharp_filler_available_true_for_the_real_committed_set() -> None:
 
 
 class TestCommittedSharpSetDataIntegrity:
-    """Re-verifies every D-12/D-13/D-18 constraint against the REAL committed
+    """Re-verifies every data-integrity constraint against the REAL committed
     `app/data/sharp_filler_puzzles.csv` (via the module-level `SHARP_SET`
     constant — never a monkeypatched fixture)."""
 
@@ -284,7 +284,7 @@ class TestCommittedSharpSetDataIntegrity:
         """The committed file stores only `fen` (the position AFTER
         `first_move_uci` was played), not the preceding position — fully
         reconstructing the preceding FEN would need the captured piece and
-        castling-rights data that isn't persisted (RESEARCH Pitfall 5). This
+        castling-rights data that isn't persisted. This
         checks the structurally-verifiable invariant instead: the piece that
         supposedly just arrived at `first_move_uci`'s to-square is actually
         present there in `fen`, and belongs to the mover (the side that is
@@ -298,8 +298,8 @@ class TestCommittedSharpSetDataIntegrity:
 
 
 class TestNoAppRuntimeReferenceToTaggerFixtures:
-    """D-11's own mechanical review (RESEARCH: a runtime reference would
-    break silently on the next tagger-fixture regen)."""
+    """A mechanical review: a runtime reference would
+    break silently on the next tagger-fixture regen."""
 
     def test_sharp_filler_data_path_resolves_under_app_data(self) -> None:
         assert SHARP_FILLER_DATA_PATH.parent.name == "data"

@@ -1,10 +1,9 @@
 """Llm log ORM model — one row per LLM cache-miss call.
 
 Generic across future LLM features (naming convention: <feature>.<subfeature> for
-`endpoint`, e.g. `insights.endgame`). See SEED-003 §"Log table schema" and
-Phase 64 CONTEXT.md for the locked column set + index plan. D-02 explains
-the repo-owned-session deviation from import_job_repository's co-transactional
-pattern.
+`endpoint`, e.g. `insights.endgame`). The repository writes through its own
+session rather than import_job_repository's co-transactional pattern, so log
+rows survive caller rollbacks.
 """
 
 import datetime
@@ -45,8 +44,7 @@ class LlmLog(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     # users.id is Integer (4-byte), NOT BigInteger. FK column type MUST match.
-    # CONTEXT.md D-06 says "BigInt FK" but that is a misread of D-05 — see
-    # RESEARCH.md Pitfall 1. Use Integer.
+    # Use Integer.
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )

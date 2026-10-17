@@ -1,7 +1,6 @@
 """Repository tests for user_rating_anchors: blended-schema UPSERT round-trip.
 
-Phase 94.4 Plan 09 Task 5 -- rewrites the original Plan 02 tests to assert
-the D-12 Reversal Amendment (2026-05-27) column set.
+Asserts the blended-schema column set.
 
 See ``.planning/notes/percentile-anchor-d12-reversal.md`` for the design-
 decision record including the worked example used in Test 1.

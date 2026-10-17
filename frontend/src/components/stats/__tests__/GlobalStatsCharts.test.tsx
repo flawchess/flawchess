@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Regression tests for GlobalStatsCharts TC-row filtering (#260606-jvg Task 2).
+ * Regression tests for GlobalStatsCharts TC-row filtering.
  *
  * Asserts that rows for disabled TCs are omitted from the "Results by Time Control"
  * panel when enabledTimeControls is a non-null array, and that all rows render

@@ -58,29 +58,28 @@ export interface FlawFilterControlProps {
   onSeverityChange: (next: ('blunder' | 'mistake')[]) => void;
   onTagChange: (next: FlawTag[]) => void;
   /**
-   * Tactic-motif family filter (Phase 126). Only relevant when `showTacticFilter`
-   * is true (the Flaws tab). The flaw-tags panel is shared with the Games tab, where
-   * tactic filtering is a no-op, so the section is gated off by default.
+   * Tactic-motif family filter. Only relevant when `showTacticFilter` is set
+   * (both Library tabs set it).
    */
   tacticFamilies?: TacticFamily[];
   onTacticFamiliesChange?: (next: TacticFamily[]) => void;
-  /** Render the tactic-motif family section. Default false (Flaws tab passes true). */
+  /** Render the tactic sections (depth, orientation, motif families). Default false. */
   showTacticFilter?: boolean;
   /**
-   * Phase 129 TACUI-06 (D-06/D-07): orientation filter.
-   * Default 'either'. Rendered above TacticDepthFilter when showTacticFilter=true.
+   * Orientation filter.
+   * Default 'either'. Rendered below TacticDepthFilter when showTacticFilter=true.
    */
   orientation?: TacticOrientation;
   onOrientationChange?: (next: TacticOrientation) => void;
   /**
-   * Phase 129 TACUI-06 (D-01/D-02/D-03): tactic depth value.
-   * Default Intermediate. Rendered above Tactic Motif when showTacticFilter=true.
+   * Tactic depth value.
+   * Default High (full range). Rendered above Orientation when showTacticFilter=true.
    */
   tacticDepth?: TacticDepthValue;
   onTacticDepthChange?: (next: TacticDepthValue) => void;
   /**
-   * "Has gem" / "has great" toggles (FILT-01, D-05, Phase 175) — independent
-   * booleans narrowing the Library games list. The "Best Moves" section renders
+   * "Has gem" / "has great" toggles, independent
+   * booleans narrowing the Library games list. The Gem/Great section renders
    * only when the parent supplies onHasGemToggle/onHasGreatToggle — which only
    * GamesTab does; FlawsTab passes neither. (showTacticFilter can NOT distinguish
    * the two tabs: both pass it true, so it is the wrong gate for this section.)
@@ -124,8 +123,8 @@ const SEVERITY_BUTTONS: SeverityButtonConfig[] = [
 
 // ─── Family sections ──────────────────────────────────────────────────────────
 
-// Tag-family sections, including the phase family (Quick 260612-fow — phase is now
-// a first-class filter family, filtered on game_flaws.phase by the backend).
+// Tag-family sections, including the phase family (a first-class filter family,
+// filtered on game_flaws.phase by the backend).
 interface FamilySection {
   label: string;
   ariaLabel: string;
@@ -182,9 +181,8 @@ interface TagFilterButtonProps {
 
 /**
  * A single tag toggle button. Renders the canonical lowercase-with-dash tag string
- * (e.g. `lucky`) — the same names the chips and Flaw-Stats panel use. Definitions are
- * surfaced once via the <TagLegend> "Tags" popover on the Games cards, not as a
- * per-button hover tooltip here.
+ * (e.g. `lucky`) — the same names the chips and Flaw-Stats panel use. Definitions come
+ * from the family's TagLegend popover, not per-button tooltips.
  */
 function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButtonProps) {
   const Icon = TAG_ICONS[tag];
@@ -220,8 +218,8 @@ interface SeverityFilterButtonProps {
 /**
  * A severity toggle styled like the tag pills (and the page severity badges):
  * rounded-full, severity-colored when selected, with the severity glyph icon
- * (red "??" / orange "?"). Replaces the old neutral rectangular toggle so the
- * severity row reads as the same family of pills as the tags below it.
+ * (red "??" / orange "?"), so the severity row reads as the same family of pills
+ * as the tags below it.
  */
 function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButtonProps) {
   const { sev, label, icon: Icon, color, bg } = config;
@@ -245,7 +243,7 @@ function SeverityFilterButton({ config, selected, onToggle }: SeverityFilterButt
   );
 }
 
-// ─── Best-move filter button (gem / great, FILT-01, Phase 175) ────────────────
+// ─── Best-move filter button (gem / great) ────────────────────────────────────
 
 interface BestMoveFilterButtonProps {
   testId: string;
@@ -450,11 +448,11 @@ function BestMovesInfo() {
  * FlawFilterControl — severity × tag-family multi-select filter control.
  *
  * Renders (top to bottom):
- * - Severity (Blunders / Mistakes) — always on top of the panel (Quick 260624)
- * - Best Moves (Gem / Great, FILT-01 Phase 175) — Games tab only (gated on the
- *   presence of the onHasGem/GreatToggle handlers, which only GamesTab passes)
- * - Orientation toggle (showTacticFilter only)
+ * - Severity (Blunders / Mistakes) — always on top of the panel
+ * - Gem / Great — Games tab only (gated on the presence of the
+ *   onHasGem/GreatToggle handlers, which only GamesTab passes)
  * - Tactic Depth filter (showTacticFilter only)
+ * - Orientation toggle (showTacticFilter only)
  * - Tactic Type families incl. "Advanced" (showTacticFilter only) — each a titled section
  * - "Context" section (always) — Timing / Opportunity / Impact / Game Phase
  *
@@ -466,7 +464,7 @@ function BestMovesInfo() {
  * tag (or tactic motif) in that family — same pattern as the Games/Flaws cards — so
  * definitions are not repeated as per-button hover tooltips here.
  *
- * UI-SPEC: uses toggle-active CSS variables for severity; family FAM_* colors for tags.
+ * Severity pills use SEV_* colors; tag families use FAM_* colors.
  * All interactive elements have data-testid + ARIA per CLAUDE.md browser automation rules.
  * text-sm floor throughout (CLAUDE.md typography rule).
  *
@@ -490,8 +488,6 @@ export function FlawFilterControl({
   onHasGemToggle,
   onHasGreatToggle,
 }: FlawFilterControlProps) {
-  // Tactic-specific sections (depth / orientation / motif families / advanced) are
-  // gated on the tab opt-in: the Flaws tab passes showTacticFilter, the Games tab does not.
   const showTactics = showTacticFilter;
 
   // Severity toggles narrow like the tag families: empty = both shown, one = that
@@ -512,7 +508,7 @@ export function FlawFilterControl({
   };
 
   // Tactic-motif families behave exactly like the tag families: off by default,
-  // applied only when ≥1 is selected (Phase 126).
+  // applied only when ≥1 is selected.
   const handleTacticFamilyToggle = (fam: TacticFamily): void => {
     const next = tacticFamilies.includes(fam)
       ? tacticFamilies.filter((f) => f !== fam)
@@ -537,8 +533,7 @@ export function FlawFilterControl({
   return (
     <div data-testid="flaw-filter-control" className="flex flex-col gap-3">
       {/* ── Severity (Blunders / Mistakes) — empty = both shown ──────────────
-          Pinned to the top of the panel, above Tactic Depth, on both tabs
-          (Quick 260624). Was previously inside the Context collapsible. ──── */}
+          Pinned to the top of the panel, above Tactic Depth, on both tabs. ──── */}
       <div className="flex flex-col gap-2">
         <p className="text-sm text-muted-foreground">Flaws</p>
         <div className="flex gap-2 flex-wrap">
@@ -553,15 +548,13 @@ export function FlawFilterControl({
         </div>
       </div>
 
-      {/* ── Best Moves (Gem / Great toggles, FILT-01 D-05, Phase 175) ──────────
+      {/* ── Gem / Great toggles ──────────────────────────────────────────────
           Two independent booleans (not a 3-state cycle) narrowing the Library
           games list to games with a stored user-move gem/great; both on is a
           union at the backend.
-          Bug fix (post-verify): this was gated on `!showTactics`, but BOTH the
-          Games AND Flaws tabs pass showTacticFilter=true, so the section never
-          rendered on the real Games tab. The true discriminator is the parent
-          opting in via the gem/great toggle handlers — only GamesTab passes
-          them; FlawsTab passes none — so gate on their presence instead. ──── */}
+          Don't gate this on showTactics: both Library tabs pass showTacticFilter=true,
+          so it can't tell them apart. The true discriminator is the parent opting
+          in via the gem/great toggle handlers: only GamesTab passes them. ──── */}
       {(onHasGemToggle || onHasGreatToggle) && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1">
@@ -593,9 +586,9 @@ export function FlawFilterControl({
         </div>
       )}
 
-      {/* ── Tactic difficulty filter (Phase 129 TACUI-06, D-01/D-02/D-03) ──
-          Placed first so users size the difficulty band before narrowing by
-          orientation/type (Quick 260620-onv follow-up). ──── */}
+      {/* ── Tactic depth filter ──
+          Placed first so users size the depth range before narrowing by
+          orientation/type. ──── */}
       {showTactics && (
         <TacticDepthFilter
           value={tacticDepth}
@@ -603,7 +596,7 @@ export function FlawFilterControl({
         />
       )}
 
-      {/* ── Orientation toggle (Phase 129 TACUI-06, D-06/D-07) ────────────── */}
+      {/* ── Orientation toggle ─────────────────────────────────────────────── */}
       {showTactics && (
         <div>
           <p className="mb-1 text-sm text-muted-foreground">Tactic Missed vs Allowed</p>
@@ -611,7 +604,7 @@ export function FlawFilterControl({
             type="single"
             value={orientation}
             onValueChange={(v) => {
-              // D-06: deselect guard — empty string means user tapped the active item;
+              // Deselect guard — empty string means user tapped the active item;
               // preserve current value (same guard as "Played as").
               if (!v) return;
               const next = v as TacticOrientation;
@@ -648,15 +641,9 @@ export function FlawFilterControl({
         </div>
       )}
 
-      {/* ── Tactic motif families (Phase 126; grouped into mechanism sections in
-          Quick 260620-onv) — opt-in, off by default. Gated to the Flaws tab
-          (showTacticFilter); shared Games-tab panel hides it. Always-on groups
-          (Piece Attacks, Checkmate/Checks/Discoveries) render here; the tier-3
-          Advanced group renders collapsed below (Quick 260623-6pd). Each group has
-          its own scoped Tags-icon legend; chips read kebab-case. ──── */}
       {/* Always-on motif groups (Piece Attacks, Checkmate/Checks/Discoveries) plus the
           tier-3 Advanced group, each rendered as a normal titled section with its own
-          scoped Tags-icon legend; chips read kebab-case. Gated to the Flaws tab. */}
+          scoped Tags-icon legend; chips read kebab-case. */}
       {showTactics
         && TACTIC_GROUPS.map(({ key, label }) => (
           <TacticFamilyGroup
@@ -668,10 +655,9 @@ export function FlawFilterControl({
           />
         ))}
 
-      {/* ── Context tag families (Quick 260620-mjh / 260623) ──
+      {/* ── Context tag families ──
           Timing / Opportunity / Impact / Game Phase, rendered as a normal "Context"
-          section below the tactic sections. Renders on both the Games tab
-          (showTacticFilter=false) and Flaws tab. ──── */}
+          section below the tactic sections. Renders on both Library tabs. ──── */}
       <div className="pt-3 border-t border-border/40">
         <p
           className="text-sm text-muted-foreground"

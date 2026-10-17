@@ -1,4 +1,4 @@
-"""Tests for app/services/eval_queue_service.py (260701-lw4: tier-4 ES lottery).
+"""Tests for app/services/eval_queue_service.py (tier-4 ES lottery).
 
 Covers:
 - test_claim_tier4_blob_anti_starvation_and_recency_preference: inserts one very-old
@@ -165,7 +165,7 @@ async def test_claim_tier4_blob_anti_starvation_and_recency_preference(
     tier4_session_maker: async_sessionmaker[AsyncSession],
     tier4_test_user: int,
 ) -> None:
-    """260701-lw4: _claim_tier4_blob's Stage-2 ES lottery favors fresh games without
+    """_claim_tier4_blob's Stage-2 ES lottery favors fresh games without
     starving old ones.
 
     Both games belong to the same tier-4 test user, so Stage 1 (user pick) is

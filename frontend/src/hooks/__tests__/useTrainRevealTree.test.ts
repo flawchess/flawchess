@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * useTrainRevealTree tests (Phase 237 Plan 02), through the REAL useAnalysisBoard.
+ * useTrainRevealTree tests, through the REAL useAnalysisBoard.
  *
- * Tracer slice (Task 1): three chip lines seed ONE tree at the puzzle position
+ * Seeding: three chip lines seed ONE tree at the puzzle position
  * without moving the board, a chip tap focuses its line, and a line arriving
- * late (RESEARCH Pitfall 1) grafts in place instead of yanking the user back.
+ * late grafts in place instead of yanking the user back.
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -162,7 +162,7 @@ afterEach(() => {
 });
 
 describe('useTrainRevealTree seeding', () => {
-  it('seeds nothing and previews nothing while the hook is inactive (T-190-16 / T-237-04 / T-261011-lwy-01)', () => {
+  it('seeds nothing and previews nothing while the hook is inactive', () => {
     const { result } = renderTree({ active: false });
     expect(result.current.nodes.size).toBe(0);
     expect(result.current.currentNodeId).toBeNull();
@@ -270,7 +270,7 @@ describe('useTrainRevealTree late lines', () => {
     rerender({ startFen: START_FEN, active: true, chips: [YOUR, BEST, GAME] });
 
     expect(result.current.nodes.size).toBe(3);
-    expect(result.current.currentNodeId).toBe(d4); // Pitfall 1: not yanked
+    expect(result.current.currentNodeId).toBe(d4); // not yanked
     expect(result.current.fen).toBe(result.current.nodes.get(d4)?.fen);
     expect(result.current.linePaths.game).toHaveLength(1);
     expect(mockPlaySound).not.toHaveBeenCalled();
@@ -289,10 +289,10 @@ describe('useTrainRevealTree late lines', () => {
   });
 });
 
-// ─── Task 2: navigation, forks and the list view ─────────────────────────────
+// ─── navigation, forks and the list view ─────────────────────────────
 
 describe('useTrainRevealTree forward navigation', () => {
-  it('forward at the puzzle position enters the ACTIVE chip, not the lowest-id node (Pitfall 3)', () => {
+  it('forward at the puzzle position enters the ACTIVE chip, not the lowest-id node', () => {
     // BEST is seeded first, so its first node has the lowest id.
     const { result } = renderTree({ chips: [BEST, YOUR] });
     const bestFirst = result.current.linePaths.best![0]!;
@@ -350,7 +350,7 @@ describe('useTrainRevealTree forward navigation', () => {
   });
 });
 
-describe('useTrainRevealTree user moves (D-04, D-13)', () => {
+describe('useTrainRevealTree user moves', () => {
   it('a root move onto a chip line lands on its node, is a board move (not a fork) and focuses the chip', () => {
     const onUserMove = vi.fn();
     const onChipSelect = vi.fn();
@@ -374,7 +374,7 @@ describe('useTrainRevealTree user moves (D-04, D-13)', () => {
     expect(onChipSelect).toHaveBeenCalledWith('your');
   });
 
-  it('a root move that matches no chip forks, deselects every chip and lists only the user line (D-04)', () => {
+  it('a root move that matches no chip forks, deselects every chip and lists only the user line', () => {
     const onUserMove = vi.fn();
     const onChipSelect = vi.fn();
     const { result } = renderTree({ onUserMove, onChipSelect });
@@ -444,10 +444,10 @@ describe('useTrainRevealTree user moves (D-04, D-13)', () => {
     expect(result.current.rootFocus).toBe('your'); // a mid-line move never touches the root focus
 
     act(() => result.current.selectChip('your'));
-    expect(result.current.currentNodeId).toBe(free); // Open Question 2: no jump
+    expect(result.current.currentNodeId).toBe(free); // no jump
 
     act(() => result.current.selectChip('best'));
-    expect(result.current.isAtRoot).toBe(true); // D-01: another chip jumps to the puzzle position
+    expect(result.current.isAtRoot).toBe(true); // another chip jumps to the puzzle position
     expect(result.current.activeChip).toBe('best');
   });
 
@@ -519,7 +519,7 @@ describe('useTrainRevealTree step reporting', () => {
     expect(onUserStep).not.toHaveBeenCalled();
   });
 
-  it('goToNode on the node the board is already on is not a user step (WR-04)', () => {
+  it('goToNode on the node the board is already on is not a user step', () => {
     const onUserStep = vi.fn();
     const { result } = renderTree({ onUserStep });
     const [e4] = result.current.linePaths.your!;
@@ -689,7 +689,7 @@ describe('useTrainRevealTree keyboard', () => {
   });
 });
 
-// ─── Task 3: snapshot and restore as UCI paths ───────────────────────────────
+// ─── snapshot and restore as UCI paths ───────────────────────────────
 
 /**
  * Builds the tree the round-trip tests snapshot: a free ROOT fork (1.Nf3) and a
@@ -791,7 +791,7 @@ describe('useTrainRevealTree snapshot / restore', () => {
     expect(result.current.nodes.has(tip)).toBe(false);
   });
 
-  it('applies nothing while inactive (T-237-04) and rebuilds once the hook activates', () => {
+  it('applies nothing while inactive and rebuilds once the hook activates', () => {
     const original = playSidelinedTree();
     const snapshot = original.result.current.snapshot();
     const { result, rerender } = renderTree({ active: false, restored: snapshot });
@@ -820,7 +820,7 @@ describe('useTrainRevealTree snapshot / restore', () => {
     expect(rendered?.result.current.rootFocus).toBeNull();
   });
 
-  it('replays at most REVEAL_TREE_SNAPSHOT_MAX_PATHS paths (T-237-05)', () => {
+  it('replays at most REVEAL_TREE_SNAPSHOT_MAX_PATHS paths', () => {
     const paths: string[][] = [];
     for (const first of ['e2e4', 'd2d4']) {
       const chess = new Chess();
@@ -882,8 +882,8 @@ function renderGraded(startFen: string, seedEval: TreeSeedEval | null) {
   return renderTree({ startFen, chips: [], seedEval });
 }
 
-describe('useTrainRevealTree: root-ply grading reads the served vetted key (D-06)', () => {
-  it("SEED-137 case 2: a served vetted move forked at the ROOT ply badges with the entry's own server quality, never the engine's (worse) fresh search", () => {
+describe('useTrainRevealTree: root-ply grading reads the served vetted key', () => {
+  it("a served vetted move forked at the ROOT ply badges with the entry's own server quality, never the engine's (worse) fresh search", () => {
     // The engine's own post-d2d4 reading is CATASTROPHIC (-900 white-POV, far
     // past BLUNDER_DROP against the +30 seed), so a build that grades this root
     // move from the engine pair badges it a blunder. The SERVER's key says d2d4
@@ -923,7 +923,7 @@ describe('useTrainRevealTree: root-ply grading reads the served vetted key (D-06
     expect(result.current.boardMarkers).toEqual([{ square: 'e4', best: true }]);
   });
 
-  it("the DEEP best played at the root badges 'best' from its vetted entry, even when the client engine's own top move differs (D-01 amendment)", () => {
+  it("the DEEP best played at the root badges 'best' from its vetted entry, even when the client engine's own top move differs", () => {
     // The served list leads with the deep best (d2d4, quality 'best'); the
     // client engine's own top move is e2e4, so the is-best check misses and the
     // key lookup must supply the badge. Scripted so the engine pair would
@@ -979,7 +979,7 @@ describe('useTrainRevealTree: root-ply grading reads the served vetted key (D-06
     expect(result.current.boardMarkers).toEqual([{ square: 'b6', severity: 'blunder' }]);
   });
 
-  it('an OFF-key root move still grades from the engine exactly as today (D-04 residual)', () => {
+  it('an OFF-key root move still grades from the engine exactly as today', () => {
     // b1c3 is legal but NOT on the served list: the accepted-residual seam,
     // esBefore from the seed, esAfter from the engine's own scripted search.
     engineState.scoresByFen[fenAfter(START_FEN, 'Nc3')] = -900;
@@ -1072,7 +1072,7 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     expect(engineState.lastMultiPv).toBe(2);
   });
 
-  it('rootMinMultiPv widens only the puzzle position (quick 261010-e5l): 4 at the root, the settings width on a known line, 4 again after goToRoot', () => {
+  it('rootMinMultiPv widens only the puzzle position: 4 at the root, the settings width on a known line, 4 again after goToRoot', () => {
     const { result } = renderTree({ rootMinMultiPv: TRAIN_LIVE_ALT_ROOT_MULTIPV });
     expect(engineState.lastMultiPv).toBe(TRAIN_LIVE_ALT_ROOT_MULTIPV);
     act(() => {
@@ -1145,7 +1145,7 @@ describe('useTrainRevealTree: the one reveal engine', () => {
   });
 });
 
-describe('useTrainRevealTree: onUserMove counting (Phase 233 D-14, Phase 237 D-13)', () => {
+describe('useTrainRevealTree: onUserMove counting', () => {
   it('counts one board move per legal playMove and never a rejected one', () => {
     const onUserMove = vi.fn();
     const { result } = renderTree({ chips: [], onUserMove });
@@ -1194,7 +1194,7 @@ describe('useTrainRevealTree: onUserMove counting (Phase 233 D-14, Phase 237 D-1
   });
 });
 
-// ─── SEED-197: the live engine preview ───────────────────────────────────────
+// ─── the live engine preview ───────────────────────────────────────
 
 describe('useTrainRevealTree preview', () => {
   it('at open the preview hangs off the active chip first move and equals the seed; live is ignored there', () => {
@@ -1370,7 +1370,7 @@ describe('useTrainRevealTree preview commits are ungraded', () => {
   });
 });
 
-describe('useTrainRevealTree preview commits survive Analyze -> Back (WR-02)', () => {
+describe('useTrainRevealTree preview commits survive Analyze -> Back', () => {
   /** e4 chip leaf, then the preview's e5 committed with ArrowRight, parked on e5. */
   function committedE5Tree() {
     keepSeedVisible();
@@ -1422,7 +1422,7 @@ describe('useTrainRevealTree preview commits survive Analyze -> Back (WR-02)', (
   });
 });
 
-describe('useTrainRevealTree commitPreview id bookkeeping (WR-01)', () => {
+describe('useTrainRevealTree commitPreview id bookkeeping', () => {
   it('two commits in one event graft once and do not exempt the next hand-played move from grading', () => {
     keepSeedVisible();
     engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'e5')] = 30;

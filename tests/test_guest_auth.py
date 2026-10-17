@@ -173,7 +173,7 @@ class TestGuestCreate:
 
     @pytest.mark.asyncio
     async def test_guest_token_authenticates_openings(self):
-        """Guest token is accepted by POST /openings/positions (GUEST-03)."""
+        """Guest token is accepted by POST /openings/positions."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -190,7 +190,7 @@ class TestGuestCreate:
 
     @pytest.mark.asyncio
     async def test_guest_token_authenticates_imports(self):
-        """Guest token is accepted by GET /imports (GUEST-03)."""
+        """Guest token is accepted by GET /imports."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -206,7 +206,7 @@ class TestGuestCreate:
 
     @pytest.mark.asyncio
     async def test_guest_token_authenticates_endgame(self):
-        """Guest token is accepted by GET /stats/endgame-types (GUEST-03)."""
+        """Guest token is accepted by GET /stats/endgame-types."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -305,7 +305,7 @@ class TestGuestRateLimit:
 
 
 # ---------------------------------------------------------------------------
-# promote_guest_with_password service unit tests (TDD RED)
+# promote_guest_with_password service unit tests
 # ---------------------------------------------------------------------------
 
 
@@ -432,7 +432,7 @@ class TestPromoteGuestWithPassword:
 
     @pytest.mark.asyncio
     async def test_promotion_hashes_off_the_event_loop_thread(self, db_session, monkeypatch):
-        """SURGE-02: the argon2 hash call runs on a worker thread, not the event loop.
+        """The argon2 hash call runs on a worker thread, not the event loop.
 
         Reverting the asyncio.to_thread wrap in promote_guest_with_password makes
         the recorded thread id equal the test's own thread id, failing this test.
@@ -573,8 +573,7 @@ class TestGuestPromotion:
 
     @pytest.mark.asyncio
     async def test_guest_token_rejected_after_email_promotion(self):
-        """Promotion revokes the long-lived guest JWT; only the returned token works
-        (quick 261016-fwd)."""
+        """Promotion revokes the long-lived guest JWT; only the returned token works."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -675,8 +674,8 @@ class TestGuestPromotion:
 
     @pytest.mark.asyncio
     async def test_train_state_preserved_after_promotion(self, test_engine) -> None:
-        """Promotion is an in-place UPDATE users (Phase 224 D-08, GUESTACT-06,
-        ROADMAP SC 4): a promoted guest's drill_sessions, drill_solves and
+        """Promotion is an in-place UPDATE users: a promoted guest's drill_sessions,
+        drill_solves and
         train_settings rows, plus its account-level streak, all survive
         unchanged -- exactly what makes the score-screen sign-up ask's "your
         streak and everything you have solved stay exactly where they are"

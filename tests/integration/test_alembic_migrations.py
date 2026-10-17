@@ -1,19 +1,16 @@
 """Migration round-trip tests for the user_benchmark_percentiles table.
 
-Phase 94.1 Plan 01 Wave 0.
-
 Tests:
 - test_user_benchmark_percentiles_upgrade — schema column/type/PK assertions
-- test_user_benchmark_percentiles_upgrade_downgrade — table + ENUM both gone (Pitfall 4)
+- test_user_benchmark_percentiles_upgrade_downgrade — table + ENUM both gone
 
 Both tests are guarded by:
 1. ``pytest.importorskip("app.models.user_benchmark_percentile")`` — skips the
-   entire module until Plan 04 creates the model.
+   entire module when the model is absent.
 2. ``@pytest.mark.skipif(not _migration_present(), ...)`` — skips each individual
    test until the Alembic migration file for user_benchmark_percentiles lands.
 
-This keeps CI green pre-Plan-04 while ensuring the tests activate automatically
-once the migration exists.
+The tests activate automatically once the model and migration exist.
 """
 
 from __future__ import annotations
@@ -26,7 +23,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 # ---------------------------------------------------------------------------
-# Guard 1 — skip module until Plan 04 creates the model
+# Guard 1 — skip module when the model is absent
 # ---------------------------------------------------------------------------
 
 pytest.importorskip(
@@ -54,16 +51,16 @@ def _migration_present() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Expected schema spec (from D-08)
+# Expected schema spec
 # ---------------------------------------------------------------------------
 
 # Column names expected in the migrated table.
-# Plan 13 (gap-closure): ``n_cells_floor`` dropped via migration a7f3c9b82e14.
-# Row existence implies above-floor.
-# Phase 94.2 (D-9-amend): ``n_games`` re-added by migration b8f4d92c1e25 under
-# pooled-per-user semantics (one count per user per metric on the pooled set).
-# Phase 94.4 D-01 (Plan 05a migration 1945ae56aa20): the PK widens to include
-# ``time_control_bucket`` and the column is added to the table.
+# ``n_cells_floor`` was dropped via migration a7f3c9b82e14, so row existence
+# implies above-floor.
+# ``n_games`` was re-added by migration b8f4d92c1e25 under pooled-per-user
+# semantics (one count per user per metric on the pooled set).
+# Migration 1945ae56aa20 widened the PK to include ``time_control_bucket`` and
+# added the column to the table.
 _EXPECTED_COLUMNS: frozenset[str] = frozenset(
     {
         "user_id",
@@ -84,7 +81,7 @@ _NULLABLE_COLUMNS: frozenset[str] = frozenset({"percentile"})
 _NOT_NULL_COLUMNS: frozenset[str] = _EXPECTED_COLUMNS - _NULLABLE_COLUMNS
 
 # The composite PK columns (order matters for the PRIMARY KEY constraint).
-# Phase 94.4 D-01: PK widens from 2 columns to 3 (Plan 05a migration).
+# The PK is composite on three columns (widened by migration 1945ae56aa20).
 _PK_COLUMNS: frozenset[str] = frozenset({"user_id", "metric", "time_control_bucket"})
 
 pytestmark = pytest.mark.asyncio
@@ -103,13 +100,13 @@ pytestmark = pytest.mark.asyncio
     ),
 )
 async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> None:
-    """After upgrade head, user_benchmark_percentiles exists with the D-08 schema.
+    """After upgrade head, user_benchmark_percentiles exists with the expected schema.
 
     Asserts:
     - Table exists in information_schema.tables
     - All 7 expected columns are present
     - ``percentile`` is nullable; all others are NOT NULL
-    - Primary key is composite on (user_id, metric)
+    - Primary key is composite on (user_id, metric, time_control_bucket)
     - ``metric`` column data_type is USER-DEFINED (Postgres ENUM)
     - ``computed_at`` column data_type is TIMESTAMP WITH TIME ZONE
     """
@@ -195,7 +192,7 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
 
 
 # ---------------------------------------------------------------------------
-# Test 2 — downgrade: table AND ENUM type both removed (Pitfall 4 guard)
+# Test 2 — downgrade: table AND ENUM type both removed
 # ---------------------------------------------------------------------------
 
 
@@ -209,9 +206,9 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
 async def test_user_benchmark_percentiles_upgrade_downgrade(
     test_engine: AsyncEngine,
 ) -> None:
-    """Downgrade removes the table AND the benchmark_metric ENUM type (Pitfall 4).
+    """Downgrade removes the table AND the benchmark_metric ENUM type.
 
-    Pitfall 4 (RESEARCH): the downgrade order matters — table must be dropped
+    The downgrade order matters — table must be dropped
     BEFORE the ENUM type, otherwise Postgres refuses with:
     ``cannot drop type benchmark_metric because column ... depends on it``.
 
@@ -251,7 +248,7 @@ async def test_user_benchmark_percentiles_upgrade_downgrade(
         )
 
     # Verify downgrade ordering in the migration source file (non-destructive check).
-    # Pitfall 4: drop_table must appear BEFORE enum.drop in downgrade().
+    # drop_table must appear BEFORE enum.drop in downgrade().
     migration_files = glob.glob(_MIGRATION_GLOB)
     assert migration_files, "Migration file must be present to verify ordering"
 

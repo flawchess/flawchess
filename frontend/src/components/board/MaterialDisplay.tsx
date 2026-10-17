@@ -4,14 +4,14 @@ import { cn } from '@/lib/utils';
 import { computeMaterialDiff, type MaterialPieceType } from '@/lib/materialDiff';
 
 /**
- * D-07: every icon after the first WITHIN a same-type sub-group gets this
+ * Every icon after the first WITHIN a same-type sub-group gets this
  * negative left margin so repeated icons overlap slightly, chess.com style.
  * Sub-groups of different types are never overlapped — they stay separated
  * by the outer container's gap instead.
  */
 const ICON_OVERLAP_MARGIN_CLASS = '-ml-2';
 
-/** D-03: the five lucide-react chess icons, keyed by chess.js piece type. */
+/** The five lucide-react chess icons, keyed by chess.js piece type. */
 const PIECE_ICONS: Record<MaterialPieceType, typeof ChessPawn> = {
   p: ChessPawn,
   n: ChessKnight,
@@ -30,12 +30,10 @@ interface MaterialDisplayProps {
 }
 
 /**
- * Quick 260809-jzz — lichess-style net material surplus for one side: piece
- * icons (hidden below `sm`, D-04) followed by a `+N` point total shown only
- * for the side that is actually ahead on points (D-06). Pure presentational;
- * `computeMaterialDiff` (materialDiff.ts) owns all the arithmetic. Shared by
- * `PlayerBar` (Analysis) and `ClockDisplay` (Bots) so neither page
- * re-implements the icon row (D-05).
+ * Lichess-style net material surplus for one side: piece icons (hidden below
+ * `sm`) followed by a `+N` point total shown only for the side that is actually
+ * ahead on points. Pure presentational; `computeMaterialDiff` (materialDiff.ts)
+ * owns all the arithmetic. Rendered by PlayerBar (analysis and bot-game boards).
  */
 export function MaterialDisplay({ fen, side, className }: MaterialDisplayProps): ReactElement | null {
   const diff = useMemo(() => computeMaterialDiff(fen), [fen]);
@@ -47,10 +45,10 @@ export function MaterialDisplay({ fen, side, className }: MaterialDisplayProps):
 
   return (
     <span data-testid={`material-${side}`} className={cn('flex items-center gap-1.5', className)}>
-      {/* Phase 223 UAT: below `sm` the per-piece icon row is hidden (D-04), which
-          left a bare "+3" with nothing saying what it counted. A single pawn
-          glyph — the universal material shorthand — labels the number there, and
-          is itself hidden at `sm+` where the real surplus icons take over. */}
+      {/* Below `sm` the per-piece icon row is hidden, which would leave a bare
+          "+3" with nothing saying what it counted. A single pawn glyph — the
+          universal material shorthand — labels the number there, and is itself
+          hidden at `sm+` where the real surplus icons take over. */}
       <ChessPawn
         aria-hidden="true"
         data-testid={`material-${side}-mobile-icon`}

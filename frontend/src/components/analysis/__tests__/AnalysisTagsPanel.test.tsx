@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 /**
- * AnalysisTagsPanel vitest suite (quick-260702-nm8; migrated to MoveStats in
- * Phase 179 Plan 03, SEED-112).
+ * AnalysisTagsPanel vitest suite (the panel is built on MoveStats).
  *
  * Covers: MoveStats cell counts/cycling (first/next/wrap/restart), zero-cell
- * inertness, both-sided (category × side) coverage (D-08), the 3-column
- * Missed/Allowed/Context tactic block, and the analyzed-only mount guard
- * (D-03/D-07 — no markers/tiers emptiness clause).
+ * inertness, both-sided (category × side) coverage, the 3-column
+ * Missed/Allowed/Context tactic block, and the analyzed-only mount guard (no markers/tiers emptiness clause).
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -109,7 +107,7 @@ describe('AnalysisTagsPanel', () => {
     is_user: true,
     tags: ['hasty'],
   });
-  // Odd ply (7) = black/opponent — a genuinely opposite-side marker for D-08.
+  // Odd ply (7) = black/opponent — a genuinely opposite-side marker.
   const opponentMarker = buildMarker({
     ply: 7,
     severity: 'blunder',
@@ -130,7 +128,7 @@ describe('AnalysisTagsPanel', () => {
     expect(screen.getByTestId('move-stats-cell-blunder-white-1').textContent).toBe('1');
     expect(screen.getByTestId('move-stats-cell-mistake-white-1').textContent).toBe('1');
     expect(screen.getByTestId('move-stats-cell-inaccuracy-white-1').textContent).toBe('1');
-    // Black (opponent): 1 blunder (ply 7) — surfaced too (D-08).
+    // Black (opponent): 1 blunder (ply 7) — surfaced too.
     expect(screen.getByTestId('move-stats-cell-blunder-black-1').textContent).toBe('1');
   });
 
@@ -141,7 +139,7 @@ describe('AnalysisTagsPanel', () => {
     expect(screen.getByTestId('context-column-1')).toBeDefined();
     // Missed chip present (fork, user marker); allowed chip present (pin, user
     // marker). Opponent's skewer motif is a MISSED chip too (tactic chips stay
-    // user-scoped — unaffected by the D-08 MoveStats rework).
+    // user-scoped — unaffected by the both-sided MoveStats counts).
     expect(screen.getByTestId('chip-tactic-missed-fork-1')).toBeDefined();
     expect(screen.getByTestId('chip-tactic-allowed-pin-1')).toBeDefined();
     expect(screen.queryByTestId('chip-tactic-missed-skewer-1')).toBeNull();
@@ -182,7 +180,7 @@ describe('AnalysisTagsPanel', () => {
     expect(onCyclePly).toHaveBeenLastCalledWith(4);
   });
 
-  it('cycles the opponent (black) blunder cell independently, never visiting the user ply (D-08/D-09)', () => {
+  it('cycles the opponent (black) blunder cell independently, never visiting the user ply', () => {
     const onCyclePly = vi.fn();
     render(<AnalysisTagsPanel game={fixture} onCyclePly={onCyclePly} />);
     fireEvent.click(screen.getByTestId('move-stats-cell-blunder-black-1'));
@@ -211,7 +209,7 @@ describe('AnalysisTagsPanel', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders the full all-zero 7-row table for a flawless analyzed game, instead of null (D-03/Pitfall 2)', () => {
+  it('renders the full all-zero 7-row table for a flawless analyzed game, instead of null', () => {
     const flawless = buildGame({ flaw_markers: [] });
     render(<AnalysisTagsPanel game={flawless} onCyclePly={() => {}} />);
     expect(screen.getByTestId('analysis-tags-panel')).toBeDefined();
@@ -220,10 +218,10 @@ describe('AnalysisTagsPanel', () => {
   });
 });
 
-describe('AnalysisTagsPanel MoveStats gem/great tiers (Phase 175 Plan 06, both-sided per D-08)', () => {
+describe('AnalysisTagsPanel MoveStats gem/great tiers (both-sided)', () => {
   // buildGame sets user_color: 'white', so even plies (0, 2, 4) are the USER's moves
   // and odd plies (1, 3) are the opponent's. best_move_tier is POSITION-scoped, and
-  // D-08 deliberately surfaces BOTH sides here (reversing the old user-only
+  // The panel deliberately surfaces BOTH sides here (reversing the old user-only
   // GemGreatBadge filter). User: gem@0, great@2, gem@4. Opponent: gem@1, great@3.
   const gemGreatFixture = buildGame({
     severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
@@ -238,7 +236,7 @@ describe('AnalysisTagsPanel MoveStats gem/great tiers (Phase 175 Plan 06, both-s
     ],
   });
 
-  it('shows BOTH the user gem count and the opponent gem count (D-08)', () => {
+  it('shows BOTH the user gem count and the opponent gem count', () => {
     render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={() => {}} />);
     // User (white) gems: plies 0, 4 → 2.
     expect(screen.getByTestId('move-stats-cell-gem-white-1').textContent).toBe('2');
@@ -246,13 +244,13 @@ describe('AnalysisTagsPanel MoveStats gem/great tiers (Phase 175 Plan 06, both-s
     expect(screen.getByTestId('move-stats-cell-gem-black-1').textContent).toBe('1');
   });
 
-  it('shows BOTH the user great count and the opponent great count (D-08)', () => {
+  it('shows BOTH the user great count and the opponent great count', () => {
     render(<AnalysisTagsPanel game={gemGreatFixture} onCyclePly={() => {}} />);
     expect(screen.getByTestId('move-stats-cell-great-white-1').textContent).toBe('1');
     expect(screen.getByTestId('move-stats-cell-great-black-1').textContent).toBe('1');
   });
 
-  it('renders even with zero flaw markers, as long as gem/great plies exist (D-03/Pitfall 2)', () => {
+  it('renders even with zero flaw markers, as long as gem/great plies exist', () => {
     const noFlawsButGem = buildGame({
       severity_counts: { inaccuracy: 0, mistake: 0, blunder: 0 },
       chips: [],

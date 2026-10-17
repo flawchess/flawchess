@@ -108,7 +108,7 @@ async def _seed_game_position(
     piece_count defaults to 2 (KR_KR — rook endgame, safely below threshold of 6).
     endgame_class defaults to 1 (rook), matching the default material_signature KR_KR.
     Use endgame_class=None for non-endgame positions.
-    eval_cp and eval_mate are white-perspective Stockfish eval (REFAC-02 cutover).
+    eval_cp and eval_mate are white-perspective Stockfish eval.
     """
     pos = GamePosition(
         game_id=game.id,
@@ -195,7 +195,7 @@ class TestQueryEndgameEntryRows:
         # Should return exactly one row for this (game, rook) span
         assert len(rows) == 1
         row = rows[0]
-        # Phase 87.1: row has 8 columns; access by attribute for clarity.
+        # Row has 8 columns; access by attribute for clarity.
         assert row.game_id == game.id
         assert row.endgame_class == 1  # rook
         # Terminal span (only one span in game) — next-eval columns are NULL.
@@ -289,7 +289,7 @@ class TestQueryEndgameEntryRows:
         assert row.user_color == "white"
         assert row.eval_cp == 200  # from first ply of span
         assert row.eval_mate is None
-        # Phase 87.1: single-span game → terminal → next-eval NULL.
+        # Single-span game → terminal → next-eval NULL.
         assert row.next_entry_eval_cp is None
         assert row.next_entry_eval_mate is None
 
@@ -345,7 +345,7 @@ class TestQueryEndgameEntryRows:
 
 
 class TestQueryEndgameEntryRowsNextSpanEval:
-    """Phase 87.1 (SEED-016 D-06): LEAD-based next-span entry eval columns.
+    """LEAD-based next-span entry eval columns.
 
     Verifies the 8-column row shape produced by `query_endgame_entry_rows` with
     the LEAD() window function appended over (game_id, span_min_ply ASC).
@@ -483,7 +483,7 @@ class TestQueryEndgameEntryRowsNextSpanEval:
         """Existing 6-column attribute access (game_id, endgame_class, result, user_color,
         eval_cp, eval_mate) still works after the row shape grew to 8 columns.
 
-        Guards Phase 87 / Conv/Recov callers from row-shape regression.
+        Guards Conv/Recov callers from row-shape regression.
         """
         game = await _seed_game(db_session, user_color="white", result="1-0")
         for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
@@ -574,14 +574,14 @@ class TestQueryEndgameGames:
 
 
 # ---------------------------------------------------------------------------
-# TestQueryEndgameBucketRows (Phase 59 gap-closure)
+# TestQueryEndgameBucketRows
 # ---------------------------------------------------------------------------
 
 
 class TestQueryEndgameBucketRows:
     """Tests for query_endgame_bucket_rows — one row per endgame game meeting ENDGAME_PLY_THRESHOLD.
 
-    Per quick-260414-ae4, this query applies the same 6-ply HAVING as
+    This query applies the same 6-ply HAVING as
     `_any_endgame_ply_subquery`, so bucket_rows and endgame_rows (from
     `query_endgame_performance_rows`) count the same population — the
     material-bucket invariant sum(material_rows.games) == endgame_wdl.total
@@ -606,7 +606,7 @@ class TestQueryEndgameBucketRows:
     async def test_short_endgame_is_excluded(self, db_session: AsyncSession) -> None:
         """Game with fewer than ENDGAME_PLY_THRESHOLD endgame plies is EXCLUDED.
 
-        Post quick-260414-ae4 the bucket query mirrors the binary "has endgame" split:
+        The bucket query mirrors the binary "has endgame" split:
         both apply the uniform 6-ply threshold, so a game that only briefly touched an
         endgame class (tactical transition) is classified as "no endgame" for the
         entire tab.
@@ -663,7 +663,7 @@ class TestQueryEndgameBucketRows:
         )
 
         assert len(rows) == 1
-        # Phase 97: query now returns 9 columns (added time_control_bucket + LEAD next-eval).
+        # Query now returns 9 columns (added time_control_bucket + LEAD next-eval).
         # Use attribute access to stay forward-compatible with future column additions.
         assert rows[0].eval_cp == 150  # entry-ply eval (white-perspective, no sign flip)
         assert rows[0].eval_mate is None
@@ -696,7 +696,7 @@ class TestQueryEndgameBucketRows:
         )
 
         assert len(rows) == 1
-        # Phase 97: query now returns 9 columns (added time_control_bucket + LEAD next-eval).
+        # Query now returns 9 columns (added time_control_bucket + LEAD next-eval).
         # Use attribute access to stay forward-compatible with future column additions.
         assert rows[0].user_color == "black"
         # eval_cp is raw white-perspective (-150): service _classify_endgame_bucket
@@ -706,7 +706,7 @@ class TestQueryEndgameBucketRows:
 
     @pytest.mark.asyncio
     async def test_invariant_matches_performance_rows_count(self, db_session: AsyncSession) -> None:
-        """Core invariant: bucket_rows count == endgame_rows count (post quick-260414-ae4).
+        """Core invariant: bucket_rows count == endgame_rows count.
 
         Mix of games: one long-endgame game (qualifies), one short-endgame game (now
         EXCLUDED from both bucket_rows and endgame_rows — routed to non_endgame_rows),
@@ -818,7 +818,7 @@ class TestQueryEndgameBucketRows:
 
     @pytest.mark.asyncio
     async def test_binary_endgame_split_uses_6ply_threshold(self, db_session: AsyncSession) -> None:
-        """quick-260414-ae4: binary split + bucket + per-class all respect ENDGAME_PLY_THRESHOLD.
+        """Binary split + bucket + per-class all respect ENDGAME_PLY_THRESHOLD.
 
         Game A spends exactly ENDGAME_PLY_THRESHOLD plies in KR_KR → qualifies.
         Game B spends ENDGAME_PLY_THRESHOLD - 1 plies in KR_KR → does NOT qualify on

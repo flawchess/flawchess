@@ -1,12 +1,12 @@
 /**
  * maiaEncoding unit tests — pure, deterministic glue (no real ONNX needed).
  *
- * Covers every <behavior> bullet from 151-04-PLAN.md Task 1:
+ * Covers:
  * - encodeBoard shape + one-hot correctness + black-to-move mirroring.
  * - maskAndSoftmax normalization, illegal-move exclusion, single-legal-move case.
  * - expectedScore for the three canonical WDL vectors.
  * - eloToInput raw passthrough.
- * - MAIA_ELO_LADDER equals the confirmed contract range (151-MAIA-CONTRACT.md §c).
+ * - MAIA_ELO_LADDER equals the confirmed contract range.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -133,13 +133,13 @@ describe('maskAndSoftmax', () => {
   });
 });
 
-// ─── maskAndSoftmaxUci (JANK-01/02) ─────────────────────────────────────────────
+// ─── maskAndSoftmaxUci ─────────────────────────────────────────────
 
 /**
  * Builds the expected UCI-keyed distribution via the EXISTING two-step path
  * (`maskAndSoftmax` + `sanToUci`) — a real cross-implementation comparison
  * against `maskAndSoftmaxUci`, not a snapshot of the new function's own
- * output. This is JANK-02's parity guard against chess.js private-API drift.
+ * output. This is the parity guard against chess.js private-API drift.
  */
 function expectedViaTwoStepPath(policy: Float32Array, fen: string): Record<string, number> {
   const sanKeyed = maskAndSoftmax(policy, fen);
@@ -180,7 +180,7 @@ describe('maskAndSoftmaxUci', () => {
     }
   });
 
-  it('matches the two-step path for a black-to-move position (mirrored vocab index, D-08 side handling)', () => {
+  it('matches the two-step path for a black-to-move position (mirrored vocab index, side handling)', () => {
     const policy = nonUniformPolicy(11, 5);
     const actual = maskAndSoftmaxUci(policy, BLACK_TO_MOVE_FEN);
     const expected = expectedViaTwoStepPath(policy, BLACK_TO_MOVE_FEN);
@@ -227,7 +227,7 @@ describe('maskAndSoftmaxUci', () => {
   });
 });
 
-// ─── buildPolicyMoveContext / softmaxPolicyByContext (quick 260731-s0z FIX-7) ───
+// ─── buildPolicyMoveContext / softmaxPolicyByContext ───
 
 /** Black to move, WITH an en-passant capture available AND all four
  *  underpromotion lanes available on the same move — exercises the
@@ -365,7 +365,7 @@ describe('eloToInput', () => {
 // ─── MAIA_ELO_LADDER ────────────────────────────────────────────────────────────
 
 describe('MAIA_ELO_LADDER', () => {
-  it('spans maiachess.com\'s full 600..2600 range, step 100 (UAT quick 260705-bm3)', () => {
+  it('spans maiachess.com\'s full 600..2600 range, step 100', () => {
     expect(MAIA_ELO_LADDER).toEqual([
       600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100,
       2200, 2300, 2400, 2500, 2600,

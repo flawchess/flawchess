@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useChessGame board-navigation tests (Quick 260821-kyz).
+ * useChessGame board-navigation tests.
  *
  * Covers the arrow-key + mouse-wheel move browsing the Openings board picked
  * up from the shared useBoardNavigationInput hook. The pre-existing local

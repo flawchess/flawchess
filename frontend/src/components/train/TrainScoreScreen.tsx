@@ -1,45 +1,41 @@
 /**
- * TrainScoreScreen — the session-end score screen (SOLV-07, Phase 190 Plan
- * 05 Task 3). Renders once the final puzzle's reveal reports the session
- * complete: the total out of twice the session size, the floored
- * percentage beneath it, and a green/yellow/red rating band — all derived
- * from the pure `lib/trainScore.ts` module so the displayed number and the
- * awarded band can never contradict each other (SOLV-07 edge probe:
- * precision).
+ * TrainScoreScreen — the session-end score screen. Renders once the final
+ * puzzle's reveal reports the session complete: the total out of
+ * `TRAIN_POINTS_PER_PUZZLE` times the session size, the floored percentage
+ * beneath it, and a green/yellow/red rating band — all derived from the pure
+ * `lib/trainScore.ts` module so the displayed number and the awarded band
+ * can never contradict each other.
  *
- * Phase 191 (D-15/PROG-02) adds the green-band celebration: a fire-once
- * confetti burst on mount, reusing `fireWinConfetti`/`prefersReducedMotion`
- * verbatim from the bot-game win celebration (`useBotGame.ts`'s
- * `finalizeGame`) rather than a new palette or effect.
+ * The green band gets a fire-once confetti burst on mount, reusing
+ * `fireWinConfetti`/`prefersReducedMotion` verbatim from the bot-game win
+ * celebration (`useBotGame.ts`'s `finalizeGame`) rather than a new palette or
+ * effect.
  *
  * The percentage is the screen's hero: it renders inside a band-colored
  * circular badge that pops in on arrival, with the raw points line demoted
- * to supporting text beneath it. Each band also gets a result sound, reusing
- * the exact per-puzzle mapping `TrainSolveScreen`'s reveal already fires
- * (green = WinChime, yellow = PartialScore, red = Defeat) so the session verdict
- * sounds like a louder version of the per-puzzle verdicts rather than a new
- * vocabulary. Yellow additionally gets the smaller `firePartialConfetti`
- * burst — acknowledged, not celebrated.
+ * to supporting text beneath it. Each band also gets a result sound: green =
+ * WinChime (reserved for this verdict and bot-game wins), yellow =
+ * PartialScore, red = Defeat. Yellow additionally gets the smaller
+ * `firePartialConfetti` burst — acknowledged, not celebrated.
  *
- * SEED-122 settles how the screen ends. It used to end on a permanently-
- * disabled "Train again" CTA (nothing could enable it — sessions are
- * once-per-day and there is no same-day resume path), which read as a broken
- * feature. That button is gone; the next-session date states when training
- * resumes, and a secondary "Done" returns to the landing so the session
- * finishes on the streak card showing the tick it just earned.
+ * The screen ends on the next-session date, which states when training
+ * resumes, and "Done" (primary, right of the Remind me control), which
+ * returns to the landing so the session ends on the streak card's new tick.
+ * There is no "Train again" button: sessions are once-per-day with no
+ * same-day resume path, so a primary button that can never enable would read
+ * as broken.
  *
- * Phase 222 (D-25, SC4): the screen OPENS on a bot bubble, BEFORE the Remind
- * me ask — SEED-166's second leak was that this screen closed a loop instead
- * of opening one. Hosted by a random smart bot regardless of the session's
- * rating band (D-04), memoised once per mount so a re-render never recasts
- * mid-read. The bubble's copy comes from `scoreBubbleCopy` (D-19), fed by
+ * The screen OPENS on a bot bubble, BEFORE the Remind me ask, so it opens a
+ * loop instead of closing one. Hosted by a random smart bot regardless of
+ * the session's rating band, memoised once per mount so a re-render never
+ * recasts mid-read. The bubble's copy comes from `scoreBubbleCopy`, fed by
  * the miss count derived from `solvedOutcomes` — the same array is correct
  * whether the session was played straight through or resumed/reloaded/handed
- * off. Phase 240 D-18: the bubble no longer says what returns or when.
+ * off. The bubble does not say what returns or when.
  *
  * The first-completed-session copy (the practice rationale in line 1) shows
  * exactly once, gated on `useTrainSettings().data.sr_explained_at === null`
- * (D-12) and stamped in ANY branch that rendered it (D-21): without that, an
+ * and stamped in ANY branch that rendered it: without that, an
  * all-warm-up guest would read the rationale every session.
  */
 
@@ -48,7 +44,7 @@ import { format, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
-import { useTrainReminderSlot } from '@/components/train/TrainReminderButton';
+import { useTrainReminderSlot } from '@/components/train/useTrainReminderSlot';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { fireWinConfetti, firePartialConfetti, prefersReducedMotion } from '@/lib/confetti';
 import { playSound, type SoundEvent } from '@/lib/sounds';
@@ -78,11 +74,10 @@ const RATING_BAND_COLOR: Record<TrainRatingBand, string> = {
   red: TRAIN_RATING_RED,
 };
 
-/** Result sound per band. Quick 260814-b: `green` keeps WinChime, which is now
- * reserved for this session verdict and bot-game wins — the per-puzzle reveal
- * moved its full-score case to its own `score-full` clip, so the session end no
- * longer sounds like just one more solved puzzle. The other two bands still
- * share the reveal's clips. */
+/** Result sound per band. `green` keeps WinChime, which is reserved for this
+ * session verdict and bot-game wins — the per-puzzle reveal's full-score case
+ * has its own `score-full` clip, so the session end does not sound like just
+ * one more solved puzzle. The other two bands share the reveal's clips. */
 const RATING_BAND_SOUND: Record<TrainRatingBand, SoundEvent> = {
   green: 'game-win',
   yellow: 'score-partial',
@@ -96,7 +91,7 @@ const BADGE_TINT_PERCENT = 14;
 /** Thickness of the badge ring, in px. */
 const BADGE_RING_WIDTH_PX = 4;
 
-/** UAT 240: the bubble and button column. 384px (max-w-sm) on phones, which
+/** The bubble and button column. 384px (max-w-sm) on phones, which
  * fills the screen anyway; 512px from md up, where the narrow column wrapped
  * the bubble into a tall block next to empty space. */
 const SCORE_COLUMN_MAX_W = 'max-w-sm md:max-w-lg';
@@ -105,55 +100,49 @@ export interface TrainScoreScreenProps {
   score: TrainSessionScore;
   /**
    * ISO date string for the next available session (`TrainSessionResponse.
-   * expires_on`). Sessions are once-per-day (Phase 189) and Phase 190 has no
-   * same-day resume path, so this states when the user can train again —
-   * SEED-122 removed the permanently-disabled "Train again" CTA that used to
-   * sit above it, because a primary button that can never enable reads as
-   * broken rather than as "you're done for today".
+   * expires_on`). Sessions are once-per-day with no same-day resume path, so
+   * this states when the user can train again. There is deliberately no
+   * "Train again" CTA above it: a primary button that can never enable reads
+   * as broken rather than as "you're done for today".
    */
   nextSessionDate: string;
   /**
-   * Leaves the score screen for the Train landing (SEED-122). The landing is
+   * Leaves the score screen for the Train landing. The landing is
    * where the streak card lives, so the session ends on the tick it just
    * earned rather than on a screen with no way forward.
    *
-   * Phase 202 D-04 OVERRIDES the original SEED-122 rationale recorded here:
-   * Done used to be `brand-outline` ("it is an exit, not a call to action")
-   * while it was the screen's only button. Now that it shares a row with the
-   * "Remind me" opt-in (`TrainReminderButton`), Done is promoted to
-   * `variant="default"` and moves to the right as the row's primary action.
+   * Done shares a row with the "Remind me" opt-in (`useTrainReminderSlot`), so
+   * it is `variant="default"` on the right as the row's primary action.
    */
   onDone: () => void;
   /**
-   * Phase 222 (D-17/D-18, RESEARCH Finding C): every item solved this
-   * session — `useTrainSession().solvedOutcomes`, correct whether the
-   * session was played straight through or resumed/reloaded/handed off.
-   * The score bubble's sole source for "what returns and when".
+   * Every item solved this session — `useTrainSession().solvedOutcomes`,
+   * correct whether the session was played straight through or
+   * resumed/reloaded/handed off. The score bubble's source for the miss count.
    */
   solvedOutcomes: SolvedResult[];
   /** `TrainSessionResponse.is_warmup` — a warm-up session (zero surviving
-   * SR items) gets its own D-25 variant regardless of `sr_explained_at`. */
+   * SR items) gets its own bubble variant regardless of `sr_explained_at`. */
   isWarmup: boolean;
-  /** D-03 (Phase 224): true when the account has at least one imported game
+  /** True when the account has at least one imported game
    * (`hasImportedGames`, the shared user-profile hook's data), passed down
    * from `Train.tsx`. Selects the warm-up bubble's zero-game copy variant. */
   hasGames: boolean;
-  /** D-03/S-3 (Phase 224): sourced from the shared user-profile hook's data
+  /** Sourced from the shared user-profile hook's data
    * via `Train.tsx`, never the auth hook's user object (FLAWCHESS-64), and
    * never read here directly — this component takes props only, so it
    * gains no complexity from the profile query. Replaces the warm-up
-   * reminder ask with the sign-up ask (`GUEST_SIGNUP_ASK_SCORE`, D-13: a
-   * guest gets no reminder slot). */
+   * reminder ask with the sign-up ask (`GUEST_SIGNUP_ASK_SCORE`: a guest
+   * gets no reminder slot). */
   isGuest: boolean;
   /** `TrainSessionResponse.session_id`: the rank lines ask the server for this
-   * session's rank change (Phase 230 D-11/D-12). Null while unknown; the
+   * session's rank change. Null while unknown; the
    * lines then render nothing. */
   sessionId: number | null;
 }
 
-/** The score bubble's action row: guests get the sign-up ask (Phase 224
- * S-3); a registered zero-game account gets the import ask (quick task
- * 260926-8p5); everyone else gets none. */
+/** The score bubble's action row: guests get the sign-up ask; a registered
+ * zero-game account gets the import ask; everyone else gets none. */
 function scoreBubbleActions(isGuest: boolean, hasGames: boolean): ReactElement | undefined {
   if (isGuest) return <SignupAskActions source="train-score" />;
   if (!hasGames) return <ImportAskActions source="train-score" />;
@@ -173,16 +162,16 @@ export function TrainScoreScreen({
   const percentage = displaySessionPercentage(score);
   const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
   const bandColor = band !== null ? RATING_BAND_COLOR[band] : null;
-  // D-04: a random smart bot hosts the score bubble regardless of the
+  // A random smart bot hosts the score bubble regardless of the
   // session's rating band — memoised once per mount so a re-render can never
   // recast mid-read (no deps: pickBot('smart') has no external inputs, so
   // exhaustive-deps raises nothing here).
   const bot = useMemo(() => pickBot('smart'), []);
-  // Phase 222 (D-12): the shared settings cache — already warm app-wide for
-  // every non-guest (RESEARCH Finding D), so this costs no extra request.
+  // The shared settings cache — already warm app-wide for every non-guest,
+  // so this costs no extra request.
   const { data: settings } = useTrainSettings();
   const { stamp } = useTrainOnboarding();
-  // Phase 222 UAT round 5: the same desktop gate `useTrainReminderSlot` uses
+  // The same desktop gate `useTrainReminderSlot` uses
   // to pick the phone block below the row, so the bubble's ask ("scan the
   // code below" / "yours are already on") and what actually renders there
   // can never disagree.
@@ -200,12 +189,10 @@ export function TrainScoreScreen({
     [solvedOutcomes],
   );
 
-  // RESEARCH Finding D: render no bubble copy until `data !== undefined`, so
-  // a first-timer never sees the one-liner flash before the full explanation
-  // replaces it.
+  // Render no bubble copy until `data !== undefined`, so a first-timer never
+  // sees the one-liner flash before the full explanation replaces it.
   //
-  // BUG FIX (Phase 222 UAT round 5): latched on the first resolved settings
-  // value, never re-derived. The `stamp('sr_explained')` below writes the
+  // BUG FIX: latched on the first resolved settings value, never re-derived. The `stamp('sr_explained')` below writes the
   // stamped row back into the SAME settings cache (`useTrainOnboarding`'s
   // `setQueryData`), so a live read flipped `sr_explained_at` to non-null a
   // moment after mount and the full explanation collapsed into the
@@ -230,12 +217,12 @@ export function TrainScoreScreen({
           audience: { hasGames, isGuest } satisfies TrainCopyAudience,
         });
 
-  // D-12/D-21: stamp whenever the first-completed variant actually rendered,
+  // Stamp whenever the first-completed variant actually rendered,
   // in any branch (warm-up, nothing missed, regular). An explanation that was
   // never rendered must never be stamped (`bubbleCopy` is still null until
   // settings resolve), but one that WAS rendered in a warm-up or perfect
   // session must be, or an all-warm-up guest would see the rationale every
-  // session. Accepted (D-21): a user whose first completed session was a
+  // session. Accepted trade-off: a user whose first completed session was a
   // warm-up never later sees the "Reminders build the habit" line.
   const showsFirstSessionCopy = bubbleCopy !== null && firstExplanation;
   const stampedRef = useRef(false);
@@ -244,9 +231,9 @@ export function TrainScoreScreen({
     stampedRef.current = true;
     stamp('sr_explained');
   }, [showsFirstSessionCopy, stamp]);
-  // Plan 04 UAT round 1: called directly here (not via `<TrainReminderButton />`)
+  // Called directly here (not via a wrapper component)
   // so `control` and `belowRow` can be placed in two different rows — see
-  // TrainReminderButton.tsx's module docstring for why the split exists. One
+  // useTrainReminderSlot.tsx's module docstring for why the split exists. One
   // hook call, one state instance, for this whole screen.
   const { control: reminderControl, belowRow: reminderBelowRow } = useTrainReminderSlot();
   // Read once per render (not inside the effect) so the badge animation and
@@ -254,7 +241,7 @@ export function TrainScoreScreen({
   const reducedMotion = prefersReducedMotion();
 
   useEffect(() => {
-    // Fire once per mount only (D-15) — the exact reduced-motion guard shape
+    // Fire once per mount only — the exact reduced-motion guard shape
     // `useBotGame.ts`'s `finalizeGame` uses for the bot-win burst. The sound
     // is NOT motion-gated: reduced-motion users still get the result sound
     // (playSound honors the shared mute preference on its own), they just
@@ -268,17 +255,14 @@ export function TrainScoreScreen({
   }, []);
 
   return (
-    // Phase 222 UAT round 6: no extra top/bottom padding on phones — stacked
+    // No extra top/bottom padding on phones — stacked
     // on the page's own `py-6` it pushed the bubble (and the score under it)
     // a screenful down; the page padding alone is the gap below the header.
     <div
       className="flex flex-col items-center gap-4 py-0 text-center md:py-12"
       data-testid="train-score-screen"
     >
-      {/* Phase 222 (D-25, SC4): the bubble states what returns and when
-          BEFORE the Remind me ask below — the whole point of SC4. Replaces
-          the old "Session complete" heading, which said nothing about the
-          loop this screen is meant to open. */}
+      {/* The bubble opens the screen, before the Remind me ask. */}
       <div className={cn('w-full text-left', SCORE_COLUMN_MAX_W)} data-testid="train-score-bubble">
         <TrainBotBubble
           persona={bot}
@@ -321,12 +305,11 @@ export function TrainScoreScreen({
       <p className="text-sm font-semibold text-muted-foreground">
         Next session: {format(parseISO(nextSessionDate), 'MMM d, yyyy')}
       </p>
-      {/* Phase 202 (D-01..D-04, UI-SPEC E2): Remind me (left, brand-outline)
-          then Done (right, promoted to default/primary). max-w-sm is a
-          planner resolution — the Train page container has no max width, so
-          a bare w-full row would stretch Done across the whole desktop
-          viewport.
-          Plan 04 UAT round 1: the row keeps its two-cell shape no matter
+      {/* Remind me (left, brand-outline) then Done (right, default/primary).
+          The column is width-capped because the Train page container has no
+          max width, so a bare w-full row would stretch Done across the whole
+          desktop viewport.
+          The row keeps its two-cell shape no matter
           which reminder-slot state is active — overflow content (error
           copy, the iOS instructions, the Android install offer, the QR
           block) never crowds into this row; it renders on its own full-width
@@ -369,16 +352,10 @@ function resolveReminderAsk({
 }
 
 /**
- * GuardedReminderControl / GuardedReminderBelowRow — Phase 224 (S-3):
- * suppress the reminder row's two pieces entirely for a guest (no reminder
- * slot, no QR/install block, S-3). Each wraps exactly one guest-guard
- * ternary in its own module-level function so it is measured against ITS
- * OWN complexity, not `TrainScoreScreen`'s — which had only one branch of
- * headroom left against CLAUDE.md's un-baselined complexity cap of 15 after
- * the bubble's guest-guarded `actions` prop ternary above (baseline
- * complexity 13, cap 15: only one more branch fits inline). Fragments are
- * transparent in the DOM, so this changes no rendered markup and no
- * existing TrainScoreScreen.test.tsx assertion.
+ * GuardedReminderControl / GuardedReminderBelowRow — suppress the reminder
+ * row's two pieces entirely for a guest (no reminder slot, no QR/install
+ * block). Fragments are transparent in the DOM, so this changes no rendered
+ * markup.
  */
 function GuardedReminderControl({
   isGuest,

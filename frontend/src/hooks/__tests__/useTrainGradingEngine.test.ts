@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * useTrainGradingEngine — regression coverage for the Phase 190-01 checkpoint
- * bug fix (manual browser UAT hit an indefinite "Checking your move…" hang).
+ * useTrainGradingEngine — regression coverage for a checkpoint
+ * bug fix (browser testing hit an indefinite "Checking your move…" hang).
  *
  * Two independent root causes, two regression tests:
  * 1. React StrictMode's dev-only mount->cleanup->mount double-invoke used to
@@ -15,8 +15,8 @@
  * 2. No matter the cause, `gradeMove` must never hang forever — it now races
  *    against `TRAIN_GRADING_TIMEOUT_MS` and rejects.
  *
- * Task 2 of this plan (190-01) extends this same file (below the checkpoint
- * regression block) with the full grading-contract test suite: exact-match
+ * This same file also holds (below the checkpoint
+ * regression block) the full grading-contract test suite: exact-match
  * fast path, threshold boundaries, mate scores, mover-sign consistency,
  * single-Worker reuse, and abort-then-restart isolation.
  */
@@ -37,7 +37,7 @@ import {
 import { MISTAKE_DROP, BLUNDER_DROP, INACCURACY_DROP } from '@/generated/flawThresholds';
 import { evalToExpectedScore } from '@/lib/liveFlaw';
 
-// ─── stockfishWorkerSource mock (Phase 213-08, G-213-35) ───────────────────
+// ─── stockfishWorkerSource mock ───────────────────
 //
 // The worker-lifecycle effect now constructs through the shared source
 // module, via `ensureStockfishWorkerUrl().then(setupWorker)`. This file's
@@ -182,7 +182,7 @@ describe('useTrainGradingEngine — checkpoint regression', () => {
     await assertion;
   });
 
-  it('startGrading called before the Worker reports ready queues the search instead of fabricating a null result (CR-01)', async () => {
+  it('startGrading called before the Worker reports ready queues the search instead of fabricating a null result', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     // Do NOT driveInit yet — start grading while the Worker's UCI handshake
     // is still outstanding (the normal state for the first puzzle of a
@@ -209,7 +209,7 @@ describe('useTrainGradingEngine — checkpoint regression', () => {
 
     const grade = await result.current.gradeMove(FEN, 'e2e4');
     // A fabricated-null pre-fix result would have left bestMoveUci null
-    // forever (the D-06 exact-match fast path could never trigger) and
+    // forever (the exact-match fast path could never trigger) and
     // esBefore pinned at the neutral 0.5 fallback.
     expect(grade.bestMoveUci).toBe('e2e4');
     expect(grade.moveTier).toBe('good');
@@ -235,14 +235,14 @@ describe('useTrainGradingEngine — checkpoint regression', () => {
   });
 });
 
-// ─── Task 2: grading-contract pinning ──────────────────────────────────────
+// ─── grading-contract pinning ──────────────────────────────────────
 
 // Two legal replies to 1.e4 e5 2.Nf3 (black to move) — used for the
 // mover-sign test below. Nf6 is the engine's chosen "best" move; Nc6 is the
 // DIFFERENT move actually played, forcing the second-search branch.
 const BLACK_TO_MOVE_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 3 2';
 
-describe('useTrainGradingEngine — grading contract (Task 2)', () => {
+describe('useTrainGradingEngine — grading contract', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -279,7 +279,7 @@ describe('useTrainGradingEngine — grading contract (Task 2)', () => {
     expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(1);
   });
 
-  it('a trailing lowerbound/upperbound info line never clobbers the previous exact iteration\'s full PV (190.1 UAT round 4)', async () => {
+  it('a trailing lowerbound/upperbound info line never clobbers the previous exact iteration\'s full PV', async () => {
     // Real engine behavior at the end of a movetime budget: an aspiration-
     // window fail emits e.g. "depth 20 ... upperbound ... pv <2 moves>" as
     // the LAST rank-1 line. Latest-wins committing used to shrink the reveal
@@ -325,7 +325,7 @@ describe('useTrainGradingEngine — grading contract (Task 2)', () => {
     // search runs on the post-move fen, which is BLACK to move (whitePovSign
     // -1 for that search) — raw UCI cp -110 normalizes to a stored white-POV
     // evalCp of +110, giving esBefore - esAfter just over MISTAKE_DROP (0.10)
-    // — see 190-01-SUMMARY.md for the exact derivation of these cp values.
+    // — the cp values above give that margin.
     const gradePromise = result.current.gradeMove(FEN, 'd2d4');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -342,7 +342,7 @@ describe('useTrainGradingEngine — grading contract (Task 2)', () => {
     expect(grade.moveTier).toBe('wrong');
   });
 
-  it('a drop just under MISTAKE_DROP (inside the inaccuracy band) resolves moveTier="inaccuracy" — SEED-119 substantive new coverage: this previously only asserted the optimistic correctMove boolean', async () => {
+  it('a drop just under MISTAKE_DROP (inside the inaccuracy band) resolves moveTier="inaccuracy": previously only the optimistic correctMove boolean was asserted', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -595,9 +595,9 @@ describe('useTrainGradingEngine — grading contract (Task 2)', () => {
   });
 });
 
-// ─── 190.1-01 Task 2: startGameMoveSearch honesty + cancellation safety ────
+// ─── startGameMoveSearch honesty + cancellation safety ────
 
-describe('useTrainGradingEngine — startGameMoveSearch (190.1-01 Task 2)', () => {
+describe('useTrainGradingEngine — startGameMoveSearch', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -661,9 +661,9 @@ describe('useTrainGradingEngine — startGameMoveSearch (190.1-01 Task 2)', () =
   });
 });
 
-// ─── 211-02 Task 1: width-1 mount search, kept PV, no client alternatives ──
+// ─── width-1 mount search, kept PV, no client alternatives ──
 
-describe('useTrainGradingEngine — width-1 mount search (211-02 Task 1)', () => {
+describe('useTrainGradingEngine — width-1 mount search', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -680,8 +680,8 @@ describe('useTrainGradingEngine — width-1 mount search (211-02 Task 1)', () =>
     vi.unstubAllGlobals();
   });
 
-  it('the mount search is width 1 (D-05) and its setoption line carries the exported constant; the after-move search also posts width 1', async () => {
-    // The mutation proof VETFINE-05 asks for: restoring the width to 4 turns
+  it('the mount search is width 1 and its setoption line carries the exported constant; the after-move search also posts width 1', async () => {
+    // Mutation check: restoring the width to 4 turns
     // this assertion red. The message assertion below stays symbolic (the
     // exported constant), so THIS line is the one that pins the value.
     expect(TRAIN_GRADING_MULTIPV_WIDTH).toBe(1);
@@ -711,7 +711,7 @@ describe('useTrainGradingEngine — width-1 mount search (211-02 Task 1)', () =>
     });
 
     // EVERY dispatched search in this session requested width 1 — the whole
-    // 1.5s budget goes to one line (D-05).
+    // 1.5s budget goes to one line.
     const setoptionMessages = mockWorker.messages.filter((m) => m.startsWith('setoption name MultiPV value '));
     expect(setoptionMessages).toHaveLength(2);
     expect(setoptionMessages.every((m) => m === 'setoption name MultiPV value 1')).toBe(true);
@@ -725,7 +725,7 @@ describe('useTrainGradingEngine — width-1 mount search (211-02 Task 1)', () =>
     await gradePromise;
   });
 
-  it('a played move that is NOT the top move dispatches exactly TWO searches (mount + after-move) and grades from the after-move eval (211-02)', async () => {
+  it('a played move that is NOT the top move dispatches exactly TWO searches (mount + after-move) and grades from the after-move eval', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -760,8 +760,8 @@ describe('useTrainGradingEngine — width-1 mount search (211-02 Task 1)', () =>
     expect(grade.moveTier).toBe('wrong');
   });
 
-  it('the retired mount-rank shortcut must not resurrect: a played move present as an extra rank in the settled lines STILL runs the after-move search (211-02 mutation guard)', async () => {
-    // The mutation proof VETFINE-05 asks for: re-adding gradeMoveInner's
+  it('the retired mount-rank shortcut must not resurrect: a played move present as an extra rank in the settled lines STILL runs the after-move search (mutation guard)', async () => {
+    // Mutation check: re-adding gradeMoveInner's
     // rank-match branch makes this grade from the (spurious) rank-2 entry
     // with ONE go dispatched and moveTier 'good' — turning both assertions
     // below red. The extra multipv-2 line stands in for any stale rank the
@@ -872,7 +872,7 @@ describe('useTrainGradingEngine — width-1 mount search (211-02 Task 1)', () =>
   });
 });
 
-describe('useTrainGradingEngine — consistent evals & display clamp (190.1 UAT round 9, narrowed by 211-02)', () => {
+describe('useTrainGradingEngine — consistent evals & display clamp', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -889,9 +889,9 @@ describe('useTrainGradingEngine — consistent evals & display clamp (190.1 UAT 
     vi.unstubAllGlobals();
   });
 
-  // NOTE (211-02): the two "played move matching a non-top mount rank grades
+  // NOTE: the two "played move matching a non-top mount rank grades
   // from that rank without a second search" tests that used to live here were
-  // RETIRED with the mount-rank shortcut itself (D-05). Their replacement —
+  // RETIRED with the mount-rank shortcut itself. Their replacement —
   // proving that even a spurious extra rank never short-circuits the
   // after-move search — lives in the width-1 mount search block above
   // ("the retired mount-rank shortcut must not resurrect").
@@ -933,7 +933,7 @@ describe('useTrainGradingEngine — consistent evals & display clamp (190.1 UAT 
     expect(grade.playedLine.moves).toEqual(['d2d4', 'd7d5']);
   });
 
-  it("startGameMoveSearch resolves a game move that IS the engine's top move straight from the settled mount search, dispatching no new search (211-02 consumer ledger row 4)", async () => {
+  it("startGameMoveSearch resolves a game move that IS the engine's top move straight from the settled mount search, dispatching no new search", async () => {
     // At width 1 the only rank the exact-UCI lookup can match is the
     // engine's own top move — the deliberately RETAINED consumer of
     // rankLineForMove, narrowed from the old "any mount rank" behavior.
@@ -999,7 +999,7 @@ describe('useTrainGradingEngine — consistent evals & display clamp (190.1 UAT 
   });
 });
 
-// ─── Phase 235 (D-01/D-08): key-anchored grading ───────────────────────────
+// ─── key-anchored grading ───────────────────────────
 
 /** The FEN after a legal UCI move from `fen`, computed independently with chess.js. */
 function fenAfter(fen: string, uci: string): string {
@@ -1012,7 +1012,7 @@ function goCount(): number {
   return mockWorker.messages.filter((m) => m.startsWith('go ')).length;
 }
 
-describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)', () => {
+describe('useTrainGradingEngine — key-anchored grading', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -1029,7 +1029,7 @@ describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)',
     vi.unstubAllGlobals();
   });
 
-  it('a keyed startGrading searches the position AFTER the key at the mount budget, never the root (D-08)', () => {
+  it('a keyed startGrading searches the position AFTER the key at the mount budget, never the root', () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1046,7 +1046,7 @@ describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)',
     expect(goCount()).toBe(1);
   });
 
-  it('playing the key grades GOOD with no further search, and the key line is rooted at the puzzle fen (D-01)', async () => {
+  it('playing the key grades GOOD with no further search, and the key line is rooted at the puzzle fen', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1070,7 +1070,7 @@ describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)',
     expect(goCount()).toBe(1);
   });
 
-  it('an off-key move runs ONE after-move search and is graded against the after-key ES, naming the key as best (D-01/D-09)', async () => {
+  it('an off-key move runs ONE after-move search and is graded against the after-key ES, naming the key as best', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1102,7 +1102,7 @@ describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)',
 
     const grade = await gradePromise;
     expect(grade.moveTier).toBe('wrong');
-    // D-09: the key, not the phone's own pick, is named best.
+    // The key, not the phone's own pick, is named best.
     expect(grade.bestMoveUci).toBe('d2d4');
     expect(grade.bestLine.moves.slice(0, 2)).toEqual(['d2d4', 'd7d5']);
     expect(grade.playedLine.moves[0]).toBe('e2e4');
@@ -1111,13 +1111,13 @@ describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)',
     expect(grade.esAfter).toBe(evalToExpectedScore(-300, null, 'white'));
   });
 
-  it('keeps the grading budget unchanged: no global movetime raise (D-03)', () => {
+  it('keeps the grading budget unchanged: no global movetime raise', () => {
     expect(TRAIN_GRADING_MOVETIME_MS).toBe(1500);
     expect(TRAIN_GRADING_MAX_NODES).toBe(2000000);
   });
 });
 
-// ─── Phase 235 (D-07/D-09): legacy fallback, terminal positions, clamp ─────
+// ─── legacy fallback, terminal positions, clamp ─────
 
 // White to move, Ra8# is mate in one (back-rank).
 const MATE_IN_ONE_FEN = '6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1';
@@ -1126,7 +1126,7 @@ const TWO_MATES_FEN = '6k1/5ppp/8/8/8/8/5PPP/RR4K1 w - - 0 1';
 // White to move; Qg6 is stalemate (black Kh8 has no move and is not in check).
 const STALEMATE_FEN = '7k/5K2/8/6Q1/8/8/8/8 w - - 0 1';
 
-describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp (Phase 235 D-07/D-09)', () => {
+describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -1148,7 +1148,7 @@ describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp 
     ['no key argument', []],
     ['a null key', [null]],
     ['an illegal key', ['e2e5']],
-  ])('D-07: %s keeps the legacy root search and the exact-match fast path', async (_label, args) => {
+  ])('%s keeps the legacy root search and the exact-match fast path', async (_label, args) => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1171,7 +1171,7 @@ describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp 
     expect(goCount()).toBe(1);
   });
 
-  it('a mating key is scored without a search, and a weaker move is graded against the mate, not a neutral 0.5 (T-235-05)', async () => {
+  it('a mating key is scored without a search, and a weaker move is graded against the mate, not a neutral 0.5', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1254,7 +1254,7 @@ describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp 
     expect(grade.moveTier).toBe('wrong');
   });
 
-  it('D-09 clamp: an off-key move whose after-search reads better than the key line grades good and its line is capped at the key line eval', async () => {
+  it('clamp: an off-key move whose after-search reads better than the key line grades good and its line is capped at the key line eval', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1289,7 +1289,7 @@ describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp 
     expect(grade.playedLine.moves).toEqual(['e2e4', 'e7e5']);
   });
 
-  it('D-09 game move: a game move equal to the key resolves the key line with no search', async () => {
+  it('game move: a game move equal to the key resolves the key line with no search', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1313,7 +1313,7 @@ describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp 
     expect(line.evalCp).toBe(40);
   });
 
-  it('D-09 game move: a different game move posts ONE after-move search and its eval is clamped to the key line', async () => {
+  it('game move: a different game move posts ONE after-move search and its eval is clamped to the key line', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1351,7 +1351,7 @@ describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp 
   });
 });
 
-// ─── Phase 235 (D-11/D-13/D-16/D-20): disagreement re-check ────────────────
+// ─── disagreement re-check ────────────────
 
 const RECHECK_GO = `go movetime ${TRAIN_RECHECK_MOVETIME_MS} nodes ${TRAIN_RECHECK_MAX_NODES}`;
 
@@ -1405,7 +1405,7 @@ async function answerRecheck(keyWhiteCp: number, keyDepth: number, playedWhiteCp
 
 const GOOD_FAST: FastReadings = { keyWhiteCp: 40, keyDepth: 12, playedWhiteCp: 30, playedDepth: 11 };
 
-describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D-16/D-20)', () => {
+describe('useTrainGradingEngine — disagreement re-check', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -1460,7 +1460,7 @@ describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D
     expect(outcome?.grade.bestMoveUci).toBe('d2d4');
     expect(outcome?.grade.bestLine.moves).toEqual(['d2d4', 'd7d5', 'b1c3']);
     expect(outcome?.grade.playedLine.moves).toEqual(['e2e4', 'e7e5', 'b1c3']);
-    // D-16: NOT capped at the key line's +40.
+    // NOT capped at the key line's +40.
     expect(outcome?.grade.playedLine.evalCp).toBe(260);
     expect(outcome?.recheck).toEqual({
       v: 1,
@@ -1493,7 +1493,7 @@ describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D
     expect(outcome?.recheck.played_es_recheck).toBe(evalToExpectedScore(-300, null, 'white'));
   });
 
-  it('(d) a stalled re-check resolves null after TRAIN_RECHECK_TIMEOUT_MS and a late answer never changes the anchor (D-20)', async () => {
+  it('(d) a stalled re-check resolves null after TRAIN_RECHECK_TIMEOUT_MS and a late answer never changes the anchor', async () => {
     expect(TRAIN_RECHECK_TIMEOUT_MS).toBeGreaterThan(2 * TRAIN_RECHECK_MOVETIME_MS);
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
@@ -1515,7 +1515,7 @@ describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D
     expect(line.evalCp).toBe(40);
   });
 
-  it('(d2) a key search that lands AFTER the timeout never dispatches the played re-check search (WR-01)', async () => {
+  it('(d2) a key search that lands AFTER the timeout never dispatches the played re-check search', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
     await gradeOffKey(result, GOOD_FAST);
@@ -1629,9 +1629,9 @@ describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D
   });
 });
 
-// ─── Phase 236 (D-04/D-05/D-06): the phone_grade reading ───────────────────
+// ─── the phone_grade reading ───────────────────
 
-describe('useTrainGradingEngine — phone reading (Phase 236 D-04/D-05/D-06)', () => {
+describe('useTrainGradingEngine — phone reading', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -1661,7 +1661,7 @@ describe('useTrainGradingEngine — phone reading (Phase 236 D-04/D-05/D-06)', (
     });
   }
 
-  it('playing the key records a good tier with the played pair equal to the key pair (D-05)', async () => {
+  it('playing the key records a good tier with the played pair equal to the key pair', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
     settleKeyedAnchor(result.current.startGrading);
@@ -1676,7 +1676,7 @@ describe('useTrainGradingEngine — phone reading (Phase 236 D-04/D-05/D-06)', (
     });
   });
 
-  it('an off-key move takes the key pair from the anchor and the played pair from the after-played search (D-04)', async () => {
+  it('an off-key move takes the key pair from the anchor and the played pair from the after-played search', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
     settleKeyedAnchor(result.current.startGrading);
@@ -1703,7 +1703,7 @@ describe('useTrainGradingEngine — phone reading (Phase 236 D-04/D-05/D-06)', (
     expect(grade.moveTier).toBe('wrong');
   });
 
-  it('the legacy root anchor records nothing, for the root bestmove and for an off-key move (D-06)', async () => {
+  it('the legacy root anchor records nothing, for the root bestmove and for an off-key move', async () => {
     const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
     driveInit(mockWorker);
 
@@ -1749,9 +1749,9 @@ describe('useTrainGradingEngine — phone reading (Phase 236 D-04/D-05/D-06)', (
   });
 });
 
-// ─── Phase 236 (RESEARCH Pitfall 1): instant-path serialization ────────────
+// ─── instant-path serialization ────────────
 
-describe('useTrainGradingEngine: instant-path serialization (Phase 236 Pitfall 1)', () => {
+describe('useTrainGradingEngine: instant-path serialization', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();
@@ -1808,7 +1808,7 @@ describe('useTrainGradingEngine: instant-path serialization (Phase 236 Pitfall 1
 
     const gamePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
     await flush();
-    // Pitfall 1: the reveal's search must neither stop the played search nor dispatch yet.
+    // The reveal's search must neither stop the played search nor dispatch yet.
     expect(stopCount()).toBe(0);
     expect(goCount()).toBe(2);
 
@@ -1895,9 +1895,9 @@ describe('useTrainGradingEngine: instant-path serialization (Phase 236 Pitfall 1
   });
 });
 
-// ─── Phase 236 (D-14): the early key-line callback ─────────────────────────
+// ─── the early key-line callback ─────────────────────────
 
-describe('useTrainGradingEngine: onKeyLine (Phase 236 D-14)', () => {
+describe('useTrainGradingEngine: onKeyLine', () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: 0 });
     mockWorker = new MockWorker();

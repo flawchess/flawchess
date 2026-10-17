@@ -1,12 +1,12 @@
 /**
  * deviceClass.ts — the project's UA-based mobile definition, shared by the
- * install prompt (useInstallPrompt) and the Phase 233 Train telemetry.
+ * install prompt (useInstallPrompt) and the Train telemetry.
  */
 
 import type { TelemetryClient } from '@/types/train';
 
 /**
- * D-06: this UA device-class gate is kept verbatim from useInstallPrompt, and
+ * This UA device-class gate is kept verbatim from useInstallPrompt, and
  * is deliberately NOT the project's viewport-based desktop-detection hook (a
  * matchMedia width check answering a different question) — a desktop browser
  * resized narrow must never show the install drawer.
@@ -31,10 +31,10 @@ function isIpadOsDesktopUserAgent(): boolean {
 }
 
 /**
- * Phase 233 D-09: only this two-value class leaves the device, never the raw
- * user-agent string. Fix (233 review WR-01): iPadOS is counted as mobile here,
+ * Only this two-value class leaves the device, never the raw
+ * user-agent string. iPadOS is counted as mobile here,
  * otherwise every modern iPad was stored as "desktop" and the data could not be
- * re-derived. The install prompt keeps the bare isMobileUserAgent gate (D-06).
+ * re-derived. The install prompt keeps the bare isMobileUserAgent gate.
  */
 export function telemetryClient(): TelemetryClient {
   return isMobileUserAgent() || isIpadOsDesktopUserAgent() ? 'mobile' : 'desktop';

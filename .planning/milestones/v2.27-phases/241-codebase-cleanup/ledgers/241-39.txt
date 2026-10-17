@@ -1,0 +1,25 @@
+# Plan 241-39 ledger: INVENTORY section 6 rows located in scopes/241-39.txt (bot components)
+INV-L851: APPLIED EngineReadyGate.tsx doc now says the gate is mounted by Bots.tsx (beside ResumeGate) and by the analysis page (`surface`) and lists the terminal variants unsupported, failed and oom; re-verified: Bots.tsx:554 and Analysis.tsx:2519 mount it, TerminalVariant has three members
+INV-L858: APPLIED BotGameMobileBar.tsx pinned-complexity-ceiling sentence replaced by "A new component rather than a prop on the shared BoardControls row, so the bot-only branches stay out of that shared row"
+INV-L859: APPLIED BotGameDesktopLayout.tsx now reads "so BotsGame gains none of them"
+INV-L860: APPLIED BotGameMobileLayout.tsx sentence about BotsGame's pinned complexity budget deleted
+INV-L865: APPLIED GameControls.tsx header now says the row is desktop only and BotGameMobileBar renders the same trigger and dialog with the same three testids; the Phase 223 UAT sounds-switch history is gone
+INV-L908: APPLIED BotGameMobileLayout.tsx boardPx doc is now "Caps the stack at the board's width and centers it"; re-verified: renderMobileLayout no longer exists in Bots.tsx (only a stale comment at Bots.tsx:517, owned by the Bots.tsx plan)
+INV-L909: APPLIED GameResultDialog.tsx: dismiss doc now "calls onDismiss, which returns to the bot roster" (re-verified: Bots.tsx passes onDismiss={onNewGame}, GameResultStrip no longer exists); the exported copy constants carry "Exported for the tests" (only GameResultDialog.test.tsx imports them)
+INV-L925: APPLIED BotGameDesktopLayout.tsx header is "BotGameDesktopLayout: two stacked rows sharing ..." and DESKTOP_SIDE_COLUMN_PX doc is "Fixed width of the desktop right column (clocks + move list + controls)"
+INV-L926: APPLIED GameResultDialog.tsx Analyze button comment states the store-gating rule without the retirement history; the analyzeBusy prop doc points at the Analyze button note
+INV-L930: APPLIED BotDrawOfferActions.tsx header now describes the pair inside BotGameBubble's actions slot, deliberately not a Dialog, with the hook auto-expiring the offer; banner-lineage sentences dropped
+INV-L931: APPLIED BotGameBubble.tsx avatar-size doc is "72px on phones, 84px on sm and above ..." and the fallback-copy doc is "The generic offer sentence, used ONLY by the persona-less bubble form below"
+INV-L932: APPLIED BotGameMobileLayout.tsx Phase 223 UAT paragraph about the replaced clock strip deleted; the player-rows fact kept as one clause of the header
+INV-L933: APPLIED botPlayerRow.ts header now "botPlayerRow: the pure resolver behind both bot-game player rows (BotGameDesktopLayout and BotGameMobileLayout). No React, no side effects: ..."
+INV-L934: APPLIED EngineReadyGate.tsx Sentry banner keeps the fixed-message rule and now says "Don't capture `unsupported` here" with the markEngineAssetsUnsupported owner; re-verified: engineAssetProgress.ts:342 exports it
+INV-L866: APPLIED chipStyles.ts BOT_ACTION_BUTTON_CLASS doc now says "the in-game Resign control"; re-verified: GameControls.tsx renders only Resign and the in-game mute and Offer draw buttons are gone
+INV-L868: APPLIED PersonaCard.tsx backstop paragraph now says the avatar renders resolveAvatarSrc(persona)'s portrait when present, otherwise the placeholder (species emoji on the per-style tint); the "every persona omits avatarSrc today" claim and the SUMMARY pointer are gone
+INV-L869: APPLIED PlayStyleControl.tsx comment is "One component serves both setup surfaces; re-picking the active preset is not a change"
+INV-L870: APPLIED PersonaDetailSurface.tsx handlePlay comment now "Mirrors SetupScreen.tsx's buildSettings: an unresolved 'random' preference must never reach useBotGame ..."; re-verified: the resolver is SetupScreen's buildSettings, not handleStart
+INV-L871: APPLIED SetupScreen.tsx bottom-nav comment cites App.tsx's `<main className="pb-16 sm:pb-0">` without the line number or the UAT tag; re-verified: App.tsx has that main element at a different line
+INV-L918: APPLIED PersonaGrid.tsx popover comment now cites AnalysisTabs.tsx's FlawChessInfoTooltip; re-verified: FlawChessInfoTooltip is defined in components/analysis/AnalysisTabs.tsx only
+INV-L927: APPLIED SetupScreen.tsx header: the "Replaces the D-14 hardcoded start-settings stub ... Plan 06 wires this component" paragraph deleted
+INV-L928: APPLIED SetupScreen.tsx three Density-pass comments rewritten as present-tense rationale (inline bucket label keeps Start above the fold; slider min-h-10 scoping rationale kept; "h-12 (48px): the Start CTA is the tallest control on the screen")
+INV-L929: APPLIED chipStyles.ts header: the Phase 171 code-review narration is gone, "Don't re-type them inline." kept; also fixed the stale "Human/Engine preset chips" wording to Human/Light/Deep
+INV-L946: APPLIED PersonaGrid.tsx BotWelcomeCard doc now describes the rotating host bubble and keeps "Don't show the player's estimated rating next to it: bot ELO is measured against engines, not humans"; the name BotWelcomeCard is kept for 241-58

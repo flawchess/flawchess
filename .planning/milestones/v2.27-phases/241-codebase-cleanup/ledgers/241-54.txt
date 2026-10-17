@@ -1,0 +1,2 @@
+# Plan 241-54 ledger: INVENTORY section 6 rows located in scopes/241-54.txt
+INV-L637: APPLIED insights_llm.py _visible_findings docstring now reads "Drop NaN-valued findings, empty thin findings, and pawnless-class findings (the UI hides pawnless rows)."; re-verified against the body: the comprehension drops math.isnan(f.value), (sample_size == 0 and sample_quality == "thin") and dimension endgame_class == "pawnless"; no hidden-subsection rule exists

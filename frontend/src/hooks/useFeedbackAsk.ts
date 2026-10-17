@@ -16,12 +16,12 @@ function patchFeedbackAsk(
 }
 
 /**
- * Phase 234 (SEED-191): report a view, snooze or done for Hilda's milestone
+ * Report a view, snooze or done for Hilda's milestone
  * feedback ask via POST /users/me/feedback-ask. Three deliberate choices:
  *
  * - `scope` serializes the calls, so a fast "Maybe later" click is sent after
  *   the in-flight view rather than racing it.
- * - snooze/done hide the bubble immediately (SEED-191 #6): `onMutate` cancels
+ * - snooze/done hide the bubble immediately: `onMutate` cancels
  *   in-flight profile refetches (a stale response must not re-show the ask)
  *   and patches the cached `feedback_ask` to inactive; `onSuccess` then
  *   replaces it with the server's answer.

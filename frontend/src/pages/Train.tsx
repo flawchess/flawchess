@@ -1,10 +1,10 @@
 /**
- * Train — the /train page (Phase 190 Plans 01+04).
+ * Train — the /train page.
  *
  * Default export (required by React.lazy in App.tsx, mirroring Bots.tsx /
  * Analysis.tsx's divergence from the app's named-export convention).
  *
- * D-01 (LOCKED): visiting /train never auto-starts a session — the landing
+ * Visiting /train never auto-starts a session — the landing
  * always shows a status line plus a single Start/Resume button, and the loop
  * begins only on that press. `useTrainSession.startSession()` is fired
  * automatically on MOUNT below, but that is a status READ (there is no
@@ -14,10 +14,10 @@
  * `TrainStartScreen`.
  *
  * The grading engine's Worker is created HERE, at the page level — session
- * scope, not per-puzzle (190-RESEARCH.md Pattern 4) — and threaded down to
+ * scope, not per-puzzle — and threaded down to
  * `TrainSolveScreen` so exactly one Worker exists for the whole session.
  *
- * Plan 05 Task 3 (SOLV-07) adds the session-complete -> score-screen
+ * Session-complete -> score-screen
  * transition: when the final puzzle's solve response reports
  * `session_complete` and the user presses Next on its reveal, `handleNext`
  * shows `TrainScoreScreen` instead of calling `trainSession.advance()` (which
@@ -25,13 +25,13 @@
  * becoming null — there is no "puzzle past the end" state to fall through to
  * automatically). `showScoreScreen` is local view state, not the accurate
  * source of truth on a later day's revisit — that's `TrainStartScreen`'s
- * pre-existing 'completed' landing state (190-04), which reads real session
+ * 'completed' landing state, which reads real session
  * data on a fresh mount instead of this transient in-session flag. The score
- * screen's "Done" (SEED-122) routes into exactly that state via
+ * screen's "Done" routes into exactly that state via
  * `returnToLanding`, which re-reads session status rather than merely
  * flipping the flag back.
  *
- * 190.1 UAT round 5: leaving a reveal via its Analyze deep link and pressing
+ * Leaving a reveal via its Analyze deep link and pressing
  * the browser back button restores that puzzle's SOLVED reveal (not the
  * start screen) from the sessionStorage cache written on the Analyze click —
  * see `trainRevealCache.ts` and the `restoredReveal` state below.
@@ -64,22 +64,21 @@ function trainPageClass(showLoop: boolean, restoredActive: boolean): string {
 export default function TrainPage(): ReactElement {
   const trainSession = useTrainSession();
   // FLAWCHESS-64: is_guest read from useUserProfile(), never useAuth().user
-  // (always null, carries no is_guest — D-02, cf. the Analysis.tsx:789
-  // free-play ELO source comment). Kept for Plan 04/Plan 06 (score-screen
-  // sign-up ask, settings card guest branch).
+  // (always null, carries no is_guest; cf. Analysis.tsx's free-play ELO
+  // default source comment).
   const { data: profile, isError: profileError } = useUserProfile();
   const isGuest = profile?.is_guest === true;
-  // D-03 (Phase 224): the two orthogonal flags the games-less Train copy
+  // The two orthogonal flags the games-less Train copy
   // branches on. hasImportedGames is the SAME shared zero-game predicate
-  // Plan 02 added for Home.tsx — never re-derived here.
+  // Home.tsx uses — never re-derived here.
   const hasGames = hasImportedGames(profile);
-  // Phase 224 (S-2): the 403 source (`_reject_guest`) is gone from every
-  // /train/* handler, so canTrain now only waits for the profile to resolve.
+  // No /train/* handler rejects guests, so canTrain only waits for the
+  // profile to resolve.
   const canTrain = profile != null;
   const gradingEngine = useTrainGradingEngine({ enabled: canTrain });
   const [hasEnteredLoop, setHasEnteredLoop] = useState(false);
   const [showScoreScreen, setShowScoreScreen] = useState(false);
-  // 190.1 UAT round 5 (Analyze -> browser back): a cached solved reveal,
+  // Analyze -> browser back: a cached solved reveal,
   // read once at mount. While it validates against the freshly resumed
   // session (same session_id), the page skips the start screen and mounts
   // straight into that puzzle's solved reveal — see trainRevealCache.ts.
@@ -89,8 +88,8 @@ export default function TrainPage(): ReactElement {
 
   const { startSession } = trainSession;
   useEffect(() => {
-    // Phase 224: the 403 source is gone, so this only waits for the profile
-    // to resolve before firing the status read (canTrain = profile != null).
+    // This only waits for the profile to resolve before firing the status
+    // read (canTrain = profile != null).
     //
     // NO ref latch here, deliberately. A "fire only once per mount" latch
     // looks harmless but hangs the page under StrictMode (dev): React mounts,
@@ -159,7 +158,7 @@ export default function TrainPage(): ReactElement {
     setRestoredReveal(null);
     setHasEnteredLoop(false);
     setShowScoreScreen(false);
-    // Phase 200 UAT round 7: drop the last solve verdict too, so the session
+    // Drop the last solve verdict too, so the session
     // just left cannot bleed into the next one. Without this the mutation
     // still held the previous session's response when the user pressed Start
     // again (dev-clock time travel is the fast way to hit this), and the
@@ -195,12 +194,11 @@ export default function TrainPage(): ReactElement {
   }
 
   return (
-    // 191.1 UAT: same horizontal padding as the Import page content
-    // (`px-4 py-6 md:px-6` in Import.tsx) instead of a flat `p-6`. Phase 222
-    // UAT round 3: while a puzzle is on screen the phone header is suppressed
-    // (`useMarkPlayActive`), so the top padding would only push the pinned
-    // progress row + board down — drop it below `sm`, the header's own
-    // breakpoint.
+    // Same horizontal padding as the Import page content (`px-4 py-6 md:px-6`
+    // in Import.tsx) instead of a flat `p-6`. While a puzzle is on screen the
+    // phone header is suppressed (`useMarkPlayActive`), so the top padding
+    // would only push the pinned progress row + board down — drop it below
+    // `sm`, the header's own breakpoint.
     <div className={trainPageClass(showLoop, restoredActive)} data-testid="train-page">
       {/* Landing screen only: the strip is vertical chrome above the solve
           screen's board column, which on mobile is pinned and sized to the

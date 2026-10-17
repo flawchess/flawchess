@@ -1,4 +1,4 @@
-// Phase 62 — TypeScript types mirroring app/schemas/admin.py.
+// TypeScript types mirroring app/schemas/admin.py.
 
 export interface ImpersonationContext {
   admin_id: number;

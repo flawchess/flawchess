@@ -1,4 +1,4 @@
-"""Phase 212 D-08: alembic/env.py's table-level autogenerate filter.
+"""alembic/env.py's table-level autogenerate filter.
 
 _AUTOGEN_TABLE_IGNORELIST + the `type_ == "table"` branch of _include_object
 close the latent gap where alembic/env.py's _include_object filtered indexes
@@ -117,7 +117,7 @@ def alembic_env() -> ModuleType:
 def test_include_object_table_and_index_filtering(
     alembic_env: ModuleType, name: str, type_: str, expected: bool
 ) -> None:
-    """_include_object filters benchmark-only tables (new D-08 branch) while
+    """_include_object filters benchmark-only tables while
     leaving canonical tables and the pre-existing index filter unchanged."""
     result = alembic_env._include_object(None, name, type_, False, None)
     assert result is expected, (
@@ -128,9 +128,8 @@ def test_include_object_table_and_index_filtering(
 def test_ignorelisted_tables_not_imported_in_canonical_chain(alembic_env: ModuleType) -> None:
     """No name in _AUTOGEN_TABLE_IGNORELIST may be imported at the top of
     alembic/env.py -- that would put a benchmark-only table back into the
-    canonical Alembic chain, defeating D-07/INFRA-02. This is the
-    test-verified half of this plan's second prohibition: a future executor
-    cannot "helpfully" add the model to env.py's import list and still pass.
+    canonical Alembic chain. This guards against a future editor "helpfully"
+    adding the model to env.py's import list and still passing.
     """
     source = _ENV_PY_PATH.read_text()
     ignorelist = alembic_env._AUTOGEN_TABLE_IGNORELIST

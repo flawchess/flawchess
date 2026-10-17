@@ -1,0 +1,20 @@
+old	new	kind	absent_paths	ref	canon_paths
+useTrainWalkthrough.ts	useTrainTour.ts	file	frontend/src	D-05	
+useTrainWalkthrough	useTrainTour	identifier	frontend/src	D-05	
+UseTrainWalkthroughInput	UseTrainTourInput	identifier	frontend/src	D-05	
+UseTrainWalkthroughResult	UseTrainTourResult	identifier	frontend/src	D-05	
+WalkthroughTarget	TourTarget	identifier	frontend/src	D-05	
+WalkthroughContext	TourContext	identifier	frontend/src	D-05	
+WalkthroughStepCopy	TourStepCopy	identifier	frontend/src	D-05	
+WALKTHROUGH_CHIPS	TOUR_CHIPS	identifier	frontend/src	D-05	
+WALKTHROUGH_STEP	TOUR_STEP	identifier	frontend/src	D-05	
+WALKTHROUGH_BOARD	TOUR_BOARD	identifier	frontend/src	D-05	
+WALKTHROUGH_UNDERSTAND	TOUR_UNDERSTAND	identifier	frontend/src	D-05	
+WALKTHROUGH_SCROLL_TARGETS	TOUR_SCROLL_TARGETS	identifier	frontend/src	D-05	
+WALKTHROUGH_SCROLL_GAP_PX	TOUR_SCROLL_GAP_PX	identifier	frontend/src	D-05	
+WALKTHROUGH_SCROLL_DURATION_MS	TOUR_SCROLL_DURATION_MS	identifier	frontend/src	D-05	
+walkthroughTarget	tourTarget	identifier	frontend/src	D-05	
+walkthroughHideRef	tourHideRef	identifier	frontend/src	D-05	
+walkthroughActive	tourActive	identifier	frontend/src	D-05	
+markWalkthroughActive	markTourActive	identifier	frontend/src	D-05	
+walkthrough	tour	identifier	-	D-05	frontend/src/components/train/TrainSolveScreen.tsx

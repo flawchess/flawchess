@@ -1,6 +1,6 @@
 """FastAPI-Users configuration: UserManager, auth backend, and dependencies.
 
-Phase 62 adds two JWT strategies on top of the default:
+This module adds two JWT strategies on top of the default:
 
 - `ImpersonationJWTStrategy` — issues + validates 1h tokens carrying
   `act_as` / `admin_id` / `is_impersonation` claims. `read_token` re-validates
@@ -115,11 +115,11 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         """Upstream authenticate(), guarded for empty-hash accounts.
 
         FLAWCHESS-BQ / FLAWCHESS-2A: Google-only and guest accounts store
-        hashed_password="" (see app/services/guest_service.py lines 41 and
-        173). pwdlib's password_helper.verify_and_update cannot identify an
-        empty hash and raises UnknownHashError, and upstream's authenticate()
-        (fastapi_users.manager.BaseUserManager.authenticate) calls it
-        unguarded, so a password login against such an account 500'd instead
+        hashed_password="" (see guest_service.create_guest_user and
+        promote_guest_with_google). pwdlib's password_helper.verify_and_update
+        cannot identify an empty hash and raises UnknownHashError, and upstream's
+        authenticate() (fastapi_users.manager.BaseUserManager.authenticate) calls
+        it unguarded, so a password login against such an account 500'd instead
         of returning bad credentials.
 
         The empty-hash predicate (_has_password) is shared with
@@ -175,18 +175,18 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         token: str,
         request: Request | None = None,
     ) -> None:
-        """Send the reset email, gated by eligibility (RESET-05) and rate-limited (D-06).
+        """Send the reset email, gated by eligibility and rate-limited.
 
         Runs only for a real, active user — the router already filtered
         UserNotExists/UserInactive upstream (fastapi_users router/reset.py),
         so a throttled or ineligible request here still returns the router's
-        identical 202 with zero enumeration signal (RESET-02). This hook must
+        identical 202 with zero enumeration signal. This hook must
         NEVER raise, log, or emit a Sentry event that distinguishes which
         branch was taken — both guards below are silent no-ops, deviating
         deliberately from guest_create_limiter/feedback_limiter, which both
         reject with an HTTP "too many requests" error on rejection.
         """
-        # 1. Eligibility gate (RESET-05). The predicate is credential state —
+        # 1. Eligibility gate. The predicate is credential state —
         # "does this account have a password to reset" — NOT account type
         # ("is this a Google account"). 125 of the 172 eligible prod accounts
         # hold BOTH a password and a linked Google account, so an
@@ -198,20 +198,20 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         if not _has_password(user):
             return
 
-        # 2. Per-email rate limit (D-06). Silent no-op on rejection — see
+        # 2. Per-email rate limit. Silent no-op on rejection — see
         # module docstring on reset_password_limiter for why this deviates
-        # from the two existing limiter call sites.
+        # from the other limiter call sites.
         if not reset_password_limiter.is_allowed(user.email.lower()):
             return
 
         # 3. Reset URL — host comes only from settings.FRONTEND_URL, never
-        # from the Request object (T-207-09: host-header poisoning).
+        # from the Request object (host-header poisoning).
         reset_url = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
 
-        # 4. Dispatch the send without awaiting the network (T-207-02: an
-        # existing address must not cost a round-trip that a non-existent
-        # address never pays). email_service.spawn_password_reset_email opens
-        # its own client and fires the send as a detached task.
+        # 4. Dispatch the send without awaiting the network: an existing address
+        # must not cost a round-trip that a non-existent address never pays.
+        # email_service.spawn_password_reset_email opens its own client and fires
+        # the send as a detached task.
         email_service.spawn_password_reset_email(
             to=user.email, reset_url=reset_url, user_id=user.id
         )
@@ -380,7 +380,7 @@ def get_guest_jwt_strategy() -> VersionedJWTStrategy:
     )
 
 
-# D-03: 1 hour — deliberately short to minimize blast radius of a leaked
+# 1 hour — deliberately short to minimize blast radius of a leaked
 # impersonation token. No server-side revocation, TTL is the bound.
 _IMPERSONATION_JWT_LIFETIME_SECONDS = 3600
 
@@ -394,15 +394,16 @@ class ImpersonationJWTStrategy(VersionedJWTStrategy):
       - `is_impersonation` — dispatch flag, must be `True` on every issued token
 
     `read_token` re-validates on every request that:
-      - admin is still active and `is_superuser=True` (D-02)
-      - target is still active and `is_superuser=False` (D-05 re-enforced)
+      - admin is still active and `is_superuser=True`
+      - target is still active and `is_superuser=False` (impersonating a superuser
+        is rejected)
     """
 
     async def write_impersonation_token(self, admin: User, target: User) -> str:
         """Issue a new impersonation JWT for `admin` to act as `target`.
 
         Does NOT call UserManager.on_after_login — bypasses `last_login` writes
-        on both users by construction (D-06).
+        on both users by construction.
         """
         data: dict[str, Any] = {
             "sub": str(target.id),
@@ -437,13 +438,14 @@ class ImpersonationJWTStrategy(VersionedJWTStrategy):
         if admin_id is None or act_as is None:
             return None
 
-        # D-02: re-validate admin is still a superuser on EVERY request.
+        # Re-validate admin is still a superuser on EVERY request.
         # user_db.get returns Optional[User] for missing/deleted users.
         admin = await user_manager.user_db.get(int(admin_id))
         if admin is None or not admin.is_active or not admin.is_superuser:
             return None
 
-        # D-05 re-enforced: target must still exist, be active, and NOT be a superuser.
+        # Target must still exist, be active, and NOT be a superuser (impersonating a
+        # superuser is rejected).
         target = await user_manager.user_db.get(int(act_as))
         if target is None or not target.is_active or target.is_superuser:
             return None
@@ -526,9 +528,9 @@ current_active_user = fastapi_users.current_user(active=True)
 # OAuth flow is routed to in-place promotion instead of orphaning their account.
 current_active_user_optional = fastapi_users.current_user(active=True, optional=True)
 
-# Used by /admin/* endpoints (D-04/D-05 auth gate).
+# Used by /admin/* endpoints as the superuser auth gate.
 # Note: when the caller holds an impersonation token, ClaimAwareJWTStrategy
 # returns the TARGET (non-superuser) user. The `superuser=True` dep then 403s,
-# which naturally enforces D-04 (nested impersonation rejected) without any
+# which naturally rejects nested impersonation without any
 # extra raw-token inspection in the endpoint.
 current_superuser = fastapi_users.current_user(active=True, superuser=True)

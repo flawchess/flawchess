@@ -1,16 +1,15 @@
-"""Save-and-enqueue service for POST /imports/paste (Phase 208, PASTE-04/06/07).
+"""Save-and-enqueue service for POST /imports/paste.
 
-Orchestrates: normalize_pasted_game (D-16 identity hash) -> a pre-insert
-identity lookup (D-17) -> either reuse-with-user_color-update (D-18) on a
-hash HIT, or `_flush_batch` insert (D-09 reuse) on a MISS -> a post-insert
+Orchestrates: normalize_pasted_game (identity hash) -> a pre-insert
+identity lookup -> either reuse-with-user_color-update on a
+hash HIT, or `_flush_batch` insert on a MISS -> a post-insert
 game-id lookup (no id in `_flush_batch`'s return, mirrors
-store_bot_game_service's Pitfall 2) -> a single commit (the service owns the
-transaction; `_flush_batch` itself never commits, WR-05) -> a POST-COMMIT
-tier-1 enqueue (D-08). The enqueue call is deliberately OUTSIDE the
-persistence try/except and carries its own non-propagating handler: see
-"SC-7 post-commit failure window" in 208-03-PLAN.md for why a raised
+store_bot_game_service) -> a single commit (the service owns the
+transaction; `_flush_batch` itself never commits) -> a POST-COMMIT
+tier-1 enqueue. The enqueue call is deliberately OUTSIDE the
+persistence try/except and carries its own non-propagating handler: a raised
 exception there must not fail the request or roll back the already-committed
-row.
+row (see the post-commit comment in `store_pasted_game`).
 """
 
 import io
@@ -26,7 +25,7 @@ from app.services.eval_queue_service import enqueue_tier1_game
 from app.services.import_service import _flush_batch
 from app.services.normalization import normalize_pasted_game
 
-# Platform constant — the one value this service ever writes/looks up (D-05/D-17).
+# Platform constant — the one value this service ever writes/looks up.
 _PASTE_PLATFORM = "pgn"
 
 
@@ -42,17 +41,17 @@ async def store_pasted_game(
     validation failure; the caller (imports router) maps None to a 422. No
     Sentry capture and no DB write happen on this path.
 
-    Idempotent on the D-16 identity hash (normalized mainline SAN + canonical
+    Idempotent on the identity hash (normalized mainline SAN + canonical
     root FEN, headers and user_color excluded): re-invoking with the same
-    game resolves to the existing row (D-17) rather than inserting a second
+    game resolves to the existing row rather than inserting a second
     one. A re-paste with the OTHER user_color updates the existing row's
-    user_color in place (D-18) instead of creating a second row.
+    user_color in place instead of creating a second row.
 
     Args:
         session: AsyncSession. This function commits once (on the persistence
             path) — the caller (router) must not also commit.
         user_id: Internal user PK, sourced from current_active_user, never
-            from the request body (ASVS V4, T-208-10).
+            from the request body (ASVS V4).
         request: The validated SavePastedGameRequest.
 
     Returns:
@@ -67,7 +66,7 @@ async def store_pasted_game(
         return None  # expected validation failure — no Sentry capture, no write
 
     try:
-        # D-17: pre-insert identity lookup — a hash HIT reuses the existing
+        # Pre-insert identity lookup — a hash HIT reuses the existing
         # row instead of re-normalizing/inserting.
         existing = await game_repository.get_pasted_game_by_identity(
             session, user_id=user_id, platform_game_id=normalized.platform_game_id
@@ -78,7 +77,7 @@ async def store_pasted_game(
             game_id = existing.id
             already_analyzed = existing.full_evals_completed_at is not None
             if existing.user_color != request.user_color:
-                # D-18: the user's row, their call which side they are
+                # The user's row, their call which side they are
                 # studying. game_flaws stores both players' flaws regardless,
                 # so nothing needs recomputation — only orientation changes.
                 await game_repository.update_game_user_color(
@@ -126,14 +125,14 @@ async def store_pasted_game(
         sentry_sdk.capture_exception()
         raise
 
-    # This service owns the single transaction — _flush_batch never commits
-    # (WR-05); commit the game + positions rows together.
+    # This service owns the single transaction — _flush_batch never commits;
+    # commit the game + positions rows together.
     await session.commit()
 
-    # SC-7 post-commit failure window: the game row is already durably
+    # Post-commit failure window: the game row is already durably
     # committed above, so an exception here must NOT propagate as a 500 (that
     # would leave a platform='pgn' row with no eval_jobs row and a NULL
-    # full_evals_completed_at — precisely the state SC-7 forbids). D-17: skip
+    # full_evals_completed_at — a state that must never persist). Skip
     # the call entirely when the reused row is already fully analyzed (no
     # re-enqueue, no wasted engine budget). In every other case call it
     # unconditionally — it is idempotent via on_conflict_do_nothing on the
@@ -152,11 +151,10 @@ async def store_pasted_game(
         )
         sentry_sdk.capture_exception()
         # Healing path: re-submitting the same PGN resolves to the same row
-        # via the D-16 identity hash (get_pasted_game_by_identity above) and
+        # via the identity hash (get_pasted_game_by_identity above) and
         # re-enqueues, because this branch is only skipped (already_analyzed)
-        # once full_evals_completed_at is set. See 208-03-PLAN.md's
-        # "SC-7 post-commit failure window" for why a background sweep cannot
-        # be relied on for a guest's orphaned row.
+        # once full_evals_completed_at is set. A background sweep cannot be
+        # relied on for a guest's orphaned row.
         return SavePastedGameResponse(
             game_id=game_id, created=created, eval_status="enqueue_failed"
         )

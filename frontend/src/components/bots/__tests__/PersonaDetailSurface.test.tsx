@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * PersonaDetailSurface.test.tsx (Phase 183 Plan 04).
+ * PersonaDetailSurface.test.tsx.
  *
  * @sentry/react is mocked (its ESM module namespace is not configurable) —
  * `botPersonaSetupSettings.ts` calls `Sentry.captureException` on corrupt
@@ -73,7 +73,7 @@ describe('PersonaDetailSurface — rendering', () => {
     expect(screen.queryByRole('slider')).toBeNull();
   });
 
-  it('mounts the D-08 ELO disclosure popover trigger for every persona', () => {
+  it('mounts the ELO disclosure popover trigger for every persona', () => {
     renderSurface();
 
     expect(screen.getByTestId('persona-elo-disclosure')).toBeTruthy();
@@ -109,7 +109,7 @@ describe('PersonaDetailSurface — rendering', () => {
   });
 });
 
-describe('PersonaDetailSurface — Play builds the pinned BotGameSettings (PERS-02)', () => {
+describe('PersonaDetailSurface — Play builds the pinned BotGameSettings', () => {
   it('builds settings with the pinned botElo/blend/personaId, the by-reference style, and calls onStart exactly once', () => {
     const { onStart, onOpenChange } = renderSurface();
 
@@ -122,7 +122,7 @@ describe('PersonaDetailSurface — Play builds the pinned BotGameSettings (PERS-
     expect(settings.botElo).toBe(PERSONA.botElo);
     expect(settings.blend).toBe(PERSONA.blend);
     expect(settings.personaId).toBe(PERSONA.id);
-    // Reference identity, not a clone (Pitfall 4).
+    // Reference identity, not a clone.
     expect(settings.style).toBe(BOT_STYLE_BUNDLES[PERSONA.style]);
     expect(settings.userColor).toBe('white');
     expect(settings.baseSeconds).toBe(300);
@@ -130,7 +130,7 @@ describe('PersonaDetailSurface — Play builds the pinned BotGameSettings (PERS-
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('resolves an unresolved Random color preference to a concrete color before Play fires (D-12)', () => {
+  it('resolves an unresolved Random color preference to a concrete color before Play fires', () => {
     const { onStart } = renderSurface();
     // Random is the default color preference — do not touch the color chips.
     fireEvent.click(screen.getByTestId('btn-persona-play'));
@@ -152,7 +152,7 @@ describe('PersonaDetailSurface — Play builds the pinned BotGameSettings (PERS-
   });
 });
 
-describe('PersonaDetailSurface — D-08/D-06 ELO disclosure popover copy', () => {
+describe('PersonaDetailSurface — ELO disclosure popover copy', () => {
   /** Hovers the ELO disclosure trigger and waits for the popover body to open. */
   async function openEloDisclosure() {
     vi.useFakeTimers();
@@ -175,8 +175,8 @@ describe('PersonaDetailSurface — D-08/D-06 ELO disclosure popover copy', () =>
     expect(content.textContent).not.toContain('900');
   });
 
-  // CAL-04b filled the ~800/~1200 persona gaps and flipped
-  // PERSONA_CALIBRATION_MEASURED to true, so the real surface now shows the
+  // The ~800/~1200 persona gaps are filled and
+  // PERSONA_CALIBRATION_MEASURED is true, so the real surface shows the
   // measured copy: the popover claims a measurement (never "provisional"), and
   // for a floor-rung persona it appends the ~900 floor line. These assert that
   // wiring through the real surface — the mocked both-states unit coverage

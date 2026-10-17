@@ -1,18 +1,18 @@
 /**
- * botGameCopy — Phase 223 (BOTVOICE-01/02): all in-game bot-narrated copy for
+ * botGameCopy — all in-game bot-narrated copy for
  * the `/bots` speech bubble, keyed by trigger and then by persona. No React
  * import (mirrors `lib/trainBotCopy.ts`'s pure-module convention) — every
  * function here is a total function of already-computed values.
  *
- * Generalizes the "ONE scoped exception" `trainBotCopy.ts`'s own header
- * records for `LANDING_GREETINGS` (a per-persona /train landing line): this
- * phase makes per-persona voice the point for every in-game trigger, not a
- * one-off exception. `trainBotCopy.ts`'s per-outcome-bucket convention (D-06
- * there) is unaffected — this module owns a disjoint surface, the `/bots`
+ * Generalizes the one exception `trainBotCopy.ts`'s own header
+ * records for `LANDING_GREETINGS` (a per-persona /train landing line): here
+ * per-persona voice is the point for every in-game trigger, not a
+ * one-off exception. `trainBotCopy.ts`'s per-outcome-bucket convention
+ * is unaffected — this module owns a disjoint surface, the `/bots`
  * game itself, never /train.
  *
  * Copy accuracy constraint (carried verbatim from
- * `PersonaGrid.tsx`'s `BotWelcomeCard` doc comment): 16 of the 24
+ * `PersonaGrid.tsx`'s `BotWelcomeBubble` doc comment): 16 of the 24
  * personas run at `HUMAN_BLEND` (rungs 800, 1000, 1200, 1400), where
  * `selectBotMove` makes exactly ONE Maia policy call and never searches. So
  * no line in any table below may claim a bot "calculated", "thought ahead",
@@ -22,7 +22,7 @@
  * Terminal-line visibility (the three tables `'bot-won'`/`'bot-lost'`/
  * `'game-drawn'`): these lines are rendered INSIDE `GameResultDialog` (with
  * the persona's avatar), so they are read in the dialog whether or not
- * `useWinCelebrationHold` delays it for that ending (it does after a human
+ * `useResultDialogHold` delays it for that ending (it does after a human
  * win and after a bot checkmate; not after other losses or draws). This
  * module introduces no timing logic of its own; the hold lives entirely in
  * that hook.
@@ -31,22 +31,16 @@
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import type { Persona, PersonaId } from '@/lib/personas/personaRegistry';
-// 223-02: the roster rotation imports these SHARED primitives rather than
+// The roster rotation imports these SHARED primitives rather than
 // declaring its own epoch/id list, so "the same bot greets you on /train
 // and /bots today" is structural, never coincidental (see `rosterHost`).
 import { LANDING_HOST_IDS, LANDING_ROTATION_EPOCH, TANK_ID } from '@/lib/trainBotCopy';
 
 /**
  * The trigger keys a line can be authored for. A literal union, never a bare
- * `string` (root CLAUDE.md rule). Plan 01 shipped `'game-start'` only; this
- * plan (223-02) widens the union to the five move-triggered keys below in
- * the same edit as their `BOT_LINE_TABLES` entries, so exhaustiveness
- * (`Record<PersonaId, string>` per key) can never lapse for an added
- * trigger. The nine keys below are exhaustive; `'player-threat'` was
- * retired in Phase 223 UAT (see `botLineTrigger.ts`'s own note), and
- * `'got-away'` was added in the same round. The exhaustive
- * per-table/per-persona invariant test lives in
- * `lib/__tests__/botGameCopy.test.ts`.
+ * `string`; adding a key must add its BOT_LINE_TABLES entry in the same edit
+ * so the per-persona exhaustiveness can't lapse (pinned by
+ * lib/__tests__/botGameCopy.test.ts).
  */
 export type BotLineKey =
   | 'game-start'
@@ -65,7 +59,7 @@ export type BotLineKey =
  * Record<PersonaId, string>>` makes a missing persona (for any key) a
  * compile error, mirroring `trainBotCopy.ts`'s `LANDING_GREETINGS` shape.
  *
- * `'game-start'` (D-06): pure voice, in-game hellos. These lines fire before
+ * `'game-start'`: pure voice, in-game hellos. These lines fire before
  * a single move has been played, so they can never reference the position —
  * unlike every other trigger this phase adds, which describes something the
  * board has just shown. One line per persona, no em-dash, at most
@@ -100,7 +94,7 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   },
 
   /**
-   * `'first-capture'` (D-06/223-CONTEXT): fires once, right after the first
+   * `'first-capture'`: fires once, right after the first
    * capture of the game by either side, when the bot has just replied. Pure
    * mood ("the game is real now") — never a claim about who stands better.
    */
@@ -132,7 +126,7 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   },
 
   /**
-   * `'earned-tease'` (D-03/223-CONTEXT): fires when the bot's OWN move just
+   * `'earned-tease'`: fires when the bot's OWN move just
    * cashed in a large swing in its favor. The teasing register: points at
    * what is now visible on the board. Never claims the bot planned,
    * calculated or foresaw it — 16 of the 24 personas make exactly one
@@ -184,7 +178,7 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   },
 
   /**
-   * `'punished-mistake'` (D-04/223-CONTEXT): fires when a large swing
+   * `'punished-mistake'`: fires when a large swing
    * against the bot pairs with a capture by the player in the same move
    * pair. Self-deprecating, good-humoured, never sulky — describes the
    * board, never the player.
@@ -217,7 +211,7 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   },
 
   /**
-   * `'nice-move'` (D-04/223-CONTEXT): fires when a large swing against the
+   * `'nice-move'`: fires when a large swing against the
    * bot has NO capture in that move pair. A genuine compliment on a move
    * the board now shows was strong.
    */
@@ -249,10 +243,9 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   },
 
   /**
-   * `'draw-offer'` (D-12/223-CONTEXT): the copy the Accept and Decline
+   * `'draw-offer'`: the copy the Accept and Decline
    * buttons in the bubble sit under. Reads as an offer, in the persona's own
-   * voice, in one sentence — replaces the retired draw-offer banner
-   * component's generic wording.
+   * voice, in one sentence.
    */
   'draw-offer': {
     'attacker-800': 'Truce? Even wasps need a break sometimes.',
@@ -282,7 +275,7 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   },
 
   /**
-   * `'got-away'` (Phase 223 UAT): fires when the bot blundered, the player
+   * `'got-away'`: fires when the bot blundered, the player
    * did NOT punish it, and the bot's own next move recovered the position by
    * a full `BOT_LINE_SWING_THRESHOLD_CP`. Relief, never gloating — the bot
    * knows it was losing something and is saying so out loud, which is the
@@ -322,7 +315,7 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
   /**
    * The three terminal tables below (`'bot-won'`/`'bot-lost'`/
    * `'game-drawn'`). Each is rendered inside `GameResultDialog`, so it is
-   * read there regardless of whether `useWinCelebrationHold` delays the
+   * read there regardless of whether `useResultDialogHold` delays the
    * dialog; see this file's header. No timing logic is introduced here.
    */
 
@@ -433,24 +426,15 @@ export function botLineCopy(key: BotLineKey, personaId: PersonaId): string {
  * the copy on phones instead of above it (`BotGameBubble.tsx`), so at 375px
  * the copy box is estimated at ~271px wide (375 minus the avatar column,
  * gaps and padding) instead of Train's 204px — roughly 32 chars/line, and
- * this bubble is capped at two lines (D-07), giving roughly 64 characters.
- * The budget is a guard on that ESTIMATE, not a substitute for it — plan 06's
- * UAT re-measures the real rendered bubble at 375x667 and adjusts this
- * number if the estimate was off.
+ * this bubble is capped at two lines, giving roughly 64 characters.
+ * The budget is a guard on that ESTIMATE, not a substitute for it — re-measure
+ * the real rendered bubble at 375x667 and adjust this number if the estimate
+ * is off.
  */
 export const BOT_LINE_MAX_CHARS = 64;
 
 /**
- * The `/bots` roster page's per-persona welcome table (D-13/223-CONTEXT),
- * rendered by `PersonaGrid`'s welcome bubble. Deliberately SEPARATE from
- * `BOT_LINE_TABLES['game-start']`: a roster greeting welcomes the VISITOR
- * and may invite them to pick an opponent, while an in-game hello opens a
- * game already in progress — the two surfaces read differently even though
- * both are per-persona one-liners in the same voice. Same tone rules, same
- * `BOT_LINE_MAX_CHARS` budget, same forbidden claims as every table above.
- */
-/**
- * Phase 223 UAT: the one claim every roster greeting makes in common,
+ * The one claim every roster greeting makes in common,
  * appended after the day's host line rather than written into all 24 voices
  * — it is a product claim about the engine, not a character trait, so it
  * must read identically whichever persona is hosting. Exempt from
@@ -459,6 +443,15 @@ export const BOT_LINE_MAX_CHARS = 64;
  */
 export const ROSTER_HUMAN_LIKE_LINE = 'Careful, we play like humans, not like computers!';
 
+/**
+ * The `/bots` roster page's per-persona welcome table,
+ * rendered by `PersonaGrid`'s welcome bubble. Deliberately SEPARATE from
+ * `BOT_LINE_TABLES['game-start']`: a roster greeting welcomes the VISITOR
+ * and may invite them to pick an opponent, while an in-game hello opens a
+ * game already in progress — the two surfaces read differently even though
+ * both are per-persona one-liners in the same voice. Same tone rules, same
+ * `BOT_LINE_MAX_CHARS` budget, same forbidden claims as every table above.
+ */
 export const ROSTER_GREETINGS: Record<PersonaId, string> = {
   'attacker-800': "Bzzz! Ziggy here. Pick a fight, any fight.",
   'attacker-1000': "Woof! Duke here. Pick a bot and let's go.",

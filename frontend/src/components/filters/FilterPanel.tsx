@@ -43,8 +43,8 @@ export interface FilterState {
   matchSide: MatchSide;
   timeControls: TimeControl[] | null; // null = all
   platforms: Platform[] | null; // null = all
-  rated: boolean | null; // null = all; default true = rated games only (SEED-163 2a)
-  opponentType: OpponentType; // default 'human' = human opponents only (SEED-163 2a)
+  rated: boolean | null; // null = all; default true = rated games only
+  opponentType: OpponentType; // default 'human' = human opponents only
   /**
    * Opponent strength as a (gap_min, gap_max) range over opponent_rating - user_rating.
    * Default `{ min: null, max: null }` = no filter (Any preset).
@@ -57,42 +57,42 @@ export interface FilterState {
   /** Tri-state color filter for Library surfaces (Either/White/Black). Default 'either' = no filter. */
   playedAs: 'either' | 'white' | 'black';
   /**
-   * Phase 208 (D-11/D-14, PASTE-05/09): Library-only opt-in that reveals
+   * Library-only opt-in that reveals
    * `platform='pgn'` (pasted) games. Deliberately a SEPARATE field, not a
    * third value folded into `platforms` — `platforms` is module-level state
    * (useFilterStore.ts) that survives SPA navigation and is read by the
    * Openings, Endgames, GlobalStats and Insights queries, where pasted games
-   * must never appear (D-14, ROADMAP locked constraint 4). This field is read
+   * must never appear. This field is read
    * on the wire ONLY by `buildLibraryParams` (useLibrary.ts) and by nothing
    * else — see `showPastedChip` below for the render-side half of the same
    * containment guarantee.
    *
-   * UAT (Phase 208): was a boolean, which made the chip purely additive — a
-   * pasted game sorts by its own historical PGN date, so "with" buries it at
-   * the end of a multi-thousand-game archive and there was no way to see
-   * pasted games alone. 'only' is what deselecting both platform chips while
-   * the Pasted chip is on now means, and it keeps `platforms` itself free of
-   * a 'pgn' member (the containment guarantee above).
+   * Tri-state rather than a boolean: a boolean made the chip purely additive, and
+   * a pasted game sorts by its own historical PGN date, so "with" buries it at
+   * the end of a multi-thousand-game archive with no way to see pasted games
+   * alone. 'only' is what deselecting both platform chips while the Pasted chip
+   * is on means, and it keeps `platforms` itself free of a 'pgn' member (the
+   * containment guarantee above).
    */
   pasted: PastedFilter;
 }
 
 /**
- * Tri-state for the Library's Pasted chip (UAT follow-up to D-11):
+ * Tri-state for the Library's Pasted chip:
  * 'off'  — pasted games hidden (the default everywhere)
  * 'with' — pasted games added to the selected platforms
  * 'only' — pasted games exclusively; no platform chip is active
  */
 export type PastedFilter = 'off' | 'with' | 'only';
 
-// SEED-163 2a: the analytics default population is Human + Rated (rated:
+// The analytics default population is Human + Rated (rated:
 // true, opponentType: 'human') so it matches the percentile benchmark cohort
 // (`g.rated AND NOT g.is_computer_game`). The store is module memory (no
 // localStorage — useFilterStore.ts), so this reaches every user on next load
 // with no migration. The filter stays visible (Opponent/Rated controls read
 // Human/Rated) and reversible (switching back to Both/All restores the old
 // population); the Library keeps native games reachable regardless via the
-// backend's native_games_bypass_opponent_and_rated flag (SEED-163 2b).
+// backend's native_games_bypass_opponent_and_rated flag.
 export const DEFAULT_FILTERS: FilterState = {
   matchSide: 'both',
   timeControls: null,
@@ -108,8 +108,8 @@ export const DEFAULT_FILTERS: FilterState = {
 };
 
 /**
- * Reset a FilterState to defaults, preserving the current `color` (Played-as piece
- * color is not part of the filter query — see FILTER_DOT_FIELDS) and clearing any
+ * Reset a FilterState to defaults, preserving the current `color` (the Openings board
+ * color, not part of the filter query — see FILTER_DOT_FIELDS) and clearing any
  * custom date range. Single source of truth for the Reset behavior shared by
  * FilterPanel's own footer, LibraryFilterPanel, and every mobile filter-drawer
  * footer (Stats / Openings / Endgames / Library tabs).
@@ -120,9 +120,9 @@ export function resetFilterState(current: FilterState): FilterState {
 
 /**
  * FilterState keys used to compute the "modified filters" dot across all three pages
- * (Openings, Endgames, GlobalStats). Intentionally EXCLUDES `color` — changing
- * Played-as does not light the dot because the user's current piece color is not
- * considered part of "the filter query" for indicator purposes, and Reset preserves
+ * (Openings, Endgames, GlobalStats). Intentionally EXCLUDES `color` (the Openings
+ * board color): changing it does not light the dot because the current piece color is
+ * not considered part of "the filter query" for indicator purposes, and Reset preserves
  * it for the same reason.
  */
 export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
@@ -140,7 +140,7 @@ export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
 /**
  * FILTER_DOT_FIELDS plus the Library-only `pasted` field. Only the Library
  * tabs may use this: `pasted` is shared module state but ONLY the Library
- * applies it (D-14), so lighting the Openings/Endgames/GlobalStats dot for it
+ * applies it, so lighting the Openings/Endgames/GlobalStats dot for it
  * would flag a filter those pages don't honor. Conversely the Library must
  * light its dot — a 'only' selection can hide thousands of games, and a view
  * that small with no modified-dot reads as a broken archive.
@@ -155,8 +155,8 @@ export const LIBRARY_FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
  * as set-equal regardless of order. Used to detect "filters are modified from defaults" for
  * the sidebar modified-indicator dot.
  *
- * If `fields` is provided, only those FilterState keys are compared — used by GlobalStats
- * which only exposes platform + recency (other fields must be ignored even if non-default).
+ * If `fields` is provided, only those FilterState keys are compared (e.g. FILTER_DOT_FIELDS
+ * for the modified dot).
  */
 export function areFiltersEqual(
   a: FilterState,
@@ -218,10 +218,10 @@ interface FilterPanelProps {
    */
   hideReset?: boolean;
   /**
-   * Phase 208 (D-14): when true AND the 'platform' section is visible, renders
+   * When true AND the 'platform' section is visible, renders
    * one additional "Pasted" chip after the two platform chips. Default false.
    * LibraryFilterPanel is the ONLY caller that sets this — Openings, Endgames
-   * and GlobalStats must never render it (D-14, ROADMAP locked constraint 4).
+   * and GlobalStats must never render it.
    */
   showPastedChip?: boolean;
 }
@@ -243,27 +243,22 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 };
 
 /**
- * SEED-163 2c: the Library-only disclosure line below the Rated toggle (the last
- * of the two filters it describes; Opponent Type sits directly above it).
- * Extracted to its own component (rather than an inline `{show && (...)}` in
- * FilterPanel) so the added branch doesn't push FilterPanel's cyclomatic
- * complexity past the eslint `complexity` gate (frontend/CLAUDE.md).
+ * The Library-only disclosure line below the Rated toggle (the last of the two
+ * filters it describes; Opponent Type sits directly above it).
  *
  * Gated on the same `showPastedChip` flag as the Pasted chip above —
  * LibraryFilterPanel is the only caller that sets it, so Openings, Endgames
  * and GlobalStats never render this hint, and the same component instance
  * covers both the desktop sidebar and the mobile drawer (see the
  * showPastedChip containment comment in LibraryFilterPanel.tsx). Discloses
- * the backend's native_games_bypass_opponent_and_rated exemption (SEED-163
- * 2b): flawchess/pgn rows ignore the Opponent and Rated filters here.
+ * the backend's native_games_bypass_opponent_and_rated exemption: flawchess/pgn
+ * rows ignore the Opponent and Rated filters here.
  */
 function NativeGamesHint({ show }: { show: boolean }) {
   if (!show) return null;
   return (
-    // frontend/CLAUDE.md: text-sm is the floor for new UI copy (the text-xs
-    // tooltip exception does not apply — this is a static disclosure line,
-    // not a hover/tap popover), so this deviates from the plan's "text-xs
-    // variant is fine" suggestion.
+    // text-sm is the floor for UI copy (frontend/CLAUDE.md); the text-xs
+    // tooltip exception does not apply to a static disclosure line.
     <p data-testid="filter-native-games-hint" className="mt-1 text-sm text-muted-foreground">
       Opponent and Rated filters don&apos;t apply to FlawChess bot games or pasted games.
     </p>
@@ -293,8 +288,8 @@ export function FilterPanel({
   const [customOpen, setCustomOpen] = useState(false);
   // Tracks a pending "custom" pick so we can suppress Select's restore-focus on
   // close — otherwise focus snaps back to the SelectTrigger right after the
-  // popover opens, and the popover's focusOutside dismiss closes it (UAT bug:
-  // calendar flashed open then disappeared).
+  // popover opens, and the popover's focusOutside dismiss closes it (the
+  // calendar would flash open then disappear).
   const pendingCustomRef = useRef(false);
   // In-progress custom-range edits live here while the popover is open; they
   // are committed to the filter only when the popover closes (Done button,
@@ -319,7 +314,7 @@ export function FilterPanel({
       // Closing — commit pendingCustomRange. Empty edit reverts recency.
       if (pendingCustomRange?.from || pendingCustomRange?.to) {
         update({ recency: 'custom', customRange: pendingCustomRange });
-        // Report only a real change; the range itself is never sent (D-04).
+        // Report only a real change; the range itself is never sent.
         if (filters.recency !== 'custom' || !isSameRange(filters.customRange, pendingCustomRange)) {
           trackFeature('filter-change', { target: 'recency', value: 'custom' });
         }
@@ -369,8 +364,8 @@ export function FilterPanel({
       return;
     }
     // Deselecting the last platform is only meaningful when the Pasted chip is
-    // on — it means "pasted games only" (UAT: previously impossible, the chip
-    // was additive and this branch bounced the selection back to [p]).
+    // on — it means "pasted games only"; otherwise the
+    // selection bounces back to [p].
     // `platforms` stays null so the shared state other pages read never
     // becomes an empty (match-nothing) list.
     if (filters.pasted === 'with') {
@@ -432,10 +427,10 @@ export function FilterPanel({
         <div>
           <p className="mb-1 text-sm text-muted-foreground">Recency</p>
           {/*
-            Desktop: Popover anchored to the Select trigger via PopoverAnchor asChild (D-03).
-            Mobile:  Popover is never open; CustomRangeDrawer handles the nested sheet (D-06).
+            Desktop: Popover anchored to the Select trigger via PopoverAnchor asChild.
+            Mobile:  Popover is never open; CustomRangeDrawer handles the nested sheet.
             queueMicrotask defers setCustomOpen so the Select close animation completes
-            before the popover/drawer open animation begins (RESEARCH.md §Pitfall 6).
+            before the popover/drawer open animation begins.
           */}
           <Popover
             open={customOpen && !isMobile}
@@ -449,7 +444,7 @@ export function FilterPanel({
                 // still reopens the calendar (Radix Select doesn't fire
                 // onValueChange when the value is unchanged).
                 if (v !== 'custom') {
-                  // Any preset clears the custom range (D-08).
+                  // Any preset clears the custom range.
                   update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
                   trackFeature('filter-change', { target: 'recency', value: v as RecencyPreset });
                 }
@@ -463,7 +458,7 @@ export function FilterPanel({
               */}
               <PopoverAnchor asChild>
                 <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
-                  {/* Render resolved range label when custom is active (D-04); preset label otherwise. */}
+                  {/* Render resolved range label when custom is active; preset label otherwise. */}
                   {filters.recency === 'custom'
                     ? formatCustomRangeLabel(filters.customRange)
                     : <SelectValue />}
@@ -566,7 +561,7 @@ export function FilterPanel({
       {show('platform') && (
         <div>
           <p className="mb-1 text-sm text-muted-foreground">Platform</p>
-          {/* Phase 208 (D-14/UI-SPEC §7): a third chip (Pasted, Library-only) joins
+          {/* A third chip (Pasted, Library-only) joins
               the grid when showPastedChip is set — grid-cols-3 keeps all three
               chips evenly sized instead of orphaning a third chip in a half-width
               row of a 2-col grid. */}
@@ -661,8 +656,8 @@ export function FilterPanel({
           When onApply is absent: renders a lone Reset button (backward-compat for callers
           that do not yet pass onApply). Suppress entirely with hideReset=true when the
           parent owns the footer (e.g. LibraryFilterPanel).
-          GLOBAL RESET: clears every FilterState field to DEFAULT_FILTERS EXCEPT `color`
-          (Played-as), which is preserved at its current value. Because the modified-dot
+          GLOBAL RESET: clears every FilterState field to DEFAULT_FILTERS except `color`
+          (the Openings board color), which is preserved at its current value. Because the modified-dot
           also ignores `color` (see FILTER_DOT_FIELDS), Reset is guaranteed to drop the
           dot on every page. */}
       {!hideReset && (

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * EngineReadyGate.tsx — this is the Phase 213-01 tracer's own end-to-end
- * proof: it drives the REAL `engineAssetProgress.ts` store (never mocks
+ * EngineReadyGate.tsx — the end-to-end proof for the gate:
+ * it drives the REAL `engineAssetProgress.ts` store (never mocks
  * `useEngineAssets`) so the whole transport — store -> useEngineAssets ->
  * gate — is actually exercised, not just the component in isolation.
  */
@@ -20,7 +20,7 @@ import {
   STOCKFISH_WASM_BYTES_FALLBACK,
 } from '@/lib/engine/engineAssetProgress';
 
-/** Marks all three required assets ready — the Phase 213-09 gate condition (G-213-35). */
+/** Marks all three required assets ready — the gate condition. */
 function markAllAssetsReady(): void {
   markEngineAssetReady('maia-model');
   markEngineAssetReady('stockfish-wasm');
@@ -57,7 +57,7 @@ describe('EngineReadyGate', () => {
     expect(startButton().disabled).toBe(true);
   });
 
-  // ─── G-213-34: per-surface copy ────────────────────────────────────────────
+  // ─── Per-surface copy ────────────────────────────────────────────
 
   it('the bots surface still renders today\'s title and one-time-download note', () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
@@ -88,10 +88,10 @@ describe('EngineReadyGate', () => {
       reportEngineAssetProgress('maia-model', 22_841_843, 45_683_686);
     });
 
-    // Phase 213-09 (G-213-35): the denominator is now the full 66.9 MB bundle
-    // (maia + stockfish + ort-runtime's untouched fallback totals; onnxruntime-web
-    // 1.29.0 sizes per Phase 217-02), not the pre-213-09 53.0 MB pair —
-    // 22,841,843 / 66,940,942 -> 34%.
+    // The denominator is the full 66.5 MB bundle
+    // (maia + stockfish + ort-runtime's untouched fallback totals; vendored
+    // onnxruntime-web 1.27.0 sizes), not just the Maia + Stockfish pair —
+    // 22,841,843 / 66,459,075 -> 34%.
     await waitFor(
       () => {
         const gate = screen.getByTestId('engine-ready-gate');
@@ -105,7 +105,7 @@ describe('EngineReadyGate', () => {
     expect(progress.getAttribute('aria-valuenow')).toBe('34');
   });
 
-  it('shows the MB pair alongside the percent, and tells the user the download is one-time (G-213-4)', async () => {
+  it('shows the MB pair alongside the percent, and tells the user the download is one-time', async () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
     act(() => {
@@ -116,10 +116,10 @@ describe('EngineReadyGate', () => {
       () => {
         // A bare percent gave no sense of scale — the readout must say how many
         // MB of how many, from the SAME byte-weighted aggregate as the bar.
-        // Phase 213-09: the total is now the 66.9 MB unconditional triple
-        // (onnxruntime-web 1.29.0 sizes per Phase 217-02).
+        // The total is the 66.5 MB unconditional triple
+        // (vendored onnxruntime-web 1.27.0 sizes).
         expect(screen.getByTestId('engine-ready-readout').textContent).toBe(
-          'Maia model — 34% (22.8 / 66.9 MB)',
+          'Maia model — 34% (22.8 / 66.5 MB)',
         );
       },
       { timeout: WAIT_FOR_TIMEOUT_MS },
@@ -128,13 +128,13 @@ describe('EngineReadyGate', () => {
     expect(screen.getByTestId('engine-ready-gate').textContent).toContain('one-time download');
   });
 
-  it('says the engine is starting once the last byte lands but the worker is not ready yet (G-213-19)', async () => {
+  it('says the engine is starting once the last byte lands but the worker is not ready yet', async () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
     // Every byte of ALL THREE assets is in, but no `ready` message has
     // arrived for any — the worker is still building the ONNX session and
     // running its warmup inference. On the wasm fallback (Brave) that gap is
-    // several seconds long. Phase 213-09: all three assets are always
+    // several seconds long. All three assets are always
     // required, so all three must report full bytes before the aggregate
     // counts as "all bytes in".
     act(() => {
@@ -166,7 +166,7 @@ describe('EngineReadyGate', () => {
     );
   });
 
-  it('does NOT claim the engine is starting while a second asset is still downloading (G-213-19)', async () => {
+  it('does NOT claim the engine is starting while a second asset is still downloading', async () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
     // Maia is fully in, Stockfish is not — the aggregate is not complete, so
@@ -186,18 +186,18 @@ describe('EngineReadyGate', () => {
     );
   });
 
-  it('does NOT claim the engine is starting while bytes are still arriving but the percent has rounded to 100 (G-213-19)', async () => {
+  it('does NOT claim the engine is starting while bytes are still arriving but the percent has rounded to 100', async () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
-    // Combined ~99.85% of the bundle's bytes (onnxruntime-web 1.29.0 sizes,
-    // Phase 217-02): `percent` rounds to 100, but the download is not
+    // Combined ~99.85% of the bundle's bytes (vendored onnxruntime-web 1.27.0 sizes):
+    // `percent` rounds to 100, but the download is not
     // finished. This is why the preparing copy is gated on BYTES, not
     // percent. Maia + Stockfish fully in, ort-runtime at
-    // 13,861,845 / 13,961,845 (100,000 bytes short of the wasm-only fallback total).
+    // 13,379,978 / 13,479,978 (100,000 bytes short of the wasm-only fallback total).
     act(() => {
       reportEngineAssetProgress('maia-model', 45_683_686, 45_683_686);
       reportEngineAssetProgress('stockfish-wasm', STOCKFISH_WASM_BYTES_FALLBACK, STOCKFISH_WASM_BYTES_FALLBACK);
-      reportEngineAssetProgress('ort-runtime', 13_861_845, ORT_RUNTIME_BYTES_FALLBACK);
+      reportEngineAssetProgress('ort-runtime', 13_379_978, ORT_RUNTIME_BYTES_FALLBACK);
     });
 
     await waitFor(
@@ -209,15 +209,15 @@ describe('EngineReadyGate', () => {
       { timeout: WAIT_FOR_TIMEOUT_MS },
     );
     expect(screen.getByTestId('engine-ready-readout').textContent).toBe(
-      'Maia model — 100% (66.8 / 66.9 MB)',
+      'Maia model — 100% (66.4 / 66.5 MB)',
     );
   });
 
-  it('enables Start once the store reports ready, and clicking it calls onStart exactly once (D-18: bots does NOT auto-call onStart on readiness alone)', async () => {
+  it('enables Start once the store reports ready, and clicking it calls onStart exactly once (bots does NOT auto-call onStart on readiness alone)', async () => {
     const onStart = vi.fn();
     render(<EngineReadyGate surface="bots" onStart={onStart} onRetry={vi.fn()} />);
 
-    // Phase 213-09: ALL THREE assets must be marked ready — a subset can no
+    // ALL THREE assets must be marked ready — a subset can no
     // longer enable Start.
     act(() => {
       markAllAssetsReady();
@@ -229,7 +229,7 @@ describe('EngineReadyGate', () => {
       },
       { timeout: WAIT_FOR_TIMEOUT_MS },
     );
-    // D-18: reaching readiness alone must NOT close the bots gate — only a
+    // Reaching readiness alone must NOT close the bots gate — only a
     // click does. This is the surface-asymmetry the analysis auto-close
     // (tested below) must not leak into bot play.
     expect(onStart).not.toHaveBeenCalled();
@@ -238,9 +238,9 @@ describe('EngineReadyGate', () => {
     expect(onStart).toHaveBeenCalledTimes(1);
   });
 
-  // ─── Phase 213-09: every session gated on ALL THREE assets, single byte-weighted bar (D-11, G-213-35) ──
+  // ─── Every session gated on ALL THREE assets, single byte-weighted bar ──
 
-  it('every session is gated on ALL THREE assets, shows exactly ONE progress element, and the subtext switches asset as each one completes (D-11)', async () => {
+  it('every session is gated on ALL THREE assets, shows exactly ONE progress element, and the subtext switches asset as each one completes', async () => {
     render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
     // No asset done yet — Start stays disabled. requiredEngineAssets()
@@ -250,7 +250,7 @@ describe('EngineReadyGate', () => {
       const gate = screen.getByTestId('engine-ready-gate');
       expect(gate.textContent).toContain('Maia model');
     });
-    // D-11: exactly one aggregate progress element, never one per asset.
+    // Exactly one aggregate progress element, never one per asset.
     expect(screen.queryAllByTestId('engine-ready-progress')).toHaveLength(1);
 
     act(() => {
@@ -263,7 +263,7 @@ describe('EngineReadyGate', () => {
 
     // Complete maia-model — the subtext must switch to the next undone
     // asset (stockfish-wasm), and the aggregate bar reflects the
-    // byte-weighted total (D-11), never per-asset rows.
+    // byte-weighted total, never per-asset rows.
     act(() => {
       markEngineAssetReady('maia-model');
     });
@@ -280,7 +280,7 @@ describe('EngineReadyGate', () => {
     expect(startButton().disabled).toBe(true); // stockfish-wasm, ort-runtime still not done
 
     // Complete stockfish-wasm — the subtext switches to the THIRD asset
-    // (ort-runtime, Phase 213-09/G-213-35), and Start is STILL disabled.
+    // (ort-runtime), and Start is STILL disabled.
     act(() => {
       markEngineAssetReady('stockfish-wasm');
     });
@@ -308,7 +308,7 @@ describe('EngineReadyGate', () => {
     );
   });
 
-  // ─── Phase 213-04 D-14: two terminal states, correct retry affordance ─────
+  // ─── Two terminal states, correct retry affordance ─────
 
   it('the unsupported terminal state renders no button of any kind, and never the LoadError trailer copy', () => {
     act(() => {
@@ -340,7 +340,7 @@ describe('EngineReadyGate', () => {
     expect(screen.queryByTestId('engine-gate-failed')).toBeNull();
   });
 
-  // ─── Quick 260829-tku: the Maia out-of-memory terminal variant ────────────
+  // ─── The Maia out-of-memory terminal variant ────────────
 
   describe.each([['bots'], ['analysis']] as const)(
     'the out-of-memory terminal state (surface=%s)',
@@ -379,7 +379,7 @@ describe('EngineReadyGate', () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  // ─── Quick 260829-tku Task 2: the new branch must not swallow the generic path ──
+  // ─── The new branch must not swallow the generic path ──
 
   it.each([
     ['a load-classified failure', 'load' as const],
@@ -395,10 +395,10 @@ describe('EngineReadyGate', () => {
     expect(screen.getByTestId('btn-engine-retry')).toBeTruthy();
   });
 
-  // ─── Phase 213-04 D-16/D-17: Umami wait/abandonment + Sentry terminal capture ──
+  // ─── Umami wait/abandonment + Sentry terminal capture ──
 
-  describe('telemetry (D-16/D-17)', () => {
-    it('fires engine-gate-shown exactly once on mount, carrying which surface mounted it (G-213-34)', () => {
+  describe('telemetry', () => {
+    it('fires engine-gate-shown exactly once on mount, carrying which surface mounted it', () => {
       render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
       expect(trackEvent).toHaveBeenCalledTimes(1);
@@ -411,7 +411,7 @@ describe('EngineReadyGate', () => {
         render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
         vi.mocked(trackEvent).mockClear(); // drop the mount-time 'shown' call
 
-        // Phase 213-09: ALL THREE assets must be marked ready to enable Start.
+        // ALL THREE assets must be marked ready to enable Start.
         act(() => {
           markAllAssetsReady();
         });
@@ -434,7 +434,7 @@ describe('EngineReadyGate', () => {
       }
     });
 
-    it('D-18: fires engine-gate-started exactly once on the analysis auto-close, with trigger "auto" and the surface — and never fires abandoned afterward', () => {
+    it('fires engine-gate-started exactly once on the analysis auto-close, with trigger "auto" and the surface — and never fires abandoned afterward', () => {
       render(<EngineReadyGate surface="analysis" onStart={vi.fn()} onRetry={vi.fn()} />);
       vi.mocked(trackEvent).mockClear(); // drop the mount-time 'shown' call
 
@@ -479,7 +479,7 @@ describe('EngineReadyGate', () => {
       expect(trackEvent).toHaveBeenCalledTimes(1); // still just the one call
     });
 
-    it('never fires any Umami event when the gate never mounts (D-04 cache-hit path)', () => {
+    it('never fires any Umami event when the gate never mounts (cache-hit path)', () => {
       // The gate simply never renders in the cache-hit case (Bots.tsx's own
       // conditional mount, not this component's concern) — asserting the
       // absence of calls here documents the contract this component upholds
@@ -494,7 +494,7 @@ describe('EngineReadyGate', () => {
       act(() => {
         reportEngineAssetProgress('maia-model', 20_000_000, 45_683_686);
       });
-      // Phase 213-09: ALL THREE assets must be marked ready to enable Start.
+      // ALL THREE assets must be marked ready to enable Start.
       act(() => {
         markAllAssetsReady();
       });
@@ -503,7 +503,7 @@ describe('EngineReadyGate', () => {
       expect(Sentry.captureException).not.toHaveBeenCalled();
     });
 
-    it('adds NO capture of its own for the unsupported terminal state — the store captured it once already (SEED-158, 2026-09-07)', () => {
+    it('adds NO capture of its own for the unsupported terminal state — the store captured it once already', () => {
       act(() => {
         markEngineAssetsUnsupported('no-wasm-simd');
       });
@@ -534,7 +534,7 @@ describe('EngineReadyGate', () => {
     });
   });
 
-  // ─── Phase 213-09 (G-213-35): BOTH mounts, three-asset denominator ─────────
+  // ─── BOTH mounts, three-asset denominator ─────────
   //
   // `Bots.tsx` mounts `surface="bots"`, `Analysis.tsx` mounts
   // `surface="analysis"` — both read the SAME `engineAssetProgress.ts` store
@@ -543,7 +543,7 @@ describe('EngineReadyGate', () => {
   // one surface with the other assumed.
 
   describe.each([['bots'], ['analysis']] as const)('surface=%s', (surface) => {
-    it('shows the three-asset denominator (66.9 MB) in its readout', async () => {
+    it('shows the three-asset denominator (66.5 MB) in its readout', async () => {
       render(<EngineReadyGate surface={surface} onStart={vi.fn()} onRetry={vi.fn()} />);
 
       act(() => {
@@ -553,14 +553,14 @@ describe('EngineReadyGate', () => {
       await waitFor(
         () => {
           expect(screen.getByTestId('engine-ready-readout').textContent).toBe(
-            'Maia model — 34% (22.8 / 66.9 MB)',
+            'Maia model — 34% (22.8 / 66.5 MB)',
           );
         },
         { timeout: WAIT_FOR_TIMEOUT_MS },
       );
     });
 
-    it('keeps its own per-surface title and note (G-213-34) while sharing the three-asset denominator', () => {
+    it('keeps its own per-surface title and note while sharing the three-asset denominator', () => {
       render(<EngineReadyGate surface={surface} onStart={vi.fn()} onRetry={vi.fn()} />);
 
       const gate = screen.getByTestId('engine-ready-gate');
@@ -568,7 +568,7 @@ describe('EngineReadyGate', () => {
       expect(gate.textContent).toContain(expectedTitle);
     });
 
-    it('reaches readiness only once ALL THREE assets are done — not sooner (D-18: enables Start on bots, auto-closes via onStart on analysis)', async () => {
+    it('reaches readiness only once ALL THREE assets are done — not sooner (enables Start on bots, auto-closes via onStart on analysis)', async () => {
       const onStart = vi.fn();
       render(<EngineReadyGate surface={surface} onStart={onStart} onRetry={vi.fn()} />);
 
@@ -579,7 +579,7 @@ describe('EngineReadyGate', () => {
       if (surface === 'bots') {
         expect(startButton().disabled).toBe(true); // ort-runtime still not done
       } else {
-        // D-18: analysis renders no Start button at all, in any state.
+        // Analysis renders no Start button at all, in any state.
         expect(screen.queryByTestId('btn-engine-start')).toBeNull();
         expect(onStart).not.toHaveBeenCalled();
       }
@@ -595,10 +595,10 @@ describe('EngineReadyGate', () => {
           },
           { timeout: WAIT_FOR_TIMEOUT_MS },
         );
-        // D-18: reaching readiness alone does not close bots — only a click does.
+        // Reaching readiness alone does not close bots — only a click does.
         expect(onStart).not.toHaveBeenCalled();
       } else {
-        // D-18: reaching readiness closes analysis on its own — no click, no button.
+        // Reaching readiness closes analysis on its own — no click, no button.
         await waitFor(
           () => {
             expect(onStart).toHaveBeenCalledTimes(1);
@@ -617,20 +617,20 @@ describe('EngineReadyGate', () => {
     });
   });
 
-  // ─── Phase 213-11 (D-18): analysis auto-closes, bots keeps Start ──────────
+  // ─── Analysis auto-closes, bots keeps Start ──────────
 
-  describe('D-18: analysis auto-close vs bots Start button', () => {
+  describe('analysis auto-close vs bots Start button', () => {
     it('analysis: never renders a Start button, in the downloading state either', () => {
       render(<EngineReadyGate surface="analysis" onStart={vi.fn()} onRetry={vi.fn()} />);
       expect(screen.queryByTestId('btn-engine-start')).toBeNull();
     });
 
-    it('analysis: stays OPEN and shows the G-213-19 preparing readout while all bytes are in but the worker is not yet ready — the close waits for real readiness, not last byte', async () => {
+    it('analysis: stays OPEN and shows the preparing readout while all bytes are in but the worker is not yet ready — the close waits for real readiness, not last byte', async () => {
       const onStart = vi.fn();
       render(<EngineReadyGate surface="analysis" onStart={onStart} onRetry={vi.fn()} />);
 
       // Every byte of ALL THREE assets is in, but no `ready` message has
-      // arrived — mirrors the bots G-213-19 test above, keyed to the
+      // arrived — mirrors the bots preparing-readout test above, keyed to the
       // auto-close's own gating condition (assets.ready, never allBytesIn).
       act(() => {
         reportEngineAssetProgress('maia-model', 45_683_686, 45_683_686);
