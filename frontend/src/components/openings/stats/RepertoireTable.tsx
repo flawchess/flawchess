@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { BookMarked, ChevronDown, Sparkles } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Button } from '@/components/ui/button';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
+import { RepertoireExpandedRow } from '@/components/openings/stats/RepertoireExpandedRow';
 import { VerdictCompact } from '@/components/openings/stats/VerdictBar';
 import {
   EvalVerdictPopover,
@@ -27,13 +28,15 @@ import {
 } from '@/lib/openingVerdict';
 import { formatRelativeDate } from '@/lib/relativeDate';
 import { UNRELIABLE_OPACITY } from '@/lib/theme';
+import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
 /** Top offset of the sticky header: py-2 plus the h-8 switch row of the colour bar on lg and the
  * Filters row on md both measure 48 px. */
 const REPERTOIRE_HEADER_STICKY_TOP_PX = 48;
 const MINI_BOARD_SIZE = 44;
 const COLUMN_HEADERS = ['Opening', 'Games', 'Results', 'Score', 'Eval after opening'] as const;
-const COLUMN_COUNT = COLUMN_HEADERS.length;
+/** The chevron column has no visible header, so it is counted on top of the named columns. */
+const COLUMN_COUNT = COLUMN_HEADERS.length + 1;
 const NO_VALUE = '—';
 const NOT_PLAYED_RECENTLY = 'not played recently';
 
@@ -49,6 +52,10 @@ interface RepertoireTableProps {
   /** ISO cutoff of the current repertoire for this colour; null when every opening is current. */
   currentCutoff: string | null;
   onOpenSuggestions: () => void;
+  /** Expanded-row links: Moves tab, Games tab (most-played rows) and Games tab (bookmark rows). */
+  onOpenMoves: (pgn: string, color: 'white' | 'black') => void;
+  onOpenGames: (pgn: string, color: 'white' | 'black') => void;
+  onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
 }
 
 function colorLabel(color: 'white' | 'black'): string {
@@ -68,7 +75,17 @@ function lastPlayedText(row: RepertoireRowModel): string {
   return row.lastPlayedAt ? formatRelativeDate(row.lastPlayedAt) : '';
 }
 
-function OpeningCell({ row, testId }: { row: RepertoireRowModel; testId: string }) {
+function OpeningCell({
+  row,
+  testId,
+  expanded,
+  onToggle,
+}: {
+  row: RepertoireRowModel;
+  testId: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const stale = row.kind === 'bookmark' && !row.isCurrent;
   return (
     <td className={`${CELL_BASE} max-md:col-start-1 max-md:row-span-2 max-md:row-start-1 max-md:min-w-0`}>
@@ -76,13 +93,21 @@ function OpeningCell({ row, testId }: { row: RepertoireRowModel; testId: string 
         <LazyMiniBoard fen={row.fen} flipped={row.color === 'black'} size={MINI_BOARD_SIZE} />
         <div className="min-w-0">
           <div className="font-bold" data-testid={`${testId}-name`}>
-            {row.kind === 'bookmark' && (
-              <BookMarked
-                className="mr-1 inline-block h-3.5 w-3.5 align-[-2px] text-brand-brown-light"
-                aria-label="Bookmarked"
-              />
-            )}
-            {row.name}
+            <button
+              type="button"
+              className="text-left font-bold hover:underline"
+              aria-expanded={expanded}
+              onClick={onToggle}
+              data-testid={`${testId}-name-toggle`}
+            >
+              {row.kind === 'bookmark' && (
+                <BookMarked
+                  className="mr-1 inline-block h-3.5 w-3.5 align-[-2px] text-brand-brown-light"
+                  aria-label="Bookmarked"
+                />
+              )}
+              {row.name}
+            </button>
             {stale && (
               <span
                 className="ml-1.5 inline-block rounded-full bg-white/10 px-2 py-px align-[1px] text-sm font-semibold whitespace-nowrap text-muted-foreground"
@@ -170,14 +195,46 @@ function EvalValue({ row, testId, tier2 }: { row: RepertoireRowModel; testId: st
   );
 }
 
+function ChevronCell({
+  testId,
+  expanded,
+  onToggle,
+}: {
+  testId: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <td className={`${CELL_BASE} w-10 max-md:col-start-2 max-md:row-start-3 max-md:self-center`}>
+      <button
+        type="button"
+        className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+        aria-expanded={expanded}
+        aria-label="Show details"
+        onClick={onToggle}
+        data-testid={`${testId}-toggle`}
+      >
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+    </td>
+  );
+}
+
 function RepertoireRow({
   row,
   index,
   tier2,
+  expanded,
+  onToggle,
 }: {
   row: RepertoireRowModel;
   index: number;
   tier2: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   // Indices, never opening names, build the testids: names repeat once ECO codes are dropped.
   const testId = `repertoire-row-${index}`;
@@ -188,12 +245,12 @@ function RepertoireRow({
       style={isFadedRow(row.games) ? { opacity: UNRELIABLE_OPACITY } : undefined}
       data-testid={testId}
     >
-      <OpeningCell row={row} testId={testId} />
+      <OpeningCell row={row} testId={testId} expanded={expanded} onToggle={onToggle} />
       <td className={`${CELL_BASE} text-right tabular-nums max-md:hidden`} data-testid={`${testId}-games`}>
         <div>{row.games.toLocaleString('en-US')}</div>
         <div className="text-sm font-normal text-muted-foreground whitespace-nowrap">{lastPlayed}</div>
       </td>
-      <td className={`${CELL_BASE} max-md:col-span-full max-md:row-start-3`}>
+      <td className={`${CELL_BASE} max-md:col-start-1 max-md:row-start-3 max-md:min-w-0`}>
         <div className="flex items-center gap-2 md:min-w-40">
           <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
           <span className="whitespace-nowrap text-sm text-muted-foreground tabular-nums md:hidden">
@@ -210,6 +267,7 @@ function RepertoireRow({
           <EvalValue row={row} testId={testId} tier2={tier2} />
         </span>
       </td>
+      <ChevronCell testId={testId} expanded={expanded} onToggle={onToggle} />
     </tr>
   );
 }
@@ -321,6 +379,16 @@ function FooterRow({
   );
 }
 
+function ExpandedDetailRow({ children, testId }: { children: ReactNode; testId: string }) {
+  return (
+    <tr className="border-b border-card-edge bg-white/[0.02] max-md:block" data-testid={testId}>
+      <td colSpan={COLUMN_COUNT} className="px-3 py-4 max-md:block max-md:p-3">
+        {children}
+      </td>
+    </tr>
+  );
+}
+
 export function RepertoireTable({
   color,
   bookmarkRows,
@@ -328,15 +396,55 @@ export function RepertoireTable({
   pastRows,
   currentCutoff,
   onOpenSuggestions,
+  onOpenMoves,
+  onOpenGames,
+  onOpenBookmarkGames,
 }: RepertoireTableProps) {
   const { tier2 } = useReadiness();
   const [pastExpanded, setPastExpanded] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(new Set());
   const visiblePast = pastExpanded ? pastRows : [];
   const ordered = [...bookmarkRows, ...currentRows, ...visiblePast];
   const indexOf = new Map(ordered.map((row, i) => [row.key, i]));
-  const renderRow = (row: RepertoireRowModel) => (
-    <RepertoireRow key={row.key} row={row} index={indexOf.get(row.key) ?? 0} tier2={tier2} />
-  );
+
+  const toggleRow = (key: string) => {
+    const opening = !expandedKeys.has(key);
+    // Discovery only: track the expand, never the collapse.
+    if (opening) trackFeature('panel-open', { target: 'opening-row-expand' });
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (opening) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
+  const renderRow = (row: RepertoireRowModel) => {
+    const index = indexOf.get(row.key) ?? 0;
+    const expanded = expandedKeys.has(row.key);
+    return (
+      <Fragment key={row.key}>
+        <RepertoireRow
+          row={row}
+          index={index}
+          tier2={tier2}
+          expanded={expanded}
+          onToggle={() => toggleRow(row.key)}
+        />
+        {expanded && (
+          <ExpandedDetailRow testId={`repertoire-row-${index}-detail`}>
+            <RepertoireExpandedRow
+              row={row}
+              index={index}
+              onOpenMoves={onOpenMoves}
+              onOpenGames={onOpenGames}
+              onOpenBookmarkGames={onOpenBookmarkGames}
+            />
+          </ExpandedDetailRow>
+        )}
+      </Fragment>
+    );
+  };
 
   const handleTogglePast = () => {
     // Discovery only: track the expand, never the collapse.
@@ -361,12 +469,19 @@ export function RepertoireTable({
               <th
                 key={header}
                 scope="col"
-                className={`sticky z-10 border-b border-card-edge bg-charcoal px-3 py-2 text-sm font-semibold whitespace-nowrap text-muted-foreground ${i === 1 ? 'text-right' : 'text-left'} ${i === 0 ? 'rounded-tl-md' : ''} ${i === COLUMN_COUNT - 1 ? 'rounded-tr-md' : ''}`}
+                className={`sticky z-10 border-b border-card-edge bg-charcoal px-3 py-2 text-sm font-semibold whitespace-nowrap text-muted-foreground ${i === 1 ? 'text-right' : 'text-left'} ${i === 0 ? 'rounded-tl-md' : ''}`}
                 style={{ top: REPERTOIRE_HEADER_STICKY_TOP_PX }}
               >
                 {header}
               </th>
             ))}
+            <th
+              scope="col"
+              className="sticky z-10 rounded-tr-md border-b border-card-edge bg-charcoal px-3 py-2"
+              style={{ top: REPERTOIRE_HEADER_STICKY_TOP_PX }}
+            >
+              <span className="sr-only">Details</span>
+            </th>
           </tr>
         </thead>
         <tbody>

@@ -31,6 +31,10 @@ type StatsTabProps = {
   /** Finding card deep links: Moves tab with the pulse highlight, and Games tab. */
   onOpenFinding: (finding: OpeningInsightFinding) => void;
   onOpenFindingGames: (finding: OpeningInsightFinding) => void;
+  /** Expanded-row links: Moves tab, Games tab (most-played rows), Games tab (bookmark rows). */
+  onOpenMoves: (pgn: string, color: Color) => void;
+  onOpenGames: (pgn: string, color: Color) => void;
+  onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
 };
 
 export function StatsTab({
@@ -46,6 +50,9 @@ export function StatsTab({
   debouncedFilters,
   onOpenFinding,
   onOpenFindingGames,
+  onOpenMoves,
+  onOpenGames,
+  onOpenBookmarkGames,
 }: StatsTabProps) {
   const { bookmarkRows, currentRows, pastRows } = useRepertoireRows({
     color,
@@ -150,6 +157,9 @@ export function StatsTab({
           pastRows={pastRows}
           currentCutoff={currentCutoff}
           onOpenSuggestions={onOpenSuggestions}
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+          onOpenBookmarkGames={onOpenBookmarkGames}
         />
       )}
     </div>

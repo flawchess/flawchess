@@ -107,6 +107,9 @@ function renderTable(props: {
       pastRows={props.pastRows ?? []}
       currentCutoff={props.currentCutoff ?? null}
       onOpenSuggestions={vi.fn()}
+      onOpenMoves={vi.fn()}
+      onOpenGames={vi.fn()}
+      onOpenBookmarkGames={vi.fn()}
     />,
   );
 }

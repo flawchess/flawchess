@@ -372,6 +372,7 @@ export const PANEL_TARGETS = [
   'opening-insights-more',
   'opening-findings-unclear',
   'opening-stats-more',
+  'opening-row-expand',
   'tactic-motifs-more',
   'move-stats-expand',
 ] as const;

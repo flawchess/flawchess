@@ -303,6 +303,9 @@ export function OpeningsPage() {
   // All handlers preserve original behavior exactly: chess.loadMoves → flip board
   // → update filters → navigate → scrollTo top.
   const {
+    handleOpenChartBookmarkGames,
+    handleOpenGames,
+    handleOpenMoves,
     handleOpenFinding,
     handleOpenFindingGames,
     handleLoadBookmark,
@@ -492,6 +495,9 @@ export function OpeningsPage() {
       debouncedFilters={debouncedFilters}
       onOpenFinding={handleOpenFinding}
       onOpenFindingGames={handleOpenFindingGames}
+      onOpenMoves={handleOpenMoves}
+      onOpenGames={handleOpenGames}
+      onOpenBookmarkGames={handleOpenChartBookmarkGames}
     />
   );
 

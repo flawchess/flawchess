@@ -5,7 +5,6 @@ import { useReorderPositionBookmarks } from '@/hooks/usePositionBookmarks';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { MatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
-import type { OpeningWDL } from '@/types/stats';
 import type { OpeningInsightFinding } from '@/types/insights';
 import type { OpeningsTab } from '@/types/openingsTab';
 import type { HighlightedMove } from './useDeepLinkHighlight';
@@ -28,7 +27,7 @@ type UseOpeningsHandlersParams = {
 type OpeningsNavHandlers = {
   handleOpenChartBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
   handleOpenGames: (pgn: string, color: 'white' | 'black') => void;
-  handleOpenMoves: (opening: OpeningWDL, color: 'white' | 'black') => void;
+  handleOpenMoves: (pgn: string, color: 'white' | 'black') => void;
   handleOpenFinding: (finding: OpeningInsightFinding) => void;
   handleOpenFindingGames: (finding: OpeningInsightFinding) => void;
   handleLoadBookmark: (bkm: PositionBookmarkResponse) => void;
@@ -75,8 +74,8 @@ export function useOpeningsHandlers(params: UseOpeningsHandlersParams): Openings
     window.scrollTo({ top: 0 });
   }, [chess, navigate, setFilters, setBoardFlipped]);
 
-  const handleOpenMoves = useCallback((opening: OpeningWDL, color: 'white' | 'black') => {
-    chess.loadMoves(pgnToSanArray(opening.pgn));
+  const handleOpenMoves = useCallback((pgn: string, color: 'white' | 'black') => {
+    chess.loadMoves(pgnToSanArray(pgn));
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/explorer');
