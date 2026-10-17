@@ -2219,10 +2219,55 @@ class TestTier4BlobBackfill:
                 f"Tier-4 must have job_id=None (table-less lottery); got {claimed.job_id}"
             )
             assert claimed.is_lichess_eval_game is False, (
-                "is_lichess_eval_game must be False at claim time (resolved in Plan-03 handler)"
+                "An engine-analyzed tier-4 pick must have is_lichess_eval_game=False"
             )
             assert isinstance(claimed.game_id, int), "game_id must be an int"
             assert isinstance(claimed.user_id, int), "user_id must be an int"
+        finally:
+            await _delete_games(queue_session_maker, [game_id])
+
+    async def test_tier4_claim_resolves_lichess_eval_flag(
+        self,
+        tier4_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A tier-4 pick of a lichess-eval game carries is_lichess_eval_game=True.
+
+        SEED-202 item 1: the bundled claim hard-coded False, and the in-process drain
+        trusts the flag, so it overwrote the game's lichess %evals with engine evals
+        and donated them to the opening cache.
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        async def _mock_tier3(session: object) -> None:
+            return None
+
+        monkeypatch.setattr(svc, "_claim_tier3_derived", _mock_tier3)
+
+        user_id = tier4_test_users["user"]
+        now = datetime.now(timezone.utc)
+
+        game_id = await _insert_game(
+            queue_session_maker,
+            user_id,
+            full_evals_completed_at=now,
+            lichess_evals_at=now,
+        )
+        await _insert_game_flaw(queue_session_maker, user_id, game_id, ply=10)
+
+        try:
+            claimed = await svc.claim_eval_job()
+
+            assert claimed is not None, "Expected tier-4 ClaimedJob; got None"
+            assert claimed.game_id == game_id
+            assert claimed.tier == TIER_BLOB_BACKFILL
+            assert claimed.is_lichess_eval_game is True, (
+                "Tier-4 pick of a lichess-eval game must set is_lichess_eval_game=True"
+            )
         finally:
             await _delete_games(queue_session_maker, [game_id])
 

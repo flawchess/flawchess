@@ -778,9 +778,8 @@ async def _claim_tier4_blob(
     Once a game's blobs_completed_at is stamped (all flaw blobs, or sentinels,
     written) the game stops matching the predicate and is never re-selected.
 
-    is_lichess_eval_game is NOT resolved here — it is determined later in the
-    /flaw-blob-lease handler, which has the full game context needed to route the blob
-    write correctly. This function returns only the (game_id, user_id) pair.
+    is_lichess_eval_game is NOT resolved here — claim_eval_job's bundled path resolves
+    it from the picked game row. This function returns only the (game_id, user_id) pair.
 
     Security: :tau_u, :floor_u, :picked_user, :tau_g, :floor_g, and the :tc_* TC
     multipliers are all bound via the sa.text params dict — never f-string-interpolated
@@ -1067,11 +1066,21 @@ async def claim_eval_job(
         )
 
     game_id4, user_id4 = blob_pick
+    # SEED-202 item 1: this used to hard-code is_lichess_eval_game=False ("resolved in
+    # the /flaw-blob-lease handler"), but the in-process drain (_full_drain_tick) also
+    # consumes this claim and trusts the flag. The tier-4 predicate admits lichess-eval
+    # games, so the drain overwrote their %evals with engine evals and donated them to
+    # the opening cache (prod, 2026-10-17). Resolve it from the row like tier-4b does.
+    async with async_session_maker() as session:
+        lichess_at_4 = await session.execute(
+            select(Game.lichess_evals_at).where(Game.id == game_id4)
+        )
+        is_lichess_4 = derive_is_lichess_eval_game(lichess_at_4.scalar_one_or_none())
     return ClaimedJob(
         game_id=game_id4,
         user_id=user_id4,
         tier=TIER_BLOB_BACKFILL,
-        is_lichess_eval_game=False,  # resolved in the /flaw-blob-lease handler
+        is_lichess_eval_game=is_lichess_4,
         job_id=None,  # table-less lottery, no eval_jobs row
     )
 
