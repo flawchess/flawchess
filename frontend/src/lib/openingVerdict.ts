@@ -33,6 +33,12 @@ export const EVAL_VERDICT_BAND = EVAL_NEUTRAL_MAX_PAWNS;
 export const SCORE_VERDICT_BAND = SCORE_BULLET_NEUTRAL_MAX;
 
 const PERCENT_SCALE = 100;
+/**
+ * Decimals kept when comparing a computed delta to the band edge. Far finer than any real
+ * difference (a score moves in steps of 1 / games), coarse enough to absorb IEEE-754 noise.
+ */
+const BAND_COMPARE_DECIMALS = 6;
+const BAND_COMPARE_SCALE = 10 ** BAND_COMPARE_DECIMALS;
 /** An eval that rounds to 0.0 reads without a sign. */
 const EVAL_COMPACT_ZERO_BELOW = 0.05;
 const EVAL_COMPACT_DECIMALS = 1;
@@ -56,7 +62,11 @@ export interface OpeningVerdictInput {
 /** Precedence: too few games, then inside the band, then not confident, then the sign. */
 export function openingVerdictReason(input: OpeningVerdictInput): OpeningVerdictReason {
   if (input.games < REPERTOIRE_MIN_GAMES_FOR_VERDICT) return 'too-few';
-  if (Math.abs(input.delta) <= input.band) return 'typical';
+  // Round before the band test: score - 0.5 is -0.04999999999999999 at 45% but
+  // 0.050000000000000044 at 55%, so the raw compare coloured one band edge and not the
+  // other (WR-03). Rounding makes both edges land exactly on the band, i.e. typical.
+  const delta = Math.round(input.delta * BAND_COMPARE_SCALE) / BAND_COMPARE_SCALE;
+  if (Math.abs(delta) <= input.band) return 'typical';
   if (input.confidence !== 'high') return 'chance';
   return input.delta > 0 ? 'better' : 'worse';
 }

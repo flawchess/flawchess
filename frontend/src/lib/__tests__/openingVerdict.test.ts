@@ -35,6 +35,15 @@ describe('openingVerdictReason', () => {
     expect(openingVerdictReason(input({ delta: -BAND }))).toBe('typical');
   });
 
+  it('treats computed score deltas at 45% and 55% identically (float noise, WR-03)', () => {
+    const scoreInput = (score: number): OpeningVerdictInput =>
+      input({ delta: scoreDelta(score), band: SCORE_VERDICT_BAND });
+    expect(openingVerdictReason(scoreInput(0.45))).toBe('typical');
+    expect(openingVerdictReason(scoreInput(0.55))).toBe('typical');
+    expect(openingVerdictReason(scoreInput(0.44))).toBe('worse');
+    expect(openingVerdictReason(scoreInput(0.56))).toBe('better');
+  });
+
   it('is chance when outside the band but confidence is not high', () => {
     expect(openingVerdictReason(input({ confidence: 'medium' }))).toBe('chance');
     expect(openingVerdictReason(input({ confidence: 'low', delta: -0.6 }))).toBe('chance');
