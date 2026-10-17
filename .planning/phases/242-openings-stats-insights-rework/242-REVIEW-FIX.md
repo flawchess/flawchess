@@ -24,21 +24,21 @@ Verification ran in the main checkout on branch `gsd/phase-242-openings-stats-in
 
 ## Fixed Issues
 
-### WR-01: Bookmark-twin drop runs after the deeper-line dedupe
+### WR-01: Bookmark-twin drop runs after the deeper-line dedupe, so a deeper twin of a shallower bookmark survives
 
 **Files modified:** `app/services/stats_service.py`, `tests/test_stats_service.py`
 **Commit:** 6307dc980
 **Applied fix:** `_prepare_candidates` now drops bookmark twins before `_dedupe_identical_sets`. `_drop_bookmark_twins` also drops any candidate whose game-set fingerprint equals that of a bookmarked-hash candidate, so a deeper row with the same games as a shallow bookmark no longer survives. Added a unit test for the fingerprint rule and a `_prepare_candidates` pipeline test (shallow bookmark, deeper twin, unrelated row). An existing twin test used two candidates with accidentally identical fingerprints, so its "other" row now has a distinct `game_id_sum`. Gates: `uv run pytest tests/test_stats_service.py` (34 passed), `ruff check`, `ty check app/ tests/test_stats_service.py`.
 **Status note:** logic fix, requires human verification. The fix only collapses when the bookmarked position is itself a most-played candidate (it needs a fingerprint to compare against).
 
-### WR-02: Eval verdict applies the 20-game floor to game count, not eval sample size
+### WR-02: Eval verdict applies the 20-game floor to `games`, not to the eval sample size
 
 **Files modified:** `frontend/src/components/openings/stats/RepertoireTable.tsx`, `frontend/src/components/openings/stats/FindingCard.tsx`, `frontend/src/components/openings/stats/RepertoireExpandedRow.tsx`, `frontend/src/components/charts/PositionResultsPanel.tsx`, `frontend/src/components/charts/__tests__/PositionResultsPanel.test.tsx`, `frontend/src/components/openings/__tests__/RepertoireTable.test.tsx`
 **Commit:** 8f3f4ca1b
 **Applied fix:** The eval `OpeningVerdictInput.games` is now the eval sample (`row.evalN` in `EvalValue` and `EvalBar`, `evalN` in `EvalLine`, `stats.eval_n` in `OpeningEvalVerdictRow`). Score inputs, row fading and popover game counts still use the game count. Two existing low-sample tests set a small game count but left `evalN` at 90 (or `eval_n` at 38), so they now set the eval sample too. Added regression tests for 100 games with 11 evals (the eval dot stays neutral; in the table the score dot still colours). Gates: vitest on `src/components`, `src/pages`, `src/lib` (all passed), `npm run lint`, `npm run build`.
 **Status note:** logic fix, requires human verification.
 
-### WR-03: Float arithmetic makes a 45% finding render as "typical"
+### WR-03: A finding classified as a weakness at exactly 45% score renders as "typical" because of float arithmetic
 
 **Files modified:** `frontend/src/lib/openingVerdict.ts`, `frontend/src/lib/__tests__/openingVerdict.test.ts`
 **Commit:** ad76675c0
