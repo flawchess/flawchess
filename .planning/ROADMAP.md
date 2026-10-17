@@ -134,6 +134,43 @@
 
 No open milestone. Standalone phases continue absolute numbering from v2.27's Phase 241.
 
+### Phase 242: Openings Stats + Insights Rework (SEED-204)
+
+**Goal**: Rework the Openings Stats and Insights tabs the way Phases 238/239 reworked the Endgame and Library
+Stats pages: simpler, more readable, no loss of information. Design settled in sketch 012
+(`.planning/sketches/012-opening-stats-repertoire/`, README "Round 2" + MANIFEST "012 →"). The 238/239 system
+decisions apply unchanged (one verdict bar per metric, grey typical band, red/blue/green dot, uncoloured values,
+Search-icon popover with greyed stats footer, red/green only at 99% (D-14), symmetric bands (D-15),
+significance-only verdict without a band (D-16), "show less rather than noise" (D-17)). Locked design in SEED-204.
+
+- **Insights merge into Stats:** the Insights subtab (desktop + `OpeningsMobileBoardPanel`) and its route go;
+  `/openings/insights` and deep links redirect to Stats. "Moves that cost you" / "Moves that work" sit above the
+  repertoire table per colour, under one sticky White | Black switch (table header sticks under it).
+- **Findings:** 99% gate (confidence "high"), top 5 per section, rest in a faded "Not clear yet (n)" list,
+  empty-state copy. Cards lead with the move, opening name (no ECO) + line, board with arrow, "You score X%" +
+  WDL bar, Eval after opening bar, one eval-only "why" line.
+- **Repertoire table** replaces the 4 bookmark / most-played sections: bookmarks pinned, then most played, per
+  colour. Columns Opening · Games · Results · Score · Eval after opening (compact values + verdict dot + popover);
+  rows under 20 games faded, never coloured. Expanded row: 200px board, links, Score bar (45–55% band), Eval bar,
+  per-opening Score over Time (`ScoreChart` reuse + optional grey weekly volume bars). Multi-line bookmark chart
+  dropped. Phone rows stack.
+- **Backend wave first:** eval z-test and bar centred on the colour baseline (+0.25 / −0.25) for Openings
+  (stats, bookmarks, insights, Moves tab) only; Endgames entry eval unchanged. Dedupe most-played rows (identical
+  game sets, bookmark wins). Current/past cutoff = user's 200th most recent game per colour ("Played before (n)"
+  group, "not played recently" / "older games" chips). Weekly game counts per time series.
+- **Dropped:** "After the opening" metric (refit moved to SEED-203), ECO codes and "pawns" unit on the page,
+  Trend column, CI whiskers, coloured fonts.
+- **Open for discuss:** validate the 200-game cutoff on prod distribution; most-played fetch count
+  (`TOP_OPENINGS_LIMIT`); phone finding-card count; "Not clear yet" cap; score band check (keep ±5%).
+
+**Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+**Status**: Not planned yet
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 242 or /gsd-plan-phase 242)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

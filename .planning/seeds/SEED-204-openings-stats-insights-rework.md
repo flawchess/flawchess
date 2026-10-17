@@ -1,6 +1,8 @@
 ---
 id: SEED-204
-status: dormant
+status: promoted
+promoted_to: Phase 242
+promoted: 2026-10-17
 planted: 2026-10-17
 planted_during: sketch 012 (opening-stats-repertoire), after the 238/239 Endgame and Library Stats reworks
 trigger_when: owner opens the next Openings milestone or asks to implement sketch 012
