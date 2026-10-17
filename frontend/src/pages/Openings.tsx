@@ -61,6 +61,7 @@ import { ChessboardInfoCopy } from './openings/ChessboardInfoCopy';
 import { OpeningsMobileBoardPanel } from './openings/OpeningsMobileBoardPanel';
 import { ExplorerTab } from './openings/ExplorerTab';
 import { GamesTab } from './openings/GamesTab';
+import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { StatsTab } from './openings/StatsTab';
 import { InsightsTab } from './openings/InsightsTab';
 
@@ -117,6 +118,12 @@ export function OpeningsPage() {
   // Edits always go to localFilters; Apply commits localFilters → filters (store).
   const [filters, setFilters] = useFilterStore();
   const debouncedFilters = useDebounce(filters, 300);
+
+  // ── Stats tab colour (the sticky White | Black switch, D-00) ─────────────────
+  // Starts from the Played-as filter so a user browsing Black lands on Black. Never
+  // persisted and never written back to the filter store (onTogglePlayedAs navigates
+  // away from Stats anyway).
+  const [statsColor, setStatsColor] = useState<Color>(filters.color);
 
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
@@ -515,6 +522,8 @@ export function OpeningsPage() {
 
   const statsTabEl = (
     <StatsTab
+      color={statsColor}
+      onColorChange={setStatsColor}
       bookmarks={bookmarks}
       chartBookmarks={chartBookmarks}
       wdlStatsMap={wdlStatsMap}
@@ -772,7 +781,15 @@ export function OpeningsPage() {
               like the Library page. On Moves/Games the filter button lives in the
               board settings column instead, so it is not rendered here. */}
           {(activeTab === 'stats' || activeTab === 'insights') && (
-            <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+            <div className="sticky top-0 z-20 flex items-center justify-between gap-2 py-2 bg-background/80 backdrop-blur-sm">
+              {/* Stats only: the colour switch shares this row so there is one sticky row,
+                  not two overlapping top-0 ones. Insights has no colour switch (spacer keeps
+                  the Filters button on the right). */}
+              {activeTab === 'stats' ? (
+                <OpeningColorSwitch idPrefix="mobile" selected={statsColor} onSelect={setStatsColor} />
+              ) : (
+                <span aria-hidden="true" />
+              )}
               <Button
                 variant="brand-outline"
                 className="relative"

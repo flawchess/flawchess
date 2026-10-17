@@ -443,6 +443,7 @@ export const OPTION_TARGETS = [
   'train-reminder-hour',
   'endgame-stats-tc',
   'library-stats-tc',
+  'opening-stats-color',
 ] as const;
 
 /** FilterPanel's Rated ToggleGroup item values. */
@@ -482,7 +483,10 @@ export type OptionChangeProps =
   | { target: 'endgame-stats-tc'; value: TimeControlBucket }
   // The one time-control switch on the Library Stats tab (tracked only on
   // a user click, never on restore or default).
-  | { target: 'library-stats-tc'; value: TimeControlBucket };
+  | { target: 'library-stats-tc'; value: TimeControlBucket }
+  // The Openings Stats White | Black switch (tracked only on a user click, never on
+  // mount or restore).
+  | { target: 'opening-stats-color'; value: 'white' | 'black' };
 
 /** Every action target keeps the bare shape except the reminder opt-in funnel, which carries source and outcome. */
 export type ActionProps =

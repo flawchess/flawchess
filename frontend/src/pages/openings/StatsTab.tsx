@@ -8,7 +8,9 @@ import {
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_BASELINE_PAWNS_BLACK,
 } from '@/lib/openingStatsZones';
+import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { sanArrayToPgn } from '@/lib/pgn';
+import type { Color } from '@/types/api';
 import type { OpeningWDL, MostPlayedOpeningsResponse, BookmarkPhaseEntryItem } from '@/types/stats';
 import type {
   PositionBookmarkResponse,
@@ -24,6 +26,9 @@ export type WdlStatsRow = {
 };
 
 type StatsTabProps = {
+  /** The colour whose sections are shown (the sticky White | Black switch, D-00). */
+  color: Color;
+  onColorChange: (color: Color) => void;
   bookmarks: PositionBookmarkResponse[];
   chartBookmarks: PositionBookmarkResponse[];
   wdlStatsMap: Record<number, WdlStatsRow>;
@@ -39,6 +44,8 @@ type StatsTabProps = {
 };
 
 export function StatsTab({
+  color,
+  onColorChange,
   bookmarks,
   chartBookmarks,
   wdlStatsMap,
@@ -191,8 +198,22 @@ export function StatsTab({
         }
       : null;
 
+  const showWhite = color === 'white';
+  const colorBookmarks = chartBookmarks.filter((b) => b.color === color);
+
   return (
     <div className="flex flex-col gap-6">
+      {/* Desktop sticky colour bar. Phones render the same switch inside the sticky Filters
+          row in Openings.tsx (one sticky row, not two). No ancestor may set overflow-*
+          or the bar stops sticking. */}
+      <div
+        className="hidden lg:flex sticky top-0 z-20 items-center justify-between gap-3 py-2 bg-background/80 backdrop-blur-sm"
+        data-testid="opening-stats-color-bar"
+      >
+        <span className="text-sm font-medium text-muted-foreground">Playing as</span>
+        <OpeningColorSwitch idPrefix="desktop" selected={color} onSelect={onColorChange} />
+      </div>
+
       {/* Empty-state hint when there are no bookmarks at all */}
       {bookmarks.length === 0 && (
         <div className="charcoal-texture rounded-md p-4">
@@ -221,25 +242,23 @@ export function StatsTab({
         </div>
       )}
 
-      {/* 1. White Opening Bookmarks (full width) */}
-      {whiteBookmarkRows.length > 0 && (
+      {/* 1. Opening Bookmarks of the selected colour (full width) */}
+      {showWhite && whiteBookmarkRows.length > 0 && (
         <OpeningStatsSection section={whiteBookmarksSection} />
       )}
-
-      {/* 2. Black Opening Bookmarks (full width) */}
-      {blackBookmarkRows.length > 0 && (
+      {!showWhite && blackBookmarkRows.length > 0 && (
         <OpeningStatsSection section={blackBookmarksSection} />
       )}
 
-      {/* 3. Score over Time — only when bookmarks exist with time series data */}
-      {bookmarks.length > 0 && tsData && (
+      {/* 2. Score over Time (selected colour's bookmarks) — only when bookmarks exist with time series data */}
+      {colorBookmarks.length > 0 && tsData && (
         <div className="charcoal-texture rounded-md overflow-hidden">
-          <ScoreChart bookmarks={chartBookmarks} series={tsData.series} />
+          <ScoreChart bookmarks={colorBookmarks} series={tsData.series} />
         </div>
       )}
 
       {/* Loading state when bookmarks exist but tsData is not ready */}
-      {bookmarks.length > 0 && chartBookmarks.length > 0 && !tsData && (
+      {colorBookmarks.length > 0 && !tsData && (
         <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
           Loading chart data...
         </div>
@@ -262,11 +281,9 @@ export function StatsTab({
         </div>
       )}
 
-      {/* 4. Most Played Openings as White (full width) */}
-      {whiteMpoSection && <OpeningStatsSection section={whiteMpoSection} />}
-
-      {/* 5. Most Played Openings as Black (full width) */}
-      {blackMpoSection && <OpeningStatsSection section={blackMpoSection} />}
+      {/* 3. Most Played Openings of the selected colour (full width) */}
+      {showWhite && whiteMpoSection && <OpeningStatsSection section={whiteMpoSection} />}
+      {!showWhite && blackMpoSection && <OpeningStatsSection section={blackMpoSection} />}
     </div>
   );
 }
