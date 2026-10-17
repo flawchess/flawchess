@@ -13,7 +13,13 @@ export function useCreatePositionBookmark() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: PositionBookmarkCreate) => positionBookmarksApi.create(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['position-bookmarks'] }),
+    // The most-played list drops rows that duplicate a bookmark (server-side twin drop,
+    // D-06), so a new bookmark changes it too.
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['position-bookmarks'] }),
+        qc.invalidateQueries({ queryKey: ['mostPlayedOpenings'] }),
+      ]),
   });
 }
 
@@ -43,7 +49,12 @@ export function useDeletePositionBookmark() {
     onError: (_: Error, __: number, ctx: DeleteContext | undefined) => {
       qc.setQueryData(['position-bookmarks'], ctx?.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['position-bookmarks'] }),
+    // A deleted bookmark's opening returns to the most-played list (twin drop, D-06).
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['position-bookmarks'] }),
+        qc.invalidateQueries({ queryKey: ['mostPlayedOpenings'] }),
+      ]),
   });
 }
 

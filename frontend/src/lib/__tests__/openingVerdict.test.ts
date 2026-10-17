@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   EVAL_VERDICT_BAND,
   REPERTOIRE_MIN_GAMES_FOR_VERDICT,
+  SCORE_VERDICT_BAND,
   evalBaselinePawns,
+  formatEvalCompact,
+  formatScorePercent,
+  isFadedRow,
   openingVerdict,
   openingVerdictReason,
+  scoreDelta,
+  stripEcoSuffix,
   verdictBandRange,
   verdictPosition,
   type OpeningVerdictInput,
@@ -93,5 +99,45 @@ describe('verdictBandRange', () => {
     expect(leftPct).toBeCloseTo(25, 6);
     expect(widthPct).toBeCloseTo(50, 6);
     expect(leftPct + widthPct / 2).toBeCloseTo(50, 6);
+  });
+});
+
+describe('score and table helpers', () => {
+  it('SCORE_VERDICT_BAND is the shared +/-5 point band (45% to 55%)', () => {
+    expect(SCORE_VERDICT_BAND).toBe(0.05);
+  });
+
+  it('scoreDelta is the score minus 50%', () => {
+    expect(scoreDelta(0.56)).toBeCloseTo(0.06, 10);
+    expect(scoreDelta(0.5)).toBe(0);
+    expect(scoreDelta(0.4)).toBeCloseTo(-0.1, 10);
+  });
+
+  it('formatScorePercent rounds to a whole percent', () => {
+    expect(formatScorePercent(0.56)).toBe('56%');
+    expect(formatScorePercent(0.5549)).toBe('55%');
+    expect(formatScorePercent(0.555)).toBe('56%');
+    expect(formatScorePercent(0)).toBe('0%');
+  });
+
+  it('formatEvalCompact signs, rounds to one decimal and zeroes below 0.05', () => {
+    expect(formatEvalCompact(0.91)).toBe('+0.9');
+    expect(formatEvalCompact(-0.44)).toBe('\u22120.4');
+    expect(formatEvalCompact(0.049)).toBe('0.0');
+    expect(formatEvalCompact(-0.049)).toBe('0.0');
+    expect(formatEvalCompact(0.05)).toBe('+0.1');
+    expect(formatEvalCompact(-1.26)).toBe('\u22121.3');
+  });
+
+  it('stripEcoSuffix drops only a trailing " (B12)" code', () => {
+    expect(stripEcoSuffix('Caro-Kann Defense (B12)')).toBe('Caro-Kann Defense');
+    expect(stripEcoSuffix('Caro-Kann Defense')).toBe('Caro-Kann Defense');
+    expect(stripEcoSuffix("King's Pawn (Opening) Game")).toBe("King's Pawn (Opening) Game");
+    expect(stripEcoSuffix('Queen\'s Gambit (D06) Accepted')).toBe("Queen's Gambit (D06) Accepted");
+  });
+
+  it('isFadedRow is true strictly below the verdict floor', () => {
+    expect(isFadedRow(REPERTOIRE_MIN_GAMES_FOR_VERDICT - 1)).toBe(true);
+    expect(isFadedRow(REPERTOIRE_MIN_GAMES_FOR_VERDICT)).toBe(false);
   });
 });

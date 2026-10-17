@@ -136,7 +136,11 @@ export function VerdictCompact({ verdict, valueText, testId, trailing }: Verdict
   const color = gapVerdictColor(verdict);
   const coloured = verdict === 'better' || verdict === 'worse';
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" data-testid={testId}>
+    <span
+      className="inline-flex items-center gap-1.5 whitespace-nowrap"
+      data-testid={testId}
+      data-verdict={verdict}
+    >
       <span
         className="size-2.5 shrink-0 rounded-full"
         style={{ backgroundColor: color }}
