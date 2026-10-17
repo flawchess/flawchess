@@ -1,6 +1,6 @@
 ---
 id: SEED-202
-status: code-fixed; data repair for items 1-2 pending owner decision
+status: code-fixed; item 1 data repaired on prod; item 2 data repair pending owner decision
 planted: 2026-10-17
 planted_during: owner review of the Phase 241 audit's suspected bugs (INVENTORY §7.2), after the v2.25–v2.27 close
 trigger_when: next session; start with item 1 (tier-4 lichess flag). Owner is not yet sure how big a deal items 1 and 2 are, so measure impact before sizing the fix
@@ -11,7 +11,8 @@ scope: small; a series of /gsd-quick tasks (items 3-8 fit one batch, e.g. /gsd-q
 
 ## Resolution (2026-10-17)
 
-All eight code fixes landed on `main` (three commits after de3a44df7). Open: the data repairs for items 1 and 2.
+All eight code fixes landed on `main` (three commits after de3a44df7) and shipped in PR #427 (production 5672b194c).
+Item 1's data repair ran on prod on 2026-10-17. Open: the data repair for item 2.
 
 - **Item 1, measured on prod.** Prod runs the drain (`../../../docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
   Footprint check: compare `game_positions.eval_cp` at ply n-1 with the n-th `[%eval]` in the PGN (lichess
@@ -21,9 +22,17 @@ All eight code fixes landed on `main` (three commits after de3a44df7). Open: the
   (the separate known convention issue), 4,769 ok. The damaged games still carry `lichess_evals_at`, so the app
   treats them as lichess-eval games while their evals and flaws come from our engine. Opening-cache donations
   from them are real engine evals of real positions, so they are probably harmless (not checked further).
-  Repair candidate: rewrite eval_cp/eval_mate from the PGN %evals for games under the threshold, then
-  reclassify. 2,458 non-guest lichess-eval games are still tier-4-pending; with the fix they now take the
+  2,458 non-guest lichess-eval games were still tier-4-pending; with the fix they now take the
   preserve-evals path.
+- **Item 1 data repair: DONE (2026-10-17).** We chose a provenance fix over restoring the lichess evals: the
+  stored evals are real engine evals, consistent with the stored best moves, PVs and flaws, so
+  `scripts/fix_lichess_eval_provenance.py` NULLs `lichess_evals_at` on the overwritten games, which then count
+  as analyzed by us. The lichess evals remain in the PGN. The prod scan (11:54 UTC, after the tier-4 fix was
+  deployed) flagged 3,586 games across 229 users (the shifted-one-ply control is excluded). The owner ran
+  `apply --db prod --execute`. Spot check: 40 of 40 sampled ids now have `lichess_evals_at IS NULL`. The scan
+  file, which `restore` needs, is `temp/lichess-provenance-fix/flagged-games.json` (gitignored, local only).
+  We rejected switching lichess games to our own evals: it would mean recomputing about 109k analyzed games,
+  because our per-ply evals are not stored for them.
 - **Item 2.** Normalization now writes `*_imported`. Existing 15,289 rows still need the repair described below
   (owner sign-off: it changes what Library shows for unanalyzed games).
 - **Item 7.** Removing the dead branch also makes a start-position bookmark (empty `moves`) load the start position
