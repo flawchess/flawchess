@@ -370,8 +370,23 @@ def _dedupe_identical_sets(candidates: list[_MostPlayedCandidate]) -> list[_Most
 def _drop_bookmark_twins(
     candidates: list[_MostPlayedCandidate], bookmark_hashes: set[int]
 ) -> list[_MostPlayedCandidate]:
-    """Drop rows whose position equals a same-colour bookmark's position (bookmark wins, D-06)."""
-    return [c for c in candidates if c.full_hash not in bookmark_hashes]
+    """Drop rows that duplicate a same-colour bookmark (bookmark wins, D-06).
+
+    A row is a twin when its position equals a bookmark's position, or when it has the
+    identical game set as such a row (a deeper line the bookmark's own position nests
+    into). The second rule is what keeps a bookmark on a shallow position A from being
+    shown next to a deeper "Most played" row B with the same games.
+    """
+    twin_prints = {
+        fp
+        for c in candidates
+        if c.full_hash in bookmark_hashes and (fp := _game_set_fingerprint(c)) is not None
+    }
+    return [
+        c
+        for c in candidates
+        if c.full_hash not in bookmark_hashes and _game_set_fingerprint(c) not in twin_prints
+    ]
 
 
 def _prepare_candidates(
@@ -380,10 +395,17 @@ def _prepare_candidates(
     cutoff: datetime.datetime | None,
     bookmark_hashes: set[int],
 ) -> list[_MostPlayedCandidate]:
-    """Pure pipeline head: build -> dedupe identical sets -> drop bookmark twins."""
+    """Pure pipeline head: build -> drop bookmark twins -> dedupe identical sets.
+
+    Twins are dropped BEFORE the identical-set dedupe. The dedupe keeps the deeper
+    line and removes the shallower one, so with the order reversed a bookmark on the
+    shallow position A had its candidate removed first, the twin drop then found no
+    hash match for the surviving deeper row B, and A (pinned) and B (most played)
+    were both shown with identical games (WR-01).
+    """
     candidates = _build_candidates(rows, position_wdl, cutoff)
-    candidates = _dedupe_identical_sets(candidates)
-    return _drop_bookmark_twins(candidates, bookmark_hashes)
+    candidates = _drop_bookmark_twins(candidates, bookmark_hashes)
+    return _dedupe_identical_sets(candidates)
 
 
 def _split_and_cap(candidates: list[_MostPlayedCandidate]) -> list[_MostPlayedCandidate]:

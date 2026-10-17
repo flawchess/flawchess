@@ -19,6 +19,7 @@ import io
 import json
 import uuid
 from collections import namedtuple
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -33,7 +34,7 @@ import app.services.stats_service as stats_service
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.models.position_bookmark import PositionBookmark
-from app.repositories.stats_repository import _openings_dedup
+from app.repositories.stats_repository import PositionWDL, _openings_dedup
 from app.services.stats_service import (
     MOST_PLAYED_CURRENT_LIMIT,
     MOST_PLAYED_PAST_LIMIT,
@@ -42,6 +43,7 @@ from app.services.stats_service import (
     _drop_bookmark_twins,
     _MostPlayedCandidate,
     _needs_recent_fallback,
+    _prepare_candidates,
     _recent_from_date,
     _rows_to_wdl_categories,
     _split_and_cap,
@@ -552,12 +554,54 @@ class TestDedupeIdenticalSets:
         assert _dedupe_identical_sets([keep_first, loser, winner]) == [keep_first, winner]
 
 
+def _row(name: str, *, full_hash: int, ply_count: int) -> Any:
+    """Minimal top-openings row (attribute access only, like the real query row)."""
+    return SimpleNamespace(
+        eco="B00",
+        name=name,
+        display_name=name,
+        pgn="1. e4",
+        fen="fen",
+        full_hash=full_hash,
+        ply_count=ply_count,
+        total=1,
+        wins=1,
+        draws=0,
+        losses=0,
+    )
+
+
 class TestBookmarkTwins:
     def test_bookmark_twin_rows_are_dropped(self) -> None:
         twin = _cand("Twin", full_hash=7)
-        other = _cand("Other", full_hash=8)
+        other = _cand("Other", full_hash=8, game_id_sum=101)
 
         assert _drop_bookmark_twins([twin, other], {7}) == [other]
+
+    def test_deeper_row_with_identical_game_set_is_dropped(self) -> None:
+        """WR-01: bookmark on shallow A; deeper B has the same games, so B is a twin too."""
+        bookmarked_shallow = _cand("A", full_hash=7, ply_count=3, game_id_sum=100)
+        deeper_twin = _cand("B", full_hash=8, ply_count=5, game_id_sum=100)
+        unrelated = _cand("C", full_hash=9, ply_count=5, game_id_sum=101)
+
+        result = _drop_bookmark_twins([bookmarked_shallow, deeper_twin, unrelated], {7})
+
+        assert result == [unrelated]
+
+    def test_prepare_candidates_drops_deeper_twin_of_shallow_bookmark(self) -> None:
+        """WR-01 through the real pipeline: twins go before the deeper-line dedupe."""
+        shallow_pos = PositionWDL(10, 10, 0, 0, _NOW, 100)
+        deeper_pos = PositionWDL(10, 10, 0, 0, _NOW, 100)
+        other_pos = PositionWDL(5, 5, 0, 0, _NOW, 55)
+        rows = [
+            _row("Shallow", full_hash=7, ply_count=3),
+            _row("Deeper", full_hash=8, ply_count=5),
+            _row("Other", full_hash=9, ply_count=5),
+        ]
+
+        result = _prepare_candidates(rows, {7: shallow_pos, 8: deeper_pos, 9: other_pos}, None, {7})
+
+        assert [c.name for c in result] == ["Other"]
 
     def test_bookmark_twin_drop_with_no_bookmarks_keeps_everything(self) -> None:
         rows = [_cand("A", full_hash=1), _cand("B", full_hash=2)]
