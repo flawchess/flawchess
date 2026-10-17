@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 241
 current_phase_name: Openings Stats + Insights Rework (SEED-204)
-status: completed
+status: executing
 stopped_at: Phase 242 context gathered
-last_updated: "2026-10-17T16:15:03.189Z"
-state_head: 7f79e8e974389af1b8b3e68e73d3598dd4b90146
+last_updated: "2026-10-17T16:20:18.812Z"
+state_head: 70f536a1ad1015c69860350c23575ee6322c9c8b
 progress:
   total_phases: 1
   completed_phases: 103
@@ -21,10 +21,10 @@ last_activity_desc: Closed milestones v2.25 (238–239), v2.26 (240) and v2.27 (
 
 ## Current Position
 
-Phase: 242 (Openings Stats + Insights Rework (SEED-204)) — READY TO EXECUTE
-Plan: Not started
+Phase: 242 (Openings Stats + Insights Rework (SEED-204)) — EXECUTING
+Plan: 1 of 9
 
-Status: No open milestone; v2.25–v2.27 closed 2026-10-17 (v2.27 on `main`, not yet deployed)
+Status: Executing Phase 242
 
 Open threads carried forward (not blockers):
 
