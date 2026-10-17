@@ -24,8 +24,6 @@ export type OpeningsMobileDrawersProps = {
   localBookmarks: PositionBookmarkResponse[];
   onReorderBookmarks: (orderedIds: number[]) => void;
   onLoadBookmark: (bkm: PositionBookmarkResponse) => void;
-  localChartEnabled: Record<number, boolean>;
-  onLocalChartEnabledChange: (id: number, enabled: boolean) => void;
   onLocalMatchSideChange: (id: number, matchSide: MatchSide) => void;
   onOpenSuggestions: () => void;
   onOpenBookmarkDialog: () => void;
@@ -48,8 +46,6 @@ export function OpeningsMobileDrawers({
   localBookmarks,
   onReorderBookmarks,
   onLoadBookmark,
-  localChartEnabled,
-  onLocalChartEnabledChange,
   onLocalMatchSideChange,
   onOpenSuggestions,
   onOpenBookmarkDialog,
@@ -98,9 +94,6 @@ export function OpeningsMobileDrawers({
               <p>
                 Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
               </p>
-              <p>
-                Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
-              </p>
             </div>
           </InfoPopover>
         }
@@ -137,8 +130,6 @@ export function OpeningsMobileDrawers({
           bookmarks={localBookmarks}
           onReorder={onReorderBookmarks}
           onLoad={onLoadBookmark}
-          chartEnabledMap={localChartEnabled}
-          onChartEnabledChange={onLocalChartEnabledChange}
           onMatchSideChange={onLocalMatchSideChange}
         />
       </MobileFilterDrawer>

@@ -28,8 +28,6 @@ export type OpeningsDesktopSidebarProps = {
   bookmarks: PositionBookmarkResponse[];
   onReorderBookmarks: (orderedIds: number[]) => void;
   onLoadBookmark: (bkm: PositionBookmarkResponse) => void;
-  chartEnabledMap: Record<number, boolean>;
-  onChartEnabledChange: (id: number, enabled: boolean) => void;
   onOpenSuggestions: () => void;
   onOpenBookmarkDialog: () => void;
   showBookmarksHint: boolean;
@@ -61,8 +59,6 @@ export function OpeningsDesktopSidebar({
   bookmarks,
   onReorderBookmarks,
   onLoadBookmark,
-  chartEnabledMap,
-  onChartEnabledChange,
   onOpenSuggestions,
   onOpenBookmarkDialog,
   showBookmarksHint,
@@ -128,8 +124,6 @@ export function OpeningsDesktopSidebar({
         bookmarks={bookmarks}
         onReorder={onReorderBookmarks}
         onLoad={onLoadBookmark}
-        chartEnabledMap={chartEnabledMap}
-        onChartEnabledChange={onChartEnabledChange}
       />
     </div>
   );
@@ -189,9 +183,6 @@ export function OpeningsDesktopSidebar({
                 </p>
                 <p>
                   Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                </p>
-                <p>
-                  Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
                 </p>
               </div>
             </InfoPopover>
