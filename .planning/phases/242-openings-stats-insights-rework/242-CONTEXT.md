@@ -117,6 +117,10 @@ discuss-phase" and record defaults for the rest.
 - **D-21:** No move sequences on repertoire cards or finding cards; the board shows the position.
 - **D-22:** Score-over-time chart: no rotated "Score" y-axis label and no caption line under it.
 - **D-23:** lucide `BookMarked` is replaced by `Bookmark` everywhere.
+- **D-24:** Stats tab section order is **Bookmarks, Most Played, Moves that Cost You, Moves that Work**
+  (findings move below the repertoire; amends D-00's "findings above"). Every section heading is an h2 in
+  Fredoka (`font-brand`); the "Opening insights" umbrella heading is dropped and its explanation sits under
+  "Moves that Cost You".
 
 </decisions>
 

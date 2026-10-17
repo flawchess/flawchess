@@ -1,4 +1,4 @@
-import { Bookmark, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
@@ -81,12 +81,7 @@ export function StatsTab({
       {/* Empty-state hint when there are no bookmarks at all */}
       {bookmarks.length === 0 && (
         <div className="charcoal-texture rounded-md p-4">
-          <h2 className="text-lg font-medium mb-3">
-            <span className="inline-flex items-center gap-1">
-              <Bookmark className="h-5 w-5" />
-              Bookmarked Openings
-            </span>
-          </h2>
+          <h2 className="font-brand text-lg font-semibold text-foreground mb-3">Bookmarks</h2>
           <p
             className="text-sm italic text-muted-foreground mb-3"
             data-testid="bookmarks-tip"
@@ -123,14 +118,6 @@ export function StatsTab({
         </div>
       )}
 
-      {/* Findings of the selected colour (99%-gated cards, Not clear yet) above the repertoire */}
-      <OpeningFindings
-        color={color}
-        debouncedFilters={debouncedFilters}
-        onOpenMoves={onOpenFinding}
-        onOpenGames={onOpenFindingGames}
-      />
-
       {/* Repertoire cards of the selected colour: bookmarks, most played, played before */}
       {showRepertoire && (
         <RepertoireList
@@ -146,6 +133,14 @@ export function StatsTab({
           onOpenBookmarkGames={onOpenBookmarkGames}
         />
       )}
+
+      {/* Findings of the selected colour (99%-gated cards, Not clear yet) below the repertoire */}
+      <OpeningFindings
+        color={color}
+        debouncedFilters={debouncedFilters}
+        onOpenMoves={onOpenFinding}
+        onOpenGames={onOpenFindingGames}
+      />
     </div>
   );
 }
