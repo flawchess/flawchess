@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark, useUpdateMatchSide } from '@/hooks/usePositionBookmarks';
-import { onOff, trackFeature } from '@/lib/analytics';
+import { trackFeature } from '@/lib/analytics';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { MatchSide } from '@/types/api';
 import { BookmarkMiniBoard } from './BookmarkMiniBoard';
@@ -14,13 +14,11 @@ import { BookmarkMiniBoard } from './BookmarkMiniBoard';
 interface Props {
   bookmark: PositionBookmarkResponse;
   onLoad: (bookmark: PositionBookmarkResponse) => void;
-  chartEnabled: boolean;
-  onChartEnabledChange: (id: number, enabled: boolean) => void;
   /** When provided, overrides the internal mutation — used for deferred updates (mobile drawer). */
   onMatchSideChange?: (id: number, matchSide: MatchSide) => void;
 }
 
-export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEnabledChange, onMatchSideChange }: Props) {
+export function PositionBookmarkCard({ bookmark, onLoad, onMatchSideChange }: Props) {
   const updateLabel = useUpdatePositionBookmarkLabel();
   const deleteBookmark = useDeletePositionBookmark();
   const updateMatchSide = useUpdateMatchSide();
@@ -76,11 +74,6 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
     onLoad(bookmark);
     // Never the bookmark id: the target is a fixed literal.
     trackFeature('action', { target: 'bookmark-load' });
-  };
-
-  const handleChartToggle = () => {
-    onChartEnabledChange(bookmark.id, !chartEnabled);
-    trackFeature('toggle', { target: 'bookmark-chart', value: onOff(!chartEnabled) });
   };
 
   const handleDelete = () => {
@@ -185,20 +178,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
 
   const buttonRow = (
     <div className="flex items-center justify-between">
-      {/* Chart toggle on left */}
-      <Tooltip content={chartEnabled ? 'Exclude from opening results' : 'Include in opening results'}>
-        <button
-          role="switch"
-          aria-checked={chartEnabled}
-          aria-label={chartEnabled ? 'Exclude from opening results' : 'Include in opening results'}
-          onClick={handleChartToggle}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-toggle-active' : 'bg-muted'}`}
-          data-testid={`bookmark-chart-toggle-${bookmark.id}`}
-        >
-          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${chartEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-        </button>
-      </Tooltip>
-      {/* Load button in middle */}
+      {/* Load button on left */}
       <Tooltip content="Load bookmark">
         <Button variant="ghost" size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground"

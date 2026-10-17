@@ -30,7 +30,6 @@ type StatsTabProps = {
   color: Color;
   onColorChange: (color: Color) => void;
   bookmarks: PositionBookmarkResponse[];
-  chartBookmarks: PositionBookmarkResponse[];
   wdlStatsMap: Record<number, WdlStatsRow>;
   bookmarkPhaseEntryByHash: Map<string, BookmarkPhaseEntryItem>;
   mostPlayedData: MostPlayedOpeningsResponse | undefined;
@@ -47,7 +46,6 @@ export function StatsTab({
   color,
   onColorChange,
   bookmarks,
-  chartBookmarks,
   wdlStatsMap,
   bookmarkPhaseEntryByHash,
   mostPlayedData,
@@ -61,7 +59,7 @@ export function StatsTab({
 }: StatsTabProps) {
   // Build bookmark rows for a given color (used when bookmarks exist)
   const buildBookmarkRows = (targetColor: 'white' | 'black'): OpeningWDL[] =>
-    chartBookmarks
+    bookmarks
       .filter((b) => b.color === targetColor)
       .flatMap((b) => {
         const s = wdlStatsMap[b.id];
@@ -101,7 +99,7 @@ export function StatsTab({
   const blackBookmarkRows = bookmarks.length > 0 ? buildBookmarkRows('black') : [];
 
   const bookmarkByHash = new Map<string, PositionBookmarkResponse>(
-    chartBookmarks.map((b) => [b.target_hash, b]),
+    bookmarks.map((b) => [b.target_hash, b]),
   );
   const handleOpenBookmarkGames = (opening: OpeningWDL) => {
     const bookmark = bookmarkByHash.get(opening.full_hash);
@@ -199,7 +197,7 @@ export function StatsTab({
       : null;
 
   const showWhite = color === 'white';
-  const colorBookmarks = chartBookmarks.filter((b) => b.color === color);
+  const colorBookmarks = bookmarks.filter((b) => b.color === color);
 
   return (
     <div className="flex flex-col gap-6">

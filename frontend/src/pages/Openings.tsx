@@ -1,12 +1,4 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-
-// localStorage helper for per-bookmark chart-enable toggle (default: enabled).
-// The read side (getChartEnabled) moved into useOpeningsChartData.ts along
-// with the memo that's its only consumer; this write side stays here since
-// it's called by handlers useOpeningsChartData doesn't own.
-function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
-  localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
-}
 import { useNavigate, useLocation, Navigate } from 'react-router';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { trackFeature } from '@/lib/analytics';
@@ -138,7 +130,6 @@ export function OpeningsPage() {
   const sidebar = useSidebarState();
 
   // ── Mobile drawer deferred-apply local state ───────────────────────────────
-  const [localChartEnabled, setLocalChartEnabled] = useState<Record<number, boolean>>({});
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
@@ -199,10 +190,6 @@ export function OpeningsPage() {
     };
   }, [filters]);
 
-  // ── Chart-enable toggle (persisted per bookmark in localStorage) ─────────────
-  // Version counter to force chartEnabledMap recompute when a toggle changes
-  const [chartToggleVersion, setChartToggleVersion] = useState(0);
-
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
@@ -236,19 +223,16 @@ export function OpeningsPage() {
     opponentStrength: debouncedFilters.opponentStrength,
   });
 
-  // Query-derivation cluster — chart-enable map, board arrows (from next-move
-  // frequencies), chart-enabled bookmark subset, per-bookmark phase-entry
-  // metrics, and per-bookmark WDL stats. Extracted to useOpeningsChartData.ts.
+  // Query-derivation cluster — board arrows (from next-move frequencies),
+  // per-bookmark phase-entry metrics, and per-bookmark WDL stats.
+  // Extracted to useOpeningsChartData.ts.
   const {
-    chartEnabledMap,
     boardArrows,
-    chartBookmarks,
     bookmarkPhaseEntryByHash,
     tsData,
     wdlStatsMap,
   } = useOpeningsChartData({
     bookmarks,
-    chartToggleVersion,
     nextMovesData: nextMoves.data,
     position: chess.position,
     hoveredMove,
@@ -258,12 +242,6 @@ export function OpeningsPage() {
   });
 
   // ── Handlers ────────────────────────────────────────────────────────────────
-
-  const handleChartEnabledChange = useCallback((id: number, enabled: boolean) => {
-    setChartEnabledStorage(id, enabled);
-    setChartToggleVersion(v => v + 1);
-    if (activeTab !== 'stats') navigate('/openings/stats');
-  }, [activeTab, navigate]);
 
   // ── Desktop sidebar filter panel Apply handler ────────────────────────────────
   // Commits localFilters to the store, fires the pulse, closes the panel, and
@@ -384,38 +362,20 @@ export function OpeningsPage() {
   const updateMatchSide = useUpdateMatchSide();
 
   const openBookmarkDrawer = useCallback(() => {
-    setLocalChartEnabled({ ...chartEnabledMap });
     setLocalMatchSides({});
     sidebar.setBookmarkDrawerOpen(true);
-  }, [chartEnabledMap, sidebar]);
+  }, [sidebar]);
 
   const handleBookmarkDrawerOpenChange = useCallback((open: boolean) => {
     if (!open && sidebar.bookmarkDrawerOpen) {
-      // Commit deferred chart toggle changes on close
-      for (const [idStr, enabled] of Object.entries(localChartEnabled)) {
-        const id = Number(idStr);
-        if (chartEnabledMap[id] !== enabled) {
-          setChartEnabledStorage(id, enabled);
-        }
-      }
       // Commit deferred match side changes on close
       for (const [idStr, matchSide] of Object.entries(localMatchSides)) {
         const id = Number(idStr);
         updateMatchSide.mutate({ id, data: { match_side: matchSide } });
       }
-      // Bump chart toggle version to refresh chartEnabledMap
-      const chartChanged = Object.keys(localChartEnabled).some(idStr => chartEnabledMap[Number(idStr)] !== localChartEnabled[Number(idStr)]);
-      if (chartChanged) {
-        setChartToggleVersion(v => v + 1);
-        if (activeTab !== 'stats') navigate('/openings/stats');
-      }
     }
     sidebar.setBookmarkDrawerOpen(open);
-  }, [sidebar, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide, activeTab, navigate]);
-
-  const handleLocalChartEnabledChange = useCallback((id: number, enabled: boolean) => {
-    setLocalChartEnabled(prev => ({ ...prev, [id]: enabled }));
-  }, []);
+  }, [sidebar, localMatchSides, updateMatchSide]);
 
   const handleLocalMatchSideChange = useCallback((id: number, matchSide: MatchSide) => {
     setLocalMatchSides(prev => ({ ...prev, [id]: matchSide }));
@@ -525,7 +485,6 @@ export function OpeningsPage() {
       color={statsColor}
       onColorChange={setStatsColor}
       bookmarks={bookmarks}
-      chartBookmarks={chartBookmarks}
       wdlStatsMap={wdlStatsMap}
       bookmarkPhaseEntryByHash={bookmarkPhaseEntryByHash}
       mostPlayedData={mostPlayedData}
@@ -650,8 +609,6 @@ export function OpeningsPage() {
           bookmarks={bookmarks}
           onReorderBookmarks={handleReorder}
           onLoadBookmark={handleLoadBookmarkFromDesktopSidebar}
-          chartEnabledMap={chartEnabledMap}
-          onChartEnabledChange={handleChartEnabledChange}
           onOpenSuggestions={openSuggestions}
           onOpenBookmarkDialog={openBookmarkDialog}
           showBookmarksHint={showBookmarksHint}
@@ -855,8 +812,6 @@ export function OpeningsPage() {
             localBookmarks={localBookmarks}
             onReorderBookmarks={handleReorder}
             onLoadBookmark={handleLoadBookmarkFromSidebar}
-            localChartEnabled={localChartEnabled}
-            onLocalChartEnabledChange={handleLocalChartEnabledChange}
             onLocalMatchSideChange={handleLocalMatchSideChange}
             onOpenSuggestions={openSuggestions}
             onOpenBookmarkDialog={openBookmarkDialog}

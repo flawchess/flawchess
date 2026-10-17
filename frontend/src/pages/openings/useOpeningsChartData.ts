@@ -18,23 +18,8 @@ import type { BookmarkPhaseEntryItem } from '@/types/stats';
 import type { WdlStatsRow } from './StatsTab';
 import type { HighlightedMove } from './useDeepLinkHighlight';
 
-// localStorage helper for per-bookmark chart-enable toggle (default: enabled).
-// Only consumed by chartEnabledMap below — the write side
-// (setChartEnabledStorage) stays in Openings.tsx, called by handlers this
-// hook doesn't own (handleChartEnabledChange, handleBookmarkDrawerOpenChange).
-function getChartEnabled(bookmarkId: number): boolean {
-  const stored = localStorage.getItem(`bookmark-chart-enabled-${bookmarkId}`);
-  return stored === null ? true : stored === 'true';
-}
-
 export type UseOpeningsChartDataParams = {
   bookmarks: PositionBookmarkResponse[];
-  /** Unnecessary-by-design dependency (pre-existing react-hooks/exhaustive-deps
-   * warning) — bumped by handlers in Openings.tsx to force chartEnabledMap to
-   * re-read localStorage after a chart-enable toggle. Must NOT be dropped from
-   * the memo's dependency array; the app-wide react-hooks warning count is a
-   * hard invariant in both directions. */
-  chartToggleVersion: number;
   nextMovesData: NextMovesResponse | undefined;
   position: string;
   hoveredMove: string | null;
@@ -44,25 +29,21 @@ export type UseOpeningsChartDataParams = {
 };
 
 export type OpeningsChartData = {
-  chartEnabledMap: Record<number, boolean>;
   boardArrows: BoardArrow[];
-  chartBookmarks: PositionBookmarkResponse[];
   bookmarkPhaseEntryByHash: Map<string, BookmarkPhaseEntryItem>;
   tsData: TimeSeriesResponse | undefined;
   wdlStatsMap: Record<number, WdlStatsRow>;
 };
 
 /**
- * Query-derivation cluster for the Openings page: per-bookmark chart-enable
- * state, board arrows from next-move frequencies, the chart-enabled bookmark
- * subset, per-bookmark phase-entry metrics, and per-bookmark WDL stats from
- * the bookmark time series. Matches useOpeningsHandlers.ts's shape (one typed
+ * Query-derivation cluster for the Openings page: board arrows from next-move
+ * frequencies, per-bookmark phase-entry metrics, and per-bookmark WDL stats
+ * from the bookmark time series (every bookmark feeds both requests). Matches useOpeningsHandlers.ts's shape (one typed
  * params object in, one named data interface out).
  */
 export function useOpeningsChartData(params: UseOpeningsChartDataParams): OpeningsChartData {
   const {
     bookmarks,
-    chartToggleVersion,
     nextMovesData,
     position,
     hoveredMove,
@@ -70,15 +51,6 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
     pulseActive,
     debouncedFilters,
   } = params;
-
-  const chartEnabledMap = useMemo(() => {
-    const map: Record<number, boolean> = {};
-    for (const b of bookmarks) {
-      map[b.id] = getChartEnabled(b.id);
-    }
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookmarks, chartToggleVersion]);
 
   // Board arrows derived from next move frequencies. The matching arrow on a
   // deep-link gets isHighlightPulse=true so its <path> pulses briefly. The
@@ -114,26 +86,17 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
       .filter((a): a is NonNullable<typeof a> => a !== null);
   }, [nextMovesData, position, hoveredMove, highlightedMove, pulseActive]);
 
-  // Chart entries: real bookmarks filtered by chart-enable toggle.
-  // Memoized so the array identity is stable across renders that don't change
-  // the underlying bookmarks or toggle map — keeps `timeSeriesRequest` (which
-  // depends on this) from being rebuilt on every parent tick.
-  const chartBookmarks = useMemo(
-    () => bookmarks.filter(b => chartEnabledMap[b.id] !== false),
-    [bookmarks, chartEnabledMap],
-  );
-
   // Per-bookmark MG/EG entry eval metrics.
   // Without this, bookmark rows in the Stats subtab tables permanently render with
   // eval_n=0 / "low" / "0 games" because buildBookmarkRows hardcoded those fields.
   const bookmarkMetricsRequest = useMemo(
     () =>
-      chartBookmarks.map((b) => ({
+      bookmarks.map((b) => ({
         target_hash: b.target_hash,
         match_side: resolveMatchSide(b.match_side, (b.color ?? 'white') as Color),
         color: b.color,
       })),
-    [chartBookmarks],
+    [bookmarks],
   );
   const { data: bookmarkPhaseEntryData } = useBookmarkPhaseEntryMetrics(
     bookmarkMetricsRequest,
@@ -156,9 +119,9 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
   }, [bookmarkPhaseEntryData]);
 
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
-    if (chartBookmarks.length === 0) return null;
+    if (bookmarks.length === 0) return null;
     return {
-      bookmarks: chartBookmarks.map((b) => ({
+      bookmarks: bookmarks.map((b) => ({
         bookmark_id: b.id,
         target_hash: b.target_hash,
         match_side: resolveMatchSide(b.match_side, (b.color ?? 'white') as Color),
@@ -173,7 +136,7 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
       // so the bookmark card WDL bar, game count, and Score % respond to the filter.
       ...dateRangeToWireParams(resolveDateRange(debouncedFilters)),
     };
-  }, [chartBookmarks, debouncedFilters]);
+  }, [bookmarks, debouncedFilters]);
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
 
@@ -193,9 +156,7 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
   }, [tsData]);
 
   return {
-    chartEnabledMap,
     boardArrows,
-    chartBookmarks,
     bookmarkPhaseEntryByHash,
     tsData,
     wdlStatsMap,
