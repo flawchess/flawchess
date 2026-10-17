@@ -311,8 +311,8 @@
   ],
   "next": {
     "command": "/gsd-new-milestone",
-    "label": "Start the next milestone or a standalone phase",
-    "reason": "v2.25\u2013v2.27 closed 2026-10-17; no open milestone (v2.27 not yet deployed)"
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-10-17T12:00:00.000Z"
+  "updated_at": "2026-10-17T16:15:03.240Z"
 }

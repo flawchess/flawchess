@@ -97,7 +97,7 @@ matches unrelated to this phase and were not folded.)
 | D-00 (ScoreChart + volume) | Per-opening chart with weekly grey bars | §Pattern B6 (weekly bucketing + `per_week_games`), §Pattern F6 |
 | D-00b | Score band ±5% | `SCORE_BULLET_NEUTRAL_MIN/MAX` quoted below; no change |
 | D-01..D-04 | Current/past cutoff (200 games OR 60 days, under filters, `dev_now_utc`) | §Pattern B2 (SQL measured 2.9 ms on a 33k-game colour), response shape recommendation |
-| D-05..D-07 | 10 current + 10 past, fetch before dedupe, MIN_GAMES_FOR_OPENING = 1 | §Pattern B3 (fetch 60; dev evidence: owner's 10th current White row is rank 33) |
+| D-05..D-07 | 10 current + 10 past, fetch before dedupe, MIN_GAMES_FOR_OPENING = 1 | §Pattern B3 (fetch 60; dev evidence: owner's 10th current White row is rank 33; cutoff-restricted second fetch when current rows run short, D-05 clarified) |
 | D-06 (dedupe) | Identical game sets keep deeper line; bookmark twin dropped | §Pattern B4 (game-id fingerprint + ply_count; bookmark full_hash via `compute_hashes`), Open Question 1 (chart-excluded bookmarks) |
 | D-08 | Phone 2 cards + "Show more" (testid + Umami) | §Pattern F7 (reuse `opening-insights-more` panel target) |
 | D-09..D-11 | "Not clear yet" = medium only, ≤10, p-asc, current first; full medium count | §Pattern B5 (counts computed pre-cap, cheap) |
@@ -348,10 +348,13 @@ position-WDL batch 0.08 s @10 → 0.14-0.22 s @60; phase-entry batch @20 hashes 
 4. split by `is_current`, sort each by `total` desc, cap 10/10
 5. `query_opening_phase_entry_metrics_batch` on the ≤20 survivors only (cheaper than today's per-row eval on 10 when you count the dedupe benefit; eval is not needed for the dedupe if the game-set fingerprint is exact)
 
-Residual risk: a user who switched repertoire recently could have fewer than 10 current rows in the top 60. That is
-acceptable (the rows exist, they just are not in the all-time top 60). If UAT shows a shortfall, add a second top
-query restricted to `from_date = max(from_date, cutoff.date())`, whose rows are all current by construction, and
-union the hashes.
+Residual risk: a user who switched repertoire recently could have fewer than 10 current rows in the top 60.
+**Built (owner, "D-05 (clarified)" in 242-CONTEXT.md; plan 242-01 Task 3):** when a cutoff exists and fewer than 10
+current rows survive dedupe and the twin drop, a second top query restricted to
+`from_date = max(from_date, cutoff.date())` nominates extra rows. It only nominates: the nominees' WDL,
+`last_played_at`, fingerprint and `is_current` come from `query_position_wdl_batch` under the unrestricted filters,
+so merged rows show their full counts, then dedupe, twin drop and the 10/10 split run on the merged set. No second
+query when the cutoff is `None`.
 
 Keep `MIN_GAMES_FOR_OPENING = 1` (verbatim `stats_service.py:38`), `MIN_PLY_WHITE = 3`, `MIN_PLY_BLACK = 3`
 (`:48-49`). Keep the sequential awaits.
@@ -566,7 +569,7 @@ display `:824`). `PositionResultsPanel` is shared with `Endgames.tsx:296-302`.
 
 ### Pitfall 3: Fetch too small for heavy, repertoire-shifting users
 **What goes wrong:** fewer than 10 current rows although more current openings exist.
-**Evidence:** owner White, 10th current row at rank 33 (dev). **Avoid:** `MOST_PLAYED_FETCH_LIMIT = 60`, with the optional second query (Pattern B3).
+**Evidence:** owner White, 10th current row at rank 33 (dev). **Avoid:** `MOST_PLAYED_FETCH_LIMIT = 60`, plus the cutoff-restricted second query when current rows run short (Pattern B3, built per D-05 clarified).
 
 ### Pitfall 4: Bookmark twin drop vs the bookmark include/exclude toggle
 **What goes wrong:** the per-bookmark toggle (`aria-label` "Exclude from opening results" / "Include in opening results",
@@ -666,19 +669,30 @@ const needsLegacyRedirect = location.pathname.endsWith('/statistics')
 | A2 | `(count, sum(distinct id))` (+ optional `bit_xor`) has no practical collisions among one user's nested opening game sets | B4 | a wrongly merged row (rare); add the eval_n/last_played_at equality as a belt-and-braces check |
 | A3 | Initialising the colour switch from `filters.color` is what the owner wants (the sketch defaults to White) | F2 | trivial copy/UX change |
 | A4 | Reusing `opening-insights-more` / `opening-stats-more` targets for the new expanders is acceptable to the owner | F7 | analytics continuity only |
-| A5 | 60 fetch rows is enough on prod (sized on the dev snapshot; the owner has more recent games on prod) | B3 | fewer than 10 current rows for some users; second-query fallback documented |
+| A5 | 60 fetch rows is enough on prod (sized on the dev snapshot; the owner has more recent games on prod) | B3 | moot: the cutoff-restricted second query (built per D-05 clarified) fills current rows when the top 60 hold fewer than 10 |
 | A6 | New helper/module/constant names (`opening_eval.py`, `CENTIPAWNS_PER_PAWN`, `MOST_PLAYED_FETCH_LIMIT`, `FINDINGS_CARD_CAP`, target names) | Patterns | naming only |
-| A7 | Moves/Games keep the `MiniBulletChart` (re-centred) rather than adopting the new verdict bar | F4 | if the owner wants the new bar there too, add a plan |
+| A7 | Moves/Games keep the `MiniBulletChart` (re-centred) rather than adopting the new verdict bar | F4 | if the owner wants the new bar there too, add a plan. **Superseded by D-17** (new verdict bar, plan 242-04) |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four items were answered on 2026-10-17 (owner decisions D-16..D-18 in 242-CONTEXT.md, item 4 by the planner).
 
 1. **Bookmark include/exclude toggle vs server-side bookmark-twin drop (blocking design point).**
    - Known: the toggle ("Include in opening results") filters bookmarks out of the Stats rows via localStorage (`chartBookmarks`); its name says "chart" because it also fed the multi-line chart that D-14 retires. The backend dedupe cannot see it.
    - Unclear: should an excluded bookmark still suppress its most-played twin?
    - Recommendation: ask the owner. Option A (simplest): with the multi-line chart gone, **retire the toggle** (all coloured bookmarks are rows; delete `chartEnabledMap`, localStorage keys, the `bookmark-chart` toggle UI). Option B: keep the toggle and send the excluded bookmark ids to `/stats/most-played-openings` so the backend skips them during the twin drop.
+   - **RESOLVED (D-16):** Option A. The toggle and its localStorage state are retired (plan 242-05); the endpoint takes no bookmark-exclusion parameter (plan 242-01).
 2. **Moves/Games eval visual.** D-00 lists Moves/Games in the centring scope. Is re-centring the existing `MiniBulletChart` enough (recommended, minimal), or should they adopt the new verdict bar? The default in A7 is re-centre only.
+   - **RESOLVED (D-17):** Moves and Games adopt the new 238/239-style verdict bar for `evalContext="opening-end"` (plan 242-04); Endgames keeps its current display. This supersedes A7.
 3. **Bookmark score p/CI source.** Server-side on `BookmarkTimeSeries` (recommended, one source) or client-side `computeScoreConfidence` with a z parameter. The planner picks; both are cheap.
+   - **RESOLVED (D-18):** server-side on `BookmarkTimeSeries` with the same score/Wilson util as the most-played rows (plan 242-03); the client-side `computeScoreConfidence` is deleted (plan 242-06).
 4. **Insights response compatibility.** Changing the four lists to "high only, ≤5" changes their meaning for any other consumer. Grep shows the only consumers are the frontend block and tests (no LLM use of `compute_insights`). Safe to change in place.
+   - **RESOLVED (planner):** changed in place, no versioned endpoint (plan 242-02).
+
+Not an open question, recorded here so plans can cite it: the second top query for heavy users (Pattern B3,
+Pitfall 3, assumption A5) **is built** (owner, "D-05 (clarified)" in 242-CONTEXT.md, superseding the earlier
+"not built" note). `MOST_PLAYED_FETCH_LIMIT = 60` runs first; plan 242-01 Task 3 adds the cutoff-restricted second
+fetch, and plan 242-09 keeps "10 current rows for the owner's White repertoire" as a UAT check.
 
 ## Environment Availability
 

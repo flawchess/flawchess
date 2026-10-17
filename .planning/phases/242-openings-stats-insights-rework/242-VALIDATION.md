@@ -50,14 +50,16 @@ Filled by the planner per task (`<automated>` + `<fails_when>`). Decision → te
 | D-13 guard | endgame eval unchanged | regression | `uv run pytest tests/test_endgame_service.py -x` | ✅ | ⬜ pending |
 | D-01..D-03 | current/past cutoff (200 games OR 60 d, filters, now_utc) | unit/integration | `uv run pytest tests/test_repertoire_recency.py -x` | ❌ W0 | ⬜ pending |
 | D-05/D-06 | fetch → dedupe → bookmark twin drop → split → cap 10/10 | integration | `uv run pytest tests/test_stats_service.py -k most_played -x` | ✅ extend | ⬜ pending |
+| D-05 (clarified) | cutoff-restricted second fetch fills current rows when fewer than 10 survive; nominees carry unrestricted counts; none when cutoff is None (plan 242-01 Task 3, mutation-proven) | unit/integration | `uv run pytest tests/test_stats_service.py -k recent_fallback -x` | ✅ extend | ⬜ pending |
 | D-09..D-11 | findings high ≤5, medium ≤10, counts, low dropped | unit | `uv run pytest tests/services/test_opening_insights_service.py -x` | ✅ extend | ⬜ pending |
 | D-00 series / D-18 | weekly points + per-week games; bookmark score p + 99% CI | integration | `uv run pytest tests/test_openings_time_series.py tests/test_aggregation_sanity.py -x` | ✅ update | ⬜ pending |
 | D-03 | routers inject `dev_now_utc` (plans 242-01/02/03) | router | `uv run pytest tests/test_stats_router.py tests/routers/test_insights_openings.py tests/routers/test_openings_time_series_router.py -x` | ✅ extend + ❌ W0 (time-series router test) | ⬜ pending |
-| D-15 | `/openings/insights` redirects to `/openings/stats` | component | `cd frontend && npx vitest run src/pages/__tests__/Openings.render.test.tsx` | ✅ update | ⬜ pending |
+| D-15 | `/openings/insights` redirects to `/openings/stats`; Insights triggers gone on both strips (plan 242-08) | component | `cd frontend && npx vitest run src/pages/__tests__/Openings.render.test.tsx` | ✅ update | ⬜ pending |
+| D-00 layout | board hidden on lg for Stats only; Insights case removed (plan 242-08) | unit | `cd frontend && npx vitest run src/pages/__tests__/Openings.statsBoard.test.tsx` | ✅ update | ⬜ pending |
 | D-00 verdicts | opening verdict rules (n<20 neutral, band, 99%) | unit | `cd frontend && npx vitest run src/lib/__tests__/openingVerdict.test.ts` | ❌ W0 | ⬜ pending |
-| D-00 table / D-16 | repertoire table, "Played before (n)", chips, fades; toggle gone | component | `cd frontend && npx vitest run src/components/openings/__tests__/RepertoireTable.test.tsx` | ❌ W0 | ⬜ pending |
-| D-08..D-11 | findings Show more, Not clear yet, empty state | component | `cd frontend && npx vitest run src/components/openings/__tests__/OpeningFindings.test.tsx` | ❌ W0 | ⬜ pending |
-| D-14 | single-series ScoreChart with volume bars | component | `cd frontend && npx vitest run src/components/charts/__tests__/ScoreChart.test.tsx` | ✅ rewrite | ⬜ pending |
+| D-00 table / D-16 | repertoire table, "Played before (n)", chips, fades; toggle gone (plan 242-06; row expansion + bookmark link extended in plan 242-09) | component | `cd frontend && npx vitest run src/components/openings/__tests__/RepertoireTable.test.tsx` | ❌ W0 | ⬜ pending |
+| D-08..D-11 | findings Show more, Not clear yet, empty state (plan 242-07) | component | `cd frontend && npx vitest run src/components/openings/__tests__/OpeningFindings.test.tsx` | ❌ W0 | ⬜ pending |
+| D-14 | single-series ScoreChart with volume bars (plan 242-09) | component | `cd frontend && npx vitest run src/components/charts/__tests__/ScoreChart.test.tsx` | ✅ rewrite | ⬜ pending |
 | D-17 | Moves/Games verdict bar for opening-end; endgame-entry unchanged (plan 242-04) | component | `npm --prefix frontend test -- src/components/charts/__tests__/PositionResultsPanel.test.tsx src/pages/__tests__/Endgames.readinessGate.test.tsx` | ❌ W0 (new PositionResultsPanel.test.tsx) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -71,7 +73,7 @@ Filled by the planner per task (`<automated>` + `<fails_when>`). Decision → te
 - [ ] dedupe/split cases in `tests/test_stats_service.py`
 - [ ] `frontend/src/lib/__tests__/openingVerdict.test.ts`
 - [ ] `frontend/src/components/openings/__tests__/RepertoireTable.test.tsx`, `OpeningFindings.test.tsx`
-- [ ] Delete tests with their components (`OpeningStatsCard`, `OpeningFindingCard`, `OpeningInsightsBlock`); adjust `EvalCpuPlaceholder.test.tsx`, `openingStatsZones.test.ts`
+- [ ] Delete tests with their components (`OpeningStatsCard` in plan 242-06; `OpeningFindingCard`, `OpeningInsightsBlock` in plan 242-08); adjust `EvalCpuPlaceholder.test.tsx` (plan 242-06), `openingStatsZones.test.ts`
 
 ---
 

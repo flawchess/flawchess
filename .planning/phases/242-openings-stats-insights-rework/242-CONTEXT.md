@@ -101,6 +101,10 @@ discuss-phase" and record defaults for the rest.
   unchanged. This extends D-13 from backend-only centring to the Moves/Games UI.
 - **D-18:** Bookmark Score p-value and 99% CI are computed **server-side** and returned in the
   `/openings/time-series` response, using the same score/Wilson util as the most-played rows.
+- **D-05 (clarified, owner 2026-10-17):** the fixed top-60 fetch is not enough on its own. When fewer than
+  10 current rows survive dedupe and the split, the backend runs a **second top query limited to games
+  since the current/past cutoff** and merges its rows, so past openings never push current ones out.
+  Plan sizing warnings (01 over budget ~10%, 06 at 18 files) were accepted as is; no further splits.
 
 </decisions>
 
