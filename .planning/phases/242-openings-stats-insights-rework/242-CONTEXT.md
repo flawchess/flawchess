@@ -91,6 +91,17 @@ discuss-phase" and record defaults for the rest.
 - Exact copy for chips, "Show more" and "Played before (n)" follows sketch 012 and the popover-minimalism
   rule; planner/UI phase may tune wording.
 
+### Post-research decisions (owner, 2026-10-17, answering 242-RESEARCH.md open questions)
+- **D-16:** The per-bookmark "Include in opening results" toggle (localStorage) is **retired**, together with
+  its localStorage state. It only fed the dropped multi-line bookmark chart, and server-side bookmark-twin
+  removal (D-06) would make an excluded bookmark's opening vanish from the table.
+- **D-17:** The Moves and Games tabs get the **new 238/239-style eval verdict bar** (baseline-centred, ±0.30
+  band, 99% red/green, popover with greyed stats footer), replacing their current eval `MiniBulletChart`
+  display for `evalContext="opening-end"`. Endgames (`evalContext="endgame-entry"`) keeps its current display
+  unchanged. This extends D-13 from backend-only centring to the Moves/Games UI.
+- **D-18:** Bookmark Score p-value and 99% CI are computed **server-side** and returned in the
+  `/openings/time-series` response, using the same score/Wilson util as the most-played rows.
+
 </decisions>
 
 <canonical_refs>
