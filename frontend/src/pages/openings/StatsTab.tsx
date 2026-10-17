@@ -3,9 +3,12 @@ import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { ScoreChart } from '@/components/charts/ScoreChart';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
+import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
 import { RepertoireTable } from '@/components/openings/stats/RepertoireTable';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import { useRepertoireRows } from '@/pages/openings/useRepertoireRows';
 import type { Color } from '@/types/api';
+import type { OpeningInsightFinding } from '@/types/insights';
 import type { MostPlayedOpeningsResponse, BookmarkPhaseEntryItem } from '@/types/stats';
 import type {
   PositionBookmarkResponse,
@@ -23,6 +26,11 @@ type StatsTabProps = {
   mostPlayedError: boolean;
   tsData: TimeSeriesResponse | undefined;
   onOpenSuggestions: () => void;
+  /** Sidebar filters (debounced) that scope the findings request. */
+  debouncedFilters: FilterState;
+  /** Finding card deep links: Moves tab with the pulse highlight, and Games tab. */
+  onOpenFinding: (finding: OpeningInsightFinding) => void;
+  onOpenFindingGames: (finding: OpeningInsightFinding) => void;
 };
 
 export function StatsTab({
@@ -35,6 +43,9 @@ export function StatsTab({
   mostPlayedError,
   tsData,
   onOpenSuggestions,
+  debouncedFilters,
+  onOpenFinding,
+  onOpenFindingGames,
 }: StatsTabProps) {
   const { bookmarkRows, currentRows, pastRows } = useRepertoireRows({
     color,
@@ -121,6 +132,14 @@ export function StatsTab({
           Loading most-played openings...
         </div>
       )}
+
+      {/* Findings of the selected colour (99%-gated cards, Not clear yet) above the table */}
+      <OpeningFindings
+        color={color}
+        debouncedFilters={debouncedFilters}
+        onOpenMoves={onOpenFinding}
+        onOpenGames={onOpenFindingGames}
+      />
 
       {/* 3. Repertoire table of the selected colour: bookmarks, most played, played before */}
       {showTable && (

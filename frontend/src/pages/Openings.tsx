@@ -494,6 +494,9 @@ export function OpeningsPage() {
       mostPlayedError={mostPlayedError}
       tsData={tsData}
       onOpenSuggestions={openSuggestions}
+      debouncedFilters={debouncedFilters}
+      onOpenFinding={handleOpenFinding}
+      onOpenFindingGames={handleOpenFindingGames}
     />
   );
 

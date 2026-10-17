@@ -110,3 +110,13 @@ export function stripEcoSuffix(name: string): string {
 export function isFadedRow(games: number): boolean {
   return games < REPERTOIRE_MIN_GAMES_FOR_VERDICT;
 }
+
+/**
+ * The one-line "why" under a finding's eval bar: only the opening eval can explain a score, so
+ * it says nothing when the eval verdict is typical (sketch 012 why()).
+ */
+export function whyLine(verdict: GapVerdict, color: 'white' | 'black'): string | null {
+  if (verdict === 'typical') return null;
+  const side = color === 'black' ? 'Black' : 'White';
+  return `You come out of the opening ${verdict} than an average ${side} game.`;
+}
