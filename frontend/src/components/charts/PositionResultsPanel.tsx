@@ -6,6 +6,8 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
+import { VerdictBar } from '@/components/openings/stats/VerdictBar';
+import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
@@ -18,9 +20,14 @@ import {
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import { isConfident } from '@/lib/significance';
+import { formatSignedGap } from '@/lib/gapBar';
 import {
-  EVAL_BASELINE_PAWNS_WHITE,
-  EVAL_BASELINE_PAWNS_BLACK,
+  EVAL_VERDICT_BAND,
+  evalBaselinePawns as colorEvalBaselinePawns,
+  openingVerdict,
+  openingVerdictReason,
+} from '@/lib/openingVerdict';
+import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -84,32 +91,13 @@ export function PositionResultsPanel({
   const showZoneFontColor = isConfident(stats.confidence) && isInColoredZone;
   const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
 
-  // MG-entry eval row. Mirrors OpeningStatsCard / OpeningFindingCard
-  // scoreEvalBlock: a third bullet chart row showing signed pawns + Cpu icon
-  // + EvalConfidencePopover when MG eval data is available, em-dash otherwise.
+  // MG-entry eval row: 'opening-end' with data renders the baseline-centred VerdictBar (D-17);
+  // everything else (Endgames entry eval, or no eval data) keeps the bullet-chart cells.
   const hasAvgEval =
     stats.eval_n > 0 &&
     stats.avg_eval_pawns !== null &&
     stats.avg_eval_pawns !== undefined;
-  const evalZoneHex = hasAvgEval ? evalZoneColor(stats.avg_eval_pawns as number) : null;
-  const showEvalZoneFont =
-    hasAvgEval &&
-    isConfident(stats.eval_confidence) &&
-    evalZoneHex !== ZONE_NEUTRAL;
-
-  // Prefer the backend-provided baseline; fall back to the local per-color
-  // constant if a stale cache returns no field.
-  const evalBaselinePawnsLocal =
-    filterColor === 'black' ? EVAL_BASELINE_PAWNS_BLACK : EVAL_BASELINE_PAWNS_WHITE;
-  const resolvedEvalBaselinePawns = evalBaselinePawns ?? evalBaselinePawnsLocal;
-
-  // The Endgames Games subtab samples the eval at endgame entry (color-agnostic,
-  // matching the Stats-tab "Entry Eval"): no per-color baseline tick,
-  // and the popover copy describes the endgame start rather than opening end.
-  const isEndgameEntryEval = evalContext === 'endgame-entry';
-  const evalAriaLabel = isEndgameEntryEval
-    ? `Avg eval at endgame entry: ${hasAvgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`
-    : `Avg eval at MG entry: ${hasAvgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`;
+  const showVerdictBar = hasAvgEval && evalContext === 'opening-end';
 
   return (
     <Card
@@ -191,65 +179,154 @@ export function PositionResultsPanel({
           />
         </div>
 
-        {/* Row 3: Eval value + Cpu + popover + Eval bullet. Gated on Tier 2 —
-            when !tier2 (Stockfish still analyzing) both eval cells are replaced
-            by the pulsating-Cpu placeholder spanning the 2-col grid. In the
-            endgame-entry context tier2 is always true (the Endgames page is
-            itself Tier-2 gated), so this only affects the openings explorer. */}
-        {tier2 ? (
-          <>
-            <span
-              className="flex items-center gap-1 text-sm tabular-nums w-full"
-              data-testid="eval-text-position"
-            >
-              <span className="text-muted-foreground">End Eval:</span>
-              {hasAvgEval ? (
-                <span
-                  className="ml-auto font-semibold inline-flex items-center gap-0.3"
-                  style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
-                >
-                  {formatSignedEvalPawns(stats.avg_eval_pawns as number)}
-                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                </span>
-              ) : (
-                <span className="ml-auto text-muted-foreground">—</span>
-              )}
-              {hasAvgEval && (
-                <EvalConfidencePopover
-                  level={stats.eval_confidence}
-                  pValue={stats.eval_p_value}
-                  gameCount={stats.eval_n}
-                  evalMeanPawns={stats.avg_eval_pawns}
-                  color={filterColor}
-                  testId="eval-bullet-popover-trigger"
-                  evalContext={evalContext}
-                  showBaselineTick={isEndgameEntryEval ? false : undefined}
-                />
-              )}
-            </span>
-            <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
-              {hasAvgEval ? (
-                <MiniBulletChart
-                  value={stats.avg_eval_pawns as number}
-                  ciLow={stats.eval_ci_low_pawns ?? undefined}
-                  ciHigh={stats.eval_ci_high_pawns ?? undefined}
-                  tickPawns={isEndgameEntryEval ? undefined : resolvedEvalBaselinePawns}
-                  neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-                  neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-                  domain={EVAL_BULLET_DOMAIN_PAWNS}
-                  barColor="neutral"
-                  ariaLabel={evalAriaLabel}
-                />
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </div>
-          </>
-        ) : (
+        {/* Row 3: End Eval. Gated on Tier 2 — when !tier2 (Stockfish still analyzing)
+            both eval cells are replaced by the pulsating-Cpu placeholder spanning the
+            2-col grid. In the endgame-entry context tier2 is always true (the Endgames
+            page is itself Tier-2 gated), so this only affects the openings explorer. */}
+        {!tier2 ? (
           <EvalCpuPlaceholder />
+        ) : showVerdictBar ? (
+          <OpeningEvalVerdictRow
+            stats={stats}
+            evalBaselinePawns={evalBaselinePawns}
+            filterColor={filterColor}
+          />
+        ) : (
+          <EvalBulletCells stats={stats} hasAvgEval={hasAvgEval} evalContext={evalContext} filterColor={filterColor} />
         )}
       </div>
       </CardBody>
     </Card>
+  );
+}
+
+interface OpeningEvalVerdictRowProps {
+  stats: WDLStats;
+  evalBaselinePawns: number | undefined;
+  filterColor: Color;
+}
+
+/**
+ * Opening-end End Eval: a verdict bar centred on the colour's average eval, spanning both
+ * grid columns. Dot is green/red only for a confident (99%), out-of-band eval over 20+ games.
+ */
+function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: OpeningEvalVerdictRowProps) {
+  const avgEval = stats.avg_eval_pawns as number;
+  // Prefer the backend baseline; a stale cache that omits it falls back to the per-color constant.
+  const baseline = evalBaselinePawns ?? colorEvalBaselinePawns(filterColor);
+  const delta = avgEval - baseline;
+  const verdictInput = {
+    delta,
+    band: EVAL_VERDICT_BAND,
+    confidence: stats.eval_confidence,
+    games: stats.total,
+  };
+  const verdict = openingVerdict(verdictInput);
+  const colourName = filterColor === 'black' ? 'Black' : 'White';
+  return (
+    <div className="col-span-2" data-testid="eval-text-position">
+      <VerdictBar
+        delta={delta}
+        band={EVAL_VERDICT_BAND}
+        verdict={verdict}
+        valueText={formatSignedEvalPawns(avgEval)}
+        zeroTickDelta={-baseline}
+        centreSwatch={filterColor}
+        testId="eval-verdict-position"
+        ariaLabel={`End eval ${formatSignedGap(avgEval)}, centred on an average ${colourName} game at ${formatSignedGap(baseline)}`}
+        leading={<span className="text-muted-foreground">End Eval:</span>}
+        trailing={
+          <>
+            <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+            {/* Fixed trigger testId: it is the Umami popover-open target, keep its history. */}
+            <EvalVerdictPopover
+              testId="eval-bullet-popover-trigger"
+              label="End Eval"
+              avgEvalPawns={avgEval}
+              evalN={stats.eval_n}
+              color={filterColor}
+              reason={openingVerdictReason(verdictInput)}
+              ci99Low={stats.eval_ci99_low_pawns ?? null}
+              ci99High={stats.eval_ci99_high_pawns ?? null}
+              pValue={stats.eval_p_value ?? null}
+            />
+          </>
+        }
+      />
+    </div>
+  );
+}
+
+interface EvalBulletCellsProps {
+  stats: WDLStats;
+  hasAvgEval: boolean;
+  evalContext: 'opening-end' | 'endgame-entry';
+  filterColor: Color;
+}
+
+/**
+ * The two-cell bullet-chart End Eval row: the Endgames games subtab (eval at endgame entry,
+ * color-agnostic so no per-color baseline tick) and the em-dash fallback when an Openings
+ * position has no eval data.
+ */
+function EvalBulletCells({ stats, hasAvgEval, evalContext, filterColor }: EvalBulletCellsProps) {
+  const evalZoneHex = hasAvgEval ? evalZoneColor(stats.avg_eval_pawns as number) : null;
+  const showEvalZoneFont =
+    hasAvgEval &&
+    isConfident(stats.eval_confidence) &&
+    evalZoneHex !== ZONE_NEUTRAL;
+  const isEndgameEntryEval = evalContext === 'endgame-entry';
+  const evalAriaLabel = isEndgameEntryEval
+    ? `Avg eval at endgame entry: ${hasAvgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`
+    : `Avg eval at MG entry: ${hasAvgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`;
+
+  return (
+    <>
+      <span
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
+        data-testid="eval-text-position"
+      >
+        <span className="text-muted-foreground">End Eval:</span>
+        {hasAvgEval ? (
+          <span
+            className="ml-auto font-semibold inline-flex items-center gap-0.3"
+            style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
+          >
+            {formatSignedEvalPawns(stats.avg_eval_pawns as number)}
+            <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+        ) : (
+          <span className="ml-auto text-muted-foreground">—</span>
+        )}
+        {hasAvgEval && (
+          <EvalConfidencePopover
+            level={stats.eval_confidence}
+            pValue={stats.eval_p_value}
+            gameCount={stats.eval_n}
+            evalMeanPawns={stats.avg_eval_pawns}
+            color={filterColor}
+            testId="eval-bullet-popover-trigger"
+            evalContext={evalContext}
+            showBaselineTick={isEndgameEntryEval ? false : undefined}
+          />
+        )}
+      </span>
+      <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
+        {hasAvgEval ? (
+          <MiniBulletChart
+            value={stats.avg_eval_pawns as number}
+            ciLow={stats.eval_ci_low_pawns ?? undefined}
+            ciHigh={stats.eval_ci_high_pawns ?? undefined}
+            neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+            neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+            domain={EVAL_BULLET_DOMAIN_PAWNS}
+            barColor="neutral"
+            ariaLabel={evalAriaLabel}
+          />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </div>
+    </>
   );
 }
