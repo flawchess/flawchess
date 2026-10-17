@@ -22,7 +22,6 @@ import {
   openingVerdictReason,
   scoreDelta,
   stripEcoSuffix,
-  whyLine,
 } from '@/lib/openingVerdict';
 import { ARROW_NEUTRAL } from '@/lib/theme';
 import { cn } from '@/lib/utils';
@@ -128,39 +127,31 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
     games: evalN,
   };
   const verdict = openingVerdict(input);
-  const why = whyLine(verdict, finding.color);
   return (
-    <>
-      <VerdictBar
-        delta={input.delta}
-        band={EVAL_VERDICT_BAND}
-        verdict={verdict}
-        valueText={formatEvalCompact(avg)}
-        zeroTickDelta={-baseline}
-        centreSwatch={finding.color}
-        testId={`${testId}-eval`}
-        ariaLabel={`${EVAL_LABEL} ${formatSignedGap(avg)}, centred on an average ${finding.color} game at ${formatSignedGap(baseline)}`}
-        leading={<span className="text-muted-foreground">{EVAL_LABEL}</span>}
-        trailing={
-          <EvalVerdictPopover
-            testId={`${testId}-eval-info`}
-            label={EVAL_LABEL}
-            avgEvalPawns={avg}
-            evalN={evalN}
-            color={finding.color}
-            reason={openingVerdictReason(input)}
-            ci99Low={finding.eval_ci99_low_pawns ?? null}
-            ci99High={finding.eval_ci99_high_pawns ?? null}
-            pValue={finding.eval_p_value ?? null}
-          />
-        }
-      />
-      {why && (
-        <p className="text-sm text-muted-foreground" data-testid={`${testId}-why`}>
-          {why}
-        </p>
-      )}
-    </>
+    <VerdictBar
+      delta={input.delta}
+      band={EVAL_VERDICT_BAND}
+      verdict={verdict}
+      valueText={formatEvalCompact(avg)}
+      zeroTickDelta={-baseline}
+      centreSwatch={finding.color}
+      testId={`${testId}-eval`}
+      ariaLabel={`${EVAL_LABEL} ${formatSignedGap(avg)}, centred on an average ${finding.color} game at ${formatSignedGap(baseline)}`}
+      leading={<span className="text-muted-foreground">{EVAL_LABEL}</span>}
+      trailing={
+        <EvalVerdictPopover
+          testId={`${testId}-eval-info`}
+          label={EVAL_LABEL}
+          avgEvalPawns={avg}
+          evalN={evalN}
+          color={finding.color}
+          reason={openingVerdictReason(input)}
+          ci99Low={finding.eval_ci99_low_pawns ?? null}
+          ci99High={finding.eval_ci99_high_pawns ?? null}
+          pValue={finding.eval_p_value ?? null}
+        />
+      }
+    />
   );
 }
 
@@ -183,7 +174,7 @@ const LINK_BUTTON_CLASS =
 /**
  * Move-led finding card (D-00): the move first, then the opening name, a 120 px
  * board with the move arrow, the score with its popover and WDL bar, the eval bar centred on
- * the colour baseline and a one-line why when the eval verdict is better or worse.
+ * the colour baseline.
  */
 export function FindingCard({
   finding,

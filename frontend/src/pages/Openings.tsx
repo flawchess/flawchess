@@ -723,7 +723,8 @@ export function OpeningsPage() {
               <OpeningColorSwitch idPrefix="mobile" selected={filters.color} onSelect={handleStatsColorChange} />
               <Button
                 variant="brand-outline"
-                className="relative"
+                // Same height as the colour buttons beside it (min-h-11 below sm, see OpeningColorSwitch).
+                className="relative min-h-11 sm:min-h-0"
                 onClick={openFilterDrawer}
                 data-testid="subnav-filter-button"
                 aria-label="Open filters"

@@ -313,7 +313,7 @@ export function RepertoireCard({
     >
       <CardHeader as="h4" size="compact" className="items-start text-base">
         {row.kind === 'bookmark' && (
-          <Bookmark className="mt-1 h-4 w-4 shrink-0 text-brand-brown-light" aria-label="Bookmarked" />
+          <Bookmark className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" aria-label="Bookmarked" />
         )}
         <span className="min-w-0 break-words" data-testid={`${testId}-name`}>
           {row.name}

@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { FindingCard } from '@/components/openings/stats/FindingCard';
+import { SECTION_HEADING_CLASS } from '@/components/openings/stats/headingClasses';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import { trackFeature } from '@/lib/analytics';
@@ -12,7 +13,6 @@ import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/ins
 /** Phones show this many cards per section before "Show more" (D-08). */
 const INITIAL_VISIBLE_PHONE = 2;
 const SKELETON_SECTION_COUNT = 2;
-const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
 
 type FindingKind = 'weakness' | 'strength';
 type FindingColor = 'white' | 'black';

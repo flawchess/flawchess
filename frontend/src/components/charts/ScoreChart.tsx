@@ -30,6 +30,9 @@ const TYPICAL_LOW = EVEN_SCORE - SCORE_VERDICT_BAND;
 const TYPICAL_HIGH = EVEN_SCORE + SCORE_VERDICT_BAND;
 const TYPICAL_LABEL = 'typical';
 const TYPICAL_LABEL_FONT_SIZE = 14;
+// No left margin: with an auto-width value axis the plot starts right after the tick labels
+// instead of behind Recharts' fixed 60px axis gutter.
+const CHART_MARGIN = { top: 5, right: 5, bottom: 5, left: 0 };
 
 function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showVolume: boolean }) {
   return (
@@ -79,7 +82,7 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
   return (
     <div data-testid={testId}>
       <ChartContainer config={{}} className={`w-full ${CHART_HEIGHT_CLASS}`}>
-        <ComposedChart data={points}>
+        <ComposedChart data={points} margin={CHART_MARGIN}>
           <CartesianGrid vertical={false} yAxisId="value" />
           <ReferenceArea
             yAxisId="value"
@@ -96,6 +99,7 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
           <XAxis dataKey="date" tickFormatter={formatDateTick} />
           <YAxis
             yAxisId="value"
+            width="auto"
             domain={yAxis.domain}
             ticks={yAxis.ticks}
             tickFormatter={(v: number) => `${Math.round(v * PERCENT_SCALE)}%`}

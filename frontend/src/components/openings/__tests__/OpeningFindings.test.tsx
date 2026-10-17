@@ -219,22 +219,6 @@ describe('OpeningFindings cards and Show more', () => {
     expect(onOpenGames).toHaveBeenCalledWith(finding);
   });
 
-  it('shows the why line only when the eval verdict is better or worse', () => {
-    renderFindings(
-      emptyResponse({
-        white_weaknesses: [
-          makeFinding({ avg_eval_pawns: -0.6 }),
-          // Within the typical band around the White baseline of +0.25: no sentence.
-          makeFinding({ avg_eval_pawns: 0.3 }),
-        ],
-      }),
-    );
-    expect(screen.getByTestId('opening-findings-weakness-card-0-why').textContent).toBe(
-      'You come out of the opening worse than an average White game.',
-    );
-    expect(screen.queryByTestId('opening-findings-weakness-card-1-why')).toBeNull();
-  });
-
   it('renders the em dash instead of an eval bar without eval data', () => {
     renderFindings(
       emptyResponse({

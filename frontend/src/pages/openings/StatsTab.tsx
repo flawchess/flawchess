@@ -1,8 +1,10 @@
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
+import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
+import { REPERTOIRE_HEADING_CLASS } from '@/components/openings/stats/headingClasses';
 import { RepertoireList } from '@/components/openings/stats/RepertoireList';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useRepertoireRows } from '@/pages/openings/useRepertoireRows';
@@ -66,80 +68,83 @@ export function StatsTab({
   const showRepertoire = !mostPlayedError && (mostPlayedData !== undefined || bookmarkRows.length > 0);
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Desktop sticky colour bar. Phones render the same switch inside the sticky Filters
-          row in Openings.tsx (one sticky row, not two). No ancestor may set overflow-*
-          or the bar stops sticking. */}
-      <div
-        className="hidden lg:flex sticky top-0 z-20 items-center justify-end py-2 bg-background/80 backdrop-blur-sm"
-        data-testid="opening-stats-color-bar"
-      >
+    <div>
+      {/* Desktop: the colour switch pins in a StickyTcBar overlaying the first heading row
+          (Bookmarked Openings), like the Library Stats TC switch. Phones render the same
+          switch inside the sticky Filters row in Openings.tsx (one sticky row, not two).
+          No ancestor may set overflow-* or the bar stops sticking. */}
+      <StickyTcBar showOnMobile={false} desktopBreakpoint="lg" testId="opening-stats-color-bar">
         <OpeningColorSwitch idPrefix="desktop" selected={color} onSelect={onColorChange} />
-      </div>
+      </StickyTcBar>
+      <div className="flex flex-col gap-6">
+        {/* Empty-state hint when there are no bookmarks at all */}
+        {bookmarks.length === 0 && (
+          <div className="space-y-2">
+            {/* Outside the card, like the RepertoireList headings, so the desktop colour bar
+                lines up with it (lg:h-8, see StickyTcBar). */}
+            <h2 className={REPERTOIRE_HEADING_CLASS}>Bookmarked Openings</h2>
+            <div className="charcoal-texture rounded-md p-4">
+              <p
+                className="text-sm italic text-muted-foreground mb-3"
+                data-testid="bookmarks-tip"
+              >
+                <span className="font-semibold text-foreground/80">Tip:</span> Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
+              </p>
+              <Button
+                size="lg"
+                variant="brand-outline"
+                className="w-full"
+                onClick={onOpenSuggestions}
+                data-testid="btn-suggest-bookmarks-empty"
+              >
+                <Sparkles className="h-4 w-4" />
+                Suggest
+              </Button>
+            </div>
+          </div>
+        )}
 
-      {/* Empty-state hint when there are no bookmarks at all */}
-      {bookmarks.length === 0 && (
-        <div className="charcoal-texture rounded-md p-4">
-          <h2 className="font-brand text-lg font-semibold text-foreground mb-3">Bookmarked Openings</h2>
-          <p
-            className="text-sm italic text-muted-foreground mb-3"
-            data-testid="bookmarks-tip"
+        {/* Most Played Openings — error / loading branches per CLAUDE.md */}
+        {mostPlayedError && (
+          <LoadError
+            resource="most-played openings"
+            className="charcoal-texture rounded-md p-4 text-center"
+            data-testid="mpo-error"
+          />
+        )}
+        {!mostPlayedError && mostPlayedLoading && !mostPlayedData && (
+          <div
+            className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
+            data-testid="mpo-loading"
           >
-            <span className="font-semibold text-foreground/80">Tip:</span> Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
-          </p>
-          <Button
-            size="lg"
-            variant="brand-outline"
-            className="w-full"
-            onClick={onOpenSuggestions}
-            data-testid="btn-suggest-bookmarks-empty"
-          >
-            <Sparkles className="h-4 w-4" />
-            Suggest
-          </Button>
-        </div>
-      )}
+            Loading most-played openings...
+          </div>
+        )}
 
-      {/* Most Played Openings — error / loading branches per CLAUDE.md */}
-      {mostPlayedError && (
-        <LoadError
-          resource="most-played openings"
-          className="charcoal-texture rounded-md p-4 text-center"
-          data-testid="mpo-error"
-        />
-      )}
-      {!mostPlayedError && mostPlayedLoading && !mostPlayedData && (
-        <div
-          className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
-          data-testid="mpo-loading"
-        >
-          Loading most-played openings...
-        </div>
-      )}
+        {/* Repertoire cards of the selected colour: bookmarks, most played, played before */}
+        {showRepertoire && (
+          <RepertoireList
+            color={color}
+            bookmarkRows={bookmarkRows}
+            currentRows={currentRows}
+            pastRows={pastRows}
+            currentCutoff={currentCutoff}
+            onOpenSuggestions={onOpenSuggestions}
+            debouncedFilters={debouncedFilters}
+            onOpenMoves={onOpenMoves}
+            onOpenGames={onOpenGames}
+            onOpenBookmarkGames={onOpenBookmarkGames}
+          />
+        )}
 
-      {/* Repertoire cards of the selected colour: bookmarks, most played, played before */}
-      {showRepertoire && (
-        <RepertoireList
+        {/* Findings of the selected colour (99%-gated cards, Not clear yet) below the repertoire */}
+        <OpeningFindings
           color={color}
-          bookmarkRows={bookmarkRows}
-          currentRows={currentRows}
-          pastRows={pastRows}
-          currentCutoff={currentCutoff}
-          onOpenSuggestions={onOpenSuggestions}
           debouncedFilters={debouncedFilters}
-          onOpenMoves={onOpenMoves}
-          onOpenGames={onOpenGames}
-          onOpenBookmarkGames={onOpenBookmarkGames}
+          onOpenMoves={onOpenFinding}
+          onOpenGames={onOpenFindingGames}
         />
-      )}
-
-      {/* Findings of the selected colour (99%-gated cards, Not clear yet) below the repertoire */}
-      <OpeningFindings
-        color={color}
-        debouncedFilters={debouncedFilters}
-        onOpenMoves={onOpenFinding}
-        onOpenGames={onOpenFindingGames}
-      />
+      </div>
     </div>
   );
 }

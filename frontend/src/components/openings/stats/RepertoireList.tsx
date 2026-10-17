@@ -14,9 +14,9 @@ import {
   formatScorePercent,
 } from '@/lib/openingVerdict';
 import { cn } from '@/lib/utils';
+import { REPERTOIRE_HEADING_CLASS } from './headingClasses';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
-const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
 const GROUP_HEADING_CLASS = 'text-sm font-semibold uppercase tracking-wide text-muted-foreground';
 /** One column on phones and tablets, two from lg. items-start: an open chart never stretches its neighbour. */
 const CARD_GRID_CLASS = 'grid grid-cols-1 items-start gap-3 lg:grid-cols-2';
@@ -197,13 +197,13 @@ export function RepertoireList({
     <section className="flex flex-col gap-4" data-testid={`repertoire-list-${color}`}>
       {bookmarkRows.length > 0 && (
         <div className="space-y-2" data-testid="repertoire-group-bookmarks">
-          <h2 className={SECTION_HEADING_CLASS}>Bookmarked Openings</h2>
+          <h2 className={REPERTOIRE_HEADING_CLASS}>Bookmarked Openings</h2>
           {renderGroup(bookmarkRows)}
         </div>
       )}
       {currentRows.length > 0 && (
         <div className="space-y-2" data-testid="repertoire-group-most-played">
-          <h2 className={SECTION_HEADING_CLASS}>Most Played Openings</h2>
+          <h2 className={REPERTOIRE_HEADING_CLASS}>Most Played Openings</h2>
           {renderGroup(currentRows)}
         </div>
       )}

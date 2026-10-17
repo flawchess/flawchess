@@ -13,7 +13,6 @@ import {
   stripEcoSuffix,
   verdictBandRange,
   verdictPosition,
-  whyLine,
   type OpeningVerdictInput,
 } from '@/lib/openingVerdict';
 
@@ -149,17 +148,5 @@ describe('score and table helpers', () => {
   it('isFadedRow is true strictly below the verdict floor', () => {
     expect(isFadedRow(REPERTOIRE_MIN_GAMES_FOR_VERDICT - 1)).toBe(true);
     expect(isFadedRow(REPERTOIRE_MIN_GAMES_FOR_VERDICT)).toBe(false);
-  });
-});
-
-describe('whyLine', () => {
-  it('says nothing for a typical eval verdict', () => {
-    expect(whyLine('typical', 'white')).toBeNull();
-    expect(whyLine('typical', 'black')).toBeNull();
-  });
-
-  it('names the direction and the colour for better and worse', () => {
-    expect(whyLine('better', 'white')).toBe('You come out of the opening better than an average White game.');
-    expect(whyLine('worse', 'black')).toBe('You come out of the opening worse than an average Black game.');
   });
 });
