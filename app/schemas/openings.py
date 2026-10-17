@@ -89,6 +89,10 @@ class WDLStats(BaseModel):
     avg_eval_pawns: float | None = None
     eval_ci_low_pawns: float | None = None
     eval_ci_high_pawns: float | None = None
+    # 99% bounds (Phase 242, D-17): drive the red/green verdict colouring on the
+    # Moves/Games eval bar. Left None by next-moves (which reuses WDLStats).
+    eval_ci99_low_pawns: float | None = None
+    eval_ci99_high_pawns: float | None = None
     eval_n: int = 0
     eval_p_value: float | None = None
     eval_confidence: Literal["low", "medium", "high"] = "low"
@@ -126,8 +130,9 @@ class OpeningsResponse(BaseModel):
     limit: int
     # Per-color engine-asymmetry baseline (in pawns). Resolved server-side
     # from the request's color (BLACK when color == "black", WHITE otherwise).
-    # The frontend renders this as a small reference tick on the MG-entry
-    # bullet chart, mirroring the Stats and Insights tab cards.
+    # Phase 242: this is the eval verdict bar centre AND the z-test H0 (the
+    # eval_p_value / eval_confidence above are tested against it); avg_eval_pawns
+    # stays the raw mean.
     eval_baseline_pawns: float
 
 
