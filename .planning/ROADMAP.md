@@ -164,7 +164,7 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 5/9 plans executed
+**Plans:** 6/9 plans executed
 **Status**: Planned (9 plans, 7 waves), ready to execute
 
 Plans:
@@ -180,7 +180,7 @@ Plans:
 - [x] 242-05-PLAN.md — Frontend Stats shell: sticky White | Black switch (desktop + phone, Umami) and retirement of the bookmark include toggle + its localStorage (D-16) (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
+- [x] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 242-07-PLAN.md — Frontend findings merged into Stats (cards, phone Show more, Not clear yet, empty state, older-games chip) (wave 5)
