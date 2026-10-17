@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Openings Stats now holds your opening insights: the moves that cost you and the moves that work, at 99% confidence, with a "Not clear yet" list for the rest. They sit above one repertoire table per colour, switched with a White | Black toggle.
+- The repertoire table pins your bookmarks, shows your most played openings, and moves openings you have not played recently into a collapsed "Played before" group. Duplicate rows collapse into one.
+- Each repertoire row expands to a board, Moves, Games and Bookmark links, a score bar, an engine-eval bar and a score-over-time chart with weekly game bars.
+- The eval verdict now compares against the average game for your colour on the Moves, Games and Stats tabs.
+- The Insights tab and the per-bookmark "Include in opening results" switch are gone. Old Insights links open Stats.
+
 ### Fixed
 
 - Background analysis no longer replaces a lichess-analyzed game's lichess evaluations with FlawChess engine evaluations.
