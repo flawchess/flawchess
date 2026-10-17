@@ -358,6 +358,31 @@ class TestAnalyzeEvalFields:
         assert response.eval_baseline_pawns == pytest.approx(0.25)
 
     @pytest.mark.asyncio
+    async def test_eval_is_centred_on_the_colour_baseline(self, db_session: AsyncSession) -> None:
+        """Phase 242 (D-13): MG evals averaging exactly the white baseline (+25 cp) are
+        "typical for the colour". The z-test runs against the baseline, so the bucket is
+        "low" while avg_eval_pawns stays the raw 0.25. Against 0 cp the same sample
+        (mean 25, sd about 18, n = 12) would be a very strong "high"."""
+        for cp in [0, 5, 10, 15, 20, 25, 25, 30, 35, 40, 45, 50]:
+            await _seed_game_with_mg_eval(
+                db_session, full_hash=EVAL_HASH + 200, user_color="white", eval_cp=cp
+            )
+
+        request = OpeningsRequest(target_hash=EVAL_HASH + 200, match_side="full", color="white")
+        response = await analyze(db_session, user_id=1, request=request)
+
+        stats = response.stats
+        assert stats.eval_n == 12
+        assert stats.avg_eval_pawns == pytest.approx(0.25, abs=1e-9)  # raw, uncentred
+        assert stats.eval_confidence == "low"
+        assert stats.eval_p_value is not None and stats.eval_p_value > 0.9
+        # 99% bounds bracket the 95% bounds (same SE, wider z).
+        assert stats.eval_ci_low_pawns is not None and stats.eval_ci_high_pawns is not None
+        assert stats.eval_ci99_low_pawns is not None and stats.eval_ci99_high_pawns is not None
+        assert stats.eval_ci99_low_pawns < stats.eval_ci_low_pawns
+        assert stats.eval_ci99_high_pawns > stats.eval_ci_high_pawns
+
+    @pytest.mark.asyncio
     async def test_eval_fields_default_when_no_mg_data(self, db_session: AsyncSession) -> None:
         """Position with no MG-entry eval → eval_n == 0, avg_eval_pawns is None,
         eval_confidence == 'low' (defaults), response still validates."""
