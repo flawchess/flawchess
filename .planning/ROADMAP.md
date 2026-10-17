@@ -164,7 +164,7 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 8/9 plans executed
+**Plans:** 9/9 plans executed
 **Status**: Planned (9 plans, 7 waves), ready to execute
 
 Plans:
@@ -189,7 +189,7 @@ Plans:
 - [x] 242-08-PLAN.md — Frontend Insights subtab, mobile tab and route removed with /openings/insights → /openings/stats redirect (D-15), one OpeningsTab union, old Insights components deleted (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 242-09-PLAN.md — Frontend expanded row (board, links, Score/Eval bars, bookmark toggle) + single-series ScoreChart with weekly volume (D-14) + CHANGELOG (wave 7)
+- [x] 242-09-PLAN.md — Frontend expanded row (board, links, Score/Eval bars, bookmark toggle) + single-series ScoreChart with weekly volume (D-14) + CHANGELOG (wave 7)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
