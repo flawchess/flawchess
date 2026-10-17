@@ -52,7 +52,7 @@ the N>=10 gate are shared.
 
 import math
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, TypedDict
 
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
@@ -412,3 +412,41 @@ def compute_confidence_bucket(
     se = math.sqrt(empirical_variance / n)
 
     return _bucket_from_p_value(p_value, n), p_value, se
+
+
+class ScoreVerdictFields(TypedDict):
+    """Chess score plus its two-sided p-value vs 50% and the 99% Wilson CI (D-18)."""
+
+    score: float
+    score_confidence: Literal["low", "medium", "high"]
+    score_p_value: float
+    score_ci99_low: float
+    score_ci99_high: float
+
+
+def score_verdict_fields(wins: int, draws: int, losses: int) -> ScoreVerdictFields:
+    """Score verdict inputs for one W/D/L row: score, bucket, p-value, 99% Wilson CI.
+
+    Single shared helper for the Openings most-played rows and the bookmark time series
+    (D-18), so both surfaces report identical numbers for identical games. n == 0
+    returns the neutral defaults (score 0.5, "low", p 1.0, degenerate CI at 0.5).
+    """
+    n = wins + draws + losses
+    if n == 0:
+        return ScoreVerdictFields(
+            score=SCORE_PIVOT,
+            score_confidence="low",
+            score_p_value=1.0,
+            score_ci99_low=SCORE_PIVOT,
+            score_ci99_high=SCORE_PIVOT,
+        )
+    score = (wins + 0.5 * draws) / n
+    confidence, p_value, _se = compute_confidence_bucket(wins, draws, losses, n)
+    ci99_low, ci99_high = wilson_bounds(score, n, z=VERDICT_CI_Z_99)
+    return ScoreVerdictFields(
+        score=score,
+        score_confidence=confidence,
+        score_p_value=p_value,
+        score_ci99_low=ci99_low,
+        score_ci99_high=ci99_high,
+    )

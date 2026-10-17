@@ -27,12 +27,13 @@ from app.schemas.stats import (
     RatingHistoryResponse,
     WDLByCategory,
 )
-from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.opening_insights_constants import (
     EVAL_BASELINE_PAWNS_BLACK,
     EVAL_BASELINE_PAWNS_WHITE,
 )
+from app.services.opening_eval import finalize_opening_eval
 from app.services.repertoire_recency import is_current, resolve_current_cutoffs
+from app.services.score_confidence import score_verdict_fields
 
 
 # Minimum number of games required for an opening to appear in top openings.
@@ -412,6 +413,7 @@ async def get_most_played_openings(
         position_wdl: dict[int, PositionWDL],
         phase_entry_metrics: dict[int, OpeningPhaseEntryMetrics],
         cutoff: datetime.datetime | None,
+        color: Literal["white", "black"],
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
@@ -432,33 +434,11 @@ async def get_most_played_openings(
             else:
                 win_pct = draw_pct = loss_pct = 0.0
 
-            # Phase-entry eval finalizer.
+            # Phase-entry eval finalizer. The eval z-test runs against the colour
+            # baseline (+25 cp White / -25 cp Black, D-13); avg_eval_pawns stays raw.
             pe = phase_entry_metrics.get(full_hash) if full_hash else None
-
-            # MG-entry pillar
-            avg_eval_pawns: float | None = None
-            eval_ci_low_pawns: float | None = None
-            eval_ci_high_pawns: float | None = None
-            eval_n = 0
-            eval_p_value: float | None = None
-            eval_confidence: Literal["low", "medium", "high"] = "low"
-
-            if pe is not None and pe.eval_n_mg > 0:
-                # H0: mean == 0 cp (engine-balanced). The per-color engine
-                # asymmetry baseline is shown on the bullet chart as a tick,
-                # not subtracted from the test reference.
-                confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
-                    pe.eval_sum_mg,
-                    pe.eval_sumsq_mg,
-                    pe.eval_n_mg,
-                )
-                avg_eval_pawns = mean_cp_mg / 100.0  # cp -> pawns
-                if pe.eval_n_mg >= 2:
-                    eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
-                    eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
-                eval_n = pe.eval_n_mg
-                eval_p_value = p_value_mg
-                eval_confidence = confidence_mg
+            eval_fields = finalize_opening_eval(pe, color)
+            score_fields = score_verdict_fields(wins, draws, losses)
 
             openings.append(
                 OpeningWDL(
@@ -476,13 +456,20 @@ async def get_most_played_openings(
                     win_pct=win_pct,
                     draw_pct=draw_pct,
                     loss_pct=loss_pct,
+                    score=score_fields["score"],
+                    score_confidence=score_fields["score_confidence"],
+                    score_p_value=score_fields["score_p_value"],
+                    score_ci99_low=score_fields["score_ci99_low"],
+                    score_ci99_high=score_fields["score_ci99_high"],
                     # MG-entry eval fields
-                    avg_eval_pawns=avg_eval_pawns,
-                    eval_ci_low_pawns=eval_ci_low_pawns,
-                    eval_ci_high_pawns=eval_ci_high_pawns,
-                    eval_n=eval_n,
-                    eval_p_value=eval_p_value,
-                    eval_confidence=eval_confidence,
+                    avg_eval_pawns=eval_fields["avg_eval_pawns"],
+                    eval_ci_low_pawns=eval_fields["eval_ci_low_pawns"],
+                    eval_ci_high_pawns=eval_fields["eval_ci_high_pawns"],
+                    eval_ci99_low_pawns=eval_fields["eval_ci99_low_pawns"],
+                    eval_ci99_high_pawns=eval_fields["eval_ci99_high_pawns"],
+                    eval_n=eval_fields["eval_n"],
+                    eval_p_value=eval_fields["eval_p_value"],
+                    eval_confidence=eval_fields["eval_confidence"],
                     last_played_at=last_played_at,
                     is_current=is_current(last_played_at, cutoff),
                 )
@@ -494,15 +481,13 @@ async def get_most_played_openings(
 
     return MostPlayedOpeningsResponse(
         white=rows_to_openings(
-            white_rows, white_position_wdl, white_phase_entry_metrics, cutoffs["white"]
+            white_rows, white_position_wdl, white_phase_entry_metrics, cutoffs["white"], "white"
         ),
         black=rows_to_openings(
-            black_rows, black_position_wdl, black_phase_entry_metrics, cutoffs["black"]
+            black_rows, black_position_wdl, black_phase_entry_metrics, cutoffs["black"], "black"
         ),
-        # Per-color engine-asymmetry baselines (in pawns). The frontend renders
-        # these as a small reference tick on the MG-entry bullet chart. They
-        # are NOT used as the chart's center or the z-test H0 — both of those
-        # remain anchored at 0 cp (engine-balanced).
+        # Per-color engine-asymmetry baselines (in pawns): the eval bar centre and the
+        # H0 of the eval z-test on Openings surfaces (D-13), already applied above.
         eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
         eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         current_cutoff_white=cutoffs["white"],
@@ -513,36 +498,28 @@ async def get_most_played_openings(
 def _bookmark_phase_entry_item(
     target_hash: str,
     pe: OpeningPhaseEntryMetrics | None,
+    color: Literal["white", "black"] | None,
 ) -> BookmarkPhaseEntryItem:
     """Compute the MG-entry eval display fields for a single hash.
 
-    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings.
-    Kept as a separate helper so the bookmark endpoint
-    can reuse the same numerical logic without depending on the OpeningWDL row shape.
+    Uses the same finalize_opening_eval as the most-played rows, so the bookmark
+    endpoint reports identical numbers without depending on the OpeningWDL row shape.
 
-    The eval z-test runs against H0: mean == 0 cp (engine-balanced) regardless
-    of the bookmark's color — the per-color engine-asymmetry baseline is
-    a display tick on the bullet chart, not the test reference.
+    The eval z-test runs against the bookmark colour's baseline (+25 cp White, -25 cp
+    Black; None counts as White), not 0 cp (D-13).
     """
-    item = BookmarkPhaseEntryItem(target_hash=target_hash)
-    if pe is None:
-        return item
-
-    if pe.eval_n_mg > 0:
-        confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
-            pe.eval_sum_mg,
-            pe.eval_sumsq_mg,
-            pe.eval_n_mg,
-        )
-        item.avg_eval_pawns = mean_cp_mg / 100.0
-        if pe.eval_n_mg >= 2:
-            item.eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
-            item.eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
-        item.eval_n = pe.eval_n_mg
-        item.eval_p_value = p_value_mg
-        item.eval_confidence = confidence_mg
-
-    return item
+    eval_fields = finalize_opening_eval(pe, color)
+    return BookmarkPhaseEntryItem(
+        target_hash=target_hash,
+        avg_eval_pawns=eval_fields["avg_eval_pawns"],
+        eval_ci_low_pawns=eval_fields["eval_ci_low_pawns"],
+        eval_ci_high_pawns=eval_fields["eval_ci_high_pawns"],
+        eval_ci99_low_pawns=eval_fields["eval_ci99_low_pawns"],
+        eval_ci99_high_pawns=eval_fields["eval_ci99_high_pawns"],
+        eval_n=eval_fields["eval_n"],
+        eval_p_value=eval_fields["eval_p_value"],
+        eval_confidence=eval_fields["eval_confidence"],
+    )
 
 
 async def get_bookmark_phase_entry_metrics(
@@ -598,7 +575,7 @@ async def get_bookmark_phase_entry_metrics(
         metrics_by_hash.update(group_metrics)
 
     items = [
-        _bookmark_phase_entry_item(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
+        _bookmark_phase_entry_item(b.target_hash, metrics_by_hash.get(int(b.target_hash)), b.color)
         for b in bookmarks
     ]
     return BookmarkPhaseEntryResponse(items=items)
