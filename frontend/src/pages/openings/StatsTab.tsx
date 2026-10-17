@@ -80,7 +80,7 @@ export function StatsTab({
       {/* Empty-state hint when there are no bookmarks at all */}
       {bookmarks.length === 0 && (
         <div className="charcoal-texture rounded-md p-4">
-          <h2 className="font-brand text-lg font-semibold text-foreground mb-3">Bookmarks</h2>
+          <h2 className="font-brand text-lg font-semibold text-foreground mb-3">Bookmarked Openings</h2>
           <p
             className="text-sm italic text-muted-foreground mb-3"
             data-testid="bookmarks-tip"

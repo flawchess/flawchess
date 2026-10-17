@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
-import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
-import { SCORE_OVER_TIME_LINE, VOLUME_BAR_COLOR } from '@/lib/theme';
+import { SCORE_VERDICT_BAND } from '@/lib/openingVerdict';
+import { SCORE_OVER_TIME_LINE, TYPICAL_BAND_FILL, VOLUME_BAR_COLOR } from '@/lib/theme';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import type { BookmarkTimeSeries, TimeSeriesPoint } from '@/types/position_bookmarks';
 
@@ -23,6 +24,12 @@ const SCORE_LINE_WIDTH = 2;
 const EVEN_SCORE_DASH = '4 3';
 const CHART_HEIGHT_CLASS = 'h-52';
 const EMPTY_MESSAGE = 'Not enough games in this opening for a score line yet.';
+// The grey typical band (the same 45-55% the score verdict bar uses), labelled like the
+// Clock Gap at Endgame Entry chart, at the text-sm floor (14px).
+const TYPICAL_LOW = EVEN_SCORE - SCORE_VERDICT_BAND;
+const TYPICAL_HIGH = EVEN_SCORE + SCORE_VERDICT_BAND;
+const TYPICAL_LABEL = 'typical';
+const TYPICAL_LABEL_FONT_SIZE = 14;
 
 function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showVolume: boolean }) {
   return (
@@ -52,9 +59,10 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
   const points = series.data;
   const dates = useMemo(() => points.map((p) => p.date), [points]);
   const formatDateTick = useMemo(() => createDateTickFormatter(dates), [dates]);
-  // The 50% reference line has to sit inside the axis even for a one-sided series.
+  // The 50% reference line and the typical band have to sit inside the axis even for a
+  // one-sided series.
   const yAxis = useMemo(
-    () => niceWinRateAxis([...points.map((p) => p.score), EVEN_SCORE]),
+    () => niceWinRateAxis([...points.map((p) => p.score), TYPICAL_LOW, TYPICAL_HIGH]),
     [points],
   );
   // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
@@ -73,6 +81,18 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
       <ChartContainer config={{}} className={`w-full ${CHART_HEIGHT_CLASS}`}>
         <ComposedChart data={points}>
           <CartesianGrid vertical={false} yAxisId="value" />
+          <ReferenceArea
+            yAxisId="value"
+            y1={TYPICAL_LOW}
+            y2={TYPICAL_HIGH}
+            fill={TYPICAL_BAND_FILL}
+            ifOverflow="visible"
+            label={{
+              value: TYPICAL_LABEL,
+              position: 'insideTopLeft',
+              style: { fontSize: TYPICAL_LABEL_FONT_SIZE, fill: 'var(--muted-foreground)' },
+            }}
+          />
           <XAxis dataKey="date" tickFormatter={formatDateTick} />
           <YAxis
             yAxisId="value"

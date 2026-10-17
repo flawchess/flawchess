@@ -197,13 +197,13 @@ export function RepertoireList({
     <section className="flex flex-col gap-4" data-testid={`repertoire-list-${color}`}>
       {bookmarkRows.length > 0 && (
         <div className="space-y-2" data-testid="repertoire-group-bookmarks">
-          <h2 className={SECTION_HEADING_CLASS}>Bookmarks</h2>
+          <h2 className={SECTION_HEADING_CLASS}>Bookmarked Openings</h2>
           {renderGroup(bookmarkRows)}
         </div>
       )}
       {currentRows.length > 0 && (
         <div className="space-y-2" data-testid="repertoire-group-most-played">
-          <h2 className={SECTION_HEADING_CLASS}>Most Played</h2>
+          <h2 className={SECTION_HEADING_CLASS}>Most Played Openings</h2>
           {renderGroup(currentRows)}
         </div>
       )}

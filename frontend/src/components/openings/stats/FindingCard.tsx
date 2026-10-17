@@ -11,6 +11,7 @@ import {
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedGap, gapVerdictColor } from '@/lib/gapBar';
 import { findingArrows, findingMoveText } from '@/lib/openingInsights';
+import { lastMoveSquares } from '@/lib/sanToSquares';
 import {
   EVAL_VERDICT_BAND,
   SCORE_VERDICT_BAND,
@@ -192,6 +193,7 @@ export function FindingCard({
   neutralArrow = false,
 }: FindingCardProps) {
   const arrows = findingArrows(finding);
+  const lastMove = lastMoveSquares(finding.entry_san_sequence) ?? undefined;
   return (
     <Card data-testid={testId}>
       <CardHeader as="h4" size="compact" className="flex-col items-start gap-0.5">
@@ -209,6 +211,7 @@ export function FindingCard({
           flipped={finding.color === 'black'}
           size={BOARD_SIZE}
           arrows={neutralArrow ? arrows?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL })) : arrows}
+          lastMove={lastMove}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <ScoreLine finding={finding} testId={testId} />

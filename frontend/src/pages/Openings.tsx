@@ -71,7 +71,7 @@ const TAB_INFO: Record<OpeningsTab, { aria: string; text: string }> = {
   },
   stats: {
     aria: 'About Opening Stats',
-    text: 'Your opening repertoire as White or Black (switch at the top). Opening insights list the moves after which you score clearly above or below 50%, counting your opponents\' replies too. Below, your bookmarked and most played openings show results, score and the engine eval when the middlegame starts, compared with an average game of that colour. Open an opening for its score over time.',
+    text: 'Your opening repertoire as White or Black (switch at the top). Bookmarked Openings and Most Played Openings show your results, score and the engine eval when the middlegame starts, compared with an average game of that colour. Open an opening for its score over time. Below, Moves that Cost You and Moves that Work list the moves after which you score clearly below or above 50%, counting your opponents\' replies too.',
   },
 };
 

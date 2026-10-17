@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * PositionResultsPanel End Eval row: the Openings ('opening-end') context renders the
- * baseline-centred VerdictBar; the Endgames ('endgame-entry') context keeps the old
- * MiniBulletChart and EvalConfidencePopover untouched.
+ * PositionResultsPanel Score and End Eval rows: the Score row and the Openings ('opening-end')
+ * End Eval row render verdict tracks beside their label cell; the Endgames ('endgame-entry')
+ * End Eval keeps the old MiniBulletChart and EvalConfidencePopover untouched.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -83,6 +83,12 @@ describe('PositionResultsPanel End Eval row', () => {
     const dot = screen.getByTestId('eval-verdict-position-dot');
     expect(dot.style.backgroundColor).toBe(normalized(ZONE_SUCCESS));
     expect(screen.queryByTestId('eval-bullet-position')).toBeNull();
+    // Label, value and popover sit in the left cell, beside the track (same layout as Score).
+    const textCell = screen.getByTestId('eval-text-position');
+    expect(textCell.textContent).toContain('End Eval:');
+    expect(textCell.contains(screen.getByTestId('eval-verdict-position-value'))).toBe(true);
+    expect(textCell.contains(screen.getByTestId('eval-bullet-popover-trigger'))).toBe(true);
+    expect(textCell.contains(screen.getByTestId('eval-verdict-position-track'))).toBe(false);
   });
 
   it('keeps the dot neutral below the 20-game floor even when outside the band and confident', () => {
@@ -117,6 +123,27 @@ describe('PositionResultsPanel End Eval row', () => {
     expect(screen.getByTestId('eval-bullet-position')).toBeTruthy();
     expect(screen.queryByTestId('eval-verdict-position-track')).toBeNull();
     expect(screen.getByTestId('eval-bullet-popover-trigger')).toBeTruthy();
+  });
+});
+
+describe('PositionResultsPanel Score row', () => {
+  it('renders a verdict track with a neutral dot for an unconfident score', () => {
+    renderPanel(stats());
+    expect(screen.getByTestId('score-verdict-position-band')).toBeTruthy();
+    const dot = screen.getByTestId('score-verdict-position-dot');
+    expect(dot.style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
+  });
+
+  it('colours the dot for a confident, large-sample score outside the band', () => {
+    renderPanel(stats({ score: 0.7, confidence: 'high', p_value: 0.001 }));
+    const dot = screen.getByTestId('score-verdict-position-dot');
+    expect(dot.style.backgroundColor).toBe(normalized(ZONE_SUCCESS));
+  });
+
+  it('keeps the dot neutral at 95% confidence: only the 99% gate colours it', () => {
+    renderPanel(stats({ score: 0.7, confidence: 'medium', p_value: 0.03 }));
+    const dot = screen.getByTestId('score-verdict-position-dot');
+    expect(dot.style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
   });
 });
 

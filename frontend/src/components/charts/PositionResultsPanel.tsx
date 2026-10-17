@@ -6,26 +6,21 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
-import { VerdictBar } from '@/components/openings/stats/VerdictBar';
+import { VerdictTrack } from '@/components/openings/stats/VerdictBar';
 import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
-import {
-  SCORE_BULLET_CENTER,
-  SCORE_BULLET_NEUTRAL_MAX,
-  SCORE_BULLET_NEUTRAL_MIN,
-  clampScoreCi,
-  scoreBulletDomain,
-  scoreZoneColor,
-} from '@/lib/scoreBulletConfig';
 import { isConfident } from '@/lib/significance';
 import { formatSignedGap } from '@/lib/gapBar';
 import {
   EVAL_VERDICT_BAND,
+  SCORE_VERDICT_BAND,
   evalBaselinePawns as colorEvalBaselinePawns,
   openingVerdict,
   openingVerdictReason,
+  scoreDelta,
+  verdictValueColor,
 } from '@/lib/openingVerdict';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
@@ -83,13 +78,15 @@ export function PositionResultsPanel({
   const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
   const scorePct = Math.round(stats.score * 100);
 
-  // Score-color font gate mirrors MoveExplorer.tsx: paint Score % in the
-  // zone color only when confidence is 'medium'/'high' (not 'low') AND
-  // the score is in a colored zone. Otherwise default foreground.
-  const zoneHex = scoreZoneColor(stats.score);
-  const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
-  const showZoneFontColor = isConfident(stats.confidence) && isInColoredZone;
-  const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
+  // Score verdict: same 99% / 20-game / +-5-point rule as the repertoire cards. The value text
+  // takes the dot colour only for a better or worse verdict.
+  const scoreVerdict = openingVerdict({
+    delta: scoreDelta(stats.score),
+    band: SCORE_VERDICT_BAND,
+    confidence: stats.confidence,
+    games: stats.total,
+  });
+  const scoreColor = verdictValueColor(scoreVerdict);
 
   // MG-entry eval row: 'opening-end' with data renders the baseline-centred VerdictBar (D-17);
   // everything else (Endgames entry eval, or no eval data) keeps the bullet-chart cells.
@@ -165,17 +162,13 @@ export function PositionResultsPanel({
             ariaLabel="Show score confidence details"
           />
         </span>
-        <div className="min-w-0 tabular-nums" data-testid="score-bullet-position">
-          <MiniBulletChart
-            value={stats.score}
-            center={SCORE_BULLET_CENTER}
-            neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-            neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-            domain={scoreBulletDomain()}
-            ciLow={clampScoreCi(stats.ci_low)}
-            ciHigh={clampScoreCi(stats.ci_high)}
-            barColor="neutral"
-            ariaLabel={`Score ${scorePct}% vs 50% baseline`}
+        <div className="min-w-0" data-testid="score-bullet-position">
+          <VerdictTrack
+            delta={scoreDelta(stats.score)}
+            band={SCORE_VERDICT_BAND}
+            verdict={scoreVerdict}
+            testId="score-verdict-position"
+            ariaLabel={`Score ${scorePct}%, centred on 50%`}
           />
         </div>
 
@@ -207,8 +200,9 @@ interface OpeningEvalVerdictRowProps {
 }
 
 /**
- * Opening-end End Eval: a verdict bar centred on the colour's average eval, spanning both
- * grid columns. Dot is green/red only for a confident (99%), out-of-band eval over 20+ games.
+ * Opening-end End Eval: label, value and popover in the left cell and a verdict track centred
+ * on the colour's average eval in the right cell, the same layout as the Score row. Dot is
+ * green/red only for a confident (99%), out-of-band eval over 20+ evals.
  */
 function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: OpeningEvalVerdictRowProps) {
   const avgEval = stats.avg_eval_pawns as number;
@@ -224,38 +218,48 @@ function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: Openin
     games: stats.eval_n,
   };
   const verdict = openingVerdict(verdictInput);
+  const valueColor = verdictValueColor(verdict);
   const colourName = filterColor === 'black' ? 'Black' : 'White';
   return (
-    <div className="col-span-2" data-testid="eval-text-position">
-      <VerdictBar
-        delta={delta}
-        band={EVAL_VERDICT_BAND}
-        verdict={verdict}
-        valueText={formatSignedEvalPawns(avgEval)}
-        zeroTickDelta={-baseline}
-        centreSwatch={filterColor}
-        testId="eval-verdict-position"
-        ariaLabel={`End eval ${formatSignedGap(avgEval)}, centred on an average ${colourName} game at ${formatSignedGap(baseline)}`}
-        leading={<span className="text-muted-foreground">End Eval:</span>}
-        trailing={
-          <>
-            <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-            {/* Fixed trigger testId: it is the Umami popover-open target, keep its history. */}
-            <EvalVerdictPopover
-              testId="eval-bullet-popover-trigger"
-              label="End Eval"
-              avgEvalPawns={avgEval}
-              evalN={stats.eval_n}
-              color={filterColor}
-              reason={openingVerdictReason(verdictInput)}
-              ci99Low={stats.eval_ci99_low_pawns ?? null}
-              ci99High={stats.eval_ci99_high_pawns ?? null}
-              pValue={stats.eval_p_value ?? null}
-            />
-          </>
-        }
-      />
-    </div>
+    <>
+      <span
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
+        data-testid="eval-text-position"
+      >
+        <span className="text-muted-foreground">End Eval:</span>
+        <span
+          className="ml-auto font-semibold inline-flex items-center gap-0.3"
+          style={valueColor ? { color: valueColor } : undefined}
+          data-testid="eval-verdict-position-value"
+        >
+          {formatSignedEvalPawns(avgEval)}
+          <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+        {/* Fixed trigger testId: it is the Umami popover-open target, keep its history. */}
+        <EvalVerdictPopover
+          testId="eval-bullet-popover-trigger"
+          label="End Eval"
+          avgEvalPawns={avgEval}
+          evalN={stats.eval_n}
+          color={filterColor}
+          reason={openingVerdictReason(verdictInput)}
+          ci99Low={stats.eval_ci99_low_pawns ?? null}
+          ci99High={stats.eval_ci99_high_pawns ?? null}
+          pValue={stats.eval_p_value ?? null}
+        />
+      </span>
+      <div className="min-w-0" data-testid="eval-verdict-position">
+        <VerdictTrack
+          delta={delta}
+          band={EVAL_VERDICT_BAND}
+          verdict={verdict}
+          zeroTickDelta={-baseline}
+          centreSwatch={filterColor}
+          testId="eval-verdict-position"
+          ariaLabel={`End eval ${formatSignedGap(avgEval)}, centred on an average ${colourName} game at ${formatSignedGap(baseline)}`}
+        />
+      </div>
+    </>
   );
 }
 

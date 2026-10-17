@@ -14,7 +14,7 @@
  * neutral blue.
  */
 
-import { gapPosition, type GapVerdict } from '@/lib/gapBar';
+import { gapPosition, gapVerdictColor, type GapVerdict } from '@/lib/gapBar';
 import {
   EVAL_BASELINE_PAWNS_BLACK,
   EVAL_BASELINE_PAWNS_WHITE,
@@ -75,6 +75,11 @@ export function openingVerdictReason(input: OpeningVerdictInput): OpeningVerdict
 export function openingVerdict(input: OpeningVerdictInput): GapVerdict {
   const reason = openingVerdictReason(input);
   return reason === 'better' || reason === 'worse' ? reason : 'typical';
+}
+
+/** Colour of a verdict's value text: the dot colour when better or worse, none (plain foreground) otherwise. */
+export function verdictValueColor(verdict: GapVerdict): string | undefined {
+  return verdict === 'better' || verdict === 'worse' ? gapVerdictColor(verdict) : undefined;
 }
 
 /** The engine-balanced reference an average game of this colour reaches the middlegame at. */

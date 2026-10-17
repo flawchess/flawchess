@@ -69,3 +69,22 @@ export function sanToUci(fen: string, san: string): string | null {
     return null;
   }
 }
+
+/**
+ * From/to squares of the last move of a SAN line played from the starting position, for the
+ * yellow last-move highlight on a mini board. `null` for an empty or illegal line.
+ */
+export function lastMoveSquares(sans: readonly string[]): MoveSquares | null {
+  if (sans.length === 0) return null;
+  try {
+    const chess = new Chess();
+    let last: MoveSquares | null = null;
+    for (const san of sans) {
+      const move = chess.move(san);
+      last = { from: move.from, to: move.to };
+    }
+    return last;
+  } catch {
+    return null;
+  }
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Archive, ArrowRightLeft, Bookmark, BookmarkMinus, BookmarkPlus, ChevronDown, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { ScoreChart } from '@/components/charts/ScoreChart';
@@ -28,6 +28,7 @@ import {
   scoreDelta,
 } from '@/lib/openingVerdict';
 import { pgnToSanArray } from '@/lib/pgn';
+import { lastMoveSquares } from '@/lib/sanToSquares';
 import { formatRelativeDate } from '@/lib/relativeDate';
 import { UNRELIABLE_OPACITY } from '@/lib/theme';
 import { cn } from '@/lib/utils';
@@ -290,6 +291,10 @@ export function RepertoireCard({
   const testId = `repertoire-card-${index}`;
   // Any card outside the current repertoire window: stale bookmarks and Played before rows.
   const stale = !row.isCurrent;
+  const lastMove = useMemo(
+    () => lastMoveSquares(pgnToSanArray(row.moveLine)) ?? undefined,
+    [row.moveLine],
+  );
 
   const handleToggleChart = () => {
     // Discovery only: track the expand, never the collapse.
@@ -335,7 +340,12 @@ export function RepertoireCard({
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
-          <LazyMiniBoard fen={row.fen} flipped={row.color === 'black'} size={BOARD_SIZE} />
+          <LazyMiniBoard
+            fen={row.fen}
+            flipped={row.color === 'black'}
+            size={BOARD_SIZE}
+            lastMove={lastMove}
+          />
           <div className="flex min-w-0 flex-1 flex-col gap-2.5">
             <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
             <ScoreBar row={row} testId={testId} />

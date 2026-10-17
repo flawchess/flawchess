@@ -149,3 +149,11 @@ describe('ScoreChart empty state', () => {
     expect(container.querySelector('.recharts-wrapper')).toBeNull();
   });
 });
+
+describe('ScoreChart typical band', () => {
+  it('draws the labelled grey 45-55% typical band', () => {
+    const { container } = render(<ScoreChart series={makeSeries(WEEKLY_DATES)} />);
+    expect(container.querySelector('.recharts-reference-area')).not.toBeNull();
+    expect(screen.getByText('typical')).toBeTruthy();
+  });
+});

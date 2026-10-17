@@ -131,6 +131,14 @@ discuss-phase" and record defaults for the rest.
 - **D-27:** The "not played recently" chip is replaced by a muted lucide `Archive` icon right of the
   last-played date, on every card outside the current repertoire window (stale bookmarks and Played before).
   Indicator only, no action.
+- **D-28:** The score-over-time chart marks the typical 45-55% range as a grey labelled band, like the
+  Clock Gap at Endgame Entry chart. Section headings read "Bookmarked Openings" and "Most Played Openings";
+  the Stats tab info popover follows the D-24 order. Repertoire and finding mini boards highlight the last
+  played move in yellow (finding cards keep the candidate-move arrow on top).
+- **D-29:** The Moves / Games "Results played as" card (shared `PositionResultsPanel`, so the Endgames Games
+  subtab too) replaces the Score bullet chart with the verdict track (same 99% / 20-game / +-5-point rule).
+  The opening-end End Eval row moves its label, value and popover into the left cell beside its track, the
+  same layout as Score. The score popover stays `ScoreConfidencePopover`.
 
 </decisions>
 
