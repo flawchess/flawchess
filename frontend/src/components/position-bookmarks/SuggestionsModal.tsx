@@ -111,6 +111,8 @@ export function SuggestionsModal({ open, onOpenChange, mostPlayedData, bookmarks
 
     await qc.invalidateQueries({ queryKey: ['position-bookmarks'] });
     await qc.refetchQueries({ queryKey: ['position-bookmarks'] });
+    // New bookmarks make the most-played list drop their twin rows (D-06).
+    await qc.invalidateQueries({ queryKey: ['mostPlayedOpenings'] });
     setSaving(false);
     setSelected(new Set());
     onOpenChange(false);

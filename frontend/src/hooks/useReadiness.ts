@@ -40,7 +40,7 @@ const READINESS_BACKOFF_BUDGET_MS = 30 * 60_000;
  *
  * The hook never hard-stops at tier1: while tier1 is true and tier2 is false
  * it keeps polling (albeit decayed), so Endgames.tsx, OpeningFindingCard.tsx,
- * OpeningStatsCard.tsx and PositionResultsPanel.tsx still unlock reactively
+ * RepertoireTable.tsx and PositionResultsPanel.tsx still unlock reactively
  * on the tier2 transition without requiring a navigation.
  *
  * All consumers on the same page share one in-flight request via the shared

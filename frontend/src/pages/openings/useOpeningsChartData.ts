@@ -15,7 +15,6 @@ import type {
   TimeSeriesResponse,
 } from '@/types/position_bookmarks';
 import type { BookmarkPhaseEntryItem } from '@/types/stats';
-import type { WdlStatsRow } from './StatsTab';
 import type { HighlightedMove } from './useDeepLinkHighlight';
 
 export type UseOpeningsChartDataParams = {
@@ -32,13 +31,12 @@ export type OpeningsChartData = {
   boardArrows: BoardArrow[];
   bookmarkPhaseEntryByHash: Map<string, BookmarkPhaseEntryItem>;
   tsData: TimeSeriesResponse | undefined;
-  wdlStatsMap: Record<number, WdlStatsRow>;
 };
 
 /**
  * Query-derivation cluster for the Openings page: board arrows from next-move
- * frequencies, per-bookmark phase-entry metrics, and per-bookmark WDL stats
- * from the bookmark time series (every bookmark feeds both requests). Matches useOpeningsHandlers.ts's shape (one typed
+ * frequencies, per-bookmark phase-entry metrics, and the per-bookmark time series
+ * (every bookmark feeds both requests). Matches useOpeningsHandlers.ts's shape (one typed
  * params object in, one named data interface out).
  */
 export function useOpeningsChartData(params: UseOpeningsChartDataParams): OpeningsChartData {
@@ -140,25 +138,9 @@ export function useOpeningsChartData(params: UseOpeningsChartDataParams): Openin
 
   const { data: tsData } = useTimeSeries(timeSeriesRequest);
 
-  // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
-  const wdlStatsMap = useMemo(() => {
-    const map: Record<number, WdlStatsRow> = {};
-    for (const s of tsData?.series ?? []) {
-      map[s.bookmark_id] = {
-        wins: s.total_wins,
-        draws: s.total_draws,
-        losses: s.total_losses,
-        total: s.total_games,
-        last_played_at: s.last_played_at ?? null,
-      };
-    }
-    return map;
-  }, [tsData]);
-
   return {
     boardArrows,
     bookmarkPhaseEntryByHash,
     tsData,
-    wdlStatsMap,
   };
 }

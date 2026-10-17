@@ -20,6 +20,7 @@ import {
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_NEUTRAL_MAX_PAWNS,
 } from '@/lib/openingStatsZones';
+import { SCORE_BULLET_CENTER, SCORE_BULLET_NEUTRAL_MAX } from '@/lib/scoreBulletConfig';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 
 /** Fewer games than this never get a verdict. Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
@@ -27,6 +28,17 @@ export const REPERTOIRE_MIN_GAMES_FOR_VERDICT = 20;
 
 /** Half-width of the grey typical band on the eval bar, in pawns (benchmark section 2.1 centred IQR). */
 export const EVAL_VERDICT_BAND = EVAL_NEUTRAL_MAX_PAWNS;
+
+/** Half-width of the typical score band: 5 points around 50% (D-00b, shared SCORE_BULLET band). */
+export const SCORE_VERDICT_BAND = SCORE_BULLET_NEUTRAL_MAX;
+
+const PERCENT_SCALE = 100;
+/** An eval that rounds to 0.0 reads without a sign. */
+const EVAL_COMPACT_ZERO_BELOW = 0.05;
+const EVAL_COMPACT_DECIMALS = 1;
+const TYPOGRAPHIC_MINUS = '\u2212';
+/** Opening names carry a trailing " (B12)" ECO code that the repertoire table drops (no ECO codes). */
+const TRAILING_ECO_PATTERN = / \([A-E]\d\d\)$/;
 
 /** Why a bar reads the way it does; the popover turns this into a sentence. */
 export type OpeningVerdictReason = 'too-few' | 'typical' | 'chance' | 'better' | 'worse';
@@ -70,4 +82,31 @@ export function verdictBandRange(band: number): { leftPct: number; widthPct: num
   const leftPct = verdictPosition(-band, band);
   const rightPct = verdictPosition(band, band);
   return { leftPct, widthPct: rightPct - leftPct };
+}
+
+/** Score minus the 50% centre, as a fraction (0.06 = six points above break-even). */
+export function scoreDelta(score: number): number {
+  return score - SCORE_BULLET_CENTER;
+}
+
+/** "56%": the compact score cell text. */
+export function formatScorePercent(score: number): string {
+  return `${Math.round(score * PERCENT_SCALE)}%`;
+}
+
+/** Compact signed eval for the table cell: "+0.9", "−0.4", "0.0" when it rounds to zero. */
+export function formatEvalCompact(pawns: number): string {
+  if (Math.abs(pawns) < EVAL_COMPACT_ZERO_BELOW) return (0).toFixed(EVAL_COMPACT_DECIMALS);
+  const sign = pawns > 0 ? '+' : TYPOGRAPHIC_MINUS;
+  return `${sign}${Math.abs(pawns).toFixed(EVAL_COMPACT_DECIMALS)}`;
+}
+
+/** Drops a trailing " (B12)" ECO suffix; names without one pass through. */
+export function stripEcoSuffix(name: string): string {
+  return name.replace(TRAILING_ECO_PATTERN, '');
+}
+
+/** Rows under the verdict game floor are drawn faded and never coloured (D-00). */
+export function isFadedRow(games: number): boolean {
+  return games < REPERTOIRE_MIN_GAMES_FOR_VERDICT;
 }

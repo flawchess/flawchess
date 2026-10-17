@@ -74,6 +74,15 @@ export interface BookmarkTimeSeries {
   // ISO 8601 (or null when no qualifying games). MAX(played_at) across all
   // matching games — drives the bookmark card "Last played: <relative>" line.
   last_played_at?: string | null;
+  // Score verdict inputs over the in-window totals, computed server-side (D-18).
+  score: number;
+  score_confidence: 'low' | 'medium' | 'high';
+  score_p_value: number;
+  score_ci99_low: number;
+  score_ci99_high: number;
+  // False when the opening was last played before the colour's current-repertoire
+  // cutoff (D-04): drives the "not played recently" chip.
+  is_current: boolean;
 }
 
 export interface TimeSeriesResponse {
