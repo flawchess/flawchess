@@ -262,6 +262,49 @@ async def query_results_by_color(
     return list(result.fetchall())
 
 
+async def query_nth_recent_played_at(
+    session: AsyncSession,
+    user_id: int,
+    color: Literal["white", "black"],
+    n: int,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+) -> datetime.datetime | None:
+    """Return played_at of the user's Nth most recent game as ``color``, or None.
+
+    None means the user has fewer than ``n`` games of that colour under the active
+    filters (the current-repertoire cutoff then does not exist, D-01). Filters go
+    through apply_game_filters, the only filter implementation (D-02). Served by
+    ix_games_user_played_at (user_id, played_at DESC).
+    """
+    stmt = select(Game.played_at).where(
+        Game.user_id == user_id,
+        Game.played_at.is_not(None),
+    )
+    stmt = apply_game_filters(
+        stmt,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        from_date,
+        to_date,
+        color=color,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+    )
+    stmt = stmt.order_by(Game.played_at.desc()).offset(n - 1).limit(1)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def query_top_openings_sql_wdl(
     session: AsyncSession,
     user_id: int,

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.schemas.stats import (
     BookmarkPhaseEntryRequest,
@@ -21,6 +22,9 @@ from app.services import stats_service
 from app.users import current_active_user
 
 router = APIRouter(prefix="/stats", tags=["stats"])
+
+#: The current UTC instant, dev-clock-shiftable. Real clock outside development.
+NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 
 
 @router.get("/rating-history", response_model=RatingHistoryResponse)
@@ -88,6 +92,7 @@ async def get_global_stats(
 async def get_most_played_openings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
     from_date: datetime.date | None = Query(default=None),
     to_date: datetime.date | None = Query(default=None),
     time_control: list[str] | None = Query(default=None),
@@ -114,6 +119,7 @@ async def get_most_played_openings(
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        now_utc=now_utc,
     )
 
 

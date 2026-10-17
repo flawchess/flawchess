@@ -230,7 +230,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
             )
         expected_mean = sum([20, 25, 25, 28, 30, 30, 30, 32, 35, 35, 38, 42]) / 12
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
         opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
         assert opening is not None, f"Opening {opening_name} (hash {full_hash}) not in white list"
 
@@ -268,7 +270,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 mg_eval_cp=None,
             )
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
         opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
         assert opening is not None
 
@@ -297,7 +301,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 mg_eval_cp=cp,
             )
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
         for opening in response.white + response.black:
             assert opening.eval_n <= opening.total
 
@@ -392,7 +398,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
             )
             await db_session.flush()
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
 
         # White games: user is white, sign=+1 → positive eval
         opening_w = next((o for o in response.white if o.full_hash == str(hash_w)), None)
@@ -426,7 +434,9 @@ class TestGetMostPlayedOpeningsPhaseEntry:
                 mg_eval_cp=cp,
             )
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
         opening = next((o for o in response.white if o.full_hash == str(full_hash)), None)
         assert opening is not None
 

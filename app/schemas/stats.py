@@ -74,6 +74,9 @@ class OpeningWDL(BaseModel):
     # the OpeningStatsCard score-confidence popover. None when every
     # contributing game has a NULL played_at (rare).
     last_played_at: datetime.datetime | None = None
+    # True when last_played_at is on or after the colour's current-repertoire cutoff
+    # (or the colour has no cutoff). False = "Played before" group (D-04).
+    is_current: bool
 
 
 class MostPlayedOpeningsResponse(BaseModel):
@@ -89,6 +92,11 @@ class MostPlayedOpeningsResponse(BaseModel):
     # opening_insights_constants.EVAL_BASELINE_PAWNS_*).
     eval_baseline_pawns_white: float
     eval_baseline_pawns_black: float
+    # Per-colour current-repertoire cutoff (D-01..D-04). None means the user has
+    # fewer than 200 games of that colour under the active filters, so every
+    # opening of that colour is current.
+    current_cutoff_white: datetime.datetime | None = None
+    current_cutoff_black: datetime.datetime | None = None
 
 
 class BookmarkPhaseEntryItem(BaseModel):

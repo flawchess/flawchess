@@ -417,7 +417,9 @@ class TestGetMostPlayedOpenings:
         """Response always has white and black keys with list values."""
         uid = _USER_MOST_PLAYED
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
 
         assert isinstance(response.white, list)
         assert isinstance(response.black, list)
@@ -427,7 +429,9 @@ class TestGetMostPlayedOpenings:
         """If any openings are returned, each entry has the required display fields."""
         uid = _USER_MOST_PLAYED
 
-        response = await get_most_played_openings(db_session, uid)
+        response = await get_most_played_openings(
+            db_session, uid, now_utc=datetime.datetime.now(datetime.UTC)
+        )
 
         for opening in response.white + response.black:
             assert hasattr(opening, "opening_eco")

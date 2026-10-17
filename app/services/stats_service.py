@@ -32,6 +32,7 @@ from app.services.opening_insights_constants import (
     EVAL_BASELINE_PAWNS_BLACK,
     EVAL_BASELINE_PAWNS_WHITE,
 )
+from app.services.repertoire_recency import is_current, resolve_current_cutoffs
 
 
 # Minimum number of games required for an opening to appear in top openings.
@@ -266,8 +267,14 @@ async def get_most_played_openings(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    *,
+    now_utc: datetime.datetime,
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with position-based game counts.
+
+    ``now_utc`` (from the dev_now_utc dependency, never the wall clock) anchors the
+    60-day floor of the per-colour current-repertoire cutoff (D-03); each row carries
+    ``is_current`` and the response returns both cutoffs.
 
     Opening selection uses the games table (by opening_eco/name), but the
     displayed game count comes from game_positions (games passing through
@@ -277,6 +284,20 @@ async def get_most_played_openings(
     query_opening_phase_entry_metrics_batch.
     Sequential awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
     """
+    cutoffs = await resolve_current_cutoffs(
+        session,
+        user_id,
+        ["white", "black"],
+        now_utc=now_utc,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+    )
     white_rows = await query_top_openings_sql_wdl(
         session,
         user_id=user_id,
@@ -390,6 +411,7 @@ async def get_most_played_openings(
         rows: list[Row[Any]],
         position_wdl: dict[int, PositionWDL],
         phase_entry_metrics: dict[int, OpeningPhaseEntryMetrics],
+        cutoff: datetime.datetime | None,
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
@@ -462,6 +484,7 @@ async def get_most_played_openings(
                     eval_p_value=eval_p_value,
                     eval_confidence=eval_confidence,
                     last_played_at=last_played_at,
+                    is_current=is_current(last_played_at, cutoff),
                 )
             )
         # Sort by position-based game count descending (may differ from
@@ -470,14 +493,20 @@ async def get_most_played_openings(
         return openings
 
     return MostPlayedOpeningsResponse(
-        white=rows_to_openings(white_rows, white_position_wdl, white_phase_entry_metrics),
-        black=rows_to_openings(black_rows, black_position_wdl, black_phase_entry_metrics),
+        white=rows_to_openings(
+            white_rows, white_position_wdl, white_phase_entry_metrics, cutoffs["white"]
+        ),
+        black=rows_to_openings(
+            black_rows, black_position_wdl, black_phase_entry_metrics, cutoffs["black"]
+        ),
         # Per-color engine-asymmetry baselines (in pawns). The frontend renders
         # these as a small reference tick on the MG-entry bullet chart. They
         # are NOT used as the chart's center or the z-test H0 — both of those
         # remain anchored at 0 cp (engine-balanced).
         eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
         eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
+        current_cutoff_white=cutoffs["white"],
+        current_cutoff_black=cutoffs["black"],
     )
 
 
