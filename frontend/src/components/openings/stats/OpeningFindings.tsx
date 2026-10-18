@@ -28,14 +28,14 @@ interface KindMeta {
 
 const KINDS: readonly KindMeta[] = [
   {
-    kind: 'weakness',
-    title: 'Moves that Cost You',
-    intro: "Moves after which you score below 50%, your own moves and your opponents' replies. The clearest come first.",
-  },
-  {
     kind: 'strength',
     title: 'Moves that Work',
     intro: "Moves after which you score above 50%, your own moves and your opponents' replies. The clearest come first.",
+  },
+  {
+    kind: 'weakness',
+    title: 'Moves that Cost You',
+    intro: "Moves after which you score below 50%, your own moves and your opponents' replies. The clearest come first.",
   },
 ];
 
@@ -252,8 +252,8 @@ interface OpeningFindingsProps {
 }
 
 /**
- * Findings for the selected colour below the repertoire cards: "Moves that Cost You" and
- * "Moves that Work", each the backend's top 10 by Wilson bound, any confidence (D-38), with a
+ * Findings for the selected colour below the repertoire cards: "Moves that Work" and
+ * "Moves that Cost You", each the backend's top 10 by Wilson bound, any confidence (D-38), with a
  * phone "Show more" (D-08). Each card's colour carries the 95% verdict, so a finding that could
  * still be chance draws blue. A section without cards says so in one line, and both sections
  * empty merge into one block.
