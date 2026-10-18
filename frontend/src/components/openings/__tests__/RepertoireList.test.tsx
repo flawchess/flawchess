@@ -601,27 +601,18 @@ describe('useOpeningRowTimeSeries', () => {
     const series = makeSeries(5, 30);
     const row = makeRow({ key: 'bookmark-5', kind: 'bookmark', series });
     const { result } = renderHook(() =>
-      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: true }),
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS }),
     );
     expect(result.current.series).toBe(series);
     expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
   });
 
-  it('does not fetch a most-played row\'s series until enabled', () => {
-    const row = makeRow({ key: 'mpo-1', fullHash: '777' });
-    const { result } = renderHook(() =>
-      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: false }),
-    );
-    expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
-    expect(result.current.series).toBeNull();
-  });
-
-  it('requests one full-position series for an enabled most-played row', () => {
+  it('requests one full-position series for a most-played row', () => {
     const series = makeSeries(MOST_PLAYED_ROW_SERIES_ID, 40);
     useTimeSeriesMock.mockReturnValue({ data: { series: [series] }, isLoading: false, isError: false });
     const row = makeRow({ key: 'mpo-1', fullHash: '777', color: 'black' });
     const { result } = renderHook(() =>
-      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS, enabled: true }),
+      useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS }),
     );
     const request = useTimeSeriesMock.mock.calls.at(-1)?.[0];
     expect(request.bookmarks).toEqual([

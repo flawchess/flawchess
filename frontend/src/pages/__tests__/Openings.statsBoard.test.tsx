@@ -40,93 +40,15 @@ describe('Openings board container className', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Score bullet sub-tree tests
-//
-// Full-page render of Openings requires mocking 15+ hooks. Instead, we
-// test the score bullet sub-tree components directly: ScoreConfidencePopover
-// (trigger testid + aria-label) and the isUnreliable opacity logic.
+// Unreliable-row opacity constants (PositionResultsPanel fades rows under the floor).
 // ---------------------------------------------------------------------------
 
-import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import {
-  SCORE_BULLET_CENTER,
-  SCORE_BULLET_DOMAIN,
-  SCORE_BULLET_NEUTRAL_MAX,
-  SCORE_BULLET_NEUTRAL_MIN,
-} from '@/lib/scoreBulletConfig';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
-
-describe('ScoreConfidencePopover trigger (score bullet)', () => {
-  it('renders trigger with expected testid and aria-label', () => {
-    render(
-      <ScoreConfidencePopover
-        level="high"
-        pValue={0.02}
-        score={0.7}
-        gameCount={10}
-        testId="score-bullet-popover-trigger"
-        ariaLabel="Show score confidence details"
-      />,
-    );
-    const trigger = screen.getByTestId('score-bullet-popover-trigger');
-    expect(trigger).not.toBeNull();
-    expect(trigger.getAttribute('aria-label')).toBe('Show score confidence details');
-  });
-
-  it('uses default aria-label when not provided', () => {
-    render(
-      <ScoreConfidencePopover
-        level="low"
-        pValue={0.3}
-        score={0.5}
-        gameCount={5}
-        testId="test-trigger"
-      />,
-    );
-    const trigger = screen.getByTestId('test-trigger');
-    expect(trigger.getAttribute('aria-label')).toBe('Show score confidence details');
-  });
-});
-
-describe('MiniBulletChart score-domain configuration', () => {
-  it('renders with score-domain constants and CI whisker', () => {
-    render(
-      <MiniBulletChart
-        value={0.7}
-        center={SCORE_BULLET_CENTER}
-        neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-        neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-        domain={SCORE_BULLET_DOMAIN}
-        ciLow={0.55}
-        ciHigh={0.85}
-        ariaLabel="Score 70% vs 50% baseline"
-      />,
-    );
-    // MiniBulletChart renders with testid="mini-bullet-chart"
-    expect(screen.getByTestId('mini-bullet-chart')).not.toBeNull();
-    // CI whisker is present when both ciLow and ciHigh are provided
-    expect(screen.getByTestId('mini-bullet-whisker')).not.toBeNull();
-  });
-
-  it('does not render CI whisker when CI props omitted', () => {
-    render(
-      <MiniBulletChart
-        value={0.5}
-        center={SCORE_BULLET_CENTER}
-        neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-        neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-        domain={SCORE_BULLET_DOMAIN}
-        ariaLabel="Score 50% vs 50% baseline"
-      />,
-    );
-    expect(screen.queryByTestId('mini-bullet-whisker')).toBeNull();
-  });
-});
 
 describe('Score bullet isUnreliable opacity logic', () => {
   it('total < MIN_GAMES_FOR_RELIABLE_STATS triggers UNRELIABLE_OPACITY', () => {
-    // The moveExplorerContent IIFE applies opacity when stats.total < MIN_GAMES_FOR_RELIABLE_STATS.
+    // PositionResultsPanel applies opacity when stats.total < MIN_GAMES_FOR_RELIABLE_STATS.
     // Verify the constants are consistent with the spec (threshold=10, opacity=0.5).
     expect(MIN_GAMES_FOR_RELIABLE_STATS).toBe(10);
     expect(UNRELIABLE_OPACITY).toBe(0.5);
@@ -139,12 +61,10 @@ describe('Score bullet isUnreliable opacity logic', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Eval bullet sub-tree tests
+// Endgames entry-eval bullet sub-tree tests
 //
-// Same pattern as the score-bullet tests above: full-page render of Openings
-// requires mocking 15+ hooks, so we cover the eval row's key sub-trees
-// (MiniBulletChart with eval domain + EvalConfidencePopover trigger) and
-// the hasMgEval gate logic in isolation.
+// The Openings End Eval row is a verdict track (PositionResultsPanel.test.tsx); the
+// bullet chart and EvalConfidencePopover remain only for the Endgames entry eval.
 // ---------------------------------------------------------------------------
 
 import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
@@ -162,7 +82,6 @@ describe('EvalConfidencePopover trigger (eval bullet)', () => {
         pValue={0.04}
         gameCount={25}
         evalMeanPawns={0.4}
-        color="white"
         testId="eval-bullet-popover-trigger"
       />,
     );
@@ -173,18 +92,17 @@ describe('EvalConfidencePopover trigger (eval bullet)', () => {
 });
 
 describe('MiniBulletChart eval-domain configuration', () => {
-  it('renders the eval bullet with tickPawns and CI whisker', () => {
+  it('renders the eval bullet with a CI whisker', () => {
     render(
       <MiniBulletChart
         value={0.4}
         ciLow={0.2}
         ciHigh={0.6}
-        tickPawns={0.25}
         neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
         neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
         domain={EVAL_BULLET_DOMAIN_PAWNS}
         barColor="neutral"
-        ariaLabel="Avg eval at MG entry: 0.40 pawns"
+        ariaLabel="Avg eval at endgame entry: 0.40 pawns"
       />,
     );
     expect(screen.getByTestId('mini-bullet-chart')).not.toBeNull();

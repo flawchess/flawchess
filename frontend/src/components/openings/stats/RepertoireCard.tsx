@@ -193,11 +193,7 @@ function ScoreOverTime({
   debouncedFilters: FilterState;
 }) {
   // The block only mounts while the chart is open, so mounting is the lazy trigger.
-  const { series, isLoading, isError } = useOpeningRowTimeSeries({
-    row,
-    debouncedFilters,
-    enabled: true,
-  });
+  const { series, isLoading, isError } = useOpeningRowTimeSeries({ row, debouncedFilters });
   return (
     <div className="min-w-0 border-t border-card-edge pt-3" data-testid={`${testId}-chart`}>
       {isError ? (

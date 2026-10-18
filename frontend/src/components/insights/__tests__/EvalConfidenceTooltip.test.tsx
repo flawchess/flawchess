@@ -52,7 +52,6 @@ const baseProps = {
   pValue: 0.02,
   gameCount: 50,
   evalMeanPawns: 0.3,
-  color: 'white' as const,
 };
 
 describe('EvalConfidenceTooltip — pending-analysis caveat removed (Constraint 7)', () => {
@@ -71,15 +70,6 @@ describe('EvalConfidenceTooltip — pending-analysis caveat removed (Constraint 
     expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
   });
 
-  it('eval-pending-caveat is absent for endgame-entry evalContext', () => {
-    render(<EvalConfidenceTooltip {...baseProps} evalContext="endgame-entry" showBaselineTick={false} />);
-    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
-  });
-
-  it('eval-pending-caveat is absent for black color', () => {
-    render(<EvalConfidenceTooltip {...baseProps} color="black" />);
-    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
-  });
 
   it('renders the metric line with signed pawns and game count', () => {
     render(<EvalConfidenceTooltip {...baseProps} />);
@@ -88,5 +78,6 @@ describe('EvalConfidenceTooltip — pending-analysis caveat removed (Constraint 
     expect(container).not.toBeNull();
     expect(container?.textContent).toMatch(/\+0.30 pawns/);
     expect(container?.textContent).toMatch(/50 games/);
+    expect(container?.textContent).toMatch(/endgame begins/);
   });
 });

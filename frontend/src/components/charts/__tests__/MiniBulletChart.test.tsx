@@ -81,66 +81,6 @@ describe('MiniBulletChart — CI whisker', () => {
   });
 });
 
-describe('MiniBulletChart — tickPawns prop', () => {
-  function leftPercent(el: HTMLElement | null): number | null {
-    if (!el) return null;
-    const m = (el.getAttribute('style') ?? '').match(/left:\s*([\d.]+)%/);
-    return m && m[1] ? parseFloat(m[1]) : null;
-  }
-
-  it('omitted tickPawns -> tick not rendered', () => {
-    render(<MiniBulletChart value={0} domain={1.5} />);
-    expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
-  });
-
-  it('tickPawns=0.25 (white baseline) with domain=1.5 renders tick at the expected percentage', () => {
-    render(<MiniBulletChart value={0} tickPawns={0.25} domain={1.5} />);
-    const tick = screen.queryByTestId('mini-bullet-tick');
-    expect(tick).not.toBeNull();
-    // axisMin = -1.5, axisMax = 1.5; toPct(0.25) = ((0.25 + 1.5) / 3) * 100 ≈ 58.333%
-    expect(leftPercent(tick)).toBeCloseTo(58.333, 2);
-  });
-
-  it('tickPawns=-0.25 (black baseline) renders tick at expected percentage', () => {
-    render(<MiniBulletChart value={0} tickPawns={-0.25} domain={1.5} />);
-    const tick = screen.queryByTestId('mini-bullet-tick');
-    expect(tick).not.toBeNull();
-    // toPct(-0.25) = ((-0.25 + 1.5) / 3) * 100 ≈ 41.667%
-    expect(leftPercent(tick)).toBeCloseTo(41.667, 2);
-  });
-
-  it('tickPawns outside the axis (above axisMax) -> tick not rendered', () => {
-    render(<MiniBulletChart value={0} tickPawns={2.0} domain={1.5} />);
-    expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
-  });
-
-  it('tickPawns outside the axis (below axisMin) -> tick not rendered', () => {
-    render(<MiniBulletChart value={0} tickPawns={-2.0} domain={1.5} />);
-    expect(screen.queryByTestId('mini-bullet-tick')).toBeNull();
-  });
-
-  it('positive tickPawns (white opening) renders the dashed line in the theme default tone', () => {
-    render(<MiniBulletChart value={0} tickPawns={0.25} domain={1.5} />);
-    const tick = screen.queryByTestId('mini-bullet-tick');
-    expect(tick).not.toBeNull();
-    // jsdom 29 changed shorthand CSS serialization: getAttribute('style') no
-    // longer includes 'currentcolor' for border-left shorthand. Check the
-    // individual borderLeftColor style property instead.
-    const borderColor = (tick as HTMLElement | null)?.style.borderLeftColor ?? '';
-    expect(borderColor).toBe('currentcolor');
-  });
-
-  it('negative tickPawns (black opening) renders the dashed line in black', () => {
-    render(<MiniBulletChart value={0} tickPawns={-0.25} domain={1.5} />);
-    const tick = screen.queryByTestId('mini-bullet-tick');
-    expect(tick).not.toBeNull();
-    const borderColor = (tick as HTMLElement | null)?.style.borderLeftColor ?? '';
-    expect(borderColor).not.toBe('currentcolor');
-    // jsdom normalises #000 to rgb(0, 0, 0) in style properties
-    expect(['#000000', '#000', 'rgb(0, 0, 0)']).toContain(borderColor);
-  });
-});
-
 describe('MiniBulletChart — barColor prop', () => {
   /**
    * The `barColor` prop controls the fill color of the value bar.
@@ -285,22 +225,6 @@ describe('MiniBulletChart — barColor prop', () => {
     // Chart root still renders
     const chart = container.querySelector('[data-testid="mini-bullet-chart"]');
     expect(chart).not.toBeNull();
-  });
-
-  it('Test 5: tickPawns reference line unaffected by barColor="neutral"', () => {
-    const { container } = render(
-      <MiniBulletChart
-        value={0.5}
-        center={0.5}
-        neutralMin={-0.05}
-        neutralMax={0.05}
-        domain={0.5}
-        tickPawns={0.45}
-        barColor="neutral"
-      />,
-    );
-    const tick = container.querySelector('[data-testid="mini-bullet-tick"]');
-    expect(tick).not.toBeNull();
   });
 });
 

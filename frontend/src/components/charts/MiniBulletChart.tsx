@@ -63,18 +63,13 @@ interface MiniBulletChartProps {
   ciLow?: number;
   /** Optional 95% CI upper bound (in domain units, signed). Renders a thin whisker over the value bar when both ciLow and ciHigh are provided. */
   ciHigh?: number;
-  /** Optional reference tick at this absolute axis position. Used to mark the
-   * per-color MG-entry baseline alongside the 0 cp center reference. Rendered
-   * as a thin dashed line distinct from the solid center reference. Suppressed
-   * when the value falls outside the visible axis [center - domain, center + domain]. */
-  tickPawns?: number;
   /**
    * Controls the fill color of the value bar.
    * - 'zone' (default): fill uses the zone color the value lands in
    *   (danger/neutral/success).
    * - 'neutral': fill uses BULLET_BAR_NEUTRAL (light grey). Zone bands still
-   *   carry the verdict color; the bar only encodes position. Used on Openings
-   *   Stats and Insights cards (Tufte/Few bullet-chart convention).
+   *   carry the verdict color; the bar only encodes position (Tufte/Few
+   *   bullet-chart convention). Used by the Endgames entry-eval bullet.
    */
   barColor?: 'zone' | 'neutral';
   /**
@@ -102,7 +97,6 @@ export function MiniBulletChart({
   valueHeightClass = 'h-2',
   ciLow,
   ciHigh,
-  tickPawns,
   barColor = 'zone',
   invertColors = false,
 }: MiniBulletChartProps) {
@@ -150,11 +144,6 @@ export function MiniBulletChart({
   const barRight = value >= center ? markerPct : centerPct;
   const barWidth = Math.max(0, barRight - barLeft);
 
-  // The reference tick is the per-color baseline; a negative tickPawns marks a
-  // black-piece opening, so render the dashed line in black to associate it
-  // with the chess color. Positive ticks keep the theme-default tone.
-  const isBlackPieceTick = tickPawns !== undefined && tickPawns < 0;
-
   return (
     <div
       className={`relative ${heightClass} w-full min-w-[80px] overflow-hidden rounded-sm bg-muted/20`}
@@ -195,22 +184,6 @@ export function MiniBulletChart({
         className="absolute top-0 bottom-0 w-px bg-foreground/50"
         style={{ left: `${centerPct}%` }}
       />
-      {/* Optional per-color baseline reference tick. Distinct from the solid
-        center reference: rendered as a thin dashed marker at the absolute
-        axis position. Black-piece openings get a black dashed line; white-piece
-        openings inherit the theme default. Suppressed when outside the axis. */}
-      {tickPawns !== undefined && tickPawns >= axisMin && tickPawns <= axisMax && (
-        <div
-          className="absolute top-0 bottom-0 w-px"
-          style={{
-            left: `${toPct(tickPawns)}%`,
-            borderLeft: isBlackPieceTick ? '1px dashed #000' : '1px dashed currentColor',
-            backgroundColor: 'transparent',
-          }}
-          data-testid="mini-bullet-tick"
-          aria-hidden="true"
-        />
-      )}
       {/* Value fill bar — thinner than zones, vertically centered.
           data-testid enables tests to assert barColor behavior directly. */}
       <div
