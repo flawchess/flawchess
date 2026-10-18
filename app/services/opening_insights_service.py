@@ -5,8 +5,9 @@ Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
 dedupe within color section and across continuations -> rank (Wilson 95%
 bound, direction-aware) -> partition per section: up to 10 cards at p < 0.05
-(medium or high confidence), current before older games; low-confidence findings
-are dropped -> MG-entry eval on the card findings only.
+(medium or high confidence), current before older games; a section with none falls
+back to its top 4 low-confidence "leaning" findings (D-38) -> MG-entry eval on the
+card findings only.
 No precompute, no caching — partial-index-backed query keeps even
 Hikaru-class users <1 s.
 """
@@ -71,6 +72,11 @@ from app.services.score_confidence import (
 # findings never saw a significant older-games one (current sorts first). The phone
 # 2-card view with "Show more" is a frontend concern.
 FINDINGS_CARD_CAP: int = 10
+# Leaning cards (D-38): a section with no 95% finding shows up to this many low-confidence
+# findings instead of an empty state (prod 2026-10-18: "Moves that Cost You" was empty for
+# about two thirds of user-colours with 20+ games). Fewer than the card cap: they are hints,
+# not verdicts. The frontend tells them apart by confidence == 'low'.
+FINDINGS_LEANING_CAP: int = 4
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 
@@ -842,16 +848,18 @@ def _row_to_finding(
 
 
 def _partition_section(ranked: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
-    """The 95%-gated card findings of a ranked section (D-33, D-34).
+    """The card findings of a ranked section (D-33, D-38).
 
-    Confidence 'medium' or 'high' (p < 0.05) only, current findings before older ones
-    with the incoming Wilson order kept inside each group (stable sort), capped at
-    FINDINGS_CARD_CAP (D-00, D-08). Low-confidence findings are dropped ("show less
-    rather than noise"); there is no separate "not clear yet" list any more.
+    Confidence 'medium' or 'high' (p < 0.05) qualifies, capped at FINDINGS_CARD_CAP. A
+    section with no such finding falls back to its low-confidence "leaning" findings,
+    capped at FINDINGS_LEANING_CAP, so the section is not empty; the two never mix, so a
+    section is either all verdicts or all leaning. Both lists put current findings before
+    older ones and keep the incoming Wilson order inside each group (stable sort, D-08).
     """
     confident = [f for f in ranked if f.confidence != "low"]
+    cards, cap = (confident, FINDINGS_CARD_CAP) if confident else (ranked, FINDINGS_LEANING_CAP)
     # sorted() is stable, so Wilson order survives within the current / older groups.
-    return sorted(confident, key=lambda f: not f.is_current)[:FINDINGS_CARD_CAP]
+    return sorted(cards, key=lambda f: not f.is_current)[:cap]
 
 
 def _rank_sections(
@@ -951,7 +959,8 @@ async def _build_sections(
     """Stage 3: classify -> attribute -> dedupe -> rank -> partition -> enrich cards.
 
     Builds the four sections (white/black x weaknesses/strengths), keeps the
-    95%-gated cards of each, then enriches ONLY the card findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
+    95%-gated cards of each (or its leaning fallback, D-38), then enriches ONLY the card
+    findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
     the uncapped ranked list measured 10.6 s for a heavy user (Pitfall 8). The eval batch
     awaits run sequentially per colour (AsyncSession is not safe for concurrent use).
     """

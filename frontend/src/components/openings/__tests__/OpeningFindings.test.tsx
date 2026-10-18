@@ -252,6 +252,22 @@ describe('OpeningFindings 95% gate (D-33, D-34)', () => {
   });
 });
 
+describe('OpeningFindings leaning cards (D-38)', () => {
+  it('marks an all-low section as leaning and draws its cards uncoloured', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [makeFinding({ confidence: 'low', p_value: 0.2 })] }));
+    expect(screen.getByTestId('opening-findings-weakness-leaning').textContent).toBe(
+      'Nothing is clear yet as White. These moves lean this way, but it could still be chance.',
+    );
+    expect(screen.getByTestId('opening-findings-weakness-card-0-score').style.color).toBe('');
+    expect(screen.queryByTestId('opening-findings-empty')).toBeNull();
+  });
+
+  it('shows no leaning note above confident cards', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [makeFinding()] }));
+    expect(screen.queryByTestId('opening-findings-weakness-leaning')).toBeNull();
+  });
+});
+
 describe('OpeningFindings empty sections', () => {
   it('says nothing stands out in a section that is empty while the other is not', () => {
     renderFindings(

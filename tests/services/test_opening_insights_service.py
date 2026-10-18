@@ -34,6 +34,7 @@ from app.services.score_confidence import wilson_bounds
 from app.services.repertoire_recency import CurrentCutoffs
 from app.services.opening_insights_service import (
     FINDINGS_CARD_CAP,
+    FINDINGS_LEANING_CAP,
     _partition_section,
     _TransitionRow,
     _classify_row,
@@ -1946,7 +1947,8 @@ def test_partition_returns_a_plain_list_of_cards() -> None:
 
 
 def test_partition_keeps_medium_as_a_card_and_drops_low() -> None:
-    """D-33: the card gate is 95% (p < 0.05), so 'medium' qualifies; 'low' is dropped."""
+    """D-33: the card gate is 95% (p < 0.05), so 'medium' qualifies; 'low' is dropped
+    when at least one confident card exists (D-38: verdicts and leaning never mix)."""
     ranked = [
         _finding_for("lo1", confidence="low", p_value=0.4),
         _finding_for("med", confidence="medium", p_value=0.03),
@@ -1992,10 +1994,22 @@ def test_partition_older_card_findings_fill_remaining_slots_after_current() -> N
     assert _names(cards) == ["cur_b", "old_a", "old_c"]
 
 
-def test_partition_all_low_is_empty() -> None:
-    ranked = [_finding_for(f"lo{i}", confidence="low", p_value=0.2) for i in range(3)]
+def test_partition_all_low_falls_back_to_leaning_cards() -> None:
+    """D-38: no confident finding -> the top low-confidence ones, current first, capped."""
+    ranked = [
+        _finding_for("lo_old", confidence="low", is_current=False, p_value=0.1),
+        *(_finding_for(f"lo_{i}", confidence="low", p_value=0.2) for i in range(5)),
+    ]
 
-    assert _partition_section(ranked) == []
+    cards = _partition_section(ranked)
+
+    assert FINDINGS_LEANING_CAP == 4
+    assert _names(cards) == ["lo_0", "lo_1", "lo_2", "lo_3"]
+    assert all(f.confidence == "low" for f in cards)
+
+
+def test_partition_empty_section_stays_empty() -> None:
+    assert _partition_section([]) == []
 
 
 def _patch_confidence_by_n(
@@ -2099,7 +2113,7 @@ async def test_medium_findings_are_cards_and_get_the_eval(
 
 
 @pytest.mark.asyncio
-async def test_low_confidence_findings_are_dropped() -> None:
+async def test_low_confidence_findings_are_dropped_next_to_a_confident_one() -> None:
     sizes = [100, 110, 120]
     rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 3)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
@@ -2114,6 +2128,23 @@ async def test_low_confidence_findings_are_dropped() -> None:
     assert [f.confidence for f in response.white_weaknesses] == ["medium"]
     # D-34: the response carries no "not clear yet" lists or counts.
     assert not any("not_clear" in name for name in OpeningInsightsResponse.model_fields)
+
+
+@pytest.mark.asyncio
+async def test_section_without_confident_findings_returns_leaning_cards() -> None:
+    """D-38: an all-low section is not empty; it carries its leaning findings."""
+    sizes = [100, 110]
+    rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 2)
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
+        100: ("low", 0.4),
+        110: ("low", 0.2),
+    }
+
+    with _patch_confidence_by_n(buckets):
+        response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
+
+    assert len(response.white_weaknesses) == len(sizes)
+    assert all(f.confidence == "low" for f in response.white_weaknesses)
 
 
 @pytest.mark.asyncio

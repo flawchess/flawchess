@@ -1,5 +1,6 @@
 import { sanToSquares } from '@/lib/sanToSquares';
-import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import { isConfident } from '@/lib/significance';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 /**
@@ -48,12 +49,19 @@ export function findingMoveText(finding: OpeningInsightFinding): string {
   return formatCandidateMove(finding.entry_san_sequence, finding.candidate_move_san);
 }
 
-/** One arrow from the candidate move's squares, red for a weakness and green for a strength. */
+/**
+ * One arrow from the candidate move's squares, red for a weakness and green for a strength.
+ * A leaning (low-confidence) card gets the neutral blue (D-38): its direction is not a verdict.
+ */
 export function findingArrows(
   finding: OpeningInsightFinding,
 ): ReadonlyArray<{ from: string; to: string; color: string }> | undefined {
   const squares = sanToSquares(finding.entry_fen, finding.candidate_move_san);
   if (!squares) return undefined;
-  const color = finding.classification === 'weakness' ? ZONE_DANGER : ZONE_SUCCESS;
+  const color = !isConfident(finding.confidence)
+    ? ZONE_NEUTRAL
+    : finding.classification === 'weakness'
+      ? ZONE_DANGER
+      : ZONE_SUCCESS;
   return [{ from: squares.from, to: squares.to, color }];
 }

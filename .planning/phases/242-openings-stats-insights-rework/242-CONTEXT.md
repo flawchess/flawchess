@@ -178,6 +178,17 @@ discuss-phase" and record defaults for the rest.
   white strengths, 5 shown). Desktop still shows every card; phone keeps 2 + "Show more". The 95% gate stays.
   Amends D-00's "top 5" and D-08.
 
+### Post-UAT decision (owner, 2026-10-18)
+- **D-38:** Leaning cards come back as a fallback. A prod check (2026-10-18, rated human games, SQL upper
+  bound) found "Moves that Cost You" empty at the 95% gate for at least 67% of user-colours with 20+ games
+  (25% before the gate) and both findings sections empty for 34% (6% before). A section with no 95% finding
+  now shows its top **4** low-confidence findings (`FINDINGS_LEANING_CAP`, current first, Wilson order); a
+  section never mixes verdicts and leaning cards. The frontend tells a leaning section by every card being
+  `confidence == 'low'`: it adds the line "Nothing is clear yet as <colour>. These moves lean this way, but
+  it could still be chance.", and the cards draw a neutral arrow and no score colour (the verdict rule is
+  unchanged). "Nothing stands out" and the merged "Moves that Stand Out" block remain for sections with no
+  candidate at all. Amends D-34.
+
 </decisions>
 
 <canonical_refs>

@@ -7,6 +7,7 @@ import { SECTION_HEADING_CLASS } from '@/components/openings/stats/headingClasse
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import { trackFeature } from '@/lib/analytics';
+import { isConfident } from '@/lib/significance';
 import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 
@@ -158,6 +159,20 @@ function FindingCardGrid({
   );
 }
 
+/** A non-empty section with no 95% card holds only leaning findings (D-38, backend partition). */
+function isLeaningSection(cards: OpeningInsightFinding[]): boolean {
+  return cards.length > 0 && cards.every((card) => !isConfident(card.confidence));
+}
+
+function LeaningNote({ color, testId }: { color: FindingColor; testId: string }) {
+  return (
+    <p className="text-sm text-muted-foreground" data-testid={`${testId}-leaning`}>
+      Nothing is clear yet as {colorLabel(color)}. These moves lean this way, but it could still be
+      chance.
+    </p>
+  );
+}
+
 function SectionHeading({ title, intro }: { title: string; intro: string }) {
   return (
     <div className="space-y-1">
@@ -197,6 +212,7 @@ function FindingsSubsection({
   return (
     <div className="space-y-3" data-testid={testId}>
       <SectionHeading title={meta.title} intro={meta.intro} />
+      {isLeaningSection(cards) && <LeaningNote color={color} testId={testId} />}
       {body}
     </div>
   );
@@ -254,8 +270,9 @@ interface OpeningFindingsProps {
 /**
  * Findings for the selected colour below the repertoire cards: "Moves that Cost You" and
  * "Moves that Work", each at most 10 cards from the 95%-gated backend lists (D-33, D-37), with a
- * phone "Show more" (D-08). There is no "Not clear yet" list (D-34): a section without cards
- * says so in one line, and both sections empty merge into one block.
+ * phone "Show more" (D-08). A section without a 95% card gets up to 4 leaning cards from the
+ * backend instead, under a "nothing is clear yet" note (D-38). A section with neither says so
+ * in one line, and both sections empty merge into one block.
  */
 export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGames }: OpeningFindingsProps) {
   const { data, isLoading, isError, refetch } = useOpeningInsights({
