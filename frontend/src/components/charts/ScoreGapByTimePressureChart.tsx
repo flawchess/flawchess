@@ -28,17 +28,15 @@ import {
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
-import { NEUTRAL_SERIES_COLOR, TYPICAL_BAND_FILL, ZONE_NEUTRAL } from '@/lib/theme';
+import { NEUTRAL_SERIES_COLOR, ZONE_NEUTRAL } from '@/lib/theme';
 import {
   clampDeltaCi,
   computeScoreGapYAxis,
   pressureDeltaZoneColor,
 } from '@/lib/pressureBulletConfig';
 import type { PressureQuintileBullet } from '@/types/endgames';
-
-// Label of the grey band, at the text-sm floor (14px) from frontend/CLAUDE.md.
-const TYPICAL_LABEL = 'typical';
-const TYPICAL_LABEL_FONT_SIZE = 14;
+import { TypicalBandWatermark, type BandShapeProps } from './TypicalBandWatermark';
+import { useTypicalBandMaskId } from '@/hooks/useTypicalBandMaskId';
 
 // Mobile breakpoint for hiding the vertical Y-axis label (Tailwind `sm:`).
 // Mirrors EndgameClockDiffOverTimeChart's "Clock Gap" axis-label treatment.
@@ -280,6 +278,7 @@ export function ScoreGapByTimePressureChart({
   const data = toChartData(quintiles);
   const { domain: yDomain, ticks: yTicks } = computeScoreGapYAxis(data);
   const isMobile = useIsMobile();
+  const bandMaskId = useTypicalBandMaskId();
 
   // With no clock data every bin is filtered out and the chart would draw only
   // its axis frame and grey band, with no hint why it is blank.
@@ -358,13 +357,8 @@ export function ScoreGapByTimePressureChart({
             x2={1}
             y1={PRESSURE_SCORE_GAP_NEUTRAL_MIN}
             y2={PRESSURE_SCORE_GAP_NEUTRAL_MAX}
-            fill={TYPICAL_BAND_FILL}
             ifOverflow="visible"
-            label={{
-              value: TYPICAL_LABEL,
-              position: 'insideTopLeft',
-              style: { fontSize: TYPICAL_LABEL_FONT_SIZE, fill: 'var(--muted-foreground)' },
-            }}
+            shape={(props: BandShapeProps) => <TypicalBandWatermark {...props} maskId={bandMaskId} />}
           />
           {/* Category x-axis — 4 bucket-center labels. Edge padding insets the
               first/last datapoints off the chart borders. */}
@@ -404,6 +398,9 @@ export function ScoreGapByTimePressureChart({
             stroke="currentColor"
             strokeDasharray="3 3"
             strokeOpacity={0.4}
+            // The 0-line runs through the middle of the typical band, so it shares the watermark
+            // cutout instead of striking through the letters.
+            mask={`url(#${bandMaskId})`}
           />
           <ChartTooltip
             content={({ active, payload }) => {

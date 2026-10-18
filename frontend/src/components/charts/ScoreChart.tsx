@@ -1,11 +1,13 @@
-import { useId, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
 import { SCORE_VERDICT_BAND } from '@/lib/openingVerdict';
-import { SCORE_OVER_TIME_LINE, TYPICAL_BAND_FILL, VOLUME_BAR_COLOR } from '@/lib/theme';
+import { SCORE_OVER_TIME_LINE, VOLUME_BAR_COLOR } from '@/lib/theme';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
+import { TypicalBandWatermark, type BandShapeProps } from './TypicalBandWatermark';
+import { useTypicalBandMaskId } from '@/hooks/useTypicalBandMaskId';
 import type { BookmarkTimeSeries, TimeSeriesPoint } from '@/types/position_bookmarks';
 
 interface ScoreChartProps {
@@ -24,15 +26,9 @@ const SCORE_LINE_WIDTH = 2;
 const EVEN_SCORE_DASH = '4 3';
 const CHART_HEIGHT_CLASS = 'h-52';
 const EMPTY_MESSAGE = 'Not enough games in this opening for a score line yet.';
-// The grey typical band (the same 45-55% the score verdict bar uses), labelled with a
-// watermark: bold text centred in the band and cut out of it, so the card surface shows
-// through the letters. The font shrinks to fit when the axis makes the band thin.
+// The grey typical band, the same 45-55% the score verdict bar uses.
 const TYPICAL_LOW = EVEN_SCORE - SCORE_VERDICT_BAND;
 const TYPICAL_HIGH = EVEN_SCORE + SCORE_VERDICT_BAND;
-const TYPICAL_LABEL = 'typical';
-const TYPICAL_WATERMARK_FONT_SIZE = 20;
-const TYPICAL_WATERMARK_HEIGHT_RATIO = 0.85;
-const TYPICAL_WATERMARK_LETTER_SPACING = '0.08em';
 // No left margin: with an auto-width value axis the plot starts right after the tick labels
 // instead of behind Recharts' fixed 60px axis gutter.
 const CHART_MARGIN = { top: 5, right: 5, bottom: 5, left: 0 };
@@ -54,39 +50,6 @@ function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showV
   );
 }
 
-interface BandShapeProps {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-}
-
-/** The typical band rect with TYPICAL_LABEL masked out of it (a cutout, not painted text). */
-function TypicalBandWatermark({ x = 0, y = 0, width = 0, height = 0, maskId }: BandShapeProps & { maskId: string }) {
-  if (width <= 0 || height <= 0) return null;
-  const fontSize = Math.min(TYPICAL_WATERMARK_FONT_SIZE, height * TYPICAL_WATERMARK_HEIGHT_RATIO);
-  return (
-    <g>
-      <mask id={maskId} maskUnits="userSpaceOnUse" x={x} y={y} width={width} height={height}>
-        <rect x={x} y={y} width={width} height={height} fill="white" />
-        <text
-          x={x + width / 2}
-          y={y + height / 2}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={fontSize}
-          fontWeight="bold"
-          letterSpacing={TYPICAL_WATERMARK_LETTER_SPACING}
-          fill="black"
-        >
-          {TYPICAL_LABEL}
-        </text>
-      </mask>
-      <rect x={x} y={y} width={width} height={height} fill={TYPICAL_BAND_FILL} mask={`url(#${maskId})`} />
-    </g>
-  );
-}
-
 /**
  * Score over time for one opening: the rolling score line on an ordinal axis over active weeks
  * (inactivity is cut out, >90-day breaks get a palm-tree marker) and, with showVolume, grey
@@ -96,8 +59,7 @@ function TypicalBandWatermark({ x = 0, y = 0, width = 0, height = 0, maskId }: B
  */
 export function ScoreChart({ series, showVolume = false, testId = 'score-chart' }: ScoreChartProps) {
   const points = series.data;
-  // useId output carries characters (colons, guillemets) that are unsafe in a url(#...) ref.
-  const bandMaskId = `typical-band-mask-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const bandMaskId = useTypicalBandMaskId();
   const dates = useMemo(() => points.map((p) => p.date), [points]);
   const formatDateTick = useMemo(() => createDateTickFormatter(dates), [dates]);
   // The 50% reference line and the typical band have to sit inside the axis even for a
