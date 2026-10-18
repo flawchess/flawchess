@@ -62,6 +62,7 @@ export interface TimeSeriesPoint {
   score: number;         // chess score (W + 0.5·D) / N, 0.0 - 1.0
   game_count: number;    // games in rolling window (1..window_size)
   window_size: number;   // configured window size (ROLLING_WINDOW_SIZE)
+  per_week_games: number; // in-window games that ISO week (drives the weekly volume bars)
 }
 
 export interface BookmarkTimeSeries {
@@ -74,6 +75,15 @@ export interface BookmarkTimeSeries {
   // ISO 8601 (or null when no qualifying games). MAX(played_at) across all
   // matching games — drives the bookmark card "Last played: <relative>" line.
   last_played_at?: string | null;
+  // Score verdict inputs over the in-window totals, computed server-side (D-18).
+  score: number;
+  score_confidence: 'low' | 'medium' | 'high';
+  score_p_value: number;
+  score_ci_low: number;
+  score_ci_high: number;
+  // False when the opening was last played before the colour's current-repertoire
+  // cutoff (D-04): drives the "not played recently" chip.
+  is_current: boolean;
 }
 
 export interface TimeSeriesResponse {

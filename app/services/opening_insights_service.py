@@ -4,7 +4,9 @@ Single public entry point: compute_insights(session, user_id, request).
 Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
 dedupe within color section and across continuations -> rank (Wilson 95%
-bound, direction-aware) -> cap per section (10 weaknesses, 10 strengths).
+bound, direction-aware) -> top 10 per section in that order, any confidence (D-38);
+the 95% gate decides each card's colour on the frontend, not whether it shows ->
+MG-entry eval on the card findings only.
 No precompute, no caching — partial-index-backed query keeps even
 Hikaru-class users <1 s.
 """
@@ -38,15 +40,21 @@ from app.schemas.opening_insights import (
     OpeningInsightsRequest,
     OpeningInsightsResponse,
 )
-from app.services.eval_confidence import compute_eval_confidence_bucket
+from app.services.opening_eval import finalize_opening_eval
 from app.services.opening_insights_constants import (
-    EVAL_BASELINE_PAWNS_BLACK,
-    EVAL_BASELINE_PAWNS_WHITE,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
-from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
+from app.services.repertoire_recency import (
+    CurrentCutoffs,
+    is_current,
+    resolve_current_cutoffs,
+)
+from app.services.score_confidence import (
+    compute_confidence_bucket,
+    wilson_bounds,
+)
 
 # ---------------------------------------------------------------------------
 # Thresholds. The score-based effect-size gate and Wilson score-test
@@ -56,10 +64,12 @@ from app.services.score_confidence import compute_confidence_bucket, wilson_boun
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-# Caps of 10 let the FE render 5 visible cards per section with a "X more"
-# toggle expanding up to 10, all in a single roundtrip.
-WEAKNESS_CAP_PER_COLOR: int = 10
-STRENGTH_CAP_PER_COLOR: int = 10
+# Card findings per section (D-37, D-38): the top 10 by the direction-aware Wilson bound,
+# whatever their confidence. Gating cards at 95% (D-33) left "Moves that Cost You" empty for
+# about two thirds of prod user-colours with 20+ games (2026-10-18), so the gate now only
+# colours a card (frontend openingVerdict). How many show before the "N more" toggle is a
+# frontend concern (OpeningFindings INITIAL_VISIBLE_PER_SECTION).
+FINDINGS_CARD_CAP: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 
@@ -81,28 +91,30 @@ def _classify_row(
     """Classify a transition row by chess score against the 0.50 pivot.
 
     Score is (W + 0.5·D) / N. Effect-size thresholds are symmetric:
-      - weakness: score <= 0.45 → minor; <= 0.40 → major
-      - strength: score >= 0.55 → minor; >= 0.60 → major
-    Strict <= / >= boundaries. Returns None for neutral positions.
+      - weakness: score < 0.45 → minor; <= 0.40 → major
+      - strength: score > 0.55 → minor; >= 0.60 → major
+    Returns None for neutral positions. Exactly 45% / 55% is the edge of the typical
+    band and stays neutral, matching the frontend openingVerdict rule (WR-03); an
+    inclusive edge listed a 45% move as a weakness while its card read "typical".
 
     Compare score directly against precomputed pivot ± effect thresholds rather
     than against `delta = score - PIVOT`. The literal score values produced by
     integer-row factories (e.g. 0.45 = 9/20) are exactly equal to PIVOT ± EFFECT
     in IEEE-754 (0.50 - 0.05 == 0.45 exactly), but `0.45 - 0.50 == -0.04999…`,
-    which would silently miss strict-<= boundary cases. Direct comparison keeps
-    the strict <= / >= semantics on the boundary.
+    which would put the band edge on the wrong side. Direct comparison keeps the
+    boundary exact.
     """
     score = (row.w + 0.5 * row.d) / row.n
     weakness_minor_threshold = SCORE_PIVOT - MINOR_EFFECT  # 0.45
     weakness_major_threshold = SCORE_PIVOT - MAJOR_EFFECT  # 0.40
     strength_minor_threshold = SCORE_PIVOT + MINOR_EFFECT  # 0.55
     strength_major_threshold = SCORE_PIVOT + MAJOR_EFFECT  # 0.60
-    if score <= weakness_minor_threshold:
+    if score < weakness_minor_threshold:
         severity: Literal["minor", "major"] = (
             "major" if score <= weakness_major_threshold else "minor"
         )
         return "weakness", severity
-    if score >= strength_minor_threshold:
+    if score > strength_minor_threshold:
         severity = "major" if score >= strength_major_threshold else "minor"
         return "strength", severity
     return None
@@ -395,30 +407,16 @@ def _apply_eval_metrics_to_finding(
     finding: OpeningInsightFinding,
     pe: OpeningPhaseEntryMetrics,
 ) -> OpeningInsightFinding:
-    """Populate the six MG-entry eval fields on a finding from phase-entry metrics.
+    """Populate the MG-entry eval fields on a finding from phase-entry metrics.
 
-    Mirrors the finalizer logic in stats_service._bookmark_phase_entry_item so
-    there is a single source of eval math without duplicating SQL or confidence
-    bucket computation. The H0 is 0 cp (engine-balanced).
+    Delegates to opening_eval.finalize_opening_eval, the single Openings eval
+    finalizer shared with the Stats tab. The z-test runs against the finding colour's
+    baseline (+25 cp White, -25 cp Black), not 0 cp (D-13), so "typical for the
+    colour" reads as not significant. avg_eval_pawns stays the raw mean; the 95% CI
+    bounds are returned alongside it.
     """
-    if pe.eval_n_mg <= 0:
-        return finding
-
-    confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
-        pe.eval_sum_mg,
-        pe.eval_sumsq_mg,
-        pe.eval_n_mg,
-    )
-    return finding.model_copy(
-        update={
-            "avg_eval_pawns": mean_cp_mg / 100.0,
-            "eval_ci_low_pawns": (mean_cp_mg - ci_half_mg) / 100.0 if pe.eval_n_mg >= 2 else None,
-            "eval_ci_high_pawns": (mean_cp_mg + ci_half_mg) / 100.0 if pe.eval_n_mg >= 2 else None,
-            "eval_n": pe.eval_n_mg,
-            "eval_p_value": p_value_mg,
-            "eval_confidence": confidence_mg,
-        }
-    )
+    fields = finalize_opening_eval(pe, finding.color)
+    return finding.model_copy(update=dict(fields))
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +425,7 @@ def _apply_eval_metrics_to_finding(
 # compute_insights reads as a short pipeline:
 #   1. _fetch_attribution_context  — pass-1 transitions + direct openings lookup
 #   2. _fetch_position_wdl_per_color — pass-2 parent walk + per-color WDL fetch
-#   3. _build_sections              — classify → attribute → dedupe → rank → cap → eval enrich
+#   3. _build_sections              — classify → attribute → dedupe → rank → partition → eval enrich (cards only)
 # Each helper is module-private and called sequentially; no behavior changes.
 # ---------------------------------------------------------------------------
 
@@ -588,6 +586,9 @@ class _PipelineContext:
         Literal["white", "black"],
         dict[int, tuple[int, int, int, datetime.datetime | None]],
     ]
+    # Per-colour current-repertoire cutoff (D-02); filled by compute_insights before
+    # _build_sections so _row_to_finding can stamp is_current on each finding.
+    cutoffs: CurrentCutoffs = field(default_factory=lambda: CurrentCutoffs(white=None, black=None))
 
 
 async def _fetch_attribution_context(
@@ -739,8 +740,12 @@ def _row_to_finding(
     pos_wdl_for_color: dict[int, tuple[int, int, int, datetime.datetime | None]],
     openings_by_hash: dict[int, Opening],
     parents_by_hash: dict[int, Opening],
+    cutoff: datetime.datetime | None = None,
 ) -> tuple[OpeningInsightFinding, int, float] | None:
     """Convert one _TransitionRow into a (finding, ply_count, se) tuple, or None.
+
+    ``cutoff`` is the finding colour's current-repertoire cutoff; the finding's
+    ``is_current`` compares its last_played_at against it (D-04).
 
     Returns None when the row is neutral (classify miss) or when attribution
     fails at every depth (dropped). Mirrors the inner-loop body of the
@@ -832,35 +837,36 @@ def _row_to_finding(
         # query_opening_transitions when the resulting-position
         # lookup misses (matches the W/D/L fallback above).
         last_played_at=finding_last_played_at,
+        is_current=is_current(finding_last_played_at, cutoff),
     )
     return finding, opening_ply_count, se
 
 
-async def _build_sections(
-    session: AsyncSession,
-    user_id: int,
-    request: OpeningInsightsRequest,
-    from_date: datetime.date | None,
-    to_date: datetime.date | None,
-    colors_to_query: Sequence[Literal["white", "black"]],
-    ctx: _PipelineContext,
-) -> dict[str, list[OpeningInsightFinding]]:
-    """Stage 3: classify → attribute → assemble → dedupe → rank → cap → enrich.
+def _partition_section(ranked: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
+    """The card findings of a ranked section: its first FINDINGS_CARD_CAP (D-38).
 
-    Builds the four sections (white/black × weaknesses/strengths), runs
-    per-section transposition dedupe and global continuation dedupe, ranks
-    each section by Wilson 95% CI bound, caps per section
-    (WEAKNESS_CAP_PER_COLOR / STRENGTH_CAP_PER_COLOR), then enriches surviving
-    findings with MG-entry eval metrics
-    (sequential per-color batch awaits per CLAUDE.md AsyncSession rule).
+    No confidence gate and no current-first re-sort: the Wilson bound order from
+    _rank_section already mixes effect size and sample size, so the clearest findings lead
+    and a low-confidence one only shows when there is room. Findings outside the current
+    repertoire keep their place in that order (is_current=False only adds the card's
+    "Not played recently" icon).
     """
-    # ---- Build sections ----
+    return ranked[:FINDINGS_CARD_CAP]
+
+
+def _rank_sections(
+    ctx: _PipelineContext, colors_to_query: Sequence[Literal["white", "black"]]
+) -> dict[str, list[OpeningInsightFinding]]:
+    """Classify, attribute, dedupe and rank every row into the four sections.
+
+    Per-section transposition dedupe -> global continuation dedupe -> rank by the
+    direction-aware Wilson 95% CI bound on (score, n_games). SE is ignored (Wald
+    degenerates at small N) and the confidence bucket is not part of the sort key.
+    """
     # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
     # - ply_count drives the deeper-entry-wins dedupe in _dedupe_within_section
     #   (consumed there and not propagated downstream).
-    # - se threads through dedupe stages but is ignored by _rank_section under
-    #   the Wilson 95% CI bound (Wald degenerates at small N). SE is still
-    #   produced for the UI confidence badge.
+    # - se threads through dedupe stages but is ignored by _rank_section.
     sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
         "white_weaknesses": [],
         "black_weaknesses": [],
@@ -877,6 +883,7 @@ async def _build_sections(
                 ctx.pos_wdl_by_color[color_literal],
                 ctx.openings_by_hash,
                 ctx.parents_by_hash,
+                ctx.cutoffs[color_literal],
             )
             if built is None:
                 continue
@@ -886,83 +893,84 @@ async def _build_sections(
             )
             sections[section_key].append((finding, opening_ply_count, se))
 
-    # Per-section transposition dedupe → global continuation dedupe
-    # → rank → cap (WEAKNESS_CAP_PER_COLOR / STRENGTH_CAP_PER_COLOR).
-    # Ranks by Wilson 95% CI bound (direction-aware),
-    # using (score, n_games) and ignoring SE (Wald degenerates at small N).
-    # Confidence bucket is not part of the sort key, only a UI badge.
     deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
         key: _dedupe_within_section(items) for key, items in sections.items()
     }
     deduped_sections = _dedupe_continuations(deduped_sections)
-    final_sections: dict[str, list[OpeningInsightFinding]] = {}
+    ranked_sections: dict[str, list[OpeningInsightFinding]] = {}
     for key, findings_with_se in deduped_sections.items():
         direction: Literal["weakness", "strength"] = (
             "weakness" if "weaknesses" in key else "strength"
         )
-        ranked = _rank_section(findings_with_se, direction=direction)
-        cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
-        final_sections[key] = ranked[:cap]
+        ranked_sections[key] = _rank_section(findings_with_se, direction=direction)
+    return ranked_sections
 
-    # Populate MG-entry eval fields on all surviving findings.
-    # Call the shared batch helper once per color (sequential per CLAUDE.md
-    # AsyncSession rule). Key is resulting_full_hash (the position immediately
-    # after the candidate move) — mirrors how Stats keys MG-entry eval.
-    all_white_findings: list[OpeningInsightFinding] = (
-        final_sections["white_weaknesses"] + final_sections["white_strengths"]
+
+async def _fetch_eval_metrics(
+    session: AsyncSession,
+    user_id: int,
+    request: OpeningInsightsRequest,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    color: Literal["white", "black"],
+    findings: Sequence[OpeningInsightFinding],
+) -> dict[int, OpeningPhaseEntryMetrics]:
+    """MG-entry eval sums for the findings' resulting positions (empty when none).
+
+    Key is resulting_full_hash (the position immediately after the candidate move),
+    mirroring how Stats keys MG-entry eval.
+    """
+    hashes: list[int] = list({int(f.resulting_full_hash) for f in findings})
+    if not hashes:
+        return {}
+    return await query_opening_phase_entry_metrics_batch(
+        session=session,
+        user_id=user_id,
+        hashes=hashes,
+        color=color,
+        time_control=request.time_control,
+        platform=request.platform,
+        rated=request.rated,
+        opponent_type=request.opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )
-    all_black_findings: list[OpeningInsightFinding] = (
-        final_sections["black_weaknesses"] + final_sections["black_strengths"]
-    )
 
-    white_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_white_findings})
-    black_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_black_findings})
 
-    # Sequential awaits — AsyncSession not safe for concurrent use.
-    white_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
-    if white_hashes:
-        white_eval_metrics = await query_opening_phase_entry_metrics_batch(
-            session=session,
-            user_id=user_id,
-            hashes=white_hashes,
-            color="white",
-            time_control=request.time_control,
-            platform=request.platform,
-            rated=request.rated,
-            opponent_type=request.opponent_type,
-            from_date=from_date,
-            to_date=to_date,
-            opponent_gap_min=request.opponent_gap_min,
-            opponent_gap_max=request.opponent_gap_max,
+async def _build_sections(
+    session: AsyncSession,
+    user_id: int,
+    request: OpeningInsightsRequest,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    colors_to_query: Sequence[Literal["white", "black"]],
+    ctx: _PipelineContext,
+) -> dict[str, list[OpeningInsightFinding]]:
+    """Stage 3: classify -> attribute -> dedupe -> rank -> partition -> enrich cards.
+
+    Builds the four sections (white/black x weaknesses/strengths), keeps the
+    top FINDINGS_CARD_CAP cards of each (D-38), then enriches ONLY the card
+    findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
+    the uncapped ranked list measured 10.6 s for a heavy user (Pitfall 8). The eval batch
+    awaits run sequentially per colour (AsyncSession is not safe for concurrent use).
+    """
+    ranked_sections = _rank_sections(ctx, colors_to_query)
+    partitions = {key: _partition_section(ranked) for key, ranked in ranked_sections.items()}
+
+    eval_by_color: dict[Literal["white", "black"], dict[int, OpeningPhaseEntryMetrics]] = {}
+    for color in ("white", "black"):
+        cards = partitions[f"{color}_weaknesses"] + partitions[f"{color}_strengths"]
+        eval_by_color[color] = await _fetch_eval_metrics(
+            session, user_id, request, from_date, to_date, color, cards
         )
 
-    black_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
-    if black_hashes:
-        black_eval_metrics = await query_opening_phase_entry_metrics_batch(
-            session=session,
-            user_id=user_id,
-            hashes=black_hashes,
-            color="black",
-            time_control=request.time_control,
-            platform=request.platform,
-            rated=request.rated,
-            opponent_type=request.opponent_type,
-            from_date=from_date,
-            to_date=to_date,
-            opponent_gap_min=request.opponent_gap_min,
-            opponent_gap_max=request.opponent_gap_max,
-        )
-
-    return {
-        "white_weaknesses": _enrich_findings(
-            final_sections["white_weaknesses"], white_eval_metrics
-        ),
-        "black_weaknesses": _enrich_findings(
-            final_sections["black_weaknesses"], black_eval_metrics
-        ),
-        "white_strengths": _enrich_findings(final_sections["white_strengths"], white_eval_metrics),
-        "black_strengths": _enrich_findings(final_sections["black_strengths"], black_eval_metrics),
-    }
+    enriched: dict[str, list[OpeningInsightFinding]] = {}
+    for key, cards in partitions.items():
+        color_key: Literal["white", "black"] = "white" if key.startswith("white") else "black"
+        enriched[key] = _enrich_findings(cards, eval_by_color[color_key])
+    return enriched
 
 
 def _enrich_findings(
@@ -989,11 +997,15 @@ async def compute_insights(
     session: AsyncSession,
     user_id: int,
     request: OpeningInsightsRequest,
+    *,
+    now_utc: datetime.datetime,
 ) -> OpeningInsightsResponse:
     """Compute four-section opening insights for one user under a filter set.
 
     Returns OpeningInsightsResponse with white_weaknesses, black_weaknesses,
     white_strengths, black_strengths — each capped per section.
+    ``now_utc`` (from the dev_now_utc dependency) anchors the current-repertoire
+    cutoff behind every finding's ``is_current`` (D-02, D-03).
     See module docstring for pipeline details.
     """
     from_date: datetime.date | None = request.from_date
@@ -1017,16 +1029,29 @@ async def compute_insights(
         pipeline_ctx = await _fetch_position_wdl_per_color(
             session, user_id, request, from_date, to_date, colors_to_query, attribution_ctx
         )
-        final_sections = await _build_sections(
+        # D-02: the cutoff is computed under the SAME filters as the findings.
+        pipeline_ctx.cutoffs = await resolve_current_cutoffs(
+            session,
+            user_id,
+            colors_to_query,
+            now_utc=now_utc,
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            from_date=from_date,
+            to_date=to_date,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+        )
+        partitions = await _build_sections(
             session, user_id, request, from_date, to_date, colors_to_query, pipeline_ctx
         )
         return OpeningInsightsResponse(
-            white_weaknesses=final_sections["white_weaknesses"],
-            black_weaknesses=final_sections["black_weaknesses"],
-            white_strengths=final_sections["white_strengths"],
-            black_strengths=final_sections["black_strengths"],
-            eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
-            eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
+            white_weaknesses=partitions["white_weaknesses"],
+            black_weaknesses=partitions["black_weaknesses"],
+            white_strengths=partitions["white_strengths"],
+            black_strengths=partitions["black_strengths"],
         )
     except Exception as exc:
         # CLAUDE.md §Sentry: pass variable data via set_context; never embed

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The bookmark card's chart toggle and load button
- * each report one id-free event; the persisted match-side change stays untracked
- * (DB-known). Real analytics module with a window.umami stub.
+ * The bookmark card's load button reports one id-free event; the persisted
+ * match-side change stays untracked (DB-known). Real analytics module with a
+ * window.umami stub.
  */
 import { DndContext } from '@dnd-kit/core';
 import { SortableContext } from '@dnd-kit/sortable';
@@ -44,8 +44,7 @@ afterEach(() => {
   delete window.umami;
 });
 
-function renderCard(chartEnabled: boolean) {
-  const onChartEnabledChange = vi.fn();
+function renderCard() {
   const onLoad = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -55,8 +54,6 @@ function renderCard(chartEnabled: boolean) {
             <PositionBookmarkCard
               bookmark={BOOKMARK}
               onLoad={onLoad}
-              chartEnabled={chartEnabled}
-              onChartEnabledChange={onChartEnabledChange}
               onMatchSideChange={vi.fn()}
             />
           </SortableContext>
@@ -64,7 +61,7 @@ function renderCard(chartEnabled: boolean) {
       </TooltipProvider>
     </QueryClientProvider>,
   );
-  return { onChartEnabledChange, onLoad };
+  return { onLoad };
 }
 
 /** The card renders mobile and desktop layouts side by side; either copy works. */
@@ -82,27 +79,12 @@ function expectNoBookmarkId(): void {
 
 describe('PositionBookmarkCard tracking', () => {
   it('fires nothing on render', () => {
-    renderCard(true);
+    renderCard();
     expect(track).not.toHaveBeenCalled();
   });
 
-  it('reports the chart toggle as off when it was on, and calls the handler', () => {
-    const { onChartEnabledChange } = renderCard(true);
-    fireEvent.click(firstByTestId(`bookmark-chart-toggle-${BOOKMARK_ID}`));
-    expect(onChartEnabledChange).toHaveBeenCalledWith(BOOKMARK_ID, false);
-    expect(track).toHaveBeenCalledTimes(1);
-    expect(track).toHaveBeenCalledWith('toggle', { page: 'openings', target: 'bookmark-chart', value: 'off' });
-    expectNoBookmarkId();
-  });
-
-  it('reports the chart toggle as on when it was off', () => {
-    renderCard(false);
-    fireEvent.click(firstByTestId(`bookmark-chart-toggle-${BOOKMARK_ID}`));
-    expect(track).toHaveBeenCalledWith('toggle', { page: 'openings', target: 'bookmark-chart', value: 'on' });
-  });
-
   it('reports the load button as a fixed action without any identifier', () => {
-    const { onLoad } = renderCard(true);
+    const { onLoad } = renderCard();
     fireEvent.click(firstByTestId(`bookmark-btn-load-${BOOKMARK_ID}`));
     expect(onLoad).toHaveBeenCalledWith(BOOKMARK);
     expect(track).toHaveBeenCalledTimes(1);
@@ -111,7 +93,7 @@ describe('PositionBookmarkCard tracking', () => {
   });
 
   it('does not track the persisted match-side change (DB-known)', () => {
-    renderCard(true);
+    renderCard();
     fireEvent.click(firstByTestId(`bookmark-match-side-${BOOKMARK_ID}-mine`));
     expect(track).not.toHaveBeenCalled();
   });

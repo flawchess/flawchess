@@ -59,6 +59,13 @@ class OpeningWDL(BaseModel):
     win_pct: float
     draw_pct: float
     loss_pct: float
+    # Score verdict inputs (D-18): (W + 0.5*D) / n, two-sided Wilson p vs 50%, and the
+    # 95% Wilson CI (D-33). Computed server-side by score_confidence.score_verdict_fields.
+    score: float
+    score_confidence: Literal["low", "medium", "high"]
+    score_p_value: float
+    score_ci_low: float
+    score_ci_high: float
 
     # Middlegame-entry Stockfish eval
     # All optional with defaults so existing callers/tests keep working.
@@ -67,13 +74,16 @@ class OpeningWDL(BaseModel):
     eval_ci_low_pawns: float | None = None  # 95% CI lower bound; None when eval_n < 2
     eval_ci_high_pawns: float | None = None  # 95% CI upper bound; None when eval_n < 2
     eval_n: int = 0  # games used in the mean (mate-excluded, NULL-excluded, outlier-trimmed)
-    eval_p_value: float | None = None  # two-sided p-value vs zero
+    eval_p_value: float | None = None  # two-sided p-value vs the colour baseline (D-13)
     eval_confidence: Literal["low", "medium", "high"] = "low"
     # MAX(games.played_at) across the games visiting
-    # this opening's full_hash. Drives the "Last played: <relative>" line in
-    # the OpeningStatsCard score-confidence popover. None when every
+    # this opening's full_hash. Drives the repertoire card's relative "last played"
+    # date and the score popover's "Last played" line. None when every
     # contributing game has a NULL played_at (rare).
     last_played_at: datetime.datetime | None = None
+    # True when last_played_at is on or after the colour's current-repertoire cutoff
+    # (or the colour has no cutoff). False = "Played before" group (D-04).
+    is_current: bool
 
 
 class MostPlayedOpeningsResponse(BaseModel):
@@ -81,14 +91,14 @@ class MostPlayedOpeningsResponse(BaseModel):
 
     white: list[OpeningWDL]
     black: list[OpeningWDL]
-    # Engine-asymmetry baselines (in pawns) rendered as a small reference tick
-    # on the frontend MG-entry bullet chart. The chart's center stays at 0 cp
-    # (engine-balanced) and the per-row z-test runs against H0: mean == 0;
-    # these values are display-only annotations. Per-game mean
-    # from the 2026-05-04 Lichess benchmark run (values in
-    # opening_insights_constants.EVAL_BASELINE_PAWNS_*).
-    eval_baseline_pawns_white: float
-    eval_baseline_pawns_black: float
+    # The per-colour eval baseline (D-13: eval bar centre and z-test H0, applied server-side
+    # by opening_eval.finalize_opening_eval) is not echoed: it is the fixed
+    # EVAL_BASELINE_PAWNS_* pair, mirrored by the frontend openingStatsZones constants.
+    # Per-colour current-repertoire cutoff (D-01..D-04). None means the user has
+    # fewer than 200 games of that colour under the active filters, so every
+    # opening of that colour is current.
+    current_cutoff_white: datetime.datetime | None = None
+    current_cutoff_black: datetime.datetime | None = None
 
 
 class BookmarkPhaseEntryItem(BaseModel):
@@ -106,7 +116,7 @@ class BookmarkPhaseEntryItem(BaseModel):
     eval_ci_low_pawns: float | None = None
     eval_ci_high_pawns: float | None = None
     eval_n: int = 0
-    eval_p_value: float | None = None
+    eval_p_value: float | None = None  # two-sided p-value vs the bookmark colour's baseline
     eval_confidence: Literal["low", "medium", "high"] = "low"
 
 

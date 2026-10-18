@@ -6,7 +6,7 @@ calls the service function directly, and asserts exact integers.
 
 Coverage:
 - TestWDLBlackPerspective: user plays black, WDL flips correctly from white perspective
-- TestRollingWindowBoundaries: MIN_GAMES_FOR_TIMELINE cutoff, same-day bucketing
+- TestRollingWindowBoundaries: MIN_GAMES_FOR_TIMELINE cutoff, same-week bucketing
 - TestFilterIntersection: platform AND time_control (intersection, not union)
 - TestRecencyBoundary: played_at == cutoff is inclusive (>=)
 - TestPositionDedup: same hash at multiple plies in one game counts once
@@ -35,6 +35,9 @@ from app.services.endgame_service import get_endgame_stats
 from app.services.openings_service import analyze as openings_analyze
 from app.services.openings_service import get_time_series
 from app.services.stats_service import get_global_stats
+
+# Pinned dev-clock instant for get_time_series (anchors the is_current cutoff).
+_NOW_UTC = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
 
 # 700-series IDs (no other test module uses these)
 _USER_BLACK = 701
@@ -242,7 +245,9 @@ class TestRollingWindowBoundaries:
                 TimeSeriesBookmarkParam(bookmark_id=1, target_hash=hash_val, match_side="full")
             ]
         )
-        resp = await get_time_series(db_session, user_id=_USER_ROLLING, request=req)
+        resp = await get_time_series(
+            db_session, user_id=_USER_ROLLING, request=req, now_utc=_NOW_UTC
+        )
         assert len(resp.series) == 1
         assert resp.series[0].data == []
         assert resp.series[0].total_games == 5
@@ -273,14 +278,16 @@ class TestRollingWindowBoundaries:
                 TimeSeriesBookmarkParam(bookmark_id=2, target_hash=hash_val, match_side="full")
             ]
         )
-        resp = await get_time_series(db_session, user_id=_USER_ROLLING, request=req)
+        resp = await get_time_series(
+            db_session, user_id=_USER_ROLLING, request=req, now_utc=_NOW_UTC
+        )
         assert len(resp.series[0].data) == 1
         assert resp.series[0].data[0].game_count == 10
         assert resp.series[0].data[0].score == 1.0  # all wins
 
     @pytest.mark.asyncio
     async def test_same_day_games_collapse_to_one_point(self, db_session: AsyncSession) -> None:
-        """12 games on the same calendar day keep only the last game's window per date."""
+        """12 games on the same calendar day collapse into the week's single point (Phase 242)."""
         hash_val = 99_703
         base_dt = datetime.datetime(2026, 3, 1, 8, 0, 0, tzinfo=datetime.timezone.utc)
         for i in range(12):
@@ -304,10 +311,15 @@ class TestRollingWindowBoundaries:
                 TimeSeriesBookmarkParam(bookmark_id=3, target_hash=hash_val, match_side="full")
             ]
         )
-        resp = await get_time_series(db_session, user_id=_USER_ROLLING_SAMEDAY, request=req)
-        # Single date → single point (the last game's rolling window)
+        resp = await get_time_series(
+            db_session, user_id=_USER_ROLLING_SAMEDAY, request=req, now_utc=_NOW_UTC
+        )
+        # Single ISO week → single point (the last game's rolling window), keyed by
+        # that week's Monday (2026-03-01 is a Sunday, so the week starts 2026-02-23).
         assert len(resp.series[0].data) == 1
         assert resp.series[0].data[0].game_count == 12
+        assert resp.series[0].data[0].per_week_games == 12
+        assert resp.series[0].data[0].date == "2026-02-23"
 
 
 # -----------------------------------------------------------------------------

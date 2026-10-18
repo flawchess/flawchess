@@ -1,7 +1,7 @@
 """Schema-additivity tests for OpeningWDL — the MG-entry eval fields are optional.
 
 Verifies that:
-- Existing callers with only the 14 legacy fields still parse correctly.
+- Payloads without the MG-entry eval fields (but with the required score / is_current fields) still parse correctly.
 - The 6 MG-entry eval fields parse when present.
 - Literal type for eval_confidence rejects invalid values.
 - Optional fields default correctly when omitted.
@@ -10,7 +10,7 @@ Verifies that:
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.stats import MostPlayedOpeningsResponse, OpeningWDL
+from app.schemas.stats import OpeningWDL
 
 _LEGACY: dict[str, object] = dict(
     opening_eco="C50",
@@ -27,6 +27,13 @@ _LEGACY: dict[str, object] = dict(
     win_pct=66.7,
     draw_pct=13.3,
     loss_pct=20.0,
+    # Required since Phase 242: score verdict inputs (D-18) and the current/past flag (D-04).
+    score=0.733,
+    score_confidence="high",
+    score_p_value=0.004,
+    score_ci_low=0.47,
+    score_ci_high=0.89,
+    is_current=True,
 )
 
 
@@ -44,6 +51,9 @@ def test_opening_wdl_old_payload_still_parses() -> None:
     assert m.eval_ci_low_pawns is None
     assert m.eval_ci_high_pawns is None
     assert m.eval_p_value is None
+    # D-33: the score CI on OpeningWDL is the 95% pair; the 99% names are gone.
+    assert (m.score_ci_low, m.score_ci_high) == (0.47, 0.89)
+    assert not any("ci99" in name for name in OpeningWDL.model_fields)
 
 
 # --- Full payload (new fields) ----------------------------------
@@ -92,23 +102,3 @@ def test_avg_eval_pawns_none_when_omitted() -> None:
 
 
 # --- MostPlayedOpeningsResponse: eval baselines -------------
-
-
-def test_most_played_response_carries_eval_baseline_pawns() -> None:
-    """Wrapper carries per-color eval baselines in pawns (per-game mean,
-    2026-05-04 Lichess benchmark) so the frontend can center the bullet
-    chart on the same H0 the backend z-test uses.
-    """
-    resp = MostPlayedOpeningsResponse(
-        white=[],
-        black=[],
-        eval_baseline_pawns_white=0.315,
-        eval_baseline_pawns_black=-0.189,
-    )
-    assert resp.eval_baseline_pawns_white == pytest.approx(0.315)
-    assert resp.eval_baseline_pawns_black == pytest.approx(-0.189)
-
-    # Round-trip via model_dump preserves the baseline values.
-    resp2 = MostPlayedOpeningsResponse.model_validate(resp.model_dump())
-    assert resp2.eval_baseline_pawns_white == pytest.approx(0.315)
-    assert resp2.eval_baseline_pawns_black == pytest.approx(-0.189)

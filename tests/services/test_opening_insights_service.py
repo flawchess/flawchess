@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import ctypes
 import datetime
+import math
+from collections.abc import Iterator
 from typing import Any, Literal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,17 +20,21 @@ import chess.polyglot
 import pytest
 
 from app.models.opening import Opening
+from app.repositories.stats_repository import OpeningPhaseEntryMetrics
 from app.schemas.opening_insights import (
     OpeningInsightFinding,
     OpeningInsightsRequest,
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_CI_Z_95,
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE as MIN_GAMES_PER_CANDIDATE,
 )
+from app.services.score_confidence import wilson_bounds
+from app.services.repertoire_recency import CurrentCutoffs
 from app.services.opening_insights_service import (
-    WEAKNESS_CAP_PER_COLOR,
-    STRENGTH_CAP_PER_COLOR,
+    FINDINGS_CARD_CAP,
+    _partition_section,
     _TransitionRow,
     _classify_row,
     _rank_section,
@@ -39,6 +45,24 @@ from app.services.opening_insights_service import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Fixed dev-clock instant handed to compute_insights (it never reads the wall clock).
+NOW_UTC = datetime.datetime(2026, 10, 17, 12, 0, tzinfo=datetime.timezone.utc)
+NO_CUTOFFS: CurrentCutoffs = CurrentCutoffs(white=None, black=None)
+
+
+@pytest.fixture(autouse=True)
+def mock_resolve_cutoffs() -> Iterator[AsyncMock]:
+    """Patch the cutoff lookup so tests need no DB; default is "everything current".
+
+    Tests that exercise the cutoff override ``.return_value``.
+    """
+    with patch(
+        "app.services.opening_insights_service.resolve_current_cutoffs",
+        new_callable=AsyncMock,
+    ) as mock_cutoffs:
+        mock_cutoffs.return_value = NO_CUTOFFS
+        yield mock_cutoffs
 
 
 def _make_row(
@@ -140,6 +164,8 @@ async def _run_compute(
     openings_by_hash: dict[int, Opening] | None = None,
     color: str = "white",
     pos_wdl: dict[int, tuple[int, int, int, datetime.datetime | None]] | None = None,
+    eval_metrics: dict[int, OpeningPhaseEntryMetrics] | None = None,
+    eval_calls: list[Any] | None = None,
 ) -> OpeningInsightsResponse:
     """Helper: patch repo functions and run compute_insights.
 
@@ -204,14 +230,19 @@ async def _run_compute(
         mock_transitions.return_value = rows
         mock_prefixes.return_value = {}  # bypassed by _wrap_transition_row patch
         mock_attribution.return_value = openings_by_hash
-        mock_eval.return_value = {}  # no MG-entry metrics (existing tests unaffected)
+        # No MG-entry metrics unless a test supplies them (existing tests unaffected).
+        mock_eval.return_value = eval_metrics if eval_metrics is not None else {}
         mock_pos_wdl.return_value = pos_wdl
 
-        return await compute_insights(
+        response = await compute_insights(
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color=color),
+            now_utc=NOW_UTC,
         )
+        if eval_calls is not None:
+            eval_calls.extend(mock_eval.call_args_list)
+        return response
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +251,7 @@ async def _run_compute(
 
 
 def test_classify_row_neutral_score_046_returns_none() -> None:
-    """Strict <=/>= boundaries: score=0.46 → not a finding (neutral, |delta|<0.05)."""
+    """score=0.46 → not a finding (neutral, |delta|<0.05)."""
     # n=100, w=40, d=12, l=48 → score = (40 + 6)/100 = 0.46
     row = _make_row(n=100, w=40, d=12, losses=48)
     assert _classify_row(row) is None
@@ -233,10 +264,17 @@ def test_classify_row_neutral_score_054_returns_none() -> None:
     assert _classify_row(row) is None
 
 
-def test_classify_row_minor_weakness_at_score_045_exact() -> None:
-    """score=0.45 exactly → minor weakness (delta=-0.05, strict <=)."""
+def test_classify_row_band_edge_045_is_neutral() -> None:
+    """score=0.45 exactly is the typical-band edge → neutral (strict <, WR-03 parity)."""
     # n=20, w=5, d=8, l=7 → score = (5 + 4)/20 = 0.45 exactly
     row = _make_row(n=20, w=5, d=8, losses=7)
+    assert _classify_row(row) is None
+
+
+def test_classify_row_minor_weakness_just_below_045() -> None:
+    """score=0.44 → minor weakness (just past the band edge)."""
+    # n=100, w=38, d=12, l=50 → score = (38 + 6)/100 = 0.44
+    row = _make_row(n=100, w=38, d=12, losses=50)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -255,10 +293,17 @@ def test_classify_row_major_weakness_at_score_040_exact() -> None:
     assert severity == "major"
 
 
-def test_classify_row_minor_strength_at_score_055_exact() -> None:
-    """score=0.55 → minor strength (delta=+0.05, strict >=)."""
+def test_classify_row_band_edge_055_is_neutral() -> None:
+    """score=0.55 exactly is the typical-band edge → neutral (strict >, WR-03 parity)."""
     # n=20, w=8, d=6, l=6 → score = (8 + 3)/20 = 0.55 exactly
     row = _make_row(n=20, w=8, d=6, losses=6)
+    assert _classify_row(row) is None
+
+
+def test_classify_row_minor_strength_just_above_055() -> None:
+    """score=0.56 → minor strength (just past the band edge)."""
+    # n=100, w=50, d=12, l=38 → score = (50 + 6)/100 = 0.56
+    row = _make_row(n=100, w=50, d=12, losses=38)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -285,7 +330,7 @@ def test_classify_row_major_strength_at_score_060_exact() -> None:
 def test_min_games_floor_constant_is_20() -> None:
     """Discovery floor raised back from 10 to 20.
 
-    Rationale: the SQL pre-filter on score <= 0.45 OR score >= 0.55 selects on
+    Rationale: the SQL pre-filter on score < 0.45 OR score > 0.55 selects on
     the same statistic the Wald p-value then tests, so at n in 10..19 the
     score-vs-50% test is systematically anti-conservative. n>=20 mitigates the
     worst of the post-selection inflation.
@@ -377,6 +422,7 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="all"),
+            now_utc=NOW_UTC,
         )
 
     # Both sections should have one finding (cross-color dedup does NOT happen)
@@ -402,30 +448,30 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
         move_san="exd5",
         resulting_full_hash=200,
         entry_san_sequence=["e4", "c6", "Nc3", "d5"],
-        n=20,
-        w=4,
-        d=4,
-        losses=12,
+        n=60,
+        w=12,
+        d=12,
+        losses=36,
     )
     row_white_deep = _make_row(
         entry_hash=300,
         move_san="d4",
         resulting_full_hash=400,
         entry_san_sequence=["e4", "c6", "Nc3", "d5", "exd5", "cxd5"],
-        n=20,
-        w=4,
-        d=4,
-        losses=12,
+        n=60,
+        w=12,
+        d=12,
+        losses=36,
     )
     row_black_mid = _make_row(
         entry_hash=200,
         move_san="cxd5",
         resulting_full_hash=300,
         entry_san_sequence=["e4", "c6", "Nc3", "d5", "exd5"],
-        n=20,
-        w=4,
-        d=4,
-        losses=12,
+        n=60,
+        w=12,
+        d=12,
+        losses=36,
     )
     opening_a = _make_opening(full_hash=100, name="Caro-Kann Defense", eco="B10", ply_count=4)
     opening_b = _make_opening(full_hash=200, name="Caro-Kann Defense", eco="B10", ply_count=5)
@@ -466,15 +512,16 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
         mock_eval.return_value = {}
         # Pos WDL == move-played WDL across all three rows.
         mock_pos_wdl.return_value = {
-            200: (4, 4, 12, None),
-            400: (4, 4, 12, None),
-            300: (4, 4, 12, None),
+            200: (12, 12, 36, None),
+            400: (12, 12, 36, None),
+            300: (12, 12, 36, None),
         }
 
         response = await compute_insights(
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="all"),
+            now_utc=NOW_UTC,
         )
 
     # Only the shortest finding (3.exd5) should survive — both deeper continuations
@@ -494,20 +541,20 @@ async def test_continuation_dedupe_keeps_sibling_lines_at_same_depth() -> None:
         move_san="exd5",
         resulting_full_hash=200,
         entry_san_sequence=["e4", "c6", "Nc3", "d5"],
-        n=20,
-        w=4,
-        d=4,
-        losses=12,
+        n=60,
+        w=12,
+        d=12,
+        losses=36,
     )
     row_b = _make_row(
         entry_hash=100,
         move_san="d3",
         resulting_full_hash=201,
         entry_san_sequence=["e4", "c6", "Nc3", "d5"],
-        n=20,
-        w=4,
-        d=4,
-        losses=12,
+        n=60,
+        w=12,
+        d=12,
+        losses=36,
     )
     opening = _make_opening(full_hash=100, name="Caro-Kann Defense", eco="B10", ply_count=4)
     response = await _run_compute(
@@ -536,7 +583,7 @@ async def test_attribution_picks_max_ply_count() -> None:
     # The mock already returns deepest opening by ply_count (as the repo does)
     opening = _make_opening(full_hash=100, name="Deep Sicilian", ply_count=8, eco="B70")
     response = await _run_compute(
-        rows=[_make_row(n=20, w=4, d=4, losses=12)],
+        rows=[_make_row(n=60, w=12, d=12, losses=36)],
         openings_by_hash={100: opening},
         color="white",
     )
@@ -557,7 +604,7 @@ async def test_finding_includes_entry_san_sequence() -> None:
     """
     opening = _make_opening(full_hash=100, name="Sicilian Defense", ply_count=4, eco="B20")
     # Default _make_row() uses entry_san_sequence=["e4", "c5", "Nf3"] (3 plys)
-    row = _make_row(n=20, w=4, d=4, losses=12)
+    row = _make_row(n=60, w=12, d=12, losses=36)
     response = await _run_compute(
         rows=[row],
         openings_by_hash={100: opening},
@@ -665,6 +712,7 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
     assert len(response.white_weaknesses) == 1
@@ -705,6 +753,7 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
     # Finding is dropped — no sentinel '<unnamed line>' surfaced
@@ -939,68 +988,6 @@ def test_ranking_bound_handles_boundary_scores() -> None:
     assert [f.candidate_move_san for f in ranked_s] == ["normal", "extreme"]
 
 
-@pytest.mark.asyncio
-async def test_caps_10_per_color_per_classification() -> None:
-    """Per-section caps applied after sorting: top-10 weaknesses, top-10 strengths."""
-    assert WEAKNESS_CAP_PER_COLOR == 10
-    assert STRENGTH_CAP_PER_COLOR == 10
-
-    # Create 12 weakness rows — only 10 should survive cap.
-    # Use fixed n=20, w=4, d=4, l=12 (score=0.30, major) so all rows classify.
-    # Distinct entry/resulting hashes AND distinct candidate moves prevent
-    # _dedupe_continuations from collapsing them as same-line findings.
-    weakness_rows = [
-        _make_row(
-            entry_hash=i,
-            move_san=f"M{i}",
-            resulting_full_hash=100 + i,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=4,
-            d=4,
-            losses=12,  # score=(4+2)/20=0.30 → major weakness for all
-        )
-        for i in range(1, 13)
-    ]
-    openings_map = {
-        i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in range(1, 13)
-    }
-
-    response = await _run_compute(
-        rows=weakness_rows,
-        openings_by_hash=openings_map,
-        color="white",
-    )
-    assert len(response.white_weaknesses) == WEAKNESS_CAP_PER_COLOR  # 10
-    assert len(response.white_strengths) == 0  # no strength rows
-
-    # Now create 12 strength rows — only 10 should survive cap.
-    strength_rows = [
-        _make_row(
-            entry_hash=20 + i,
-            move_san=f"M{i}",
-            resulting_full_hash=200 + i,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=14,
-            d=3,
-            losses=3,  # score=(14+1.5)/20=0.775 → major strength
-        )
-        for i in range(1, 13)
-    ]
-    openings_strength = {
-        20 + i: _make_opening(full_hash=20 + i, name=f"Strength {i}", ply_count=2)
-        for i in range(1, 13)
-    }
-    response2 = await _run_compute(
-        rows=strength_rows,
-        openings_by_hash=openings_strength,
-        color="white",
-    )
-    assert len(response2.white_strengths) == STRENGTH_CAP_PER_COLOR  # 10
-    assert len(response2.white_weaknesses) == 0
-
-
 # ---------------------------------------------------------------------------
 # confidence + p_value end-to-end smoke
 # ---------------------------------------------------------------------------
@@ -1033,7 +1020,7 @@ async def test_compute_insights_populates_confidence_and_p_value() -> None:
 @pytest.mark.asyncio
 async def test_color_optimization_skips_unused_color_query() -> None:
     """When request.color='white', only one SQL call issued; black sections empty."""
-    row = _make_row(n=20, w=12, d=4, losses=4)  # strength
+    row = _make_row(n=60, w=36, d=12, losses=12)  # strength, high confidence
     opening = _make_opening(full_hash=100)
 
     with (
@@ -1058,12 +1045,13 @@ async def test_color_optimization_skips_unused_color_query() -> None:
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
         # Pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {200: (12, 4, 4, None)}
+        mock_pos_wdl.return_value = {200: (36, 12, 12, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
         # Only ONE query_opening_transitions call (for white)
@@ -1125,6 +1113,7 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="all"),
+            now_utc=NOW_UTC,
         )
 
     assert len(response.black_weaknesses) == 1
@@ -1188,455 +1177,6 @@ def test_opening_insight_finding_eval_fields_default() -> None:
     assert finding.eval_n == 0
     assert finding.eval_p_value is None
     assert finding.eval_confidence == "low"
-
-
-def test_opening_insights_response_carries_eval_baselines() -> None:
-    """OpeningInsightsResponse must expose eval_baseline_pawns_white and _black."""
-    from app.services.opening_insights_constants import (
-        EVAL_BASELINE_PAWNS_WHITE,
-        EVAL_BASELINE_PAWNS_BLACK,
-    )
-
-    resp = OpeningInsightsResponse(
-        eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
-        eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
-    )
-    assert resp.eval_baseline_pawns_white == EVAL_BASELINE_PAWNS_WHITE
-    assert resp.eval_baseline_pawns_black == EVAL_BASELINE_PAWNS_BLACK
-
-
-@pytest.mark.asyncio
-async def test_compute_insights_eval_fields_populated_when_metrics_present() -> None:
-    """When query_opening_phase_entry_metrics_batch returns metrics for a finding's
-    resulting_full_hash, the service populates the six eval fields on the finding."""
-    from unittest.mock import AsyncMock, patch
-    from app.repositories.stats_repository import OpeningPhaseEntryMetrics
-
-    row = _make_row(n=20, w=4, d=4, losses=12, resulting_full_hash=999)
-    opening = _make_opening(full_hash=100)
-
-    # Synthetic metrics for the resulting_full_hash=999
-    synthetic_metrics: dict[int, OpeningPhaseEntryMetrics] = {
-        999: OpeningPhaseEntryMetrics(
-            eval_sum_mg=2000.0,  # mean = 2000/20 = 100 cp = 1.0 pawns
-            eval_sumsq_mg=220000.0,
-            eval_n_mg=20,
-            mate_n_mg=0,
-            null_eval_n_mg=0,
-            outlier_n_mg=0,
-        ),
-    }
-
-    with (
-        patch(
-            "app.services.opening_insights_service.query_opening_transitions",
-            new_callable=AsyncMock,
-        ) as mock_transitions,
-        patch(
-            "app.services.opening_insights_service.query_transition_prefixes",
-            new_callable=AsyncMock,
-        ),
-        patch(
-            "app.services.opening_insights_service._wrap_transition_row",
-            side_effect=_fake_wrap,
-        ),
-        patch(
-            "app.services.opening_insights_service.query_openings_by_hashes",
-            new_callable=AsyncMock,
-        ) as mock_attribution,
-        patch(
-            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
-            new_callable=AsyncMock,
-        ) as mock_eval,
-        patch(
-            "app.services.opening_insights_service.query_resulting_position_wdl",
-            new_callable=AsyncMock,
-        ) as mock_pos_wdl,
-    ):
-        mock_transitions.return_value = [row]
-        mock_attribution.return_value = {100: opening}
-        mock_eval.return_value = synthetic_metrics
-        # Pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {999: (4, 4, 12, None)}
-
-        response = await compute_insights(
-            session=AsyncMock(),
-            user_id=1,
-            request=_default_request(color="white"),
-        )
-
-    assert len(response.white_weaknesses) == 1
-    finding = response.white_weaknesses[0]
-    # eval fields should be populated
-    assert finding.eval_n == 20
-    assert finding.avg_eval_pawns is not None
-    assert abs(finding.avg_eval_pawns - 1.0) < 0.01  # 100 cp = 1.0 pawns
-    assert finding.eval_p_value is not None
-    assert finding.eval_confidence in ("low", "medium", "high")
-    # Baselines are present on the response
-    assert isinstance(response.eval_baseline_pawns_white, float)
-    assert isinstance(response.eval_baseline_pawns_black, float)
-
-
-@pytest.mark.asyncio
-async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -> None:
-    """When query_opening_phase_entry_metrics_batch returns empty dict (no MG entry data),
-    eval fields stay at defaults (eval_n=0, avg_eval_pawns=None, eval_confidence='low')."""
-    from unittest.mock import AsyncMock, patch
-
-    row = _make_row(n=20, w=4, d=4, losses=12, resulting_full_hash=999)
-    opening = _make_opening(full_hash=100)
-
-    with (
-        patch(
-            "app.services.opening_insights_service.query_opening_transitions",
-            new_callable=AsyncMock,
-        ) as mock_transitions,
-        patch(
-            "app.services.opening_insights_service.query_openings_by_hashes",
-            new_callable=AsyncMock,
-        ) as mock_attribution,
-        patch(
-            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
-            new_callable=AsyncMock,
-        ) as mock_eval,
-        patch(
-            "app.services.opening_insights_service.query_resulting_position_wdl",
-            new_callable=AsyncMock,
-        ) as mock_pos_wdl,
-    ):
-        mock_transitions.return_value = [row]
-        mock_attribution.return_value = {100: opening}
-        mock_eval.return_value = {}  # no metrics
-        # Pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {999: (4, 4, 12, None)}
-
-        response = await compute_insights(
-            session=AsyncMock(),
-            user_id=1,
-            request=_default_request(color="white"),
-        )
-
-    assert len(response.white_weaknesses) == 1
-    finding = response.white_weaknesses[0]
-    assert finding.eval_n == 0
-    assert finding.avg_eval_pawns is None
-    assert finding.eval_ci_low_pawns is None
-    assert finding.eval_ci_high_pawns is None
-    assert finding.eval_p_value is None
-    assert finding.eval_confidence == "low"
-
-
-# ---------------------------------------------------------------------------
-# resulting-position WDL drives classification + fields
-# ---------------------------------------------------------------------------
-#
-# Hash namespace 0xDD** is reserved for service-level transposition
-# tests (mirrors 0xCC** for openings_service tests). These tests
-# drive a divergence between move-played WDL (carried on `row`) and resulting-
-# position WDL (returned by query_resulting_position_wdl) so we can verify
-# that compute_insights classifies, ranks, and populates fields from the
-# resulting-position aggregation, not from the move-played counts.
-DIVERGE_HASH = 0xDD01
-FLIP_HASH = 0xDD02
-VALIDATOR_HASH = 0xDD03
-
-
-class TestComputeInsightsTranspositionWdl:
-    """Resulting-position WDL drives classification + fields."""
-
-    @pytest.mark.asyncio
-    async def test_finding_uses_resulting_position_wdl_when_diverges_from_move_played(
-        self,
-    ) -> None:
-        """When pos_wdl diverges from row (transposition: more games visit the
-        resulting position than played the candidate from this entry),
-        finding.{n_games, wins, draws, losses, score} all reflect pos_wdl,
-        not the move-played row."""
-        # Move-played: w=15, d=3, l=2, n=20 → score = 16.5/20 = 0.825 (major strength)
-        # Pos WDL:     w=24, d=6, l=10, n=40 → score = 27/40 = 0.675 (still major strength)
-        # Surfacing gate (HAVING n_games >= 20) passes on move-played n=20.
-        # Field validator (Field(ge=20) on n_games) passes on pos_n=40.
-        row = _make_row(
-            entry_hash=100,
-            move_san="e4",
-            resulting_full_hash=DIVERGE_HASH,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=15,
-            d=3,
-            losses=2,
-        )
-        opening = _make_opening(full_hash=100, ply_count=1)
-
-        response = await _run_compute(
-            rows=[row],
-            openings_by_hash={100: opening},
-            color="white",
-            pos_wdl={DIVERGE_HASH: (24, 6, 10, None)},
-        )
-
-        assert len(response.white_strengths) == 1
-        finding = response.white_strengths[0]
-        # Field semantics flip to resulting-position WDL.
-        assert finding.n_games == 40
-        assert finding.wins == 24
-        assert finding.draws == 6
-        assert finding.losses == 10
-        assert finding.score == pytest.approx(27 / 40, abs=1e-9)
-        # Classification stays strength (0.675 still >= 0.60 = major threshold).
-        assert finding.classification == "strength"
-        assert finding.severity == "major"
-
-    @pytest.mark.asyncio
-    async def test_finding_classification_uses_resulting_position_score(self) -> None:
-        """When move-played score classifies as strength but pos_wdl yields a
-        weakness score, the finding surfaces in the WEAKNESS section
-        (classification flipped) — _classify_row sees pos_row, not row."""
-        # Move-played: w=12, d=1, l=7, n=20 → score = 12.5/20 = 0.625 (minor strength)
-        # Pos WDL:     w=10, d=10, l=20, n=40 → score = 15/40 = 0.375 (major weakness)
-        # Surfacing gate passes on move-played n=20. Validator passes on pos_n=40.
-        row = _make_row(
-            entry_hash=100,
-            move_san="e4",
-            resulting_full_hash=FLIP_HASH,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=12,
-            d=1,
-            losses=7,
-        )
-        opening = _make_opening(full_hash=100, ply_count=1)
-
-        response = await _run_compute(
-            rows=[row],
-            openings_by_hash={100: opening},
-            color="white",
-            pos_wdl={FLIP_HASH: (10, 10, 20, None)},
-        )
-
-        # Classification flipped: appears in WEAKNESSES, not strengths.
-        assert len(response.white_strengths) == 0
-        assert len(response.white_weaknesses) == 1
-        finding = response.white_weaknesses[0]
-        assert finding.classification == "weakness"
-        assert finding.severity == "major"  # 0.375 <= 0.40
-        assert finding.score == pytest.approx(15 / 40, abs=1e-9)
-        assert finding.n_games == 40
-
-    @pytest.mark.asyncio
-    async def test_pos_wdl_queried_per_color_with_matching_color_filter(self) -> None:
-        """Regression: query_resulting_position_wdl must be invoked once
-        per color in colors_to_query, scoped to that color's resulting hashes,
-        and with color=color (matching query_opening_transitions' explicit
-        Game.user_color predicate). The cross-color blended call site
-        (color=None) silently inflated/deflated white-section and black-section
-        denominators against the click-through Move Explorer view, which IS
-        color-filtered. See app/services/opening_insights_service.py header
-        comment near pos_wdl_by_color.
-        """
-        # Two rows, same resulting_full_hash but in different color sections.
-        # Each color's pos_wdl mock returns a *different* (w, d, l) so we can
-        # detect cross-section blending if it happened.
-        WHITE_HASH = 0xDD10
-        BLACK_HASH = 0xDD11
-        row_white = _make_row(
-            entry_hash=100,
-            move_san="e4",
-            resulting_full_hash=WHITE_HASH,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=4,
-            d=4,
-            losses=12,
-        )
-        row_black = _make_row(
-            entry_hash=200,
-            move_san="e5",
-            resulting_full_hash=BLACK_HASH,
-            entry_san_sequence=["e4", "e5"],
-            n=20,
-            w=14,
-            d=2,
-            losses=4,
-        )
-        opening_w = _make_opening(full_hash=100, ply_count=1)
-        opening_b = _make_opening(full_hash=200, ply_count=2)
-
-        # Per-color pos_wdl: white sees (8, 8, 24) for n=40, black sees
-        # (28, 4, 8) for n=40. If the implementation reverted to a single
-        # cross-color call and reused the same dict for both colors, we'd
-        # see different counts on at least one finding.
-        async def pos_wdl_side_effect(
-            *, session: Any, user_id: int, hash_list: list[int], color: str | None, **_: Any
-        ) -> dict[int, tuple[int, int, int, datetime.datetime | None]]:
-            # Caller must pass a real color literal, never None, when
-            # called per-color. Assert here so a regression is impossible to
-            # mock around.
-            assert color in ("white", "black"), (
-                f"WR-01: query_resulting_position_wdl must be called with "
-                f"color in {{'white','black'}}, got {color!r}"
-            )
-            if color == "white":
-                # White scope: only WHITE_HASH should be requested.
-                assert hash_list == [WHITE_HASH], (
-                    f"white-color call must scope to white-section hashes, got {hash_list}"
-                )
-                return {WHITE_HASH: (8, 8, 24, None)}
-            assert hash_list == [BLACK_HASH], (
-                f"black-color call must scope to black-section hashes, got {hash_list}"
-            )
-            return {BLACK_HASH: (28, 4, 8, None)}
-
-        with (
-            patch(
-                "app.services.opening_insights_service.query_opening_transitions",
-                new_callable=AsyncMock,
-            ) as mock_transitions,
-            patch(
-                "app.services.opening_insights_service.query_transition_prefixes",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "app.services.opening_insights_service._wrap_transition_row",
-                side_effect=_fake_wrap,
-            ),
-            patch(
-                "app.services.opening_insights_service.query_openings_by_hashes",
-                new_callable=AsyncMock,
-            ) as mock_attribution,
-            patch(
-                "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
-                new_callable=AsyncMock,
-            ) as mock_eval,
-            patch(
-                "app.services.opening_insights_service.query_resulting_position_wdl",
-                side_effect=pos_wdl_side_effect,
-            ) as mock_pos_wdl,
-        ):
-            # White call returns the white row, black returns the black row.
-            mock_transitions.side_effect = [[row_white], [row_black]]
-            mock_attribution.return_value = {100: opening_w, 200: opening_b}
-            mock_eval.return_value = {}
-
-            response = await compute_insights(
-                session=AsyncMock(),
-                user_id=1,
-                request=_default_request(color="all"),
-            )
-
-        # Two calls, one per color (sequential per CLAUDE.md AsyncSession rule).
-        assert mock_pos_wdl.call_count == 2
-        # White finding picks up white-color pos_wdl: (8, 8, 24), n=40, score=12/40=0.30.
-        assert len(response.white_weaknesses) == 1
-        wf = response.white_weaknesses[0]
-        assert (wf.wins, wf.draws, wf.losses, wf.n_games) == (8, 8, 24, 40)
-        # Black finding picks up black-color pos_wdl: (28, 4, 8), n=40, score=30/40=0.75.
-        assert len(response.black_strengths) == 1
-        bf = response.black_strengths[0]
-        assert (bf.wins, bf.draws, bf.losses, bf.n_games) == (28, 4, 8, 40)
-
-    @pytest.mark.asyncio
-    async def test_pos_wdl_skipped_when_color_has_no_rows(self) -> None:
-        """When a color produced zero transition rows (e.g. user has only one
-        color active), query_resulting_position_wdl must NOT be invoked for
-        that color — empty hash_list short-circuit retained."""
-        row_white = _make_row(
-            entry_hash=100,
-            move_san="e4",
-            resulting_full_hash=0xDD20,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=4,
-            d=4,
-            losses=12,
-        )
-        opening = _make_opening(full_hash=100, ply_count=1)
-
-        with (
-            patch(
-                "app.services.opening_insights_service.query_opening_transitions",
-                new_callable=AsyncMock,
-            ) as mock_transitions,
-            patch(
-                "app.services.opening_insights_service.query_transition_prefixes",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "app.services.opening_insights_service._wrap_transition_row",
-                side_effect=_fake_wrap,
-            ),
-            patch(
-                "app.services.opening_insights_service.query_openings_by_hashes",
-                new_callable=AsyncMock,
-            ) as mock_attribution,
-            patch(
-                "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
-                new_callable=AsyncMock,
-            ) as mock_eval,
-            patch(
-                "app.services.opening_insights_service.query_resulting_position_wdl",
-                new_callable=AsyncMock,
-            ) as mock_pos_wdl,
-        ):
-            # White returns one row, black returns nothing.
-            mock_transitions.side_effect = [[row_white], []]
-            mock_attribution.return_value = {100: opening}
-            mock_eval.return_value = {}
-            mock_pos_wdl.return_value = {0xDD20: (4, 4, 12, None)}
-
-            await compute_insights(
-                session=AsyncMock(),
-                user_id=1,
-                request=_default_request(color="all"),
-            )
-
-        # Exactly one call: only the white color (black short-circuited).
-        assert mock_pos_wdl.call_count == 1
-        kwargs = mock_pos_wdl.await_args_list[0].kwargs
-        assert kwargs["color"] == "white"
-        assert kwargs["hash_list"] == [0xDD20]
-
-    @pytest.mark.asyncio
-    async def test_finding_n_games_validator_satisfied_when_pos_n_gt_move_played_n(
-        self,
-    ) -> None:
-        """Pydantic Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE=20) on
-        n_games stays satisfied because pos_n is always >= move-played n by
-        construction (every move-played game also visits the resulting
-        position). Regression test for the pos_n >= move-played n invariant."""
-        # Move-played: n=20 (exactly at the gate).
-        # Pos WDL: n=25 (transposition adds 5 games via other move orders).
-        row = _make_row(
-            entry_hash=100,
-            move_san="e4",
-            resulting_full_hash=VALIDATOR_HASH,
-            entry_san_sequence=["e4"],
-            n=20,
-            w=12,
-            d=1,
-            losses=7,
-        )
-        opening = _make_opening(full_hash=100, ply_count=1)
-
-        # Pos: w=15, d=0, l=10 → score = 15/25 = 0.60 (strength, major boundary).
-        response = await _run_compute(
-            rows=[row],
-            openings_by_hash={100: opening},
-            color="white",
-            pos_wdl={VALIDATOR_HASH: (15, 0, 10, None)},
-        )
-
-        # Validator did not raise; finding is constructed with pos_n=25.
-        assert len(response.white_strengths) == 1
-        finding = response.white_strengths[0]
-        assert finding.n_games == 25
-        assert finding.n_games >= MIN_GAMES_PER_CANDIDATE  # validator gate
-
-
-# ---------------------------------------------------------------------------
-# Custom-FEN drop path (flat-query refactor)
-# ---------------------------------------------------------------------------
 
 
 def test_row_wrapping_drops_unreachable_san_and_reports_a_warning() -> None:
@@ -1842,3 +1382,341 @@ def test_row_wrapping_drops_all_custom_group_without_raising() -> None:
     _, context_dict = mock_set_context.call_args_list[0].args
     assert context_dict["reason"] == "all_games_custom_start"
     assert context_dict["n"] == 50
+
+
+# ---------------------------------------------------------------------------
+# Phase 242: current-repertoire cutoff (is_current) on findings
+# ---------------------------------------------------------------------------
+
+# 60 games at score 0.30 -> Wilson p ~ 0.002: a high-confidence major weakness.
+HIGH_N, HIGH_W, HIGH_D, HIGH_L = 60, 12, 12, 36
+
+
+def _distinct_weakness_rows(
+    count: int,
+    *,
+    n: int = HIGH_N,
+    w: int = HIGH_W,
+    d: int = HIGH_D,
+    losses: int = HIGH_L,
+    last_played_at: datetime.datetime | None = None,
+    first_index: int = 1,
+) -> tuple[list[SimpleNamespace], dict[int, Opening]]:
+    """Weakness rows with distinct entry/resulting hashes and candidate moves.
+
+    Distinct moves and hashes keep _dedupe_continuations from collapsing them as one line.
+    """
+    indices = range(first_index, first_index + count)
+    rows = [
+        _make_row(
+            entry_hash=i,
+            move_san=f"M{i}",
+            resulting_full_hash=1000 + i,
+            entry_san_sequence=["e4"],
+            n=n,
+            w=w,
+            d=d,
+            losses=losses,
+            last_played_at=last_played_at,
+        )
+        for i in indices
+    ]
+    openings = {i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in indices}
+    return rows, openings
+
+
+@pytest.mark.asyncio
+async def test_findings_carry_is_current_against_the_colour_cutoff(
+    mock_resolve_cutoffs: AsyncMock,
+) -> None:
+    """A finding last played before the colour's cutoff is not current; one after is."""
+    cutoff = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
+    mock_resolve_cutoffs.return_value = CurrentCutoffs(white=cutoff, black=None)
+    old_rows, old_openings = _distinct_weakness_rows(
+        1, last_played_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc), first_index=1
+    )
+    new_rows, new_openings = _distinct_weakness_rows(
+        1, last_played_at=datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc), first_index=2
+    )
+
+    response = await _run_compute(
+        rows=old_rows + new_rows,
+        openings_by_hash={**old_openings, **new_openings},
+        color="white",
+    )
+
+    by_move = {f.candidate_move_san: f for f in response.white_weaknesses}
+    assert by_move["M1"].is_current is False
+    assert by_move["M2"].is_current is True
+
+
+@pytest.mark.asyncio
+async def test_cutoff_lookup_receives_now_utc_and_request_filters(
+    mock_resolve_cutoffs: AsyncMock,
+) -> None:
+    """D-02/D-03: the cutoff is computed with the dev-clock instant and the findings' filters."""
+    await _run_compute(rows=[], color="white")
+
+    mock_resolve_cutoffs.assert_awaited_once()
+    await_args = mock_resolve_cutoffs.await_args
+    assert await_args is not None
+    assert await_args.kwargs["now_utc"] == NOW_UTC
+    assert await_args.kwargs["opponent_type"] == "human"
+    assert await_args.args[2] == ["white"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 242: 95% card partition (D-33, D-34), centred eval, 95% CIs
+# ---------------------------------------------------------------------------
+
+LONG_AGO = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+RECENT = datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)
+CUTOFF = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
+
+MEDIUM_P_BASE = 0.011
+MEDIUM_P_STEP = 0.002
+
+
+def _finding_for(
+    name: str,
+    *,
+    confidence: Literal["low", "medium", "high"],
+    is_current: bool = True,
+    p_value: float = 0.001,
+) -> OpeningInsightFinding:
+    """A weakness finding with the partition-relevant fields set explicitly."""
+    return _make_weakness_finding(score=0.30, candidate=name, confidence=confidence).model_copy(
+        update={"is_current": is_current, "p_value": p_value}
+    )
+
+
+def _names(findings: list[OpeningInsightFinding]) -> list[str]:
+    return [f.candidate_move_san for f in findings]
+
+
+def test_partition_returns_a_plain_list_of_cards() -> None:
+    """D-34: no "not clear yet" bucket, the partition is just the card list."""
+    cards = _partition_section([_finding_for("hi", confidence="high")])
+
+    assert isinstance(cards, list)
+    assert _names(cards) == ["hi"]
+
+
+def test_partition_keeps_every_confidence_in_wilson_order() -> None:
+    """D-38: no 95% gate on listing; low-confidence findings keep their ranked place."""
+    ranked = [
+        _finding_for("lo1", confidence="low", p_value=0.4),
+        _finding_for("med", confidence="medium", p_value=0.03),
+        _finding_for("hi", confidence="high"),
+        _finding_for("lo2", confidence="low", p_value=0.2),
+    ]
+
+    cards = _partition_section(ranked)
+
+    assert _names(cards) == ["lo1", "med", "hi", "lo2"]
+
+
+def test_partition_caps_without_moving_current_findings_first() -> None:
+    """12 ranked findings -> the first 10 as ranked; an older one at the top stays there."""
+    ranked = [
+        _finding_for("old_a", confidence="high", is_current=False),
+        _finding_for("old_b", confidence="medium", is_current=False, p_value=0.04),
+        *(_finding_for(f"cur_{i}", confidence="low", p_value=0.2) for i in range(10)),
+    ]
+
+    cards = _partition_section(ranked)
+
+    assert len(cards) == FINDINGS_CARD_CAP == 10
+    assert _names(cards) == ["old_a", "old_b", *(f"cur_{i}" for i in range(8))]
+
+
+def test_partition_empty_section_stays_empty() -> None:
+    assert _partition_section([]) == []
+
+
+def _patch_confidence_by_n(
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]],
+) -> Any:
+    """Patch compute_confidence_bucket so the sample size n picks the bucket and p-value.
+
+    End-to-end tests need exact confidence mixes; choosing n/w/d/l to land a Wilson p inside a
+    bucket for a dozen distinct rows is brittle, so n is used as the lookup key instead.
+    """
+
+    def fake(
+        w: int, d: int, losses: int, n: int
+    ) -> tuple[Literal["low", "medium", "high"], float, float]:
+        bucket, p_value = buckets[n]
+        return bucket, p_value, 0.05
+
+    return patch(
+        "app.services.opening_insights_service.compute_confidence_bucket", side_effect=fake
+    )
+
+
+def _rows_with_n(
+    sizes: list[int], *, last_played_at: list[datetime.datetime]
+) -> tuple[list[SimpleNamespace], dict[int, Opening]]:
+    """One score-0.30 weakness row per sample size (n multiple of 10 so w = 0.3 n is whole)."""
+    rows: list[SimpleNamespace] = []
+    openings: dict[int, Opening] = {}
+    for index, (size, played) in enumerate(zip(sizes, last_played_at, strict=True), start=1):
+        rows.append(
+            _make_row(
+                entry_hash=index,
+                move_san=f"M{index}",
+                resulting_full_hash=1000 + index,
+                entry_san_sequence=["e4"],
+                n=size,
+                w=size * 3 // 10,
+                d=0,
+                losses=size - size * 3 // 10,
+                last_played_at=played,
+            )
+        )
+        openings[index] = _make_opening(full_hash=index, name=f"Opening {index}", ply_count=2)
+    return rows, openings
+
+
+@pytest.mark.asyncio
+async def test_card_list_is_capped_in_wilson_order_and_eval_runs_on_cards_only(
+    mock_resolve_cutoffs: AsyncMock,
+) -> None:
+    """12 rows at the same score (two older) -> the 10 largest by Wilson order, an older one
+    included (no current-first re-sort, D-38); the eval batch sees only those 10 hashes."""
+    mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
+    sizes = [100 + 10 * i for i in range(12)]
+    played = [LONG_AGO, RECENT, LONG_AGO, *([RECENT] * 9)]
+    rows, openings = _rows_with_n(sizes, last_played_at=played)
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
+        size: ("high", 0.001) if i % 2 == 0 else ("medium", 0.03) for i, size in enumerate(sizes)
+    }
+    eval_calls: list[Any] = []
+
+    with _patch_confidence_by_n(buckets):
+        response = await _run_compute(
+            rows=rows, openings_by_hash=openings, color="white", eval_calls=eval_calls
+        )
+
+    assert len(response.white_weaknesses) == FINDINGS_CARD_CAP == 10
+    # Same score, so the Wilson upper bound falls with n: the two smallest rows are cut.
+    assert sorted(f.n_games for f in response.white_weaknesses) == sizes[2:]
+    assert [f.is_current for f in response.white_weaknesses].count(False) == 1
+    # Pitfall 8: enrichment must not touch the uncapped ranked list.
+    assert len(eval_calls) == 1
+    queried_hashes = set(eval_calls[0].kwargs["hashes"])
+    assert queried_hashes == {int(f.resulting_full_hash) for f in response.white_weaknesses}
+    assert len(queried_hashes) == FINDINGS_CARD_CAP
+
+
+@pytest.mark.asyncio
+async def test_medium_findings_are_cards_and_get_the_eval(
+    mock_resolve_cutoffs: AsyncMock,
+) -> None:
+    """D-33: medium rows (p < 0.05) are cards in their own right, enriched with the eval."""
+    mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
+    sizes = [100 + 10 * i for i in range(3)]
+    rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 3)
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
+        size: ("medium", MEDIUM_P_BASE + MEDIUM_P_STEP * i) for i, size in enumerate(sizes)
+    }
+    eval_calls: list[Any] = []
+
+    with _patch_confidence_by_n(buckets):
+        response = await _run_compute(
+            rows=rows, openings_by_hash=openings, color="white", eval_calls=eval_calls
+        )
+
+    assert len(response.white_weaknesses) == 3
+    assert all(f.confidence == "medium" for f in response.white_weaknesses)
+    assert len(eval_calls) == 1
+    assert set(eval_calls[0].kwargs["hashes"]) == {
+        int(f.resulting_full_hash) for f in response.white_weaknesses
+    }
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_findings_are_listed_in_wilson_order() -> None:
+    """D-38: a low-confidence finding is a card too; the larger-n one ranks first here."""
+    sizes = [100, 110, 120]
+    rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 3)
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
+        100: ("low", 0.4),
+        110: ("low", 0.2),
+        120: ("medium", 0.03),
+    }
+
+    with _patch_confidence_by_n(buckets):
+        response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
+
+    assert sorted(f.n_games for f in response.white_weaknesses) == sizes
+    assert {f.confidence for f in response.white_weaknesses} == {"low", "medium"}
+    # D-34: the response carries no "not clear yet" lists or counts.
+    assert not any("not_clear" in name for name in OpeningInsightsResponse.model_fields)
+
+
+@pytest.mark.asyncio
+async def test_card_eval_is_centred_on_the_colour_baseline_and_carries_95_cis() -> None:
+    """A card whose MG-entry eval mean equals the white baseline (+25 cp) is not significant.
+
+    With the old H0 of 0 cp the same sums (mean 25 cp, sd 50 cp, n 60) give z ~ 3.9, i.e. 'high'.
+    """
+    row = _make_row(
+        n=HIGH_N, w=HIGH_W, d=HIGH_D, losses=HIGH_L, resulting_full_hash=999, last_played_at=RECENT
+    )
+    eval_n = 60
+    mean_cp = 25.0
+    variance = 2500.0  # sd 50 cp
+    metrics = {
+        999: OpeningPhaseEntryMetrics(
+            eval_sum_mg=mean_cp * eval_n,
+            eval_sumsq_mg=eval_n * (variance + mean_cp**2),
+            eval_n_mg=eval_n,
+            mate_n_mg=0,
+            null_eval_n_mg=0,
+            outlier_n_mg=0,
+        )
+    }
+
+    response = await _run_compute(
+        rows=[row],
+        openings_by_hash={100: _make_opening(full_hash=100)},
+        color="white",
+        pos_wdl={999: (HIGH_W, HIGH_D, HIGH_L, RECENT)},
+        eval_metrics=metrics,
+    )
+
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+    assert finding.avg_eval_pawns == pytest.approx(0.25)  # raw mean, uncentred
+    assert finding.eval_confidence == "low"  # centred H0: nothing to see
+    assert finding.eval_p_value is not None and finding.eval_p_value > 0.5
+    assert finding.eval_ci_low_pawns is not None and finding.eval_ci_high_pawns is not None
+    # D-33: the 95% CI (z95 * sd / sqrt(n)) serves the popover and contains the baseline.
+    # The fixture sumsq encodes the population variance; the primitive is Bessel-corrected.
+    sample_variance = variance * eval_n / (eval_n - 1)
+    half_pawns = OPENING_INSIGHTS_CI_Z_95 * math.sqrt(sample_variance / eval_n) / 100.0
+    assert finding.eval_ci_low_pawns == pytest.approx(0.25 - half_pawns)
+    assert finding.eval_ci_high_pawns == pytest.approx(0.25 + half_pawns)
+
+
+@pytest.mark.asyncio
+async def test_every_card_carries_the_95_wilson_interval() -> None:
+    """D-33: ci_low/ci_high are the 95% Wilson bounds; no 99% pair is sent."""
+    sizes = [100, 110]
+    rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 2)
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
+        100: ("high", 0.001),
+        110: ("medium", 0.03),
+    }
+
+    with _patch_confidence_by_n(buckets):
+        response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
+
+    findings = response.white_weaknesses
+    assert len(findings) == 2
+    for finding in findings:
+        assert (finding.ci_low, finding.ci_high) == pytest.approx(
+            wilson_bounds(finding.score, finding.n_games)
+        )
+    assert not any("ci99" in name for name in OpeningInsightFinding.model_fields)

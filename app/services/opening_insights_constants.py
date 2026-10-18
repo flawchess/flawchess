@@ -19,20 +19,19 @@ OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 0
 OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
 
 # Discovery floor. Small-N findings (n in 10..19) are dominated by
-# post-selection noise: the SQL pre-filter on score <= 0.45 OR score >= 0.55
+# post-selection noise: the SQL pre-filter on score < 0.45 OR score > 0.55
 # selects the very statistic the score-vs-50% test then uses. The Wilson score
 # test (null SE = 0.5/sqrt(n)) is less sensitive to that selection (null SE
 # doesn't depend on observed score), but the floor stays at 20; lowering it is a
 # separate decision.
-# Decoupled from the explorer's MIN_GAMES_FOR_COLOR (frontend, still 10) —
-# the explorer arrow palette can tolerate weaker evidence than a surfaced
-# "weakness" card on the Insights tab.
+# Mirrored by the frontend REPERTOIRE_MIN_GAMES_FOR_VERDICT (openingVerdict.ts), which
+# also gates the Moves-tab arrow colours (D-35).
 OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 20
 
 # Score classifier. Pivot is fixed at 0.50; effect-size gate is symmetric on
 # both sides.
 OPENING_INSIGHTS_SCORE_PIVOT: float = 0.50
-OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| >= 0.05 → minor
+OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| > 0.05 → minor
 OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 
 # Confidence buckets — two-sided p-value thresholds plus N>=10 gate, unified
@@ -79,9 +78,10 @@ OPENING_INSIGHTS_CI_Z_95: float = 1.96
 # Deduping at the game level cancels that artefact and yields a single
 # symmetric tempo baseline of about ±25 cp (white's first-move advantage).
 #
-# Used only as a visual reference tick on the MG-entry bullet chart, NOT as
-# the H0 reference for the z-test. The test runs against 0 cp (engine-balanced)
-# regardless of color.
+# On Openings surfaces these are the eval bar's centre AND the H0 reference of the
+# MG-entry eval z-test (Phase 242, D-13; applied by opening_eval.finalize_opening_eval),
+# so "typical for the colour" reads as neutral. The endgame-entry eval is unchanged:
+# endgame_service still tests against 0 cp.
 EVAL_BASELINE_PAWNS_WHITE: float = 0.25
 EVAL_BASELINE_PAWNS_BLACK: float = -0.25
 

@@ -12,13 +12,18 @@ Coverage:
 - GET /stats/global?from_date=...: filters by date range
 """
 
+import datetime
 import uuid
+from collections.abc import Iterator
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 import pytest_asyncio
 
+from app.core.dev_clock import dev_now_utc
 from app.main import app
+from app.schemas.stats import MostPlayedOpeningsResponse
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +303,37 @@ class TestGetMostPlayedOpenings:
         assert "black" in data
         assert isinstance(data["white"], list)
         assert isinstance(data["black"], list)
+        # Current-repertoire cutoffs are always present (null = everything current).
+        assert "current_cutoff_white" in data
+        assert "current_cutoff_black" in data
+
+    @pytest.fixture
+    def pinned_now(self) -> Iterator[datetime.datetime]:
+        """Pin dev_now_utc through dependency_overrides; removed on teardown."""
+        pinned = datetime.datetime(2026, 3, 10, 12, 0, tzinfo=datetime.UTC)
+        app.dependency_overrides[dev_now_utc] = lambda: pinned
+        yield pinned
+        app.dependency_overrides.pop(dev_now_utc, None)
+
+    @pytest.mark.asyncio
+    async def test_most_played_openings_passes_dev_clock_now_utc(
+        self, auth_headers: dict[str, str], pinned_now: datetime.datetime
+    ) -> None:
+        """The router hands the dev_now_utc instant to the service (D-03)."""
+        empty = MostPlayedOpeningsResponse(white=[], black=[])
+        with patch(
+            "app.services.stats_service.get_most_played_openings",
+            new=AsyncMock(return_value=empty),
+        ) as mock_service:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/api/stats/most-played-openings", headers=auth_headers)
+
+        assert resp.status_code == 200
+        mock_service.assert_awaited_once()
+        assert mock_service.await_args is not None
+        assert mock_service.await_args.kwargs["now_utc"] == pinned_now
 
     @pytest.mark.asyncio
     async def test_most_played_openings_includes_pgn_fen(

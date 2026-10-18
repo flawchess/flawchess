@@ -1,16 +1,9 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-
-// localStorage helper for per-bookmark chart-enable toggle (default: enabled).
-// The read side (getChartEnabled) moved into useOpeningsChartData.ts along
-// with the memo that's its only consumer; this write side stays here since
-// it's called by handlers useOpeningsChartData doesn't own.
-function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
-  localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
-}
 import { useNavigate, useLocation, Navigate } from 'react-router';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { trackFeature } from '@/lib/analytics';
-import { ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal } from 'lucide-react';
+import { removeRetiredBookmarkChartKeys } from '@/lib/retiredLocalStorage';
+import { ArrowRightLeft, Swords, BarChart2, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -50,6 +43,7 @@ import { buildAnalysisLineUrl } from '@/lib/analysisUrl';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+import type { OpeningsTab } from '@/types/openingsTab';
 import { useDeepLinkHighlight } from './openings/useDeepLinkHighlight';
 import { useSidebarState } from './openings/useSidebarState';
 import { useTabReset } from './openings/useTabReset';
@@ -61,12 +55,13 @@ import { ChessboardInfoCopy } from './openings/ChessboardInfoCopy';
 import { OpeningsMobileBoardPanel } from './openings/OpeningsMobileBoardPanel';
 import { ExplorerTab } from './openings/ExplorerTab';
 import { GamesTab } from './openings/GamesTab';
+import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
 import { StatsTab } from './openings/StatsTab';
-import { InsightsTab } from './openings/InsightsTab';
 
 const PAGE_SIZE = 20;
 
-const TAB_INFO: Record<'explorer' | 'games' | 'stats' | 'insights', { aria: string; text: string }> = {
+// Stats has no tab popover: its sections explain themselves with intro lines under each heading.
+const TAB_INFO: Record<Exclude<OpeningsTab, 'stats'>, { aria: string; text: string }> = {
   explorer: {
     aria: 'About Opening Moves',
     text: 'Interactive opening explorer with win/draw/loss charts and statistical analysis for each move.',
@@ -74,14 +69,6 @@ const TAB_INFO: Record<'explorer' | 'games' | 'stats' | 'insights', { aria: stri
   games: {
     aria: 'About Opening Games',
     text: 'A list of your games that reached the position on the board, matching your current filter settings.',
-  },
-  stats: {
-    aria: 'About Opening Stats',
-    text: 'Shows the performance of your bookmarked and most played openings, with win/draw/loss charts and Stockfish evaluation at the transition from opening to middlegame.',
-  },
-  insights: {
-    aria: 'About Opening Insights',
-    text: 'Your weakest and strongest opening positions, based on a systematic scan of all your games up to 16 half-moves.',
   },
 };
 
@@ -92,16 +79,18 @@ export function OpeningsPage() {
   const hasGames = (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
 
   const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
-  // Redirect old /openings/compare and /openings/statistics URLs to /openings/stats after tab rename
-  const needsLegacyRedirect = location.pathname.endsWith('/statistics') || location.pathname.endsWith('/compare');
+  // Redirect old /openings/compare, /openings/statistics and /openings/insights URLs to
+  // /openings/stats (tab rename; the Insights subtab was merged into Stats, D-15).
+  const needsLegacyRedirect =
+    location.pathname.endsWith('/statistics')
+    || location.pathname.endsWith('/compare')
+    || location.pathname.endsWith('/insights');
 
-  const activeTab = location.pathname.includes('/games')
+  const activeTab: OpeningsTab = location.pathname.includes('/games')
     ? 'games'
     : location.pathname.includes('/stats')
       ? 'stats'
-      : location.pathname.includes('/insights')
-        ? 'insights'
-        : 'explorer';
+      : 'explorer';
 
   // ── Board state ─────────────────────────────────────────────────────────────
   const chess = useChessGame();
@@ -118,10 +107,16 @@ export function OpeningsPage() {
   const [filters, setFilters] = useFilterStore();
   const debouncedFilters = useDebounce(filters, 300);
 
+  // One-time sweep of the retired per-bookmark "Include in opening results" keys (D-16).
+  // Stale client state cleanup, not a tracking event.
+  useEffect(() => {
+    removeRetiredBookmarkChartKeys();
+  }, []);
+
   // ── Board arrows (hovered move) ─────────────────────────────────────────────
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
-  // ── Deep-link highlight (Insights → MoveExplorer) ──
+  // ── Deep-link highlight (Stats finding card → Moves tab) ──
   const { highlightedMove, setHighlightedMove, pulseActive } = useDeepLinkHighlight(
     activeTab,
     filters,
@@ -131,12 +126,23 @@ export function OpeningsPage() {
   const sidebar = useSidebarState();
 
   // ── Mobile drawer deferred-apply local state ───────────────────────────────
-  const [localChartEnabled, setLocalChartEnabled] = useState<Record<number, boolean>>({});
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
   // ── Games tab pagination + tab-switch resets ────────────────────────────────
   const { gamesOffset, setGamesOffset } = useTabReset(activeTab);
+
+  // ── Stats tab colour (the sticky White | Black switch, D-26) ─────────────────
+  // The switch IS the Played-as filter: it writes the committed filters and the open
+  // panel's draft, so the sidebar button, the filter panel and the switch never disagree.
+  // The switch tracks its own option-change event.
+  const handleStatsColorChange = useCallback((color: Color) => {
+    setFilters(prev => ({ ...prev, color }));
+    setLocalFilters(prev => ({ ...prev, color }));
+    setGamesOffset(0);
+    setBoardFlipped(color === 'black');
+    sidebar.dismissPlayedAsHint();
+  }, [setFilters, setGamesOffset, sidebar]);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
@@ -192,10 +198,6 @@ export function OpeningsPage() {
     };
   }, [filters]);
 
-  // ── Chart-enable toggle (persisted per bookmark in localStorage) ─────────────
-  // Version counter to force chartEnabledMap recompute when a toggle changes
-  const [chartToggleVersion, setChartToggleVersion] = useState(0);
-
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
@@ -229,19 +231,15 @@ export function OpeningsPage() {
     opponentStrength: debouncedFilters.opponentStrength,
   });
 
-  // Query-derivation cluster — chart-enable map, board arrows (from next-move
-  // frequencies), chart-enabled bookmark subset, per-bookmark phase-entry
-  // metrics, and per-bookmark WDL stats. Extracted to useOpeningsChartData.ts.
+  // Query-derivation cluster — board arrows (from next-move frequencies),
+  // per-bookmark phase-entry metrics, and the per-bookmark time series.
+  // Extracted to useOpeningsChartData.ts.
   const {
-    chartEnabledMap,
     boardArrows,
-    chartBookmarks,
     bookmarkPhaseEntryByHash,
     tsData,
-    wdlStatsMap,
   } = useOpeningsChartData({
     bookmarks,
-    chartToggleVersion,
     nextMovesData: nextMoves.data,
     position: chess.position,
     hoveredMove,
@@ -251,12 +249,6 @@ export function OpeningsPage() {
   });
 
   // ── Handlers ────────────────────────────────────────────────────────────────
-
-  const handleChartEnabledChange = useCallback((id: number, enabled: boolean) => {
-    setChartEnabledStorage(id, enabled);
-    setChartToggleVersion(v => v + 1);
-    if (activeTab !== 'stats') navigate('/openings/stats');
-  }, [activeTab, navigate]);
 
   // ── Desktop sidebar filter panel Apply handler ────────────────────────────────
   // Commits localFilters to the store, fires the pulse, closes the panel, and
@@ -270,7 +262,8 @@ export function OpeningsPage() {
     setGamesOffset(0);
     sidebar.setFiltersHintDismissed(true);
     setBoardFlipped(localFilters.color === 'black');
-    if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+    // Stats follows the Played-as colour since D-26, so only a Piece filter change leaves it.
+    if (localFilters.matchSide !== filters.matchSide
         && activeTab !== 'explorer' && activeTab !== 'games') {
       navigate('/openings/explorer');
     }
@@ -367,7 +360,8 @@ export function OpeningsPage() {
     setGamesOffset(0);
     sidebar.setFiltersHintDismissed(true);
     setBoardFlipped(localFilters.color === 'black');
-    if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+    // Stats follows the Played-as colour since D-26, so only a Piece filter change leaves it.
+    if (localFilters.matchSide !== filters.matchSide
         && activeTab !== 'explorer' && activeTab !== 'games') {
       navigate('/openings/explorer');
     }
@@ -377,38 +371,20 @@ export function OpeningsPage() {
   const updateMatchSide = useUpdateMatchSide();
 
   const openBookmarkDrawer = useCallback(() => {
-    setLocalChartEnabled({ ...chartEnabledMap });
     setLocalMatchSides({});
     sidebar.setBookmarkDrawerOpen(true);
-  }, [chartEnabledMap, sidebar]);
+  }, [sidebar]);
 
   const handleBookmarkDrawerOpenChange = useCallback((open: boolean) => {
     if (!open && sidebar.bookmarkDrawerOpen) {
-      // Commit deferred chart toggle changes on close
-      for (const [idStr, enabled] of Object.entries(localChartEnabled)) {
-        const id = Number(idStr);
-        if (chartEnabledMap[id] !== enabled) {
-          setChartEnabledStorage(id, enabled);
-        }
-      }
       // Commit deferred match side changes on close
       for (const [idStr, matchSide] of Object.entries(localMatchSides)) {
         const id = Number(idStr);
         updateMatchSide.mutate({ id, data: { match_side: matchSide } });
       }
-      // Bump chart toggle version to refresh chartEnabledMap
-      const chartChanged = Object.keys(localChartEnabled).some(idStr => chartEnabledMap[Number(idStr)] !== localChartEnabled[Number(idStr)]);
-      if (chartChanged) {
-        setChartToggleVersion(v => v + 1);
-        if (activeTab !== 'stats') navigate('/openings/stats');
-      }
     }
     sidebar.setBookmarkDrawerOpen(open);
-  }, [sidebar, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide, activeTab, navigate]);
-
-  const handleLocalChartEnabledChange = useCallback((id: number, enabled: boolean) => {
-    setLocalChartEnabled(prev => ({ ...prev, [id]: enabled }));
-  }, []);
+  }, [sidebar, localMatchSides, updateMatchSide]);
 
   const handleLocalMatchSideChange = useCallback((id: number, matchSide: MatchSide) => {
     setLocalMatchSides(prev => ({ ...prev, [id]: matchSide }));
@@ -478,9 +454,6 @@ export function OpeningsPage() {
     </span>
   );
 
-  const hasOpenings = !!mostPlayedData &&
-    (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0);
-
   const explorerTabEl = (
     <ExplorerTab
       gamesData={gamesData}
@@ -515,33 +488,27 @@ export function OpeningsPage() {
 
   const statsTabEl = (
     <StatsTab
+      color={filters.color}
+      onColorChange={handleStatsColorChange}
       bookmarks={bookmarks}
-      chartBookmarks={chartBookmarks}
-      wdlStatsMap={wdlStatsMap}
       bookmarkPhaseEntryByHash={bookmarkPhaseEntryByHash}
       mostPlayedData={mostPlayedData}
       mostPlayedLoading={mostPlayedLoading}
       mostPlayedError={mostPlayedError}
       tsData={tsData}
-      onOpenMoves={handleOpenMoves}
-      onOpenChartBookmarkGames={handleOpenChartBookmarkGames}
-      onOpenGames={handleOpenGames}
       onOpenSuggestions={openSuggestions}
-    />
-  );
-
-  const insightsTabEl = (
-    <InsightsTab
-      hasOpenings={hasOpenings}
       debouncedFilters={debouncedFilters}
-      onFindingClick={handleOpenFinding}
-      onOpenGames={handleOpenFindingGames}
+      onOpenFinding={handleOpenFinding}
+      onOpenFindingGames={handleOpenFindingGames}
+      onOpenMoves={handleOpenMoves}
+      onOpenGames={handleOpenGames}
+      onOpenBookmarkGames={handleOpenChartBookmarkGames}
     />
   );
 
   // Shared filter notification dot for the mobile filter affordances: the board
   // settings-column button (Moves/Games subtabs) and the sticky Filters button
-  // (Stats/Insights subtabs). Mirrors the desktop SidebarLayout notificationDot.
+  // (Stats subtab). Mirrors the desktop SidebarLayout notificationDot.
   const mobileFiltersDot = showFiltersHint ? (
     <span
       className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
@@ -611,24 +578,6 @@ export function OpeningsPage() {
             <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
               <BarChart2 className="mr-1.5 h-4 w-4" />
               Stats
-              {activeTab === 'stats' && (
-                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                  <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
-                    {TAB_INFO.stats.text}
-                  </InfoPopover>
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
-              <Lightbulb className="mr-1.5 h-4 w-4" />
-              Insights
-              {activeTab === 'insights' && (
-                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                  <InfoPopover ariaLabel={TAB_INFO.insights.aria} testId="tab-insights-info" side="bottom">
-                    {TAB_INFO.insights.text}
-                  </InfoPopover>
-                </span>
-              )}
             </TabsTrigger>
           </TabsList>
         <OpeningsDesktopSidebar
@@ -641,8 +590,6 @@ export function OpeningsPage() {
           bookmarks={bookmarks}
           onReorderBookmarks={handleReorder}
           onLoadBookmark={handleLoadBookmarkFromDesktopSidebar}
-          chartEnabledMap={chartEnabledMap}
-          onChartEnabledChange={handleChartEnabledChange}
           onOpenSuggestions={openSuggestions}
           onOpenBookmarkDialog={openBookmarkDialog}
           showBookmarksHint={showBookmarksHint}
@@ -707,7 +654,6 @@ export function OpeningsPage() {
                 <TabsContent value="explorer">{explorerTabEl}</TabsContent>
                 <TabsContent value="games">{gamesTabEl}</TabsContent>
                 <TabsContent value="stats">{statsTabEl}</TabsContent>
-                <TabsContent value="insights">{insightsTabEl}</TabsContent>
               </div>
             </div>
           </OpeningsDesktopSidebar>
@@ -719,7 +665,7 @@ export function OpeningsPage() {
         <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="flex flex-col gap-2 min-w-0">
           {/* Full-width, non-sticky sub-navigation (like the Library page). The filter
               affordance lives in the board settings column on Moves/Games, and as a
-              sticky Filters button on Stats/Insights (rendered just below). */}
+              sticky Filters button on Stats (rendered just below). */}
           <div
             className="flex items-center gap-2 h-[40px] rounded-md"
             data-testid="openings-mobile-subnav"
@@ -747,35 +693,21 @@ export function OpeningsPage() {
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 Stats
-                {activeTab === 'stats' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info-mobile" side="bottom">
-                      {TAB_INFO.stats.text}
-                    </InfoPopover>
-                  </span>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="insights" className="flex-1" data-testid="tab-insights-mobile">
-                Insights
-                {activeTab === 'insights' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.insights.aria} testId="tab-insights-info-mobile" side="bottom">
-                      {TAB_INFO.insights.text}
-                    </InfoPopover>
-                  </span>
-                )}
               </TabsTrigger>
             </TabsList>
           </div>
 
-          {/* Sticky Filters button on the non-board subtabs (Stats/Insights), styled
-              like the Library page. On Moves/Games the filter button lives in the
+          {/* Sticky row on the non-board Stats subtab, styled like the Library page. The
+              colour switch shares it with the Filters button so there is one sticky row,
+              not two overlapping top-0 ones. On Moves/Games the filter button lives in the
               board settings column instead, so it is not rendered here. */}
-          {(activeTab === 'stats' || activeTab === 'insights') && (
-            <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+          {activeTab === 'stats' && (
+            <div className="sticky top-0 z-20 flex items-center justify-between gap-2 py-2 bg-background/80 backdrop-blur-sm">
+              <OpeningColorSwitch idPrefix="mobile" selected={filters.color} onSelect={handleStatsColorChange} />
               <Button
                 variant="brand-outline"
-                className="relative"
+                // Same height as the colour buttons beside it (min-h-11 below sm, see OpeningColorSwitch).
+                className="relative min-h-11 sm:min-h-0"
                 onClick={openFilterDrawer}
                 data-testid="subnav-filter-button"
                 aria-label="Open filters"
@@ -838,8 +770,6 @@ export function OpeningsPage() {
             localBookmarks={localBookmarks}
             onReorderBookmarks={handleReorder}
             onLoadBookmark={handleLoadBookmarkFromSidebar}
-            localChartEnabled={localChartEnabled}
-            onLocalChartEnabledChange={handleLocalChartEnabledChange}
             onLocalMatchSideChange={handleLocalMatchSideChange}
             onOpenSuggestions={openSuggestions}
             onOpenBookmarkDialog={openBookmarkDialog}
@@ -848,7 +778,6 @@ export function OpeningsPage() {
           <TabsContent value="explorer" className="mt-2">{explorerTabEl}</TabsContent>
           <TabsContent value="games" className="mt-2">{gamesTabEl}</TabsContent>
           <TabsContent value="stats" className="mt-2">{statsTabEl}</TabsContent>
-          <TabsContent value="insights" className="mt-2">{insightsTabEl}</TabsContent>
         </Tabs>
         </div>
       </main>

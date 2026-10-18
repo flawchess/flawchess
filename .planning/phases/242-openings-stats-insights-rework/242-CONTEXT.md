@@ -106,6 +106,93 @@ discuss-phase" and record defaults for the rest.
   since the current/past cutoff** and merges its rows, so past openings never push current ones out.
   Plan sizing warnings (01 over budget ~10%, 06 at 18 files) were accepted as is; no further splits.
 
+### Post-UAT decisions (owner, 2026-10-17)
+- **D-19:** The repertoire table is replaced by **cards** (2 columns from lg, 1 below): name header, 128 px
+  board, WDL bar with "N games · last played", Score and Eval verdict bars, Moves / Games / Bookmark links and a
+  "Score over time" toggle that opens the chart inside the card. Reason: 44 px row boards were too small on
+  desktop, expanding rows to see the board was impractical, and the stacked mobile rows read worse than the
+  old cards. Supersedes the table / sticky column header / expanded-row parts of D-00.
+- **D-20:** The findings gate **stays at p < 0.01**. "Not clear yet" moves render as the same finding cards
+  (uncoloured verdicts, neutral arrow, no fade) instead of the faded mini-board list; amends D-10's "faded".
+- **D-21:** No move sequences on repertoire cards or finding cards; the board shows the position.
+- **D-22:** Score-over-time chart: no rotated "Score" y-axis label and no caption line under it.
+- **D-23:** lucide `BookMarked` is replaced by `Bookmark` everywhere.
+- **D-24:** Stats tab section order is **Bookmarks, Most Played, Moves that Cost You, Moves that Work**
+  (findings move below the repertoire; amends D-00's "findings above"). Every section heading is an h2 in
+  Fredoka (`font-brand`); the "Opening insights" umbrella heading and its explanation paragraph are dropped.
+  Each findings section carries its "You score clearly below/above 50%." line under the heading.
+- **D-25:** No "Playing as" label in the colour switch row. Repertoire cards drop the "N games · last played"
+  line under the WDL bar (the count stays on the Games link); the last-played date sits muted on the right of
+  the card header.
+- **D-26:** The Stats White | Black switch **is the Played-as filter** (supersedes D-00's "not persisted"
+  page state): switching writes the committed filters and the open panel draft, flips the board, and the
+  sidebar Played-as button and filter panel follow it. A Played-as change via Apply no longer jumps from
+  Stats to Moves (only a Piece filter change still does). Desktop switch is right-aligned.
+- **D-27:** The "not played recently" chip is replaced by a muted lucide `Archive` icon right of the
+  last-played date, on every card outside the current repertoire window (stale bookmarks and Played before).
+  Indicator only, no action.
+- **D-28:** The score-over-time chart marks the typical 45-55% range as a grey labelled band, like the
+  Clock Gap at Endgame Entry chart. Section headings read "Bookmarked Openings" and "Most Played Openings";
+  the Stats tab info popover follows the D-24 order. Repertoire and finding mini boards highlight the last
+  played move in yellow (finding cards keep the candidate-move arrow on top).
+- **D-29:** The Moves / Games "Results played as" card (shared `PositionResultsPanel`, so the Endgames Games
+  subtab too) replaces the Score bullet chart with the verdict track (same 99% / 20-game / +-5-point rule).
+  The opening-end End Eval row moves its label, value and popover into the left cell beside its track, the
+  same layout as Score. The Score popover is the repertoire `ScoreVerdictPopover` with an extra "Last played"
+  bullet; `WDLStats` (and `EndgameCategoryStats`) gain `ci99_low` / `ci99_high` for its 99% CI footer.
+- **D-30 (UAT round 7, owner 2026-10-18):** The bottom verdict legend is removed. Each repertoire and finding
+  card carries one muted sentence reading the Score and Eval verdicts together (`openingVerdictSentence`,
+  `lib/openingVerdict.ts`): only 99%-clear parts are stated, an unclear eval falls back to the score-only
+  sentence, and a <20-game card says "Too few games to call it yet." Every cell has a sentence (owner,
+  same day: a card without one read as missing), e.g. "An ordinary opening for you: average positions and
+  a typical score." and "Nothing clear yet. The differences could still be chance."
+- **D-31:** The Stats subtab info popover is removed (Moves/Games popovers stay). Every Stats section h2 gets a
+  one-line intro under it (Library Stats pattern); the first repertoire heading also explains Score and Eval.
+- **D-32:** Findings density: a section without 99% cards shows its "Not clear yet" cards inline (phone 2,
+  desktop 4, then Show more) instead of behind a toggle; the toggle stays only below clear cards. A section
+  with neither reads "Nothing stands out as <colour> yet."; both sections empty merge into one
+  "Moves that Stand Out" block. The duplicated "n moves lean this way" empty-state copy is gone (amends D-11).
+
+### UAT round 9 decisions (owner, 2026-10-18)
+- **D-33:** The Openings verdict gate drops from 99% to **95%** (confidence bucket 'medium' or 'high', p < 0.05)
+  on every Openings surface: finding cards, repertoire and bookmark cards, and the Moves / Games "Results
+  played as" panel (shared, so the Endgames Games subtab follows). A false positive is cheap and 99% hid too
+  much. The popover footers quote the 95% CI, so the separate `ci99_*` / `score_ci99_*` / `eval_ci99_*`
+  fields are dropped in favour of the existing 95% `ci_*` / `eval_ci_*` bounds (bookmark and most-played
+  score CIs become `score_ci_low` / `score_ci_high`). Endgame Stats and Library keep `VERDICT_CI_Z_99`
+  (about 50 cells per page). Amends D-00, D-17, D-18, D-20, D-29, D-30.
+- **D-34:** "Not clear yet" is **removed** (it was "p < 0.05 but not at 99%", empty at a 95% gate): no
+  not-clear lists or counts in the API, no not-clear cards or toggle. A section with no cards reads
+  "Nothing stands out as <colour> yet."; both empty still merge into "Moves that Stand Out". Supersedes
+  D-09, D-10, D-11 and the not-clear parts of D-20 and D-32.
+- **D-35:** The Moves-tab move list (score text colour, row tint, board arrows) uses the **same verdict rule**
+  as the cards (`openingVerdict`: 95% confidence, 20+ games, outside the +/-5-point band), replacing its
+  own 10-game / >= 55% rule, so a move and the "Results played as" panel after it never disagree.
+- **D-36:** Most Played rows need **at least 20 games** (`MIN_GAMES_FOR_OPENING = 20`, the verdict floor), in
+  both the current list and "Played before"; no more padding with 1-3 game openings. The cutoff-restricted
+  second fetch (D-05 clarified) stays, under the same floor. Bookmarks are never filtered. Amends D-07.
+
+### UAT round 12 decision (owner, 2026-10-18)
+- **D-37:** The findings card cap per section rises from 5 to **10** (`FINDINGS_CARD_CAP`). With 5, current
+  findings filled every slot, so significant older-games findings never showed (owner's account: 14 significant
+  white strengths, 5 shown). Desktop still shows every card; phone keeps 2 + "Show more". The 95% gate stays.
+  Amends D-00's "top 5" and D-08.
+
+### Post-UAT decision (owner, 2026-10-18)
+- **D-38:** The 95% gate no longer decides which findings are **listed**, only how each card is
+  **coloured** (back to the pre-phase `main` behaviour). A prod check (2026-10-18, rated human games, SQL
+  upper bound) found "Moves that Cost You" empty at the gate for at least 67% of user-colours with 20+ games
+  (25% before it) and both findings sections empty for 34% (6% before). Each section is now the top 10
+  (`FINDINGS_CARD_CAP`) of the direction-aware Wilson bound order, any confidence, with **no current-first
+  re-sort** (older findings keep their rank and the "older games" chip). A low-confidence card draws a blue
+  spine, a neutral arrow, an uncoloured score and the "Nothing clear yet" sentence, through the unchanged
+  `openingVerdict` rule. The section intros drop "clearly" and say the clearest come first. A tried
+  alternative (a separate up-to-4 "leaning" fallback with a note) was rejected by the owner. Amends D-08,
+  D-33, D-37.
+- **D-39:** (UAT round 14) "Moves that Work" comes **before** "Moves that Cost You". Each section shows its
+  **first 4 cards on every viewport**, the rest (up to 6 more) behind main's "N more" / "Less" chevron toggle
+  (`INITIAL_VISIBLE_PER_SECTION = 4`), replacing the phone-only 2-card "Show more". Amends D-08.
+
 </decisions>
 
 <canonical_refs>

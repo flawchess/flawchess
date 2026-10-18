@@ -1,32 +1,39 @@
 // @vitest-environment jsdom
 /**
- * Tests for EvalCpuPlaceholder and the tier2-gated eval row in OpeningStatsCard.
+ * Tests for EvalCpuPlaceholder and the tier2-gated eval bar of the RepertoireCard.
  *
  * Covers:
  *   - EvalCpuPlaceholder renders testid, "Analyzing…" label, and Cpu icon
- *   - OpeningStatsCard: when tier2=false → EvalCpuPlaceholder renders, eval-text row absent
- *   - OpeningStatsCard: when tier2=true  → placeholder absent, eval metric renders
- *   - WDL score row is present in both tier2=true and tier2=false cases
+ *   - RepertoireCard: when tier2=false -> EvalCpuPlaceholder renders, no eval value
+ *   - RepertoireCard: when tier2=true  -> placeholder absent, eval value renders
+ *   - The score bar is present in both cases (score is not eval-dependent)
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { EvalCpuPlaceholder } from '../EvalCpuPlaceholder';
-import { OpeningStatsCard } from '../OpeningStatsCard';
-import type { OpeningWDL } from '@/types/stats';
+import { RepertoireCard } from '@/components/openings/stats/RepertoireCard';
+import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 
 afterEach(() => {
   cleanup();
 });
 
 // ---------------------------------------------------------------------------
-// Shared mocks needed by OpeningStatsCard
+// Shared mocks needed by RepertoireCard
 // ---------------------------------------------------------------------------
 
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('@/hooks/usePositionBookmarks', () => ({
+  useTimeSeries: () => ({ data: undefined, isLoading: false, isError: false }),
+  useCreatePositionBookmark: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeletePositionBookmark: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/components/board/LazyMiniBoard', () => ({
@@ -40,20 +47,8 @@ vi.mock('@/components/board/LazyMiniBoard', () => ({
   ),
 }));
 
-vi.mock('@/components/charts/MiniBulletChart', () => ({
-  MiniBulletChart: ({ ariaLabel }: { ariaLabel?: string }) => (
-    <div data-testid="mini-bullet-chart" aria-label={ariaLabel} />
-  ),
-}));
-
-vi.mock('@/components/insights/EvalConfidencePopover', () => ({
-  EvalConfidencePopover: ({ testId }: { testId?: string }) => (
-    <button type="button" data-testid={testId}>?</button>
-  ),
-}));
-
 // useReadiness is mocked at module level; individual tests call mockReturnValue
-// to override tier2 as needed. Default: tier2=true so eval rows show.
+// to override tier2 as needed. Default: tier2=true so eval cells show.
 vi.mock('@/hooks/useReadiness', () => ({
   useReadiness: vi.fn(() => ({ tier1: true, tier2: true, pendingCount: 0, totalCount: 0, isLoading: false })),
 }));
@@ -62,43 +57,50 @@ vi.mock('@/hooks/useReadiness', () => ({
 // Helper factories
 // ---------------------------------------------------------------------------
 
-function makeOpening(overrides: Partial<OpeningWDL> = {}): OpeningWDL {
+function makeRow(overrides: Partial<RepertoireRowModel> = {}): RepertoireRowModel {
   return {
-    opening_eco: 'A00',
-    opening_name: 'Test Opening',
-    display_name: 'Test Opening',
-    label: 'Test Opening (A00)',
-    pgn: '1. e4 e5',
+    key: 'mpo-12345',
+    kind: 'current',
+    color: 'white',
+    name: 'Test Opening',
+    moveLine: '1. e4 e5',
     fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1',
-    full_hash: '12345',
-    wins: 10,
-    draws: 5,
-    losses: 5,
-    total: 20,
-    win_pct: 50,
-    draw_pct: 25,
-    loss_pct: 25,
-    eval_n: 30,
-    eval_confidence: 'medium',
-    avg_eval_pawns: 0.3,
-    eval_p_value: 0.03,
+    fullHash: '12345',
+    bookmark: null,
+    games: 30,
+    wins: 15,
+    draws: 7,
+    losses: 8,
+    winPct: 50,
+    drawPct: 23.3,
+    lossPct: 26.7,
+    lastPlayedAt: null,
+    isCurrent: true,
+    score: 0.57,
+    scoreConfidence: 'medium',
+    scorePValue: 0.03,
+    scoreCiLow: 0.4,
+    scoreCiHigh: 0.74,
+    avgEvalPawns: 0.3,
+    evalN: 30,
+    evalConfidence: 'medium',
+    evalPValue: 0.03,
+    evalCiLow: 0.1,
+    evalCiHigh: 0.5,
+    series: null,
     ...overrides,
   };
 }
 
-const noop = () => {};
-
-function renderCard(props: Partial<React.ComponentProps<typeof OpeningStatsCard>> = {}) {
-  const opening = props.opening ?? makeOpening();
+function renderCard() {
   return render(
-    <OpeningStatsCard
-      opening={opening}
-      color={props.color ?? 'white'}
-      idx={props.idx ?? 0}
-      testIdPrefix={props.testIdPrefix ?? 'stats-card'}
-      onOpenMoves={props.onOpenMoves ?? noop}
-      onOpenGames={props.onOpenGames ?? noop}
-      evalBaselinePawns={props.evalBaselinePawns ?? 0.25}
+    <RepertoireCard
+      row={makeRow()}
+      index={0}
+      debouncedFilters={DEFAULT_FILTERS}
+      onOpenMoves={() => {}}
+      onOpenGames={() => {}}
+      onOpenBookmarkGames={() => {}}
     />,
   );
 }
@@ -136,48 +138,38 @@ describe('EvalCpuPlaceholder — standalone', () => {
 });
 
 // ---------------------------------------------------------------------------
-// OpeningStatsCard tier2 gate tests
+// RepertoireCard tier2 gate tests
 // ---------------------------------------------------------------------------
 
-describe('OpeningStatsCard — tier2 gate for eval rows', () => {
-  it('when tier2=false, EvalCpuPlaceholder renders in place of the eval rows', async () => {
+describe('RepertoireCard: tier2 gate for the eval bar', () => {
+  it('when tier2=false, EvalCpuPlaceholder renders in place of the eval value', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: false, pendingCount: 5, totalCount: 20, isLoading: false });
-    renderCard({ idx: 20 });
-    const placeholder = document.querySelector('[data-testid="eval-cpu-placeholder"]');
-    expect(placeholder).not.toBeNull();
-    // eval-text row must NOT be present when placeholder is shown
-    const evalText = document.querySelector('[data-testid="stats-card-20-eval-text"]');
-    expect(evalText).toBeNull();
+    renderCard();
+    expect(screen.queryByTestId('eval-cpu-placeholder')).not.toBeNull();
+    expect(screen.queryByTestId('repertoire-card-0-eval-bar')).toBeNull();
+    expect(screen.queryByTestId('repertoire-card-0-eval-info')).toBeNull();
   });
 
-  it('when tier2=true, EvalCpuPlaceholder is absent and eval metric renders', async () => {
+  it('when tier2=true, EvalCpuPlaceholder is absent and the eval value renders', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: true, pendingCount: 0, totalCount: 20, isLoading: false });
-    renderCard({ idx: 21, opening: makeOpening({ eval_n: 30, avg_eval_pawns: 0.3, eval_p_value: 0.03 }) });
-    const placeholder = document.querySelector('[data-testid="eval-cpu-placeholder"]');
-    expect(placeholder).toBeNull();
-    const evalText = document.querySelector('[data-testid="stats-card-21-eval-text"]');
-    expect(evalText).not.toBeNull();
+    renderCard();
+    expect(screen.queryByTestId('eval-cpu-placeholder')).toBeNull();
+    expect(screen.getByTestId('repertoire-card-0-eval-bar-value').textContent).toBe('+0.3');
   });
 
-  it('WDL score row is present when tier2=false (score is not eval-dependent)', async () => {
+  it('the score line is present when tier2=false (score is not eval-dependent)', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: false, pendingCount: 5, totalCount: 20, isLoading: false });
-    renderCard({ idx: 22 });
-    const scoreBullet = document.querySelector('[data-testid="stats-card-22-score-bullet"]');
-    expect(scoreBullet).not.toBeNull();
-    const scoreText = document.querySelector('[data-testid="stats-card-22-score-text"]');
-    expect(scoreText).not.toBeNull();
+    renderCard();
+    expect(screen.getByTestId('repertoire-card-0-score').textContent).toBe('57%');
   });
 
-  it('WDL score row is present when tier2=true', async () => {
+  it('the score line is present when tier2=true', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: true, pendingCount: 0, totalCount: 20, isLoading: false });
-    renderCard({ idx: 23 });
-    const scoreBullet = document.querySelector('[data-testid="stats-card-23-score-bullet"]');
-    expect(scoreBullet).not.toBeNull();
-    const scoreText = document.querySelector('[data-testid="stats-card-23-score-text"]');
-    expect(scoreText).not.toBeNull();
+    renderCard();
+    expect(screen.getByTestId('repertoire-card-0-score').textContent).toBe('57%');
   });
 });

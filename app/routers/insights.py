@@ -18,6 +18,7 @@ filters_not_supported) is gone. The report narrates the ranked sample that the S
 shows, so there is nothing for a filter to scope.
 """
 
+import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.dev_clock import dev_now_utc
 from app.models.user import User
 from app.schemas.insights import (
     EndgameInsightsResponse,
@@ -43,6 +45,9 @@ from app.services.opening_insights_service import compute_insights
 from app.users import current_active_user
 
 router = APIRouter(prefix="/insights", tags=["insights"])
+
+# Time-dependent handlers take "now" from the dev clock dependency, never datetime.now().
+NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 
 
 @router.post("/endgame", response_model=EndgameInsightsResponse)
@@ -109,11 +114,13 @@ async def get_opening_insights(
     request: OpeningInsightsRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
 ) -> OpeningInsightsResponse:
     """Opening insights — POST /api/insights/openings.
 
     Authenticated, user-scoped. Returns a four-section
-    OpeningInsightsResponse under the active filter set.
+    OpeningInsightsResponse under the active filter set. ``now_utc`` (dev clock)
+    anchors the current-repertoire cutoff behind each finding's ``is_current``.
 
     Every filter reshapes findings (unlike the filter-free endgame insights
     routes above).
@@ -122,4 +129,5 @@ async def get_opening_insights(
         session=session,
         user_id=user.id,
         request=request,
+        now_utc=now_utc,
     )

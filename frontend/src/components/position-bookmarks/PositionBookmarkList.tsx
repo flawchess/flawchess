@@ -23,13 +23,11 @@ interface Props {
   bookmarks: PositionBookmarkResponse[];
   onReorder: (orderedIds: number[]) => void;
   onLoad: (bookmark: PositionBookmarkResponse) => void;
-  chartEnabledMap: Record<number, boolean>;
-  onChartEnabledChange: (id: number, enabled: boolean) => void;
   /** When provided, overrides the internal mutation — used for deferred updates (mobile drawer). */
   onMatchSideChange?: (id: number, matchSide: MatchSide) => void;
 }
 
-export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnabledMap, onChartEnabledChange, onMatchSideChange }: Props) {
+export function PositionBookmarkList({ bookmarks, onReorder, onLoad, onMatchSideChange }: Props) {
   const [items, setItems] = useState(bookmarks);
 
   // Sync when server data refreshes (e.g., after delete or label edit)
@@ -80,8 +78,6 @@ export function PositionBookmarkList({ bookmarks, onReorder, onLoad, chartEnable
                   key={b.id}
                   bookmark={b}
                   onLoad={onLoad}
-                  chartEnabled={chartEnabledMap[b.id] !== false}
-                  onChartEnabledChange={onChartEnabledChange}
                   onMatchSideChange={onMatchSideChange}
                 />
               ))}

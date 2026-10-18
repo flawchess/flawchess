@@ -7,13 +7,17 @@ import {
   NEUTRAL_ARROW_COLOR,
 } from './arrowColor';
 
-describe('getArrowColor (3-zone score palette, low-data → neutral grey)', () => {
+describe('getArrowColor (card verdict rule, D-35)', () => {
   describe('low-data fallback', () => {
-    it('returns NEUTRAL_ARROW_COLOR when gameCount < MIN_GAMES_FOR_COLOR (10), regardless of score', () => {
-      expect(getArrowColor(0.65, 9, 'high')).toBe(NEUTRAL_ARROW_COLOR);
-      expect(getArrowColor(0.30, 9, 'high')).toBe(NEUTRAL_ARROW_COLOR);
-      expect(getArrowColor(0.50, 9, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+    it('returns NEUTRAL_ARROW_COLOR under the 20-game verdict floor, regardless of score', () => {
+      expect(getArrowColor(0.65, 19, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.30, 19, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.65, 10, 'high')).toBe(NEUTRAL_ARROW_COLOR);
       expect(getArrowColor(0.99, 5, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+    });
+
+    it('colours at exactly the 20-game floor', () => {
+      expect(getArrowColor(0.65, 20, 'high')).toBe(DARK_GREEN);
     });
   });
 
@@ -38,9 +42,10 @@ describe('getArrowColor (3-zone score palette, low-data → neutral grey)', () =
     });
   });
 
-  describe('reliable + green zone (>= 0.55)', () => {
-    it('returns DARK_GREEN at exact threshold 0.55', () => {
-      expect(getArrowColor(0.55, 20, 'high')).toBe(DARK_GREEN);
+  describe('reliable + green zone (> 0.55)', () => {
+    it('keeps the exact band edge 0.55 neutral, like the verdict bars', () => {
+      expect(getArrowColor(0.55, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.56, 20, 'high')).toBe(DARK_GREEN);
     });
 
     it('returns DARK_GREEN at 0.60 and 0.80', () => {
@@ -49,9 +54,10 @@ describe('getArrowColor (3-zone score palette, low-data → neutral grey)', () =
     });
   });
 
-  describe('reliable + red zone (<= 0.45)', () => {
-    it('returns DARK_RED at exact threshold 0.45', () => {
-      expect(getArrowColor(0.45, 20, 'high')).toBe(DARK_RED);
+  describe('reliable + red zone (< 0.45)', () => {
+    it('keeps the exact band edge 0.45 neutral, like the verdict bars', () => {
+      expect(getArrowColor(0.45, 20, 'high')).toBe(NEUTRAL_ARROW_COLOR);
+      expect(getArrowColor(0.44, 20, 'high')).toBe(DARK_RED);
     });
 
     it('returns DARK_RED at 0.40 and 0.20', () => {

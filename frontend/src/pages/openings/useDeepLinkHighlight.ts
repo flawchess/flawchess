@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
+import type { OpeningsTab } from '@/types/openingsTab';
 
 export type HighlightedMove = { san: string };
 
@@ -24,7 +25,7 @@ export type DeepLinkHighlight = {
  *  - Filter changes AFTER the highlight was set clear it (snapshot pattern).
  */
 export function useDeepLinkHighlight(
-  activeTab: 'explorer' | 'games' | 'stats' | 'insights',
+  activeTab: OpeningsTab,
   filters: FilterState,
 ): DeepLinkHighlight {
   const [highlightedMove, setHighlightedMove] = useState<HighlightedMove | null>(null);

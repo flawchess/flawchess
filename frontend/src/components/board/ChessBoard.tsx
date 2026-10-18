@@ -27,7 +27,7 @@ export interface BoardArrow {
    * When true, the arrow's <path> gets the .animate-arrow-pulse class so it
    * pulses (opacity 0.45 → 1.0 → 0.75) for HIGHLIGHT_PULSE_ITERATIONS
    * iterations and then settles at the static ARROW_OPACITY. Used by the
-   * deep-link from OpeningInsightsBlock → MoveExplorer to draw attention to the
+   * deep-link from a Stats finding card → MoveExplorer to draw attention to the
    * candidate move on arrival.
    */
   isHighlightPulse?: boolean;

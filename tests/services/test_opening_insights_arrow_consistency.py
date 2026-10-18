@@ -1,14 +1,14 @@
-"""CI-enforced consistency: opening_insights_constants must match
-frontend/src/lib/arrowColor.ts. Catches future score-threshold drift
-between the backend classifier and the board arrow colors
-Float values, regex-extracted from arrowColor.ts.
+"""CI-enforced consistency: opening_insights_constants must match the frontend
+score-verdict constants that colour the board arrows. Catches future score-threshold
+drift between the backend classifier and the board arrow colors.
+Values are regex-extracted from the TypeScript sources.
 
-Note: the arrow palette was collapsed from 5 categories to 3,
-removing the minor/major distinction on the FE. The
-single FE boundary (`SCORE_BOUNDARY`, 0.05) corresponds to the backend
-`OPENING_INSIGHTS_MINOR_EFFECT`. The backend still keeps `MAJOR_EFFECT`
-(0.10) for opening insights classification — that constant is no longer
-used to color arrows, so it has no FE counterpart to compare against.
+Phase 242 D-35: arrowColor.ts no longer carries its own SCORE_PIVOT / SCORE_BOUNDARY /
+MIN_GAMES_FOR_COLOR. getArrowColor routes through openingVerdict (the same 95%,
+20-game, +/-5-point rule as the Stats cards), so the constants live in
+scoreBulletConfig.ts (pivot and band) and openingVerdict.ts (game floor). The single FE
+band (0.05) corresponds to the backend `OPENING_INSIGHTS_MINOR_EFFECT`; the backend
+`MAJOR_EFFECT` (0.10) has no FE counterpart.
 """
 
 import re
@@ -16,7 +16,10 @@ from pathlib import Path
 
 import pytest
 
-_ARROW_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/arrowColor.ts"
+_FE_LIB = Path(__file__).resolve().parents[2] / "frontend/src/lib"
+_ARROW_TS = _FE_LIB / "arrowColor.ts"
+_SCORE_BULLET_TS = _FE_LIB / "scoreBulletConfig.ts"
+_OPENING_VERDICT_TS = _FE_LIB / "openingVerdict.ts"
 
 # Import lazily so the file is always collectable, but tests skip if the
 # constants module is missing (e.g. during initial development).
@@ -35,43 +38,53 @@ except ImportError:
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 0  # type: ignore[assignment]
 
 
-def _extract_float(name: str) -> float:
-    """Extract `export const NAME = <float>;` from arrowColor.ts."""
-    text = _ARROW_TS.read_text()
+def _extract_float(path: Path, name: str) -> float:
+    """Extract `export const NAME = <float>;` from a TypeScript source."""
+    text = path.read_text()
     # Match floats like 0.50, .05, 1, 10, 0.10
     m = re.search(rf"export\s+const\s+{name}\s*=\s*([0-9]*\.?[0-9]+)\s*;", text)
-    assert m, f"could not find export const {name} in arrowColor.ts"
+    assert m, f"could not find export const {name} in {path.name}"
     return float(m.group(1))
 
 
-def _extract_int(name: str) -> int:
-    """Extract `export const NAME = <int>;` from arrowColor.ts."""
-    text = _ARROW_TS.read_text()
+def _extract_int(path: Path, name: str) -> int:
+    """Extract `export const NAME = <int>;` from a TypeScript source."""
+    text = path.read_text()
     m = re.search(rf"export\s+const\s+{name}\s*=\s*(\d+)\s*;", text)
-    assert m, f"could not find export const {name} in arrowColor.ts"
+    assert m, f"could not find export const {name} in {path.name}"
     return int(m.group(1))
+
+
+def test_arrow_color_routes_through_the_opening_verdict() -> None:
+    """D-35: the arrows use openingVerdict, so the constants below are the arrow rule."""
+    text = _ARROW_TS.read_text()
+    assert re.search(r"from\s+'@/lib/openingVerdict'", text)
+    assert "openingVerdict(" in text
 
 
 @pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
 def test_score_pivot_matches_frontend() -> None:
-    """SCORE_PIVOT must match OPENING_INSIGHTS_SCORE_PIVOT."""
-    assert _extract_float("SCORE_PIVOT") == OPENING_INSIGHTS_SCORE_PIVOT
+    """SCORE_BULLET_CENTER must match OPENING_INSIGHTS_SCORE_PIVOT."""
+    assert _extract_float(_SCORE_BULLET_TS, "SCORE_BULLET_CENTER") == OPENING_INSIGHTS_SCORE_PIVOT
 
 
 @pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
 def test_score_boundary_matches_frontend() -> None:
-    """SCORE_BOUNDARY (FE single-boundary) must match
-    OPENING_INSIGHTS_MINOR_EFFECT. The 5-category palette was
-    collapsed to 3, so the FE no longer carries a separate major-effect
-    threshold — the single boundary is the minor-effect value (0.05).
-    """
-    assert _extract_float("SCORE_BOUNDARY") == OPENING_INSIGHTS_MINOR_EFFECT
+    """SCORE_BULLET_NEUTRAL_MAX (the FE single band) must match OPENING_INSIGHTS_MINOR_EFFECT."""
+    assert (
+        _extract_float(_SCORE_BULLET_TS, "SCORE_BULLET_NEUTRAL_MAX")
+        == OPENING_INSIGHTS_MINOR_EFFECT
+    )
 
 
-# test_min_games_matches_frontend removed (quick 260506): the two thresholds
-# were decoupled. The Insights tab now uses n>=20 (post-selection inference
-# mitigation), while the explorer's MIN_GAMES_FOR_COLOR stays at 10 — the
-# arrow palette can tolerate weaker evidence than a surfaced "weakness" card.
+@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
+def test_min_games_matches_frontend() -> None:
+    """The FE verdict floor matches the Insights candidate floor and the D-36 most-played
+    floor, so every surfaced row can carry a verdict."""
+    from app.services.stats_service import MOST_PLAYED_MIN_GAMES
+
+    fe_floor = _extract_int(_OPENING_VERDICT_TS, "REPERTOIRE_MIN_GAMES_FOR_VERDICT")
+    assert fe_floor == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE == MOST_PLAYED_MIN_GAMES
 
 
 def test_compute_confidence_bucket_is_single_implementation() -> None:
@@ -104,3 +117,23 @@ def test_compute_confidence_bucket_is_single_implementation() -> None:
         "openings_service must use the shared score_confidence helper (Phase 76 D-06); "
         "found no reference to compute_confidence_bucket."
     )
+
+
+def test_eval_baselines_match_frontend() -> None:
+    """The /stats and /insights/openings responses no longer echo the per-colour eval
+    baseline, so the frontend openingStatsZones constants must equal the backend pair the
+    eval z-test is centred on (D-13)."""
+    from app.services.opening_insights_constants import (
+        EVAL_BASELINE_PAWNS_BLACK,
+        EVAL_BASELINE_PAWNS_WHITE,
+    )
+
+    text = (_FE_LIB / "openingStatsZones.ts").read_text()
+
+    def fe_value(name: str) -> float:
+        m = re.search(rf"export\s+const\s+{name}\s*=\s*(-?[0-9]*\.?[0-9]+)\s*;", text)
+        assert m, f"could not find export const {name} in openingStatsZones.ts"
+        return float(m.group(1))
+
+    assert fe_value("EVAL_BASELINE_PAWNS_WHITE") == EVAL_BASELINE_PAWNS_WHITE
+    assert fe_value("EVAL_BASELINE_PAWNS_BLACK") == EVAL_BASELINE_PAWNS_BLACK

@@ -129,6 +129,7 @@
 | 238-239. v2.25 phases | 19/19 | Complete | 2026-10-13 |
 | 240. v2.26 phase | 7/7 | Complete | 2026-10-16 |
 | 241. v2.27 phase | 70/70 | Complete | 2026-10-17 |
+| 242. standalone phase | 9/9 | Complete | 2026-10-18 |
 
 ## Active Phases
 
@@ -164,32 +165,32 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 9 plans
-**Status**: Planned (9 plans, 7 waves), ready to execute
+**Plans:** 9/9 plans complete
+**Status**: Complete 2026-10-18 (9 plans + 15 UAT rounds; verification passed by owner override; PR #428 squash-merged to `main`, not yet deployed)
 
 Plans:
 **Wave 1**
-- [ ] 242-01-PLAN.md — Backend /stats: current/past cutoff (200 games or 60 days, filters, dev clock), most-played fetch 60 → dedupe → bookmark-twin drop → cutoff-restricted second fetch when current rows run short → 10 current + 10 past, baseline-centred eval finalizer + 99% CIs, shared score verdict fields (wave 1)
+- [x] 242-01-PLAN.md — Backend /stats: current/past cutoff (200 games or 60 days, filters, dev clock), most-played fetch 60 → dedupe → bookmark-twin drop → cutoff-restricted second fetch when current rows run short → 10 current + 10 past, baseline-centred eval finalizer + 99% CIs, shared score verdict fields (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 242-02-PLAN.md — Backend /insights/openings: 99% cards (≤5, current first), "Not clear yet" medium list (≤10 + full count), is_current, centred eval on cards (wave 2)
-- [ ] 242-03-PLAN.md — Backend /openings: Moves/Games centred eval + 99% CIs, weekly time series with per-week games, bookmark score p + 99% CI and is_current (wave 2)
+- [x] 242-02-PLAN.md — Backend /insights/openings: 99% cards (≤5, current first), "Not clear yet" medium list (≤10 + full count), is_current, centred eval on cards (wave 2)
+- [x] 242-03-PLAN.md — Backend /openings: Moves/Games centred eval + 99% CIs, weekly time series with per-week games, bookmark score p + 99% CI and is_current (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 242-04-PLAN.md — Frontend verdict primitives (openingVerdict, VerdictBar, EvalVerdictPopover) shipped on the Moves/Games eval row (D-17) (wave 3)
-- [ ] 242-05-PLAN.md — Frontend Stats shell: sticky White | Black switch (desktop + phone, Umami) and retirement of the bookmark include toggle + its localStorage (D-16) (wave 3)
+- [x] 242-04-PLAN.md — Frontend verdict primitives (openingVerdict, VerdictBar, EvalVerdictPopover) shipped on the Moves/Games eval row (D-17) (wave 3)
+- [x] 242-05-PLAN.md — Frontend Stats shell: sticky White | Black switch (desktop + phone, Umami) and retirement of the bookmark include toggle + its localStorage (D-16) (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
+- [x] 242-06-PLAN.md — Frontend repertoire table: pinned bookmarks, current rows, "Played before (n)", compact Score/Eval cells + popovers, fades, phone stacking, sticky header; old sections deleted (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 242-07-PLAN.md — Frontend findings merged into Stats (cards, phone Show more, Not clear yet, empty state, older-games chip) (wave 5)
+- [x] 242-07-PLAN.md — Frontend findings merged into Stats (cards, phone Show more, Not clear yet, empty state, older-games chip) (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 242-08-PLAN.md — Frontend Insights subtab, mobile tab and route removed with /openings/insights → /openings/stats redirect (D-15), one OpeningsTab union, old Insights components deleted (wave 6)
+- [x] 242-08-PLAN.md — Frontend Insights subtab, mobile tab and route removed with /openings/insights → /openings/stats redirect (D-15), one OpeningsTab union, old Insights components deleted (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 242-09-PLAN.md — Frontend expanded row (board, links, Score/Eval bars, bookmark toggle) + single-series ScoreChart with weekly volume (D-14) + CHANGELOG (wave 7)
+- [x] 242-09-PLAN.md — Frontend expanded row (board, links, Score/Eval bars, bookmark toggle) + single-series ScoreChart with weekly volume (D-14) + CHANGELOG (wave 7)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

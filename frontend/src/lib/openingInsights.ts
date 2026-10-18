@@ -1,3 +1,8 @@
+import { sanToSquares } from '@/lib/sanToSquares';
+import { isConfident } from '@/lib/significance';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import type { OpeningInsightFinding } from '@/types/insights';
+
 /**
  * Render a ply index and SAN in PGN move-number notation.
  *
@@ -37,4 +42,36 @@ export function formatCandidateMove(
   candidateMoveSan: string,
 ): string {
   return formatMoveNotation(entrySanSequence.length, candidateMoveSan);
+}
+
+/** "2... e6": the move a finding is about, in PGN notation. */
+export function findingMoveText(finding: OpeningInsightFinding): string {
+  return formatCandidateMove(finding.entry_san_sequence, finding.candidate_move_san);
+}
+
+/**
+ * True when the candidate move is the user's own, false for an opponent's reply. The side to
+ * move at the entry position follows the ply parity (even = white, as in formatMoveNotation).
+ */
+export function isOwnMove(finding: OpeningInsightFinding): boolean {
+  const whiteToMove = finding.entry_san_sequence.length % 2 === 0;
+  return whiteToMove === (finding.color === 'white');
+}
+
+/**
+ * One arrow from the candidate move's squares, red for a weakness and green for a strength.
+ * A low-confidence card gets the neutral blue (D-38): listed by rank, but its direction is not a
+ * verdict, matching its blue spine.
+ */
+export function findingArrows(
+  finding: OpeningInsightFinding,
+): ReadonlyArray<{ from: string; to: string; color: string }> | undefined {
+  const squares = sanToSquares(finding.entry_fen, finding.candidate_move_san);
+  if (!squares) return undefined;
+  const color = !isConfident(finding.confidence)
+    ? ZONE_NEUTRAL
+    : finding.classification === 'weakness'
+      ? ZONE_DANGER
+      : ZONE_SUCCESS;
+  return [{ from: squares.from, to: squares.to, color }];
 }

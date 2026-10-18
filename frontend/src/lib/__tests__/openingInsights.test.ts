@@ -6,7 +6,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { formatCandidateMove, formatMoveNotation } from '../openingInsights';
+import { findingArrows, formatCandidateMove, formatMoveNotation, isOwnMove } from '../openingInsights';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import type { OpeningInsightFinding } from '@/types/insights';
 
 describe('formatMoveNotation', () => {
   it('returns "N. san" for white (even ply index)', () => {
@@ -48,5 +50,43 @@ describe('formatCandidateMove', () => {
   it('returns "3... c5" for entrySanSequence of length 5 (black ply)', () => {
     const seq = ['e4', 'e5', 'Nf3', 'Nc6', 'd4'];
     expect(formatCandidateMove(seq, 'c5')).toBe('3... c5');
+  });
+});
+
+describe('isOwnMove', () => {
+  const finding = (color: OpeningInsightFinding['color'], plies: number): OpeningInsightFinding =>
+    ({ color, entry_san_sequence: Array.from({ length: plies }, () => 'x') }) as OpeningInsightFinding;
+
+  it("is the user's move when the side to move matches the finding colour", () => {
+    expect(isOwnMove(finding('white', 0))).toBe(true);
+    expect(isOwnMove(finding('black', 1))).toBe(true);
+  });
+
+  it("is the opponent's reply otherwise", () => {
+    expect(isOwnMove(finding('white', 1))).toBe(false);
+    expect(isOwnMove(finding('black', 2))).toBe(false);
+  });
+});
+
+describe('findingArrows', () => {
+  // Only the fields findingArrows reads; the rest of the finding is irrelevant here.
+  const finding = (
+    confidence: OpeningInsightFinding['confidence'],
+    classification: OpeningInsightFinding['classification'],
+  ): OpeningInsightFinding =>
+    ({
+      entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      candidate_move_san: 'e4',
+      confidence,
+      classification,
+    }) as OpeningInsightFinding;
+
+  it('colours a confident weakness red and a confident strength green', () => {
+    expect(findingArrows(finding('medium', 'weakness'))?.[0]?.color).toBe(ZONE_DANGER);
+    expect(findingArrows(finding('high', 'strength'))?.[0]?.color).toBe(ZONE_SUCCESS);
+  });
+
+  it('draws a low-confidence card with the neutral arrow (D-38)', () => {
+    expect(findingArrows(finding('low', 'weakness'))?.[0]?.color).toBe(ZONE_NEUTRAL);
   });
 });
