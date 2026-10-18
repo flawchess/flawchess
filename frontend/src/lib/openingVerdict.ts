@@ -24,6 +24,7 @@ import {
 import { SCORE_BULLET_CENTER, SCORE_BULLET_NEUTRAL_MAX } from '@/lib/scoreBulletConfig';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 import { isConfident } from '@/lib/significance';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 /** Fewer games than this never get a verdict. Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
 export const REPERTOIRE_MIN_GAMES_FOR_VERDICT = 20;
@@ -82,6 +83,21 @@ export function openingVerdict(input: OpeningVerdictInput): GapVerdict {
 /** Colour of a verdict's value text: the dot colour when better or worse, none (plain foreground) otherwise. */
 export function verdictValueColor(verdict: GapVerdict): string | undefined {
   return verdict === 'better' || verdict === 'worse' ? gapVerdictColor(verdict) : undefined;
+}
+
+const ACCENT_COLOR: Record<GapVerdict, string> = {
+  better: ZONE_SUCCESS,
+  worse: ZONE_DANGER,
+  typical: ZONE_NEUTRAL,
+};
+
+/**
+ * The card's left spine from its score verdict, in the score-zone palette the spine used before
+ * the rework. Rows under the game floor get no spine, so a sparse card paints no score colour.
+ */
+export function scoreAccentColor(input: OpeningVerdictInput): string | undefined {
+  if (isFadedRow(input.games)) return undefined;
+  return ACCENT_COLOR[openingVerdict(input)];
 }
 
 /** The engine-balanced reference an average game of this colour reaches the middlegame at. */
@@ -163,7 +179,7 @@ const VERDICT_SENTENCES: Record<SentenceState, Record<SentenceState, string>> = 
   typical: {
     worse: 'You come out of the opening worse but hold your own.',
     typical: 'An ordinary opening for you: average positions and a typical score.',
-    better: "You come out of the opening better, but your results don't show it yet.",
+    better: 'You get better positions but only a typical score.',
     unknown: SENTENCE_SCORE_EVEN,
   },
   unknown: {

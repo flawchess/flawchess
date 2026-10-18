@@ -20,7 +20,7 @@ import {
   type RepertoireRowKind,
   type RepertoireRowModel,
 } from '@/pages/openings/useRepertoireRows';
-import { UNRELIABLE_OPACITY } from '@/lib/theme';
+import { UNRELIABLE_OPACITY, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type { MostPlayedOpeningsResponse, OpeningWDL } from '@/types/stats';
 import type {
   BookmarkTimeSeries,
@@ -257,6 +257,22 @@ describe('RepertoireList intros and verdict sentence', () => {
 });
 
 describe('RepertoireList low-sample rows', () => {
+  it('colours the left spine by the score verdict and leaves faded cards without one', () => {
+    renderList({
+      currentRows: [
+        makeRow({ key: 'mpo-better', score: 0.7 }),
+        makeRow({ key: 'mpo-worse', score: 0.3 }),
+        makeRow({ key: 'mpo-typical', score: 0.52 }),
+        makeRow({ key: 'mpo-small', games: 15, score: 0.9 }),
+      ],
+    });
+    const spine = (i: number) => normalizeColor(screen.getByTestId(`repertoire-card-${i}`).style.borderLeftColor);
+    expect(spine(0)).toBe(normalizeColor(ZONE_SUCCESS));
+    expect(spine(1)).toBe(normalizeColor(ZONE_DANGER));
+    expect(spine(2)).toBe(normalizeColor(ZONE_NEUTRAL));
+    expect(spine(3)).toBe('');
+  });
+
   it('fades a 15-game card and keeps its dots neutral despite high confidence', () => {
     renderList({
       currentRows: [
@@ -605,3 +621,8 @@ describe('useOpeningRowTimeSeries', () => {
     expect(result.current.series).toBe(series);
   });
 });
+
+/** jsdom drops trailing zeros from oklch decimals (oklch(0.50 ...) reads back as oklch(0.5 ...)). */
+function normalizeColor(value: string): string {
+  return value.replace(/(\.\d*?)0+(?=\D|$)/g, '$1');
+}

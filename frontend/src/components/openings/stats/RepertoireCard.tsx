@@ -23,6 +23,7 @@ import {
   openingVerdict,
   openingVerdictReason,
   openingVerdictSentence,
+  scoreAccentColor,
   scoreDelta,
   type OpeningVerdictInput,
 } from '@/lib/openingVerdict';
@@ -304,6 +305,7 @@ export function RepertoireCard({
   return (
     <Card
       data-testid={testId}
+      accentColor={scoreAccentColor(scoreInput(row))}
       style={isFadedRow(row.games) ? { opacity: UNRELIABLE_OPACITY } : undefined}
     >
       <CardHeader as="h4" size="compact" className="items-start text-base">

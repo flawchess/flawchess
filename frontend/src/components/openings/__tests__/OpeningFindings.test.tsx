@@ -11,6 +11,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
 import type { FilterState } from '@/components/filters/FilterPanel';
+import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 
 const trackFeature = vi.hoisted(() => vi.fn());
@@ -180,8 +181,23 @@ describe('OpeningFindings cards and Show more', () => {
       }),
       'black',
     );
-    expect(screen.getByTestId('opening-findings-weakness-card-0-move').textContent).toBe('After 1... e6');
+    expect(screen.getByTestId('opening-findings-weakness-card-0-move').textContent).toBe('1... e6');
+    expect(screen.getByTestId('opening-findings-weakness-card-0-title').textContent).toBe(
+      '1... e6, Sicilian Defense',
+    );
     expect(screen.queryByTestId('opening-findings-weakness-card-1')).toBeNull();
+  });
+
+  it('colours the left spine by the score verdict', () => {
+    renderFindings(
+      emptyResponse({
+        white_weaknesses: [makeFinding()],
+        white_strengths: [makeFinding({ classification: 'strength', score: 0.7, wins: 30, losses: 10 })],
+      }),
+    );
+    const spine = (testId: string) => normalizeColor(screen.getByTestId(testId).style.borderLeftColor);
+    expect(spine('opening-findings-weakness-card-0')).toBe(normalizeColor(ZONE_DANGER));
+    expect(spine('opening-findings-strength-card-0')).toBe(normalizeColor(ZONE_SUCCESS));
   });
 
   it('marks findings from older games with a chip and leaves current ones bare', () => {
@@ -287,3 +303,8 @@ describe('OpeningFindings loading and error', () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 });
+
+/** jsdom drops trailing zeros from oklch decimals (oklch(0.50 ...) reads back as oklch(0.5 ...)). */
+function normalizeColor(value: string): string {
+  return value.replace(/(\.\d*?)0+(?=\D|$)/g, '$1');
+}

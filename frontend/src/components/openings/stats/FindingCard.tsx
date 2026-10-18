@@ -18,6 +18,7 @@ import {
   openingVerdict,
   openingVerdictReason,
   openingVerdictSentence,
+  scoreAccentColor,
   scoreDelta,
   stripEcoSuffix,
   type OpeningVerdictInput,
@@ -25,7 +26,8 @@ import {
 import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding } from '@/types/insights';
 
-const BOARD_SIZE = 120;
+/** Same board as the repertoire cards, so both card kinds share one layout. */
+const BOARD_SIZE = 128;
 const PERCENT_SCALE = 100;
 /** The backend's name for a line without an openings-table match. */
 const UNNAMED_SENTINEL = '<unnamed line>';
@@ -54,10 +56,16 @@ function OlderGamesChip({ finding, testId }: { finding: OpeningInsightFinding; t
   );
 }
 
-/** Opening name without ECO (italic for the unnamed sentinel); the board shows the position. */
-function FindingSubtitle({ finding }: { finding: OpeningInsightFinding }) {
+/** "4... Bf5, vs. Indian Defense": the move, then the opening name without ECO (italic when unnamed). */
+function FindingTitle({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
   const unnamed = finding.opening_name === UNNAMED_SENTINEL;
-  return <span className={cn(unnamed && 'italic')}>{stripEcoSuffix(finding.display_name)}</span>;
+  return (
+    <span className="min-w-0 break-words" data-testid={`${testId}-title`}>
+      <span data-testid={`${testId}-move`}>{findingMoveText(finding)}</span>
+      {', '}
+      <span className={cn(unnamed && 'italic')}>{stripEcoSuffix(finding.display_name)}</span>
+    </span>
+  );
 }
 
 function scoreInput(finding: OpeningInsightFinding): OpeningVerdictInput {
@@ -159,9 +167,9 @@ const LINK_BUTTON_CLASS =
   'flex items-center gap-1 text-sm text-brand-brown-light transition-colors hover:text-brand-brown-highlight';
 
 /**
- * Move-led finding card (D-00): the move first, then the opening name, a 120 px
- * board with the move arrow, the score with its popover and WDL bar, the eval bar centred on
- * the colour baseline.
+ * Move-led finding card (D-00), laid out like the repertoire cards: a one-line "move, opening"
+ * title, a 128 px board with the move arrow beside the score line, WDL bar and eval bar, the
+ * verdict sentence under the eval bar, and a score-verdict left spine.
  */
 export function FindingCard({
   finding,
@@ -172,26 +180,27 @@ export function FindingCard({
   const arrows = findingArrows(finding);
   const lastMove = lastMoveSquares(finding.entry_san_sequence) ?? undefined;
   return (
-    <Card data-testid={testId}>
-      <CardHeader as="h4" size="compact" className="flex-col items-start gap-0.5">
-        <span className="flex flex-wrap items-center gap-2 text-base">
-          <span data-testid={`${testId}-move`}>After {findingMoveText(finding)}</span>
+    <Card data-testid={testId} accentColor={scoreAccentColor(scoreInput(finding))}>
+      <CardHeader as="h4" size="compact" className="items-start text-base">
+        <FindingTitle finding={finding} testId={testId} />
+        <span className="ml-auto shrink-0">
           <OlderGamesChip finding={finding} testId={`${testId}-older`} />
-        </span>
-        <span className="max-w-full truncate font-normal text-muted-foreground">
-          <FindingSubtitle finding={finding} />
         </span>
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
-        <div className="flex items-start gap-3">
-          <LazyMiniBoard
-            fen={finding.entry_fen}
-            flipped={finding.color === 'black'}
-            size={BOARD_SIZE}
-            arrows={arrows}
-            lastMove={lastMove}
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        {/* Same grid as RepertoireCard: from sm up the sentence sits under the eval bar beside
+            the board; phones are too narrow for that column, so it spans the card width. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 sm:gap-y-2.5">
+          <div className="sm:row-span-2">
+            <LazyMiniBoard
+              fen={finding.entry_fen}
+              flipped={finding.color === 'black'}
+              size={BOARD_SIZE}
+              arrows={arrows}
+              lastMove={lastMove}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-2.5">
             <div className="space-y-1.5">
               <ScoreLine
                 score={finding.score}
@@ -213,8 +222,10 @@ export function FindingCard({
             </div>
             <EvalLine finding={finding} testId={testId} />
           </div>
+          <div className="col-span-2 sm:col-span-1 sm:col-start-2">
+            <VerdictSentence finding={finding} testId={testId} />
+          </div>
         </div>
-        <VerdictSentence finding={finding} testId={testId} />
         <div className="flex items-center gap-4">
           <button
             type="button"

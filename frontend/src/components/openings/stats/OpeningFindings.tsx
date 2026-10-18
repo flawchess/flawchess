@@ -134,7 +134,8 @@ function FindingCardGrid({
   };
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid={`${testId}-list`}>
+      {/* Same grid as the repertoire cards (two columns from lg) now that both share one layout. */}
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2" data-testid={`${testId}-list`}>
         {findings.map((finding, i) => (
           <div key={i} className={cn(!expanded && i >= INITIAL_VISIBLE_PHONE && 'max-md:hidden')}>
             <FindingCard
