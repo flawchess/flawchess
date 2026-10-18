@@ -145,7 +145,7 @@ discuss-phase" and record defaults for the rest.
   `lib/openingVerdict.ts`): only 99%-clear parts are stated, an unclear eval falls back to the score-only
   sentence, and a <20-game card says "Too few games to call it yet." Every cell has a sentence (owner,
   same day: a card without one read as missing), e.g. "An ordinary opening for you: average positions and
-  about 50%." and "Nothing clear yet. The differences could still be chance."
+  a typical score." and "Nothing clear yet. The differences could still be chance."
 - **D-31:** The Stats subtab info popover is removed (Moves/Games popovers stay). Every Stats section h2 gets a
   one-line intro under it (Library Stats pattern); the first repertoire heading also explains Score and Eval.
 - **D-32:** Findings density: a section without 99% cards shows its "Not clear yet" cards inline (phone 2,
