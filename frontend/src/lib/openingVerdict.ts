@@ -160,7 +160,7 @@ const VERDICT_SENTENCES: Record<SentenceState, Record<SentenceState, string>> = 
   },
   typical: {
     worse: 'You come out of the opening worse but hold your own.',
-    typical: 'An ordinary opening for you: average positions and about 50%.',
+    typical: 'An ordinary opening for you: average positions and a typical score.',
     better: "You come out of the opening better, but your results don't show it yet.",
     unknown: SENTENCE_SCORE_EVEN,
   },

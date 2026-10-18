@@ -181,7 +181,7 @@ describe('openingVerdictSentence', () => {
 
   it('still says something when neither bar stands out', () => {
     expect(openingVerdictSentence('typical', 'typical')).toBe(
-      'An ordinary opening for you: average positions and about 50%.',
+      'An ordinary opening for you: average positions and a typical score.',
     );
     expect(openingVerdictSentence('typical', null)).toBe('You score in the typical range here.');
     expect(openingVerdictSentence('chance', 'typical')).toBe(
