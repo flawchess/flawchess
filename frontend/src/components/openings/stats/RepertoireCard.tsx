@@ -7,10 +7,8 @@ import { LoadError } from '@/components/ui/load-error';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { VerdictBar } from '@/components/openings/stats/VerdictBar';
-import {
-  EvalVerdictPopover,
-  ScoreVerdictPopover,
-} from '@/components/openings/stats/VerdictPopover';
+import { ScoreLine } from '@/components/openings/stats/ScoreLine';
+import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { useCreatePositionBookmark, useDeletePositionBookmark } from '@/hooks/usePositionBookmarks';
 import { useReadiness } from '@/hooks/useReadiness';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -21,7 +19,6 @@ import {
   SCORE_VERDICT_BAND,
   evalBaselinePawns,
   formatEvalCompact,
-  formatScorePercent,
   isFadedRow,
   openingVerdict,
   openingVerdictReason,
@@ -77,35 +74,6 @@ function evalInput(row: RepertoireRowModel): OpeningVerdictInput | null {
     // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
     games: row.evalN,
   };
-}
-
-function ScoreBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
-  const input = scoreInput(row);
-  return (
-    <VerdictBar
-      delta={input.delta}
-      band={SCORE_VERDICT_BAND}
-      verdict={openingVerdict(input)}
-      valueText={formatScorePercent(row.score)}
-      testId={`${testId}-score-bar`}
-      ariaLabel={`Score ${formatScorePercent(row.score)}, centred on 50%`}
-      leading={<span className="text-muted-foreground">Score</span>}
-      trailing={
-        <ScoreVerdictPopover
-          testId={`${testId}-score-info`}
-          score={row.score}
-          games={row.games}
-          wins={row.wins}
-          draws={row.draws}
-          losses={row.losses}
-          reason={openingVerdictReason(input)}
-          ci99Low={row.scoreCi99Low}
-          ci99High={row.scoreCi99High}
-          pValue={row.scorePValue}
-        />
-      }
-    />
-  );
 }
 
 function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
@@ -301,9 +269,9 @@ function CardLinks({
 }
 
 /**
- * One repertoire opening as a card: name header with the last-played date, a 128 px board beside the WDL bar, the Score
- * and Eval after opening verdict bars, the Moves / Games / Bookmark links and a toggle that
- * opens the score-over-time chart under them. A one-line sentence reads the two verdicts together.
+ * One repertoire opening as a card: name header with the last-played date, a 128 px board beside the score line, the WDL
+ * bar and the Eval after opening verdict bar, the Moves / Games / Bookmark links and a toggle that
+ * opens the score-over-time chart under them. A sentence under the eval bar reads the two verdicts together.
  * Cards with fewer than 20 games are faded.
  */
 export function RepertoireCard({
@@ -366,20 +334,39 @@ export function RepertoireCard({
         )}
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
-        <div className="flex items-start gap-3">
-          <LazyMiniBoard
-            fen={row.fen}
-            flipped={row.color === 'black'}
-            size={BOARD_SIZE}
-            lastMove={lastMove}
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-            <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
-            <ScoreBar row={row} testId={testId} />
+        {/* From sm up the sentence sits under the eval bar beside the board; phones are too
+            narrow for that column, so it spans the card width under the board. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 sm:gap-y-2.5">
+          <div className="sm:row-span-2">
+            <LazyMiniBoard
+              fen={row.fen}
+              flipped={row.color === 'black'}
+              size={BOARD_SIZE}
+              lastMove={lastMove}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="space-y-1.5">
+              <ScoreLine
+                score={row.score}
+                games={row.games}
+                wins={row.wins}
+                draws={row.draws}
+                losses={row.losses}
+                input={scoreInput(row)}
+                ci99Low={row.scoreCi99Low}
+                ci99High={row.scoreCi99High}
+                pValue={row.scorePValue}
+                testId={testId}
+              />
+              <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
+            </div>
             <EvalBar row={row} testId={testId} />
           </div>
+          <div className="col-span-2 sm:col-span-1 sm:col-start-2">
+            <VerdictSentence row={row} testId={testId} />
+          </div>
         </div>
-        <VerdictSentence row={row} testId={testId} />
         <CardLinks
           row={row}
           testId={testId}

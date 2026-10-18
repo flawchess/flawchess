@@ -268,9 +268,9 @@ describe('RepertoireList low-sample rows', () => {
     const big = screen.getByTestId('repertoire-card-1');
     expect(small.style.opacity).toBe(String(UNRELIABLE_OPACITY));
     expect(big.style.opacity).toBe('');
-    expect(screen.getByTestId('repertoire-card-0-score-bar').getAttribute('data-verdict')).toBe('typical');
+    expect(screen.getByTestId('repertoire-card-0-score').getAttribute('data-verdict')).toBe('typical');
     expect(screen.getByTestId('repertoire-card-0-eval-bar').getAttribute('data-verdict')).toBe('typical');
-    expect(screen.getByTestId('repertoire-card-1-score-bar').getAttribute('data-verdict')).toBe('better');
+    expect(screen.getByTestId('repertoire-card-1-score').getAttribute('data-verdict')).toBe('better');
     expect(screen.getByTestId('repertoire-card-1-eval-bar').getAttribute('data-verdict')).toBe('better');
   });
 
@@ -279,7 +279,7 @@ describe('RepertoireList low-sample rows', () => {
     renderList({
       currentRows: [makeRow({ key: 'mpo-thin-eval', games: 100, evalN: 11, score: 0.9, avgEvalPawns: 2.0 })],
     });
-    expect(screen.getByTestId('repertoire-card-0-score-bar').getAttribute('data-verdict')).toBe('better');
+    expect(screen.getByTestId('repertoire-card-0-score').getAttribute('data-verdict')).toBe('better');
     expect(screen.getByTestId('repertoire-card-0-eval-bar').getAttribute('data-verdict')).toBe('typical');
   });
 
@@ -298,7 +298,7 @@ describe('RepertoireList card values', () => {
         makeRow({ key: 'mpo-2', avgEvalPawns: null, evalN: 0 }),
       ],
     });
-    expect(screen.getByTestId('repertoire-card-0-score-bar-value').textContent).toBe('56%');
+    expect(screen.getByTestId('repertoire-card-0-score').textContent).toBe('56%');
     expect(screen.getByTestId('repertoire-card-0-eval-bar-value').textContent).toBe('+0.9');
     expect(screen.queryByTestId('repertoire-card-1-eval-bar')).toBeNull();
     expect(screen.getByTestId('repertoire-card-1-eval-none').textContent).toContain('—');
@@ -348,12 +348,12 @@ describe('RepertoireCard links and chart', () => {
     };
   }
 
-  it('shows the 128px board and both verdict bars, and opens the chart tracking the expand once', () => {
+  it('shows the 128px board, the score line and the eval bar, and opens the chart tracking the expand once', () => {
     useTimeSeriesMock.mockReturnValue({ data: { series: [series] }, isLoading: false, isError: false });
     renderList({ currentRows: [makeRow({ key: 'mpo-1' })] });
     const card = screen.getByTestId('repertoire-card-0');
     expect(card.querySelector('[data-testid="lazy-mini-board"]')?.getAttribute('data-size')).toBe('128');
-    expect(screen.getByTestId('repertoire-card-0-score-bar')).toBeTruthy();
+    expect(screen.getByTestId('repertoire-card-0-score')).toBeTruthy();
     expect(screen.getByTestId('repertoire-card-0-eval-bar')).toBeTruthy();
     expect(screen.queryByTestId('repertoire-card-0-chart')).toBeNull();
 

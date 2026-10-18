@@ -4,12 +4,10 @@ import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { VerdictBar } from '@/components/openings/stats/VerdictBar';
-import {
-  EvalVerdictPopover,
-  ScoreVerdictPopover,
-} from '@/components/openings/stats/VerdictPopover';
+import { ScoreLine } from '@/components/openings/stats/ScoreLine';
+import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { useReadiness } from '@/hooks/useReadiness';
-import { formatSignedGap, gapVerdictColor } from '@/lib/gapBar';
+import { formatSignedGap } from '@/lib/gapBar';
 import { findingArrows, findingMoveText } from '@/lib/openingInsights';
 import { lastMoveSquares } from '@/lib/sanToSquares';
 import {
@@ -17,7 +15,6 @@ import {
   SCORE_VERDICT_BAND,
   evalBaselinePawns,
   formatEvalCompact,
-  formatScorePercent,
   openingVerdict,
   openingVerdictReason,
   openingVerdictSentence,
@@ -86,42 +83,6 @@ function evalInput(finding: OpeningInsightFinding): OpeningVerdictInput | null {
     // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
     games: evalN,
   };
-}
-
-function ScoreLine({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
-  const input = scoreInput(finding);
-  const verdict = openingVerdict(input);
-  return (
-    <div className="flex items-center justify-between gap-2 text-sm">
-      <span className="inline-flex items-center gap-1">
-        <span>
-          You score{' '}
-          <strong
-            className="tabular-nums"
-            style={verdict !== 'typical' ? { color: gapVerdictColor(verdict) } : undefined}
-            data-testid={`${testId}-score`}
-          >
-            {formatScorePercent(finding.score)}
-          </strong>
-        </span>
-        <ScoreVerdictPopover
-          testId={`${testId}-score-info`}
-          score={finding.score}
-          games={finding.n_games}
-          wins={finding.wins}
-          draws={finding.draws}
-          losses={finding.losses}
-          reason={openingVerdictReason(input)}
-          ci99Low={finding.ci99_low ?? null}
-          ci99High={finding.ci99_high ?? null}
-          pValue={finding.p_value}
-        />
-      </span>
-      <span className="text-muted-foreground tabular-nums">
-        {finding.n_games.toLocaleString('en-US')} games
-      </span>
-    </div>
-  );
 }
 
 function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
@@ -234,13 +195,26 @@ export function FindingCard({
             arrows={neutralArrow ? arrows?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL })) : arrows}
             lastMove={lastMove}
           />
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <ScoreLine finding={finding} testId={testId} />
-            <MiniWDLBar
-              win_pct={pct(finding.wins, finding.n_games)}
-              draw_pct={pct(finding.draws, finding.n_games)}
-              loss_pct={pct(finding.losses, finding.n_games)}
-            />
+          <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+            <div className="space-y-1.5">
+              <ScoreLine
+                score={finding.score}
+                games={finding.n_games}
+                wins={finding.wins}
+                draws={finding.draws}
+                losses={finding.losses}
+                input={scoreInput(finding)}
+                ci99Low={finding.ci99_low ?? null}
+                ci99High={finding.ci99_high ?? null}
+                pValue={finding.p_value}
+                testId={testId}
+              />
+              <MiniWDLBar
+                win_pct={pct(finding.wins, finding.n_games)}
+                draw_pct={pct(finding.draws, finding.n_games)}
+                loss_pct={pct(finding.losses, finding.n_games)}
+              />
+            </div>
             <EvalLine finding={finding} testId={testId} />
           </div>
         </div>

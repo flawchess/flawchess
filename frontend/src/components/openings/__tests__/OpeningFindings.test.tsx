@@ -266,7 +266,7 @@ describe('OpeningFindings Not clear yet', () => {
 
     const card0 = screen.getByTestId('opening-findings-weakness-unclear-card-0');
     expect(card0.textContent).toContain('After 1. e4');
-    expect(card0.textContent).toContain('30 games');
+    expect(screen.getByTestId('opening-findings-weakness-unclear-card-0-btn-games').textContent).toBe('30Games');
     // Medium confidence never passes the 99% gate, so the score stays uncoloured.
     const score0 = screen.getByTestId('opening-findings-weakness-unclear-card-0-score');
     expect(score0.textContent).toBe('40%');

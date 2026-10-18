@@ -159,17 +159,17 @@ describe('RepertoireCard: tier2 gate for the eval bar', () => {
     expect(screen.getByTestId('repertoire-card-0-eval-bar-value').textContent).toBe('+0.3');
   });
 
-  it('the score bar is present when tier2=false (score is not eval-dependent)', async () => {
+  it('the score line is present when tier2=false (score is not eval-dependent)', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: false, pendingCount: 5, totalCount: 20, isLoading: false });
     renderCard();
-    expect(screen.getByTestId('repertoire-card-0-score-bar-value').textContent).toBe('57%');
+    expect(screen.getByTestId('repertoire-card-0-score').textContent).toBe('57%');
   });
 
-  it('the score bar is present when tier2=true', async () => {
+  it('the score line is present when tier2=true', async () => {
     const { useReadiness } = await import('@/hooks/useReadiness');
     vi.mocked(useReadiness).mockReturnValue({ tier1: true, tier2: true, pendingCount: 0, totalCount: 20, isLoading: false });
     renderCard();
-    expect(screen.getByTestId('repertoire-card-0-score-bar-value').textContent).toBe('57%');
+    expect(screen.getByTestId('repertoire-card-0-score').textContent).toBe('57%');
   });
 });
