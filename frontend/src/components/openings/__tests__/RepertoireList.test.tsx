@@ -251,7 +251,7 @@ describe('RepertoireList intros and verdict sentence', () => {
     );
     expect(screen.getByTestId('repertoire-card-1-sentence').textContent).toBe('Too few games to call it yet.');
     expect(screen.getByTestId('repertoire-card-2-sentence').textContent).toBe(
-      'An ordinary opening for you: average positions and a typical score.',
+      'An ordinary opening: average positions and a typical score.',
     );
   });
 });

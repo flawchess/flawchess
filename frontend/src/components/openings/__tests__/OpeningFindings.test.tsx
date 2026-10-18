@@ -285,7 +285,7 @@ describe('OpeningFindings verdict sentence', () => {
   it('reads a clear low score and a clearly worse eval together', () => {
     renderFindings(emptyResponse({ white_weaknesses: [makeFinding()] }), 'white');
     expect(screen.getByTestId('opening-findings-weakness-card-0-sentence').textContent).toBe(
-      'You come out of the opening worse, and it shows in your results.',
+      'You come out of the opening worse, and it costs you points.',
     );
   });
 });

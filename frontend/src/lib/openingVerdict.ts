@@ -165,26 +165,26 @@ const SENTENCE_CHANCE = 'Nothing clear yet. The differences could still be chanc
  */
 const VERDICT_SENTENCES: Record<SentenceState, Record<SentenceState, string>> = {
   worse: {
-    worse: 'You come out of the opening worse, and it shows in your results.',
-    typical: 'You score below 50% even though the opening itself goes fine. The points slip away later.',
-    better: 'You come out of the opening better but still score below 50%.',
+    worse: 'You come out of the opening worse, and it costs you points.',
+    typical: 'The opening goes fine, but you still score below 50%.',
+    better: 'You come out of the opening better but score below 50%.',
     unknown: SENTENCE_SCORE_BELOW,
   },
   better: {
-    worse: 'You come out of the opening worse but outplay your opponents later.',
+    worse: 'You come out of the opening worse but win it back later.',
     typical: SENTENCE_SCORE_ABOVE,
     better: 'You come out of the opening better and make it count.',
     unknown: SENTENCE_SCORE_ABOVE,
   },
   typical: {
     worse: 'You come out of the opening worse but hold your own.',
-    typical: 'An ordinary opening for you: average positions and a typical score.',
+    typical: 'An ordinary opening: average positions and a typical score.',
     better: 'You get better positions but only a typical score.',
     unknown: SENTENCE_SCORE_EVEN,
   },
   unknown: {
     worse: 'You come out of the opening worse than an average game.',
-    typical: 'Average positions out of the opening. Your score could still be chance.',
+    typical: 'Average positions, but your score could still be chance.',
     better: 'You come out of the opening better than an average game.',
     unknown: SENTENCE_CHANCE,
   },

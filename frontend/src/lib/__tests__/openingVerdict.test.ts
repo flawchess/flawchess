@@ -15,9 +15,12 @@ import {
   verdictBandRange,
   verdictPosition,
   type OpeningVerdictInput,
+  type OpeningVerdictReason,
 } from '@/lib/openingVerdict';
 
 const BAND = 0.3;
+/** Card verdict sentences stay short enough to read at a glance (phase 242 UAT). */
+const MAX_VERDICT_SENTENCE_CHARS = 60;
 
 function input(overrides: Partial<OpeningVerdictInput> = {}): OpeningVerdictInput {
   return { delta: 0.6, band: BAND, confidence: 'high', games: 40, ...overrides };
@@ -164,7 +167,7 @@ describe('openingVerdictSentence', () => {
 
   it('reads a clear score with a typical eval as the points slipping away later', () => {
     expect(openingVerdictSentence('worse', 'typical')).toBe(
-      'You score below 50% even though the opening itself goes fine. The points slip away later.',
+      'The opening goes fine, but you still score below 50%.',
     );
   });
 
@@ -186,14 +189,25 @@ describe('openingVerdictSentence', () => {
 
   it('still says something when neither bar stands out', () => {
     expect(openingVerdictSentence('typical', 'typical')).toBe(
-      'An ordinary opening for you: average positions and a typical score.',
+      'An ordinary opening: average positions and a typical score.',
     );
     expect(openingVerdictSentence('typical', null)).toBe('You score in the typical range here.');
     expect(openingVerdictSentence('chance', 'typical')).toBe(
-      'Average positions out of the opening. Your score could still be chance.',
+      'Average positions, but your score could still be chance.',
     );
     expect(openingVerdictSentence('chance', 'chance')).toBe(
       'Nothing clear yet. The differences could still be chance.',
     );
+  });
+
+  it('keeps every sentence within the card length limit', () => {
+    const reasons: OpeningVerdictReason[] = ['too-few', 'typical', 'chance', 'better', 'worse'];
+    for (const score of reasons) {
+      for (const evalReason of [...reasons, null]) {
+        expect(openingVerdictSentence(score, evalReason).length).toBeLessThanOrEqual(
+          MAX_VERDICT_SENTENCE_CHARS,
+        );
+      }
+    }
   });
 });
