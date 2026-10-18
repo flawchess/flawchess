@@ -1667,23 +1667,20 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
     const strip = await screen.findByTestId('train-verdict-strip');
     expect(strip.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Right call, best move');
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Called it, found it');
     expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe(
       `+${scorePuzzle(SOLVE_RESPONSE.correct_guess, SOLVE_RESPONSE.move_quality)}`,
     );
     expect(screen.queryByTestId('train-verdict-strip-details')).toBeNull();
-    // The old surfaces are gone on a phone: no bubble, no Your-call card.
+    // The old surfaces are gone on a phone: no bubble, no verdict body.
     expect(screen.queryByTestId('train-bot-bubble')).toBeNull();
-    expect(screen.queryByTestId('train-verdict-guess')).toBeNull();
+    expect(screen.queryByTestId('train-bot-verdict-line')).toBeNull();
 
     fireEvent.click(strip);
     expect(strip.getAttribute('aria-expanded')).toBe('true');
     const details = screen.getByTestId('train-verdict-strip-details');
     const verdictLine = within(details).getByTestId('train-bot-verdict-line');
-    const guessRow = within(details).getByTestId('train-verdict-guess');
-    const guessProse = within(details).getByTestId('train-verdict-guess-prose');
-    expect(verdictLine.compareDocumentPosition(guessRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(guessRow.compareDocumentPosition(guessProse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(verdictLine).getByTestId('train-bot-fact').textContent).toBe('Only one move works here.');
     expect(within(details).queryByTestId('btn-train-analyze')).toBeNull();
   });
 
@@ -2066,7 +2063,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('train-reveal-also-fine').textContent).toContain('d4, Nf3, c4');
     };
     await expectLiveBoard();
-    fireEvent.pointerEnter(screen.getByTestId('train-verdict-guess'));
+    fireEvent.pointerEnter(screen.getByTestId('train-verdict-extras'));
     // Deliberately re-assert after the hover settles.
     await expectLiveBoard();
   });
@@ -3849,8 +3846,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       // The avatar sits inside the card, with no name label.
       expect(within(bubble).getByTestId('train-verdict-card-avatar')).not.toBeNull();
       expect(within(bubble).queryByTestId('train-bot-name')).toBeNull();
-      expect(within(bubble).getByTestId('train-bot-verdict-line').textContent).toContain('best move');
-      expect(within(bubble).getByTestId('train-verdict-guess-prose')).not.toBeNull();
+      expect(within(bubble).getByTestId('train-bot-verdict-line').textContent).toContain('found it');
+      expect(within(bubble).getByTestId('train-bot-fact')).not.toBeNull();
       expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
       // The left slot no longer speaks the verdict.
       expect(screen.queryByTestId('train-bot-bubble')).toBeNull();
@@ -3914,10 +3911,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      const verdictLine = await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
+      const tail = await waitFor(() => screen.getByTestId('train-bot-tail'));
       // The mastered tail EXPLAINS why it won't return — it is not
       // itself a return promise, so it never carries `train-bot-return-tail`.
-      expect(verdictLine.textContent).toContain("won't come back");
+      expect(tail.textContent).toContain('retired');
       expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
     });
 
@@ -3968,8 +3965,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
           fireEvent.click(screen.getByTestId('drop-e2e4'));
         });
         const verdictLine = await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
-        expect(verdictLine.textContent?.includes("won't come back")).toBe(expectTail);
+        const tailText = screen.queryByTestId('train-bot-tail')?.textContent ?? '';
+        expect(tailText.includes("won't come back")).toBe(expectTail);
         expect(verdictLine.textContent).not.toContain('warm-up');
+        expect(tailText).not.toContain('warm-up');
         expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
       },
     );

@@ -2,21 +2,20 @@
  * TrainVerdictDetails — the full verdict feedback body, shared by the desktop
  * verdict card and the phone strip's expansion.
  *
- * In order: the bot verdict (opener, clause with its point pills, look-closer
- * line, return tail), the Your-call feedback (call label, guess prose,
- * motif) and the "Also fine, e.g. ..." list. There are no buttons here:
- * Analyze and Next live in the reveal action bar.
+ * In order: the bot verdict (opener, position fact, guess and move clauses
+ * with their point pills, look-closer line), the return tail on its own muted
+ * line, and an extras line (motif, "Also fine, e.g. ...") shown only when
+ * either exists. There are no buttons here: Analyze and Next live in the
+ * reveal action bar.
  *
  * Also home of `TrainScoreChip`, the "+N" pill shared with the strip and the
  * points flash over the board.
  */
 
 import type { ReactElement, ReactNode } from 'react';
-import { returnPhrase, verdictClauseParts } from '@/lib/trainBotCopy';
-import type { VerdictCopy } from '@/lib/trainBotCopy';
+import { returnPhrase } from '@/lib/trainBotCopy';
+import type { VerdictClauseParts, VerdictCopy } from '@/lib/trainBotCopy';
 import { TRAIN_VERDICT_CORRECT, TRAIN_VERDICT_INCORRECT } from '@/lib/theme';
-import { GUESS_CALL_LABELS } from '@/lib/trainGuessLabels';
-import type { Guess } from '@/lib/trainGuessLabels';
 import type { SolveResponse } from '@/types/train';
 
 /**
@@ -46,27 +45,46 @@ export interface TrainVerdictDetailsProps {
   /** The opener + look-closer, resolved ONCE per verdict by the board owner (the
    * opener is a random draw, so a per-render draw would flip it on every render). */
   opening: VerdictCopy;
-  /** True when the played move is the engine's best (the chip-merge predicate). */
-  isBest: boolean;
+  /** The scored sentence, from `verdictClauseParts` (the board owner builds it
+   * once so the strip line and this body read the same input). */
+  clause: VerdictClauseParts;
   sessionDate: string | undefined;
   expiresOn: string | undefined;
   isWarmup: boolean;
-  guess: Guess | null;
-  guessProse: string | null;
   motif: string | null;
   /** Comma-joined SAN of the alternative fine moves; '' hides the line. */
   alsoFineSanList: string;
   /**
    * The desktop card floats the bot avatar here, so the verdict
-   * paragraph wraps to its right while the Your-call block below the separator
-   * keeps the full width. The phone strip shows its avatar in the header line.
+   * paragraph wraps to its right while the extras below the separator keep
+   * the full width. The phone strip shows its avatar in the header line.
    */
   leading?: ReactNode;
 }
 
 /**
- * The verdict paragraph: opener + clause with inline pills + optional
- * look-closer line (0-1 pts) + the return tail.
+ * The verdict paragraph: opener + position fact + guess/move clauses with
+ * inline pills + optional look-closer line (0-1 pts).
+ */
+function VerdictParagraph({ opening, clause }: Pick<TrainVerdictDetailsProps, 'opening' | 'clause'>): ReactElement {
+  return (
+    <p data-testid="train-bot-verdict-line">
+      {opening.opener} <span data-testid="train-bot-fact">{clause.fact}</span> {clause.guessLabel}{' '}
+      <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />
+      {clause.joiner}
+      {clause.moveLabel} <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
+      {opening.lookCloser !== null && (
+        <>
+          {' '}
+          <span data-testid="train-bot-look-closer">{opening.lookCloser}</span>
+        </>
+      )}
+    </p>
+  );
+}
+
+/**
+ * The return tail, on its own muted line under the verdict.
  *
  * A `trainRevealCache` entry written by an older bundle
  * restores a verdict without `source` at runtime despite the TS type calling
@@ -76,15 +94,12 @@ export interface TrainVerdictDetailsProps {
  * all, the one nullish default at this consumption site, rather than
  * guessing from a possibly-unrelated due_date.
  */
-function VerdictParagraph({
+function ReturnTail({
   verdict,
-  opening,
-  isBest,
   sessionDate,
   expiresOn,
   isWarmup,
-}: Pick<TrainVerdictDetailsProps, 'verdict' | 'opening' | 'isBest' | 'sessionDate' | 'expiresOn' | 'isWarmup'>): ReactElement {
-  const clause = verdictClauseParts(verdict.correct_guess, verdict.move_quality, isBest);
+}: Pick<TrainVerdictDetailsProps, 'verdict' | 'sessionDate' | 'expiresOn' | 'isWarmup'>): ReactElement | null {
   const returnTail =
     verdict.source === undefined
       ? ''
@@ -96,37 +111,16 @@ function VerdictParagraph({
           session_date: sessionDate,
           expires_on: expiresOn,
         });
+  if (returnTail === '') return null;
   // A mastered/parked/herring/filler item's tail explains WHY it won't
   // return — it is not itself a return promise. `train-bot-return-tail`
   // (the testid a future date-check UI could key off) is reserved for the
-  // two genuine promises (next-session / in-N-days); the terminal variants
-  // still render their explanatory text, just without that testid.
+  // two genuine promises (next-session / in-N-days).
   const isReturnPromise =
-    verdict.source === 'sr_item' &&
-    verdict.item_status !== 'mastered' &&
-    verdict.item_status !== 'parked' &&
-    returnTail !== '';
+    verdict.source === 'sr_item' && verdict.item_status !== 'mastered' && verdict.item_status !== 'parked';
   return (
-    // One flowing paragraph, not one <p> per sentence: stacked lines ate too
-    // much vertical space on phones. The testids stay on inline spans.
-    <p data-testid="train-bot-verdict-line">
-      {opening.opener} {clause.guessLabel}{' '}
-      <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
-      {clause.moveLabel}{' '}
-      <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
-      {opening.lookCloser !== null && (
-        <>
-          {' '}
-          <span data-testid="train-bot-look-closer">{opening.lookCloser}</span>
-        </>
-      )}
-      {returnTail !== '' && isReturnPromise && (
-        <>
-          {' '}
-          <span data-testid="train-bot-return-tail">{returnTail}</span>
-        </>
-      )}
-      {returnTail !== '' && !isReturnPromise && <> {returnTail}</>}
+    <p className="text-muted-foreground" data-testid={isReturnPromise ? 'train-bot-return-tail' : 'train-bot-tail'}>
+      {returnTail}
     </p>
   );
 }
@@ -134,55 +128,41 @@ function VerdictParagraph({
 export function TrainVerdictDetails({
   verdict,
   opening,
-  isBest,
+  clause,
   sessionDate,
   expiresOn,
   isWarmup,
-  guess,
-  guessProse,
   motif,
   alsoFineSanList,
   leading,
 }: TrainVerdictDetailsProps): ReactElement {
+  const showExtras = motif !== null || alsoFineSanList !== '';
   return (
     <div className="flex flex-col gap-2">
       {/* flow-root contains the floated avatar, so a verdict shorter than the
           avatar never lets the separator block wrap up beside it. */}
       <div className="flow-root">
         {leading}
-        <VerdictParagraph
-          verdict={verdict}
-          opening={opening}
-          isBest={isBest}
-          sessionDate={sessionDate}
-          expiresOn={expiresOn}
-          isWarmup={isWarmup}
-        />
+        <VerdictParagraph opening={opening} clause={clause} />
+        <ReturnTail verdict={verdict} sessionDate={sessionDate} expiresOn={expiresOn} isWarmup={isWarmup} />
       </div>
-      <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="train-verdict-guess">
-        {/* No score chip on this line, the verdict clause's guess pill above
-            already states the call's points. */}
-        <p className="font-semibold">Your call: {guess !== null ? GUESS_CALL_LABELS[guess] : ''}</p>
-        {guessProse !== null && (
-          <p className="text-sm" data-testid="train-verdict-guess-prose">
-            {guessProse}
-          </p>
-        )}
-        {motif !== null && (
-          <p className="text-sm text-muted-foreground" data-testid="train-reveal-motif">
-            Motif: {motif}
-          </p>
-        )}
-        {alsoFineSanList !== '' && (
-          <p className="text-sm" data-testid="train-reveal-also-fine">
-            {/* "e.g." because the vetted list is not exhaustive: a soft puzzle
-                serves only the deep best + second-best, and even the herring
-                ladder stops at MultiPV-5 — other good moves may exist beyond
-                what the server certified. */}
-            Also fine, e.g. {alsoFineSanList}
-          </p>
-        )}
-      </div>
+      {showExtras && (
+        <p className="border-t border-border pt-2 text-sm" data-testid="train-verdict-extras">
+          {motif !== null && (
+            <span className="text-sm text-muted-foreground" data-testid="train-reveal-motif">
+              Motif: {motif}
+            </span>
+          )}
+          {motif !== null && alsoFineSanList !== '' && ' · '}
+          {alsoFineSanList !== '' && (
+            // "e.g." because the vetted list is not exhaustive: a soft puzzle
+            // serves only the deep best + second-best, and even the herring
+            // ladder stops at MultiPV-5 — other good moves may exist beyond
+            // what the server certified.
+            <span data-testid="train-reveal-also-fine">Also fine, e.g. {alsoFineSanList}</span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Train: the puzzle verdict is now one short sentence that states what the position was and what you scored ("Only one move works here. You called it +1 and found it +2."), replacing three blocks that repeated each other. Return dates read "Back in 3 days", and motif and alternative moves share one line.
+
 ### Fixed
 
 - Background analysis no longer replaces a lichess-analyzed game's lichess evaluations with FlawChess engine evaluations.

@@ -4,7 +4,7 @@
  * Auto-opens as soon as grading and the solve POST have BOTH landed — no
  * "show solution" tap. Order: the verdict surface (a one-line strip on
  * phones, the full verdict card on desktop, both carrying the same
- * `TrainVerdictDetails` body, which includes the guess feedback), the mastery
+ * `TrainVerdictDetails` body), the mastery
  * banner, a chips row (You / Best / Game, each with its quality mark, SAN and
  * eval) with ONE move list under it, then the compact game footer. The chips
  * pick a line, the move list steps it, and the board follows the single
@@ -43,11 +43,9 @@ import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
-import { verdictStripLine } from '@/lib/trainBotCopy';
-import type { VerdictCopy, TourTarget } from '@/lib/trainBotCopy';
+import { verdictClauseParts, verdictStripLine } from '@/lib/trainBotCopy';
+import type { VerdictClauseInput, VerdictCopy, TourTarget } from '@/lib/trainBotCopy';
 import type { Persona } from '@/lib/personas/personaRegistry';
-import { guessFeedbackProse } from '@/lib/trainGuessLabels';
-import type { Guess } from '@/lib/trainGuessLabels';
 import { revealBestUciOf, sanFromUci } from '@/lib/trainRevealLines';
 import type { ChipGroup, GameMoveLineState, RoleKey } from '@/lib/trainRevealLines';
 import type { GradeResult, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
@@ -70,11 +68,6 @@ export interface TrainRevealProps {
    * `TrainSolveScreen`, which already holds it. Supplies the reveal-time
    * "played in game" search via `startGameMoveSearch`. */
   gradingEngine: TrainGradingEngine;
-  /** The guess the user committed before playing a move — spelled out on the
-   * verdict row with the SAME wording as the guess buttons.
-   * Null only in a defensive/impossible state (a verdict cannot exist
-   * without a prior guess commit). */
-  guess: Guess | null;
   /** The UCI of the move the user actually played — doubles as the 'your'
    * role's key for deciding whether the game move needs its own search. */
   playedMoveUci: string | null;
@@ -165,7 +158,6 @@ export function TrainReveal({
   onRetrySolve,
   onNext,
   gradingEngine,
-  guess,
   playedMoveUci,
   gradeResult,
   instantGrade = null,
@@ -295,29 +287,24 @@ export function TrainReveal({
   const showChipRow = chips.length > 0 || sanOnlyGameMove !== null;
   const tourSpotlightVerdict = tourTarget === 'verdict';
 
-  // The verdict details state the verdict but never say why; this derives one
-  // prose sentence (`guessFeedbackProse`). `verdict.source === 'sr_item'` is
-  // the "user's own blunder vs a red herring/sharp filler" predicate, the same
-  // one the game footer uses. Reads `verdict`, not `revealQuery.data`, for the
-  // synchronous-timing reason the game footer's comment documents.
-  // `move_quality` joins it so the sentence can never claim the user played
-  // the critical move on the strength of the guess alone.
-  // The disagreement line reads the SERVER's `disagreement` flag only (never
-  // the phone's own outcome). The key SAN comes from `gradeResult.bestMoveUci`
-  // because on the keyed path that IS the server key.
+  // The scored verdict sentence's input, shared by the strip line and the
+  // details body. `verdict.source === 'sr_item'` is the "user's own blunder vs
+  // a red herring/sharp filler" predicate, the same one the game footer uses.
+  // Reads `verdict`, not `revealQuery.data`, for the synchronous-timing reason
+  // the game footer's comment documents. The disagreement wording reads the
+  // SERVER's `disagreement` flag only (never the phone's own outcome). The key
+  // SAN comes from `gradeResult.bestMoveUci` because on the keyed path that IS
+  // the server key.
   const disagreement = verdict.disagreement ?? false;
-  const keySan = disagreement ? sanFromUci(puzzle.fen, gradeResult?.bestMoveUci ?? null) : null;
-  const guessProse =
-    guess !== null
-      ? guessFeedbackProse(
-          guess,
-          verdict.correct_guess,
-          verdict.source === 'sr_item',
-          verdict.move_quality,
-          disagreement,
-          keySan,
-        )
-      : null;
+  const clauseInput: VerdictClauseInput = {
+    puzzleType: verdict.puzzle_type,
+    correctGuess: verdict.correct_guess,
+    moveTier: verdict.move_quality,
+    isBest,
+    fromOwnBlunder: verdict.source === 'sr_item',
+    disagreement,
+    keySan: disagreement ? sanFromUci(puzzle.fen, gradeResult?.bestMoveUci ?? null) : null,
+  };
   const alsoFineSanList = alsoFineMoves
     .map((f) => sanFromUci(puzzle.fen, f.uci))
     .filter((san): san is string => san !== null)
@@ -329,12 +316,10 @@ export function TrainReveal({
         leading={leading}
         verdict={verdict}
         opening={verdictOpening}
-        isBest={isBest}
+        clause={verdictClauseParts(clauseInput)}
         sessionDate={sessionDate}
         expiresOn={expiresOn}
         isWarmup={isWarmup}
-        guess={guess}
-        guessProse={guessProse}
         motif={motif}
         alsoFineSanList={alsoFineSanList}
       />
@@ -364,7 +349,7 @@ export function TrainReveal({
           <TrainVerdictStrip
             persona={verdictBot}
             points={scorePuzzle(verdict.correct_guess, verdict.move_quality)}
-            line={verdictStripLine(verdict.correct_guess, verdict.move_quality, isBest)}
+            line={verdictStripLine(clauseInput)}
             onExpand={onStripExpand}
             spotlight={tourSpotlightVerdict}
           >
