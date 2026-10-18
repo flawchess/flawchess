@@ -137,7 +137,7 @@ function sentenceState(reason: OpeningVerdictReason | null): SentenceState {
 const SENTENCE_TOO_FEW = 'Too few games to call it yet.';
 const SENTENCE_SCORE_BELOW = 'You score clearly below 50% from these positions.';
 const SENTENCE_SCORE_ABOVE = 'You score clearly above 50% from these positions.';
-const SENTENCE_SCORE_EVEN = 'You score about 50% here.';
+const SENTENCE_SCORE_EVEN = 'You score in the typical range here.';
 const SENTENCE_CHANCE = 'Nothing clear yet. The differences could still be chance.';
 
 /**

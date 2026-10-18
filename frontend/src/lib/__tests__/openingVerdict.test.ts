@@ -183,7 +183,7 @@ describe('openingVerdictSentence', () => {
     expect(openingVerdictSentence('typical', 'typical')).toBe(
       'An ordinary opening for you: average positions and about 50%.',
     );
-    expect(openingVerdictSentence('typical', null)).toBe('You score about 50% here.');
+    expect(openingVerdictSentence('typical', null)).toBe('You score in the typical range here.');
     expect(openingVerdictSentence('chance', 'typical')).toBe(
       'Average positions out of the opening. Your score could still be chance.',
     );
