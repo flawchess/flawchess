@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { sanArrayToPgn } from '@/lib/pgn';
-import { stripEcoSuffix } from '@/lib/openingVerdict';
+import { percentOf, stripEcoSuffix } from '@/lib/openingVerdict';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 import type { BookmarkPhaseEntryItem, MostPlayedOpeningsResponse, OpeningWDL } from '@/types/stats';
 import type {
@@ -8,8 +8,6 @@ import type {
   PositionBookmarkResponse,
   TimeSeriesResponse,
 } from '@/types/position_bookmarks';
-
-const PERCENT_SCALE = 100;
 
 export type RepertoireRowKind = 'bookmark' | 'current' | 'past';
 
@@ -61,10 +59,6 @@ interface UseRepertoireRowsResult {
   bookmarkRows: RepertoireRowModel[];
   currentRows: RepertoireRowModel[];
   pastRows: RepertoireRowModel[];
-}
-
-function pct(count: number, total: number): number {
-  return total > 0 ? (count / total) * PERCENT_SCALE : 0;
 }
 
 function mostPlayedRow(
@@ -125,9 +119,9 @@ function bookmarkRow(
     wins: series.total_wins,
     draws: series.total_draws,
     losses: series.total_losses,
-    winPct: pct(series.total_wins, series.total_games),
-    drawPct: pct(series.total_draws, series.total_games),
-    lossPct: pct(series.total_losses, series.total_games),
+    winPct: percentOf(series.total_wins, series.total_games),
+    drawPct: percentOf(series.total_draws, series.total_games),
+    lossPct: percentOf(series.total_losses, series.total_games),
     lastPlayedAt: series.last_played_at ?? null,
     isCurrent: series.is_current,
     // Score verdict inputs are server-side (D-18), identical to the most-played rows.

@@ -7,13 +7,12 @@ import { SECTION_HEADING_CLASS } from '@/components/openings/stats/headingClasse
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import { trackFeature } from '@/lib/analytics';
+import { REPERTOIRE_MIN_GAMES_FOR_VERDICT } from '@/lib/openingVerdict';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 
 /** Cards shown per section before the "N more" toggle (two rows of the lg 2-column grid). */
 const INITIAL_VISIBLE_PER_SECTION = 4;
 const SKELETON_SECTION_COUNT = 2;
-/** Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
-const MIN_GAMES_PER_FINDING = 20;
 const MERGED_EMPTY_TITLE = 'Moves that Stand Out';
 const ZONE_DIVIDER_LABEL = 'Move insights';
 
@@ -237,7 +236,7 @@ function MergedEmpty({ color }: { color: FindingColor }) {
     <div className="space-y-1" data-testid="opening-findings-empty">
       <h2 className={SECTION_HEADING_CLASS}>{MERGED_EMPTY_TITLE}</h2>
       <p className="text-sm text-muted-foreground">
-        No moves stand out as {colorLabel(color)} yet. A move needs at least {MIN_GAMES_PER_FINDING} games
+        No moves stand out as {colorLabel(color)} yet. A move needs at least {REPERTOIRE_MIN_GAMES_FOR_VERDICT} games
         before it can show up here.
       </p>
     </div>

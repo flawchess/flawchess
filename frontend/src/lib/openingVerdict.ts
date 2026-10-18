@@ -62,6 +62,41 @@ export interface OpeningVerdictInput {
   games: number;
 }
 
+/** Score verdict input: the score against 50% over the card's games. */
+export function scoreVerdictInput(
+  score: number,
+  confidence: ConfidenceLevel,
+  games: number,
+): OpeningVerdictInput {
+  return { delta: scoreDelta(score), band: SCORE_VERDICT_BAND, confidence, games };
+}
+
+/** The eval sample a card judges; avgEvalPawns null or evalN 0 means there is nothing to judge. */
+export interface EvalSample {
+  avgEvalPawns: number | null;
+  evalN: number;
+  confidence: ConfidenceLevel;
+  color: 'white' | 'black';
+}
+
+/** Eval verdict input centred on the colour baseline, or null when the card has no eval. */
+export function evalVerdictInput(sample: EvalSample): OpeningVerdictInput | null {
+  if (sample.avgEvalPawns === null || sample.evalN <= 0) return null;
+  return {
+    delta: sample.avgEvalPawns - evalBaselinePawns(sample.color),
+    band: EVAL_VERDICT_BAND,
+    confidence: sample.confidence,
+    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
+    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
+    games: sample.evalN,
+  };
+}
+
+/** count / total as a 0-100 percentage; 0 for an empty total. */
+export function percentOf(count: number, total: number): number {
+  return total > 0 ? (count / total) * PERCENT_SCALE : 0;
+}
+
 /** Precedence: too few games, then inside the band, then not confident, then the sign. */
 export function openingVerdictReason(input: OpeningVerdictInput): OpeningVerdictReason {
   if (input.games < REPERTOIRE_MIN_GAMES_FOR_VERDICT) return 'too-few';

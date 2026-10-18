@@ -230,7 +230,7 @@ describe('OpeningFindings cards and N more', () => {
       }),
     );
     expect(screen.getByTestId('opening-findings-weakness-card-0-eval-none')).toBeTruthy();
-    expect(screen.queryByTestId('opening-findings-weakness-card-0-eval')).toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-card-0-eval-bar')).toBeNull();
   });
 });
 

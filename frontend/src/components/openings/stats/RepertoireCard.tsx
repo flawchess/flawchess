@@ -1,48 +1,34 @@
 import { useMemo, useState } from 'react';
-import { Archive, ArrowRightLeft, Bookmark, BookmarkMinus, BookmarkPlus, ChevronDown, Swords } from 'lucide-react';
+import { ArrowRightLeft, Bookmark, BookmarkMinus, BookmarkPlus, ChevronDown, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { ScoreChart } from '@/components/charts/ScoreChart';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { LoadError } from '@/components/ui/load-error';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
-import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
-import { VerdictBar } from '@/components/openings/stats/VerdictBar';
 import { ScoreLine } from '@/components/openings/stats/ScoreLine';
-import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
+import {
+  CardVerdictGrid,
+  EvalVerdictLine,
+  LastPlayedIndicator,
+  VerdictSentence,
+} from '@/components/openings/stats/CardParts';
+import { CARD_BOARD_SIZE, CARD_LINK_BUTTON_CLASS } from '@/components/openings/stats/cardLayout';
 import { useCreatePositionBookmark, useDeletePositionBookmark } from '@/hooks/usePositionBookmarks';
-import { useReadiness } from '@/hooks/useReadiness';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { trackFeature } from '@/lib/analytics';
-import { formatSignedGap } from '@/lib/gapBar';
 import {
-  EVAL_VERDICT_BAND,
-  SCORE_VERDICT_BAND,
-  evalBaselinePawns,
-  formatEvalCompact,
   isFadedRow,
-  openingVerdict,
-  openingVerdictReason,
-  openingVerdictSentence,
   scoreAccentColor,
-  scoreDelta,
-  type OpeningVerdictInput,
+  scoreVerdictInput,
+  type EvalSample,
 } from '@/lib/openingVerdict';
 import { pgnToSanArray } from '@/lib/pgn';
 import { lastMoveSquares } from '@/lib/sanToSquares';
-import { formatRelativeDate } from '@/lib/relativeDate';
 import { UNRELIABLE_OPACITY } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { useOpeningRowTimeSeries } from '@/pages/openings/useOpeningRowTimeSeries';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
-
-const BOARD_SIZE = 128;
-const NO_VALUE = '—';
-const EVAL_LABEL = 'Eval after opening';
-const EVAL_LABEL_SHORT = 'Eval';
-const NOT_PLAYED_RECENTLY = 'Not played recently';
-const LINK_BUTTON_CLASS =
-  'flex items-center gap-1 text-sm text-brand-brown-light transition-colors hover:text-brand-brown-highlight disabled:opacity-50';
 
 interface RepertoireCardProps {
   row: RepertoireRowModel;
@@ -55,92 +41,13 @@ interface RepertoireCardProps {
   onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
 }
 
-function scoreInput(row: RepertoireRowModel): OpeningVerdictInput {
+function evalSample(row: RepertoireRowModel): EvalSample {
   return {
-    delta: scoreDelta(row.score),
-    band: SCORE_VERDICT_BAND,
-    confidence: row.scoreConfidence,
-    games: row.games,
-  };
-}
-
-/** Null when the row has no eval to judge. */
-function evalInput(row: RepertoireRowModel): OpeningVerdictInput | null {
-  if (row.avgEvalPawns === null || row.evalN <= 0) return null;
-  return {
-    delta: row.avgEvalPawns - evalBaselinePawns(row.color),
-    band: EVAL_VERDICT_BAND,
+    avgEvalPawns: row.avgEvalPawns,
+    evalN: row.evalN,
     confidence: row.evalConfidence,
-    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
-    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
-    games: row.evalN,
+    color: row.color,
   };
-}
-
-function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
-  const { tier2 } = useReadiness();
-  // Eval needs Stockfish analysis: show the pending placeholder until tier 2 is reached.
-  if (!tier2) return <EvalCpuPlaceholder />;
-  const input = evalInput(row);
-  if (row.avgEvalPawns === null || input === null) {
-    return (
-      <div
-        className="flex items-center justify-between text-sm text-muted-foreground"
-        data-testid={`${testId}-eval-none`}
-      >
-        <span>{EVAL_LABEL}</span>
-        <span>{NO_VALUE}</span>
-      </div>
-    );
-  }
-  const baseline = evalBaselinePawns(row.color);
-  return (
-    <VerdictBar
-      delta={input.delta}
-      band={EVAL_VERDICT_BAND}
-      verdict={openingVerdict(input)}
-      valueText={formatEvalCompact(row.avgEvalPawns)}
-      zeroTickDelta={-baseline}
-      centreSwatch={row.color}
-      testId={`${testId}-eval-bar`}
-      ariaLabel={`${EVAL_LABEL} ${formatSignedGap(row.avgEvalPawns)}, centred on an average ${row.color} game at ${formatSignedGap(baseline)}`}
-      leading={
-        // Phones shorten the label so it fits beside the value on one line.
-        <span className="text-muted-foreground">
-          <span className="sm:hidden">{EVAL_LABEL_SHORT}</span>
-          <span className="max-sm:hidden">{EVAL_LABEL}</span>
-        </span>
-      }
-      trailing={
-        <EvalVerdictPopover
-          testId={`${testId}-eval-info`}
-          label={EVAL_LABEL}
-          avgEvalPawns={row.avgEvalPawns}
-          evalN={row.evalN}
-          color={row.color}
-          reason={openingVerdictReason(input)}
-          ciLow={row.evalCiLow}
-          ciHigh={row.evalCiHigh}
-          pValue={row.evalPValue}
-        />
-      }
-    />
-  );
-}
-
-/** The Score and Eval verdicts read together in one muted line. */
-function VerdictSentence({ row, testId }: { row: RepertoireRowModel; testId: string }) {
-  const { tier2 } = useReadiness();
-  const evalIn = tier2 ? evalInput(row) : null;
-  const sentence = openingVerdictSentence(
-    openingVerdictReason(scoreInput(row)),
-    evalIn ? openingVerdictReason(evalIn) : null,
-  );
-  return (
-    <p className="text-sm text-muted-foreground" data-testid={`${testId}-sentence`}>
-      {sentence}
-    </p>
-  );
 }
 
 /**
@@ -171,7 +78,7 @@ function BookmarkLink({ row, testId }: { row: RepertoireRowModel; testId: string
   return (
     <button
       type="button"
-      className={LINK_BUTTON_CLASS}
+      className={CARD_LINK_BUTTON_CLASS}
       disabled={create.isPending || remove.isPending}
       onClick={handleClick}
       data-testid={`${testId}-btn-bookmark`}
@@ -228,7 +135,7 @@ function CardLinks({
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <button
         type="button"
-        className={LINK_BUTTON_CLASS}
+        className={CARD_LINK_BUTTON_CLASS}
         aria-label="Open this line in the Move Explorer"
         data-testid={`${testId}-btn-moves`}
         onClick={onOpenMoves}
@@ -238,7 +145,7 @@ function CardLinks({
       </button>
       <button
         type="button"
-        className={LINK_BUTTON_CLASS}
+        className={CARD_LINK_BUTTON_CLASS}
         aria-label={`View ${row.games} games for this line`}
         data-testid={`${testId}-btn-games`}
         onClick={onOpenGames}
@@ -250,7 +157,7 @@ function CardLinks({
       <BookmarkLink row={row} testId={testId} />
       <button
         type="button"
-        className={cn(LINK_BUTTON_CLASS, 'ml-auto')}
+        className={cn(CARD_LINK_BUTTON_CLASS, 'ml-auto')}
         aria-expanded={chartOpen}
         onClick={onToggleChart}
         data-testid={`${testId}-toggle`}
@@ -281,8 +188,6 @@ export function RepertoireCard({
 }: RepertoireCardProps) {
   const [chartOpen, setChartOpen] = useState(false);
   const testId = `repertoire-card-${index}`;
-  // Any card outside the current repertoire window: stale bookmarks and Played before rows.
-  const stale = !row.isCurrent;
   const lastMove = useMemo(
     () => lastMoveSquares(pgnToSanArray(row.moveLine)) ?? undefined,
     [row.moveLine],
@@ -298,10 +203,13 @@ export function RepertoireCard({
     else onOpenGames(row.moveLine, row.color);
   };
 
+  const scoreInput = scoreVerdictInput(row.score, row.scoreConfidence, row.games);
+  const sample = evalSample(row);
+
   return (
     <Card
       data-testid={testId}
-      accentColor={scoreAccentColor(scoreInput(row))}
+      accentColor={scoreAccentColor(scoreInput)}
       style={isFadedRow(row.games) ? { opacity: UNRELIABLE_OPACITY } : undefined}
     >
       <CardHeader as="h4" size="compact" className="items-start text-base">
@@ -311,60 +219,47 @@ export function RepertoireCard({
         <span className="min-w-0 break-words" data-testid={`${testId}-name`}>
           {row.name}
         </span>
-        {(row.lastPlayedAt || stale) && (
-          <span
-            className="ml-auto flex shrink-0 items-center gap-1.5 text-sm font-normal whitespace-nowrap text-muted-foreground"
-            data-testid={`${testId}-last-played`}
-          >
-            {row.lastPlayedAt && formatRelativeDate(row.lastPlayedAt)}
-            {/* Indicator only, not an action: marks openings outside the current repertoire. */}
-            {stale && (
-              <Archive
-                className="h-4 w-4"
-                role="img"
-                aria-label={NOT_PLAYED_RECENTLY}
-                data-testid={`${testId}-stale-icon`}
-              >
-                <title>{NOT_PLAYED_RECENTLY}</title>
-              </Archive>
-            )}
-          </span>
-        )}
+        {/* Stale = outside the current repertoire window: stale bookmarks and Played before rows. */}
+        <LastPlayedIndicator lastPlayedAt={row.lastPlayedAt} stale={!row.isCurrent} testId={testId} />
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
-        {/* From sm up the sentence sits under the eval bar beside the board; phones are too
-            narrow for that column, so it spans the card width under the board. */}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 sm:gap-y-2.5">
-          <div className="sm:row-span-2">
+        <CardVerdictGrid
+          board={
             <LazyMiniBoard
               fen={row.fen}
               flipped={row.color === 'black'}
-              size={BOARD_SIZE}
+              size={CARD_BOARD_SIZE}
               lastMove={lastMove}
             />
-          </div>
-          <div className="flex min-w-0 flex-col gap-2.5">
-            <div className="space-y-1.5">
-              <ScoreLine
-                score={row.score}
-                games={row.games}
-                wins={row.wins}
-                draws={row.draws}
-                losses={row.losses}
-                input={scoreInput(row)}
-                ciLow={row.scoreCiLow}
-                ciHigh={row.scoreCiHigh}
-                pValue={row.scorePValue}
+          }
+          metrics={
+            <>
+              <div className="space-y-1.5">
+                <ScoreLine
+                  score={row.score}
+                  games={row.games}
+                  wins={row.wins}
+                  draws={row.draws}
+                  losses={row.losses}
+                  input={scoreInput}
+                  ciLow={row.scoreCiLow}
+                  ciHigh={row.scoreCiHigh}
+                  pValue={row.scorePValue}
+                  testId={testId}
+                />
+                <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
+              </div>
+              <EvalVerdictLine
+                sample={sample}
+                ciLow={row.evalCiLow}
+                ciHigh={row.evalCiHigh}
+                pValue={row.evalPValue}
                 testId={testId}
               />
-              <MiniWDLBar win_pct={row.winPct} draw_pct={row.drawPct} loss_pct={row.lossPct} />
-            </div>
-            <EvalBar row={row} testId={testId} />
-          </div>
-          <div className="col-span-2 sm:col-span-1 sm:col-start-2">
-            <VerdictSentence row={row} testId={testId} />
-          </div>
-        </div>
+            </>
+          }
+          sentence={<VerdictSentence scoreInput={scoreInput} evalSample={sample} testId={testId} />}
+        />
         <CardLinks
           row={row}
           testId={testId}
