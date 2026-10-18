@@ -137,7 +137,7 @@ export function StatsTab({
           />
         )}
 
-        {/* Findings of the selected colour (95%-gated cards) below the repertoire */}
+        {/* Findings of the selected colour below the repertoire: top 10 per section, the 95% gate only colours them (D-38) */}
         <OpeningFindings
           color={color}
           debouncedFilters={debouncedFilters}

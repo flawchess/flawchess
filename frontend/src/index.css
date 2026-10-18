@@ -300,7 +300,7 @@
 }
 
 /* Highlight-pulse for a chessboard arrow's <path>. Used by the deep-link
-   from OpeningInsightsBlock → MoveExplorer to draw
+   from a Stats finding card → MoveExplorer to draw
    the user's eye to the candidate move's arrow on arrival.
 
    The 100% opacity matches the static ARROW_OPACITY (0.75) in

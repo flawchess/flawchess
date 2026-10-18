@@ -77,8 +77,8 @@ class OpeningWDL(BaseModel):
     eval_p_value: float | None = None  # two-sided p-value vs the colour baseline (D-13)
     eval_confidence: Literal["low", "medium", "high"] = "low"
     # MAX(games.played_at) across the games visiting
-    # this opening's full_hash. Drives the "Last played: <relative>" line in
-    # the OpeningStatsCard score-confidence popover. None when every
+    # this opening's full_hash. Drives the repertoire card's relative "last played"
+    # date and the score popover's "Last played" line. None when every
     # contributing game has a NULL played_at (rare).
     last_played_at: datetime.datetime | None = None
     # True when last_played_at is on or after the colour's current-repertoire cutoff

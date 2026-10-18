@@ -83,7 +83,7 @@ class WDLStats(BaseModel):
     # MG-entry eval fields. Mirror the OpeningWDL
     # shape from app/schemas/stats.py so the Openings → Moves "Results played
     # as" section can render the same WDL + Score + Eval three-pillar layout
-    # used by the Stats and Insights tabs. Optional because the position +
+    # used by the Stats tab cards. Optional because the position +
     # filter combo may have no MG-entry rows; the frontend renders an em-dash
     # in that case. Defaults match the OpeningWDL "no eval data" state.
     avg_eval_pawns: float | None = None

@@ -20,7 +20,7 @@ Coverage:
   exposes from_date and to_date
 - TestRollingWindow: single game, same-week games, multi-week sequence, empty position
 - TestWeeklyBuckets: Monday keys, week boundaries, per_week_games, pre-window warm-up
-- TestSeriesVerdictFields: score, p-value, 99% Wilson CI, empty-series defaults
+- TestSeriesVerdictFields: score, p-value, 95% Wilson CI (D-33), empty-series defaults
 - TestIsCurrent: current/past flag against the per-colour repertoire cutoff
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
 - TestDateWindowedTimeSeries: from_date/to_date windowing + warm-up preservation
@@ -897,7 +897,7 @@ class TestWeeklyBuckets:
 
 
 # ---------------------------------------------------------------------------
-# TestSeriesVerdictFields — D-18 score p + 99% Wilson CI per bookmark
+# TestSeriesVerdictFields — D-18 score p + 95% Wilson CI per bookmark (D-33)
 # ---------------------------------------------------------------------------
 
 

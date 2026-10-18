@@ -34,9 +34,9 @@ runtime dependency for sub-1% precision gain. This project lists 11 runtime deps
 critical (CLAUDE.md); adding scipy is out of scope. Using math.erfc is consistent with
 score_confidence.compute_confidence_bucket, which uses the same stdlib approximation.
 
-Callers: opening_eval.finalize_opening_eval (Openings surfaces, colour baseline),
-  endgame_service (endgame-entry eval, 0 cp) and, until their Phase 242 plans land,
-  openings_service / opening_insights_service. Not exposed via routers directly.
+Callers: opening_eval.finalize_opening_eval (every Openings surface: stats_service,
+  openings_service and opening_insights_service, colour baseline) and endgame_service
+  (endgame-entry eval, 0 cp). Not exposed via routers directly.
 """
 
 import math

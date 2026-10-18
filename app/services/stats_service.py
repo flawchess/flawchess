@@ -652,9 +652,10 @@ async def _most_played_for_color(
 ) -> list[OpeningWDL]:
     """Most-played rows for one colour: up to 10 current, then up to 10 past (D-04..D-06).
 
-    Pipeline: top MOST_PLAYED_FETCH_LIMIT rows -> position WDL -> dedupe identical game
-    sets -> drop bookmark twins -> (cutoff-restricted second fetch when current rows run
-    short, D-05 clarified) -> split current/past and cap -> eval metrics for the
+    Pipeline: top MOST_PLAYED_FETCH_LIMIT rows -> position WDL -> _prepare_candidates
+    (drop bookmark twins, then dedupe identical game sets; that order matters, WR-01, then
+    drop rows under MOST_PLAYED_MIN_GAMES) -> (cutoff-restricted second fetch when current
+    rows run short, D-05 clarified) -> split current/past and cap -> eval metrics for the
     survivors only (the expensive batch never sees the full candidate list).
     All awaits are sequential on the one AsyncSession.
     """

@@ -67,8 +67,8 @@ from app.services.score_confidence import (
 # Card findings per section (D-37, D-38): the top 10 by the direction-aware Wilson bound,
 # whatever their confidence. Gating cards at 95% (D-33) left "Moves that Cost You" empty for
 # about two thirds of prod user-colours with 20+ games (2026-10-18), so the gate now only
-# colours a card (frontend openingVerdict). The phone 2-card view with "Show more" is a
-# frontend concern.
+# colours a card (frontend openingVerdict). How many show before the "N more" toggle is a
+# frontend concern (OpeningFindings INITIAL_VISIBLE_PER_SECTION).
 FINDINGS_CARD_CAP: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
@@ -847,8 +847,9 @@ def _partition_section(ranked: list[OpeningInsightFinding]) -> list[OpeningInsig
 
     No confidence gate and no current-first re-sort: the Wilson bound order from
     _rank_section already mixes effect size and sample size, so the clearest findings lead
-    and a low-confidence one only shows when there is room. Older-games findings keep their
-    place in that order and carry the "older games" chip.
+    and a low-confidence one only shows when there is room. Findings outside the current
+    repertoire keep their place in that order (is_current=False only adds the card's
+    "Not played recently" icon).
     """
     return ranked[:FINDINGS_CARD_CAP]
 

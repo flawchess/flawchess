@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * OpeningFindings: the "N more" toggle (4 cards first) and its single Umami event, the collapsed
- * "Not clear yet (n)" cards (D-09, D-10), inline leaning cards and the empty states, the
- * combined verdict sentence, the older-games chip
- * (D-04) and the Moves / Games deep-link callbacks.
+ * OpeningFindings: the "N more" toggle (4 cards first) and its single Umami event, the absence
+ * of the retired "Not clear yet" list (D-34), the empty states, the combined verdict sentence,
+ * the "Not played recently" indicator (D-27) and the Moves / Games deep-link callbacks.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

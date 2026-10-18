@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Tests for ScoreConfidenceTooltip — the body shared by all four
- * score-confidence surfaces (move-explorer Score popover, stats-board score
- * bullet, OpeningStatsCard, OpeningFindingCard).
+ * Tests for ScoreConfidenceTooltip — the move-explorer Score popover body.
  *
  * Optional "Last played: <relative>" line.
  */

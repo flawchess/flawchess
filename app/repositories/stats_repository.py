@@ -454,8 +454,8 @@ class PositionWDL:
         self.draws = draws
         self.losses = losses
         # MAX(games.played_at) for the games contributing to this (full_hash)
-        # bucket; surfaces "Last played: <relative>" in the OpeningStatsCard
-        # score-confidence popover. None when no contributing game has a
+        # bucket; surfaces the repertoire card's relative "last played" date and
+        # the score popover's "Last played" line. None when no contributing game has a
         # populated played_at (rare; column is nullable on Game).
         self.last_played_at = last_played_at
         # SUM(DISTINCT games.id) over the contributing games: with total it fingerprints
