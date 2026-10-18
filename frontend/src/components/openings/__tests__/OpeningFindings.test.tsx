@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * OpeningFindings: the phone "Show more" (D-08) and its single Umami event, the collapsed
+ * OpeningFindings: the "N more" toggle (4 cards first) and its single Umami event, the collapsed
  * "Not clear yet (n)" cards (D-09, D-10), inline leaning cards and the empty states, the
  * combined verdict sentence, the older-games chip
  * (D-04) and the Moves / Games deep-link callbacks.
@@ -141,33 +141,32 @@ afterEach(() => {
   cleanup();
 });
 
-describe('OpeningFindings cards and Show more', () => {
-  const fiveCards = Array.from({ length: 5 }, (_, i) => makeFinding({ n_games: 50 + i }));
+describe('OpeningFindings cards and N more', () => {
+  const tenCards = Array.from({ length: 10 }, (_, i) => makeFinding({ n_games: 50 + i }));
 
-  it('hides cards 3-5 on phones until Show more, and tracks the expand once', () => {
-    renderFindings(emptyResponse({ white_weaknesses: fiveCards }));
+  it('shows four cards, reveals the other six behind "6 more", and tracks the expand once', () => {
+    renderFindings(emptyResponse({ white_weaknesses: tenCards }));
 
-    const card = (i: number) => screen.getByTestId(`opening-findings-weakness-card-${i}`);
-    expect(card(0).parentElement?.className).not.toContain('max-md:hidden');
-    expect(card(1).parentElement?.className).not.toContain('max-md:hidden');
-    expect(card(2).parentElement?.className).toContain('max-md:hidden');
-    expect(card(4).parentElement?.className).toContain('max-md:hidden');
+    const card = (i: number) => screen.queryByTestId(`opening-findings-weakness-card-${i}`);
+    expect(card(3)).not.toBeNull();
+    expect(card(4)).toBeNull();
 
     const more = screen.getByTestId('opening-findings-weakness-btn-more');
     expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(more.textContent).toBe('6 more');
     fireEvent.click(more);
-    expect(card(2).parentElement?.className).not.toContain('max-md:hidden');
-    expect(card(4).parentElement?.className).not.toContain('max-md:hidden');
+    expect(card(9)).not.toBeNull();
+    expect(more.textContent).toBe('Less');
     expect(panelOpenTargets()).toEqual(['opening-insights-more']);
 
     // Collapsing never tracks.
     fireEvent.click(more);
-    expect(card(4).parentElement?.className).toContain('max-md:hidden');
+    expect(card(4)).toBeNull();
     expect(panelOpenTargets()).toEqual(['opening-insights-more']);
   });
 
-  it('renders no Show more button when a section has at most two cards', () => {
-    renderFindings(emptyResponse({ white_weaknesses: fiveCards.slice(0, 2) }));
+  it('renders no N more button when a section has at most four cards', () => {
+    renderFindings(emptyResponse({ white_weaknesses: tenCards.slice(0, 4) }));
     expect(screen.queryByTestId('opening-findings-weakness-btn-more')).toBeNull();
   });
 

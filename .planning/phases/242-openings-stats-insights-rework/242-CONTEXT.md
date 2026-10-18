@@ -189,6 +189,9 @@ discuss-phase" and record defaults for the rest.
   `openingVerdict` rule. The section intros drop "clearly" and say the clearest come first. A tried
   alternative (a separate up-to-4 "leaning" fallback with a note) was rejected by the owner. Amends D-08,
   D-33, D-37.
+- **D-39:** (UAT round 14) "Moves that Work" comes **before** "Moves that Cost You". Each section shows its
+  **first 4 cards on every viewport**, the rest (up to 6 more) behind main's "N more" / "Less" chevron toggle
+  (`INITIAL_VISIBLE_PER_SECTION = 4`), replacing the phone-only 2-card "Show more". Amends D-08.
 
 </decisions>
 

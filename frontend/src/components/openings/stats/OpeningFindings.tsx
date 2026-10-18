@@ -7,11 +7,10 @@ import { SECTION_HEADING_CLASS } from '@/components/openings/stats/headingClasse
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import { trackFeature } from '@/lib/analytics';
-import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 
-/** Phones show this many cards per section before "Show more" (D-08). */
-const INITIAL_VISIBLE_PHONE = 2;
+/** Cards shown per section before the "N more" toggle (two rows of the lg 2-column grid). */
+const INITIAL_VISIBLE_PER_SECTION = 4;
 const SKELETON_SECTION_COUNT = 2;
 /** Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
 const MIN_GAMES_PER_FINDING = 20;
@@ -81,47 +80,54 @@ function FindingsError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-/** Phones only (md:hidden): desktop already shows every card, at most FINDINGS_CARD_CAP. */
+/** "N more" / "Less" toggle under a section's first INITIAL_VISIBLE_PER_SECTION cards (as on main). */
 function ShowMoreButton({
   testId,
+  kind,
+  hiddenCount,
   expanded,
   onToggle,
 }: {
   testId: string;
+  kind: FindingKind;
+  hiddenCount: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
-      className="flex items-center gap-1 px-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:hidden"
+      className="flex items-center gap-1 px-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
       aria-expanded={expanded}
+      aria-label={expanded ? `Show fewer ${kind} findings` : `Show ${hiddenCount} more ${kind} findings`}
       onClick={onToggle}
       data-testid={testId}
     >
       {expanded ? (
         <>
           <ChevronUp className="h-4 w-4" />
-          Show less
+          Less
         </>
       ) : (
         <>
           <ChevronDown className="h-4 w-4" />
-          Show more
+          {hiddenCount} more
         </>
       )}
     </button>
   );
 }
 
-/** Two-column finding cards with the phone "Show more" (D-08); desktop shows every card. */
+/** Two-column finding cards: the first INITIAL_VISIBLE_PER_SECTION, the rest behind "N more". */
 function FindingCardGrid({
   findings,
+  kind,
   testId,
   onOpenMoves,
   onOpenGames,
 }: {
   findings: OpeningInsightFinding[];
+  kind: FindingKind;
   testId: string;
   onOpenMoves: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
@@ -132,24 +138,27 @@ function FindingCardGrid({
     if (!expanded) trackFeature('panel-open', { target: 'opening-insights-more' });
     setExpanded((prev) => !prev);
   };
+  const visibleFindings = expanded ? findings : findings.slice(0, INITIAL_VISIBLE_PER_SECTION);
+  const hiddenCount = findings.length - INITIAL_VISIBLE_PER_SECTION;
   return (
     <>
       {/* Same grid as the repertoire cards (two columns from lg) now that both share one layout. */}
       <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2" data-testid={`${testId}-list`}>
-        {findings.map((finding, i) => (
-          <div key={i} className={cn(!expanded && i >= INITIAL_VISIBLE_PHONE && 'max-md:hidden')}>
-            <FindingCard
-              finding={finding}
-              testId={`${testId}-card-${i}`}
-              onOpenMoves={onOpenMoves}
-              onOpenGames={onOpenGames}
-            />
-          </div>
+        {visibleFindings.map((finding, i) => (
+          <FindingCard
+            key={i}
+            finding={finding}
+            testId={`${testId}-card-${i}`}
+            onOpenMoves={onOpenMoves}
+            onOpenGames={onOpenGames}
+          />
         ))}
       </div>
-      {findings.length > INITIAL_VISIBLE_PHONE && (
+      {hiddenCount > 0 && (
         <ShowMoreButton
           testId={`${testId}-btn-more`}
+          kind={kind}
+          hiddenCount={hiddenCount}
           expanded={expanded}
           onToggle={handleToggle}
         />
@@ -185,6 +194,7 @@ function FindingsSubsection({
     cards.length > 0 ? (
       <FindingCardGrid
         findings={cards}
+        kind={meta.kind}
         testId={testId}
         onOpenMoves={onOpenMoves}
         onOpenGames={onOpenGames}
@@ -253,8 +263,8 @@ interface OpeningFindingsProps {
 
 /**
  * Findings for the selected colour below the repertoire cards: "Moves that Work" and
- * "Moves that Cost You", each the backend's top 10 by Wilson bound, any confidence (D-38), with a
- * phone "Show more" (D-08). Each card's colour carries the 95% verdict, so a finding that could
+ * "Moves that Cost You", each the backend's top 10 by Wilson bound, any confidence (D-38): the
+ * first four cards, the rest behind an "N more" toggle (UAT round 14, main's pattern). Each card's colour carries the 95% verdict, so a finding that could
  * still be chance draws blue. A section without cards says so in one line, and both sections
  * empty merge into one block.
  */
