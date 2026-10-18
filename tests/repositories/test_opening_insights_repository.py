@@ -452,13 +452,14 @@ async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) -> None:
-    """HAVING uses score (W + 0.5·D)/N <= 0.45 OR >= 0.55. Strict
-    <=/>= boundaries: score=0.50 is dropped, score=0.45 / 0.55 surface.
+    """HAVING uses score (W + 0.5·D)/N < 0.45 OR > 0.55. Strict
+    boundaries: score=0.50 and the band edges 0.45 / 0.55 are all dropped (the edge
+    is typical, matching the frontend openingVerdict rule).
 
     Seeds three scenarios at n=20:
     1. 8W/4D/8L → score=(8+2)/20=0.50: 0 rows — neutral
-    2. 8W/6D/6L → score=(8+3)/20=0.55: 1 row — strength boundary surfaces
-    3. 5W/8D/7L → score=(5+4)/20=0.45: 1 row — weakness boundary surfaces
+    2. 8W/6D/6L → score=(8+3)/20=0.55: 0 rows — strength band edge is typical
+    3. 5W/8D/7L → score=(5+4)/20=0.45: 0 rows — weakness band edge is typical
     """
     user_id = 10
 
@@ -466,7 +467,7 @@ async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) 
     H_STRENGTH_ENTRY = 70003
     H_WEAKNESS_ENTRY = 80003
 
-    # Scenario 1: 8W/4D/8L => score=(8+2)/20=0.50 — neutral (strict <=/>=)
+    # Scenario 1: 8W/4D/8L => score=(8+2)/20=0.50 — neutral
     for i in range(8):
         await _seed_game_with_positions(
             db_session,
@@ -510,7 +511,7 @@ async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) 
             ],
         )
 
-    # Scenario 2: 8W/6D/6L => score=(8+3)/20=0.55 — strength boundary
+    # Scenario 2: 8W/6D/6L => score=(8+3)/20=0.55 — strength band edge
     for i in range(8):
         await _seed_game_with_positions(
             db_session,
@@ -554,7 +555,7 @@ async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) 
             ],
         )
 
-    # Scenario 3: 5W/8D/7L => score=(5+4)/20=0.45 — weakness boundary
+    # Scenario 3: 5W/8D/7L => score=(5+4)/20=0.45 — weakness band edge
     for i in range(7):
         await _seed_game_with_positions(
             db_session,
@@ -607,11 +608,11 @@ async def test_having_score_boundaries_drops_neutrals(db_session: AsyncSession) 
 
     entry_hashes_in_result = [r.entry_hash for r in rows]
     assert H_NEUTRAL_ENTRY not in entry_hashes_in_result, "score=0.50 (neutral) should be dropped"
-    assert H_STRENGTH_ENTRY in entry_hashes_in_result, (
-        "score=0.55 boundary (strength) should appear"
+    assert H_STRENGTH_ENTRY not in entry_hashes_in_result, (
+        "score=0.55 band edge (strength) should be dropped"
     )
-    assert H_WEAKNESS_ENTRY in entry_hashes_in_result, (
-        "score=0.45 boundary (weakness) should appear"
+    assert H_WEAKNESS_ENTRY not in entry_hashes_in_result, (
+        "score=0.45 band edge (weakness) should be dropped"
     )
 
 

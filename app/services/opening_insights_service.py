@@ -93,28 +93,30 @@ def _classify_row(
     """Classify a transition row by chess score against the 0.50 pivot.
 
     Score is (W + 0.5·D) / N. Effect-size thresholds are symmetric:
-      - weakness: score <= 0.45 → minor; <= 0.40 → major
-      - strength: score >= 0.55 → minor; >= 0.60 → major
-    Strict <= / >= boundaries. Returns None for neutral positions.
+      - weakness: score < 0.45 → minor; <= 0.40 → major
+      - strength: score > 0.55 → minor; >= 0.60 → major
+    Returns None for neutral positions. Exactly 45% / 55% is the edge of the typical
+    band and stays neutral, matching the frontend openingVerdict rule (WR-03); an
+    inclusive edge listed a 45% move as a weakness while its card read "typical".
 
     Compare score directly against precomputed pivot ± effect thresholds rather
     than against `delta = score - PIVOT`. The literal score values produced by
     integer-row factories (e.g. 0.45 = 9/20) are exactly equal to PIVOT ± EFFECT
     in IEEE-754 (0.50 - 0.05 == 0.45 exactly), but `0.45 - 0.50 == -0.04999…`,
-    which would silently miss strict-<= boundary cases. Direct comparison keeps
-    the strict <= / >= semantics on the boundary.
+    which would put the band edge on the wrong side. Direct comparison keeps the
+    boundary exact.
     """
     score = (row.w + 0.5 * row.d) / row.n
     weakness_minor_threshold = SCORE_PIVOT - MINOR_EFFECT  # 0.45
     weakness_major_threshold = SCORE_PIVOT - MAJOR_EFFECT  # 0.40
     strength_minor_threshold = SCORE_PIVOT + MINOR_EFFECT  # 0.55
     strength_major_threshold = SCORE_PIVOT + MAJOR_EFFECT  # 0.60
-    if score <= weakness_minor_threshold:
+    if score < weakness_minor_threshold:
         severity: Literal["minor", "major"] = (
             "major" if score <= weakness_major_threshold else "minor"
         )
         return "weakness", severity
-    if score >= strength_minor_threshold:
+    if score > strength_minor_threshold:
         severity = "major" if score >= strength_major_threshold else "minor"
         return "strength", severity
     return None

@@ -251,7 +251,7 @@ async def _run_compute(
 
 
 def test_classify_row_neutral_score_046_returns_none() -> None:
-    """Strict <=/>= boundaries: score=0.46 → not a finding (neutral, |delta|<0.05)."""
+    """score=0.46 → not a finding (neutral, |delta|<0.05)."""
     # n=100, w=40, d=12, l=48 → score = (40 + 6)/100 = 0.46
     row = _make_row(n=100, w=40, d=12, losses=48)
     assert _classify_row(row) is None
@@ -264,10 +264,17 @@ def test_classify_row_neutral_score_054_returns_none() -> None:
     assert _classify_row(row) is None
 
 
-def test_classify_row_minor_weakness_at_score_045_exact() -> None:
-    """score=0.45 exactly → minor weakness (delta=-0.05, strict <=)."""
+def test_classify_row_band_edge_045_is_neutral() -> None:
+    """score=0.45 exactly is the typical-band edge → neutral (strict <, WR-03 parity)."""
     # n=20, w=5, d=8, l=7 → score = (5 + 4)/20 = 0.45 exactly
     row = _make_row(n=20, w=5, d=8, losses=7)
+    assert _classify_row(row) is None
+
+
+def test_classify_row_minor_weakness_just_below_045() -> None:
+    """score=0.44 → minor weakness (just past the band edge)."""
+    # n=100, w=38, d=12, l=50 → score = (38 + 6)/100 = 0.44
+    row = _make_row(n=100, w=38, d=12, losses=50)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -286,10 +293,17 @@ def test_classify_row_major_weakness_at_score_040_exact() -> None:
     assert severity == "major"
 
 
-def test_classify_row_minor_strength_at_score_055_exact() -> None:
-    """score=0.55 → minor strength (delta=+0.05, strict >=)."""
+def test_classify_row_band_edge_055_is_neutral() -> None:
+    """score=0.55 exactly is the typical-band edge → neutral (strict >, WR-03 parity)."""
     # n=20, w=8, d=6, l=6 → score = (8 + 3)/20 = 0.55 exactly
     row = _make_row(n=20, w=8, d=6, losses=6)
+    assert _classify_row(row) is None
+
+
+def test_classify_row_minor_strength_just_above_055() -> None:
+    """score=0.56 → minor strength (just past the band edge)."""
+    # n=100, w=50, d=12, l=38 → score = (50 + 6)/100 = 0.56
+    row = _make_row(n=100, w=50, d=12, losses=38)
     result = _classify_row(row)
     assert result is not None
     classification, severity = result
@@ -316,7 +330,7 @@ def test_classify_row_major_strength_at_score_060_exact() -> None:
 def test_min_games_floor_constant_is_20() -> None:
     """Discovery floor raised back from 10 to 20.
 
-    Rationale: the SQL pre-filter on score <= 0.45 OR score >= 0.55 selects on
+    Rationale: the SQL pre-filter on score < 0.45 OR score > 0.55 selects on
     the same statistic the Wald p-value then tests, so at n in 10..19 the
     score-vs-50% test is systematically anti-conservative. n>=20 mitigates the
     worst of the post-selection inflation.
