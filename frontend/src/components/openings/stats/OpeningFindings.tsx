@@ -174,11 +174,14 @@ function FindingCardGrid({
  */
 function ZoneDivider() {
   return (
-    <div className="flex items-center gap-3 pt-2" data-testid="opening-findings-divider">
-      <span className="text-sm font-semibold uppercase tracking-wide whitespace-nowrap text-muted-foreground">
+    // Foreground label and a 25% rule: the first version (muted label, card-edge rule) blended
+    // into the "Played before" toggle above it and the line was all but invisible (UAT round 15).
+    <div className="flex items-center gap-3 pt-6" data-testid="opening-findings-divider">
+      <span className="h-px w-4 bg-foreground/25" aria-hidden="true" />
+      <span className="text-sm font-semibold uppercase tracking-wide whitespace-nowrap text-foreground">
         {ZONE_DIVIDER_LABEL}
       </span>
-      <span className="h-px flex-1 bg-card-edge" aria-hidden="true" />
+      <span className="h-px flex-1 bg-foreground/25" aria-hidden="true" />
     </div>
   );
 }
