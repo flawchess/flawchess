@@ -37,13 +37,14 @@ import { NEUTRAL_PCT_THRESHOLD } from '@/generated/endgameZones';
 import {
   VOLUME_BAR_COLOR,
   NEUTRAL_SERIES_COLOR,
-  TYPICAL_BAND_FILL,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
 } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
+import { TypicalBandWatermark, type BandShapeProps } from './TypicalBandWatermark';
+import { useTypicalBandMaskId } from '@/hooks/useTypicalBandMaskId';
 import type { ClockDiffTimelinePoint } from '@/types/endgames';
 
 // Y axis baseline envelope. Real values can exceed this — see
@@ -51,10 +52,6 @@ import type { ClockDiffTimelinePoint } from '@/types/endgames';
 // instead of silently clipping them to the ±30% edge.
 const Y_DOMAIN_BASE: [number, number] = [-30, 30];
 const Y_TICKS_BASE = [-30, -20, -10, 0, 10, 20, 30];
-
-// Label of the grey band, at the text-sm floor (14px) from frontend/CLAUDE.md.
-const TYPICAL_LABEL = 'typical';
-const TYPICAL_LABEL_FONT_SIZE = 14;
 
 // Mobile breakpoint for hiding the vertical Y-axis label (Tailwind `sm:`).
 const MOBILE_BREAKPOINT_PX = 640;
@@ -144,6 +141,7 @@ export function EndgameClockDiffOverTimeChart({
   timeline,
 }: EndgameClockDiffOverTimeChartProps) {
   const isMobile = useIsMobile();
+  const bandMaskId = useTypicalBandMaskId();
 
   // Belt-and-suspenders: page-level integration also guards on empty, but
   // returning null here keeps the chart fully self-contained.
@@ -224,13 +222,8 @@ export function EndgameClockDiffOverTimeChart({
               yAxisId="value"
               y1={-NEUTRAL_PCT_THRESHOLD}
               y2={NEUTRAL_PCT_THRESHOLD}
-              fill={TYPICAL_BAND_FILL}
               ifOverflow="visible"
-              label={{
-                value: TYPICAL_LABEL,
-                position: 'insideTopLeft',
-                style: { fontSize: TYPICAL_LABEL_FONT_SIZE, fill: 'var(--muted-foreground)' },
-              }}
+              shape={(props: BandShapeProps) => <TypicalBandWatermark {...props} maskId={bandMaskId} />}
             />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
@@ -252,6 +245,9 @@ export function EndgameClockDiffOverTimeChart({
               stroke="currentColor"
               strokeDasharray="3 3"
               strokeOpacity={0.4}
+              // The 0-line runs through the middle of the typical band, so it shares the watermark
+              // cutout instead of striking through the letters.
+              mask={`url(#${bandMaskId})`}
             />
             {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
                 >90-day gap. Vertical x= gap lines are independent from the horizontal

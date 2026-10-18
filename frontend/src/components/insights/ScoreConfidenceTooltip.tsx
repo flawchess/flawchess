@@ -74,9 +74,7 @@ interface ScoreConfidenceTooltipProps {
 
 /**
  * Tooltip body for WDL-context confidence indicators (two-sided Wilson score
- * test against the 50% baseline). Used by OpeningFindingCard (via
- * ScoreConfidencePopover), the move-explorer Score column, and the stats-board
- * Score bullet popover.
+ * test against the 50% baseline). Used by the move-explorer Score column.
  */
 export function ScoreConfidenceTooltip({
   level,

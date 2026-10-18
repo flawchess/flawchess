@@ -1,5 +1,5 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import { Save, Sparkles, SlidersHorizontal, BookMarked, Search } from 'lucide-react';
+import { Save, Sparkles, SlidersHorizontal, Bookmark, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -28,8 +28,6 @@ export type OpeningsDesktopSidebarProps = {
   bookmarks: PositionBookmarkResponse[];
   onReorderBookmarks: (orderedIds: number[]) => void;
   onLoadBookmark: (bkm: PositionBookmarkResponse) => void;
-  chartEnabledMap: Record<number, boolean>;
-  onChartEnabledChange: (id: number, enabled: boolean) => void;
   onOpenSuggestions: () => void;
   onOpenBookmarkDialog: () => void;
   showBookmarksHint: boolean;
@@ -61,8 +59,6 @@ export function OpeningsDesktopSidebar({
   bookmarks,
   onReorderBookmarks,
   onLoadBookmark,
-  chartEnabledMap,
-  onChartEnabledChange,
   onOpenSuggestions,
   onOpenBookmarkDialog,
   showBookmarksHint,
@@ -128,8 +124,6 @@ export function OpeningsDesktopSidebar({
         bookmarks={bookmarks}
         onReorder={onReorderBookmarks}
         onLoad={onLoadBookmark}
-        chartEnabledMap={chartEnabledMap}
-        onChartEnabledChange={onChartEnabledChange}
       />
     </div>
   );
@@ -177,7 +171,7 @@ export function OpeningsDesktopSidebar({
         {
           id: 'bookmarks',
           label: 'Bookmarks',
-          icon: <BookMarked className="h-5 w-5" />,
+          icon: <Bookmark className="h-5 w-5" />,
           content: bookmarkPanelContent,
           footer: bookmarkPanelFooter,
           headerExtra: (
@@ -189,9 +183,6 @@ export function OpeningsDesktopSidebar({
                 </p>
                 <p>
                   Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. You can change the Piece filter directly on each bookmark card.
-                </p>
-                <p>
-                  Use the chart toggle on each bookmark to include or exclude it from the Bookmarked Openings charts.
                 </p>
               </div>
             </InfoPopover>

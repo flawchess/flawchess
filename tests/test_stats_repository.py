@@ -566,7 +566,7 @@ class TestQueryTopOpeningsSqlWDL:
         # Find the King's Pawn Game row
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 1
-        eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses = kpg[0]
+        eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses, ply_count = kpg[0]
         assert wins == 3
         assert draws == 2
         assert losses == 0
@@ -575,6 +575,7 @@ class TestQueryTopOpeningsSqlWDL:
         assert fen  # non-empty FEN from openings_dedup
         assert "/" in fen  # FEN has rank separators
         assert full_hash is not None  # precomputed Zobrist hash from openings_dedup
+        assert ply_count == 1  # trailing ply_count column (used for the D-06 dedupe)
         # King's Pawn Game has ply_count=1 (white-defined). For a white user this
         # is same-color, so display_name has no "vs. " prefix.
         assert display_name == "King's Pawn Game"

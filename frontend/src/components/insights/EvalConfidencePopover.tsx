@@ -12,21 +12,13 @@ interface EvalConfidencePopoverProps {
   pValue: number | null | undefined;
   gameCount: number | null | undefined;
   evalMeanPawns: number | null | undefined;
-  /** User's color for this row — drives which per-color baseline tick is shown. */
-  color: 'white' | 'black';
   testId: string;
   ariaLabel?: string;
   /** Extra classes for the trigger span (e.g. positioning). */
   triggerClassName?: string;
-  /** Forwarded to EvalConfidenceTooltip; pass false when the bullet chart has
-   * no per-color baseline tick (e.g. endgame entry eval). */
-  showBaselineTick?: boolean;
-  /** Forwarded to EvalConfidenceTooltip — which game phase the eval is sampled
-   * at ('opening-end' default, or 'endgame-entry' on the Endgames Games subtab). */
-  evalContext?: 'opening-end' | 'endgame-entry';
 }
 
-// Hover- and tap-activated popover for the eval bullet chart confidence
+// Hover- and tap-activated popover for the Endgames entry-eval bullet confidence
 // details. Trigger is a Search (magnifying-glass) icon rather than the bullet
 // itself so the bullet stays interaction-free.
 export function EvalConfidencePopover({
@@ -34,12 +26,9 @@ export function EvalConfidencePopover({
   pValue,
   gameCount,
   evalMeanPawns,
-  color,
   testId,
   ariaLabel = 'Show eval confidence details',
   triggerClassName,
-  showBaselineTick,
-  evalContext,
 }: EvalConfidencePopoverProps) {
   const [open, setOpen] = useTrackedPopoverOpen(testId);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,9 +81,6 @@ export function EvalConfidencePopover({
             pValue={pValue ?? 1}
             gameCount={gameCount ?? 0}
             evalMeanPawns={evalMeanPawns ?? 0}
-            color={color}
-            showBaselineTick={showBaselineTick}
-            evalContext={evalContext}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

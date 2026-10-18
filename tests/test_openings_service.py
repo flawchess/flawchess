@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.schemas.openings import OpeningsRequest, NextMovesRequest
+from app.schemas.openings import OpeningsRequest, NextMovesRequest, WDLStats
+from app.services.score_confidence import wilson_bounds
 from app.services.openings_service import (
     analyze,
     derive_user_result,
@@ -158,6 +159,13 @@ class TestWDLStats:
         assert response.stats.confidence in {"low", "medium", "high"}
         assert 0.0 <= response.stats.ci_low <= response.stats.score
         assert response.stats.score <= response.stats.ci_high <= 1.0
+        # D-33: the Score verdict popover quotes the 95% Wilson CI (default z), the same
+        # level as the verdict gate. No separate 99% pair is sent any more.
+        assert (response.stats.ci_low, response.stats.ci_high) == pytest.approx(
+            wilson_bounds(response.stats.score, 3)
+        )
+        assert "ci99_low" not in WDLStats.model_fields
+        assert "ci99_high" not in WDLStats.model_fields
 
     @pytest.mark.asyncio
     async def test_zero_matches(self, db_session: AsyncSession) -> None:
@@ -356,6 +364,32 @@ class TestAnalyzeEvalFields:
         # White color → +0.25 baseline (EVAL_BASELINE_PAWNS_WHITE).
         assert response.stats.eval_p_value is not None
         assert response.eval_baseline_pawns == pytest.approx(0.25)
+
+    @pytest.mark.asyncio
+    async def test_eval_is_centred_on_the_colour_baseline(self, db_session: AsyncSession) -> None:
+        """Phase 242 (D-13): MG evals averaging exactly the white baseline (+25 cp) are
+        "typical for the colour". The z-test runs against the baseline, so the bucket is
+        "low" while avg_eval_pawns stays the raw 0.25. Against 0 cp the same sample
+        (mean 25, sd about 18, n = 12) would be a very strong "high"."""
+        for cp in [0, 5, 10, 15, 20, 25, 25, 30, 35, 40, 45, 50]:
+            await _seed_game_with_mg_eval(
+                db_session, full_hash=EVAL_HASH + 200, user_color="white", eval_cp=cp
+            )
+
+        request = OpeningsRequest(target_hash=EVAL_HASH + 200, match_side="full", color="white")
+        response = await analyze(db_session, user_id=1, request=request)
+
+        stats = response.stats
+        assert stats.eval_n == 12
+        assert stats.avg_eval_pawns == pytest.approx(0.25, abs=1e-9)  # raw, uncentred
+        assert stats.eval_confidence == "low"
+        assert stats.eval_p_value is not None and stats.eval_p_value > 0.9
+        # D-33: the 95% CI serves the verdict popover. A "low" (not significant) verdict
+        # means the 95% CI contains the colour baseline, so popover and verdict agree.
+        assert stats.eval_ci_low_pawns is not None and stats.eval_ci_high_pawns is not None
+        assert stats.eval_ci_low_pawns < response.eval_baseline_pawns < stats.eval_ci_high_pawns
+        assert "eval_ci99_low_pawns" not in WDLStats.model_fields
+        assert "eval_ci99_high_pawns" not in WDLStats.model_fields
 
     @pytest.mark.asyncio
     async def test_eval_fields_default_when_no_mg_data(self, db_session: AsyncSession) -> None:

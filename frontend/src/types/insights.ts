@@ -88,7 +88,8 @@ export interface OpeningInsightFinding {
   p_value: number;
   ci_low: number;
   ci_high: number;
-  // MG-entry eval fields (parity with OpeningWDL)
+  // MG-entry eval fields (parity with OpeningWDL). The eval z-test is centred on the
+  // finding colour's baseline.
   avg_eval_pawns?: number | null;
   eval_ci_low_pawns?: number | null;
   eval_ci_high_pawns?: number | null;
@@ -97,9 +98,11 @@ export interface OpeningInsightFinding {
   eval_confidence?: 'low' | 'medium' | 'high';
   // MAX(games.played_at) across all games visiting this (entry, candidate)
   // transition. ISO 8601 string; null when contributing games all have NULL
-  // played_at. Drives the OpeningFindingCard score-confidence popover's
-  // "Last played: <relative>" line.
+  // played_at. Drives the finding card's relative "last played" date.
   last_played_at?: string | null;
+  // True when last_played_at is on or after the colour's current-repertoire cutoff.
+  // False adds the "Not played recently" archive icon; the card order is unchanged.
+  is_current: boolean;
 }
 
 export interface OpeningInsightsResponse {
@@ -107,7 +110,4 @@ export interface OpeningInsightsResponse {
   black_weaknesses: OpeningInsightFinding[];
   white_strengths: OpeningInsightFinding[];
   black_strengths: OpeningInsightFinding[];
-  /** Per-color engine-asymmetry baselines (in pawns). Rendered as a reference tick on the finding card's eval bullet chart. */
-  eval_baseline_pawns_white: number;
-  eval_baseline_pawns_black: number;
 }

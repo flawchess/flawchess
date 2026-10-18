@@ -1,205 +1,148 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { BookMarked } from 'lucide-react';
-import { InfoPopover } from '@/components/ui/info-popover';
-import { CardHeader } from '@/components/ui/card';
+import { useMemo } from 'react';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
-import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
+import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
+import { SCORE_VERDICT_BAND } from '@/lib/openingVerdict';
+import { SCORE_OVER_TIME_LINE, VOLUME_BAR_COLOR } from '@/lib/theme';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
-import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
-import type { BookmarkTimeSeries } from '@/types/position_bookmarks';
+import { TypicalBandWatermark, type BandShapeProps } from './TypicalBandWatermark';
+import { useTypicalBandMaskId } from '@/hooks/useTypicalBandMaskId';
+import type { BookmarkTimeSeries, TimeSeriesPoint } from '@/types/position_bookmarks';
 
 interface ScoreChartProps {
-  bookmarks: PositionBookmarkResponse[];
-  series: BookmarkTimeSeries[];
+  /** One opening's rolling score series (the expanded repertoire row). */
+  series: BookmarkTimeSeries;
+  /** Adds grey weekly bars of games in the opening, tallest bar = bottom 20% of the canvas. */
+  showVolume?: boolean;
+  testId?: string;
 }
 
-// Distinct categorical palette — easy to distinguish across lines
-const CHART_COLORS = [
-  'oklch(0.65 0.20 145)',   // green
-  'oklch(0.60 0.22 30)',    // red-orange
-  'oklch(0.65 0.20 260)',   // blue
-  'oklch(0.70 0.18 80)',    // amber/gold
-  'oklch(0.60 0.22 310)',   // purple
-  'oklch(0.65 0.15 190)',   // teal
-  'oklch(0.55 0.22 350)',   // magenta
-  'oklch(0.70 0.15 110)',   // lime
-];
+/** The hidden bar axis runs [0, barMax * 5], which pins the tallest bar to the bottom 20%. */
+const VOLUME_BAR_DOMAIN_FACTOR = 5;
+const EVEN_SCORE = 0.5;
+const PERCENT_SCALE = 100;
+const SCORE_LINE_WIDTH = 2;
+const EVEN_SCORE_DASH = '4 3';
+const CHART_HEIGHT_CLASS = 'h-52';
+const EMPTY_MESSAGE = 'Not enough games in this opening for a score line yet.';
+// The grey typical band, the same 45-55% the score verdict bar uses.
+const TYPICAL_LOW = EVEN_SCORE - SCORE_VERDICT_BAND;
+const TYPICAL_HIGH = EVEN_SCORE + SCORE_VERDICT_BAND;
+// No left margin: with an auto-width value axis the plot starts right after the tick labels
+// instead of behind Recharts' fixed 60px axis gutter.
+const CHART_MARGIN = { top: 5, right: 5, bottom: 5, left: 0 };
 
-// Mirrors EndgameScoreOverTimeChart: hide the rotated Y-axis label on
-// narrow screens so the chart keeps its full width.
-const MOBILE_BREAKPOINT_PX = 768;
-
-function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined'
-      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return isMobile;
-}
-
-export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
-  const isMobile = useIsMobile();
-  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
-
-  const handleLegendClick = useCallback((dataKey: string) => {
-    setHiddenKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(dataKey)) {
-        next.delete(dataKey);
-      } else {
-        next.add(dataKey);
-      }
-      return next;
-    });
-  }, []);
-
-  // Collect all unique dates across series, sorted chronologically
-  const allDates = useMemo(() => [
-    ...new Set(
-      series.flatMap((s) => s.data.map((p) => p.date))
-    ),
-  ].sort(), [series]);
-
-  const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
-
-  const yAxis = useMemo(() => niceWinRateAxis(
-    series.flatMap((s) => s.data.map((p) => p.score))
-  ), [series]);
-
-  // Empty state: no series data
-  if (allDates.length === 0) {
-    return (
-      <>
-        <CardHeader data-testid="score-chart-header">
-          <BookMarked className="h-5 w-5" />
-          Bookmarked Openings: Score over Time
-          <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
-            Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
-          </InfoPopover>
-        </CardHeader>
-        <div className="p-4 text-center text-muted-foreground py-8">
-          No game history available for saved positions yet.
+function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showVolume: boolean }) {
+  return (
+    <ChartTooltipBox>
+      <div className="font-medium">Week of {formatDateWithYear(point.date)}</div>
+      <div>
+        Score: {Math.round(point.score * PERCENT_SCALE)}%
+        <span className="text-muted-foreground ml-1">(past {point.game_count} games)</span>
+      </div>
+      {showVolume && (
+        <div className="text-muted-foreground">
+          {point.per_week_games} {point.per_week_games === 1 ? 'game' : 'games'} that week
         </div>
-      </>
+      )}
+    </ChartTooltipBox>
+  );
+}
+
+/**
+ * Score over time for one opening: the rolling score line on an ordinal axis over active weeks
+ * (inactivity is cut out, >90-day breaks get a palm-tree marker) and, with showVolume, grey
+ * bars of the games played in it per week. The first point can be dated up to six days before
+ * the filter's from-date because points are keyed by the ISO-week Monday; the ordinal axis
+ * takes the series as it comes.
+ */
+export function ScoreChart({ series, showVolume = false, testId = 'score-chart' }: ScoreChartProps) {
+  const points = series.data;
+  const bandMaskId = useTypicalBandMaskId();
+  const dates = useMemo(() => points.map((p) => p.date), [points]);
+  const formatDateTick = useMemo(() => createDateTickFormatter(dates), [dates]);
+  // The 50% reference line and the typical band have to sit inside the axis even for a
+  // one-sided series.
+  const yAxis = useMemo(
+    () => niceWinRateAxis([...points.map((p) => p.score), TYPICAL_LOW, TYPICAL_HIGH]),
+    [points],
+  );
+  // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
+  const barMax = Math.max(1, ...points.map((p) => p.per_week_games));
+
+  if (points.length === 0) {
+    return (
+      <div className="p-4 text-center text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
+        {EMPTY_MESSAGE}
+      </div>
     );
   }
 
-  // Build chartConfig
-  const chartConfig = Object.fromEntries(
-    bookmarks.map((b, i) => [
-      `bkm_${b.id}`,
-      { label: b.label, color: CHART_COLORS[i % CHART_COLORS.length] },
-    ]),
-  );
-
-  // Build data array with score and game_count per bookmark
-  const data = allDates.map((date) => {
-    const point: Record<string, string | number | undefined> = { date };
-    for (const s of series) {
-      const found = s.data.find((p) => p.date === date);
-      if (found) {
-        point[`bkm_${s.bookmark_id}`] = found.score;
-        point[`bkm_${s.bookmark_id}_game_count`] = found.game_count;
-      }
-      // undefined produces a gap in the line
-    }
-    return point;
-  });
-
   return (
-    <>
-      <CardHeader data-testid="score-chart-header">
-        <BookMarked className="h-5 w-5" />
-        Bookmarked Openings: Score over Time
-        <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
-          Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
-        </InfoPopover>
-      </CardHeader>
-      <div className="p-4">
-      <div className={isMobile ? '' : 'flex items-stretch'}>
-        {!isMobile && (
-          <div
-            className="flex items-center text-xs text-muted-foreground shrink-0 pt-40 -mr-1"
-            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-          >
-            Score
-          </div>
-        )}
-        <ChartContainer config={chartConfig} className="w-full h-72">
-          <LineChart data={data}>
-            <CartesianGrid vertical={false} />
-            <XAxis dataKey="date" tickFormatter={formatDateTick} />
-            <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
-            {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
-                >90-day gap. Placed BEFORE the bookmark Line series so annotations
-                sit behind the data in SVG z-order. allDates is pre-sorted
-                (ascending) — no yAxisId (single default axis). */}
-            {inactivityGapReferenceLines({ dates: allDates })}
-            <ChartTooltip
-              content={({ active, payload, label }) => {
-                if (!active || !payload?.length) return null;
-                return (
-                  <ChartTooltipBox>
-                    <div className="font-medium">{formatDateWithYear(label as string)}</div>
-                    {payload
-                      .filter((item) => item.value !== undefined)
-                      .map((item) => {
-                        // recharts 3: dataKey is DataKey<any> = string | number | function;
-                        // narrow to string for use as a React key and lookup key.
-                        const dataKey = typeof item.dataKey === 'string' || typeof item.dataKey === 'number'
-                          ? String(item.dataKey)
-                          : 'value';
-                        const cfg = chartConfig[dataKey];
-                        const gameCount = item.payload[`${dataKey}_game_count`] as number | undefined;
-                        return (
-                          <div key={dataKey} className="flex items-center gap-1.5">
-                            <div
-                              className="h-2 w-2 shrink-0 rounded-[2px]"
-                              style={{ backgroundColor: item.color }}
-                            />
-                            <span>
-                              {cfg?.label ?? dataKey}: {Math.round((item.value as number) * 100)}%
-                              {gameCount !== undefined && (
-                                <span className="text-muted-foreground ml-1">(past {gameCount} games)</span>
-                              )}
-                            </span>
-                          </div>
-                        );
-                      })}
-                  </ChartTooltipBox>
-                );
-              }}
+    <div data-testid={testId}>
+      <ChartContainer config={{}} className={`w-full ${CHART_HEIGHT_CLASS}`}>
+        <ComposedChart data={points} margin={CHART_MARGIN}>
+          <CartesianGrid vertical={false} yAxisId="value" />
+          <ReferenceArea
+            yAxisId="value"
+            y1={TYPICAL_LOW}
+            y2={TYPICAL_HIGH}
+            ifOverflow="visible"
+            shape={(props: BandShapeProps) => <TypicalBandWatermark {...props} maskId={bandMaskId} />}
+          />
+          <XAxis dataKey="date" tickFormatter={formatDateTick} />
+          <YAxis
+            yAxisId="value"
+            width="auto"
+            domain={yAxis.domain}
+            ticks={yAxis.ticks}
+            tickFormatter={(v: number) => `${Math.round(v * PERCENT_SCALE)}%`}
+          />
+          {showVolume && (
+            <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * VOLUME_BAR_DOMAIN_FACTOR]} />
+          )}
+          <ChartTooltip
+            content={({ active, payload }) => {
+              const point = payload?.[0]?.payload as TimeSeriesPoint | undefined;
+              if (!active || !point) return null;
+              return <ScoreTooltipBody point={point} showVolume={showVolume} />;
+            }}
+          />
+          <ReferenceLine
+            yAxisId="value"
+            y={EVEN_SCORE}
+            stroke="currentColor"
+            strokeOpacity={0.3}
+            strokeDasharray={EVEN_SCORE_DASH}
+            // The 50% line runs through the middle of the band, so it shares the watermark
+            // cutout instead of striking through the letters.
+            mask={`url(#${bandMaskId})`}
+          />
+          {/* Inactivity-gap annotations (palm tree + label per >90-day gap) sit BEFORE the data
+              series so they render behind it. dates is ascending (backend emits by week). */}
+          {inactivityGapReferenceLines({ dates, yAxisId: 'value' })}
+          {showVolume && (
+            <Bar
+              yAxisId="bars"
+              dataKey="per_week_games"
+              fill={VOLUME_BAR_COLOR}
+              legendType="none"
+              isAnimationActive={false}
+              data-testid="score-chart-volume-bars"
             />
-            <ChartLegend
-              content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
-            />
-            {bookmarks.map((b) => {
-              const key = `bkm_${b.id}`;
-              return (
-                <Line
-                  key={b.id}
-                  type="monotone"
-                  dataKey={key}
-                  stroke={`var(--color-${key})`}
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls={true}
-                  hide={hiddenKeys.has(key)}
-                />
-              );
-            })}
-          </LineChart>
-        </ChartContainer>
-      </div>
-      </div>
-    </>
+          )}
+          <Line
+            yAxisId="value"
+            type="monotone"
+            dataKey="score"
+            stroke={SCORE_OVER_TIME_LINE}
+            strokeWidth={SCORE_LINE_WIDTH}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
+      </ChartContainer>
+    </div>
   );
 }

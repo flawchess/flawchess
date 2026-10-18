@@ -1,6 +1,6 @@
 ---
 id: SEED-202
-status: code-fixed; data repair for items 1-2 pending owner decision
+status: resolved (code fixed, items 1 and 2 data repaired on prod 2026-10-17)
 planted: 2026-10-17
 planted_during: owner review of the Phase 241 audit's suspected bugs (INVENTORY §7.2), after the v2.25–v2.27 close
 trigger_when: next session; start with item 1 (tier-4 lichess flag). Owner is not yet sure how big a deal items 1 and 2 are, so measure impact before sizing the fix
@@ -11,9 +11,10 @@ scope: small; a series of /gsd-quick tasks (items 3-8 fit one batch, e.g. /gsd-q
 
 ## Resolution (2026-10-17)
 
-All eight code fixes landed on `main` (three commits after de3a44df7). Open: the data repairs for items 1 and 2.
+All eight code fixes landed on `main` (three commits after de3a44df7) and shipped in PR #427 (production 5672b194c).
+The data repairs for items 1 and 2 ran on prod on 2026-10-17. Nothing is open.
 
-- **Item 1, measured on prod.** Prod runs the drain (`docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
+- **Item 1, measured on prod.** Prod runs the drain (`../../../docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
   Footprint check: compare `game_positions.eval_cp` at ply n-1 with the n-th `[%eval]` in the PGN (lichess
   storage is post-move, so the n-th eval maps to row n-1). Non-guest lichess-eval games with blobs done: 97,174;
   **about 4,000 match less than 50%** (Jun 85, Jul 2,167, Aug 459, Sep 303, Oct 988 by `full_evals_completed_at`
@@ -21,16 +22,29 @@ All eight code fixes landed on `main` (three commits after de3a44df7). Open: the
   (the separate known convention issue), 4,769 ok. The damaged games still carry `lichess_evals_at`, so the app
   treats them as lichess-eval games while their evals and flaws come from our engine. Opening-cache donations
   from them are real engine evals of real positions, so they are probably harmless (not checked further).
-  Repair candidate: rewrite eval_cp/eval_mate from the PGN %evals for games under the threshold, then
-  reclassify. 2,458 non-guest lichess-eval games are still tier-4-pending; with the fix they now take the
+  2,458 non-guest lichess-eval games were still tier-4-pending; with the fix they now take the
   preserve-evals path.
-- **Item 2.** Normalization now writes `*_imported`. Existing 15,289 rows still need the repair described below
-  (owner sign-off: it changes what Library shows for unanalyzed games).
+- **Item 1 data repair: DONE (2026-10-17).** We chose a provenance fix over restoring the lichess evals: the
+  stored evals are real engine evals, consistent with the stored best moves, PVs and flaws, so
+  `scripts/fix_lichess_eval_provenance.py` NULLs `lichess_evals_at` on the overwritten games, which then count
+  as analyzed by us. The lichess evals remain in the PGN. The prod scan (11:54 UTC, after the tier-4 fix was
+  deployed) flagged 3,586 games across 229 users (the shifted-one-ply control is excluded). The owner ran
+  `apply --db prod --execute`. Spot check: 40 of 40 sampled ids now have `lichess_evals_at IS NULL`. The scan
+  file, which `restore` needs, is `temp/lichess-provenance-fix/flagged-games.json` (gitignored, local only).
+  We rejected switching lichess games to our own evals: it would mean recomputing about 109k analyzed games,
+  because our per-ply evals are not stored for them.
+- **Item 2.** Normalization now writes `*_imported`. No user-visible effect: Library and the analysis panel only
+  render accuracy when `analysis_state === 'analyzed'`. The leaked values were only being lost once our compute
+  overwrote them.
+- **Item 2 data repair: DONE (2026-10-17).** The owner ran one UPDATE on prod for `full_evals_completed_at IS NULL`
+  rows: `coalesce` the canonical values into `*_imported`, then NULL the canonical columns. 14,103 rows were
+  affected, fewer than the 15,289 measured that morning. The cause is not verified: the drain probably analyzed
+  some of them in between, and those platform values are lost. Afterwards 0 leaked rows remain.
 - **Item 7.** Removing the dead branch also makes a start-position bookmark (empty `moves`) load the start position
   from the Stats chart instead of leaving the board where it was.
 - **Item 8.** Fixed with `(pointer: coarse)` as proposed. Still not verified on touchscreen hardware.
 
-Source: `.planning/milestones/v2.27-phases/241-codebase-cleanup/241-INVENTORY.md` §7.2 (13 entries, 11 distinct).
+Source: `../../milestones/v2.27-phases/241-codebase-cleanup/241-INVENTORY.md` §7.2 (13 entries, 11 distinct).
 Already fixed in v2.27: §7.2 #3 (NULL `sample_pair`, 07dd60fb4), #6 (Tactic Depth highlight), #8 (auth-route
 401 redirect). #10 was not a bug, #11 duplicates #9. The eight below were re-checked against code on
 2026-10-17 (after the Phase 241 renames, so line numbers are current); items 1 and 2 also against prod.

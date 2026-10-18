@@ -8,11 +8,11 @@ export interface MoveSquares {
 /**
  * Convert a SAN move string into its from/to squares relative to a given FEN.
  *
- * `fen` is the position BEFORE the move (i.e. `finding.entry_fen` from the
- * Insights API). `san` is the candidate move SAN ("Be2", "Nxd4", "O-O", etc.).
+ * `fen` is the position BEFORE the move (e.g. `finding.entry_fen` from the
+ * opening insights API). `san` is the candidate move SAN ("Be2", "Nxd4", "O-O", etc.).
  *
  * chess.js v1.x throws on illegal moves and on malformed FENs. We swallow
- * everything and return `null` so callers (e.g. OpeningFindingCard) can simply
+ * everything and return `null` so callers (e.g. the finding-card arrows) can simply
  * fall back to "no arrow" without try/catch boilerplate at every call site.
  */
 export function sanToSquares(fen: string, san: string): MoveSquares | null {
@@ -39,22 +39,6 @@ export function uciToSquares(uci: string | null): MoveSquares | null {
 }
 
 /**
- * Apply `san` to `fen` and return the resulting full FEN, or `null` if the move
- * is illegal or the FEN is malformed. Render-time safe — never throws. Used by
- * OpeningFindingCard to also show the troll-opening watermark when the
- * candidate move's target position matches a troll line.
- */
-export function fenAfterMove(fen: string, san: string): string | null {
-  try {
-    const chess = new Chess(fen);
-    chess.move(san);
-    return chess.fen();
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Convert a SAN move (relative to `fen`) into its UCI string (e.g. "e2e4",
  * "e7e8q" for a promotion), or `null` on illegal/malformed input. Used to
  * build the grading search's `searchmoves` list — mirrors
@@ -65,6 +49,25 @@ export function sanToUci(fen: string, san: string): string | null {
     const chess = new Chess(fen);
     const move = chess.move(san);
     return `${move.from}${move.to}${move.promotion ?? ''}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * From/to squares of the last move of a SAN line played from the starting position, for the
+ * yellow last-move highlight on a mini board. `null` for an empty or illegal line.
+ */
+export function lastMoveSquares(sans: readonly string[]): MoveSquares | null {
+  if (sans.length === 0) return null;
+  try {
+    const chess = new Chess();
+    let last: MoveSquares | null = null;
+    for (const san of sans) {
+      const move = chess.move(san);
+      last = { from: move.from, to: move.to };
+    }
+    return last;
   } catch {
     return null;
   }

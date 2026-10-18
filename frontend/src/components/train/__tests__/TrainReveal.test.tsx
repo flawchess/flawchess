@@ -17,7 +17,6 @@ import { TrainReveal } from '@/components/train/TrainReveal';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatDateWithYear } from '@/lib/utils';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
-import { guessFeedbackProse } from '@/lib/trainGuessLabels';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { verdictCopy } from '@/lib/trainBotCopy';
 import { buildChipGroups } from '@/lib/trainRevealLines';
@@ -239,7 +238,6 @@ function renderReveal(
     onRetrySolve: vi.fn(),
     onNext: vi.fn(),
     gradingEngine: makeGradingEngine(),
-    guess: null,
     playedMoveUci: null,
     gradeResult: null,
     chips: [],
@@ -247,7 +245,7 @@ function renderReveal(
     onChipSelect: vi.fn(),
     treeList: null,
     verdictBot: PERSONA_REGISTRY['wall-1800'],
-    verdictOpening: verdictCopy(2, true, 'good', false, () => 0),
+    verdictOpening: verdictCopy(2, () => 0),
     isBest: false,
     isWarmup: false,
     ...props,
@@ -281,52 +279,52 @@ describe('TrainReveal', () => {
   // ─── The verdict surface (strip on phones, bubble on desktop) ──
 
   it('desktop: the verdict bubble leads the reveal column with the full details visible and no strip', () => {
-    renderReveal({ guess: 'critical', isBest: true });
+    renderReveal({ isBest: true, alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }] });
     const reveal = screen.getByTestId('train-reveal');
     const bubble = within(reveal).getByTestId('train-verdict-card');
     expect(within(bubble).getByTestId('train-verdict-card-avatar')).not.toBeNull();
-    expect(within(bubble).getByTestId('train-bot-verdict-line').textContent).toContain('best move');
-    expect(within(bubble).getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(within(bubble).getByTestId('train-bot-verdict-line').textContent).toContain('found it');
+    expect(within(bubble).getByTestId('train-verdict-extras')).not.toBeNull();
     expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
     // The bubble is the FIRST thing in the column.
     expect(reveal.firstElementChild).toBe(bubble);
   });
 
-  it('phone: the strip replaces the bubble and the Your-call card, collapsed, with the isBest wording', () => {
+  it('phone: the strip replaces the card, collapsed, and its tap opens the full verdict', () => {
     matchMediaMatches = false;
-    renderReveal({ guess: 'critical', isBest: true });
+    renderReveal({ isBest: true });
     const strip = screen.getByTestId('train-verdict-strip');
     expect(strip.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Right call, best move');
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Called it, found it');
     expect(screen.queryByTestId('train-verdict-card')).toBeNull();
-    expect(screen.queryByTestId('train-verdict-guess')).toBeNull();
+    expect(screen.queryByTestId('train-bot-verdict-line')).toBeNull();
     fireEvent.click(strip);
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull();
   });
 
-  it('phone: without isBest the same verdict reads "good move"', () => {
+  it('phone: on a several-move puzzle isBest selects "best move" vs "good move"', () => {
     matchMediaMatches = false;
-    renderReveal({ guess: 'critical', isBest: false });
-    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Right call, good move');
+    const verdict = makeVerdict({ puzzle_type: 'soft' });
+    const { unmount } = renderReveal({ verdict, isBest: true });
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Called it, best move');
+    unmount();
+    renderReveal({ verdict, isBest: false });
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Called it, good move');
   });
 
   // ─── Verdict rows ─────────────────────────────────────────
 
   // The ✓/✗ marks are score chips stating the
   // points actually earned (guess: 1 or 0).
-  it('verdict-guess row states the spelled-out critical-option wording and a +0 chip for a wrong critical guess', () => {
-    renderReveal({ guess: 'critical', verdict: makeVerdict({ correct_guess: false }) });
-    const text = screen.getByTestId('train-verdict-guess').textContent ?? '';
-    expect(text).toContain('only one good move');
-    expect(text).not.toContain('✗');
+  it('a wrong call reads "Wrong call" with a +0 guess pill', () => {
+    renderReveal({ verdict: makeVerdict({ correct_guess: false }) });
+    expect(screen.getByTestId('train-bot-verdict-line').textContent).toContain('Wrong call');
     expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+0');
   });
 
-  it('verdict-guess row states the spelled-out several-fine wording with a +1 chip for a correct guess', () => {
-    renderReveal({ guess: 'several', verdict: makeVerdict({ correct_guess: true }) });
-    const text = screen.getByTestId('train-verdict-guess').textContent ?? '';
-    expect(text).toContain('several good moves');
-    expect(text).not.toContain('✓');
+  it('a correct call reads "You called it" with a +1 guess pill', () => {
+    renderReveal({ verdict: makeVerdict({ correct_guess: true }) });
+    expect(screen.getByTestId('train-bot-verdict-line').textContent).toContain('You called it');
     expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
   });
 
@@ -381,7 +379,6 @@ describe('TrainReveal', () => {
   // accidentally make this pass for the wrong reason.
   it('the flaw-fixed banner follows the verdict surface and sits above the chips row', async () => {
     renderReveal({
-      guess: 'critical',
       playedMoveUci: 'd2d4',
       chips: makeChips(),
       activeChip: 'your',
@@ -465,7 +462,6 @@ describe('TrainReveal', () => {
   it('renders the chips row and the treeList slot, and a chip tap reaches onChipSelect with its role key', async () => {
     const onChipSelect = vi.fn();
     renderReveal({
-      guess: 'critical',
       playedMoveUci: 'd2d4',
       chips: makeChips(),
       activeChip: 'your',
@@ -482,7 +478,7 @@ describe('TrainReveal', () => {
 
   it('a game move with a SAN but no UCI renders a non-interactive game chip', async () => {
     revealPuzzle.mockResolvedValue(makeReveal({ played_in_game_san: 'Nf3', played_in_game_move_uci: null }));
-    renderReveal({ guess: 'critical', playedMoveUci: 'd2d4', chips: makeChips(), activeChip: 'your' });
+    renderReveal({ playedMoveUci: 'd2d4', chips: makeChips(), activeChip: 'your' });
     const gameChip = await waitFor(() => screen.getByTestId('train-chip-game'));
     expect(gameChip.getAttribute('data-interactive')).toBe('false');
     expect(gameChip.textContent).toContain('Nf3');
@@ -504,7 +500,6 @@ describe('TrainReveal', () => {
       tourTarget: ComponentProps<typeof TrainReveal>['tourTarget'],
     ): Promise<void> => {
       renderReveal({
-        guess: 'critical',
         playedMoveUci: 'd2d4',
         chips: makeChips(),
         activeChip: 'your',
@@ -591,7 +586,6 @@ describe('TrainReveal', () => {
     const startGameMoveSearch = vi.fn();
     const onGameMoveUciChange = vi.fn();
     renderReveal({
-      guess: 'critical',
       playedMoveUci: 'd2d4',
       gradeResult,
       gradingEngine: makeGradingEngine({ startGameMoveSearch }),
@@ -614,7 +608,6 @@ describe('TrainReveal', () => {
     const startGameMoveSearch = vi.fn();
     const onGameMoveUciChange = vi.fn();
     renderReveal({
-      guess: 'critical',
       playedMoveUci: 'd2d4',
       gradeResult,
       gradingEngine: makeGradingEngine({ startGameMoveSearch }),
@@ -691,7 +684,7 @@ describe('TrainReveal', () => {
     await waitFor(() => expect(onGameMoveLineStateChange).toHaveBeenCalledWith({ status: 'loading' }));
     expect(onGameMoveLineStateChange).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'ready' }));
     expect(onGameMoveLineStateChange).not.toHaveBeenCalledWith({ status: 'error' });
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull();
   });
 
   it('a rejecting game-move search reports the error state, and the other reveal blocks still render', async () => {
@@ -720,7 +713,7 @@ describe('TrainReveal', () => {
     });
     await waitFor(() => expect(onGameMoveLineStateChange).toHaveBeenCalledWith({ status: 'error' }));
     // The other reveal blocks (verdict rows, the chips row) still render normally.
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull();
     expect(screen.getByTestId('train-chip-your')).not.toBeNull();
     expect(screen.getByTestId('train-chip-game').getAttribute('data-line-status')).toBe('failed');
   });
@@ -752,9 +745,9 @@ describe('TrainReveal', () => {
     // renders regardless of motif — otherwise this test would trivially
     // pass whenever the whole card is absent, never actually exercising
     // the motif row's own null guard.
-    renderReveal({ guess: 'several' });
+    renderReveal();
     await waitFor(() => expect(getGame).toHaveBeenCalled());
-    expect(screen.getByTestId('train-verdict-guess-prose')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-fact')).not.toBeNull();
     expect(screen.queryByTestId('train-reveal-motif')).toBeNull();
   });
 
@@ -820,7 +813,7 @@ describe('TrainReveal', () => {
     getGame.mockRejectedValue(new Error('boom'));
     renderReveal();
     await waitFor(() => expect(screen.getByTestId('train-gamecard-error')).not.toBeNull());
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull();
   });
 
   it('clock line reads "Played after 13s, with 3:56 left." as its own element under the footer', async () => {
@@ -961,7 +954,6 @@ describe('TrainReveal', () => {
   it('a sharp_filler verdict (puzzle_type "sharp", same as a real SR puzzle) suppresses the mastery banner, the game footer, and the own-game guess prose all together', async () => {
     getGame.mockResolvedValue(makeGame());
     const { client } = renderReveal({
-      guess: 'several',
       verdict: makeVerdict({
         puzzle_type: 'sharp',
         source: 'sharp_filler',
@@ -974,11 +966,9 @@ describe('TrainReveal', () => {
     // No mastery banner (item_status is null anyway, but the source gate
     // must ALSO suppress it independently of item_status).
     expect(screen.queryByTestId('train-flaw-fixed-banner')).toBeNull();
-    // The non-own-game guess prose renders — same sentence a herring gets —
-    // never the SR "not the one you played in the game" variant.
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Indeed, several moves are fine here.',
-    );
+    // A sharp filler is a sharp position: the plain sharp fact, never the
+    // SR "just not your game move" variant.
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe('Only one move works here.');
     // No game footer, and no game-load error either — a sharp filler has no
     // game at all (game_id is structurally null server-side).
     await waitFor(() =>
@@ -990,7 +980,6 @@ describe('TrainReveal', () => {
   it('an sr_item verdict with puzzle_type "sharp" (the exact literal a sharp_filler also carries) still renders all three own-game sites — proves the predicate reads source, not puzzle_type', async () => {
     getGame.mockResolvedValue(makeGame());
     renderReveal({
-      guess: 'several',
       verdict: makeVerdict({
         puzzle_type: 'sharp',
         source: 'sr_item',
@@ -1000,9 +989,6 @@ describe('TrainReveal', () => {
       }),
     });
     expect(screen.getByTestId('train-flaw-fixed-banner')).not.toBeNull();
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Several moves are fine here, but not the one you played in the game.',
-    );
     await waitFor(() => expect(screen.getByTestId('train-reveal-footer')).not.toBeNull());
   });
 
@@ -1013,14 +999,14 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
   });
 
-  it('renders the Also fine list in the guess card body, listing the SAN of every entry, with no button in the card', () => {
+  it('renders the Also fine list in the extras line, listing the SAN of every entry, with no button in it', () => {
     renderReveal({
       alsoFineMoves: [
         { uci: 'd2d4', quality: 'good' },
         { uci: 'g1f3', quality: 'inaccuracy' },
       ],
     });
-    const card = screen.getByTestId('train-verdict-guess');
+    const card = screen.getByTestId('train-verdict-extras');
     const list = within(card).getByTestId('train-reveal-also-fine');
     expect(list.textContent).toContain('d4');
     expect(list.textContent).toContain('Nf3');
@@ -1029,25 +1015,11 @@ describe('TrainReveal', () => {
     expect(within(card).queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('the guess card keeps the verdict and its score chip in the header, and only the Also fine list in the body (the herring sentence is gone)', async () => {
-    renderReveal({
-      verdict: makeVerdict({
-        correct_guess: true,
-        correct_move: false,
-        puzzle_type: 'herring',
-        source: 'red_herring',
-        item_status: null,
-        due_date: null,
-        streak: null,
-      }),
-      alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }],
-    });
-    const card = screen.getByTestId('train-verdict-guess');
-    expect(card.textContent).toContain('Your call:');
-    expect(within(card).queryByTestId('train-verdict-guess-points')).toBeNull();
-    await waitFor(() => expect(getGame).toHaveBeenCalled());
-    expect(within(card).queryByTestId('train-outcome-copy')).toBeNull();
-    expect(within(card).getByTestId('train-reveal-also-fine').textContent).toContain('d4');
+  it('motif and Also fine share one extras line, motif first', async () => {
+    revealPuzzle.mockResolvedValue(makeReveal({ motif: 'Fork' }));
+    renderReveal({ alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }] });
+    await waitFor(() => expect(screen.getByTestId('train-reveal-motif')).not.toBeNull());
+    expect(screen.getByTestId('train-verdict-extras').textContent).toBe('Motif: Fork · Also fine, e.g. d4');
   });
 
   // ─── Card engagement reaches the telemetry callbacks ──
@@ -1062,7 +1034,6 @@ describe('TrainReveal', () => {
       ...props,
       verdict: makeVerdict(),
       isSolveError: false,
-      guess: 'critical',
       playedMoveUci: 'd2d4',
       chips: makeChips({ gameMoveUci: 'g1f3', gameMoveLine: { status: 'ready', line: makeEngineLine({ moves: ['g1f3'], evalCp: -20, evalMate: null }) } }),
       activeChip: 'your',
@@ -1099,252 +1070,94 @@ describe('TrainReveal', () => {
     expect(hookOrderErrors).toEqual([]);
   });
 
-  // ─── Guess-feedback prose ──────────────────────
-  // One prose sentence stating what the guess verdict MEANS, in the guess
-  // card body above the Also fine line. The six combinations are LOCKED
-  // wording — exact string equality, never a substring/regex match.
+  // ─── The verdict sentence ──────────────────────
+  // The full copy matrix is unit-tested on `verdictClauseParts`
+  // (trainBotCopy.test.ts); these render tests prove the reveal feeds it the
+  // right server fields.
 
-  describe('guessFeedbackProse', () => {
-    it('critical + wrong guess + herring, regardless of the move played', () => {
-      expect(guessFeedbackProse('critical', false, false, 'wrong', false, null)).toBe(
-        'Several moves are fine here.',
-      );
-      expect(guessFeedbackProse('critical', false, false, 'good', false, null)).toBe(
-        'Several moves are fine here.',
-      );
-    });
+  const verdictLine = (): string => screen.getByTestId('train-bot-verdict-line').textContent ?? '';
 
-    // Same fix as the correct-`several` soft branch below, one branch over: a
-    // bare "Several moves are fine here." read as "nothing happened here" at
-    // one of the user's own blunders. Both guesses share the sentence — the
-    // position fact is independent of what the user guessed about it.
-    it('critical + wrong guess + one of the user own blunders (soft)', () => {
-      expect(guessFeedbackProse('critical', false, true, 'wrong', false, null)).toBe(
-        'Several moves are fine here, but not the one you played in the game.',
-      );
-      expect(guessFeedbackProse('critical', false, true, 'good', false, null)).toBe(
-        'Several moves are fine here, but not the one you played in the game.',
-      );
-    });
-
-    // A correct `critical` guess no longer claims the user
-    // PLAYED the critical move — only a `good` move earns the praise clause.
-    it('critical + correct + a good move', () => {
-      expect(guessFeedbackProse('critical', true, true, 'good', false, null)).toBe(
-        'Right, and you found it: only one move works here.',
-      );
-    });
-
-    it('critical + correct + a non-good move never claims the move was found', () => {
-      expect(guessFeedbackProse('critical', true, true, 'inaccuracy', false, null)).toBe(
-        "Right, only one move works here, but that wasn't it.",
-      );
-      expect(guessFeedbackProse('critical', true, true, 'wrong', false, null)).toBe(
-        "Right, only one move works here, but that wasn't it.",
-      );
-    });
-
-    it('several + wrong', () => {
-      expect(guessFeedbackProse('several', false, true, 'wrong', false, null)).toBe(
-        'One move is clearly better than the alternatives.',
-      );
-    });
-
-    it('several + correct + NOT one of the user own blunders (herring)', () => {
-      expect(guessFeedbackProse('several', true, false, 'good', false, null)).toBe(
-        'Indeed, several moves are fine here.',
-      );
-    });
-
-    // This branch is reachable ONLY on a `soft`
-    // puzzle, i.e. one of the user's own blunders — it used to congratulate
-    // them ("You handled this fine in your game.") at the exact position where
-    // they blundered.
-    it('several + correct + one of the user own blunders (soft)', () => {
-      expect(guessFeedbackProse('several', true, true, 'good', false, null)).toBe(
-        'Several moves are fine here, but not the one you played in the game.',
-      );
-    });
-
-    // A server-confirmed disagreement outranks every "only
-    // one move works" branch, for BOTH guesses and whatever else is true.
-    it('a confirmed disagreement names the key for both guesses, whatever the other inputs', () => {
-      const line = "Qh4 is the engine's first choice, but your move holds up too.";
-      expect(guessFeedbackProse('critical', false, true, 'good', true, 'Qh4')).toBe(line);
-      expect(guessFeedbackProse('critical', true, true, 'good', true, 'Qh4')).toBe(line);
-      expect(guessFeedbackProse('several', true, false, 'good', true, 'Qh4')).toBe(line);
-      expect(guessFeedbackProse('several', false, false, 'wrong', true, 'Qh4')).toBe(line);
-    });
-
-    it('a disagreement without a key SAN falls through to the existing chain', () => {
-      expect(guessFeedbackProse('critical', true, true, 'good', true, null)).toBe(
-        'Right, and you found it: only one move works here.',
-      );
-      expect(guessFeedbackProse('several', false, true, 'wrong', true, null)).toBe(
-        'One move is clearly better than the alternatives.',
-      );
-    });
+  it('a sharp puzzle, correct call, key move: one sentence states the fact and both pills', () => {
+    renderReveal({ verdict: makeVerdict({ correct_guess: true, puzzle_type: 'sharp', move_quality: 'good' }) });
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe('Only one move works here.');
+    expect(verdictLine()).toContain('You called it +1 and found it +2.');
   });
 
-  it('a server-confirmed disagreement renders the disagreement line naming the key SAN on the guess card', () => {
+  it('a correct call with a wrong move never claims the move was found', () => {
     renderReveal({
-      guess: 'several',
+      verdict: makeVerdict({ correct_guess: true, correct_move: false, move_quality: 'wrong', puzzle_type: 'sharp' }),
+    });
+    expect(verdictLine()).toContain('You called it +1, but missed it +0.');
+  });
+
+  it('a soft puzzle (one of the user own blunders) names the game move in the fact', () => {
+    renderReveal({ verdict: makeVerdict({ correct_guess: false, puzzle_type: 'soft' }) });
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe(
+      'Several moves work here, just not your game move.',
+    );
+  });
+
+  it('an sr_item with puzzle_type "sharp" gets the sharp fact (the source gate only splits several-move facts)', () => {
+    renderReveal({ verdict: makeVerdict({ correct_guess: false, puzzle_type: 'sharp', source: 'sr_item' }) });
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe('Only one move works here.');
+    expect(verdictLine()).toContain('Wrong call +0, but you found it +2.');
+  });
+
+  it('a herring fact carries no game-move clause', () => {
+    renderReveal({
+      verdict: makeVerdict({
+        correct_guess: true,
+        puzzle_type: 'herring',
+        source: 'red_herring',
+        item_status: null,
+        due_date: null,
+        streak: null,
+      }),
+    });
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe('Several moves work here.');
+  });
+
+  it('a server-confirmed disagreement names the key SAN and credits either call', () => {
+    renderReveal({
       verdict: makeVerdict({ correct_guess: true, move_quality: 'good', disagreement: true }),
       gradeResult: makeGradeResult({ bestMoveUci: 'd2d4' }),
     });
-    const prose = within(screen.getByTestId('train-verdict-guess')).getByTestId('train-verdict-guess-prose');
-    expect(prose.textContent).toBe("d4 is the engine's first choice, but your move holds up too.");
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe(
+      "d4 is the engine's pick, but not the only good move.",
+    );
+    expect(verdictLine()).toContain('Either call counts +1, and your move holds up +2.');
   });
 
-  it('a verdict without the disagreement field keeps the old copy even when a key is known', () => {
+  it('a verdict without the disagreement field keeps the sharp copy even when a key is known', () => {
     renderReveal({
-      guess: 'critical',
       verdict: makeVerdict({ correct_guess: true, move_quality: 'good' }),
       gradeResult: makeGradeResult({ bestMoveUci: 'd2d4' }),
     });
-    const prose = within(screen.getByTestId('train-verdict-guess')).getByTestId('train-verdict-guess-prose');
-    expect(prose.textContent).toBe('Right, and you found it: only one move works here.');
+    expect(screen.getByTestId('train-bot-fact').textContent).toBe('Only one move works here.');
   });
 
-  it('renders the exact locked prose sentence in the guess card body, above the Also fine line', () => {
-    renderReveal({
-      guess: 'critical',
-      verdict: makeVerdict({ correct_guess: true, puzzle_type: 'sharp', move_quality: 'good' }),
-      alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }],
-    });
-    const card = screen.getByTestId('train-verdict-guess');
-    const prose = within(card).getByTestId('train-verdict-guess-prose');
-    expect(prose.textContent).toBe('Right, and you found it: only one move works here.');
-    const alsoFine = within(card).getByTestId('train-reveal-also-fine');
-    expect(
-      prose.compareDocumentPosition(alsoFine) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+  it('the return tail sits on its own line after the verdict sentence', () => {
+    renderReveal({ sessionDate: '2026-07-20', expiresOn: '2026-07-21' });
+    const tail = screen.getByTestId('train-bot-return-tail');
+    expect(tail.textContent).toBe('Back in 12 days.');
+    expect(screen.getByTestId('train-bot-verdict-line').contains(tail)).toBe(false);
   });
 
-  it('several + correct + herring (not a played game) renders the "Indeed" sentence', () => {
-    renderReveal({
-      guess: 'several',
-      verdict: makeVerdict({
-        correct_guess: true,
-        puzzle_type: 'herring',
-        source: 'red_herring',
-        item_status: null,
-        due_date: null,
-        streak: null,
-      }),
-    });
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Indeed, several moves are fine here.',
-    );
-  });
-
-  it('several + correct + soft (one of the user own blunders) renders the "not the one you played" sentence', () => {
-    renderReveal({
-      guess: 'several',
-      verdict: makeVerdict({ correct_guess: true, puzzle_type: 'soft' }),
-    });
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Several moves are fine here, but not the one you played in the game.',
-    );
-  });
-
-  // The reported bug, end to end: guessed "One critical move" correctly but
-  // played a losing move. The prose used to read "You identified the one
-  // critical move.", contradicting the zero-point Your-move chip above it.
-  it('a correct critical guess with a wrong move never claims the move was identified', () => {
-    renderReveal({
-      guess: 'critical',
-      verdict: makeVerdict({
-        correct_guess: true,
-        correct_move: false,
-        move_quality: 'wrong',
-        puzzle_type: 'sharp',
-      }),
-    });
-    const prose = screen.getByTestId('train-verdict-guess-prose');
-    expect(prose.textContent).toBe("Right, only one move works here, but that wasn't it.");
-  });
-
-  it('several + wrong renders the "one move is clearly better" sentence', () => {
-    renderReveal({
-      guess: 'several',
-      verdict: makeVerdict({ correct_guess: false, puzzle_type: 'sharp' }),
-    });
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'One move is clearly better than the alternatives.',
-    );
-  });
-
-  // Both fixtures below are server-consistent: a missed `critical` guess means
-  // the puzzle was NOT sharp (`_compute_correct_guess`), so only herring/soft
-  // can reach this prose — the pair that `fromOwnBlunder` splits.
-  it('critical + wrong + herring renders the bare "several moves are fine" sentence', () => {
-    renderReveal({
-      guess: 'critical',
-      verdict: makeVerdict({
-        correct_guess: false,
-        puzzle_type: 'herring',
-        source: 'red_herring',
-        item_status: null,
-        due_date: null,
-        streak: null,
-      }),
-    });
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Several moves are fine here.',
-    );
-  });
-
-  it('critical + wrong + soft renders the "not the one you played" sentence', () => {
-    renderReveal({
-      guess: 'critical',
-      verdict: makeVerdict({ correct_guess: false, puzzle_type: 'soft' }),
-    });
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Several moves are fine here, but not the one you played in the game.',
-    );
-  });
-
-  it('renders no prose element when guess is null', () => {
-    renderReveal({ guess: null });
-    expect(screen.queryByTestId('train-verdict-guess-prose')).toBeNull();
-  });
-
-  it('the guess card body still mounts (for the prose alone) even with no Also fine alternatives', () => {
-    renderReveal({
-      guess: 'critical',
-      verdict: makeVerdict({ correct_guess: true, puzzle_type: 'sharp' }),
-      alsoFineMoves: [],
-    });
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe(
-      'Right, and you found it: only one move works here.',
-    );
-    expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
-  });
-
-  // The guess card is inert — it never carries a
-  // cursor-pointer affordance, with or without prose.
-  it('a prose-only guess card (no Also fine) carries no cursor-pointer class', () => {
-    renderReveal({
-      guess: 'critical',
-      verdict: makeVerdict({ correct_guess: true, puzzle_type: 'sharp' }),
-      alsoFineMoves: [],
-    });
-    const card = screen.getByTestId('train-verdict-guess');
-    expect(card.className).not.toContain('cursor-pointer');
+  it('no motif and no Also fine renders no extras line at all', () => {
+    renderReveal({ alsoFineMoves: [] });
+    expect(screen.queryByTestId('train-verdict-extras')).toBeNull();
   });
 
   // ─── Free play is gone, so nothing on the reveal is ever swapped out ──
 
   it('the guess card, the Also fine list, the chips and the move list slot render together (a sideline forks in place, nothing swaps)', async () => {
     renderReveal({
-      guess: 'critical',
       chips: makeChips(),
       activeChip: 'your',
       treeList: <div data-testid="train-move-tree-slot" />,
       alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }],
     });
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull();
     expect(screen.getByTestId('train-reveal-also-fine')).not.toBeNull();
     expect(screen.getByTestId('train-line-chips')).not.toBeNull();
     expect(screen.getByTestId('train-move-tree-slot')).not.toBeNull();
@@ -1388,7 +1201,6 @@ describe('instant-path game-move search', () => {
       onRetrySolve: vi.fn(),
       onNext: vi.fn(),
       gradingEngine,
-      guess: 'critical',
       playedMoveUci: 'e2e4',
       gradeResult: null,
       instantGrade: { status: 'pending', keyUci: 'd2d4', keyLine: KEY_LINE },
@@ -1397,7 +1209,7 @@ describe('instant-path game-move search', () => {
       onChipSelect: vi.fn(),
       treeList: null,
       verdictBot: PERSONA_REGISTRY['wall-1800'],
-      verdictOpening: verdictCopy(2, true, 'good', false, () => 0),
+      verdictOpening: verdictCopy(2, () => 0),
       isBest: false,
       isWarmup: false,
     };

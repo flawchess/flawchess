@@ -3,17 +3,14 @@ import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/
 import { cn } from '@/lib/utils';
 
 /**
- * Inline placeholder bar shown in OpeningStatsCard when Tier 2 is not yet
- * reached (i.e. Stockfish analysis is still pending).
+ * Inline placeholder shown in the repertoire card's eval bar (and FindingCard) when
+ * Tier 2 is not yet reached (i.e. Stockfish analysis is still pending).
  *
- * Replaces both the eval bullet row and the eval-text+popover row with a
- * single pulsating-Cpu amber bar that spans the full 2-col grid. Its height
- * matches the MiniBulletChart it covers (h-5) so swapping in the placeholder
- * does not change the card's row height, and it reads as a thin "covered"
- * metric bar rather than a chunky box. Shares the EvalCoverageHeader amber
+ * A thin pulsating-Cpu amber bar (h-5, matching the cell's content height) replaces the eval
+ * value so swapping it in does not change the row height. Shares the EvalCoverageHeader amber
  * "Stockfish is working" semantic (amber token, animate-pulse Cpu icon).
  *
- * The WDL score row is intentionally unaffected — it is not eval-dependent.
+ * The score cell is intentionally unaffected: it is not eval-dependent.
  */
 export function EvalCpuPlaceholder() {
   return (

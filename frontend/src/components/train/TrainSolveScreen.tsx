@@ -1715,8 +1715,8 @@ export function TrainSolveScreen({
   // verdict here rather than on every render inside the bubble body.
   const verdictOpening = useMemo<VerdictCopy | null>(() => {
     if (verdict === null || verdictPoints === null) return null;
-    return verdictCopy(verdictPoints, verdict.correct_guess, verdict.move_quality, playedIsBest);
-  }, [verdict, verdictPoints, playedIsBest]);
+    return verdictCopy(verdictPoints);
+  }, [verdict, verdictPoints]);
 
   function handleNextFromReveal(): void {
     // The bar's Next is the tour's only Next; on any tour
@@ -2011,7 +2011,6 @@ export function TrainSolveScreen({
           onRetrySolve={trainSession.retrySolve}
           onNext={handleNext}
           gradingEngine={gradingEngine}
-          guess={guess}
           playedMoveUci={lastPlayedUci}
           gradeResult={gradeResult}
           instantGrade={instantGrade}

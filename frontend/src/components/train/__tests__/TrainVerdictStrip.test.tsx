@@ -10,7 +10,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TrainVerdictDetails } from '@/components/train/TrainVerdictDetails';
 import { TrainVerdictStrip } from '@/components/train/TrainVerdictStrip';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
-import { verdictCopy, verdictStripLine } from '@/lib/trainBotCopy';
+import { verdictClauseParts, verdictCopy, verdictStripLine } from '@/lib/trainBotCopy';
+import type { VerdictClauseInput } from '@/lib/trainBotCopy';
 import { scorePuzzle } from '@/lib/trainScore';
 import type { SolveResponse } from '@/types/train';
 
@@ -25,6 +26,16 @@ const VERDICT: SolveResponse = {
   due_date: '2026-07-28',
   session_complete: false,
   source: 'sr_item',
+};
+
+const CLAUSE_INPUT: VerdictClauseInput = {
+  puzzleType: VERDICT.puzzle_type,
+  correctGuess: VERDICT.correct_guess,
+  moveTier: VERDICT.move_quality,
+  isBest: true,
+  fromOwnBlunder: true,
+  disagreement: false,
+  keySan: null,
 };
 
 const track = vi.fn();
@@ -46,18 +57,16 @@ function renderStrip(onExpand?: () => void): void {
     <TrainVerdictStrip
       persona={PERSONA}
       points={scorePuzzle(VERDICT.correct_guess, VERDICT.move_quality)}
-      line={verdictStripLine(VERDICT.correct_guess, VERDICT.move_quality, true)}
+      line={verdictStripLine(CLAUSE_INPUT)}
       onExpand={onExpand}
     >
       <TrainVerdictDetails
         verdict={VERDICT}
-        opening={verdictCopy(3, true, 'good', true, () => 0)}
-        isBest
+        opening={verdictCopy(3, () => 0)}
+        clause={verdictClauseParts(CLAUSE_INPUT)}
         sessionDate="2026-07-27"
         expiresOn={undefined}
         isWarmup={false}
-        guess="critical"
-        guessProse="You spotted the only move."
         motif={null}
         alsoFineSanList=""
       />
@@ -70,7 +79,7 @@ describe('TrainVerdictStrip', () => {
     renderStrip();
     const strip = screen.getByTestId('train-verdict-strip');
     expect(strip.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Right call, best move');
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Called it, found it');
     expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe('+3');
     const avatar = screen.getByTestId('train-verdict-strip-avatar');
     expect(avatar.getAttribute('data-persona-id')).toBe(PERSONA.id);
@@ -108,9 +117,10 @@ describe('TrainVerdictStrip', () => {
     fireEvent.click(screen.getByTestId('train-verdict-strip'));
     fireEvent.click(screen.getByTestId('train-verdict-strip'));
     expect(track).toHaveBeenCalledTimes(2);
-    expect(screen.getByTestId('train-bot-verdict-line').textContent).toContain('Right call');
+    expect(screen.getByTestId('train-bot-verdict-line').textContent).toBe(
+      'Good job! Only one move works here. You called it +1 and found it +2.',
+    );
     expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
-    expect(screen.getByTestId('train-verdict-guess-prose').textContent).toBe('You spotted the only move.');
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
   });
 });

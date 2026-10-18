@@ -1,8 +1,6 @@
 /**
- * Score-domain bullet chart configuration. Used by the current-position
- * score-vs-50% bullet on the Openings Moves tab and the Insights/Stats cards.
- * Domain is fixed at 25-75% so the visual scale stays comparable across
- * surfaces — wide CIs simply render with open-ended whiskers.
+ * Score-vs-50% band configuration: the 50% centre and the +/-5-point typical band shared
+ * by the Openings score verdicts (openingVerdict) and the Moves-tab score colour.
  */
 
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
@@ -19,26 +17,6 @@ export const SCORE_BULLET_NEUTRAL_MAX = 0.05;
 // neutral band: 0.45..0.55 around the 0.5 center).
 export const SCORE_NEUTRAL_LOW = SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MIN;
 export const SCORE_NEUTRAL_HIGH = SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MAX;
-
-// Axis half-width: spans the 25-75% score range around the 0.5 center.
-// CIs that overflow this window render with open-ended whiskers (the
-// MiniBulletChart suppresses end-caps past the axis edge).
-export const SCORE_BULLET_DOMAIN = 0.25;
-
-/** Returns the score bullet axis half-width. The domain is fixed at 25-75%
- *  so all score bullets share one scale; CIs that overflow render with
- *  open-ended whiskers instead of widening the axis.
- */
-export function scoreBulletDomain(): number {
-  return SCORE_BULLET_DOMAIN;
-}
-
-/** Clamp a score-domain value (or CI bound) to the valid [0, 1] range. */
-export function clampScoreCi(value: number): number {
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
 
 /** Pick the zone color for a score in [0, 1] relative to the 50% baseline.
  * Mirrors evalZoneColor: SUCCESS above the neutral band, DANGER below,

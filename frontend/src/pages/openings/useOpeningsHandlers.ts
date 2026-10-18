@@ -5,8 +5,8 @@ import { useReorderPositionBookmarks } from '@/hooks/usePositionBookmarks';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { MatchSide } from '@/types/api';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
-import type { OpeningWDL } from '@/types/stats';
 import type { OpeningInsightFinding } from '@/types/insights';
+import type { OpeningsTab } from '@/types/openingsTab';
 import type { HighlightedMove } from './useDeepLinkHighlight';
 
 type ChessLike = {
@@ -18,7 +18,7 @@ type SetFilters = (next: FilterState | ((prev: FilterState) => FilterState)) => 
 type UseOpeningsHandlersParams = {
   chess: ChessLike;
   navigate: ReturnType<typeof useNavigate>;
-  activeTab: 'explorer' | 'games' | 'stats' | 'insights';
+  activeTab: OpeningsTab;
   setBoardFlipped: (flipped: boolean) => void;
   setFilters: SetFilters;
   setHighlightedMove: (m: HighlightedMove | null) => void;
@@ -27,7 +27,7 @@ type UseOpeningsHandlersParams = {
 type OpeningsNavHandlers = {
   handleOpenChartBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
   handleOpenGames: (pgn: string, color: 'white' | 'black') => void;
-  handleOpenMoves: (opening: OpeningWDL, color: 'white' | 'black') => void;
+  handleOpenMoves: (pgn: string, color: 'white' | 'black') => void;
   handleOpenFinding: (finding: OpeningInsightFinding) => void;
   handleOpenFindingGames: (finding: OpeningInsightFinding) => void;
   handleLoadBookmark: (bkm: PositionBookmarkResponse) => void;
@@ -36,7 +36,7 @@ type OpeningsNavHandlers = {
 
 /**
  * Bundles the deep-link / open-from-{X} navigation callbacks used by
- * StatsTab, InsightsTab, and the bookmark sidebars. All handlers preserve the
+ * StatsTab (including its finding cards) and the bookmark sidebars. All handlers preserve the
  * original OpeningsPage behavior exactly:
  *  - mutate the chess board (loadMoves), update boardFlipped + filters, then
  *    navigate to the appropriate subtab and scroll to top.
@@ -74,8 +74,8 @@ export function useOpeningsHandlers(params: UseOpeningsHandlersParams): Openings
     window.scrollTo({ top: 0 });
   }, [chess, navigate, setFilters, setBoardFlipped]);
 
-  const handleOpenMoves = useCallback((opening: OpeningWDL, color: 'white' | 'black') => {
-    chess.loadMoves(pgnToSanArray(opening.pgn));
+  const handleOpenMoves = useCallback((pgn: string, color: 'white' | 'black') => {
+    chess.loadMoves(pgnToSanArray(pgn));
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/explorer');

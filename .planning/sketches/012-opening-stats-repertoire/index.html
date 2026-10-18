@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opening Stats Repertoire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from sketch 010 (measured from the live Endgame Stats page) so all three pages read as one system. */
+:root {
+  --bg: oklch(0.145 0 0);
+  --card: #161412;
+  --band-hdr: oklch(1 0 0 / 3.5%);
+  --edge: oklch(1 0 0 / 8%);
+  --fg: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.5 0 0);
+  --brand: rgb(139, 94, 60);
+  --brand-light: oklch(0.72 0.07 60);
+  --low: oklch(0.62 0.17 25);
+  --mid: oklch(0.62 0.15 260);
+  --high: oklch(0.66 0.15 145);
+  --win: oklch(0.55 0.14 145);
+  --draw: oklch(0.65 0 0);
+  --loss: oklch(0.55 0.16 25);
+  --track: oklch(1 0 0 / 7%);
+  --band: oklch(1 0 0 / 13%);
+  --sq-l: #f0d9b5;
+  --sq-d: #b58863;
+  --note-bg: oklch(0.80 0.12 85 / 8%);
+  --note-edge: oklch(0.80 0.12 85 / 45%);
+  --note-fg: oklch(0.88 0.08 85);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: 'Nunito Sans', sans-serif; font-size: 14px; line-height: 1.45; }
+h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px; margin: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 56px 16px 80px; transition: max-width .2s ease; }
+.muted { color: var(--muted); } .faint { color: var(--faint); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Variant nav */
+#variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #0d0d0d; border-bottom: 1px solid var(--edge); padding: 8px 16px; display: flex; gap: 8px; flex-wrap: wrap; font-family: system-ui; font-size: 13px; align-items: center; }
+#variant-nav button { font: inherit; background: transparent; color: var(--muted); border: 1px solid var(--edge); border-radius: 6px; padding: 4px 10px; cursor: pointer; transition: all .15s ease; }
+#variant-nav button:hover { color: var(--fg); }
+#variant-nav button.active { background: #2a2420; color: var(--fg); border-color: var(--brand); }
+#variant-nav .sep { width: 1px; height: 20px; background: var(--edge); margin: 0 4px; }
+
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px dashed var(--note-edge); border-radius: 10px; background: var(--note-bg); color: var(--note-fg); font-size: 13px; margin-bottom: 16px; }
+.topbar label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.topbar .gate button { font: inherit; background: transparent; color: var(--note-fg); border: 1px solid var(--note-edge); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.topbar .gate button.on { background: oklch(0.80 0.12 85 / 25%); }
+
+/* App subtabs (mimic) */
+.subtabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: oklch(1 0 0 / 4%); border-radius: 10px; padding: 4px; margin-bottom: 20px; }
+.subtabs button { font: inherit; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-radius: 8px; height: 34px; cursor: pointer; transition: all .15s ease; }
+.subtabs button:hover { color: var(--fg); }
+.subtabs button.on { background: var(--brand); color: #fff; }
+.subtabs button[disabled] { cursor: default; opacity: .5; }
+
+.sechead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.q { color: var(--muted); margin: 6px 0 14px; }
+.colors { display: inline-flex; gap: 4px; }
+/* Sticky colour switch: one per page (insights + repertoire), stays under the fixed nav while scrolling */
+.colorbar { position: sticky; top: 41px; z-index: 20; background: var(--bg); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; margin-bottom: 8px; border-bottom: 1px solid var(--edge); }
+.colorbar .cl { color: var(--muted); font-size: 13px; }
+.narrow .colorbar .cl { display: none; }
+.colors button { font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border-radius: 10px; cursor: pointer; transition: all .15s ease; background: transparent; color: var(--brand-light); border: 1px solid oklch(0.58 0.09 55 / 55%); }
+.colors button:hover { border-color: var(--brand); color: var(--fg); }
+.colors button.on { background: var(--brand); color: #fff; border-color: transparent; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--muted); }
+.sw.w { background: #fff; } .sw.b { background: #18181b; }
+
+.card { background: var(--card); border: 1px solid var(--edge); border-radius: 8px; }
+.card-h { padding: 12px 16px; background: var(--band-hdr); border-bottom: 1px solid var(--edge); border-radius: 8px 8px 0 0; font-size: 16px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card-h small { font-size: 13px; font-weight: 400; color: var(--faint); }
+.card-b { padding: 16px; }
+.section + .section { margin-top: 28px; }
+
+/* Mini board (unicode glyphs on lichess-brown squares) */
+.board { position: relative; display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1; border-radius: 3px; overflow: hidden; flex: none; }
+.board i { display: flex; align-items: center; justify-content: center; font-style: normal; line-height: 1; }
+.board i.l { background: var(--sq-l); } .board i.d { background: var(--sq-d); }
+.board .pw { color: #fff; text-shadow: 0 0 1px #000, 0 0 1px #000, 0 0 1px #000; }
+.board .pb { color: #111; }
+.board svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* WDL bar */
+.wdl { display: flex; height: 18px; border-radius: 4px; overflow: hidden; font-size: 11px; font-weight: 700; color: #fff; min-width: 0; }
+.wdl span { display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; }
+.wdl .W { background: var(--win); } .wdl .D { background: var(--draw); } .wdl .L { background: var(--loss); }
+.wdl.sm { height: 12px; font-size: 0; }
+
+/* Gap bar: zero in the middle, grey typical band, coloured dot, better to the right */
+.bar { display: flex; align-items: center; gap: 10px; }
+.track { position: relative; flex: 1; height: 10px; border-radius: 6px; background: var(--track); min-width: 60px; }
+.track .band { position: absolute; top: 0; bottom: 0; background: var(--band); border-radius: 2px; }
+.track .zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 1px; background: oklch(1 0 0 / 40%); }
+.track .dot { position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--card); }
+/* eval bars are centred on the colour baseline: the centre tick wears a white/black swatch, a faint dashed tick marks 0 (equal) */
+.track .zero i { position: absolute; top: -6px; left: -3px; width: 7px; height: 7px; border-radius: 1px; border: 1px solid var(--muted); }
+.track .zero i.white { background: #fff; } .track .zero i.black { background: #18181b; }
+.track.sm .zero i { top: -5px; left: -3px; width: 6px; height: 6px; }
+.track .eq { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 1px dashed oklch(1 0 0 / 30%); }
+.track.sm { height: 6px; } .track.sm .dot { width: 11px; height: 11px; } .track.sm .zero { top: -3px; bottom: -3px; }
+.verdict { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+.verdict .w { font-weight: 700; }
+.lo { color: var(--low); } .hi { color: var(--high); } .md { color: var(--fg); }
+.bg-lo { background: var(--low); } .bg-md { background: var(--mid); } .bg-hi { background: var(--high); }
+.grow + .grow { margin-top: 14px; }
+.grow .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.grow .lbl { font-weight: 600; }
+.grow .hint { display: block; font-weight: 400; font-size: 12.5px; color: var(--faint); line-height: 1.3; }
+
+/* Search-icon popover */
+.info { position: relative; display: inline-flex; color: oklch(0.72 0.07 60 / 70%); cursor: pointer; }
+.info:hover, .info:focus { color: var(--brand-light); outline: none; }
+.info svg { width: 15px; height: 15px; }
+.pop { display: none; position: absolute; right: -8px; bottom: 140%; width: 320px; z-index: 30; background: var(--fg); color: oklch(0.145 0 0); font-size: 12px; font-weight: 400; text-align: left; border-radius: 6px; padding: 8px 12px; white-space: normal; line-height: 1.45; box-shadow: 0 8px 24px oklch(0 0 0 / 50%); }
+.info:hover .pop, .info:focus .pop { display: block; }
+.pop p { margin: 0 0 6px; } .pop ul { margin: 0 0 6px; padding-left: 16px; }
+.pop hr { border: 0; border-top: 1px solid oklch(0.145 0 0 / 25%); margin: 6px 0; }
+.pop .foot { font-style: italic; color: oklch(0.145 0 0 / 60%); margin: 0; }
+.narrow .pop { right: auto; left: -200px; width: 280px; }
+.grow .pop, .fscore .pop { right: auto; left: -8px; }   /* left-column popovers open rightwards so they stay on screen */
+
+/* ── Repertoire table ── */
+.rep { width: 100%; border-collapse: collapse; }
+.rep th { font-weight: 600; font-size: 12.5px; color: var(--muted); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--edge); white-space: nowrap; position: sticky; top: 98px; z-index: 5; background: var(--card); }  /* sits under the sticky colour bar */
+.rep th.r, .rep td.r { text-align: right; }
+.rep td { padding: 10px; border-bottom: 1px solid var(--edge); vertical-align: middle; }
+.rep tr.row { cursor: pointer; transition: background .15s ease; }
+.rep tr.row:hover { background: oklch(1 0 0 / 3%); }
+.rep tr.row.open { background: oklch(1 0 0 / 4%); }
+.rep tr.row.open td { border-bottom-color: transparent; }
+.rep tr.faded td { opacity: .5; }
+.opn { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.opn .t { min-width: 0; }
+.opn .nm { font-weight: 700; }
+.opn .nm .bm { display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.opn .mv { font-size: 12.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+.bm { width: 14px; height: 14px; color: var(--brand-light); flex: none; }
+.chev { width: 16px; height: 16px; color: var(--faint); transition: transform .2s ease; }
+tr.open .chev { transform: rotate(180deg); }
+.res { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+.res .wdl { flex: 1; }
+.cellgap { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+.cellgap .verdict { justify-content: flex-start; font-size: 13px; }
+.cellgap .track { flex: none; width: 100%; }
+.spark { display: block; }
+/* compact eval cell: signed value + verdict dot; the full bar lives in the expanded row */
+.evc { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 700; }
+.evc .pill { flex: none; }
+/* recency: last-played line under the games count, "not played recently" chip, collapsible "Played before" group */
+.lp { display: block; font-size: 11.5px; color: var(--faint); font-weight: 400; white-space: nowrap; }
+.chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: oklch(1 0 0 / 8%); color: var(--muted); margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
+.pastsep { cursor: pointer; }
+.pastsep td { transition: background .15s ease; }
+.pastsep:hover td { background: oklch(1 0 0 / 5%); }
+.pastsep .h { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.pastsep .chev { vertical-align: -3px; margin-left: 4px; }
+.pastsep[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.pinsep td { padding: 6px 10px; font-size: 12px; color: var(--faint); background: oklch(1 0 0 / 2%); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.foot-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.linkbtn { font: inherit; display: inline-flex; align-items: center; gap: 5px; background: none; border: 0; color: var(--brand-light); cursor: pointer; padding: 0; transition: color .15s ease; }
+.linkbtn:hover { color: oklch(0.85 0.06 70); }
+.linkbtn svg { width: 14px; height: 14px; }
+
+/* expanded row */
+.exp td { padding: 4px 10px 18px; border-bottom: 1px solid var(--edge); }
+.expg { display: grid; grid-template-columns: 200px minmax(0, 1fr) 280px; gap: 24px; align-items: start; }
+.expg .links { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+.expg h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.trendbox .cap { font-size: 12px; color: var(--faint); margin-top: 4px; }
+
+/* phone layout: rows become stacked blocks */
+.narrow .rep thead { display: none; }
+.narrow .rep, .narrow .rep tbody, .narrow .rep tr, .narrow .rep td { display: block; width: 100%; }
+.narrow .rep tr.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; padding: 12px; border-bottom: 1px solid var(--edge); }
+.narrow .rep td.c-chev { display: none; }
+.narrow .rep tr.row.open { border-bottom-color: transparent; }
+.narrow .rep tr.row td { padding: 0; border: 0; }
+.narrow .rep tr.row td.c-opn { grid-column: 1; grid-row: 1 / 3; min-width: 0; }
+.narrow .rep tr.row td.c-n { display: none; }
+.res .ng { display: none; }
+.narrow .res .ng { display: inline; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
+.narrow .rep td.c-n { grid-column: 2; text-align: right; color: var(--muted); font-size: 13px; align-self: center; }
+.narrow .rep td.c-res { grid-column: 1 / -1; grid-row: 3; }
+/* phone: Score above Eval in the right column, next to the opening name; WDL bar full width below */
+.narrow .rep td.c-sc { grid-column: 2; grid-row: 1; justify-self: end; padding-top: 2px; }
+.narrow .rep td.c-ev { grid-column: 2; grid-row: 2; justify-self: end; align-self: start; }
+.narrow .rep td.c-sc .evc::before { content: 'Score'; font-size: 12px; color: var(--faint); margin-right: 2px; display: inline-block; width: 34px; text-align: right; font-weight: 400; }
+.narrow .rep td.c-ev .evc::before { content: 'Eval'; font-size: 12px; color: var(--faint); margin-right: 2px; display: inline-block; width: 34px; text-align: right; font-weight: 400; }
+.narrow .cellgap { min-width: 0; gap: 4px; }
+.narrow .pinsep td { padding: 6px 12px; }
+.narrow .exp td { padding: 0 12px 16px !important; }
+.narrow .opn .mv { max-width: 230px; }
+.narrow .pinsep { display: block; }
+.narrow .exp td { padding: 0 0 16px; }
+.narrow .expg { grid-template-columns: 1fr; gap: 16px; }
+/* phone: Moves / Games / Bookmark links stack to the right of the board */
+.narrow .expg .bwrap { display: flex; gap: 16px; align-items: flex-start; }
+.narrow .expg .links { flex-direction: column; gap: 14px; margin-top: 4px; }
+.narrow .expg .links .linkbtn { white-space: nowrap; }
+.narrow .expg .bwrap .board { width: 168px !important; }   /* leaves room for the link column at 390px */
+.narrow .expg .bwrap .board i { font-size: 16px !important; }
+.narrow .res { min-width: 0; }
+
+/* ── Insights ── */
+.fsplit { display: grid; gap: 24px; }
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.narrow .fgrid { grid-template-columns: 1fr; }
+.fcard { background: var(--card); border: 1px solid var(--edge); border-radius: 8px; }
+.fcard .card-h { font-size: 15px; justify-content: space-between; }
+.fhead .after { font-weight: 700; }
+.fhead .after b { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 17px; }
+.fsub { font-size: 12.5px; color: var(--faint); font-weight: 400; margin-top: 2px; }
+.fbody { display: flex; gap: 14px; padding: 14px 16px; align-items: flex-start; }
+.fbody .fm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.fscore { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.fscore b { font-size: 15px; }
+.why { font-size: 13px; color: var(--muted); border-top: 1px solid var(--edge); padding-top: 8px; }
+.flinks { display: flex; gap: 16px; }
+.empty { border: 1px dashed var(--edge); border-radius: 8px; padding: 18px; color: var(--muted); text-align: center; }
+.acc { width: 100%; font: inherit; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: transparent; color: var(--fg); border: 1px solid var(--edge); border-radius: 8px; padding: 10px 14px; margin-top: 12px; cursor: pointer; transition: background .15s ease; text-align: left; }
+.acc:hover { background: oklch(1 0 0 / 4%); }
+.acc .h { font-size: 12px; color: var(--muted); display: block; font-weight: 400; }
+.acc[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.unclear { margin-top: 8px; }
+.urow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid var(--edge); opacity: .75; }
+.urow:last-child { border-bottom: 0; }
+.urow .l { font-size: 12.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); margin-top: 12px; align-items: center; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.legend .lb { width: 22px; height: 8px; background: var(--band); border-radius: 2px; }
+.pill { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+
+.note { margin-top: 12px; border: 1px dashed var(--note-edge); background: var(--note-bg); color: var(--note-fg); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.note b { color: oklch(0.92 0.09 85); }
+.note ul { margin: 4px 0 0; padding-left: 18px; }
+body.hide-notes .note { display: none; }
+
+#sketch-tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,0.75); color: white; padding: 8px 10px; border-radius: 8px; opacity: 0.5; transition: opacity 0.2s; display: flex; gap: 6px; align-items: center; }
+#sketch-tools:hover { opacity: 1; }
+#sketch-tools button { font: inherit; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+#sketch-tools button.on { background: #8a6a3a; }
+@media (max-width: 760px) { .expg { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="variant-nav">
+  <b style="color:var(--fg)">Sketch 012 · round 2</b>
+  <span class="sep"></span>
+  <button class="active">Stats A (board thumbnails) + Insights A (cards), merged ★ Selected</button>
+</div>
+
+<div class="wrap" id="wrap">
+  <div class="topbar">
+    <span><b>Round 2</b> · real dev data (owner account, human opponents, all time controls). Hover a search icon for its popover; click a row to expand it.</span>
+    <span class="gate">Red/green needs <button data-gate="99" class="on">99%</button> <button data-gate="95">95%</button></span>
+    <label><input type="checkbox" id="notesToggle" checked> Show design notes</label>
+  </div>
+
+  <div class="subtabs">
+    <button disabled>Moves</button><button disabled>Games</button>
+    <button class="on">Stats</button>
+  </div>
+
+  <div class="colorbar"><span class="cl">Playing as</span><div class="colors" data-colors></div></div>
+
+  <!-- ── INSIGHTS (merged in, above the table) ── -->
+  <section class="section">
+    <div class="sechead"><h2>Opening insights</h2></div>
+    <p class="q">Moves in your games after which you score clearly better or worse than 50%. Your opponents' moves count too: they show which replies you handle well or badly.</p>
+    <div class="fsplit"><div id="insCost"></div><div id="insWork"></div></div>
+  </section>
+
+  <!-- ── REPERTOIRE ── -->
+  <section class="section">
+    <div class="sechead"><h2>Your repertoire</h2></div>
+    <p class="q">Your bookmarked openings first, then your most played ones, under your current filters. Click or tap a row for details.</p>
+    <div class="card"><div id="repTable"></div>
+      <div class="foot-row"><span id="repFoot"></span><button class="linkbtn" id="suggestBtn">Suggest bookmarks</button></div>
+    </div>
+    <div class="legend"><span><i class="lb"></i>typical for players at your level</span><span>│ middle tick = typical (50% for score)</span><span>▪ eval bars are centred on an average game for your colour (White moves first); ┆ faint tick = 0 (equal)</span><span><i class="pill bg-hi"></i>clearly better</span><span><i class="pill bg-md"></i>typical or not clear</span><span><i class="pill bg-lo"></i>clearly worse</span></div>
+  </section>
+
+  <div class="note"><b>Round 2 changes:</b>
+    <ul>
+      <li><b>Insights merged into Stats.</b> The Insights subtab is gone; "Moves that cost you" and "Moves that work" sit above the repertoire table. At 99% they hold only a few cards, so the table stays near the top.</li>
+      <li><b>One sticky White | Black switch</b> drives both sections and stays visible while you scroll; the table header sticks under it.</li>
+      <li><b>No ECO codes, no "pawns".</b> The eval shows as a signed number (+0.9 / −0.4).</li>
+      <li><b>Current vs past repertoire.</b> The Games cell shows when you last played each opening. Openings not in your last 200 games with that colour move to a collapsed "Played before" group; stale bookmarks stay pinned with a "not played recently" chip. The expanded row's chart shares one calendar axis for games per month and your score, with your last 200 games shaded. Insight findings from older games are tagged and sorted after current ones.</li>
+      <li><b>Lighter table.</b> The eval column is a compact "+0.9" with a verdict dot; the full bar with its typical band, the Score bar and the score-over-time chart live in the expanded row. The Trend sparkline column is gone.</li>
+      <li><b>"After the opening" dropped.</b> It was never significant at 99%, needed an Elo × TC refit of the eval → score curve plus a made-up typical band, and added a column. Each row now shows the result (WDL + score) and one verdict bar: Eval after opening. The refit moves to the Endgames page (SEED-203).</li>
+    </ul>
+  </div>
+  <div class="note"><b>Still open:</b> at 99% there are no "cost you" findings in either colour; toggle the gate in the top bar to compare. On phone, four "Moves that work" cards push the table down; consider showing two with "show more".</div>
+</div>
+
+<div id="sketch-tools">
+  <span>Width</span>
+  <button data-w="390">Phone</button><button data-w="768">Tablet</button><button data-w="1120" class="on">Desktop</button>
+</div>
+
+<script src="data.js"></script>
+<script>
+// ── Constants ──
+const SCORE_BAND = 5;        // score points around 50%, same neutral zone as today's score bullet (45-55%)
+const EV_BASELINE = { white: 0.25, black: -0.25 };  // engine first-move edge, benchmark (openingStatsZones.ts)
+const EV_BAND = 0.30;        // pawns, benchmark §3 per-user IQR at MG entry (symmetric)
+const BAND_HALF_POS = 25;    // band reaches 25% from the centre
+const EDGE_POS = 3;
+const OUTER_SPAN = 50 - BAND_HALF_POS - EDGE_POS;
+const MIN_GAMES = 20;        // fade rows below this
+const TOP_FINDINGS = 5;
+const Z = { 99: 2.576, 95: 1.96 };
+
+const ICON = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+  bookmark: '<svg class="bm" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>',
+  bookmarkOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>',
+  chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  moves: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>',
+  games: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="m5 14 4 4"/><path d="m7 17-3 3"/><path d="m3 19 2 2"/></svg>',
+  sparkles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
+};
+
+let color = 'white', gate = 99, pastOpen = false;
+const openRows = new Set();
+let unclearOpen = { weak: false, strong: false };
+const bookmarked = new Set(ROWS.filter(r => r.pin).map(r => r.c + r.fen));
+
+// ── Helpers ──
+const nf = n => n.toLocaleString('en-US');
+function normCdf(z) {        // Abramowitz-Stegun 7.1.26
+  const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2);
+  const e = 1 - t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-z * z / 2);
+  return z >= 0 ? (1 + e) / 2 : (1 - e) / 2;
+}
+const pTwo = (v, ci99) => 2 * (1 - normCdf(Math.abs(v) / se99(ci99[0], ci99[1])));
+const fmtP = p => p < 0.001 ? 'p < 0.001' : `p = ${p < 0.01 ? p.toFixed(3) : p.toFixed(2)}`;
+const pct = (k, n) => Math.round(100 * k / n);
+const se99 = (lo, hi) => (hi - lo) / (2 * Z[99]);
+function sigAt(v, ci99) {           // does the CI at the selected gate exclude 0?
+  if (!ci99) return false;
+  const se = se99(ci99[0], ci99[1]);
+  return se > 0 && Math.abs(v) / se > Z[gate];
+}
+function verdict(v, band, ci99, n) {
+  if (n < MIN_GAMES || Math.abs(v) <= band || !sigAt(v, ci99)) return 'md';
+  return v > 0 ? 'hi' : 'lo';
+}
+function pos(v, band) {             // better (higher) to the right; saturating outside the band
+  const a = Math.abs(v);
+  const off = a <= band ? BAND_HALF_POS * a / band : BAND_HALF_POS + OUTER_SPAN * (1 - Math.exp(-(a - band) / (2 * band)));
+  return v > 0 ? 50 + off : 50 - off;
+}
+const evWords = v => Math.abs(v) < 0.05 ? '0.0' : (v > 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+const signedEv = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2);
+
+function board(fen, flip, size, arrow) {
+  const G = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+  const ranks = fen.split('/').map(r => r.replace(/\d/g, d => '.'.repeat(+d)).split(''));
+  let cells = '';
+  for (let ri = 0; ri < 8; ri++) for (let fi = 0; fi < 8; fi++) {
+    const r = flip ? 7 - ri : ri, f = flip ? 7 - fi : fi;
+    const ch = ranks[r][f];
+    const light = (r + f) % 2 === 0;
+    const pc = ch === '.' ? '' : `<span class="${ch === ch.toUpperCase() ? 'pw' : 'pb'}">${G[ch.toLowerCase()]}</span>`;
+    cells += `<i class="${light ? 'l' : 'd'}" style="font-size:${size / 8 * 0.78}px">${pc}</i>`;
+  }
+  let svg = '';
+  if (arrow) {
+    const xy = sq => { let f = sq.charCodeAt(0) - 97, r = 8 - +sq[1]; if (flip) { f = 7 - f; r = 7 - r; } return [f * 12.5 + 6.25, r * 12.5 + 6.25]; };
+    const [x1, y1] = xy(arrow[0]), [x2, y2] = xy(arrow[1]);
+    svg = `<svg viewBox="0 0 100 100"><defs><marker id="ah${size}" markerWidth="3" markerHeight="3" refX="1.6" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 z" fill="${arrow[2]}"/></marker></defs><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${arrow[2]}" stroke-width="2.6" stroke-linecap="round" marker-end="url(#ah${size})" opacity=".85"/></svg>`;
+  }
+  return `<div class="board" style="width:${size}px">${cells}${svg}</div>`;
+}
+
+function wdl(w, d, l, small) {
+  const n = w + d + l, pw = 100 * w / n, pd = 100 * d / n, pl = 100 * l / n;
+  const lab = p => p >= 12 ? Math.round(p) + '%' : '';
+  return `<div class="wdl${small ? ' sm' : ''}"><span class="W" style="width:${pw}%">${lab(pw)}</span><span class="D" style="width:${pd}%"></span><span class="L" style="width:${pl}%">${lab(pl)}</span></div>`;
+}
+
+const infoIcon = pop => `<span class="info" tabindex="0" role="button" aria-label="About this metric" onclick="event.stopPropagation()">${ICON.search}${pop}</span>`;
+
+function evPop(r) {
+  const e = evRel(r), side = r.c === 'white' ? 'White' : 'Black';
+  const verdictTxt = r.n < MIN_GAMES ? 'Too few games to call it.'
+    : Math.abs(e.v) <= EV_BAND ? 'That is typical.'
+    : sigAt(e.v, e.ci99) ? (e.v > 0 ? `You come out of the opening clearly better than an average ${side} game.` : `You come out of the opening clearly worse than an average ${side} game.`)
+    : 'Outside the typical range, but this may still be chance.';
+  const diff = Math.abs(e.v) < 0.05 ? `about the same as an average ${side} game` : `${Math.abs(e.v).toFixed(2)} ${e.v > 0 ? 'better' : 'worse'} than an average ${side} game (${signedEv(e.b)})`;
+  return `<span class="pop"><p><b>Eval after opening:</b> the average engine evaluation when your games reach the middlegame, from your side. Higher is better.</p>
+    <p><b>You: ${signedEv(r.ev)}</b>, ${diff}, over ${nf(r.en)} games with an engine evaluation.</p>
+    <ul><li>White moves first, so an average game reaches the middlegame at about +0.25 for White and −0.25 for Black. The bar is centred there; the faint dashed tick is 0 (equal).</li>
+    <li>Typical: ${signedEv(e.b - EV_BAND)} to ${signedEv(e.b + EV_BAND)}. ${verdictTxt}</li></ul>
+    <hr><p class="foot">99% CI ${signedEv(r.ev99[0])} to ${signedEv(r.ev99[1])} · ${fmtP(pTwo(e.v, e.ci99))} vs ${signedEv(e.b)} · n = ${nf(r.en)}</p></span>`;
+}
+function scoreStats(r) {     // score minus 50 in points, with a 99% CI from the per-game score variance
+  const n = r.w + r.d + r.l, s = (r.w + 0.5 * r.d) / n;
+  const se = Math.sqrt(Math.max((r.w + 0.25 * r.d) / n - s * s, 1e-9) / n) * 100;
+  const v = s * 100 - 50;
+  return { v, ci99: [v - Z[99] * se, v + Z[99] * se] };
+}
+function scorePop(r, st) {
+  const verdictTxt = r.n < MIN_GAMES ? 'Too few games to call it.'
+    : Math.abs(st.v) <= SCORE_BAND ? 'That is typical.'
+    : sigAt(st.v, st.ci99) ? (st.v > 0 ? 'You score clearly above 50%.' : 'You score clearly below 50%.')
+    : 'Outside the typical range, but this may still be chance.';
+  return `<span class="pop"><p><b>Score:</b> wins plus half the draws, as a percentage of your games. 50% means you break even.</p>
+    <p><b>You: ${Math.round(r.score)}%</b> over ${nf(r.n)} games (${r.w}W ${r.d}D ${r.l}L).</p>
+    <ul><li>Typical: ${50 - SCORE_BAND}% to ${50 + SCORE_BAND}%. ${verdictTxt}</li></ul>
+    <hr><p class="foot">99% CI ${Math.round(50 + st.ci99[0])}% to ${Math.round(50 + st.ci99[1])}% · ${fmtP(r.p ?? pTwo(st.v, st.ci99))} vs 50% · n = ${nf(r.n)}</p></span>`;
+}
+function scoreCell(r, small) {
+  const st = scoreStats(r);
+  return gapCell(st.v, SCORE_BAND, st.ci99, r.n, v => `${Math.round(50 + v)}%`, scorePop(r, st), small);
+}
+// value/ci99 are relative to the centre. base = { c, v }: centre is that colour's baseline, words get the raw value back.
+function gapCell(value, band, ci99, n, words, pop, small, base) {
+  const v = verdict(value, band, ci99, n);
+  const bandL = pos(-band, band), bandR = pos(band, band);
+  const centre = base ? `<div class="zero" title="Average ${base.c === 'white' ? 'White' : 'Black'} game: ${signedEv(base.v)}"><i class="${base.c}"></i></div>
+    <div class="eq" style="left:${pos(-base.v, band)}%" title="0 = equal position"></div>` : '<div class="zero"></div>';
+  return `<div class="cellgap"><span class="verdict"><span class="w ${v}">${words(value)}</span>${infoIcon(pop)}</span>
+    <div class="track${small ? ' sm' : ''}"><div class="band" style="left:${bandL}%;width:${bandR - bandL}%"></div>${centre}
+    <div class="dot bg-${v}" style="left:${pos(value, band)}%"></div></div></div>`;
+}
+function evRel(r) {           // eval minus the colour baseline: what the band, verdict and 99% test use
+  const b = EV_BASELINE[r.c];
+  return { b, v: r.ev - b, ci99: r.ev99 ? [r.ev99[0] - b, r.ev99[1] - b] : null };
+}
+function scoreCompact(r) {   // same compact shape as the eval cell: verdict dot + value + popover
+  const st = scoreStats(r), v = verdict(st.v, SCORE_BAND, st.ci99, r.n);
+  return `<span class="evc"><i class="pill bg-${v}"></i><span class="num">${Math.round(r.score)}%</span>${infoIcon(scorePop(r, st))}</span>`;
+}
+function evCompact(r) {
+  if (r.ev == null) return '<span class="faint">—</span>';
+  const e = evRel(r), v = verdict(e.v, EV_BAND, e.ci99, r.n);
+  return `<span class="evc"><i class="pill bg-${v}"></i><span class="num">${evWords(r.ev)}</span>${infoIcon(evPop(r))}</span>`;
+}
+function evCell(r, small) {
+  if (r.ev == null) return '<span class="faint">—</span>';
+  const e = evRel(r);
+  return gapCell(e.v, EV_BAND, e.ci99, r.n, x => evWords(x + e.b), evPop(r), small, { v: e.b, c: r.c });
+}
+
+function gapRowFull(label, hint, cell) {
+  return `<div class="grow"><div class="top"><div class="lbl">${label}<span class="hint">${hint}</span></div></div>${cell}</div>`;
+}
+
+
+// ── Recency ──
+const NOW = '2026-10-17';      // sketch "today" (data pulled 2026-10-17)
+const ROLL_GAMES = 50;         // score line: last 50 games in this opening
+const MIN_ROLL_GAMES = 10;
+const stripEco = n => n.replace(/ \(([A-E]\d\d)\)$/, '');
+const isCurrent = x => !x.lp || x.lp >= CUTOFF[x.c];
+const monthYear = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+function ago(d) {
+  if (!d) return '';
+  const days = Math.round((new Date(NOW) - new Date(d)) / 864e5);
+  if (days < 1) return 'today';
+  if (days < 45) return `${days} day${days > 1 ? 's' : ''} ago`;
+  if (days < 365) return `${Math.round(days / 30.4)} months ago`;
+  return monthYear(d);
+}
+const GAP_DAYS = 90;           // inactivity break threshold, as INACTIVITY_GAP_THRESHOLD_DAYS
+const BAR_SHARE = 0.2;         // tallest weekly bar fills the bottom 20% of the plot, as in EndgameScoreOverTimeChart
+const dayDiff = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+const gapLabel = d => d >= 365 ? `${(d / 365).toFixed(1)}y` : `${Math.round(d / 30)}mo`;
+const monthTick = d => new Date(d.slice(0, 7) + '-01T00:00:00').toLocaleDateString('en-US', { month: 'short' }) + ` '${d.slice(2, 4)}`;
+// Mirrors the existing "Score over Time" chart (ScoreChart.tsx): ordinal axis over active weeks only, so inactivity
+// is cut out; a dashed line with a palm tree and the break length marks each gap over 90 days.
+// Grey bars: games in this opening per week (volume bars as in EndgameScoreOverTimeChart).
+function monthChart(r, w, h) {
+  const padL = 28, padB = 16, padT = 26, iw = w - padL - 6, ih = h - padB - padT;
+  const lo = 30, hi = 70, Y = v => padT + ih * (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo));
+  const wk = r.wk;
+  if (wk.length < 2) return `<span class="faint" style="font-size:12px">not enough games yet</span>`;
+  const X = k => padL + k * iw / (wk.length - 1);
+  const hist = [], pts = [];
+  wk.forEach(([d, n0, p0], k) => {
+    hist.push([n0, p0]);
+    let n = 0, sc = 0;               // walk back until 50 games, taking a fraction of the oldest week
+    for (let j = hist.length - 1; j >= 0 && n < ROLL_GAMES; j--) {
+      const take = Math.min(hist[j][0], ROLL_GAMES - n); n += take; sc += hist[j][1] * take / hist[j][0];
+    }
+    if (n >= MIN_ROLL_GAMES) pts.push([X(k), Y(100 * sc / n)]);
+  });
+  const maxN = Math.max(1, ...wk.map(x => x[1])), bw = Math.max(1, Math.min(6, iw / wk.length - 1));
+  const bars = wk.map(([, n], k) => `<rect x="${X(k) - bw / 2}" y="${padT + ih - ih * BAR_SHARE * n / maxN}" width="${bw}" height="${ih * BAR_SHARE * n / maxN}" fill="oklch(1 0 0 / 25%)"><title>${n} game${n > 1 ? 's' : ''} that week</title></rect>`).join('');
+  const gaps = wk.slice(0, -1).map((x, k) => [k, dayDiff(x[0], wk[k + 1][0])]).filter(([, d]) => d > GAP_DAYS);
+  const gapEls = gaps.map(([k, d]) => `<line x1="${X(k)}" x2="${X(k)}" y1="${padT - 18}" y2="${padT + ih}" stroke="oklch(1 0 0 / 30%)" stroke-dasharray="4 2"/>
+    <text x="${X(k) + 4}" y="${padT - 8}" font-size="11" opacity=".7">🌴</text><text x="${X(k) + 19}" y="${padT - 8}" font-size="10" fill="oklch(0.6 0 0)">${gapLabel(d)}</text>`).join('');
+  const nT = Math.min(4, wk.length), ticks = [...new Set(Array.from({ length: nT }, (_, j) => Math.round(j * (wk.length - 1) / (nT - 1))))];
+  const xl = ticks.map(k => `<text x="${X(k)}" y="${h - 3}" font-size="10" fill="oklch(0.5 0 0)" text-anchor="${k === 0 ? 'start' : k === wk.length - 1 ? 'end' : 'middle'}">${monthTick(wk[k][0])}</text>`).join('');
+  const ax = [70, 50, 30].map(v => `<text x="0" y="${Y(v) + 4}" font-size="10" fill="oklch(0.5 0 0)">${v}%</text>`).join('');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${bars}${ax}${xl}
+    <line x1="${padL}" x2="${w}" y1="${Y(50)}" y2="${Y(50)}" stroke="oklch(1 0 0 / 30%)" stroke-dasharray="3 3"/>${gapEls}
+    <polyline points="${pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none" stroke="oklch(0.80 0.05 250)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+
+// ── Stats ──
+function repRows() {
+  const rs = ROWS.filter(r => r.c === color);
+  const pinned = rs.filter(r => bookmarked.has(r.c + r.fen));
+  const rest = rs.filter(r => !bookmarked.has(r.c + r.fen)).sort((a, b) => b.n - a.n);
+  return { pinned, rest };
+}
+function rowHtml(r, i) {
+  const key = r.c + r.fen, open = openRows.has(key), isBm = bookmarked.has(key);
+  const faded = r.n < MIN_GAMES;
+  const name = stripEco(r.name);
+  let h = `<tr class="row${open ? ' open' : ''}${faded ? ' faded' : ''}" data-row="${key}">
+    <td class="c-opn"><div class="opn">${board(r.fen, r.c === 'black', 44)}<div class="t">
+      <div class="nm">${isBm ? ICON.bookmark : ''}${name}${isBm && !isCurrent(r) ? '<span class="chip">not played recently</span>' : ''}</div>
+      <div class="mv">${r.moves}</div></div></div></td>
+    <td class="c-n r num">${nf(r.n)}<span class="lp">${ago(r.lp)}</span></td>
+    <td class="c-res"><div class="res">${wdl(r.w, r.d, r.l)}<span class="ng num">${nf(r.n)} games · ${ago(r.lp)}</span></div></td>
+    <td class="c-sc">${scoreCompact(r)}</td>
+    <td class="c-ev">${evCompact(r)}</td>
+    <td class="c-chev" style="width:24px">${ICON.chev}</td></tr>`;
+  if (open) {
+    h += `<tr class="exp"><td colspan="6"><div class="expg">
+      <div class="bwrap">${board(r.fen, r.c === 'black', 200)}
+        <div class="links"><button class="linkbtn">${ICON.moves} Moves</button><button class="linkbtn">${ICON.games} ${nf(r.n)} Games</button>
+        <button class="linkbtn" data-bm="${key}">${isBm ? ICON.bookmarkOff + ' Remove bookmark' : ICON.bookmarkOff + ' Bookmark'}</button></div></div>
+      <div>${gapRowFull('Score', 'Wins plus half the draws; the middle tick is 50%', scoreCell(r, false))}
+        ${gapRowFull('Eval after opening', 'Engine evaluation when the middlegame starts, from your side', evCell(r, false))}</div>
+      <div class="trendbox"><h4>Score over time</h4>${monthChart(r, 280, 140)}<div class="cap">Line: your score over your last ${ROLL_GAMES} games in this opening · grey bars: games in it per week · dashed line = 50% · 🌴 = a break of 3+ months · last played ${ago(r.lp)}</div></div>
+    </div></td></tr>`;
+  }
+  return h;
+}
+function renderStats() {
+  const { pinned, rest: all } = repRows();
+  const rest = all.filter(isCurrent), past = all.filter(r => !isCurrent(r));
+  let h = `<table class="rep"><thead><tr><th>Opening</th><th class="r">Games</th><th>Results</th><th>Score</th><th>Eval after opening</th><th></th></tr></thead><tbody>`;
+  if (pinned.length) h += `<tr class="pinsep"><td colspan="6">Bookmarks</td></tr>` + pinned.map(rowHtml).join('');
+  h += `<tr class="pinsep"><td colspan="6">Most played</td></tr>` + rest.map(rowHtml).join('');
+  if (past.length) {
+    h += `<tr class="pinsep pastsep" data-past aria-expanded="${pastOpen}"><td colspan="6">Played before (${past.length})<span class="h">not in your last 200 games as ${color === 'white' ? 'White' : 'Black'}</span>${ICON.chev}</td></tr>`;
+    if (pastOpen) h += past.map(rowHtml).join('');
+  }
+  h += '</tbody></table>';
+  document.getElementById('repTable').innerHTML = h;
+  document.getElementById('repFoot').textContent = `${pinned.length} bookmarks · ${rest.length} most played as ${color}${past.length ? ` · ${past.length} played before` : ''}`;
+  document.getElementById('suggestBtn').innerHTML = `${ICON.sparkles} Suggest bookmarks`;
+}
+
+// ── Insights ──
+function why(f) {             // only the opening eval can explain a score; say nothing when it is unremarkable
+  const e = f.ev == null ? null : evRel(f), ve = e ? verdict(e.v, EV_BAND, e.ci99, f.n) : 'md';
+  const side = f.c === 'white' ? 'White' : 'Black';
+  if (ve === 'lo') return `You come out of the opening worse than an average ${side} game.`;
+  if (ve === 'hi') return `You come out of the opening better than an average ${side} game.`;
+  return '';
+}
+function scoreSig(f) { return gate === 99 ? f.sig99 : f.sig95; }
+function findingHead(f) {
+  return `<div class="fhead"><div class="after">After <b>${f.last}</b>${isCurrent(f) ? '' : `<span class="chip" title="Last seen ${monthYear(f.lp)}, before your last 200 games as ${f.c === 'white' ? 'White' : 'Black'}">older games</span>`}</div>
+    <div class="fsub">${stripEco(f.name)} · ${f.line}</div></div>`;
+}
+function arrowFor(f) { return [...f.arrow, f.kind === 'weak' ? '#c0392b' : '#2e9e4f']; }
+function findingCard(f) {
+  const sc = f.kind === 'weak' ? 'lo' : 'hi';
+  return `<div class="fcard"><div class="card-h">${findingHead(f)}</div>
+    <div class="fbody">${board(f.fen, f.c === 'black', 120, arrowFor(f))}<div class="fm">
+      <div class="fscore"><span>You score <b class="${sc}">${Math.round(f.score)}%</b> ${infoIcon(scorePop(f, scoreStats(f)))}</span><span>${nf(f.n)} games</span></div>
+      ${wdl(f.w, f.d, f.l)}
+      ${gapRowFull('Eval after opening', '', evCell(f, true))}
+      ${why(f) ? `<div class="why">${why(f)}</div>` : ''}
+      <div class="flinks"><button class="linkbtn">${ICON.moves} Moves</button><button class="linkbtn">${ICON.games} ${nf(f.n)} Games</button></div>
+    </div></div></div>`;
+}
+function renderInsightSection(kind, el) {
+  const all = FINDS.filter(f => f.c === color && f.kind === kind);
+  const byRecency = (a, b) => isCurrent(b) - isCurrent(a);   // current findings first, older ones after (tagged)
+  const clear = all.filter(scoreSig).sort(byRecency).slice(0, TOP_FINDINGS);
+  const unclear = all.filter(f => !scoreSig(f)).sort(byRecency);
+  const title = kind === 'weak' ? 'Moves that cost you' : 'Moves that work';
+  const sub = kind === 'weak' ? 'you score clearly below 50%' : 'you score clearly above 50%';
+  let h = `<div class="sechead" style="margin-bottom:10px"><h2 style="font-size:16px">${title} <small class="faint" style="font-family:'Nunito Sans';font-weight:400;font-size:13px">${sub}</small></h2></div>`;
+  if (!clear.length) {
+    h += `<div class="empty">Nothing clear yet as ${color === 'white' ? 'White' : 'Black'}.${unclear.length ? ` ${unclear.length} move${unclear.length > 1 ? 's' : ''} lean${unclear.length > 1 ? '' : 's'} this way, but could still be chance.` : ''}</div>`;
+  } else {
+    h += `<div class="fgrid">${clear.map(findingCard).join('')}</div>`;
+  }
+  if (unclear.length) {
+    const open = unclearOpen[kind];
+    h += `<button class="acc" data-unclear="${kind}" aria-expanded="${open}"><span>Not clear yet (${unclear.length})<span class="h">Leaning this way, but the difference from 50% could still be chance. Click or tap for details.</span></span>${ICON.chev}</button>`;
+    if (open) h += `<div class="card unclear"><div class="card-b" style="padding:4px 12px">${unclear.map(f => `<div class="urow">${board(f.fen, f.c === 'black', 40, arrowFor(f))}<div style="min-width:0"><div>After <b>${f.last}</b>${isCurrent(f) ? '' : '<span class="chip">older games</span>'}</div><div class="l">${stripEco(f.name)} · ${f.line}</div></div><div class="num" style="text-align:right">${Math.round(f.score)}%<div class="faint" style="font-size:12px">${nf(f.n)} games</div></div></div>`).join('')}</div></div>`;
+  }
+  el.innerHTML = h;
+}
+function renderInsights() {
+  renderInsightSection('weak', document.getElementById('insCost'));
+  renderInsightSection('strong', document.getElementById('insWork'));
+}
+
+function renderColors() {
+  const btn = (c, label) => `<button data-color="${c}" class="${color === c ? 'on' : ''}"><span class="sw ${c[0]}"></span>${label}</button>`;
+  document.querySelectorAll('[data-colors]').forEach(el => el.innerHTML = btn('white', 'White') + btn('black', 'Black'));
+}
+function render() {
+  renderColors(); renderStats(); renderInsights();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const bm = t.closest('[data-bm]');
+  if (bm) { const k = bm.dataset.bm; bookmarked.has(k) ? bookmarked.delete(k) : bookmarked.add(k); render(); return; }
+  if (t.closest('[data-past]')) { pastOpen = !pastOpen; renderStats(); return; }
+  const row = t.closest('[data-row]');
+  if (row) { const k = row.dataset.row; openRows.has(k) ? openRows.delete(k) : openRows.add(k); renderStats(); return; }
+  const c = t.closest('[data-color]');
+  if (c) { color = c.dataset.color; openRows.clear(); render(); return; }
+  const g = t.closest('[data-gate]');
+  if (g) { gate = +g.dataset.gate; document.querySelectorAll('[data-gate]').forEach(x => x.classList.toggle('on', x === g)); render(); return; }
+  const u = t.closest('[data-unclear]');
+  if (u) { const k = u.dataset.unclear; unclearOpen[k] = !unclearOpen[k]; renderInsights(); return; }
+  const w = t.closest('[data-w]');
+  if (w) {
+    const wrap = document.getElementById('wrap');
+    wrap.style.maxWidth = w.dataset.w + 'px';
+    wrap.classList.toggle('narrow', +w.dataset.w < 500);
+    document.querySelectorAll('[data-w]').forEach(x => x.classList.toggle('on', x === w));
+    render();
+  }
+  if (t.closest('#suggestBtn')) { t.closest('#suggestBtn').textContent = 'Opens the Suggest dialog (unchanged)'; }
+});
+document.getElementById('notesToggle').addEventListener('change', e => document.body.classList.toggle('hide-notes', !e.target.checked));
+if (window.innerWidth < 500) document.getElementById('wrap').classList.add('narrow');
+render();
+</script>
+</body>
+</html>

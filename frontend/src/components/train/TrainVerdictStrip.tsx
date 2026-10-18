@@ -1,6 +1,6 @@
 /**
  * TrainVerdictStrip — the phone's one-line verdict after the reveal: bot
- * avatar + total-points pill + one clause ("Right call, best move"). Tapping
+ * avatar + total-points pill + one clause ("Called it, found it"). Tapping
  * it expands the full feedback (`TrainVerdictDetails`, passed as children)
  * below the line.
  *

@@ -612,6 +612,9 @@ async def query_opening_transitions(
     # Score-based effect-size gate. score = (W + 0.5·D) / N.
     # Minor-effect threshold drives the SQL gate; major findings are a post-filter
     # in Python (_classify_row). Symmetric on both sides → OR keeps the gate simple.
+    # Strict < / >: exactly 45% / 55% is the edge of the typical band and stays neutral,
+    # matching the frontend openingVerdict rule (WR-03). An inclusive gate listed a 45%
+    # move under "Moves that Cost You" while its card said "typical range".
     score_expr = (cast(wins, Float) + 0.5 * cast(draws, Float)) / cast(n_games, Float)
     weakness_threshold = OPENING_INSIGHTS_SCORE_PIVOT - OPENING_INSIGHTS_MINOR_EFFECT  # 0.45
     strength_threshold = OPENING_INSIGHTS_SCORE_PIVOT + OPENING_INSIGHTS_MINOR_EFFECT  # 0.55
@@ -666,8 +669,8 @@ async def query_opening_transitions(
             and_(
                 n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
                 or_(
-                    score_expr <= weakness_threshold,
-                    score_expr >= strength_threshold,
+                    score_expr < weakness_threshold,
+                    score_expr > strength_threshold,
                 ),
             )
         )

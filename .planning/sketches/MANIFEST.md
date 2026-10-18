@@ -29,6 +29,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 008 | train-reveal-mobile-layout | How should the post-solve reveal (lines, verdict, free play, Solution/Analyze/Next) use a phone screen? | **Combined — strip + chips + one move tree + action bar (phone + desktop)** | train, reveal, mobile, lines, free-play |
 | 009 | endgame-stats-percentile-first | How to make the Endgame Stats bullet/gauge sections readable when zone colors and peer percentiles disagree? | **Round 2 — percentile-first, ranked values shown, one percentile bar per metric** (SEED-196) | endgames, stats, percentiles, mobile |
 | 010 | library-stats-you-vs-opponents | How do the Library Stats you-vs-opponent sections (context tags, tactics) become readable, consistent with 009 but without percentiles? | **Round 5: tiles + opponents, zero-centred gap bars (gap only, rates in popovers), What stands out, three tactic tables by filter group (Advanced collapsed), synced TC switch** (SEED-198) | library, stats, flaws, tactics, iqr, mobile |
+| 012 | opening-stats-repertoire | How do the Openings Stats + Insights tabs carry over the 009/010 system (repertoire table, out-of/after-the-opening gap bars, move-led findings)? | Stats A + Insights A, merged; After the opening dropped | openings, stats, insights, repertoire, mobile |
 
 ## Decisions (winners)
 
@@ -128,3 +129,20 @@ as 009 but without percentiles: the benchmark IQR of the you-minus-opponent gap 
   Advanced), Motif | Missed | Allowed, per 100 games; Advanced collapsed with "Click or tap for details".
   Cells under 40 flaws are faded and verdict-neutral. Tactic IQRs do not exist yet.
 - **Synced TC switch** per section, card header bands, Fredoka only for h2 section titles.
+
+**012 → Stats A + Insights A, merged into one Stats tab (round 2).** Sketched 2026-10-17 on the owner's dev data.
+- **One Stats tab**: the Insights subtab is gone; "Moves that cost you" / "Moves that work" cards (move-led,
+  board with arrow, top 5 at the 99% gate, "Not clear yet" accordion) sit above the repertoire table. One
+  sticky White | Black switch drives both; the table header sticks under it.
+- **Repertoire table**: bookmarks pinned, then most played (duplicates collapsed). Columns: Opening (44px
+  board, name without ECO, move line) · Games (with last played) · Results (WDL bar + score) · Eval after
+  opening (compact "+0.9" with a verdict dot). Trend column dropped.
+- **Expanded row**: large board + links, Score bar (band 45–55%), Eval after opening bar, and the existing
+  ScoreChart (ordinal axis, palm-tree breaks) with grey weekly bars of games in that opening.
+- **Eval centred on the colour baseline** (+0.25 White, −0.25 Black) for bar, band (±0.30), verdict and
+  test; faint tick at 0. Reverses "H0 = 0 cp".
+- **Current vs past**: not in the user's last 200 games with that colour → collapsed "Played before"
+  group; stale bookmarks get a chip; findings from older games get an "older games" chip.
+- **Popover footers** carry 99% CI, p-value (and its reference) and n.
+- **"After the opening" (score vs expected from eval) dropped**: never significant, too many assumptions.
+  The Elo × TC expected-score refit moved to Endgames (SEED-203).
