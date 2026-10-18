@@ -35,6 +35,7 @@ const UNNAMED_SENTINEL = '<unnamed line>';
 const OLDER_GAMES_LABEL = 'older games';
 const NO_VALUE = '—';
 const EVAL_LABEL = 'Eval after opening';
+const EVAL_LABEL_SHORT = 'Eval';
 const OWN_MOVE_LABEL = 'Your move';
 const OPPONENT_MOVE_LABEL = 'Their reply';
 
@@ -170,7 +171,13 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
       centreSwatch={finding.color}
       testId={`${testId}-eval`}
       ariaLabel={`${EVAL_LABEL} ${formatSignedGap(avg)}, centred on an average ${finding.color} game at ${formatSignedGap(baseline)}`}
-      leading={<span className="text-muted-foreground">{EVAL_LABEL}</span>}
+      leading={
+        // Phones shorten the label so it fits beside the value on one line (as RepertoireCard).
+        <span className="text-muted-foreground">
+          <span className="sm:hidden">{EVAL_LABEL_SHORT}</span>
+          <span className="max-sm:hidden">{EVAL_LABEL}</span>
+        </span>
+      }
       trailing={
         <EvalVerdictPopover
           testId={`${testId}-eval-info`}
