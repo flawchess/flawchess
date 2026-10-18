@@ -9,7 +9,8 @@
  *
  * `delta` is the value minus its reference (the colour's baseline for eval, 50% for score).
  * A dot is green or red only when all three hold: the delta is outside the +/- band, the
- * backend confidence is 'high' (the 99% gate: p < 0.01 against the reference), and the
+ * backend confidence is 'medium' or 'high' (the 95% gate: p < 0.05 against the reference,
+ * D-33), and the
  * position has at least REPERTOIRE_MIN_GAMES_FOR_VERDICT games. Everything else is the
  * neutral blue.
  */
@@ -22,6 +23,7 @@ import {
 } from '@/lib/openingStatsZones';
 import { SCORE_BULLET_CENTER, SCORE_BULLET_NEUTRAL_MAX } from '@/lib/scoreBulletConfig';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
+import { isConfident } from '@/lib/significance';
 
 /** Fewer games than this never get a verdict. Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
 export const REPERTOIRE_MIN_GAMES_FOR_VERDICT = 20;
@@ -54,7 +56,7 @@ export interface OpeningVerdictInput {
   delta: number;
   /** Half-width of the typical band, in the same unit as delta. */
   band: number;
-  /** Backend confidence against the reference; only 'high' (99%) colours a dot. */
+  /** Backend confidence against the reference; 'medium' or 'high' (95%) colours a dot. */
   confidence: ConfidenceLevel;
   games: number;
 }
@@ -67,7 +69,7 @@ export function openingVerdictReason(input: OpeningVerdictInput): OpeningVerdict
   // other (WR-03). Rounding makes both edges land exactly on the band, i.e. typical.
   const delta = Math.round(input.delta * BAND_COMPARE_SCALE) / BAND_COMPARE_SCALE;
   if (Math.abs(delta) <= input.band) return 'typical';
-  if (input.confidence !== 'high') return 'chance';
+  if (!isConfident(input.confidence)) return 'chance';
   return input.delta > 0 ? 'better' : 'worse';
 }
 
@@ -141,7 +143,7 @@ const SENTENCE_SCORE_EVEN = 'You score in the typical range here.';
 const SENTENCE_CHANCE = 'Nothing clear yet. The differences could still be chance.';
 
 /**
- * Score row x eval column. Only the parts that passed the 99% gate are stated as clear: an
+ * Score row x eval column. Only the parts that passed the 95% gate are stated as clear: an
  * unclear eval falls back to the score-only sentence. Every cell has a sentence, so a card
  * without one never reads as missing.
  */

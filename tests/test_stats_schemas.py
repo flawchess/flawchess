@@ -31,8 +31,8 @@ _LEGACY: dict[str, object] = dict(
     score=0.733,
     score_confidence="high",
     score_p_value=0.004,
-    score_ci99_low=0.45,
-    score_ci99_high=0.9,
+    score_ci_low=0.47,
+    score_ci_high=0.89,
     is_current=True,
 )
 
@@ -51,6 +51,9 @@ def test_opening_wdl_old_payload_still_parses() -> None:
     assert m.eval_ci_low_pawns is None
     assert m.eval_ci_high_pawns is None
     assert m.eval_p_value is None
+    # D-33: the score CI on OpeningWDL is the 95% pair; the 99% names are gone.
+    assert (m.score_ci_low, m.score_ci_high) == (0.47, 0.89)
+    assert not any("ci99" in name for name in OpeningWDL.model_fields)
 
 
 # --- Full payload (new fields) ----------------------------------

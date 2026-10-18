@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.schemas.openings import OpeningsRequest, NextMovesRequest
+from app.schemas.openings import OpeningsRequest, NextMovesRequest, WDLStats
+from app.services.score_confidence import wilson_bounds
 from app.services.openings_service import (
     analyze,
     derive_user_result,
@@ -158,9 +159,13 @@ class TestWDLStats:
         assert response.stats.confidence in {"low", "medium", "high"}
         assert 0.0 <= response.stats.ci_low <= response.stats.score
         assert response.stats.score <= response.stats.ci_high <= 1.0
-        # The 99% CI (Score verdict popover footer) is strictly wider than the 95% one.
-        assert 0.0 <= response.stats.ci99_low < response.stats.ci_low
-        assert response.stats.ci_high < response.stats.ci99_high <= 1.0
+        # D-33: the Score verdict popover quotes the 95% Wilson CI (default z), the same
+        # level as the verdict gate. No separate 99% pair is sent any more.
+        assert (response.stats.ci_low, response.stats.ci_high) == pytest.approx(
+            wilson_bounds(response.stats.score, 3)
+        )
+        assert "ci99_low" not in WDLStats.model_fields
+        assert "ci99_high" not in WDLStats.model_fields
 
     @pytest.mark.asyncio
     async def test_zero_matches(self, db_session: AsyncSession) -> None:
@@ -379,11 +384,12 @@ class TestAnalyzeEvalFields:
         assert stats.avg_eval_pawns == pytest.approx(0.25, abs=1e-9)  # raw, uncentred
         assert stats.eval_confidence == "low"
         assert stats.eval_p_value is not None and stats.eval_p_value > 0.9
-        # 99% bounds bracket the 95% bounds (same SE, wider z).
+        # D-33: the 95% CI serves the verdict popover. A "low" (not significant) verdict
+        # means the 95% CI contains the colour baseline, so popover and verdict agree.
         assert stats.eval_ci_low_pawns is not None and stats.eval_ci_high_pawns is not None
-        assert stats.eval_ci99_low_pawns is not None and stats.eval_ci99_high_pawns is not None
-        assert stats.eval_ci99_low_pawns < stats.eval_ci_low_pawns
-        assert stats.eval_ci99_high_pawns > stats.eval_ci_high_pawns
+        assert stats.eval_ci_low_pawns < response.eval_baseline_pawns < stats.eval_ci_high_pawns
+        assert "eval_ci99_low_pawns" not in WDLStats.model_fields
+        assert "eval_ci99_high_pawns" not in WDLStats.model_fields
 
     @pytest.mark.asyncio
     async def test_eval_fields_default_when_no_mg_data(self, db_session: AsyncSession) -> None:

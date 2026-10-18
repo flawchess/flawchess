@@ -19,9 +19,7 @@ from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.opening_insights_constants import (
     EVAL_BASELINE_PAWNS_BLACK,
     EVAL_BASELINE_PAWNS_WHITE,
-    OPENING_INSIGHTS_CI_Z_95,
 )
-from app.services.score_confidence import VERDICT_CI_Z_99
 
 CENTIPAWNS_PER_PAWN: float = 100.0
 
@@ -35,8 +33,6 @@ class OpeningEvalFields(TypedDict):
     avg_eval_pawns: float | None
     eval_ci_low_pawns: float | None
     eval_ci_high_pawns: float | None
-    eval_ci99_low_pawns: float | None
-    eval_ci99_high_pawns: float | None
     eval_n: int
     eval_p_value: float | None
     eval_confidence: Literal["low", "medium", "high"]
@@ -55,8 +51,6 @@ def empty_opening_eval_fields() -> OpeningEvalFields:
         avg_eval_pawns=None,
         eval_ci_low_pawns=None,
         eval_ci_high_pawns=None,
-        eval_ci99_low_pawns=None,
-        eval_ci99_high_pawns=None,
         eval_n=0,
         eval_p_value=None,
         eval_confidence="low",
@@ -68,9 +62,8 @@ def finalize_opening_eval(
 ) -> OpeningEvalFields:
     """Turn accumulated phase-entry sums into the eval verdict fields for one row.
 
-    The z-test runs against the colour baseline (H0: mean == baseline). The 99% bounds
-    reuse the same standard error as the 95% ones (ci99_half = ci_half * z99 / z95),
-    so no second call to the primitive is needed.
+    The z-test runs against the colour baseline (H0: mean == baseline). The verdict
+    gate and the popover CI are both 95% (D-33), so one CI pair serves both.
     """
     if pe is None or pe.eval_n_mg <= 0:
         return empty_opening_eval_fields()
@@ -88,9 +81,6 @@ def finalize_opening_eval(
     fields["eval_p_value"] = p_value
     fields["eval_confidence"] = confidence
     if pe.eval_n_mg >= MIN_EVAL_N_FOR_CI:
-        ci99_half_cp = ci_half_cp * VERDICT_CI_Z_99 / OPENING_INSIGHTS_CI_Z_95
         fields["eval_ci_low_pawns"] = (mean_cp - ci_half_cp) / CENTIPAWNS_PER_PAWN
         fields["eval_ci_high_pawns"] = (mean_cp + ci_half_cp) / CENTIPAWNS_PER_PAWN
-        fields["eval_ci99_low_pawns"] = (mean_cp - ci99_half_cp) / CENTIPAWNS_PER_PAWN
-        fields["eval_ci99_high_pawns"] = (mean_cp + ci99_half_cp) / CENTIPAWNS_PER_PAWN
     return fields

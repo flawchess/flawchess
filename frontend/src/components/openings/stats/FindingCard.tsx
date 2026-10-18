@@ -22,7 +22,6 @@ import {
   stripEcoSuffix,
   type OpeningVerdictInput,
 } from '@/lib/openingVerdict';
-import { ARROW_NEUTRAL } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -121,8 +120,8 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
           evalN={evalN}
           color={finding.color}
           reason={openingVerdictReason(input)}
-          ci99Low={finding.eval_ci99_low_pawns ?? null}
-          ci99High={finding.eval_ci99_high_pawns ?? null}
+          ciLow={finding.eval_ci_low_pawns ?? null}
+          ciHigh={finding.eval_ci_high_pawns ?? null}
           pValue={finding.eval_p_value ?? null}
         />
       }
@@ -154,8 +153,6 @@ interface FindingCardProps {
   testId: string;
   onOpenMoves: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
-  /** "Not clear yet" cards draw the move arrow uncoloured: only a 99% finding gets red or green. */
-  neutralArrow?: boolean;
 }
 
 const LINK_BUTTON_CLASS =
@@ -171,7 +168,6 @@ export function FindingCard({
   testId,
   onOpenMoves,
   onOpenGames,
-  neutralArrow = false,
 }: FindingCardProps) {
   const arrows = findingArrows(finding);
   const lastMove = lastMoveSquares(finding.entry_san_sequence) ?? undefined;
@@ -192,7 +188,7 @@ export function FindingCard({
             fen={finding.entry_fen}
             flipped={finding.color === 'black'}
             size={BOARD_SIZE}
-            arrows={neutralArrow ? arrows?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL })) : arrows}
+            arrows={arrows}
             lastMove={lastMove}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-2.5">
@@ -204,8 +200,8 @@ export function FindingCard({
                 draws={finding.draws}
                 losses={finding.losses}
                 input={scoreInput(finding)}
-                ci99Low={finding.ci99_low ?? null}
-                ci99High={finding.ci99_high ?? null}
+                ciLow={finding.ci_low ?? null}
+                ciHigh={finding.ci_high ?? null}
                 pValue={finding.p_value}
                 testId={testId}
               />

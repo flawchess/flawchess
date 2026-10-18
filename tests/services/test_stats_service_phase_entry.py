@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.stats_repository import _openings_dedup
+import app.services.stats_service as stats_service
+from app.services.score_confidence import wilson_bounds
 from app.services.stats_service import MIN_PLY_WHITE, get_most_played_openings
 
 
@@ -45,6 +47,13 @@ _ALL_USER_IDS = [
     _USER_SS_FLIP,
     _USER_SS_OUTLIER,
 ]
+
+
+@pytest.fixture(autouse=True)
+def _no_most_played_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests cover the eval fields on 2-12 game fixtures, not the D-36 row floor
+    (MOST_PLAYED_MIN_GAMES = 20, tested in tests/test_stats_service.py), so lift it."""
+    monkeypatch.setattr(stats_service, "MOST_PLAYED_MIN_GAMES", 1)
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -252,7 +261,7 @@ class TestGetMostPlayedOpeningsPhaseEntry:
     async def test_most_played_eval_is_centred_on_the_colour_baseline(
         self, db_session: AsyncSession
     ) -> None:
-        """12 White games averaging +25 cp (the White baseline) read as typical, with 99% CIs."""
+        """12 White games averaging +25 cp (the White baseline) read as typical, with 95% CIs."""
         uid = _USER_SS_BASELINE
         opening_info = await _get_white_opening_with_min_ply(db_session, MIN_PLY_WHITE)
         if opening_info is None:
@@ -282,13 +291,14 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         assert opening.avg_eval_pawns == pytest.approx(0.25)
         assert opening.eval_confidence == "low"
         assert opening.eval_p_value == pytest.approx(1.0)
+        # D-33: the 95% eval CI serves the popover; "low" means it contains the baseline.
         assert opening.eval_ci_low_pawns is not None and opening.eval_ci_high_pawns is not None
-        assert opening.eval_ci99_low_pawns is not None and opening.eval_ci99_high_pawns is not None
-        assert opening.eval_ci99_low_pawns < opening.eval_ci_low_pawns
-        assert opening.eval_ci99_high_pawns > opening.eval_ci_high_pawns
-        # Score fields come from the shared score_verdict_fields helper.
+        assert opening.eval_ci_low_pawns < 0.25 < opening.eval_ci_high_pawns
+        # Score fields come from the shared score_verdict_fields helper: 95% Wilson CI.
         assert opening.score == pytest.approx(1.0)  # every seeded game is a win
-        assert opening.score_ci99_low <= opening.score <= opening.score_ci99_high
+        assert (opening.score_ci_low, opening.score_ci_high) == pytest.approx(
+            wilson_bounds(1.0, len(evals))
+        )
 
     @pytest.mark.asyncio
     async def test_get_most_played_openings_eval_n_zero_when_no_phase_data(

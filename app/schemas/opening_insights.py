@@ -90,21 +90,15 @@ class OpeningInsightFinding(BaseModel):
     # whisker on the bullet chart.
     ci_low: float = Field(ge=0.0, le=1.0)
     ci_high: float = Field(ge=0.0, le=1.0)
-    # Wilson 99% score interval bounds (D-00): the card popover footer quotes the 99% CI
-    # because the card gate is p < 0.01. Optional so legacy payloads still validate.
-    ci99_low: float | None = Field(default=None, ge=0.0, le=1.0)
-    ci99_high: float | None = Field(default=None, ge=0.0, le=1.0)
     # MG-entry pillar (parity with OpeningWDL).
     # Populated after the finding is built by looking up resulting_full_hash in
     # query_opening_phase_entry_metrics_batch. Defaults mirror OpeningWDL defaults.
-    # Card findings only: not-clear findings carry no eval. The z-test is centred on the
+    # Card findings only. The z-test is centred on the
     # finding colour's baseline (opening_eval.finalize_opening_eval, D-13); avg_eval_pawns
     # stays the raw mean.
     avg_eval_pawns: float | None = None
     eval_ci_low_pawns: float | None = None
     eval_ci_high_pawns: float | None = None
-    eval_ci99_low_pawns: float | None = None
-    eval_ci99_high_pawns: float | None = None
     eval_n: int = 0
     eval_p_value: float | None = None
     eval_confidence: Literal["low", "medium", "high"] = "low"
@@ -124,11 +118,8 @@ class OpeningInsightsResponse(BaseModel):
 
     Four card lists (``white_weaknesses``, ``black_weaknesses``, ``white_strengths``,
     ``black_strengths``) hold at most FINDINGS_CARD_CAP (5) findings each, all
-    high-confidence (p < 0.01), current findings before older ones (D-00, D-08).
-    Four ``*_not_clear`` lists hold at most FINDINGS_NOT_CLEAR_CAP (10) medium-confidence
-    findings (p < 0.05, not at 99%), current first then lowest p first (D-09, D-10), and
-    the matching ``*_not_clear_count`` carries the full medium count before that cap
-    (D-09, D-11). Low-confidence findings are dropped. All lists are always present;
+    medium or high confidence (p < 0.05, D-33), current findings before older ones
+    (D-00, D-08). Low-confidence findings are dropped. All lists are always present;
     empty ones are a valid empty state.
 
     ``current_cutoff_white`` / ``current_cutoff_black`` echo the per-colour current
@@ -139,14 +130,6 @@ class OpeningInsightsResponse(BaseModel):
     black_weaknesses: list[OpeningInsightFinding] = Field(default_factory=list)
     white_strengths: list[OpeningInsightFinding] = Field(default_factory=list)
     black_strengths: list[OpeningInsightFinding] = Field(default_factory=list)
-    white_weaknesses_not_clear: list[OpeningInsightFinding] = Field(default_factory=list)
-    black_weaknesses_not_clear: list[OpeningInsightFinding] = Field(default_factory=list)
-    white_strengths_not_clear: list[OpeningInsightFinding] = Field(default_factory=list)
-    black_strengths_not_clear: list[OpeningInsightFinding] = Field(default_factory=list)
-    white_weaknesses_not_clear_count: int = Field(default=0, ge=0)
-    black_weaknesses_not_clear_count: int = Field(default=0, ge=0)
-    white_strengths_not_clear_count: int = Field(default=0, ge=0)
-    black_strengths_not_clear_count: int = Field(default=0, ge=0)
     current_cutoff_white: datetime.datetime | None = None
     current_cutoff_black: datetime.datetime | None = None
     # Per-color engine-asymmetry baselines (in pawns). Since Phase 242 (D-13) they are both

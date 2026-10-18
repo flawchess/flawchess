@@ -42,6 +42,7 @@ from app.services.openings_service import (
     ROLLING_WINDOW_SIZE,
     get_time_series,
 )
+from app.services.score_confidence import wilson_bounds
 
 # ---------------------------------------------------------------------------
 # TestTimeSeriesRequestSchema — recency field removed from TimeSeriesRequest
@@ -904,7 +905,7 @@ class TestSeriesVerdictFields:
     """Each BookmarkTimeSeries carries score_verdict_fields over its in-window totals."""
 
     @pytest.mark.asyncio
-    async def test_30w_5d_5l_series_has_score_p_and_99_ci(self, db_session: AsyncSession) -> None:
+    async def test_30w_5d_5l_series_has_score_p_and_95_ci(self, db_session: AsyncSession) -> None:
         uid = _USER_WEEKLY
         fh = 9_600_002
         results = ["1-0"] * 30 + ["1/2-1/2"] * 5 + ["0-1"] * 5
@@ -927,7 +928,9 @@ class TestSeriesVerdictFields:
 
         bts = response.series[0]
         assert bts.score == pytest.approx(0.8125)
-        assert bts.score_ci99_low < 0.8125 < bts.score_ci99_high
+        # D-33: the series carries the 95% Wilson CI over the in-window totals.
+        assert (bts.score_ci_low, bts.score_ci_high) == pytest.approx(wilson_bounds(0.8125, 40))
+        assert bts.score_ci_low < 0.8125 < bts.score_ci_high
         assert bts.score_confidence == "high"
         assert bts.score_p_value < 0.01
 
@@ -944,7 +947,7 @@ class TestSeriesVerdictFields:
         assert bts.score == 0.5
         assert bts.score_confidence == "low"
         assert bts.score_p_value == 1.0
-        assert bts.score_ci99_low == bts.score_ci99_high == 0.5
+        assert bts.score_ci_low == bts.score_ci_high == 0.5
 
     @pytest.mark.asyncio
     async def test_score_fields_cover_only_in_window_games(self, db_session: AsyncSession) -> None:

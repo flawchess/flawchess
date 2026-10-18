@@ -16,7 +16,6 @@ from app.services.opening_insights_constants import (
     EVAL_BASELINE_PAWNS_WHITE,
     OPENING_INSIGHTS_CI_Z_95,
 )
-from app.services.score_confidence import VERDICT_CI_Z_99
 
 
 def _metrics(evals_cp: list[int]) -> OpeningPhaseEntryMetrics:
@@ -63,17 +62,30 @@ class TestFinalizeOpeningEval:
             fields = finalize_opening_eval(_metrics(_MEAN_PLUS_25), color)
             assert fields["avg_eval_pawns"] == pytest.approx(25 / CENTIPAWNS_PER_PAWN)
 
-    def test_ci99_half_width_scales_the_ci95_half_width(self) -> None:
-        fields = finalize_opening_eval(_metrics(_MEAN_PLUS_25), "white")
+    def test_ci_is_the_95_percent_normal_interval_around_the_mean(self) -> None:
+        """D-33: the one CI pair is 95% (z95 * sd / sqrt(n)), symmetric around the mean."""
+        evals = _MEAN_PLUS_25
+        n = len(evals)
+        mean = sum(evals) / n
+        sd = math.sqrt(sum((cp - mean) ** 2 for cp in evals) / (n - 1))
+        expected_half_pawns = OPENING_INSIGHTS_CI_Z_95 * sd / math.sqrt(n) / CENTIPAWNS_PER_PAWN
+
+        fields = finalize_opening_eval(_metrics(evals), "white")
+
         assert fields["avg_eval_pawns"] is not None
+        assert fields["eval_ci_low_pawns"] is not None
         assert fields["eval_ci_high_pawns"] is not None
-        assert fields["eval_ci99_high_pawns"] is not None
-        assert fields["eval_ci99_low_pawns"] is not None
-        half95 = fields["eval_ci_high_pawns"] - fields["avg_eval_pawns"]
-        half99 = fields["eval_ci99_high_pawns"] - fields["avg_eval_pawns"]
-        assert half99 == pytest.approx(half95 * VERDICT_CI_Z_99 / OPENING_INSIGHTS_CI_Z_95)
-        # Symmetric around the mean.
-        assert fields["avg_eval_pawns"] - fields["eval_ci99_low_pawns"] == pytest.approx(half99)
+        assert fields["eval_ci_high_pawns"] - fields["avg_eval_pawns"] == pytest.approx(
+            expected_half_pawns
+        )
+        assert fields["avg_eval_pawns"] - fields["eval_ci_low_pawns"] == pytest.approx(
+            expected_half_pawns
+        )
+
+    def test_no_99_percent_fields_are_returned(self) -> None:
+        fields = finalize_opening_eval(_metrics(_MEAN_PLUS_25), "white")
+        assert not any("ci99" in key for key in fields)
+        assert not any("ci99" in key for key in empty_opening_eval_fields())
 
     def test_none_metrics_return_empty_fields(self) -> None:
         assert finalize_opening_eval(None, "white") == empty_opening_eval_fields()
@@ -88,8 +100,6 @@ class TestFinalizeOpeningEval:
         assert fields["eval_confidence"] == "low"
         assert fields["eval_ci_low_pawns"] is None
         assert fields["eval_ci_high_pawns"] is None
-        assert fields["eval_ci99_low_pawns"] is None
-        assert fields["eval_ci99_high_pawns"] is None
 
     def test_color_none_uses_the_white_baseline(self) -> None:
         none_fields = finalize_opening_eval(_metrics(_MEAN_PLUS_25), None)

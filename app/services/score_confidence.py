@@ -65,6 +65,8 @@ from app.services.opening_insights_constants import (
 # Red/green verdicts on the Library and Endgame Stats pages need 99%
 # significance (about 50 cells on one page, so 95% flags 2-3 by chance alone). The
 # displayed CIs on those pages use the same z so the popover and the verdict agree.
+# The Openings verdicts use 95% instead (Phase 242 D-33): fewer cells per view and a
+# false positive is cheap there.
 # Two-sided 99% normal quantile.
 VERDICT_CI_Z_99: float = 2.5758293035489
 
@@ -415,17 +417,17 @@ def compute_confidence_bucket(
 
 
 class ScoreVerdictFields(TypedDict):
-    """Chess score plus its two-sided p-value vs 50% and the 99% Wilson CI (D-18)."""
+    """Chess score plus its two-sided p-value vs 50% and the 95% Wilson CI (D-18, D-33)."""
 
     score: float
     score_confidence: Literal["low", "medium", "high"]
     score_p_value: float
-    score_ci99_low: float
-    score_ci99_high: float
+    score_ci_low: float
+    score_ci_high: float
 
 
 def score_verdict_fields(wins: int, draws: int, losses: int) -> ScoreVerdictFields:
-    """Score verdict inputs for one W/D/L row: score, bucket, p-value, 99% Wilson CI.
+    """Score verdict inputs for one W/D/L row: score, bucket, p-value, 95% Wilson CI.
 
     Single shared helper for the Openings most-played rows and the bookmark time series
     (D-18), so both surfaces report identical numbers for identical games. n == 0
@@ -437,16 +439,16 @@ def score_verdict_fields(wins: int, draws: int, losses: int) -> ScoreVerdictFiel
             score=SCORE_PIVOT,
             score_confidence="low",
             score_p_value=1.0,
-            score_ci99_low=SCORE_PIVOT,
-            score_ci99_high=SCORE_PIVOT,
+            score_ci_low=SCORE_PIVOT,
+            score_ci_high=SCORE_PIVOT,
         )
     score = (wins + 0.5 * draws) / n
     confidence, p_value, _se = compute_confidence_bucket(wins, draws, losses, n)
-    ci99_low, ci99_high = wilson_bounds(score, n, z=VERDICT_CI_Z_99)
+    ci_low, ci_high = wilson_bounds(score, n)
     return ScoreVerdictFields(
         score=score,
         score_confidence=confidence,
         score_p_value=p_value,
-        score_ci99_low=ci99_low,
-        score_ci99_high=ci99_high,
+        score_ci_low=ci_low,
+        score_ci_high=ci_high,
     )

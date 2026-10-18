@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { ArrowLeftRight, Search } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
-import { isConfident } from '@/lib/significance';
 import { DARK_GREEN, DARK_RED, getArrowColor } from '@/lib/arrowColor';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
@@ -265,23 +264,14 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   // for the side that just moved. Pure synchronous lookup, so no useMemo.
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
 
-  // Score-text font gate. Paint the Score % in the zone color only when:
-  //   - confidence bucket is 'medium' or 'high' (n>=10 + p below the medium
-  //     threshold; current threshold is p<0.05, see scoreConfidence.ts)
-  //   - the score lands in a colored zone (red or green), not the in-between band
-  // Otherwise leave undefined → falls back to the default foreground.
-  const zoneHex = scoreZoneColor(entry.score);
-  const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
-  const showZoneFontColor = isConfident(entry.confidence) && isInColoredZone;
-  const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
-
-  // Row-bg score-zone tint. Only red and green zones get a row tint — the
-  // blue (in-between OR unreliable) class stays untinted so the eye is drawn
-  // to strong/weak moves. Reuse the arrow palette hex so the row tint and
-  // the board arrow share one source of truth.
+  // Score text, row tint and board arrow all follow the card verdict rule (D-35: 95%
+  // confidence, 20+ games, outside the +/-5-point band), so a move never disagrees with
+  // the "Results played as" panel of the position it leads to. Only red and green get a
+  // colour; everything else stays the default foreground and untinted.
   const arrowColorHex = getArrowColor(entry.score, entry.game_count, entry.confidence);
   const zoneTintHex =
     arrowColorHex === DARK_GREEN || arrowColorHex === DARK_RED ? arrowColorHex : null;
+  const scoreColor: string | undefined = zoneTintHex !== null ? scoreZoneColor(entry.score) : undefined;
 
   // Merge unreliable-row opacity with the score-zone tint and the deep-link
   // pulse. The pulse animates through grey alpha levels; the row settles at

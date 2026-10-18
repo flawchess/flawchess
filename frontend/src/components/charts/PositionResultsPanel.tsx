@@ -80,7 +80,7 @@ export function PositionResultsPanel({
   const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
   const scorePct = Math.round(stats.score * 100);
 
-  // Score verdict: same 99% / 20-game / +-5-point rule as the repertoire cards. The value text
+  // Score verdict: same 95% / 20-game / +-5-point rule as the repertoire cards. The value text
   // takes the dot colour only for a better or worse verdict.
   const scoreVerdictInput = {
     delta: scoreDelta(stats.score),
@@ -164,8 +164,8 @@ export function PositionResultsPanel({
             draws={stats.draws}
             losses={stats.losses}
             reason={openingVerdictReason(scoreVerdictInput)}
-            ci99Low={stats.ci99_low ?? null}
-            ci99High={stats.ci99_high ?? null}
+            ciLow={stats.ci_low ?? null}
+            ciHigh={stats.ci_high ?? null}
             pValue={stats.p_value}
             lastPlayedAt={stats.last_played_at}
           />
@@ -210,7 +210,7 @@ interface OpeningEvalVerdictRowProps {
 /**
  * Opening-end End Eval: label, value and popover in the left cell and a verdict track centred
  * on the colour's average eval in the right cell, the same layout as the Score row. Dot is
- * green/red only for a confident (99%), out-of-band eval over 20+ evals.
+ * green/red only for a confident (95%), out-of-band eval over 20+ evals.
  */
 function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: OpeningEvalVerdictRowProps) {
   const avgEval = stats.avg_eval_pawns as number;
@@ -251,8 +251,8 @@ function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: Openin
           evalN={stats.eval_n}
           color={filterColor}
           reason={openingVerdictReason(verdictInput)}
-          ci99Low={stats.eval_ci99_low_pawns ?? null}
-          ci99High={stats.eval_ci99_high_pawns ?? null}
+          ciLow={stats.eval_ci_low_pawns ?? null}
+          ciHigh={stats.eval_ci_high_pawns ?? null}
           pValue={stats.eval_p_value ?? null}
         />
       </span>

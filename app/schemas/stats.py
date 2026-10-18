@@ -60,12 +60,12 @@ class OpeningWDL(BaseModel):
     draw_pct: float
     loss_pct: float
     # Score verdict inputs (D-18): (W + 0.5*D) / n, two-sided Wilson p vs 50%, and the
-    # 99% Wilson CI. Computed server-side by score_confidence.score_verdict_fields.
+    # 95% Wilson CI (D-33). Computed server-side by score_confidence.score_verdict_fields.
     score: float
     score_confidence: Literal["low", "medium", "high"]
     score_p_value: float
-    score_ci99_low: float
-    score_ci99_high: float
+    score_ci_low: float
+    score_ci_high: float
 
     # Middlegame-entry Stockfish eval
     # All optional with defaults so existing callers/tests keep working.
@@ -73,10 +73,6 @@ class OpeningWDL(BaseModel):
     avg_eval_pawns: float | None = None  # signed, user-perspective; None when eval_n == 0
     eval_ci_low_pawns: float | None = None  # 95% CI lower bound; None when eval_n < 2
     eval_ci_high_pawns: float | None = None  # 95% CI upper bound; None when eval_n < 2
-    eval_ci99_low_pawns: float | None = (
-        None  # 99% CI lower bound (red/green verdict); None when eval_n < 2
-    )
-    eval_ci99_high_pawns: float | None = None  # 99% CI upper bound; None when eval_n < 2
     eval_n: int = 0  # games used in the mean (mate-excluded, NULL-excluded, outlier-trimmed)
     eval_p_value: float | None = None  # two-sided p-value vs the colour baseline (D-13)
     eval_confidence: Literal["low", "medium", "high"] = "low"
@@ -123,8 +119,6 @@ class BookmarkPhaseEntryItem(BaseModel):
     avg_eval_pawns: float | None = None
     eval_ci_low_pawns: float | None = None
     eval_ci_high_pawns: float | None = None
-    eval_ci99_low_pawns: float | None = None
-    eval_ci99_high_pawns: float | None = None
     eval_n: int = 0
     eval_p_value: float | None = None  # two-sided p-value vs the bookmark colour's baseline
     eval_confidence: Literal["low", "medium", "high"] = "low"

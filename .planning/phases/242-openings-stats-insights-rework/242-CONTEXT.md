@@ -153,6 +153,25 @@ discuss-phase" and record defaults for the rest.
   with neither reads "Nothing stands out as <colour> yet."; both sections empty merge into one
   "Moves that Stand Out" block. The duplicated "n moves lean this way" empty-state copy is gone (amends D-11).
 
+### UAT round 9 decisions (owner, 2026-10-18)
+- **D-33:** The Openings verdict gate drops from 99% to **95%** (confidence bucket 'medium' or 'high', p < 0.05)
+  on every Openings surface: finding cards, repertoire and bookmark cards, and the Moves / Games "Results
+  played as" panel (shared, so the Endgames Games subtab follows). A false positive is cheap and 99% hid too
+  much. The popover footers quote the 95% CI, so the separate `ci99_*` / `score_ci99_*` / `eval_ci99_*`
+  fields are dropped in favour of the existing 95% `ci_*` / `eval_ci_*` bounds (bookmark and most-played
+  score CIs become `score_ci_low` / `score_ci_high`). Endgame Stats and Library keep `VERDICT_CI_Z_99`
+  (about 50 cells per page). Amends D-00, D-17, D-18, D-20, D-29, D-30.
+- **D-34:** "Not clear yet" is **removed** (it was "p < 0.05 but not at 99%", empty at a 95% gate): no
+  not-clear lists or counts in the API, no not-clear cards or toggle. A section with no cards reads
+  "Nothing stands out as <colour> yet."; both empty still merge into "Moves that Stand Out". Supersedes
+  D-09, D-10, D-11 and the not-clear parts of D-20 and D-32.
+- **D-35:** The Moves-tab move list (score text colour, row tint, board arrows) uses the **same verdict rule**
+  as the cards (`openingVerdict`: 95% confidence, 20+ games, outside the +/-5-point band), replacing its
+  own 10-game / >= 55% rule, so a move and the "Results played as" panel after it never disagree.
+- **D-36:** Most Played rows need **at least 20 games** (`MIN_GAMES_FOR_OPENING = 20`, the verdict floor), in
+  both the current list and "Played before"; no more padding with 1-3 game openings. The cutoff-restricted
+  second fetch (D-05 clarified) stays, under the same floor. Bookmarks are never filtered. Amends D-07.
+
 </decisions>
 
 <canonical_refs>

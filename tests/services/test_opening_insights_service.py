@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import datetime
+import math
 from collections.abc import Iterator
 from typing import Any, Literal
 from types import SimpleNamespace
@@ -26,12 +27,13 @@ from app.schemas.opening_insights import (
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_CI_Z_95,
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE as MIN_GAMES_PER_CANDIDATE,
 )
+from app.services.score_confidence import wilson_bounds
 from app.services.repertoire_recency import CurrentCutoffs
 from app.services.opening_insights_service import (
     FINDINGS_CARD_CAP,
-    FINDINGS_NOT_CLEAR_CAP,
     _partition_section,
     _TransitionRow,
     _classify_row,
@@ -1330,7 +1332,7 @@ class TestComputeInsightsTranspositionWdl:
         not the move-played row."""
         # Move-played: w=15, d=3, l=2, n=20 → score = 16.5/20 = 0.825 (major strength)
         # Pos WDL:     w=48, d=12, l=20, n=80 → score = 54/80 = 0.675 (still major strength,
-        #              p ~ 0.002 so it clears the 99% card gate)
+        #              p ~ 0.002 so it clears the 95% card gate)
         # Surfacing gate (HAVING n_games >= 20) passes on move-played n=20.
         # Field validator (Field(ge=20) on n_games) passes on pos_n=80.
         row = _make_row(
@@ -1371,7 +1373,7 @@ class TestComputeInsightsTranspositionWdl:
         (classification flipped) — _classify_row sees pos_row, not row."""
         # Move-played: w=12, d=1, l=7, n=20 → score = 12.5/20 = 0.625 (minor strength)
         # Pos WDL:     w=30, d=30, l=60, n=120 → score = 45/120 = 0.375 (major weakness,
-        #              p ~ 0.006 so it clears the 99% card gate)
+        #              p ~ 0.006 so it clears the 95% card gate)
         # Surfacing gate passes on move-played n=20. Validator passes on pos_n=120.
         row = _make_row(
             entry_hash=100,
@@ -1907,7 +1909,7 @@ async def test_cutoff_lookup_receives_now_utc_and_request_filters(
 
 
 # ---------------------------------------------------------------------------
-# Phase 242: 99% card partition, capped not-clear list, centred eval, 99% CIs
+# Phase 242: 95% card partition (D-33, D-34), centred eval, 95% CIs
 # ---------------------------------------------------------------------------
 
 LONG_AGO = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
@@ -1935,75 +1937,66 @@ def _names(findings: list[OpeningInsightFinding]) -> list[str]:
     return [f.candidate_move_san for f in findings]
 
 
-def test_partition_cards_hold_only_high_confidence_capped_with_current_first() -> None:
-    """7 high findings (two older, Wilson-best first) -> 5 current cards; older ones are cut."""
+def test_partition_returns_a_plain_list_of_cards() -> None:
+    """D-34: no "not clear yet" bucket, the partition is just the card list."""
+    cards = _partition_section([_finding_for("hi", confidence="high")])
+
+    assert isinstance(cards, list)
+    assert _names(cards) == ["hi"]
+
+
+def test_partition_keeps_medium_as_a_card_and_drops_low() -> None:
+    """D-33: the card gate is 95% (p < 0.05), so 'medium' qualifies; 'low' is dropped."""
     ranked = [
-        _finding_for("old_a", confidence="high", is_current=False),
-        _finding_for("cur_b", confidence="high"),
-        _finding_for("old_c", confidence="high", is_current=False),
-        _finding_for("cur_d", confidence="high"),
-        _finding_for("cur_e", confidence="high"),
-        _finding_for("cur_f", confidence="high"),
-        _finding_for("cur_g", confidence="high"),
+        _finding_for("lo1", confidence="low", p_value=0.4),
+        _finding_for("med", confidence="medium", p_value=0.03),
+        _finding_for("hi", confidence="high"),
+        _finding_for("lo2", confidence="low", p_value=0.2),
     ]
 
-    partition = _partition_section(ranked)
+    cards = _partition_section(ranked)
 
-    assert len(partition.cards) == FINDINGS_CARD_CAP == 5
+    # Incoming (Wilson) order kept: medium is not demoted below high.
+    assert _names(cards) == ["med", "hi"]
+
+
+def test_partition_cards_are_capped_with_current_first() -> None:
+    """7 confident findings (two older, mixed high/medium) -> 5 current cards; older cut."""
+    ranked = [
+        _finding_for("old_a", confidence="high", is_current=False),
+        _finding_for("cur_b", confidence="medium", p_value=0.02),
+        _finding_for("old_c", confidence="medium", is_current=False, p_value=0.04),
+        _finding_for("cur_d", confidence="high"),
+        _finding_for("cur_e", confidence="medium", p_value=0.03),
+        _finding_for("cur_f", confidence="high"),
+        _finding_for("cur_g", confidence="medium", p_value=0.01),
+    ]
+
+    cards = _partition_section(ranked)
+
+    assert len(cards) == FINDINGS_CARD_CAP == 5
     # Current findings first, Wilson order kept inside the group.
-    assert _names(partition.cards) == ["cur_b", "cur_d", "cur_e", "cur_f", "cur_g"]
+    assert _names(cards) == ["cur_b", "cur_d", "cur_e", "cur_f", "cur_g"]
 
 
 def test_partition_older_card_findings_fill_remaining_slots_after_current() -> None:
     """With fewer than 5 current findings the older ones follow, still in Wilson order."""
     ranked = [
         _finding_for("old_a", confidence="high", is_current=False),
-        _finding_for("cur_b", confidence="high"),
-        _finding_for("old_c", confidence="high", is_current=False),
+        _finding_for("cur_b", confidence="medium", p_value=0.03),
+        _finding_for("old_c", confidence="medium", is_current=False, p_value=0.02),
+        _finding_for("lo_d", confidence="low", p_value=0.3),
     ]
 
-    partition = _partition_section(ranked)
+    cards = _partition_section(ranked)
 
-    assert _names(partition.cards) == ["cur_b", "old_a", "old_c"]
-
-
-def test_partition_not_clear_is_capped_sorted_and_counted_before_the_cap() -> None:
-    """12 medium findings -> 10 listed (current first, then lowest p) and a count of 12."""
-    medium = [
-        _finding_for(
-            f"m{i}",
-            confidence="medium",
-            # m0 and m1 are older games even though m0 has the lowest p of all.
-            is_current=i >= 2,
-            p_value=MEDIUM_P_BASE + MEDIUM_P_STEP * i,
-        )
-        for i in range(12)
-    ]
-    # Feed the section in a scrambled order: the partition must sort, not trust input order.
-    ranked = list(reversed(medium))
-
-    partition = _partition_section(ranked)
-
-    assert len(partition.not_clear) == FINDINGS_NOT_CLEAR_CAP == 10
-    assert partition.not_clear_count == 12
-    # Current findings by ascending p (m2..m11 -> the first 10 are m2..m11), older cut by the cap.
-    assert _names(partition.not_clear) == [f"m{i}" for i in range(2, 12)]
-    assert partition.cards == []
+    assert _names(cards) == ["cur_b", "old_a", "old_c"]
 
 
-def test_partition_drops_low_confidence_and_ignores_it_in_counts() -> None:
-    ranked = [
-        _finding_for("hi", confidence="high"),
-        _finding_for("med", confidence="medium", p_value=0.03),
-        _finding_for("lo1", confidence="low", p_value=0.4),
-        _finding_for("lo2", confidence="low", p_value=0.2),
-    ]
+def test_partition_all_low_is_empty() -> None:
+    ranked = [_finding_for(f"lo{i}", confidence="low", p_value=0.2) for i in range(3)]
 
-    partition = _partition_section(ranked)
-
-    assert _names(partition.cards) == ["hi"]
-    assert _names(partition.not_clear) == ["med"]
-    assert partition.not_clear_count == 1
+    assert _partition_section(ranked) == []
 
 
 def _patch_confidence_by_n(
@@ -2051,25 +2044,28 @@ def _rows_with_n(
 
 
 @pytest.mark.asyncio
-async def test_card_list_is_99_gated_capped_and_eval_runs_on_cards_only(
+async def test_card_list_is_95_gated_capped_and_eval_runs_on_cards_only(
     mock_resolve_cutoffs: AsyncMock,
 ) -> None:
-    """7 high rows (two older) -> 5 current cards; the eval batch sees only those 5 hashes."""
+    """7 confident rows (high and medium, two older) -> 5 current cards; the eval batch sees
+    only those 5 hashes."""
     mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
     sizes = [100 + 10 * i for i in range(7)]
     played = [LONG_AGO, RECENT, LONG_AGO, RECENT, RECENT, RECENT, RECENT]
     rows, openings = _rows_with_n(sizes, last_played_at=played)
+    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
+        size: ("high", 0.001) if i % 2 == 0 else ("medium", 0.03) for i, size in enumerate(sizes)
+    }
     eval_calls: list[Any] = []
 
-    with _patch_confidence_by_n({size: ("high", 0.001) for size in sizes}):
+    with _patch_confidence_by_n(buckets):
         response = await _run_compute(
             rows=rows, openings_by_hash=openings, color="white", eval_calls=eval_calls
         )
 
     assert len(response.white_weaknesses) == FINDINGS_CARD_CAP
     assert all(f.is_current for f in response.white_weaknesses)
-    assert response.white_weaknesses_not_clear == []
-    assert response.white_weaknesses_not_clear_count == 0
+    assert {f.confidence for f in response.white_weaknesses} == {"high", "medium"}
     # Pitfall 8: enrichment must not touch the uncapped ranked list.
     assert len(eval_calls) == 1
     queried_hashes = set(eval_calls[0].kwargs["hashes"])
@@ -2078,15 +2074,13 @@ async def test_card_list_is_99_gated_capped_and_eval_runs_on_cards_only(
 
 
 @pytest.mark.asyncio
-async def test_not_clear_list_holds_medium_findings_with_the_full_count_and_no_eval(
+async def test_medium_findings_are_cards_and_get_the_eval(
     mock_resolve_cutoffs: AsyncMock,
 ) -> None:
-    """12 medium rows -> no cards, 10 not-clear rows, count 12, and no eval query at all."""
+    """D-33: medium rows (p < 0.05) are cards in their own right, enriched with the eval."""
     mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
-    sizes = [100 + 10 * i for i in range(12)]
-    # The two lowest-p rows (i=0, 1) are older games: they sort after every current row.
-    played = [LONG_AGO, LONG_AGO] + [RECENT] * 10
-    rows, openings = _rows_with_n(sizes, last_played_at=played)
+    sizes = [100 + 10 * i for i in range(3)]
+    rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 3)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
         size: ("medium", MEDIUM_P_BASE + MEDIUM_P_STEP * i) for i, size in enumerate(sizes)
     }
@@ -2097,18 +2091,16 @@ async def test_not_clear_list_holds_medium_findings_with_the_full_count_and_no_e
             rows=rows, openings_by_hash=openings, color="white", eval_calls=eval_calls
         )
 
-    assert response.white_weaknesses == []
-    assert len(response.white_weaknesses_not_clear) == FINDINGS_NOT_CLEAR_CAP
-    assert response.white_weaknesses_not_clear_count == 12
-    p_values = [f.p_value for f in response.white_weaknesses_not_clear]
-    assert p_values == sorted(p_values)
-    assert all(f.is_current for f in response.white_weaknesses_not_clear)
-    assert all(f.eval_n == 0 for f in response.white_weaknesses_not_clear)
-    assert eval_calls == []
+    assert len(response.white_weaknesses) == 3
+    assert all(f.confidence == "medium" for f in response.white_weaknesses)
+    assert len(eval_calls) == 1
+    assert set(eval_calls[0].kwargs["hashes"]) == {
+        int(f.resulting_full_hash) for f in response.white_weaknesses
+    }
 
 
 @pytest.mark.asyncio
-async def test_low_confidence_findings_appear_in_neither_list() -> None:
+async def test_low_confidence_findings_are_dropped() -> None:
     sizes = [100, 110, 120]
     rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 3)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
@@ -2120,13 +2112,13 @@ async def test_low_confidence_findings_appear_in_neither_list() -> None:
     with _patch_confidence_by_n(buckets):
         response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
 
-    assert response.white_weaknesses == []
-    assert len(response.white_weaknesses_not_clear) == 1
-    assert response.white_weaknesses_not_clear_count == 1
+    assert [f.confidence for f in response.white_weaknesses] == ["medium"]
+    # D-34: the response carries no "not clear yet" lists or counts.
+    assert not any("not_clear" in name for name in OpeningInsightsResponse.model_fields)
 
 
 @pytest.mark.asyncio
-async def test_card_eval_is_centred_on_the_colour_baseline_and_carries_99_cis() -> None:
+async def test_card_eval_is_centred_on_the_colour_baseline_and_carries_95_cis() -> None:
     """A card whose MG-entry eval mean equals the white baseline (+25 cp) is not significant.
 
     With the old H0 of 0 cp the same sums (mean 25 cp, sd 50 cp, n 60) give z ~ 3.9, i.e. 'high'.
@@ -2161,15 +2153,18 @@ async def test_card_eval_is_centred_on_the_colour_baseline_and_carries_99_cis() 
     assert finding.avg_eval_pawns == pytest.approx(0.25)  # raw mean, uncentred
     assert finding.eval_confidence == "low"  # centred H0: nothing to see
     assert finding.eval_p_value is not None and finding.eval_p_value > 0.5
-    assert finding.eval_ci99_low_pawns is not None and finding.eval_ci99_high_pawns is not None
     assert finding.eval_ci_low_pawns is not None and finding.eval_ci_high_pawns is not None
-    # 99% bounds are wider than the 95% ones around the same mean.
-    assert finding.eval_ci99_low_pawns < finding.eval_ci_low_pawns
-    assert finding.eval_ci99_high_pawns > finding.eval_ci_high_pawns
+    # D-33: the 95% CI (z95 * sd / sqrt(n)) serves the popover and contains the baseline.
+    # The fixture sumsq encodes the population variance; the primitive is Bessel-corrected.
+    sample_variance = variance * eval_n / (eval_n - 1)
+    half_pawns = OPENING_INSIGHTS_CI_Z_95 * math.sqrt(sample_variance / eval_n) / 100.0
+    assert finding.eval_ci_low_pawns == pytest.approx(0.25 - half_pawns)
+    assert finding.eval_ci_high_pawns == pytest.approx(0.25 + half_pawns)
 
 
 @pytest.mark.asyncio
-async def test_every_finding_has_a_99_wilson_interval_wider_than_the_95() -> None:
+async def test_every_card_carries_the_95_wilson_interval() -> None:
+    """D-33: ci_low/ci_high are the 95% Wilson bounds; no 99% pair is sent."""
     sizes = [100, 110]
     rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 2)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
@@ -2180,9 +2175,10 @@ async def test_every_finding_has_a_99_wilson_interval_wider_than_the_95() -> Non
     with _patch_confidence_by_n(buckets):
         response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
 
-    findings = response.white_weaknesses + response.white_weaknesses_not_clear
+    findings = response.white_weaknesses
     assert len(findings) == 2
     for finding in findings:
-        assert finding.ci99_low is not None and finding.ci99_high is not None
-        assert finding.ci99_low < finding.ci_low
-        assert finding.ci99_high > finding.ci_high
+        assert (finding.ci_low, finding.ci_high) == pytest.approx(
+            wilson_bounds(finding.score, finding.n_games)
+        )
+    assert not any("ci99" in name for name in OpeningInsightFinding.model_fields)

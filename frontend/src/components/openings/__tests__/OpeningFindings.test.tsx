@@ -81,14 +81,12 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     p_value: 0.001,
     ci_low: 0.2,
     ci_high: 0.4,
-    ci99_low: 0.18,
-    ci99_high: 0.44,
     avg_eval_pawns: -0.6,
     eval_n: 40,
     eval_p_value: 0.001,
     eval_confidence: 'high',
-    eval_ci99_low_pawns: -0.9,
-    eval_ci99_high_pawns: -0.3,
+    eval_ci_low_pawns: -0.9,
+    eval_ci_high_pawns: -0.3,
     last_played_at: '2026-09-01T00:00:00Z',
     is_current: true,
     ...overrides,
@@ -101,14 +99,6 @@ function emptyResponse(overrides: Partial<OpeningInsightsResponse> = {}): Openin
     black_weaknesses: [],
     white_strengths: [],
     black_strengths: [],
-    white_weaknesses_not_clear: [],
-    black_weaknesses_not_clear: [],
-    white_strengths_not_clear: [],
-    black_strengths_not_clear: [],
-    white_weaknesses_not_clear_count: 0,
-    black_weaknesses_not_clear_count: 0,
-    white_strengths_not_clear_count: 0,
-    black_strengths_not_clear_count: 0,
     current_cutoff_white: null,
     current_cutoff_black: null,
     eval_baseline_pawns_white: 0.25,
@@ -231,98 +221,22 @@ describe('OpeningFindings cards and Show more', () => {
   });
 });
 
-describe('OpeningFindings Not clear yet', () => {
-  const tenRows = Array.from({ length: 10 }, (_, i) =>
-    makeFinding({ confidence: 'medium', score: 0.4, n_games: 30 + i }),
-  );
-
-  it('uses the full backend count in the header and hides the rows until expanded', () => {
-    renderFindings(
-      emptyResponse({
-        white_weaknesses: [makeFinding()],
-        white_weaknesses_not_clear: tenRows,
-        white_weaknesses_not_clear_count: 12,
-      }),
-    );
-    const toggle = screen.getByTestId('opening-findings-weakness-unclear-toggle');
-    expect(toggle.textContent).toContain('Not clear yet (12)');
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByTestId('opening-findings-weakness-unclear-list')).toBeNull();
+describe('OpeningFindings 95% gate (D-33, D-34)', () => {
+  it('draws a medium-confidence finding as a normal coloured card', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [makeFinding({ confidence: 'medium', p_value: 0.03 })] }));
+    const score0 = screen.getByTestId('opening-findings-weakness-card-0-score');
+    expect(score0.textContent).toBe('30%');
+    expect(score0.style.color).not.toBe('');
   });
 
-  it('expands to uncoloured finding cards and tracks the expand once', () => {
-    renderFindings(
-      emptyResponse({
-        white_weaknesses: [makeFinding()],
-        white_weaknesses_not_clear: [
-          ...tenRows.slice(0, 2),
-          makeFinding({ confidence: 'medium', is_current: false }),
-        ],
-        white_weaknesses_not_clear_count: 3,
-      }),
-    );
-    const toggle = screen.getByTestId('opening-findings-weakness-unclear-toggle');
-    fireEvent.click(toggle);
-
-    const card0 = screen.getByTestId('opening-findings-weakness-unclear-card-0');
-    expect(card0.textContent).toContain('After 1. e4');
-    expect(screen.getByTestId('opening-findings-weakness-unclear-card-0-btn-games').textContent).toBe('30Games');
-    // Medium confidence never passes the 99% gate, so the score stays uncoloured.
-    const score0 = screen.getByTestId('opening-findings-weakness-unclear-card-0-score');
-    expect(score0.textContent).toBe('40%');
-    expect(score0.style.color).toBe('');
-    expect(screen.queryByTestId('opening-findings-weakness-unclear-card-0-older')).toBeNull();
-    expect(screen.getByTestId('opening-findings-weakness-unclear-card-2-older').textContent).toBe(
-      'older games',
-    );
-    expect(panelOpenTargets()).toEqual(['opening-findings-unclear']);
-
-    // Collapsing never tracks.
-    fireEvent.click(toggle);
-    expect(screen.queryByTestId('opening-findings-weakness-unclear-list')).toBeNull();
-    expect(panelOpenTargets()).toEqual(['opening-findings-unclear']);
-  });
-
-  it('is hidden entirely when the medium count is zero', () => {
+  it('has no "Not clear yet" list or toggle', () => {
     renderFindings(emptyResponse({ white_weaknesses: [makeFinding()] }));
-    expect(screen.queryByTestId('opening-findings-weakness-unclear-toggle')).toBeNull();
+    expect(screen.queryByText(/Not clear yet/)).toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-unclear')).toBeNull();
   });
 });
 
-describe('OpeningFindings without clear cards', () => {
-  it('shows the leaning cards inline with their label, no toggle', () => {
-    renderFindings(
-      emptyResponse({
-        black_weaknesses_not_clear: [makeFinding({ color: 'black', confidence: 'medium' })],
-        black_weaknesses_not_clear_count: 1,
-        black_strengths: [makeFinding({ color: 'black', classification: 'strength', score: 0.7 })],
-      }),
-      'black',
-    );
-    expect(screen.getByTestId('opening-findings-weakness-unclear-label').textContent).toBe(
-      'Not clear yet (1)Leaning this way, but could still be chance.',
-    );
-    expect(screen.getByTestId('opening-findings-weakness-unclear-card-0')).toBeTruthy();
-    expect(screen.queryByTestId('opening-findings-weakness-unclear-toggle')).toBeNull();
-    expect(screen.queryByTestId('opening-findings-weakness-empty')).toBeNull();
-  });
-
-  it('caps the inline leaning cards at four on desktop behind Show more', () => {
-    const leaning = Array.from({ length: 6 }, () => makeFinding({ confidence: 'medium' }));
-    renderFindings(
-      emptyResponse({ white_weaknesses_not_clear: leaning, white_weaknesses_not_clear_count: 6 }),
-      'white',
-    );
-    const wrapper = (i: number) =>
-      screen.getByTestId(`opening-findings-weakness-unclear-card-${i}`).parentElement!;
-    expect(wrapper(2).className).toContain('max-md:hidden');
-    expect(wrapper(4).className).toContain('hidden');
-    const more = screen.getByTestId('opening-findings-weakness-unclear-btn-more');
-    expect(more.className).not.toContain('md:hidden');
-    fireEvent.click(more);
-    expect(wrapper(4).className).not.toContain('hidden');
-  });
-
+describe('OpeningFindings empty sections', () => {
   it('says nothing stands out in a section that is empty while the other is not', () => {
     renderFindings(
       emptyResponse({ black_strengths: [makeFinding({ color: 'black', classification: 'strength', score: 0.7 })] }),

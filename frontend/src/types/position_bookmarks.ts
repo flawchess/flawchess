@@ -79,8 +79,8 @@ export interface BookmarkTimeSeries {
   score: number;
   score_confidence: 'low' | 'medium' | 'high';
   score_p_value: number;
-  score_ci99_low: number;
-  score_ci99_high: number;
+  score_ci_low: number;
+  score_ci_high: number;
   // False when the opening was last played before the colour's current-repertoire
   // cutoff (D-04): drives the "not played recently" chip.
   is_current: boolean;

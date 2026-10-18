@@ -118,8 +118,8 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
           evalN={row.evalN}
           color={row.color}
           reason={openingVerdictReason(input)}
-          ci99Low={row.evalCi99Low}
-          ci99High={row.evalCi99High}
+          ciLow={row.evalCiLow}
+          ciHigh={row.evalCiHigh}
           pValue={row.evalPValue}
         />
       }
@@ -354,8 +354,8 @@ export function RepertoireCard({
                 draws={row.draws}
                 losses={row.losses}
                 input={scoreInput(row)}
-                ci99Low={row.scoreCi99Low}
-                ci99High={row.scoreCi99High}
+                ciLow={row.scoreCiLow}
+                ciHigh={row.scoreCiHigh}
                 pValue={row.scorePValue}
                 testId={testId}
               />

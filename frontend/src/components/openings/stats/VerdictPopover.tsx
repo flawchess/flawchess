@@ -1,7 +1,7 @@
 /**
  * Info popovers for the Openings verdict cells (End Eval bar, repertoire card Score and Eval), on the shared MetricInfoPopover shell:
  * what the metric is and that higher is better, the raw value against an average game of the
- * colour, the typical range around that baseline with the verdict reason, then the 99% CI,
+ * colour, the typical range around that baseline with the verdict reason, then the 95% CI,
  * p-value (with its reference) and n greyed below a separator. Plain words only: no unit name,
  * no statistics jargon (popover copy minimalism).
  */
@@ -53,8 +53,8 @@ interface EvalVerdictPopoverProps {
   evalN: number;
   color: 'white' | 'black';
   reason: OpeningVerdictReason;
-  ci99Low: number | null;
-  ci99High: number | null;
+  ciLow: number | null;
+  ciHigh: number | null;
   /** p-value of the mean against the colour baseline. */
   pValue: number | null;
 }
@@ -67,17 +67,17 @@ function distanceText(delta: number, side: string, baselineText: string): string
   return `${distance.toFixed(DISTANCE_DECIMALS)} ${direction} than an average ${side} game (${baselineText})`;
 }
 
-/** Greyed statistics line: 99% CI, p-value vs the baseline, n; each only when present. */
+/** Greyed statistics line: 95% CI, p-value vs the baseline, n; each only when present. */
 function footerText(
-  ci99Low: number | null,
-  ci99High: number | null,
+  ciLow: number | null,
+  ciHigh: number | null,
   pValue: number | null,
   baselineText: string,
   evalN: number,
 ): string {
   const parts: string[] = [];
-  if (ci99Low !== null && ci99High !== null) {
-    parts.push(`99% CI ${formatSignedGap(ci99Low)} to ${formatSignedGap(ci99High)}`);
+  if (ciLow !== null && ciHigh !== null) {
+    parts.push(`95% CI ${formatSignedGap(ciLow)} to ${formatSignedGap(ciHigh)}`);
   }
   if (pValue !== null) parts.push(`${formatPValue(pValue)} vs ${baselineText}`);
   parts.push(`n = ${evalN.toLocaleString('en-US')}`);
@@ -91,8 +91,8 @@ export function EvalVerdictPopover({
   evalN,
   color,
   reason,
-  ci99Low,
-  ci99High,
+  ciLow,
+  ciHigh,
   pValue,
 }: EvalVerdictPopoverProps) {
   const side = color === 'black' ? 'Black' : 'White';
@@ -118,7 +118,7 @@ export function EvalVerdictPopover({
         </ul>
         <hr className="border-background/25" />
         <p className="italic text-background/60" data-testid={`${testId}-footer`}>
-          {footerText(ci99Low, ci99High, pValue, baselineText, evalN)}
+          {footerText(ciLow, ciHigh, pValue, baselineText, evalN)}
         </p>
       </div>
     </MetricInfoPopover>
@@ -134,24 +134,24 @@ interface ScoreVerdictPopoverProps {
   draws: number;
   losses: number;
   reason: OpeningVerdictReason;
-  ci99Low: number | null;
-  ci99High: number | null;
+  ciLow: number | null;
+  ciHigh: number | null;
   /** p-value of the score against 50%. */
   pValue: number | null;
   /** MAX(games.played_at) (ISO 8601). Adds a "Last played" bullet; omitted when absent. */
   lastPlayedAt?: string | null;
 }
 
-/** Greyed statistics line for the score: 99% CI as percentages, p-value vs 50%, n. */
+/** Greyed statistics line for the score: 95% CI as percentages, p-value vs 50%, n. */
 function scoreFooterText(
-  ci99Low: number | null,
-  ci99High: number | null,
+  ciLow: number | null,
+  ciHigh: number | null,
   pValue: number | null,
   games: number,
 ): string {
   const parts: string[] = [];
-  if (ci99Low !== null && ci99High !== null) {
-    parts.push(`99% CI ${formatScorePercent(ci99Low)} to ${formatScorePercent(ci99High)}`);
+  if (ciLow !== null && ciHigh !== null) {
+    parts.push(`95% CI ${formatScorePercent(ciLow)} to ${formatScorePercent(ciHigh)}`);
   }
   if (pValue !== null) parts.push(`${formatPValue(pValue)} vs ${SCORE_REFERENCE_TEXT}`);
   parts.push(`n = ${games.toLocaleString('en-US')}`);
@@ -166,8 +166,8 @@ export function ScoreVerdictPopover({
   draws,
   losses,
   reason,
-  ci99Low,
-  ci99High,
+  ciLow,
+  ciHigh,
   pValue,
   lastPlayedAt,
 }: ScoreVerdictPopoverProps) {
@@ -196,7 +196,7 @@ export function ScoreVerdictPopover({
         </ul>
         <hr className="border-background/25" />
         <p className="italic text-background/60" data-testid={`${testId}-footer`}>
-          {scoreFooterText(ci99Low, ci99High, pValue, games)}
+          {scoreFooterText(ciLow, ciHigh, pValue, games)}
         </p>
       </div>
     </MetricInfoPopover>

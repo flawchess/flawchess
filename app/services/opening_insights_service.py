@@ -4,10 +4,9 @@ Single public entry point: compute_insights(session, user_id, request).
 Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
 dedupe within color section and across continuations -> rank (Wilson 95%
-bound, direction-aware) -> partition per section: up to 5 high-confidence
-(p < 0.01) cards, current before older games, plus up to 10 medium-confidence
-"not clear yet" findings with their full count; low-confidence findings are
-dropped -> MG-entry eval on the card findings only.
+bound, direction-aware) -> partition per section: up to 5 cards at p < 0.05
+(medium or high confidence), current before older games; low-confidence findings
+are dropped -> MG-entry eval on the card findings only.
 No precompute, no caching — partial-index-backed query keeps even
 Hikaru-class users <1 s.
 """
@@ -55,7 +54,6 @@ from app.services.repertoire_recency import (
     resolve_current_cutoffs,
 )
 from app.services.score_confidence import (
-    VERDICT_CI_Z_99,
     compute_confidence_bucket,
     wilson_bounds,
 )
@@ -68,12 +66,10 @@ from app.services.score_confidence import (
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-# Card findings per section (D-00 top 5, D-08): only 99%-gated ('high', p < 0.01)
-# findings qualify. The phone 2-card view with "Show more" is a frontend concern.
+# Card findings per section (D-00 top 5, D-08): only 95%-gated ('medium' or 'high',
+# p < 0.05, D-33) findings qualify. The phone 2-card view with "Show more" is a frontend
+# concern.
 FINDINGS_CARD_CAP: int = 5
-# "Not clear yet" list per section (D-10): medium-confidence findings (p < 0.05, not at
-# 99%), current first then lowest p. The full count before this cap is sent separately.
-FINDINGS_NOT_CLEAR_CAP: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 
@@ -414,8 +410,8 @@ def _apply_eval_metrics_to_finding(
     Delegates to opening_eval.finalize_opening_eval, the single Openings eval
     finalizer shared with the Stats tab. The z-test runs against the finding colour's
     baseline (+25 cp White, -25 cp Black), not 0 cp (D-13), so "typical for the
-    colour" reads as not significant. avg_eval_pawns stays the raw mean; the 95% and
-    99% CI bounds are returned alongside it.
+    colour" reads as not significant. avg_eval_pawns stays the raw mean; the 95% CI
+    bounds are returned alongside it.
     """
     fields = finalize_opening_eval(pe, finding.color)
     return finding.model_copy(update=dict(fields))
@@ -809,7 +805,6 @@ def _row_to_finding(
     score = _compute_score(pos_row)
     confidence, p_value, se = compute_confidence_bucket(pos_row.w, pos_row.d, pos_row.l, pos_row.n)
     ci_low, ci_high = wilson_bounds(score, pos_row.n)
-    ci99_low, ci99_high = wilson_bounds(score, pos_row.n, z=VERDICT_CI_Z_99)
 
     finding = OpeningInsightFinding(
         color=color_literal,
@@ -834,8 +829,6 @@ def _row_to_finding(
         p_value=p_value,
         ci_low=ci_low,
         ci_high=ci_high,
-        ci99_low=ci99_low,
-        ci99_high=ci99_high,
         # MAX(played_at) across all games
         # visiting the resulting position (transposition-inclusive,
         # color-filtered). Falls back to the move-played MAX from
@@ -847,40 +840,17 @@ def _row_to_finding(
     return finding, opening_ply_count, se
 
 
-@dataclass(slots=True)
-class _SectionPartition:
-    """One section split into card findings and the capped "not clear yet" list.
+def _partition_section(ranked: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
+    """The 95%-gated card findings of a ranked section (D-33, D-34).
 
-    ``not_clear_count`` is the number of medium-confidence findings BEFORE the
-    FINDINGS_NOT_CLEAR_CAP slice, so the header and empty-state copy can say
-    "Not clear yet (n)" even when fewer than n rows are listed (D-09, D-11).
+    Confidence 'medium' or 'high' (p < 0.05) only, current findings before older ones
+    with the incoming Wilson order kept inside each group (stable sort), capped at
+    FINDINGS_CARD_CAP (D-00, D-08). Low-confidence findings are dropped ("show less
+    rather than noise"); there is no separate "not clear yet" list any more.
     """
-
-    cards: list[OpeningInsightFinding]
-    not_clear: list[OpeningInsightFinding]
-    not_clear_count: int
-
-
-def _partition_section(ranked: list[OpeningInsightFinding]) -> _SectionPartition:
-    """Split a ranked section into 99%-gated cards and the medium "not clear yet" list.
-
-    - cards: confidence 'high' (p < 0.01) only, current findings before older ones with
-      the incoming Wilson order kept inside each group (stable sort), capped at
-      FINDINGS_CARD_CAP (D-00, D-08).
-    - not_clear: confidence 'medium' (p < 0.05, not at 99%), current first then lowest p,
-      capped at FINDINGS_NOT_CLEAR_CAP (D-10); the count is taken before the cap (D-09, D-11).
-    - low-confidence findings are dropped ("show less rather than noise").
-    """
-    high = [f for f in ranked if f.confidence == "high"]
-    medium = [f for f in ranked if f.confidence == "medium"]
+    confident = [f for f in ranked if f.confidence != "low"]
     # sorted() is stable, so Wilson order survives within the current / older groups.
-    cards = sorted(high, key=lambda f: not f.is_current)[:FINDINGS_CARD_CAP]
-    not_clear = sorted(medium, key=lambda f: (not f.is_current, f.p_value))
-    return _SectionPartition(
-        cards=cards,
-        not_clear=not_clear[:FINDINGS_NOT_CLEAR_CAP],
-        not_clear_count=len(medium),
-    )
+    return sorted(confident, key=lambda f: not f.is_current)[:FINDINGS_CARD_CAP]
 
 
 def _rank_sections(
@@ -976,12 +946,11 @@ async def _build_sections(
     to_date: datetime.date | None,
     colors_to_query: Sequence[Literal["white", "black"]],
     ctx: _PipelineContext,
-) -> dict[str, _SectionPartition]:
+) -> dict[str, list[OpeningInsightFinding]]:
     """Stage 3: classify -> attribute -> dedupe -> rank -> partition -> enrich cards.
 
-    Builds the four sections (white/black x weaknesses/strengths), partitions each into
-    99%-gated cards and a capped medium "not clear yet" list, then enriches ONLY the card
-    findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
+    Builds the four sections (white/black x weaknesses/strengths), keeps the
+    95%-gated cards of each, then enriches ONLY the card findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
     the uncapped ranked list measured 10.6 s for a heavy user (Pitfall 8). The eval batch
     awaits run sequentially per colour (AsyncSession is not safe for concurrent use).
     """
@@ -990,15 +959,16 @@ async def _build_sections(
 
     eval_by_color: dict[Literal["white", "black"], dict[int, OpeningPhaseEntryMetrics]] = {}
     for color in ("white", "black"):
-        cards = partitions[f"{color}_weaknesses"].cards + partitions[f"{color}_strengths"].cards
+        cards = partitions[f"{color}_weaknesses"] + partitions[f"{color}_strengths"]
         eval_by_color[color] = await _fetch_eval_metrics(
             session, user_id, request, from_date, to_date, color, cards
         )
 
-    for key, partition in partitions.items():
+    enriched: dict[str, list[OpeningInsightFinding]] = {}
+    for key, cards in partitions.items():
         color_key: Literal["white", "black"] = "white" if key.startswith("white") else "black"
-        partition.cards = _enrich_findings(partition.cards, eval_by_color[color_key])
-    return partitions
+        enriched[key] = _enrich_findings(cards, eval_by_color[color_key])
+    return enriched
 
 
 def _enrich_findings(
@@ -1076,18 +1046,10 @@ async def compute_insights(
             session, user_id, request, from_date, to_date, colors_to_query, pipeline_ctx
         )
         return OpeningInsightsResponse(
-            white_weaknesses=partitions["white_weaknesses"].cards,
-            black_weaknesses=partitions["black_weaknesses"].cards,
-            white_strengths=partitions["white_strengths"].cards,
-            black_strengths=partitions["black_strengths"].cards,
-            white_weaknesses_not_clear=partitions["white_weaknesses"].not_clear,
-            black_weaknesses_not_clear=partitions["black_weaknesses"].not_clear,
-            white_strengths_not_clear=partitions["white_strengths"].not_clear,
-            black_strengths_not_clear=partitions["black_strengths"].not_clear,
-            white_weaknesses_not_clear_count=partitions["white_weaknesses"].not_clear_count,
-            black_weaknesses_not_clear_count=partitions["black_weaknesses"].not_clear_count,
-            white_strengths_not_clear_count=partitions["white_strengths"].not_clear_count,
-            black_strengths_not_clear_count=partitions["black_strengths"].not_clear_count,
+            white_weaknesses=partitions["white_weaknesses"],
+            black_weaknesses=partitions["black_weaknesses"],
+            white_strengths=partitions["white_strengths"],
+            black_strengths=partitions["black_strengths"],
             current_cutoff_white=pipeline_ctx.cutoffs["white"],
             current_cutoff_black=pipeline_ctx.cutoffs["black"],
             eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,

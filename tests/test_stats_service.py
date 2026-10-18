@@ -590,9 +590,10 @@ class TestBookmarkTwins:
 
     def test_prepare_candidates_drops_deeper_twin_of_shallow_bookmark(self) -> None:
         """WR-01 through the real pipeline: twins go before the deeper-line dedupe."""
-        shallow_pos = PositionWDL(10, 10, 0, 0, _NOW, 100)
-        deeper_pos = PositionWDL(10, 10, 0, 0, _NOW, 100)
-        other_pos = PositionWDL(5, 5, 0, 0, _NOW, 55)
+        # Totals at or above MOST_PLAYED_MIN_GAMES so only the twin rule can drop a row.
+        shallow_pos = PositionWDL(30, 30, 0, 0, _NOW, 100)
+        deeper_pos = PositionWDL(30, 30, 0, 0, _NOW, 100)
+        other_pos = PositionWDL(20, 20, 0, 0, _NOW, 55)
         rows = [
             _row("Shallow", full_hash=7, ply_count=3),
             _row("Deeper", full_hash=8, ply_count=5),
@@ -607,6 +608,52 @@ class TestBookmarkTwins:
         rows = [_cand("A", full_hash=1), _cand("B", full_hash=2)]
 
         assert _drop_bookmark_twins(rows, set()) == rows
+
+
+class TestMostPlayedMinGames:
+    """D-36: most-played rows need MOST_PLAYED_MIN_GAMES games on the displayed total."""
+
+    def test_floor_is_twenty_games(self) -> None:
+        assert stats_service.MOST_PLAYED_MIN_GAMES == 20
+
+    def test_prepare_candidates_drops_19_and_keeps_20(self) -> None:
+        rows = [
+            _row("Nineteen", full_hash=1, ply_count=3),
+            _row("Twenty", full_hash=2, ply_count=3),
+        ]
+        position_wdl = {
+            1: PositionWDL(19, 19, 0, 0, _NOW, 100),
+            2: PositionWDL(20, 20, 0, 0, _NOW, 200),
+        }
+
+        result = _prepare_candidates(rows, position_wdl, None, set())
+
+        assert [(c.name, c.total) for c in result] == [("Twenty", 20)]
+
+    def test_floor_reads_the_position_total_not_the_name_row_total(self) -> None:
+        """The opening-name row says 1 game, the position bucket says 25: the row stays."""
+        rows = [_row("Transposed", full_hash=3, ply_count=3)]  # row.total == 1
+
+        result = _prepare_candidates(rows, {3: PositionWDL(25, 25, 0, 0, _NOW, 300)}, None, set())
+
+        assert [(c.name, c.total) for c in result] == [("Transposed", 25)]
+
+    def test_floor_applies_to_past_rows_too(self) -> None:
+        """A past ("Played before") row under the floor is dropped like a current one."""
+        cutoff = _NOW - datetime.timedelta(days=60)
+        old = _NOW - datetime.timedelta(days=400)
+        rows = [
+            _row("PastSmall", full_hash=4, ply_count=3),
+            _row("PastBig", full_hash=5, ply_count=3),
+        ]
+        position_wdl = {
+            4: PositionWDL(19, 19, 0, 0, old, 400),
+            5: PositionWDL(20, 20, 0, 0, old, 500),
+        }
+
+        result = _prepare_candidates(rows, position_wdl, cutoff, set())
+
+        assert [(c.name, c.is_current) for c in result] == [("PastBig", False)]
 
 
 class TestSplitAndCap:
@@ -803,8 +850,9 @@ class TestMostPlayedPipeline:
         await _seed_games_through(
             db_session, user_id=_USER_PIPELINE, days_back=list(range(1, 201)), opening=a
         )
+        # B carries exactly MOST_PLAYED_MIN_GAMES games so it survives the D-36 floor.
         await _seed_games_through(
-            db_session, user_id=_USER_PIPELINE, days_back=[400] * 5, opening=b
+            db_session, user_id=_USER_PIPELINE, days_back=[400] * 20, opening=b
         )
 
         response = await get_most_played_openings(db_session, _USER_PIPELINE, now_utc=_NOW)
@@ -824,7 +872,7 @@ class TestMostPlayedPipeline:
         await _seed_games_through(
             db_session, user_id=_USER_TWIN, days_back=list(range(1, 201)), opening=a
         )
-        await _seed_games_through(db_session, user_id=_USER_TWIN, days_back=[400] * 5, opening=b)
+        await _seed_games_through(db_session, user_id=_USER_TWIN, days_back=[400] * 20, opening=b)
         sans = _replayed_moves(a.pgn)
         board = chess.Board()
         for san in sans:
@@ -853,9 +901,11 @@ class TestMostPlayedPipeline:
     ) -> None:
         """Past openings outranking a current one must not push it out of the table.
 
-        With the fetch limit at 2, the all-time top query returns only P1 and P2 (6 games
-        each, 400 days ago). C (3 old + 2 recent games) is found by the cutoff-restricted
-        second fetch and shown with its FULL count (5), not the post-cutoff 2.
+        With the fetch limit at 2, the all-time top query returns only P1 and P2 (25 games
+        each, 400 days ago). C (18 old + 2 recent games) is found by the cutoff-restricted
+        second fetch and shown with its FULL count (20), not the post-cutoff 2. The full
+        count is also what clears the MOST_PLAYED_MIN_GAMES floor (D-36): judged on the
+        post-cutoff 2, C would be dropped.
         """
         p1, p2, c = await _white_openings(db_session, 3)
         monkeypatch.setattr(stats_service, "MOST_PLAYED_FETCH_LIMIT", 2)
@@ -864,13 +914,13 @@ class TestMostPlayedPipeline:
             db_session, user_id=_USER_FALLBACK, days_back=[1 + (i % 30) for i in range(200)]
         )
         await _seed_games_through(
-            db_session, user_id=_USER_FALLBACK, days_back=[400] * 6, opening=p1
+            db_session, user_id=_USER_FALLBACK, days_back=[400] * 25, opening=p1
         )
         await _seed_games_through(
-            db_session, user_id=_USER_FALLBACK, days_back=[400] * 6, opening=p2
+            db_session, user_id=_USER_FALLBACK, days_back=[400] * 25, opening=p2
         )
         await _seed_games_through(
-            db_session, user_id=_USER_FALLBACK, days_back=[400, 400, 400, 5, 5], opening=c
+            db_session, user_id=_USER_FALLBACK, days_back=[400] * 18 + [5, 5], opening=c
         )
 
         response = await get_most_played_openings(db_session, _USER_FALLBACK, now_utc=_NOW)
@@ -879,7 +929,7 @@ class TestMostPlayedPipeline:
         assert set(by_hash) == {str(c.full_hash), str(p1.full_hash), str(p2.full_hash)}
         assert response.white[0].full_hash == str(c.full_hash)  # current rows first
         assert by_hash[str(c.full_hash)].is_current is True
-        assert by_hash[str(c.full_hash)].total == 5
+        assert by_hash[str(c.full_hash)].total == 20
         assert by_hash[str(p1.full_hash)].is_current is False
         assert by_hash[str(p2.full_hash)].is_current is False
 

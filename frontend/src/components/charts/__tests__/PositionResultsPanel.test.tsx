@@ -48,8 +48,6 @@ function stats(overrides: Partial<WDLStats> = {}): WDLStats {
     avg_eval_pawns: 0.85,
     eval_ci_low_pawns: 0.6,
     eval_ci_high_pawns: 1.1,
-    eval_ci99_low_pawns: 0.5,
-    eval_ci99_high_pawns: 1.2,
     eval_n: 38,
     eval_p_value: 0.001,
     eval_confidence: 'high',
@@ -105,7 +103,7 @@ describe('PositionResultsPanel End Eval row', () => {
   });
 
   it('keeps the dot neutral when the eval is outside the band but not confident', () => {
-    renderPanel(stats({ eval_confidence: 'medium' }));
+    renderPanel(stats({ eval_confidence: 'low' }));
     const dot = screen.getByTestId('eval-verdict-position-dot');
     expect(dot.style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
   });
@@ -140,10 +138,10 @@ describe('PositionResultsPanel Score row', () => {
     expect(dot.style.backgroundColor).toBe(normalized(ZONE_SUCCESS));
   });
 
-  it('keeps the dot neutral at 95% confidence: only the 99% gate colours it', () => {
+  it('colours the dot at 95% confidence too: medium passes the gate (D-33)', () => {
     renderPanel(stats({ score: 0.7, confidence: 'medium', p_value: 0.03 }));
     const dot = screen.getByTestId('score-verdict-position-dot');
-    expect(dot.style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
+    expect(dot.style.backgroundColor).toBe(normalized(ZONE_SUCCESS));
   });
 });
 
@@ -155,12 +153,12 @@ describe('PositionResultsPanel End Eval popover', () => {
     return popover as HTMLElement;
   }
 
-  it('opening-end popover carries the greyed 99% CI / p vs baseline / n footer and no "pawns"', () => {
+  it('opening-end popover carries the greyed 95% CI / p vs baseline / n footer and no "pawns"', () => {
     renderPanel(
       stats({
         avg_eval_pawns: 0.41,
-        eval_ci99_low_pawns: 0.12,
-        eval_ci99_high_pawns: 0.7,
+        eval_ci_low_pawns: 0.12,
+        eval_ci_high_pawns: 0.7,
         eval_p_value: 0.004,
         eval_n: 230,
         total: 230,
@@ -168,13 +166,13 @@ describe('PositionResultsPanel End Eval popover', () => {
     );
     const popover = openEvalPopover();
     expect(screen.getByTestId('eval-bullet-popover-trigger-footer').textContent).toBe(
-      '99% CI +0.12 to +0.70 · p = 0.004 vs +0.25 · n = 230',
+      '95% CI +0.12 to +0.70 · p = 0.004 vs +0.25 · n = 230',
     );
     expect(popover.textContent ?? '').not.toMatch(/pawns/i);
   });
 
   it('opening-end popover says "could be chance" for an out-of-band, non-confident eval', () => {
-    renderPanel(stats({ eval_confidence: 'medium' }));
+    renderPanel(stats({ eval_confidence: 'low' }));
     expect(openEvalPopover().textContent ?? '').toMatch(/could be chance/);
   });
 
@@ -186,18 +184,18 @@ describe('PositionResultsPanel End Eval popover', () => {
 });
 
 describe('PositionResultsPanel Score popover', () => {
-  it('is the repertoire Score verdict popover with the 99% CI footer and a Last played bullet', () => {
+  it('is the repertoire Score verdict popover with the 95% CI footer and a Last played bullet', () => {
     renderPanel(
       stats({
-        ci99_low: 0.33,
-        ci99_high: 0.72,
+        ci_low: 0.33,
+        ci_high: 0.72,
         p_value: 0.7,
         last_played_at: new Date().toISOString(),
       }),
     );
     fireEvent.click(screen.getByTestId('score-bullet-popover-trigger'));
     expect(screen.getByTestId('score-bullet-popover-trigger-footer').textContent).toBe(
-      '99% CI 33% to 72% · p = 0.700 vs 50% · n = 40',
+      '95% CI 33% to 72% · p = 0.700 vs 50% · n = 40',
     );
     expect(screen.getByTestId('score-bullet-popover-trigger-last-played').textContent).toMatch(
       /^Last played: /,

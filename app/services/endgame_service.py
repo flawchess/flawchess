@@ -814,8 +814,6 @@ def _build_category_stats(
         p_value=wdl_stats.p_value,
         ci_low=wdl_stats.ci_low,
         ci_high=wdl_stats.ci_high,
-        ci99_low=wdl_stats.ci99_low,
-        ci99_high=wdl_stats.ci99_high,
         last_played_at=category_last_played_at,
         avg_eval_pawns=cat_eval_pawns,
         eval_ci_low_pawns=cat_eval_ci_low_pawns,

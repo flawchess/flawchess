@@ -45,12 +45,12 @@ export interface OpeningWDL {
   loss_pct: number;
 
   // Score verdict inputs, computed server-side (D-18): (W + 0.5*D) / n, the Wilson
-  // confidence bucket and p-value against 50%, and the 99% Wilson CI.
+  // confidence bucket and p-value against 50%, and the 95% Wilson CI (D-33).
   score: number;
   score_confidence: 'low' | 'medium' | 'high';
   score_p_value: number;
-  score_ci99_low: number;
-  score_ci99_high: number;
+  score_ci_low: number;
+  score_ci_high: number;
 
   // MG-entry pillar.
   // avg_eval_pawns is signed user-perspective (positive = user better).
@@ -59,9 +59,6 @@ export interface OpeningWDL {
   avg_eval_pawns?: number | null;
   eval_ci_low_pawns?: number | null;
   eval_ci_high_pawns?: number | null;
-  /** 99% CI bounds (verdict popover footer); null when eval_n < 2. */
-  eval_ci99_low_pawns?: number | null;
-  eval_ci99_high_pawns?: number | null;
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';
@@ -98,8 +95,6 @@ export interface BookmarkPhaseEntryItem {
   avg_eval_pawns?: number | null;
   eval_ci_low_pawns?: number | null;
   eval_ci_high_pawns?: number | null;
-  eval_ci99_low_pawns?: number | null;
-  eval_ci99_high_pawns?: number | null;
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';

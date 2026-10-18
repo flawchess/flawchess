@@ -1,13 +1,13 @@
 // Arrow color utility — maps chess score to a 3-category palette for board
-// arrows on the Openings → Moves tab.
+// arrows and row tints on the Openings → Moves tab.
 //
-// Categories:
-//   reliable + score >= 0.55           → DARK_GREEN (advantage)
-//   reliable + score <= 0.45           → DARK_RED   (disadvantage)
-//   everything else                    → NEUTRAL_ARROW_COLOR
-//     ↳ "everything else" includes the in-between band (0.45..0.55) AND
-//       low-data rows (gameCount < MIN_GAMES_FOR_COLOR) AND low-confidence
-//       rows. The board renders these grey arrows at a much lower opacity
+// Categories (Phase 242 D-35: the same rule as the "Results played as" panel and the
+// Stats cards, via openingVerdict: 95% confidence, 20+ games, outside the +/-5-point band):
+//   verdict 'better'  → DARK_GREEN (advantage)
+//   verdict 'worse'   → DARK_RED   (disadvantage)
+//   everything else   → NEUTRAL_ARROW_COLOR
+//     ↳ "everything else" includes the typical band (45..55%), rows under 20 games and
+//       low-confidence rows. The board renders these grey arrows at a much lower opacity
 //       (see ARROW_LOW_EMPHASIS_OPACITY in ChessBoard.tsx) so reliable
 //       red/green moves dominate visually.
 //
@@ -15,16 +15,9 @@
 // instead. Sorting hovered arrows on top happens in ChessBoard.tsx via a
 // separate isHovered-first comparator, not via this color value.
 //
+import { openingVerdict, SCORE_VERDICT_BAND, scoreDelta } from '@/lib/openingVerdict';
+import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 import { ARROW_NEUTRAL } from '@/lib/theme';
-
-export const MIN_GAMES_FOR_COLOR = 10;
-
-// Score-based thresholds. MIN_GAMES_FOR_COLOR is 10 — intentionally lower
-// than the Insights tab's OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE (20). The
-// explorer arrow palette can tolerate weaker evidence; a surfaced "weakness"
-// card on the Insights tab cannot.
-export const SCORE_PIVOT = 0.50;
-export const SCORE_BOUNDARY = 0.05;  // boundaries: >=0.55 / <=0.45
 
 // Categorical color constants — hex strings for direct equality checks.
 export const DARK_GREEN = '#1E6B1E';
@@ -36,22 +29,21 @@ export const NEUTRAL_ARROW_COLOR = ARROW_NEUTRAL;
  * chess score (W + 0.5*D)/N.
  *
  * @param score      Score in [0, 1]. The pivot is 0.50 (break-even).
- * @param gameCount  Absolute game count for this move. Below MIN_GAMES_FOR_COLOR
- *                   (10) the function returns NEUTRAL_ARROW_COLOR — the board renders
- *                   grey arrows at low opacity to fade them into the background.
- * @param confidence Statistical confidence ('low' | 'medium' | 'high'). 'low'
- *                   collapses to NEUTRAL_ARROW_COLOR — the effect could plausibly be
- *                   chance, so we don't encode it as a strength/weakness.
+ * @param gameCount  Absolute game count for this move. Under REPERTOIRE_MIN_GAMES_FOR_VERDICT
+ *                   (20) the function returns NEUTRAL_ARROW_COLOR.
+ * @param confidence Statistical confidence of the score against 50%. 'low' collapses to
+ *                   NEUTRAL_ARROW_COLOR: the effect could plausibly be chance.
  */
-export function getArrowColor(
-  score: number,
-  gameCount: number,
-  confidence: 'low' | 'medium' | 'high',
-): string {
-  if (gameCount < MIN_GAMES_FOR_COLOR || confidence === 'low') return NEUTRAL_ARROW_COLOR;
-  if (score >= SCORE_PIVOT + SCORE_BOUNDARY) return DARK_GREEN;  // >= 0.55
-  if (score <= SCORE_PIVOT - SCORE_BOUNDARY) return DARK_RED;    // <= 0.45
-  return NEUTRAL_ARROW_COLOR;  // 0.45..0.55
+export function getArrowColor(score: number, gameCount: number, confidence: ConfidenceLevel): string {
+  const verdict = openingVerdict({
+    delta: scoreDelta(score),
+    band: SCORE_VERDICT_BAND,
+    confidence,
+    games: gameCount,
+  });
+  if (verdict === 'better') return DARK_GREEN;
+  if (verdict === 'worse') return DARK_RED;
+  return NEUTRAL_ARROW_COLOR;
 }
 
 /**

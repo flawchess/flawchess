@@ -137,7 +137,7 @@ export function StatsTab({
           />
         )}
 
-        {/* Findings of the selected colour (99%-gated cards, Not clear yet) below the repertoire */}
+        {/* Findings of the selected colour (95%-gated cards) below the repertoire */}
         <OpeningFindings
           color={color}
           debouncedFilters={debouncedFilters}

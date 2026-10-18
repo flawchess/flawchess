@@ -191,21 +191,19 @@ async def test_post_openings_endpoint_passes_dev_clock_now_utc(
 async def test_post_openings_endpoint_response_carries_new_fields(
     auth_headers: dict[str, str],
 ) -> None:
-    """The response exposes the not-clear lists, their full counts and both cutoffs."""
+    """The response exposes the four card lists and both cutoffs, and no longer carries
+    the "not clear yet" lists or their counts (D-34)."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.post(OPENINGS_ENDPOINT, json={}, headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
-    for key in (
-        "white_weaknesses_not_clear",
-        "black_weaknesses_not_clear",
-        "white_strengths_not_clear",
-        "black_strengths_not_clear",
-    ):
+    for key in ("white_weaknesses", "black_weaknesses", "white_strengths", "black_strengths"):
         assert body[key] == []
-        assert body[f"{key}_count"] == 0
+        assert f"{key}_not_clear" not in body
+        assert f"{key}_not_clear_count" not in body
+    assert not any("not_clear" in key for key in body)
     assert body["current_cutoff_white"] is None
     assert body["current_cutoff_black"] is None
 

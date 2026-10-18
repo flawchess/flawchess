@@ -44,9 +44,14 @@ describe('openingVerdictReason', () => {
     expect(openingVerdictReason(scoreInput(0.56))).toBe('better');
   });
 
-  it('is chance when outside the band but confidence is not high', () => {
-    expect(openingVerdictReason(input({ confidence: 'medium' }))).toBe('chance');
+  it('is chance when outside the band but confidence is low', () => {
+    expect(openingVerdictReason(input({ confidence: 'low' }))).toBe('chance');
     expect(openingVerdictReason(input({ confidence: 'low', delta: -0.6 }))).toBe('chance');
+  });
+
+  it('passes the 95% gate at medium confidence (D-33)', () => {
+    expect(openingVerdictReason(input({ confidence: 'medium' }))).toBe('better');
+    expect(openingVerdictReason(input({ confidence: 'medium', delta: -0.6 }))).toBe('worse');
   });
 
   it('is too-few below the game floor, and the floor itself passes', () => {
@@ -68,7 +73,7 @@ describe('openingVerdict', () => {
     expect(openingVerdict(input({ delta: 0.6 }))).toBe('better');
     expect(openingVerdict(input({ delta: -0.6 }))).toBe('worse');
     expect(openingVerdict(input({ delta: 0.1 }))).toBe('typical');
-    expect(openingVerdict(input({ confidence: 'medium' }))).toBe('typical');
+    expect(openingVerdict(input({ confidence: 'low' }))).toBe('typical');
     expect(openingVerdict(input({ games: 3 }))).toBe('typical');
   });
 });

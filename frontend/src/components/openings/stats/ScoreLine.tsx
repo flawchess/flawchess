@@ -16,8 +16,8 @@ interface ScoreLineProps {
   losses: number;
   /** The score verdict input; colours the percentage only when the verdict is better or worse. */
   input: OpeningVerdictInput;
-  ci99Low: number | null;
-  ci99High: number | null;
+  ciLow: number | null;
+  ciHigh: number | null;
   pValue: number | null;
   /** Prefix of the testids: `${testId}-score` (the value) and `${testId}-score-info` (the popover). */
   testId: string;
@@ -34,8 +34,8 @@ export function ScoreLine({
   draws,
   losses,
   input,
-  ci99Low,
-  ci99High,
+  ciLow,
+  ciHigh,
   pValue,
   testId,
 }: ScoreLineProps) {
@@ -62,8 +62,8 @@ export function ScoreLine({
           draws={draws}
           losses={losses}
           reason={openingVerdictReason(input)}
-          ci99Low={ci99Low}
-          ci99High={ci99High}
+          ciLow={ciLow}
+          ciHigh={ciHigh}
           pValue={pValue}
         />
       </div>

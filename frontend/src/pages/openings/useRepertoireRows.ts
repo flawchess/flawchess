@@ -37,14 +37,14 @@ export interface RepertoireRowModel {
   score: number;
   scoreConfidence: ConfidenceLevel;
   scorePValue: number | null;
-  scoreCi99Low: number | null;
-  scoreCi99High: number | null;
+  scoreCiLow: number | null;
+  scoreCiHigh: number | null;
   avgEvalPawns: number | null;
   evalN: number;
   evalConfidence: ConfidenceLevel;
   evalPValue: number | null;
-  evalCi99Low: number | null;
-  evalCi99High: number | null;
+  evalCiLow: number | null;
+  evalCiHigh: number | null;
   /** The bookmark's score-over-time series; null for most-played rows. */
   series: BookmarkTimeSeries | null;
 }
@@ -94,14 +94,14 @@ function mostPlayedRow(
     score: opening.score,
     scoreConfidence: opening.score_confidence,
     scorePValue: opening.score_p_value,
-    scoreCi99Low: opening.score_ci99_low,
-    scoreCi99High: opening.score_ci99_high,
+    scoreCiLow: opening.score_ci_low,
+    scoreCiHigh: opening.score_ci_high,
     avgEvalPawns: opening.avg_eval_pawns ?? null,
     evalN: opening.eval_n,
     evalConfidence: opening.eval_confidence,
     evalPValue: opening.eval_p_value ?? null,
-    evalCi99Low: opening.eval_ci99_low_pawns ?? null,
-    evalCi99High: opening.eval_ci99_high_pawns ?? null,
+    evalCiLow: opening.eval_ci_low_pawns ?? null,
+    evalCiHigh: opening.eval_ci_high_pawns ?? null,
     series: null,
   };
 }
@@ -134,14 +134,14 @@ function bookmarkRow(
     score: series.score,
     scoreConfidence: series.score_confidence,
     scorePValue: series.score_p_value,
-    scoreCi99Low: series.score_ci99_low,
-    scoreCi99High: series.score_ci99_high,
+    scoreCiLow: series.score_ci_low,
+    scoreCiHigh: series.score_ci_high,
     avgEvalPawns: phaseEntry?.avg_eval_pawns ?? null,
     evalN: phaseEntry?.eval_n ?? 0,
     evalConfidence: phaseEntry?.eval_confidence ?? 'low',
     evalPValue: phaseEntry?.eval_p_value ?? null,
-    evalCi99Low: phaseEntry?.eval_ci99_low_pawns ?? null,
-    evalCi99High: phaseEntry?.eval_ci99_high_pawns ?? null,
+    evalCiLow: phaseEntry?.eval_ci_low_pawns ?? null,
+    evalCiHigh: phaseEntry?.eval_ci_high_pawns ?? null,
     series,
   };
 }

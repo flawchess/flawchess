@@ -44,8 +44,15 @@ from app.services.score_confidence import score_verdict_fields
 from app.services.zobrist import compute_hashes
 
 
-# Minimum number of games required for an opening to appear in top openings.
+# SQL-level minimum for the top-openings queries. It stays at 1 on purpose: the
+# cutoff-restricted second fetch counts only post-cutoff games, so a 20-game floor there
+# would refuse to nominate a current opening with 15 recent games and 300 in total.
 MIN_GAMES_FOR_OPENING = 1
+# Most-played rows need this many games (the displayed, position-based count) in both the
+# current list and "Played before" (D-36). Matches the verdict floor
+# (REPERTOIRE_MIN_GAMES_FOR_VERDICT on the frontend), so every row can carry a verdict and
+# light users are no longer padded with 1-3 game openings. Bookmarks are never filtered.
+MOST_PLAYED_MIN_GAMES = 20
 
 # Most-played pipeline sizing (D-05). The top query fetches MOST_PLAYED_FETCH_LIMIT
 # candidates per colour BEFORE dedupe and the current/past split; the response keeps up to
@@ -395,7 +402,8 @@ def _prepare_candidates(
     cutoff: datetime.datetime | None,
     bookmark_hashes: set[int],
 ) -> list[_MostPlayedCandidate]:
-    """Pure pipeline head: build -> drop bookmark twins -> dedupe identical sets.
+    """Pure pipeline head: build -> drop bookmark twins -> dedupe identical sets ->
+    drop rows under MOST_PLAYED_MIN_GAMES (D-36).
 
     Twins are dropped BEFORE the identical-set dedupe. The dedupe keeps the deeper
     line and removes the shallower one, so with the order reversed a bookmark on the
@@ -405,7 +413,8 @@ def _prepare_candidates(
     """
     candidates = _build_candidates(rows, position_wdl, cutoff)
     candidates = _drop_bookmark_twins(candidates, bookmark_hashes)
-    return _dedupe_identical_sets(candidates)
+    candidates = _dedupe_identical_sets(candidates)
+    return [c for c in candidates if c.total >= MOST_PLAYED_MIN_GAMES]
 
 
 def _split_and_cap(candidates: list[_MostPlayedCandidate]) -> list[_MostPlayedCandidate]:
@@ -621,13 +630,11 @@ def _candidate_to_opening_wdl(
         score=score_fields["score"],
         score_confidence=score_fields["score_confidence"],
         score_p_value=score_fields["score_p_value"],
-        score_ci99_low=score_fields["score_ci99_low"],
-        score_ci99_high=score_fields["score_ci99_high"],
+        score_ci_low=score_fields["score_ci_low"],
+        score_ci_high=score_fields["score_ci_high"],
         avg_eval_pawns=eval_fields["avg_eval_pawns"],
         eval_ci_low_pawns=eval_fields["eval_ci_low_pawns"],
         eval_ci_high_pawns=eval_fields["eval_ci_high_pawns"],
-        eval_ci99_low_pawns=eval_fields["eval_ci99_low_pawns"],
-        eval_ci99_high_pawns=eval_fields["eval_ci99_high_pawns"],
         eval_n=eval_fields["eval_n"],
         eval_p_value=eval_fields["eval_p_value"],
         eval_confidence=eval_fields["eval_confidence"],
@@ -814,8 +821,6 @@ def _bookmark_phase_entry_item(
         avg_eval_pawns=eval_fields["avg_eval_pawns"],
         eval_ci_low_pawns=eval_fields["eval_ci_low_pawns"],
         eval_ci_high_pawns=eval_fields["eval_ci_high_pawns"],
-        eval_ci99_low_pawns=eval_fields["eval_ci99_low_pawns"],
-        eval_ci99_high_pawns=eval_fields["eval_ci99_high_pawns"],
         eval_n=eval_fields["eval_n"],
         eval_p_value=eval_fields["eval_p_value"],
         eval_confidence=eval_fields["eval_confidence"],

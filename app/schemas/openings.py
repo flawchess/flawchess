@@ -75,9 +75,6 @@ class WDLStats(BaseModel):
     p_value: float
     ci_low: float
     ci_high: float
-    # 99% Wilson CI on the score: the greyed footer of the Score verdict popover (Phase 242).
-    ci99_low: float = 0.5
-    ci99_high: float = 0.5
     # MAX(games.played_at) across the games contributing to these stats. Drives
     # the "Last played: <relative>" line in the WDL confidence tooltip. None
     # when no contributing game has a populated
@@ -92,10 +89,6 @@ class WDLStats(BaseModel):
     avg_eval_pawns: float | None = None
     eval_ci_low_pawns: float | None = None
     eval_ci_high_pawns: float | None = None
-    # 99% bounds (Phase 242, D-17): drive the red/green verdict colouring on the
-    # Moves/Games eval bar. Left None by next-moves (which reuses WDLStats).
-    eval_ci99_low_pawns: float | None = None
-    eval_ci99_high_pawns: float | None = None
     eval_n: int = 0
     eval_p_value: float | None = None
     eval_confidence: Literal["low", "medium", "high"] = "low"
@@ -222,13 +215,13 @@ class BookmarkTimeSeries(BaseModel):
     # Drives the bookmark card score-confidence popover's "Last played: <relative>" line.
     last_played_at: datetime.datetime | None = None
     # Score verdict inputs over the in-window totals (D-18): score, two-sided Wilson
-    # p-value bucket, and the 99% Wilson CI. Same helper as the most-played rows, so
+    # p-value bucket, and the 95% Wilson CI (D-33). Same helper as the most-played rows, so
     # identical games report identical numbers. Empty series: 0.5 / "low" / p 1.0.
     score: float
     score_confidence: Literal["low", "medium", "high"]
     score_p_value: float
-    score_ci99_low: float
-    score_ci99_high: float
+    score_ci_low: float
+    score_ci_high: float
     # False when this opening was last played before the colour's current-repertoire
     # cutoff under the request filters (D-04): drives the "not played recently" chip.
     # Colour-less bookmarks and series without games read as current.

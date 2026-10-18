@@ -14,8 +14,8 @@ interface Overrides {
   avgEvalPawns?: number;
   color?: 'white' | 'black';
   reason?: OpeningVerdictReason;
-  ci99Low?: number | null;
-  ci99High?: number | null;
+  ciLow?: number | null;
+  ciHigh?: number | null;
   pValue?: number | null;
 }
 
@@ -28,8 +28,8 @@ function openPopover(overrides: Overrides = {}): HTMLElement {
       evalN={230}
       color={overrides.color ?? 'white'}
       reason={overrides.reason ?? 'typical'}
-      ci99Low={overrides.ci99Low === undefined ? 0.12 : overrides.ci99Low}
-      ci99High={overrides.ci99High === undefined ? 0.7 : overrides.ci99High}
+      ciLow={overrides.ciLow === undefined ? 0.12 : overrides.ciLow}
+      ciHigh={overrides.ciHigh === undefined ? 0.7 : overrides.ciHigh}
       pValue={overrides.pValue === undefined ? 0.004 : overrides.pValue}
     />,
   );
@@ -44,17 +44,17 @@ function footer(): string {
 }
 
 describe('EvalVerdictPopover', () => {
-  it('footer carries the 99% CI, the p-value with its baseline, and n', () => {
+  it('footer carries the 95% CI, the p-value with its baseline, and n', () => {
     openPopover();
-    expect(footer()).toBe('99% CI +0.12 to +0.70 · p = 0.004 vs +0.25 · n = 230');
+    expect(footer()).toBe('95% CI +0.12 to +0.70 · p = 0.004 vs +0.25 · n = 230');
   });
 
   it('omits the CI part when either bound is null and the p part when the p-value is null', () => {
-    openPopover({ ci99Low: null });
+    openPopover({ ciLow: null });
     expect(footer()).toBe('p = 0.004 vs +0.25 · n = 230');
     cleanup();
     openPopover({ pValue: null });
-    expect(footer()).toBe('99% CI +0.12 to +0.70 · n = 230');
+    expect(footer()).toBe('95% CI +0.12 to +0.70 · n = 230');
   });
 
   it('uses the Black baseline for a Black game', () => {

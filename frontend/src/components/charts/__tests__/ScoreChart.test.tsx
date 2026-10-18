@@ -70,8 +70,8 @@ function makeSeries(dates: string[], perWeekGames: number[] = []): BookmarkTimeS
     score: 0.55,
     score_confidence: 'low',
     score_p_value: 0.2,
-    score_ci99_low: 0.4,
-    score_ci99_high: 0.7,
+    score_ci_low: 0.4,
+    score_ci_high: 0.7,
     is_current: true,
     data: dates.map((date, i) => ({
       date,
