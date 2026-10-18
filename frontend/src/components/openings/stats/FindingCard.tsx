@@ -8,7 +8,7 @@ import { ScoreLine } from '@/components/openings/stats/ScoreLine';
 import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedGap } from '@/lib/gapBar';
-import { findingArrows, findingMoveText } from '@/lib/openingInsights';
+import { findingArrows, findingMoveText, isOwnMove } from '@/lib/openingInsights';
 import { lastMoveSquares } from '@/lib/sanToSquares';
 import {
   EVAL_VERDICT_BAND,
@@ -23,6 +23,7 @@ import {
   stripEcoSuffix,
   type OpeningVerdictInput,
 } from '@/lib/openingVerdict';
+import { MOVE_PILL_NEUTRAL_BG, MOVE_PILL_TINT_PCT } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -34,6 +35,8 @@ const UNNAMED_SENTINEL = '<unnamed line>';
 const OLDER_GAMES_LABEL = 'older games';
 const NO_VALUE = '—';
 const EVAL_LABEL = 'Eval after opening';
+const OWN_MOVE_LABEL = 'Your move';
+const OPPONENT_MOVE_LABEL = 'Their reply';
 
 /** "Last seen October 2026" (title of the older-games chip); undefined without a date. */
 function lastSeenTitle(iso: string | null | undefined): string | undefined {
@@ -56,14 +59,62 @@ function OlderGamesChip({ finding, testId }: { finding: OpeningInsightFinding; t
   );
 }
 
-/** "4... Bf5, vs. Indian Defense": the move, then the opening name without ECO (italic when unnamed). */
-function FindingTitle({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
+/** The move in a pill tinted by the card's score verdict. */
+function MovePill({
+  finding,
+  accentColor,
+  testId,
+}: {
+  finding: OpeningInsightFinding;
+  accentColor: string | undefined;
+  testId: string;
+}) {
+  const style = accentColor
+    ? {
+        backgroundColor: `color-mix(in oklch, ${accentColor} ${MOVE_PILL_TINT_PCT}%, transparent)`,
+        borderColor: accentColor,
+      }
+    : { backgroundColor: MOVE_PILL_NEUTRAL_BG, borderColor: 'transparent' };
+  return (
+    <span
+      className="inline-block rounded-md border px-2 py-0.5 whitespace-nowrap text-foreground"
+      style={style}
+      data-testid={`${testId}-move`}
+    >
+      {findingMoveText(finding)}
+    </span>
+  );
+}
+
+/**
+ * Move-led title: the move pill and whose move it is on the first line, the opening name
+ * without ECO under it (italic when unnamed). Opening cards lead with the name instead, so the
+ * two card kinds read differently at a glance.
+ */
+function FindingTitle({
+  finding,
+  accentColor,
+  testId,
+}: {
+  finding: OpeningInsightFinding;
+  accentColor: string | undefined;
+  testId: string;
+}) {
   const unnamed = finding.opening_name === UNNAMED_SENTINEL;
   return (
-    <span className="min-w-0 break-words" data-testid={`${testId}-title`}>
-      <span data-testid={`${testId}-move`}>{findingMoveText(finding)}</span>
-      {', '}
-      <span className={cn(unnamed && 'italic')}>{stripEcoSuffix(finding.display_name)}</span>
+    <span className="flex min-w-0 flex-col gap-1" data-testid={`${testId}-title`}>
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <MovePill finding={finding} accentColor={accentColor} testId={testId} />
+        <span className="text-sm font-normal text-muted-foreground" data-testid={`${testId}-mover`}>
+          {isOwnMove(finding) ? OWN_MOVE_LABEL : OPPONENT_MOVE_LABEL}
+        </span>
+      </span>
+      <span
+        className={cn('break-words text-sm font-normal text-muted-foreground', unnamed && 'italic')}
+        data-testid={`${testId}-opening`}
+      >
+        {stripEcoSuffix(finding.display_name)}
+      </span>
     </span>
   );
 }
@@ -167,8 +218,8 @@ const LINK_BUTTON_CLASS =
   'flex items-center gap-1 text-sm text-brand-brown-light transition-colors hover:text-brand-brown-highlight';
 
 /**
- * Move-led finding card (D-00), laid out like the repertoire cards: a one-line "move, opening"
- * title, a 128 px board with the move arrow beside the score line, WDL bar and eval bar, the
+ * Move-led finding card (D-00), laid out like the repertoire cards: a header led by the move pill
+ * and whose move it is, with the opening name under it, a 128 px board with the move arrow beside the score line, WDL bar and eval bar, the
  * verdict sentence under the eval bar, and a score-verdict left spine.
  */
 export function FindingCard({
@@ -179,10 +230,11 @@ export function FindingCard({
 }: FindingCardProps) {
   const arrows = findingArrows(finding);
   const lastMove = lastMoveSquares(finding.entry_san_sequence) ?? undefined;
+  const accentColor = scoreAccentColor(scoreInput(finding));
   return (
-    <Card data-testid={testId} accentColor={scoreAccentColor(scoreInput(finding))}>
+    <Card data-testid={testId} accentColor={accentColor}>
       <CardHeader as="h4" size="compact" className="items-start text-base">
-        <FindingTitle finding={finding} testId={testId} />
+        <FindingTitle finding={finding} accentColor={accentColor} testId={testId} />
         <span className="ml-auto shrink-0">
           <OlderGamesChip finding={finding} testId={`${testId}-older`} />
         </span>

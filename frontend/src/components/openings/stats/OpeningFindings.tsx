@@ -15,6 +15,7 @@ const SKELETON_SECTION_COUNT = 2;
 /** Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
 const MIN_GAMES_PER_FINDING = 20;
 const MERGED_EMPTY_TITLE = 'Moves that Stand Out';
+const ZONE_DIVIDER_LABEL = 'Move insights';
 
 type FindingKind = 'weakness' | 'strength';
 type FindingColor = 'white' | 'black';
@@ -167,6 +168,21 @@ function FindingCardGrid({
   );
 }
 
+/**
+ * Labelled rule between the opening cards above and the move cards below, so scrolling past
+ * the repertoire shows where one kind of card ends and the other begins.
+ */
+function ZoneDivider() {
+  return (
+    <div className="flex items-center gap-3 pt-2" data-testid="opening-findings-divider">
+      <span className="text-sm font-semibold uppercase tracking-wide whitespace-nowrap text-muted-foreground">
+        {ZONE_DIVIDER_LABEL}
+      </span>
+      <span className="h-px flex-1 bg-card-edge" aria-hidden="true" />
+    </div>
+  );
+}
+
 function SectionHeading({ title, intro }: { title: string; intro: string }) {
   return (
     <div className="space-y-1">
@@ -281,6 +297,7 @@ export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGa
 
   return (
     <section className="space-y-3" data-testid="opening-findings">
+      <ZoneDivider />
       {isLoading ? (
         <FindingsSkeleton />
       ) : isError ? (

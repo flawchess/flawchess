@@ -181,9 +181,11 @@ describe('OpeningFindings cards and N more', () => {
       'black',
     );
     expect(screen.getByTestId('opening-findings-weakness-card-0-move').textContent).toBe('1... e6');
-    expect(screen.getByTestId('opening-findings-weakness-card-0-title').textContent).toBe(
-      '1... e6, Sicilian Defense',
+    expect(screen.getByTestId('opening-findings-weakness-card-0-opening').textContent).toBe(
+      'Sicilian Defense',
     );
+    // Black to move after 1. e4 and the finding is a Black one: the user's own move.
+    expect(screen.getByTestId('opening-findings-weakness-card-0-mover').textContent).toBe('Your move');
     expect(screen.queryByTestId('opening-findings-weakness-card-1')).toBeNull();
   });
 

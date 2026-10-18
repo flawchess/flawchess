@@ -50,6 +50,15 @@ export function findingMoveText(finding: OpeningInsightFinding): string {
 }
 
 /**
+ * True when the candidate move is the user's own, false for an opponent's reply. The side to
+ * move at the entry position follows the ply parity (even = white, as in formatMoveNotation).
+ */
+export function isOwnMove(finding: OpeningInsightFinding): boolean {
+  const whiteToMove = finding.entry_san_sequence.length % 2 === 0;
+  return whiteToMove === (finding.color === 'white');
+}
+
+/**
  * One arrow from the candidate move's squares, red for a weakness and green for a strength.
  * A low-confidence card gets the neutral blue (D-38): listed by rank, but its direction is not a
  * verdict, matching its blue spine.

@@ -302,6 +302,12 @@ export const ZONE_DANGER = 'oklch(0.50 0.15 25)';       // red zone (same hue as
 export const ZONE_NEUTRAL = 'oklch(0.50 0.14 260)';     // blue zone (L/C match WDL)
 export const ZONE_SUCCESS = 'oklch(0.50 0.14 145)';     // green zone (same hue as WDL_WIN)
 
+// Opening finding cards: the move pill in the header is the card's zone colour mixed at this
+// share into transparent (the verdict colour without competing with the left spine).
+export const MOVE_PILL_TINT_PCT = 35;
+// Fallback pill fill when a card has no spine colour (below the game floor).
+export const MOVE_PILL_NEUTRAL_BG = 'oklch(1 0 0 / 0.10)';
+
 // Blue for the typical middle: the 25-75 percentile-bar dot and other neutral
 // endgame marks (matches MY_SCORE_COLOR / Recovery line).
 export const GAUGE_NEUTRAL = 'oklch(0.55 0.18 260)';

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { findingArrows, formatCandidateMove, formatMoveNotation } from '../openingInsights';
+import { findingArrows, formatCandidateMove, formatMoveNotation, isOwnMove } from '../openingInsights';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -50,6 +50,21 @@ describe('formatCandidateMove', () => {
   it('returns "3... c5" for entrySanSequence of length 5 (black ply)', () => {
     const seq = ['e4', 'e5', 'Nf3', 'Nc6', 'd4'];
     expect(formatCandidateMove(seq, 'c5')).toBe('3... c5');
+  });
+});
+
+describe('isOwnMove', () => {
+  const finding = (color: OpeningInsightFinding['color'], plies: number): OpeningInsightFinding =>
+    ({ color, entry_san_sequence: Array.from({ length: plies }, () => 'x') }) as OpeningInsightFinding;
+
+  it("is the user's move when the side to move matches the finding colour", () => {
+    expect(isOwnMove(finding('white', 0))).toBe(true);
+    expect(isOwnMove(finding('black', 1))).toBe(true);
+  });
+
+  it("is the opponent's reply otherwise", () => {
+    expect(isOwnMove(finding('white', 1))).toBe(false);
+    expect(isOwnMove(finding('black', 2))).toBe(false);
   });
 });
 
