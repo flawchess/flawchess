@@ -15,6 +15,8 @@ const INITIAL_VISIBLE_PER_SECTION = 4;
 const SKELETON_SECTION_COUNT = 2;
 const MERGED_EMPTY_TITLE = 'Moves that Stand Out';
 const ZONE_DIVIDER_LABEL = 'Move insights';
+const ZONE_INTRO =
+  'Your weakest and strongest opening positions, based on a systematic scan of all your games up to 16 half-moves.';
 
 type FindingKind = 'weakness' | 'strength';
 type FindingColor = 'white' | 'black';
@@ -300,6 +302,7 @@ export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGa
   return (
     <section className="space-y-3" data-testid="opening-findings">
       <ZoneDivider />
+      <p className="text-sm text-muted-foreground" data-testid="opening-findings-intro">{ZONE_INTRO}</p>
       {isLoading ? (
         <FindingsSkeleton />
       ) : isError ? (

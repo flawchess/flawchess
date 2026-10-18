@@ -24,7 +24,7 @@ const DISTANCE_DECIMALS = 2;
 const DISTANCE_SAME_BELOW = 0.005;
 
 const COPY_TOO_FEW = 'Too few games to call it.';
-const COPY_TYPICAL = 'That is typical.';
+const COPY_TYPICAL = 'Your value is in the typical range.';
 const COPY_BASELINE =
   'White moves first, so an average game reaches the middlegame at about +0.25 for White and −0.25 for Black. The bar is centred there; the faint tick is 0 (equal).';
 

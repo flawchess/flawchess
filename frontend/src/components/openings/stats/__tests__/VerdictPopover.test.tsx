@@ -65,7 +65,7 @@ describe('EvalVerdictPopover', () => {
   it.each([
     ['chance', /could be chance/],
     ['too-few', /Too few games to call it/],
-    ['typical', /That is typical/],
+    ['typical', /Your value is in the typical range/],
     ['better', /clearly better than an average White game/],
     ['worse', /clearly worse than an average White game/],
   ] as const)('says the %s reason', (reason, pattern) => {
