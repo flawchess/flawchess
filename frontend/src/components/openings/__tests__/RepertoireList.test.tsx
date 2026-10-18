@@ -223,6 +223,37 @@ describe('RepertoireList played before', () => {
   });
 });
 
+describe('RepertoireList intros and verdict sentence', () => {
+  it('explains Score and Eval under the first heading only', () => {
+    renderList({
+      bookmarkRows: [makeRow({ key: 'bm-1', kind: 'bookmark' })],
+      currentRows: [makeRow({ key: 'mpo-1' })],
+      pastRows: [makeRow({ key: 'past-1', kind: 'past' })],
+    });
+    const bookmarks = screen.getByTestId('repertoire-group-bookmarks').textContent ?? '';
+    const mostPlayed = screen.getByTestId('repertoire-group-most-played').textContent ?? '';
+    expect(bookmarks).toContain('Score counts a draw as half a win.');
+    expect(mostPlayed).toContain('Your most frequent openings as White lately. Older ones sit under Played before.');
+    expect(mostPlayed).not.toContain('Score counts a draw');
+    expect(screen.queryByTestId('repertoire-legend')).toBeNull();
+  });
+
+  it('reads both clear verdicts together, and says too few games on a faded card', () => {
+    renderList({
+      currentRows: [
+        makeRow({ key: 'mpo-big' }),
+        makeRow({ key: 'mpo-small', games: 15, evalN: 15 }),
+        makeRow({ key: 'mpo-plain', score: 0.5, scoreConfidence: 'low', avgEvalPawns: 0.25, evalConfidence: 'low' }),
+      ],
+    });
+    expect(screen.getByTestId('repertoire-card-0-sentence').textContent).toBe(
+      'You come out of the opening better and make it count.',
+    );
+    expect(screen.getByTestId('repertoire-card-1-sentence').textContent).toBe('Too few games to call it yet.');
+    expect(screen.queryByTestId('repertoire-card-2-sentence')).toBeNull();
+  });
+});
+
 describe('RepertoireList low-sample rows', () => {
   it('fades a 15-game card and keeps its dots neutral despite high confidence', () => {
     renderList({

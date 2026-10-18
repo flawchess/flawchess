@@ -25,7 +25,9 @@ import {
   isFadedRow,
   openingVerdict,
   openingVerdictReason,
+  openingVerdictSentence,
   scoreDelta,
+  type OpeningVerdictInput,
 } from '@/lib/openingVerdict';
 import { pgnToSanArray } from '@/lib/pgn';
 import { lastMoveSquares } from '@/lib/sanToSquares';
@@ -55,14 +57,30 @@ interface RepertoireCardProps {
   onOpenBookmarkGames: (bookmark: PositionBookmarkResponse) => void;
 }
 
-
-function ScoreBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
-  const input = {
+function scoreInput(row: RepertoireRowModel): OpeningVerdictInput {
+  return {
     delta: scoreDelta(row.score),
     band: SCORE_VERDICT_BAND,
     confidence: row.scoreConfidence,
     games: row.games,
   };
+}
+
+/** Null when the row has no eval to judge. */
+function evalInput(row: RepertoireRowModel): OpeningVerdictInput | null {
+  if (row.avgEvalPawns === null || row.evalN <= 0) return null;
+  return {
+    delta: row.avgEvalPawns - evalBaselinePawns(row.color),
+    band: EVAL_VERDICT_BAND,
+    confidence: row.evalConfidence,
+    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
+    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
+    games: row.evalN,
+  };
+}
+
+function ScoreBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
+  const input = scoreInput(row);
   return (
     <VerdictBar
       delta={input.delta}
@@ -94,7 +112,8 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
   const { tier2 } = useReadiness();
   // Eval needs Stockfish analysis: show the pending placeholder until tier 2 is reached.
   if (!tier2) return <EvalCpuPlaceholder />;
-  if (row.avgEvalPawns === null || row.evalN <= 0) {
+  const input = evalInput(row);
+  if (row.avgEvalPawns === null || input === null) {
     return (
       <div
         className="flex items-center justify-between text-sm text-muted-foreground"
@@ -106,14 +125,6 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
     );
   }
   const baseline = evalBaselinePawns(row.color);
-  const input = {
-    delta: row.avgEvalPawns - baseline,
-    band: EVAL_VERDICT_BAND,
-    confidence: row.evalConfidence,
-    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
-    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
-    games: row.evalN,
-  };
   return (
     <VerdictBar
       delta={input.delta}
@@ -145,6 +156,22 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
         />
       }
     />
+  );
+}
+
+/** The Score and Eval verdicts read together in one muted line; nothing when neither stands out. */
+function VerdictSentence({ row, testId }: { row: RepertoireRowModel; testId: string }) {
+  const { tier2 } = useReadiness();
+  const evalIn = tier2 ? evalInput(row) : null;
+  const sentence = openingVerdictSentence(
+    openingVerdictReason(scoreInput(row)),
+    evalIn ? openingVerdictReason(evalIn) : null,
+  );
+  if (!sentence) return null;
+  return (
+    <p className="text-sm text-muted-foreground" data-testid={`${testId}-sentence`}>
+      {sentence}
+    </p>
   );
 }
 
@@ -277,7 +304,8 @@ function CardLinks({
 /**
  * One repertoire opening as a card: name header with the last-played date, a 128 px board beside the WDL bar, the Score
  * and Eval after opening verdict bars, the Moves / Games / Bookmark links and a toggle that
- * opens the score-over-time chart under them. Cards with fewer than 20 games are faded.
+ * opens the score-over-time chart under them. A one-line sentence reads the two verdicts together.
+ * Cards with fewer than 20 games are faded.
  */
 export function RepertoireCard({
   row,
@@ -352,6 +380,7 @@ export function RepertoireCard({
             <EvalBar row={row} testId={testId} />
           </div>
         </div>
+        <VerdictSentence row={row} testId={testId} />
         <CardLinks
           row={row}
           testId={testId}

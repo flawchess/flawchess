@@ -125,3 +125,59 @@ export function stripEcoSuffix(name: string): string {
 export function isFadedRow(games: number): boolean {
   return games < REPERTOIRE_MIN_GAMES_FOR_VERDICT;
 }
+
+/** How one bar reads for the card sentence: chance, too few evals and no eval all collapse to 'unknown'. */
+type SentenceState = 'better' | 'worse' | 'typical' | 'unknown';
+
+function sentenceState(reason: OpeningVerdictReason | null): SentenceState {
+  if (reason === 'better' || reason === 'worse' || reason === 'typical') return reason;
+  return 'unknown';
+}
+
+const SENTENCE_TOO_FEW = 'Too few games to call it yet.';
+const SENTENCE_SCORE_BELOW = 'You score clearly below 50% from these positions.';
+const SENTENCE_SCORE_ABOVE = 'You score clearly above 50% from these positions.';
+
+/**
+ * Score row x eval column. Only the parts that passed the 99% gate are stated: an unclear
+ * eval falls back to the score-only sentence, and nothing clear on either bar says nothing.
+ */
+const VERDICT_SENTENCES: Record<SentenceState, Record<SentenceState, string | null>> = {
+  worse: {
+    worse: 'You come out of the opening worse, and it shows in your results.',
+    typical: 'You score below 50% even though the opening itself goes fine. The points slip away later.',
+    better: 'You come out of the opening better but still score below 50%.',
+    unknown: SENTENCE_SCORE_BELOW,
+  },
+  better: {
+    worse: 'You come out of the opening worse but outplay your opponents later.',
+    typical: SENTENCE_SCORE_ABOVE,
+    better: 'You come out of the opening better and make it count.',
+    unknown: SENTENCE_SCORE_ABOVE,
+  },
+  typical: {
+    worse: 'You come out of the opening worse but hold your own.',
+    typical: null,
+    better: "You come out of the opening better, but your results don't show it yet.",
+    unknown: null,
+  },
+  unknown: {
+    worse: 'You come out of the opening worse than an average game.',
+    typical: null,
+    better: 'You come out of the opening better than an average game.',
+    unknown: null,
+  },
+};
+
+/**
+ * One plain sentence reading the Score and Eval verdicts together (repertoire and finding
+ * cards). `evalReason` is null when the card has no eval (no analysis yet, or no evals).
+ * Returns null when nothing stands out.
+ */
+export function openingVerdictSentence(
+  scoreReason: OpeningVerdictReason,
+  evalReason: OpeningVerdictReason | null,
+): string | null {
+  if (scoreReason === 'too-few') return SENTENCE_TOO_FEW;
+  return VERDICT_SENTENCES[sentenceState(scoreReason)][sentenceState(evalReason)];
+}

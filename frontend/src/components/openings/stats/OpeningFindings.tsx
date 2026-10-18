@@ -12,7 +12,14 @@ import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/ins
 
 /** Phones show this many cards per section before "Show more" (D-08). */
 const INITIAL_VISIBLE_PHONE = 2;
+/** Desktop cap for leaning cards shown inline in a section without clear ones. */
+const INLINE_NOT_CLEAR_DESKTOP = 4;
 const SKELETON_SECTION_COUNT = 2;
+/** Mirrors backend OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE. */
+const MIN_GAMES_PER_FINDING = 20;
+const COPY_NOT_CLEAR = 'Not clear yet';
+const COPY_LEANING = 'Leaning this way, but could still be chance.';
+const MERGED_EMPTY_TITLE = 'Moves that Stand Out';
 
 type FindingKind = 'weakness' | 'strength';
 type FindingColor = 'white' | 'black';
@@ -20,12 +27,20 @@ type FindingColor = 'white' | 'black';
 interface KindMeta {
   kind: FindingKind;
   title: string;
-  subtitle: string;
+  intro: string;
 }
 
 const KINDS: readonly KindMeta[] = [
-  { kind: 'weakness', title: 'Moves that Cost You', subtitle: 'You score clearly below 50%.' },
-  { kind: 'strength', title: 'Moves that Work', subtitle: 'You score clearly above 50%.' },
+  {
+    kind: 'weakness',
+    title: 'Moves that Cost You',
+    intro: "Moves after which you score clearly below 50%, your own moves and your opponents' replies.",
+  },
+  {
+    kind: 'strength',
+    title: 'Moves that Work',
+    intro: "Moves after which you score clearly above 50%, your own moves and your opponents' replies.",
+  },
 ];
 
 interface SectionData {
@@ -46,12 +61,6 @@ function sectionData(data: OpeningInsightsResponse, color: FindingColor, kind: F
     notClear: data[`${base}_not_clear`],
     notClearCount: data[`${base}_not_clear_count`],
   };
-}
-
-/** "3 moves lean this way, but could still be chance." (singular: "1 move leans"). */
-function leanText(count: number): string {
-  const plural = count !== 1;
-  return `${count} move${plural ? 's' : ''} lean${plural ? '' : 's'} this way, but could still be chance.`;
 }
 
 function FindingsSkeleton() {
@@ -83,83 +92,28 @@ function FindingsError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-/**
- * Collapsed list of the medium candidates (D-09, D-10), drawn as the same finding cards as the
- * 99% ones; their verdicts and arrows stay uncoloured because none passed the 99% gate.
- */
-function NotClearYet({
-  kind,
-  findings,
-  count,
-  onOpenMoves,
-  onOpenGames,
-}: {
-  kind: FindingKind;
-  findings: OpeningInsightFinding[];
-  count: number;
-  onOpenMoves: (finding: OpeningInsightFinding) => void;
-  onOpenGames: (finding: OpeningInsightFinding) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  if (count <= 0) return null;
-  const testId = `opening-findings-${kind}`;
-  const handleToggle = () => {
-    // Discovery only: track the expand, never the collapse.
-    if (!expanded) trackFeature('panel-open', { target: 'opening-findings-unclear' });
-    setExpanded((prev) => !prev);
-  };
-  return (
-    <div className="space-y-3" data-testid={`${testId}-unclear`}>
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 text-left text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
-        aria-expanded={expanded}
-        onClick={handleToggle}
-        data-testid={`${testId}-unclear-toggle`}
-      >
-        <span>Not clear yet ({count})</span>
-        <span className="font-normal">
-          Leaning this way, but the difference from 50% could still be chance.
-        </span>
-        <ChevronDown
-          className={cn('h-4 w-4 shrink-0 transition-transform', expanded && 'rotate-180')}
-          aria-hidden="true"
-        />
-      </button>
-      {expanded && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid={`${testId}-unclear-list`}>
-          {findings.map((finding, i) => (
-            <FindingCard
-              key={i}
-              finding={finding}
-              testId={`${testId}-unclear-card-${i}`}
-              onOpenMoves={onOpenMoves}
-              onOpenGames={onOpenGames}
-              neutralArrow
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ShowMoreButton({
-  kind,
+  testId,
   expanded,
+  hideOnDesktop,
   onToggle,
 }: {
-  kind: FindingKind;
+  testId: string;
   expanded: boolean;
+  /** True when every card already fits on desktop, so only phones need the button. */
+  hideOnDesktop: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
-      className="flex items-center gap-1 px-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:hidden"
+      className={cn(
+        'flex items-center gap-1 px-2 text-sm text-muted-foreground transition-colors hover:text-foreground',
+        hideOnDesktop && 'md:hidden',
+      )}
       aria-expanded={expanded}
       onClick={onToggle}
-      data-testid={`opening-findings-${kind}-btn-more`}
+      data-testid={testId}
     >
       {expanded ? (
         <>
@@ -176,6 +130,179 @@ function ShowMoreButton({
   );
 }
 
+/** Classes hiding a card beyond the phone / desktop initial counts while collapsed. */
+function hiddenClass(index: number, desktopInitial: number | undefined): string | undefined {
+  const phoneHidden = index >= INITIAL_VISIBLE_PHONE;
+  const desktopHidden = desktopInitial !== undefined && index >= desktopInitial;
+  if (phoneHidden && desktopHidden) return 'hidden';
+  if (phoneHidden) return 'max-md:hidden';
+  return undefined;
+}
+
+/**
+ * Two-column finding cards with the phone "Show more" (D-08). `desktopInitial` also caps
+ * desktop before Show more; undefined shows every card there.
+ */
+function FindingCardGrid({
+  findings,
+  testId,
+  desktopInitial,
+  neutralArrow = false,
+  onOpenMoves,
+  onOpenGames,
+}: {
+  findings: OpeningInsightFinding[];
+  testId: string;
+  desktopInitial?: number;
+  neutralArrow?: boolean;
+  onOpenMoves: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const handleToggle = () => {
+    // Discovery only: track the expand, never the collapse.
+    if (!expanded) trackFeature('panel-open', { target: 'opening-insights-more' });
+    setExpanded((prev) => !prev);
+  };
+  const overflowsDesktop = desktopInitial !== undefined && findings.length > desktopInitial;
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid={`${testId}-list`}>
+        {findings.map((finding, i) => (
+          <div key={i} className={cn(!expanded && hiddenClass(i, desktopInitial))}>
+            <FindingCard
+              finding={finding}
+              testId={`${testId}-card-${i}`}
+              onOpenMoves={onOpenMoves}
+              onOpenGames={onOpenGames}
+              neutralArrow={neutralArrow}
+            />
+          </div>
+        ))}
+      </div>
+      {findings.length > INITIAL_VISIBLE_PHONE && (
+        <ShowMoreButton
+          testId={`${testId}-btn-more`}
+          expanded={expanded}
+          hideOnDesktop={!overflowsDesktop}
+          onToggle={handleToggle}
+        />
+      )}
+    </>
+  );
+}
+
+/** "Not clear yet (n)" label with its one-line explanation, as a toggle or a plain label. */
+function NotClearLabel({ count }: { count: number }) {
+  return (
+    <>
+      <span>
+        {COPY_NOT_CLEAR} ({count})
+      </span>
+      <span className="font-normal">{COPY_LEANING}</span>
+    </>
+  );
+}
+
+const NOT_CLEAR_LABEL_CLASS = 'flex w-full flex-wrap items-center gap-x-2 text-left text-sm font-semibold text-muted-foreground';
+
+/**
+ * Medium candidates (D-09, D-10) below clear cards: collapsed behind a toggle. Drawn as the
+ * same finding cards as the 99% ones; their verdicts and arrows stay uncoloured.
+ */
+function NotClearYetCollapsed({
+  kind,
+  findings,
+  count,
+  onOpenMoves,
+  onOpenGames,
+}: {
+  kind: FindingKind;
+  findings: OpeningInsightFinding[];
+  count: number;
+  onOpenMoves: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (count <= 0) return null;
+  const testId = `opening-findings-${kind}-unclear`;
+  const handleToggle = () => {
+    // Discovery only: track the expand, never the collapse.
+    if (!expanded) trackFeature('panel-open', { target: 'opening-findings-unclear' });
+    setExpanded((prev) => !prev);
+  };
+  return (
+    <div className="space-y-3" data-testid={testId}>
+      <button
+        type="button"
+        className={cn(NOT_CLEAR_LABEL_CLASS, 'transition-colors hover:text-foreground')}
+        aria-expanded={expanded}
+        onClick={handleToggle}
+        data-testid={`${testId}-toggle`}
+      >
+        <NotClearLabel count={count} />
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 transition-transform', expanded && 'rotate-180')}
+          aria-hidden="true"
+        />
+      </button>
+      {expanded && (
+        <FindingCardGrid
+          findings={findings}
+          testId={testId}
+          neutralArrow
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A section without clear cards shows its leaning cards inline: a toggle hiding a single card
+ * was friction, and the section would otherwise read as empty.
+ */
+function NotClearYetInline({
+  kind,
+  findings,
+  count,
+  onOpenMoves,
+  onOpenGames,
+}: {
+  kind: FindingKind;
+  findings: OpeningInsightFinding[];
+  count: number;
+  onOpenMoves: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
+}) {
+  const testId = `opening-findings-${kind}-unclear`;
+  return (
+    <div className="space-y-3" data-testid={testId}>
+      <p className={NOT_CLEAR_LABEL_CLASS} data-testid={`${testId}-label`}>
+        <NotClearLabel count={count} />
+      </p>
+      <FindingCardGrid
+        findings={findings}
+        testId={testId}
+        desktopInitial={INLINE_NOT_CLEAR_DESKTOP}
+        neutralArrow
+        onOpenMoves={onOpenMoves}
+        onOpenGames={onOpenGames}
+      />
+    </div>
+  );
+}
+
+function SectionHeading({ title, intro }: { title: string; intro: string }) {
+  return (
+    <div className="space-y-1">
+      <h2 className={SECTION_HEADING_CLASS}>{title}</h2>
+      <p className="text-sm text-muted-foreground">{intro}</p>
+    </div>
+  );
+}
+
 function FindingsSubsection({
   meta,
   color,
@@ -189,53 +316,82 @@ function FindingsSubsection({
   onOpenMoves: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const testId = `opening-findings-${meta.kind}`;
-  const handleToggle = () => {
-    // Discovery only: track the expand, never the collapse.
-    if (!expanded) trackFeature('panel-open', { target: 'opening-insights-more' });
-    setExpanded((prev) => !prev);
+  const notClearProps = {
+    kind: meta.kind,
+    findings: data.notClear,
+    count: data.notClearCount,
+    onOpenMoves,
+    onOpenGames,
   };
+  const body =
+    data.cards.length > 0 ? (
+      <>
+        <FindingCardGrid
+          findings={data.cards}
+          testId={testId}
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+        />
+        <NotClearYetCollapsed {...notClearProps} />
+      </>
+    ) : data.notClear.length > 0 ? (
+      <NotClearYetInline {...notClearProps} />
+    ) : (
+      <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
+        Nothing stands out as {colorLabel(color)} yet.
+      </p>
+    );
   return (
     <div className="space-y-3" data-testid={testId}>
-      <div className="space-y-1">
-        <h2 className={SECTION_HEADING_CLASS}>{meta.title}</h2>
-        <p className="text-sm text-muted-foreground">{meta.subtitle}</p>
-      </div>
-      {data.cards.length === 0 ? (
-        <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
-          Nothing clear yet as {colorLabel(color)}.
-          {data.notClearCount > 0 && ` ${leanText(data.notClearCount)}`}
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {data.cards.map((finding, i) => (
-              <div
-                key={i}
-                className={cn(i >= INITIAL_VISIBLE_PHONE && !expanded && 'max-md:hidden')}
-              >
-                <FindingCard
-                  finding={finding}
-                  testId={`${testId}-card-${i}`}
-                  onOpenMoves={onOpenMoves}
-                  onOpenGames={onOpenGames}
-                />
-              </div>
-            ))}
-          </div>
-          {data.cards.length > INITIAL_VISIBLE_PHONE && (
-            <ShowMoreButton kind={meta.kind} expanded={expanded} onToggle={handleToggle} />
-          )}
-        </>
-      )}
-      <NotClearYet
-        kind={meta.kind}
-        findings={data.notClear}
-        count={data.notClearCount}
-        onOpenMoves={onOpenMoves}
-        onOpenGames={onOpenGames}
-      />
+      <SectionHeading title={meta.title} intro={meta.intro} />
+      {body}
+    </div>
+  );
+}
+
+function sectionIsEmpty(data: SectionData): boolean {
+  return data.cards.length === 0 && data.notClear.length === 0;
+}
+
+/** Both sections empty: one short block instead of two headings with "nothing yet" each. */
+function MergedEmpty({ color }: { color: FindingColor }) {
+  return (
+    <div className="space-y-1" data-testid="opening-findings-empty">
+      <h2 className={SECTION_HEADING_CLASS}>{MERGED_EMPTY_TITLE}</h2>
+      <p className="text-sm text-muted-foreground">
+        No moves stand out as {colorLabel(color)} yet. A move needs at least {MIN_GAMES_PER_FINDING} games
+        before it can show up here.
+      </p>
+    </div>
+  );
+}
+
+function FindingsSections({
+  data,
+  color,
+  onOpenMoves,
+  onOpenGames,
+}: {
+  data: OpeningInsightsResponse;
+  color: FindingColor;
+  onOpenMoves: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
+}) {
+  const sections = KINDS.map((meta) => ({ meta, data: sectionData(data, color, meta.kind) }));
+  if (sections.every((section) => sectionIsEmpty(section.data))) return <MergedEmpty color={color} />;
+  return (
+    <div className="flex flex-col gap-6">
+      {sections.map((section) => (
+        <FindingsSubsection
+          key={section.meta.kind}
+          meta={section.meta}
+          color={color}
+          data={section.data}
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+        />
+      ))}
     </div>
   );
 }
@@ -250,8 +406,8 @@ interface OpeningFindingsProps {
 /**
  * Findings for the selected colour below the repertoire cards: "Moves that Cost You" and
  * "Moves that Work", each at most 5 cards from the 99%-gated backend lists (D-00), with a
- * phone "Show more" (D-08), a collapsed "Not clear yet (n)" list (D-09, D-10) and the
- * empty-state copy (D-11).
+ * phone "Show more" (D-08) and a collapsed "Not clear yet (n)" list (D-09, D-10). A section
+ * without clear cards shows its leaning cards inline; both sections empty merge into one line.
  */
 export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGames }: OpeningFindingsProps) {
   const { data, isLoading, isError, refetch } = useOpeningInsights({
@@ -271,18 +427,12 @@ export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGa
       ) : isError ? (
         <FindingsError onRetry={() => void refetch()} />
       ) : data ? (
-        <div className="flex flex-col gap-6">
-          {KINDS.map((meta) => (
-            <FindingsSubsection
-              key={meta.kind}
-              meta={meta}
-              color={color}
-              data={sectionData(data, color, meta.kind)}
-              onOpenMoves={onOpenMoves}
-              onOpenGames={onOpenGames}
-            />
-          ))}
-        </div>
+        <FindingsSections
+          data={data}
+          color={color}
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+        />
       ) : null}
     </section>
   );

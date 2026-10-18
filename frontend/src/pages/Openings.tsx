@@ -60,7 +60,8 @@ import { StatsTab } from './openings/StatsTab';
 
 const PAGE_SIZE = 20;
 
-const TAB_INFO: Record<OpeningsTab, { aria: string; text: string }> = {
+// Stats has no tab popover: its sections explain themselves with intro lines under each heading.
+const TAB_INFO: Record<Exclude<OpeningsTab, 'stats'>, { aria: string; text: string }> = {
   explorer: {
     aria: 'About Opening Moves',
     text: 'Interactive opening explorer with win/draw/loss charts and statistical analysis for each move.',
@@ -68,10 +69,6 @@ const TAB_INFO: Record<OpeningsTab, { aria: string; text: string }> = {
   games: {
     aria: 'About Opening Games',
     text: 'A list of your games that reached the position on the board, matching your current filter settings.',
-  },
-  stats: {
-    aria: 'About Opening Stats',
-    text: 'Your opening repertoire as White or Black (switch at the top). Bookmarked Openings and Most Played Openings show your results, score and the engine eval when the middlegame starts, compared with an average game of that colour. Open an opening for its score over time. Below, Moves that Cost You and Moves that Work list the moves after which you score clearly below or above 50%, counting your opponents\' replies too.',
   },
 };
 
@@ -581,13 +578,6 @@ export function OpeningsPage() {
             <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
               <BarChart2 className="mr-1.5 h-4 w-4" />
               Stats
-              {activeTab === 'stats' && (
-                <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                  <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
-                    {TAB_INFO.stats.text}
-                  </InfoPopover>
-                </span>
-              )}
             </TabsTrigger>
           </TabsList>
         <OpeningsDesktopSidebar
@@ -703,13 +693,6 @@ export function OpeningsPage() {
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 Stats
-                {activeTab === 'stats' && (
-                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
-                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info-mobile" side="bottom">
-                      {TAB_INFO.stats.text}
-                    </InfoPopover>
-                  </span>
-                )}
               </TabsTrigger>
             </TabsList>
           </div>

@@ -20,8 +20,10 @@ import {
   formatScorePercent,
   openingVerdict,
   openingVerdictReason,
+  openingVerdictSentence,
   scoreDelta,
   stripEcoSuffix,
+  type OpeningVerdictInput,
 } from '@/lib/openingVerdict';
 import { ARROW_NEUTRAL } from '@/lib/theme';
 import { cn } from '@/lib/utils';
@@ -62,13 +64,32 @@ function FindingSubtitle({ finding }: { finding: OpeningInsightFinding }) {
   return <span className={cn(unnamed && 'italic')}>{stripEcoSuffix(finding.display_name)}</span>;
 }
 
-function ScoreLine({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
-  const input = {
+function scoreInput(finding: OpeningInsightFinding): OpeningVerdictInput {
+  return {
     delta: scoreDelta(finding.score),
     band: SCORE_VERDICT_BAND,
     confidence: finding.confidence,
     games: finding.n_games,
   };
+}
+
+/** Null when the finding has no eval to judge. */
+function evalInput(finding: OpeningInsightFinding): OpeningVerdictInput | null {
+  const avg = finding.avg_eval_pawns ?? null;
+  const evalN = finding.eval_n ?? 0;
+  if (avg === null || evalN <= 0) return null;
+  return {
+    delta: avg - evalBaselinePawns(finding.color),
+    band: EVAL_VERDICT_BAND,
+    confidence: finding.eval_confidence ?? 'low',
+    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
+    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
+    games: evalN,
+  };
+}
+
+function ScoreLine({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
+  const input = scoreInput(finding);
   const verdict = openingVerdict(input);
   return (
     <div className="flex items-center justify-between gap-2 text-sm">
@@ -109,7 +130,8 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
   if (!tier2) return <EvalCpuPlaceholder />;
   const avg = finding.avg_eval_pawns ?? null;
   const evalN = finding.eval_n ?? 0;
-  if (avg === null || evalN <= 0) {
+  const input = evalInput(finding);
+  if (avg === null || input === null) {
     return (
       <div className="flex items-center justify-between text-sm" data-testid={`${testId}-eval-none`}>
         <span className="text-muted-foreground">{EVAL_LABEL}</span>
@@ -118,14 +140,6 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
     );
   }
   const baseline = evalBaselinePawns(finding.color);
-  const input = {
-    delta: avg - baseline,
-    band: EVAL_VERDICT_BAND,
-    confidence: finding.eval_confidence ?? 'low',
-    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
-    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
-    games: evalN,
-  };
   const verdict = openingVerdict(input);
   return (
     <VerdictBar
@@ -152,6 +166,22 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
         />
       }
     />
+  );
+}
+
+/** The Score and Eval verdicts read together in one muted line; nothing when neither stands out. */
+function VerdictSentence({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
+  const { tier2 } = useReadiness();
+  const evalIn = tier2 ? evalInput(finding) : null;
+  const sentence = openingVerdictSentence(
+    openingVerdictReason(scoreInput(finding)),
+    evalIn ? openingVerdictReason(evalIn) : null,
+  );
+  if (!sentence) return null;
+  return (
+    <p className="text-sm text-muted-foreground" data-testid={`${testId}-sentence`}>
+      {sentence}
+    </p>
   );
 }
 
@@ -196,45 +226,48 @@ export function FindingCard({
           <FindingSubtitle finding={finding} />
         </span>
       </CardHeader>
-      <CardBody className="flex items-start gap-3">
-        <LazyMiniBoard
-          fen={finding.entry_fen}
-          flipped={finding.color === 'black'}
-          size={BOARD_SIZE}
-          arrows={neutralArrow ? arrows?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL })) : arrows}
-          lastMove={lastMove}
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <ScoreLine finding={finding} testId={testId} />
-          <MiniWDLBar
-            win_pct={pct(finding.wins, finding.n_games)}
-            draw_pct={pct(finding.draws, finding.n_games)}
-            loss_pct={pct(finding.losses, finding.n_games)}
+      <CardBody className="flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <LazyMiniBoard
+            fen={finding.entry_fen}
+            flipped={finding.color === 'black'}
+            size={BOARD_SIZE}
+            arrows={neutralArrow ? arrows?.map((arrow) => ({ ...arrow, color: ARROW_NEUTRAL })) : arrows}
+            lastMove={lastMove}
           />
-          <EvalLine finding={finding} testId={testId} />
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              className={LINK_BUTTON_CLASS}
-              aria-label="Open this line in the Move Explorer"
-              data-testid={`${testId}-btn-moves`}
-              onClick={() => onOpenMoves(finding)}
-            >
-              <ArrowRightLeft className="h-3.5 w-3.5" />
-              <span>Moves</span>
-            </button>
-            <button
-              type="button"
-              className={LINK_BUTTON_CLASS}
-              aria-label={`View ${finding.n_games} games for this line`}
-              data-testid={`${testId}-btn-games`}
-              onClick={() => onOpenGames(finding)}
-            >
-              <Swords className="h-3.5 w-3.5" />
-              <span className="tabular-nums">{finding.n_games}</span>
-              <span>Games</span>
-            </button>
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <ScoreLine finding={finding} testId={testId} />
+            <MiniWDLBar
+              win_pct={pct(finding.wins, finding.n_games)}
+              draw_pct={pct(finding.draws, finding.n_games)}
+              loss_pct={pct(finding.losses, finding.n_games)}
+            />
+            <EvalLine finding={finding} testId={testId} />
           </div>
+        </div>
+        <VerdictSentence finding={finding} testId={testId} />
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            className={LINK_BUTTON_CLASS}
+            aria-label="Open this line in the Move Explorer"
+            data-testid={`${testId}-btn-moves`}
+            onClick={() => onOpenMoves(finding)}
+          >
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            <span>Moves</span>
+          </button>
+          <button
+            type="button"
+            className={LINK_BUTTON_CLASS}
+            aria-label={`View ${finding.n_games} games for this line`}
+            data-testid={`${testId}-btn-games`}
+            onClick={() => onOpenGames(finding)}
+          >
+            <Swords className="h-3.5 w-3.5" />
+            <span className="tabular-nums">{finding.n_games}</span>
+            <span>Games</span>
+          </button>
         </div>
       </CardBody>
     </Card>

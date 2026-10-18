@@ -140,6 +140,16 @@ discuss-phase" and record defaults for the rest.
   The opening-end End Eval row moves its label, value and popover into the left cell beside its track, the
   same layout as Score. The Score popover is the repertoire `ScoreVerdictPopover` with an extra "Last played"
   bullet; `WDLStats` (and `EndgameCategoryStats`) gain `ci99_low` / `ci99_high` for its 99% CI footer.
+- **D-30 (UAT round 7, owner 2026-10-18):** The bottom verdict legend is removed. Each repertoire and finding
+  card carries one muted sentence reading the Score and Eval verdicts together (`openingVerdictSentence`,
+  `lib/openingVerdict.ts`): only 99%-clear parts are stated, an unclear eval falls back to the score-only
+  sentence, nothing clear says nothing, and a <20-game card says "Too few games to call it yet."
+- **D-31:** The Stats subtab info popover is removed (Moves/Games popovers stay). Every Stats section h2 gets a
+  one-line intro under it (Library Stats pattern); the first repertoire heading also explains Score and Eval.
+- **D-32:** Findings density: a section without 99% cards shows its "Not clear yet" cards inline (phone 2,
+  desktop 4, then Show more) instead of behind a toggle; the toggle stays only below clear cards. A section
+  with neither reads "Nothing stands out as <colour> yet."; both sections empty merge into one
+  "Moves that Stand Out" block. The duplicated "n moves lean this way" empty-state copy is gone (amends D-11).
 
 </decisions>
 

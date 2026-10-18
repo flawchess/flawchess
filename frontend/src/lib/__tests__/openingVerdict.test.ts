@@ -9,6 +9,7 @@ import {
   isFadedRow,
   openingVerdict,
   openingVerdictReason,
+  openingVerdictSentence,
   scoreDelta,
   stripEcoSuffix,
   verdictBandRange,
@@ -148,5 +149,38 @@ describe('score and table helpers', () => {
   it('isFadedRow is true strictly below the verdict floor', () => {
     expect(isFadedRow(REPERTOIRE_MIN_GAMES_FOR_VERDICT - 1)).toBe(true);
     expect(isFadedRow(REPERTOIRE_MIN_GAMES_FOR_VERDICT)).toBe(false);
+  });
+});
+
+describe('openingVerdictSentence', () => {
+  it('says too few games before reading either bar', () => {
+    expect(openingVerdictSentence('too-few', 'worse')).toBe('Too few games to call it yet.');
+  });
+
+  it('reads a clear score with a typical eval as the points slipping away later', () => {
+    expect(openingVerdictSentence('worse', 'typical')).toBe(
+      'You score below 50% even though the opening itself goes fine. The points slip away later.',
+    );
+  });
+
+  it('falls back to the score-only sentence when the eval is unclear or missing', () => {
+    const scoreOnly = 'You score clearly below 50% from these positions.';
+    expect(openingVerdictSentence('worse', 'chance')).toBe(scoreOnly);
+    expect(openingVerdictSentence('worse', 'too-few')).toBe(scoreOnly);
+    expect(openingVerdictSentence('worse', null)).toBe(scoreOnly);
+  });
+
+  it('claims no "hold your own" when the score is only unclear', () => {
+    expect(openingVerdictSentence('typical', 'worse')).toBe(
+      'You come out of the opening worse but hold your own.',
+    );
+    expect(openingVerdictSentence('chance', 'worse')).toBe(
+      'You come out of the opening worse than an average game.',
+    );
+  });
+
+  it('says nothing when neither bar stands out', () => {
+    expect(openingVerdictSentence('typical', 'typical')).toBeNull();
+    expect(openingVerdictSentence('chance', null)).toBeNull();
   });
 });

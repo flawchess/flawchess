@@ -5,17 +5,16 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import { RepertoireCard } from '@/components/openings/stats/RepertoireCard';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 import { trackFeature } from '@/lib/analytics';
-import { gapVerdictColor, type GapVerdict } from '@/lib/gapBar';
-import {
-  EVAL_VERDICT_BAND,
-  REPERTOIRE_MIN_GAMES_FOR_VERDICT,
-  SCORE_VERDICT_BAND,
-  evalBaselinePawns,
-  formatScorePercent,
-} from '@/lib/openingVerdict';
 import { cn } from '@/lib/utils';
 import { REPERTOIRE_HEADING_CLASS } from './headingClasses';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
+
+const INTRO_CLASS = 'text-sm text-muted-foreground';
+const COPY_BOOKMARKS_INTRO = 'Openings you saved.';
+/** Explains the card bars once, under whichever repertoire heading comes first. */
+const COPY_METRICS_INTRO =
+  "Score counts a draw as half a win. Eval is the engine's view when the middlegame starts.";
+const COPY_PLAYED_BEFORE_POINTER = 'Older ones sit under Played before.';
 
 const GROUP_HEADING_CLASS = 'text-sm font-semibold uppercase tracking-wide text-muted-foreground';
 /** One column on phones and tablets, two from lg. items-start: an open chart never stretches its neighbour. */
@@ -82,38 +81,6 @@ function PlayedBeforeToggle({
   );
 }
 
-function VerdictLegend({ color }: { color: 'white' | 'black' }) {
-  const baseline = evalBaselinePawns(color);
-  const dots: Array<{ verdict: GapVerdict; label: string }> = [
-    { verdict: 'better', label: 'clearly better' },
-    { verdict: 'typical', label: 'typical or not clear' },
-    { verdict: 'worse', label: 'clearly worse' },
-  ];
-  return (
-    <p
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground"
-      data-testid="repertoire-legend"
-    >
-      {dots.map((d) => (
-        <span key={d.verdict} className="inline-flex items-center gap-1.5">
-          <span
-            className="size-2.5 rounded-full"
-            style={{ backgroundColor: gapVerdictColor(d.verdict) }}
-          />
-          {d.label}
-        </span>
-      ))}
-      <span>
-        Typical: score {formatScorePercent(0.5 - SCORE_VERDICT_BAND)} to{' '}
-        {formatScorePercent(0.5 + SCORE_VERDICT_BAND)}, eval within {EVAL_VERDICT_BAND.toFixed(2)} of an
-        average {colorLabel(color)} game ({baseline > 0 ? '+' : '−'}
-        {Math.abs(baseline).toFixed(2)}). Faded cards have fewer than {REPERTOIRE_MIN_GAMES_FOR_VERDICT}{' '}
-        games.
-      </span>
-    </p>
-  );
-}
-
 function Footer({
   color,
   bookmarkCount,
@@ -146,10 +113,25 @@ function Footer({
   );
 }
 
+function mostPlayedIntro(color: 'white' | 'black', hasPast: boolean): string {
+  const base = `Your most frequent openings as ${colorLabel(color)} lately.`;
+  return hasPast ? `${base} ${COPY_PLAYED_BEFORE_POINTER}` : base;
+}
+
+/** A group's h2 with its intro line underneath (the Library Stats section pattern). */
+function GroupHeading({ title, intro }: { title: string; intro: string }) {
+  return (
+    <div className="space-y-1">
+      <h2 className={REPERTOIRE_HEADING_CLASS}>{title}</h2>
+      <p className={INTRO_CLASS}>{intro}</p>
+    </div>
+  );
+}
+
 /**
  * The selected colour's repertoire as cards: pinned bookmarks, the current most-played
- * openings and the collapsed "Played before (n)" group, then the counts footer and the
- * verdict legend.
+ * openings and the collapsed "Played before (n)" group, then the counts footer. Each group
+ * heading carries an intro line; the first one also explains Score and Eval.
  */
 export function RepertoireList({
   color,
@@ -197,13 +179,23 @@ export function RepertoireList({
     <section className="flex flex-col gap-4" data-testid={`repertoire-list-${color}`}>
       {bookmarkRows.length > 0 && (
         <div className="space-y-2" data-testid="repertoire-group-bookmarks">
-          <h2 className={REPERTOIRE_HEADING_CLASS}>Bookmarked Openings</h2>
+          <GroupHeading
+            title="Bookmarked Openings"
+            intro={`${COPY_BOOKMARKS_INTRO} ${COPY_METRICS_INTRO}`}
+          />
           {renderGroup(bookmarkRows)}
         </div>
       )}
       {currentRows.length > 0 && (
         <div className="space-y-2" data-testid="repertoire-group-most-played">
-          <h2 className={REPERTOIRE_HEADING_CLASS}>Most Played Openings</h2>
+          <GroupHeading
+            title="Most Played Openings"
+            intro={
+              bookmarkRows.length > 0
+                ? mostPlayedIntro(color, pastRows.length > 0)
+                : `${mostPlayedIntro(color, pastRows.length > 0)} ${COPY_METRICS_INTRO}`
+            }
+          />
           {renderGroup(currentRows)}
         </div>
       )}
@@ -233,7 +225,6 @@ export function RepertoireList({
         pastCount={pastRows.length}
         onOpenSuggestions={onOpenSuggestions}
       />
-      <VerdictLegend color={color} />
     </section>
   );
 }

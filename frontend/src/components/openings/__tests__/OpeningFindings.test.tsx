@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * OpeningFindings: the phone "Show more" (D-08) and its single Umami event, the collapsed
- * "Not clear yet (n)" cards (D-09, D-10), the empty-state copy (D-11), the older-games chip
+ * "Not clear yet (n)" cards (D-09, D-10), inline leaning cards and the empty states, the
+ * combined verdict sentence, the older-games chip
  * (D-04) and the Moves / Games deep-link callbacks.
  */
 
@@ -288,25 +289,65 @@ describe('OpeningFindings Not clear yet', () => {
   });
 });
 
-describe('OpeningFindings empty state', () => {
-  it('says nothing is clear yet and counts the leaning moves', () => {
-    renderFindings(emptyResponse({ black_weaknesses_not_clear_count: 3 }), 'black');
+describe('OpeningFindings without clear cards', () => {
+  it('shows the leaning cards inline with their label, no toggle', () => {
+    renderFindings(
+      emptyResponse({
+        black_weaknesses_not_clear: [makeFinding({ color: 'black', confidence: 'medium' })],
+        black_weaknesses_not_clear_count: 1,
+        black_strengths: [makeFinding({ color: 'black', classification: 'strength', score: 0.7 })],
+      }),
+      'black',
+    );
+    expect(screen.getByTestId('opening-findings-weakness-unclear-label').textContent).toBe(
+      'Not clear yet (1)Leaning this way, but could still be chance.',
+    );
+    expect(screen.getByTestId('opening-findings-weakness-unclear-card-0')).toBeTruthy();
+    expect(screen.queryByTestId('opening-findings-weakness-unclear-toggle')).toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-empty')).toBeNull();
+  });
+
+  it('caps the inline leaning cards at four on desktop behind Show more', () => {
+    const leaning = Array.from({ length: 6 }, () => makeFinding({ confidence: 'medium' }));
+    renderFindings(
+      emptyResponse({ white_weaknesses_not_clear: leaning, white_weaknesses_not_clear_count: 6 }),
+      'white',
+    );
+    const wrapper = (i: number) =>
+      screen.getByTestId(`opening-findings-weakness-unclear-card-${i}`).parentElement!;
+    expect(wrapper(2).className).toContain('max-md:hidden');
+    expect(wrapper(4).className).toContain('hidden');
+    const more = screen.getByTestId('opening-findings-weakness-unclear-btn-more');
+    expect(more.className).not.toContain('md:hidden');
+    fireEvent.click(more);
+    expect(wrapper(4).className).not.toContain('hidden');
+  });
+
+  it('says nothing stands out in a section that is empty while the other is not', () => {
+    renderFindings(
+      emptyResponse({ black_strengths: [makeFinding({ color: 'black', classification: 'strength', score: 0.7 })] }),
+      'black',
+    );
     expect(screen.getByTestId('opening-findings-weakness-empty').textContent).toBe(
-      'Nothing clear yet as Black. 3 moves lean this way, but could still be chance.',
+      'Nothing stands out as Black yet.',
     );
   });
 
-  it('uses the singular for one leaning move', () => {
-    renderFindings(emptyResponse({ white_strengths_not_clear_count: 1 }), 'white');
-    expect(screen.getByTestId('opening-findings-strength-empty').textContent).toBe(
-      'Nothing clear yet as White. 1 move leans this way, but could still be chance.',
-    );
-  });
-
-  it('shows only the first sentence when no moves lean', () => {
+  it('merges both sections into one short block when both are empty', () => {
     renderFindings(emptyResponse(), 'black');
-    expect(screen.getByTestId('opening-findings-weakness-empty').textContent).toBe(
-      'Nothing clear yet as Black.',
+    expect(screen.getByTestId('opening-findings-empty').textContent).toBe(
+      'Moves that Stand OutNo moves stand out as Black yet. A move needs at least 20 games before it can show up here.',
+    );
+    expect(screen.queryByTestId('opening-findings-weakness')).toBeNull();
+    expect(screen.queryByTestId('opening-findings-strength')).toBeNull();
+  });
+});
+
+describe('OpeningFindings verdict sentence', () => {
+  it('reads a clear low score and a clearly worse eval together', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [makeFinding()] }), 'white');
+    expect(screen.getByTestId('opening-findings-weakness-card-0-sentence').textContent).toBe(
+      'You come out of the opening worse, and it shows in your results.',
     );
   });
 });
