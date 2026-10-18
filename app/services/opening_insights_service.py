@@ -4,10 +4,9 @@ Single public entry point: compute_insights(session, user_id, request).
 Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
 dedupe within color section and across continuations -> rank (Wilson 95%
-bound, direction-aware) -> partition per section: up to 10 cards at p < 0.05
-(medium or high confidence), current before older games; a section with none falls
-back to its top 4 low-confidence "leaning" findings (D-38) -> MG-entry eval on the
-card findings only.
+bound, direction-aware) -> top 10 per section in that order, any confidence (D-38);
+the 95% gate decides each card's colour on the frontend, not whether it shows ->
+MG-entry eval on the card findings only.
 No precompute, no caching — partial-index-backed query keeps even
 Hikaru-class users <1 s.
 """
@@ -67,16 +66,12 @@ from app.services.score_confidence import (
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-# Card findings per section (D-08, D-37): only 95%-gated ('medium' or 'high',
-# p < 0.05, D-33) findings qualify. 10, not the original 5: with 5, a user with 5+ current
-# findings never saw a significant older-games one (current sorts first). The phone
-# 2-card view with "Show more" is a frontend concern.
+# Card findings per section (D-37, D-38): the top 10 by the direction-aware Wilson bound,
+# whatever their confidence. Gating cards at 95% (D-33) left "Moves that Cost You" empty for
+# about two thirds of prod user-colours with 20+ games (2026-10-18), so the gate now only
+# colours a card (frontend openingVerdict). The phone 2-card view with "Show more" is a
+# frontend concern.
 FINDINGS_CARD_CAP: int = 10
-# Leaning cards (D-38): a section with no 95% finding shows up to this many low-confidence
-# findings instead of an empty state (prod 2026-10-18: "Moves that Cost You" was empty for
-# about two thirds of user-colours with 20+ games). Fewer than the card cap: they are hints,
-# not verdicts. The frontend tells them apart by confidence == 'low'.
-FINDINGS_LEANING_CAP: int = 4
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 
@@ -848,18 +843,14 @@ def _row_to_finding(
 
 
 def _partition_section(ranked: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
-    """The card findings of a ranked section (D-33, D-38).
+    """The card findings of a ranked section: its first FINDINGS_CARD_CAP (D-38).
 
-    Confidence 'medium' or 'high' (p < 0.05) qualifies, capped at FINDINGS_CARD_CAP. A
-    section with no such finding falls back to its low-confidence "leaning" findings,
-    capped at FINDINGS_LEANING_CAP, so the section is not empty; the two never mix, so a
-    section is either all verdicts or all leaning. Both lists put current findings before
-    older ones and keep the incoming Wilson order inside each group (stable sort, D-08).
+    No confidence gate and no current-first re-sort: the Wilson bound order from
+    _rank_section already mixes effect size and sample size, so the clearest findings lead
+    and a low-confidence one only shows when there is room. Older-games findings keep their
+    place in that order and carry the "older games" chip.
     """
-    confident = [f for f in ranked if f.confidence != "low"]
-    cards, cap = (confident, FINDINGS_CARD_CAP) if confident else (ranked, FINDINGS_LEANING_CAP)
-    # sorted() is stable, so Wilson order survives within the current / older groups.
-    return sorted(cards, key=lambda f: not f.is_current)[:cap]
+    return ranked[:FINDINGS_CARD_CAP]
 
 
 def _rank_sections(
@@ -959,7 +950,7 @@ async def _build_sections(
     """Stage 3: classify -> attribute -> dedupe -> rank -> partition -> enrich cards.
 
     Builds the four sections (white/black x weaknesses/strengths), keeps the
-    95%-gated cards of each (or its leaning fallback, D-38), then enriches ONLY the card
+    top FINDINGS_CARD_CAP cards of each (D-38), then enriches ONLY the card
     findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
     the uncapped ranked list measured 10.6 s for a heavy user (Pitfall 8). The eval batch
     awaits run sequentially per colour (AsyncSession is not safe for concurrent use).

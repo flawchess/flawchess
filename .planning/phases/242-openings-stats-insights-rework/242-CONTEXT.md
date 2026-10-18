@@ -179,15 +179,16 @@ discuss-phase" and record defaults for the rest.
   Amends D-00's "top 5" and D-08.
 
 ### Post-UAT decision (owner, 2026-10-18)
-- **D-38:** Leaning cards come back as a fallback. A prod check (2026-10-18, rated human games, SQL upper
-  bound) found "Moves that Cost You" empty at the 95% gate for at least 67% of user-colours with 20+ games
-  (25% before the gate) and both findings sections empty for 34% (6% before). A section with no 95% finding
-  now shows its top **4** low-confidence findings (`FINDINGS_LEANING_CAP`, current first, Wilson order); a
-  section never mixes verdicts and leaning cards. The frontend tells a leaning section by every card being
-  `confidence == 'low'`: it adds the line "Nothing is clear yet as <colour>. These moves lean this way, but
-  it could still be chance.", and the cards draw a neutral arrow and no score colour (the verdict rule is
-  unchanged). "Nothing stands out" and the merged "Moves that Stand Out" block remain for sections with no
-  candidate at all. Amends D-34.
+- **D-38:** The 95% gate no longer decides which findings are **listed**, only how each card is
+  **coloured** (back to the pre-phase `main` behaviour). A prod check (2026-10-18, rated human games, SQL
+  upper bound) found "Moves that Cost You" empty at the gate for at least 67% of user-colours with 20+ games
+  (25% before it) and both findings sections empty for 34% (6% before). Each section is now the top 10
+  (`FINDINGS_CARD_CAP`) of the direction-aware Wilson bound order, any confidence, with **no current-first
+  re-sort** (older findings keep their rank and the "older games" chip). A low-confidence card draws a blue
+  spine, a neutral arrow, an uncoloured score and the "Nothing clear yet" sentence, through the unchanged
+  `openingVerdict` rule. The section intros drop "clearly" and say the clearest come first. A tried
+  alternative (a separate up-to-4 "leaning" fallback with a note) was rejected by the owner. Amends D-08,
+  D-33, D-37.
 
 </decisions>
 

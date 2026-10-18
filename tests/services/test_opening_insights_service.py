@@ -34,7 +34,6 @@ from app.services.score_confidence import wilson_bounds
 from app.services.repertoire_recency import CurrentCutoffs
 from app.services.opening_insights_service import (
     FINDINGS_CARD_CAP,
-    FINDINGS_LEANING_CAP,
     _partition_section,
     _TransitionRow,
     _classify_row,
@@ -1946,9 +1945,8 @@ def test_partition_returns_a_plain_list_of_cards() -> None:
     assert _names(cards) == ["hi"]
 
 
-def test_partition_keeps_medium_as_a_card_and_drops_low() -> None:
-    """D-33: the card gate is 95% (p < 0.05), so 'medium' qualifies; 'low' is dropped
-    when at least one confident card exists (D-38: verdicts and leaning never mix)."""
+def test_partition_keeps_every_confidence_in_wilson_order() -> None:
+    """D-38: no 95% gate on listing; low-confidence findings keep their ranked place."""
     ranked = [
         _finding_for("lo1", confidence="low", p_value=0.4),
         _finding_for("med", confidence="medium", p_value=0.03),
@@ -1958,54 +1956,21 @@ def test_partition_keeps_medium_as_a_card_and_drops_low() -> None:
 
     cards = _partition_section(ranked)
 
-    # Incoming (Wilson) order kept: medium is not demoted below high.
-    assert _names(cards) == ["med", "hi"]
+    assert _names(cards) == ["lo1", "med", "hi", "lo2"]
 
 
-def test_partition_cards_are_capped_with_current_first() -> None:
-    """12 confident findings (two older, mixed high/medium) -> 10 current cards; older cut."""
+def test_partition_caps_without_moving_current_findings_first() -> None:
+    """12 ranked findings -> the first 10 as ranked; an older one at the top stays there."""
     ranked = [
         _finding_for("old_a", confidence="high", is_current=False),
         _finding_for("old_b", confidence="medium", is_current=False, p_value=0.04),
-        *(
-            _finding_for(f"cur_{i}", confidence="high" if i % 2 else "medium", p_value=0.01)
-            for i in range(10)
-        ),
+        *(_finding_for(f"cur_{i}", confidence="low", p_value=0.2) for i in range(10)),
     ]
 
     cards = _partition_section(ranked)
 
     assert len(cards) == FINDINGS_CARD_CAP == 10
-    # Current findings first, Wilson order kept inside the group.
-    assert _names(cards) == [f"cur_{i}" for i in range(10)]
-
-
-def test_partition_older_card_findings_fill_remaining_slots_after_current() -> None:
-    """With fewer than 10 current findings the older ones follow, still in Wilson order."""
-    ranked = [
-        _finding_for("old_a", confidence="high", is_current=False),
-        _finding_for("cur_b", confidence="medium", p_value=0.03),
-        _finding_for("old_c", confidence="medium", is_current=False, p_value=0.02),
-        _finding_for("lo_d", confidence="low", p_value=0.3),
-    ]
-
-    cards = _partition_section(ranked)
-
-    assert _names(cards) == ["cur_b", "old_a", "old_c"]
-
-
-def test_partition_all_low_falls_back_to_leaning_cards() -> None:
-    """D-38: no confident finding -> the top low-confidence ones, current first, capped."""
-    ranked = [
-        _finding_for("lo_old", confidence="low", is_current=False, p_value=0.1),
-        *(_finding_for(f"lo_{i}", confidence="low", p_value=0.2) for i in range(5)),
-    ]
-
-    cards = _partition_section(ranked)
-
-    assert FINDINGS_LEANING_CAP == 4
-    assert _names(cards) == ["lo_0", "lo_1", "lo_2", "lo_3"]
-    assert all(f.confidence == "low" for f in cards)
+    assert _names(cards) == ["old_a", "old_b", *(f"cur_{i}" for i in range(8))]
 
 
 def test_partition_empty_section_stays_empty() -> None:
@@ -2057,11 +2022,11 @@ def _rows_with_n(
 
 
 @pytest.mark.asyncio
-async def test_card_list_is_95_gated_capped_and_eval_runs_on_cards_only(
+async def test_card_list_is_capped_in_wilson_order_and_eval_runs_on_cards_only(
     mock_resolve_cutoffs: AsyncMock,
 ) -> None:
-    """12 confident rows (high and medium, two older) -> 10 current cards; the eval batch sees
-    only those 10 hashes."""
+    """12 rows at the same score (two older) -> the 10 largest by Wilson order, an older one
+    included (no current-first re-sort, D-38); the eval batch sees only those 10 hashes."""
     mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
     sizes = [100 + 10 * i for i in range(12)]
     played = [LONG_AGO, RECENT, LONG_AGO, *([RECENT] * 9)]
@@ -2077,8 +2042,9 @@ async def test_card_list_is_95_gated_capped_and_eval_runs_on_cards_only(
         )
 
     assert len(response.white_weaknesses) == FINDINGS_CARD_CAP == 10
-    assert all(f.is_current for f in response.white_weaknesses)
-    assert {f.confidence for f in response.white_weaknesses} == {"high", "medium"}
+    # Same score, so the Wilson upper bound falls with n: the two smallest rows are cut.
+    assert sorted(f.n_games for f in response.white_weaknesses) == sizes[2:]
+    assert [f.is_current for f in response.white_weaknesses].count(False) == 1
     # Pitfall 8: enrichment must not touch the uncapped ranked list.
     assert len(eval_calls) == 1
     queried_hashes = set(eval_calls[0].kwargs["hashes"])
@@ -2113,7 +2079,8 @@ async def test_medium_findings_are_cards_and_get_the_eval(
 
 
 @pytest.mark.asyncio
-async def test_low_confidence_findings_are_dropped_next_to_a_confident_one() -> None:
+async def test_low_confidence_findings_are_listed_in_wilson_order() -> None:
+    """D-38: a low-confidence finding is a card too; the larger-n one ranks first here."""
     sizes = [100, 110, 120]
     rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 3)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
@@ -2125,26 +2092,10 @@ async def test_low_confidence_findings_are_dropped_next_to_a_confident_one() -> 
     with _patch_confidence_by_n(buckets):
         response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
 
-    assert [f.confidence for f in response.white_weaknesses] == ["medium"]
+    assert sorted(f.n_games for f in response.white_weaknesses) == sizes
+    assert {f.confidence for f in response.white_weaknesses} == {"low", "medium"}
     # D-34: the response carries no "not clear yet" lists or counts.
     assert not any("not_clear" in name for name in OpeningInsightsResponse.model_fields)
-
-
-@pytest.mark.asyncio
-async def test_section_without_confident_findings_returns_leaning_cards() -> None:
-    """D-38: an all-low section is not empty; it carries its leaning findings."""
-    sizes = [100, 110]
-    rows, openings = _rows_with_n(sizes, last_played_at=[RECENT] * 2)
-    buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
-        100: ("low", 0.4),
-        110: ("low", 0.2),
-    }
-
-    with _patch_confidence_by_n(buckets):
-        response = await _run_compute(rows=rows, openings_by_hash=openings, color="white")
-
-    assert len(response.white_weaknesses) == len(sizes)
-    assert all(f.confidence == "low" for f in response.white_weaknesses)
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,8 @@ export function findingMoveText(finding: OpeningInsightFinding): string {
 
 /**
  * One arrow from the candidate move's squares, red for a weakness and green for a strength.
- * A leaning (low-confidence) card gets the neutral blue (D-38): its direction is not a verdict.
+ * A low-confidence card gets the neutral blue (D-38): listed by rank, but its direction is not a
+ * verdict, matching its blue spine.
  */
 export function findingArrows(
   finding: OpeningInsightFinding,

@@ -117,11 +117,10 @@ class OpeningInsightsResponse(BaseModel):
     """Per-section findings for the merged Openings Stats page, by color x classification.
 
     Four card lists (``white_weaknesses``, ``black_weaknesses``, ``white_strengths``,
-    ``black_strengths``) hold at most FINDINGS_CARD_CAP (10) findings each, all
-    medium or high confidence (p < 0.05, D-33), current findings before older ones
-    (D-08, D-37). A section without such a finding instead holds at most
-    FINDINGS_LEANING_CAP (4) low-confidence "leaning" findings (D-38); a list never
-    mixes the two. All lists are always present; empty ones are a valid empty state.
+    ``black_strengths``) hold at most FINDINGS_CARD_CAP (10) findings each, the top of the
+    direction-aware Wilson bound order, any confidence (D-38): ``confidence`` decides the
+    card's colour, not whether it is listed. All lists are always present; empty ones are a
+    valid empty state.
 
     ``current_cutoff_white`` / ``current_cutoff_black`` echo the per-colour current
     repertoire cutoff (None = everything current) so the client never re-derives it.

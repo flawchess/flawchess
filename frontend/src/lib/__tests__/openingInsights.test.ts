@@ -71,7 +71,7 @@ describe('findingArrows', () => {
     expect(findingArrows(finding('high', 'strength'))?.[0]?.color).toBe(ZONE_SUCCESS);
   });
 
-  it('draws a leaning (low-confidence) card with the neutral arrow (D-38)', () => {
+  it('draws a low-confidence card with the neutral arrow (D-38)', () => {
     expect(findingArrows(finding('low', 'weakness'))?.[0]?.color).toBe(ZONE_NEUTRAL);
   });
 });
