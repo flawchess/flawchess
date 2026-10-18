@@ -201,7 +201,7 @@ describe('OpeningFindings cards and N more', () => {
     expect(spine('opening-findings-strength-card-0')).toBe(normalizeColor(ZONE_SUCCESS));
   });
 
-  it('marks findings from older games with a chip and leaves current ones bare', () => {
+  it('shows when each finding was last played and marks older ones with the archive icon', () => {
     renderFindings(
       emptyResponse({
         white_strengths: [
@@ -210,10 +210,11 @@ describe('OpeningFindings cards and N more', () => {
         ],
       }),
     );
-    expect(screen.queryByTestId('opening-findings-strength-card-0-older')).toBeNull();
-    const chip = screen.getByTestId('opening-findings-strength-card-1-older');
-    expect(chip.textContent).toBe('older games');
-    expect(chip.getAttribute('title')).toMatch(/^Last seen September 2026$/);
+    expect(screen.getByTestId('opening-findings-strength-card-0-last-played').textContent).toMatch(/ ago$/);
+    expect(screen.queryByTestId('opening-findings-strength-card-0-stale-icon')).toBeNull();
+    expect(screen.getByTestId('opening-findings-strength-card-1-stale-icon').getAttribute('aria-label')).toBe(
+      'Not played recently',
+    );
   });
 
   it('calls the Moves and Games callbacks with the finding', () => {

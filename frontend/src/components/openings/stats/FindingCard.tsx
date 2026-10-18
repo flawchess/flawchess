@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Swords } from 'lucide-react';
+import { Archive, ArrowRightLeft, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
@@ -9,6 +9,7 @@ import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedGap } from '@/lib/gapBar';
 import { findingArrows, findingMoveText, isOwnMove } from '@/lib/openingInsights';
+import { formatRelativeDate } from '@/lib/relativeDate';
 import { lastMoveSquares } from '@/lib/sanToSquares';
 import {
   EVAL_VERDICT_BAND,
@@ -32,30 +33,38 @@ const BOARD_SIZE = 128;
 const PERCENT_SCALE = 100;
 /** The backend's name for a line without an openings-table match. */
 const UNNAMED_SENTINEL = '<unnamed line>';
-const OLDER_GAMES_LABEL = 'older games';
+const NOT_PLAYED_RECENTLY = 'Not played recently';
 const NO_VALUE = '—';
 const EVAL_LABEL = 'Eval after opening';
 const EVAL_LABEL_SHORT = 'Eval';
 const OWN_MOVE_LABEL = 'Your move';
 const OPPONENT_MOVE_LABEL = 'Their reply';
 
-/** "Last seen October 2026" (title of the older-games chip); undefined without a date. */
-function lastSeenTitle(iso: string | null | undefined): string | undefined {
-  if (!iso) return undefined;
-  const month = new Date(iso).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  return `Last seen ${month}`;
-}
-
-/** Marks a finding whose games all predate the current repertoire (D-04). */
-function OlderGamesChip({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
-  if (finding.is_current) return null;
+/**
+ * "3 weeks ago" plus the archive icon for a finding outside the current repertoire (D-04), the
+ * same top-right indicator as the repertoire cards. Nothing when there is neither a date nor
+ * the stale flag.
+ */
+function LastPlayed({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
+  const stale = !finding.is_current;
+  if (!finding.last_played_at && !stale) return null;
   return (
     <span
-      className="inline-block rounded-full bg-white/10 px-2 py-px text-sm font-semibold whitespace-nowrap text-muted-foreground"
-      title={lastSeenTitle(finding.last_played_at)}
-      data-testid={testId}
+      className="ml-auto flex shrink-0 items-center gap-1.5 text-sm font-normal whitespace-nowrap text-muted-foreground"
+      data-testid={`${testId}-last-played`}
     >
-      {OLDER_GAMES_LABEL}
+      {finding.last_played_at && formatRelativeDate(finding.last_played_at)}
+      {/* Indicator only, not an action: marks findings outside the current repertoire. */}
+      {stale && (
+        <Archive
+          className="h-4 w-4"
+          role="img"
+          aria-label={NOT_PLAYED_RECENTLY}
+          data-testid={`${testId}-stale-icon`}
+        >
+          <title>{NOT_PLAYED_RECENTLY}</title>
+        </Archive>
+      )}
     </span>
   );
 }
@@ -88,10 +97,9 @@ function MovePill({
 }
 
 /**
- * Move-led title: the move pill, whose move it is, then the opening name without ECO (italic
- * when unnamed). From sm up it is one line with a separator dot and the name truncates (full
- * name in its title); phones put the name on a second line where it may wrap. Opening cards lead
- * with the name instead, so the two card kinds read differently at a glance.
+ * Move-led title: the move pill, whose move it is and the last-played date on the first row, the
+ * opening name without ECO under it (italic when unnamed). Opening cards lead with the name instead, so the two card kinds read
+ * differently at a glance.
  */
 function FindingTitle({
   finding,
@@ -103,13 +111,11 @@ function FindingTitle({
   testId: string;
 }) {
   const unnamed = finding.opening_name === UNNAMED_SENTINEL;
-  const openingName = stripEcoSuffix(finding.display_name);
   return (
-    <span
-      className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"
-      data-testid={`${testId}-title`}
-    >
-      <span className="flex shrink-0 items-center gap-2">
+    <span className="flex min-w-0 flex-1 flex-col gap-1" data-testid={`${testId}-title`}>
+      {/* The last-played date shares this row (items-center), so it lines up with "Your move"
+          instead of sitting at the top of the taller pill row. */}
+      <span className="flex items-center gap-2">
         <MovePill finding={finding} accentColor={accentColor} testId={testId} />
         <span
           className="whitespace-nowrap text-sm font-normal text-muted-foreground"
@@ -117,22 +123,13 @@ function FindingTitle({
         >
           {isOwnMove(finding) ? OWN_MOVE_LABEL : OPPONENT_MOVE_LABEL}
         </span>
+        <LastPlayed finding={finding} testId={testId} />
       </span>
       <span
-        className="shrink-0 text-sm font-normal text-muted-foreground max-sm:hidden"
-        aria-hidden="true"
-      >
-        ·
-      </span>
-      <span
-        className={cn(
-          'min-w-0 break-words text-sm font-normal text-muted-foreground sm:truncate',
-          unnamed && 'italic',
-        )}
-        title={openingName}
+        className={cn('break-words text-sm font-normal text-muted-foreground', unnamed && 'italic')}
         data-testid={`${testId}-opening`}
       >
-        {openingName}
+        {stripEcoSuffix(finding.display_name)}
       </span>
     </span>
   );
@@ -258,11 +255,8 @@ export function FindingCard({
   const accentColor = scoreAccentColor(scoreInput(finding));
   return (
     <Card data-testid={testId} accentColor={accentColor}>
-      <CardHeader as="h4" size="compact" className="items-start text-base sm:items-center">
+      <CardHeader as="h4" size="compact" className="items-start text-base">
         <FindingTitle finding={finding} accentColor={accentColor} testId={testId} />
-        <span className="ml-auto shrink-0">
-          <OlderGamesChip finding={finding} testId={`${testId}-older`} />
-        </span>
       </CardHeader>
       <CardBody className="flex flex-col gap-3">
         {/* Same grid as RepertoireCard: from sm up the sentence sits under the eval bar beside
