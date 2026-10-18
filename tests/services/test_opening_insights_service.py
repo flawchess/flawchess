@@ -1961,26 +1961,25 @@ def test_partition_keeps_medium_as_a_card_and_drops_low() -> None:
 
 
 def test_partition_cards_are_capped_with_current_first() -> None:
-    """7 confident findings (two older, mixed high/medium) -> 5 current cards; older cut."""
+    """12 confident findings (two older, mixed high/medium) -> 10 current cards; older cut."""
     ranked = [
         _finding_for("old_a", confidence="high", is_current=False),
-        _finding_for("cur_b", confidence="medium", p_value=0.02),
-        _finding_for("old_c", confidence="medium", is_current=False, p_value=0.04),
-        _finding_for("cur_d", confidence="high"),
-        _finding_for("cur_e", confidence="medium", p_value=0.03),
-        _finding_for("cur_f", confidence="high"),
-        _finding_for("cur_g", confidence="medium", p_value=0.01),
+        _finding_for("old_b", confidence="medium", is_current=False, p_value=0.04),
+        *(
+            _finding_for(f"cur_{i}", confidence="high" if i % 2 else "medium", p_value=0.01)
+            for i in range(10)
+        ),
     ]
 
     cards = _partition_section(ranked)
 
-    assert len(cards) == FINDINGS_CARD_CAP == 5
+    assert len(cards) == FINDINGS_CARD_CAP == 10
     # Current findings first, Wilson order kept inside the group.
-    assert _names(cards) == ["cur_b", "cur_d", "cur_e", "cur_f", "cur_g"]
+    assert _names(cards) == [f"cur_{i}" for i in range(10)]
 
 
 def test_partition_older_card_findings_fill_remaining_slots_after_current() -> None:
-    """With fewer than 5 current findings the older ones follow, still in Wilson order."""
+    """With fewer than 10 current findings the older ones follow, still in Wilson order."""
     ranked = [
         _finding_for("old_a", confidence="high", is_current=False),
         _finding_for("cur_b", confidence="medium", p_value=0.03),
@@ -2047,11 +2046,11 @@ def _rows_with_n(
 async def test_card_list_is_95_gated_capped_and_eval_runs_on_cards_only(
     mock_resolve_cutoffs: AsyncMock,
 ) -> None:
-    """7 confident rows (high and medium, two older) -> 5 current cards; the eval batch sees
-    only those 5 hashes."""
+    """12 confident rows (high and medium, two older) -> 10 current cards; the eval batch sees
+    only those 10 hashes."""
     mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
-    sizes = [100 + 10 * i for i in range(7)]
-    played = [LONG_AGO, RECENT, LONG_AGO, RECENT, RECENT, RECENT, RECENT]
+    sizes = [100 + 10 * i for i in range(12)]
+    played = [LONG_AGO, RECENT, LONG_AGO, *([RECENT] * 9)]
     rows, openings = _rows_with_n(sizes, last_played_at=played)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
         size: ("high", 0.001) if i % 2 == 0 else ("medium", 0.03) for i, size in enumerate(sizes)
@@ -2063,7 +2062,7 @@ async def test_card_list_is_95_gated_capped_and_eval_runs_on_cards_only(
             rows=rows, openings_by_hash=openings, color="white", eval_calls=eval_calls
         )
 
-    assert len(response.white_weaknesses) == FINDINGS_CARD_CAP
+    assert len(response.white_weaknesses) == FINDINGS_CARD_CAP == 10
     assert all(f.is_current for f in response.white_weaknesses)
     assert {f.confidence for f in response.white_weaknesses} == {"high", "medium"}
     # Pitfall 8: enrichment must not touch the uncapped ranked list.

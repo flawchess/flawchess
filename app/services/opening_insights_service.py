@@ -4,7 +4,7 @@ Single public entry point: compute_insights(session, user_id, request).
 Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
 dedupe within color section and across continuations -> rank (Wilson 95%
-bound, direction-aware) -> partition per section: up to 5 cards at p < 0.05
+bound, direction-aware) -> partition per section: up to 10 cards at p < 0.05
 (medium or high confidence), current before older games; low-confidence findings
 are dropped -> MG-entry eval on the card findings only.
 No precompute, no caching — partial-index-backed query keeps even
@@ -66,10 +66,11 @@ from app.services.score_confidence import (
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-# Card findings per section (D-00 top 5, D-08): only 95%-gated ('medium' or 'high',
-# p < 0.05, D-33) findings qualify. The phone 2-card view with "Show more" is a frontend
-# concern.
-FINDINGS_CARD_CAP: int = 5
+# Card findings per section (D-08, D-37): only 95%-gated ('medium' or 'high',
+# p < 0.05, D-33) findings qualify. 10, not the original 5: with 5, a user with 5+ current
+# findings never saw a significant older-games one (current sorts first). The phone
+# 2-card view with "Show more" is a frontend concern.
+FINDINGS_CARD_CAP: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 

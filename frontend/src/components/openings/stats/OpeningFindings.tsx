@@ -253,7 +253,7 @@ interface OpeningFindingsProps {
 
 /**
  * Findings for the selected colour below the repertoire cards: "Moves that Cost You" and
- * "Moves that Work", each at most 5 cards from the 95%-gated backend lists (D-00, D-33), with a
+ * "Moves that Work", each at most 10 cards from the 95%-gated backend lists (D-33, D-37), with a
  * phone "Show more" (D-08). There is no "Not clear yet" list (D-34): a section without cards
  * says so in one line, and both sections empty merge into one block.
  */

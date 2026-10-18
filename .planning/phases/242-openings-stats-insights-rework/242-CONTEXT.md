@@ -172,6 +172,12 @@ discuss-phase" and record defaults for the rest.
   both the current list and "Played before"; no more padding with 1-3 game openings. The cutoff-restricted
   second fetch (D-05 clarified) stays, under the same floor. Bookmarks are never filtered. Amends D-07.
 
+### UAT round 12 decision (owner, 2026-10-18)
+- **D-37:** The findings card cap per section rises from 5 to **10** (`FINDINGS_CARD_CAP`). With 5, current
+  findings filled every slot, so significant older-games findings never showed (owner's account: 14 significant
+  white strengths, 5 shown). Desktop still shows every card; phone keeps 2 + "Show more". The 95% gate stays.
+  Amends D-00's "top 5" and D-08.
+
 </decisions>
 
 <canonical_refs>
