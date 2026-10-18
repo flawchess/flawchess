@@ -88,9 +88,10 @@ function MovePill({
 }
 
 /**
- * Move-led title: the move pill and whose move it is on the first line, the opening name
- * without ECO under it (italic when unnamed). Opening cards lead with the name instead, so the
- * two card kinds read differently at a glance.
+ * Move-led title: the move pill, whose move it is, then the opening name without ECO (italic
+ * when unnamed). From sm up it is one line with a separator dot and the name truncates (full
+ * name in its title); phones put the name on a second line where it may wrap. Opening cards lead
+ * with the name instead, so the two card kinds read differently at a glance.
  */
 function FindingTitle({
   finding,
@@ -102,19 +103,36 @@ function FindingTitle({
   testId: string;
 }) {
   const unnamed = finding.opening_name === UNNAMED_SENTINEL;
+  const openingName = stripEcoSuffix(finding.display_name);
   return (
-    <span className="flex min-w-0 flex-col gap-1" data-testid={`${testId}-title`}>
-      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <span
+      className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"
+      data-testid={`${testId}-title`}
+    >
+      <span className="flex shrink-0 items-center gap-2">
         <MovePill finding={finding} accentColor={accentColor} testId={testId} />
-        <span className="text-sm font-normal text-muted-foreground" data-testid={`${testId}-mover`}>
+        <span
+          className="whitespace-nowrap text-sm font-normal text-muted-foreground"
+          data-testid={`${testId}-mover`}
+        >
           {isOwnMove(finding) ? OWN_MOVE_LABEL : OPPONENT_MOVE_LABEL}
         </span>
       </span>
       <span
-        className={cn('break-words text-sm font-normal text-muted-foreground', unnamed && 'italic')}
+        className="shrink-0 text-sm font-normal text-muted-foreground max-sm:hidden"
+        aria-hidden="true"
+      >
+        ·
+      </span>
+      <span
+        className={cn(
+          'min-w-0 break-words text-sm font-normal text-muted-foreground sm:truncate',
+          unnamed && 'italic',
+        )}
+        title={openingName}
         data-testid={`${testId}-opening`}
       >
-        {stripEcoSuffix(finding.display_name)}
+        {openingName}
       </span>
     </span>
   );
@@ -240,7 +258,7 @@ export function FindingCard({
   const accentColor = scoreAccentColor(scoreInput(finding));
   return (
     <Card data-testid={testId} accentColor={accentColor}>
-      <CardHeader as="h4" size="compact" className="items-start text-base">
+      <CardHeader as="h4" size="compact" className="items-start text-base sm:items-center">
         <FindingTitle finding={finding} accentColor={accentColor} testId={testId} />
         <span className="ml-auto shrink-0">
           <OlderGamesChip finding={finding} testId={`${testId}-older`} />
