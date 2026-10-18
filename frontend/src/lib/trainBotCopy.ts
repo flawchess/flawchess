@@ -208,9 +208,8 @@ export function promptCopy(sideToMove: 'white' | 'black'): string {
 /**
  * Move prompt, spoken by the SAME host bubble once the guess is
  * committed (one persisting chat-row slot, copy swaps in place).
- * The prompt echoes the call just made (`guess`), in the
- * reveal card's own "Your call: …" vocabulary, so the answer stays on screen
- * while the move is chosen. `null` (no call recorded) drops the echo.
+ * The prompt echoes the call just made (`guess`) so the answer stays on
+ * screen while the move is chosen. `null` (no call recorded) drops the echo.
  */
 export function movePromptCopy(sideToMove: 'white' | 'black', guess: Guess | null = null): string {
   const movePrompt = `Now play a move for ${sideToMove}.`;
@@ -356,13 +355,12 @@ export function dropNudgeCopy(sideToMove: 'white' | 'black'): string {
   return `Decide first, then move. ${promptCopy(sideToMove)}`;
 }
 
-/** The verdict bubble's structured copy — an opener, the scoring
- * clause, and (for the 0-1 point buckets only) the look-closer line. The
- * return tail is resolved SEPARATELY by `returnPhrase` — this type carries
- * no return-date knowledge. */
+/** The verdict's per-reveal random pieces: an opener and (for the 0-1 point
+ * buckets only) the look-closer line. The scored sentence comes from
+ * `verdictClauseParts` and the return tail from `returnPhrase`; neither is
+ * random, so neither is cached here. */
 export interface VerdictCopy {
   opener: string;
-  clause: string;
   lookCloser: string | null;
 }
 
@@ -375,89 +373,141 @@ const VERDICT_OPENERS: Record<0 | 1 | 2 | 3, readonly [string, string]> = {
 };
 
 /** Shown only for the 0 and 1 point buckets. */
-const LOOK_CLOSER_LINE = 'Step through the best line and your own move to see why.';
+const LOOK_CLOSER_LINE = 'Step through the lines to see why.';
 
-/** The verdict clause's two labeled phrases with their point values. One table
- * drives every surface (strip line, expanded verdict, desktop bubble), so the
- * vocabulary can never drift between them. */
+/** What the scored sentence needs to know about the solve. Every field comes
+ * from the server's `SolveResponse` except `isBest` (the phone's own engine,
+ * wording only) and `keySan` (the server key rendered as SAN). */
+export interface VerdictClauseInput {
+  puzzleType: 'sharp' | 'soft' | 'herring';
+  correctGuess: boolean;
+  moveTier: TrainMoveTier;
+  isBest: boolean;
+  /** `source === 'sr_item'`: the position is one of the user's own blunders. */
+  fromOwnBlunder: boolean;
+  /** The server accepted a confirmed phone disagreement (both guesses credited). */
+  disagreement: boolean;
+  keySan: string | null;
+}
+
+/**
+ * The verdict sentence in pieces: the position fact, then the guess and move
+ * clauses, each followed by its point pill ("Only one move works here. You
+ * called it [+1] and found it [+2]."). One table drives the desktop card, the
+ * phone strip's expansion and (via `verdictStripLine`) the strip line.
+ *
+ * It replaces an older three-block layout ("Right call +1, best move +2." +
+ * "Your call: only one good move" + "Right, and you found it: only one move
+ * works here.") that said the same thing three times and buried the one new
+ * fact, what the position actually was, in the last block.
+ */
 export interface VerdictClauseParts {
+  fact: string;
   guessLabel: string;
   guessPoints: 0 | 1;
+  /** ', ' before a contrasting "but", ' ' before "and". */
+  joiner: ', ' | ' ';
   moveLabel: string;
   movePoints: 0 | 1 | 2;
 }
 
-/**
- * The clause's guess and move halves. The move half is
- * four words at most: "best move" (the best move, a good-tier move that is the
- * engine's top choice), "good move" (good tier, not the best), "decent move"
- * (inaccuracy), "wrong move" (mistake/blunder). `isBest` only selects wording,
- * never points: those come from `GUESS_POINTS` / `MOVE_TIER_POINTS`, the same
- * source `scorePuzzle` sums, so the clause can never disagree with the total.
- * Guard-clause returns, no nesting.
- */
-export function verdictClauseParts(
-  correctGuess: boolean,
-  moveTier: TrainMoveTier,
-  isBest: boolean,
-): VerdictClauseParts {
-  const guessLabel = correctGuess ? 'Right call' : 'Wrong call';
-  const guessPoints: 0 | 1 = correctGuess ? GUESS_POINTS : 0;
-  const movePoints = MOVE_TIER_POINTS[moveTier] as 0 | 1 | 2;
-  if (moveTier === 'good') {
-    const base = isBest ? 'best move' : 'good move';
-    const moveLabel = correctGuess ? base : `but ${isBest ? 'the' : 'a'} ${base}`;
-    return { guessLabel, guessPoints, moveLabel, movePoints };
-  }
-  if (moveTier === 'inaccuracy') {
-    return { guessLabel, guessPoints, moveLabel: 'decent move', movePoints };
-  }
-  return { guessLabel, guessPoints, moveLabel: 'wrong move', movePoints };
+/** The move clause's core: `text` is the long form, `short` the strip form.
+ * `withSubject` marks a verb phrase that needs "you" when the guess clause
+ * before it ("Wrong call") has no subject to share. */
+interface MovePhrase {
+  text: string;
+  short: string;
+  good: boolean;
+  withSubject: boolean;
 }
 
-/** The scoring clause with bracketed point values ("Right call [+1], best
- * move [+2]."), built from `verdictClauseParts`. */
-function verdictClause(correctGuess: boolean, moveTier: TrainMoveTier, isBest: boolean): string {
-  const parts = verdictClauseParts(correctGuess, moveTier, isBest);
-  return `${parts.guessLabel} [+${parts.guessPoints}], ${parts.moveLabel} [+${parts.movePoints}].`;
+/** Guard-clause returns, no nesting. A sharp puzzle's only good move is its
+ * key by construction (the runner-up is a mistake, `SHARP_GAP_ES`), so a sharp
+ * `good` is always "found it" whatever the phone's `isBest` says. */
+function movePhrase(input: VerdictClauseInput): MovePhrase {
+  const sharp = input.puzzleType === 'sharp';
+  if (input.moveTier === 'good' && sharp) return { text: 'found it', short: 'found it', good: true, withSubject: true };
+  if (input.moveTier === 'good' && input.isBest)
+    return { text: 'played the best one', short: 'best move', good: true, withSubject: true };
+  if (input.moveTier === 'good') return { text: 'played a good one', short: 'good move', good: true, withSubject: true };
+  if (input.moveTier === 'inaccuracy')
+    return { text: 'played an inaccurate move', short: 'inaccurate move', good: false, withSubject: true };
+  if (sharp) return { text: 'missed it', short: 'missed it', good: false, withSubject: true };
+  return { text: "yours isn't one of them", short: 'wrong move', good: false, withSubject: false };
 }
 
-/** The article `verdictClauseParts` puts after "but" (`but the` / `but a`). */
-const STRIP_ARTICLE_PATTERN = /^but (the|a) /;
+/** The position fact. The soft/herring split only matters for the user's own
+ * blunders: "Several moves work here" alone read as "nothing happened here"
+ * at a position where they blundered in the game. */
+function positionFact(input: VerdictClauseInput): string {
+  if (input.puzzleType === 'sharp') return 'Only one move works here.';
+  if (input.fromOwnBlunder) return 'Several moves work here, just not your game move.';
+  return 'Several moves work here.';
+}
 
-/** The phone strip's one line, the clause without the
- * point brackets ("Right call, best move"). The strip drops
- * the article after "but" ("Wrong call, but best move") to keep it short;
- * the full clause in the details keeps it. */
-export function verdictStripLine(
-  correctGuess: boolean,
-  moveTier: TrainMoveTier,
-  isBest: boolean,
-): string {
-  const parts = verdictClauseParts(correctGuess, moveTier, isBest);
-  return `${parts.guessLabel}, ${parts.moveLabel.replace(STRIP_ARTICLE_PATTERN, 'but ')}`;
+/** An accepted disagreement: the user's off-key move held up on the deeper
+ * re-check, so the sharp position turned out to have two good moves and the
+ * server credits either guess. "Only one move works here" would be false. */
+function isCreditedDisagreement(input: VerdictClauseInput): boolean {
+  return input.disagreement && input.correctGuess && input.moveTier === 'good';
 }
 
 /**
- * Resolves the verdict bubble's opener + clause + optional
- * look-closer line. `points` comes from `scorePuzzle(correctGuess,
- * moveTier)` at the call site — never re-derived here (Option B, LOCKED).
- * `rng` is injectable per the `pickBot` convention above.
+ * Builds the verdict sentence parts. Points come from `GUESS_POINTS` /
+ * `MOVE_TIER_POINTS`, the same source `scorePuzzle` sums, so the pills can
+ * never disagree with the total; `isBest` only selects wording.
  */
-export function verdictCopy(
-  points: 0 | 1 | 2 | 3,
-  correctGuess: boolean,
-  moveTier: TrainMoveTier,
-  isBest: boolean,
-  rng: () => number = Math.random,
-): VerdictCopy {
+export function verdictClauseParts(input: VerdictClauseInput): VerdictClauseParts {
+  const guessPoints: 0 | 1 = input.correctGuess ? GUESS_POINTS : 0;
+  const movePoints = MOVE_TIER_POINTS[input.moveTier] as 0 | 1 | 2;
+  if (isCreditedDisagreement(input)) {
+    const fact =
+      input.keySan !== null
+        ? `${input.keySan} is the engine's pick, but not the only good move.`
+        : 'Two moves work here.';
+    return {
+      fact,
+      guessLabel: 'Either call counts',
+      guessPoints,
+      joiner: ', ',
+      moveLabel: 'and your move holds up',
+      movePoints,
+    };
+  }
+  const move = movePhrase(input);
+  // "and" when the two clauses agree (both earned or both missed), "but" when
+  // they contrast.
+  const contrast = input.correctGuess !== move.good;
+  const subject = !input.correctGuess && move.withSubject ? 'you ' : '';
+  return {
+    fact: positionFact(input),
+    guessLabel: input.correctGuess ? 'You called it' : 'Wrong call',
+    guessPoints,
+    joiner: contrast ? ', ' : ' ',
+    moveLabel: `${contrast ? 'but' : 'and'} ${subject}${move.text}`,
+    movePoints,
+  };
+}
+
+/** The phone strip's one line next to the total pill ("Called it, found it").
+ * "but" survives only for a wrong call with an earned move, the case where
+ * the bare pair reads as a contradiction. */
+export function verdictStripLine(input: VerdictClauseInput): string {
+  if (isCreditedDisagreement(input)) return 'Two good moves, yours holds up';
+  const move = movePhrase(input);
+  if (input.correctGuess) return `Called it, ${move.short}`;
+  return move.good ? `Wrong call, but ${move.short}` : `Wrong call, ${move.short}`;
+}
+
+/**
+ * Resolves the verdict's opener + optional look-closer line. `points` comes
+ * from `scorePuzzle(correctGuess, moveTier)` at the call site, never
+ * re-derived here. `rng` is injectable per the `pickBot` convention above.
+ */
+export function verdictCopy(points: 0 | 1 | 2 | 3, rng: () => number = Math.random): VerdictCopy {
   const openers = VERDICT_OPENERS[points];
   const opener = rng() < 0.5 ? openers[0] : openers[1];
-  return {
-    opener,
-    clause: verdictClause(correctGuess, moveTier, isBest),
-    lookCloser: points <= 1 ? LOOK_CLOSER_LINE : null,
-  };
+  return { opener, lookCloser: points <= 1 ? LOOK_CLOSER_LINE : null };
 }
 
 /** The look-closer line, exported so callers can render it identically
@@ -467,9 +517,9 @@ export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
 }
 
 /** Return tails. */
-const NEXT_SESSION_TAIL = "We'll try this one again in the next session.";
-const MASTERED_TAIL = "Three in a row. You have this one down, it won't come back.";
-const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to positions that stick.';
+const NEXT_SESSION_TAIL = 'Back next session.';
+const MASTERED_TAIL = 'Three in a row, so this one is retired.';
+const PARKED_TAIL = 'This one keeps slipping, so it is parked for now.';
 /** The non-return lines for a herring/filler solved in a
  * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
  * sources unconditionally, so a user with plenty of SR items was told a
@@ -477,8 +527,8 @@ const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to pos
  * come, while the surrounding puzzles already were their own positions.
  * Warm-up is a SESSION property (`TrainSessionResponse.is_warmup`), not a
  * per-puzzle one. */
-const HERRING_TAIL = "That one was a red herring, so it won't come back.";
-const FILLER_TAIL = "That one was a tactics puzzle, not from your games, so it won't come back.";
+const HERRING_TAIL = "A red herring, so it won't come back.";
+const FILLER_TAIL = "Not from your games, so it won't come back.";
 
 /** Inputs for `returnPhrase` — every field optional so a pre-206 cached
  * reveal or an incomplete fixture degrades to an empty
@@ -526,7 +576,7 @@ export function returnPhrase(input: ReturnPhraseInput): string {
   if (input.due_date <= input.expires_on) return NEXT_SESSION_TAIL;
   if (input.session_date == null) return '';
   const days = differenceInCalendarDays(parseISO(input.due_date), parseISO(input.session_date));
-  return `Let's see if you remember this in ${days} days.`;
+  return `Back in ${days} days.`;
 }
 
 /**

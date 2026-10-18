@@ -16,6 +16,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The eval verdict now compares against the average game for your colour on the Moves, Games and Stats tabs.
 - The Moves tab colours moves and arrows by the same rule as the cards: 20 games or more, a clear difference at 95% confidence, outside the 45-55% typical range.
 - The Insights tab and the per-bookmark "Include in opening results" switch are gone. Old Insights links open Stats.
+- Train: the puzzle verdict is now one short sentence that states what the position was and what you scored ("Only one move works here. You called it +1 and found it +2."), replacing three blocks that repeated each other. Return dates read "Back in 3 days", and motif and alternative moves share one line.
 
 ### Fixed
 

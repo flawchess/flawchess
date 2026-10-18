@@ -48,6 +48,7 @@ import type {
   TourStepId,
   TrainCopyAudience,
   TourContext,
+  VerdictClauseInput,
 } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY, personaForId } from '@/lib/personas/personaRegistry';
 import type { PersonaId } from '@/lib/personas/personaRegistry';
@@ -326,111 +327,103 @@ describe('dropNudgeCopy', () => {
   });
 });
 
-describe('verdictClauseParts / verdictCopy clause / verdictStripLine', () => {
-  // The full vocabulary table: [correct call, tier, isBest, guess label, move label,
-  // guess points, move points].
-  const TABLE: ReadonlyArray<readonly [boolean, TrainMoveTier, boolean, string, string, 0 | 1, 0 | 1 | 2]> = [
-    [true, 'good', true, 'Right call', 'best move', 1, 2],
-    [true, 'good', false, 'Right call', 'good move', 1, 2],
-    [true, 'inaccuracy', false, 'Right call', 'decent move', 1, 1],
-    [true, 'wrong', false, 'Right call', 'wrong move', 1, 0],
-    [false, 'good', true, 'Wrong call', 'but the best move', 0, 2],
-    [false, 'good', false, 'Wrong call', 'but a good move', 0, 2],
-    [false, 'inaccuracy', false, 'Wrong call', 'decent move', 0, 1],
-    [false, 'wrong', false, 'Wrong call', 'wrong move', 0, 0],
+describe('verdictClauseParts / verdictStripLine', () => {
+  const base: VerdictClauseInput = {
+    puzzleType: 'sharp',
+    correctGuess: true,
+    moveTier: 'good',
+    isBest: true,
+    fromOwnBlunder: false,
+    disagreement: false,
+    keySan: null,
+  };
+
+  /** The sentence as the details body renders it, pills as [+N]. */
+  function sentence(input: VerdictClauseInput): string {
+    const p = verdictClauseParts(input);
+    return `${p.fact} ${p.guessLabel} [+${p.guessPoints}]${p.joiner}${p.moveLabel} [+${p.movePoints}].`;
+  }
+
+  // [puzzle type, correct call, tier, isBest, sentence, strip line]
+  const TABLE: ReadonlyArray<
+    readonly [VerdictClauseInput['puzzleType'], boolean, TrainMoveTier, boolean, string, string]
+  > = [
+    ['sharp', true, 'good', true, 'Only one move works here. You called it [+1] and found it [+2].', 'Called it, found it'],
+    ['sharp', true, 'wrong', false, 'Only one move works here. You called it [+1], but missed it [+0].', 'Called it, missed it'],
+    ['sharp', false, 'good', true, 'Only one move works here. Wrong call [+0], but you found it [+2].', 'Wrong call, but found it'],
+    ['sharp', false, 'wrong', false, 'Only one move works here. Wrong call [+0] and you missed it [+0].', 'Wrong call, missed it'],
+    ['herring', true, 'good', true, 'Several moves work here. You called it [+1] and played the best one [+2].', 'Called it, best move'],
+    ['herring', true, 'good', false, 'Several moves work here. You called it [+1] and played a good one [+2].', 'Called it, good move'],
+    ['herring', true, 'inaccuracy', false, 'Several moves work here. You called it [+1], but played an inaccurate move [+1].', 'Called it, inaccurate move'],
+    ['herring', true, 'wrong', false, "Several moves work here. You called it [+1], but yours isn't one of them [+0].", 'Called it, wrong move'],
+    ['herring', false, 'good', false, 'Several moves work here. Wrong call [+0], but you played a good one [+2].', 'Wrong call, but good move'],
+    ['herring', false, 'inaccuracy', false, 'Several moves work here. Wrong call [+0] and you played an inaccurate move [+1].', 'Wrong call, inaccurate move'],
+    ['herring', false, 'wrong', false, "Several moves work here. Wrong call [+0] and yours isn't one of them [+0].", 'Wrong call, wrong move'],
   ];
 
-  it.each(TABLE)(
-    'correct=%s tier=%s isBest=%s -> %s, %s',
-    (correct, tier, isBest, guessLabel, moveLabel, guessPoints, movePoints) => {
-      expect(verdictClauseParts(correct, tier, isBest)).toEqual({
-        guessLabel,
-        guessPoints,
-        moveLabel,
-        movePoints,
-      });
-      expect(verdictCopy(0, correct, tier, isBest, () => 0).clause).toBe(
-        `${guessLabel} [+${guessPoints}], ${moveLabel} [+${movePoints}].`,
-      );
-      // The strip drops the article after "but".
-      expect(verdictStripLine(correct, tier, isBest)).toBe(
-        `${guessLabel}, ${moveLabel.replace(/^but (the|a) /, 'but ')}`,
-      );
-    },
-  );
-
-  it('states the example clauses and strip lines from the plan', () => {
-    expect(verdictCopy(3, true, 'good', true, () => 0).clause).toBe('Right call [+1], best move [+2].');
-    expect(verdictCopy(2, false, 'good', false, () => 0).clause).toBe(
-      'Wrong call [+0], but a good move [+2].',
-    );
-    expect(verdictStripLine(true, 'good', true)).toBe('Right call, best move');
-    expect(verdictStripLine(false, 'good', false)).toBe('Wrong call, but good move');
-    expect(verdictStripLine(false, 'good', true)).toBe('Wrong call, but best move');
-    expect(verdictStripLine(true, 'wrong', false)).toBe('Right call, wrong move');
-  });
-
-  it('isBest is ignored for the inaccuracy and wrong tiers', () => {
-    for (const tier of ['inaccuracy', 'wrong'] as const) {
-      expect(verdictClauseParts(true, tier, true)).toEqual(verdictClauseParts(true, tier, false));
-      expect(verdictClauseParts(false, tier, true)).toEqual(verdictClauseParts(false, tier, false));
-    }
+  it.each(TABLE)('%s correct=%s tier=%s isBest=%s', (puzzleType, correctGuess, moveTier, isBest, text, strip) => {
+    const input = { ...base, puzzleType, correctGuess, moveTier, isBest };
+    expect(sentence(input)).toBe(text);
+    expect(verdictStripLine(input)).toBe(strip);
   });
 
   it('the points always equal scorePuzzle (isBest only selects wording)', () => {
-    for (const [correct, tier, isBest, , , guessPoints, movePoints] of TABLE) {
-      expect(guessPoints + movePoints).toBe(scorePuzzle(correct, tier));
-      const parts = verdictClauseParts(correct, tier, isBest);
-      expect(parts.guessPoints + parts.movePoints).toBe(scorePuzzle(correct, tier));
+    for (const [puzzleType, correctGuess, moveTier, isBest] of TABLE) {
+      const parts = verdictClauseParts({ ...base, puzzleType, correctGuess, moveTier, isBest });
+      expect(parts.guessPoints + parts.movePoints).toBe(scorePuzzle(correctGuess, moveTier));
     }
+  });
+
+  // A sharp puzzle's only good move is the key by construction, so the phone
+  // engine's isBest never turns "found it" into "a good one".
+  it('a sharp good move is "found it" whatever isBest says', () => {
+    expect(verdictClauseParts({ ...base, isBest: false }).moveLabel).toBe('and found it');
+  });
+
+  // "Several moves work here" alone read as "nothing happened here" at one
+  // of the user's own blunders; the soft fact names the game move instead.
+  it('a several-move fact on the user own blunder names the game move; a sharp fact never does', () => {
+    const soft = { ...base, puzzleType: 'soft' as const, fromOwnBlunder: true };
+    expect(verdictClauseParts(soft).fact).toBe('Several moves work here, just not your game move.');
+    expect(verdictClauseParts({ ...base, fromOwnBlunder: true }).fact).toBe('Only one move works here.');
+  });
+
+  it('a credited disagreement names the key and credits either call', () => {
+    const input = { ...base, isBest: false, disagreement: true, keySan: 'Qh4' };
+    expect(sentence(input)).toBe(
+      "Qh4 is the engine's pick, but not the only good move. Either call counts [+1], and your move holds up [+2].",
+    );
+    expect(verdictStripLine(input)).toBe('Two good moves, yours holds up');
+  });
+
+  it('a credited disagreement without a key SAN still drops the "only one move" fact', () => {
+    expect(verdictClauseParts({ ...base, disagreement: true }).fact).toBe('Two moves work here.');
+  });
+
+  it('a disagreement flag on an uncredited solve falls through to the normal sentence', () => {
+    const input = { ...base, correctGuess: false, moveTier: 'wrong' as const, disagreement: true, keySan: 'Qh4' };
+    expect(verdictClauseParts(input).fact).toBe('Only one move works here.');
   });
 });
 
 describe('verdictCopy', () => {
-  it('0-point bucket: wrong guess + wrong move, carries the look-closer line', () => {
-    const copy = verdictCopy(0, false, 'wrong', false, () => 0);
-    expect(['Not this time.', 'Not quite.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Wrong call [+0], wrong move [+0].');
-    expect(copy.lookCloser).toBe('Step through the best line and your own move to see why.');
+  it('0 and 1 point buckets carry the look-closer line', () => {
+    expect(['Not this time.', 'Not quite.']).toContain(verdictCopy(0, () => 0).opener);
+    expect(verdictCopy(0, () => 0).lookCloser).toBe('Step through the lines to see why.');
+    expect(['Close.', 'Halfway there.']).toContain(verdictCopy(1, () => 0).opener);
+    expect(verdictCopy(1, () => 0).lookCloser).not.toBeNull();
   });
 
-  it('1-point bucket via correct guess + wrong move, carries the look-closer line', () => {
-    const copy = verdictCopy(1, true, 'wrong', false, () => 0);
-    expect(['Close.', 'Halfway there.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Right call [+1], wrong move [+0].');
-    expect(copy.lookCloser).not.toBeNull();
-  });
-
-  it('1-point bucket via wrong guess + inaccuracy, same opener bucket, different clause', () => {
-    const copy = verdictCopy(1, false, 'inaccuracy', false, () => 0);
-    expect(['Close.', 'Halfway there.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Wrong call [+0], decent move [+1].');
-  });
-
-  it('2-point bucket via correct guess + inaccuracy, no look-closer line', () => {
-    const copy = verdictCopy(2, true, 'inaccuracy', false, () => 0);
-    expect(['Nice.', 'Solid.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Right call [+1], decent move [+1].');
-    expect(copy.lookCloser).toBeNull();
-  });
-
-  it('2-point bucket via wrong guess + good move, no look-closer line', () => {
-    const copy = verdictCopy(2, false, 'good', false, () => 0);
-    expect(['Nice.', 'Solid.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Wrong call [+0], but a good move [+2].');
-    expect(copy.lookCloser).toBeNull();
-  });
-
-  it('3-point bucket: correct guess + good move, no look-closer line', () => {
-    const copy = verdictCopy(3, true, 'good', true, () => 0);
-    expect(['Good job!', 'Clean.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Right call [+1], best move [+2].');
-    expect(copy.lookCloser).toBeNull();
+  it('2 and 3 point buckets carry no look-closer line', () => {
+    expect(['Nice.', 'Solid.']).toContain(verdictCopy(2, () => 0).opener);
+    expect(verdictCopy(2, () => 0).lookCloser).toBeNull();
+    expect(['Good job!', 'Clean.']).toContain(verdictCopy(3, () => 0).opener);
+    expect(verdictCopy(3, () => 0).lookCloser).toBeNull();
   });
 
   it('the injected rng selects between the two opener variants deterministically', () => {
-    expect(verdictCopy(3, true, 'good', true, () => 0).opener).toBe('Good job!');
-    expect(verdictCopy(3, true, 'good', true, () => 0.999).opener).toBe('Clean.');
+    expect(verdictCopy(3, () => 0).opener).toBe('Good job!');
+    expect(verdictCopy(3, () => 0.999).opener).toBe('Clean.');
   });
 
   it('lookCloserCopy mirrors verdictCopy.lookCloser for all four buckets', () => {
@@ -486,13 +479,13 @@ describe('returnPhrase (truth table)', () => {
     },
   );
 
-  it('a red_herring names itself; a sharp_filler is a tactics puzzle', () => {
+  it('a red_herring names itself; a sharp_filler is not from your games', () => {
     expect(
       returnPhrase({ source: 'red_herring', is_warmup: false }),
     ).toContain('red herring');
     expect(
       returnPhrase({ source: 'sharp_filler', is_warmup: false }),
-    ).toContain('tactics puzzle');
+    ).toContain('Not from your games');
   });
 
   it('an absent is_warmup (pre-fix cached reveal) degrades to the neutral line, not the warm-up claim', () => {
@@ -508,7 +501,7 @@ describe('returnPhrase (truth table)', () => {
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
     });
-    expect(phrase).toContain("won't come back");
+    expect(phrase).toContain('retired');
   });
 
   it("item_status 'mastered' returns the mastered tail even when due_date equals expires_on exactly", () => {
@@ -518,7 +511,7 @@ describe('returnPhrase (truth table)', () => {
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
     });
-    expect(phrase).toContain("won't come back");
+    expect(phrase).toContain('retired');
   });
 
   it("item_status 'parked' returns the parked tail under the same stale-date conditions", () => {
@@ -538,7 +531,7 @@ describe('returnPhrase (truth table)', () => {
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
     });
-    expect(phrase).toBe("We'll try this one again in the next session.");
+    expect(phrase).toBe('Back next session.');
   });
 
   it('due_date > expires_on returns the "in N days" tail with N = differenceInCalendarDays(due_date, session_date)', () => {
@@ -548,7 +541,7 @@ describe('returnPhrase (truth table)', () => {
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
     });
-    expect(phrase).toBe("Let's see if you remember this in 4 days.");
+    expect(phrase).toBe('Back in 4 days.');
   });
 
   it('due_date == null with an active status returns an empty string, never a crash', () => {
