@@ -5,6 +5,7 @@ import type { FilterState } from '@/components/filters/FilterPanel';
 import { RepertoireCard } from '@/components/openings/stats/RepertoireCard';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 import { trackFeature } from '@/lib/analytics';
+import { REPERTOIRE_MIN_GAMES_FOR_VERDICT } from '@/lib/openingVerdict';
 import { cn } from '@/lib/utils';
 import { REPERTOIRE_HEADING_CLASS } from './headingClasses';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
@@ -204,7 +205,10 @@ export function RepertoireList({
           className="charcoal-texture rounded-md px-3 py-6 text-center text-sm text-muted-foreground"
           data-testid="repertoire-empty"
         >
-          No {colorLabel(color)} games match the current filters.
+          {/* The backend drops most-played openings under its game floor (D-36), so an empty
+              list can mean games spread thin, not no games at all. */}
+          No {colorLabel(color)} opening has {REPERTOIRE_MIN_GAMES_FOR_VERDICT} or more games under
+          the current filters yet.
         </p>
       )}
       {pastRows.length > 0 && (

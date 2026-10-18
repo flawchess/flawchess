@@ -223,6 +223,15 @@ describe('RepertoireList played before', () => {
   });
 });
 
+describe('RepertoireList empty state', () => {
+  it('names the game floor instead of blaming the filters', () => {
+    renderList({});
+    expect(screen.getByTestId('repertoire-empty').textContent).toContain(
+      'No White opening has 20 or more games under the current filters yet.',
+    );
+  });
+});
+
 describe('RepertoireList intros and verdict sentence', () => {
   it('explains Score and Eval under the first heading only', () => {
     renderList({
