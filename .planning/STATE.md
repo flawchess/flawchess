@@ -1,30 +1,31 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.27
-current_phase: 241
+current_phase: 242
 current_phase_name: Openings Stats + Insights Rework (SEED-204)
-status: executing
-stopped_at: Phase 242 context gathered
-last_updated: "2026-10-17T16:20:18.812Z"
-state_head: 70f536a1ad1015c69860350c23575ee6322c9c8b
+status: completed
+stopped_at: Phase 242 complete — all phases complete
+last_updated: "2026-10-18T14:47:28.988Z"
+state_head: a062c678977fdcbad047764329b5fa8350de6e71
 progress:
   total_phases: 1
   completed_phases: 103
   total_plans: 9
   completed_plans: 96
+  percent: 100
 milestone_name: Codebase Cleanup
-last_activity: 2026-10-17
-last_activity_desc: Closed milestones v2.25 (238–239), v2.26 (240) and v2.27 (241) with tags and GitHub releases; v2.27 not yet deployed
+last_activity: 2026-10-18
+last_activity_desc: Phase 242 complete (owner override on the 5 browser UAT items) and squash-merged to main via PR #428; v2.27 and 242 not yet deployed
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 242 (Openings Stats + Insights Rework (SEED-204)) — EXECUTING
-Plan: 1 of 9
+Phase: 242 (Openings Stats + Insights Rework (SEED-204)) — COMPLETE
+Plan: 9 of 9
 
-Status: Executing Phase 242
+Status: Phase 242 complete, squash-merged to `main` (PR #428), not yet deployed
 
 Open threads carried forward (not blockers):
 
@@ -49,7 +50,9 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.25, v2.26 and v2.27 closed 2026-10-17**; phases 238–241 regrouped into v2.25 Readable Endgame & Library Stats (238–239, releases #406–#422), v2.26 Train First-Session Onboarding (240, #423–#426) and v2.27 Codebase Cleanup (241, not yet deployed), each tagged with a GitHub release. No open milestone: next is a deploy of v2.27, then `/gsd-new-milestone` or standalone Phase 242.
+Current focus: **Phase 242 (Openings Stats + Insights rework, SEED-204) complete 2026-10-18**, squash-merged to `main` via PR #428; no milestone holds it yet. Next: deploy (v2.27 + 242), then `/gsd-new-milestone`.
+
+Previous focus: **v2.25, v2.26 and v2.27 closed 2026-10-17**; phases 238–241 regrouped into v2.25 Readable Endgame & Library Stats (238–239, releases #406–#422), v2.26 Train First-Session Onboarding (240, #423–#426) and v2.27 Codebase Cleanup (241, not yet deployed), each tagged with a GitHub release. No open milestone: next is a deploy of v2.27, then `/gsd-new-milestone` or standalone Phase 242.
 
 ### Superseded: focus after the v2.22–v2.24 close
 
@@ -1109,7 +1112,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 ## Session Continuity
 
 **Last session:** 2026-10-17T14:35:43.021Z
-**Stopped at:** Phase 242 context gathered
+**Stopped at:** Phase 242 complete — all phases complete
 **Resume file:** .planning/phases/242-openings-stats-insights-rework/242-CONTEXT.md
 
 Previous session note (Phase 227):

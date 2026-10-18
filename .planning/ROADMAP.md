@@ -129,6 +129,7 @@
 | 238-239. v2.25 phases | 19/19 | Complete | 2026-10-13 |
 | 240. v2.26 phase | 7/7 | Complete | 2026-10-16 |
 | 241. v2.27 phase | 70/70 | Complete | 2026-10-17 |
+| 242. standalone phase | 9/9 | Complete | 2026-10-18 |
 
 ## Active Phases
 
@@ -164,8 +165,8 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 9/9 plans executed
-**Status**: Planned (9 plans, 7 waves), ready to execute
+**Plans:** 9/9 plans complete
+**Status**: Complete 2026-10-18 (9 plans + 15 UAT rounds; verification passed by owner override; PR #428 squash-merged to `main`, not yet deployed)
 
 Plans:
 **Wave 1**

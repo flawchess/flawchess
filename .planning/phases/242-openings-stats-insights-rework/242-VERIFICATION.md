@@ -1,8 +1,8 @@
 ---
 phase: 242-openings-stats-insights-rework
 verified: 2026-10-17T20:30:00Z
-status: human_needed
-score: 12/12 must-haves verified
+status: passed
+score: 12/12 must-haves verified; 5 human-verification items closed by owner override, see below
 covered_files:
   - .planning/phases/242-openings-stats-insights-rework/242-01-PLAN.md
   - .planning/phases/242-openings-stats-insights-rework/242-01-SUMMARY.md
@@ -33,16 +33,26 @@ covered_files:
   - frontend/src/components/charts/ScoreChart.tsx
   - frontend/src/components/openings/stats/FindingCard.tsx
   - frontend/src/components/openings/stats/OpeningFindings.tsx
-  - frontend/src/components/openings/stats/RepertoireExpandedRow.tsx
-  - frontend/src/components/openings/stats/RepertoireTable.tsx
+  - frontend/src/components/openings/stats/RepertoireCard.tsx
+  - frontend/src/components/openings/stats/RepertoireList.tsx
   - frontend/src/components/openings/stats/VerdictBar.tsx
   - frontend/src/components/openings/stats/VerdictPopover.tsx
   - frontend/src/lib/openingVerdict.ts
   - frontend/src/pages/Openings.tsx
   - frontend/src/pages/openings/StatsTab.tsx
-covered_digest: "v3:sha256:c7c86f24ae09dce0adc3fd4fcfebb1d0320e204347c84a8571e2a866047df063"
+covered_digest: "v3:sha256:98d3f70ccefd3bfb06ebcd3a9068f2e10f4c8b427f66399aaf3886cc2ed6fc18"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+override:
+  by: owner (Adrian Imfeld, merge + close instruction 2026-10-18 after 15 live UAT rounds on the branch)
+  from: human_needed
+  to: passed
+  reason: |
+    The owner ran 15 live UAT rounds on the Stats page after this report (commits "fix(242): UAT round 1..15").
+    Round 1 replaced the repertoire table with repertoire cards (RepertoireTable/RepertoireExpandedRow ->
+    RepertoireList/RepertoireCard, covered_files updated); later rounds reworked findings (95% gate, no
+    "Not clear yet", card caps), verdict sentences and the colour switch, so several items below describe a
+    superseded design. The owner accepted the result for merge; the five items were not re-walked one by one.
 advisory:
   - finding: "WR-01: a bookmark on the SHALLOWER position of a duplicate pair leaves the deeper most-played twin visible (dedupe runs before the twin drop and the twin drop compares hashes only)"
     category: other
@@ -82,7 +92,7 @@ human_verification:
 
 **Phase Goal:** Rework the Openings Stats and Insights tabs the way Phases 238/239 reworked the Endgame and Library Stats pages: simpler, more readable, no loss of information. Design from sketch 012 / SEED-204, 238/239 system decisions D-14..D-17 unchanged.
 **Verified:** 2026-10-17
-**Status:** human_needed
+**Status:** passed (owner override, see frontmatter)
 **Re-verification:** No, initial verification
 
 All code-checkable must-haves hold. Remaining items are browser-layout and animation checks that the SUMMARYs themselves marked human_judgment. Three code-review warnings (WR-01..03) were weighed; none defeats a must-have (details below).
