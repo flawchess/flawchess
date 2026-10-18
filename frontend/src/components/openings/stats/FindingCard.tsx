@@ -169,7 +169,7 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
   );
 }
 
-/** The Score and Eval verdicts read together in one muted line; nothing when neither stands out. */
+/** The Score and Eval verdicts read together in one muted line. */
 function VerdictSentence({ finding, testId }: { finding: OpeningInsightFinding; testId: string }) {
   const { tier2 } = useReadiness();
   const evalIn = tier2 ? evalInput(finding) : null;
@@ -177,7 +177,6 @@ function VerdictSentence({ finding, testId }: { finding: OpeningInsightFinding; 
     openingVerdictReason(scoreInput(finding)),
     evalIn ? openingVerdictReason(evalIn) : null,
   );
-  if (!sentence) return null;
   return (
     <p className="text-sm text-muted-foreground" data-testid={`${testId}-sentence`}>
       {sentence}

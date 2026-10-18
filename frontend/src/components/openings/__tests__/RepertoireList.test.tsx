@@ -238,7 +238,7 @@ describe('RepertoireList intros and verdict sentence', () => {
     expect(screen.queryByTestId('repertoire-legend')).toBeNull();
   });
 
-  it('reads both clear verdicts together, and says too few games on a faded card', () => {
+  it('reads both verdicts together on every card, including faded and ordinary ones', () => {
     renderList({
       currentRows: [
         makeRow({ key: 'mpo-big' }),
@@ -250,7 +250,9 @@ describe('RepertoireList intros and verdict sentence', () => {
       'You come out of the opening better and make it count.',
     );
     expect(screen.getByTestId('repertoire-card-1-sentence').textContent).toBe('Too few games to call it yet.');
-    expect(screen.queryByTestId('repertoire-card-2-sentence')).toBeNull();
+    expect(screen.getByTestId('repertoire-card-2-sentence').textContent).toBe(
+      'An ordinary opening for you: average positions and about 50%.',
+    );
   });
 });
 

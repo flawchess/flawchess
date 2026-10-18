@@ -179,8 +179,16 @@ describe('openingVerdictSentence', () => {
     );
   });
 
-  it('says nothing when neither bar stands out', () => {
-    expect(openingVerdictSentence('typical', 'typical')).toBeNull();
-    expect(openingVerdictSentence('chance', null)).toBeNull();
+  it('still says something when neither bar stands out', () => {
+    expect(openingVerdictSentence('typical', 'typical')).toBe(
+      'An ordinary opening for you: average positions and about 50%.',
+    );
+    expect(openingVerdictSentence('typical', null)).toBe('You score about 50% here.');
+    expect(openingVerdictSentence('chance', 'typical')).toBe(
+      'Average positions out of the opening. Your score could still be chance.',
+    );
+    expect(openingVerdictSentence('chance', 'chance')).toBe(
+      'Nothing clear yet. The differences could still be chance.',
+    );
   });
 });

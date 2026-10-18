@@ -159,7 +159,7 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
   );
 }
 
-/** The Score and Eval verdicts read together in one muted line; nothing when neither stands out. */
+/** The Score and Eval verdicts read together in one muted line. */
 function VerdictSentence({ row, testId }: { row: RepertoireRowModel; testId: string }) {
   const { tier2 } = useReadiness();
   const evalIn = tier2 ? evalInput(row) : null;
@@ -167,7 +167,6 @@ function VerdictSentence({ row, testId }: { row: RepertoireRowModel; testId: str
     openingVerdictReason(scoreInput(row)),
     evalIn ? openingVerdictReason(evalIn) : null,
   );
-  if (!sentence) return null;
   return (
     <p className="text-sm text-muted-foreground" data-testid={`${testId}-sentence`}>
       {sentence}

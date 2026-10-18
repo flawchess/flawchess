@@ -143,7 +143,9 @@ discuss-phase" and record defaults for the rest.
 - **D-30 (UAT round 7, owner 2026-10-18):** The bottom verdict legend is removed. Each repertoire and finding
   card carries one muted sentence reading the Score and Eval verdicts together (`openingVerdictSentence`,
   `lib/openingVerdict.ts`): only 99%-clear parts are stated, an unclear eval falls back to the score-only
-  sentence, nothing clear says nothing, and a <20-game card says "Too few games to call it yet."
+  sentence, and a <20-game card says "Too few games to call it yet." Every cell has a sentence (owner,
+  same day: a card without one read as missing), e.g. "An ordinary opening for you: average positions and
+  about 50%." and "Nothing clear yet. The differences could still be chance."
 - **D-31:** The Stats subtab info popover is removed (Moves/Games popovers stay). Every Stats section h2 gets a
   one-line intro under it (Library Stats pattern); the first repertoire heading also explains Score and Eval.
 - **D-32:** Findings density: a section without 99% cards shows its "Not clear yet" cards inline (phone 2,
