@@ -100,10 +100,6 @@ function emptyResponse(overrides: Partial<OpeningInsightsResponse> = {}): Openin
     black_weaknesses: [],
     white_strengths: [],
     black_strengths: [],
-    current_cutoff_white: null,
-    current_cutoff_black: null,
-    eval_baseline_pawns_white: 0.25,
-    eval_baseline_pawns_black: -0.25,
     ...overrides,
   };
 }

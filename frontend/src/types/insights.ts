@@ -98,10 +98,10 @@ export interface OpeningInsightFinding {
   eval_confidence?: 'low' | 'medium' | 'high';
   // MAX(games.played_at) across all games visiting this (entry, candidate)
   // transition. ISO 8601 string; null when contributing games all have NULL
-  // played_at. Drives the finding card's "older games" chip title ("Last seen <month year>").
+  // played_at. Drives the finding card's relative "last played" date.
   last_played_at?: string | null;
   // True when last_played_at is on or after the colour's current-repertoire cutoff.
-  // False renders the "older games" chip (the backend already sorted those after current ones).
+  // False adds the "Not played recently" archive icon; the card order is unchanged.
   is_current: boolean;
 }
 
@@ -110,10 +110,4 @@ export interface OpeningInsightsResponse {
   black_weaknesses: OpeningInsightFinding[];
   white_strengths: OpeningInsightFinding[];
   black_strengths: OpeningInsightFinding[];
-  /** ISO cutoff of the current repertoire per colour; null when everything is current. */
-  current_cutoff_white: string | null;
-  current_cutoff_black: string | null;
-  /** Per-color engine-asymmetry baselines (in pawns). Rendered as a reference tick on the finding card's eval bullet chart. */
-  eval_baseline_pawns_white: number;
-  eval_baseline_pawns_black: number;
 }

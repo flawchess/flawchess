@@ -42,8 +42,6 @@ from app.schemas.opening_insights import (
 )
 from app.services.opening_eval import finalize_opening_eval
 from app.services.opening_insights_constants import (
-    EVAL_BASELINE_PAWNS_BLACK,
-    EVAL_BASELINE_PAWNS_WHITE,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
@@ -1053,10 +1051,6 @@ async def compute_insights(
             black_weaknesses=partitions["black_weaknesses"],
             white_strengths=partitions["white_strengths"],
             black_strengths=partitions["black_strengths"],
-            current_cutoff_white=pipeline_ctx.cutoffs["white"],
-            current_cutoff_black=pipeline_ctx.cutoffs["black"],
-            eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
-            eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         )
     except Exception as exc:
         # CLAUDE.md §Sentry: pass variable data via set_context; never embed

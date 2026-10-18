@@ -538,8 +538,6 @@ describe('useRepertoireRows', () => {
   const mostPlayed: MostPlayedOpeningsResponse = {
     white: [makeOpening(), makeOpening({ full_hash: '43', is_current: false })],
     black: [],
-    eval_baseline_pawns_white: 0.25,
-    eval_baseline_pawns_black: -0.25,
     current_cutoff_white: null,
     current_cutoff_black: null,
   };

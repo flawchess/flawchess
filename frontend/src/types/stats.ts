@@ -73,11 +73,6 @@ export interface OpeningWDL {
 export interface MostPlayedOpeningsResponse {
   white: OpeningWDL[];
   black: OpeningWDL[];
-  /** Engine-asymmetry baseline (in pawns) for white-color cells: the eval verdict
-   * bar's centre and the H0 the per-row z-test uses. */
-  eval_baseline_pawns_white: number;
-  /** Engine-asymmetry baseline (in pawns) for black-color cells. */
-  eval_baseline_pawns_black: number;
   /** Per-colour current-repertoire cutoff (ISO 8601); null when every opening counts as current. */
   current_cutoff_white: string | null;
   current_cutoff_black: string | null;

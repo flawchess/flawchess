@@ -91,13 +91,9 @@ class MostPlayedOpeningsResponse(BaseModel):
 
     white: list[OpeningWDL]
     black: list[OpeningWDL]
-    # Engine-asymmetry baselines (in pawns): on Openings surfaces they are the eval
-    # bar's centre and the H0 of the per-row eval z-test (D-13, applied server-side by
-    # opening_eval.finalize_opening_eval); avg_eval_pawns itself stays the raw mean.
-    # Per-game mean from the 2026-05-04 Lichess benchmark run (values in
-    # opening_insights_constants.EVAL_BASELINE_PAWNS_*).
-    eval_baseline_pawns_white: float
-    eval_baseline_pawns_black: float
+    # The per-colour eval baseline (D-13: eval bar centre and z-test H0, applied server-side
+    # by opening_eval.finalize_opening_eval) is not echoed: it is the fixed
+    # EVAL_BASELINE_PAWNS_* pair, mirrored by the frontend openingStatsZones constants.
     # Per-colour current-repertoire cutoff (D-01..D-04). None means the user has
     # fewer than 200 games of that colour under the active filters, so every
     # opening of that colour is current.

@@ -204,8 +204,8 @@ async def test_post_openings_endpoint_response_carries_new_fields(
         assert f"{key}_not_clear" not in body
         assert f"{key}_not_clear_count" not in body
     assert not any("not_clear" in key for key in body)
-    assert body["current_cutoff_white"] is None
-    assert body["current_cutoff_black"] is None
+    # Neither the cutoff nor the eval baseline is echoed: the client never reads them.
+    assert not any(key.startswith(("current_cutoff", "eval_baseline")) for key in body)
 
 
 ENDGAME_INSIGHTS_ENDPOINT = "/api/insights/endgame"

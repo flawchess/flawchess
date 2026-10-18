@@ -320,9 +320,7 @@ class TestGetMostPlayedOpenings:
         self, auth_headers: dict[str, str], pinned_now: datetime.datetime
     ) -> None:
         """The router hands the dev_now_utc instant to the service (D-03)."""
-        empty = MostPlayedOpeningsResponse(
-            white=[], black=[], eval_baseline_pawns_white=0.25, eval_baseline_pawns_black=-0.25
-        )
+        empty = MostPlayedOpeningsResponse(white=[], black=[])
         with patch(
             "app.services.stats_service.get_most_played_openings",
             new=AsyncMock(return_value=empty),

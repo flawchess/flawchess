@@ -117,3 +117,23 @@ def test_compute_confidence_bucket_is_single_implementation() -> None:
         "openings_service must use the shared score_confidence helper (Phase 76 D-06); "
         "found no reference to compute_confidence_bucket."
     )
+
+
+def test_eval_baselines_match_frontend() -> None:
+    """The /stats and /insights/openings responses no longer echo the per-colour eval
+    baseline, so the frontend openingStatsZones constants must equal the backend pair the
+    eval z-test is centred on (D-13)."""
+    from app.services.opening_insights_constants import (
+        EVAL_BASELINE_PAWNS_BLACK,
+        EVAL_BASELINE_PAWNS_WHITE,
+    )
+
+    text = (_FE_LIB / "openingStatsZones.ts").read_text()
+
+    def fe_value(name: str) -> float:
+        m = re.search(rf"export\s+const\s+{name}\s*=\s*(-?[0-9]*\.?[0-9]+)\s*;", text)
+        assert m, f"could not find export const {name} in openingStatsZones.ts"
+        return float(m.group(1))
+
+    assert fe_value("EVAL_BASELINE_PAWNS_WHITE") == EVAL_BASELINE_PAWNS_WHITE
+    assert fe_value("EVAL_BASELINE_PAWNS_BLACK") == EVAL_BASELINE_PAWNS_BLACK

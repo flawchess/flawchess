@@ -34,10 +34,6 @@ from app.schemas.stats import (
     RatingHistoryResponse,
     WDLByCategory,
 )
-from app.services.opening_insights_constants import (
-    EVAL_BASELINE_PAWNS_BLACK,
-    EVAL_BASELINE_PAWNS_WHITE,
-)
 from app.services.opening_eval import finalize_opening_eval
 from app.services.repertoire_recency import is_current, resolve_current_cutoffs
 from app.services.score_confidence import score_verdict_fields
@@ -793,10 +789,6 @@ async def get_most_played_openings(
     return MostPlayedOpeningsResponse(
         white=white,
         black=black,
-        # Per-color engine-asymmetry baselines (in pawns): the eval bar centre and the
-        # H0 of the eval z-test on Openings surfaces (D-13), already applied above.
-        eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
-        eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         current_cutoff_white=cutoffs["white"],
         current_cutoff_black=cutoffs["black"],
     )
