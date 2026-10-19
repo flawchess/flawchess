@@ -1,7 +1,8 @@
 /**
  * MedalTally — one row owner's lifetime medals for one board.
- * Non-zero types only, gold, silver, bronze order, each a MedalIcon plus a
- * text-sm count from 2 up (a single medal is just the icon). Renders nothing
+ * Non-zero types only, gold, silver, bronze order. Up to five medals of a
+ * type stack as horizontally overlapping MedalIcons; from six up the type
+ * collapses to one icon plus a text-sm count. Renders nothing
  * when the owner has no medals, so a board before the first deadline shows no
  * tally.
  *
@@ -14,8 +15,8 @@ import { MedalIcon } from '@/components/train/medals/MedalIcon';
 import { tallyAriaLabel, tallyEntries } from '@/lib/trainMedals';
 import type { LeaderboardBoardKind, LeaderboardMedals } from '@/types/train';
 
-/** A single medal reads as one without a number; counts show from here up. */
-const MIN_SHOWN_TALLY_COUNT = 2;
+/** Up to this many medals of a type render as stacked icons; above it, one icon plus a count. */
+const MAX_STACKED_MEDALS = 5;
 /** Zero-width space: keeps a text baseline in the count span when the number is hidden. */
 const BASELINE_ANCHOR = '\u200B';
 
@@ -35,24 +36,35 @@ export function MedalTally({ medals, board, testId }: MedalTallyProps): ReactEle
       data-testid={testId}
       className="inline-flex items-center gap-1.5 whitespace-nowrap font-normal"
     >
-      {entries.map(({ kind, count }) => (
-        // Bug fix: an SVG has no text baseline, so with items-center the icon's
-        // bottom edge became the tally's baseline and the baseline-aligned row
-        // name block lifted icon and count above the name. Baseline-align so the
-        // count text sets the baseline, and center only the icon.
-        <span key={kind} data-testid={`${testId}-${kind}`} className="inline-flex items-baseline gap-0.5">
-          <MedalIcon kind={kind} className="self-center" />
-          {/* The count span stays even when the number is hidden: without a text
-              child the icon would lose the baseline fix above and lift. */}
-          {count >= MIN_SHOWN_TALLY_COUNT ? (
-            <span className="text-sm tabular-nums">{count}</span>
-          ) : (
-            <span aria-hidden="true" className="text-sm">
-              {BASELINE_ANCHOR}
+      {entries.map(({ kind, count }) => {
+        const showCount = count > MAX_STACKED_MEDALS;
+        const iconCount = showCount ? 1 : count;
+        return (
+          // Bug fix: an SVG has no text baseline, so with items-center the icon's
+          // bottom edge became the tally's baseline and the baseline-aligned row
+          // name block lifted icon and count above the name. Baseline-align so the
+          // count text sets the baseline, and center only the icons.
+          <span key={kind} data-testid={`${testId}-${kind}`} className="inline-flex items-baseline">
+            <span className="inline-flex self-center">
+              {Array.from({ length: iconCount }, (_, i) => (
+                // Each later icon overlaps the previous one by about 60% of its width.
+                <MedalIcon key={i} kind={kind} className={i > 0 ? '-ml-2.5' : undefined} />
+              ))}
             </span>
-          )}
-        </span>
-      ))}
+            {/* The count span stays even when the number is hidden: without a text
+                child the icons would lose the baseline fix above and lift. */}
+            {showCount ? (
+              <span data-testid={`${testId}-${kind}-count`} className="ml-0.5 text-sm tabular-nums">
+                {count}
+              </span>
+            ) : (
+              <span aria-hidden="true" className="text-sm">
+                {BASELINE_ANCHOR}
+              </span>
+            )}
+          </span>
+        );
+      })}
     </span>
   );
 }
