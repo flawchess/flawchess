@@ -672,6 +672,7 @@ export function OpeningsPage() {
           >
             <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
+                <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                 Moves
                 {activeTab === 'explorer' && (
                   <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
@@ -682,6 +683,7 @@ export function OpeningsPage() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
+                <Swords className="mr-1.5 h-4 w-4" />
                 Games
                 {activeTab === 'games' && (
                   <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
@@ -692,6 +694,7 @@ export function OpeningsPage() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
+                <BarChart2 className="mr-1.5 h-4 w-4" />
                 Stats
               </TabsTrigger>
             </TabsList>
