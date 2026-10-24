@@ -13,8 +13,9 @@ without a database:
   under 20 are tentative, listed below every qualified user with no rank, ordered by
   puzzles desc, then accuracy desc, then name.
 - Competition ranks (1, 1, 1, 4) among qualified entries; display order within
-  equal value is puzzles desc, then name, then an internal key. Top 5 plus the viewer
-  with 2 neighbours.
+  equal value is puzzles desc, then name, then an internal key. On the Accuracy board
+  puzzles is also a rank tiebreaker (equal percent, more puzzles ranks higher), so only
+  equal percent AND equal puzzles share a rank. Top 5 plus the viewer with 2 neighbours.
 - Display name is the lichess username, else chess.com, else
   "Anonymous". No verification (impersonation is an accepted risk).
 - Other users' rows and ranks are computed only from registered,
@@ -239,18 +240,29 @@ def _tentative_order_key(entry: _Entry) -> tuple[int, int, str, int]:
     return (-entry.puzzles, -entry.value, entry.name.casefold(), entry.key)
 
 
-def _competition_ranks(ordered: Sequence[_Entry]) -> list[int]:
-    """Competition ranks over an already ordered list: equal values share a rank."""
+def _rank_key(kind: LeaderboardBoardKind, entry: _Entry) -> tuple[int, int]:
+    """What a rank compares: Points by value alone, Accuracy by value then puzzles.
+
+    Accuracy is a floored integer percent over small puzzle counts, so equal percents
+    were common; at equal percent the user who solved more ranks higher.
+    """
+    return (entry.value, entry.puzzles if kind == "accuracy" else 0)
+
+
+def _competition_ranks(kind: LeaderboardBoardKind, ordered: Sequence[_Entry]) -> list[int]:
+    """Competition ranks over an already ordered list: equal rank keys share a rank."""
     ranks: list[int] = []
     for index, entry in enumerate(ordered):
-        if index > 0 and entry.value == ordered[index - 1].value:
+        if index > 0 and _rank_key(kind, entry) == _rank_key(kind, ordered[index - 1]):
             ranks.append(ranks[index - 1])
         else:
             ranks.append(index + 1)
     return ranks
 
 
-def _tiered_order(combined: Sequence[_Entry]) -> tuple[list[_Entry], list[int | None]]:
+def _tiered_order(
+    kind: LeaderboardBoardKind, combined: Sequence[_Entry]
+) -> tuple[list[_Entry], list[int | None]]:
     """Qualified entries first (ranked), then tentative entries (rank None).
 
     Don't rank tentative entries among qualified ones: interleaving them by raw
@@ -259,7 +271,7 @@ def _tiered_order(combined: Sequence[_Entry]) -> tuple[list[_Entry], list[int | 
     """
     qualified = sorted((e for e in combined if not e.tentative), key=_order_key)
     tentative = sorted((e for e in combined if e.tentative), key=_tentative_order_key)
-    ranks: list[int | None] = [*_competition_ranks(qualified), *([None] * len(tentative))]
+    ranks: list[int | None] = [*_competition_ranks(kind, qualified), *([None] * len(tentative))]
     return [*qualified, *tentative], ranks
 
 
@@ -327,7 +339,8 @@ def _rank_without(
     others = (
         e for e in entries if e.is_public and not e.tentative and e.key != viewer_aggregate.user_id
     )
-    return 1 + sum(1 for other in others if other.value > viewer_entry.value)
+    viewer_key = _rank_key(kind, viewer_entry)
+    return 1 + sum(1 for other in others if _rank_key(kind, other) > viewer_key)
 
 
 def medal_for(rank: int, value: int) -> Medal | None:
@@ -352,7 +365,7 @@ def final_standings(
     Accuracy entries come back with rank None and get no row.
     """
     public = [e for e in (_entry_for(kind, a) for a in aggregates) if e is not None and e.is_public]
-    ordered, ranks = _tiered_order(public)
+    ordered, ranks = _tiered_order(kind, public)
     return [
         FinalStanding(
             user_id=entry.key,
@@ -438,7 +451,7 @@ def _rank_board(
     `visible_keys` share, so the tally lookup can never drift from the rows displayed."""
     entries = [e for e in (_entry_for(kind, a) for a in aggregates) if e is not None]
     combined = [e for e in entries if e.is_public or e.key == viewer_id]
-    ordered, ranks = _tiered_order(combined)
+    ordered, ranks = _tiered_order(kind, combined)
     viewer_index = next((i for i, e in enumerate(ordered) if e.key == viewer_id), None)
     indices, gap_index = _slice_indices(len(ordered), viewer_index)
     return _RankedBoard(entries, ordered, ranks, viewer_index, indices, gap_index)
