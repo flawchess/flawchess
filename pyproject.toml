@@ -61,7 +61,7 @@ maia-inference = [
     # .planning/phases/218-backend-onnxruntime-parity-spike-python-3-14-chain/
     # 218-evidence-onnxruntime-1.29.0-python.txt. Pin raised to 1.29.0 to unblock the
     # Python 3.14 chain (218-02).
-    "onnxruntime==1.29.0",
+    "onnxruntime==1.31.0",
     "numpy",
 ]
 # Isolated group for the backend Web Push send path (Phase 201, PUSH-05). Kept OUT
