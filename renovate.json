@@ -28,6 +28,11 @@
       "groupName": "onnxruntime-web (run scripts/bench_maia_ort_wasm.mjs before merging — Phase 219)"
     },
     {
+      "description": "Python is held at 3.14: the pinned onnxruntime 1.29.0 ships only cp314 wheels (>=1.30 segfaults on the Maia model, see the next rule). Lift this cap together with the onnxruntime bump.",
+      "matchDepNames": ["python"],
+      "allowedVersions": "<3.15"
+    },
+    {
       "description": "onnxruntime / onnxruntime-node are pinned at 1.29.0: >=1.30 segfaults loading the vendored maia3_simplified.onnx (exit 139, reproduced 2026-10-09 on 1.30.0 and 1.31.0). A bump must pass the Phase 218 parity spike (scripts/maia_parity_spike.py, verify_value_head.mjs) first.",
       "matchPackageNames": ["onnxruntime", "onnxruntime-node"],
       "dependencyDashboardApproval": true
