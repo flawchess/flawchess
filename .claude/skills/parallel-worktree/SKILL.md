@@ -64,7 +64,7 @@ If the branch exists but is not checked out anywhere, offer to check it out inst
 
 ## Steps
 
-Run from the primary worktree root (the main checkout, typically `/home/aimfeld/Projects/Python/flawchess`).
+Run from the primary worktree root (the main checkout; `git rev-parse --show-toplevel` prints it as `<repo-root>`).
 
 ### 1. Fetch origin/main
 
@@ -122,7 +122,7 @@ Use this exact template so all the information they need is in one place:
 > **To start a second Claude session in it**, open a new terminal and run:
 >
 > ```
-> cd /home/aimfeld/Projects/Python/flawchess/.claude/worktrees/<branch-name>
+> cd <repo-root>/.claude/worktrees/<branch-name>
 > claude
 > ```
 >
