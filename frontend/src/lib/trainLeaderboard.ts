@@ -29,7 +29,7 @@ export const ACCURACY_QUALIFY_MIN_PUZZLES = 20;
 /** Header info popover: what each board rewards (wording: effort and care, never ability). */
 export const LEADERBOARD_INFO_POINTS_COPY = 'Points mainly rewards how many puzzles you solve.';
 export const LEADERBOARD_INFO_ACCURACY_COPY =
-  'Accuracy is your average session score: it rewards how carefully you solve, not how many.';
+  'Accuracy is your score across all puzzles this week: it rewards how carefully you solve. At equal accuracy, more puzzles ranks higher.';
 /** Viewer has Points entries but no Accuracy entry: never a misleading count. */
 export const ACCURACY_NOT_ENTERED_COPY =
   "You're not on this board yet: tactics puzzles don't count here.";

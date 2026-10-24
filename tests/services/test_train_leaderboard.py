@@ -265,9 +265,9 @@ def test_rank_equal_value_and_puzzles_fall_back_to_casefolded_name() -> None:
     assert [r.name for r in _points(aggs, viewer_id=1).rows] == ["Alpha", "bravo", "charlie"]
 
 
-def test_rank_accuracy_ties_are_visible_ties_on_the_floored_percent() -> None:
-    # 56/63 = 88.9% and 64/72 = 88.9% both floor to 88, so they tie; puzzles breaks the order.
-    # All three are qualified (20+ puzzles), so all are ranked.
+def test_rank_accuracy_equal_percent_ranks_more_puzzles_higher() -> None:
+    # 56/63 = 88.9% and 64/72 = 88.9% both floor to 88; puzzles breaks the rank, not just
+    # the order. All three are qualified (20+ puzzles), so all are ranked.
     aggs = [
         _agg(1, points=56, puzzles=21),  # 56/63 -> 88
         _agg(2, points=64, puzzles=24),  # 64/72 -> 88
@@ -277,8 +277,23 @@ def test_rank_accuracy_ties_are_visible_ties_on_the_floored_percent() -> None:
     assert [(r.rank, r.value, r.puzzles) for r in board.rows] == [
         (1, 100, 20),
         (2, 88, 24),
-        (2, 88, 21),
+        (3, 88, 21),
     ]
+
+
+def test_rank_accuracy_equal_percent_and_puzzles_share_a_rank() -> None:
+    aggs = [
+        _agg(1, points=45, puzzles=20, name="bravo"),  # 75
+        _agg(2, points=45, puzzles=20, name="alpha"),  # 75
+        _agg(3, points=30, puzzles=20, name="low"),  # 50
+    ]
+    board = _accuracy(aggs, viewer_id=1)
+    assert [(r.name, r.rank) for r in board.rows] == [("alpha", 1), ("bravo", 1), ("low", 3)]
+
+
+def test_rank_points_ties_ignore_puzzles() -> None:
+    aggs = [_agg(1, points=10, puzzles=2), _agg(2, points=10, puzzles=6)]
+    assert [r.rank for r in _points(aggs, viewer_id=1).rows] == [1, 1]
 
 
 # --- slice ------------------------------------------------------------------
@@ -578,6 +593,26 @@ def test_without_session_hidden_viewer_counts_only_visible_others() -> None:
     assert board.viewer.rank_without_session == 1
 
 
+def test_without_session_accuracy_equal_percent_counts_others_with_more_puzzles() -> None:
+    # Without the session the viewer is 60/20 = 100 percent on 20 puzzles: the rival at
+    # 100 percent on 30 puzzles ranks ahead, the one on 20 puzzles ties.
+    aggs = [
+        _agg(1, points=90, puzzles=30, name="busy"),  # 100, 30 puzzles
+        _agg(2, points=60, puzzles=20, name="even"),  # 100, 20 puzzles
+        _agg(9, points=60, puzzles=30, name="viewer"),  # 66 with, 100 without
+    ]
+    board = build_board(
+        "accuracy",
+        aggs,
+        viewer_id=9,
+        viewer_visibility="public",
+        session_contribution=_contribution(points=0, puzzles=10),
+    )
+    assert board.viewer is not None
+    assert board.viewer.rank == 3
+    assert board.viewer.rank_without_session == 2
+
+
 def test_totals_without_subtracts_each_field_and_clamps_at_zero() -> None:
     total = SolveTotals(points=10, puzzles=4, non_filler_points=8, non_filler_puzzles=3)
     assert totals_without(total, SolveTotals(3, 1, 2, 1)) == SolveTotals(7, 3, 6, 2)
@@ -621,7 +656,12 @@ def test_tier_competition_ranks_among_qualified_ignore_tentative_rows() -> None:
         _agg(4, points=3, puzzles=1, name="tentative"),
     ]
     board = _accuracy(aggs, viewer_id=1)
-    assert [r.rank for r in board.rows] == [1, 2, 2, None]
+    assert [(r.name, r.rank) for r in board.rows] == [
+        ("top", 1),
+        ("tie_b", 2),
+        ("tie_a", 3),
+        ("tentative", None),
+    ]
 
 
 def test_tier_all_tentative_week_shows_the_five_most_active() -> None:
@@ -775,6 +815,24 @@ def test_final_standings_accuracy_keeps_only_qualified_users() -> None:
 
     assert [(s.user_id, s.final_rank, s.value, s.medal) for s in standings] == [
         (1, 1, 100, Medal.GOLD)
+    ]
+
+
+def test_final_standings_accuracy_puzzles_tiebreak_decides_the_medal() -> None:
+    aggs = [
+        _agg(1, points=60, puzzles=20),  # 100
+        _agg(2, points=56, puzzles=21),  # 88
+        _agg(3, points=64, puzzles=24),  # 88, more puzzles
+        _agg(4, points=45, puzzles=20),  # 75
+    ]
+
+    standings = final_standings("accuracy", aggs)
+
+    assert [(s.user_id, s.final_rank, s.medal) for s in standings] == [
+        (1, 1, Medal.GOLD),
+        (3, 2, Medal.SILVER),
+        (2, 3, Medal.BRONZE),
+        (4, 4, None),
     ]
 
 

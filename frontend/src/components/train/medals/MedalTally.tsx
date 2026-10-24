@@ -34,7 +34,7 @@ export function MedalTally({ medals, board, testId }: MedalTallyProps): ReactEle
       role="img"
       aria-label={tallyAriaLabel(medals, board)}
       data-testid={testId}
-      className="inline-flex items-center gap-1.5 whitespace-nowrap font-normal"
+      className="inline-flex items-center whitespace-nowrap font-normal"
     >
       {entries.map(({ kind, count }) => {
         const showCount = count > MAX_STACKED_MEDALS;
@@ -54,7 +54,7 @@ export function MedalTally({ medals, board, testId }: MedalTallyProps): ReactEle
             {/* The count span stays even when the number is hidden: without a text
                 child the icons would lose the baseline fix above and lift. */}
             {showCount ? (
-              <span data-testid={`${testId}-${kind}-count`} className="ml-0.5 text-sm tabular-nums">
+              <span data-testid={`${testId}-${kind}-count`} className="mx-0.5 text-sm tabular-nums">
                 {count}
               </span>
             ) : (

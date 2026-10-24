@@ -451,7 +451,7 @@ describe('TrainLeaderboardCard countdown and private rows', () => {
     fireEvent.click(info);
     expect(await screen.findByText('Points mainly rewards how many puzzles you solve.')).not.toBeNull();
     expect(
-      screen.getByText('Accuracy is your average session score: it rewards how carefully you solve, not how many.'),
+      screen.getByText('Accuracy is your score across all puzzles this week: it rewards how carefully you solve. At equal accuracy, more puzzles ranks higher.'),
     ).not.toBeNull();
     expect(trackFeature).toHaveBeenCalledWith('popover-open', { target: 'train-leaderboard-info' });
     expect(screen.getByTestId('train-leaderboard-info-opt-out').textContent).toContain(

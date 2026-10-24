@@ -34,7 +34,8 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 # LICHESS_PUZZLER_TAGGER_PATH so other machines can point at their own clone
 # without editing committed source (code review WR-01).
 _PUZZLER_CLONE_ENV_VAR = "LICHESS_PUZZLER_TAGGER_PATH"
-_PUZZLER_CLONE_DEFAULT = "/home/aimfeld/Projects/Python/lichess-puzzler/tagger"
+# Default: a lichess-puzzler checkout sitting next to this repo.
+_PUZZLER_CLONE_DEFAULT = str(_PROJECT_ROOT.parent / "lichess-puzzler" / "tagger")
 _PUZZLER_CLONE = Path(os.environ.get(_PUZZLER_CLONE_ENV_VAR, _PUZZLER_CLONE_DEFAULT))
 if not _PUZZLER_CLONE.is_dir():
     print("lichess-puzzler clone not found — skipping (analysis-only script).")
