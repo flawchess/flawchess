@@ -223,30 +223,31 @@ class TestOAuthCSRFCallback:
         )
 
     @pytest.mark.asyncio
-    async def test_callback_rejects_expired_state_jwt(self):
-        """Callback returns 400 when the state JWT has expired.
+    async def test_callback_redirects_expired_state_jwt_to_retry(self):
+        """An expired state JWT redirects to the SPA retry toast without a Sentry capture.
 
-        lifetime_seconds=-1 causes the exp claim to be in the past,
-        so decode_jwt raises an expiry error.
+        lifetime_seconds=-1 puts the exp claim in the past. Users who linger on Google's
+        consent screen past the 10-minute state lifetime hit this (FLAWCHESS-9A); it must
+        not show a dead-end JSON 400 or page Sentry.
         """
-        # Generate a JWT with negative lifetime — exp is already in the past
         state = make_state_jwt("expired_token", lifetime_seconds=-1)
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
-            base_url="http://test",
-            cookies={_CSRF_COOKIE: "expired_token"},
-        ) as client:
-            resp = await client.get(
-                "/api/auth/google/callback",
-                params={"code": "fakecode", "state": state},
-            )
+        with patch("app.routers.auth.sentry_sdk.capture_exception") as capture:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+                cookies={_CSRF_COOKIE: "expired_token"},
+            ) as client:
+                resp = await client.get(
+                    "/api/auth/google/callback",
+                    params={"code": "fakecode", "state": state},
+                )
 
-        assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-        # Expired JWT fails decode → "Invalid OAuth state"
-        assert "Invalid OAuth state" in resp.text, (
-            f"Expected 'Invalid OAuth state' in response body, got: {resp.text!r}"
+        assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text}"
+        assert resp.headers["location"] == (
+            f"{settings.FRONTEND_URL}/auth/callback#error=GOOGLE_SIGNIN_FAILED"
         )
+        capture.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

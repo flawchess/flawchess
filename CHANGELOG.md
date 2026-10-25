@@ -25,6 +25,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Newly imported games no longer show the platform's accuracy and ACPL as FlawChess's own before FlawChess has analyzed them; the platform values are kept separately.
 - Move explorer: on touchscreen laptops a mouse click on a move now plays it again instead of only highlighting the row.
 - Bots: the resume prompt for a saved game now shows full moves instead of half-moves.
+- Google sign-in: taking longer than 10 minutes on Google's consent screen now returns you to the login page with a "please try again" message instead of an error page.
 
 ## [v2.27] Codebase Cleanup — 2026-10-17
 
