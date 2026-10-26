@@ -12,6 +12,7 @@ from fastapi_users import schemas as fapi_schemas
 from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists, UserNotExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
 from httpx_oauth.oauth2 import GetAccessTokenError, OAuth2Token
+from jwt import ExpiredSignatureError
 from sqlalchemy import func, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -372,6 +373,14 @@ async def google_callback(
     # Fail fast on bad state/CSRF without wasting an external API call.
     try:
         state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
+    except ExpiredSignatureError:
+        # The state JWT lives 10 minutes; users who linger on Google's consent screen (or
+        # reopen a stale tab) land here. That's expected, not a bug: it used to be captured
+        # to Sentry (FLAWCHESS-9A) and showed a dead-end JSON 400. Send them back to the SPA
+        # with the retryable sign-in error instead. The default frontend base is used since
+        # we don't trust claims from a token we just rejected.
+        _backend_base, frontend_base = _resolve_oauth_bases(None)
+        return _google_signin_failed_redirect(frontend_base)
     except Exception as exc:
         sentry_sdk.set_tag("source", "auth")
         sentry_sdk.capture_exception()

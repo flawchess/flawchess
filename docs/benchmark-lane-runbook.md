@@ -703,3 +703,38 @@ is 98,423. **Re-based leak baseline after `select`: 1,671,700** (down from
 1,735,048 by the 63,348 already-stamped games that moved into the selection,
 arithmetic, not a leak). The entry-ply saturation burst stamped 12,290 games in
 the first 10 minutes with `of_which_unselected = 0`.
+
+### 2026-09-08 → 2026-10-25: the blitz tranche run, and the bullet start
+
+**Tranche**: blitz, both arms. **Date range**: started 2026-09-08 ~15:45 UTC; the
+last best move landed 2026-10-25 06:49 UTC and the close was recorded 09:57 UTC.
+That is far longer than classical or rapid: the fleet gives prod strict priority
+(§8), so the wall-clock time measures prod load, not lane throughput.
+
+**Final `status`**: lichess arm 23,928 / 23,928 on every axis. Never-analyzed arm
+74,494 / 74,586. Headline 99.9%. Report:
+`reports/benchmark-lane/benchmark-lane-blitz-2026-10-25.md` (6,796,095
+`best_move` cells, 1,137,616 PVs, 684,117 `game_flaws`, 811,218
+`game_best_moves`).
+
+**Residual**: 91 of the 92 unfinished games are the zero-movetext forfeits
+counted at the start. The other one, game 7481 (user 17), was still pending at
+close and stays claimable under the gate. It is the lottery-dilution tail from
+the rapid entry, so it was not waited for.
+
+**Invariant**: the gate held across the whole run. The post-blitz-select baseline
+was 1,671,700. After the bullet `select` the count reads 1,609,439, and 62,261
+bullet-selected games carry an `evals_completed_at` older than their
+`selected_at`. 1,609,439 + 62,261 = 1,671,700 exactly, so nothing unselected was
+stamped during blitz.
+
+**Bullet start.** `select` ran 2026-10-23 12:57 UTC: 99,395 games (8,708 lichess
+arm / 90,687 never-analyzed), 64 of them with zero positions, so the analyzable
+denominator is 99,331. The snapshot covers the source ply-for-ply (569,080 rows
+against 569,080 lichess-arm plies carrying an `eval_cp` or `eval_mate`), but the
+tranche was left **unarmed** and nothing records why. Arming does not depend on
+how the snapshot ran, so `arm --tranche bullet` was run by hand 2026-10-25
+09:55 UTC: 99,395 rows armed, coverage gap 0. **Leak baseline for the bullet
+run: 1,609,439**, measured just before arming. The entry-ply saturation burst
+started within the first minute (520 games stamped). Pre-existing coverage on the
+lichess arm: 6,514 full evals and 46 blobs.
