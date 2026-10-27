@@ -63,8 +63,9 @@
       "allowedVersions": "<3.15"
     },
     {
-      "description": "onnxruntime / onnxruntime-node are pinned at 1.29.0: >=1.30 segfaults loading the vendored maia3_simplified.onnx (exit 139, reproduced 2026-10-09 on 1.30.0 and 1.31.0). A bump must pass the Phase 218 parity spike (scripts/maia_parity_spike.py, verify_value_head.mjs) first.",
+      "description": "onnxruntime / onnxruntime-node are pinned at 1.29.0: >=1.30 segfaults loading the vendored maia3_simplified.onnx (exit 139, reproduced 2026-10-09 on 1.30.0 and 1.31.0). A bump must pass the Phase 218 parity spike (scripts/maia_parity_spike.py, verify_value_head.mjs) first. Own groupName (2026-10-27): without it onnxruntime 1.31.1 landed in the grouped minor/patch PR #442 and segfaulted CI, blocking every other update in that group.",
       "matchPackageNames": ["onnxruntime", "onnxruntime-node"],
+      "groupName": "onnxruntime + onnxruntime-node (pinned, needs dashboard approval)",
       "dependencyDashboardApproval": true,
       "automerge": false
     },

@@ -140,8 +140,8 @@ Set up 2026-10-27. Everything up to `main` updates on its own; prod code still m
 **Host OS (server-side config, not in the repo):**
 
 - `unattended-upgrades` installs Ubuntu `-security` **and** `-updates`, plus the Docker apt repo (`docker-ce`, `containerd.io`, compose plugin). The overrides live in `/etc/apt/apt.conf.d/52flawchess-unattended-upgrades`; `50unattended-upgrades` is package-managed, leave it alone.
-- `apt-daily-upgrade.timer` runs at 02:30 UTC (+ up to 15 min), via the drop-in `/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`.
-- When an update needs a reboot (kernel, libc), the server reboots at **03:30 UTC** the same night. All containers have `restart: unless-stopped` and come back on boot. Imports or analysis running at that moment are interrupted, the same as during a deploy.
+- `apt-daily-upgrade.timer` runs at 01:30 UTC (+ up to 15 min), via the drop-in `/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`.
+- When an update needs a reboot (kernel, libc), the server reboots at **02:15 UTC** the same night (before the 05:00 Zurich health check, which is 03:00 UTC in summer). All containers have `restart: unless-stopped` and come back on boot. Imports or analysis running at that moment are interrupted, the same as during a deploy.
 - A Docker engine upgrade restarts `dockerd`. `/etc/docker/daemon.json` sets `"live-restore": true`, so containers keep running across patch releases; across minor releases Docker may restart them anyway (restart policy brings them back).
 
 ```bash
@@ -156,6 +156,8 @@ ssh flawchess "systemctl list-timers apt-daily-upgrade.timer --no-pager; uptime 
 ```
 
 To pause automatic reboots (e.g. during a long backfill), set `Unattended-Upgrade::Automatic-Reboot "false";` in the `52flawchess-…` file; to cancel tonight's scheduled one, `sudo shutdown -c`.
+
+**Morning health check (owner's PC):** a systemd user timer runs `bin/morning_health_check.sh` at 05:00 Europe/Zurich (or at the next boot/resume if the PC was off). It starts headless Claude with `bin/morning_health_check.prompt.md`, which runs the read-only `bin/health_check.sh`, checks Sentry, may apply the four whitelisted fixes in `bin/health_fix.sh` (start stopped containers, restart backend/caddy/umami, prune build cache at >= 85% disk, finish an interrupted dpkg), and adds a row to the "FlawChess Health" Claude Doc (https://claude.ai/artifact/36ewXKZcoEZMp1H9PfZ8jw). Reports go to `temp/health/YYYY-MM-DD.md`; WARN, FAIL or a broken run pops a desktop notification. The agent runs with `--permission-mode dontAsk` and an explicit tool allowlist, so it cannot run anything else. Install or reinstall the timer with `bin/morning_health_check.sh install`; run it by hand with `bin/morning_health_check.sh`; inspect with `systemctl --user list-timers flawchess-health-check.timer` and `journalctl --user -u flawchess-health-check`.
 
 **Dependencies (Renovate, `renovate.json`):**
 

@@ -11,7 +11,7 @@
 #   3. Configures UFW firewall (SSH + HTTP + HTTPS only)
 #   4. Creates /opt/flawchess directory structure and .env template
 #   5. Hardens SSH (key-only, no root)
-#   6. Automatic OS + Docker updates with a 03:30 UTC reboot when needed
+#   6. Automatic OS + Docker updates with a 02:15 UTC reboot when needed
 
 users:
   - name: deploy
@@ -58,7 +58,7 @@ write_files:
       };
       Unattended-Upgrade::Automatic-Reboot "true";
       Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
-      Unattended-Upgrade::Automatic-Reboot-Time "03:30";
+      Unattended-Upgrade::Automatic-Reboot-Time "02:15";
       Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
       Unattended-Upgrade::Remove-Unused-Dependencies "true";
   - path: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
@@ -67,7 +67,7 @@ write_files:
     content: |
       [Timer]
       OnCalendar=
-      OnCalendar=*-*-* 02:30
+      OnCalendar=*-*-* 01:30
       RandomizedDelaySec=15m
   - path: /etc/docker/daemon.json
     owner: root:root

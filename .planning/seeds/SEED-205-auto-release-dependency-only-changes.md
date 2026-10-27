@@ -14,7 +14,7 @@ scope: small to medium (one scheduled workflow plus a guard script; the hard par
 Auto-update plan agreed 2026-10-27, in four layers:
 
 1. **Host OS** (DONE 2026-10-27): unattended-upgrades for Ubuntu security + updates and the Docker
-   apt repo, an automatic reboot at 03:30 UTC when one is needed, Docker `live-restore`. See
+   apt repo, an automatic reboot at 02:15 UTC when one is needed, Docker `live-restore`. See
    `docs/production-runbook.md` → "Automatic updates".
 2. **Renovate automerge** (DONE 2026-10-27): non-major updates of stable (>= 1.0) packages, digests,
    GitHub Actions and lock file maintenance merge into `main` on their own once the required `test`
