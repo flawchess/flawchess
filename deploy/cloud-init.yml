@@ -11,6 +11,7 @@
 #   3. Configures UFW firewall (SSH + HTTP + HTTPS only)
 #   4. Creates /opt/flawchess directory structure and .env template
 #   5. Hardens SSH (key-only, no root)
+#   6. Automatic OS + Docker updates with a 03:30 UTC reboot when needed
 
 users:
   - name: deploy
@@ -44,6 +45,35 @@ write_files:
       # Google OAuth (from Google Cloud Console)
       GOOGLE_OAUTH_CLIENT_ID=
       GOOGLE_OAUTH_CLIENT_SECRET=
+
+  # Automatic updates (2026-10-27), mirrored from the live server; see
+  # docs/production-runbook.md "Automatic updates".
+  - path: /etc/apt/apt.conf.d/52flawchess-unattended-upgrades
+    owner: root:root
+    permissions: '0644'
+    content: |
+      Unattended-Upgrade::Allowed-Origins {
+      	"${distro_id}:${distro_codename}-updates";
+      	"Docker:${distro_codename}";
+      };
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "03:30";
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+  - path: /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Timer]
+      OnCalendar=
+      OnCalendar=*-*-* 02:30
+      RandomizedDelaySec=15m
+  - path: /etc/docker/daemon.json
+    owner: root:root
+    permissions: '0644'
+    content: |
+      {"live-restore": true}
 
 packages:
   - apt-transport-https
@@ -80,7 +110,8 @@ runcmd:
   - sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
   - systemctl restart sshd
 
-  # --- Enable auto-updates for security patches ---
+  # --- Enable automatic updates (security + updates + Docker repo, nightly reboot) ---
+  - systemctl daemon-reload
   - systemctl enable unattended-upgrades
   - systemctl start unattended-upgrades
 

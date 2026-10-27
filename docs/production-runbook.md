@@ -133,6 +133,38 @@ UPDATE session SET distinct_id = NULL WHERE website_id = :'site' AND distinct_id
 ROLLBACK;
 ```
 
+## Automatic updates
+
+Set up 2026-10-27. Everything up to `main` updates on its own; prod code still moves only through `bin/deploy.sh`. Auto-releasing dependency-only changes is SEED-205.
+
+**Host OS (server-side config, not in the repo):**
+
+- `unattended-upgrades` installs Ubuntu `-security` **and** `-updates`, plus the Docker apt repo (`docker-ce`, `containerd.io`, compose plugin). The overrides live in `/etc/apt/apt.conf.d/52flawchess-unattended-upgrades`; `50unattended-upgrades` is package-managed, leave it alone.
+- `apt-daily-upgrade.timer` runs at 02:30 UTC (+ up to 15 min), via the drop-in `/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf`.
+- When an update needs a reboot (kernel, libc), the server reboots at **03:30 UTC** the same night. All containers have `restart: unless-stopped` and come back on boot. Imports or analysis running at that moment are interrupted, the same as during a deploy.
+- A Docker engine upgrade restarts `dockerd`. `/etc/docker/daemon.json` sets `"live-restore": true`, so containers keep running across patch releases; across minor releases Docker may restart them anyway (restart policy brings them back).
+
+```bash
+# What would be installed tonight, and is a reboot pending?
+ssh flawchess "sudo unattended-upgrade --dry-run --debug 2>&1 | grep 'Packages that will be upgraded'; ls /var/run/reboot-required 2>/dev/null"
+
+# What ran (log is root-only)
+ssh flawchess "sudo tail -30 /var/log/unattended-upgrades/unattended-upgrades.log"
+
+# Next run, last boot
+ssh flawchess "systemctl list-timers apt-daily-upgrade.timer --no-pager; uptime -p"
+```
+
+To pause automatic reboots (e.g. during a long backfill), set `Unattended-Upgrade::Automatic-Reboot "false";` in the `52flawchess-…` file; to cancel tonight's scheduled one, `sudo shutdown -c`.
+
+**Dependencies (Renovate, `renovate.json`):**
+
+- Runs before 06:00 Zurich on Mondays. Non-major updates (minor, patch, digest) of stable packages, GitHub Actions, Docker base image digests and lock file maintenance **automerge into `main`** (squash, GitHub auto-merge) once the required `test` check passes. Repo setting "Allow auto-merge" is on for this.
+- Stays manual: majors, 0.x packages (own "0.x, manual" group), `onnxruntime-web` (bench first), `onnxruntime` / `onnxruntime-node` (dashboard approval, segfault history), Postgres majors (dashboard approval). Python is capped below 3.15.
+- Automerged bumps sit in `main` until the next release; nothing deploys by itself.
+
+**Postgres image:** pinned as `postgres:18.6-alpine@sha256:…` in `docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.benchmark.yml` and `ci.yml`, grouped in Renovate so CI always tests the version prod runs. A new digest makes the deploy's `docker compose up -d` pull it and recreate the db container (a few seconds of DB downtime). Minor releases (18.x) need no migration. A major (19) needs `pg_upgrade` or dump/restore and is never automated.
+
 ## Weekly leaderboard medals
 
 Weeks are finalized lazily: the first `GET /train/leaderboard` or `GET /train/medals/unclaimed` after a week's Sunday 24:00 UTC deadline plus 5 minutes of grace freezes that week into `train_weekly_standings` (see `app/services/train_medals.py`). There is no cron or scheduler.
@@ -146,6 +178,7 @@ Weeks are finalized lazily: the first `GET /train/leaderboard` or `GET /train/me
 - Hetzner Cloud Firewall: inbound TCP 22/80/443 + ICMP from any.
 - Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`.
 - `.env` on the server at `/opt/flawchess/.env` — never commit production secrets.
+- OS, Docker engine and dependency updates are automatic, see "Automatic updates" above.
 - Docker BuildKit cache capped at 3 GB by a daily cron (`/etc/cron.d/docker-builder-prune`, 3am UTC) — each deploy rebuilds images on the server, so the cache fills the disk without it. Inspect with `docker system df` (containerd image store, not `/var/lib/docker/buildkit`).
 - VAPID key rotation (Web Push, only on suspected key compromise): follow `docs/push-vapid-rotation-runbook.md`.
 - Remote Stockfish worker setup: see `REMOTE_WORKER.md`.
