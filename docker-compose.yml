@@ -129,7 +129,7 @@ services:
     # up -d` without a pull; with pull_policy missing, compose pulls a pinned tag
     # the server does not have yet, so bumping this tag is the upgrade mechanism.
     # Umami applies its own migrations on start.
-    image: ghcr.io/umami-software/umami:3.4.0
+    image: ghcr.io/umami-software/umami:3.4.1
     pull_policy: missing
     environment:
       DATABASE_URL: postgresql://${UMAMI_DB_USER}:${UMAMI_DB_PASSWORD}@db:5432/umami
