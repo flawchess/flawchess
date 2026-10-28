@@ -34,9 +34,10 @@ WARN (look at it soon):
 - disk >= 80%, swap used > 75%, any OOM kill or oom_killed=true, a restart count > 0 on a container
   started more than 24h ago
 - imports stuck > 2h, or more than 5 failed imports in 24h
-- remote workers: none seen in the last 24h. Heartbeats are written only when a worker submits
-  results, and workers only have work while there is an analysis backlog, so quiet stretches of
-  hours are normal and not worth a mention. Only a full day without any worker counts.
+- remote workers stalled: the "analysis backlog" section shows waiting > 0 in any lane AND no
+  worker was seen in the last hour. Heartbeats are written only when a worker submits results, and
+  workers idle whenever there is no backlog, so quiet workers with nothing waiting are normal and
+  not worth a mention.
 - deployed server HEAD != origin/production
 - latest CI run on main failed, or an open Renovate PR whose checks failed or that has been open
   more than 7 days

@@ -16,6 +16,7 @@ SECURITY_HEADERS="strict-transport-security x-content-type-options referrer-poli
 CURL_TIMEOUT_S=15
 LONG_QUERY_MIN=5
 STUCK_IMPORT_HOURS=2
+WORKER_QUIET_HOURS=1
 
 cd "$(dirname "$0")/.."
 
@@ -71,7 +72,7 @@ section "Server (via ssh)"
 # Everything below runs on the server and only reads. sudo is needed for the
 # unattended-upgrades log, the kernel journal and dpkg --audit.
 ssh -T -o ConnectTimeout=10 "$SSH_HOST" \
-  "LONG_QUERY_MIN=$LONG_QUERY_MIN STUCK_IMPORT_HOURS=$STUCK_IMPORT_HOURS bash -s" <<'REMOTE'
+  "LONG_QUERY_MIN=$LONG_QUERY_MIN STUCK_IMPORT_HOURS=$STUCK_IMPORT_HOURS WORKER_QUIET_HOURS=$WORKER_QUIET_HOURS bash -s" <<'REMOTE'
 set -uo pipefail
 cd /opt/flawchess
 sub() { printf '\n### %s\n' "$1"; }
@@ -133,6 +134,25 @@ SELECT platform, status, count(*) FROM import_jobs WHERE started_at > now() - in
 \echo [failed import messages last 24h]
 SELECT left(error_message, 150), count(*) FROM import_jobs
 WHERE status = 'failed' AND started_at > now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC LIMIT 5;
+\echo [analysis backlog: pending | waiting > ${WORKER_QUIET_HOURS} h]
+-- Mirrors the lease lanes: explicit eval_jobs (tier 1), import-time entry evals (/entry-lease),
+-- and tier 3's two branches (app/services/eval_queue_service.py _claim_tier3_derived).
+-- The tier-4 blob and best-move backfills are open-ended lotteries, so they never count.
+-- The "waiting" column ignores fresh imports workers have not had time to pick up yet.
+SELECT 'explicit eval jobs' AS lane, count(*) AS pending,
+       count(*) FILTER (WHERE created_at < now() - interval '${WORKER_QUIET_HOURS} hours') AS waiting
+FROM eval_jobs WHERE status = 'pending'
+UNION ALL
+SELECT 'entry evals', count(*), count(*) FILTER (WHERE imported_at < now() - interval '${WORKER_QUIET_HOURS} hours')
+FROM games WHERE evals_completed_at IS NULL
+UNION ALL
+SELECT 'full evals (non-guest)', count(*),
+       count(*) FILTER (WHERE g.imported_at < now() - interval '${WORKER_QUIET_HOURS} hours')
+FROM games g JOIN users u ON u.id = g.user_id
+WHERE g.full_evals_completed_at IS NULL AND g.lichess_evals_at IS NULL AND NOT u.is_guest
+UNION ALL
+SELECT 'lichess-eval PV', count(*), count(*) FILTER (WHERE imported_at < now() - interval '${WORKER_QUIET_HOURS} hours')
+FROM games WHERE full_pv_completed_at IS NULL AND lichess_evals_at IS NOT NULL;
 \echo [remote workers seen in the last 7 days]
 SELECT worker_id, last_ip, date_trunc('minute', now() - last_seen) AS last_seen_ago FROM worker_heartbeats
 WHERE last_seen > now() - interval '7 days' ORDER BY last_seen DESC;
