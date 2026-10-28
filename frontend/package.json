@@ -81,13 +81,13 @@
   },
   "overrides": {
     "fast-uri": "^3.1.9",
-    "hono": "^4.12.34",
+    "hono": "^4.13.14",
     "qs": "^6.15.2",
-    "ip-address": "^10.3.1",
-    "postcss": "^8.5.23",
-    "@hono/node-server": "^2.0.5",
-    "brace-expansion": "^5.0.9",
-    "js-yaml": "^4.3.1"
+    "ip-address": "^10.7.5",
+    "postcss": "^8.5.32",
+    "@hono/node-server": "^2.1.5",
+    "brace-expansion": "^5.0.12",
+    "js-yaml": "^4.3.2"
   },
   "allowScripts": {
     "protobufjs": false,
