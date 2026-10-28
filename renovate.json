@@ -70,6 +70,12 @@
       "automerge": false
     },
     {
+      "description": "Bump npm override ranges in package.json instead of a lockfile-only `npm install pkg@ver`: that path fails with EOVERRIDE (\"conflicts with direct dependency\") for every override, which left PR #442 with no frontend changes at all (2026-10-28, @hono/node-server 2.1.5).",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["overrides"],
+      "rangeStrategy": "bump"
+    },
+    {
       "description": "js-yaml and fast-uri exist only as npm overrides pinning patched transitive versions. A major would force the next major onto consumers that declare ^4 / ^3 (cosmiconfig, ajv@8), so disable majors; minor and patch floors still flow through the grouped branch.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["overrides"],
