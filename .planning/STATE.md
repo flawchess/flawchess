@@ -4,18 +4,17 @@ milestone: v2.27
 current_phase: 242
 current_phase_name: Openings Stats + Insights Rework (SEED-204)
 status: completed
-stopped_at: Phase 242 complete — all phases complete
-last_updated: "2026-10-31T10:41:44.135Z"
-state_head: a02ca1788510d17711def6e10cd9a51e58710241
+stopped_at: Phase 243 context gathered
+last_updated: "2026-10-31T14:49:01.115Z"
+state_head: d9e9801eecb10878e28aecd0a9c17302829c4d6e
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 103
   total_plans: 9
   completed_plans: 96
-  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-31
-last_activity_desc: Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart
+last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart"
 ---
 
 # Project State: FlawChess
@@ -1115,9 +1114,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-17T14:35:43.021Z
-**Stopped at:** Phase 242 complete — all phases complete
-**Resume file:** .planning/phases/242-openings-stats-insights-rework/242-CONTEXT.md
+**Last session:** 2026-10-31T14:49:00.675Z
+**Stopped at:** Phase 243 context gathered
+**Resume file:** .planning/phases/243-out-of-the-opening-worse-better-rates/243-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
