@@ -293,17 +293,17 @@ class TestBestMoveTierAssembly:
         assert eval_series[0].maia_prob == 0.10
 
     def test_eval_series_great_row_populates_tier_and_maia_prob(self) -> None:
-        """maia_prob=0.35 (between GEM_MAIA_MAX_PROB and GREAT_MAIA_MAX_PROB) -> great."""
+        """maia_prob=0.50 (between GEM_MAIA_MAX_PROB and GREAT_MAIA_MAX_PROB) -> great."""
         from app.services.library_service import _build_eval_series
 
         game = _make_game(user_color="white")
         positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
-        best_moves = {0: _make_best_move(maia_prob=0.35)}
+        best_moves = {0: _make_best_move(maia_prob=0.50)}
 
         eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
 
         assert eval_series[0].best_move_tier == "great"
-        assert eval_series[0].maia_prob == 0.35
+        assert eval_series[0].maia_prob == 0.50
 
     def test_eval_series_narrow_margin_row_yields_null_tier(self) -> None:
         """A stored row with margin in [0.05, 0.10) (best_cp=77 vs
@@ -328,7 +328,7 @@ class TestBestMoveTierAssembly:
 
         game = _make_game(user_color="white")
         positions = [_make_pos(ply=0, eval_cp=0, move_san="e4")]
-        best_moves = {0: _make_best_move(maia_prob=0.60)}
+        best_moves = {0: _make_best_move(maia_prob=0.80)}
 
         eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
 
@@ -383,10 +383,10 @@ class TestBestGoodTiers:
 
         game = _make_game(user_color="white")
         positions = [_make_pos(ply=0, eval_cp=0, move_san="e4", best_move="e2e4")]
-        # Wide margin (best_cp=169 vs second_cp=0) but maia_prob=0.60 exceeds
+        # Wide margin (best_cp=169 vs second_cp=0) but maia_prob=0.80 exceeds
         # GREAT_MAIA_MAX_PROB -> classify_best_move returns "neither" (mirrors
         # test_eval_series_neither_row_leaves_maia_prob_null's fixture).
-        best_moves = {0: _make_best_move(maia_prob=0.60)}
+        best_moves = {0: _make_best_move(maia_prob=0.80)}
 
         eval_series, _, _ = _build_eval_series(game, positions, best_moves_by_ply=best_moves)
 

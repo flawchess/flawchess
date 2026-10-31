@@ -1869,17 +1869,17 @@ async def best_move_filter_test_state(test_engine: Any) -> dict[str, Any]:
         await _seed_best_move_committed(session_maker, game_id=gid, ply=2, maia_prob=0.10)
         gem_game_ids.append(gid)
 
-    # game4: white user's own great (maia_prob in (0.20, 0.50]).
+    # game4: white user's own great (maia_prob in (0.30, 0.70]).
     game4_great = await _seed_game_committed(
         session_maker, user_id=user_a_id, played_at=_day(4), user_color="white"
     )
-    await _seed_best_move_committed(session_maker, game_id=game4_great, ply=2, maia_prob=0.35)
+    await _seed_best_move_committed(session_maker, game_id=game4_great, ply=2, maia_prob=0.60)
 
     # game5: stored row present but maia_prob above the great ceiling -> neither.
     game5_neither = await _seed_game_committed(
         session_maker, user_id=user_a_id, played_at=_day(5), user_color="white"
     )
-    await _seed_best_move_committed(session_maker, game_id=game5_neither, ply=2, maia_prob=0.60)
+    await _seed_best_move_committed(session_maker, game_id=game5_neither, ply=2, maia_prob=0.80)
 
     # game6: gem at ply=1 (odd -> black mover -> OPPONENT for a white user) —
     # must NOT count towards has_gem (player-parity scoping).

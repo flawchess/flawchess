@@ -2552,10 +2552,10 @@ class TestBestMoveExistsFromTable:
         await _seed_best_move(db_session, game=game_gem, ply=2, maia_prob=0.10)
 
         game_great = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
-        await _seed_best_move(db_session, game=game_great, ply=2, maia_prob=0.35)
+        await _seed_best_move(db_session, game=game_great, ply=2, maia_prob=0.60)
 
         game_neither = await _seed_game(db_session, user_id=_BMF_USER_ID, user_color="white")
-        await _seed_best_move(db_session, game=game_neither, ply=2, maia_prob=0.60)
+        await _seed_best_move(db_session, game=game_neither, ply=2, maia_prob=0.80)
 
         matched = await _matching_best_move_ids(
             db_session, user_id=_BMF_USER_ID, has_gem=True, has_great=True
