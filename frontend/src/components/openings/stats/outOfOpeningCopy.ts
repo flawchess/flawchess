@@ -21,7 +21,7 @@ import type { OpeningOutRateOut, OpeningOutSide, OpeningOutTcOut } from '@/types
 /** Mirrors OPENING_OUT_THRESHOLD in app/services/opening_insights_constants.py (the eval cut for worse/better). */
 const OUT_OF_OPENING_EVAL_CUT = 1.0;
 /** Mirrors RECENT_GAMES_PER_TC_CAP / RECENCY_WINDOW_MONTHS in app/services/canonical_slice_sql.py. */
-const RECENT_GAMES_PER_TC_CAP = 3000;
+const RECENT_GAMES_PER_TC_CAP = 1000;
 const RECENCY_WINDOW_MONTHS = 36;
 const PERCENT_SCALE = 100;
 const CI_DECIMALS = 1;

@@ -2,7 +2,7 @@
 
 Each subject (a cohort user during CDF construction; an app user during
 per-user lookup) contributes a single ``metric_value`` and ``n_games``
-aggregate to the output, computed over their most recent 3000 games in ONE
+aggregate to the output, computed over their most recent 1000 games in ONE
 time control within a 36-month recency window. Every builder takes a
 ``TimeControlBucket``; there is no cross-TC pooled form.
 
@@ -36,7 +36,7 @@ Structural diff between the two sources (the ONLY documented diff):
 Per-user aggregate shape (identical on both sources):
 
 * ``recent_capped``: ``ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY
-  played_at DESC) <= 3000`` over one time control, with the universal
+  played_at DESC) <= 1000`` over one time control, with the universal
   filter (rated, non-computer, both ratings non-null, equal-footing ±100)
   and the 36-month recency predicate.
 
@@ -119,7 +119,10 @@ ACHIEVABLE_MIN_GAMES: int = 30
 SCORE_GAP_BUCKET_MIN_SPANS: int = 30
 
 # Window shape.
-RECENT_GAMES_PER_TC_CAP: int = 3000
+# The cap matches the benchmark ingest depth (at most 1000 games per user per TC), so the
+# user basis and the peer basis are both "most recent 1000 games in the last 36 months".
+# Lowered from 3000 on 2026-10-31.
+RECENT_GAMES_PER_TC_CAP: int = 1000
 RECENCY_WINDOW_MONTHS: int = 36
 
 # Per-TC time-pressure builder thresholds.
@@ -141,7 +144,7 @@ NET_FLAG_RATE_MIN_POOL_N: int = 30
 MINIMUM_RATE_BUCKET_SPANS: int = 30
 
 # Per-(user, TC) median rating anchor inclusion floor.
-# 30 games is the lower bound for a stable per-TC median on the recent-3000
+# 30 games is the lower bound for a stable per-TC median on the recent-1000
 # pool (CLAUDE.md no-magic-numbers); a tighter floor is a tuning decision
 # for the CDF regen report. Used as the default `min_games` in
 # `per_user_cte_median_anchor` below.
@@ -315,7 +318,7 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
        by ``TimeControlBucket``; no SQL-injection vector.
     2. ``ROW_NUMBER() OVER (PARTITION BY g.user_id ...)`` — the per-(user, TC)
        partition collapses to per-user because the inner set is already
-       restricted to one TC. The 3000-cap then means "most recent 3000 games
+       restricted to one TC. The 1000-cap then means "most recent 1000 games
        of this TC per user".
     """
     recency = _recency_window_sql(snapshot_date)
@@ -899,7 +902,7 @@ def per_user_cte_conv_rate_tc(
 ) -> str:
     """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``conversion_rate_{tc}``.
 
-    ``metric_value`` = wins / conv_spans (pooled over the recent-3000-per-TC ×
+    ``metric_value`` = wins / conv_spans (pooled over the recent-1000-per-TC ×
     36-month pool). ``n_games`` = conversion span count (the binding floor
     ≥ MINIMUM_RATE_BUCKET_SPANS).
 
@@ -972,7 +975,7 @@ def per_user_cte_parity_rate_tc(
     """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``parity_rate_{tc}``.
 
     ``metric_value`` = (wins + 0.5 * draws) / parity_spans (chess-score formula,
-    pooled over the recent-3000-per-TC × 36-month pool). ``n_games`` = parity
+    pooled over the recent-1000-per-TC × 36-month pool). ``n_games`` = parity
     span count (the binding floor ≥ MINIMUM_RATE_BUCKET_SPANS).
 
     No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
@@ -1050,7 +1053,7 @@ def per_user_cte_recovery_rate_tc(
     """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``recovery_rate_{tc}``.
 
     ``metric_value`` = (wins + draws) / recov_spans (saves formula — both wins
-    and draws count as successful recoveries, pooled over the recent-3000-per-TC
+    and draws count as successful recoveries, pooled over the recent-1000-per-TC
     × 36-month pool). ``n_games`` = recovery span count (the binding floor
     ≥ MINIMUM_RATE_BUCKET_SPANS).
 
@@ -1171,7 +1174,7 @@ def per_user_cte_median_anchor(
     min_games: int = MEDIAN_ANCHOR_MIN_GAMES,
     blend: bool = False,
 ) -> str:
-    """Per-(user, TC) median rating anchor over the recent-3000-per-TC × 36-month pool.
+    """Per-(user, TC) median rating anchor over the recent-1000-per-TC × 36-month pool.
 
     Substrate for the peer-relative percentile chip lookup: the median anchor
     per (user, TC) is persisted in ``user_rating_anchors`` and later joined
@@ -1324,8 +1327,8 @@ def _per_user_cte_median_anchor_blended(
       per_game_blended_rating,
       per_user_anchor (6 columns)
 
-    The LATERAL nearest-anchor join is bounded by the recent-3000-per-TC cap
-    (3000 games × ~50 lookup rows ≈ 150K comparisons per user per TC), which
+    The LATERAL nearest-anchor join is bounded by the recent-1000-per-TC cap
+    (1000 games × ~50 lookup rows ≈ 50K comparisons per user per TC), which
     is acceptable.
     """
     elo_expr = _user_elo_at_game_expr()

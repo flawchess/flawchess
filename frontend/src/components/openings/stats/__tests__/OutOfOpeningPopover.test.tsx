@@ -119,7 +119,7 @@ describe('OutOfOpeningPopover', () => {
     const text = openPopover(rankedRate()).textContent ?? '';
     expect(text).toContain('benchmarked Lichess players at your rating, not FlawChess users');
     expect(text).toContain(
-      'rated, opponents within ±100 Elo, your most recent 3,000 per time control from the last 36 months',
+      'rated, opponents within ±100 Elo, your most recent 1,000 per time control from the last 36 months',
     );
     expect(text).toContain('Not affected by the page filters');
     // UAT: the rating-dependence and TC-averaging bullets were cut to shorten the popover.
