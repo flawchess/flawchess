@@ -7,6 +7,14 @@
  * lines emphasized with a thicker stroke — DECOUPLED from color, which encodes the
  * move's Stockfish-graded `MoveQuality` bucket, not played/best identity.
  *
+ * Per-rating tiers (quick 261031-g4l): the `tieredSan` line (the engine-best
+ * move when it is the only good move, C2) is NOT one color. C2 is
+ * rating-independent and C1 is a flat cutoff on the line's own probability, so
+ * the gem/great/best tier at each rung is a pure function of y. A vertical
+ * gradient with hard stops at the 30%/70% heights paints that exactly. The chart
+ * answers "at this rating", so the color at the dashed line may differ from the
+ * move's gem/great badge, which is pinned to the game's rating.
+ *
  * Idiomatic Recharts (LineChart/Line/ReferenceLine/XAxis/YAxis, custom tooltip via
  * the `content` prop), following the existing chart conventions in EvalChart.tsx /
  * ScoreChart.tsx.
@@ -23,6 +31,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useId } from 'react';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
@@ -41,6 +50,7 @@ import {
 } from '@/lib/theme';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import type { MoveQuality } from '@/lib/moveQuality';
+import { GEM_MAIA_MAX_PROB, GREAT_MAIA_MAX_PROB, rareTierForProbability } from '@/lib/gemMove';
 
 // Emphasized (played/best) vs. muted (other shown) stroke widths.
 const EMPHASIZED_STROKE_WIDTH = 3;
@@ -151,6 +161,10 @@ export interface MovesByRatingChartProps {
   qualityBySan: Map<string, MoveQualityEval>;
   /** Primary engine's top PV lines (best + 2nd-best), shown as a reference header in the tooltip. */
   engineTopLines: EngineLine[];
+  /** SAN whose line is colored per rung by Maia probability (gem/great/best) —
+   *  the engine-best move when it is the only good move (`onlyGoodMoveSan`),
+   *  else null/omitted (every line keeps its single quality color). */
+  tieredSan?: string | null;
   /** Tailwind height class for the plot (and its no-jump skeleton). Defaults to the
    * desktop `h-64`; mobile passes a shorter class to reclaim vertical space. */
   heightClass?: string;
@@ -192,6 +206,55 @@ function colorForQuality(quality: MoveQuality | undefined): string {
     default:
       return MOVE_QUALITY_PENDING;
   }
+}
+
+/**
+ * A move's quality AT ONE RUNG: the per-rung gem/great/best tier for the
+ * `tieredSan` line, else its single Stockfish-graded quality.
+ */
+function qualityAtRung(
+  san: string,
+  probability: number,
+  qualityBySan: Map<string, MoveQualityEval>,
+  tieredSan: string | null,
+): MoveQuality | undefined {
+  if (san === tieredSan) return rareTierForProbability(probability);
+  return qualityBySan.get(san)?.quality;
+}
+
+/**
+ * Vertical userSpaceOnUse gradient for the `tieredSan` line: best green above
+ * the GREAT_MAIA_MAX_PROB height, great blue between, gem violet below
+ * GEM_MAIA_MAX_PROB. Hard stops (paired offsets) give crisp switches exactly
+ * where the curve crosses each threshold, independent of the monotone
+ * interpolation. userSpaceOnUse (not objectBoundingBox) so a flat line with a
+ * zero-height bbox still renders, and so the hovered active dot picks up the
+ * color at its own height.
+ */
+function TierGradientDefs({ id }: { id: string }): React.ReactElement | null {
+  const yScale = useYAxisScale();
+  if (!yScale) return null;
+  const yGreat = yScale(GREAT_MAIA_MAX_PROB);
+  const yGem = yScale(GEM_MAIA_MAX_PROB);
+  if (yGreat == null || yGem == null) return null;
+  return (
+    <defs>
+      <linearGradient
+        id={id}
+        data-testid="moves-by-rating-tier-gradient"
+        gradientUnits="userSpaceOnUse"
+        x1={0}
+        x2={0}
+        y1={yGreat}
+        y2={yGem}
+      >
+        <stop offset={0} stopColor={MOVE_QUALITY_BEST} />
+        <stop offset={0} stopColor={GREAT_ACCENT} />
+        <stop offset={1} stopColor={GREAT_ACCENT} />
+        <stop offset={1} stopColor={MAIA_ACCENT} />
+      </linearGradient>
+    </defs>
+  );
 }
 
 /** White-POV eval text for the tooltip: "+1.2" for cp, "#N"/"#-N" for mate, "—" ungraded. */
@@ -298,10 +361,12 @@ function MoveEndLabels({
   lastRow,
   shownSans,
   qualityBySan,
+  tieredSan,
 }: {
   lastRow: Record<string, number>;
   shownSans: string[];
   qualityBySan: Map<string, MoveQualityEval>;
+  tieredSan: string | null;
 }): React.ReactElement | null {
   const xScale = useXAxisScale();
   const yScale = useYAxisScale();
@@ -319,7 +384,10 @@ function MoveEndLabels({
     if (typeof value !== 'number') continue;
     const y = yScale(value);
     if (y == null) continue;
-    labels.push({ san, color: colorForQuality(qualityBySan.get(san)?.quality), y });
+    // The tiered line's label takes the color of the segment it sits on (its
+    // last-rung tier), so label and line end never clash.
+    const color = colorForQuality(qualityAtRung(san, value, qualityBySan, tieredSan));
+    labels.push({ san, color, y });
     targetBySan.set(san, y);
   }
   if (labels.length === 0) return null;
@@ -370,7 +438,6 @@ type ResolvedTooltipPayloadItem = { dataKey: string; value: number; color?: stri
 export interface MovesTooltipRow {
   san: string;
   probability: number;
-  color?: string;
 }
 
 /**
@@ -408,14 +475,22 @@ export function MovesByRatingTooltipContent({
   rows,
   engineTopLines,
   qualityBySan,
+  tieredSan = null,
 }: {
   label: string | number;
   rows: MovesTooltipRow[];
   engineTopLines: EngineLine[];
   qualityBySan: Map<string, MoveQualityEval>;
+  tieredSan?: string | null;
 }): React.ReactElement {
   const topLine = engineTopLines[0];
   const topLineProb = topLine ? rows.find((r) => r.san === topLine.san)?.probability : undefined;
+  // Quality at the hovered rung: the tiered line's tier changes with rating.
+  const rungQuality = (san: string, probability: number | undefined): MoveQuality | undefined =>
+    probability === undefined
+      ? qualityBySan.get(san)?.quality
+      : qualityAtRung(san, probability, qualityBySan, tieredSan);
+  const topLineQuality = topLine ? rungQuality(topLine.san, topLineProb) : undefined;
   return (
     <ChartTooltipBox data-testid="moves-by-rating-tooltip">
       <div className="font-medium text-foreground">{`ELO ${label}`}</div>
@@ -429,14 +504,11 @@ export function MovesByRatingTooltipContent({
               data-testid="moves-by-rating-tooltip-engine"
               className="[&>td]:border-b [&>td]:border-border [&>td]:pb-1"
             >
-              <td
-                className="pr-3"
-                style={{ color: colorForQuality(qualityBySan.get(topLine.san)?.quality) }}
-              >
+              <td className="pr-3" style={{ color: colorForQuality(topLineQuality) }}>
                 {topLine.san}
               </td>
               <td className="pr-2">
-                <QualityIconCell quality={qualityBySan.get(topLine.san)?.quality} />
+                <QualityIconCell quality={topLineQuality} />
               </td>
               <td className="pr-3" style={{ color: FLAWCHESS_ENGINE_ACCENT }}>
                 FlawChess
@@ -452,6 +524,8 @@ export function MovesByRatingTooltipContent({
           {rows.map((row, i) => {
             const { san } = row;
             const graded = qualityBySan.get(san);
+            const quality = rungQuality(san, row.probability);
+            const color = colorForQuality(quality);
             const evalText = formatEvalText(graded?.evalCp ?? null, graded?.evalMate ?? null);
             // Only the first move row gets the gap under the FlawChess divider.
             const topPad = topLine && i === 0 ? 'pt-1' : '';
@@ -459,14 +533,14 @@ export function MovesByRatingTooltipContent({
               <tr key={san} data-testid={`moves-by-rating-tooltip-row-${san}`}>
                 {/* Move name | quality word — both in the move-quality color | eval
                     (blue) | probability (violet). */}
-                <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
+                <td className={`pr-3 ${topPad}`} style={{ color }}>
                   {san}
                 </td>
                 <td className={`pr-2 ${topPad}`}>
-                  <QualityIconCell quality={graded?.quality} />
+                  <QualityIconCell quality={quality} />
                 </td>
-                <td className={`pr-3 ${topPad}`} style={{ color: row.color }}>
-                  {qualityWord(graded?.quality)}
+                <td className={`pr-3 ${topPad}`} style={{ color }}>
+                  {qualityWord(quality)}
                 </td>
                 <td className={`${NUM_CELL_CLASS} ${topPad}`} style={{ color: STOCKFISH_ACCENT }}>
                   {evalText}
@@ -491,6 +565,7 @@ export function MovesByRatingTooltipContent({
 function movesTooltipContent(
   engineTopLines: EngineLine[],
   qualityBySan: Map<string, MoveQualityEval>,
+  tieredSan: string | null,
 ): (props: {
   active?: boolean;
   payload?: readonly TooltipPayloadItem[];
@@ -503,7 +578,7 @@ function movesTooltipContent(
         (p): p is ResolvedTooltipPayloadItem =>
           typeof p.dataKey === 'string' && typeof p.value === 'number',
       )
-      .map((p) => ({ san: p.dataKey, probability: p.value, color: p.color }))
+      .map((p) => ({ san: p.dataKey, probability: p.value }))
       .sort((a, b) => b.probability - a.probability);
     return (
       <MovesByRatingTooltipContent
@@ -511,6 +586,7 @@ function movesTooltipContent(
         rows={rows}
         engineTopLines={engineTopLines}
         qualityBySan={qualityBySan}
+        tieredSan={tieredSan}
       />
     );
   };
@@ -559,8 +635,11 @@ export function MovesByRatingChart({
   shownSans,
   qualityBySan,
   engineTopLines,
+  tieredSan = null,
   heightClass = CHART_HEIGHT_CLASS,
 }: MovesByRatingChartProps): React.ReactElement {
+  // SVG ids must not carry React's useId punctuation into url(#...).
+  const tierGradientId = `moves-tier-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   if (perElo.length === 0) {
     return <MaiaChartSkeleton heightClass={heightClass} />;
   }
@@ -600,14 +679,21 @@ export function MovesByRatingChart({
             strokeWidth={1.5}
           />
 
-          <ChartTooltip content={movesTooltipContent(engineTopLines, qualityBySan)} />
+          <ChartTooltip content={movesTooltipContent(engineTopLines, qualityBySan, tieredSan)} />
+
+          {tieredSan !== null && shownSans.includes(tieredSan) && (
+            <TierGradientDefs id={tierGradientId} />
+          )}
 
           {shownSans.map((san) => {
             // Stroke width encodes played/best emphasis ONLY; color encodes quality
             // ONLY — the two are decoupled. A played or SF-best move
             // keeps the emphasized stroke regardless of its quality color.
             const emphasized = san === playedSan || san === bestSan;
-            const color = colorForQuality(qualityBySan.get(san)?.quality);
+            const color =
+              san === tieredSan
+                ? `url(#${tierGradientId})`
+                : colorForQuality(qualityBySan.get(san)?.quality);
             return (
               <Line
                 key={san}
@@ -624,7 +710,12 @@ export function MovesByRatingChart({
           {/* Single de-collided label layer drawn after the lines so the
               SANs sit on top; sees every endpoint at once to avoid overlaps. */}
           {lastRow && (
-            <MoveEndLabels lastRow={lastRow} shownSans={shownSans} qualityBySan={qualityBySan} />
+            <MoveEndLabels
+              lastRow={lastRow}
+              shownSans={shownSans}
+              qualityBySan={qualityBySan}
+              tieredSan={tieredSan}
+            />
           )}
         </LineChart>
       </ChartContainer>

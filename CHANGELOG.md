@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- In the Maia chart, when the best move is the only good one, its line changes color with rating: violet (gem) where at most 30% of players at that rating would find it, blue (great) up to 70%, green (best) above. The tooltip shows the tier at the hovered rating.
 - Openings Stats now holds your opening insights: up to 10 moves that work and 10 that cost you per colour, clearest first, coloured only when the difference is clear at 95% confidence. They sit below your bookmarks and most-played openings, one colour at a time, switched with a White | Black toggle that also sets the Played as filter.
 - The repertoire shows your bookmarks first, then your most played openings (20 games or more), and moves openings you have not played recently into a collapsed "Played before" group. Duplicates collapse into one.
 - Each repertoire opening is a card with a board, win/draw/loss bar, score, an engine-eval bar, a one-line verdict, Moves, Games and Bookmark links, and a score-over-time chart with weekly game bars.

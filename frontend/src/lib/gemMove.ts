@@ -153,3 +153,40 @@ export function summarizeForGem(
     secondBestEs: secondBestEs > -Infinity ? secondBestEs : null,
   };
 }
+
+/** Per-rung tier of an only-good move, purely from its Maia probability. */
+export type RungTier = 'gem' | 'great' | 'best';
+
+/**
+ * C1 band for ONE Maia rung: <= GEM_MAIA_MAX_PROB gem, <= GREAT_MAIA_MAX_PROB
+ * great, else plain best. Only meaningful for a move that already passes C2
+ * (see `onlyGoodMoveSan`) — C2 is rating-independent, so for such a move the
+ * tier at each rung is a function of that rung's probability alone. Used by
+ * the Moves-by-Rating chart to color the line per rating (quick 261031-g4l).
+ */
+export function rareTierForProbability(maiaProbability: number): RungTier {
+  if (maiaProbability <= GEM_MAIA_MAX_PROB) return 'gem';
+  if (maiaProbability <= GREAT_MAIA_MAX_PROB) return 'great';
+  return 'best';
+}
+
+/**
+ * The SAN whose Moves-by-Rating line gets per-rung gem/great/best coloring:
+ * `bestSan` when it is the only good move (C2), else null. C2 holds when the
+ * caller's map already tags it gem/great (the backend's stored tier — it only
+ * stores C2-passing moves, so it stays authoritative even if live grading
+ * disagrees) OR the live gate passes (graded argmax === bestSan and it beats
+ * the runner-up by at least MISTAKE_DROP).
+ */
+export function onlyGoodMoveSan(
+  qualityBySan: Map<string, GemGrade & { quality?: string }>,
+  bestSan: string | null,
+  mover: MoverColor,
+): string | null {
+  if (bestSan === null) return null;
+  const quality = qualityBySan.get(bestSan)?.quality;
+  if (quality === 'gem' || quality === 'great') return bestSan;
+  const { bestSan: argmax, bestEs, secondBestEs } = summarizeForGem(qualityBySan, mover);
+  if (argmax !== bestSan || bestEs === null || secondBestEs === null) return null;
+  return bestEs - secondBestEs >= MISTAKE_DROP ? bestSan : null;
+}

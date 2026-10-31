@@ -331,7 +331,7 @@ describe('MovesByRatingTooltipContent', () => {
     render(
       <MovesByRatingTooltipContent
         label={1500}
-        rows={[{ san: 'Ne4', probability: 0.08, color: MOVE_QUALITY_BLUNDER }]}
+        rows={[{ san: 'Ne4', probability: 0.08 }]}
         engineTopLines={[]}
         qualityBySan={makeQualityBySan()}
       />,
@@ -349,7 +349,7 @@ describe('MovesByRatingTooltipContent', () => {
     render(
       <MovesByRatingTooltipContent
         label={1500}
-        rows={[{ san: 'O-O', probability: 0.45, color: 'oklch(0.4 0.17 145)' }]}
+        rows={[{ san: 'O-O', probability: 0.45 }]}
         engineTopLines={[]}
         qualityBySan={makeQualityBySan()}
       />,
@@ -533,5 +533,89 @@ describe('end-of-line leader lines (Option B)', () => {
     expect(container.querySelector('[data-testid="moves-by-rating-end-labels"]')).toBeTruthy();
     const leaders = container.querySelectorAll('[data-testid^="moves-by-rating-leader-"]');
     expect(leaders.length).toBe(0);
+  });
+});
+
+// ─── Per-rating gem/great/best tiers (quick 261031-g4l) ────────────────────
+
+describe('per-rating tier coloring of the tiered line', () => {
+  // Qg5+ climbs from gem (25%) through great (50%) to best (80%) and back.
+  const tieredPerElo: MoveCurvePoint[] = [1100, 1500, 1900].map((elo, i) => ({
+    elo,
+    moveProbabilities: { 'Qg5+': [0.25, 0.8, 0.5][i] ?? 0, Qe4: [0.2, 0.1, 0.15][i] ?? 0 },
+  }));
+  const tieredQuality = new Map<string, MoveQualityEval>([
+    ['Qg5+', { quality: 'gem', evalCp: 320, evalMate: null }],
+    ['Qe4', { quality: 'blunder', evalCp: -200, evalMate: null }],
+  ]);
+
+  it('strokes the tiered line with the threshold gradient and leaves others single-colored', () => {
+    const { container } = render(
+      <MovesByRatingChart
+        perElo={tieredPerElo}
+        playedSan={null}
+        bestSan="Qg5+"
+        selectedElo={1500}
+        shownSans={['Qg5+', 'Qe4']}
+        engineTopLines={[]}
+        qualityBySan={tieredQuality}
+        tieredSan="Qg5+"
+      />,
+    );
+    const gradient = container.querySelector('[data-testid="moves-by-rating-tier-gradient"]');
+    expect(gradient).toBeTruthy();
+    const strokes = Array.from(container.querySelectorAll('.recharts-line-curve')).map((el) =>
+      el.getAttribute('stroke'),
+    );
+    expect(strokes).toContain(`url(#${gradient?.getAttribute('id')})`);
+    expect(strokes).toContain(MOVE_QUALITY_BLUNDER);
+    // Threshold heights: 70% sits above (smaller y) the 30% line.
+    expect(Number(gradient?.getAttribute('y1'))).toBeLessThan(Number(gradient?.getAttribute('y2')));
+  });
+
+  it('renders no gradient when no line is tiered', () => {
+    const { container } = render(
+      <MovesByRatingChart
+        perElo={tieredPerElo}
+        playedSan={null}
+        bestSan="Qg5+"
+        selectedElo={1500}
+        shownSans={['Qg5+', 'Qe4']}
+        engineTopLines={[]}
+        qualityBySan={tieredQuality}
+      />,
+    );
+    expect(container.querySelector('[data-testid="moves-by-rating-tier-gradient"]')).toBeNull();
+  });
+
+  it.each([
+    [0.25, 'Gem'],
+    [0.5, 'Great'],
+    [0.8, 'Best'],
+  ])('tooltip shows the hovered rung tier for the tiered move (%s → %s)', (probability, word) => {
+    render(
+      <MovesByRatingTooltipContent
+        label={1500}
+        rows={[{ san: 'Qg5+', probability }]}
+        engineTopLines={[]}
+        qualityBySan={tieredQuality}
+        tieredSan="Qg5+"
+      />,
+    );
+    const cells = screen.getByTestId('moves-by-rating-tooltip-row-Qg5+').querySelectorAll('td');
+    expect(cells[2]?.textContent).toBe(word);
+  });
+
+  it('tooltip keeps the single graded quality for a non-tiered move', () => {
+    render(
+      <MovesByRatingTooltipContent
+        label={1500}
+        rows={[{ san: 'Qg5+', probability: 0.8 }]}
+        engineTopLines={[]}
+        qualityBySan={tieredQuality}
+      />,
+    );
+    const cells = screen.getByTestId('moves-by-rating-tooltip-row-Qg5+').querySelectorAll('td');
+    expect(cells[2]?.textContent).toBe('Gem');
   });
 });
