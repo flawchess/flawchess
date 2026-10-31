@@ -292,8 +292,6 @@ async def test_backfill_with_metric_filter_only_processes_that_metric(
 
         async with session_maker() as check:
             # Stage B metric rows must not have been written.
-            # Note: CAST(:metric AS benchmark_metric) required — asyncpg
-            # infers VARCHAR which causes type mismatch on the ENUM column.
             for stage_b_metric in (
                 "achievable_score_gap",
                 "score_gap_conv",
@@ -302,7 +300,7 @@ async def test_backfill_with_metric_filter_only_processes_that_metric(
                 result = await check.execute(
                     text(
                         "SELECT count(*) FROM user_benchmark_percentiles "
-                        "WHERE user_id = :uid AND metric = CAST(:metric AS benchmark_metric)"
+                        "WHERE user_id = :uid AND metric = :metric"
                     ).bindparams(uid=_TEST_USER_1_ID, metric=stage_b_metric)
                 )
                 count = result.scalar_one() or 0

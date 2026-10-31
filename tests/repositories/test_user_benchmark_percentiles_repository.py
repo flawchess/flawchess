@@ -459,3 +459,151 @@ async def test_has_any_rows_scoped_to_user(db_session: AsyncSession) -> None:
         "has_any_rows must scope strictly to user_id; "
         "rows for another user must not affect the result"
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-colour rows (Phase 243): the PK gains ``color``; Endgames reads stay 'all'-only
+# ---------------------------------------------------------------------------
+
+_OPENING_METRIC: str = "opening_worse_rate"
+_WHITE_VALUE: float = 0.20
+_BLACK_VALUE: float = 0.30
+_ALL_VALUE: float = 0.25
+_UPDATED_WHITE_VALUE: float = 0.22
+_UPDATED_WHITE_N_GAMES: int = 77
+_UPDATED_WHITE_PERCENTILE: float = 81.5
+
+
+async def _color_rows(
+    session: AsyncSession, metric: str
+) -> dict[str, tuple[float, int, float | None]]:
+    """Read every colour row of one (user, metric, tc) cell: {color: (value, n_games, percentile)}."""
+    from sqlalchemy import select
+
+    from app.models.user_benchmark_percentile import UserBenchmarkPercentile as Row
+
+    result = await session.execute(
+        select(Row.color, Row.value, Row.n_games, Row.percentile).where(
+            Row.user_id == _TEST_USER_ID,
+            Row.metric == metric,
+            Row.time_control_bucket == _DEFAULT_TC,
+        )
+    )
+    return {r.color: (r.value, r.n_games, r.percentile) for r in result}
+
+
+async def _upsert_opening(
+    session: AsyncSession, color: str | None, value: float, n_games: int = _DEFAULT_N_GAMES
+) -> None:
+    kwargs: dict[str, object] = {} if color is None else {"color": color}
+    await upsert_percentile(
+        session,
+        user_id=_TEST_USER_ID,
+        metric=_OPENING_METRIC,
+        time_control_bucket=_DEFAULT_TC,
+        value=value,
+        n_games=n_games,
+        percentile=_DEFAULT_PERCENTILE,
+        cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
+        **kwargs,
+    )
+    await session.flush()
+
+
+async def test_upsert_stores_one_row_per_color(db_session: AsyncSession) -> None:
+    """The same (metric, tc) with 'white', 'black' and the default colour yields three rows."""
+    await _upsert_opening(db_session, "white", _WHITE_VALUE)
+    await _upsert_opening(db_session, "black", _BLACK_VALUE)
+    await _upsert_opening(db_session, None, _ALL_VALUE)
+
+    rows = await _color_rows(db_session, _OPENING_METRIC)
+    assert set(rows) == {"all", "white", "black"}
+    assert rows["white"][0] == pytest.approx(_WHITE_VALUE)
+    assert rows["black"][0] == pytest.approx(_BLACK_VALUE)
+    assert rows["all"][0] == pytest.approx(_ALL_VALUE)
+
+
+async def test_reupsert_updates_only_its_own_color_row(db_session: AsyncSession) -> None:
+    """Re-upserting 'white' updates that row in place and leaves 'black' and 'all' alone."""
+    await _upsert_opening(db_session, "white", _WHITE_VALUE)
+    await _upsert_opening(db_session, "black", _BLACK_VALUE)
+    await _upsert_opening(db_session, None, _ALL_VALUE)
+
+    await upsert_percentile(
+        db_session,
+        user_id=_TEST_USER_ID,
+        metric=_OPENING_METRIC,
+        time_control_bucket=_DEFAULT_TC,
+        value=_UPDATED_WHITE_VALUE,
+        n_games=_UPDATED_WHITE_N_GAMES,
+        percentile=_UPDATED_WHITE_PERCENTILE,
+        cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
+        color="white",
+    )
+    await db_session.flush()
+
+    rows = await _color_rows(db_session, _OPENING_METRIC)
+    assert len(rows) == 3
+    assert rows["white"] == (
+        pytest.approx(_UPDATED_WHITE_VALUE),
+        _UPDATED_WHITE_N_GAMES,
+        pytest.approx(_UPDATED_WHITE_PERCENTILE),
+    )
+    assert rows["black"][0] == pytest.approx(_BLACK_VALUE)
+    assert rows["black"][1] == _DEFAULT_N_GAMES
+    assert rows["all"][0] == pytest.approx(_ALL_VALUE)
+
+
+async def test_fetch_for_user_returns_only_the_all_color_row(db_session: AsyncSession) -> None:
+    """fetch_for_user keeps the Endgames shape: per-colour rows never reach it."""
+    await _upsert_opening(db_session, "white", _WHITE_VALUE)
+    await _upsert_opening(db_session, "black", _BLACK_VALUE)
+    await _upsert_opening(db_session, None, _ALL_VALUE)
+
+    result = await fetch_for_user(db_session, user_id=_TEST_USER_ID)
+    cell = result[_OPENING_METRIC][_DEFAULT_TC]
+    assert cell.value == pytest.approx(_ALL_VALUE)
+
+
+async def test_fetch_for_user_hides_color_only_cells(db_session: AsyncSession) -> None:
+    """A cell that has only per-colour rows is invisible to the colour-agnostic reader."""
+    await _upsert_opening(db_session, "white", _WHITE_VALUE)
+    await _upsert_opening(db_session, "black", _BLACK_VALUE)
+
+    result = await fetch_for_user(db_session, user_id=_TEST_USER_ID)
+    assert _OPENING_METRIC not in result
+
+
+async def test_fetch_opening_out_rows_keyed_by_metric_tc_color(db_session: AsyncSession) -> None:
+    """Only white/black rows of the opening metrics are returned, keyed (metric, tc, colour).
+
+    The colour-agnostic 'all' row of the same metric and an Endgames row are excluded.
+    """
+    fetch_opening_out_rows = user_benchmark_percentiles_repository.fetch_opening_out_rows
+    await _upsert_opening(db_session, "white", _WHITE_VALUE)
+    await _upsert_opening(db_session, "black", _BLACK_VALUE)
+    await _upsert_opening(db_session, None, _ALL_VALUE)
+    await upsert_percentile(
+        db_session,
+        user_id=_TEST_USER_ID,
+        metric=_METRIC_CONV,
+        time_control_bucket=_DEFAULT_TC,
+        value=_DEFAULT_VALUE,
+        n_games=_DEFAULT_N_GAMES,
+        percentile=_DEFAULT_PERCENTILE,
+        cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
+    )
+    await db_session.flush()
+
+    rows = await fetch_opening_out_rows(db_session, user_id=_TEST_USER_ID)
+    assert set(rows) == {
+        (_OPENING_METRIC, _DEFAULT_TC, "white"),
+        (_OPENING_METRIC, _DEFAULT_TC, "black"),
+    }
+    white = rows[(_OPENING_METRIC, _DEFAULT_TC, "white")]
+    assert white.value == pytest.approx(_WHITE_VALUE)
+    assert white.n_games == _DEFAULT_N_GAMES
+    assert white.percentile == pytest.approx(_DEFAULT_PERCENTILE)
+    assert rows[(_OPENING_METRIC, _DEFAULT_TC, "black")].value == pytest.approx(_BLACK_VALUE)
+    # Scoped to the user: another user's rows never appear.
+    assert await fetch_opening_out_rows(db_session, user_id=_SECOND_USER_ID) == {}

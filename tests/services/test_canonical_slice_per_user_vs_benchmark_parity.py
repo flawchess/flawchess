@@ -47,10 +47,13 @@ from app.services.canonical_slice_sql import (
     per_user_cte_achievable_tc,
     per_user_cte_clock_gap,
     per_user_cte_net_flag_rate,
+    per_user_cte_opening_out_counts,
+    per_user_cte_opening_out_rate,
     per_user_cte_score_gap_bucket_tc,
     per_user_cte_score_gap_tc,
     per_user_cte_time_pressure_score_gap,
 )
+from app.services.global_percentile_cdf import OPENING_OUT_METRICS, OpeningOutMetricId
 
 _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "single_user")
 
@@ -282,3 +285,43 @@ def test_existing_per_tc_pooled_body_byte_identical_after_user_id_widening(
         assert re.search(r"SELECT\s+user_id\s*,", block), (
             f"user_id projection missing on {label} for {family}/{tc} (Pitfall 1)"
         )
+
+
+# ---------------------------------------------------------------------------
+# "Out of the opening" worse/better builders (Phase 243). One classification body
+# serves the CDF path (benchmark) and the per-user path (single_user).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tc", _PER_TC_TCS)
+def test_opening_out_counts_body_byte_identical_across_sources(
+    tc: Literal["bullet", "blitz", "rapid", "classical"],
+) -> None:
+    """The counts builder emits an identical body for both sources, with the per-TC predicate."""
+    bm = per_user_cte_opening_out_counts(tc, source="benchmark", snapshot_date=date(2026, 3, 31))
+    su = per_user_cte_opening_out_counts(tc, source="single_user", snapshot_date=date(2026, 3, 31))
+    assert _normalise_whitespace(bm) == _normalise_whitespace(su)
+    assert f"g.time_control_bucket = '{tc}'" in bm
+    # The counts builder feeds the on-read "k of n" display, so it applies no floor.
+    assert "n_games >=" not in bm
+    assert "per_user_color_counts" in bm
+
+
+@pytest.mark.parametrize("tc", _PER_TC_TCS)
+@pytest.mark.parametrize("metric", OPENING_OUT_METRICS)
+def test_opening_out_rate_body_byte_identical_across_sources(
+    metric: OpeningOutMetricId, tc: Literal["bullet", "blitz", "rapid", "classical"]
+) -> None:
+    """The rate builder is identical across sources and emits the colour-aware output shape."""
+    bm = per_user_cte_opening_out_rate(
+        tc, metric=metric, source="benchmark", snapshot_date=date(2026, 3, 31)
+    )
+    su = per_user_cte_opening_out_rate(
+        tc, metric=metric, source="single_user", snapshot_date=date(2026, 3, 31)
+    )
+    assert _normalise_whitespace(bm) == _normalise_whitespace(su)
+    assert f"g.time_control_bucket = '{tc}'" in bm
+    block = bm[bm.find("per_user_values") :]
+    for column in ("user_color", "metric_value", "n_games"):
+        assert column in block, f"{column} missing in per_user_values for {metric}/{tc}"
+    assert "n_games >=" in block, "the rate builder applies the per-colour floor"

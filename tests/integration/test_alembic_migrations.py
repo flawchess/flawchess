@@ -60,12 +60,13 @@ def _migration_present() -> bool:
 # ``n_games`` was re-added by migration b8f4d92c1e25 under pooled-per-user
 # semantics (one count per user per metric on the pooled set).
 # Migration 1945ae56aa20 widened the PK to include ``time_control_bucket`` and
-# added the column to the table.
+# added the column to the table. Migration b7e4c2a9f013 added ``color``.
 _EXPECTED_COLUMNS: frozenset[str] = frozenset(
     {
         "user_id",
         "metric",
         "time_control_bucket",
+        "color",
         "value",
         "percentile",
         "n_games",
@@ -81,8 +82,9 @@ _NULLABLE_COLUMNS: frozenset[str] = frozenset({"percentile"})
 _NOT_NULL_COLUMNS: frozenset[str] = _EXPECTED_COLUMNS - _NULLABLE_COLUMNS
 
 # The composite PK columns (order matters for the PRIMARY KEY constraint).
-# The PK is composite on three columns (widened by migration 1945ae56aa20).
-_PK_COLUMNS: frozenset[str] = frozenset({"user_id", "metric", "time_control_bucket"})
+# Widened to include ``time_control_bucket`` by migration 1945ae56aa20 and to include
+# the per-colour ``color`` by migration b7e4c2a9f013 (Phase 243).
+_PK_COLUMNS: frozenset[str] = frozenset({"user_id", "metric", "time_control_bucket", "color"})
 
 pytestmark = pytest.mark.asyncio
 
@@ -104,10 +106,10 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
 
     Asserts:
     - Table exists in information_schema.tables
-    - All 7 expected columns are present
+    - All expected columns are present
     - ``percentile`` is nullable; all others are NOT NULL
-    - Primary key is composite on (user_id, metric, time_control_bucket)
-    - ``metric`` column data_type is USER-DEFINED (Postgres ENUM)
+    - Primary key is composite on (user_id, metric, time_control_bucket, color)
+    - ``metric`` column data_type is ``text`` (TEXT + CHECK, no native ENUM)
     - ``computed_at`` column data_type is TIMESTAMP WITH TIME ZONE
     """
     async with test_engine.connect() as conn:
@@ -155,8 +157,8 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
         # ENUM column
         metric_info = cols.get("metric")
         assert metric_info is not None
-        assert metric_info["data_type"] == "USER-DEFINED", (
-            "Column 'metric' must be a Postgres ENUM (USER-DEFINED type) per D-05"
+        assert metric_info["data_type"] == "text", (
+            "Column 'metric' must be TEXT + CHECK (CLAUDE.md: avoid native ENUMs)"
         )
 
         # TIMESTAMPTZ column
@@ -186,13 +188,13 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
         )
         pk_cols = {r[0] for r in pk_rows.fetchall()}
         assert pk_cols == _PK_COLUMNS, (
-            f"Primary key must be composite on (user_id, metric, time_control_bucket) "
-            f"per Phase 94.4 D-01. Got {pk_cols}"
+            f"Primary key must be composite on (user_id, metric, time_control_bucket, color). "
+            f"Got {pk_cols}"
         )
 
 
 # ---------------------------------------------------------------------------
-# Test 2 — downgrade: table AND ENUM type both removed
+# Test 2 — the benchmark_metric ENUM is gone, the metric CHECK exists
 # ---------------------------------------------------------------------------
 
 
@@ -206,23 +208,20 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
 async def test_user_benchmark_percentiles_upgrade_downgrade(
     test_engine: AsyncEngine,
 ) -> None:
-    """Downgrade removes the table AND the benchmark_metric ENUM type.
+    """After upgrade head the native ENUM is gone and the metric CHECK exists.
 
-    The downgrade order matters — table must be dropped
-    BEFORE the ENUM type, otherwise Postgres refuses with:
-    ``cannot drop type benchmark_metric because column ... depends on it``.
-
-    This test verifies the migration's downgrade() function handles the ordering
-    correctly by asserting:
-    - ``user_benchmark_percentiles`` table does not exist after downgrade
-    - ``benchmark_metric`` pg_type does not exist after downgrade (0 rows from pg_type)
+    Phase 243 (migration b7e4c2a9f013) converted ``metric`` from the native
+    ``benchmark_metric`` ENUM to TEXT + CHECK, so after ``upgrade head``:
+    - the table exists,
+    - the ``benchmark_metric`` pg_type is absent,
+    - ``ck_user_benchmark_percentiles_metric`` exists.
 
     NOTE: This test runs against the shared test_engine (alembic upgrade head).
-    A real round-trip would require calling alembic downgrade then re-upgrade.
-    Since this could interfere with other tests, we verify the contract via:
-    - Inspecting that upgrade succeeded (table + type exist)
-    - Verifying the migration's downgrade SQL handles ordering correctly by
-      reading the migration source rather than executing it destructively.
+    A real round-trip would require calling alembic downgrade then re-upgrade, which
+    could interfere with other tests. The ordering of the ORIGINAL reshape migration's
+    downgrade (table dropped BEFORE the ENUM type) is verified by reading its source
+    rather than executing it destructively; the b7e4c2a9f013 round trip is proven on
+    the dev DB by ``alembic upgrade head && downgrade -1 && upgrade head``.
     """
     async with test_engine.connect() as conn:
         # After upgrade, table must exist
@@ -238,17 +237,26 @@ async def test_user_benchmark_percentiles_upgrade_downgrade(
             "user_benchmark_percentiles must exist after upgrade for downgrade test"
         )
 
-        # After upgrade, ENUM type must exist
+        # After upgrade, the native ENUM type is gone ...
         enum_rows = await conn.execute(
             text("SELECT COUNT(*) FROM pg_type WHERE typname = 'benchmark_metric'")
         )
-        enum_count = enum_rows.scalar_one()
-        assert enum_count == 1, (
-            "benchmark_metric ENUM type must exist after upgrade for downgrade test"
+        assert enum_rows.scalar_one() == 0, (
+            "benchmark_metric ENUM type must be dropped by migration b7e4c2a9f013"
+        )
+        # ... and the metric CHECK exists in its place.
+        check_rows = await conn.execute(
+            text(
+                "SELECT COUNT(*) FROM pg_constraint "
+                "WHERE conname = 'ck_user_benchmark_percentiles_metric'"
+            )
+        )
+        assert check_rows.scalar_one() == 1, (
+            "ck_user_benchmark_percentiles_metric must exist after upgrade"
         )
 
-    # Verify downgrade ordering in the migration source file (non-destructive check).
-    # drop_table must appear BEFORE enum.drop in downgrade().
+    # Verify the ORIGINAL reshape migration's ordering in source (non-destructive check).
+    # drop_table must appear BEFORE the ENUM type drop in its upgrade().
     migration_files = glob.glob(_MIGRATION_GLOB)
     assert migration_files, "Migration file must be present to verify ordering"
 
@@ -262,7 +270,7 @@ async def test_user_benchmark_percentiles_upgrade_downgrade(
 
     if drop_table_pos != -1 and enum_drop_pos != -1:
         assert drop_table_pos < enum_drop_pos, (
-            "Pitfall 4: in downgrade(), op.drop_table() must appear BEFORE "
-            "benchmark_metric_enum.drop() — the ENUM cannot be dropped while "
-            "the table's 'metric' column still references it."
+            "Pitfall 4: op.drop_table() must appear BEFORE the ENUM type drop "
+            "— the ENUM cannot be dropped while the table's 'metric' column "
+            "still references it."
         )

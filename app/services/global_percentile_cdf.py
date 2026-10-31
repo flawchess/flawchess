@@ -94,7 +94,20 @@ CdfMetricId = Literal[
     "conversion_rate",
     "parity_rate",
     "recovery_rate",
+    # Phase 243 D-04: "out of the opening" worse / better rates. One colour-pooled
+    # CDF per TC per rate (TC stays an outer key); each benchmark peer contributes
+    # up to one point per colour.
+    "opening_worse_rate",
+    "opening_better_rate",
 ]
+
+# The two "out of the opening" metric ids (Phase 243). Kept apart from the Endgames
+# families so the Stage B endgame tuples never pick them up.
+OpeningOutMetricId = Literal["opening_worse_rate", "opening_better_rate"]
+OPENING_OUT_METRICS: Final[tuple[OpeningOutMetricId, ...]] = (
+    "opening_worse_rate",
+    "opening_better_rate",
+)
 
 
 # ---------------------------------------------------------------------------

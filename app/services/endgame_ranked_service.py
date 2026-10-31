@@ -363,7 +363,7 @@ def _restrict_to_since(inputs: RankedInputs, since: datetime.datetime) -> Ranked
     )
 
 
-def _is_anchor_game(game: RankedGameRow) -> bool:
+def is_anchor_game(game: RankedGameRow) -> bool:
     """Mirror of the anchor CTE's Daily exclusion.
 
     The CTE keeps a game iff ``NOT (platform = 'chess.com' AND time_control_str LIKE
@@ -873,7 +873,7 @@ def _tc_canonical(
     return _TcCanonical(cores=cores, buckets=buckets, entry_flow=entry_flow)
 
 
-def _rank_status(
+def rank_status(
     *,
     has_anchor: bool,
     anchor_games: int,
@@ -942,7 +942,7 @@ def _metric_out(
     ctx: _StatusContext,
     cohort_median: float | None,
 ) -> RankedMetricOut:
-    status, floor_n, floor_required = _rank_status(
+    status, floor_n, floor_required = rank_status(
         has_anchor=ctx.has_anchor,
         anchor_games=ctx.anchor_games,
         eval_dependent=metric in EVAL_DEPENDENT_METRICS,
@@ -987,7 +987,7 @@ def _build_tc_stats(
     full_endgame = _rows_for_tc(full.endgame_rows, tc)
     full_non_endgame = _rows_for_tc(full.non_endgame_rows, tc)
     canonical = _tc_canonical(tc, games, inputs, endgame_rows, non_endgame_rows)
-    anchor_games = sum(1 for g in games if _is_anchor_game(g))
+    anchor_games = sum(1 for g in games if is_anchor_game(g))
     eval_pending_games = sum(1 for g in games if g.eval_pending)
     ctx = _StatusContext(
         has_anchor=tc in inputs.anchors,

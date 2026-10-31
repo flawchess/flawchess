@@ -20,6 +20,7 @@ import type {
   BookmarkPhaseEntryRequest,
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
+import type { OutOfOpeningStatsResponse } from '@/types/openingOut';
 import type { EndgameGamesResponse, EndgameRankedStatsResponse, EndgameStatsResponse } from '@/types/endgames';
 import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
@@ -193,6 +194,15 @@ export const positionBookmarksApi = {
 export const timeSeriesApi = {
   fetch: (req: TimeSeriesRequest) =>
     apiClient.post<TimeSeriesResponse>('/openings/time-series', req).then(r => r.data),
+};
+
+// ─── Openings API ─────────────────────────────────────────────────────────────
+
+export const openingsApi = {
+  // Takes no filters on purpose: the out-of-the-opening ranking is filter-independent
+  // (canonical ranked slice only, D-12), so the sidebar filters must not reach it.
+  getOutOfOpeningStats: () =>
+    apiClient.get<OutOfOpeningStatsResponse>('/openings/out-of-opening-stats').then(r => r.data),
 };
 
 // ─── Stats API ────────────────────────────────────────────────────────────────

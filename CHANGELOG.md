@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Openings Stats now opens with "Out of the opening": how often you leave the opening clearly worse or clearly better than a typical position for your colour, ranked against benchmarked Lichess players at your rating in each time control. The popover breaks it down by time control.
+
 ### Changed
 
 - In the Maia chart, when the best move is the only good one, its line changes color with rating: violet (gem) where at most 30% of players at that rating would find it, blue (great) up to 70%, green (best) above. The tooltip shows the tier at the hovered rating.

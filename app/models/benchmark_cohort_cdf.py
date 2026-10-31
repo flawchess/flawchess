@@ -15,18 +15,18 @@ Audit columns:
     (e.g. "2026-05"). NULLable plain audit column, NOT part of any idempotency
     gate.
 
-~123k rows total (11 metrics × ≤ 36 anchor_elo grid points × 4 TC buckets
+~123k rows total (13 metrics × ≤ 36 anchor_elo grid points × 4 TC buckets
 × 99 percentiles, minus grid cells that lack the K=200 user floor).
 """
 
 from __future__ import annotations
 
-from sqlalchemy import Double, Index, Integer, SmallInteger, String
+from sqlalchemy import CheckConstraint, Double, Index, Integer, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 from app.models.game import time_control_bucket_enum
-from app.models.user_benchmark_percentile import benchmark_metric_enum
+from app.models.user_benchmark_percentile import benchmark_metric_check_sql
 from app.models.user_rating_anchors import TimeControlBucket
 from app.services.global_percentile_cdf import CdfMetricId
 
@@ -47,12 +47,18 @@ class BenchmarkCohortCdf(Base):
     # metrics, so the PK cannot serve that filter -- without this index Postgres
     # seq-scans the full ~123k-row table on every import. Index the filter
     # columns so the prefetch is an index scan over the user's anchor x TC grid.
-    __table_args__ = (Index("ix_benchmark_cohort_cdf_anchor_tc", "anchor_elo", "tc"),)
+    #
+    # ``metric`` is TEXT + CHECK over the CdfMetricId values (Phase 243 replaced the
+    # native ``benchmark_metric`` ENUM; the CHECK is generated from the Literal).
+    __table_args__ = (
+        Index("ix_benchmark_cohort_cdf_anchor_tc", "anchor_elo", "tc"),
+        CheckConstraint(benchmark_metric_check_sql(), name="ck_benchmark_cohort_cdf_metric"),
+    )
 
     # --- composite primary key (metric, anchor_elo, tc, percentile) ----------
 
     metric: Mapped[CdfMetricId] = mapped_column(
-        benchmark_metric_enum,
+        Text,
         primary_key=True,
     )
     anchor_elo: Mapped[int] = mapped_column(

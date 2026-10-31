@@ -1026,6 +1026,9 @@ function AppRoutes() {
     // percentile badges only appear on /endgames after a hard refresh. Partial-match
     // on ['endgameOverview'] invalidates every cached (params, window) variant.
     queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
+    // Stage A/B write the opening rows asynchronously too: refresh the Openings Stats
+    // 'Out of the opening' section (its own key, not overloaded onto endgameOverview).
+    queryClient.invalidateQueries({ queryKey: ['outOfOpeningStats'] });
     // Refetch the endgame insights report so a user whose first report does not
     // exist yet (cache null) re-arms the one-time auto-generate after the import.
     // An existing report is never replaced by an import: the server keeps

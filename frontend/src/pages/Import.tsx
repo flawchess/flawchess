@@ -206,6 +206,9 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
       // queryClient staleTime serves the stale pre-import response and the
       // percentile badges only appear after a hard refresh.
       queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
+      // Stage A/B write the opening rows asynchronously too: refresh the Openings Stats
+      // 'Out of the opening' section (its own key, not overloaded onto endgameOverview).
+      queryClient.invalidateQueries({ queryKey: ['outOfOpeningStats'] });
     }, ACTIVE_IMPORT_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isActive, queryClient]);
@@ -403,6 +406,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       // until the next import, but the endgame overview must drop the chip
       // immediately. Invalidate so the FE refetches and renders the empty state.
       queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
+      // Stage A/B write the opening rows asynchronously too: refresh the Openings Stats
+      // 'Out of the opening' section (its own key, not overloaded onto endgameOverview).
+      queryClient.invalidateQueries({ queryKey: ['outOfOpeningStats'] });
     } catch (err) {
       Sentry.captureException(err, {
         tags: { source: 'import' },

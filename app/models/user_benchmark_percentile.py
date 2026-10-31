@@ -1,27 +1,24 @@
 """ORM model for user_benchmark_percentiles table.
 
-The ``benchmark_metric_enum`` mirrors the ``CdfMetricId`` Literal in
-``app/services/global_percentile_cdf.py``. The ENUM holds the 11 CdfMetricId
-family names (per-TC dimensionality lives in the ``time_control_bucket`` PK
-column, not in the ENUM) plus 12 legacy TC-suffixed rate values (3 rate-metric
-families × 4 TCs), 23 values in total. The 12 TC-suffixed values remain for
-forward compatibility. The bare family names (conversion_rate, parity_rate,
-recovery_rate) are what the upsert_percentile write path stores, with
-time_control_bucket providing the per-TC dimensionality (PK column, not ENUM
-suffix).
+``metric`` is TEXT with a CHECK constraint over the ``CdfMetricId`` Literal in
+``app/services/global_percentile_cdf.py`` (13 ids since Phase 243). The CHECK is
+generated from the ``CdfMetricId`` Literal's members, so the Literal stays the single
+source of truth. Per-TC dimensionality lives in the ``time_control_bucket`` PK
+column, not in the metric id. Until Phase 243 the column was the native
+``benchmark_metric`` Postgres ENUM; migration ``b7e4c2a9f013`` converted it to
+TEXT + CHECK (root CLAUDE.md: avoid native ENUMs) and deleted any row on a dead
+legacy TC-suffixed label. Earlier history: the original
+``20260524_000000_add_user_benchmark_percentiles.py`` created the table and ENUM;
+``20260526_222651_1945ae56aa20_reshape_user_benchmark_percentiles.py`` reshaped
+both.
 
-``create_type=False`` means Alembic controls the ENUM lifecycle — see
-``alembic/versions/20260526_222651_1945ae56aa20_reshape_user_benchmark_percentiles.py``
-for the destructive reshape (drop/recreate of both the table and the ENUM).
-Earlier ENUM/table history: the original
-``20260524_000000_add_user_benchmark_percentiles.py`` created the table and
-ENUM (4-value); ``20260524_170733_fd5b551f381c_extend_benchmark_metric_for_tc_pressure.py``
-extended to 16 values (now superseded by the destructive reshape).
+Composite PK is (user_id, metric, time_control_bucket, color). At most one row per
+user per metric per TC bucket per colour. ``color`` is ``'all'`` for the
+colour-agnostic rows every Endgames family writes, and ``'white'`` / ``'black'`` for
+the per-colour "out of the opening" rows (Phase 243); the peer CDF itself is
+colour-pooled, so ``benchmark_cohort_cdf`` carries no colour.
 
-Composite PK is (user_id, metric, time_control_bucket).
-At most one row per user per metric per TC bucket.
-
-Row existence implies above-floor. Below-floor (user, metric, tc) triples
+Row existence implies above-floor. Below-floor (user, metric, tc[, colour]) triples
 produce NO row — the chip suppresses naturally via an empty
 fetch_for_user[metric][tc] entry.
 
@@ -33,7 +30,10 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Date, DateTime, Enum as SAEnum, Float, ForeignKey, Integer
+import typing
+from typing import Final, Literal
+
+from sqlalchemy import CheckConstraint, Date, DateTime, Float, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -42,56 +42,27 @@ from app.models.game import time_control_bucket_enum
 from app.models.user_rating_anchors import TimeControlBucket
 from app.services.global_percentile_cdf import CdfMetricId
 
-# Postgres ENUM type descriptor.
-# create_type=False: Alembic owns the lifecycle; SQLAlchemy must never attempt to
-# CREATE or DROP this type itself. Project precedent: app/models/game.py:20-40.
-#
-# The 8 family-level values come first; per-TC dimensionality is carried by the
-# time_control_bucket PK column. Their order matches the destructive reshape
-# migration verbatim.
-#
-# Then 12 TC-suffixed values (conversion_rate, parity_rate,
-# recovery_rate × bullet, blitz, rapid, classical). These ride in the
-# existing per-(user, metric, time_control_bucket) PK structure — the TC-suffix
-# in the ENUM value is redundant with the PK column but is required for the
-# ``user_benchmark_percentiles`` ORM write path.
-# Order: family-then-TC, matching the migration's _NEW_VALUES tuple and
-# gen_global_percentile_cdf.py IN_SCOPE_METRICS ordering.
-benchmark_metric_enum = SAEnum(
-    "score_gap",
-    "achievable_score_gap",
-    "score_gap_conv",
-    "score_gap_parity",
-    "recovery_score_gap",
-    "time_pressure_score_gap",
-    "clock_gap",
-    "net_flag_rate",
-    # Rate families (TC-suffixed for the benchmark_metric Postgres ENUM).
-    "conversion_rate_bullet",
-    "conversion_rate_blitz",
-    "conversion_rate_rapid",
-    "conversion_rate_classical",
-    "parity_rate_bullet",
-    "parity_rate_blitz",
-    "parity_rate_rapid",
-    "parity_rate_classical",
-    "recovery_rate_bullet",
-    "recovery_rate_blitz",
-    "recovery_rate_rapid",
-    "recovery_rate_classical",
-    # Bare family names required by upsert_percentile
-    # write path (CdfMetricId is used as the metric column value; TC-suffix in
-    # ENUM is redundant with time_control_bucket PK column — migration 52c928794fe7).
-    "conversion_rate",
-    "parity_rate",
-    "recovery_rate",
-    name="benchmark_metric",
-    create_type=False,
-)
+# Row colour: 'all' = colour-agnostic (every Endgames family); 'white' / 'black' =
+# the per-colour opening rows (Phase 243).
+PercentileColor = Literal["all", "white", "black"]
+PERCENTILE_COLORS: Final[tuple[PercentileColor, ...]] = typing.get_args(PercentileColor)
+
+# The allowed metric ids, derived from the Literal so the CHECK cannot drift from it.
+BENCHMARK_METRIC_VALUES: Final[tuple[str, ...]] = typing.get_args(CdfMetricId)
+
+
+def _check_in_sql(column: str, values: tuple[str, ...]) -> str:
+    """Render ``<column> IN ('a', 'b', ...)`` from constant, code-defined values."""
+    return f"{column} IN (" + ", ".join(f"'{v}'" for v in values) + ")"
+
+
+def benchmark_metric_check_sql() -> str:
+    """CHECK expression restricting ``metric`` to the ``CdfMetricId`` values."""
+    return _check_in_sql("metric", BENCHMARK_METRIC_VALUES)
 
 
 class UserBenchmarkPercentile(Base):
-    """One canonical-slice percentile row per (user_id, metric, time_control_bucket).
+    """One canonical-slice percentile row per (user_id, metric, time_control_bucket, color).
 
     Written by Stage A (score_gap) and Stage B (eval-dependent metrics)
     background tasks, and by the one-shot backfill script.
@@ -101,10 +72,10 @@ class UserBenchmarkPercentile(Base):
     suppresses naturally when fetch_for_user returns no entry for that
     (metric, tc) pair.
 
-    Composite PK is (user_id, metric, time_control_bucket). The ENUM holds the
-    11 CdfMetricId family names (per-TC dimensionality lives in the
-    time_control_bucket PK column) plus 12 legacy TC-suffixed rate values
-    (23 total).
+    Composite PK is (user_id, metric, time_control_bucket, color). ``metric`` holds
+    the 13 CdfMetricId values (per-TC dimensionality lives in the
+    time_control_bucket PK column); ``color`` is 'all' for colour-agnostic rows and
+    'white' / 'black' for the per-colour opening rows.
 
     ``recovery_score_gap`` is included under the peer-relative framing.
 
@@ -124,20 +95,35 @@ class UserBenchmarkPercentile(Base):
     - ``time_pressure_score_gap`` / ``clock_gap`` / ``net_flag_rate`` →
       count of games in the TC's recent-3000 pool used to compute the
       time-pressure metric.
+    - ``opening_worse_rate`` / ``opening_better_rate`` → count of qualifying games
+      (reached the middlegame with an eval, or ended early by resignation, checkmate
+      or timeout) for that colour on the TC's recent-3000 pool.
     """
 
     __tablename__ = "user_benchmark_percentiles"
+    __table_args__ = (
+        CheckConstraint(benchmark_metric_check_sql(), name="ck_user_benchmark_percentiles_metric"),
+        CheckConstraint(
+            _check_in_sql("color", PERCENTILE_COLORS), name="ck_user_benchmark_percentiles_color"
+        ),
+    )
 
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    metric: Mapped[CdfMetricId] = mapped_column(benchmark_metric_enum, primary_key=True)
+    metric: Mapped[CdfMetricId] = mapped_column(Text, primary_key=True)
     time_control_bucket: Mapped[TimeControlBucket] = mapped_column(
         time_control_bucket_enum,
         primary_key=True,
         nullable=False,
+    )
+    color: Mapped[PercentileColor] = mapped_column(
+        Text,
+        primary_key=True,
+        nullable=False,
+        server_default="all",
     )
     value: Mapped[float] = mapped_column(Float, nullable=False)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)

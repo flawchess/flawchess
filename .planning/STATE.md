@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.27
-current_phase: 242
-current_phase_name: Out of the Opening Worse/Better Rates (SEED-206)
+current_phase: 243
 status: completed
-stopped_at: Phase 243 context gathered
-last_updated: "2026-10-31T16:11:15.154Z"
-state_head: 9e9b06d69fe188cf89888758f915175a7c8d018e
+stopped_at: Phase 243 complete — all phases complete
+last_updated: "2026-10-31T19:28:50.430Z"
+state_head: cc403554025543c0d27868b0a69c3dc4bd9cdcdc
 progress:
   total_phases: 2
   completed_phases: 103
   total_plans: 14
   completed_plans: 96
+  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-31
 last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best 
 
 ## Current Position
 
-Phase: 243 (Out of the Opening Worse/Better Rates (SEED-206)) — READY TO EXECUTE
-Plan: 0 of TBD
+Phase: 243
+Plan: 5 of 5 (complete)
 
-Status: Phase 243 added 2026-10-31, ready to discuss. Phase 242 complete, squash-merged to `main` (PR #428), not yet deployed
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -886,6 +886,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 240]: 240-05: intro is a fixed two-bubble sequence (INTRO_STEP_COUNT = 2), warm-up notice dropped with no relocation (D-01, D-02)
 - [Phase 240]: 240-05: sr_explained is stamped whenever the first-completed score variant rendered, in any branch; a first warm-up session never later shows the habit line (D-21)
 - [Phase 240]: Tour spotlight is one box-shadow-only class (.train-tour-spotlight, --brand-glow vars = FLAW_FIXED_GLOW), never combined with a ring utility; understand step glows one chips-plus-list wrapper
+- [Phase 243]: ENUM benchmark_metric folded to TEXT + CHECK (generated from CdfMetricId) with a color column in a 4-column PK; per-colour opening rows, colour-pooled CDF
+- [Phase 243]: Opening-out builder drops sub-800 games and treats a game with no phase=1 ply as ended before the middlegame, matching fetch_sweep.py
+- [Phase 243]: 243-02: opening CDF cohort MIN/MAX and n_users count distinct users, not colour points (A2); rated costly
+- [Phase 243]: 243-04: rank_status/is_anchor_game made public; opening-out gate uses z=1.96 passed in, Endgames 99% path untouched
+- [Phase 243]: 243-04: nothing-contributes card status is pending > unranked > below_floor; ranked TC without CDF cell excluded from headline and gate
+- [Phase 243]: 243-05: popover re-sorts TCs bullet-to-classical locally and shows all five disclosures on every popover; eval cut 1.0 is a named frontend constant mirroring the backend threshold
 
 ### Pending Todos
 
@@ -1114,9 +1120,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-31T14:49:00.675Z
-**Stopped at:** Phase 243 context gathered
-**Resume file:** .planning/phases/243-out-of-the-opening-worse-better-rates/243-CONTEXT.md
+**Last session:** 2026-10-31T17:41:15.680Z
+**Stopped at:** Phase 243 complete — all phases complete
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1363,6 +1369,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 240 P04 | 9 min | 2 tasks | 4 files |
 | Phase 240 P05 | 12 min | 2 tasks | 10 files |
 | Phase 240 P06 | 10min | 2 tasks | 15 files |
+| Phase 243 P01 | 11 min | 3 tasks | 17 files |
+| Phase 243 P02 | 2h | 3 tasks | 14 files |
+| Phase 243 P04 | 30min | 2 tasks | 6 files |
+| Phase 243 P05 | 25min | 3 tasks | 15 files |
 
 ## Performance Metrics
 

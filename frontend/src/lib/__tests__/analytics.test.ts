@@ -404,6 +404,8 @@ describe('feature-event registry', () => {
     ['score-bullet-popover-trigger', 'score-bullet-popover-trigger'],
     ['opening-finding-card-3-bullet-popover', 'opening-finding-card-bullet-popover'],
     ['persona-elo-disclosure', 'persona-elo-disclosure'],
+    ['out-of-opening-worse-rate', 'out-of-opening-worse-rate'],
+    ['out-of-opening-better-rate', 'out-of-opening-better-rate'],
   ])('popoverTargetFromTestId(%s) is %s', (testId, expected) => {
     expect(analytics.popoverTargetFromTestId(testId)).toBe(expected);
   });
