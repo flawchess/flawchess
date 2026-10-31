@@ -5,8 +5,8 @@ current_phase: 242
 current_phase_name: Openings Stats + Insights Rework (SEED-204)
 status: completed
 stopped_at: Phase 242 complete — all phases complete
-last_updated: "2026-10-18T15:32:11.235Z"
-state_head: 67d053ef3ca359b6aa6146d9dda662efa3085a58
+last_updated: "2026-10-31T09:45:53.591Z"
+state_head: 702494c0b86e75289e9cc104ad0fe0538dbabb06
 progress:
   total_phases: 1
   completed_phases: 103
@@ -1060,6 +1060,7 @@ None active.
 | 150 | Fix tactic depth summary highlight vs High default | 2026-10-16 | 38baedf8b | — |
 | 261017-986 | SEED-201: concurrent pytest isolation, TrainStreakCard flake, 422 rename + asyncio mark, INV-L1012 comment | 2026-10-17 | d42a6ace0 | [261017-986-seed-201-test-infra-hardening-after-241](./quick/261017-986-seed-201-test-infra-hardening-after-241/) |
 | 152 | Show subnav tab icons on mobile Openings page | 2026-10-18 | 67d053ef3 | — |
+| 261031-et9 | Retune gem/great Maia ceilings to 0.30/0.70 | 2026-10-31 | 702494c0b | [261031-et9-retune-gem-great-maia-thresholds-to-0-30](./quick/261031-et9-retune-gem-great-maia-thresholds-to-0-30/) |
 
 ## Deferred Items
 
