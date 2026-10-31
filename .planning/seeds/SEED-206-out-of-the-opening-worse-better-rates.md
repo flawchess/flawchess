@@ -1,5 +1,5 @@
 ---
-id: SEED-261031-x3l
+id: SEED-206
 status: dormant
 planted: 2026-10-31
 planted_during: v2.27 (after Phase 242), /gsd-explore session on opening narration → sketch 013
@@ -7,7 +7,7 @@ trigger_when: owner opens the next Openings milestone/phase, or asks to implemen
 scope: medium; one phase with several plans, backend wave first (canonical-slice builder, CDF regen, Stage B family, ranked read path + parity test, per-opening rates on the openings endpoints), then frontend (section, popover histogram, expanded-card bars)
 ---
 
-# SEED-261031-x3l: "Out of the opening": peer-ranked worse/better rates on the Openings Stats tab
+# SEED-206: "Out of the opening": peer-ranked worse/better rates on the Openings Stats tab
 
 ## Why This Matters
 

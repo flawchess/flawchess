@@ -78,4 +78,4 @@ Rejected after review:
   floor 30, 99% significance gate); current form lives in the per-opening cards, which follow the page
   filters.
 
-Full reasoning: `.planning/notes/out-of-the-opening-metric-design.md`. Seed: `.planning/seeds/SEED-261031-x3l-out-of-the-opening-worse-better-rates.md`.
+Full reasoning: `.planning/notes/out-of-the-opening-metric-design.md`. Seed: `.planning/seeds/SEED-206-out-of-the-opening-worse-better-rates.md`.

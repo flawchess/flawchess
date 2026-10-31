@@ -1,7 +1,7 @@
 ---
 title: "Out of the opening" — worse/better rates, peer basis, and the reasoning behind them
 date: 2026-10-31
-context: Captured from a /gsd-explore session that started as "an LLM narration for the Openings tab" and narrowed to a new opening statistic. Records the full chain of reasoning, the benchmark numbers that drove each decision, and the options that were rejected, so the phase that implements SEED-261031-x3l does not re-litigate them.
+context: Captured from a /gsd-explore session that started as "an LLM narration for the Openings tab" and narrowed to a new opening statistic. Records the full chain of reasoning, the benchmark numbers that drove each decision, and the options that were rejected, so the phase that implements SEED-206 does not re-litigate them.
 related_files:
   - .planning/sketches/013-out-of-the-opening/index.html
   - .planning/sketches/013-out-of-the-opening/analysis/
@@ -16,7 +16,7 @@ related_files:
 related_notes:
   - .planning/notes/opponent-mirror-as-self-calibrating-cohort.md
   - .planning/notes/percentile-chip-canonical-slice.md
-related_seeds: [SEED-204, SEED-261031-x3l]
+related_seeds: [SEED-204, SEED-206]
 related_sketches: ["013"]
 ---
 

@@ -148,7 +148,7 @@ as 009 but without percentiles: the benchmark IQR of the you-minus-opponent gap 
 - **"After the opening" (score vs expected from eval) dropped**: never significant, too many assumptions.
   The Elo × TC expected-score refit moved to Endgames (SEED-203).
 
-**013 → A: per-TC cards with percentile rows (round 1).** Sketched 2026-10-31 from a /gsd-explore session; seed: SEED-261031-x3l.
+**013 → A: per-TC cards with percentile rows (round 1).** Sketched 2026-10-31 from a /gsd-explore session; seed: SEED-206.
 - **New "Out of the opening" section** at the top of the Openings Stats tab, under the sticky White | Black
   switch: one card per played TC, two `RankedMetricRow`s ("Came out worse", "Came out better") with the
   Endgames `PercentileBar`; words carry the inverted meaning ("Fewer worse games than 58% of peers").
