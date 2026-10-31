@@ -93,8 +93,8 @@ function formatAccuracy(value: number | null): string {
  * Lichess-aligned win-chance drops in `app/services/flaws_service.py`.
  */
 const CATEGORY_DEFINITIONS: Record<MoveStatCategory, string> = {
-  gem: "The engine's clear best move, which fewer than ~1 in 5 rating peers would find.",
-  great: "The engine's clear best move, found by roughly 1 in 5 to 1 in 2 rating peers.",
+  gem: "The engine's clear best move, which fewer than ~3 in 10 rating peers would find.",
+  great: "The engine's clear best move, found by roughly 3 in 10 to 7 in 10 rating peers.",
   best: "The engine's top move.",
   good: 'Not the top move, but costs less than 5% winning chances.',
   inaccuracy: 'Costs 5–10% winning chances.',

@@ -429,9 +429,9 @@ function BestMovesInfo() {
         equivalent) would have found it.
       </p>
       <p className="mt-1.5">
-        <strong>Gem</strong>: fewer than ~1 in 5 rating peers would find it.
+        <strong>Gem</strong>: fewer than ~3 in 10 rating peers would find it.
         <br />
-        <strong>Great</strong>: found by roughly 1 in 5 to 1 in 2 peers.
+        <strong>Great</strong>: found by roughly 3 in 10 to 7 in 10 peers.
       </p>
       <p className="mt-1.5">
         Unlike chess.com&apos;s <strong>Brilliant</strong> moves, which only reward

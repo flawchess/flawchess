@@ -122,7 +122,7 @@ export const MAIA_ACCENT = 'oklch(0.58 0.20 290)'; // violet
 // with the severity/tag toggles it sits alongside.
 export const MAIA_ACCENT_BG = 'oklch(0.58 0.20 290 / 0.14)';
 // Great-move corner-marker identity color. The
-// "great" tier sits one step below gem in the maia_prob band (0.20, 0.50] —
+// "great" tier sits one step below gem in the maia_prob band (0.30, 0.70] —
 // a distinct blue hue (not gem's violet 290, not Stockfish's 255, not the
 // desaturated Book blue 250) so all four board-marker identities read apart
 // even though three share the "cool" family. Hue 220 + a higher chroma than

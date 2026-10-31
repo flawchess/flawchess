@@ -61,8 +61,8 @@ describe('classifyGem', () => {
     ).toBe(true);
   });
 
-  it('GEM_MAIA_MAX_PROB is exactly 0.2', () => {
-    expect(GEM_MAIA_MAX_PROB).toBe(0.2);
+  it('GEM_MAIA_MAX_PROB is exactly 0.3', () => {
+    expect(GEM_MAIA_MAX_PROB).toBe(0.3);
   });
 
   it('a maiaProbability of 0.15 with a passing C2 now classifies as a gem (would have failed C1 at the old 0.1 threshold)', () => {
@@ -172,10 +172,10 @@ describe('classifyGem', () => {
 // ─── classifyGreat ──────────────────────────────────────────────────────────
 
 describe('classifyGreat', () => {
-  it('qualifying inputs in the (0.20, 0.50] band with a passing C2 margin classify as great', () => {
+  it('qualifying inputs in the (0.30, 0.70] band with a passing C2 margin classify as great', () => {
     expect(
       classifyGreat({
-        maiaProbability: 0.35,
+        maiaProbability: 0.6,
         playedIsBest: true,
         bestEs: 0.55,
         secondBestEs: 0.4,
@@ -183,8 +183,8 @@ describe('classifyGreat', () => {
     ).toBe(true);
   });
 
-  it('GREAT_MAIA_MAX_PROB is exactly 0.5', () => {
-    expect(GREAT_MAIA_MAX_PROB).toBe(0.5);
+  it('GREAT_MAIA_MAX_PROB is exactly 0.7', () => {
+    expect(GREAT_MAIA_MAX_PROB).toBe(0.7);
   });
 
   it('returns false at the GEM ceiling (0.10 <= GEM_MAIA_MAX_PROB) — that is a gem, not a great', () => {
@@ -198,10 +198,10 @@ describe('classifyGreat', () => {
     ).toBe(false);
   });
 
-  it('returns false above the GREAT ceiling (0.60 > GREAT_MAIA_MAX_PROB)', () => {
+  it('returns false above the GREAT ceiling (0.80 > GREAT_MAIA_MAX_PROB)', () => {
     expect(
       classifyGreat({
-        maiaProbability: 0.6,
+        maiaProbability: 0.8,
         playedIsBest: true,
         bestEs: 0.55,
         secondBestEs: 0.4,

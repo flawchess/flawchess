@@ -3,7 +3,7 @@
  * marking a "great move": a played move that is the
  * only good move in the position (same C2 gate as gem) and one a human at
  * the selected rating rarely finds, but not as rarely as a gem (gem =
- * maia_prob <= 0.20, great = maia_prob in (0.20, 0.50]).
+ * maia_prob <= 0.30, great = maia_prob in (0.30, 0.70]).
  *
  * Shape-compatible with `SeverityGlyphIconProps`/`GemIconProps` (`className`,
  * `style`, `aria-hidden`) so it drops into the same move-list call sites
