@@ -7,9 +7,17 @@
   "prHourlyLimit": 2,
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 6am on monday"]
+    "schedule": ["before 6am on monday"],
+    "automerge": true
   },
   "packageRules": [
+    {
+      "description": "Auto-update (2026-10-27): non-major updates merge into main on their own once the required `test` check passes (branch protection, strict). main never deploys, so prod still moves only via bin/deploy.sh. Rules below opt specific packages back out.",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
     {
       "matchUpdateTypes": ["minor", "patch"],
       "matchManagers": ["pep621", "npm"],
@@ -24,8 +32,30 @@
       "groupName": "docker base images"
     },
     {
+      "description": "0.x packages (e.g. chess.js) can break on a minor bump, so they get their own grouped PR that waits for a human instead of riding the automerged group.",
+      "matchManagers": ["pep621", "npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchCurrentVersion": "/^v?0\\./",
+      "groupName": "minor and patch (0.x, manual)"
+    },
+    {
+      "matchCurrentVersion": "/^v?0\\./",
+      "automerge": false
+    },
+    {
+      "description": "One Postgres pin lives in docker-compose.yml, docker-compose.dev.yml, docker-compose.benchmark.yml and ci.yml; group them so CI always tests the version prod runs. Patch and digest bumps automerge (rule 1); a major needs pg_upgrade, so it waits for dashboard approval.",
+      "matchDepNames": ["postgres"],
+      "groupName": "postgres"
+    },
+    {
+      "matchDepNames": ["postgres"],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
       "matchPackageNames": ["onnxruntime-web"],
-      "groupName": "onnxruntime-web (run scripts/bench_maia_ort_wasm.mjs before merging — Phase 219)"
+      "groupName": "onnxruntime-web (run scripts/bench_maia_ort_wasm.mjs before merging — Phase 219)",
+      "automerge": false
     },
     {
       "description": "Python is held at 3.14: the pinned onnxruntime 1.29.0 ships only cp314 wheels (>=1.30 segfaults on the Maia model, see the next rule). Lift this cap together with the onnxruntime bump.",
@@ -33,9 +63,17 @@
       "allowedVersions": "<3.15"
     },
     {
-      "description": "onnxruntime / onnxruntime-node are pinned at 1.29.0: >=1.30 segfaults loading the vendored maia3_simplified.onnx (exit 139, reproduced 2026-10-09 on 1.30.0 and 1.31.0). A bump must pass the Phase 218 parity spike (scripts/maia_parity_spike.py, verify_value_head.mjs) first.",
+      "description": "onnxruntime / onnxruntime-node are pinned at 1.29.0: >=1.30 segfaults loading the vendored maia3_simplified.onnx (exit 139, reproduced 2026-10-09 on 1.30.0 and 1.31.0). A bump must pass the Phase 218 parity spike (scripts/maia_parity_spike.py, verify_value_head.mjs) first. Own groupName (2026-10-27): without it onnxruntime 1.31.1 landed in the grouped minor/patch PR #442 and segfaulted CI, blocking every other update in that group.",
       "matchPackageNames": ["onnxruntime", "onnxruntime-node"],
-      "dependencyDashboardApproval": true
+      "groupName": "onnxruntime + onnxruntime-node (pinned, needs dashboard approval)",
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Bump npm override ranges in package.json instead of a lockfile-only `npm install pkg@ver`: that path fails with EOVERRIDE (\"conflicts with direct dependency\") for every override, which left PR #442 with no frontend changes at all (2026-10-28, @hono/node-server 2.1.5).",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["overrides"],
+      "rangeStrategy": "bump"
     },
     {
       "description": "js-yaml and fast-uri exist only as npm overrides pinning patched transitive versions. A major would force the next major onto consumers that declare ^4 / ^3 (cosmiconfig, ajv@8), so disable majors; minor and patch floors still flow through the grouped branch.",

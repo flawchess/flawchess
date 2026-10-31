@@ -18,12 +18,15 @@
 import { evalToExpectedScore, type MoverColor } from '@/lib/liveFlaw';
 import { MISTAKE_DROP } from '@/generated/flawThresholds';
 
-/** Maia policy-probability ceiling for C1 — strict-side v1 constant.
+/** Maia policy-probability ceiling for C1.
  *  Deliberately a flat cutoff, not an ELO-scaled iso-rarity curve (this
  *  constant stays independent of any per-ELO reference-probability curve).
  *
- *  0.2 rather than 0.1: "hard to find" means "fewer than 1 in 5 rating-peers
- *  would play it." Measured against the calibration TSV (`reports/data/gem-elo-calibration-2026-07-11T14-07-34-084Z.tsv`,
+ *  Retuned 0.2 -> 0.3 on 2026-10-31 (quick 261031-et9): at 0.2 a gem showed up
+ *  in only 4.8% of prod player-games; 0.3 roughly doubles that ("fewer than ~3
+ *  in 10 rating-peers would play it").
+ *
+ *  Original v1 rationale, 0.2 rather than 0.1: measured against the calibration TSV (`reports/data/gem-elo-calibration-2026-07-11T14-07-34-084Z.tsv`,
  *  3,000 positions x 6 rungs), 0.2 (vs 0.1) multiplies gem frequency by ~1.35x at
  *  Maia-600, rising to ~1.8x at 2200-2600 — and it NARROWS the 600-vs-2600 Elo
  *  skew from 3.8x to 2.9x (strong players were previously starved: only 2.9% of
@@ -37,17 +40,17 @@ import { MISTAKE_DROP } from '@/generated/flawThresholds';
  *  (classifyGem/classifyGreat, below) — the stored/mainline path always reads
  *  the backend-classified `EvalPoint.best_move_tier` instead. If the backend
  *  constant is ever retuned, update this copy too. */
-export const GEM_MAIA_MAX_PROB = 0.2;
+export const GEM_MAIA_MAX_PROB = 0.3;
 
 /** Maia policy-probability ceiling for the "great" tier's C1 band — great = maia_prob in (GEM_MAIA_MAX_PROB, GREAT_MAIA_MAX_PROB].
  *
  *  Cross-reference: mirrors the backend's authoritative `GREAT_MAIA_MAX_PROB`
- *  in `app/services/best_move_candidates.py` (starting value, calibrated
- *  against real per-game frequency once the pipeline runs). Fallback-only
+ *  in `app/services/best_move_candidates.py` (retuned 0.5 -> 0.7 on 2026-10-31
+ *  against real prod per-game frequency, quick 261031-et9). Fallback-only
  *  — the stored/mainline path never calls `classifyGreat`; it always
  *  reads the backend-classified `EvalPoint.best_move_tier` instead. If the
  *  backend constant is ever retuned, update this copy too. */
-export const GREAT_MAIA_MAX_PROB = 0.5;
+export const GREAT_MAIA_MAX_PROB = 0.7;
 
 /**
  * Cap on the per-session live engine/Maia/flaw FIFO caches keyed by FEN or

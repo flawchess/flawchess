@@ -235,11 +235,11 @@ def test_classify_gem_when_prob_at_or_below_gem_max() -> None:
 
 
 def test_classify_great_between_gem_and_great_max() -> None:
-    assert bmc.classify_best_move(maia_prob=0.35, **_WIDE_MARGIN) == "great"
+    assert bmc.classify_best_move(maia_prob=0.50, **_WIDE_MARGIN) == "great"
 
 
 def test_classify_neither_when_prob_above_great_max() -> None:
-    assert bmc.classify_best_move(maia_prob=0.60, **_WIDE_MARGIN) == "neither"
+    assert bmc.classify_best_move(maia_prob=0.80, **_WIDE_MARGIN) == "neither"
 
 
 def test_classify_neither_when_margin_below_mistake_drop() -> None:
@@ -339,11 +339,13 @@ def test_guard_is_noop_when_post_move_eval_missing() -> None:
     )
 
 
-def test_guard_suppresses_the_game_640125_great() -> None:
+def test_guard_suppresses_the_game_640125_badge() -> None:
     """The reported false positive: 55.Qc6+ (ply 108, white). Our best_cp=-82
-    (es ~0.425), runner-up -217, maia_prob 0.257 -> 'great' by C1/C2, but lichess's
-    preserved post-move eval -246 (es ~0.288) is 0.137 ES worse -> suppressed."""
-    great_before_guard = bmc.classify_best_move(
+    (es ~0.425), runner-up -217, maia_prob 0.257 -> a badge by C1/C2 ('great' when
+    reported under the old 0.20 gem ceiling, 'gem' since the 0.30 retune), but
+    lichess's preserved post-move eval -246 (es ~0.288) is 0.137 ES worse ->
+    suppressed."""
+    tier_before_guard = bmc.classify_best_move(
         maia_prob=0.257,
         best_cp=-82,
         best_mate=None,
@@ -351,7 +353,7 @@ def test_guard_suppresses_the_game_640125_great() -> None:
         second_mate=None,
         mover_color="white",
     )
-    assert great_before_guard == "great"
+    assert tier_before_guard == "gem"
 
     assert (
         bmc.classify_best_move(
@@ -395,19 +397,19 @@ def test_constants_only_retune_flips_classification() -> None:
     """The SAME stored (maia_prob, cp) inputs reclassify differently when the
     module constants change — proving a threshold retune needs ZERO re-analysis
     (no DB read, no engine call, no re-inference)."""
-    stored: _ClassifyKwargs = dict(maia_prob=0.35, **_WIDE_MARGIN)
+    stored: _ClassifyKwargs = dict(maia_prob=0.50, **_WIDE_MARGIN)
 
-    # Under the shipped constants (gem<=0.20, great<=0.50): 0.35 -> great.
+    # Under the shipped constants (gem<=0.30, great<=0.70): 0.50 -> great.
     assert bmc.classify_best_move(**stored) == "great"
 
-    # Retune GEM_MAIA_MAX_PROB up to 0.40 -> the same 0.35 now clears gem.
+    # Retune GEM_MAIA_MAX_PROB up to 0.60 -> the same 0.50 now clears gem.
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(bmc, "GEM_MAIA_MAX_PROB", 0.40)
+        mp.setattr(bmc, "GEM_MAIA_MAX_PROB", 0.60)
         assert bmc.classify_best_move(**stored) == "gem"
 
-    # Retune GREAT_MAIA_MAX_PROB down below 0.35 -> the same 0.35 falls to neither.
+    # Retune GREAT_MAIA_MAX_PROB down below 0.50 -> the same 0.50 falls to neither.
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(bmc, "GREAT_MAIA_MAX_PROB", 0.30)
+        mp.setattr(bmc, "GREAT_MAIA_MAX_PROB", 0.40)
         assert bmc.classify_best_move(**stored) == "neither"
 
 
@@ -446,11 +448,11 @@ _TIER_SQL_FIXTURE_MATRIX: list[tuple[str, _ClassifyKwargs]] = [
     ),
     (
         "great_mid_prob_wide_margin",
-        dict(maia_prob=0.35, **_WIDE_MARGIN),
+        dict(maia_prob=0.50, **_WIDE_MARGIN),
     ),
     (
         "neither_high_prob_wide_margin",
-        dict(maia_prob=0.60, **_WIDE_MARGIN),
+        dict(maia_prob=0.80, **_WIDE_MARGIN),
     ),
     (
         "gem_boundary_exactly_gem_max",

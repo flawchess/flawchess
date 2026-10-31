@@ -37,11 +37,16 @@ from app.services.maia_encoding import clamp_to_ladder_bounds
 # ─── Classification constants ────────────────────────────────────────
 
 # Maia policy-probability ceilings, mirroring the frontend gemMove.ts semantics.
-# A gem is "fewer than 1 in 5 rating-peers would play it" (GEM_MAIA_MAX_PROB); a
-# great move is the (0.20, 0.50] band. Both are flat cutoffs (no per-ELO
+# A gem is "fewer than ~3 in 10 rating-peers would play it" (GEM_MAIA_MAX_PROB); a
+# great move is the (0.30, 0.70] band. Both are flat cutoffs (no per-ELO
 # iso-rarity curve). Named constants — no magic numbers.
-GEM_MAIA_MAX_PROB: float = 0.20
-GREAT_MAIA_MAX_PROB: float = 0.50
+#
+# Retuned 2026-10-31 from 0.20 / 0.50 (quick 261031-et9): both tiers were too rare.
+# On prod (1.02M analyzed games, 2.04M player-games) the old cutoffs gave 0.051
+# gems and 0.21 greats per player-game (a gem in only 4.8% of player-games); the
+# new ones give ~0.10 gems and ~0.44 greats. Query-time only, so no re-analysis.
+GEM_MAIA_MAX_PROB: float = 0.30
+GREAT_MAIA_MAX_PROB: float = 0.70
 
 # Imported-eval divergence guard. For a lichess-eval game the
 # eval graph (game_positions.eval_cp) is lichess's imported %eval, while best_cp
