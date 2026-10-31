@@ -30,6 +30,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 009 | endgame-stats-percentile-first | How to make the Endgame Stats bullet/gauge sections readable when zone colors and peer percentiles disagree? | **Round 2 — percentile-first, ranked values shown, one percentile bar per metric** (SEED-196) | endgames, stats, percentiles, mobile |
 | 010 | library-stats-you-vs-opponents | How do the Library Stats you-vs-opponent sections (context tags, tactics) become readable, consistent with 009 but without percentiles? | **Round 5: tiles + opponents, zero-centred gap bars (gap only, rates in popovers), What stands out, three tactic tables by filter group (Advanced collapsed), synced TC switch** (SEED-198) | library, stats, flaws, tactics, iqr, mobile |
 | 012 | opening-stats-repertoire | How do the Openings Stats + Insights tabs carry over the 009/010 system (repertoire table, out-of/after-the-opening gap bars, move-led findings)? | Stats A + Insights A, merged; After the opening dropped | openings, stats, insights, repertoire, mobile |
+| 013 | out-of-the-opening | How should the per-colour "came out worse / better" rates (±1.0 vs colour baseline, peer-ranked per TC) look on the Openings Stats tab without reading as a WDL bar? | **A: per-TC cards, two percentile rows (canonical-slice CDFs); same bars per opening in the expanded card vs the peer band** | openings, stats, percentiles, eval, mobile |
 
 ## Decisions (winners)
 
@@ -146,3 +147,18 @@ as 009 but without percentiles: the benchmark IQR of the you-minus-opponent gap 
 - **Popover footers** carry 99% CI, p-value (and its reference) and n.
 - **"After the opening" (score vs expected from eval) dropped**: never significant, too many assumptions.
   The Elo × TC expected-score refit moved to Endgames (SEED-203).
+
+**013 → A: per-TC cards with percentile rows (round 1).** Sketched 2026-10-31 from a /gsd-explore session; seed: SEED-261031-x3l.
+- **New "Out of the opening" section** at the top of the Openings Stats tab, under the sticky White | Black
+  switch: one card per played TC, two `RankedMetricRow`s ("Came out worse", "Came out better") with the
+  Endgames `PercentileBar`; words carry the inverted meaning ("Fewer worse games than 58% of peers").
+- **Not a WDL bar:** no three-part composition; "even" is implicit.
+- **Metric:** eval at the first middlegame ply minus the colour baseline, ≤ −1.0 worse / ≥ +1.0 better;
+  games ending in the opening count by result (resign/mate/timeout), abandoned and drawn ones excluded.
+- **Peer basis:** rating × TC CDFs on the Endgames canonical slice (3000 games / 36 months per TC, ±100,
+  floor 30, 99% gate), filter-independent. The opponent framing was rejected: for a shared eval it collapses
+  worse and better into one identity.
+- **Popover:** what + histogram of the player's eval after the opening with the ±1.0 cuts + disclosure footer.
+- **Per opening:** the same two bars in the repertoire expanded card, against the peer band with a 99%
+  binomial test, no percentile, faded under 20 games.
+
