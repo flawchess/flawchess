@@ -45,7 +45,11 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
   `user_benchmark_percentiles_service.py`.
   - Slice: most recent 3000 games within 36 months per TC, rated, opponents within ±100.
   - Floor: 30 games per colour × TC.
-  - 99% significance gate for red/green. Filter-independent.
+  - **95% significance gate** for red/green (owner, 2026-10-31), matching the Openings page (Phase 242
+    D-33: few cells per view, cheap false positive; `OPENING_INSIGHTS_CI_Z_95`). Library and Endgames
+    stay at 99% (`VERDICT_CI_Z_99`, about 50 cells per page). The Endgames ranked-metric gate
+    hardcodes 99%, so the plan must pass the level in as a parameter rather than reuse that path.
+  - Filter-independent.
 - **Colour collapses** (|d| ≤ 0.15), so one CDF per TC can rank both colours.
 
 ### Section UI (sketch 013, Variant A)
@@ -72,7 +76,7 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
   mean (SE about 6.4 pp at n=40, p=0.21).
 - Current form per opening stays with the existing filter-following eval and score bars.
 - Original design, in case it is revisited: same two bars, against the peer typical band at the
-  user's rating × TC, dot colour from a 99% binomial test against the peer median, faded under 20 games.
+  user's rating × TC, dot colour from a 95% binomial test against the peer median, faded under 20 games.
 
 ## Rejected (do not reopen without new evidence)
 
@@ -129,14 +133,15 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
   about 0 in every benchmark cell. Owner's read (2026-10-31): FlawChess users are a self-selected,
   ambitious population (fringe-tool seekers, GM Noel Studer's newsletter), not a random lichess or
   chess.com sample. This is expected, not a bug.
-- **Consequence:** against the lichess peer CDF, many users will land above the median, and the 99%
+- **Consequence:** against the lichess peer CDF, many users will land above the median, and the 95%
   gate will colour green more often than red. The popover's "who the peers are" disclosure carries
   real weight; the copy must not imply the peers are other FlawChess users.
 
 ## Open for discuss-phase
 
 - One CDF per TC pooled over colours, or one per colour.
-- The exact definition of the section's 99% significance test.
+- The exact definition of the section's 95% significance test (e.g. the user's rate CI against the
+  peer p50 at their rating × TC).
 - Whether the eventual opening LLM narration consumes these percentiles.
 
 ## Breadcrumbs
