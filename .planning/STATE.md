@@ -5,8 +5,8 @@ current_phase: 242
 current_phase_name: Openings Stats + Insights Rework (SEED-204)
 status: completed
 stopped_at: Phase 242 complete — all phases complete
-last_updated: "2026-10-31T09:45:53.591Z"
-state_head: 702494c0b86e75289e9cc104ad0fe0538dbabb06
+last_updated: "2026-10-31T10:41:44.135Z"
+state_head: a02ca1788510d17711def6e10cd9a51e58710241
 progress:
   total_phases: 1
   completed_phases: 103
@@ -14,8 +14,8 @@ progress:
   completed_plans: 96
   percent: 100
 milestone_name: Codebase Cleanup
-last_activity: 2026-10-18
-last_activity_desc: Phase 242 complete (owner override on the 5 browser UAT items) and squash-merged to main via PR
+last_activity: 2026-10-31
+last_activity_desc: Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart
 ---
 
 # Project State: FlawChess
@@ -1061,6 +1061,7 @@ None active.
 | 261017-986 | SEED-201: concurrent pytest isolation, TrainStreakCard flake, 422 rename + asyncio mark, INV-L1012 comment | 2026-10-17 | d42a6ace0 | [261017-986-seed-201-test-infra-hardening-after-241](./quick/261017-986-seed-201-test-infra-hardening-after-241/) |
 | 152 | Show subnav tab icons on mobile Openings page | 2026-10-18 | 67d053ef3 | — |
 | 261031-et9 | Retune gem/great Maia ceilings to 0.30/0.70 | 2026-10-31 | 702494c0b | [261031-et9-retune-gem-great-maia-thresholds-to-0-30](./quick/261031-et9-retune-gem-great-maia-thresholds-to-0-30/) |
+| 261031-g4l | Per-rating gem/great/best coloring of the best-move line in the Maia moves-by-rating chart | 2026-10-31 | a02ca1788 | [261031-g4l-per-rating-gem-great-best-coloring-of-th](./quick/261031-g4l-per-rating-gem-great-best-coloring-of-th/) |
 
 ## Deferred Items
 

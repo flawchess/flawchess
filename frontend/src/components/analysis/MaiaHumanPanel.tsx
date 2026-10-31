@@ -23,6 +23,7 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { MAIA_ACCENT } from '@/lib/theme';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import type { MoverColor } from '@/lib/liveFlaw';
+import { onlyGoodMoveSan } from '@/lib/gemMove';
 
 const MAIA_SOURCE_URL = 'https://github.com/CSSLab/maia3';
 const MAIA_SITE_URL = 'https://maiachess.com';
@@ -96,6 +97,11 @@ function MaiaInfoTooltip(): React.ReactElement {
           curve traces one candidate move, so you can see its popularity rise or fall
           as players get stronger, and read off what a player at your level would most
           likely play.
+        </p>
+        <p>
+          When the best move is the only good one, its line changes color with rating:
+          violet (gem) where at most 30% of players at that rating would find it, blue
+          (great) up to 70%, and green (best) above that.
         </p>
         <p>
           Predictions come from{' '}
@@ -189,6 +195,7 @@ export function MaiaHumanPanel({
               shownSans={shownSans}
               qualityBySan={qualityBySan}
               engineTopLines={engineTopLines}
+              tieredSan={onlyGoodMoveSan(qualityBySan, bestSan, mover)}
               heightClass={compact ? COMPACT_CHART_HEIGHT_CLASS : undefined}
             />
             {/* Move-quality bar below the chart: the shown

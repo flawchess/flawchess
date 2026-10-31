@@ -15,6 +15,8 @@ import {
   classifyGem,
   classifyGreat,
   summarizeForGem,
+  rareTierForProbability,
+  onlyGoodMoveSan,
   GEM_MAIA_MAX_PROB,
   GREAT_MAIA_MAX_PROB,
   type GemGrade,
@@ -351,5 +353,55 @@ describe('summarizeForGem', () => {
       bestEs: null,
       secondBestEs: null,
     });
+  });
+});
+
+// ─── rareTierForProbability / onlyGoodMoveSan (quick 261031-g4l) ───────────
+
+describe('rareTierForProbability', () => {
+  it('maps the C1 bands with inclusive upper bounds', () => {
+    expect(rareTierForProbability(0)).toBe('gem');
+    expect(rareTierForProbability(GEM_MAIA_MAX_PROB)).toBe('gem');
+    expect(rareTierForProbability(GEM_MAIA_MAX_PROB + 0.01)).toBe('great');
+    expect(rareTierForProbability(GREAT_MAIA_MAX_PROB)).toBe('great');
+    expect(rareTierForProbability(GREAT_MAIA_MAX_PROB + 0.01)).toBe('best');
+    expect(rareTierForProbability(1)).toBe('best');
+  });
+});
+
+describe('onlyGoodMoveSan', () => {
+  // Gap well above MISTAKE_DROP vs well below it.
+  const clearGap = new Map<string, GemGrade>([
+    ['Qg5+', gradeForEs(0.95)],
+    ['Qe4', gradeForEs(0.3)],
+  ]);
+  const smallGap = new Map<string, GemGrade>([
+    ['Qg5+', gradeForEs(0.6)],
+    ['Qe4', gradeForEs(0.59)],
+  ]);
+
+  it('returns bestSan when it is the graded argmax and beats the runner-up by MISTAKE_DROP', () => {
+    expect(onlyGoodMoveSan(clearGap, 'Qg5+', WHITE)).toBe('Qg5+');
+  });
+
+  it('returns null when the gap is below MISTAKE_DROP', () => {
+    expect(onlyGoodMoveSan(smallGap, 'Qg5+', WHITE)).toBeNull();
+  });
+
+  it('returns null when bestSan is not the graded argmax', () => {
+    expect(onlyGoodMoveSan(clearGap, 'Qe4', WHITE)).toBeNull();
+  });
+
+  it('returns null without a bestSan or a runner-up', () => {
+    expect(onlyGoodMoveSan(clearGap, null, WHITE)).toBeNull();
+    expect(onlyGoodMoveSan(new Map([['Qg5+', gradeForEs(0.95)]]), 'Qg5+', WHITE)).toBeNull();
+  });
+
+  it('trusts a stored gem/great tag even when live grading misses C2', () => {
+    const tagged = new Map<string, GemGrade & { quality?: string }>([
+      ['Qg5+', { ...gradeForEs(0.6), quality: 'great' }],
+      ['Qe4', gradeForEs(0.59)],
+    ]);
+    expect(onlyGoodMoveSan(tagged, 'Qg5+', WHITE)).toBe('Qg5+');
   });
 });
