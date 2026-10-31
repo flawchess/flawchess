@@ -25,8 +25,9 @@ blunders is what actually wins games.
 
 - **Gem**: by far the best move in the position (second-best is a blunder:
   best − second ≥ MISTAKE_DROP in mover-POV expected score) AND hard to find at
-  the player's level (Maia policy prob ≤ 20% at the mover's pinned ELO).
-- **Great**: same only-move condition, Maia prob in (20%, 50%].
+  the player's level (Maia policy prob ≤ 30% at the mover's pinned ELO; was 20% until the
+  2026-10-31 retune, quick 261031-et9).
+- **Great**: same only-move condition, Maia prob in (30%, 70%] (was (20%, 50%]).
 - chess.com Brilliant = "a good piece sacrifice" with extra conditions
   (https://support.chess.com/en/articles/8572705). Our definition includes
   positional and defensive brilliance, and Maia gives rating-relative

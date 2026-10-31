@@ -18,6 +18,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The Insights tab and the per-bookmark "Include in opening results" switch are gone. Old Insights links open Stats.
 - Train: the puzzle verdict is now one short sentence that states what the position was and what you scored ("Only one move works here. You called it +1 and found it +2."), replacing three blocks that repeated each other. Return dates read "Back in 3 days", and motif and alternative moves share one line.
 - Train: on the Accuracy leaderboard, players with equal accuracy are now ranked by puzzles solved (more puzzles ranks higher), so ties are rarer. Medals from earlier weeks are unchanged.
+- Gem and great moves are now about twice as common. A gem is the only good move that fewer than 3 in 10 rating peers would find (was 1 in 5); a great move is one found by 3 to 7 in 10 peers (was 1 in 5 to 1 in 2). Existing games are reclassified automatically.
 
 ### Fixed
 
