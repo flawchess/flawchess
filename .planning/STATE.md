@@ -4,8 +4,8 @@ milestone: v2.27
 current_phase: 243
 status: completed
 stopped_at: Phase 243 complete — all phases complete
-last_updated: "2026-10-31T19:28:50.430Z"
-state_head: cc403554025543c0d27868b0a69c3dc4bd9cdcdc
+last_updated: "2026-10-31T19:59:09.192Z"
+state_head: f4c0b154bbea5cc93700afb01910868ef6063b60
 progress:
   total_phases: 2
   completed_phases: 103
@@ -1068,6 +1068,7 @@ None active.
 | 152 | Show subnav tab icons on mobile Openings page | 2026-10-18 | 67d053ef3 | — |
 | 261031-et9 | Retune gem/great Maia ceilings to 0.30/0.70 | 2026-10-31 | 702494c0b | [261031-et9-retune-gem-great-maia-thresholds-to-0-30](./quick/261031-et9-retune-gem-great-maia-thresholds-to-0-30/) |
 | 261031-g4l | Per-rating gem/great/best coloring of the best-move line in the Maia moves-by-rating chart | 2026-10-31 | a02ca1788 | [261031-g4l-per-rating-gem-great-best-coloring-of-th](./quick/261031-g4l-per-rating-gem-great-best-coloring-of-th/) |
+| 261031-sly | Lower ranked-sample cap from 3000 to 1000 games per TC | 2026-10-31 | f4c0b154b | [261031-sly-lower-ranked-sample-cap-from-3000-to-100](./quick/261031-sly-lower-ranked-sample-cap-from-3000-to-100/) |
 
 ## Deferred Items
 
