@@ -207,7 +207,7 @@ class TestPromptVersionAndBody:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v49"
+        assert insights_llm._PROMPT_VERSION == "endgame_v50"
 
     def test_prompt_file_glossary_has_entry_expected_score(self) -> None:
         """Glossary entry must be present with required framing."""
@@ -411,8 +411,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """_PROMPT_VERSION is endgame_v49 (v48 ranked sample + v49 summary)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v49"
+        """_PROMPT_VERSION is endgame_v50 (v48 ranked sample + v49 summary + v50 1000-game cap)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v50"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2593,7 +2593,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v49"
+        assert response.report.prompt_version == "endgame_v50"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2617,7 +2617,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v49"
+        assert log.response_json["prompt_version"] == "endgame_v50"
 
 
 class TestCacheBehavior:
@@ -3622,7 +3622,7 @@ class TestPromptVersionPinned:
 
     def test_prompt_version_is_v33(self) -> None:
         """The pinned prompt version."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v49"
+        assert insights_llm._PROMPT_VERSION == "endgame_v50"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """_NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3666,7 +3666,7 @@ class TestNonEndgameEloPayloadExtension:
 
     def test_prompt_version_is_endgame_v39(self) -> None:
         """The pinned prompt version."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v49"
+        assert insights_llm._PROMPT_VERSION == "endgame_v50"
 
     def test_prompt_prose_includes_non_endgame_elo_sentence_pattern(self) -> None:
         """The canonical 'Your Endgame ELO sits at X, vs Y' sentence skeleton
@@ -4606,4 +4606,4 @@ class TestRatingBasisBlock:
         """The pinned prompt version."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v49"
+        assert insights_llm._PROMPT_VERSION == "endgame_v50"

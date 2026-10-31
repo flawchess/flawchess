@@ -93,11 +93,11 @@ class UserBenchmarkPercentile(Base):
     - ``recovery_score_gap`` → count of spans classified into the recovery
       bucket on the pool.
     - ``time_pressure_score_gap`` / ``clock_gap`` / ``net_flag_rate`` →
-      count of games in the TC's recent-3000 pool used to compute the
+      count of games in the TC's recent-1000 pool used to compute the
       time-pressure metric.
     - ``opening_worse_rate`` / ``opening_better_rate`` → count of qualifying games
       (reached the middlegame with an eval, or ended early by resignation, checkmate
-      or timeout) for that colour on the TC's recent-3000 pool.
+      or timeout) for that colour on the TC's recent-1000 pool.
     """
 
     __tablename__ = "user_benchmark_percentiles"

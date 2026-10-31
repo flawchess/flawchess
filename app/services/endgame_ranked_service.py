@@ -3,7 +3,7 @@
 ``get_ranked_stats`` serves ``GET /api/endgames/ranked-stats``: for every time
 control with at least one ranked-sample game it computes the 11 peer-ranked
 metric values ON READ from the canonical ranked slice (rated, human, opponents
-within 100 Elo, last 36 months, at most 3000 games per TC). The ranked games are
+within 100 Elo, last 36 months, at most 1000 games per TC). The ranked games are
 selected by ``ranked_games_sql`` which composes the unchanged Stage A/B prelude,
 so every value describes the same games the persisted percentiles rank.
 Percentiles are read as Stage A/B wrote them.

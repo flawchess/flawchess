@@ -78,7 +78,7 @@ async def get_out_of_opening_stats(
     """Return both colours' peer-ranked "out of the opening" worse/better stats.
 
     Takes NO filter parameters: the section always describes the canonical ranked
-    sample (rated, opponents within 100 Elo, last 36 months, at most 3000 games per time
+    sample (rated, opponents within 100 Elo, last 36 months, at most 1000 games per time
     control), so any query string produces the same body. ``user_id`` comes only from the
     authenticated user, never from the request.
 
