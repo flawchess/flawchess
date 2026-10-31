@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { OpeningColorSwitch } from '@/components/openings/stats/OpeningColorSwitch';
+import { OutOfOpeningSection } from '@/components/openings/stats/OutOfOpeningSection';
 import { OpeningFindings } from '@/components/openings/stats/OpeningFindings';
 import { REPERTOIRE_HEADING_CLASS } from '@/components/openings/stats/headingClasses';
 import { RepertoireList } from '@/components/openings/stats/RepertoireList';
@@ -70,13 +71,17 @@ export function StatsTab({
   return (
     <div>
       {/* Desktop: the colour switch pins in a StickyTcBar overlaying the first heading row
-          (Bookmarked Openings), like the Library Stats TC switch. Phones render the same
+          (Out of the opening), like the Library Stats TC switch. Phones render the same
           switch inside the sticky Filters row in Openings.tsx (one sticky row, not two).
           No ancestor may set overflow-* or the bar stops sticking. */}
       <StickyTcBar showOnMobile={false} desktopBreakpoint="lg" testId="opening-stats-color-bar">
         <OpeningColorSwitch idPrefix="desktop" selected={color} onSelect={onColorChange} />
       </StickyTcBar>
       <div className="flex flex-col gap-6">
+        {/* Peer-ranked worse/better rates of the selected colour; filter-independent. First section
+            so the sticky colour bar overlays its heading. */}
+        <OutOfOpeningSection color={color} />
+
         {/* Empty-state hint when there are no bookmarks at all */}
         {bookmarks.length === 0 && (
           <div className="space-y-2">

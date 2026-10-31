@@ -97,7 +97,12 @@ line-length = 100
 # analysis/tilt_study/probes/ holds notebook-style REPL snippets that reuse the marimo
 # notebook's globals (F821 everywhere); they are scratch probes, not modules.
 # .planning/research/perf-profiling-* holds throwaway profiling scripts kept for re-measurement.
-extend-exclude = ["analysis/tilt_study/probes", ".planning/research/perf-profiling-*"]
+# .planning/sketches/ holds throwaway sketch analysis scripts (sketch 013 broke `ruff check .` on main).
+extend-exclude = [
+    "analysis/tilt_study/probes",
+    ".planning/research/perf-profiling-*",
+    ".planning/sketches",
+]
 
 [tool.ruff.lint]
 # Explicit `select` pins the rule set that was ruff's own implicit default under

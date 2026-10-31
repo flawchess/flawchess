@@ -19,7 +19,10 @@ Stage A (eval-independent — wired into import completion):
 Stage B (eval-dependent — wired into the eval drain): for each
 metric family in ``STAGE_B_METRIC_FAMILIES`` × each TC with an above-floor
 anchor, dispatch to the matching per-TC builder, interpolate against the
-cohort CDF, and UPSERT one row per (family, tc).
+cohort CDF, and UPSERT one row per (family, tc). It also writes the per-colour
+"out of the opening" rows (``STAGE_B_OPENING_FAMILIES``): one counts query per
+anchored TC feeds up to four rows (worse/better x white/black), each ranked
+against the SAME colour-pooled cell ``(metric, rounded anchor, tc)`` (D-04).
 
 Game-weighted blended anchor:
 
@@ -64,8 +67,8 @@ Session discipline (CLAUDE.md hard rule):
 Stage A / Stage B race-condition non-issue:
   Stage A owns ``(score_gap, *)`` percentile rows + ALL anchor rows.
   Stage B owns the other 10 metric families (``STAGE_B_METRIC_FAMILIES``)
-  × {bullet, blitz, rapid, classical}. The PK is
-  ``(user_id, metric, time_control_bucket)`` so disjoint writes never
+  × {bullet, blitz, rapid, classical} plus the per-colour opening rows. The PK is
+  ``(user_id, metric, time_control_bucket, color)`` so disjoint writes never
   collide.
 """
 
@@ -83,6 +86,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.database import async_session_maker as _default_session_maker
 from app.services import percentile_compute_registry
 from app.models.user_rating_anchors import TimeControlBucket
+from app.repositories.opening_out_repository import fetch_opening_out_counts
 from app.repositories.user_benchmark_percentiles_repository import upsert_percentile
 from app.repositories.user_rating_anchors_repository import (
     RatingAnchorRow,
@@ -91,6 +95,7 @@ from app.repositories.user_rating_anchors_repository import (
 )
 from app.services.canonical_slice_sql import (
     MEDIAN_ANCHOR_MIN_GAMES,
+    OPENING_OUT_MIN_GAMES_PER_COLOR,
     per_user_cte_achievable_tc,
     per_user_cte_clock_gap,
     per_user_cte_conv_rate_tc,
@@ -105,8 +110,10 @@ from app.services.canonical_slice_sql import (
 )
 from app.repositories.benchmark_cohort_cdf_repository import load_cohort_cells
 from app.services.global_percentile_cdf import (
+    OPENING_OUT_METRICS,
     CdfMetricId,
     CdfTable,
+    OpeningOutMetricId,
     round_anchor_to_grid,
     interpolate_cohort_percentile,
 )
@@ -145,6 +152,11 @@ STAGE_B_METRIC_FAMILIES: tuple[CdfMetricId, ...] = (
     "parity_rate",
     "recovery_rate",
 )
+
+# Per-colour "out of the opening" families (Phase 243). A SEPARATE tuple on purpose:
+# the Endgames ranked payload and its parity tests pin STAGE_B_METRIC_FAMILIES to
+# exactly the 10 colour-agnostic families, so the opening ids must never join it.
+STAGE_B_OPENING_FAMILIES: tuple[OpeningOutMetricId, ...] = OPENING_OUT_METRICS
 
 
 # Bounds how many compute_stage_a/compute_stage_b bodies can hold a DB
@@ -457,6 +469,57 @@ async def _compute_and_upsert_cell(
         sentry_sdk.capture_exception(exc)
 
 
+async def _compute_and_upsert_opening_cells(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    tc: TimeControlBucket,
+    anchor: RatingAnchorRow,
+    cohort: dict[tuple[CdfMetricId, int, TimeControlBucket], CdfTable],
+) -> None:
+    """Upsert the per-colour opening worse/better percentile rows for one TC.
+
+    One ``fetch_opening_out_counts`` call feeds both rates (half the DB time of a
+    query per rate). Each (colour, metric) with at least
+    ``OPENING_OUT_MIN_GAMES_PER_COLOR`` qualifying games gets a row whose value is
+    ``count / n_games`` and whose percentile is interpolated against the SAME
+    colour-pooled cell for both colours (D-04: the cohort key carries no colour).
+    A colour below the floor gets no row. Failures are captured per TC so the other
+    TCs and the endgame families still write.
+    """
+    try:
+        counts_by_color = await fetch_opening_out_counts(session, user_id=user_id, tc=tc)
+        table_anchor = round_anchor_to_grid(anchor.anchor_rating)
+        for (color, counts), metric in itertools.product(
+            counts_by_color.items(), STAGE_B_OPENING_FAMILIES
+        ):
+            if counts.n_games < OPENING_OUT_MIN_GAMES_PER_COLOR:
+                continue
+            value = counts.count_for(metric) / counts.n_games
+            percentile = interpolate_cohort_percentile(
+                value, cohort.get((metric, table_anchor, tc))
+            )
+            await upsert_percentile(
+                session,
+                user_id=user_id,
+                metric=metric,
+                time_control_bucket=tc,
+                color=color,
+                value=value,
+                n_games=counts.n_games,
+                percentile=percentile,
+                cdf_snapshot=datetime.now(UTC).date(),
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        sentry_sdk.set_context(
+            "percentile_compute",
+            {"user_id": user_id, "stage": "B", "metric": "opening_out", "tc": tc},
+        )
+        sentry_sdk.capture_exception(exc)
+
+
 async def compute_stage_a(
     user_id: int,
     *,
@@ -512,7 +575,8 @@ async def compute_stage_b(
     *,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """Compute the 10 eval-dependent metric families × user's above-floor TCs.
+    """Compute the 10 eval-dependent metric families × user's above-floor TCs,
+    plus the per-colour opening worse/better rows (``STAGE_B_OPENING_FAMILIES``).
 
     Background task — never propagates exceptions. Scheduled via
     ``asyncio.create_task`` from ``eval_drain.py`` (once the user's pending
@@ -531,9 +595,9 @@ async def compute_stage_b(
     ``session.commit()`` at the end.
 
     Stage A / Stage B race: PK is ``(user_id, metric,
-    time_control_bucket)`` and Stage A writes only ``score_gap`` rows;
-    Stage B writes the other 10 families. Disjoint write sets never
-    conflict.
+    time_control_bucket, color)`` and Stage A writes only ``score_gap`` rows;
+    Stage B writes the other 10 families plus the per-colour opening rows.
+    Disjoint write sets never conflict.
     """
     maker = session_maker if session_maker is not None else _default_session_maker
     # Bound how many compute_stage_a/compute_stage_b bodies hold a pooled DB
@@ -569,6 +633,12 @@ async def compute_stage_b(
                         anchor=anchor,
                         cohort=cohort_b,
                         stage_label="B",
+                    )
+                # Per-colour opening rows: one counts query per anchored TC, ranked
+                # against the same prefetched cohort.
+                for tc, anchor in anchors.items():
+                    await _compute_and_upsert_opening_cells(
+                        session, user_id=user_id, tc=tc, anchor=anchor, cohort=cohort_b
                     )
                 await session.commit()
         except asyncio.CancelledError:

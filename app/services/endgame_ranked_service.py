@@ -3,7 +3,7 @@
 ``get_ranked_stats`` serves ``GET /api/endgames/ranked-stats``: for every time
 control with at least one ranked-sample game it computes the 11 peer-ranked
 metric values ON READ from the canonical ranked slice (rated, human, opponents
-within 100 Elo, last 36 months, at most 3000 games per TC). The ranked games are
+within 100 Elo, last 36 months, at most 1000 games per TC). The ranked games are
 selected by ``ranked_games_sql`` which composes the unchanged Stage A/B prelude,
 so every value describes the same games the persisted percentiles rank.
 Percentiles are read as Stage A/B wrote them.
@@ -363,7 +363,7 @@ def _restrict_to_since(inputs: RankedInputs, since: datetime.datetime) -> Ranked
     )
 
 
-def _is_anchor_game(game: RankedGameRow) -> bool:
+def is_anchor_game(game: RankedGameRow) -> bool:
     """Mirror of the anchor CTE's Daily exclusion.
 
     The CTE keeps a game iff ``NOT (platform = 'chess.com' AND time_control_str LIKE
@@ -873,7 +873,7 @@ def _tc_canonical(
     return _TcCanonical(cores=cores, buckets=buckets, entry_flow=entry_flow)
 
 
-def _rank_status(
+def rank_status(
     *,
     has_anchor: bool,
     anchor_games: int,
@@ -942,7 +942,7 @@ def _metric_out(
     ctx: _StatusContext,
     cohort_median: float | None,
 ) -> RankedMetricOut:
-    status, floor_n, floor_required = _rank_status(
+    status, floor_n, floor_required = rank_status(
         has_anchor=ctx.has_anchor,
         anchor_games=ctx.anchor_games,
         eval_dependent=metric in EVAL_DEPENDENT_METRICS,
@@ -987,7 +987,7 @@ def _build_tc_stats(
     full_endgame = _rows_for_tc(full.endgame_rows, tc)
     full_non_endgame = _rows_for_tc(full.non_endgame_rows, tc)
     canonical = _tc_canonical(tc, games, inputs, endgame_rows, non_endgame_rows)
-    anchor_games = sum(1 for g in games if _is_anchor_game(g))
+    anchor_games = sum(1 for g in games if is_anchor_game(g))
     eval_pending_games = sum(1 for g in games if g.eval_pending)
     ctx = _StatusContext(
         has_anchor=tc in inputs.anchors,

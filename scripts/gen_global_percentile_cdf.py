@@ -68,6 +68,9 @@ CLI:
   window. Defaults to today (UTC).
 * ``--regen-report-path PATH`` (optional) — defaults to
   ``reports/percentile/cohort-percentile-cdf-latest.md``.
+* ``--metrics ID[,ID...]`` (optional) — Phase 243 scoped regen: only these
+  metrics are queried and merged into the committed TSV; all other rows stay
+  byte-identical. Use ``--regen-report-path`` to keep the full-run report intact.
 """
 
 from __future__ import annotations
@@ -80,7 +83,8 @@ import sys
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Final, cast
+from collections.abc import Sequence
+from typing import Final, NamedTuple, cast
 from urllib.parse import urlparse, urlunparse
 
 import sentry_sdk
@@ -98,6 +102,7 @@ from app.services.canonical_slice_sql import (  # noqa: E402
     per_user_cte_conv_rate_tc,
     per_user_cte_median_anchor,
     per_user_cte_net_flag_rate,
+    per_user_cte_opening_out_rate,
     per_user_cte_parity_rate_tc,
     per_user_cte_recovery_rate_tc,
     per_user_cte_score_gap_tc,
@@ -108,6 +113,7 @@ from app.services.canonical_slice_sql import (  # noqa: E402
 from app.services.global_percentile_cdf import (  # noqa: E402
     BENCHMARK_DB_SNAPSHOT_MONTH,
     BREAKPOINT_PERCENTILES,
+    OPENING_OUT_METRICS,
     CdfMetricId,
     CdfTable,
 )
@@ -152,12 +158,14 @@ ALL_TIME_CONTROLS: Final[tuple[TimeControlBucket, ...]] = (
     "classical",
 )
 
-# 11-value CdfMetricId tuple. Order matters: registry-literal emission walks
+# 13-value CdfMetricId tuple. Order matters: registry-literal emission walks
 # this tuple so two regen runs against the same DB produce byte-identical
 # Python source. Order mirrors the Literal in
 # ``app/services/global_percentile_cdf.py`` (CONTEXT D-13).
 # Phase 99: 3 raw-rate families appended
 # (conversion_rate, parity_rate, recovery_rate).
+# Phase 243: the two out-of-the-opening rates are appended LAST so the TSV
+# emission order keeps every existing metric's rows in place.
 IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
     "score_gap",
     "achievable_score_gap",
@@ -170,6 +178,8 @@ IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
     "conversion_rate",
     "parity_rate",
     "recovery_rate",
+    "opening_worse_rate",
+    "opening_better_rate",
 )
 
 # Output paths.
@@ -301,7 +311,18 @@ def _per_user_cte_for_metric_and_tc(
         return per_user_cte_parity_rate_tc(tc, source="benchmark", snapshot_date=snapshot_date)
     if metric == "recovery_rate":
         return per_user_cte_recovery_rate_tc(tc, source="benchmark", snapshot_date=snapshot_date)
+    # Phase 243 (D-05): the opening rates compose the SAME builder body Stage B and
+    # the on-read path use. Explicit equality checks narrow the Literal for ty.
+    if metric == "opening_worse_rate" or metric == "opening_better_rate":
+        return per_user_cte_opening_out_rate(
+            tc, metric=metric, source="benchmark", snapshot_date=snapshot_date
+        )
     raise ValueError(f"Unknown metric: {metric!r}")
+
+
+def _is_opening_out_metric(metric: CdfMetricId) -> bool:
+    """True for the two per-colour opening rates (colour-pooled CDF path)."""
+    return metric in OPENING_OUT_METRICS
 
 
 def _build_per_user_with_anchor_query(
@@ -313,7 +334,9 @@ def _build_per_user_with_anchor_query(
     """Build the per-(metric, TC) SQL query joining per_user_values × per_user_anchor.
 
     Returns rows of ``(user_id, metric_value, n_games, anchor_rating)`` over
-    the cohort selected by ``selected_users_cte(source="benchmark")``. Plan 04
+    the cohort selected by ``selected_users_cte(source="benchmark")``. The two
+    per-colour opening metrics also project ``user_color`` (one row per user x
+    colour that passes the 30-game floor). Plan 04
     of Phase 94.4 ranks these rows in Python (RESEARCH Pitfall 8) — collapses
     1,056 per-anchor queries to 32 per-(metric, TC) queries.
 
@@ -334,12 +357,15 @@ def _build_per_user_with_anchor_query(
         .replace("recent_capped_no_daily", "recent_capped_anchor_no_daily")
         .replace("FROM recent_capped rc", "FROM recent_capped_anchor rc")
     )
+    # Only the per-colour opening metrics project user_color; every other metric
+    # keeps the exact historical SELECT list (the 44 golden fixtures pin it).
+    color_column = "\n  puv.user_color," if _is_opening_out_metric(metric) else ""
     return f"""
 WITH {selected_users_cte(source="benchmark")},
 {per_user_block},
 {anchor_block_renamed}
 SELECT
-  puv.user_id,
+  puv.user_id,{color_column}
   puv.metric_value,
   puv.n_games,
   pua.anchor_rating
@@ -357,11 +383,18 @@ JOIN per_user_anchor pua USING (user_id)
 # tiebreaker on the sort (RESEARCH Pitfall 1 + W3 fix). Use a NamedTuple so
 # the sort key can write ``r.anchor_rating`` / ``r.user_id`` (matches the
 # RESEARCH Pattern 1 reference style and the plan-acceptance literal grep).
-from typing import NamedTuple  # noqa: E402 — local to keep the row type near its sort
-
-
 class _PerUserRow(NamedTuple):
     user_id: int
+    metric_value: float
+    n_games: int
+    anchor_rating: int
+
+
+class _PerUserColorRow(NamedTuple):
+    """One (user, colour) row of a per-colour opening metric (Phase 243, D-04)."""
+
+    user_id: int
+    user_color: str
     metric_value: float
     n_games: int
     anchor_rating: int
@@ -486,6 +519,97 @@ def _build_cohort_cdf_for(
     return result, log
 
 
+async def _query_per_user_color_with_anchor(
+    session: AsyncSession,
+    metric: CdfMetricId,
+    tc: TimeControlBucket,
+    snapshot_date: date,
+) -> list[_PerUserColorRow]:
+    """Fetch (user_id, user_color, metric_value, n_games, anchor_rating) for one opening (metric, TC)."""
+    sql = _build_per_user_with_anchor_query(metric, tc, snapshot_date=snapshot_date)
+    result = await session.execute(text(sql))
+    return [
+        _PerUserColorRow(
+            user_id=int(r.user_id),
+            user_color=str(r.user_color),
+            metric_value=float(r.metric_value),
+            n_games=int(r.n_games),
+            anchor_rating=int(r.anchor_rating),
+        )
+        for r in result.all()
+    ]
+
+
+def _color_pooled_cell_for_anchor(
+    users: dict[int, tuple[int, list[float]]],
+    anchor: int,
+) -> tuple[CdfTable | None, int, int, int]:
+    """Rank one anchor of the colour-pooled CDF.
+
+    ``users`` maps user_id -> (anchor_rating, [metric_value per colour row]).
+    Returns ``(table_or_None, n_users, n_in_window, farthest_dist)``; the table is
+    None when fewer than ``COHORT_MIN_USERS_PER_ANCHOR`` DISTINCT users are in the
+    window (A2: MIN/MAX/n_users count users, not colour points, so both colour
+    points of a user enter or leave a cell together).
+    """
+    in_window = [
+        (abs(rating - anchor), user_id)
+        for user_id, (rating, _values) in users.items()
+        if abs(rating - anchor) <= COHORT_MAX_WINDOW_ELO
+    ]
+    n_in_window = len(in_window)
+    if n_in_window < COHORT_MIN_USERS_PER_ANCHOR:
+        return None, 0, n_in_window, 0
+    # (|distance|, user_id) tiebreaker keeps regen byte-identical when MAX binds.
+    kept = sorted(in_window)[:COHORT_MAX_USERS_PER_ANCHOR]
+    values = sorted(v for _dist, user_id in kept for v in users[user_id][1])
+    breakpoints = tuple(_percentile_linear(values, p) for p in range(1, 100))
+    table = CdfTable(
+        breakpoints=breakpoints,
+        n_users=len(kept),
+        snapshot_month=BENCHMARK_DB_SNAPSHOT_MONTH,
+    )
+    return table, len(kept), n_in_window, kept[-1][0]
+
+
+def _build_color_pooled_cohort_cdf_for(
+    rows: Sequence[_PerUserColorRow],
+    metric: CdfMetricId,
+    tc: TimeControlBucket,
+) -> tuple[dict[int, CdfTable], list[_CellLogEntry]]:
+    """Colour-pooled variant of ``_build_cohort_cdf_for`` (Phase 243, D-04).
+
+    Each user contributes one point per colour that passed the 30-game floor (up to
+    two) to ONE CDF per (anchor, TC); both colours are later ranked against that same
+    curve. Cohort membership (window, MIN, MAX, ``n_users``) counts DISTINCT users.
+    Returns the same ``(per-anchor CDF map, log)`` shape and log keys as
+    ``_build_cohort_cdf_for``.
+    """
+    users: dict[int, tuple[int, list[float]]] = {}
+    for r in rows:
+        users.setdefault(r.user_id, (r.anchor_rating, []))[1].append(r.metric_value)
+    result: dict[int, CdfTable] = {}
+    log: list[_CellLogEntry] = []
+    for anchor in range(COHORT_ANCHOR_MIN_ELO, COHORT_ANCHOR_MAX_ELO + 1, COHORT_ANCHOR_STEP_ELO):
+        table, n_users, n_in_window, farthest = _color_pooled_cell_for_anchor(users, anchor)
+        suppressed = table is None
+        if table is not None:
+            result[anchor] = table
+        log.append(
+            {
+                "metric": metric,
+                "anchor": anchor,
+                "tc": tc,
+                "n_users": n_users,
+                "n_in_window": n_in_window,
+                "farthest_dist_elo": farthest,
+                "suppressed": suppressed,
+                "suppression_reason": "insufficient_users_in_window" if suppressed else None,
+            }
+        )
+    return result, log
+
+
 # ---------------------------------------------------------------------------
 # TSV seed emission — write cohort_cdf.tsv from cells dict.
 # ---------------------------------------------------------------------------
@@ -508,7 +632,9 @@ def _write_seed_tsv(
     """
     tc_order = {tc: i for i, tc in enumerate(ALL_TIME_CONTROLS)}
     with path.open("w", newline="") as f:
-        writer = csv.writer(f, delimiter="\t")
+        # csv.writer defaults to CRLF; the committed TSV is LF (core.autocrlf=input
+        # normalized it on commit), so a working-copy byte diff against main failed.
+        writer = csv.writer(f, delimiter="\t", lineterminator="\n")
         writer.writerow(
             ["metric", "anchor_elo", "tc", "percentile", "value", "n_users", "snapshot_month"]
         )
@@ -533,6 +659,58 @@ def _write_seed_tsv(
     _log(f"Wrote {path}")
 
 
+CdfCells = dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]]
+
+
+def load_cells_from_tsv(tsv_path: Path) -> CdfCells:
+    """Reconstruct the cells dict from a seed TSV (inverse of ``_write_seed_tsv``).
+
+    Groups rows by (metric, anchor_elo, tc), collecting breakpoints in percentile
+    order. Avoids importing any in-source registry, so it works against the
+    committed artifact alone.
+    """
+    rows_by_cell: dict[tuple[str, int, str], list[tuple[int, float, int, str]]] = {}
+    with tsv_path.open(newline="") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            key = (row["metric"], int(row["anchor_elo"]), row["tc"])
+            rows_by_cell.setdefault(key, []).append(
+                (
+                    int(row["percentile"]),
+                    float(row["value"]),
+                    int(row["n_users"]),
+                    row["snapshot_month"],
+                )
+            )
+
+    cells: CdfCells = {}
+    for (metric, anchor_elo, tc), pct_rows in rows_by_cell.items():
+        pct_rows.sort(key=lambda r: r[0])
+        table = CdfTable(
+            breakpoints=tuple(r[1] for r in pct_rows),
+            # n_users and snapshot_month are identical across a cell's rows: take the first.
+            n_users=pct_rows[0][2],
+            snapshot_month=pct_rows[0][3],
+        )
+        per_metric = cells.setdefault(cast(CdfMetricId, metric), {})
+        per_metric[(anchor_elo, cast(TimeControlBucket, tc))] = table
+    return cells
+
+
+def merge_cells(existing: CdfCells, fresh: CdfCells, metrics: Sequence[CdfMetricId]) -> CdfCells:
+    """Replace only ``metrics`` in ``existing`` with their entries from ``fresh``.
+
+    Every other metric's per-cell dict is the same object as in ``existing``, so a
+    scoped regen cannot move any other CDF (Phase 243: no Endgames percentile
+    shifts when only the opening metrics are regenerated).
+    """
+    selected = set(metrics)
+    merged: CdfCells = {m: cells for m, cells in existing.items() if m not in selected}
+    for metric in metrics:
+        if metric in fresh:
+            merged[metric] = fresh[metric]
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Regen report.
 # ---------------------------------------------------------------------------
@@ -551,6 +729,11 @@ _METRIC_DISPLAY: Final[dict[CdfMetricId, str]] = {
     "conversion_rate": "Conversion Rate",
     "parity_rate": "Parity Rate",
     "recovery_rate": "Recovery Rate",
+    # Phase 243: out-of-the-opening worse/better rates (colour-pooled). Missing
+    # entries here crashed the first scoped regen at report render, after the TSV
+    # had already been written.
+    "opening_worse_rate": "Out of the Opening Worse Rate",
+    "opening_better_rate": "Out of the Opening Better Rate",
 }
 
 
@@ -559,6 +742,7 @@ def _render_regen_report(
     snapshot_date: date,
     runtime_seconds: float,
     git_commit: str,
+    metrics: Sequence[CdfMetricId] = IN_SCOPE_METRICS,
 ) -> str:
     """Compose the markdown text of the regen report.
 
@@ -570,7 +754,18 @@ def _render_regen_report(
     n_anchors_per_tc = (
         (COHORT_ANCHOR_MAX_ELO - COHORT_ANCHOR_MIN_ELO) // COHORT_ANCHOR_STEP_ELO
     ) + 1
-    total_cells = len(IN_SCOPE_METRICS) * n_anchors_per_tc * len(ALL_TIME_CONTROLS)
+    total_cells = len(metrics) * n_anchors_per_tc * len(ALL_TIME_CONTROLS)
+    scoped = tuple(metrics) != IN_SCOPE_METRICS
+    metrics_flag = f" --metrics {','.join(metrics)}" if scoped else ""
+    opening_note = (
+        "\n\n**Colour-pooled opening metrics (Phase 243, D-04):** each benchmark user "
+        "contributes one point per colour that passes the 30-game floor (up to two "
+        "points per TC) to ONE CDF per (anchor, TC); both colours are ranked against "
+        "that same curve. MIN/MAX and ``n_users`` count DISTINCT users (A2), so both "
+        "colour points of a user enter or leave a cell together."
+        if any(_is_opening_out_metric(m) for m in metrics)
+        else ""
+    )
 
     intro = (
         f"# Cohort Percentile CDF — Sliding-Window Methodology (Phase 94.4)\n\n"
@@ -589,7 +784,8 @@ def _render_regen_report(
         f"{COHORT_MAX_WINDOW_ELO} Elo of the anchor "
         f"(``insufficient_users_in_window``). Cohort size is variable per "
         f"cell — denser bands yield larger cohorts (tighter CIs) up to the "
-        f"MAX cap; sparser bands sit closer to MIN.\n\n"
+        f"MAX cap; sparser bands sit closer to MIN."
+        f"{opening_note}\n\n"
         f"- **DB**: benchmark (Docker on localhost:5433, "
         f"{BENCHMARK_DB_NAME_TOKEN})\n"
         f"- **Snapshot date (recency anchor)**: {snapshot_date.isoformat()} "
@@ -599,7 +795,7 @@ def _render_regen_report(
         f"- **Git commit (gen script)**: {git_commit}\n"
         f"- **Regen runtime**: {runtime_seconds:.1f}s\n"
         f"- **Generated by**: ``scripts/gen_global_percentile_cdf.py "
-        f"--target benchmark --snapshot-date {snapshot_date.isoformat()}``\n\n"
+        f"--target benchmark --snapshot-date {snapshot_date.isoformat()}{metrics_flag}``\n\n"
         f"## Policy constants\n\n"
         f"- ``COHORT_MIN_USERS_PER_ANCHOR = {COHORT_MIN_USERS_PER_ANCHOR}``\n"
         f"- ``COHORT_MAX_USERS_PER_ANCHOR = {COHORT_MAX_USERS_PER_ANCHOR}``\n"
@@ -612,7 +808,7 @@ def _render_regen_report(
     # TOP-LINE suppression-flag table.
     table_header = (
         "## Per-(metric, anchor, TC) suppression-flag table (TOP-LINE)\n\n"
-        f"Per-cell rows for all {len(IN_SCOPE_METRICS)} metrics × "
+        f"Per-cell rows for all {len(metrics)} metrics × "
         f"{n_anchors_per_tc} anchors × {len(ALL_TIME_CONTROLS)} TCs = "
         f"{total_cells:,} cells. "
         "Sorted by metric ASC, anchor ASC, TC in canonical order (bullet, "
@@ -650,7 +846,7 @@ def _render_regen_report(
 
     # Per-metric coverage summary.
     coverage_lines: list[str] = ["\n\n## Per-metric coverage\n"]
-    for metric in IN_SCOPE_METRICS:
+    for metric in metrics:
         per_metric_log = [e for e in log if e["metric"] == metric]
         non_suppressed = sum(1 for e in per_metric_log if not e["suppressed"])
         total = len(per_metric_log)
@@ -728,44 +924,73 @@ def _archive_prior_report(report_path: Path) -> Path | None:
 # ---------------------------------------------------------------------------
 
 
+async def _query_and_rank(
+    session: AsyncSession,
+    metric: CdfMetricId,
+    tc: TimeControlBucket,
+    snapshot_date: date,
+) -> tuple[dict[int, CdfTable], list[_CellLogEntry]]:
+    """Query one (metric, TC) and rank it: colour-pooled for opening metrics, else per user."""
+    if _is_opening_out_metric(metric):
+        color_rows = await _query_per_user_color_with_anchor(session, metric, tc, snapshot_date)
+        _log(f"  [{metric}|{tc}] received {len(color_rows)} rows; ranking in Python...")
+        return _build_color_pooled_cohort_cdf_for(color_rows, metric, tc)
+    rows = await _query_per_user_with_anchor(session, metric, tc, snapshot_date)
+    _log(f"  [{metric}|{tc}] received {len(rows)} rows; ranking in Python...")
+    return _build_cohort_cdf_for(rows, metric, tc)
+
+
+async def _rank_selected_metrics(
+    session: AsyncSession,
+    selected: Sequence[CdfMetricId],
+    snapshot_date: date,
+) -> tuple[CdfCells, list[_CellLogEntry]]:
+    """Query and rank every (metric, TC) in ``selected``; return (fresh cells, full log)."""
+    cells: CdfCells = {}
+    full_log: list[_CellLogEntry] = []
+    for metric, tc in ((m, t) for m in selected for t in ALL_TIME_CONTROLS):
+        _log(f"  [{metric}|{tc}] querying per_user_values × per_user_anchor...")
+        per_anchor, log = await _query_and_rank(session, metric, tc, snapshot_date)
+        full_log.extend(log)
+        if per_anchor:
+            cells.setdefault(metric, {}).update(
+                {(anchor, tc): t for anchor, t in per_anchor.items()}
+            )
+        non_suppressed = sum(1 for e in log if not e["suppressed"])
+        _log(f"  [{metric}|{tc}] {non_suppressed}/{len(log)} anchors non-suppressed")
+    return cells, full_log
+
+
 async def regenerate(
     *,
     target: str,
     snapshot_date: date,
     report_path: Path,
-) -> tuple[dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]], list[_CellLogEntry]]:
+    metrics: Sequence[CdfMetricId] | None = None,
+) -> tuple[CdfCells, list[_CellLogEntry]]:
     """Run the 3-level loop and emit the populated seed file + regen report.
 
-    Returns ``(cells, suppression_log)`` for testing / inspection. Side effects:
-    writes ``app/data/cohort_cdf.tsv`` (the long-row seed file) and writes the
-    regen report to ``report_path``.
+    ``metrics=None`` regenerates every metric and rewrites the whole TSV. A
+    sequence queries only those metrics and MERGES them into the committed TSV
+    (``merge_cells``), leaving every other metric's rows byte-identical; the
+    report then covers only the selected metrics.
+
+    Returns ``(cells, suppression_log)`` (the freshly computed cells only) for
+    testing / inspection. Side effects: writes ``app/data/cohort_cdf.tsv`` and
+    the regen report to ``report_path``.
     """
+    selected: Sequence[CdfMetricId] = IN_SCOPE_METRICS if metrics is None else metrics
     url = _db_url(target)
     _assert_benchmark_db(url)
     _log(f"Resolved DB URL: {_mask_password(url)}")
     _log(f"Snapshot date (recency anchor): {snapshot_date.isoformat()}")
 
     start_epoch = time.monotonic()
-    cells: dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]] = {}
-    full_log: list[_CellLogEntry] = []
-
     engine = create_async_engine(url, pool_pre_ping=True)
     try:
         session_maker = async_sessionmaker(engine, expire_on_commit=False)
         async with session_maker() as session:
-            for metric in IN_SCOPE_METRICS:
-                for tc in ALL_TIME_CONTROLS:
-                    _log(f"  [{metric}|{tc}] querying per_user_values × per_user_anchor...")
-                    rows = await _query_per_user_with_anchor(session, metric, tc, snapshot_date)
-                    _log(f"  [{metric}|{tc}] received {len(rows)} rows; ranking in Python...")
-                    per_anchor, log = _build_cohort_cdf_for(rows, metric, tc)
-                    full_log.extend(log)
-                    if per_anchor:
-                        cells.setdefault(metric, {}).update(
-                            {(anchor, tc): table for anchor, table in per_anchor.items()}
-                        )
-                    non_suppressed = sum(1 for e in log if not e["suppressed"])
-                    _log(f"  [{metric}|{tc}] {non_suppressed}/{len(log)} anchors non-suppressed")
+            cells, full_log = await _rank_selected_metrics(session, selected, snapshot_date)
     finally:
         await engine.dispose()
 
@@ -786,10 +1011,15 @@ async def regenerate(
     except Exception:  # pragma: no cover — best-effort audit
         pass
 
-    _write_seed_tsv(cells, OUTPUT_SEED_PATH)
+    to_write = (
+        cells
+        if metrics is None
+        else merge_cells(load_cells_from_tsv(OUTPUT_SEED_PATH), cells, selected)
+    )
+    _write_seed_tsv(to_write, OUTPUT_SEED_PATH)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     _archive_prior_report(report_path)
-    report_md = _render_regen_report(full_log, snapshot_date, runtime, git_commit)
+    report_md = _render_regen_report(full_log, snapshot_date, runtime, git_commit, selected)
     report_path.write_text(report_md)
     _log(f"Wrote {report_path}")
     return cells, full_log
@@ -802,6 +1032,20 @@ def _parse_snapshot_date(raw: str) -> date:
         raise argparse.ArgumentTypeError(
             f"Invalid --snapshot-date {raw!r}: must be YYYY-MM-DD ({exc})"
         ) from exc
+
+
+def _parse_metrics(raw: str) -> list[CdfMetricId]:
+    """Parse ``--metrics a,b`` into validated ``CdfMetricId`` values (in the given order)."""
+    out: list[CdfMetricId] = []
+    for token in (t.strip() for t in raw.split(",")):
+        match = next((m for m in IN_SCOPE_METRICS if m == token), None)
+        if match is None:
+            raise argparse.ArgumentTypeError(
+                f"Invalid --metrics entry {token!r}: must be one of {', '.join(IN_SCOPE_METRICS)}"
+            )
+        if match not in out:
+            out.append(match)
+    return out
 
 
 def parse_args() -> argparse.Namespace:
@@ -840,6 +1084,18 @@ def parse_args() -> argparse.Namespace:
         dest="report_path",
         help=(f"Output path for the markdown regen report. Defaults to {DEFAULT_REPORT_PATH}."),
     )
+    parser.add_argument(
+        "--metrics",
+        type=_parse_metrics,
+        default=None,
+        dest="metrics",
+        metavar="ID[,ID...]",
+        help=(
+            "Comma-separated CdfMetricId subset. Queries only these metrics and merges "
+            "them into the committed TSV, leaving every other metric's rows untouched. "
+            "Default: regenerate every metric."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -857,6 +1113,7 @@ async def main() -> None:
         target=args.target,
         snapshot_date=args.snapshot_date,
         report_path=args.report_path,
+        metrics=args.metrics,
     )
     _log("Done.")
 

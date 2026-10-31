@@ -49,7 +49,7 @@ function EndgameConceptsAccordion() {
           <p>
             <strong>Your ranked games:</strong> the Stats tab uses your recent ranked games: rated
             games against human opponents within ±100 Elo of your rating, from the last 36 months,
-            up to 3000 games per time control. Every number, bar and chart on this tab comes from
+            up to 1,000 games per time control. Every number, bar and chart on this tab comes from
             that same sample, so a value and its percentile always describe the same games. Filters
             only apply on the Games tab.
           </p>

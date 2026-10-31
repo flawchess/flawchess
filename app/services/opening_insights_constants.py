@@ -85,6 +85,14 @@ OPENING_INSIGHTS_CI_Z_95: float = 1.96
 EVAL_BASELINE_PAWNS_WHITE: float = 0.25
 EVAL_BASELINE_PAWNS_BLACK: float = -0.25
 
+# "Out of the opening" clear-advantage cut (Phase 243 D-01), in pawns: a game leaves
+# the opening clearly WORSE when the user-POV eval at the first middlegame ply minus
+# the colour baseline above is at or below -OPENING_OUT_THRESHOLD_PAWNS, clearly
+# BETTER at or above +OPENING_OUT_THRESHOLD_PAWNS. 1.0 is the lowest threshold on the
+# 0.5-3.0 predictive plateau of the design-note sweep and matches the Informant
+# clear-advantage band. User-facing copy says "eval", never "pawns" (D-03).
+OPENING_OUT_THRESHOLD_PAWNS: float = 1.0
+
 # N gate for the eval z-test — unified with OPENING_INSIGHTS_CONFIDENCE_MIN_N
 # at n>=10 (was 20 to bound the Edgeworth leading-error term on the normal
 # approximation under ~2% for cp distributions with excess kurtosis ~2.4).

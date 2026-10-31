@@ -2,7 +2,7 @@
 
 Each subject (a cohort user during CDF construction; an app user during
 per-user lookup) contributes a single ``metric_value`` and ``n_games``
-aggregate to the output, computed over their most recent 3000 games in ONE
+aggregate to the output, computed over their most recent 1000 games in ONE
 time control within a 36-month recency window. Every builder takes a
 ``TimeControlBucket``; there is no cross-TC pooled form.
 
@@ -36,7 +36,7 @@ Structural diff between the two sources (the ONLY documented diff):
 Per-user aggregate shape (identical on both sources):
 
 * ``recent_capped``: ``ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY
-  played_at DESC) <= 3000`` over one time control, with the universal
+  played_at DESC) <= 1000`` over one time control, with the universal
   filter (rated, non-computer, both ratings non-null, equal-footing ±100)
   and the 36-month recency predicate.
 
@@ -54,6 +54,11 @@ Per-user aggregate shape (identical on both sources):
 
 Below-floor users produce no row, so the caller stores no row and the chip
 is suppressed.
+
+Documented exception to "one point per user": the two "out of the opening" builders
+(``per_user_cte_opening_out_counts`` / ``per_user_cte_opening_out_rate``) emit up to
+TWO rows per user, one per colour, because the metric is a per-colour rate (Phase 243
+D-04/D-05). Their ``per_user_values`` therefore carries a ``user_color`` column.
 
 Sparse-cell exclusion is a cohort-selection concern, applied by
 ``selected_users_cte(source="benchmark")`` only.
@@ -76,6 +81,12 @@ from typing import Final, Literal, Mapping, TypeAlias
 from app.services.chesscom_to_lichess import (
     ChessComSourceTC,
     composed_chesscom_to_lichess_grid,
+)
+from app.services.global_percentile_cdf import OpeningOutMetricId
+from app.services.opening_insights_constants import (
+    EVAL_BASELINE_PAWNS_BLACK,
+    EVAL_BASELINE_PAWNS_WHITE,
+    OPENING_OUT_THRESHOLD_PAWNS,
 )
 
 # Per-TC bucket identifier, used by the per-TC builders so the leading
@@ -108,7 +119,10 @@ ACHIEVABLE_MIN_GAMES: int = 30
 SCORE_GAP_BUCKET_MIN_SPANS: int = 30
 
 # Window shape.
-RECENT_GAMES_PER_TC_CAP: int = 3000
+# The cap matches the benchmark ingest depth (at most 1000 games per user per TC), so the
+# user basis and the peer basis are both "most recent 1000 games in the last 36 months".
+# Lowered from 3000 on 2026-10-31.
+RECENT_GAMES_PER_TC_CAP: int = 1000
 RECENCY_WINDOW_MONTHS: int = 36
 
 # Per-TC time-pressure builder thresholds.
@@ -130,11 +144,35 @@ NET_FLAG_RATE_MIN_POOL_N: int = 30
 MINIMUM_RATE_BUCKET_SPANS: int = 30
 
 # Per-(user, TC) median rating anchor inclusion floor.
-# 30 games is the lower bound for a stable per-TC median on the recent-3000
+# 30 games is the lower bound for a stable per-TC median on the recent-1000
 # pool (CLAUDE.md no-magic-numbers); a tighter floor is a tuning decision
 # for the CDF regen report. Used as the default `min_games` in
 # `per_user_cte_median_anchor` below.
 MEDIAN_ANCHOR_MIN_GAMES: Final[int] = 30
+
+# "Out of the opening" worse/better rates (Phase 243).
+# D-05 floor: minimum qualifying games per colour x TC, applied to benchmark peers
+# (for CDF points) and to the user alike. Only the rate builder applies it; the
+# counts builder feeds the on-read "k of n" display and applies no floor.
+OPENING_OUT_MIN_GAMES_PER_COLOR: Final[int] = 30
+# lichess Divider phase encoding (see app/models/game_position.py): 1 = middlegame.
+_MIDDLEGAME_PHASE: Final[int] = 1
+_CP_PER_PAWN: Final[int] = 100
+# Colour baselines and the clear-advantage cut, in centipawns (int literals only, so
+# the f-string into SQL has no injection surface).
+_OPENING_OUT_BASELINE_CP_WHITE: Final[int] = round(EVAL_BASELINE_PAWNS_WHITE * _CP_PER_PAWN)
+_OPENING_OUT_BASELINE_CP_BLACK: Final[int] = round(EVAL_BASELINE_PAWNS_BLACK * _CP_PER_PAWN)
+_OPENING_OUT_CUT_CP: Final[int] = round(OPENING_OUT_THRESHOLD_PAWNS * _CP_PER_PAWN)
+# D-02: a game with no middlegame ply counts by result only when it ended this way.
+_DECISIVE_EARLY_TERMINATIONS: Final[tuple[str, ...]] = ("resignation", "checkmate", "timeout")
+_DECISIVE_EARLY_TERMINATIONS_SQL: Final[str] = (
+    "(" + ", ".join(f"'{t}'" for t in _DECISIVE_EARLY_TERMINATIONS) + ")"
+)
+# Count column of per_user_color_counts feeding each metric's numerator.
+_OPENING_OUT_COUNT_COLUMN: Final[Mapping[OpeningOutMetricId, str]] = {
+    "opening_worse_rate": "worse_n",
+    "opening_better_rate": "better_n",
+}
 
 # Shared SQL constants.
 _EQUAL_FOOTING_TOL: int = 100
@@ -280,7 +318,7 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
        by ``TimeControlBucket``; no SQL-injection vector.
     2. ``ROW_NUMBER() OVER (PARTITION BY g.user_id ...)`` — the per-(user, TC)
        partition collapses to per-user because the inner set is already
-       restricted to one TC. The 3000-cap then means "most recent 3000 games
+       restricted to one TC. The 1000-cap then means "most recent 1000 games
        of this TC per user".
     """
     recency = _recency_window_sql(snapshot_date)
@@ -864,7 +902,7 @@ def per_user_cte_conv_rate_tc(
 ) -> str:
     """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``conversion_rate_{tc}``.
 
-    ``metric_value`` = wins / conv_spans (pooled over the recent-3000-per-TC ×
+    ``metric_value`` = wins / conv_spans (pooled over the recent-1000-per-TC ×
     36-month pool). ``n_games`` = conversion span count (the binding floor
     ≥ MINIMUM_RATE_BUCKET_SPANS).
 
@@ -937,7 +975,7 @@ def per_user_cte_parity_rate_tc(
     """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``parity_rate_{tc}``.
 
     ``metric_value`` = (wins + 0.5 * draws) / parity_spans (chess-score formula,
-    pooled over the recent-3000-per-TC × 36-month pool). ``n_games`` = parity
+    pooled over the recent-1000-per-TC × 36-month pool). ``n_games`` = parity
     span count (the binding floor ≥ MINIMUM_RATE_BUCKET_SPANS).
 
     No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
@@ -1015,7 +1053,7 @@ def per_user_cte_recovery_rate_tc(
     """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``recovery_rate_{tc}``.
 
     ``metric_value`` = (wins + draws) / recov_spans (saves formula — both wins
-    and draws count as successful recoveries, pooled over the recent-3000-per-TC
+    and draws count as successful recoveries, pooled over the recent-1000-per-TC
     × 36-month pool). ``n_games`` = recovery span count (the binding floor
     ≥ MINIMUM_RATE_BUCKET_SPANS).
 
@@ -1136,7 +1174,7 @@ def per_user_cte_median_anchor(
     min_games: int = MEDIAN_ANCHOR_MIN_GAMES,
     blend: bool = False,
 ) -> str:
-    """Per-(user, TC) median rating anchor over the recent-3000-per-TC × 36-month pool.
+    """Per-(user, TC) median rating anchor over the recent-1000-per-TC × 36-month pool.
 
     Substrate for the peer-relative percentile chip lookup: the median anchor
     per (user, TC) is persisted in ``user_rating_anchors`` and later joined
@@ -1289,8 +1327,8 @@ def _per_user_cte_median_anchor_blended(
       per_game_blended_rating,
       per_user_anchor (6 columns)
 
-    The LATERAL nearest-anchor join is bounded by the recent-3000-per-TC cap
-    (3000 games × ~50 lookup rows ≈ 150K comparisons per user per TC), which
+    The LATERAL nearest-anchor join is bounded by the recent-1000-per-TC cap
+    (1000 games × ~50 lookup rows ≈ 50K comparisons per user per TC), which
     is acceptable.
     """
     elo_expr = _user_elo_at_game_expr()
@@ -1344,4 +1382,127 @@ per_user_anchor AS (
   FROM per_game_blended_rating
   GROUP BY user_id
   HAVING count(*) >= {min_games}
+)"""
+
+
+# ---------------------------------------------------------------------------
+# "Out of the opening" worse/better builders (Phase 243).
+# ---------------------------------------------------------------------------
+
+
+def _opening_out_classified_cte() -> str:
+    """The ``opening_out_mg_entry`` + ``opening_out_classified`` CTE pair.
+
+    ``opening_out_classified(game_id, user_id, user_color, side)`` gives every slice
+    game a ``side``: -1 worse, 0 even, +1 better, NULL non-qualifying (D-01, D-02).
+
+    * Middlegame entry = the game's first ply with ``phase = 1``. ``gp.user_id =
+      rc.user_id`` in the join lets the ``(user_id, game_id, ply)`` PK drive an
+      index scan.
+    * No middlegame ply: counts by result only for resignation / checkmate / timeout
+      with a decisive result (win = +1, loss = -1); draws, abandoned, unknown and NULL
+      termination are NULL.
+    * Middlegame entry with a mate score: the sign of the mate in the user's POV
+      (``eval_mate = 0`` is even).
+    * Middlegame entry with ``eval_cp``: the user-POV eval minus the colour baseline,
+      at or below -cut is worse, at or above +cut is better. The baselines render
+      PARENTHESISED: an unparenthesised negative literal after a minus would form a
+      ``--`` SQL line comment.
+    * Both evals NULL: NULL (not a qualifying game).
+    * Sub-800 games (rating at game time) are dropped, as in the other rate builders.
+    """
+    ueag = _user_elo_at_game_expr()
+    colour_sign = "(CASE WHEN rc.user_color = 'white' THEN 1 ELSE -1 END)"
+    baseline = (
+        f"(CASE WHEN rc.user_color = 'white' THEN ({_OPENING_OUT_BASELINE_CP_WHITE}) "
+        f"ELSE ({_OPENING_OUT_BASELINE_CP_BLACK}) END)"
+    )
+    centred = f"(me.eval_cp * {colour_sign} - {baseline})"
+    return f"""opening_out_mg_entry AS (
+  SELECT DISTINCT ON (gp.game_id) gp.game_id, gp.eval_cp, gp.eval_mate
+  FROM game_positions gp
+  JOIN recent_capped rc ON rc.id = gp.game_id AND gp.user_id = rc.user_id
+  WHERE gp.phase = {_MIDDLEGAME_PHASE}
+  ORDER BY gp.game_id, gp.ply
+),
+opening_out_classified AS (
+  SELECT rc.id AS game_id, rc.user_id, rc.user_color::text AS user_color,
+    CASE
+      WHEN me.game_id IS NULL THEN
+        CASE
+          WHEN g.termination IN {_DECISIVE_EARLY_TERMINATIONS_SQL} AND g.result <> '1/2-1/2'
+          THEN CASE WHEN (g.result = '1-0') = (rc.user_color = 'white') THEN 1 ELSE -1 END
+        END
+      WHEN me.eval_mate IS NOT NULL THEN sign(me.eval_mate)::int * {colour_sign}
+      WHEN me.eval_cp IS NOT NULL THEN
+        CASE
+          WHEN {centred} <= -{_OPENING_OUT_CUT_CP} THEN -1
+          WHEN {centred} >= {_OPENING_OUT_CUT_CP} THEN 1
+          ELSE 0
+        END
+    END AS side
+  FROM recent_capped rc
+  JOIN games g ON g.id = rc.id
+  LEFT JOIN opening_out_mg_entry me ON me.game_id = rc.id
+  WHERE {ueag} >= {_SUB_800_FLOOR}
+)"""
+
+
+def per_user_cte_opening_out_counts(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Per-(user, colour) worse/better counts: ``per_user_color_counts``.
+
+    Columns: ``user_id``, ``user_color`` (``'white'`` / ``'black'``), ``n_games``
+    (qualifying games), ``worse_n``, ``better_n``. NO floor is applied: the on-read
+    path shows "k of n" for colours below the floor, and the rate builder applies
+    ``OPENING_OUT_MIN_GAMES_PER_COLOR`` on top of this same chain.
+
+    The body is identical for both sources; the cohort difference lives only in
+    ``selected_users_cte``. Up to two rows per user (one per colour).
+
+    Security: only the ``TimeControlBucket`` Literal and int constants are
+    interpolated; ``user_id`` flows only through the ``CAST(:user_id AS int)``
+    bindparam in ``selected_users_cte``, bound via ``text(sql).bindparams(...)``.
+    """
+    _ = source  # cohort difference is in selected_users_cte; the body is identical
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+{_opening_out_classified_cte()},
+per_user_color_counts AS (
+  SELECT user_id, user_color,
+    count(side)::int AS n_games,
+    (count(*) FILTER (WHERE side = -1))::int AS worse_n,
+    (count(*) FILTER (WHERE side = 1))::int AS better_n
+  FROM opening_out_classified
+  GROUP BY user_id, user_color
+)"""
+
+
+def per_user_cte_opening_out_rate(
+    tc: TimeControlBucket,
+    *,
+    metric: OpeningOutMetricId,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Per-(user, colour) ``per_user_values(user_id, user_color, metric_value, n_games)``.
+
+    ``metric_value`` = worse_n (``opening_worse_rate``) or better_n
+    (``opening_better_rate``) divided by the qualifying game count. Only colours with
+    at least ``OPENING_OUT_MIN_GAMES_PER_COLOR`` qualifying games produce a row.
+
+    Same source-mode parity and security as ``per_user_cte_opening_out_counts``;
+    ``metric`` is the ``OpeningOutMetricId`` Literal, mapped to a fixed column name.
+    """
+    count_column = _OPENING_OUT_COUNT_COLUMN[metric]
+    return f"""{per_user_cte_opening_out_counts(tc, source=source, snapshot_date=snapshot_date)},
+per_user_values AS (
+  SELECT user_id, user_color,
+    {count_column}::float / n_games AS metric_value,
+    n_games
+  FROM per_user_color_counts
+  WHERE n_games >= {OPENING_OUT_MIN_GAMES_PER_COLOR}
 )"""

@@ -31,6 +31,9 @@ function load(url: URL): string {
 const ENDGAME_OVERVIEW_INVALIDATION =
   /queryClient\.invalidateQueries\(\s*\{\s*queryKey:\s*\['endgameOverview'\]\s*\}\s*\)/g;
 
+const OUT_OF_OPENING_INVALIDATION =
+  /queryClient\.invalidateQueries\(\s*\{\s*queryKey:\s*\['outOfOpeningStats'\]\s*\}\s*\)/g;
+
 describe('endgameOverview invalidation contract', () => {
   it('Import.tsx invalidates endgameOverview in at least 2 call sites', () => {
     const src = load(IMPORT_TSX);
@@ -43,6 +46,16 @@ describe('endgameOverview invalidation contract', () => {
     const src = load(APP_TSX);
     const matches = src.match(ENDGAME_OVERVIEW_INVALIDATION) ?? [];
     // handleJobDone in App.tsx is the canonical import-complete site.
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('Import.tsx invalidates outOfOpeningStats in at least 2 call sites', () => {
+    const matches = load(IMPORT_TSX).match(OUT_OF_OPENING_INVALIDATION) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('App.tsx invalidates outOfOpeningStats when an import job completes', () => {
+    const matches = load(APP_TSX).match(OUT_OF_OPENING_INVALIDATION) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 });

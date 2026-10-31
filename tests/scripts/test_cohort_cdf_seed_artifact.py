@@ -28,7 +28,6 @@ import csv
 import sys
 import tempfile
 from pathlib import Path
-from typing import cast
 
 # Ensure scripts/ is importable (mirrors the pattern in test_gen_global_percentile_cdf_unchanged.py).
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent.parent.parent / "scripts")
@@ -36,11 +35,15 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 from app.services.global_percentile_cdf import (  # noqa: E402
-    CdfMetricId,
+    BREAKPOINT_PERCENTILES,
     CdfTable,
-    TimeControlBucket,
 )
-from scripts.gen_global_percentile_cdf import _write_seed_tsv  # noqa: E402
+from scripts.gen_global_percentile_cdf import (  # noqa: E402
+    CdfCells,
+    _write_seed_tsv,
+    load_cells_from_tsv,
+    merge_cells,
+)
 
 _TSV_PATH: Path = Path(__file__).resolve().parent.parent.parent / "app" / "data" / "cohort_cdf.tsv"
 
@@ -53,52 +56,6 @@ _EXPECTED_HEADER = [
     "n_users",
     "snapshot_month",
 ]
-
-
-def _load_cells_from_tsv(
-    tsv_path: Path,
-) -> dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]]:
-    """Reconstruct the cells dict from the committed TSV.
-
-    Groups rows by (metric, anchor_elo, tc), collecting breakpoints in
-    percentile order. Mirrors the shape expected by ``_write_seed_tsv``:
-    ``dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]]``.
-
-    Returns a dict reconstruction that avoids importing the in-source registry
-    (so the test survives the removal of ``COHORT_PERCENTILE_CDF``).
-    The ``CdfTable`` dataclass and the ``CdfMetricId``/``TimeControlBucket``
-    type aliases are stable across plans -- only the registry literal is removed.
-    """
-    rows_by_cell: dict[tuple[str, int, str], list[tuple[int, float, int, str]]] = {}
-    with tsv_path.open(newline="") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        for row in reader:
-            key = (row["metric"], int(row["anchor_elo"]), row["tc"])
-            rows_by_cell.setdefault(key, []).append(
-                (
-                    int(row["percentile"]),
-                    float(row["value"]),
-                    int(row["n_users"]),
-                    row["snapshot_month"],
-                )
-            )
-
-    cells: dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]] = {}
-    for (metric, anchor_elo, tc), pct_rows in rows_by_cell.items():
-        # Sort by percentile to guarantee correct breakpoints order.
-        pct_rows.sort(key=lambda r: r[0])
-        breakpoints = tuple(r[1] for r in pct_rows)
-        # n_users and snapshot_month are identical across a cell's rows -- take first.
-        n_users = pct_rows[0][2]
-        snapshot_month = pct_rows[0][3]
-        metric_key = cast(CdfMetricId, metric)
-        tc_key = cast(TimeControlBucket, tc)
-        cells.setdefault(metric_key, {})[(anchor_elo, tc_key)] = CdfTable(
-            breakpoints=breakpoints,
-            n_users=n_users,
-            snapshot_month=snapshot_month,
-        )
-    return cells
 
 
 def test_committed_tsv_header() -> None:
@@ -123,7 +80,7 @@ def test_write_seed_tsv_round_trip() -> None:
     Round-trip: committed TSV -> cells dict -> _write_seed_tsv -> compare.
     This guards both emitter determinism and committed-artifact integrity.
     """
-    cells = _load_cells_from_tsv(_TSV_PATH)
+    cells = load_cells_from_tsv(_TSV_PATH)
     committed_text = _TSV_PATH.read_text()
 
     with tempfile.NamedTemporaryFile(suffix=".tsv", delete=True) as tmp:
@@ -138,3 +95,53 @@ def test_write_seed_tsv_round_trip() -> None:
         "or _write_seed_tsv changed its output format.\n"
         f"Committed length: {len(committed_text)}, regenerated length: {len(regenerated_text)}"
     )
+
+
+def _synthetic_opening_cells() -> CdfCells:
+    """Two synthetic opening cells (one per metric) with a full 99-breakpoint curve."""
+    breakpoints = tuple(i / 200 for i in range(len(BREAKPOINT_PERCENTILES)))
+    table = CdfTable(breakpoints=breakpoints, n_users=123, snapshot_month="2026-05")
+    return {
+        "opening_worse_rate": {(1500, "blitz"): table},
+        "opening_better_rate": {(1500, "blitz"): table},
+    }
+
+
+def test_merged_tsv_keeps_existing_rows_as_exact_prefix() -> None:
+    """Merging fresh opening cells leaves the committed rows byte-identical, in order.
+
+    Scoped regen guarantee (Phase 243): only the selected metrics' rows may differ. The
+    opening metrics sort last in ``IN_SCOPE_METRICS``, so the merged file starts with
+    every non-opening line of the committed file and is followed only by opening rows.
+    """
+    existing = load_cells_from_tsv(_TSV_PATH)
+    fresh = _synthetic_opening_cells()
+    merged = merge_cells(existing, fresh, ["opening_worse_rate", "opening_better_rate"])
+
+    with tempfile.NamedTemporaryFile(suffix=".tsv", delete=True) as tmp:
+        tmp_path = Path(tmp.name)
+        _write_seed_tsv(merged, tmp_path)
+        merged_lines = tmp_path.read_text().splitlines()
+
+    committed_lines = [
+        line
+        for line in _TSV_PATH.read_text().splitlines()
+        if not line.startswith(("opening_worse_rate\t", "opening_better_rate\t"))
+    ]
+    assert merged_lines[: len(committed_lines)] == committed_lines
+    tail = merged_lines[len(committed_lines) :]
+    assert tail, "merged file must carry the synthetic opening rows"
+    assert all(line.startswith(("opening_worse_rate\t", "opening_better_rate\t")) for line in tail)
+    assert len(tail) == 2 * len(BREAKPOINT_PERCENTILES)
+
+
+def test_committed_tsv_contains_the_opening_metrics() -> None:
+    """The release runbook seeds this TSV before the Stage B backfill (docs/production-runbook.md).
+
+    If the opening metric ids were missing, the backfill would persist NULL-percentile rows for
+    every existing user (interpolation against a missing cell returns None) and nothing would
+    flag it, so pin their presence in the committed artifact.
+    """
+    cells = load_cells_from_tsv(_TSV_PATH)
+    for metric in ("opening_worse_rate", "opening_better_rate"):
+        assert cells.get(metric), f"{metric} has no cells in the committed cohort_cdf.tsv"

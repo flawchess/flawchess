@@ -3,7 +3,7 @@
 The anchor is a game-weighted blend, not a Lichess-precedence rule ("any Lichess
 games in TC => Lichess source"):
 
-  1. For each game in the canonical slice (per-TC, recent-3000-capped,
+  1. For each game in the canonical slice (per-TC, recent-1000-capped,
      36-month window, status=completed, ±100 opp filter):
        - Lichess game -> use rating_at_game_time as-is (native Lichess).
        - Chess.com game (non-Daily) -> convert rating_at_game_time to

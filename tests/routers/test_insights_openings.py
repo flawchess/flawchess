@@ -244,7 +244,7 @@ async def test_endgame_insights_no_longer_gated_by_from_date(
                     SectionInsight(section_id="overall", headline="Stub", bullets=["Stub bullet"])
                 ],
                 model_used="test",
-                prompt_version="endgame_v49",
+                prompt_version="endgame_v50",
             ),
             status="fresh",
         )

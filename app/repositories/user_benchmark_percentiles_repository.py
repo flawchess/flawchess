@@ -3,12 +3,14 @@
 Implements the write/read path for materialised
 canonical-slice percentile rows.
 
-The PK is (user_id, metric, time_control_bucket); a row exists only for
-above-floor cells, so no row is written for below-floor (user, metric, tc)
-triples. ``upsert_percentile`` takes ``time_control_bucket`` as a keyword arg
-and uses a 3-column index_elements on the ON CONFLICT clause.
+The PK is (user_id, metric, time_control_bucket, color); a row exists only for
+above-floor cells, so no row is written for below-floor (user, metric, tc[, colour])
+triples. ``upsert_percentile`` takes ``time_control_bucket`` as a keyword arg and an
+optional ``color`` (default ``'all'``, the colour-agnostic Endgames rows) and uses a
+4-column index_elements on the ON CONFLICT clause.
 ``fetch_for_user`` returns a nested dict:
-``dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]``.
+``dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]`` over the ``'all'`` rows
+only, so the Endgames read shape is unchanged by the per-colour opening rows.
 
 ``PercentileRow`` carries ``n_games: int`` so the API shaper can compute the
 game-count-weighted mean of per-TC percentiles when producing aggregated
@@ -29,9 +31,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
-from app.models.user_benchmark_percentile import UserBenchmarkPercentile
+from app.models.user_benchmark_percentile import PercentileColor, UserBenchmarkPercentile
 from app.models.user_rating_anchors import TimeControlBucket
-from app.services.global_percentile_cdf import CdfMetricId
+from app.schemas.normalization import Color
+from app.services.global_percentile_cdf import OPENING_OUT_METRICS, CdfMetricId, OpeningOutMetricId
 
 
 @dataclass(frozen=True)
@@ -65,10 +68,11 @@ async def upsert_percentile(
     n_games: int,
     percentile: float | None,
     cdf_snapshot: datetime.date,
+    color: PercentileColor = "all",
 ) -> None:
-    """Insert or update one (user_id, metric, time_control_bucket) row.
+    """Insert or update one (user_id, metric, time_control_bucket, color) row.
 
-    Uses ``INSERT ... ON CONFLICT (user_id, metric, time_control_bucket) DO
+    Uses ``INSERT ... ON CONFLICT (user_id, metric, time_control_bucket, color) DO
     UPDATE`` so the operation is atomic and idempotent. The caller is
     responsible for committing the session after all writes in a unit of work
     are done.
@@ -78,9 +82,10 @@ async def upsert_percentile(
     produce no row — callers must skip the upsert when the per-(metric, tc)
     compute returns None.
 
-    The PK includes ``time_control_bucket``, so the index_elements on the ON
-    CONFLICT clause has 3 columns. A single user has at most one row per
-    (metric, tc) cell.
+    The PK includes ``time_control_bucket`` and ``color``, so the index_elements on
+    the ON CONFLICT clause has 4 columns (a narrower target would match no unique
+    constraint and fail every write). A single user has at most one row per
+    (metric, tc, colour) cell; Endgames rows use the default ``'all'`` colour.
 
     The ``n_games`` parameter is required
     and participates in both the insert values and the on-conflict update so
@@ -97,18 +102,21 @@ async def upsert_percentile(
         percentile: Lookup percentile in [0, 100], or None when no cohort
             CDF exists for the user's (metric, tc, anchor) cell.
         cdf_snapshot: Date of the CDF artifact used for interpolation.
+        color: ``'all'`` (default) for colour-agnostic rows, ``'white'`` /
+            ``'black'`` for the per-colour opening rows.
     """
     stmt = pg_insert(UserBenchmarkPercentile).values(
         user_id=user_id,
         metric=metric,
         time_control_bucket=time_control_bucket,
+        color=color,
         value=value,
         n_games=n_games,
         percentile=percentile,
         cdf_snapshot=cdf_snapshot,
     )
     stmt = stmt.on_conflict_do_update(
-        index_elements=["user_id", "metric", "time_control_bucket"],
+        index_elements=["user_id", "metric", "time_control_bucket", "color"],
         set_={
             "value": stmt.excluded.value,
             "n_games": stmt.excluded.n_games,
@@ -153,7 +161,7 @@ async def fetch_for_user(
     *,
     user_id: int,
 ) -> dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]:
-    """Return all percentile rows for a user, keyed by (metric, tc).
+    """Return all colour-agnostic percentile rows for a user, keyed by (metric, tc).
 
     V4 Information Disclosure mitigation: Caller MUST pass the authenticated
     user's ID (from FastAPI-Users dep ``current_user.id``); never accept
@@ -181,12 +189,60 @@ async def fetch_for_user(
             UserBenchmarkPercentile.percentile,
             UserBenchmarkPercentile.cdf_snapshot,
             UserBenchmarkPercentile.n_games,
-        ).where(UserBenchmarkPercentile.user_id == user_id)
+        )
+        .where(UserBenchmarkPercentile.user_id == user_id)
+        # Colour-agnostic rows only: the per-colour opening rows (Phase 243) share
+        # (metric, tc) keys with nothing here, but must never leak into the Endgames
+        # shape, which has one PercentileRow per (metric, tc).
+        .where(UserBenchmarkPercentile.color == "all")
     )
     rows = result.fetchall()
     out: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {}
     for row in rows:
         out.setdefault(row.metric, {})[row.time_control_bucket] = PercentileRow(
+            value=row.value,
+            percentile=row.percentile,
+            cdf_snapshot=row.cdf_snapshot,
+            n_games=row.n_games,
+        )
+    return out
+
+
+async def fetch_opening_out_rows(
+    session: AsyncSession,
+    *,
+    user_id: int,
+) -> dict[tuple[OpeningOutMetricId, TimeControlBucket, Color], PercentileRow]:
+    """Return the user's per-colour opening worse/better rows keyed (metric, tc, colour).
+
+    Only ``'white'`` / ``'black'`` rows of the opening metrics: the colour-agnostic
+    ``'all'`` rows (Endgames) are excluded, as is every other metric.
+
+    V4 Information Disclosure mitigation: Caller MUST pass the authenticated user's
+    ID (from FastAPI-Users dep ``current_user.id``); never accept ``user_id`` as a
+    query parameter from the client.
+    """
+    result = await session.execute(
+        select(
+            UserBenchmarkPercentile.metric,
+            UserBenchmarkPercentile.time_control_bucket,
+            UserBenchmarkPercentile.color,
+            UserBenchmarkPercentile.value,
+            UserBenchmarkPercentile.percentile,
+            UserBenchmarkPercentile.cdf_snapshot,
+            UserBenchmarkPercentile.n_games,
+        )
+        .where(UserBenchmarkPercentile.user_id == user_id)
+        .where(UserBenchmarkPercentile.color.in_(("white", "black")))
+        .where(UserBenchmarkPercentile.metric.in_(OPENING_OUT_METRICS))
+    )
+    out: dict[tuple[OpeningOutMetricId, TimeControlBucket, Color], PercentileRow] = {}
+    for row in result.fetchall():
+        color: Color = "white" if row.color == "white" else "black"
+        metric: OpeningOutMetricId = (
+            "opening_worse_rate" if row.metric == "opening_worse_rate" else "opening_better_rate"
+        )
+        out[(metric, row.time_control_bucket, color)] = PercentileRow(
             value=row.value,
             percentile=row.percentile,
             cdf_snapshot=row.cdf_snapshot,

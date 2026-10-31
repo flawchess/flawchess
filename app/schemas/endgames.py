@@ -414,7 +414,7 @@ class PressureQuintileBullet(BaseModel):
 # GET /api/endgames/ranked-stats returns, per time control that has at least one
 # ranked-sample game, the 11 peer-ranked metric values computed ON READ from the
 # canonical ranked slice (rated, human, opponents within 100 Elo, last 36 months,
-# at most 3000 games per TC). Values describe the same games the persisted
+# at most 1000 games per TC). Values describe the same games the persisted
 # percentiles rank. The endpoint takes no filters.
 # ---------------------------------------------------------------------------
 

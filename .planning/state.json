@@ -307,6 +307,11 @@
       "number": "241",
       "name": "v2.27 phase",
       "status": "complete"
+    },
+    {
+      "number": "242",
+      "name": "standalone phase",
+      "status": "complete"
     }
   ],
   "next": {
@@ -314,5 +319,5 @@
     "label": "Start a new milestone",
     "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-10-18T14:47:29.022Z"
+  "updated_at": "2026-10-31T19:28:50.508Z"
 }

@@ -45,11 +45,16 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.models.game import Game
 from app.models.user import User
 from app.models.user_rating_anchors import TimeControlBucket
+from app.repositories.opening_out_repository import OpeningOutCounts
 from app.repositories.user_rating_anchors_repository import fetch_anchors_for_user
+from app.schemas.normalization import Color
 from app.services import user_benchmark_percentiles_service as svc
+from app.services.canonical_slice_sql import OPENING_OUT_MIN_GAMES_PER_COLOR
+from app.services.global_percentile_cdf import OPENING_OUT_METRICS
 from app.services.user_benchmark_percentiles_service import (
     STAGE_A_METRIC,
     STAGE_B_METRIC_FAMILIES,
+    STAGE_B_OPENING_FAMILIES,
     compute_anchors_for_user,
     compute_stage_a,
     compute_stage_b,
@@ -144,6 +149,13 @@ class _FakeSessionMakerCM:
 
     async def __aexit__(self, *args: Any) -> None:
         return None
+
+
+async def _no_opening_counts(
+    session: Any, *, user_id: int, tc: Any
+) -> dict[Color, OpeningOutCounts]:
+    """fetch_opening_out_counts stand-in for a user with no opening-eligible games."""
+    return {}
 
 
 def _make_anchor_row(
@@ -246,6 +258,8 @@ async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
     # compute_stage_b. Mock it to return an empty cohort dict (tests only
     # care that the per-(family, TC) upsert loop runs the right number of times).
     load_mock_b = AsyncMock(return_value={})
+    # No opening games: the 10-family count stays exact (the opening fan-out has its own tests).
+    monkeypatch.setattr(svc, "fetch_opening_out_counts", _no_opening_counts)
     monkeypatch.setattr(svc, "fetch_anchors_for_user", fake_fetch_anchors)
     monkeypatch.setattr(svc, "load_cohort_cells", load_mock_b)
     monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
@@ -281,6 +295,154 @@ async def test_compute_stage_b_noop_when_no_anchors(monkeypatch: pytest.MonkeyPa
     await compute_stage_b(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
 
     assert upsert_mock.call_count == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage B opening (per-colour) fan-out — Phase 243 D-04 / D-05.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OPENING_N_ABOVE_FLOOR: int = OPENING_OUT_MIN_GAMES_PER_COLOR + 10
+_OPENING_WORSE_N: int = 12
+_OPENING_BETTER_N: int = 7
+
+
+def _opening_counts(n_games: int = _OPENING_N_ABOVE_FLOOR) -> OpeningOutCounts:
+    return OpeningOutCounts(n_games=n_games, worse_n=_OPENING_WORSE_N, better_n=_OPENING_BETTER_N)
+
+
+def _patch_stage_b_opening_only(
+    monkeypatch: pytest.MonkeyPatch,
+    counts_for_tc: Any,
+    upsert_mock: AsyncMock,
+    anchors: dict[Any, Any],
+) -> None:
+    """Wire compute_stage_b so ONLY the opening loop upserts (endgame cells compute to None)."""
+
+    async def fake_fetch_anchors(session: Any, *, user_id: int) -> dict[Any, Any]:
+        return anchors
+
+    async def no_endgame_value(session: Any, user_id: int, family: Any, tc: Any) -> None:
+        return None
+
+    monkeypatch.setattr(svc, "fetch_anchors_for_user", fake_fetch_anchors)
+    monkeypatch.setattr(svc, "load_cohort_cells", AsyncMock(return_value={}))
+    monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", no_endgame_value)
+    monkeypatch.setattr(svc, "fetch_opening_out_counts", counts_for_tc)
+    monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
+    monkeypatch.setattr(svc, "interpolate_cohort_percentile", MagicMock(return_value=50.0))
+
+
+async def test_compute_stage_b_opening_fans_out_colors_metrics_and_tcs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2 anchored TCs x 2 colours x 2 metrics = 8 opening upserts, each with a colour."""
+    fake_maker = _FakeSessionMaker()
+    anchors = {
+        "bullet": _make_anchor_row(tc="bullet", anchor_rating=1800),
+        "blitz": _make_anchor_row(tc="blitz", anchor_rating=1750),
+    }
+    upsert_mock = AsyncMock(return_value=None)
+
+    async def both_colors(session: Any, *, user_id: int, tc: Any) -> dict[Color, OpeningOutCounts]:
+        return {"white": _opening_counts(), "black": _opening_counts()}
+
+    _patch_stage_b_opening_only(monkeypatch, both_colors, upsert_mock, anchors)
+
+    await compute_stage_b(99510, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
+
+    assert STAGE_B_OPENING_FAMILIES == OPENING_OUT_METRICS
+    assert upsert_mock.call_count == 8
+    keys = {
+        (c.kwargs["metric"], c.kwargs["time_control_bucket"], c.kwargs["color"])
+        for c in upsert_mock.call_args_list
+    }
+    assert keys == {
+        (metric, tc, color)
+        for metric in OPENING_OUT_METRICS
+        for tc in anchors
+        for color in ("white", "black")
+    }
+    for call in upsert_mock.call_args_list:
+        assert call.kwargs["n_games"] == _OPENING_N_ABOVE_FLOOR
+        expected_count = (
+            _OPENING_WORSE_N if call.kwargs["metric"] == "opening_worse_rate" else _OPENING_BETTER_N
+        )
+        assert call.kwargs["value"] == expected_count / _OPENING_N_ABOVE_FLOOR
+
+
+async def test_compute_stage_b_opening_skips_color_below_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A colour at floor - 1 qualifying games gets no row; the other colour still does."""
+    fake_maker = _FakeSessionMaker()
+    anchors = {"blitz": _make_anchor_row(tc="blitz", anchor_rating=1750)}
+    upsert_mock = AsyncMock(return_value=None)
+
+    async def one_short(session: Any, *, user_id: int, tc: Any) -> dict[Color, OpeningOutCounts]:
+        return {
+            "white": _opening_counts(OPENING_OUT_MIN_GAMES_PER_COLOR),
+            "black": _opening_counts(OPENING_OUT_MIN_GAMES_PER_COLOR - 1),
+        }
+
+    _patch_stage_b_opening_only(monkeypatch, one_short, upsert_mock, anchors)
+
+    await compute_stage_b(99511, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
+
+    assert {c.kwargs["color"] for c in upsert_mock.call_args_list} == {"white"}
+    assert upsert_mock.call_count == len(OPENING_OUT_METRICS)
+
+
+async def test_compute_stage_b_opening_failure_is_isolated_per_tc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A counts failure for one TC is captured (stage B, metric opening_out); the other TC upserts."""
+    fake_maker = _FakeSessionMaker()
+    anchors = {
+        "bullet": _make_anchor_row(tc="bullet", anchor_rating=1800),
+        "blitz": _make_anchor_row(tc="blitz", anchor_rating=1750),
+    }
+    upsert_mock = AsyncMock(return_value=None)
+
+    async def bullet_fails(session: Any, *, user_id: int, tc: Any) -> dict[Color, OpeningOutCounts]:
+        if tc == "bullet":
+            raise RuntimeError("simulated opening counts failure")
+        return {"white": _opening_counts()}
+
+    _patch_stage_b_opening_only(monkeypatch, bullet_fails, upsert_mock, anchors)
+    contexts: list[dict[str, Any]] = []
+    captured: list[Exception] = []
+
+    with (
+        patch("sentry_sdk.set_context", side_effect=lambda key, value: contexts.append(value)),
+        patch("sentry_sdk.capture_exception", side_effect=captured.append),
+    ):
+        await compute_stage_b(99512, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
+
+    assert len(captured) == 1
+    assert any(
+        c.get("stage") == "B" and c.get("metric") == "opening_out" and c.get("tc") == "bullet"
+        for c in contexts
+    ), "set_context must carry stage='B', metric='opening_out', tc='bullet'"
+    assert {c.kwargs["time_control_bucket"] for c in upsert_mock.call_args_list} == {"blitz"}
+    assert upsert_mock.call_count == len(OPENING_OUT_METRICS)
+
+
+async def test_compute_stage_b_opening_cancellation_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CancelledError inside the opening loop is never swallowed by the per-TC capture."""
+    import asyncio
+
+    fake_maker = _FakeSessionMaker()
+    anchors = {"blitz": _make_anchor_row(tc="blitz", anchor_rating=1750)}
+
+    async def cancelled(session: Any, *, user_id: int, tc: Any) -> dict[Color, OpeningOutCounts]:
+        raise asyncio.CancelledError
+
+    _patch_stage_b_opening_only(monkeypatch, cancelled, AsyncMock(return_value=None), anchors)
+
+    with pytest.raises(asyncio.CancelledError):
+        await compute_stage_b(99513, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
 
 
 async def test_upsert_called_with_3_column_pk_tuple(monkeypatch: pytest.MonkeyPatch) -> None:

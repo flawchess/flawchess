@@ -101,9 +101,10 @@ _TC_BAND_METRICS: frozenset[str] = frozenset(
 # migration) and always written and matched as this constant.
 INSIGHTS_CACHE_OPPONENT_STRENGTH: Literal["any"] = "any"
 
+# v50: ranked sample now capped at 1000 games per TC (was 3000) and the prompt basis sentence says so; bumping invalidates every v49 cache row.
 # v49: adds the 1-2 sentence `summary` field shown as the Insights block header.
 # v48: findings come from the ranked sample (last 36 months, opponents within 100 Elo, up to 3000 games per TC), overall findings are per TC, no filter scoping; bumping invalidates every v47 cache row.
-_PROMPT_VERSION = "endgame_v49"
+_PROMPT_VERSION = "endgame_v50"
 _OUTPUT_RETRIES = 2  # structured-output validation retries before InsightsValidationFailure
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 

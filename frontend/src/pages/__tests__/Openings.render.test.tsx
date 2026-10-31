@@ -67,6 +67,10 @@ vi.mock('@/hooks/usePositionBookmarks', () => ({
   useReorderPositionBookmarks: () => ({ mutate: vi.fn() }),
 }));
 
+vi.mock('@/hooks/useOutOfOpeningStats', () => ({
+  useOutOfOpeningStats: () => ({ data: undefined, isError: false }),
+}));
+
 vi.mock('@/hooks/useStats', () => ({
   useMostPlayedOpenings: () => ({ data: undefined, isLoading: false, isError: false }),
   useBookmarkPhaseEntryMetrics: () => ({ data: undefined }),

@@ -180,4 +180,4 @@ def test_prompt_version_is_v48() -> None:
     """The version bump invalidates every v47 cache row."""
     from app.services import insights_llm
 
-    assert insights_llm._PROMPT_VERSION == "endgame_v49"
+    assert insights_llm._PROMPT_VERSION == "endgame_v50"

@@ -175,6 +175,21 @@ Weeks are finalized lazily: the first `GET /train/leaderboard` or `GET /train/me
 - **Manual trigger.** `finalize_due_weeks` is idempotent and global: the `train_weekly_finalizations` marker row is the lock, so re-running it never double-awards a week. To finalize without waiting for a visit, load either endpoint once as any registered user.
 - **Dev cleanup only.** Deleting a week from `train_weekly_finalizations` (the FK cascades its standings rows) lets the next request finalize it again. Never do this in prod: it discards already-awarded medals.
 
+## Releasing a new percentile metric family (CDF seed and Stage B backfill)
+
+Applies whenever a release adds metric ids to `benchmark_cohort_cdf` / `user_benchmark_percentiles` (for example the Phase 243 `opening_worse_rate` / `opening_better_rate` rows). Order matters:
+
+1. **Deploy** with `bin/deploy.sh`. The Alembic migration runs on backend startup.
+2. **Seed the CDF** from the committed `app/data/cohort_cdf.tsv` (idempotent upsert):
+   `ssh flawchess "cd /opt/flawchess && docker compose exec backend /app/.venv/bin/python -m scripts.seed_cohort_cdf"`
+3. **Backfill Stage B for existing users** only after step 2, through the tunnel (`bin/prod_db_tunnel.sh` first):
+   `uv run python -m scripts.archive.backfill_user_percentiles --target prod` (run it as a module; the `python scripts/...` form in the script docstring fails with `No module named 'app'`). It calls `compute_stage_a` then `compute_stage_b`, and `compute_stage_b` writes the opening rows; `--skip-anchors` has no effect without `--metric`.
+
+Why the order is not optional:
+
+- Existing users already have endgame rows, so nothing re-triggers Stage B for them. Until they next import or an eval drain finishes, the new section reads "Not ranked yet" unless step 3 runs.
+- If Stage B runs before step 2, `interpolate_cohort_percentile(value, None)` returns None and a row with `percentile = NULL` is persisted. It reads as unranked and nothing flags it. Fix it by re-running step 3 after the seed (UPSERT).
+
 ## Infrastructure notes
 
 - Hetzner Cloud Firewall: inbound TCP 22/80/443 + ICMP from any.

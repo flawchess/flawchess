@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Out of the Opening</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from sketch 012 (which copied 010, measured from the live Endgame Stats page). */
+:root {
+  --bg: oklch(0.145 0 0);
+  --card: #161412;
+  --band-hdr: oklch(1 0 0 / 3.5%);
+  --edge: oklch(1 0 0 / 8%);
+  --fg: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.5 0 0);
+  --brand: rgb(139, 94, 60);
+  --brand-light: oklch(0.72 0.07 60);
+  --low: oklch(0.62 0.17 25);
+  --mid: oklch(0.62 0.15 260);
+  --high: oklch(0.66 0.15 145);
+  --win: oklch(0.55 0.14 145);
+  --draw: oklch(0.65 0 0);
+  --loss: oklch(0.55 0.16 25);
+  --track: oklch(1 0 0 / 7%);
+  --band: oklch(1 0 0 / 13%);
+  --neutral-fill: oklch(0.62 0.02 70);
+  --note-bg: oklch(0.80 0.12 85 / 8%);
+  --note-edge: oklch(0.80 0.12 85 / 45%);
+  --note-fg: oklch(0.88 0.08 85);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: 'Nunito Sans', sans-serif; font-size: 14px; line-height: 1.45; }
+h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px; margin: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 56px 16px 80px; transition: max-width .2s ease; }
+.muted { color: var(--muted); } .faint { color: var(--faint); }
+.num { font-variant-numeric: tabular-nums; }
+
+#variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #0d0d0d; border-bottom: 1px solid var(--edge); padding: 8px 16px; display: flex; gap: 8px; flex-wrap: wrap; font-family: system-ui; font-size: 13px; align-items: center; }
+#variant-nav button { font: inherit; background: transparent; color: var(--muted); border: 1px solid var(--edge); border-radius: 6px; padding: 4px 10px; cursor: pointer; transition: all .15s ease; }
+#variant-nav button:hover { color: var(--fg); }
+#variant-nav button.active { background: #2a2420; color: var(--fg); border-color: var(--brand); }
+#variant-nav .sep { width: 1px; height: 20px; background: var(--edge); margin: 0 4px; }
+
+.topbar { padding: 10px 14px; border: 1px dashed var(--note-edge); border-radius: 10px; background: var(--note-bg); color: var(--note-fg); font-size: 13px; margin-bottom: 16px; }
+.topbar p { margin: 0; } .topbar p + p { margin-top: 4px; }
+
+.subtabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: oklch(1 0 0 / 4%); border-radius: 10px; padding: 4px; margin-bottom: 20px; }
+.subtabs button { font: inherit; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-radius: 8px; height: 34px; }
+.subtabs button.on { background: var(--brand); color: #fff; }
+
+.colorbar { position: sticky; top: 41px; z-index: 20; background: var(--bg); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; margin-bottom: 8px; border-bottom: 1px solid var(--edge); }
+.colorbar .cl { color: var(--muted); font-size: 13px; }
+.narrow .colorbar .cl { display: none; }
+.colors { display: inline-flex; gap: 4px; }
+.colors button { font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border-radius: 10px; cursor: pointer; transition: all .15s ease; background: transparent; color: var(--brand-light); border: 1px solid oklch(0.58 0.09 55 / 55%); }
+.colors button:hover { border-color: var(--brand); color: var(--fg); }
+.colors button.on { background: var(--brand); color: #fff; border-color: transparent; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--muted); }
+.sw.w { background: #fff; } .sw.b { background: #18181b; }
+
+.sechead { margin: 18px 0 4px; }
+.q { color: var(--muted); margin: 4px 0 14px; }
+.card { background: var(--card); border: 1px solid var(--edge); border-radius: 8px; }
+.card-h { padding: 12px 16px; background: var(--band-hdr); border-bottom: 1px solid var(--edge); border-radius: 8px 8px 0 0; font-size: 16px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card-h small { font-size: 13px; font-weight: 400; color: var(--faint); }
+.card-b { padding: 16px; }
+.ghost { margin-top: 28px; opacity: .35; pointer-events: none; }
+.ghost .card-b { height: 90px; display: flex; align-items: center; justify-content: center; color: var(--faint); }
+
+/* Search-icon popover (light, as 012) */
+.info { position: relative; display: inline-flex; color: oklch(0.72 0.07 60 / 70%); cursor: pointer; vertical-align: -2px; }
+.info:hover, .info:focus { color: var(--brand-light); outline: none; }
+.info svg { width: 15px; height: 15px; }
+.pop { display: none; position: absolute; left: -8px; bottom: 140%; width: 340px; z-index: 30; background: var(--fg); color: oklch(0.145 0 0); font-size: 12px; font-weight: 400; text-align: left; border-radius: 6px; padding: 10px 12px; white-space: normal; line-height: 1.45; box-shadow: 0 8px 24px oklch(0 0 0 / 50%); }
+.pop.r { left: auto; right: -8px; }
+.info:hover .pop, .info:focus .pop { display: block; }
+.pop p { margin: 0 0 6px; }
+.pop hr { border: 0; border-top: 1px solid oklch(0.145 0 0 / 25%); margin: 6px 0; }
+.pop .foot { font-style: italic; color: oklch(0.145 0 0 / 60%); margin: 0; }
+.pop .foot + .foot { margin-top: 3px; }
+.pop svg.hist { width: 100%; height: auto; display: block; margin: 4px 0 6px; }
+.narrow .pop { left: -40px; width: 300px; }
+.narrow .pop.r { left: auto; right: -12px; }
+
+/* Percentile bar (mirrors PercentileBar.tsx: 25-75 band, median tick, coloured dot, ordinal) */
+.pbar { display: flex; align-items: center; gap: 10px; }
+.ptrack { position: relative; flex: 1; height: 10px; border-radius: 6px; background: var(--track); min-width: 60px; }
+.ptrack .band { position: absolute; top: 0; bottom: 0; background: var(--band); border-radius: 2px; }
+.ptrack .med { position: absolute; top: -3px; bottom: -3px; width: 1px; background: oklch(1 0 0 / 40%); }
+.ptrack .dot { position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--card); transition: left .3s ease; }
+.ord { font-weight: 700; font-size: 13px; min-width: 38px; text-align: right; }
+.c-lo { color: var(--low); } .c-md { color: var(--mid); } .c-hi { color: var(--high); }
+.b-lo { background: var(--low); } .b-md { background: var(--mid); } .b-hi { background: var(--high); }
+.status { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+
+/* Variant A: per-TC cards with ranked rows */
+.tcgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.narrow .tcgrid { grid-template-columns: 1fr; }
+.rrow + .rrow { margin-top: 16px; }
+.rrow .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.rrow .lbl { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.rrow .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rrow .hint { font-size: 12.5px; color: var(--faint); margin-bottom: 6px; }
+
+/* Variant B: one table, TC rows, value bars on the rate axis */
+.vt { width: 100%; border-collapse: collapse; }
+.vt th { font-weight: 600; font-size: 12.5px; color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--edge); }
+.vt th small { display: block; font-weight: 400; color: var(--faint); font-size: 11.5px; }
+.vt td { padding: 12px; border-bottom: 1px solid var(--edge); vertical-align: middle; }
+.vt tr:last-child td { border-bottom: 0; }
+.tcl { font-weight: 700; } .tcl small { display: block; font-weight: 400; color: var(--faint); font-size: 12px; }
+.vcell { display: flex; flex-direction: column; gap: 6px; min-width: 200px; }
+.vcell .vtop { display: flex; align-items: center; gap: 6px; }
+.vcell .vtop b { font-variant-numeric: tabular-nums; }
+.vcell .vtop .w { color: var(--faint); font-size: 12.5px; }
+.vtrack { position: relative; height: 10px; border-radius: 6px; background: var(--track); }
+.vtrack .band { position: absolute; top: 0; bottom: 0; background: var(--band); border-radius: 2px; }
+.vtrack .dot { position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--card); }
+.vtrack .ax { position: absolute; top: 13px; font-size: 10.5px; color: var(--faint); }
+.narrow .vt thead { display: none; }
+.narrow .vt, .narrow .vt tbody, .narrow .vt tr, .narrow .vt td { display: block; width: 100%; }
+.narrow .vt tr { padding: 12px 0; border-bottom: 1px solid var(--edge); }
+.narrow .vt tr:last-child { border-bottom: 0; }
+.narrow .vt td { border: 0; padding: 4px 0; }
+.narrow .vcell { min-width: 0; }
+.narrow .vcell .vtop::before { content: attr(data-l); color: var(--muted); font-weight: 600; margin-right: 2px; }
+
+/* Variant C: diverging worse | better per TC */
+.dv + .dv { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--edge); }
+.dvh { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.dvh .tcl small { display: inline; margin-left: 6px; }
+.dvrow { display: grid; grid-template-columns: 110px minmax(0, 1fr) 110px; gap: 10px; align-items: center; }
+.narrow .dvrow { grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+.narrow .dvrow .dtrack { grid-column: 1 / -1; grid-row: 2; }
+.narrow .dvlab.l { text-align: left; }
+.narrow .dvlab:not(.l) { text-align: right; }
+.dvlab { font-size: 13px; } .dvlab b { font-variant-numeric: tabular-nums; font-size: 15px; }
+.dvlab.l { text-align: right; } .dvlab small { display: block; color: var(--faint); font-size: 11.5px; }
+.dtrack { position: relative; height: 16px; }
+.dtrack .half { position: absolute; top: 3px; height: 10px; background: var(--track); }
+.dtrack .half.l { left: 0; right: calc(50% + 2px); border-radius: 6px 0 0 6px; }
+.dtrack .half.r { left: calc(50% + 2px); right: 0; border-radius: 0 6px 6px 0; }
+.dtrack .band { position: absolute; top: 3px; height: 10px; background: var(--band); }
+.dtrack .fill { position: absolute; top: 6px; height: 4px; background: var(--neutral-fill); border-radius: 2px; }
+.dtrack .ctr { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: oklch(1 0 0 / 35%); }
+.dtrack .dot { position: absolute; top: 50%; width: 13px; height: 13px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--card); }
+.dvfoot { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin-top: 6px; gap: 8px; }
+
+/* Variant D: expanded repertoire row */
+.exprow { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; }
+.narrow .exprow { grid-template-columns: 1fr; }
+.fakeboard { width: 200px; aspect-ratio: 1; border-radius: 3px; background: repeating-conic-gradient(#b58863 0 25%, #f0d9b5 0 50%) 0 0 / 25% 25%; opacity: .85; }
+.narrow .fakeboard { width: 168px; }
+.exprow h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.mini + .mini { margin-top: 14px; }
+.mini .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.mini .top b { font-variant-numeric: tabular-nums; }
+.mini .top .w { color: var(--faint); font-size: 12.5px; margin-left: 6px; }
+.mtrack { position: relative; height: 6px; border-radius: 4px; background: var(--track); }
+.mtrack .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: oklch(1 0 0 / 45%); border-radius: 1px; }
+.mtrack .dot { position: absolute; top: 50%; width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--card); background: var(--mid); }
+.mini .cap { font-size: 12px; color: var(--faint); margin-top: 6px; }
+.existing { opacity: .55; }
+.existing .tag { font-size: 11px; color: var(--note-fg); border: 1px dashed var(--note-edge); border-radius: 6px; padding: 0 6px; margin-left: 6px; }
+.faded { opacity: .5; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.pills button { font: inherit; font-size: 12.5px; background: transparent; color: var(--muted); border: 1px solid var(--edge); border-radius: 8px; padding: 3px 10px; cursor: pointer; transition: all .15s ease; }
+.pills button.on { color: var(--fg); border-color: var(--brand); background: #2a2420; }
+
+#sketch-tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,0.75); color: white; padding: 8px 10px; border-radius: 8px; opacity: 0.5; transition: opacity 0.2s; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: 92vw; }
+#sketch-tools:hover { opacity: 1; }
+#sketch-tools button { font: inherit; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+#sketch-tools button.on { background: #8a6a3a; }
+</style>
+</head>
+<body>
+<div id="variant-nav">
+  <button class="variant-tab active" data-v="a">A: Per-TC cards, percentile rows ★ Selected</button>
+  <button class="variant-tab" data-v="b">B: One table, rate bars vs peers</button>
+  <button class="variant-tab" data-v="c">C: Worse | better, diverging</button>
+  <span class="sep"></span>
+  <button class="variant-tab" data-v="d">D: Per opening (expanded row)</button>
+</div>
+
+<div id="sketch-tools">
+  <span>View</span>
+  <button data-w="1120" class="on">Desktop</button><button data-w="390">Phone</button>
+  <span style="margin-left:6px">Data</span>
+  <button data-s="typical" class="on">Typical user</button><button data-s="new">New user</button><button data-s="pending">Analyzing</button>
+</div>
+
+<div class="wrap" id="wrap">
+  <div class="topbar">
+    <p><b>Sketch 013.</b> "Came out worse" = left the opening with an eval 1.0 or more below a typical opening position (colour baseline ±0.25); games lost in the opening (resign/mate/timeout) count as worse, wins as better. Peers = benchmark players at your rating and TC. Numbers are made up, shaped like the benchmark (1600: worse typical 15–28%, better 18–29%).</p>
+    <p>Hover the <b>search icons</b> for the popover with the eval-after-opening histogram. Toggle Phone and Data states bottom-right.</p>
+  </div>
+
+  <div class="subtabs"><button>Moves</button><button>Games</button><button class="on">Stats</button></div>
+
+  <div class="colorbar">
+    <span class="cl">Showing your openings as</span>
+    <div class="colors">
+      <button class="on" data-c="white"><span class="sw w"></span>White</button>
+      <button data-c="black"><span class="sw b"></span>Black</button>
+    </div>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="ghost">
+    <div class="card"><div class="card-h">Moves that cost you · Moves that work</div><div class="card-b">existing findings cards</div></div>
+    <div class="card" style="margin-top:16px"><div class="card-h">Repertoire</div><div class="card-b">existing repertoire table</div></div>
+  </div>
+</div>
+
+<script>
+const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+const FLOOR = 30;
+const CUT = 1.0;
+// Peer typical band (p25, median, p75) at the user's rating x TC. Shaped like the 1600 benchmark cell.
+const PEER = { worse: [0.15, 0.21, 0.28], better: [0.18, 0.23, 0.29] };
+
+// m/s = mean/sd (eval, baseline-centred) of the user's eval after the opening; worse/better rates derive from it.
+// pW / pB = percentile ("better than X% of peers": for worse, peers with MORE worse games). sig = 99% vs the peer median.
+const DATA = {
+  white: [
+    { tc: 'Blitz', n: 412, elo: 1650, m: 0.08, s: 1.2, pW: 58, sigW: false, pB: 46, sigB: false },
+    { tc: 'Rapid', n: 214, elo: 1580, m: -0.35, s: 1.25, pW: 14, sigW: true, pB: 22, sigB: false },
+    { tc: 'Bullet', n: 22, elo: 1520, m: 0, s: 1.4, below: true },
+  ],
+  black: [
+    { tc: 'Blitz', n: 398, elo: 1650, m: 0.0, s: 1.05, pW: 66, sigW: false, pB: 35, sigB: false },
+    { tc: 'Rapid', n: 180, elo: 1580, m: 0.3, s: 1.1, pW: 84, sigW: true, pB: 71, sigB: false },
+    { tc: 'Bullet', n: 19, elo: 1520, m: 0, s: 1.4, below: true },
+  ],
+};
+const OPENINGS = {
+  white: [
+    { name: "Italian Game: Giuoco Pianissimo", line: '1.e4 e5 2.Nf3 Nc6 3.Bc4 Bc5 4.d3', n: 54, m: -0.1, s: 1.15, score: 0.55, ev: '+0.21' },
+    { name: "Vienna Game", line: '1.e4 e5 2.Nc3', n: 31, m: -0.55, s: 1.3, score: 0.47, ev: '−0.31' },
+    { name: "King's Gambit Accepted", line: '1.e4 e5 2.f4 exf4', n: 14, m: -0.3, s: 1.6, score: 0.5, ev: '−0.12' },
+  ],
+  black: [
+    { name: "Caro-Kann Defense: Advance", line: '1.e4 c6 2.d4 d5 3.e5', n: 172, m: 0.15, s: 1.0, score: 0.53, ev: '−0.09' },
+    { name: "Slav Defense", line: '1.d4 d5 2.c4 c6', n: 66, m: -0.2, s: 1.1, score: 0.49, ev: '−0.38' },
+    { name: "Englund Gambit", line: '1.d4 e5', n: 12, m: -1.1, s: 1.4, score: 0.33, ev: '−1.30' },
+  ],
+};
+
+let state = { v: 'a', color: 'white', data: 'typical', narrow: false, opening: 0 };
+
+// ---- maths -------------------------------------------------------------
+function erf(x) { const t = 1 / (1 + 0.3275911 * Math.abs(x)); const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; }
+const Phi = z => 0.5 * (1 + erf(z / Math.SQRT2));
+const rates = r => ({ worse: Phi((-CUT - r.m) / r.s), better: 1 - Phi((CUT - r.m) / r.s) });
+const pct = x => Math.round(x * 100) + '%';
+function bins(r) {
+  const edges = []; for (let x = -3; x <= 3.0001; x += 0.25) edges.push(+x.toFixed(2));
+  const out = [{ lo: -Infinity, hi: -3, c: r.n * Phi((-3 - r.m) / r.s) }];
+  for (let i = 0; i < edges.length - 1; i++) out.push({ lo: edges[i], hi: edges[i + 1], c: r.n * (Phi((edges[i + 1] - r.m) / r.s) - Phi((edges[i] - r.m) / r.s)) });
+  out.push({ lo: 3, hi: Infinity, c: r.n * (1 - Phi((3 - r.m) / r.s)) });
+  return out;
+}
+const tone = (p, sig) => !sig ? 'md' : p < 25 ? 'lo' : p > 75 ? 'hi' : 'md';
+const ordinal = p => p + (p % 10 === 1 && p !== 11 ? 'st' : p % 10 === 2 && p !== 12 ? 'nd' : p % 10 === 3 && p !== 13 ? 'rd' : 'th');
+
+// ---- shared pieces -----------------------------------------------------
+function histSvg(r, side) {
+  const b = bins(r), W = 316, H = 92, pad = 14, bw = (W - 2) / b.length, max = Math.max(...b.map(x => x.c));
+  const x = v => 1 + (v + 3.25) / 6.5 * (W - 2);   // -3.25..3.25 maps the 26 bins
+  let s = `<svg class="hist" viewBox="0 0 ${W} ${H + pad + 12}">`;
+  b.forEach((bin, i) => {
+    const out = bin.hi <= -CUT ? 'worse' : bin.lo >= CUT ? 'better' : 'even';
+    const hl = out === side;
+    const h = Math.max(1, bin.c / max * H);
+    s += `<rect x="${(1 + i * bw).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw - 1.5).toFixed(1)}" height="${h.toFixed(1)}" fill="${hl ? '#3a3633' : '#b9b4ae'}" rx="1"/>`;
+  });
+  [-CUT, CUT].forEach(c => { s += `<line x1="${x(c)}" x2="${x(c)}" y1="0" y2="${H + 3}" stroke="#3a3633" stroke-dasharray="3 2" stroke-width="1"/>`; });
+  s += `<line x1="${x(0)}" x2="${x(0)}" y1="${H}" y2="${H + 4}" stroke="#777"/>`;
+  const ty = H + pad;
+  s += `<text x="${x(-2.1)}" y="${ty}" font-size="10.5" text-anchor="middle" fill="#3a3633" font-weight="${side === 'worse' ? 700 : 400}">worse</text>`;
+  s += `<text x="${x(0)}" y="${ty}" font-size="10.5" text-anchor="middle" fill="#777">even</text>`;
+  s += `<text x="${x(2.1)}" y="${ty}" font-size="10.5" text-anchor="middle" fill="#3a3633" font-weight="${side === 'better' ? 700 : 400}">better</text>`;
+  s += `<text x="${x(-CUT)}" y="${ty + 11}" font-size="9.5" text-anchor="middle" fill="#888">−1.0</text>`;
+  s += `<text x="${x(CUT)}" y="${ty + 11}" font-size="9.5" text-anchor="middle" fill="#888">+1.0</text>`;
+  return s + '</svg>';
+}
+
+function popover(r, side, opts = {}) {
+  const rt = rates(r), v = rt[side], k = Math.round(v * r.n);
+  const p = side === 'worse' ? r.pW : r.pB;
+  const band = PEER[side];
+  const what = side === 'worse'
+    ? 'Share of your games where your eval after the opening was 1.0 or more below a typical opening position. Games you lost before the middlegame count too.'
+    : 'Share of your games where your eval after the opening was 1.0 or more above a typical opening position. Games you won before the middlegame count too.';
+  const rank = side === 'worse'
+    ? `Fewer worse games than ${p}% of peers`
+    : `More better games than ${p}% of peers`;
+  return `<span class="info" tabindex="0">${ICON}<span class="pop ${opts.right ? 'r' : ''}">
+    <p>${what}</p>
+    <p>Your eval after the opening, ${r.tc.toLowerCase()} games as ${state.color === 'white' ? 'White' : 'Black'}:</p>
+    ${histSvg(r, side)}
+    <p>Evals are measured against the typical opening position for your colour (White +0.25, Black −0.25).</p>
+    <hr>
+    <p class="foot">${r.tc}: ${k} of ${r.n} games · typical at your level ${pct(band[0])}–${pct(band[2])}</p>
+    ${opts.noRank ? '' : `<p class="foot">${rank}. Peers: benchmark players rated about ${r.elo - 100}–${r.elo + 100} in ${r.tc.toLowerCase()}.</p>
+    <p class="foot">Ranked games only (rated, opponents within 100, last 36 months), so the page filters don't change it. This rate drops steeply with rating.</p>`}
+  </span></span>`;
+}
+
+function statusOf(r) {
+  if (state.data === 'pending') return { pending: true };
+  if (state.data === 'new' || r.below) return { below: true, have: state.data === 'new' ? Math.min(r.n, 12) : r.n };
+  return null;
+}
+function statusLine(st) {
+  return st.pending ? '<p class="status">Analyzing your games, this fills in once evaluations finish</p>'
+    : `<p class="status">Not enough games to rank yet (${st.have} of ${FLOOR})</p>`;
+}
+function pbar(p, sig) {
+  const t = tone(p, sig);
+  return `<div class="pbar"><div class="ptrack"><div class="band" style="left:25%;right:25%"></div><div class="med" style="left:50%"></div><div class="dot b-${t}" style="left:${p}%"></div></div><span class="ord c-${t}">${ordinal(p)}</span></div>`;
+}
+
+// ---- Variant A ---------------------------------------------------------
+function rrow(r, side, st) {
+  const rt = rates(r), v = rt[side], p = side === 'worse' ? r.pW : r.pB, sig = side === 'worse' ? r.sigW : r.sigB;
+  const label = side === 'worse' ? 'Came out worse' : 'Came out better';
+  const hint = side === 'worse' ? `Fewer worse games than ${p}% of peers` : `More better games than ${p}% of peers`;
+  return `<div class="rrow"><div class="top"><span class="lbl">${label} ${popover(r, side)}</span>${st && st.pending ? '' : `<span class="val">${pct(v)}</span>`}</div>
+    ${st ? statusLine(st) : `<div class="hint">${hint}</div>${pbar(p, sig)}`}</div>`;
+}
+function variantA() {
+  const cards = DATA[state.color].map(r => {
+    const st = statusOf(r);
+    return `<div class="card"><div class="card-h">${r.tc}<small>${state.data === 'new' ? Math.min(r.n, 12) : r.n} games</small></div>
+      <div class="card-b">${rrow(r, 'worse', st)}${rrow(r, 'better', st)}</div></div>`;
+  }).join('');
+  return `<div class="tcgrid">${cards}</div>`;
+}
+
+// ---- Variant B ---------------------------------------------------------
+const AXIS_MAX = 0.5;
+function vbar(r, side) {
+  const rt = rates(r), v = rt[side], band = PEER[side];
+  const sig = side === 'worse' ? r.sigW : r.sigB, p = side === 'worse' ? r.pW : r.pB;
+  // better to the right: the worse axis runs reversed (fewer worse games on the right)
+  const pos = x => side === 'worse' ? (1 - Math.min(x, AXIS_MAX) / AXIS_MAX) * 100 : Math.min(x, AXIS_MAX) / AXIS_MAX * 100;
+  const lo = Math.min(pos(band[0]), pos(band[2])), hi = Math.max(pos(band[0]), pos(band[2]));
+  const word = v < band[0] ? (side === 'worse' ? 'fewer than typical' : 'fewer than typical') : v > band[2] ? 'more than typical' : 'typical';
+  return `<div class="vtrack"><div class="band" style="left:${lo}%;width:${hi - lo}%"></div><div class="dot b-${tone(p, sig)}" style="left:${pos(v)}%"></div></div>`
+    + `<span class="faint" style="font-size:11.5px">${word}</span>`;
+}
+function vcell(r, side, st) {
+  const rt = rates(r);
+  const lab = side === 'worse' ? 'Worse' : 'Better';
+  if (st && st.pending) return `<div class="vcell"><div class="vtop" data-l="${lab}">${popover(r, side)}</div>${statusLine(st)}</div>`;
+  return `<div class="vcell"><div class="vtop" data-l="${lab}"><b>${pct(rt[side])}</b><span class="w">of games</span>${popover(r, side, { right: side === 'better' })}</div>
+    ${st ? statusLine(st) : vbar(r, side)}</div>`;
+}
+function variantB() {
+  const rows = DATA[state.color].map(r => {
+    const st = statusOf(r);
+    return `<tr><td class="tcl">${r.tc}<small>${state.data === 'new' ? Math.min(r.n, 12) : r.n} games</small></td><td>${vcell(r, 'worse', st)}</td><td>${vcell(r, 'better', st)}</td></tr>`;
+  }).join('');
+  return `<div class="card"><div class="card-b" style="padding:4px 4px">
+    <table class="vt"><thead><tr><th style="width:120px">Time control</th><th>Came out worse<small>eval 1.0+ below typical · fewer is better →</small></th><th>Came out better<small>eval 1.0+ above typical · more is better →</small></th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div>`;
+}
+
+// ---- Variant C ---------------------------------------------------------
+const DV_MAX = 0.5;
+function variantC() {
+  const blocks = DATA[state.color].map(r => {
+    const st = statusOf(r), rt = rates(r);
+    const n = state.data === 'new' ? Math.min(r.n, 12) : r.n;
+    const head = `<div class="dvh"><span class="tcl">${r.tc}<small>${n} games</small></span></div>`;
+    if (st) return `<div class="dv">${head}${statusLine(st)}</div>`;
+    const half = 50 - 1;   // % width per side minus the centre gap
+    const L = x => 50 - 1 - Math.min(x, DV_MAX) / DV_MAX * half;   // left edge for worse
+    const R = x => 50 + 1 + Math.min(x, DV_MAX) / DV_MAX * half;
+    const bw = PEER.worse, bb = PEER.better;
+    return `<div class="dv">${head}
+      <div class="dvrow">
+        <div class="dvlab l">${popover(r, 'worse')} <b>${pct(rt.worse)}</b> worse<small>typical ${pct(bw[0])}–${pct(bw[2])}</small></div>
+        <div class="dtrack">
+          <div class="half l"></div><div class="half r"></div>
+          <div class="band" style="left:${L(bw[2])}%;width:${L(bw[0]) - L(bw[2])}%"></div>
+          <div class="band" style="left:${R(bb[0])}%;width:${R(bb[2]) - R(bb[0])}%"></div>
+          <div class="fill" style="left:${L(rt.worse)}%;width:${49 - L(rt.worse)}%"></div>
+          <div class="fill" style="left:51%;width:${R(rt.better) - 51}%"></div>
+          <div class="ctr"></div>
+          <div class="dot b-${tone(r.pW, r.sigW)}" style="left:${L(rt.worse)}%"></div>
+          <div class="dot b-${tone(r.pB, r.sigB)}" style="left:${R(rt.better)}%"></div>
+        </div>
+        <div class="dvlab"><b>${pct(rt.better)}</b> better ${popover(r, 'better', { right: true })}<small>typical ${pct(bb[0])}–${pct(bb[2])}</small></div>
+      </div>
+      <div class="dvfoot"><span>Fewer worse games than ${r.pW}% of peers</span><span>More better games than ${r.pB}% of peers</span></div>
+    </div>`;
+  }).join('');
+  return `<div class="card"><div class="card-b">${blocks}</div></div>`;
+}
+
+// ---- Variant D ---------------------------------------------------------
+function variantD() {
+  const list = OPENINGS[state.color];
+  const o = list[state.opening] || list[0];
+  const overall = rates(DATA[state.color][0]);   // the user's own overall rate (blitz-dominated), not peers
+  const ro = rates(o);
+  const thin = o.n < 20;
+  const mini = (side) => {
+    const v = ro[side], ref = overall[side], k = Math.round(v * o.n);
+    const pos = x => Math.min(x, 0.5) / 0.5 * 100;
+    return `<div class="mini"><div class="top"><span>${side === 'worse' ? 'Came out worse' : 'Came out better'}<span class="w">${k} of ${o.n} games</span></span><b>${pct(v)}</b></div>
+      <div class="mtrack"><div class="tick" style="left:${pos(ref)}%"></div><div class="dot" style="left:${pos(v)}%"></div></div>
+      <div class="cap">Tick: your ${pct(ref)} across all your ${state.color === 'white' ? 'White' : 'Black'} games</div></div>`;
+  };
+  const pills = list.map((x, i) => `<button class="${i === state.opening ? 'on' : ''}" data-o="${i}">${x.name.split(':')[0]} (${x.n})</button>`).join('');
+  return `<div class="pills">${pills}</div>
+  <div class="card"><div class="card-h">${o.name}<small>${o.line}</small></div><div class="card-b">
+    <div class="exprow"><div class="fakeboard"></div><div>
+      <div class="existing"><h4>Score <span class="tag">existing</span></h4><div class="faint">${Math.round(o.score * 100)}% · score bar</div>
+      <h4 style="margin-top:12px">Eval after opening <span class="tag">existing</span></h4><div class="faint">${o.ev} · eval bar</div></div>
+      <h4 style="margin-top:18px">Out of the opening</h4>
+      <div class="${thin ? 'faded' : ''}">${mini('worse')}${mini('better')}</div>
+      ${thin ? '<p class="status">Under 20 games: shown faded, no verdict.</p>' : ''}
+    </div></div>
+  </div></div>
+  <p class="faint" style="margin-top:10px;font-size:12.5px">Descriptive only, no peer rank: per-opening samples are too small. The reference is the player's own overall rate, so the row answers "is this line where my bad openings come from?".</p>`;
+}
+
+// ---- render ------------------------------------------------------------
+function render() {
+  const title = state.v === 'd' ? 'Repertoire › expanded row' : 'Out of the opening';
+  const q = state.v === 'd' ? 'The same two rates for one opening, inside the existing expanded row.'
+    : 'How often you leave the opening clearly worse, or clearly better, compared with players at your level.';
+  const body = { a: variantA, b: variantB, c: variantC, d: variantD }[state.v]();
+  document.getElementById('out').innerHTML = `<div class="sechead"><h2>${title}</h2></div><p class="q">${q}</p>${body}`;
+  document.querySelectorAll('.pills button').forEach(b => b.onclick = () => { state.opening = +b.dataset.o; render(); });
+}
+
+document.querySelectorAll('.variant-tab').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.variant-tab').forEach(x => x.classList.toggle('active', x === b));
+  state.v = b.dataset.v; render();
+});
+document.querySelectorAll('.colors button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.colors button').forEach(x => x.classList.toggle('on', x === b));
+  state.color = b.dataset.c; state.opening = 0; render();
+});
+document.querySelectorAll('#sketch-tools [data-w]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#sketch-tools [data-w]').forEach(x => x.classList.toggle('on', x === b));
+  const wrap = document.getElementById('wrap');
+  wrap.style.maxWidth = b.dataset.w + 'px';
+  wrap.classList.toggle('narrow', +b.dataset.w < 500);
+});
+document.querySelectorAll('#sketch-tools [data-s]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#sketch-tools [data-s]').forEach(x => x.classList.toggle('on', x === b));
+  state.data = b.dataset.s; render();
+});
+if (window.innerWidth < 500) document.getElementById('wrap').classList.add('narrow');
+// Deep links for review screenshots: #b, #c-black, #a-pop (opens the first popover)
+const hash = location.hash.slice(1).split('-');
+if ('abcd'.includes(hash[0]) && hash[0]) document.querySelector(`.variant-tab[data-v="${hash[0]}"]`).click();
+if (hash.includes('phone')) document.querySelector('#sketch-tools [data-w="390"]').click();
+if (hash.includes('black')) document.querySelector('.colors [data-c="black"]').click();
+if (hash.includes('new') || hash.includes('pending')) document.querySelector(`#sketch-tools [data-s="${hash.includes('new') ? 'new' : 'pending'}"]`).click();
+render();
+if (hash.includes('pop')) { const p = document.querySelectorAll('.pop')[hash.includes('pop2') ? 1 : 0]; p.style.display = 'block'; p.style.bottom = 'auto'; p.style.top = '140%'; }
+</script>
+</body>
+</html>

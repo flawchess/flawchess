@@ -112,6 +112,19 @@ def wilson_bounds(p: float, n: int, z: float = CI_Z_95) -> tuple[float, float]:
     return lower, upper
 
 
+def wilson_score_test_p_value(rate: float, n: int, null: float) -> float | None:
+    """Two-sided Wilson score-test p-value of H0: rate == ``null`` for a proportion over n.
+
+    ``z = (rate - null) / sqrt(null * (1 - null) / n)``, ``p = erfc(|z| / sqrt(2))``. This is
+    the inversion of ``wilson_bounds``: p < alpha iff the Wilson 1-alpha CI excludes ``null``.
+    None when the null variance is zero (``null`` at 0 or 1) or n <= 0.
+    """
+    if n <= 0 or not 0.0 < null < 1.0:
+        return None
+    se_null = math.sqrt(null * (1.0 - null) / n)
+    return math.erfc(abs(rate - null) / se_null / math.sqrt(2.0))
+
+
 def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     """Return (p_value, se_null) for the two-sided Wilson score-test of H0: score == 0.5.
 

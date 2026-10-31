@@ -36,7 +36,7 @@ async def get_endgame_ranked_stats(
 
     Takes NO filter parameters: the Stats tab always describes the canonical
     ranked sample (rated, human opponents, within 100 Elo, last 36 months, at most
-    3000 games per time control), so any query string produces the same body.
+    1000 games per time control), so any query string produces the same body.
     ``user_id`` comes only from the authenticated user, never from the request.
 
     Dev-clock exception: the ranked window uses SQL ``NOW()`` rather than the

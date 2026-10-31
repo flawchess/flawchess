@@ -1,31 +1,30 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.27
-current_phase: 242
-current_phase_name: Openings Stats + Insights Rework (SEED-204)
+current_phase: 243
 status: completed
-stopped_at: Phase 242 complete — all phases complete
-last_updated: "2026-10-31T10:41:44.135Z"
-state_head: a02ca1788510d17711def6e10cd9a51e58710241
+stopped_at: Phase 243 complete — all phases complete
+last_updated: "2026-10-31T19:59:09.192Z"
+state_head: f4c0b154bbea5cc93700afb01910868ef6063b60
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 103
-  total_plans: 9
+  total_plans: 14
   completed_plans: 96
   percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-31
-last_activity_desc: Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart
+last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 242 (Openings Stats + Insights Rework (SEED-204)) — COMPLETE
-Plan: 9 of 9
+Phase: 243
+Plan: 5 of 5 (complete)
 
-Status: Phase 242 complete, squash-merged to `main` (PR #428), not yet deployed
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -188,6 +187,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 243 added 2026-10-31 (explicit user request via `/gsd-phase @SEED-206`, planted the same day from the `/gsd-explore` opening-narration session + sketch 013): **Out of the Opening Worse/Better Rates** (SEED-206). New "Out of the opening" section at the top of the Openings Stats tab: the share of games left clearly worse (primary) and clearly better (secondary) out of the opening (eval at first middlegame ply minus colour baseline, ±1.0; pre-middlegame decisive endings count by result) ranked per TC against rating × TC peer CDFs on the Endgames canonical slice, displayed as one game-weighted value per colour (collapsed over TC, owner 2026-10-31, after prod cross-TC correlations of blitz–rapid 0.82, bullet 0.56–0.62), 95% gate, filter-independent; popover histogram with ±1.0 cuts, per-TC breakdown and the percentile-chip disclosures. Backend first (slice builder, CDF regen, ranked read path, per-source parity test), then frontend. No per-opening bars. Written by hand as 243 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 243`.
 - Phase 242 added 2026-10-17 (explicit user request via `/gsd-phase .planning/seeds/SEED-204-openings-stats-insights-rework.md`, planted the same day from sketch 012 after the 238/239 reworks): **Openings Stats + Insights Rework** (SEED-204). Insights merge into the Stats tab under one sticky White | Black switch; 99%-gated finding cards above a per-colour repertoire table (bookmarks pinned, then most played; compact Score / Eval columns with verdict dots and popovers; expanded row with per-opening `ScoreChart` + weekly volume bars); backend wave first: Openings eval centred on the colour baseline (Endgames untouched), duplicate-row collapse, 200-game current/past cutoff, weekly counts. One phase, several plans. Written by hand as 242 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 242`.
 - Phase 240 added 2026-10-15 (explicit user request via `/gsd-phase @SEED-200`, planted and refined in `/gsd-explore` the same day from the Train return-rate analysis): **Train First-Session Onboarding Load** (SEED-200). Intro cut to 2 bubbles (welcome + merged guess prompt), first verdict teaches the only-one/several vocabulary, practice rationale to the session-1 score screen, warm-up notice out of the intro, reveal tour spread over puzzles 1-3 with per-step seen stamps, first-ever session opens on a sharp puzzle with a soft/herring in slots 2-3 (after the D-09 shuffle). Copy stays within `STEPPER_COPY_MAX_CHARS`; measured by the SEED-200 clean-cohort funnel. Written by hand as 240 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 240`.
 - Phase 239 added 2026-10-12 (explicit user request via `/gsd-phase @SEED-198`, planted the same day from the ad-hoc Library Stats UX review + sketch 010 round 5): **Library Stats You-vs-Opponents Redesign** (SEED-198). One gap bar (0 tick, grey benchmark IQR of the gap, red/blue/green dot, better to the right) replaces every `MiniBulletChart` on the Stats tab; only the gap shown, details in a Search popover; tiles cut to Blunders/Mistakes with opponent lines, Severity card and combos retire; four context cards + "What stands out"; tactic motifs as three `TACTIC_GROUPS` tables (Missed/Allowed per 100 games, Advanced collapsed); synced TC switch per section; benchmark §5 tactic-family IQRs on the fully analyzed sample (gated on blitz finishing) wired into `get_tactic_comparison`. Written by hand as 239 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 239`.
@@ -886,6 +886,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 240]: 240-05: intro is a fixed two-bubble sequence (INTRO_STEP_COUNT = 2), warm-up notice dropped with no relocation (D-01, D-02)
 - [Phase 240]: 240-05: sr_explained is stamped whenever the first-completed score variant rendered, in any branch; a first warm-up session never later shows the habit line (D-21)
 - [Phase 240]: Tour spotlight is one box-shadow-only class (.train-tour-spotlight, --brand-glow vars = FLAW_FIXED_GLOW), never combined with a ring utility; understand step glows one chips-plus-list wrapper
+- [Phase 243]: ENUM benchmark_metric folded to TEXT + CHECK (generated from CdfMetricId) with a color column in a 4-column PK; per-colour opening rows, colour-pooled CDF
+- [Phase 243]: Opening-out builder drops sub-800 games and treats a game with no phase=1 ply as ended before the middlegame, matching fetch_sweep.py
+- [Phase 243]: 243-02: opening CDF cohort MIN/MAX and n_users count distinct users, not colour points (A2); rated costly
+- [Phase 243]: 243-04: rank_status/is_anchor_game made public; opening-out gate uses z=1.96 passed in, Endgames 99% path untouched
+- [Phase 243]: 243-04: nothing-contributes card status is pending > unranked > below_floor; ranked TC without CDF cell excluded from headline and gate
+- [Phase 243]: 243-05: popover re-sorts TCs bullet-to-classical locally and shows all five disclosures on every popover; eval cut 1.0 is a named frontend constant mirroring the backend threshold
 
 ### Pending Todos
 
@@ -1062,6 +1068,7 @@ None active.
 | 152 | Show subnav tab icons on mobile Openings page | 2026-10-18 | 67d053ef3 | — |
 | 261031-et9 | Retune gem/great Maia ceilings to 0.30/0.70 | 2026-10-31 | 702494c0b | [261031-et9-retune-gem-great-maia-thresholds-to-0-30](./quick/261031-et9-retune-gem-great-maia-thresholds-to-0-30/) |
 | 261031-g4l | Per-rating gem/great/best coloring of the best-move line in the Maia moves-by-rating chart | 2026-10-31 | a02ca1788 | [261031-g4l-per-rating-gem-great-best-coloring-of-th](./quick/261031-g4l-per-rating-gem-great-best-coloring-of-th/) |
+| 261031-sly | Lower ranked-sample cap from 3000 to 1000 games per TC | 2026-10-31 | f4c0b154b | [261031-sly-lower-ranked-sample-cap-from-3000-to-100](./quick/261031-sly-lower-ranked-sample-cap-from-3000-to-100/) |
 
 ## Deferred Items
 
@@ -1114,9 +1121,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-17T14:35:43.021Z
-**Stopped at:** Phase 242 complete — all phases complete
-**Resume file:** .planning/phases/242-openings-stats-insights-rework/242-CONTEXT.md
+**Last session:** 2026-10-31T17:41:15.680Z
+**Stopped at:** Phase 243 complete — all phases complete
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1363,6 +1370,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 240 P04 | 9 min | 2 tasks | 4 files |
 | Phase 240 P05 | 12 min | 2 tasks | 10 files |
 | Phase 240 P06 | 10min | 2 tasks | 15 files |
+| Phase 243 P01 | 11 min | 3 tasks | 17 files |
+| Phase 243 P02 | 2h | 3 tasks | 14 files |
+| Phase 243 P04 | 30min | 2 tasks | 6 files |
+| Phase 243 P05 | 25min | 3 tasks | 15 files |
 
 ## Performance Metrics
 

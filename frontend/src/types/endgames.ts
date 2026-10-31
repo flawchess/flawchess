@@ -251,7 +251,7 @@ export interface EndgameEloTimelineResponse {
 // ── Ranked-sample payload (GET /api/endgames/ranked-stats) ──
 // Mirrors app/schemas/endgames.py (EndgameRankedStatsResponse and friends). The
 // payload takes no filters: every number describes the ranked sample
-// (rated games vs human opponents within 100 Elo, last 36 months, <= 3000 games
+// (rated games vs human opponents within 100 Elo, last 36 months, <= 1000 games
 // per time control), so a value and its percentile always describe the same games.
 
 export type TimeControlBucket = 'bullet' | 'blitz' | 'rapid' | 'classical';
