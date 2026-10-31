@@ -39,24 +39,24 @@ created: "2026-10-31"
 
 ## Per-Task Verification Map
 
-Task IDs are filled by the planner; rows below are keyed by decision until then.
+Task IDs filled by the planner (2026-10-31). Each "❌ W0" file is created test-first inside the task that owns it.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | D-01/D-02 metric + edge cases | — | N/A | DB integration | `uv run pytest tests/services/test_opening_out_rates_parity.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-05 builder byte-identity | T-243 SQLi | f-string only Literals/int constants; user_id bindparam | unit | `uv run pytest tests/services/test_canonical_slice_per_user_vs_benchmark_parity.py -x` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | D-05 three-path parity | — | N/A | DB integration | `uv run pytest tests/services/test_opening_out_rates_parity.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-04 colour-aware CDF ranking + goldens | — | N/A | unit | `uv run pytest tests/scripts/test_gen_global_percentile_cdf_unchanged.py tests/scripts/test_gen_global_percentile_cdf_pooled.py -x` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | Scoped regen merge mode | — | N/A | unit | `uv run pytest tests/scripts/test_cohort_cdf_seed_artifact.py -x` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | Storage migration (colour column, PK, CHECK/enum) | — | N/A | DB integration | `uv run pytest tests/integration/test_alembic_migrations.py tests/integration/test_benchmark_metric_enum.py -x` | ✅ update | ⬜ pending |
-| TBD | TBD | TBD | Repo colour filter (Endgames unaffected) | — | N/A | DB integration | `uv run pytest tests/repositories/test_user_benchmark_percentiles_repository.py -x` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | Stage B opening family; endgame parity unchanged | — | N/A | unit + DB | `uv run pytest tests/services/test_user_benchmark_percentiles_service.py tests/services/test_endgame_ranked_parity.py -x` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | D-07/D-08 TC collapse, 95% gate, rank status | — | N/A | unit | `uv run pytest tests/services/test_opening_out_stats_service.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | API endpoint auth + schema | T-243 V4 | user_id from `current_active_user` only | router | `uv run pytest tests/routers/test_openings_out_of_opening.py -x` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Per-eval-source check (not a gate) | — | N/A | DB unit + report | `uv run pytest tests/services/test_opening_out_rates_parity.py -k eval_source` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | UI section card states | — | N/A | component | `cd frontend && npx vitest run src/components/openings/stats/__tests__/OutOfOpeningSection.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-09..D-12 popover content + disclosures | — | N/A | component | `cd frontend && npx vitest run src/components/openings/stats/__tests__/OutOfOpeningPopover.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Analytics target + cache invalidation | — | N/A | unit | `cd frontend && npx vitest run src/lib/__tests__/analytics.test.ts src/pages/__tests__` | ✅ extend | ⬜ pending |
+| 243-01-T1 | 01 | 1 | D-01/D-02 metric + edge cases | — | N/A | DB integration | `uv run pytest tests/services/test_opening_out_rates_parity.py -x` | ❌ W0 (created in T1) | ⬜ pending |
+| 243-01-T1 | 01 | 1 | D-05 builder byte-identity | T-243-01 | f-string only Literals/int constants; user_id bindparam | unit | `uv run pytest tests/services/test_canonical_slice_per_user_vs_benchmark_parity.py -x` | ✅ extend | ⬜ pending |
+| 243-03-T2 | 03 | 2 | D-05 three-path parity | T-243-08 | N/A | DB integration | `uv run pytest tests/services/test_opening_out_rates_parity.py -k three_path -x` | ✅ (created in 243-01-T1) | ⬜ pending |
+| 243-02-T1 | 02 | 2 | D-04 colour-aware CDF ranking + goldens | T-243-05 | benchmark-DB target guard | unit | `uv run pytest tests/scripts/test_gen_global_percentile_cdf_unchanged.py tests/scripts/test_gen_global_percentile_cdf_opening_out.py -x` | ❌ W0 (created in T1) | ⬜ pending |
+| 243-02-T1, 243-02-T3 | 02 | 2 | Scoped regen merge mode, non-opening rows unchanged | T-243-06 | TSV diff vs main before commit | unit + diff | `uv run pytest tests/scripts/test_cohort_cdf_seed_artifact.py -x` | ✅ extend | ⬜ pending |
+| 243-01-T2, 243-01-T3 | 01 | 1 | Storage migration (colour column, PK, TEXT + CHECK) | T-243-03 | dead-label delete logged | DB integration | `uv run pytest tests/integration/test_alembic_migrations.py tests/integration/test_benchmark_metric_check.py -x` | ✅ update (check test renamed from `test_benchmark_metric_enum.py`) | ⬜ pending |
+| 243-01-T3, 243-03-T2 | 01, 03 | 1, 2 | Repo colour rows; Endgames read sees only 'all' | T-243-10 | keyword-only user_id | DB integration | `uv run pytest tests/repositories/test_user_benchmark_percentiles_repository.py -x` | ✅ extend | ⬜ pending |
+| 243-03-T1, 243-03-T2 | 03 | 2 | Stage B opening family; endgame parity unchanged | T-243-09 | per-TC Sentry isolation | unit + DB | `uv run pytest tests/services/test_user_benchmark_percentiles_service.py tests/services/test_endgame_ranked_parity.py -x` | ✅ extend | ⬜ pending |
+| 243-04-T2 | 04 | 3 | D-07/D-08 TC collapse, 95% gate, rank status | — | N/A | unit | `uv run pytest tests/services/test_opening_out_stats_service.py -x` | ❌ W0 (created in T2) | ⬜ pending |
+| 243-04-T1 | 04 | 3 | API endpoint auth + schema | T-243-11, T-243-12 | user_id from `current_active_user` only | router | `uv run pytest tests/routers/test_openings_out_of_opening.py -x` | ❌ W0 (created in T1) | ⬜ pending |
+| 243-01-T1, 243-02-T2/T3 | 01, 02 | 1, 2 | Per-eval-source check (not a gate) | — | N/A | DB unit + report | `uv run pytest tests/services/test_opening_out_rates_parity.py -k eval_source` (code path); report numbers in 243-02-SUMMARY | ❌ W0 (created in 243-01-T1) | ⬜ pending |
+| 243-05-T1 | 05 | 4 | UI section card states | T-243-15 | React text nodes only | component | `npm --prefix frontend test -- src/components/openings/stats/__tests__/OutOfOpeningSection.test.tsx` | ❌ W0 (created in T1) | ⬜ pending |
+| 243-05-T2 | 05 | 4 | D-09..D-12 popover content + disclosures | T-243-14 | fixed-literal popover testids | component | `npm --prefix frontend test -- src/components/openings/stats/__tests__/OutOfOpeningPopover.test.tsx` | ❌ W0 (created in T2) | ⬜ pending |
+| 243-05-T2, 243-05-T3 | 05 | 4 | Analytics target + cache invalidation | T-243-16 | N/A | unit | `npm --prefix frontend test -- src/lib/__tests__/analytics.test.ts src/pages/__tests__/Import.endgameOverviewInvalidation.test.ts` | ✅ extend | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -76,8 +76,8 @@ Task IDs are filled by the planner; rows below are keyed by decision until then.
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Scoped CDF regen against the benchmark DB | Peer basis | Needs `bin/benchmark_db.sh start`, ~10 min run | Run the regen with `--metrics` merge mode and the pinned snapshot date; confirm non-opening CDF rows byte-identical |
-| Visual check of the section on the Stats tab | Frontend | Layout under sticky colour switch | Browser UAT on dev build, both colours, phone + desktop |
+| Scoped CDF regen against the benchmark DB (243-02-T2, orchestrator inline) | Peer basis | Needs `bin/benchmark_db.sh start`, ~10 min run | Run the regen with `--metrics` merge mode and the pinned snapshot date; 243-02-T3 confirms non-opening CDF rows byte-identical to main |
+| Visual check of the section on the Stats tab (243-05-T1 human-check) | Frontend | Layout under sticky colour switch | Browser UAT on dev build, both colours, phone + desktop |
 | Prod rollout (deploy, seed CDF, backfill) | Rollout | Owner-run prod ops | deploy → seed CDF in container → `uv run python -m scripts.archive.backfill_user_percentiles --target prod --skip-anchors` |
 
 ---

@@ -228,10 +228,21 @@ tables in `.planning/notes/out-of-the-opening-metric-design.md`. Locked decision
 **Depends on**: Phase 242 (Openings Stats tab, sticky colour switch, baseline centring); Phase 238 ranked-metric
 components
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 243 to break down)
+**Wave 1**
+- [ ] 243-01-PLAN.md — shared worse/better classification builder (tracer, edge-case DB test) + storage: metric ENUM to TEXT + CHECK, per-colour percentile rows
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 243-02-PLAN.md — colour-pooled peer CDFs: script changes, orchestrator-run scoped regen (`--metrics`, merge), dev seed, report-only eval-source check
+- [ ] 243-03-PLAN.md — Stage B per-colour opening family + three-path parity test (CDF path vs Stage B vs on-read)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 243-04-PLAN.md — GET /openings/out-of-opening-stats: per-TC rank status, game-weighted headline, 95% gate, orientation
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 243-05-PLAN.md — "Out of the opening" Stats-tab section, chart-free popover, cache invalidation, CHANGELOG
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

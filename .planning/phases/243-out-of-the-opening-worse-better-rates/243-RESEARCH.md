@@ -642,15 +642,19 @@ Footer: `k of n games`, `95% CI a% to b%`, peer typical range. No "Wilson", no p
 | A7 | Prod has no rows on the 12 legacy TC-suffixed labels | Storage | If wrong, a CHECK-based migration fails at deploy (loudly) |
 | A8 | Colour column over per-colour ids; ENUM→TEXT folded in | Storage | Planner may choose the fallback; both are workable |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Fold the ENUM→TEXT alignment in or defer it?**
    - Known: cost is one migration step + two test rewrites; tables are small.
    - Unclear: prod usage of legacy labels (A7).
    - Recommendation: fold in, with a prod `GROUP BY metric` check before deploy; otherwise document the deferral.
+   - RESOLVED: folded in (243-01 migration `b7e4c2a9f013`, dead labels deleted with a logged count); owner pre-deploy check in 243-05 rollout notes.
 2. **Distinct-user vs point-based cohort caps (A2).** Recommendation: distinct users; record it in the regen report header.
+   - RESOLVED: distinct users (243-02 Task 1, noted in the regen report).
 3. **Backfill ownership.** The prod backfill needs the tunnel and an owner go-ahead. Recommendation: a human-action checkpoint after deploy: seed, then `-m scripts.archive.backfill_user_percentiles --target prod --skip-anchors`, then spot-check user 28.
+   - RESOLVED: owner-run rollout notes in 243-05 (pre-check, deploy, seed, backfill, spot-check user 28).
 4. **Per-eval-source check delivery.** "Report-only" can mean a deterministic unit test (identical classification across the three source flags for identical positions, which is a code-path check) plus an empirical report run against the benchmark/dev DB (SEED-206 measured < 1 pp). Recommendation: both; the empirical numbers go in the plan SUMMARY, not a pytest assertion.
+   - RESOLVED: both (243-01 `-k eval_source` code-path test; 243-02 report script, numbers recorded in SUMMARY, not a gate).
 
 ## Environment Availability
 

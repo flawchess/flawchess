@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 242
-current_phase_name: Openings Stats + Insights Rework (SEED-204)
+current_phase_name: Out of the Opening Worse/Better Rates (SEED-206)
 status: completed
 stopped_at: Phase 243 context gathered
-last_updated: "2026-10-31T14:49:01.115Z"
-state_head: d9e9801eecb10878e28aecd0a9c17302829c4d6e
+last_updated: "2026-10-31T16:11:15.154Z"
+state_head: 9e9b06d69fe188cf89888758f915175a7c8d018e
 progress:
   total_phases: 2
   completed_phases: 103
-  total_plans: 9
+  total_plans: 14
   completed_plans: 96
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-31
@@ -21,7 +21,7 @@ last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best 
 
 ## Current Position
 
-Phase: 243 (Out of the Opening Worse/Better Rates (SEED-206)) — NOT PLANNED
+Phase: 243 (Out of the Opening Worse/Better Rates (SEED-206)) — READY TO EXECUTE
 Plan: 0 of TBD
 
 Status: Phase 243 added 2026-10-31, ready to discuss. Phase 242 complete, squash-merged to `main` (PR #428), not yet deployed
