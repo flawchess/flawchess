@@ -87,16 +87,13 @@ questions and dropped the popover histogram.
 - No stacked worse / even / better bar: it reads as W/D/L.
 
 ### Popover
-- **D-09 (discussed, overrides ROADMAP and SEED-206):** **No histogram in the popover.** No other percentile
+- **D-09 (discussed; ROADMAP and SEED-206 updated to match):** **No histogram in the popover.** No other percentile
   popover has a chart, so this one follows the `RankedMetricPopover` structure
   (`frontend/src/components/endgames/stats/RankedMetricPopover.tsx`):
   - a plain WHAT sentence;
   - the percentile statement in words, with its disclosures;
   - a separator;
-  - a greyed stats footer.
-
-  The ROADMAP phase text and SEED-206 still mention the histogram. Ignore those lines.
-- **D-10:** The **per-TC breakdown** stays. It is a compact list, not a chart: rate, percentile and qualifying games
+  - a greyed stats footer.- **D-10:** The **per-TC breakdown** stays. It is a compact list, not a chart: rate, percentile and qualifying games
   for each passing TC, plus each below-floor TC listed as such. This is where a bullet vs. slower-TC split becomes
   visible.
 - **D-11:** The footer reports the counts (pooled k of n), the peer band, and a **95%** CI (the Endgames footer says
@@ -133,13 +130,12 @@ questions and dropped the popover histogram.
 
 ### Phase design
 - `.planning/seeds/SEED-206-out-of-the-opening-worse-better-rates.md`: locked decisions, rejected options (do not
-  reopen), feasibility findings (floor coverage, eval source, cross-TC agreement, FlawChess skew). Its histogram
-  line is superseded by D-09.
+  reopen), feasibility findings (floor coverage, eval source, cross-TC agreement, FlawChess skew).
 - `.planning/notes/out-of-the-opening-metric-design.md`: reasoning, benchmark tables (reliability, colour/TC/ELO d,
   score per SD), the threshold sweep.
 - `.planning/sketches/013-out-of-the-opening/index.html`: Variant A card and copy. Ignore its per-TC cards and its
   histogram (superseded by D-06 and D-09). `analysis/` holds the benchmark scripts.
-- `.planning/ROADMAP.md` § Phase 243: the goal statement. Its popover histogram is superseded by D-09.
+- `.planning/ROADMAP.md` § Phase 243: the goal statement.
 
 ### Related decisions
 - `.planning/notes/percentile-chip-canonical-slice.md`: the canonical-slice contract the new builder follows.

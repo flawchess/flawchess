@@ -6,7 +6,7 @@ promoted: 2026-10-31
 planted: 2026-10-31
 planted_during: v2.27 (after Phase 242), /gsd-explore session on opening narration → sketch 013
 trigger_when: owner opens the next Openings milestone/phase, or asks to implement sketch 013 / the "out of the opening" stat
-scope: small-medium (slimmed 2026-10-31); one phase, ~3–4 plans. Backend first (canonical-slice builder, CDF regen, Stage B family, ranked read path + parity test incl. per-eval-source check), then frontend (Stats-tab section + popover histogram). No per-opening bars.
+scope: small-medium (slimmed 2026-10-31); one phase, ~3–4 plans. Backend first (canonical-slice builder, CDF regen, Stage B family, ranked read path + parity test incl. per-eval-source check), then frontend (Stats-tab section + popover). No per-opening bars.
 priority: solid contained improvement, not urgent; a good candidate when a milestone has room for an Openings phase, but don't displace higher-impact work for it
 ---
 
@@ -77,9 +77,8 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
 - **Not a stacked worse / even / better bar**: it reads as W/D/L.
 
 ### Popover
+- Same structure as the Endgames `RankedMetricPopover`, with no chart (owner, 2026-10-31).
 - Explains what the rate means.
-- Shows a histogram of the player's eval after the opening, with the ±1.0 cuts and the selected side
-  dark.
 - Shows the per-TC breakdown: rate, percentile and game count for each TC that passes the floor.
 - The footer gives counts, the peer band and the percentile in words, plus the percentile-chip
   disclosures: who the peers are, ranked games only, filter independence, rating dependence.
@@ -109,6 +108,8 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
 - **One card per played TC (sketch 013 as drawn):** it is inconsistent with the rest of the Openings
   page, which collapses over TC. Blitz and rapid agree at 0.82 after adjusting for rating and noise, so
   the extra cards mostly repeat themselves. The bullet divergence is surfaced in the popover instead.
+- **A histogram of the eval after the opening in the popover (sketch 013 as drawn):** no other
+  percentile popover has a chart (owner, 2026-10-31, Phase 243 discuss).
 - **Splitting out only bullet:** extra layout complexity for about 60 users.
 - **Ranking a pooled-TC rate against a pooled-TC CDF:** there is no single rating to look up peers by,
   because the peer key is rating per TC.

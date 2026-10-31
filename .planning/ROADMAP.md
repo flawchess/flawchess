@@ -218,8 +218,8 @@ tables in `.planning/notes/out-of-the-opening-metric-design.md`. Locked decision
 - **Frontend:** "Out of the opening" section at the top of the Stats tab under the sticky White | Black switch;
   one card for the selected colour (not one per TC, a deviation from sketch 013) with two `RankedMetricRow` +
   `PercentileBar` rows (worse primary, better styled as the lesser row); inverted-meaning words ("Fewer worse games than 58% of peers"); below-floor and pending states as
-  on Endgames; no stacked worse/even/better bar. Popover: meaning, histogram of the eval after the opening with
-  the ±1.0 cuts and the selected side dark, per-TC breakdown (rate, percentile, games per passing TC), footer
+  on Endgames; no stacked worse/even/better bar. Popover (same structure as `RankedMetricPopover`, no chart):
+  meaning, per-TC breakdown (rate, percentile, games per passing TC), footer
   with counts, peer band, percentile in words and the
   percentile-chip disclosures (peers are not FlawChess users, ranked games only, filter independence, rating
   dependence).
