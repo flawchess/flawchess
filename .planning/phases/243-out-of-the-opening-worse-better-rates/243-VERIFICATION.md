@@ -47,7 +47,7 @@ human_verification:
 
 **Phase Goal:** Answer "compared to players at my level, how solid am I out of the opening?" on the Openings Stats tab: rank the share of games left clearly worse (primary) and clearly better (secondary) against rating x TC peer CDFs per TC, one game-weighted value per colour.
 **Verified:** 2026-10-31
-**Status:** human_needed (no gaps; one visual check outstanding)
+**Status:** passed (no gaps; the visual check was confirmed by the owner on prod, desktop and mobile, 2026-10-31 after the v-release #447 deploy)
 **Re-verification:** No, initial verification
 
 ## Goal Achievement
@@ -119,7 +119,7 @@ Dispositions in `243-REVIEW-DISPOSITION.md` are all still `open`; the orchestrat
 
 ### Gaps Summary
 
-No gaps. Every locked decision D-01..D-12 is honored in code and exercised by passing tests, and the three paths that must agree (CDF regen, Stage B, on-read) are proven identical by a parity test. Status is `human_needed` only because the one visual check from 243-05 was never run. Before releasing, handle WR-02 operationally (runbook ordering plus the manual prod seed and Stage B backfill), and consider fixing WR-01 and WR-03 first.
+No gaps. Every locked decision D-01..D-12 is honored in code and exercised by passing tests, and the three paths that must agree (CDF regen, Stage B, on-read) are proven identical by a parity test. The one visual check from 243-05 was confirmed by the owner on prod (desktop and mobile) on 2026-10-31. WR-01..WR-03 were fixed before release; WR-02's rollout (CDF seed, then Stage B backfill) ran on prod after the #447 deploy.
 
 ---
 
