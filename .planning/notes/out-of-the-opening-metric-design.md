@@ -115,7 +115,9 @@ Why ±1.0:
   the absolute colour baseline.
 - **No 100% stacked "worse / even / better" bar.** It reads as W/D/L whatever the colours.
 - **Sketch 013, winner Variant A:**
-  - one card per played TC, each with two `RankedMetricRow`s and the Endgames `PercentileBar`;
+  - one card per played TC, each with two `RankedMetricRow`s and the Endgames `PercentileBar`
+    (*superseded 2026-10-31:* ranked per TC but displayed as one game-weighted card per colour, see
+    SEED-206 "Cross-TC agreement");
   - words carry the inverted meaning for "worse" ("Fewer worse games than 58% of peers"), because a
     bare "58th" is ambiguous for a lower-is-better metric;
   - "even" stays implicit.

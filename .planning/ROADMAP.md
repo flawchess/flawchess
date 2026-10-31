@@ -192,6 +192,47 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 242-09-PLAN.md — Frontend expanded row (board, links, Score/Eval bars, bookmark toggle) + single-series ScoreChart with weekly volume (D-14) + CHANGELOG (wave 7)
 
+### Phase 243: Out of the Opening Worse/Better Rates (SEED-206)
+
+**Goal**: Answer "compared to players at my level, how solid am I out of the opening?" on the Openings Stats
+tab. Rank the share of games the user leaves the opening clearly worse (primary, the opening signal that best
+predicts results within a rating × TC cell) and clearly better (secondary context) against rating × TC peer
+CDFs per TC, and show one game-weighted value per colour (collapsed over TC like the rest of the Openings page).
+Design in sketch 013 (`.planning/sketches/013-out-of-the-opening/`, Variant A); reasoning and benchmark
+tables in `.planning/notes/out-of-the-opening-metric-design.md`. Locked decisions and rejected options in SEED-206.
+
+- **Metric:** user-POV eval at the first middlegame ply minus the colour baseline (±0.25); worse ≤ −1.0, better
+  ≥ +1.0, mate by sign. Games ending before the middlegame by resignation, checkmate or timeout count by result;
+  abandoned games and draws excluded. Copy says "eval", never "pawns".
+- **Peer basis:** new canonical-slice builder in `app/services/canonical_slice_sql.py` shared by
+  `gen_global_percentile_cdf.py` and `user_benchmark_percentiles_service.py` (most recent 3000 games within 36
+  months per TC, rated, opponents within ±100; floor 30 games per colour × TC); filter-independent; colour
+  collapses (|d| ≤ 0.15). Red/green at the **95%** gate (`OPENING_INSIGHTS_CI_Z_95`), passed in as a parameter
+  since the Endgames ranked-metric path hardcodes 99%.
+- **Collapsed over TC (owner, 2026-10-31):** ranked per TC because the peer key is rating per TC. The headline
+  percentile per colour is the user's per-TC percentiles weighted by qualifying games in each passing TC. The gate
+  tests the pooled count against the game-weighted peer median. Cross-TC agreement on prod after rating and noise
+  adjustment: blitz–rapid 0.82, bullet pairs 0.56–0.62 (SEED-206, "Cross-TC agreement").
+- **Backend first:** slice builder, CDF regen, Stage B family, ranked read path, parity test including a
+  per-eval-source check (not a gate).
+- **Frontend:** "Out of the opening" section at the top of the Stats tab under the sticky White | Black switch;
+  one card for the selected colour (not one per TC, a deviation from sketch 013) with two `RankedMetricRow` +
+  `PercentileBar` rows (worse primary, better styled as the lesser row); inverted-meaning words ("Fewer worse games than 58% of peers"); below-floor and pending states as
+  on Endgames; no stacked worse/even/better bar. Popover: meaning, histogram of the eval after the opening with
+  the ±1.0 cuts and the selected side dark, per-TC breakdown (rate, percentile, games per passing TC), footer
+  with counts, peer band, percentile in words and the
+  percentile-chip disclosures (peers are not FlawChess users, ranked games only, filter independence, rating
+  dependence).
+- **Out of scope:** per-opening worse/better bars in the repertoire expanded card; LLM narration.
+
+**Depends on**: Phase 242 (Openings Stats tab, sticky colour switch, baseline centring); Phase 238 ranked-metric
+components
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 243 to break down)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

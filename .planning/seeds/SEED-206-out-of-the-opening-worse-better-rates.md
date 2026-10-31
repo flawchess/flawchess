@@ -1,6 +1,8 @@
 ---
 id: SEED-206
-status: dormant
+status: promoted
+promoted_to: Phase 243
+promoted: 2026-10-31
 planted: 2026-10-31
 planted_during: v2.27 (after Phase 242), /gsd-explore session on opening narration → sketch 013
 trigger_when: owner opens the next Openings milestone/phase, or asks to implement sketch 013 / the "out of the opening" stat
@@ -51,11 +53,22 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
     hardcodes 99%, so the plan must pass the level in as a parameter rather than reuse that path.
   - Filter-independent.
 - **Colour collapses** (|d| ≤ 0.15), so one CDF per TC can rank both colours.
+- **Rank per TC, display collapsed over TC** (owner, 2026-10-31). The CDF must stay per TC because the
+  peer key is rating, and ratings are per TC. The display collapses, matching the rest of the Openings
+  page (see "Cross-TC agreement" below for the evidence).
+  - **Headline percentile per colour:** the user's per-TC percentiles averaged, weighted by the user's
+    qualifying slice games in each TC that passes the floor. This is an approximation, not a true
+    percentile against a mixed-TC peer group, so the copy must not overclaim it.
+  - **95% gate:** the user's pooled worse (better) count over the passing TCs against the game-weighted
+    peer median, Σ w_tc · p50_tc(rating_tc). The exact test is still open for discuss-phase.
+  - **Per-TC breakdown in the popover.** This is where a player who differs between bullet and slower
+    TCs sees it.
 
-### Section UI (sketch 013, Variant A)
+### Section UI (sketch 013, Variant A, collapsed over TC)
 - A new "Out of the opening" section at the top of the Stats tab, under the sticky White | Black
   switch.
-- One card per played TC, each with two `RankedMetricRow` + `PercentileBar` rows.
+- **One card for the selected colour** (not one per TC) with two `RankedMetricRow` + `PercentileBar`
+  rows. This deviates from sketch 013, which drew one card per played TC.
   - **The worse rate is the primary row** (it carries the predictive signal, −1.06 pp score per SD).
   - **The better rate is secondary context** (about +0.04 pp per SD). It is kept for the sharp vs.
     solid distinction, styled as the lesser row and never driving the card's headline.
@@ -67,6 +80,7 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
 - Explains what the rate means.
 - Shows a histogram of the player's eval after the opening, with the ±1.0 cuts and the selected side
   dark.
+- Shows the per-TC breakdown: rate, percentile and game count for each TC that passes the floor.
 - The footer gives counts, the peer band and the percentile in words, plus the percentile-chip
   disclosures: who the peers are, ranked games only, filter independence, rating dependence.
 
@@ -92,6 +106,12 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
   the user value, and the percentile is too wobbly (SE ≈ 2.8 pp against a ~13 pp peer IQR).
 - **Per opening-family peer comparison:** n is too thin and the cells too sparse.
 - **Ranking a "net" (better − worse):** it re-encodes the mean eval and dilutes the worse rate's signal.
+- **One card per played TC (sketch 013 as drawn):** it is inconsistent with the rest of the Openings
+  page, which collapses over TC. Blitz and rapid agree at 0.82 after adjusting for rating and noise, so
+  the extra cards mostly repeat themselves. The bullet divergence is surfaced in the popover instead.
+- **Splitting out only bullet:** extra layout complexity for about 60 users.
+- **Ranking a pooled-TC rate against a pooled-TC CDF:** there is no single rating to look up peers by,
+  because the peer key is rating per TC.
 
 ## Feasibility findings (prod + benchmark DB, 2026-10-31)
 
@@ -127,6 +147,34 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
   1 pp against a ~13 pp peer IQR. Keep a per-source parity check in the phase's tests, but it is no
   longer a gate.
 
+### Cross-TC agreement: why collapsing the display is safe (prod, 2026-10-31)
+
+Within-user correlation of the rates across TCs, on the prod canonical slice: same-colour cells with
+≥30 games in both TCs, non-guest. *Adjusted* means rating-residualised (a linear fit on median rating
+per colour × TC); *corrected* means divided by √(rel₁·rel₂), with each reliability from binomial
+sampling noise.
+
+| pair | users | worse, raw | worse, adjusted | worse, adjusted + corrected | better, adjusted + corrected |
+|---|---:|---:|---:|---:|---:|
+| blitz–rapid | 237 | 0.79 | 0.64 | **0.82** | 0.78 |
+| blitz–bullet | 60 | 0.67 | 0.52 | 0.62 | 0.75 |
+| bullet–rapid | 53 | 0.59 | 0.44 | 0.56 | 0.55 |
+| classical pairs | 15–19 | 0.63–0.67 | 0.58–0.68 | too thin | too thin |
+| all pairs | 256 | 0.69 | 0.58 | **0.73** | 0.75 |
+
+- **Blitz and rapid measure the same trait** (0.82), and that pair covers most multi-TC users.
+- **Bullet diverges more** (0.56–0.62). The typical true gap in a user's rating-adjusted worse rate is
+  about 5 pp for blitz vs. rapid and about 7 pp for bullet vs. a slower TC, against a ~13 pp peer IQR.
+  Bullet also runs about 4–5 pp more worse games than blitz or rapid for the same users.
+- **Rating carries much of the raw correlation:** the worse rate correlates −0.6 to −0.67 with rating
+  within each TC (about −5 pp per 400 rating points).
+- **Caveat:** the rating adjustment is a linear fit on the pooled prod population, and it mixes
+  chess.com and lichess rating scales. This likely biases the correlations slightly upward. It
+  approximates percentile agreement and does not use the real per-TC CDFs.
+- **Decision:** collapse the display, weighted by games. For a bullet-heavy player the headline is
+  mostly bullet anyway. The popover breakdown shows the mixed-TC divergence. Per-TC cards and a
+  bullet-only split were rejected (see Rejected).
+
 ### Expected high skew for FlawChess users
 
 - The pooled prod mean centred eval at middlegame entry is about **+40 cp** for the user, against
@@ -140,8 +188,11 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
 ## Open for discuss-phase
 
 - One CDF per TC pooled over colours, or one per colour.
-- The exact definition of the section's 95% significance test (e.g. the user's rate CI against the
-  peer p50 at their rating × TC).
+- The exact definition of the section's 95% significance test on the collapsed value (proposed: the
+  pooled binomial count against the game-weighted peer median, Σ w_tc · p50_tc(rating_tc)).
+- Whether the weights for the headline percentile are qualifying games or slice games, and how a TC
+  below the floor is handled (proposed: drop it from both the headline and the gate, and list it in the
+  popover as below floor).
 - Whether the eventual opening LLM narration consumes these percentiles.
 
 ## Breadcrumbs

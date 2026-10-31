@@ -22,10 +22,10 @@ last_activity_desc: Completed quick task 261031-g4l: per-rating gem/great/best c
 
 ## Current Position
 
-Phase: 242 (Openings Stats + Insights Rework (SEED-204)) — COMPLETE
-Plan: 9 of 9
+Phase: 243 (Out of the Opening Worse/Better Rates (SEED-206)) — NOT PLANNED
+Plan: 0 of TBD
 
-Status: Phase 242 complete, squash-merged to `main` (PR #428), not yet deployed
+Status: Phase 243 added 2026-10-31, ready to discuss. Phase 242 complete, squash-merged to `main` (PR #428), not yet deployed
 
 Open threads carried forward (not blockers):
 
@@ -188,6 +188,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 243 added 2026-10-31 (explicit user request via `/gsd-phase @SEED-206`, planted the same day from the `/gsd-explore` opening-narration session + sketch 013): **Out of the Opening Worse/Better Rates** (SEED-206). New "Out of the opening" section at the top of the Openings Stats tab: the share of games left clearly worse (primary) and clearly better (secondary) out of the opening (eval at first middlegame ply minus colour baseline, ±1.0; pre-middlegame decisive endings count by result) ranked per TC against rating × TC peer CDFs on the Endgames canonical slice, displayed as one game-weighted value per colour (collapsed over TC, owner 2026-10-31, after prod cross-TC correlations of blitz–rapid 0.82, bullet 0.56–0.62), 95% gate, filter-independent; popover histogram with ±1.0 cuts, per-TC breakdown and the percentile-chip disclosures. Backend first (slice builder, CDF regen, ranked read path, per-source parity test), then frontend. No per-opening bars. Written by hand as 243 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 243`.
 - Phase 242 added 2026-10-17 (explicit user request via `/gsd-phase .planning/seeds/SEED-204-openings-stats-insights-rework.md`, planted the same day from sketch 012 after the 238/239 reworks): **Openings Stats + Insights Rework** (SEED-204). Insights merge into the Stats tab under one sticky White | Black switch; 99%-gated finding cards above a per-colour repertoire table (bookmarks pinned, then most played; compact Score / Eval columns with verdict dots and popovers; expanded row with per-opening `ScoreChart` + weekly volume bars); backend wave first: Openings eval centred on the colour baseline (Endgames untouched), duplicate-row collapse, 200-game current/past cutoff, weekly counts. One phase, several plans. Written by hand as 242 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 242`.
 - Phase 240 added 2026-10-15 (explicit user request via `/gsd-phase @SEED-200`, planted and refined in `/gsd-explore` the same day from the Train return-rate analysis): **Train First-Session Onboarding Load** (SEED-200). Intro cut to 2 bubbles (welcome + merged guess prompt), first verdict teaches the only-one/several vocabulary, practice rationale to the session-1 score screen, warm-up notice out of the intro, reveal tour spread over puzzles 1-3 with per-step seen stamps, first-ever session opens on a sharp puzzle with a soft/herring in slots 2-3 (after the D-09 shuffle). Copy stays within `STEPPER_COPY_MAX_CHARS`; measured by the SEED-200 clean-cohort funnel. Written by hand as 240 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 240`.
 - Phase 239 added 2026-10-12 (explicit user request via `/gsd-phase @SEED-198`, planted the same day from the ad-hoc Library Stats UX review + sketch 010 round 5): **Library Stats You-vs-Opponents Redesign** (SEED-198). One gap bar (0 tick, grey benchmark IQR of the gap, red/blue/green dot, better to the right) replaces every `MiniBulletChart` on the Stats tab; only the gap shown, details in a Search popover; tiles cut to Blunders/Mistakes with opponent lines, Severity card and combos retire; four context cards + "What stands out"; tactic motifs as three `TACTIC_GROUPS` tables (Missed/Allowed per 100 games, Advanced collapsed); synced TC switch per section; benchmark §5 tactic-family IQRs on the fully analyzed sample (gated on blitz finishing) wired into `get_tactic_comparison`. Written by hand as 239 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 239`.
