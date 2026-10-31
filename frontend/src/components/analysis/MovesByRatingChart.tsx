@@ -273,6 +273,20 @@ function qualityWord(quality: MoveQuality | undefined): string {
   return quality[0]!.toUpperCase() + quality.slice(1);
 }
 
+/** The pivoted row whose ELO rung is closest to `elo` (undefined for no rows). */
+function nearestRow(
+  rows: Record<string, number>[],
+  elo: number,
+): Record<string, number> | undefined {
+  let best: Record<string, number> | undefined;
+  for (const row of rows) {
+    const rowElo = row.elo;
+    if (rowElo === undefined) continue;
+    if (best === undefined || Math.abs(rowElo - elo) < Math.abs((best.elo ?? 0) - elo)) best = row;
+  }
+  return best;
+}
+
 /** Sample at most `maxTicks` values from `values`, always including the first and last. */
 function sampleTicks(values: number[], maxTicks: number): number[] {
   if (values.length <= maxTicks) return values;
@@ -362,11 +376,14 @@ function MoveEndLabels({
   shownSans,
   qualityBySan,
   tieredSan,
+  selectedRow,
 }: {
   lastRow: Record<string, number>;
   shownSans: string[];
   qualityBySan: Map<string, MoveQualityEval>;
   tieredSan: string | null;
+  /** Row nearest the selected ELO — the tiered label takes its tier there. */
+  selectedRow: Record<string, number> | undefined;
 }): React.ReactElement | null {
   const xScale = useXAxisScale();
   const yScale = useYAxisScale();
@@ -384,9 +401,11 @@ function MoveEndLabels({
     if (typeof value !== 'number') continue;
     const y = yScale(value);
     if (y == null) continue;
-    // The tiered line's label takes the color of the segment it sits on (its
-    // last-rung tier), so label and line end never clash.
-    const color = colorForQuality(qualityAtRung(san, value, qualityBySan, tieredSan));
+    // The tiered line's label takes its tier at the dashed selected-ELO line
+    // (not at the line end), so it matches the move-list quality icon for the
+    // rating the user is looking at.
+    const labelProb = selectedRow?.[san] ?? value;
+    const color = colorForQuality(qualityAtRung(san, labelProb, qualityBySan, tieredSan));
     labels.push({ san, color, y });
     targetBySan.set(san, y);
   }
@@ -646,6 +665,7 @@ export function MovesByRatingChart({
 
   const rows = pivotRows(perElo, shownSans);
   const lastRow = rows[rows.length - 1];
+  const selectedRow = nearestRow(rows, selectedElo);
   const elos = perElo.map((p) => p.elo);
   const xTicks = sampleTicks(elos, MAX_X_TICKS);
   const { domain: yDomain, ticks: yTicks } = computeYAxis(rows, shownSans);
@@ -715,6 +735,7 @@ export function MovesByRatingChart({
               shownSans={shownSans}
               qualityBySan={qualityBySan}
               tieredSan={tieredSan}
+              selectedRow={selectedRow}
             />
           )}
         </LineChart>

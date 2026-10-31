@@ -47,6 +47,7 @@ import {
 import type { MoveQualityEval } from '../MovesByRatingChart';
 import type { MoveCurvePoint } from '@/hooks/useMaiaEngine';
 import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_PENDING } from '@/lib/theme';
+import * as THEME from '@/lib/theme';
 import {
   reportEngineAssetProgress,
   resetEngineAssetsForTests,
@@ -571,6 +572,29 @@ describe('per-rating tier coloring of the tiered line', () => {
     expect(strokes).toContain(MOVE_QUALITY_BLUNDER);
     // Threshold heights: 70% sits above (smaller y) the 30% line.
     expect(Number(gradient?.getAttribute('y1'))).toBeLessThan(Number(gradient?.getAttribute('y2')));
+  });
+
+  it.each([
+    [1100, 'MAIA_ACCENT'],
+    [1500, 'MOVE_QUALITY_BEST'],
+    [1900, 'GREAT_ACCENT'],
+  ] as const)('colors the tiered end label by its tier at the selected ELO (%s)', (elo, token) => {
+    const { container } = render(
+      <MovesByRatingChart
+        perElo={tieredPerElo}
+        playedSan={null}
+        bestSan="Qg5+"
+        selectedElo={elo}
+        shownSans={['Qg5+', 'Qe4']}
+        engineTopLines={[]}
+        qualityBySan={tieredQuality}
+        tieredSan="Qg5+"
+      />,
+    );
+    const label = Array.from(
+      container.querySelectorAll('[data-testid="moves-by-rating-end-labels"] text'),
+    ).find((el) => el.textContent === 'Qg5+');
+    expect(label?.getAttribute('fill')).toBe(THEME[token]);
   });
 
   it('renders no gradient when no line is tiered', () => {

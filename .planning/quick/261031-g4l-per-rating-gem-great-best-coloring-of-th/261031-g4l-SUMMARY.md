@@ -13,7 +13,7 @@ commit: a02ca1788
 - `MovesByRatingChart.tsx`: new `tieredSan` prop. That line is stroked with a vertical
   userSpaceOnUse gradient with hard stops at the y-pixels of 0.7 and 0.3. Tooltip rows and the
   pinned FlawChess row use the hovered rung's tier (icon, word, color); row colors now derive
-  from quality instead of the payload stroke. End label takes its last-rung tier color.
+  from quality instead of the payload stroke. End label takes its tier at the selected ELO (follow-up), matching the move-list icon.
 - `MaiaHumanPanel.tsx`: computes `tieredSan`; popover gains one sentence on per-rating coloring.
 - CHANGELOG `[Unreleased]` bullet.
 
