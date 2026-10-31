@@ -84,8 +84,8 @@ Per game, from the user's point of view:
    - abandoned games and draws are excluded.
    The §2.1 recipe silently drops these games, yet they are the clearest opening disasters.
 3. **Worse** if the centred eval is −1.0 or below; **better** if it is +1.0 or above. Because of the
-   centring, the raw cut is −0.75 for White and −1.25 for Black. User copy says "a pawn or more worse
-   than a typical opening position" and never quotes raw evals.
+   centring, the raw cut is −0.75 for White and −1.25 for Black. User copy says "an eval 1.0 or more
+   below a typical opening position" and never uses "pawns" as the eval unit.
 
 **Threshold sweep** (`fetch_sweep.py` / `analyze_sweep.py`, counting games that end in the opening;
 9,186 cells):

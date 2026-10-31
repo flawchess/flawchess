@@ -194,7 +194,7 @@ h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px; marg
 
 <div class="wrap" id="wrap">
   <div class="topbar">
-    <p><b>Sketch 013.</b> "Came out worse" = left the opening ≥ 1.0 pawn worse than a typical opening position (colour baseline ±0.25); games lost in the opening (resign/mate/timeout) count as worse, wins as better. Peers = benchmark players at your rating and TC. Numbers are made up, shaped like the benchmark (1600: worse typical 15–28%, better 18–29%).</p>
+    <p><b>Sketch 013.</b> "Came out worse" = left the opening with an eval 1.0 or more below a typical opening position (colour baseline ±0.25); games lost in the opening (resign/mate/timeout) count as worse, wins as better. Peers = benchmark players at your rating and TC. Numbers are made up, shaped like the benchmark (1600: worse typical 15–28%, better 18–29%).</p>
     <p>Hover the <b>search icons</b> for the popover with the eval-after-opening histogram. Toggle Phone and Data states bottom-right.</p>
   </div>
 
@@ -223,7 +223,7 @@ const CUT = 1.0;
 // Peer typical band (p25, median, p75) at the user's rating x TC. Shaped like the 1600 benchmark cell.
 const PEER = { worse: [0.15, 0.21, 0.28], better: [0.18, 0.23, 0.29] };
 
-// m/s = mean/sd (pawns, baseline-centred) of the user's eval after the opening; worse/better rates derive from it.
+// m/s = mean/sd (eval, baseline-centred) of the user's eval after the opening; worse/better rates derive from it.
 // pW / pB = percentile ("better than X% of peers": for worse, peers with MORE worse games). sig = 99% vs the peer median.
 const DATA = {
   white: [
@@ -294,8 +294,8 @@ function popover(r, side, opts = {}) {
   const p = side === 'worse' ? r.pW : r.pB;
   const band = PEER[side];
   const what = side === 'worse'
-    ? 'Share of your games where you left the opening a pawn or more worse than a typical opening position. Games you lost before the middlegame count too.'
-    : 'Share of your games where you left the opening a pawn or more better than a typical opening position. Games you won before the middlegame count too.';
+    ? 'Share of your games where your eval after the opening was 1.0 or more below a typical opening position. Games you lost before the middlegame count too.'
+    : 'Share of your games where your eval after the opening was 1.0 or more above a typical opening position. Games you won before the middlegame count too.';
   const rank = side === 'worse'
     ? `Fewer worse games than ${p}% of peers`
     : `More better games than ${p}% of peers`;
@@ -367,7 +367,7 @@ function variantB() {
     return `<tr><td class="tcl">${r.tc}<small>${state.data === 'new' ? Math.min(r.n, 12) : r.n} games</small></td><td>${vcell(r, 'worse', st)}</td><td>${vcell(r, 'better', st)}</td></tr>`;
   }).join('');
   return `<div class="card"><div class="card-b" style="padding:4px 4px">
-    <table class="vt"><thead><tr><th style="width:120px">Time control</th><th>Came out worse<small>a pawn or more worse · fewer is better →</small></th><th>Came out better<small>a pawn or more better · more is better →</small></th></tr></thead>
+    <table class="vt"><thead><tr><th style="width:120px">Time control</th><th>Came out worse<small>eval 1.0+ below typical · fewer is better →</small></th><th>Came out better<small>eval 1.0+ above typical · more is better →</small></th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 }
 

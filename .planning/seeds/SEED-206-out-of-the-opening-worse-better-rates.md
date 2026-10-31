@@ -33,8 +33,8 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
   timeout (a loss is worse, a win is better). Abandoned games and draws are excluded.
 - **Why ±1.0:** it is the lowest threshold on the predictive plateau in a 0.5–3.0 sweep, and it matches
   the Informant "±" clear-advantage band (about a 41% expected score).
-- **Copy:** "a pawn or more worse than a typical opening position". Never quote raw evals or say
-  "pawns".
+- **Copy:** "an eval 1.0 or more below a typical opening position" ("above" for better). Never use
+  "pawns" as the eval unit; say "eval" where a term is needed.
 
 ### Peer basis
 - **Rating × TC CDFs on the Endgames canonical slice.** Add a new builder in
