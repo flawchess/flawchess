@@ -81,8 +81,8 @@
   },
   "overrides": {
     "fast-uri": "^3.1.9",
-    "hono": "^4.13.14",
-    "qs": "^6.15.2",
+    "hono": "^4.13.16",
+    "qs": "^6.17.1",
     "ip-address": "^10.7.5",
     "postcss": "^8.5.32",
     "@hono/node-server": "^2.1.5",
