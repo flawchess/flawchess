@@ -275,7 +275,10 @@ tables and rejected options in SEED-207.
 **Plans:** 2 plans
 
 Plans:
+**Wave 1**
 - [ ] 244-01-PLAN.md — New ladder end-to-end (exact 10/4-day due dates, mastery at 2, Door B 4, no snapping), new-items pin, docstrings, in-flight due-date migration e2a7c4f9b244
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 244-02-PLAN.md — Train copy, README, CHANGELOG, re-check reminder, full pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
