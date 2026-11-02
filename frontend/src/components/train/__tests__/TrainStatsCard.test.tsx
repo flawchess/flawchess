@@ -118,6 +118,26 @@ describe('TrainStatsCard', () => {
         expect(screen.getByText(/set aside so they stop resurfacing/)).not.toBeNull();
       });
     });
+
+    it('the mastered and parked explainers state the two-in-a-row and four-miss thresholds', async () => {
+      vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('train-stats-mastered')).not.toBeNull();
+      });
+      fireEvent.click(screen.getByTestId('train-mastered-info'));
+      await waitFor(() => {
+        expect(screen.getByText(/Solved correctly twice in a row/)).not.toBeNull();
+      });
+
+      fireEvent.click(screen.getByTestId('train-parked-info'));
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Missed 4 times in total, or 3 times without ever solving it/),
+        ).not.toBeNull();
+      });
+    });
   });
 
   it('omits the score row when no todayScore is passed (session not completed)', async () => {

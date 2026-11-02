@@ -1,11 +1,11 @@
 """ORM model for drill_items — per-(user, flaw) spaced-repetition state.
 
 One row per (user, game, ply) that has entered the Train drill pool: an
-interval-ladder "streak" state machine tracks progress toward MASTERED (3
-spaced-correct solves) or PARKED (two doors: 3 never-correct fails, or 6
+interval-ladder "streak" state machine tracks progress toward MASTERED (2
+consecutive correct solves) or PARKED (two doors: 3 never-correct fails, or 4
 lifetime fails regardless of ever_correct); `due_date` drives session
-composition (snapped to a scheduled session day by
-`app.services.train_scheduler.next_scheduled_day`).
+composition and is an exact offset from the last solve day, independent of the
+user's training schedule (see `app.services.train_scheduler.apply_result`).
 
 Anchoring (LOCKED — do not "fix" this to FK `game_flaws`):
   `drill_items` FKs to `games(id) ON DELETE CASCADE` only, with PLAIN

@@ -502,6 +502,7 @@ describe('returnPhrase (truth table)', () => {
       expires_on: '2026-09-14',
     });
     expect(phrase).toContain('retired');
+    expect(phrase).toContain('Two in a row');
   });
 
   it("item_status 'mastered' returns the mastered tail even when due_date equals expires_on exactly", () => {

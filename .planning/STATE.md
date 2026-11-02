@@ -1,15 +1,15 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.27
-current_phase: 243
+current_phase: 244
 status: completed
-stopped_at: Phase 243 complete — all phases complete
-last_updated: "2026-10-31T19:59:09.192Z"
-state_head: f4c0b154bbea5cc93700afb01910868ef6063b60
+stopped_at: Phase 244 complete — all phases complete
+last_updated: "2026-11-02T14:59:02.760Z"
+state_head: 3b3aad482aea10be063406da47ac8f28cd024a6e
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 103
-  total_plans: 14
+  total_plans: 16
   completed_plans: 96
   percent: 100
 milestone_name: Codebase Cleanup
@@ -21,8 +21,8 @@ last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best 
 
 ## Current Position
 
-Phase: 243
-Plan: 5 of 5 (complete)
+Phase: 244
+Plan: 2 of 2
 
 Status: All phases complete
 
@@ -35,6 +35,7 @@ Open threads carried forward (not blockers):
 - Pending reads: Train telemetry and the weekly-leaderboard effect (~2026-10-25, data from 2026-10-05); feedback-ask yield (`feedback.source = 'milestone_ask'` vs `floating_button`); Umami funnels on `train-explore-exit` go flat from release #404 (`train-sideline-fork` replaces it).
 - Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); real-phone throughput for Phases 226/227 never measured.
+- SEED-207 post-ship re-check (Follow-up 1), about one month after the release that ships Phase 244: re-run the SEED-207 Table 2/3 queries; the attempt-2 10-11 day bucket after a correct first solve now fills; if think time there is clearly below 1.0x of the first solve, raise `CORRECT_RETRY_DAYS` to 14 (244-CONTEXT D-11). Also watch Door A/B park rates and the first-attempt share of SR slots.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - TypeScript 7 adopted in Phase 232 (D-01, supersedes Phase 217 D-11) via Microsoft's side-by-side alias: `typescript` is `@typescript/typescript6` (TS6 JS API for typescript-eslint and eslint-plugin-sonarjs) and `@typescript/native` is `typescript@7` (the `tsc` in `npm run build`). Unwind once TS 7.1 ships its API and a typescript-eslint release accepts it (typescript-eslint#10940); never merge Renovate's `typescript-7.x` branch as-is (it installs 7 under the `typescript` name and breaks lint).
@@ -187,6 +188,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 244 added 2026-11-02 (explicit user request via `/gsd-phase .planning/seeds/SEED-207-train-sr-ladder-calculation-not-recall.md`, planted the same day from the `/gsd-explore` session on Train spaced repetition vs memorization): **Train SR Ladder Rework, Calculation Not Recall** (SEED-207). Correct -> retry in 14 days (first attempt included), wrong -> retry in 4 days, mastered after 2 consecutive correct (was 3), Door B leech threshold 6 -> 4, Door A unchanged at 3; one-off migration of in-flight streaks/due dates from `drill_solves`, copy updates, scheduler tests. No schema change, no A/B test. Written by hand as 244 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 244`.
 - Phase 243 added 2026-10-31 (explicit user request via `/gsd-phase @SEED-206`, planted the same day from the `/gsd-explore` opening-narration session + sketch 013): **Out of the Opening Worse/Better Rates** (SEED-206). New "Out of the opening" section at the top of the Openings Stats tab: the share of games left clearly worse (primary) and clearly better (secondary) out of the opening (eval at first middlegame ply minus colour baseline, ±1.0; pre-middlegame decisive endings count by result) ranked per TC against rating × TC peer CDFs on the Endgames canonical slice, displayed as one game-weighted value per colour (collapsed over TC, owner 2026-10-31, after prod cross-TC correlations of blitz–rapid 0.82, bullet 0.56–0.62), 95% gate, filter-independent; popover histogram with ±1.0 cuts, per-TC breakdown and the percentile-chip disclosures. Backend first (slice builder, CDF regen, ranked read path, per-source parity test), then frontend. No per-opening bars. Written by hand as 243 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 243`.
 - Phase 242 added 2026-10-17 (explicit user request via `/gsd-phase .planning/seeds/SEED-204-openings-stats-insights-rework.md`, planted the same day from sketch 012 after the 238/239 reworks): **Openings Stats + Insights Rework** (SEED-204). Insights merge into the Stats tab under one sticky White | Black switch; 99%-gated finding cards above a per-colour repertoire table (bookmarks pinned, then most played; compact Score / Eval columns with verdict dots and popovers; expanded row with per-opening `ScoreChart` + weekly volume bars); backend wave first: Openings eval centred on the colour baseline (Endgames untouched), duplicate-row collapse, 200-game current/past cutoff, weekly counts. One phase, several plans. Written by hand as 242 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 242`.
 - Phase 240 added 2026-10-15 (explicit user request via `/gsd-phase @SEED-200`, planted and refined in `/gsd-explore` the same day from the Train return-rate analysis): **Train First-Session Onboarding Load** (SEED-200). Intro cut to 2 bubbles (welcome + merged guess prompt), first verdict teaches the only-one/several vocabulary, practice rationale to the session-1 score screen, warm-up notice out of the intro, reveal tour spread over puzzles 1-3 with per-step seen stamps, first-ever session opens on a sharp puzzle with a soft/herring in slots 2-3 (after the D-09 shuffle). Copy stays within `STEPPER_COPY_MAX_CHARS`; measured by the SEED-200 clean-cohort funnel. Written by hand as 240 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 240`.
@@ -892,6 +894,8 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 243]: 243-04: rank_status/is_anchor_game made public; opening-out gate uses z=1.96 passed in, Endgames 99% path untouched
 - [Phase 243]: 243-04: nothing-contributes card status is pending > unranked > below_floor; ranked TC without CDF cell excluded from headline and gate
 - [Phase 243]: 243-05: popover re-sorts TCs bullet-to-classical locally and shows all five disclosures on every popover; eval cut 1.0 is a named frontend constant mirroring the backend threshold
+- [Phase 244]: D-02: apply_result takes no schedule; due dates are exact +10/+4 day offsets, no weekday snapping
+- [Phase 244]: Migration e2a7c4f9b244 computes dates in UTC and only pushes when floor > UTC today and due_date < floor (D-09 literal)
 
 ### Pending Todos
 
@@ -1121,8 +1125,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-31T17:41:15.680Z
-**Stopped at:** Phase 243 complete — all phases complete
+**Last session:** 2026-11-02T14:46:10.679Z
+**Stopped at:** Phase 244 complete — all phases complete
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1374,6 +1378,8 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 243 P02 | 2h | 3 tasks | 14 files |
 | Phase 243 P04 | 30min | 2 tasks | 6 files |
 | Phase 243 P05 | 25min | 3 tasks | 15 files |
+| Phase 244 P01 | 35min | 3 tasks | 8 files |
+| Phase 244 P02 | 15min | 2 tasks | 9 files |
 
 ## Performance Metrics
 

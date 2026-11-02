@@ -6,11 +6,11 @@ tests/services/test_eval_utils.py's shape: direct import, plain asserts,
 table-driven parametrized cases over the boundary conditions.
 
 Covers:
-  - apply_result: correct-move streak progression 0->1->2->MASTERED(3),
+  - apply_result: correct-move streak progression 0->1->MASTERED(2),
     fail_count as a lifetime lapse counter never reset by a correct solve,
     PARKED via Door A (never-solved, 3 lifetime lapses) or Door B
-    (6 lifetime lapses regardless of ever_correct), due-date snapping via
-    next_scheduled_day.
+    (4 lifetime lapses regardless of ever_correct), exact +10 / +4 day due
+    dates independent of the weekday schedule (Phase 244 D-02).
   - next_scheduled_day: identity on weekday_mask=0, identity when `after` is
     already on a scheduled weekday, forward scan otherwise.
   - session_window: "open until the next scheduled session day".
@@ -35,7 +35,8 @@ import random
 from app.models.drill_item import DrillStatus
 from app.services.train_scheduler import (
     ALL_WEEKDAYS_MASK,
-    LADDER_DAYS,
+    CORRECT_RETRY_DAYS,
+    FAIL_RETRY_DAYS,
     LEECH_FAIL_THRESHOLD,
     MASTERY_STREAK_THRESHOLD,
     PARK_FAIL_THRESHOLD,
@@ -82,50 +83,65 @@ def _fresh_state(due_date: datetime.date = _TODAY) -> ItemState:
     )
 
 
+class TestLadderConstants:
+    """Pins the Phase 244 ladder so a future edit is a deliberate test change."""
+
+    def test_ladder_constants_match_phase_244(self) -> None:
+        assert CORRECT_RETRY_DAYS == 10
+        assert FAIL_RETRY_DAYS == 4
+        assert MASTERY_STREAK_THRESHOLD == 2
+        assert PARK_FAIL_THRESHOLD == 3
+        assert LEECH_FAIL_THRESHOLD == 4
+
+
 class TestApplyResultCorrect:
     """Streak progression + mastery boundary."""
 
     def test_fresh_item_correct_advances_to_streak_1(self) -> None:
         state = _fresh_state()
-        result = apply_result(state, correct_move=True, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        result = apply_result(state, correct_move=True, today=_TODAY)
         assert result.streak == 1
         assert result.status == DrillStatus.ACTIVE
         assert result.ever_correct is True
         assert result.fail_count == 0
-        assert result.due_date == next_scheduled_day(
-            _TODAY + datetime.timedelta(days=LADDER_DAYS[1]), _EVERY_DAY_MASK
-        )
+        assert result.due_date == _TODAY + datetime.timedelta(days=CORRECT_RETRY_DAYS)
 
-    def test_streak_1_correct_advances_to_streak_2(self) -> None:
-        state = ItemState(
-            status=DrillStatus.ACTIVE, streak=1, due_date=_TODAY, fail_count=0, ever_correct=True
-        )
-        result = apply_result(state, correct_move=True, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
-        assert result.streak == 2
-        assert result.status == DrillStatus.ACTIVE
-        assert result.due_date == next_scheduled_day(
-            _TODAY + datetime.timedelta(days=LADDER_DAYS[2]), _EVERY_DAY_MASK
-        )
-
-    def test_streak_2_correct_masters_at_exactly_3(self) -> None:
-        """The exact mastery boundary: streak 2 -> 3 masters; due_date is untouched."""
+    def test_streak_1_correct_masters_at_exactly_2(self) -> None:
+        """The exact mastery boundary: streak 1 -> 2 masters; due_date is untouched."""
         original_due = datetime.date(2026, 7, 20)
         state = ItemState(
             status=DrillStatus.ACTIVE,
-            streak=2,
+            streak=1,
             due_date=original_due,
             fail_count=0,
             ever_correct=True,
         )
-        result = apply_result(state, correct_move=True, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
-        assert result.streak == MASTERY_STREAK_THRESHOLD
+        result = apply_result(state, correct_move=True, today=_TODAY)
+        assert result.streak == MASTERY_STREAK_THRESHOLD == 2
         assert result.status == DrillStatus.MASTERED
         assert result.due_date == original_due, "a mastered item is never re-scheduled"
+
+    def test_correct_first_attempt_counts_toward_mastery(self) -> None:
+        """Two correct solves in a row from a fresh item master it: the first
+        attempt is not excluded from the streak (Phase 244, SEED-207)."""
+        state = apply_result(_fresh_state(), correct_move=True, today=_TODAY)
+        assert state.status == DrillStatus.ACTIVE
+        state = apply_result(state, correct_move=True, today=_TODAY)
+        assert state.status == DrillStatus.MASTERED
+        assert state.streak == 2
+
+    def test_fail_then_two_correct_masters(self) -> None:
+        state = apply_result(_fresh_state(), correct_move=False, today=_TODAY)
+        state = apply_result(state, correct_move=True, today=_TODAY)
+        assert state.status == DrillStatus.ACTIVE
+        state = apply_result(state, correct_move=True, today=_TODAY)
+        assert state.status == DrillStatus.MASTERED
+        assert state.fail_count == 1
 
     def test_correct_move_preserves_fail_count_and_sets_ever_correct(self) -> None:
         """fail_count is a lifetime lapse counter — a correct solve
         never resets it, only ever_correct flips to True."""
-        for prior_fail_count in (0, 1, 2, 5):
+        for prior_fail_count in (0, 1, 2, 3):
             state = ItemState(
                 status=DrillStatus.ACTIVE,
                 streak=0,
@@ -133,25 +149,26 @@ class TestApplyResultCorrect:
                 fail_count=prior_fail_count,
                 ever_correct=False,
             )
-            result = apply_result(
-                state, correct_move=True, today=_TODAY, weekday_mask=_EVERY_DAY_MASK
-            )
+            result = apply_result(state, correct_move=True, today=_TODAY)
             assert result.fail_count == prior_fail_count
             assert result.ever_correct is True
 
-    def test_five_lapses_then_three_in_a_row_masters_not_parks(self) -> None:
+    def test_lapses_below_leech_then_two_in_a_row_masters_not_parks(self) -> None:
         """An item the SR system is successfully teaching is not
-        retired — 5 lifetime lapses followed by 3 consecutive correct solves
-        reaches MASTERED with the lapse count preserved, never PARKED."""
+        retired: LEECH_FAIL_THRESHOLD - 1 lifetime lapses followed by 2
+        consecutive correct solves reaches MASTERED with the lapse count
+        preserved, never PARKED."""
         state = ItemState(
-            status=DrillStatus.ACTIVE, streak=0, due_date=_TODAY, fail_count=5, ever_correct=True
+            status=DrillStatus.ACTIVE,
+            streak=0,
+            due_date=_TODAY,
+            fail_count=LEECH_FAIL_THRESHOLD - 1,
+            ever_correct=True,
         )
         for _ in range(MASTERY_STREAK_THRESHOLD):
-            state = apply_result(
-                state, correct_move=True, today=_TODAY, weekday_mask=_EVERY_DAY_MASK
-            )
+            state = apply_result(state, correct_move=True, today=_TODAY)
         assert state.status == DrillStatus.MASTERED
-        assert state.fail_count == 5
+        assert state.fail_count == LEECH_FAIL_THRESHOLD - 1
 
 
 class TestApplyResultWrong:
@@ -159,11 +176,11 @@ class TestApplyResultWrong:
 
     def test_fresh_item_wrong_resets_streak_and_accrues_one_fail(self) -> None:
         state = _fresh_state()
-        result = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        result = apply_result(state, correct_move=False, today=_TODAY)
         assert result.streak == 0
         assert result.status == DrillStatus.ACTIVE
         assert result.fail_count == 1
-        assert result.due_date == next_scheduled_day(_TODAY, _EVERY_DAY_MASK)
+        assert result.due_date == _TODAY + datetime.timedelta(days=FAIL_RETRY_DAYS)
 
     def test_fail_count_2_ever_correct_false_parks_at_exactly_3(self) -> None:
         """The exact parking boundary: fail_count 2 -> 3 parks; due_date is untouched."""
@@ -175,7 +192,7 @@ class TestApplyResultWrong:
             fail_count=2,
             ever_correct=False,
         )
-        result = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        result = apply_result(state, correct_move=False, today=_TODAY)
         assert result.fail_count == PARK_FAIL_THRESHOLD
         assert result.status == DrillStatus.PARKED
         assert result.due_date == original_due, "a parked item's due_date is never re-snapped"
@@ -184,7 +201,7 @@ class TestApplyResultWrong:
         state = ItemState(
             status=DrillStatus.ACTIVE, streak=0, due_date=_TODAY, fail_count=1, ever_correct=False
         )
-        result = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        result = apply_result(state, correct_move=False, today=_TODAY)
         assert result.fail_count == 2
         assert result.status == DrillStatus.ACTIVE
 
@@ -194,7 +211,7 @@ class TestApplyResultWrong:
         state = ItemState(
             status=DrillStatus.ACTIVE, streak=0, due_date=_TODAY, fail_count=0, ever_correct=True
         )
-        result = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        result = apply_result(state, correct_move=False, today=_TODAY)
         assert result.fail_count == 1
         assert result.status == DrillStatus.ACTIVE
         assert result.ever_correct is True
@@ -206,9 +223,7 @@ class TestApplyResultWrong:
             status=DrillStatus.ACTIVE, streak=0, due_date=_TODAY, fail_count=0, ever_correct=True
         )
         for attempt in range(1, 11):
-            state = apply_result(
-                state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK
-            )
+            state = apply_result(state, correct_move=False, today=_TODAY)
             if attempt < LEECH_FAIL_THRESHOLD:
                 assert state.status == DrillStatus.ACTIVE, f"parked too early at attempt {attempt}"
             else:
@@ -227,9 +242,7 @@ class TestApplyResultWrong:
         )
         state = _fresh_state()
         for _ in range(PARK_FAIL_THRESHOLD):
-            state = apply_result(
-                state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK
-            )
+            state = apply_result(state, correct_move=False, today=_TODAY)
         assert state.status == DrillStatus.PARKED
         assert state.fail_count == PARK_FAIL_THRESHOLD
         assert state.ever_correct is False
@@ -237,12 +250,12 @@ class TestApplyResultWrong:
     def test_lapse_count_survives_a_correct_answer(self) -> None:
         """wrong, wrong, correct, wrong from a fresh state leaves lapse count
         3 and status ACTIVE — Door A cannot fire once ever_correct is True,
-        and Door B needs 6."""
+        and Door B needs 4."""
         state = _fresh_state()
-        state = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
-        state = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
-        state = apply_result(state, correct_move=True, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
-        state = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        state = apply_result(state, correct_move=False, today=_TODAY)
+        state = apply_result(state, correct_move=False, today=_TODAY)
+        state = apply_result(state, correct_move=True, today=_TODAY)
+        state = apply_result(state, correct_move=False, today=_TODAY)
         assert state.fail_count == 3
         assert state.status == DrillStatus.ACTIVE
         assert state.ever_correct is True
@@ -259,7 +272,7 @@ class TestApplyResultWrong:
             fail_count=LEECH_FAIL_THRESHOLD - 1,
             ever_correct=True,
         )
-        result = apply_result(state, correct_move=False, today=_TODAY, weekday_mask=_EVERY_DAY_MASK)
+        result = apply_result(state, correct_move=False, today=_TODAY)
         assert result.status == DrillStatus.PARKED
         assert result.fail_count == LEECH_FAIL_THRESHOLD
         assert result.ever_correct is True
@@ -273,14 +286,13 @@ class TestApplyResultAlternatingLeech:
     def test_alternating_solve_and_fail_eventually_parks(self) -> None:
         state = _fresh_state()
         # Strict alternation: correct, wrong, correct, wrong, ... The streak
-        # never reaches MASTERY_STREAK_THRESHOLD (capped at 1 by alternation),
-        # so the only way out is Door B at LEECH_FAIL_THRESHOLD lifetime lapses.
+        # never reaches MASTERY_STREAK_THRESHOLD because every fail resets it
+        # to 0, so the only way out is Door B at LEECH_FAIL_THRESHOLD lifetime
+        # lapses.
         wrong_count = 0
         for attempt in range(1, 13):
             correct_move = attempt % 2 == 1
-            state = apply_result(
-                state, correct_move=correct_move, today=_TODAY, weekday_mask=_EVERY_DAY_MASK
-            )
+            state = apply_result(state, correct_move=correct_move, today=_TODAY)
             assert state.status != DrillStatus.MASTERED, (
                 f"alternation must never reach MASTERED (attempt {attempt})"
             )
@@ -301,6 +313,24 @@ class TestApplyResultNoGuessParameter:
 
         params = inspect.signature(apply_result).parameters
         assert not any("guess" in name for name in params)
+
+
+class TestApplyResultDueDates:
+    """Due dates are exact offsets from the solve day (Phase 244 D-02)."""
+
+    def test_due_dates_are_exact_offsets_on_every_weekday(self) -> None:
+        for offset in range(7):
+            today = _TODAY + datetime.timedelta(days=offset)
+            correct = apply_result(_fresh_state(today), correct_move=True, today=today)
+            assert correct.due_date == today + datetime.timedelta(days=CORRECT_RETRY_DAYS)
+            wrong = apply_result(_fresh_state(today), correct_move=False, today=today)
+            assert wrong.due_date == today + datetime.timedelta(days=FAIL_RETRY_DAYS)
+
+    def test_signature_has_no_weekday_mask_parameter(self) -> None:
+        import inspect
+
+        params = inspect.signature(apply_result).parameters
+        assert not any("weekday" in name or "mask" in name for name in params)
 
 
 class TestNextScheduledDay:

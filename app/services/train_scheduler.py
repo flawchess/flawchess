@@ -8,7 +8,7 @@ tests/services/test_train_scheduler.py.
 Day-boundary convention (LOCKED): `local_today` is THE ONE conversion
 site from a UTC instant to a user's local calendar day, via the stored IANA
 timezone string on `train_settings`. Every other Train day computation
-(due-date snapping, session windows, the streak tick machine) reuses this
+(item due dates, session windows, the streak tick machine) reuses this
 and never re-derives `.date()` from a naive UTC datetime elsewhere.
 
 Streak model: a per-scheduled-day tick with a 0-7 depletable buffer of
@@ -20,10 +20,15 @@ trainable material is neutral.
 
 `apply_result`'s `fail_count` is a LIFETIME lapse counter with two park doors:
 Door A (never solved + 3 lifetime lapses, `PARK_FAIL_THRESHOLD`) and Door B
-(6 lifetime lapses regardless of `ever_correct`, see `LEECH_FAIL_THRESHOLD`).
+(4 lifetime lapses regardless of `ever_correct`, see `LEECH_FAIL_THRESHOLD`).
 Door B exists because an item that alternates solved/failed never reaches
-`MASTERED` (3 *consecutive* correct solves; alternation caps the streak at 1)
+`MASTERED` (2 *consecutive* correct solves; every fail resets the streak to 0)
 and is past Door A after its first correct solve.
+
+Item due dates are exact offsets from the solve day (`CORRECT_RETRY_DAYS` after
+a correct solve, `FAIL_RETRY_DAYS` after a wrong one), independent of the
+user's training schedule (Phase 244 D-02); composition serves any item with
+`due_date <= today` at the next session.
 """
 
 from __future__ import annotations
@@ -40,25 +45,36 @@ from app.models.drill_item import DrillStatus
 # Named constants (CLAUDE.md: no magic numbers)
 # ---------------------------------------------------------------------------
 
-# streak -> day offset from the solve day. streak 0 means "the next scheduled
-# session" (offset 0, i.e. as soon as possible); streak 1 -> 3 days out;
-# streak 2 -> 10 days out.
-LADDER_DAYS: dict[int, int] = {0: 0, 1: 3, 2: 10}
+# Days until the next attempt after a CORRECT solve (below mastery). A
+# self-found solution is still remembered at about a week (SEED-207 Table 3);
+# the prod re-analysis in Phase 244 D-11 could not separate 10 from 14 days,
+# and 10 gets more users to a mastering solve. The ~1-month post-ship re-check
+# may move this to 14.
+CORRECT_RETRY_DAYS: int = 10
 
-# 3 consecutive spaced-correct solves masters an item.
-MASTERY_STREAK_THRESHOLD: int = 3
+# Days until the next attempt after a WRONG solve. The recall advantage after a
+# reveal is gone by day 3-4 (SEED-207 Table 2), so the first retry after a miss
+# tests whether the reveal/analysis work stuck rather than recall of the answer.
+FAIL_RETRY_DAYS: int = 4
+
+# 2 consecutive correct solves master an item, so the mastering solve comes at
+# least CORRECT_RETRY_DAYS after the previous correct one. A correct first
+# attempt counts. A first attempt is not memory-free (players often review
+# their games right after playing), though the measured effect is small:
+# about 2-4 points of first-attempt accuracy (Phase 244 CONTEXT).
+MASTERY_STREAK_THRESHOLD: int = 2
 
 # Door A: 3 fails with zero ever-correct solves parks an item.
 PARK_FAIL_THRESHOLD: int = 3
 
-# Door B: 6 LIFETIME lapses parks an item regardless of
-# ever_correct. The counter is never reset by a correct solve, so an item the
-# user alternately solves and fails can still leave the pool. 6, not Anki's
-# leech default of 8: a Train session holds far fewer slots than an Anki
-# deck, so each wasted slot costs proportionally more. At 6, a genuine
-# coin-flip item retires, while a 70%-recall item (expected ~2 lifetime
-# lapses) almost never does.
-LEECH_FAIL_THRESHOLD: int = 6
+# Door B: 4 LIFETIME lapses park an item regardless of ever_correct. The
+# counter is never reset by a correct solve, so an item the user alternately
+# solves and fails can still leave the pool. Leech-door math (SEED-207): with
+# constant per-attempt success p and m = 2 in-a-row mastery, P(>= k lapses
+# before mastery) is about (1 - p^m)^k. A coin-flip item (p = 0.5) retires with
+# about 32% probability at k = 4 versus 18% at k = 6, an 80% item about 1.7%.
+# At 6 the door would fire far less often, and for well-known items hardly at all.
+LEECH_FAIL_THRESHOLD: int = 4
 
 # Default timezone for a brand-new train_settings row.
 DEFAULT_TIMEZONE: str = "UTC"
@@ -228,10 +244,8 @@ def next_scheduled_day(after: datetime.date, weekday_mask: int) -> datetime.date
     Returns:
         The first scheduled date >= `after`.
 
-    Cross-reference: `session_window` calls this to compute the "open
-    until the next scheduled session day" window; `apply_result`
-    calls this to snap a ladder-computed ideal due date onto a real session
-    day.
+    Cross-reference: `session_window` and `tick_days` call this. Item due
+    dates (`apply_result`) deliberately do NOT snap to scheduled days.
     """
     if weekday_mask == 0:
         return after
@@ -261,9 +275,7 @@ class ItemState:
     ever_correct: bool
 
 
-def apply_result(
-    state: ItemState, *, correct_move: bool, today: datetime.date, weekday_mask: int
-) -> ItemState:
+def apply_result(state: ItemState, *, correct_move: bool, today: datetime.date) -> ItemState:
     """Advance a drill_items row's SR state after one solve.
 
     Args:
@@ -276,17 +288,19 @@ def apply_result(
             streak; folding it in here would let scoring leak into SR
             mechanics, which the design forbids.
         today: The local session day this solve happened on (from
-            `local_today`), used as the base for due-date snapping.
-        weekday_mask: The user's scheduled-day bitmask, passed through to
-            `next_scheduled_day` for the re-snap.
+            `local_today`); the base the due date is offset from.
 
     Returns:
         The item's new state.
 
+    Due dates are schedule-independent (Phase 244 D-02): exact offsets from
+    `today`, whatever weekdays the user trains on. The schedule can change at
+    any time and composition already serves any due item at the next session.
+
     Correct-move branch: `streak + 1`; at MASTERY_STREAK_THRESHOLD the item
     becomes MASTERED with `due_date` left UNTOUCHED (a mastered item is never
-    re-scheduled); otherwise ACTIVE with a due date snapped via
-    `next_scheduled_day(today + LADDER_DAYS[new_streak] days, weekday_mask)`.
+    re-scheduled); otherwise ACTIVE with `due_date = today +
+    CORRECT_RETRY_DAYS`.
     Either way `fail_count` is carried through UNCHANGED (it is a
     lifetime lapse count, never reset by a correct solve) and `ever_correct`
     becomes True.
@@ -294,7 +308,7 @@ def apply_result(
     Wrong-move branch: `streak` resets to 0. `fail_count` increments
     unconditionally — the counter is monotonic non-decreasing for
     the life of the item, regardless of `ever_correct`. The park check runs
-    BEFORE the re-snap and evaluates two independent doors: Door A fires when
+    BEFORE the retry date is set and evaluates two independent doors: Door A fires when
     `not ever_correct and new_fail_count >= PARK_FAIL_THRESHOLD`
     (never-solved); Door B fires when
     `new_fail_count >= LEECH_FAIL_THRESHOLD` regardless of `ever_correct`
@@ -302,12 +316,10 @@ def apply_result(
     left UNTOUCHED and `ever_correct` propagated from the incoming state (not
     hardcoded) — Door B can fire with `ever_correct` True, so hardcoding
     `False` would silently rewrite a solved item's history. Otherwise the
-    item stays ACTIVE with `due_date = next_scheduled_day(today,
-    weekday_mask)`.
+    item stays ACTIVE with `due_date = today + FAIL_RETRY_DAYS`.
 
-    Cross-reference: `next_scheduled_day` is the sibling this function must
-    agree with on every due-date snap; `session_window` is the sibling for
-    the *session's* (not the item's) open-window boundary.
+    Cross-reference: `session_window` is the sibling for the *session's* (not
+    the item's) open-window boundary.
     """
     if correct_move:
         new_streak = state.streak + 1
@@ -323,11 +335,10 @@ def apply_result(
                 fail_count=state.fail_count,
                 ever_correct=True,
             )
-        ideal_due = today + datetime.timedelta(days=LADDER_DAYS[new_streak])
         return ItemState(
             status=DrillStatus.ACTIVE,
             streak=new_streak,
-            due_date=next_scheduled_day(ideal_due, weekday_mask),
+            due_date=today + datetime.timedelta(days=CORRECT_RETRY_DAYS),
             # Bug fix: see the MASTERED branch above — carry the
             # lifetime lapse count through instead of zeroing it.
             fail_count=state.fail_count,
@@ -356,7 +367,7 @@ def apply_result(
     return ItemState(
         status=DrillStatus.ACTIVE,
         streak=0,
-        due_date=next_scheduled_day(today, weekday_mask),
+        due_date=today + datetime.timedelta(days=FAIL_RETRY_DAYS),
         fail_count=new_fail_count,
         ever_correct=state.ever_correct,
     )
@@ -640,12 +651,13 @@ def tick_days(
 
 __all__ = [
     "ALL_WEEKDAYS_MASK",
+    "CORRECT_RETRY_DAYS",
     "DEFAULT_PUZZLES_PER_SESSION",
     "DEFAULT_REMINDER_ENABLED",
     "DEFAULT_REMINDER_HOUR",
     "DEFAULT_TIMEZONE",
     "DEFAULT_WEEKDAY_MASK",
-    "LADDER_DAYS",
+    "FAIL_RETRY_DAYS",
     "LEECH_FAIL_THRESHOLD",
     "MASTERY_STREAK_THRESHOLD",
     "PARK_FAIL_THRESHOLD",

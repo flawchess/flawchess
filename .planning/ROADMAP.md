@@ -131,6 +131,7 @@
 | 241. v2.27 phase | 70/70 | Complete | 2026-10-17 |
 | 242. standalone phase | 9/9 | Complete | 2026-10-18 |
 | 243. standalone phase | 5/5 | Complete | 2026-10-31 |
+| 244. standalone phase | 2/2 | Complete | 2026-11-02 |
 
 ## Active Phases
 
@@ -244,6 +245,42 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 243-05-PLAN.md — "Out of the opening" Stats-tab section, chart-free popover, cache invalidation, CHANGELOG
+
+### Phase 244: Train SR Ladder Rework, Calculation Not Recall (SEED-207)
+
+**Goal**: Make Train's spaced-repetition repeats test calculation instead of recall of the previous attempt or
+the reveal screen. Prod evidence (SEED-207, ~9.6k SR solves): repeats after a fail are +14 pts accurate and
+0.62x think time at day 1, back to the user's own baseline by day 3-4; a self-found solution stays remembered
+for about a week and is gone by 8-11 days. Retry delays move past those windows. Locked decisions, evidence
+tables and rejected options in SEED-207.
+
+- **Ladder (`app/services/train_scheduler.py`):** correct solve (including the first attempt) -> retry in
+  10 days (244-CONTEXT D-11, was 14 in SEED-207); wrong solve (any step) -> retry in 4 days, streak to 0; mastered after **2** consecutive correct
+  (was 3). Named constants (`CORRECT_RETRY_DAYS`, `FAIL_RETRY_DAYS`, `MASTERY_STREAK_THRESHOLD`) replace
+  `LADDER_DAYS`; no weekday snapping (244-CONTEXT D-02). Brand-new items stay due immediately
+  (check the initial `due_date` path in `train_pool.py` / `train_repository.py`).
+- **Parking:** Door A stays at 3 fails never solved; Door B (leech) `LEECH_FAIL_THRESHOLD` 6 -> 4 lifetime
+  lapses. Docstrings and the Door B rationale in `train_scheduler.py` and `drill_item.py` updated.
+- **In-flight migration (one-off, details in 244-CONTEXT):** no streak remap; due dates pushed
+  to at least last correct solve + 10d / last fail + 4d (from `drill_solves`); no retroactive Door B parking;
+  mastered/parked rows unchanged. No schema change.
+- **Copy:** Home.tsx ladder explainer, `MASTERED_TAIL` in `trainBotCopy.ts`, `MASTERED_EXPLAINER` /
+  `PARKED_EXPLAINER` in `TrainStatsCard.tsx`, plus any other Train copy naming three solves / 3 or 10 days.
+- **Tests + changelog:** `tests/services/test_train_scheduler.py` (offsets, mastery at 2, Door B at 4, fail delay
+  snaps to a scheduled weekday, new items due immediately); CHANGELOG `[Unreleased]`.
+- **Out of scope:** A/B test (too few users, repeat accuracy biased by gap length); the ~1-month post-ship
+  re-check of SEED-207 Tables 2/3; same-motif mastery check and fast-correct recall flag (own seeds).
+
+**Depends on**: nothing in flight
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 2/2 plans complete
+
+Plans:
+**Wave 1**
+- [x] 244-01-PLAN.md — New ladder end-to-end (exact 10/4-day due dates, mastery at 2, Door B 4, no snapping), new-items pin, docstrings, in-flight due-date migration e2a7c4f9b244
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 244-02-PLAN.md — Train copy, README, CHANGELOG, re-check reminder, full pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

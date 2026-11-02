@@ -66,7 +66,7 @@ const FEATURES: {
     desc: [
         'Every puzzle is built from your own blunders, not a generic puzzle set.',
         'Is there only one good move, or several? Commit before you play. Quiet positions are mixed in, so there isn\'t always a tactic waiting.',
-        'Spaced repetition brings each position back next session, then after three days, then ten, until you\'ve solved it three times.',
+        'Spaced repetition brings a missed position back a few days later and a solved one after ten days, until you\'ve solved it twice in a row.',
         'Pick your training days and build a session streak.',
     ],
     screenshot: { src: '/screenshots/train.png', alt: 'Train session reveal screen showing the guess verdict, the move played, the best move, and the blunder from the original game' },
