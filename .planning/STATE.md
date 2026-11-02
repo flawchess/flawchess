@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 243
+current_phase_name: NOT PLANNED
 status: completed
-stopped_at: Phase 243 complete — all phases complete
-last_updated: "2026-10-31T19:59:09.192Z"
-state_head: f4c0b154bbea5cc93700afb01910868ef6063b60
+stopped_at: Phase 244 context gathered
+last_updated: "2026-11-02T13:59:09.873Z"
+state_head: 338792ad0319928b757d077b69fd0a0d91be97ed
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 103
   total_plans: 14
   completed_plans: 96
-  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-31
 last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart"
@@ -1122,9 +1122,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-31T17:41:15.680Z
-**Stopped at:** Phase 243 complete — all phases complete
-**Resume file:** None
+**Last session:** 2026-11-02T13:59:09.220Z
+**Stopped at:** Phase 244 context gathered
+**Resume file:** .planning/phases/244-train-sr-ladder-calculation-not-recall/244-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
