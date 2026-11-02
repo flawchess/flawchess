@@ -34,6 +34,17 @@ Follow-up analysis: the streak remap (2 -> 1) is a no-op at threshold 2. Prod qu
 **Notes:** Drop snapping overrides the ROADMAP/SEED-207 line that due dates keep snapping via
 `next_scheduled_day`.
 
+## Correct-path interval (follow-up, owner challenge)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Keep 14 days | SEED-207 margin above "memory gone by 8-11d" | |
+| Reduce to 10 days | Finer prod split shows Table 3's 8-11d claim is noise; attempt 3+ shows no fade between 10 and 14d (0.66x vs 0.59x); more users reach mastery; re-check fills the 10-11d bucket | ✓ |
+
+**User's choice:** 10 days.
+**Notes:** Owner correction: first attempts carry memory from post-game analysis on chess.com/lichess. Measured:
+first-attempt accuracy 61.7% for games < 7d old vs 58.1% at 30-180d (small effect).
+
 ---
 
 ## Claude's Discretion

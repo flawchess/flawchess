@@ -7,11 +7,11 @@
 ## Phase Boundary
 
 Rework Train's spaced-repetition ladder so repeats test calculation instead of recall of the previous attempt
-or the reveal screen: correct solve -> retry in 14 days, wrong solve -> retry in 4 days, mastered after 2
+or the reveal screen: correct solve -> retry in 10 days (D-11, overrides SEED-207's 14), wrong solve -> retry in 4 days, mastered after 2
 consecutive correct solves, Door B leech threshold 6 -> 4. Includes a one-off in-flight migration of active
 `drill_items` due dates, Train copy updates, scheduler tests and a changelog entry. No schema change.
 
-Locked by SEED-207 (not re-discussed, read the seed for evidence): the 14d / 4d intervals, mastery at 2, Door A
+Locked by SEED-207 (not re-discussed, read the seed for evidence): the 4d fail interval, mastery at 2, Door A
 stays at 3 (never solved), Door B 4 lifetime lapses, a correct FIRST attempt counts toward mastery, brand-new
 items stay due immediately, no A/B test, no retroactive Door B parking, mastered/parked rows unchanged.
 
@@ -24,7 +24,7 @@ check, fast-correct recall flag.
 ## Implementation Decisions
 
 ### Ladder mechanics (`app/services/train_scheduler.py`)
-- **D-01:** Named constants replace `LADDER_DAYS`: `CORRECT_RETRY_DAYS = 14`, `FAIL_RETRY_DAYS = 4`,
+- **D-01:** Named constants replace `LADDER_DAYS`: `CORRECT_RETRY_DAYS = 10` (see D-11), `FAIL_RETRY_DAYS = 4`,
   `MASTERY_STREAK_THRESHOLD = 2`, `LEECH_FAIL_THRESHOLD = 4` (`PARK_FAIL_THRESHOLD` stays 3). Remove
   `LADDER_DAYS` from `__all__` and every import site.
 - **D-02: Drop weekday snapping from `apply_result`. OVERRIDES the ROADMAP/SEED-207 line "due dates still snap
@@ -53,7 +53,7 @@ check, fast-correct recall flag.
   old streak 2 master on the next correct solve (`streak + 1 >= 2`) and both reset to 0 on a fail, so the remap
   would change nothing behaviourally. Streak values stay as they are.
 - **D-07: Push due dates on all three paths, never pull earlier:**
-  - ACTIVE items with `streak >= 1`: `due_date = max(due_date, last correct solve date + 14)`.
+  - ACTIVE items with `streak >= 1`: `due_date = max(due_date, last correct solve date + 10)`.
   - ACTIVE items with `streak = 0` that have a failed solve: `due_date = max(due_date, last fail date + 4)`.
   - Never-attempted ACTIVE items (no SR solve): untouched, stay due immediately.
   - MASTERED / PARKED rows: untouched. No retroactive Door B parking (items with `fail_count >= 4` park at their
@@ -66,25 +66,44 @@ check, fast-correct recall flag.
 - **D-10:** Items already composed into an open session at deploy are not touched specially: the session keeps
   serving them and the solve is graded by the new `apply_result`.
 
-### Prod sizing (2026-11-02, read-only query)
-Active items whose due date the migration actually moves (still inside the new window):
+### Prod sizing (2026-11-02, read-only query, 10d correct floor)
+Active items whose due date the migration actually moves (floor still in the future):
 
-| Old state | Items | Active users | Without migration |
-|---|---|---|---|
-| streak 1, last correct < 14d ago | 363 | 57 | next correct (due ~day 3) would master on a recall-timed repeat |
-| streak 2, last correct < 14d ago | 619 | 46 | would master at ~day 10 instead of 14 |
-| streak 0, last fail < 4d ago | 87 | 35 | one more next-session retry |
+| Old state | Items moved | Without migration |
+|---|---|---|
+| streak 1, last correct < 10d ago | 328 | next correct (due ~day 3) would master on a recall-timed repeat |
+| streak 2, last correct < 10d ago | 21 | old 10-day step already matches the new floor almost everywhere |
+| streak 0, last fail < 4d ago | 87 | one more next-session retry |
 
-Totals: 2,983 active (1,202 streak 0 of which 765 never attempted, 894 streak 1, 887 streak 2). Use these
-counts as a sanity check for the migration's affected-row count on prod (the numbers will drift a bit by
-deploy day).
+About 436 rows move in total. Totals: 2,983 active (1,202 streak 0 of which 765 never attempted, 894 streak 1,
+887 streak 2). Use these counts as a sanity check for the migration's affected-row count on prod (they will
+drift by deploy day).
+
+### Correct-path interval (revisited after the first CONTEXT draft)
+- **D-11: `CORRECT_RETRY_DAYS = 10`, overriding SEED-207's 14.** Owner challenged 14 as too long. Re-analysis
+  on prod (2026-11-02):
+  - SEED-207 Table 3's "memory gone by 8-11 days" rests on n=19 and does not survive a finer split: attempt 2
+    after a correct first solve has 5-10 timed solves per bucket at 8-9d / 10-11d / 12-14d, with think ratios
+    1.11x / 0.75x / 0.52x (noise). The data shows memory clearly present at a week and cannot separate 10 from 14.
+  - The only well-sampled long-gap data (old ladder's 10-day third step, attempt 3+ after correct solves): think
+    time vs first solve 0.66x at 10-11d (n=294) and 0.59x at 12-14d (n=30). No visible fade between 10 and 14,
+    so the extra 4 days buy no measurable recall reduction (memory and genuine learning are mixed here).
+  - 10 days gets more users to a mastering solve (25% of users are active >= 14d after their first solve,
+    roughly 29% at 10d; the fail path masters at day 14 instead of 18).
+  - The ~1-month post-ship re-check then fills exactly the empty attempt-2 10-11d bucket. If think time there is
+    clearly below 1.0x, move to 14.
+  - Accepted cost: mastery is permanent, so a recall-assisted mastery retires an item for good.
+- **Owner correction recorded:** a first Train attempt is not memory-free. Serious players analyze their games
+  on chess.com/lichess right after playing. Measured effect is small: first-attempt accuracy 61.7% when the game
+  is < 7 days old (n=1,868), 60.3% at 7-30d, 58.1% at 30-180d, i.e. about 2-4 points vs +14 points one day after
+  a Train reveal (SEED-207 Table 2). Do not describe first attempts as "no memory possible" in docstrings or copy.
 
 ### Claude's Discretion
 - **Copy wording** (owner skipped this area): Home.tsx ladder explainer (line ~69), `README.md:36`,
   `MASTERED_TAIL` in `trainBotCopy.ts` (~521), `MASTERED_EXPLAINER` / `PARKED_EXPLAINER` in `TrainStatsCard.tsx`
   (~39-41, plus the comment at ~34), and any other Train copy naming three solves or 3/10-day steps (grep bot
   lines and the reveal tour). Plain, short, matching existing Train tone; no em-dash spam. Describe the new
-  ladder as "a few days after a miss, two weeks after a solve, until solved twice in a row" or similar.
+  ladder as "a few days after a miss, ten days after a solve, until solved twice in a row" or similar.
 - **Local date of a solve in the migration:** `solved_at` is UTC; whether to convert via
   `train_settings.timezone` (`AT TIME ZONE`, fallback UTC) before adding days is the planner's call. Off by at
   most one day either way.
@@ -102,8 +121,8 @@ deploy day).
 
 ### Design and evidence
 - `.planning/seeds/SEED-207-train-sr-ladder-calculation-not-recall.md` — locked decisions, evidence tables,
-  rejected options, implementation sketch. NOTE: D-02/D-06/D-08 above override its snapping and streak-remap
-  lines.
+  rejected options, implementation sketch. NOTE: D-02/D-06/D-08/D-11 above override its snapping,
+  streak-remap and 14-day lines.
 - `.planning/ROADMAP.md` § Phase 244 — scope, tests, out-of-scope list.
 - `.planning/seeds/closed/SEED-037-train-spaced-repetition-blunder-drills.md` — original SR design.
 

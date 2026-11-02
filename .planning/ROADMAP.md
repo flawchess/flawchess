@@ -254,14 +254,14 @@ for about a week and is gone by 8-11 days. Retry delays move past those windows.
 tables and rejected options in SEED-207.
 
 - **Ladder (`app/services/train_scheduler.py`):** correct solve (including the first attempt) -> retry in
-  14 days; wrong solve (any step) -> retry in 4 days, streak to 0; mastered after **2** consecutive correct
+  10 days (244-CONTEXT D-11, was 14 in SEED-207); wrong solve (any step) -> retry in 4 days, streak to 0; mastered after **2** consecutive correct
   (was 3). Named constants (`CORRECT_RETRY_DAYS`, `FAIL_RETRY_DAYS`, `MASTERY_STREAK_THRESHOLD`) replace
-  `LADDER_DAYS`; due dates still snap forward via `next_scheduled_day`. Brand-new items stay due immediately
+  `LADDER_DAYS`; no weekday snapping (244-CONTEXT D-02). Brand-new items stay due immediately
   (check the initial `due_date` path in `train_pool.py` / `train_repository.py`).
 - **Parking:** Door A stays at 3 fails never solved; Door B (leech) `LEECH_FAIL_THRESHOLD` 6 -> 4 lifetime
   lapses. Docstrings and the Door B rationale in `train_scheduler.py` and `drill_item.py` updated.
-- **In-flight migration (one-off, details in planning):** old streak 2 -> 1, 1 -> 1, 0 -> 0; due dates pushed
-  to at least last correct solve + 14d / last fail + 4d (from `drill_solves`); no retroactive Door B parking;
+- **In-flight migration (one-off, details in 244-CONTEXT):** no streak remap; due dates pushed
+  to at least last correct solve + 10d / last fail + 4d (from `drill_solves`); no retroactive Door B parking;
   mastered/parked rows unchanged. No schema change.
 - **Copy:** Home.tsx ladder explainer, `MASTERED_TAIL` in `trainBotCopy.ts`, `MASTERED_EXPLAINER` /
   `PARKED_EXPLAINER` in `TrainStatsCard.tsx`, plus any other Train copy naming three solves / 3 or 10 days.
