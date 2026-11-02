@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.27
-current_phase: 243
-current_phase_name: Train SR Ladder Rework, Calculation Not Recall (SEED-207)
+current_phase: 244
 status: completed
-stopped_at: Phase 244 context gathered
-last_updated: "2026-11-02T14:26:02.865Z"
-state_head: dbea71787cdb1856d68e3c9da06729d8e81c54ed
+stopped_at: Phase 244 complete — all phases complete
+last_updated: "2026-11-02T14:59:02.760Z"
+state_head: 3b3aad482aea10be063406da47ac8f28cd024a6e
 progress:
   total_phases: 3
   completed_phases: 103
   total_plans: 16
   completed_plans: 96
+  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-31
 last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best 
 
 ## Current Position
 
-Phase: 244 (Train SR Ladder Rework, Calculation Not Recall (SEED-207)) — READY TO EXECUTE
-Plan: 0 of TBD
+Phase: 244
+Plan: 2 of 2
 
-Status: Phase 244 added 2026-11-02, ready to discuss. Phase 243 complete and deployed
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -35,6 +35,7 @@ Open threads carried forward (not blockers):
 - Pending reads: Train telemetry and the weekly-leaderboard effect (~2026-10-25, data from 2026-10-05); feedback-ask yield (`feedback.source = 'milestone_ask'` vs `floating_button`); Umami funnels on `train-explore-exit` go flat from release #404 (`train-sideline-fork` replaces it).
 - Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); real-phone throughput for Phases 226/227 never measured.
+- SEED-207 post-ship re-check (Follow-up 1), about one month after the release that ships Phase 244: re-run the SEED-207 Table 2/3 queries; the attempt-2 10-11 day bucket after a correct first solve now fills; if think time there is clearly below 1.0x of the first solve, raise `CORRECT_RETRY_DAYS` to 14 (244-CONTEXT D-11). Also watch Door A/B park rates and the first-attempt share of SR slots.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - TypeScript 7 adopted in Phase 232 (D-01, supersedes Phase 217 D-11) via Microsoft's side-by-side alias: `typescript` is `@typescript/typescript6` (TS6 JS API for typescript-eslint and eslint-plugin-sonarjs) and `@typescript/native` is `typescript@7` (the `tsc` in `npm run build`). Unwind once TS 7.1 ships its API and a typescript-eslint release accepts it (typescript-eslint#10940); never merge Renovate's `typescript-7.x` branch as-is (it installs 7 under the `typescript` name and breaks lint).
@@ -893,6 +894,8 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 243]: 243-04: rank_status/is_anchor_game made public; opening-out gate uses z=1.96 passed in, Endgames 99% path untouched
 - [Phase 243]: 243-04: nothing-contributes card status is pending > unranked > below_floor; ranked TC without CDF cell excluded from headline and gate
 - [Phase 243]: 243-05: popover re-sorts TCs bullet-to-classical locally and shows all five disclosures on every popover; eval cut 1.0 is a named frontend constant mirroring the backend threshold
+- [Phase 244]: D-02: apply_result takes no schedule; due dates are exact +10/+4 day offsets, no weekday snapping
+- [Phase 244]: Migration e2a7c4f9b244 computes dates in UTC and only pushes when floor > UTC today and due_date < floor (D-09 literal)
 
 ### Pending Todos
 
@@ -1122,9 +1125,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-02T13:59:09.220Z
-**Stopped at:** Phase 244 context gathered
-**Resume file:** .planning/phases/244-train-sr-ladder-calculation-not-recall/244-CONTEXT.md
+**Last session:** 2026-11-02T14:46:10.679Z
+**Stopped at:** Phase 244 complete — all phases complete
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1375,6 +1378,8 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 243 P02 | 2h | 3 tasks | 14 files |
 | Phase 243 P04 | 30min | 2 tasks | 6 files |
 | Phase 243 P05 | 25min | 3 tasks | 15 files |
+| Phase 244 P01 | 35min | 3 tasks | 8 files |
+| Phase 244 P02 | 15min | 2 tasks | 9 files |
 
 ## Performance Metrics
 

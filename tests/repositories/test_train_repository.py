@@ -10,6 +10,9 @@ Coverage:
                                               honest cross-backfill.
 - test_padding_introduces_new_drill_items_recency_first : new drill_items come
                                               from the most-recently-played games.
+- test_new_drill_items_are_due_immediately : brand-new items are ACTIVE, streak 0,
+                                              due the local day they are created, never pushed
+                                              by FAIL_RETRY_DAYS (Phase 244).
 - test_empty_pool_writes_no_session_row    : zero material -> zero puzzles, no
                                               drill_sessions row.
 - test_blob_pending_count_reports_waiting_flaws : the thin-pool signal.
@@ -686,6 +689,68 @@ async def test_padding_introduces_new_drill_items_recency_first(db_session: Asyn
 
     assert tracked_game_ids == expected_tracked
     assert tracked_game_ids.isdisjoint(excluded)
+
+
+@pytest.mark.asyncio
+async def test_new_drill_items_are_due_immediately(db_session: AsyncSession) -> None:
+    """Brand-new drill_items are due on their first session (Phase 244).
+
+    Item creation in session composition sets `due_date` to the local day,
+    status ACTIVE, streak 0: they are never pushed out by FAIL_RETRY_DAYS (that
+    delay applies only to a wrong SOLVE). Each created item is served as an
+    SR row of the composed session.
+    """
+    await ensure_test_user(db_session, _USER_ID)
+    await train_repository.upsert_settings(
+        db_session,
+        user_id=_USER_ID,
+        timezone="UTC",
+        weekday_mask=0,
+        puzzles_per_session=12,
+        reminder_enabled=False,
+        reminder_hour=18,
+        reminder_intent_at=None,
+        now_utc=_NOW,
+    )
+    base = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    for i in range(3):
+        await _seed_flaw_game(
+            db_session,
+            _USER_ID,
+            f"due-now-{i}",
+            played_at=base + datetime.timedelta(days=i),
+        )
+    for i in range(5):
+        await _seed_herring_pool_row(db_session, _USER_ID, f"due-now-herring-{i}")
+
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    items = (
+        (await db_session.execute(select(DrillItem).where(DrillItem.user_id == _USER_ID)))
+        .scalars()
+        .all()
+    )
+    assert items, "composition must have created new drill_items"
+    for item in items:
+        assert item.status == DrillStatus.ACTIVE
+        assert item.streak == 0
+        assert item.fail_count == 0
+        assert item.ever_correct is False
+        assert item.due_date == _TODAY, "a new item is due immediately, not after a retry delay"
+
+    served = set(
+        (
+            await db_session.execute(
+                select(DrillSolve.game_id, DrillSolve.ply).where(
+                    DrillSolve.session_id == composed.session_id,
+                    DrillSolve.source == int(DrillSource.SR_ITEM),
+                )
+            )
+        ).all()
+    )
+    assert served == {(item.game_id, item.ply) for item in items}
 
 
 @pytest.mark.asyncio

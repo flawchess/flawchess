@@ -440,8 +440,9 @@ async def upsert_settings(
     either rolls back both, and the snapshot can never advance against a
     schedule that was never persisted.
 
-    Deliberately does NOT re-snap existing `drill_items.due_date` values when
-    `weekday_mask` changes.
+    A settings change never touches `drill_items.due_date`: item due dates are
+    schedule-independent since Phase 244 (D-02), so there is nothing to re-snap
+    when `weekday_mask` changes.
 
     `reminder_last_sent_on` is deliberately NOT a parameter here and does not
     appear in the UPSERT's `values(...)` or `set_` dict below — it is the
@@ -3122,9 +3123,7 @@ async def _advance_drill_item(
         fail_count=item_row.fail_count,
         ever_correct=item_row.ever_correct,
     )
-    new_state = apply_result(
-        state, correct_move=correct_move, today=today, weekday_mask=settings_row.weekday_mask
-    )
+    new_state = apply_result(state, correct_move=correct_move, today=today)
     await session.execute(
         update(DrillItem)
         .where(DrillItem.user_id == user_id, DrillItem.game_id == game_id, DrillItem.ply == ply)

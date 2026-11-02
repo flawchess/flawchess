@@ -37,9 +37,11 @@ best_move/best_move_san/pv are not part of the reveal:
                                              stored engine line/eval creeps back in
 
 Solve/reveal/settings:
-- test_solve_records_and_advances_streak / test_solve_masters_item_at_three /
+- test_solve_records_and_advances_streak / test_solve_masters_item_at_two /
   test_solve_wrong_resets_streak_and_counts_fail / test_solve_parks_item_at_three_never_correct :
       the interval ladder advances exactly per app.services.train_scheduler.apply_result
+- test_solve_due_date_ignores_sparse_weekday_mask : due dates are exact +10 / +4 day
+      offsets from the solve day, never snapped to a scheduled weekday (Phase 244 D-02)
 - test_solve_herring_touches_no_drill_item : a red herring carries no SR bookkeeping
 - test_correct_guess_computed_server_side  : the guess verdict is server-computed, never
                                               client-asserted (parametrized 2 guesses x 2 types)
@@ -144,6 +146,11 @@ from app.repositories import train_repository
 from app.schemas.train import ServerGradedMove, SolveRequest, TrainPuzzle
 from app.services import sharp_filler
 from app.services.sharp_filler import SharpPuzzle
+from app.services.train_scheduler import (
+    CORRECT_RETRY_DAYS,
+    FAIL_RETRY_DAYS,
+    MASTERY_STREAK_THRESHOLD,
+)
 
 ENDPOINT = "/api/train/sessions"
 
@@ -1579,18 +1586,27 @@ async def test_solve_records_and_advances_streak(test_engine) -> None:
     )
 
     try:
+        today_before = datetime.datetime.now(datetime.UTC).date()
         resp = await _solve(token, session_id, 0, guess="critical", move_quality="good")
+        today_after = datetime.datetime.now(datetime.UTC).date()
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["item_status"] == "active"
         assert body["streak"] == 1
-        assert body["due_date"] is not None
         assert body["correct_move"] is True
+        # Phase 244: exactly CORRECT_RETRY_DAYS after the solve day (either side
+        # of a midnight crossing during the request).
+        expected_dues = {
+            (day + datetime.timedelta(days=CORRECT_RETRY_DAYS)).isoformat()
+            for day in (today_before, today_after)
+        }
+        assert body["due_date"] in expected_dues
 
         item = await _get_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
         assert item is not None
         assert item.streak == 1
         assert item.status == DrillStatus.ACTIVE
+        assert item.due_date.isoformat() == body["due_date"]
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -1647,13 +1663,18 @@ async def test_solve_rejects_unrecognised_move_quality(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_solve_masters_item_at_three(test_engine) -> None:
-    """The third consecutive correct solve masters the item."""
+async def test_solve_masters_item_at_two(test_engine) -> None:
+    """The second consecutive correct solve masters the item (Phase 244 D-01)."""
     email = f"train-master-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     game_id = await _seed_game_with_blunder(test_engine, user_id)
     await _seed_drill_item(
-        test_engine, user_id, game_id, _FLAW_PLY_WHITE, streak=2, ever_correct=True
+        test_engine,
+        user_id,
+        game_id,
+        _FLAW_PLY_WHITE,
+        streak=MASTERY_STREAK_THRESHOLD - 1,
+        ever_correct=True,
     )
     session_id = await _seed_session(
         test_engine, user_id, [(game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM))]
@@ -1664,7 +1685,7 @@ async def test_solve_masters_item_at_three(test_engine) -> None:
         assert resp.status_code == 200
         body = resp.json()
         assert body["item_status"] == "mastered"
-        assert body["streak"] == 3
+        assert body["streak"] == 2
 
         item = await _get_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
         assert item is not None
@@ -1688,20 +1709,77 @@ async def test_solve_wrong_resets_streak_and_counts_fail(test_engine) -> None:
     )
 
     try:
+        today_before = datetime.datetime.now(datetime.UTC).date()
         resp = await _solve(token, session_id, 0, move_quality="wrong")
+        today_after = datetime.datetime.now(datetime.UTC).date()
         assert resp.status_code == 200
         body = resp.json()
         assert body["item_status"] == "active"
         assert body["streak"] == 0
         assert body["correct_move"] is False
+        # Phase 244: exactly FAIL_RETRY_DAYS after the solve day.
+        expected_dues = {
+            (day + datetime.timedelta(days=FAIL_RETRY_DAYS)).isoformat()
+            for day in (today_before, today_after)
+        }
+        assert body["due_date"] in expected_dues
 
         item = await _get_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
         assert item is not None
         assert item.streak == 0
         assert item.fail_count == 2
         assert item.ever_correct is False
+        assert item.due_date.isoformat() == body["due_date"]
     finally:
         await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_solve_due_date_ignores_sparse_weekday_mask(test_engine) -> None:
+    """D-02: due dates are exact offsets from the solve day, never snapped to a
+    scheduled weekday. A single-weekday schedule (tomorrow's weekday only) still
+    yields today+10 (correct) and today+4 (wrong), neither on a scheduled day."""
+    email = f"train-solve-sparse-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    today = datetime.datetime.now(datetime.UTC).date()
+    sparse_mask = 1 << (today + datetime.timedelta(days=1)).weekday()
+    put_resp = await _put_settings(
+        token, timezone="UTC", weekday_mask=sparse_mask, puzzles_per_session=6
+    )
+    assert put_resp.status_code == 200, put_resp.text
+
+    game_a = await _seed_game_with_blunder(test_engine, user_id)
+    game_b = await _seed_game_with_blunder(test_engine, user_id)
+    await _seed_drill_item(test_engine, user_id, game_a, _FLAW_PLY_WHITE, streak=0)
+    await _seed_drill_item(test_engine, user_id, game_b, _FLAW_PLY_WHITE, streak=0)
+    session_id = await _seed_session(
+        test_engine,
+        user_id,
+        [
+            (game_a, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM)),
+            (game_b, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM)),
+        ],
+    )
+
+    try:
+        today_before = datetime.datetime.now(datetime.UTC).date()
+        correct_resp = await _solve(token, session_id, 0, move_quality="good")
+        wrong_resp = await _solve(token, session_id, 1, move_quality="wrong")
+        today_after = datetime.datetime.now(datetime.UTC).date()
+        assert correct_resp.status_code == 200, correct_resp.text
+        assert wrong_resp.status_code == 200, wrong_resp.text
+
+        item_a = await _get_drill_item(test_engine, user_id, game_a, _FLAW_PLY_WHITE)
+        item_b = await _get_drill_item(test_engine, user_id, game_b, _FLAW_PLY_WHITE)
+        assert item_a is not None and item_b is not None
+        days = (today_before, today_after)
+        assert item_a.due_date in {d + datetime.timedelta(days=CORRECT_RETRY_DAYS) for d in days}
+        assert item_b.due_date in {d + datetime.timedelta(days=FAIL_RETRY_DAYS) for d in days}
+        # Non-vacuous: neither stored date falls on the one scheduled weekday.
+        assert sparse_mask & (1 << item_a.due_date.weekday()) == 0
+        assert sparse_mask & (1 << item_b.due_date.weekday()) == 0
+    finally:
+        await _delete_games(test_engine, [game_a, game_b])
 
 
 @pytest.mark.asyncio

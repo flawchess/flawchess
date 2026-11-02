@@ -1,7 +1,7 @@
 /**
  * TrainFlawFixedBanner — the inline "Flaw fixed!" mastery celebration.
  * Rendered by `TrainReveal` in the reveal's comeback-hint slot when a
- * spaced-repetition item reaches 3/3 mastery
+ * spaced-repetition item reaches mastery (two correct solves in a row)
  * (`SolveResponse.item_status === 'mastered'`) — no modal, no portal, no
  * confetti call from here (that lives on `TrainScoreScreen`).
  *

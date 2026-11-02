@@ -131,6 +131,7 @@
 | 241. v2.27 phase | 70/70 | Complete | 2026-10-17 |
 | 242. standalone phase | 9/9 | Complete | 2026-10-18 |
 | 243. standalone phase | 5/5 | Complete | 2026-10-31 |
+| 244. standalone phase | 2/2 | Complete | 2026-11-02 |
 
 ## Active Phases
 
@@ -272,14 +273,14 @@ tables and rejected options in SEED-207.
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 244-01-PLAN.md — New ladder end-to-end (exact 10/4-day due dates, mastery at 2, Door B 4, no snapping), new-items pin, docstrings, in-flight due-date migration e2a7c4f9b244
+- [x] 244-01-PLAN.md — New ladder end-to-end (exact 10/4-day due dates, mastery at 2, Door B 4, no snapping), new-items pin, docstrings, in-flight due-date migration e2a7c4f9b244
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 244-02-PLAN.md — Train copy, README, CHANGELOG, re-check reminder, full pre-merge gate
+- [x] 244-02-PLAN.md — Train copy, README, CHANGELOG, re-check reminder, full pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

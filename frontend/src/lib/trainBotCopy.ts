@@ -518,7 +518,7 @@ export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
 
 /** Return tails. */
 const NEXT_SESSION_TAIL = 'Back next session.';
-const MASTERED_TAIL = 'Three in a row, so this one is retired.';
+const MASTERED_TAIL = 'Two in a row, so this one is retired.';
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now.';
 /** The non-return lines for a herring/filler solved in a
  * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
