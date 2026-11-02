@@ -1,6 +1,8 @@
 ---
 id: SEED-207
-status: dormant
+status: promoted
+promoted_to: Phase 244
+promoted: 2026-11-02
 planted: 2026-11-02
 planted_during: v2.27 (after Phase 243), /gsd-explore session on Train spaced repetition vs memorization
 trigger_when: owner opens the next Train-focused milestone/phase, or a quick task touches the SR ladder (app/services/train_scheduler.py)

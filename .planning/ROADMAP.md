@@ -245,6 +245,38 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 243-05-PLAN.md — "Out of the opening" Stats-tab section, chart-free popover, cache invalidation, CHANGELOG
 
+### Phase 244: Train SR Ladder Rework, Calculation Not Recall (SEED-207)
+
+**Goal**: Make Train's spaced-repetition repeats test calculation instead of recall of the previous attempt or
+the reveal screen. Prod evidence (SEED-207, ~9.6k SR solves): repeats after a fail are +14 pts accurate and
+0.62x think time at day 1, back to the user's own baseline by day 3-4; a self-found solution stays remembered
+for about a week and is gone by 8-11 days. Retry delays move past those windows. Locked decisions, evidence
+tables and rejected options in SEED-207.
+
+- **Ladder (`app/services/train_scheduler.py`):** correct solve (including the first attempt) -> retry in
+  14 days; wrong solve (any step) -> retry in 4 days, streak to 0; mastered after **2** consecutive correct
+  (was 3). Named constants (`CORRECT_RETRY_DAYS`, `FAIL_RETRY_DAYS`, `MASTERY_STREAK_THRESHOLD`) replace
+  `LADDER_DAYS`; due dates still snap forward via `next_scheduled_day`. Brand-new items stay due immediately
+  (check the initial `due_date` path in `train_pool.py` / `train_repository.py`).
+- **Parking:** Door A stays at 3 fails never solved; Door B (leech) `LEECH_FAIL_THRESHOLD` 6 -> 4 lifetime
+  lapses. Docstrings and the Door B rationale in `train_scheduler.py` and `drill_item.py` updated.
+- **In-flight migration (one-off, details in planning):** old streak 2 -> 1, 1 -> 1, 0 -> 0; due dates pushed
+  to at least last correct solve + 14d / last fail + 4d (from `drill_solves`); no retroactive Door B parking;
+  mastered/parked rows unchanged. No schema change.
+- **Copy:** Home.tsx ladder explainer, `MASTERED_TAIL` in `trainBotCopy.ts`, `MASTERED_EXPLAINER` /
+  `PARKED_EXPLAINER` in `TrainStatsCard.tsx`, plus any other Train copy naming three solves / 3 or 10 days.
+- **Tests + changelog:** `tests/services/test_train_scheduler.py` (offsets, mastery at 2, Door B at 4, fail delay
+  snaps to a scheduled weekday, new items due immediately); CHANGELOG `[Unreleased]`.
+- **Out of scope:** A/B test (too few users, repeat accuracy biased by gap length); the ~1-month post-ship
+  re-check of SEED-207 Tables 2/3; same-motif mastery check and fast-correct recall flag (own seeds).
+
+**Depends on**: nothing in flight
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 244 to break down)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
