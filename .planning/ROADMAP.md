@@ -272,10 +272,11 @@ tables and rejected options in SEED-207.
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 244 to break down)
+- [ ] 244-01-PLAN.md — New ladder end-to-end (exact 10/4-day due dates, mastery at 2, Door B 4, no snapping), new-items pin, docstrings, in-flight due-date migration e2a7c4f9b244
+- [ ] 244-02-PLAN.md — Train copy, README, CHANGELOG, re-check reminder, full pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
