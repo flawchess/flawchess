@@ -50,9 +50,14 @@ from app.services.train_pool import (
     HERRING_DEGENERATE_MIN_GAP_ES,
     HERRING_LADDER_SIZE,
     HERRING_LOOSE_BAND_ES,
+    HERRING_MAX_BEST_ES,
+    HERRING_MIN_OPENING_PLY,
+    HERRING_MIN_PLY,
     HERRING_MIN_QUALIFYING_MOVES,
+    HERRING_OPENING_PHASE,
     HERRING_PREFERRED_QUALIFYING_MOVES,
     MAX_ITEMS_PER_GAME_PER_SESSION,
+    WINNABILITY_FLOOR_ES,
     SHARP_GAP_ES,
     PuzzleAnswerKey,
     ServerGradedMove,
@@ -2023,7 +2028,9 @@ async def _seed_herring_rows(
                 test_engine,
                 owner_id,
                 game_id,
-                ply=8,
+                # The opening floor applies to phase 0 rows; seeding every
+                # phase at it keeps all three servable.
+                ply=HERRING_MIN_OPENING_PLY,
                 phase=phase,
                 ladder=_ladder_with_qualifying_count(qualifying),
             )
@@ -2131,6 +2138,71 @@ async def test_herring_preferred_tier_outranks_phase_rotation(test_engine) -> No
         assert set(order[: len(preferred_ids)]) == preferred_ids
     finally:
         await _delete_herring_pool_rows(test_engine, pool_ids)
+        await _delete_games(test_engine, game_ids)
+
+
+def _cp_for_mover_es(target_es: float) -> int:
+    """White-POV cp whose white-mover expected score is `target_es` (rounded)."""
+    return round(math.log(target_es / (1.0 - target_es)) / LICHESS_K)
+
+
+@pytest.mark.asyncio
+async def test_herring_winnability_band(test_engine) -> None:
+    """Only rows whose best-move expected score (mover POV) lies inside
+    `[WINNABILITY_FLOOR_ES, HERRING_MAX_BEST_ES]` are served: a decided win
+    (prod had 310 before this gate) and a lost position are both excluded."""
+    user_id, _ = await _register_and_login(f"herring-winband-{uuid.uuid4().hex[:8]}@example.com")
+    margin_es = 0.03
+    best_cps = {
+        "inside": _cp_for_mover_es(HERRING_MAX_BEST_ES - margin_es),
+        "decided_win": _cp_for_mover_es(HERRING_MAX_BEST_ES + margin_es),
+        "lost": _cp_for_mover_es(WINNABILITY_FLOOR_ES - margin_es),
+    }
+    pool_ids: dict[str, int] = {}
+    game_ids: list[int] = []
+    for label, best_cp in best_cps.items():
+        game_id = await _seed_bare_game(test_engine, user_id)
+        game_ids.append(game_id)
+        pool_ids[label] = await _seed_pool_row(
+            test_engine,
+            user_id,
+            game_id,
+            ply=8,
+            ladder=_ladder_with_qualifying_count(
+                HERRING_MIN_QUALIFYING_MOVES, best_cp=best_cp, small_gap_cp=best_cp - 5
+            ),
+        )
+    try:
+        served = await _herring_order(test_engine, user_id, list(pool_ids.values()))
+        assert served == [pool_ids["inside"]]
+    finally:
+        await _delete_herring_pool_rows(test_engine, list(pool_ids.values()))
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_herring_opening_ply_floor(test_engine) -> None:
+    """Opening-phase rows below `HERRING_MIN_OPENING_PLY` (book territory)
+    are not served; at the floor they are; non-opening rows keep the plain
+    `HERRING_MIN_PLY` and are unaffected."""
+    user_id, _ = await _register_and_login(f"herring-openfloor-{uuid.uuid4().hex[:8]}@example.com")
+    middlegame_phase = 1
+    specs = {
+        "opening_below": (HERRING_OPENING_PHASE, HERRING_MIN_OPENING_PLY - 1),
+        "opening_at": (HERRING_OPENING_PHASE, HERRING_MIN_OPENING_PLY),
+        "middlegame_low": (middlegame_phase, HERRING_MIN_PLY),
+    }
+    pool_ids: dict[str, int] = {}
+    game_ids: list[int] = []
+    for label, (phase, ply) in specs.items():
+        game_id = await _seed_bare_game(test_engine, user_id)
+        game_ids.append(game_id)
+        pool_ids[label] = await _seed_pool_row(test_engine, user_id, game_id, ply=ply, phase=phase)
+    try:
+        served = await _herring_order(test_engine, user_id, list(pool_ids.values()))
+        assert sorted(served) == sorted([pool_ids["opening_at"], pool_ids["middlegame_low"]])
+    finally:
+        await _delete_herring_pool_rows(test_engine, list(pool_ids.values()))
         await _delete_games(test_engine, game_ids)
 
 

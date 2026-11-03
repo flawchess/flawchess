@@ -153,6 +153,19 @@ HERRING_LADDER_SIZE: int = 5
 # herring is a "several fine moves" MIDDLEGAME/endgame judgment call, not an
 # opening-theory pick.
 HERRING_MIN_PLY: int = 12
+# Opening-phase rows need this ply (move 10+) to be generated or SERVED.
+# HERRING_MIN_PLY alone did not keep the opening bucket out of book territory:
+# on prod (2026-11-03) 1,619 of 1,668 opening rows sat at ply <= 16, median 13
+# (moves 6-8). Opening-phase positions at ply >= 20 are still plentiful (a 0.2%
+# sample of prod game_positions held ~3,300 within the |eval| pre-filter).
+HERRING_MIN_OPENING_PLY: int = 20
+# GamePosition.phase / HerringPool.phase code for the opening (Lichess Divider).
+HERRING_OPENING_PHASE: int = 0
+# Upper bound on the mover's best-move expected score for a SERVED herring:
+# the mirror of WINNABILITY_FLOOR_ES. Above it the mover is already winning
+# outright and "several fine moves" is trivially true (prod 2026-11-03: 310 of
+# 5,000 rows, mostly endgame/middlegame, before this gate existed).
+HERRING_MAX_BEST_ES: float = 1.0 - WINNABILITY_FLOOR_ES
 # A plain, uncorrelated pre-filter on the sampled row's OWN stored eval_cp
 # (never a self-join): |eval_cp| <= this many centipawns keeps the sampled
 # frame roughly balanced instead of drawing mostly-decided positions. Off-by-one
@@ -1162,13 +1175,15 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
     (`scripts/gen_red_herring_pool.py`). A
     red herring is "several genuinely fine moves for whoever is to move",
     drawn across ALL signed-up users' games, not "one of the user's own
-    several-fine-moves plies". Winnability is NOT checked against
-    `WINNABILITY_FLOOR_ES` anywhere on this path: the generator applies only
-    the coarse `HERRING_PREFILTER_ABS_CP` pre-filter on the sampled row's own
-    stored `eval_cp` (corrected 2026-11-03 — an earlier revision of this
-    docstring claimed a generation-time floor that the generator never
-    implemented). In practice the pool holds almost no lost-for-the-mover
-    rows (1 of 5,000 on prod below 0.20 ES) but does hold decided wins.
+    several-fine-moves plies". Winnability is a band on the mover's
+    best-move expected score, `WINNABILITY_FLOOR_ES <= best_es <=
+    HERRING_MAX_BEST_ES`, enforced HERE at serve time over the stored
+    ladder (and mirrored by the generator so top-ups don't waste slots).
+    Before 2026-11-03 neither side checked it — only the coarse
+    `HERRING_PREFILTER_ABS_CP` pre-filter on the sampled row's stored
+    `eval_cp` — and the pool held 310 decided wins. Opening-phase rows are
+    also gated on `ply >= HERRING_MIN_OPENING_PLY` here, for the same reason
+    (the existing pool predates the generator's opening floor).
     There is no SR bookkeeping in this
     function at all (no `drill_items`, no `GameFlaw` join) — the pool is
     entirely separate material from a user's own blunders.
@@ -1312,6 +1327,12 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
         .where(
             qualifying_count >= HERRING_MIN_QUALIFYING_MOVES,
             best_es - worst_es >= HERRING_DEGENERATE_MIN_GAP_ES,
+            best_es >= WINNABILITY_FLOOR_ES,
+            best_es <= HERRING_MAX_BEST_ES,
+            or_(
+                HerringPool.phase != HERRING_OPENING_PHASE,
+                HerringPool.ply >= HERRING_MIN_OPENING_PLY,
+            ),
         )
     )
     if exclude_served:

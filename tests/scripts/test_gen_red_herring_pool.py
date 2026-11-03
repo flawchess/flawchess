@@ -14,6 +14,10 @@ Coverage:
   reject runs BEFORE any engine call.
 - test_generator_loose_gate_boundary : the loose band is inclusive at the
   boundary, exclusive one step beyond.
+- test_generator_rejects_outside_winnability_band : a decided-win best move
+  is rejected after the search, a balanced one is stored.
+- test_generator_opening_frame_uses_opening_ply_floor : opening-phase
+  positions below HERRING_MIN_OPENING_PLY never reach the engine.
 - test_generator_rerun_tops_up_without_duplicates : a re-run only inserts the
   shortfall via ON CONFLICT DO NOTHING, and a genuine top-up run
   fills the remainder from previously-unconsumed candidates.
@@ -292,14 +296,17 @@ async def test_generator_loose_gate_boundary(
     # Markers stand in for cp; expected_score_for is monkeypatched to look
     # them up directly, sidestepping sigmoid floating-point round-trip
     # concerns entirely — the gap is defined exactly, not approximated.
+    # Best-move ES sits inside the winnability band (a 1.0 best would now be
+    # rejected as a decided win before the loose band is ever consulted).
+    best_es = 0.6
     es_by_marker: dict[int, float] = {
-        100: 1.0,
-        101: 1.0 - gen_module.HERRING_LOOSE_BAND_ES,  # exactly at the band -> qualifies
+        100: best_es,
+        101: best_es - gen_module.HERRING_LOOSE_BAND_ES,  # exactly at the band -> qualifies
         102: 0.0,
         103: 0.0,
         104: 0.0,
-        200: 1.0,
-        201: 1.0 - gen_module.HERRING_LOOSE_BAND_ES - 1e-6,  # one step beyond -> rejects
+        200: best_es,
+        201: best_es - gen_module.HERRING_LOOSE_BAND_ES - 1e-6,  # one step beyond -> rejects
         202: 0.0,
         203: 0.0,
         204: 0.0,
@@ -365,6 +372,121 @@ async def test_generator_loose_gate_boundary(
         )
         assert not await _pool_row_exists(
             test_engine, user_id=user_id, game_id=game_id, ply=ply_beyond_boundary
+        )
+    finally:
+        await _cleanup(test_engine, user_ids=[user_id])
+
+
+# A second lone-king FEN with exactly 5 legal moves (f1/f2/g2/h1/h2), white to
+# move, so a FEN-keyed fake pool can script two candidates differently.
+_FEN_5_LEGAL_MOVES_ALT = "7k/8/8/8/8/8/8/6K1 w - - 0 1"
+
+# Every entry at +600cp (white POV, white to move): mover ES ~0.90, above
+# HERRING_MAX_BEST_ES — a decided win where every move is "fine".
+_DECIDED_WIN_LADDER: list[chess.engine.InfoDict] = [
+    _make_info(600, move) for move in ("g1f1", "g1f2", "g1g2", "g1h1", "g1h2")
+]
+
+
+async def test_generator_rejects_outside_winnability_band(
+    test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _lift_diversity_caps(monkeypatch)
+    ply_balanced = 20
+    ply_decided = 22
+    phase_code = 1  # middlegame
+
+    async with _session_maker(test_engine)() as session:
+        async with session.begin():
+            user_id = await _ensure_user(session)
+            game_id = await _seed_game(session, user_id=user_id)
+            for ply in (ply_balanced, ply_decided):
+                await _seed_position(
+                    session, user_id=user_id, game_id=game_id, ply=ply, phase=phase_code
+                )
+
+    _patch_fen_lookup(
+        monkeypatch,
+        {
+            ply_balanced: (_FEN_5_LEGAL_MOVES, None),
+            ply_decided: (_FEN_5_LEGAL_MOVES_ALT, None),
+        },
+    )
+    fake_pool = _FakePool(
+        {
+            _FEN_5_LEGAL_MOVES: _UNIFORM_QUALIFYING_LADDER,
+            _FEN_5_LEGAL_MOVES_ALT: _DECIDED_WIN_LADDER,
+        }
+    )
+
+    try:
+        existing = await _current_existing(test_engine, phase_code)
+        await run_generation(
+            db="dev",
+            n_positions=existing + 2,
+            phase="middlegame",
+            dry_run=False,
+            session_maker=_session_maker(test_engine),
+            pool=fake_pool,  # ty: ignore[invalid-argument-type]  # test stub duck-types EnginePool
+        )
+
+        # Both were searched (the band needs the engine's best move) ...
+        assert _FEN_5_LEGAL_MOVES_ALT in fake_pool.evaluated_fens
+        # ... but only the balanced one was stored.
+        assert await _pool_row_exists(
+            test_engine, user_id=user_id, game_id=game_id, ply=ply_balanced
+        )
+        assert not await _pool_row_exists(
+            test_engine, user_id=user_id, game_id=game_id, ply=ply_decided
+        )
+    finally:
+        await _cleanup(test_engine, user_ids=[user_id])
+
+
+async def test_generator_opening_frame_uses_opening_ply_floor(
+    test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _lift_diversity_caps(monkeypatch)
+    ply_below = gen_module.HERRING_MIN_OPENING_PLY - 2  # still >= HERRING_MIN_PLY, even
+    ply_at = gen_module.HERRING_MIN_OPENING_PLY
+    assert ply_below >= gen_module.HERRING_MIN_PLY
+    phase_code = gen_module.HERRING_OPENING_PHASE
+
+    async with _session_maker(test_engine)() as session:
+        async with session.begin():
+            user_id = await _ensure_user(session)
+            game_id = await _seed_game(session, user_id=user_id)
+            for ply in (ply_below, ply_at):
+                await _seed_position(
+                    session, user_id=user_id, game_id=game_id, ply=ply, phase=phase_code
+                )
+
+    _patch_fen_lookup(
+        monkeypatch,
+        {ply_below: (_FEN_5_LEGAL_MOVES_ALT, None), ply_at: (_FEN_5_LEGAL_MOVES, None)},
+    )
+    fake_pool = _FakePool(
+        {
+            _FEN_5_LEGAL_MOVES: _UNIFORM_QUALIFYING_LADDER,
+            _FEN_5_LEGAL_MOVES_ALT: _UNIFORM_QUALIFYING_LADDER,
+        }
+    )
+
+    try:
+        existing = await _current_existing(test_engine, phase_code)
+        await run_generation(
+            db="dev",
+            n_positions=existing + 2,
+            phase="opening",
+            dry_run=False,
+            session_maker=_session_maker(test_engine),
+            pool=fake_pool,  # ty: ignore[invalid-argument-type]  # test stub duck-types EnginePool
+        )
+
+        assert _FEN_5_LEGAL_MOVES_ALT not in fake_pool.evaluated_fens
+        assert await _pool_row_exists(test_engine, user_id=user_id, game_id=game_id, ply=ply_at)
+        assert not await _pool_row_exists(
+            test_engine, user_id=user_id, game_id=game_id, ply=ply_below
         )
     finally:
         await _cleanup(test_engine, user_ids=[user_id])

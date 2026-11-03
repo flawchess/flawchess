@@ -156,10 +156,14 @@ from app.services.engine import EnginePool, _score_to_cp_mate  # noqa: E402
 from app.services.train_pool import (  # noqa: E402
     HERRING_LADDER_SIZE,
     HERRING_LOOSE_BAND_ES,
+    HERRING_MAX_BEST_ES,
+    HERRING_MIN_OPENING_PLY,
     HERRING_MIN_PLY,
+    HERRING_OPENING_PHASE,
     HERRING_MIN_QUALIFYING_MOVES,
     HERRING_PREFERRED_QUALIFYING_MOVES,
     HERRING_PREFILTER_ABS_CP,
+    WINNABILITY_FLOOR_ES,
     expected_score_for,
     fen_and_last_move_at_ply,
 )
@@ -349,7 +353,12 @@ def _candidate_frame_stmt(
     `extra_where` scopes one of the two random-start passes (see module
     docstring); `after` is the `(user_id, game_id, ply)` keyset cursor for
     the next page within that pass — never a skip-N-rows page parameter.
+
+    The opening bucket uses the stricter `HERRING_MIN_OPENING_PLY` floor
+    (move 10+) so it stays out of book territory; `HERRING_MIN_PLY` alone
+    let 97% of opening rows land at ply <= 16 (prod, 2026-11-03).
     """
+    min_ply = HERRING_MIN_OPENING_PLY if phase_code == HERRING_OPENING_PHASE else HERRING_MIN_PLY
     stmt = (
         select(GamePosition, Game)
         .join(Game, Game.id == GamePosition.game_id)
@@ -357,7 +366,7 @@ def _candidate_frame_stmt(
         .where(
             User.is_guest.is_(False),  # D-02: generation time only
             GamePosition.phase == phase_code,
-            GamePosition.ply >= HERRING_MIN_PLY,
+            GamePosition.ply >= min_ply,
             func.abs(GamePosition.eval_cp) <= HERRING_PREFILTER_ABS_CP,
             extra_where,
         )
@@ -391,7 +400,9 @@ class _Outcome:
     """One candidate's classification. `kind="stored"` carries the accepted
     ladder/board data; every other kind is a rejection reason."""
 
-    kind: Literal["unreconstructable", "legal_moves", "ply_mismatch", "band_reject", "stored"]
+    kind: Literal[
+        "unreconstructable", "legal_moves", "ply_mismatch", "winnability", "band_reject", "stored"
+    ]
     ladder: list[dict[str, Any]] | None = None
     fen: str | None = None
     last_move_uci: str | None = None
@@ -452,6 +463,11 @@ async def _evaluate_candidate(
             mover_color=actual_mover,
         )
 
+    # Mirror of herring_stmt's serve-time winnability band: a row outside it
+    # is never served, so storing it would only burn a bucket slot.
+    if not WINNABILITY_FLOOR_ES <= best_es <= HERRING_MAX_BEST_ES:
+        return _Outcome(kind="winnability")
+
     qualifying = sum(
         1
         for entry in ladder
@@ -480,6 +496,7 @@ class _Tally:
     rejected_legal_moves: int = 0
     rejected_ply_mismatch: int = 0
     rejected_unreconstructable: int = 0
+    rejected_winnability: int = 0
     rejected_band: int = 0
     duplicate_skipped: int = 0
     stored: int = 0
@@ -601,6 +618,9 @@ async def _process_candidate(
     if outcome.kind == "ply_mismatch":
         tally.rejected_ply_mismatch += 1
         _log(f"  SKIP ply-mismatch: game_id={game.id} ply={position.ply}")
+        return
+    if outcome.kind == "winnability":
+        tally.rejected_winnability += 1
         return
     if outcome.kind == "band_reject":
         tally.rejected_band += 1
@@ -781,6 +801,7 @@ def _log_generation_summary(tally: _Tally, dry_run: bool) -> None:
     )
     _log(f"  Rejected (ply-mover mismatch): {tally.rejected_ply_mismatch}")
     _log(f"  Rejected (FEN unreconstructable): {tally.rejected_unreconstructable}")
+    _log(f"  Rejected (best move outside winnability band): {tally.rejected_winnability}")
     _log(f"  Rejected (below loose qualifying-moves band): {tally.rejected_band}")
     _log(f"  Duplicate (already in pool, ON CONFLICT skipped): {tally.duplicate_skipped}")
     _log(f"  Skipped before search (per-user cap, SEED-124): {tally.skipped_user_cap}")
