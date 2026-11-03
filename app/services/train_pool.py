@@ -153,6 +153,19 @@ HERRING_LADDER_SIZE: int = 5
 # herring is a "several fine moves" MIDDLEGAME/endgame judgment call, not an
 # opening-theory pick.
 HERRING_MIN_PLY: int = 12
+# Opening-phase rows need this ply (move 10+) to be generated or SERVED.
+# HERRING_MIN_PLY alone did not keep the opening bucket out of book territory:
+# on prod (2026-11-03) 1,619 of 1,668 opening rows sat at ply <= 16, median 13
+# (moves 6-8). Opening-phase positions at ply >= 20 are still plentiful (a 0.2%
+# sample of prod game_positions held ~3,300 within the |eval| pre-filter).
+HERRING_MIN_OPENING_PLY: int = 20
+# GamePosition.phase / HerringPool.phase code for the opening (Lichess Divider).
+HERRING_OPENING_PHASE: int = 0
+# Upper bound on the mover's best-move expected score for a SERVED herring:
+# the mirror of WINNABILITY_FLOOR_ES. Above it the mover is already winning
+# outright and "several fine moves" is trivially true (prod 2026-11-03: 310 of
+# 5,000 rows, mostly endgame/middlegame, before this gate existed).
+HERRING_MAX_BEST_ES: float = 1.0 - WINNABILITY_FLOOR_ES
 # A plain, uncorrelated pre-filter on the sampled row's OWN stored eval_cp
 # (never a self-join): |eval_cp| <= this many centipawns keeps the sampled
 # frame roughly balanced instead of drawing mostly-decided positions. Off-by-one
@@ -1162,12 +1175,16 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
     (`scripts/gen_red_herring_pool.py`). A
     red herring is "several genuinely fine moves for whoever is to move",
     drawn across ALL signed-up users' games, not "one of the user's own
-    several-fine-moves plies". Winnability (`WINNABILITY_FLOOR_ES`) is
-    enforced once at generation time against the generator's own MultiPV[0]
-    on its own searched board — never re-checked here, and never derived
-    from a correlated `game_positions` read (the post-move eval shift's
-    `ply`/`ply - 1` ambiguity does not apply: the generator's board is
-    authoritative by construction). There is no SR bookkeeping in this
+    several-fine-moves plies". Winnability is a band on the mover's
+    best-move expected score, `WINNABILITY_FLOOR_ES <= best_es <=
+    HERRING_MAX_BEST_ES`, enforced HERE at serve time over the stored
+    ladder (and mirrored by the generator so top-ups don't waste slots).
+    Before 2026-11-03 neither side checked it — only the coarse
+    `HERRING_PREFILTER_ABS_CP` pre-filter on the sampled row's stored
+    `eval_cp` — and the pool held 310 decided wins. Opening-phase rows are
+    also gated on `ply >= HERRING_MIN_OPENING_PLY` here, for the same reason
+    (the existing pool predates the generator's opening floor).
+    There is no SR bookkeeping in this
     function at all (no `drill_items`, no `GameFlaw` join) — the pool is
     entirely separate material from a user's own blunders.
 
@@ -1222,21 +1239,34 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
     `GameFlaw.missed_pv_lines`) and would otherwise raise `MissingGreenlet`
     on first implicit async access outside this query's session context.
 
-    Ordering is a TOTAL order, stable across repeated executions of the same
-    statement — which is what makes "no repeats until the pool is exhausted"
-    observable:
-    `(qualifying_count >= HERRING_PREFERRED_QUALIFYING_MOVES) DESC` ("preferring
-    3+" — a PREFERENCE, not a filter; rows with exactly
-    `HERRING_MIN_QUALIFYING_MOVES` must still be reachable), then
-    `HerringPool.source_played_at DESC NULLS LAST`, then `HerringPool.id
-    ASC` (the deterministic tiebreak for rows equal on both prior keys).
-    Recency reads off the pool row's own denormalized `source_played_at`
-    rather than a `games` join: a global pool cannot join `games` for it
-    without reintroducing exactly the link that is allowed to null out. Copying
-    `played_at` onto the row at generation time preserves the recency contract
-    and survives source-game deletion — the same reasoning that applies to the
-    FEN and arriving move. This is a deliberate resolution, not a
-    dropped requirement.
+    Ordering is a TOTAL order, stable across repeated executions for the
+    same user — which is what makes "no repeats until the pool is exhausted"
+    observable — but DIFFERENT across users:
+
+    1. `preferred DESC` (`qualifying_count >= HERRING_PREFERRED_QUALIFYING_MOVES`,
+       "preferring 3+" — a PREFERENCE, not a filter; rows with exactly
+       `HERRING_MIN_QUALIFYING_MOVES` must still be reachable).
+    2. `phase_rank ASC` — `row_number() OVER (PARTITION BY preferred, phase
+       ORDER BY user_hash, id)`, a round-robin across opening/middlegame/
+       endgame so a session's herrings honour the generator's phase-balanced
+       thirds. The window runs after WHERE, so ranks are over the rows not yet
+       served to this user.
+    3. `user_hash ASC` — `md5(user_id || ':' || id)`, which also orders the
+       phases WITHIN a round. A fixed `phase ASC` tiebreak here would starve
+       one phase: a default 8-puzzle session has 2 herring slots and ranks
+       are recomputed after every session, so the same two phases would win
+       every round.
+    4. `HerringPool.id ASC` — the final deterministic tiebreak (an md5
+       collision on a 3,500-row pool is not a real concern, but the order
+       must be total by construction).
+
+    Why per-user (2026-11-03): the previous global order (`preferred DESC,
+    source_played_at DESC NULLS LAST, id ASC`) served every user the
+    identical sequence — on prod one row reached 479 of 485 users, only 232
+    of 3,527 servable rows had ever been served, and opening herrings got
+    2.4x the middlegame volume because recency happened to favour them.
+    `source_played_at` is now provenance only (and `ix_herring_pool_recency`
+    no longer backs any query).
 
     This function NEVER filters on `HerringPool.user_id` — a user may
     legitimately be served a herring drawn from their own game (own-game
@@ -1284,12 +1314,25 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
         .scalar_subquery()
     )
 
+    preferred = qualifying_count >= HERRING_PREFERRED_QUALIFYING_MOVES
+    user_hash = func.md5(func.concat(literal(user_id, Integer), ":", HerringPool.id))
+    phase_rank = func.row_number().over(
+        partition_by=(preferred, HerringPool.phase),
+        order_by=(user_hash, HerringPool.id),
+    )
+
     stmt = (
         select(HerringPool)
         .options(undefer(HerringPool.ladder))
         .where(
             qualifying_count >= HERRING_MIN_QUALIFYING_MOVES,
             best_es - worst_es >= HERRING_DEGENERATE_MIN_GAP_ES,
+            best_es >= WINNABILITY_FLOOR_ES,
+            best_es <= HERRING_MAX_BEST_ES,
+            or_(
+                HerringPool.phase != HERRING_OPENING_PHASE,
+                HerringPool.ply >= HERRING_MIN_OPENING_PLY,
+            ),
         )
     )
     if exclude_served:
@@ -1302,9 +1345,12 @@ def herring_stmt(user_id: int, *, exclude_served: bool = True) -> Select[tuple[H
                 )
             )
         )
+    # Postgres evaluates window functions after WHERE and allows them directly
+    # in ORDER BY, so phase_rank is computed over the not-yet-served rows only.
     return stmt.order_by(
-        (qualifying_count >= HERRING_PREFERRED_QUALIFYING_MOVES).desc(),
-        HerringPool.source_played_at.desc().nullslast(),
+        preferred.desc(),
+        phase_rank.asc(),
+        user_hash.asc(),
         HerringPool.id.asc(),
     )
 

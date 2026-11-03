@@ -35,8 +35,9 @@ Never pass `None` for `ladder` — that writes `null::jsonb`, not SQL NULL.
 this note exists so nobody relaxes either.
 
 `source_played_at` and `fen`/`arriving_move_uci` are deliberate denormalized
-copies so the row survives source-game deletion self-sufficiently —
-recency ordering must not require a `games` join.
+copies so the row survives source-game deletion self-sufficiently.
+(`source_played_at` originally drove herring_stmt's recency-first order; since
+2026-11-03 the serve order is per-user, so it is provenance only.)
 
 The ladder-shape CHECK is load-bearing, not decoration: it makes "every
 stored row has a complete 5-element array" a *write-time* structural
@@ -95,8 +96,10 @@ class HerringPool(Base):
             "jsonb_typeof(ladder) = 'array' AND jsonb_array_length(ladder) = 5",
             name="ck_herring_pool_ladder_shape",
         ),
-        # Recency-first, fully deterministic serve ordering (herring_stmt) —
-        # source_played_at DESC NULLS LAST, then id ASC — with no games join.
+        # Originally backed herring_stmt's recency-first serve order. Since
+        # 2026-11-03 herring_stmt orders per user (md5 hash + phase round-robin),
+        # so no query uses this index any more; kept to avoid a migration for a
+        # ~5k-row table. Safe to drop in a future migration.
         Index("ix_herring_pool_recency", "source_played_at", "id"),
     )
 
@@ -126,8 +129,8 @@ class HerringPool(Base):
     # (mirrors GamePosition.phase's convention).
     phase: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
-    # Denormalized copy of the source game's played_at, for recency ordering
-    # that survives the source game's deletion.
+    # Denormalized copy of the source game's played_at (provenance; no longer
+    # a serve-order key, see herring_stmt), surviving source-game deletion.
     source_played_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

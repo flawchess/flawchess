@@ -21,8 +21,8 @@ Coverage:
 - herring_stmt tests         : user-scoping (IDOR), tier exclusion (gem AND
                                 large-gap-but-easy-to-find), ply-parity,
                                 winnability floor, already-served exclusion +
-                                exhaustion fallback, and deterministic
-                                recency ordering.
+                                exhaustion fallback, and the per-user
+                                deterministic order (hash + phase round-robin).
 """
 
 from __future__ import annotations
@@ -50,9 +50,14 @@ from app.services.train_pool import (
     HERRING_DEGENERATE_MIN_GAP_ES,
     HERRING_LADDER_SIZE,
     HERRING_LOOSE_BAND_ES,
+    HERRING_MAX_BEST_ES,
+    HERRING_MIN_OPENING_PLY,
+    HERRING_MIN_PLY,
     HERRING_MIN_QUALIFYING_MOVES,
+    HERRING_OPENING_PHASE,
     HERRING_PREFERRED_QUALIFYING_MOVES,
     MAX_ITEMS_PER_GAME_PER_SESSION,
+    WINNABILITY_FLOOR_ES,
     SHARP_GAP_ES,
     PuzzleAnswerKey,
     ServerGradedMove,
@@ -1948,9 +1953,9 @@ async def test_herring_excludes_degenerate_all_fine_position(test_engine) -> Non
 @pytest.mark.asyncio
 async def test_herring_prefers_three_qualifying_moves(test_engine) -> None:
     """A row with HERRING_PREFERRED_QUALIFYING_MOVES qualifiers sorts before
-    an otherwise-comparable row with only HERRING_MIN_QUALIFYING_MOVES, even
-    though the 2-qualifier row was played MORE recently — the preference
-    outranks recency — and the 2-qualifier row is still present in the
+    an otherwise-comparable row with only HERRING_MIN_QUALIFYING_MOVES (the
+    2-qualifier row's more recent `played_at` is irrelevant: recency is no
+    longer an order key) — and the 2-qualifier row is still present in the
     result (a preference, never a filter)."""
     user_id, _ = await _register_and_login(f"herring-prefer3-{uuid.uuid4().hex[:8]}@example.com")
     game_three = await _seed_bare_game(test_engine, user_id)
@@ -2008,35 +2013,197 @@ async def test_herring_gate_handles_mate_ladder_entry(test_engine) -> None:
         await _delete_games(test_engine, [game_id])
 
 
+async def _seed_herring_rows(
+    test_engine, owner_id: int, specs: list[tuple[int, int]]
+) -> tuple[list[int], list[int]]:
+    """Seed one bare game + pool row per `(phase, qualifying_count)` spec.
+    Returns `(pool_ids, game_ids)` in spec order."""
+    pool_ids: list[int] = []
+    game_ids: list[int] = []
+    for phase, qualifying in specs:
+        game_id = await _seed_bare_game(test_engine, owner_id)
+        game_ids.append(game_id)
+        pool_ids.append(
+            await _seed_pool_row(
+                test_engine,
+                owner_id,
+                game_id,
+                # The opening floor applies to phase 0 rows; seeding every
+                # phase at it keeps all three servable.
+                ply=HERRING_MIN_OPENING_PLY,
+                phase=phase,
+                ladder=_ladder_with_qualifying_count(qualifying),
+            )
+        )
+    return pool_ids, game_ids
+
+
+async def _herring_order(test_engine, user_id: int, pool_ids: list[int]) -> list[int]:
+    """`herring_stmt(user_id)` ids restricted to this test's own rows (the
+    pool is global and identity-blind, so other tests' rows may be present)."""
+    wanted = set(pool_ids)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        rows = (await session.execute(herring_stmt(user_id))).scalars().all()
+    return [row.id for row in rows if row.id in wanted]
+
+
 @pytest.mark.asyncio
-async def test_herring_order_is_total_and_stable_under_ties(test_engine) -> None:
-    """Two rows equal on preferred-tier and `source_played_at` still serve in
-    the same sequence across repeated executions of the same statement —
-    the trailing `id ASC` tiebreak, not insertion-order happenstance."""
-    user_id, _ = await _register_and_login(f"herring-tiebreak-{uuid.uuid4().hex[:8]}@example.com")
-    tied_played_at = datetime.datetime(2026, 1, 10, tzinfo=datetime.timezone.utc)
-    ladder = _ladder_with_qualifying_count(HERRING_MIN_QUALIFYING_MOVES)
-
-    game_a = await _seed_bare_game(test_engine, user_id)
-    pool_a = await _seed_pool_row(
-        test_engine, user_id, game_a, ply=8, ladder=ladder, played_at=tied_played_at
+async def test_herring_order_is_stable_per_user(test_engine) -> None:
+    """Repeated executions for the same user serve the same sequence — the
+    order is TOTAL (hash, then `id ASC`), which is what makes "no repeats
+    until exhausted" observable."""
+    user_id, _ = await _register_and_login(f"herring-stable-{uuid.uuid4().hex[:8]}@example.com")
+    pool_ids, game_ids = await _seed_herring_rows(
+        test_engine, user_id, [(1, HERRING_MIN_QUALIFYING_MOVES)] * 6
     )
-    game_b = await _seed_bare_game(test_engine, user_id)
-    pool_b = await _seed_pool_row(
-        test_engine, user_id, game_b, ply=8, ladder=ladder, played_at=tied_played_at
-    )
-    expected_order = sorted([pool_a, pool_b])
-
     try:
-        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-        async with session_maker() as session:
-            first_run = (await session.execute(herring_stmt(user_id))).scalars().all()
-            second_run = (await session.execute(herring_stmt(user_id))).scalars().all()
-        assert [row.id for row in first_run] == expected_order
-        assert [row.id for row in second_run] == expected_order
+        first_run = await _herring_order(test_engine, user_id, pool_ids)
+        second_run = await _herring_order(test_engine, user_id, pool_ids)
+        assert sorted(first_run) == sorted(pool_ids)
+        assert first_run == second_run
     finally:
-        await _delete_herring_pool_rows(test_engine, [pool_a, pool_b])
-        await _delete_games(test_engine, [game_a, game_b])
+        await _delete_herring_pool_rows(test_engine, pool_ids)
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_herring_order_differs_across_users(test_engine) -> None:
+    """Two users get different sequences over the same pool rows. The old
+    global order served row 5344 to 479 of 485 prod users (2026-11-03).
+    With 12 same-tier same-phase rows, two md5-keyed orders coincide with
+    probability 1/12!, so this is not a flaky assertion."""
+    user_a, _ = await _register_and_login(f"herring-user-a-{uuid.uuid4().hex[:8]}@example.com")
+    user_b, _ = await _register_and_login(f"herring-user-b-{uuid.uuid4().hex[:8]}@example.com")
+    pool_ids, game_ids = await _seed_herring_rows(
+        test_engine, user_a, [(1, HERRING_MIN_QUALIFYING_MOVES)] * 12
+    )
+    try:
+        order_a = await _herring_order(test_engine, user_a, pool_ids)
+        order_b = await _herring_order(test_engine, user_b, pool_ids)
+        assert sorted(order_a) == sorted(order_b) == sorted(pool_ids)
+        assert order_a != order_b
+    finally:
+        await _delete_herring_pool_rows(test_engine, pool_ids)
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_herring_order_round_robins_phases(test_engine) -> None:
+    """Within a preference tier, every consecutive run of 3 served rows covers
+    all three phases (opening/middlegame/endgame), so sessions honour the
+    generator's phase-balanced thirds instead of whatever a global key favours."""
+    user_id, _ = await _register_and_login(f"herring-phases-{uuid.uuid4().hex[:8]}@example.com")
+    phases = (0, 1, 2)
+    rows_per_phase = 3
+    # Seeded GROUPED by phase (all openings, then middlegames, then endgames)
+    # so an `id ASC` order is NOT already a round-robin — the rotation must
+    # come from herring_stmt itself.
+    specs = [
+        (phase, HERRING_MIN_QUALIFYING_MOVES) for phase in phases for _ in range(rows_per_phase)
+    ]
+    pool_ids, game_ids = await _seed_herring_rows(test_engine, user_id, specs)
+    phase_by_id = {pool_id: phase for pool_id, (phase, _) in zip(pool_ids, specs, strict=True)}
+    try:
+        order = await _herring_order(test_engine, user_id, pool_ids)
+        served_phases = [phase_by_id[pool_id] for pool_id in order]
+        rounds = [
+            served_phases[i : i + len(phases)] for i in range(0, len(served_phases), len(phases))
+        ]
+        assert len(rounds) == rows_per_phase
+        assert all(sorted(r) == list(phases) for r in rounds)
+    finally:
+        await _delete_herring_pool_rows(test_engine, pool_ids)
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_herring_preferred_tier_outranks_phase_rotation(test_engine) -> None:
+    """The 3+-qualifier preference stays the outermost key: every preferred
+    row is served before any 2-qualifier row, across all phases."""
+    user_id, _ = await _register_and_login(f"herring-tier-{uuid.uuid4().hex[:8]}@example.com")
+    specs = [
+        (phase, qualifying)
+        for phase in (0, 1, 2)
+        for qualifying in (HERRING_MIN_QUALIFYING_MOVES, HERRING_PREFERRED_QUALIFYING_MOVES)
+    ]
+    pool_ids, game_ids = await _seed_herring_rows(test_engine, user_id, specs)
+    preferred_ids = {
+        pool_id
+        for pool_id, (_, qualifying) in zip(pool_ids, specs, strict=True)
+        if qualifying >= HERRING_PREFERRED_QUALIFYING_MOVES
+    }
+    try:
+        order = await _herring_order(test_engine, user_id, pool_ids)
+        assert set(order[: len(preferred_ids)]) == preferred_ids
+    finally:
+        await _delete_herring_pool_rows(test_engine, pool_ids)
+        await _delete_games(test_engine, game_ids)
+
+
+def _cp_for_mover_es(target_es: float) -> int:
+    """White-POV cp whose white-mover expected score is `target_es` (rounded)."""
+    return round(math.log(target_es / (1.0 - target_es)) / LICHESS_K)
+
+
+@pytest.mark.asyncio
+async def test_herring_winnability_band(test_engine) -> None:
+    """Only rows whose best-move expected score (mover POV) lies inside
+    `[WINNABILITY_FLOOR_ES, HERRING_MAX_BEST_ES]` are served: a decided win
+    (prod had 310 before this gate) and a lost position are both excluded."""
+    user_id, _ = await _register_and_login(f"herring-winband-{uuid.uuid4().hex[:8]}@example.com")
+    margin_es = 0.03
+    best_cps = {
+        "inside": _cp_for_mover_es(HERRING_MAX_BEST_ES - margin_es),
+        "decided_win": _cp_for_mover_es(HERRING_MAX_BEST_ES + margin_es),
+        "lost": _cp_for_mover_es(WINNABILITY_FLOOR_ES - margin_es),
+    }
+    pool_ids: dict[str, int] = {}
+    game_ids: list[int] = []
+    for label, best_cp in best_cps.items():
+        game_id = await _seed_bare_game(test_engine, user_id)
+        game_ids.append(game_id)
+        pool_ids[label] = await _seed_pool_row(
+            test_engine,
+            user_id,
+            game_id,
+            ply=8,
+            ladder=_ladder_with_qualifying_count(
+                HERRING_MIN_QUALIFYING_MOVES, best_cp=best_cp, small_gap_cp=best_cp - 5
+            ),
+        )
+    try:
+        served = await _herring_order(test_engine, user_id, list(pool_ids.values()))
+        assert served == [pool_ids["inside"]]
+    finally:
+        await _delete_herring_pool_rows(test_engine, list(pool_ids.values()))
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_herring_opening_ply_floor(test_engine) -> None:
+    """Opening-phase rows below `HERRING_MIN_OPENING_PLY` (book territory)
+    are not served; at the floor they are; non-opening rows keep the plain
+    `HERRING_MIN_PLY` and are unaffected."""
+    user_id, _ = await _register_and_login(f"herring-openfloor-{uuid.uuid4().hex[:8]}@example.com")
+    middlegame_phase = 1
+    specs = {
+        "opening_below": (HERRING_OPENING_PHASE, HERRING_MIN_OPENING_PLY - 1),
+        "opening_at": (HERRING_OPENING_PHASE, HERRING_MIN_OPENING_PLY),
+        "middlegame_low": (middlegame_phase, HERRING_MIN_PLY),
+    }
+    pool_ids: dict[str, int] = {}
+    game_ids: list[int] = []
+    for label, (phase, ply) in specs.items():
+        game_id = await _seed_bare_game(test_engine, user_id)
+        game_ids.append(game_id)
+        pool_ids[label] = await _seed_pool_row(test_engine, user_id, game_id, ply=ply, phase=phase)
+    try:
+        served = await _herring_order(test_engine, user_id, list(pool_ids.values()))
+        assert sorted(served) == sorted([pool_ids["opening_at"], pool_ids["middlegame_low"]])
+    finally:
+        await _delete_herring_pool_rows(test_engine, list(pool_ids.values()))
+        await _delete_games(test_engine, game_ids)
 
 
 @pytest.mark.asyncio
