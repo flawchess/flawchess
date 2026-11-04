@@ -14,8 +14,8 @@ interface RatingChartProps {
   platform: string;
   /**
    * Which time-control series start visible. null (default) = all four.
-   * A TC the sticky filter disables starts hidden but keeps its legend entry, so
-   * it can be toggled back on. A filter change resets the legend toggles.
+   * A TC left out starts hidden but keeps its legend entry, so it can be toggled
+   * back on. A change of this value resets the legend toggles.
    */
   enabledTimeControls?: TimeControl[] | null;
 }

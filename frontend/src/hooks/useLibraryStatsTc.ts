@@ -1,4 +1,7 @@
 import { createTcSelectionStore, pickMostPopulatedTc } from '@/hooks/tcSelectionStore';
+import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
+import { useLibraryFlawComparison } from '@/hooks/useLibrary';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
 
 /**
@@ -36,3 +39,15 @@ export const useLibraryStatsTc = createTcSelectionStore<LibraryTcCount>({
   storageKey: LIBRARY_STATS_TC_STORAGE_KEY,
   pickDefault: pickDefaultLibraryTc,
 });
+
+const NO_TCS: readonly LibraryTcCount[] = [];
+
+/**
+ * The TC selected in the Library Stats switch, for consumers outside the flaw sections.
+ * Null when no TC is offered, which is also when the switch itself is not shown.
+ */
+export function useSelectedLibraryStatsTc(filters: FilterState): TimeControlBucket | null {
+  const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
+  const [selectedTc] = useLibraryStatsTc(comparison.data?.tcs ?? NO_TCS);
+  return selectedTc;
+}

@@ -10,6 +10,7 @@ import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGameCountValue } from '@/hooks/useGameCount';
+import { useSelectedLibraryStatsTc } from '@/hooks/useLibraryStatsTc';
 import { NoHumanRatedGamesState, shouldShowNoHumanRatedGames } from '@/components/ui/no-human-rated-games-state';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import {
@@ -64,6 +65,7 @@ export function GlobalStatsPage() {
   }, [filters]);
 
   const selectedPlatforms = filters.platforms;
+  const selectedTc = useSelectedLibraryStatsTc(filters);
 
   const { data: ratingData, isLoading: ratingLoading } = useRatingHistory(
     filters, selectedPlatforms, filters.opponentType, filters.opponentStrength,
@@ -137,48 +139,53 @@ export function GlobalStatsPage() {
     globalStats, filters, gameCount,
   );
 
+  // The ELO charts start on the TC picked in the sticky switch. Without a pick the switch
+  // is not shown (no analyzed games yet), so they fall back to the sidebar filter.
+  const ratingEnabledTcs = selectedTc !== null ? [selectedTc] : filters.timeControls;
+
+  const eloRatingsSection = (selectedPlatforms === null ||
+    selectedPlatforms.includes('chess.com') ||
+    selectedPlatforms.includes('lichess')) && (
+    <section data-testid="elo-ratings-section">
+      <h2 className="font-brand text-lg font-semibold text-foreground mt-2">ELO Ratings</h2>
+      <div className="space-y-8 mt-3">
+        {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
+          <Card as="section" data-testid="rating-section-chess-com">
+            <CardHeader data-testid="rating-chess-com-header">
+              Chess.com Rating
+              <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
+                Your Chess.com rating over time by time control, one point per day (your rating after the day's last game). Grey bars show how many games you played that day.
+              </InfoPopover>
+            </CardHeader>
+            <CardBody>
+              <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" enabledTimeControls={ratingEnabledTcs} />
+            </CardBody>
+          </Card>
+        )}
+
+        {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
+          <Card as="section" data-testid="rating-section-lichess">
+            <CardHeader data-testid="rating-lichess-header">
+              Lichess Rating
+              <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
+                Your Lichess rating over time by time control, one point per day (your rating after the day's last game). Grey bars show how many games you played that day. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
+              </InfoPopover>
+            </CardHeader>
+            <CardBody>
+              <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" enabledTimeControls={ratingEnabledTcs} />
+            </CardBody>
+          </Card>
+        )}
+      </div>
+    </section>
+  );
+
   const sectionsContent = (
     <div className="space-y-8">
-      {/* ── Flaw Stats + Tactic motifs: per-TC sections sharing one TC switch ── */}
-      <LibraryStatsSections filters={filters} isGuest={isGuest} />
-
-      {/* ── ELO Ratings ── */}
-      {(selectedPlatforms === null ||
-        selectedPlatforms.includes('chess.com') ||
-        selectedPlatforms.includes('lichess')) && (
-        <section data-testid="elo-ratings-section">
-          <h2 className="font-brand text-lg font-semibold text-foreground mt-2">ELO Ratings</h2>
-          <div className="space-y-8 mt-3">
-            {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
-              <Card as="section" data-testid="rating-section-chess-com">
-                <CardHeader data-testid="rating-chess-com-header">
-                  Chess.com Rating
-                  <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
-                    Your Chess.com rating over time by time control, one point per day (your rating after the day's last game). Grey bars show how many games you played that day.
-                  </InfoPopover>
-                </CardHeader>
-                <CardBody>
-                  <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" enabledTimeControls={filters.timeControls} />
-                </CardBody>
-              </Card>
-            )}
-
-            {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
-              <Card as="section" data-testid="rating-section-lichess">
-                <CardHeader data-testid="rating-lichess-header">
-                  Lichess Rating
-                  <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
-                    Your Lichess rating over time by time control, one point per day (your rating after the day's last game). Grey bars show how many games you played that day. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
-                  </InfoPopover>
-                </CardHeader>
-                <CardBody>
-                  <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" enabledTimeControls={filters.timeControls} />
-                </CardBody>
-              </Card>
-            )}
-          </div>
-        </section>
-      )}
+      {/* ── Flaw Stats + Tactic motifs + ELO Ratings: per-TC sections sharing one TC switch ── */}
+      <LibraryStatsSections filters={filters} isGuest={isGuest}>
+        {eloRatingsSection}
+      </LibraryStatsSections>
 
       {/* ── Results Breakdown (Results by Time Control + Results by Color) ── */}
       <section data-testid="results-breakdown-section">

@@ -14,7 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- The Library Stats ELO rating charts now keep time controls that are not selected in the filter in the legend, switched off, so you can switch them back on by clicking them.
+- The Library Stats ELO rating charts now follow the time control switch, which stays pinned while you scroll to them. They start on the selected time control, and the others stay in the legend, switched off, so you can click to bring them back.
 - Train's spaced repetition now tests whether you can still find the move rather than whether you remember it: a missed puzzle comes back after 4 days instead of next session, a solved one after 10 days, and two correct solves in a row master it (was three). A puzzle missed 4 times in total is set aside (was 6). Puzzles already in progress move to the new spacing, never earlier than planned.
 - Peer rankings on Endgame Stats and in "Out of the opening" now use your most recent 1,000 games per time control (was 3,000), the same depth as the benchmarked players you are compared with, so recent improvement shows up sooner.
 - In the Maia chart, when the best move is the only good one, its line changes color with rating: violet (gem) where at most 30% of players at that rating would find it, blue (great) up to 70%, green (best) above. The tooltip shows the tier at the hovered rating.
