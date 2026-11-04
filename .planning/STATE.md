@@ -4,8 +4,8 @@ milestone: v2.27
 current_phase: 244
 status: completed
 stopped_at: Phase 244 complete — all phases complete
-last_updated: "2026-11-03T06:28:15.692Z"
-state_head: 20b2a15a4dbfaa6b6ca418d3cc82567ec4d22bff
+last_updated: "2026-11-04T11:31:14.622Z"
+state_head: fe12b59b151c0b8af4700df771d40bd4c92e14d5
 progress:
   total_phases: 3
   completed_phases: 103
@@ -1075,6 +1075,7 @@ None active.
 | 261031-sly | Lower ranked-sample cap from 3000 to 1000 games per TC | 2026-10-31 | f4c0b154b | [261031-sly-lower-ranked-sample-cap-from-3000-to-100](./quick/261031-sly-lower-ranked-sample-cap-from-3000-to-100/) |
 | 261103-9xl | Per-user herring serve order with phase round-robin | 2026-11-03 | 340ff459f | [261103-9xl-per-user-herring-serve-order-with-phase-](./quick/261103-9xl-per-user-herring-serve-order-with-phase-/) |
 | 261103-aad | Herring opening ply floor (move 10+) and winnability band | 2026-11-03 | 20b2a15a4 | [261103-aad-herring-opening-ply-floor-and-winnabilit](./quick/261103-aad-herring-opening-ply-floor-and-winnabilit/) |
+| 158 | ELO rating charts: filter-disabled time controls start hidden, stay toggleable in the legend | 2026-11-04 | fe12b59b1 | — |
 
 ## Deferred Items
 
