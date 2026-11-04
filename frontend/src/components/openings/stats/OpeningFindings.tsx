@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { FindingCard } from '@/components/openings/stats/FindingCard';
+import { PlayedBeforeToggle } from '@/components/openings/stats/PlayedBeforeToggle';
 import { SECTION_HEADING_CLASS } from '@/components/openings/stats/headingClasses';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
@@ -12,6 +13,8 @@ import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/ins
 
 /** Cards shown per section before the "N more" toggle (two rows of the lg 2-column grid). */
 const INITIAL_VISIBLE_PER_SECTION = 4;
+/** Same grid as the repertoire cards (two columns from lg), shared by the main and Played before grids. */
+const FINDING_GRID_CLASS = 'grid grid-cols-1 items-start gap-3 lg:grid-cols-2';
 const SKELETON_SECTION_COUNT = 2;
 const MERGED_EMPTY_TITLE = 'Moves that Stand Out';
 const ZONE_DIVIDER_LABEL = 'Move insights';
@@ -144,8 +147,7 @@ function FindingCardGrid({
   const hiddenCount = findings.length - INITIAL_VISIBLE_PER_SECTION;
   return (
     <>
-      {/* Same grid as the repertoire cards (two columns from lg) now that both share one layout. */}
-      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2" data-testid={`${testId}-list`}>
+      <div className={FINDING_GRID_CLASS} data-testid={`${testId}-list`}>
         {visibleFindings.map((finding, i) => (
           <FindingCard
             key={i}
@@ -166,6 +168,61 @@ function FindingCardGrid({
         />
       )}
     </>
+  );
+}
+
+/**
+ * A section's stale findings (is_current false) behind a "Played before (n)" toggle, all of
+ * them once open (the backend caps them at 10, so no "N more" here). Opens by itself when the
+ * section has no current findings.
+ */
+function PlayedBeforeGroup({
+  findings,
+  testId,
+  autoExpand,
+  onOpenMoves,
+  onOpenGames,
+}: {
+  findings: OpeningInsightFinding[];
+  testId: string;
+  autoExpand: boolean;
+  onOpenMoves: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
+}) {
+  // Null until the user clicks: the open state then follows autoExpand, which stays reactive
+  // when the colour switch or a filter change swaps the data (no remount on colour switch), and
+  // auto-opening never tracks (D-03).
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const expanded = userExpanded ?? autoExpand;
+  const handleToggle = () => {
+    const next = !expanded;
+    // Discovery only: track the expand, never the collapse.
+    if (next) trackFeature('panel-open', { target: 'opening-insights-played-before' });
+    setUserExpanded(next);
+  };
+  const groupTestId = `${testId}-played-before`;
+  return (
+    <div className="space-y-2" data-testid={groupTestId}>
+      <PlayedBeforeToggle
+        count={findings.length}
+        expanded={expanded}
+        onToggle={handleToggle}
+        testId={`${groupTestId}-toggle`}
+      />
+      {expanded && (
+        <div className={FINDING_GRID_CLASS} data-testid={`${groupTestId}-list`}>
+          {findings.map((finding, i) => (
+            <FindingCard
+              key={i}
+              finding={finding}
+              testId={`${groupTestId}-card-${i}`}
+              onOpenMoves={onOpenMoves}
+              onOpenGames={onOpenGames}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -196,6 +253,17 @@ function SectionHeading({ title, intro }: { title: string; intro: string }) {
   );
 }
 
+/** The line shown instead of a section's grid when it has no current findings. */
+function SectionEmptyLine({ testId, color, hasStale }: { testId: string; color: FindingColor; hasStale: boolean }) {
+  const scope = hasStale ? ' in your current repertoire' : '';
+  return (
+    <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
+      Nothing stands out as {colorLabel(color)}
+      {scope} yet.
+    </p>
+  );
+}
+
 function FindingsSubsection({
   meta,
   color,
@@ -210,24 +278,33 @@ function FindingsSubsection({
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
   const testId = `opening-findings-${meta.kind}`;
+  const current = cards.filter((finding) => finding.is_current);
+  const stale = cards.filter((finding) => !finding.is_current);
   const body =
-    cards.length > 0 ? (
+    current.length > 0 ? (
       <FindingCardGrid
-        findings={cards}
+        findings={current}
         kind={meta.kind}
         testId={testId}
         onOpenMoves={onOpenMoves}
         onOpenGames={onOpenGames}
       />
     ) : (
-      <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
-        Nothing stands out as {colorLabel(color)} yet.
-      </p>
+      <SectionEmptyLine testId={testId} color={color} hasStale={stale.length > 0} />
     );
   return (
     <div className="space-y-3" data-testid={testId}>
       <SectionHeading title={meta.title} intro={meta.intro} />
       {body}
+      {stale.length > 0 && (
+        <PlayedBeforeGroup
+          findings={stale}
+          testId={testId}
+          autoExpand={current.length === 0}
+          onOpenMoves={onOpenMoves}
+          onOpenGames={onOpenGames}
+        />
+      )}
     </div>
   );
 }
@@ -257,6 +334,7 @@ function FindingsSections({
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
   const sections = KINDS.map((meta) => ({ meta, cards: sectionCards(data, color, meta.kind) }));
+  // Each list holds both the current and the stale group, so an empty list means neither.
   if (sections.every((section) => section.cards.length === 0)) return <MergedEmpty color={color} />;
   return (
     <div className="flex flex-col gap-6">
@@ -283,10 +361,13 @@ interface OpeningFindingsProps {
 
 /**
  * Findings for the selected colour below the repertoire cards: "Moves that Work" and
- * "Moves that Cost You", each the backend's top 10 by Wilson bound, any confidence (D-38): the
- * first four cards, the rest behind an "N more" toggle (UAT round 14, main's pattern). Each card's colour carries the 95% verdict, so a finding that could
- * still be chance draws blue. A section without cards says so in one line, and both sections
- * empty merge into one block.
+ * "Moves that Cost You", each the backend's top 10 current findings by Wilson bound, any
+ * confidence (D-38): the first four cards, the rest behind an "N more" toggle (UAT round 14,
+ * main's pattern). Up to 10 stale findings sit in a collapsed "Played before (n)" group under
+ * each section, opened from the start when the section has no current findings (quick
+ * 261104-hxl). Each card's colour carries the 95% verdict, so a finding that could still be
+ * chance draws blue. A section without current cards says so in one line, and both sections
+ * fully empty merge into one block.
  */
 export function OpeningFindings({ color, debouncedFilters, onOpenMoves, onOpenGames }: OpeningFindingsProps) {
   const { data, isLoading, isError, refetch } = useOpeningInsights({

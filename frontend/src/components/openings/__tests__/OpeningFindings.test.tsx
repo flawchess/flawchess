@@ -2,7 +2,8 @@
 /**
  * OpeningFindings: the "N more" toggle (4 cards first) and its single Umami event, the absence
  * of the retired "Not clear yet" list (D-34), the empty states, the combined verdict sentence,
- * the "Not played recently" indicator (D-27) and the Moves / Games deep-link callbacks.
+ * the "Not played recently" indicator (D-27), the per-section "Played before (n)" group that
+ * holds stale findings (quick 261104-hxl) and the Moves / Games deep-link callbacks.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -207,9 +208,12 @@ describe('OpeningFindings cards and N more', () => {
     );
     expect(screen.getByTestId('opening-findings-strength-card-0-last-played').textContent).toMatch(/ ago$/);
     expect(screen.queryByTestId('opening-findings-strength-card-0-stale-icon')).toBeNull();
-    expect(screen.getByTestId('opening-findings-strength-card-1-stale-icon').getAttribute('aria-label')).toBe(
-      'Not played recently',
-    );
+    // The older finding lives in the collapsed Played before group, not the main grid.
+    expect(screen.queryByTestId('opening-findings-strength-card-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('opening-findings-strength-played-before-toggle'));
+    expect(
+      screen.getByTestId('opening-findings-strength-played-before-card-0-stale-icon').getAttribute('aria-label'),
+    ).toBe('Not played recently');
   });
 
   it('calls the Moves and Games callbacks with the finding', () => {
@@ -231,6 +235,92 @@ describe('OpeningFindings cards and N more', () => {
     );
     expect(screen.getByTestId('opening-findings-weakness-card-0-eval-none')).toBeTruthy();
     expect(screen.queryByTestId('opening-findings-weakness-card-0-eval-bar')).toBeNull();
+  });
+});
+
+describe('OpeningFindings Played before (stale findings)', () => {
+  const current = (n: number) =>
+    Array.from({ length: n }, (_, i) => makeFinding({ n_games: 50 + i, candidate_move_san: `c${i}` }));
+  const stale = (n: number, overrides: Partial<OpeningInsightFinding> = {}) =>
+    Array.from({ length: n }, (_, i) =>
+      makeFinding({ n_games: 40 + i, candidate_move_san: `s${i}`, is_current: false, ...overrides }),
+    );
+
+  it('keeps stale findings out of the main grid behind a collapsed "Played before (n)" toggle', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [...current(2), ...stale(3)] }));
+    expect(screen.queryByTestId('opening-findings-weakness-card-0')).not.toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-card-1')).not.toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-card-2')).toBeNull();
+    const toggle = screen.getByTestId('opening-findings-weakness-played-before-toggle');
+    expect(toggle.textContent).toBe('Played before (3)');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('opening-findings-weakness-played-before-card-0')).toBeNull();
+  });
+
+  it('never counts stale findings toward "N more"', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [...current(4), ...stale(3)] }));
+    expect(screen.queryByTestId('opening-findings-weakness-btn-more')).toBeNull();
+  });
+
+  it('shows every stale card on expand, with no nested N more, and tracks the expand once', () => {
+    renderFindings(emptyResponse({ white_weaknesses: [...current(1), ...stale(10)] }));
+    const toggle = screen.getByTestId('opening-findings-weakness-played-before-toggle');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    for (let i = 0; i < 10; i++) {
+      expect(screen.queryByTestId(`opening-findings-weakness-played-before-card-${i}`)).not.toBeNull();
+    }
+    expect(screen.getByTestId('opening-findings-weakness-played-before-list').className).toContain('lg:grid-cols-2');
+    expect(screen.queryByTestId('opening-findings-weakness-played-before-btn-more')).toBeNull();
+    expect(panelOpenTargets()).toEqual(['opening-insights-played-before']);
+
+    // Collapsing never tracks.
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('opening-findings-weakness-played-before-card-0')).toBeNull();
+    expect(panelOpenTargets()).toEqual(['opening-insights-played-before']);
+  });
+
+  it('keeps the archive icon on stale cards in the group and none on current cards', () => {
+    renderFindings(
+      emptyResponse({
+        white_strengths: [
+          ...current(1).map((f) => ({ ...f, classification: 'strength' as const })),
+          ...stale(1, { classification: 'strength' }),
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByTestId('opening-findings-strength-played-before-toggle'));
+    expect(
+      screen.getByTestId('opening-findings-strength-played-before-card-0-stale-icon').getAttribute('aria-label'),
+    ).toBe('Not played recently');
+    expect(screen.queryByTestId('opening-findings-strength-card-0-stale-icon')).toBeNull();
+  });
+
+  it('opens the group from the start when a section has only stale findings, without tracking', () => {
+    renderFindings(emptyResponse({ white_weaknesses: stale(2) }));
+    expect(screen.getByTestId('opening-findings-weakness-empty').textContent).toBe(
+      'Nothing stands out as White in your current repertoire yet.',
+    );
+    const toggle = screen.getByTestId('opening-findings-weakness-played-before-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.queryByTestId('opening-findings-weakness-played-before-card-0')).not.toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-played-before-card-1')).not.toBeNull();
+    expect(panelOpenTargets()).toEqual([]);
+  });
+
+  it('shows both sections, not the merged empty block, when one section has only stale findings', () => {
+    renderFindings(emptyResponse({ white_weaknesses: stale(2) }));
+    expect(screen.queryByTestId('opening-findings-empty')).toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness')).not.toBeNull();
+    expect(screen.queryByTestId('opening-findings-strength')).not.toBeNull();
+    expect(screen.getByTestId('opening-findings-strength-empty').textContent).toBe('Nothing stands out as White yet.');
+  });
+
+  it('renders no toggle for a section without stale findings', () => {
+    renderFindings(emptyResponse({ white_weaknesses: current(3) }));
+    expect(screen.queryByTestId('opening-findings-weakness-played-before-toggle')).toBeNull();
+    expect(screen.queryByTestId('opening-findings-weakness-played-before')).toBeNull();
   });
 });
 

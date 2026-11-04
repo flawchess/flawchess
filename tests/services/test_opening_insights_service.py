@@ -33,7 +33,8 @@ from app.services.opening_insights_constants import (
 from app.services.score_confidence import wilson_bounds
 from app.services.repertoire_recency import CurrentCutoffs
 from app.services.opening_insights_service import (
-    FINDINGS_CARD_CAP,
+    CURRENT_FINDINGS_CAP,
+    STALE_FINDINGS_CAP,
     _partition_section,
     _TransitionRow,
     _classify_row,
@@ -1516,18 +1517,50 @@ def test_partition_keeps_every_confidence_in_wilson_order() -> None:
     assert _names(cards) == ["lo1", "med", "hi", "lo2"]
 
 
-def test_partition_caps_without_moving_current_findings_first() -> None:
-    """12 ranked findings -> the first 10 as ranked; an older one at the top stays there."""
+def test_partition_caps_current_independently_of_stale() -> None:
+    """3 stale findings ranked above 12 current ones -> 10 current, then the 3 stale.
+
+    Quick 261104-hxl: stale findings no longer crowd current ones out of a shared cap.
+    """
     ranked = [
-        _finding_for("old_a", confidence="high", is_current=False),
-        _finding_for("old_b", confidence="medium", is_current=False, p_value=0.04),
-        *(_finding_for(f"cur_{i}", confidence="low", p_value=0.2) for i in range(10)),
+        *(_finding_for(f"old_{i}", confidence="high", is_current=False) for i in range(3)),
+        *(_finding_for(f"cur_{i}", confidence="low", p_value=0.2) for i in range(12)),
     ]
 
     cards = _partition_section(ranked)
 
-    assert len(cards) == FINDINGS_CARD_CAP == 10
-    assert _names(cards) == ["old_a", "old_b", *(f"cur_{i}" for i in range(8))]
+    assert CURRENT_FINDINGS_CAP == 10
+    assert len(cards) == 13
+    assert _names(cards) == [*(f"cur_{i}" for i in range(10)), *(f"old_{i}" for i in range(3))]
+
+
+def test_partition_caps_stale_at_its_own_cap() -> None:
+    """2 current and 12 stale findings -> the 2 current, then the first 10 stale."""
+    ranked = [
+        *(_finding_for(f"old_{i}", confidence="medium", is_current=False) for i in range(12)),
+        *(_finding_for(f"cur_{i}", confidence="high") for i in range(2)),
+    ]
+
+    cards = _partition_section(ranked)
+
+    assert STALE_FINDINGS_CAP == 10
+    assert _names(cards) == ["cur_0", "cur_1", *(f"old_{i}" for i in range(10))]
+
+
+def test_partition_keeps_wilson_order_within_each_group() -> None:
+    """Interleaved input -> current group then stale group, ranked order kept inside each."""
+    ranked = [
+        _finding_for("old_a", confidence="high", is_current=False),
+        _finding_for("cur_a", confidence="high"),
+        _finding_for("old_b", confidence="low", is_current=False, p_value=0.3),
+        _finding_for("cur_b", confidence="medium", p_value=0.03),
+        _finding_for("old_c", confidence="medium", is_current=False, p_value=0.02),
+        _finding_for("cur_c", confidence="low", p_value=0.4),
+    ]
+
+    cards = _partition_section(ranked)
+
+    assert _names(cards) == ["cur_a", "cur_b", "cur_c", "old_a", "old_b", "old_c"]
 
 
 def test_partition_empty_section_stays_empty() -> None:
@@ -1582,11 +1615,11 @@ def _rows_with_n(
 async def test_card_list_is_capped_in_wilson_order_and_eval_runs_on_cards_only(
     mock_resolve_cutoffs: AsyncMock,
 ) -> None:
-    """12 rows at the same score (two older) -> the 10 largest by Wilson order, an older one
-    included (no current-first re-sort, D-38); the eval batch sees only those 10 hashes."""
+    """14 rows at the same score (two older) -> the 10 largest current rows, then both older
+    rows, each group capped on its own (quick 261104-hxl); the eval batch sees only those 12."""
     mock_resolve_cutoffs.return_value = CurrentCutoffs(white=CUTOFF, black=None)
-    sizes = [100 + 10 * i for i in range(12)]
-    played = [LONG_AGO, RECENT, LONG_AGO, *([RECENT] * 9)]
+    sizes = [100 + 10 * i for i in range(14)]
+    played = [LONG_AGO, RECENT, LONG_AGO, *([RECENT] * 11)]
     rows, openings = _rows_with_n(sizes, last_played_at=played)
     buckets: dict[int, tuple[Literal["low", "medium", "high"], float]] = {
         size: ("high", 0.001) if i % 2 == 0 else ("medium", 0.03) for i, size in enumerate(sizes)
@@ -1598,15 +1631,20 @@ async def test_card_list_is_capped_in_wilson_order_and_eval_runs_on_cards_only(
             rows=rows, openings_by_hash=openings, color="white", eval_calls=eval_calls
         )
 
-    assert len(response.white_weaknesses) == FINDINGS_CARD_CAP == 10
-    # Same score, so the Wilson upper bound falls with n: the two smallest rows are cut.
-    assert sorted(f.n_games for f in response.white_weaknesses) == sizes[2:]
-    assert [f.is_current for f in response.white_weaknesses].count(False) == 1
+    findings = response.white_weaknesses
+    assert len(findings) == CURRENT_FINDINGS_CAP + 2 == 12
+    # Same score, so the Wilson upper bound falls with n: the current group is the 10 largest
+    # current rows (sizes 110 and 130 are cut), listed first; the 2 stale rows follow.
+    current = [f for f in findings if f.is_current]
+    stale = [f for f in findings if not f.is_current]
+    assert findings == current + stale
+    assert [f.n_games for f in current] == sorted(sizes[4:], reverse=True)
+    assert [f.n_games for f in stale] == [120, 100]
     # Pitfall 8: enrichment must not touch the uncapped ranked list.
     assert len(eval_calls) == 1
     queried_hashes = set(eval_calls[0].kwargs["hashes"])
-    assert queried_hashes == {int(f.resulting_full_hash) for f in response.white_weaknesses}
-    assert len(queried_hashes) == FINDINGS_CARD_CAP
+    assert queried_hashes == {int(f.resulting_full_hash) for f in findings}
+    assert len(queried_hashes) == CURRENT_FINDINGS_CAP + 2
 
 
 @pytest.mark.asyncio

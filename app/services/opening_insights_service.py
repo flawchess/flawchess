@@ -4,7 +4,8 @@ Single public entry point: compute_insights(session, user_id, request).
 Pipeline: query_opening_transitions (per color) -> classify + severity ->
 attribute (deepest Opening / lineage walk / drop on no match) ->
 dedupe within color section and across continuations -> rank (Wilson 95%
-bound, direction-aware) -> top 10 per section in that order, any confidence (D-38);
+bound, direction-aware) -> top 10 current plus top 10 stale findings per section, each
+in that order, any confidence (D-38, quick 261104-hxl);
 the 95% gate decides each card's colour on the frontend, not whether it shows ->
 MG-entry eval on the card findings only.
 No precompute, no caching — partial-index-backed query keeps even
@@ -64,12 +65,16 @@ from app.services.score_confidence import (
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
 
-# Card findings per section (D-37, D-38): the top 10 by the direction-aware Wilson bound,
-# whatever their confidence. Gating cards at 95% (D-33) left "Moves that Cost You" empty for
-# about two thirds of prod user-colours with 20+ games (2026-10-18), so the gate now only
-# colours a card (frontend openingVerdict). How many show before the "N more" toggle is a
-# frontend concern (OpeningFindings INITIAL_VISIBLE_PER_SECTION).
-FINDINGS_CARD_CAP: int = 10
+# Card findings per section (D-37, D-38): the top findings by the direction-aware Wilson
+# bound, whatever their confidence. Gating cards at 95% (D-33) left "Moves that Cost You" empty
+# for about two thirds of prod user-colours with 20+ games (2026-10-18), so the gate now only
+# colours a card (frontend openingVerdict). Current-repertoire and stale findings are capped
+# separately: stale findings ranked above current ones crowded current ones out of a shared 10
+# (quick 261104-hxl, 2026-11-04, partially reverses D-38's no-current-first rule). The frontend
+# shows the stale group in a collapsed "Played before" group and still owns how many current
+# cards show before "N more" (OpeningFindings INITIAL_VISIBLE_PER_SECTION).
+CURRENT_FINDINGS_CAP: int = 10
+STALE_FINDINGS_CAP: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
 
@@ -843,15 +848,19 @@ def _row_to_finding(
 
 
 def _partition_section(ranked: list[OpeningInsightFinding]) -> list[OpeningInsightFinding]:
-    """The card findings of a ranked section: its first FINDINGS_CARD_CAP (D-38).
+    """The card findings of a ranked section: up to CURRENT_FINDINGS_CAP current findings
+    followed by up to STALE_FINDINGS_CAP stale ones (D-38, quick 261104-hxl).
 
-    No confidence gate and no current-first re-sort: the Wilson bound order from
-    _rank_section already mixes effect size and sample size, so the clearest findings lead
-    and a low-confidence one only shows when there is room. Findings outside the current
-    repertoire keep their place in that order (is_current=False only adds the card's
-    "Not played recently" icon).
+    No confidence gate and no re-sort: the Wilson bound order from _rank_section already
+    mixes effect size and sample size, so within each group the clearest findings lead and a
+    low-confidence one only shows when there is room. Capping the groups separately keeps
+    stale findings (is_current=False) from crowding current ones out; the frontend splits the
+    list on is_current and puts the stale group behind a collapsed "Played before" toggle.
+    The full ranked list is already in memory, so this needs no second fetch.
     """
-    return ranked[:FINDINGS_CARD_CAP]
+    current = [f for f in ranked if f.is_current]
+    stale = [f for f in ranked if not f.is_current]
+    return current[:CURRENT_FINDINGS_CAP] + stale[:STALE_FINDINGS_CAP]
 
 
 def _rank_sections(
@@ -950,9 +959,10 @@ async def _build_sections(
 ) -> dict[str, list[OpeningInsightFinding]]:
     """Stage 3: classify -> attribute -> dedupe -> rank -> partition -> enrich cards.
 
-    Builds the four sections (white/black x weaknesses/strengths), keeps the
-    top FINDINGS_CARD_CAP cards of each (D-38), then enriches ONLY the card
-    findings with MG-entry eval metrics (at most FINDINGS_CARD_CAP per section). Enriching
+    Builds the four sections (white/black x weaknesses/strengths), keeps the top
+    CURRENT_FINDINGS_CAP current and top STALE_FINDINGS_CAP stale cards of each (D-38,
+    quick 261104-hxl), then enriches ONLY the card findings with MG-entry eval metrics (at
+    most CURRENT_FINDINGS_CAP + STALE_FINDINGS_CAP per section). Enriching
     the uncapped ranked list measured 10.6 s for a heavy user (Pitfall 8). The eval batch
     awaits run sequentially per colour (AsyncSession is not safe for concurrent use).
     """

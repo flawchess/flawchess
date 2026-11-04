@@ -14,6 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Openings Stats: in "Moves that Work" and "Moves that Cost You", moves you have not played recently now sit in a collapsed "Played before" group under each list, so the up to 10 cards on top all come from your current repertoire.
 - The Library Stats ELO rating charts now follow the time control switch, which stays pinned while you scroll to them. They start on the selected time control, and the others stay in the legend, switched off, so you can click to bring them back.
 - Train's spaced repetition now tests whether you can still find the move rather than whether you remember it: a missed puzzle comes back after 4 days instead of next session, a solved one after 10 days, and two correct solves in a row master it (was three). A puzzle missed 4 times in total is set aside (was 6). Puzzles already in progress move to the new spacing, never earlier than planned.
 - Peer rankings on Endgame Stats and in "Out of the opening" now use your most recent 1,000 games per time control (was 3,000), the same depth as the benchmarked players you are compared with, so recent improvement shows up sooner.

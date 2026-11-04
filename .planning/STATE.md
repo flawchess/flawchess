@@ -4,8 +4,8 @@ milestone: v2.27
 current_phase: 244
 status: completed
 stopped_at: Phase 244 complete — all phases complete
-last_updated: "2026-11-04T11:31:14.622Z"
-state_head: fe12b59b151c0b8af4700df771d40bd4c92e14d5
+last_updated: "2026-11-04T12:06:54.626Z"
+state_head: 18de95f600d952b9592e448f725ba08850cbccc4
 progress:
   total_phases: 3
   completed_phases: 103
@@ -1076,6 +1076,7 @@ None active.
 | 261103-9xl | Per-user herring serve order with phase round-robin | 2026-11-03 | 340ff459f | [261103-9xl-per-user-herring-serve-order-with-phase-](./quick/261103-9xl-per-user-herring-serve-order-with-phase-/) |
 | 261103-aad | Herring opening ply floor (move 10+) and winnability band | 2026-11-03 | 20b2a15a4 | [261103-aad-herring-opening-ply-floor-and-winnabilit](./quick/261103-aad-herring-opening-ply-floor-and-winnabilit/) |
 | 158 | ELO rating charts: filter-disabled time controls start hidden, stay toggleable in the legend | 2026-11-04 | fe12b59b1 | — |
+| 261104-hxl | Hide stale moves in opening findings behind Played before collapsible | 2026-11-04 | 18de95f60 | [261104-hxl-hide-stale-moves-in-opening-findings-beh](./quick/261104-hxl-hide-stale-moves-in-opening-findings-beh/) |
 
 ## Deferred Items
 

@@ -106,8 +106,9 @@ class OpeningInsightFinding(BaseModel):
     # game has a NULL played_at.
     last_played_at: datetime.datetime | None = None
     # True when last_played_at is on or after the finding colour's current-repertoire
-    # cutoff (repertoire_recency, D-02/D-04). False adds the card's "Not played recently"
-    # archive icon; it does not change the card order.
+    # cutoff (repertoire_recency, D-02/D-04). False puts the card in the section's collapsed
+    # "Played before" group on the frontend (and still adds the "Not played recently" archive
+    # icon); the backend caps current and stale findings separately.
     is_current: bool = True
 
 
@@ -115,9 +116,10 @@ class OpeningInsightsResponse(BaseModel):
     """Per-section findings for the merged Openings Stats page, by color x classification.
 
     Four card lists (``white_weaknesses``, ``black_weaknesses``, ``white_strengths``,
-    ``black_strengths``) hold at most FINDINGS_CARD_CAP (10) findings each, the top of the
-    direction-aware Wilson bound order, any confidence (D-38): ``confidence`` decides the
-    card's colour, not whether it is listed. All lists are always present; empty ones are a
+    ``black_strengths``) each hold up to CURRENT_FINDINGS_CAP (10) current findings followed
+    by up to STALE_FINDINGS_CAP (10) stale ones, each group in direction-aware Wilson bound
+    order, any confidence (D-38, quick 261104-hxl): ``confidence`` decides the card's colour,
+    not whether it is listed. The frontend splits the groups on ``is_current``. All lists are always present; empty ones are a
     valid empty state. The per-colour eval baseline is not echoed: it is the fixed
     EVAL_BASELINE_PAWNS_* pair, mirrored by the frontend openingStatsZones constants
     (parity test in tests/services/test_opening_insights_arrow_consistency.py).

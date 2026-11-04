@@ -371,6 +371,7 @@ export const PANEL_TARGETS = [
   'train-schedule',
   'train-verdict-strip',
   'opening-insights-more',
+  'opening-insights-played-before',
   'opening-stats-more',
   'opening-row-expand',
   'tactic-motifs-more',
