@@ -4,8 +4,8 @@ milestone: v2.27
 current_phase: 244
 status: completed
 stopped_at: Phase 244 complete — all phases complete
-last_updated: "2026-11-04T12:06:54.626Z"
-state_head: 18de95f600d952b9592e448f725ba08850cbccc4
+last_updated: "2026-11-04T20:04:21.494Z"
+state_head: 282a8dd7d57ad078a713c500d31b42784bacce66
 progress:
   total_phases: 3
   completed_phases: 103
@@ -1077,6 +1077,7 @@ None active.
 | 261103-aad | Herring opening ply floor (move 10+) and winnability band | 2026-11-03 | 20b2a15a4 | [261103-aad-herring-opening-ply-floor-and-winnabilit](./quick/261103-aad-herring-opening-ply-floor-and-winnabilit/) |
 | 158 | ELO rating charts: filter-disabled time controls start hidden, stay toggleable in the legend | 2026-11-04 | fe12b59b1 | — |
 | 261104-hxl | Hide stale moves in opening findings behind Played before collapsible | 2026-11-04 | 18de95f60 | [261104-hxl-hide-stale-moves-in-opening-findings-beh](./quick/261104-hxl-hide-stale-moves-in-opening-findings-beh/) |
+| 261104-t65 | Analysis: PGN/FEN button becomes a menu with Import and Copy FEN | 2026-11-04 | 282a8dd7d | [261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe](./quick/261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe/) |
 
 ## Deferred Items
 
