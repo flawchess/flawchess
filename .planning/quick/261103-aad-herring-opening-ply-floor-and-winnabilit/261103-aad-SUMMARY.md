@@ -24,7 +24,14 @@ commit: 20b2a15a4
 Servable rows before → after the serve gates: opening 1,175 → 13, middlegame 1,181 → 1,094,
 endgame 1,171 → 1,071.
 
-## Pending (owner go-ahead)
+## Prod data follow-up (done 2026-11-03)
+
+Done: opening bucket regenerated with `--reset` (1,667 rows, all ply >= 20) before the
+release deploy (PR #453); the 289 middlegame/endgame rows outside the winnability band were
+deleted (`temp/herring-regen/retire_outside_band.py`) and both phases topped back up to 1,666.
+Servable after: opening 1,181, middlegame 1,184, endgame 1,185.
+
+Original plan:
 
 Regenerate the opening bucket on prod, ideally BEFORE deploying this commit so opening herrings
 never go missing (the currently deployed serve code serves new rows fine):

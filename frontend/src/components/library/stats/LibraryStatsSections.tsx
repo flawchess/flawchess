@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Cpu } from 'lucide-react';
 import { CoverageSignupButton } from '@/components/library/EvalCoverageBadge';
 import {
@@ -351,14 +352,17 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
 
 /**
  * The redesigned top of the Library Stats tab: Flaw Stats, You vs. your opponents, then
- * Tactic motifs. The sections share one remembered TC switch. The sidebar filters
- * flow into every query.
+ * Tactic motifs, then `children` (the ELO charts). The sections share one remembered TC
+ * switch. The sidebar filters flow into every query.
  *
  * The switch pins in a StickyTcBar scoped to this wrapper on desktop, so it unpins once the
- * sections scroll away (the rating and results sections below have no TC switch). Mobile
- * pins it in the page's sticky Filters bar instead (GlobalStats).
+ * sections scroll away (the results section below has no TC switch). Mobile pins it in the
+ * page's sticky Filters bar instead (GlobalStats).
  */
-export function LibraryStatsSections(props: LibraryStatsSectionsProps) {
+export function LibraryStatsSections({
+  children,
+  ...props
+}: LibraryStatsSectionsProps & { children?: ReactNode }) {
   return (
     <div>
       <StickyTcBar showOnMobile={false} testId="library-stats-tc-bar">
@@ -368,6 +372,7 @@ export function LibraryStatsSections(props: LibraryStatsSectionsProps) {
         <FlawStatsSection {...props} />
         <VsOpponentsSection filters={props.filters} />
         <TacticMotifsSection filters={props.filters} />
+        {children}
       </div>
     </div>
   );

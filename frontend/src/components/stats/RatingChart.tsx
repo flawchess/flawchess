@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ComposedChart, Line, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { onOff, trackFeature } from '@/lib/analytics';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
 import { VOLUME_BAR_COLOR } from '@/lib/theme';
@@ -12,14 +13,19 @@ interface RatingChartProps {
   data: RatingDataPoint[];
   platform: string;
   /**
-   * Which time-control series to render. null (default) = all four series.
-   * When the user disables a TC in the Stats-tab TC filter, that series is
-   * excluded from the chart. The legend click hide/show is layered on top.
+   * Which time-control series start visible. null (default) = all four.
+   * A TC left out starts hidden but keeps its legend entry, so it can be toggled
+   * back on. A change of this value resets the legend toggles.
    */
   enabledTimeControls?: TimeControl[] | null;
 }
 
 const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
+
+function filterDisabledTcs(enabledTimeControls: TimeControl[] | null | undefined): Set<string> {
+  if (enabledTimeControls == null) return new Set();
+  return new Set(TIME_CONTROLS.filter((tc) => !enabledTimeControls.includes(tc)));
+}
 
 const MOBILE_BREAKPOINT_PX = 768;
 
@@ -54,24 +60,30 @@ const chartConfig = {
 
 export function RatingChart({ data, platform, enabledTimeControls }: RatingChartProps) {
   const isMobile = useIsMobile();
-  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => filterDisabledTcs(enabledTimeControls));
+
+  // Re-derive the hidden set when the filter's value changes (adjusting state during
+  // render, not in an effect, so no frame paints the stale selection). Compared by
+  // value because unrelated filter changes must not wipe the user's legend toggles.
+  const filterKey = enabledTimeControls?.join(',') ?? null;
+  const [syncedFilterKey, setSyncedFilterKey] = useState(filterKey);
+  if (filterKey !== syncedFilterKey) {
+    setSyncedFilterKey(filterKey);
+    setHiddenKeys(filterDisabledTcs(enabledTimeControls));
+  }
 
   // TCs that actually have at least one data point. Omit empty series so a
   // never-played time control (e.g. bullet) shows no line and no legend entry.
+  // Drives both the <Line> series and the recharts legend payload (legend items
+  // derive from rendered <Line> children).
   const tcsWithData = useMemo(
     () => TIME_CONTROLS.filter((tc) => data.some((pt) => pt.time_control_bucket === tc)),
     [data],
   );
 
-  // Series to render: intersection of the filter set (all four when null) and the
-  // TCs that have data. Drives both the <Line> series and the recharts legend
-  // payload (legend items derive from rendered <Line> children).
-  const visibleTcs: TimeControl[] = useMemo(
-    () => (enabledTimeControls ?? TIME_CONTROLS).filter((tc) => tcsWithData.includes(tc)),
-    [enabledTimeControls, tcsWithData],
-  );
-
   const handleLegendClick = useCallback((dataKey: string) => {
+    // A hidden series becomes shown (on), a shown one hidden (off). No TC key.
+    trackFeature('toggle', { target: 'rating-chart-legend', value: onOff(hiddenKeys.has(dataKey)) });
     setHiddenKeys((prev) => {
       const next = new Set(prev);
       if (next.has(dataKey)) {
@@ -81,28 +93,27 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
       }
       return next;
     });
-  }, []);
+  }, [hiddenKeys]);
 
   const testId = `rating-chart-${platform.toLowerCase().replace(/[.\s]/g, '-')}`;
 
   // Group by date, keep last rating per (date, time_control_bucket).
   // Data is sorted by played_at (backend guarantees chronological order).
-  // The daily game-count bar sums game_count over the TCs that are rendered and
-  // not legend-hidden, so it always describes the lines on screen.
+  // The daily game-count bar sums game_count over the TCs that are not hidden, so
+  // it always describes the lines on screen.
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
     const map = new Map<string, Record<string, string | number>>();
     for (const pt of data) {
       const row = map.get(pt.date) ?? { date: pt.date, [GAMES_KEY]: 0 };
       row[pt.time_control_bucket] = pt.rating;
-      const tc = pt.time_control_bucket as TimeControl;
-      if (visibleTcs.includes(tc) && !hiddenKeys.has(tc)) {
+      if (!hiddenKeys.has(pt.time_control_bucket)) {
         row[GAMES_KEY] = (row[GAMES_KEY] as number) + pt.game_count;
       }
       map.set(pt.date, row);
     }
     return Array.from(map.values());
-  }, [data, visibleTcs, hiddenKeys]);
+  }, [data, hiddenKeys]);
 
   const barMax = useMemo(
     () => Math.max(1, ...chartData.map((row) => row[GAMES_KEY] as number)),
@@ -119,10 +130,8 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
   const sortedGapDates = useMemo(() => [...allDates].sort(), [allDates]);
 
   const { yDomain, yTicks } = useMemo(() => {
-    // visibleTcs already excludes empty series and filter-disabled TCs.
-    // hiddenKeys applies the legend click hide/show on top so hidden series
-    // don't inflate the Y-axis scale.
-    const effectiveTcs = visibleTcs.filter((tc) => !hiddenKeys.has(tc));
+    // Hidden series (filter-disabled or legend-toggled) don't inflate the Y-axis scale.
+    const effectiveTcs = tcsWithData.filter((tc) => !hiddenKeys.has(tc));
     if (effectiveTcs.length === 0 || chartData.length === 0) {
       return { yDomain: ['auto', 'auto'] as [string, string], yTicks: undefined };
     }
@@ -173,13 +182,13 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
       yDomain: [domainMin, domainMax] as [number, number],
       yTicks: ticks,
     };
-  }, [chartData, hiddenKeys, visibleTcs]);
+  }, [chartData, hiddenKeys, tcsWithData]);
 
-  // Narrow the chart config to the visible series so the legend and the generated
+  // Narrow the chart config to the series with data so the legend and the generated
   // --color-* CSS vars never reference an omitted/empty series.
   const legendConfig = useMemo(
-    () => Object.fromEntries(visibleTcs.map((tc) => [tc, chartConfig[tc as keyof typeof chartConfig]])),
-    [visibleTcs],
+    () => Object.fromEntries(tcsWithData.map((tc) => [tc, chartConfig[tc as keyof typeof chartConfig]])),
+    [tcsWithData],
   );
 
   if (data.length === 0) {
@@ -259,7 +268,7 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
           legendType="none"
           isAnimationActive={false}
         />
-        {visibleTcs.map((tc) => (
+        {tcsWithData.map((tc) => (
           <Line
             key={tc}
             yAxisId="elo"

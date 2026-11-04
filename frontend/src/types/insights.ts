@@ -101,7 +101,8 @@ export interface OpeningInsightFinding {
   // played_at. Drives the finding card's relative "last played" date.
   last_played_at?: string | null;
   // True when last_played_at is on or after the colour's current-repertoire cutoff.
-  // False adds the "Not played recently" archive icon; the card order is unchanged.
+  // False means the card shows in the section's collapsed "Played before" group (with the
+  // "Not played recently" archive icon); the backend lists current findings first.
   is_current: boolean;
 }
 

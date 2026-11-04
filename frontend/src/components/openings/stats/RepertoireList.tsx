@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { ChevronDown, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { FilterState } from '@/components/filters/FilterPanel';
+import { PlayedBeforeToggle } from '@/components/openings/stats/PlayedBeforeToggle';
 import { RepertoireCard } from '@/components/openings/stats/RepertoireCard';
 import type { RepertoireRowModel } from '@/pages/openings/useRepertoireRows';
 import { trackFeature } from '@/lib/analytics';
 import { REPERTOIRE_MIN_GAMES_FOR_VERDICT } from '@/lib/openingVerdict';
-import { cn } from '@/lib/utils';
 import { REPERTOIRE_HEADING_CLASS } from './headingClasses';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 
@@ -17,7 +17,6 @@ const COPY_METRICS_INTRO =
   "Score counts a draw as half a win. Eval is the engine's view when the middlegame starts.";
 const COPY_PLAYED_BEFORE_POINTER = 'Older ones sit under Played before.';
 
-const GROUP_HEADING_CLASS = 'text-sm font-semibold uppercase tracking-wide text-muted-foreground';
 /** One column on phones and tablets, two from lg. items-start: an open chart never stretches its neighbour. */
 const CARD_GRID_CLASS = 'grid grid-cols-1 items-start gap-3 lg:grid-cols-2';
 
@@ -48,38 +47,6 @@ function formatCutoffDate(iso: string): string {
     month: 'short',
     year: 'numeric',
   });
-}
-
-function PlayedBeforeToggle({
-  count,
-  hint,
-  expanded,
-  onToggle,
-}: {
-  count: number;
-  hint: string;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        GROUP_HEADING_CLASS,
-        'flex w-full flex-wrap items-center gap-x-2 text-left transition-colors hover:text-foreground',
-      )}
-      aria-expanded={expanded}
-      onClick={onToggle}
-      data-testid="repertoire-played-before-toggle"
-    >
-      <span>Played before ({count})</span>
-      {hint && <span className="font-normal normal-case tracking-normal">{hint}</span>}
-      <ChevronDown
-        className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')}
-        aria-hidden="true"
-      />
-    </button>
-  );
 }
 
 function Footer({
@@ -218,6 +185,7 @@ export function RepertoireList({
             hint={hint}
             expanded={pastExpanded}
             onToggle={handleTogglePast}
+            testId="repertoire-played-before-toggle"
           />
           {pastExpanded && renderGroup(visiblePast)}
         </div>
