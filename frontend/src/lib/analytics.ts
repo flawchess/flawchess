@@ -351,6 +351,7 @@ export const TOGGLE_TARGETS = [
   'engine-flawchess',
   'elo-timeline-legend',
   'flaw-trend-legend',
+  'rating-chart-legend',
   ...IMPORT_TC_TOGGLE_TARGETS,
   ...TRAIN_DAY_TOGGLE_TARGETS,
   'train-reminder',

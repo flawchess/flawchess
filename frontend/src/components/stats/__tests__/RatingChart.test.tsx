@@ -6,11 +6,11 @@
  *    gaps, no-op for gap-free fixtures, and out-of-order date handling.
  *
  * 2. Empty-series omission: series and legend entries for TCs
- *    with no data points are omitted; filter prop (enabledTimeControls) still wins
- *    even when data for the filtered TC exists.
+ *    with no data points are omitted; a filter-disabled TC (enabledTimeControls)
+ *    with data starts hidden even though its legend entry stays.
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
 
@@ -154,7 +154,7 @@ describe('RatingChart empty-series omission', () => {
     expect(lines.length).toBe(2);
   });
 
-  it('filter prop wins: bullet data present but enabledTimeControls=["blitz"] omits bullet Line', () => {
+  it('filter prop hides by default: bullet data present but enabledTimeControls=["blitz"] draws no bullet Line', () => {
     const { container } = render(
       <RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
     );
@@ -191,6 +191,70 @@ function barHeights(container: HTMLElement): number[] {
     Number(el.getAttribute('height')),
   );
 }
+
+// ── Sticky filter vs legend toggles ────────────────────────
+
+describe('RatingChart filter-disabled time controls', () => {
+  function lineCount(container: HTMLElement): number {
+    return container.querySelectorAll('.recharts-line').length;
+  }
+
+  it('keeps legend entries for filter-disabled TCs that have data', () => {
+    render(<RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />);
+    for (const label of ['Bullet', 'Blitz', 'Rapid', 'Classic']) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+  });
+
+  it('marks only filter-disabled TCs as hidden in the legend', () => {
+    render(<RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />);
+    expect(screen.getByText('Bullet').parentElement?.className).toContain('line-through');
+    expect(screen.getByText('Blitz').parentElement?.className).not.toContain('line-through');
+  });
+
+  it('shows a filter-disabled TC when its legend entry is clicked, and hides it again', () => {
+    const { container } = render(
+      <RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
+    );
+    expect(lineCount(container)).toBe(1);
+    fireEvent.click(screen.getByText('Bullet'));
+    expect(lineCount(container)).toBe(2);
+    fireEvent.click(screen.getByText('Bullet'));
+    expect(lineCount(container)).toBe(1);
+  });
+
+  it('counts a toggled-on TC in the daily game-count bars', () => {
+    const { container } = render(
+      <RatingChart data={VOLUME_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
+    );
+    fireEvent.click(screen.getByText('Bullet'));
+    const [day1, day2] = barHeights(container);
+    expect(day1).toBeGreaterThan(0);
+    expect(day1).toBeCloseTo(day2 ?? -1);
+  });
+
+  it('resets legend toggles when the filter value changes', () => {
+    const { container, rerender } = render(
+      <RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
+    );
+    fireEvent.click(screen.getByText('Bullet'));
+    expect(lineCount(container)).toBe(2);
+    rerender(<RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['rapid']} />);
+    expect(lineCount(container)).toBe(1);
+    expect(screen.getByText('Blitz').parentElement?.className).toContain('line-through');
+    expect(screen.getByText('Rapid').parentElement?.className).not.toContain('line-through');
+  });
+
+  it('keeps legend toggles when the filter value is unchanged across renders', () => {
+    const { container, rerender } = render(
+      <RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
+    );
+    fireEvent.click(screen.getByText('Bullet'));
+    // A new array with the same value, as an unrelated filter change could produce.
+    rerender(<RatingChart data={ALL_TC_DATA} platform="chess.com" enabledTimeControls={['blitz']} />);
+    expect(lineCount(container)).toBe(2);
+  });
+});
 
 describe('RatingChart daily game-count bars', () => {
   it('sums game_count across all visible TCs per day', () => {
