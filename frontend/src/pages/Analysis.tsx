@@ -2185,7 +2185,7 @@ export default function Analysis() {
   // desktop; the whole flow must work at 375px). Rendered
   // unconditionally, including ?game_id= game mode. `<MoveListHeaderContent>`
   // is extracted to src/components/analysis/AnalysisTabs.tsx.
-  const moveListHeaderContent = <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} />;
+  const moveListHeaderContent = <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} />;
 
   // The mobile "Moves" tab content's remount key — see MovesTab's own doc comment
   // (AnalysisTabs.tsx) for the bot-game live-analysis remount bug this fixes.
@@ -2694,7 +2694,7 @@ export default function Analysis() {
                 referenced in the mobile/mid Eval tab via mobileEngineLines; movesCard is
                 desktop-only (mid/mobile show the move tree in the Moves tab). */}
             <StockfishCard {...stockfishCardProps} />
-            <MovesCard onOpenPasteModal={() => setPasteModalOpen(true)} variationTreeProps={movesCardVariationTreeProps} />
+            <MovesCard onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} variationTreeProps={movesCardVariationTreeProps} />
             </div>
 
             {/* Invisible spacer mirroring the board column's BOTTOM player bar so the

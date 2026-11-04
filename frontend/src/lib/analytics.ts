@@ -358,7 +358,15 @@ export const TOGGLE_TARGETS = [
 ] as const;
 type ToggleTarget = (typeof TOGGLE_TARGETS)[number];
 
-export const BOARD_TOOL_TARGETS = ['flip', 'paste-open', 'paste-load', 'line-expand', 'line-delete', 'elo-reset'] as const;
+export const BOARD_TOOL_TARGETS = [
+  'flip',
+  'paste-open',
+  'paste-load',
+  'fen-copy',
+  'line-expand',
+  'line-delete',
+  'elo-reset',
+] as const;
 type BoardToolTarget = (typeof BOARD_TOOL_TARGETS)[number];
 
 export const PANEL_TARGETS = [

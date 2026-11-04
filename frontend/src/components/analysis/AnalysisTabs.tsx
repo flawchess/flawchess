@@ -1,7 +1,9 @@
 import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react';
-import { ArrowLeftRight, ChartNoAxesColumn, ChessKnight, ClipboardPaste, Cpu, User } from 'lucide-react';
+import { ArrowLeftRight, ChartNoAxesColumn, ChessKnight, ChevronDown, ClipboardPaste, Copy, Cpu, User } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { VariationTree } from '@/components/analysis/VariationTree';
@@ -489,30 +491,55 @@ export function FlawChessCard({
 
 export type MoveListHeaderContentProps = {
   onOpenPasteModal: () => void;
+  /** Full FEN of the position shown on the board (side to move, castling, ep, counters). */
+  fen: string;
 };
 
+async function copyFenToClipboard(fen: string): Promise<void> {
+  trackFeature('board-tool', { target: 'fen-copy' });
+  try {
+    await navigator.clipboard.writeText(fen);
+    toast.success('FEN copied');
+  } catch {
+    // Expected failure (clipboard permission denied, insecure context, or no
+    // Clipboard API at all): tell the user, don't report to Sentry.
+    toast.error('Could not copy FEN to the clipboard');
+  }
+}
+
 // Move-list header row content: shared between the
-// mobile/mid MovesTab header and the desktop MovesCard CardHeader — the Paste
-// trigger reaches every layout, not just desktop (the whole flow must work at
-// 375px). Rendered unconditionally, including ?game_id= game mode.
-export function MoveListHeaderContent({ onOpenPasteModal }: MoveListHeaderContentProps): ReactElement {
+// mobile/mid MovesTab header and the desktop MovesCard CardHeader — the PGN/FEN
+// menu (import or copy FEN) reaches every layout, not just desktop (the whole
+// flow must work at 375px). Rendered unconditionally, including ?game_id= game mode.
+export function MoveListHeaderContent({ onOpenPasteModal, fen }: MoveListHeaderContentProps): ReactElement {
   return (
     <>
       <ArrowLeftRight className="h-4 w-4" aria-hidden />
       Moves
-      <Button
-        variant="ghost"
-        size="default"
-        className="ml-auto gap-1"
-        data-testid="analysis-btn-paste"
-        onClick={() => {
-          onOpenPasteModal();
-          trackFeature('board-tool', { target: 'paste-open' });
-        }}
-      >
-        <ClipboardPaste className="h-4 w-4" aria-hidden="true" />
-        PGN/FEN
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="default" className="ml-auto gap-1" data-testid="analysis-btn-paste">
+            PGN/FEN
+            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" data-testid="analysis-pgn-fen-menu">
+          <DropdownMenuItem
+            data-testid="analysis-menu-import"
+            onSelect={() => {
+              onOpenPasteModal();
+              trackFeature('board-tool', { target: 'paste-open' });
+            }}
+          >
+            <ClipboardPaste aria-hidden="true" />
+            Import PGN/FEN
+          </DropdownMenuItem>
+          <DropdownMenuItem data-testid="analysis-menu-copy-fen" onSelect={() => void copyFenToClipboard(fen)}>
+            <Copy aria-hidden="true" />
+            Copy FEN
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 }
