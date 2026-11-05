@@ -294,7 +294,9 @@ reuse map in SEED-208.
 - **Contextual bar:** under the move list on desktop, directly above the mobile footer on mobile (the footer is
   at its 5-column limit on a 360px phone). Shown only when the current node is a flaw ply or inside that flaw's
   Explain line.
-- **Scope:** every flaw including inaccuracies, both sides, with or without a tactic motif.
+- **Scope:** every mistake and blunder, both sides, with or without a tactic motif. Inaccuracies are out
+  (no `game_flaws` row, tactic-lines 404s; 245-CONTEXT D-08). Null PV falls back to the other line, and the
+  bar is hidden when neither exists (D-09/D-10).
 - **Direction rule (same as the tactic motif badges):** user's own flaw opens the MISSED PV forking at ply-1;
   opponent's flaw opens the ALLOWED PV forking at the flaw ply.
 - **Behaviour:** Explain grafts the line and plays its first move immediately; Back/Forward step through it
