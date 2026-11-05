@@ -8,15 +8,20 @@
  * stop when there's no data yet.
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { createElement, type ReactNode } from 'react';
+import { renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { libraryApi } from '@/api/client';
 import {
   libraryGamePollInterval,
   LIBRARY_GAME_POLL_TIMEOUT_MS,
   buildLibraryParams,
+  useTacticLines,
 } from '../useLibrary';
 import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
-import type { GameFlawCard } from '@/types/library';
+import type { GameFlawCard, TacticLinesResponse } from '@/types/library';
 
 function makeCard(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
   return {
@@ -113,5 +118,73 @@ describe('buildLibraryParams — has_gem / has_great', () => {
     const params = buildLibraryParams(DEFAULT_FILTERS, [], [], true, true);
     expect(params.has_gem).toBe(true);
     expect(params.has_great).toBe(true);
+  });
+});
+
+describe('useTacticLines', () => {
+  const FIXTURE: TacticLinesResponse = {
+    missed_moves: ['Nf3', 'Nc6'],
+    missed_depth: 2,
+    missed_tactic_ply_index: 1,
+    missed_motif: 'fork',
+    missed_eval_cp: null,
+    missed_eval_mate: null,
+    allowed_moves: null,
+    allowed_depth: null,
+    allowed_tactic_ply_index: null,
+    allowed_motif: null,
+    allowed_eval_cp: null,
+    allowed_eval_mate: null,
+    position_fen: 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2',
+    flaw_move_san: 'Qh5',
+    best_move_uci: null,
+    flaw_ply: 2,
+    flaw_severity: 'blunder',
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function renderTacticLines(enabled: boolean) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    return renderHook(() => useTacticLines(1, 2, enabled), { wrapper });
+  }
+
+  it('maps an axios 404 to null data, not an error', async () => {
+    const notFound = Object.assign(new Error('404'), {
+      isAxiosError: true,
+      response: { status: 404, data: { detail: 'Flaw not found' } },
+    });
+    vi.spyOn(libraryApi, 'getTacticLines').mockRejectedValue(notFound);
+    const { result } = renderTacticLines(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+    expect(result.current.isError).toBe(false);
+  });
+
+  it('still surfaces a 500 as an error', async () => {
+    const serverError = Object.assign(new Error('500'), {
+      isAxiosError: true,
+      response: { status: 500, data: { detail: 'boom' } },
+    });
+    vi.spyOn(libraryApi, 'getTacticLines').mockRejectedValue(serverError);
+    const { result } = renderTacticLines(true);
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it('returns the response on success', async () => {
+    vi.spyOn(libraryApi, 'getTacticLines').mockResolvedValue(FIXTURE);
+    const { result } = renderTacticLines(true);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(FIXTURE);
+  });
+
+  it('does not fetch when disabled', () => {
+    const spy = vi.spyOn(libraryApi, 'getTacticLines').mockResolvedValue(FIXTURE);
+    renderTacticLines(false);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
