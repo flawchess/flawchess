@@ -1,6 +1,8 @@
 ---
 id: SEED-208
-status: dormant
+status: promoted
+promoted_to: Phase 245
+promoted: 2026-11-05
 planted: 2026-11-05
 planted_during: Phase 244 era, /gsd-explore session on chess.com Game Review's Explain/Best/Next bar
 trigger_when: owner plans the next Analysis-page / game-review UX phase (owner wants this planned as its own phase)

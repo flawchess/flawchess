@@ -282,6 +282,40 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 244-02-PLAN.md — Train copy, README, CHANGELOG, re-check reminder, full pre-merge gate
 
+### Phase 245: Analysis Contextual Explain Bar for Flaws (SEED-208)
+
+**Goal**: Give every flaw on the Analysis page a one-click guided explanation, like chess.com Game Review's
+Explain button, using the PVs FlawChess already stores. Today the better line and the refutation are reachable
+only through tactic motif chips, and most flaws carry no motif. Locked decisions, chess.com observations and
+reuse map in SEED-208.
+
+- **One Explain button, no coach prose, no LLM.** No "Best" button (duplicates Explain on the user's own flaws);
+  no "Next" button (`useFastForward` "Jump to next key moment" already does it).
+- **Contextual bar:** under the move list on desktop, directly above the mobile footer on mobile (the footer is
+  at its 5-column limit on a 360px phone). Shown only when the current node is a flaw ply or inside that flaw's
+  Explain line.
+- **Scope:** every flaw including inaccuracies, both sides, with or without a tactic motif.
+- **Direction rule (same as the tactic motif badges):** user's own flaw opens the MISSED PV forking at ply-1;
+  opponent's flaw opens the ALLOWED PV forking at the flaw ply.
+- **Behaviour:** Explain grafts the line and plays its first move immediately; Back/Forward step through it
+  (`goForward` already prefers the PV child); Explain becomes "Got it" while in the line, which closes it
+  (`deleteSubtree`) and returns to the flaw move. Leaving the line any other way keeps it open, like tactic chips.
+  Chip and Explain share the `flawKey(ply, orientation)` line key, so no duplicate sidelines.
+- **Reuse, no backend change expected:** `GET /library/flaws/{game_id}/{ply}/tactic-lines` (`missed_moves` /
+  `allowed_moves` for any `game_flaws` row), `handlePvChipClick`, `openLines`, the `pendingFlaw` graft effect,
+  `findFocusedFlaw` / `focusedPvLine` in `pages/Analysis.tsx`.
+- **Open for discuss/UI-SPEC:** bar visuals and copy (severity + move label?), icon, dark tokens, testids; Umami
+  event names; null-PV / final-ply handling (hide vs disabled with tooltip); interaction with the tactic-chip
+  deep-link auto-open (`tacticOrientationAtPly`).
+- **Out of scope:** free-play / what-if moves graded live by `useLiveMoveFlaw` (no stored PV).
+
+**Depends on**: nothing in flight
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 245, then /gsd-ui-phase 245 and /gsd-plan-phase 245)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
