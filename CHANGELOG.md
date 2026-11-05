@@ -10,7 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
-- Analysis: the PGN/FEN button now opens a menu with "Import PGN/FEN" and "Copy FEN", which copies the FEN of the position on the board to your clipboard.
+- Analysis: the PGN/FEN button now opens a menu with "Import PGN/FEN", "Copy PGN" (the whole move tree, with your side lines as variations and the game's players, ratings, date and result as headers) and "Copy FEN" (the position on the board).
 - Openings Stats now opens with "Out of the opening": how often you leave the opening clearly worse or clearly better than a typical position for your colour, ranked against benchmarked Lichess players at your rating in each time control. The popover breaks it down by time control.
 
 ### Changed

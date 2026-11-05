@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Analysis-board tracking: tab switches, PGN/FEN
- * paste open, the Maia ELO slider (commit-only + reset) and the play-style
+ * menu (paste open, Copy PGN, Copy FEN), the Maia ELO slider (commit-only + reset) and the play-style
  * temperature slider (3-value bucket, commit-only).
  *
  * Sliders are driven through the real Radix primitive via keyboard (Radix fires
@@ -128,6 +128,11 @@ describe('AnalysisTabs tab-switch tracking', () => {
 
 describe('MoveListHeaderContent PGN/FEN menu', () => {
   const SHOWN_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2';
+  const TREE_PGN = '[Result "*"]\n\n1. e4 e5 *\n';
+  let getPgn: ReturnType<typeof vi.fn<() => string>>;
+  beforeEach(() => {
+    getPgn = vi.fn(() => TREE_PGN);
+  });
 
   /** Radix DropdownMenu opens on pointerdown or Enter, never on a bare click. */
   function openMenu(): void {
@@ -136,16 +141,17 @@ describe('MoveListHeaderContent PGN/FEN menu', () => {
 
   it('opening the menu alone sends nothing and does not open the paste modal', () => {
     const onOpenPasteModal = vi.fn();
-    render(<MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={SHOWN_FEN} />);
+    render(<MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={SHOWN_FEN} getPgn={getPgn} />);
     openMenu();
     expect(screen.getByTestId('analysis-menu-import')).toBeTruthy();
     expect(onOpenPasteModal).not.toHaveBeenCalled();
+    expect(getPgn).not.toHaveBeenCalled();
     expect(track).not.toHaveBeenCalled();
   });
 
   it('Import opens the paste modal and sends one board-tool paste-open', () => {
     const onOpenPasteModal = vi.fn();
-    render(<MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={SHOWN_FEN} />);
+    render(<MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={SHOWN_FEN} getPgn={getPgn} />);
     openMenu();
     fireEvent.click(screen.getByTestId('analysis-menu-import'));
     expect(onOpenPasteModal).toHaveBeenCalledTimes(1);
@@ -157,7 +163,7 @@ describe('MoveListHeaderContent PGN/FEN menu', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const onOpenPasteModal = vi.fn();
-    render(<MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={SHOWN_FEN} />);
+    render(<MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={SHOWN_FEN} getPgn={getPgn} />);
     openMenu();
     await act(async () => {
       fireEvent.click(screen.getByTestId('analysis-menu-copy-fen'));
@@ -169,10 +175,25 @@ describe('MoveListHeaderContent PGN/FEN menu', () => {
     expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'fen-copy' });
   });
 
+  it('Copy PGN writes the built PGN and sends one board-tool pgn-copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<MoveListHeaderContent onOpenPasteModal={vi.fn()} fen={SHOWN_FEN} getPgn={getPgn} />);
+    openMenu();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('analysis-menu-copy-pgn'));
+    });
+    expect(getPgn).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(TREE_PGN);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'pgn-copy' });
+  });
+
   it('Copy FEN survives a rejected clipboard write', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('denied'));
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    render(<MoveListHeaderContent onOpenPasteModal={vi.fn()} fen={SHOWN_FEN} />);
+    render(<MoveListHeaderContent onOpenPasteModal={vi.fn()} fen={SHOWN_FEN} getPgn={getPgn} />);
     openMenu();
     await act(async () => {
       fireEvent.click(screen.getByTestId('analysis-menu-copy-fen'));

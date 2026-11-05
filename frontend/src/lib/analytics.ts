@@ -363,6 +363,7 @@ export const BOARD_TOOL_TARGETS = [
   'paste-open',
   'paste-load',
   'fen-copy',
+  'pgn-copy',
   'line-expand',
   'line-delete',
   'elo-reset',

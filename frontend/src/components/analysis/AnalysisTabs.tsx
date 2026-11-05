@@ -493,25 +493,27 @@ export type MoveListHeaderContentProps = {
   onOpenPasteModal: () => void;
   /** Full FEN of the position shown on the board (side to move, castling, ep, counters). */
   fen: string;
+  /** Builds the PGN of the whole move tree. A callback, so the text is only built on click. */
+  getPgn: () => string;
 };
 
-async function copyFenToClipboard(fen: string): Promise<void> {
-  trackFeature('board-tool', { target: 'fen-copy' });
+async function copyToClipboard(text: string, label: 'FEN' | 'PGN', target: 'fen-copy' | 'pgn-copy'): Promise<void> {
+  trackFeature('board-tool', { target });
   try {
-    await navigator.clipboard.writeText(fen);
-    toast.success('FEN copied');
+    await navigator.clipboard.writeText(text);
+    toast.success(`${label} copied`);
   } catch {
     // Expected failure (clipboard permission denied, insecure context, or no
     // Clipboard API at all): tell the user, don't report to Sentry.
-    toast.error('Could not copy FEN to the clipboard');
+    toast.error(`Could not copy ${label} to the clipboard`);
   }
 }
 
 // Move-list header row content: shared between the
 // mobile/mid MovesTab header and the desktop MovesCard CardHeader — the PGN/FEN
-// menu (import or copy FEN) reaches every layout, not just desktop (the whole
-// flow must work at 375px). Rendered unconditionally, including ?game_id= game mode.
-export function MoveListHeaderContent({ onOpenPasteModal, fen }: MoveListHeaderContentProps): ReactElement {
+// menu (import, copy PGN or copy FEN) reaches every layout, not just desktop (the
+// whole flow must work at 375px). Rendered unconditionally, including ?game_id= game mode.
+export function MoveListHeaderContent({ onOpenPasteModal, fen, getPgn }: MoveListHeaderContentProps): ReactElement {
   return (
     <>
       <ArrowLeftRight className="h-4 w-4" aria-hidden />
@@ -534,7 +536,17 @@ export function MoveListHeaderContent({ onOpenPasteModal, fen }: MoveListHeaderC
             <ClipboardPaste aria-hidden="true" />
             Import PGN/FEN
           </DropdownMenuItem>
-          <DropdownMenuItem data-testid="analysis-menu-copy-fen" onSelect={() => void copyFenToClipboard(fen)}>
+          <DropdownMenuItem
+            data-testid="analysis-menu-copy-pgn"
+            onSelect={() => void copyToClipboard(getPgn(), 'PGN', 'pgn-copy')}
+          >
+            <Copy aria-hidden="true" />
+            Copy PGN
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="analysis-menu-copy-fen"
+            onSelect={() => void copyToClipboard(fen, 'FEN', 'fen-copy')}
+          >
             <Copy aria-hidden="true" />
             Copy FEN
           </DropdownMenuItem>
