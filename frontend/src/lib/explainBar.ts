@@ -73,8 +73,8 @@ export type ExplainBarState =
       san: string | null;
       severity: ExplainSeverity;
       /**
-       * Every visible tactic on this flaw (missed first, then allowed), rendered on the
-       * bar's second line. Empty: no second line.
+       * Every visible tactic on this flaw (missed first, then allowed), rendered as short
+       * chips after the move. Empty: no chips.
        */
       tactics: ExplainTactic[];
       /** Per-button availability; at least one is true (both false hides the bar, D-10). */
@@ -85,8 +85,6 @@ export type ExplainBarState =
   | {
       kind: 'got-it';
       line: OpenLine;
-      /** Same second line as the explain state, so opening a line never shifts the bar height. */
-      tactics: ExplainTactic[];
       /** Whether the sibling line (the switch button) can be opened. */
       otherUsable: boolean;
     };
@@ -115,17 +113,11 @@ function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | nul
   return openLines.get(flawKey(focusedFlaw)) ?? null;
 }
 
-/** The marker at `ply` (any severity), null when absent. */
-function markerAt(markers: FlawMarker[] | null | undefined, ply: number): FlawMarker | null {
-  return markers?.find((m) => m.ply === ply) ?? null;
-}
-
 /**
  * The flaw's visible tactics, both orientations. resolveVisibleTactic applies the family
  * guard (family-less motifs render no chip), the same rule the move-list chips follow.
  */
-function explainTactics(marker: FlawMarker | null): ExplainTactic[] {
-  if (marker === null) return [];
+function explainTactics(marker: FlawMarker): ExplainTactic[] {
   const slots = [
     { orientation: 'missed', motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
     { orientation: 'allowed', motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
@@ -139,7 +131,7 @@ function explainTactics(marker: FlawMarker | null): ExplainTactic[] {
 
 /** The got-it state for an open line; the switch button needs the sibling to be open or graftable. */
 function gotItState(inputs: ExplainBarInputs, line: OpenLine): ExplainBarState {
-  const { flawMarkers, openLines, tacticLines, tacticLinesPly } = inputs;
+  const { openLines, tacticLines, tacticLinesPly } = inputs;
   const other = otherOrientation(line.orientation);
   const otherOpen = openLines.has(flawKey({ ply: line.ply, orientation: other }));
   const otherGraftable =
@@ -147,7 +139,6 @@ function gotItState(inputs: ExplainBarInputs, line: OpenLine): ExplainBarState {
   return {
     kind: 'got-it',
     line,
-    tactics: explainTactics(markerAt(flawMarkers, line.ply)),
     otherUsable: otherOpen || otherGraftable,
   };
 }

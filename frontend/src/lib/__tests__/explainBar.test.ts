@@ -232,18 +232,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
     const state = resolveExplainBarState(
       inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, openLines }),
     );
-    expect(state).toEqual({ kind: 'got-it', line, tactics: [], otherUsable: true });
-  });
-
-  it("carries the line flaw's tactics so the second row stays put", () => {
-    const state = resolveExplainBarState(
-      inputs({
-        focusedFlaw: { ply: 10, orientation: 'missed' },
-        openLines,
-        flawMarkers: [marker({ ply: 10, missed_tactic_motif: 'fork', missed_tactic_depth: 0 })],
-      }),
-    );
-    expect(state).toMatchObject({ kind: 'got-it', tactics: [{ orientation: 'missed', motif: 'fork' }] });
+    expect(state).toEqual({ kind: 'got-it', line, otherUsable: true });
   });
 
   it('the sibling is unusable when its PV is empty, or the lines are for another ply or loading', () => {
@@ -315,7 +304,6 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
     expect(resolveExplainBarState(inputs({ ...adjacent, tacticLines: undefined }))).toEqual({
       kind: 'got-it',
       line,
-      tactics: [],
       otherUsable: false,
     });
   });
@@ -334,7 +322,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
         landingPly: 10,
       }),
     );
-    expect(state).toEqual({ kind: 'got-it', line: allowed, tactics: [], otherUsable: true });
+    expect(state).toEqual({ kind: 'got-it', line: allowed, otherUsable: true });
   });
 
   it('still loses to rule 1 (not game mode, fast-forward running)', () => {

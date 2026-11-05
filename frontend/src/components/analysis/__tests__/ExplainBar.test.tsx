@@ -35,7 +35,6 @@ const EXPLAIN_BLUNDER: ExplainBarState = {
 const GOT_IT_MISSED: ExplainBarState = {
   kind: 'got-it',
   line: { rootNodeId: 5, ply: 2, orientation: 'missed' },
-  tactics: [],
   otherUsable: true,
 };
 
@@ -88,7 +87,7 @@ describe('ExplainBar explain state', () => {
     expect(bar.getAttribute('data-state')).toBe('explain');
     const headline = within(bar).getByTestId('analysis-explain-headline');
     expect(headline.getAttribute('data-severity')).toBe('blunder');
-    expect(headline.lastElementChild?.tagName.toLowerCase()).toBe('svg');
+    expect(headline.children[1]?.tagName.toLowerCase()).toBe('svg');
     expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
     const buttons = within(bar).getAllByRole('button');
     expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual([
@@ -125,7 +124,7 @@ describe('ExplainBar explain state', () => {
     expect(best.getAttribute('aria-busy')).toBeNull();
   });
 
-  it('tactics render on a second row as long-label chips; a click opens that line', () => {
+  it('tactics render inline after the move and badge as short chips; a click opens that line', () => {
     const onTacticClick = vi.fn();
     render(
       <ExplainBar
@@ -145,7 +144,9 @@ describe('ExplainBar explain state', () => {
       />,
     );
     expect(screen.getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
-    expect(screen.getByTestId('analysis-explain-tactics').textContent).toBe('missed fork in 1allowed checkmate in 3');
+    const headline = screen.getByTestId('analysis-explain-headline');
+    expect(headline.lastElementChild).toBe(screen.getByTestId('analysis-explain-tactics'));
+    expect(screen.getByTestId('analysis-explain-tactics').textContent).toBe('fork 1checkmate 3');
     fireEvent.click(screen.getByTestId('btn-analysis-explain-tactic-allowed'));
     expect(onTacticClick).toHaveBeenCalledWith({ ply: 2, orientation: 'allowed' });
   });
@@ -203,10 +204,6 @@ describe('ExplainBar got-it state', () => {
     expect(track).not.toHaveBeenCalled();
   });
 
-  it('keeps the tactic row of the line flaw', () => {
-    renderBar({ ...GOT_IT_MISSED, tactics: [{ orientation: 'missed', motif: 'fork', depth: 0 }] });
-    expect(screen.getByTestId('analysis-explain-tactics').textContent).toBe('missed fork in 1');
-  });
 });
 
 describe('ExplainBar placements', () => {

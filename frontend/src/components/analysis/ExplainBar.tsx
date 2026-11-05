@@ -6,10 +6,9 @@
  * Phase 245 UAT replaced the single Explain button with two named lines:
  *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
- * Row 1 is the headline (explain) or a line stepper (inside a line) plus the buttons;
- * row 2 holds the flaw's tactic chips, rendered in both states so opening a line never
- * shifts the bar height. Copy is neutral (never "your move"): `is_user` is the game
- * OWNER and the viewer may be someone else.
+ * One row: the headline (move, severity badge and short tactic chips, as in the move
+ * list) or, inside a line, a line stepper, then the buttons. Copy is neutral (never
+ * "your move"): `is_user` is the game OWNER and the viewer may be someone else.
  */
 
 import type { ReactElement, ReactNode } from 'react';
@@ -81,12 +80,19 @@ function TacticBadges({
 }): ReactElement | null {
   if (tactics.length === 0) return null;
   return (
-    <div data-testid="analysis-explain-tactics" className="flex flex-wrap items-center gap-1">
+    // One-chip-high clipped wrap box: on a narrow phone a chip that does not fit wraps onto
+    // the hidden second line and drops out whole instead of being cut mid-word. py-1 and
+    // gap-y-2 keep the active ring and hover lift inside the box while pushing any wrapped
+    // line below its bottom edge.
+    <span
+      data-testid="analysis-explain-tactics"
+      className="flex h-7 min-w-0 flex-wrap content-start items-center gap-x-1 gap-y-2 overflow-hidden px-0.5 py-1"
+    >
       {tactics.map((t) => (
         <TacticLineChip
           key={t.orientation}
           testId={`btn-analysis-explain-tactic-${t.orientation}`}
-          label="long"
+          label="short"
           motif={t.motif}
           orientation={t.orientation}
           ply={ply}
@@ -97,7 +103,7 @@ function TacticBadges({
           onClick={chip.onTacticClick}
         />
       ))}
-    </div>
+    </span>
   );
 }
 
@@ -162,12 +168,11 @@ type BarShellProps = {
   state: 'explain' | 'got-it';
   orientation?: ExplainOrientation;
   placement: ExplainBarPlacement;
-  row: ReactNode;
-  tactics: ReactNode;
+  children: ReactNode;
 };
 
-/** Same root, classes and two-row structure for both states. */
-function BarShell({ state, orientation, placement, row, tactics }: BarShellProps): ReactElement {
+/** Same root, classes and row structure for both states, so the swap never shifts the row height. */
+function BarShell({ state, orientation, placement, children }: BarShellProps): ReactElement {
   // The mid placement is a charcoal Card (matches the BoardControls Card it sits under);
   // the other placements are plain rows.
   const Root = placement === 'mid' ? Card : 'div';
@@ -177,10 +182,9 @@ function BarShell({ state, orientation, placement, row, tactics }: BarShellProps
       data-state={state}
       data-orientation={orientation}
       data-placement={placement}
-      className={cn('flex shrink-0 flex-col gap-2', PLACEMENT_CLASS[placement])}
+      className={cn('flex shrink-0 items-center gap-2', PLACEMENT_CLASS[placement])}
     >
-      <div className="flex items-center gap-2">{row}</div>
-      {tactics}
+      {children}
     </Root>
   );
 }
@@ -197,62 +201,44 @@ export function ExplainBar({
   if (state.kind === 'got-it') {
     const other = otherOrientation(state.line.orientation);
     return (
-      <BarShell
-        state="got-it"
-        orientation={state.line.orientation}
-        placement={placement}
-        tactics={<TacticBadges tactics={state.tactics} ply={state.line.ply} chip={chip} />}
-        row={
-          <>
-            <LineStepper stepper={stepper} />
-            <LineButton orientation={other} disabled={!state.otherUsable} busy={false} onOpenLine={onOpenLine} />
-            <Button
-              type="button"
-              variant="brand-outline"
-              size="lg"
-              data-testid="btn-analysis-explain-got-it"
-              onClick={onGotIt}
-            >
-              <Check data-icon="inline-start" aria-hidden="true" />
-              {GOT_IT_LABEL}
-            </Button>
-          </>
-        }
-      />
+      <BarShell state="got-it" orientation={state.line.orientation} placement={placement}>
+        <LineStepper stepper={stepper} />
+        <LineButton orientation={other} disabled={!state.otherUsable} busy={false} onOpenLine={onOpenLine} />
+        <Button type="button" variant="brand-outline" size="lg" data-testid="btn-analysis-explain-got-it" onClick={onGotIt}>
+          <Check data-icon="inline-start" aria-hidden="true" />
+          {GOT_IT_LABEL}
+        </Button>
+      </BarShell>
     );
   }
   return (
-    <BarShell
-      state="explain"
-      placement={placement}
-      tactics={<TacticBadges tactics={state.tactics} ply={state.ply} chip={chip} />}
-      row={
-        <>
-          <span
-            data-testid="analysis-explain-headline"
-            data-severity={state.severity}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
-          >
-            <span
-              data-testid="analysis-explain-headline-text"
-              className={cn('truncate', state.san !== null && 'font-mono font-bold text-foreground')}
-            >
-              {state.san ?? SEVERITY_NOUN[state.severity]}
-            </span>
-            {/* Badge after the move, like the move list. */}
-            <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
-          </span>
-          {LINE_ORDER.map((orientation) => (
-            <LineButton
-              key={orientation}
-              orientation={orientation}
-              disabled={state.pending !== null || !state.usable[orientation]}
-              busy={state.pending === orientation}
-              onOpenLine={onOpenLine}
-            />
-          ))}
-        </>
-      }
-    />
+    <BarShell state="explain" placement={placement}>
+      {/* Move, badge and chips in move-list order. overflow-hidden: on a narrow phone the
+          headline gives way instead of pushing the buttons out of the row. */}
+      <span
+        data-testid="analysis-explain-headline"
+        data-severity={state.severity}
+        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm"
+      >
+        {/* shrink-0: the move never truncates away; the chips give way first. */}
+        <span
+          data-testid="analysis-explain-headline-text"
+          className={cn('shrink-0', state.san !== null && 'font-mono font-bold text-foreground')}
+        >
+          {state.san ?? SEVERITY_NOUN[state.severity]}
+        </span>
+        <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
+        <TacticBadges tactics={state.tactics} ply={state.ply} chip={chip} />
+      </span>
+      {LINE_ORDER.map((orientation) => (
+        <LineButton
+          key={orientation}
+          orientation={orientation}
+          disabled={state.pending !== null || !state.usable[orientation]}
+          busy={state.pending === orientation}
+          onOpenLine={onOpenLine}
+        />
+      ))}
+    </BarShell>
   );
 }
