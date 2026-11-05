@@ -109,7 +109,7 @@ function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | nul
 /**
  * The flaw's visible tactics as headline text, both orientations. resolveVisibleTactic
  * applies the family guard (family-less motifs show nothing), the same rule as the
- * move-list chips. anchored=false: this is a navigable surface, so the allowed +1
+ * move-list chip's depth label and the board depth badges. anchored=false: this is a navigable surface, so the allowed +1
  * decision-anchor offset is dropped (the chip's depth, spelled out).
  */
 function explainTactics(marker: FlawMarker): ExplainTactic[] {

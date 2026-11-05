@@ -169,8 +169,7 @@ export function DesktopBoardStage({
         {/* Explain bar: mid layout only. In mid the move list lives in a tab that can be
             hidden while the board controls stay visible, so the bar sits under them. The
             3-column desktop mounts the bar in the MovesCard footer and mobile mounts it
-            above analysis-mobile-footer. Mid placement is a discretion call (D-03 names
-            desktop and mobile only), flagged for owner UAT. */}
+            above analysis-mobile-footer. */}
         {isMid && explainBar}
 
         {/* EvalChart with slider — game mode only, aligned to the board width.

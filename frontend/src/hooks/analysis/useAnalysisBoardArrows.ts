@@ -31,7 +31,7 @@
  * PV-sideline overlay replaces the engine arrows.
  *
  * The PV-sideline tactic overlay (numbered countdown arrow + move-list tint) only draws for
- * lines with a visible user motif (`focusedLineHasMotif`); other lines get a plain arrow.
+ * lines with a visible tactic motif, either side's (`focusedLineHasMotif`); other lines get a plain arrow.
  */
 
 import { useMemo } from 'react';
@@ -235,8 +235,8 @@ export interface UseAnalysisBoardArrowsOptions {
   contextualCurrentPly: number;
   focusedPvLine: readonly NodeId[];
   /**
-   * Whether the focused line has a user-visible tactic motif (lineHasVisibleMotif). When
-   * false (an Explain on a non-motif flaw) the PV overlay is a plain unlabelled
+   * Whether the focused line has a visible tactic motif, either side's (lineHasVisibleMotif).
+   * When false (Best/Punish on a non-motif flaw) the PV overlay is a plain unlabelled
    * next-move arrow with no numbered countdown and no move-list tint.
    */
   focusedLineHasMotif: boolean;

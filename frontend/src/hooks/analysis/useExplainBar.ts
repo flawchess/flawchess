@@ -19,8 +19,8 @@
  * shows the fork briefly before playing the better move. The D-07 re-entry path
  * below goes through the same entry so both look identical.
  *
- * Inside a line the bar shows a line stepper (Back/Forward clamped to the line),
- * the sibling line's button (closes this line, opens the other) and Got it.
+ * Inside a line the bar shows a line stepper (Back/Forward clamped to the line)
+ * and Got it; the other line's button is hidden there (no Best/Punish switch).
  * Got it deletes the line's whole subtree, so free moves the user played inside
  * the line go with it, exactly like a chip toggle-off.
  */
@@ -119,11 +119,10 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     setOpenLines,
   } = options;
 
-  // The landing flaw's lines when it is explainable, else the focused line's (the got-it
-  // bar's switch button needs to know whether the sibling line is graftable). Same query key
-  // as the page's fetchFlaw observer, so this is a cache hit in both cases.
-  const linesPly =
-    eligibleExplainMarker(flawMarkers, landingPly) !== null ? landingPly : (focusedFlaw?.ply ?? null);
+  // Only the explain state reads the lines (Best/Punish usability), and only for the
+  // landing ply; the got-it state needs none. Same query key as the page's fetchFlaw
+  // observer, so the Best/Punish click is a cache hit.
+  const linesPly = eligibleExplainMarker(flawMarkers, landingPly) !== null ? landingPly : null;
   const { data: tacticLines } = useTacticLines(gameId, linesPly, isGameMode && linesPly !== null);
 
   const state = useMemo(

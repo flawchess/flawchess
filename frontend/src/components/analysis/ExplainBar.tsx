@@ -7,7 +7,7 @@
  *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
  * One row: the headline (move, severity badge and the tactics as colored text, e.g.
- * "c3??: missed discovered-attack in 2", up to two lines) then both buttons. Inside a
+ * "c3 [blunder badge]: missed discovered-attack in 2", up to two lines) then both buttons. Inside a
  * line the headline stays and the buttons become a line stepper then Got it (the other
  * line's button is hidden there).
  * Clickable tactic chips live in the move list only.

@@ -66,8 +66,7 @@ export function TacticLineChip({
   testId,
   className,
 }: TacticLineChipProps): ReactNode {
-  // Multiple chips read active via key membership (flat siblings),
-  // not a node/orientation singleton match.
+  // Active via key membership in the open-lines set, not a node/orientation match.
   const isActive = activePvKeys?.has(`${ply}:${orientation}`) ?? false;
   const isMissed = orientation === 'missed';
   const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
