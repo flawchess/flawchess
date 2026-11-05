@@ -317,12 +317,17 @@
       "number": "243",
       "name": "standalone phase",
       "status": "complete"
+    },
+    {
+      "number": "244",
+      "name": "standalone phase",
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd-new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 3 of 4 · ready to verify"
   },
-  "updated_at": "2026-11-02T14:59:02.804Z"
+  "updated_at": "2026-11-05T09:52:07.986Z"
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
+import { lineHasVisibleMotif, tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import type { FlawMarker } from '@/types/library';
 
 // Auto-open a tactic line when the board is deep-linked to a tactic ply.
@@ -59,5 +59,42 @@ describe('tacticOrientationAtPly', () => {
     expect(tacticOrientationAtPly(null, 10)).toBeNull();
     expect(tacticOrientationAtPly(undefined, 10)).toBeNull();
     expect(tacticOrientationAtPly([marker({ ply: 10, missed_tactic_motif: 'fork' })], null)).toBeNull();
+  });
+});
+
+describe('lineHasVisibleMotif', () => {
+  it('is true for a user missed motif on a missed line', () => {
+    const markers = [marker({ ply: 10, missed_tactic_motif: 'fork' })];
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'missed' })).toBe(true);
+  });
+
+  it('is false for the allowed orientation when only a missed motif exists', () => {
+    const markers = [marker({ ply: 10, missed_tactic_motif: 'fork', allowed_tactic_motif: null })];
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'allowed' })).toBe(false);
+  });
+
+  it('is true for a user allowed motif on an allowed line', () => {
+    const markers = [marker({ ply: 10, allowed_tactic_motif: 'pin' })];
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'allowed' })).toBe(true);
+  });
+
+  it('is true for an opponent marker with motifs (opponent chips are shown too)', () => {
+    const markers = [
+      marker({ ply: 10, is_user: false, missed_tactic_motif: 'fork', allowed_tactic_motif: 'pin' }),
+    ];
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'missed' })).toBe(true);
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'allowed' })).toBe(true);
+  });
+
+  it('is false when no marker sits at the line ply', () => {
+    const markers = [marker({ ply: 8, missed_tactic_motif: 'fork' })];
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'missed' })).toBe(false);
+  });
+
+  it('is false for null markers or a null line', () => {
+    const markers = [marker({ ply: 10, missed_tactic_motif: 'fork' })];
+    expect(lineHasVisibleMotif(null, { ply: 10, orientation: 'missed' })).toBe(false);
+    expect(lineHasVisibleMotif(undefined, { ply: 10, orientation: 'missed' })).toBe(false);
+    expect(lineHasVisibleMotif(markers, null)).toBe(false);
   });
 });

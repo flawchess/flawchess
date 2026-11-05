@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { libraryApi } from '@/api/client';
 import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -14,6 +15,9 @@ import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
 // from alt-tabbing or component re-mounts. Data only changes on new imports.
 const LIBRARY_STALE_TIME_MS = 5 * 60 * 1000;
+
+// tactic-lines answers 404 when there is no game_flaws row for the ply.
+const HTTP_NOT_FOUND = 404;
 
 // The wire value of games.platform for a pasted game (backend
 // normalization._PASTE_PLATFORM_VALUE). Not part of the frontend `Platform`
@@ -291,15 +295,31 @@ export function useLibraryGame(
  * Query key: ['tactic-lines', gameId, ply]
  * Enabled only when `enabled` is true AND gameId/ply are non-null: the Analysis
  * page fetches a flaw's PV lazily when its line is opened or focused.
+ *
+ * A 404 (no game_flaws row for this ply) resolves to `null` ("no lines"), not an
+ * error, so the Explain bar's landing prefetch never retries or reaches Sentry.
+ * Consumers treat null and undefined alike.
  */
 export function useTacticLines(
   gameId: number | null,
   ply: number | null,
   enabled: boolean,
-): ReturnType<typeof useQuery<TacticLinesResponse>> {
-  return useQuery<TacticLinesResponse>({
+): ReturnType<typeof useQuery<TacticLinesResponse | null>> {
+  return useQuery<TacticLinesResponse | null>({
     queryKey: ['tactic-lines', gameId, ply],
-    queryFn: () => libraryApi.getTacticLines(gameId!, ply!),
+    queryFn: async () => {
+      try {
+        return await libraryApi.getTacticLines(gameId!, ply!);
+      } catch (err) {
+        // Bug fix (Phase 245): flaw_markers are computed live from evals while game_flaws
+        // rows are written at classify time, so they can drift. The Explain bar's landing
+        // prefetch (D-11) would otherwise retry once and send a Sentry event per drifted
+        // landing. Null means "no lines" and hides the bar; other errors still surface (the
+        // global QueryCache.onError reports them).
+        if (axios.isAxiosError(err) && err.response?.status === HTTP_NOT_FOUND) return null;
+        throw err;
+      }
+    },
     enabled: enabled && gameId != null && ply != null,
     staleTime: LIBRARY_STALE_TIME_MS,
     refetchOnWindowFocus: false,

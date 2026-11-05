@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Cpu } from 'lucide-react';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { EngineLines, EngineLinesSkeleton, engineLinesMinHeightPx } from '@/components/analysis/EngineLines';
@@ -104,6 +104,8 @@ export type MovesCardProps = {
   /** Builds the move-tree PGN for the menu's Copy PGN item (lazy, on click). */
   getPgn: () => string;
   variationTreeProps: Omit<VariationTreePanelProps, 'variant'>;
+  /** Contextual row under the move list: the Explain bar (D-03). */
+  footer?: ReactNode;
 };
 
 // Move-list card (desktop side panel): variation tree fills and scrolls
@@ -111,14 +113,16 @@ export type MovesCardProps = {
 // board-height region) so the tree's absolute-fill scroller has a definite
 // height (a 0-height parent would render an empty list). The board controls no
 // longer sit in a footer band here — they moved under the board inside
-// DesktopBoardStage (hugging the board like the mid layout).
-export function MovesCard({ onOpenPasteModal, fen, getPgn, variationTreeProps }: MovesCardProps): ReactElement {
+// DesktopBoardStage (hugging the board like the mid layout). The optional footer is a
+// shrink-0 row (the Explain bar) that shrinks the tree's scroller, not the column.
+export function MovesCard({ onOpenPasteModal, fen, getPgn, variationTreeProps, footer }: MovesCardProps): ReactElement {
   return (
     <Card data-testid="analysis-movelist-card" className="relative flex min-h-0 flex-1 flex-col">
       <CardHeader size="compact" data-testid="analysis-movelist-header">
         <MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={fen} getPgn={getPgn} />
       </CardHeader>
       <VariationTreePanel variant="responsive" {...variationTreeProps} />
+      {footer}
     </Card>
   );
 }

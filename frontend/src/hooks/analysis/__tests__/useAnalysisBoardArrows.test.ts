@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
+import { Chess } from 'chess.js';
 
 import {
   useAnalysisBoardArrows,
@@ -17,7 +18,11 @@ import type { BoardArrow } from '@/components/board/ChessBoard';
 import type { PvLine } from '@/hooks/uciParser';
 import type { RankedLine } from '@/lib/engine/types';
 import type { MoveNode, NodeId } from '@/hooks/useAnalysisBoard';
+import type { TacticLinesResponse } from '@/types/library';
+import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import {
+  TAC_MISSED,
+  PAYOFF_MOVE_ARROW,
   BEST_MOVE_ARROW,
   FLAWCHESS_ENGINE_ARROW,
   ARROW_OPACITY,
@@ -99,6 +104,7 @@ function baseOptions(
     contextualOnStoredLine: false,
     contextualCurrentPly: 0,
     focusedPvLine: [],
+    focusedLineHasMotif: true,
     hoveredQualityMoves: null,
     flawChessEnabled: true,
     flawChessRankedLines: FC_LINES,
@@ -263,5 +269,110 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges', () => {
     expect(byKey(fc, 'fc-1')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55, FLAWCHESS_PRIMARY_ALPHA)));
     expect(byKey(fc, 'fc-2')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.5, FLAWCHESS_PRIMARY_ALPHA)));
     expect(secondaryArrowAlpha(0.6 - 0.5, FLAWCHESS_PRIMARY_ALPHA)).toBeLessThan(secondaryArrowAlpha(0.6 - 0.55, FLAWCHESS_PRIMARY_ALPHA));
+  });
+});
+
+describe('useAnalysisBoardArrows — PV sideline overlay motif gate', () => {
+  // Main line 1.e4 e5 2.Qh5 (nodes 0-2); missed PV forks at node 1: 2.Nf3 Nc6 (nodes 3-4).
+  const MISSED_DEPTH = 2;
+  const MISSED_PLY_INDEX = 1;
+
+  function buildNodes(): Map<NodeId, MoveNode> {
+    const chess = new Chess();
+    const nodes = new Map<NodeId, MoveNode>();
+    const play = (id: NodeId, san: string, parentId: NodeId | null): void => {
+      const move = chess.move(san);
+      nodes.set(id, { id, san, fen: chess.fen(), from: move.from, to: move.to, parentId });
+    };
+    play(0, 'e4', null);
+    play(1, 'e5', 0);
+    const afterE5 = new Chess(chess.fen());
+    play(2, 'Qh5', 1);
+    // PV branch from the fork position (after 1...e5).
+    chess.load(afterE5.fen());
+    play(3, 'Nf3', 1);
+    play(4, 'Nc6', 3);
+    return nodes;
+  }
+
+  function tacticLines(overrides: Partial<TacticLinesResponse> = {}): TacticLinesResponse {
+    return {
+      missed_moves: ['Nf3', 'Nc6'],
+      missed_depth: MISSED_DEPTH,
+      missed_tactic_ply_index: MISSED_PLY_INDEX,
+      missed_motif: 'fork',
+      missed_eval_cp: null,
+      missed_eval_mate: null,
+      allowed_moves: null,
+      allowed_depth: null,
+      allowed_tactic_ply_index: null,
+      allowed_motif: null,
+      allowed_eval_cp: null,
+      allowed_eval_mate: null,
+      position_fen: START_FEN,
+      flaw_move_san: 'Qh5',
+      best_move_uci: null,
+      flaw_ply: 2,
+      flaw_severity: 'blunder',
+      ...overrides,
+    };
+  }
+
+  function overlayOptions(
+    overrides: Partial<UseAnalysisBoardArrowsOptions> = {},
+  ): UseAnalysisBoardArrowsOptions {
+    const nodes = buildNodes();
+    return baseOptions({
+      isGameMode: true,
+      nodes,
+      mainLine: [0, 1, 2],
+      currentNodeId: 1,
+      position: nodes.get(1)?.fen ?? START_FEN,
+      currentMainlinePly: 1,
+      focusedFlaw: { ply: 2, orientation: 'missed' },
+      focusedPvLine: [3, 4],
+      contextualTacticData: tacticLines(),
+      contextualCurrentPly: 0,
+      contextualOnStoredLine: false,
+      ...overrides,
+    });
+  }
+
+  function pvArrow(options: UseAnalysisBoardArrowsOptions): BoardArrow | undefined {
+    const { result } = renderHook(() => useAnalysisBoardArrows(options));
+    return (result.current.boardArrows ?? []).find(
+      (a) => a.startSquare === 'g1' && a.endSquare === 'f3',
+    );
+  }
+
+  it('gate true: numbered TAC_MISSED countdown arrow and a tinted sideline', () => {
+    const options = overlayOptions({ focusedLineHasMotif: true });
+    const arrow = pvArrow(options);
+    expect(arrow?.color).toBe(TAC_MISSED);
+    expect(arrow?.label).toBe(String(toDisplayDepthForOrientation(MISSED_DEPTH, 'missed', false)));
+
+    const { result } = renderHook(() => useAnalysisBoardArrows(options));
+    expect(result.current.sidelineNodeColors.size).toBe(2);
+    expect([...result.current.sidelineNodeColors.values()]).toEqual([TAC_MISSED, TAC_MISSED]);
+  });
+
+  it('gate false: plain unlabelled payoff arrow and no sideline tint', () => {
+    const options = overlayOptions({ focusedLineHasMotif: false });
+    const arrow = pvArrow(options);
+    expect(arrow?.color).toBe(PAYOFF_MOVE_ARROW);
+    expect(arrow?.label).toBeUndefined();
+
+    const { result } = renderHook(() => useAnalysisBoardArrows(options));
+    expect(result.current.sidelineNodeColors.size).toBe(0);
+  });
+
+  it('gate false with null depth and ply index: still no fake "1" label', () => {
+    const options = overlayOptions({
+      focusedLineHasMotif: false,
+      contextualTacticData: tacticLines({ missed_depth: null, missed_tactic_ply_index: null }),
+    });
+    const arrow = pvArrow(options);
+    expect(arrow?.color).toBe(PAYOFF_MOVE_ARROW);
+    expect(arrow?.label).toBeUndefined();
   });
 });

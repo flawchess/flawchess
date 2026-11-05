@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 244
-status: completed
-stopped_at: Phase 244 complete — all phases complete
-last_updated: "2026-11-05T06:57:35.208Z"
-state_head: 6088226c7e69375949142b7fa27787b98018f8c3
+current_phase_name: Analysis Contextual Explain Bar for Flaws (SEED-208)
+status: verifying
+stopped_at: Completed 245-02-PLAN.md
+last_updated: "2026-11-05T09:52:11.196Z"
+state_head: 055f9dacc14db8210d9396a521ce01a1ff7b8d7e
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 103
-  total_plans: 16
+  total_plans: 18
   completed_plans: 96
-  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-11-05
 last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the PGN/FEN dropdown"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the P
 
 ## Current Position
 
-Phase: 244
+Phase: 245 (Analysis Contextual Explain Bar for Flaws (SEED-208)) — EXECUTING
 Plan: 2 of 2
 
-Status: All phases complete
+Status: Phase complete — ready for verification
 
 Open threads carried forward (not blockers):
 
@@ -188,6 +188,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 245 added 2026-11-05 (explicit user request via `/gsd-phase .planning/seeds/SEED-208-analysis-explain-button.md`, planted the same day from the `/gsd-explore` session on chess.com Game Review's Explain/Best/Next bar): **Analysis Contextual Explain Bar for Flaws** (SEED-208). One Explain button in a contextual bar (under the move list on desktop, above the mobile footer on phones) for every flaw of both sides, motif or not: user's flaw opens the MISSED PV at ply-1, opponent's flaw the ALLOWED PV at the flaw ply; plays the first move immediately, Back/Forward step through, Explain becomes Got it (closes the line, returns to the flaw). No Best/Next buttons, no prose/LLM. Frontend only, reuses the tactic-lines endpoint and the tactic-chip line machinery. Written by hand as 245 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 245`.
 - Phase 244 added 2026-11-02 (explicit user request via `/gsd-phase .planning/seeds/SEED-207-train-sr-ladder-calculation-not-recall.md`, planted the same day from the `/gsd-explore` session on Train spaced repetition vs memorization): **Train SR Ladder Rework, Calculation Not Recall** (SEED-207). Correct -> retry in 14 days (first attempt included), wrong -> retry in 4 days, mastered after 2 consecutive correct (was 3), Door B leech threshold 6 -> 4, Door A unchanged at 3; one-off migration of in-flight streaks/due dates from `drill_solves`, copy updates, scheduler tests. No schema change, no A/B test. Written by hand as 244 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 244`.
 - Phase 243 added 2026-10-31 (explicit user request via `/gsd-phase @SEED-206`, planted the same day from the `/gsd-explore` opening-narration session + sketch 013): **Out of the Opening Worse/Better Rates** (SEED-206). New "Out of the opening" section at the top of the Openings Stats tab: the share of games left clearly worse (primary) and clearly better (secondary) out of the opening (eval at first middlegame ply minus colour baseline, ±1.0; pre-middlegame decisive endings count by result) ranked per TC against rating × TC peer CDFs on the Endgames canonical slice, displayed as one game-weighted value per colour (collapsed over TC, owner 2026-10-31, after prod cross-TC correlations of blitz–rapid 0.82, bullet 0.56–0.62), 95% gate, filter-independent; popover histogram with ±1.0 cuts, per-TC breakdown and the percentile-chip disclosures. Backend first (slice builder, CDF regen, ranked read path, per-source parity test), then frontend. No per-opening bars. Written by hand as 243 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 243`.
 - Phase 242 added 2026-10-17 (explicit user request via `/gsd-phase .planning/seeds/SEED-204-openings-stats-insights-rework.md`, planted the same day from sketch 012 after the 238/239 reworks): **Openings Stats + Insights Rework** (SEED-204). Insights merge into the Stats tab under one sticky White | Black switch; 99%-gated finding cards above a per-colour repertoire table (bookmarks pinned, then most played; compact Score / Eval columns with verdict dots and popovers; expanded row with per-opening `ScoreChart` + weekly volume bars); backend wave first: Openings eval centred on the colour baseline (Endgames untouched), duplicate-row collapse, 200-game current/past cutoff, weekly counts. One phase, several plans. Written by hand as 242 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 242`.
@@ -896,6 +897,11 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 243]: 243-05: popover re-sorts TCs bullet-to-classical locally and shows all five disclosures on every popover; eval cut 1.0 is a named frontend constant mirroring the backend threshold
 - [Phase 244]: D-02: apply_result takes no schedule; due dates are exact +10/+4 day offsets, no weekday snapping
 - [Phase 244]: Migration e2a7c4f9b244 computes dates in UTC and only pushes when floor > UTC today and due_date < floor (D-09 literal)
+- [Phase 245]: Explain sets pendingFlaw.enter and relies on the graft effect to land on the first grafted move; Got it is driven by the page's focusedFlaw; explain-open/close ride the board-tool verb
+- [Phase 245]: currentMainlinePly uses mainLine.indexOf (the isOnMainLine stateRef read was stale on the loadMainLine commit)
+- [Phase 245]: Mid layout mounts the Explain bar under the board controls (owner-UAT item)
+- [Phase 245]: Non-motif/opponent Explain lines show an unlabelled payoff-blue arrow, no tint (lineHasVisibleMotif gate)
+- [Phase 245]: useTacticLines maps 404 to null (no retry, no Sentry)
 
 ### Pending Todos
 
@@ -1131,8 +1137,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-02T14:46:10.679Z
-**Stopped at:** Phase 244 complete — all phases complete
+**Last session:** 2026-11-05T09:52:10.725Z
+**Stopped at:** Completed 245-02-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1386,6 +1392,8 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 243 P05 | 25min | 3 tasks | 15 files |
 | Phase 244 P01 | 35min | 3 tasks | 8 files |
 | Phase 244 P02 | 15min | 2 tasks | 9 files |
+| Phase 245 P01 | 40 min | 3 tasks | 11 files |
+| Phase 245 P02 | 25min | 3 tasks | 13 files |
 
 ## Performance Metrics
 
