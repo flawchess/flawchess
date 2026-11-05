@@ -14,13 +14,17 @@
  * Explain does NOT navigate to the fork first (unlike a chip click): with the
  * cached data the graft lands in one commit, while a fork navigation would add
  * a second commit, a one-frame back-step and a second move sound.
+ *
+ * Got it deletes the line's whole subtree, so free moves the user played inside
+ * the line go with it, exactly like a chip toggle-off.
  */
 
 import { useMemo } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { useTacticLines } from '@/hooks/useLibrary';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
 import type { FlawMarker } from '@/types/library';
-import { flawKey, type OpenLine, type PendingFlaw } from '@/lib/analysisTactics';
+import { flawKey, type OpenLine, type PendingFlaw, type TacticRef } from '@/lib/analysisTactics';
 import {
   eligibleExplainMarker,
   resolveExplainBarState,
@@ -39,17 +43,23 @@ export interface UseExplainBarOptions {
 
   // ── Tactic line state ─────────────────────────────────────────────────
   pendingFlaw: PendingFlaw | null;
+  /** The page's focusedFlaw memo (findFocusedFlaw), the single source for the got-it rule. */
+  focusedFlaw: TacticRef | null;
   openLines: Map<string, OpenLine>;
   fastForwardRunning: boolean;
 
   // ── Board / state setters ─────────────────────────────────────────────
+  mainLine: NodeId[];
   goToNode: (id: NodeId, opts?: { silent?: boolean }) => void;
+  deleteSubtree: (rootId: NodeId) => void;
   setPendingFlaw: (flaw: PendingFlaw | null) => void;
+  setOpenLines: Dispatch<SetStateAction<Map<string, OpenLine>>>;
 }
 
 export interface UseExplainBarResult {
   state: ExplainBarState;
   onExplain: () => void;
+  onGotIt: () => void;
 }
 
 export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResult {
@@ -59,10 +69,14 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     flawMarkers,
     landingPly,
     pendingFlaw,
+    focusedFlaw,
     openLines,
     fastForwardRunning,
+    mainLine,
     goToNode,
+    deleteSubtree,
     setPendingFlaw,
+    setOpenLines,
   } = options;
 
   const eligiblePly = eligibleExplainMarker(flawMarkers, landingPly) !== null ? landingPly : null;
@@ -76,9 +90,11 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
         flawMarkers,
         landingPly,
         pendingFlaw,
+        focusedFlaw,
+        openLines,
         tacticLines,
       }),
-    [isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, tacticLines],
+    [isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, focusedFlaw, openLines, tacticLines],
   );
 
   const onExplain = (): void => {
@@ -98,5 +114,23 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     setPendingFlaw({ ...state.flaw, enter: true });
   };
 
-  return { state, onExplain };
+  const onGotIt = (): void => {
+    if (state.kind !== 'got-it') return;
+    trackFeature('board-tool', { target: 'explain-close' });
+    const key = flawKey(state.line);
+    // Removes the line's subtree; recovers the cursor to the fork when it was inside.
+    deleteSubtree(state.line.rootNodeId);
+    setOpenLines((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+    // D-06: back to the flaw move on the main line for both orientations. For an allowed
+    // line the recovery already lands there and goToNode bails; main-line nodes are never
+    // deleted.
+    const flawNodeId = mainLine[state.line.ply];
+    if (flawNodeId !== undefined) goToNode(flawNodeId);
+  };
+
+  return { state, onExplain, onGotIt };
 }

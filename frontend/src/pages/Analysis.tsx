@@ -1321,9 +1321,15 @@ export default function Analysis() {
   // -1 for free-variation nodes / no selection. Shared by the sweep's "already
   // resolved this ply?" check, needParentGemGrade's double-work guard below, and
   // both marker memos' book/sweep-gem gates — one computation, several readers.
+  //
+  // Bug fix (Explain bar): this used to gate on isOnMainLine(), which reads the board's
+  // stateRef — synced AFTER render. On the commit where loadMainLine lands the ref still
+  // held the empty previous tree, so the memo cached -1 and never recomputed when the
+  // cursor already sat on the target node (deep link to the last ply). indexOf on the
+  // render's own mainLine is the same test (-1 when absent) without the stale read.
   const currentMainlinePly = useMemo(
-    () => (currentNodeId !== null && isOnMainLine(currentNodeId) ? mainLine.indexOf(currentNodeId) : -1),
-    [currentNodeId, isOnMainLine, mainLine],
+    () => (currentNodeId !== null ? mainLine.indexOf(currentNodeId) : -1),
+    [currentNodeId, mainLine],
   );
 
   // Contextual Explain bar (SEED-208): prefetch, state and handlers live in the hook.
@@ -1333,10 +1339,14 @@ export default function Analysis() {
     flawMarkers: gameData?.flaw_markers,
     landingPly: currentMainlinePly,
     pendingFlaw,
+    focusedFlaw,
     openLines,
     fastForwardRunning,
+    mainLine,
     goToNode,
+    deleteSubtree,
     setPendingFlaw,
+    setOpenLines,
   });
 
   // Live classification applies only to freely-played moves off the precomputed line:

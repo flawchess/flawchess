@@ -9,7 +9,7 @@
  */
 
 import type { FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
-import type { TacticRef } from '@/lib/analysisTactics';
+import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
 const ALLOWED_PREPEND_LEN = 1;
@@ -76,7 +76,8 @@ export type ExplainBarState =
       san: string | null;
       severity: ExplainSeverity;
       pending: boolean;
-    };
+    }
+  | { kind: 'got-it'; line: OpenLine; san: string | null };
 
 export interface ExplainBarInputs {
   isGameMode: boolean;
@@ -85,7 +86,24 @@ export interface ExplainBarInputs {
   /** Main-line ply of the current node, -1 off the main line. */
   landingPly: number;
   pendingFlaw: TacticRef | null;
+  /**
+   * The page's existing `focusedFlaw` memo (one source of truth with the board overlays,
+   * never a second containment walk). Drives the got-it state.
+   */
+  focusedFlaw: TacticRef | null;
+  openLines: Map<string, OpenLine>;
   tacticLines: TacticLinesResponse | null | undefined;
+}
+
+/** The open line the focused flaw maps to, or null. */
+function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | null {
+  if (focusedFlaw === null) return null;
+  return openLines.get(flawKey(focusedFlaw)) ?? null;
+}
+
+/** SAN of the marker at `ply` (any severity), null when absent. */
+function eligibleSanAt(markers: FlawMarker[] | null | undefined, ply: number): string | null {
+  return markers?.find((m) => m.ply === ply)?.move_san ?? null;
 }
 
 /** Ordered early returns; see the numbered comments for each rule. */
@@ -93,6 +111,16 @@ export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarStat
   const { isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, tacticLines } = inputs;
   // (1) Not game mode, or a Jump run is animating: nothing to offer.
   if (!isGameMode || fastForwardRunning) return { kind: 'hidden' };
+  // (1b) Got it (D-06): the board is in an open line. Following findFocusedFlaw semantics,
+  // that covers the grafted subtree (including free moves played off a PV node), a missed
+  // line's fork (ply-1) after stepping Back out, an allowed line's fork (the flaw node
+  // itself) and a deep-link auto-opened line. Accepted precedence edge: with P:missed open
+  // and the board at mainLine[P-1] that is itself an opponent flaw, Got it for P wins; one
+  // Back after Got it reaches P-1's Explain.
+  const openLine = gotItLine(inputs);
+  if (openLine !== null) {
+    return { kind: 'got-it', line: openLine, san: eligibleSanAt(flawMarkers, openLine.ply) };
+  }
   // (2) An unrelated chip or deep-link open is in flight.
   if (pendingFlaw != null && pendingFlaw.ply !== landingPly) return { kind: 'hidden' };
   // (3) Not on an eligible flaw ply (covers sidelines, the root and inaccuracies).

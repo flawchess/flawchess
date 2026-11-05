@@ -8,8 +8,8 @@
  * viewer may be someone else.
  */
 
-import type { ReactElement } from 'react';
-import { Lightbulb } from 'lucide-react';
+import type { ReactElement, ReactNode } from 'react';
+import { Check, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
@@ -31,23 +31,72 @@ const SEVERITY_NOUN: Record<ExplainSeverity, string> = {
   mistake: ' Mistake',
 };
 
+const GOT_IT_LABEL = 'Got it';
+const GOT_IT_PREFIX: Record<LineOrientation, string> = { missed: 'Better than', allowed: 'Punishing' };
+const GOT_IT_FALLBACK: Record<LineOrientation, string> = { missed: 'Better line', allowed: 'Refutation' };
+
+type LineOrientation = 'missed' | 'allowed';
+
 type ExplainBarProps = {
   state: ExplainBarState;
   onExplain: () => void;
+  onGotIt: () => void;
   placement: ExplainBarPlacement;
 };
 
-export function ExplainBar({ state, onExplain, placement }: ExplainBarProps): ReactElement | null {
-  if (state.kind === 'hidden') return null;
-  const glyph = SEVERITY_GLYPH[state.severity];
+type BarShellProps = {
+  state: 'explain' | 'got-it';
+  orientation: LineOrientation;
+  placement: ExplainBarPlacement;
+  children: ReactNode;
+};
+
+/** Same root, classes and row structure for both states, so the Explain/Got it swap never shifts the row height. */
+function BarShell({ state, orientation, placement, children }: BarShellProps): ReactElement {
   return (
     <div
       data-testid="analysis-explain-bar"
-      data-state="explain"
-      data-orientation={state.flaw.orientation}
+      data-state={state}
+      data-orientation={orientation}
       data-placement={placement}
       className={cn('flex shrink-0 items-center gap-2', PLACEMENT_CLASS[placement])}
     >
+      {children}
+    </div>
+  );
+}
+
+export function ExplainBar({ state, onExplain, onGotIt, placement }: ExplainBarProps): ReactElement | null {
+  if (state.kind === 'hidden') return null;
+  if (state.kind === 'got-it') {
+    return (
+      <BarShell state="got-it" orientation={state.line.orientation} placement={placement}>
+        <span data-testid="analysis-explain-headline" className="min-w-0 flex-1 truncate text-sm">
+          {state.san !== null ? (
+            <>
+              <span className="text-muted-foreground">{GOT_IT_PREFIX[state.line.orientation]} </span>
+              <span className="font-mono font-bold text-foreground">{state.san}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{GOT_IT_FALLBACK[state.line.orientation]}</span>
+          )}
+        </span>
+        <Button
+          type="button"
+          variant="brand-outline"
+          size="lg"
+          data-testid="btn-analysis-explain-got-it"
+          onClick={onGotIt}
+        >
+          <Check data-icon="inline-start" aria-hidden="true" />
+          {GOT_IT_LABEL}
+        </Button>
+      </BarShell>
+    );
+  }
+  const glyph = SEVERITY_GLYPH[state.severity];
+  return (
+    <BarShell state="explain" orientation={state.flaw.orientation} placement={placement}>
       <span data-testid="analysis-explain-headline" className="min-w-0 flex-1 truncate text-sm">
         <span className="font-mono font-bold" style={{ color: glyph.color }}>
           {state.san ?? ''}
@@ -67,6 +116,6 @@ export function ExplainBar({ state, onExplain, placement }: ExplainBarProps): Re
         <Lightbulb data-icon="inline-start" aria-hidden="true" />
         {EXPLAIN_LABEL}
       </Button>
-    </div>
+    </BarShell>
   );
 }
