@@ -51,9 +51,9 @@ import type { GameFlawCard } from '@/types/library';
 type AnalysisLayoutMode = 'mobile' | 'mid' | 'desktop';
 
 /** The board's height budget only binds in the locked desktop layout, i.e. at/above the
- *  desk3col width breakpoint AND at/above the `short` height-unlock threshold. Both mirror
- *  the CSS tokens in index.css (`--breakpoint-desk3col: 1200px`, `short` = max-height
- *  879.98px). Outside that band the page scrolls, so the board is width-driven. */
+ *  desk3col width breakpoint AND at/above the `deskshort` height-unlock threshold. Both mirror
+ *  the CSS tokens in index.css (`--breakpoint-desk3col: 1200px`, `deskshort` = max-height
+ *  879.98px at min-width 1200px). Outside that band the page scrolls, so the board is width-driven. */
 const BOARD_WIDTH_LOCK_MIN_PX = 1200;
 const BOARD_HEIGHT_LOCK_MIN_PX = 880;
 
