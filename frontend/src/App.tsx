@@ -818,7 +818,8 @@ function ProtectedLayout() {
             column scroll internally instead of the page.
             Two range-scoped variants UNLOCK it: `md:max-desk3col:` (the
             768-desk3col two-column band — that layout is a scrolling page) and
-            `short:` (<560px tall, a safety-valve override at ANY width).
+            `short:` (<880px tall, at ANY width: below that the locked 3-column
+            grid no longer fits and would clip content with no scroll path).
             The unlock lower bound (`md:` = 768px) MUST track MOBILE_BREAKPOINT_PX
             in Analysis.tsx: below it the mobile takeover renders and needs the
             lock; at/above it the two-column layout scrolls. Applied at this shell

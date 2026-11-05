@@ -35,6 +35,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Analysis: on smaller laptop screens (a maximized window under about 880px tall), the page now scrolls instead of cutting off the eval chart and the Accuracy card.
 - Background analysis no longer replaces a lichess-analyzed game's lichess evaluations with FlawChess engine evaluations.
 - Newly imported games no longer show the platform's accuracy and ACPL as FlawChess's own before FlawChess has analyzed them; the platform values are kept separately.
 - Move explorer: on touchscreen laptops a mouse click on a move now plays it again instead of only highlighting the row.
