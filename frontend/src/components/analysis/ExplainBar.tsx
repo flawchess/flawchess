@@ -39,10 +39,7 @@ const PLACEMENT_CLASS: Record<ExplainBarPlacement, string> = {
   mobile: 'border-t border-border bg-background px-2 py-2',
 };
 
-const SEVERITY_SUFFIX: Record<ExplainSeverity, string> = {
-  blunder: ' is a blunder',
-  mistake: ' is a mistake',
-};
+/** Headline fallback when the marker has no SAN (the badge alone would read as nothing). */
 const SEVERITY_NOUN: Record<ExplainSeverity, string> = {
   blunder: 'Blunder',
   mistake: 'Mistake',
@@ -236,17 +233,14 @@ export function ExplainBar({
             data-severity={state.severity}
             className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
           >
-            <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
-            <span data-testid="analysis-explain-headline-text" className="truncate">
-              {state.san !== null ? (
-                <>
-                  <span className="font-mono font-bold text-foreground">{state.san}</span>
-                  {SEVERITY_SUFFIX[state.severity]}
-                </>
-              ) : (
-                SEVERITY_NOUN[state.severity]
-              )}
+            <span
+              data-testid="analysis-explain-headline-text"
+              className={cn('truncate', state.san !== null && 'font-mono font-bold text-foreground')}
+            >
+              {state.san ?? SEVERITY_NOUN[state.severity]}
             </span>
+            {/* Badge after the move, like the move list. */}
+            <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
           </span>
           {LINE_ORDER.map((orientation) => (
             <LineButton

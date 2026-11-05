@@ -3279,7 +3279,7 @@ describe('Explain bar', () => {
 
     const bar = within(screen.getByTestId('analysis-movelist-card')).getByTestId('analysis-explain-bar');
     expect(bar.getAttribute('data-state')).toBe('explain');
-    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5 is a blunder');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
     expect(
       within(bar)
         .getAllByRole('button', { hidden: true })
@@ -3324,7 +3324,7 @@ describe('Explain bar', () => {
     renderAnalysis('/analysis?game_id=1&ply=3');
 
     const bar = screen.getByTestId('analysis-explain-bar');
-    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Nc6 is a mistake');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Nc6');
     // No missed PV stored: Best is disabled, Punish works.
     expect((within(bar).getByTestId('btn-analysis-explain-best') as HTMLButtonElement).disabled).toBe(true);
 

@@ -82,14 +82,14 @@ describe('ExplainBar explain state', () => {
     expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
   });
 
-  it('headline shows the severity icon, the move and severity, then Best and Punish in that order', () => {
+  it('headline shows the move, then its severity icon, then Best and Punish in that order', () => {
     renderBar(EXPLAIN_BLUNDER);
     const bar = screen.getByTestId('analysis-explain-bar');
     expect(bar.getAttribute('data-state')).toBe('explain');
     const headline = within(bar).getByTestId('analysis-explain-headline');
     expect(headline.getAttribute('data-severity')).toBe('blunder');
-    expect(headline.querySelector('svg')).not.toBeNull();
-    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5 is a blunder');
+    expect(headline.lastElementChild?.tagName.toLowerCase()).toBe('svg');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
     const buttons = within(bar).getAllByRole('button');
     expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual([
       'btn-analysis-explain-best',
@@ -144,7 +144,7 @@ describe('ExplainBar explain state', () => {
         onTacticClick={onTacticClick}
       />,
     );
-    expect(screen.getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5 is a blunder');
+    expect(screen.getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
     expect(screen.getByTestId('analysis-explain-tactics').textContent).toBe('missed fork in 1allowed checkmate in 3');
     fireEvent.click(screen.getByTestId('btn-analysis-explain-tactic-allowed'));
     expect(onTacticClick).toHaveBeenCalledWith({ ply: 2, orientation: 'allowed' });
