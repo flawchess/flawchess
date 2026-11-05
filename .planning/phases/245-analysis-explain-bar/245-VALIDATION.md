@@ -40,20 +40,21 @@ created: "2026-11-05"
 
 Decision → test mapping from 245-RESEARCH.md §Validation Architecture. Task IDs are filled in by the planner.
 
-| Decision | Behavior | Test Type | Automated Command | File Exists | Status |
-|----------|----------|-----------|-------------------|-------------|--------|
-| D-08 | `eligibleExplainMarker` M/B either side; null for inaccuracy / missing ply / null markers | unit | `npx vitest run src/lib/__tests__/explainBar.test.ts` | ❌ W0 | ⬜ pending |
-| D-04/D-09/D-10 | `chooseExplainOrientation` preferred, fallback, null; `usableExplainLines` guards | unit | same | ❌ W0 | ⬜ pending |
-| D-03/D-11 | `resolveExplainBarState` hidden / explain (pending) / got-it rules | unit | same | ❌ W0 | ⬜ pending |
-| D-05 | Explain lands on `missed_moves[0]` (user) / `allowed_moves[1]` (opponent) | hook integration | `npx vitest run src/hooks/analysis/__tests__/useExplainBar.test.ts` | ❌ W0 | ⬜ pending |
-| D-06 | Back/Forward step in line; Got it removes subtree + key, lands on `mainLine[P]` | hook integration | same | ❌ W0 | ⬜ pending |
-| D-07 | Re-entry navigates to existing root, no duplicate graft; shared chip key | hook integration | same | ❌ W0 | ⬜ pending |
-| D-05 (chips) | Graft without `enter` still parks at fork | hook integration | same | ❌ W0 | ⬜ pending |
-| D-11 hardening | `useTacticLines` maps 404 → `null`, other errors still error | unit | `npx vitest run src/hooks/__tests__/useLibrary.test.ts` | ✅ | ⬜ pending |
-| Overlay gate | Non-motif line: no tactic colours, unlabelled payoff arrow; motif line unchanged | unit | `npx vitest run src/hooks/analysis/__tests__/useAnalysisBoardArrows.test.ts` | ✅ | ⬜ pending |
-| D-01/D-02 + UI | One button; label/testid per state; tracking on click only | component | `npx vitest run src/components/analysis/__tests__/ExplainBar.test.tsx` | ❌ W0 | ⬜ pending |
-| D-03 placement | Desktop inside `analysis-movelist-card`; mobile right before `analysis-mobile-footer`; free play absent | page | `npx vitest run src/pages/__tests__/Analysis.test.tsx -t "Explain"` | ✅ | ⬜ pending |
-| Analytics registry | New `BOARD_TOOL_TARGETS` pass name checks | unit | `npx vitest run src/lib/__tests__/analytics.test.ts` | ✅ | ⬜ pending |
+| Task | Decision | Behavior | Test Type | Automated Command | File Exists | Status |
+|------|----------|----------|-----------|-------------------|-------------|--------|
+| 245-01-T1 | D-08 | `eligibleExplainMarker` M/B either side; null for inaccuracy / missing ply / null markers | unit | `npx vitest run src/lib/__tests__/explainBar.test.ts` | created by 245-01-T1 | ⬜ pending |
+| 245-01-T1 | D-04/D-09/D-10 | `chooseExplainOrientation` preferred, fallback, null; `usableExplainLines` guards | unit | same | created by 245-01-T1 | ⬜ pending |
+| 245-01-T1, 245-01-T2 | D-03/D-11 | `resolveExplainBarState` hidden / explain (pending) rules (T1) and got-it rule (T2) | unit | same | created by 245-01-T1 | ⬜ pending |
+| 245-01-T1, 245-01-T2 | D-05/D-06 (page) | Desktop: Explain lands on `Nf3` (missed_moves[0]); opponent flaw lands on `Bc4` (allowed_moves[1]); Got it returns to the flaw move | page | `npx vitest run src/pages/__tests__/Analysis.test.tsx -t "Explain bar"` | ✅ (new describe) | ⬜ pending |
+| 245-01-T3 | D-05 | Explain lands on `missed_moves[0]` (user) / `allowed_moves[1]` (opponent); D-09 fallback | hook integration | `npx vitest run src/hooks/analysis/__tests__/useExplainBar.test.ts` | created by 245-01-T3 | ⬜ pending |
+| 245-01-T3 | D-06 | Back/Forward step in line; Got it removes subtree + key, lands on `mainLine[P]` | hook integration | same | created by 245-01-T3 | ⬜ pending |
+| 245-01-T3 | D-07 | Re-entry navigates to existing root, no duplicate graft; shared chip key | hook integration | same | created by 245-01-T3 | ⬜ pending |
+| 245-01-T3 | D-05 (chips) | Graft without `enter` still parks at fork | hook integration | same | created by 245-01-T3 | ⬜ pending |
+| 245-02-T3 | D-11 hardening | `useTacticLines` maps 404 → `null`, other errors still error | unit | `npx vitest run src/hooks/__tests__/useLibrary.test.ts` | ✅ | ⬜ pending |
+| 245-02-T2 | Overlay gate | Non-motif line: no tactic colours, unlabelled payoff arrow; motif line unchanged; `lineHasVisibleMotif` | unit | `npx vitest run src/hooks/analysis/__tests__/useAnalysisBoardArrows.test.ts src/lib/__tests__/tacticOrientation.test.ts` | ✅ | ⬜ pending |
+| 245-02-T1 | D-01/D-02 + UI | One button; label/testid per state; placements; no tracking inside the component | component | `npx vitest run src/components/analysis/__tests__/ExplainBar.test.tsx` | created by 245-02-T1 | ⬜ pending |
+| 245-01-T1, 245-02-T1 | D-03 placement | Desktop inside `analysis-movelist-card` (01-T1); mobile right before `analysis-mobile-footer`, mid under board controls, inaccuracy and free play absent (02-T1) | page | `npx vitest run src/pages/__tests__/Analysis.test.tsx -t "Explain bar"` | ✅ | ⬜ pending |
+| 245-01-T1, 245-01-T2 | Analytics registry | New `BOARD_TOOL_TARGETS` pass name checks | unit | `npx vitest run src/lib/__tests__/analytics.test.ts` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -66,7 +67,8 @@ Decision → test mapping from 245-RESEARCH.md §Validation Architecture. Task I
 - [ ] `frontend/src/components/analysis/__tests__/ExplainBar.test.tsx` — UI + tracking
 - [ ] Mutable tactic-lines fixture in `Analysis.test.tsx`'s `@/hooks/useLibrary` mock
 
-No framework install needed.
+No framework install needed. No separate Wave 0 plan: each test file above is created inside the task that
+implements the behaviour it covers (245-01-T1 explainBar + page fixture, 245-01-T3 harness, 245-02-T1 component).
 
 ---
 
