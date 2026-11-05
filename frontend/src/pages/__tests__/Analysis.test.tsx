@@ -2100,6 +2100,37 @@ describe('Opponent tactic tags in the move list', () => {
     expect(desktopTree.querySelector('[data-testid^="flaw-inline-tag-missed-"]')).not.toBeNull();
     expect(desktopTree.querySelector('[data-testid^="flaw-inline-tag-allowed-"]')).not.toBeNull();
   });
+
+  // UAT: only one tactic line is open at a time; opening a chip closes the previous line.
+  it('opening a second tactic chip closes the previously opened line', () => {
+    const base = buildExplainGame();
+    libraryGameState.data = {
+      ...base,
+      flaw_markers: [
+        { ...explainMarker(2, 'Qh5', true, 'blunder'), missed_tactic_motif: 'fork', missed_tactic_confidence: 0.9, missed_tactic_depth: 1 },
+        { ...explainMarker(3, 'Nc6', false, 'mistake'), allowed_tactic_motif: 'pin', allowed_tactic_confidence: 0.9, allowed_tactic_depth: 1 },
+      ],
+    };
+    tacticLinesByPly.set(2, tacticLinesFixture({ missed_moves: ['Nf3', 'Nc6'], missed_motif: 'fork', missed_depth: 1 }));
+    tacticLinesByPly.set(
+      3,
+      tacticLinesFixture({ allowed_moves: ['Nc6', 'Bc4'], allowed_motif: 'pin', allowed_depth: 1, flaw_ply: 3, flaw_severity: 'mistake' }),
+    );
+    renderAnalysis('/analysis?game_id=1');
+
+    const tree = (): HTMLElement => screen.getByTestId('variation-tree-desktop');
+    const chip = (orientation: 'missed' | 'allowed'): HTMLElement =>
+      tree().querySelector(`[data-testid^="flaw-inline-tag-${orientation}-"]`) as HTMLElement;
+
+    fireEvent.click(chip('missed'));
+    expect(within(tree()).queryAllByText('Nf3')).toHaveLength(1);
+
+    fireEvent.click(chip('allowed'));
+    expect(within(tree()).queryAllByText('Bc4')).toHaveLength(1);
+    expect(within(tree()).queryAllByText('Nf3')).toHaveLength(0);
+    expect(chip('missed').getAttribute('aria-label')).toContain('Click to expand');
+    expect(chip('allowed').getAttribute('aria-label')).toContain('Click to collapse');
+  });
 });
 
 // Live-polling analysis board with an in-place
@@ -3294,9 +3325,10 @@ describe('Explain bar', () => {
     await waitFor(() => expect(currentSan()).toBe('Nf3'), { timeout: EXPLAIN_FORK_PREVIEW_MS * 3 });
     expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-best' });
 
-    // Inside the line: stepper, the Punish switch and Got it; no headline.
+    // Inside the line: the flaw headline stays, then stepper and Got it; no Punish (UAT).
     expect(bar.getAttribute('data-state')).toBe('got-it');
-    expect(within(bar).queryByTestId('analysis-explain-headline')).toBeNull();
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
+    expect(within(bar).queryByTestId('btn-analysis-explain-punish')).toBeNull();
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-line-forward'));
     expect(currentSan()).toBe('Nc6');
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-line-back'));
@@ -3331,7 +3363,7 @@ describe('Explain bar', () => {
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-punish'));
     expect(currentSan()).toBe('Bc4');
     expect(bar.getAttribute('data-orientation')).toBe('allowed');
-    expect((within(bar).getByTestId('btn-analysis-explain-best') as HTMLButtonElement).disabled).toBe(true);
+    expect(within(bar).queryByTestId('btn-analysis-explain-best')).toBeNull();
 
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
     expect(currentSan()).toBe('Nc6');

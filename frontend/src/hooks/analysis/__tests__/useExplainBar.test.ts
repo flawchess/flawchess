@@ -6,7 +6,7 @@
  * the real useAnalysisRouteSeeding graft effect, the page's findFocusedFlaw rule
  * and fetchFlaw observer, and useExplainBar. Only the tactic-lines network hook
  * and the audio module are mocked. This proves first-move landing for both
- * buttons on either side's flaw, the line switch, the line stepper, Got it,
+ * buttons on either side's flaw, no line switch inside a line, the line stepper, Got it,
  * re-entry without duplicate grafts, the shared chip key and unchanged chip parking.
  */
 
@@ -437,32 +437,18 @@ describe('useExplainBar harness', () => {
     expect(track).toHaveBeenLastCalledWith('board-tool', { page: 'analysis', target: 'explain-close' });
   });
 
-  it('switch: Punish inside the Best line closes it and lands on the refutation', () => {
+  it('inside a line, opening the other line is a no-op (UAT: no switch button)', () => {
     const h = renderHarness(BLUNDER_PLY);
     openAndSettle(h);
-    const grafted = [...h.result.current.board.pvNodeIds];
-    expect(h.result.current.explain.state).toMatchObject({ kind: 'got-it', otherUsable: true });
+    const before = h.result.current.board.currentNodeId;
+    track.mockClear();
 
     act(() => h.result.current.explain.onOpenLine('allowed'));
 
-    for (const id of grafted) expect(h.result.current.board.nodes.has(id)).toBe(false);
-    expect(h.result.current.openLines.has('2:missed')).toBe(false);
-    const line = h.result.current.openLines.get('2:allowed');
-    expect(h.result.current.board.currentNodeId).toBe(line?.rootNodeId);
-    expect(h.result.current.explain.state).toMatchObject({ kind: 'got-it', line: { orientation: 'allowed' } });
-    expect(track).toHaveBeenLastCalledWith('board-tool', { page: 'analysis', target: 'explain-punish' });
-  });
-
-  it('switch: Best inside the Punish line previews the fork, then plays the better move', () => {
-    const h = renderHarness(BLUNDER_PLY);
-    openAndSettle(h, 'allowed');
-
-    act(() => h.result.current.explain.onOpenLine('missed'));
-    expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, BLUNDER_PLY - 1));
-    act(() => vi.advanceTimersByTime(EXPLAIN_FORK_PREVIEW_MS));
-
-    expect(currentSan(h)).toBe('Nf3');
     expect([...h.result.current.openLines.keys()]).toEqual(['2:missed']);
+    expect(h.result.current.board.currentNodeId).toBe(before);
+    expect(h.result.current.explain.state).toMatchObject({ kind: 'got-it', line: { orientation: 'missed' } });
+    expect(track).not.toHaveBeenCalled();
   });
 
   it('stepper: Back stops at the fork, Forward re-enters the line and stops at its end', () => {

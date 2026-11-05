@@ -97,6 +97,7 @@ import {
   EloSelectorPanel,
   FlawChessCard,
   MoveListHeaderContent,
+  PgnFenMenu,
   HumanTab,
   FlawChessTab,
   MobileEngineLines,
@@ -1751,9 +1752,8 @@ export default function Analysis() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Inline chip click: toggle off (SAME chip only — deleteSubtree removes just that
-  // line, others stay open) or open a new line WITHOUT touching any other open line
-  // (flat siblings: opening a chip never clears a previously opened PV).
+  // Inline chip click: toggle off (same chip) or open a new line. Only one line is
+  // open at a time (UAT): opening a chip closes every previously open line first.
   const handlePvChipClick = (
     nodeId: NodeId,
     flaw: { ply: number; orientation: 'missed' | 'allowed' },
@@ -1770,8 +1770,11 @@ export default function Analysis() {
       });
       return;
     }
-    // Different/new chip: open it. insertPvLine is called by the graft effect once
-    // contextualTacticData arrives; other open lines are left untouched.
+    // Different/new chip: close the other open lines, then open it. insertPvLine is
+    // called by the graft effect once contextualTacticData arrives. deleteSubtree is a
+    // functional state update, so several calls in one handler compose.
+    for (const line of openLines.values()) deleteSubtree(line.rootNodeId);
+    if (openLines.size > 0) setOpenLines(new Map());
     setPendingFlaw(flaw);
     // Navigate to the fork node — decision board (ply-1) for missed, flaw position (ply) for
     // allowed. Bounds guard.
@@ -2179,6 +2182,10 @@ export default function Analysis() {
   const moveListHeaderContent = (
     <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} />
   );
+  // Mobile: icon-only menu under the SF eval bar instead of the move-list header.
+  const pgnFenIconMenu = (
+    <PgnFenMenu onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} iconOnly />
+  );
 
   // The mobile "Moves" tab content's remount key — see MovesTab's own doc comment
   // (AnalysisTabs.tsx) for the bot-game live-analysis remount bug this fixes.
@@ -2196,7 +2203,7 @@ export default function Analysis() {
       movesTab={
         <MovesTab
           moveListKey={moveListKey}
-          moveListHeaderContent={moveListHeaderContent}
+          moveListHeaderContent={isMobile ? null : moveListHeaderContent}
           variationTree={
             <VariationTreePanel
               variant="vertical"
@@ -2522,9 +2529,12 @@ export default function Analysis() {
             rightEvalBar={rightEvalBarNode()}
             containerRef={containerRef}
           />
-          {showPlayerBars && (
-            <BoardFooterRow
-              player={
+          {/* Rendered even without player bars: the slot under the SF eval bar holds the
+              icon-only PGN/FEN menu, which replaces the mobile move-list header (UAT:
+              reclaims that header's vertical space). */}
+          <BoardFooterRow
+            player={
+              showPlayerBars ? (
                 <AnalysisPlayerBar
                   color={bottomPlayerColor}
                   pastedHeaders={pastedHeaders}
@@ -2532,9 +2542,10 @@ export default function Analysis() {
                   playerClocks={playerClocks}
                   position={position}
                 />
-              }
-            />
-          )}
+              ) : null
+            }
+            rightSlot={pgnFenIconMenu}
+          />
         </div>
 
         {/* Game load error (CLAUDE.md isError branch). */}

@@ -40,7 +40,6 @@ import {
 import type { EnterExplainLine } from '@/hooks/analysis/useExplainLineEntry';
 import {
   eligibleExplainMarker,
-  otherOrientation,
   resolveExplainBarState,
   type ExplainBarState,
   type ExplainOrientation,
@@ -69,7 +68,7 @@ export interface UseExplainBarOptions {
   nodes: Map<NodeId, MoveNode>;
   currentNodeId: NodeId | null;
   mainLine: NodeId[];
-  goToNode: (id: NodeId, opts?: { silent?: boolean }) => void;
+  goToNode: (id: NodeId) => void;
   goForward: () => void;
   goBack: () => void;
   deleteSubtree: (rootId: NodeId) => void;
@@ -171,21 +170,11 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     // The graft effect's goToNode runs outside the user gesture, so iOS/WebKit
     // needs the audio unlock here.
     unlockAudio();
-    if (state.kind === 'explain') {
-      if (state.pending !== null || !state.usable[orientation]) return;
-      trackFeature('board-tool', { target: OPEN_TARGET[orientation] });
-      openLine(state.ply, orientation);
-      return;
-    }
-    // Got it state: the sibling button swaps lines (closes this one, opens the other).
-    if (state.kind !== 'got-it' || !state.otherUsable || orientation !== otherOrientation(state.line.orientation)) return;
+    // Only the explain state offers line buttons; inside a line (got-it) the other
+    // line's button is hidden (Phase 245 UAT).
+    if (state.kind !== 'explain' || state.pending !== null || !state.usable[orientation]) return;
     trackFeature('board-tool', { target: OPEN_TARGET[orientation] });
-    closeLine(state.line);
-    // Park on the flaw move so the bar shows the pending explain state while the graft
-    // runs, instead of hiding (rule 2) while the cursor sits on a missed line's fork.
-    const flawNodeId = mainLine[state.line.ply];
-    if (flawNodeId !== undefined) goToNode(flawNodeId, { silent: true });
-    openLine(state.line.ply, orientation);
+    openLine(state.ply, orientation);
   };
 
   const onGotIt = (): void => {

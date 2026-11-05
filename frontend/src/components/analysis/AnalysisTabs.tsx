@@ -1,5 +1,5 @@
 import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react';
-import { ArrowLeftRight, ChartNoAxesColumn, ChessKnight, ChevronDown, ClipboardPaste, Copy, Cpu, User } from 'lucide-react';
+import { ArrowLeftRight, ChartNoAxesColumn, ChessKnight, ChevronDown, ClipboardPaste, Copy, Cpu, FileText, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -509,49 +509,68 @@ async function copyToClipboard(text: string, label: 'FEN' | 'PGN', target: 'fen-
   }
 }
 
-// Move-list header row content: shared between the
-// mobile/mid MovesTab header and the desktop MovesCard CardHeader — the PGN/FEN
-// menu (import, copy PGN or copy FEN) reaches every layout, not just desktop (the
-// whole flow must work at 375px). Rendered unconditionally, including ?game_id= game mode.
-export function MoveListHeaderContent({ onOpenPasteModal, fen, getPgn }: MoveListHeaderContentProps): ReactElement {
+// The PGN/FEN menu (import, copy PGN or copy FEN). Rendered unconditionally in
+// every layout, including ?game_id= game mode (the whole flow must work at 375px):
+// labelled inside the move-list header on desktop/mid, icon-only under the SF eval
+// bar on mobile (UAT: the mobile move-list header was dropped to gain vertical space).
+export function PgnFenMenu({
+  onOpenPasteModal,
+  fen,
+  getPgn,
+  iconOnly = false,
+}: MoveListHeaderContentProps & { iconOnly?: boolean }): ReactElement {
   return (
-    <>
-      <ArrowLeftRight className="h-4 w-4" aria-hidden />
-      Moves
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {iconOnly ? (
+          <Button variant="ghost" size="icon-sm" aria-label="PGN/FEN" data-testid="analysis-btn-paste">
+            <FileText className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        ) : (
           <Button variant="ghost" size="default" className="ml-auto gap-1" data-testid="analysis-btn-paste">
             PGN/FEN
             <ChevronDown className="h-4 w-4" aria-hidden="true" />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" data-testid="analysis-pgn-fen-menu">
-          <DropdownMenuItem
-            data-testid="analysis-menu-import"
-            onSelect={() => {
-              onOpenPasteModal();
-              trackFeature('board-tool', { target: 'paste-open' });
-            }}
-          >
-            <ClipboardPaste aria-hidden="true" />
-            Import PGN/FEN
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="analysis-menu-copy-pgn"
-            onSelect={() => void copyToClipboard(getPgn(), 'PGN', 'pgn-copy')}
-          >
-            <Copy aria-hidden="true" />
-            Copy PGN
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="analysis-menu-copy-fen"
-            onSelect={() => void copyToClipboard(fen, 'FEN', 'fen-copy')}
-          >
-            <Copy aria-hidden="true" />
-            Copy FEN
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" data-testid="analysis-pgn-fen-menu">
+        <DropdownMenuItem
+          data-testid="analysis-menu-import"
+          onSelect={() => {
+            onOpenPasteModal();
+            trackFeature('board-tool', { target: 'paste-open' });
+          }}
+        >
+          <ClipboardPaste aria-hidden="true" />
+          Import PGN/FEN
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          data-testid="analysis-menu-copy-pgn"
+          onSelect={() => void copyToClipboard(getPgn(), 'PGN', 'pgn-copy')}
+        >
+          <Copy aria-hidden="true" />
+          Copy PGN
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          data-testid="analysis-menu-copy-fen"
+          onSelect={() => void copyToClipboard(fen, 'FEN', 'fen-copy')}
+        >
+          <Copy aria-hidden="true" />
+          Copy FEN
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// Move-list header row content: shared between the mid MovesTab header and the
+// desktop MovesCard CardHeader.
+export function MoveListHeaderContent(props: MoveListHeaderContentProps): ReactElement {
+  return (
+    <>
+      <ArrowLeftRight className="h-4 w-4" aria-hidden />
+      Moves
+      <PgnFenMenu {...props} />
     </>
   );
 }
@@ -737,12 +756,13 @@ export function EvalTab({
 
 export type MovesTabProps = {
   moveListKey: string;
+  /** Header row content; null drops the header (mobile, where the PGN/FEN menu sits under the SF eval bar). */
   moveListHeaderContent: ReactNode;
   variationTree: ReactNode;
 };
 
-// The mobile "Moves" tab content — a CardHeader (carrying the Paste
-// trigger) over the vertical variation tree in a charcoal container, matching the
+// The mobile "Moves" tab content — an optional CardHeader (carrying the PGN/FEN
+// menu; mid only, mobile passes null to save vertical space) over the vertical variation tree in a charcoal container, matching the
 // surrounding tab surfaces. Shared across the mobile tab layouts and the mid-range
 // right column.
 //
@@ -756,9 +776,11 @@ export function MovesTab({ moveListKey, moveListHeaderContent, variationTree }: 
   return (
     <TabsContent value="moves" className="flex min-h-0 flex-1 flex-col pb-2">
       <div key={moveListKey} className="charcoal-texture flex min-h-0 flex-1 flex-col rounded-md">
-        <CardHeader size="compact" data-testid="analysis-movelist-header" className="rounded-t-md">
-          {moveListHeaderContent}
-        </CardHeader>
+        {moveListHeaderContent != null && (
+          <CardHeader size="compact" data-testid="analysis-movelist-header" className="rounded-t-md">
+            {moveListHeaderContent}
+          </CardHeader>
+        )}
         {variationTree}
       </div>
     </TabsContent>

@@ -78,12 +78,12 @@ describe('lineHasVisibleMotif', () => {
     expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'allowed' })).toBe(true);
   });
 
-  it('is false for an opponent marker even with motifs', () => {
+  it('is true for an opponent marker with motifs (opponent chips are shown too)', () => {
     const markers = [
       marker({ ply: 10, is_user: false, missed_tactic_motif: 'fork', allowed_tactic_motif: 'pin' }),
     ];
-    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'missed' })).toBe(false);
-    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'allowed' })).toBe(false);
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'missed' })).toBe(true);
+    expect(lineHasVisibleMotif(markers, { ply: 10, orientation: 'allowed' })).toBe(true);
   });
 
   it('is false when no marker sits at the line ply', () => {

@@ -6,8 +6,11 @@
  * Phase 245 UAT replaced the single Explain button with two named lines:
  *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
- * One row: the headline (move and severity badge, as in the move list) or, inside a
- * line, a line stepper, then the buttons. Tactic chips live in the move list only.
+ * One row: the headline (move, severity badge and the tactics as colored text, e.g.
+ * "c3??: missed discovered-attack in 2", up to two lines) then both buttons. Inside a
+ * line the headline stays and the buttons become a line stepper then Got it (the other
+ * line's button is hidden there).
+ * Clickable tactic chips live in the move list only.
  * Copy is neutral (never "your move"): `is_user` is the game OWNER and the viewer may
  * be someone else.
  */
@@ -18,11 +21,13 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
-import {
-  otherOrientation,
-  type ExplainBarState,
-  type ExplainOrientation,
-  type ExplainSeverity,
+import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
+import type {
+  ExplainBarState,
+  ExplainHeadline,
+  ExplainOrientation,
+  ExplainSeverity,
+  ExplainTactic,
 } from '@/lib/explainBar';
 import type { ExplainLineStepper } from '@/hooks/analysis/useExplainBar';
 
@@ -51,6 +56,24 @@ const LINE_BUTTON: Record<ExplainOrientation, { label: string; testId: string; i
 const LINE_ORDER: readonly ExplainOrientation[] = ['missed', 'allowed'];
 
 const GOT_IT_LABEL = 'Got it';
+
+const TACTIC_COLOR: Record<ExplainOrientation, string> = { missed: TAC_MISSED, allowed: TAC_ALLOWED };
+const TACTIC_SEPARATOR = ', ';
+
+/** Inline text (not a flex item), so it continues the headline's first line and wraps under the move. */
+function TacticText({ tactics }: { tactics: ExplainTactic[] }): ReactElement | null {
+  if (tactics.length === 0) return null;
+  return (
+    <span data-testid="analysis-explain-tactics">
+      {tactics.map((t, i) => (
+        <span key={t.orientation} data-orientation={t.orientation} style={{ color: TACTIC_COLOR[t.orientation] }}>
+          {i > 0 && TACTIC_SEPARATOR}
+          {t.text}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 type ExplainBarProps = {
   state: ExplainBarState;
@@ -90,7 +113,7 @@ function LineButton({
 
 function LineStepper({ stepper }: { stepper: ExplainLineStepper }): ReactElement {
   return (
-    <div data-testid="analysis-explain-stepper" className="flex min-w-0 flex-1 items-center gap-1">
+    <div data-testid="analysis-explain-stepper" className="flex shrink-0 items-center gap-1">
       <Button
         type="button"
         variant="brand-outline"
@@ -142,6 +165,41 @@ function BarShell({ state, orientation, placement, children }: BarShellProps): R
   );
 }
 
+/**
+ * Same headline in both states, so it stays put when a line opens or closes.
+ *
+ * One inline text flow: move, badge and colon, then the tactics on the same first line,
+ * wrapping under the move. At most two lines; normal wrapping only breaks at spaces and
+ * after hyphens ("discovered-|attack"), and line-clamp ellipsizes the rest.
+ * leading-tight!: the unlayered mobile .text-sm bump in index.css (line-height 1.5rem)
+ * otherwise beats the utility, and two 24px lines outgrow the button row. max-h-10: the
+ * mono move's font metrics add ~1px to the line box, which would make the row taller
+ * than the button height.
+ */
+function Headline({ headline }: { headline: ExplainHeadline }): ReactElement {
+  return (
+    <span
+      data-testid="analysis-explain-headline"
+      data-severity={headline.severity}
+      className="line-clamp-2 max-h-10 min-w-0 flex-1 text-sm leading-tight!"
+    >
+      {/* nowrap: the move, its badge and the colon always stay together on line one. */}
+      <span className="whitespace-nowrap">
+        <span
+          data-testid="analysis-explain-headline-text"
+          className={cn(headline.san !== null && 'font-mono font-bold text-foreground')}
+        >
+          {headline.san ?? SEVERITY_NOUN[headline.severity]}
+        </span>
+        <MoveQualityIcon quality={headline.severity} className="ml-1.5 inline-block size-4 align-text-bottom" />
+        {headline.tactics.length > 0 && ':'}
+      </span>
+      {headline.tactics.length > 0 && ' '}
+      <TacticText tactics={headline.tactics} />
+    </span>
+  );
+}
+
 export function ExplainBar({
   state,
   onOpenLine,
@@ -151,11 +209,12 @@ export function ExplainBar({
 }: ExplainBarProps): ReactElement | null {
   if (state.kind === 'hidden') return null;
   if (state.kind === 'got-it') {
-    const other = otherOrientation(state.line.orientation);
     return (
       <BarShell state="got-it" orientation={state.line.orientation} placement={placement}>
+        {/* No headline (no mistake/blunder marker at the line's ply): a spacer keeps the
+            stepper and Got it on the right. */}
+        {state.headline !== null ? <Headline headline={state.headline} /> : <span className="flex-1" />}
         <LineStepper stepper={stepper} />
-        <LineButton orientation={other} disabled={!state.otherUsable} busy={false} onOpenLine={onOpenLine} />
         <Button type="button" variant="brand-outline" size="lg" data-testid="btn-analysis-explain-got-it" onClick={onGotIt}>
           <Check data-icon="inline-start" aria-hidden="true" />
           {GOT_IT_LABEL}
@@ -165,20 +224,7 @@ export function ExplainBar({
   }
   return (
     <BarShell state="explain" placement={placement}>
-      {/* Move then badge, as in the move list. */}
-      <span
-        data-testid="analysis-explain-headline"
-        data-severity={state.severity}
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
-      >
-        <span
-          data-testid="analysis-explain-headline-text"
-          className={cn('truncate', state.san !== null && 'font-mono font-bold text-foreground')}
-        >
-          {state.san ?? SEVERITY_NOUN[state.severity]}
-        </span>
-        <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
-      </span>
+      <Headline headline={state} />
       {LINE_ORDER.map((orientation) => (
         <LineButton
           key={orientation}

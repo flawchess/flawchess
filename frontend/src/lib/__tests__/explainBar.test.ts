@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   eligibleExplainMarker,
-  otherOrientation,
   resolveExplainBarState,
   usableExplainLines,
   type ExplainBarInputs,
@@ -104,13 +103,6 @@ describe('usableExplainLines', () => {
   });
 });
 
-describe('otherOrientation', () => {
-  it('maps each line to its sibling', () => {
-    expect(otherOrientation('missed')).toBe('allowed');
-    expect(otherOrientation('allowed')).toBe('missed');
-  });
-});
-
 describe('resolveExplainBarState', () => {
   it('offers both lines on an eligible ply with usable lines', () => {
     expect(resolveExplainBarState(inputs({}))).toEqual({
@@ -118,6 +110,7 @@ describe('resolveExplainBarState', () => {
       ply: 10,
       san: 'Qh5',
       severity: 'blunder',
+      tactics: [],
       usable: { missed: true, allowed: true },
       pending: null,
     });
@@ -133,6 +126,43 @@ describe('resolveExplainBarState', () => {
 
   it('is hidden when the lines belong to another ply (stale observer data)', () => {
     expect(resolveExplainBarState(inputs({ tacticLinesPly: 9 })).kind).toBe('hidden');
+  });
+
+  it('lists both tactics as text, missed first, with the unanchored 1-based depth', () => {
+    const state = resolveExplainBarState(
+      inputs({
+        flawMarkers: [
+          marker({
+            ply: 10,
+            missed_tactic_motif: 'discovered-attack',
+            missed_tactic_depth: 1,
+            allowed_tactic_motif: 'back-rank-mate',
+            allowed_tactic_depth: 2,
+          }),
+        ],
+      }),
+    );
+    expect(state).toMatchObject({
+      kind: 'explain',
+      tactics: [
+        { orientation: 'missed', text: 'missed discovered-attack in 2' },
+        { orientation: 'allowed', text: 'allowed checkmate in 3' },
+      ],
+    });
+  });
+
+  it('lists an allowed-only tactic and drops the depth when it is unknown', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, allowed_tactic_motif: 'fork', allowed_tactic_depth: null })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', tactics: [{ orientation: 'allowed', text: 'allowed fork' }] });
+  });
+
+  it('drops family-less motifs (the move list shows no chip for them either)', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, missed_tactic_motif: 'clearance', missed_tactic_depth: 1 })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', tactics: [] });
   });
 
   it('is hidden when not game mode or while a fast-forward Jump runs', () => {
@@ -171,6 +201,7 @@ describe('resolveExplainBarState', () => {
       ply: 10,
       san: 'Nc6',
       severity: 'mistake',
+      tactics: [],
       usable: { missed: true, allowed: true },
     });
   });
@@ -186,35 +217,40 @@ describe('resolveExplainBarState', () => {
 describe('resolveExplainBarState got-it rule (D-06)', () => {
   const line: OpenLine = { rootNodeId: 40, ply: 10, orientation: 'missed' };
   const openLines = new Map<string, OpenLine>([['10:missed', line]]);
+  const QH5_HEADLINE = { san: 'Qh5', severity: 'blunder', tactics: [] };
 
-  it('returns got-it when the focused flaw maps to an open line, with the sibling usable', () => {
+  it('returns got-it when the focused flaw maps to an open line', () => {
     const state = resolveExplainBarState(
       inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, openLines }),
     );
-    expect(state).toEqual({ kind: 'got-it', line, otherUsable: true });
+    expect(state).toEqual({ kind: 'got-it', line, headline: QH5_HEADLINE });
   });
 
-  it('the sibling is unusable when its PV is empty, or the lines are for another ply or loading', () => {
-    const focused = { focusedFlaw: { ply: 10, orientation: 'missed' as const }, openLines };
-    const noAllowed = tacticLines({ missed_moves: ['Nf3'], allowed_moves: ['Qh5'] });
-    expect(resolveExplainBarState(inputs({ ...focused, tacticLines: noAllowed }))).toMatchObject({
-      otherUsable: false,
-    });
-    expect(resolveExplainBarState(inputs({ ...focused, tacticLinesPly: 9 }))).toMatchObject({ otherUsable: false });
-    expect(resolveExplainBarState(inputs({ ...focused, tacticLines: undefined }))).toMatchObject({
-      otherUsable: false,
-    });
-  });
-
-  it('the sibling is usable when it is already open, even without line data', () => {
-    const both = new Map<string, OpenLine>([
-      ['10:missed', line],
-      ['10:allowed', { rootNodeId: 50, ply: 10, orientation: 'allowed' }],
-    ]);
+  it("keeps the line's flaw headline, tactics included, while stepping inside the line", () => {
     const state = resolveExplainBarState(
-      inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, openLines: both, tacticLines: undefined }),
+      inputs({
+        focusedFlaw: { ply: 10, orientation: 'missed' },
+        openLines,
+        landingPly: -1,
+        flawMarkers: [marker({ ply: 10, missed_tactic_motif: 'discovered-attack', missed_tactic_depth: 1 })],
+      }),
     );
-    expect(state).toMatchObject({ kind: 'got-it', otherUsable: true });
+    expect(state).toEqual({
+      kind: 'got-it',
+      line,
+      headline: {
+        san: 'Qh5',
+        severity: 'blunder',
+        tactics: [{ orientation: 'missed', text: 'missed discovered-attack in 2' }],
+      },
+    });
+  });
+
+  it('got-it has a null headline when no mistake/blunder marker sits at the line ply', () => {
+    const state = resolveExplainBarState(
+      inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, openLines, landingPly: -1, flawMarkers: [] }),
+    );
+    expect(state).toEqual({ kind: 'got-it', line, headline: null });
   });
 
   it('wins over every later rule, including a pending flaw and an off-flaw landing ply', () => {
@@ -253,6 +289,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
       ply: 9,
       san: 'f6',
       severity: 'mistake',
+      tactics: [],
       usable: { missed: true, allowed: true },
       pending: null,
     });
@@ -262,7 +299,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
     expect(resolveExplainBarState(inputs({ ...adjacent, tacticLines: undefined }))).toEqual({
       kind: 'got-it',
       line,
-      otherUsable: false,
+      headline: QH5_HEADLINE,
     });
   });
 
@@ -280,7 +317,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
         landingPly: 10,
       }),
     );
-    expect(state).toEqual({ kind: 'got-it', line: allowed, otherUsable: true });
+    expect(state).toEqual({ kind: 'got-it', line: allowed, headline: QH5_HEADLINE });
   });
 
   it('still loses to rule 1 (not game mode, fast-forward running)', () => {

@@ -236,7 +236,7 @@ export interface UseAnalysisBoardArrowsOptions {
   focusedPvLine: readonly NodeId[];
   /**
    * Whether the focused line has a user-visible tactic motif (lineHasVisibleMotif). When
-   * false (an Explain on a non-motif or opponent flaw) the PV overlay is a plain unlabelled
+   * false (an Explain on a non-motif flaw) the PV overlay is a plain unlabelled
    * next-move arrow with no numbered countdown and no move-list tint.
    */
   focusedLineHasMotif: boolean;

@@ -10,6 +10,7 @@
 
 import type { FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
 import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
+import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
 const ALLOWED_PREPEND_LEN = 1;
@@ -52,29 +53,34 @@ export function usableExplainLines(data: TacticLinesResponse, ply: number): Expl
   };
 }
 
-/** The line a got-it bar can switch to: the open line's sibling orientation. */
-export function otherOrientation(orientation: ExplainOrientation): ExplainOrientation {
-  return orientation === 'missed' ? 'allowed' : 'missed';
+/** One tactic in the Explain headline, as text: "missed discovered-attack in 2". */
+export interface ExplainTactic {
+  orientation: ExplainOrientation;
+  text: string;
+}
+
+/** The flaw the bar is about: its move, severity badge and tactics as text. */
+export interface ExplainHeadline {
+  san: string | null;
+  severity: ExplainSeverity;
+  /** Every visible tactic on this flaw (missed first, then allowed); empty: none. */
+  tactics: ExplainTactic[];
 }
 
 export type ExplainBarState =
   | { kind: 'hidden' }
-  | {
+  | (ExplainHeadline & {
       kind: 'explain';
       ply: number;
-      san: string | null;
-      severity: ExplainSeverity;
       /** Per-button availability; at least one is true (both false hides the bar, D-10). */
       usable: ExplainLineUsable;
       /** The line being opened for this ply (both buttons disabled), or null. */
       pending: ExplainOrientation | null;
-    }
-  | {
-      kind: 'got-it';
-      line: OpenLine;
-      /** Whether the sibling line (the switch button) can be opened. */
-      otherUsable: boolean;
-    };
+    })
+  // Phase 245 UAT: no sibling-line switch inside a line (Best hides Punish and vice
+  // versa). The open line's flaw headline stays visible while stepping through it; null
+  // only when the markers have no mistake/blunder at the line's ply.
+  | { kind: 'got-it'; line: OpenLine; headline: ExplainHeadline | null };
 
 export interface ExplainBarInputs {
   isGameMode: boolean;
@@ -100,18 +106,31 @@ function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | nul
   return openLines.get(flawKey(focusedFlaw)) ?? null;
 }
 
-/** The got-it state for an open line; the switch button needs the sibling to be open or graftable. */
-function gotItState(inputs: ExplainBarInputs, line: OpenLine): ExplainBarState {
-  const { openLines, tacticLines, tacticLinesPly } = inputs;
-  const other = otherOrientation(line.orientation);
-  const otherOpen = openLines.has(flawKey({ ply: line.ply, orientation: other }));
-  const otherGraftable =
-    tacticLines != null && tacticLinesPly === line.ply && usableExplainLines(tacticLines, line.ply)[other];
-  return {
-    kind: 'got-it',
-    line,
-    otherUsable: otherOpen || otherGraftable,
-  };
+/**
+ * The flaw's visible tactics as headline text, both orientations. resolveVisibleTactic
+ * applies the family guard (family-less motifs show nothing), the same rule as the
+ * move-list chips. anchored=false: this is a navigable surface, so the allowed +1
+ * decision-anchor offset is dropped (the chip's depth, spelled out).
+ */
+function explainTactics(marker: FlawMarker): ExplainTactic[] {
+  const slots = [
+    { orientation: 'missed', motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
+    { orientation: 'allowed', motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
+  ] as const;
+  return slots.flatMap(({ orientation, motif, depth }) => {
+    const visible = resolveVisibleTactic(orientation, motif, depth, undefined, false);
+    if (visible === null) return [];
+    const { motifLabel, depthLabel } = visible;
+    const text = depthLabel != null ? `${orientation} ${motifLabel} in ${depthLabel}` : `${orientation} ${motifLabel}`;
+    return [{ orientation, text }];
+  });
+}
+
+/** The headline for the mistake/blunder at `ply`, or null when there is none. */
+function explainHeadline(flawMarkers: FlawMarker[] | null | undefined, ply: number): ExplainHeadline | null {
+  const marker = eligibleExplainMarker(flawMarkers, ply);
+  if (marker === null || !isExplainSeverity(marker.severity)) return null;
+  return { san: marker.move_san, severity: marker.severity, tactics: explainTactics(marker) };
 }
 
 /** Ordered early returns; see the numbered comments for each rule. */
@@ -134,7 +153,7 @@ export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarStat
     const landing = explainState(inputs);
     if (landing.kind === 'explain') return landing;
   }
-  return gotItState(inputs, openLine);
+  return { kind: 'got-it', line: openLine, headline: explainHeadline(inputs.flawMarkers, openLine.ply) };
 }
 
 /** Rules (2)-(6): the Best / Punish offer for the landing ply, or hidden. */
@@ -143,8 +162,8 @@ function explainState(inputs: ExplainBarInputs): ExplainBarState {
   // (2) An unrelated chip or deep-link open is in flight.
   if (pendingFlaw != null && pendingFlaw.ply !== landingPly) return { kind: 'hidden' };
   // (3) Not on an eligible flaw ply (covers sidelines, the root and inaccuracies).
-  const marker = eligibleExplainMarker(flawMarkers, landingPly);
-  if (marker === null || !isExplainSeverity(marker.severity)) return { kind: 'hidden' };
+  const headline = explainHeadline(flawMarkers, landingPly);
+  if (headline === null) return { kind: 'hidden' };
   // (4) D-11: loading and no-lines both render nothing, never a placeholder.
   if (tacticLines == null || tacticLinesPly !== landingPly) return { kind: 'hidden' };
   // (5) D-10: neither line is usable. One usable line still shows both buttons, the other
@@ -156,8 +175,7 @@ function explainState(inputs: ExplainBarInputs): ExplainBarState {
   return {
     kind: 'explain',
     ply: landingPly,
-    san: marker.move_san,
-    severity: marker.severity,
+    ...headline,
     usable,
     pending: pendingFlaw?.ply === landingPly ? pendingFlaw.orientation : null,
   };

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { ExplainBar } from '../ExplainBar';
 import type { ExplainBarState } from '@/lib/explainBar';
+import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type { ExplainLineStepper } from '@/hooks/analysis/useExplainBar';
 
 let track: ReturnType<typeof vi.fn>;
@@ -27,6 +28,7 @@ const EXPLAIN_BLUNDER: ExplainBarState = {
   ply: 2,
   san: 'Qh5',
   severity: 'blunder',
+  tactics: [],
   usable: { missed: true, allowed: true },
   pending: null,
 };
@@ -34,7 +36,7 @@ const EXPLAIN_BLUNDER: ExplainBarState = {
 const GOT_IT_MISSED: ExplainBarState = {
   kind: 'got-it',
   line: { rootNodeId: 5, ply: 2, orientation: 'missed' },
-  otherUsable: true,
+  headline: null,
 };
 
 function makeStepper(overrides: Partial<ExplainLineStepper> = {}): ExplainLineStepper {
@@ -78,7 +80,7 @@ describe('ExplainBar explain state', () => {
     expect(bar.getAttribute('data-state')).toBe('explain');
     const headline = within(bar).getByTestId('analysis-explain-headline');
     expect(headline.getAttribute('data-severity')).toBe('blunder');
-    expect(headline.children[1]?.tagName.toLowerCase()).toBe('svg');
+    expect(headline.querySelector('svg')).not.toBeNull();
     expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
     const buttons = within(bar).getAllByRole('button');
     expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual([
@@ -88,8 +90,37 @@ describe('ExplainBar explain state', () => {
     expect(within(bar).getByRole('button', { name: 'Best' })).toBe(buttons[0]);
     expect(within(bar).getByRole('button', { name: 'Punish' })).toBe(buttons[1]);
     expect(buttons[0]?.querySelector('svg')).not.toBeNull();
-    // Tactic chips live in the move list only.
+    // No tactics: no colon, no tactic text.
     expect(within(bar).queryByTestId('analysis-explain-tactics')).toBeNull();
+    expect(headline.textContent).toBe('Qh5??');
+  });
+
+  it('tactics render as colored text after the move and badge, not as buttons', () => {
+    renderBar({
+      ...EXPLAIN_BLUNDER,
+      san: 'c3',
+      tactics: [
+        { orientation: 'missed', text: 'missed discovered-attack in 2' },
+        { orientation: 'allowed', text: 'allowed fork in 1' },
+      ],
+    });
+    const headline = screen.getByTestId('analysis-explain-headline');
+    const tactics = screen.getByTestId('analysis-explain-tactics');
+    expect(headline.lastElementChild).toBe(tactics);
+    // One inline flow: the tactics continue the move's line and the whole headline clamps to two lines.
+    expect(headline.textContent).toBe('c3??: missed discovered-attack in 2, allowed fork in 1');
+    expect(headline.className).toContain('line-clamp-2');
+    // jsdom normalizes the oklch string, so compare against a probe styled the same way.
+    const colorOf = (c: string): string => {
+      const probe = document.createElement('span');
+      probe.style.color = c;
+      return probe.style.color;
+    };
+    const missed = tactics.querySelector<HTMLElement>('[data-orientation="missed"]');
+    const allowed = tactics.querySelector<HTMLElement>('[data-orientation="allowed"]');
+    expect(missed?.style.color).toBe(colorOf(TAC_MISSED));
+    expect(allowed?.style.color).toBe(colorOf(TAC_ALLOWED));
+    expect(within(tactics).queryAllByRole('button')).toHaveLength(0);
   });
 
   it('each button opens its line', () => {
@@ -124,7 +155,23 @@ describe('ExplainBar explain state', () => {
 });
 
 describe('ExplainBar got-it state', () => {
-  it('shows the line stepper, the sibling line button and Got it, with no headline', () => {
+  it('keeps the headline with its tactic text, then the stepper and Got it', () => {
+    renderBar({
+      ...GOT_IT_MISSED,
+      headline: { san: 'c3', severity: 'blunder', tactics: [{ orientation: 'missed', text: 'missed fork in 2' }] },
+    });
+    const bar = screen.getByTestId('analysis-explain-bar');
+    const headline = within(bar).getByTestId('analysis-explain-headline');
+    expect(headline.textContent).toBe('c3??: missed fork in 2');
+    expect(bar.firstElementChild).toBe(headline);
+    expect(within(bar).getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual([
+      'btn-analysis-explain-line-back',
+      'btn-analysis-explain-line-forward',
+      'btn-analysis-explain-got-it',
+    ]);
+  });
+
+  it('without a headline shows only the line stepper and Got it, no line buttons', () => {
     renderBar(GOT_IT_MISSED);
     const bar = screen.getByTestId('analysis-explain-bar');
     expect(bar.getAttribute('data-state')).toBe('got-it');
@@ -133,20 +180,14 @@ describe('ExplainBar got-it state', () => {
     expect(within(bar).getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual([
       'btn-analysis-explain-line-back',
       'btn-analysis-explain-line-forward',
-      'btn-analysis-explain-punish',
       'btn-analysis-explain-got-it',
     ]);
   });
 
-  it('an allowed line offers Best move as the switch', () => {
+  it('a Punish line hides Best too', () => {
     renderBar({ ...GOT_IT_MISSED, line: { rootNodeId: 5, ply: 3, orientation: 'allowed' } });
-    expect(screen.getByTestId('btn-analysis-explain-best')).toBeTruthy();
+    expect(screen.queryByTestId('btn-analysis-explain-best')).toBeNull();
     expect(screen.queryByTestId('btn-analysis-explain-punish')).toBeNull();
-  });
-
-  it('the switch button is disabled when the sibling line is unusable', () => {
-    renderBar({ ...GOT_IT_MISSED, otherUsable: false });
-    expect((screen.getByTestId('btn-analysis-explain-punish') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('stepper buttons call their handlers and follow canBack/canForward', () => {
@@ -160,10 +201,8 @@ describe('ExplainBar got-it state', () => {
     expect(stepper.onForward).toHaveBeenCalledTimes(1);
   });
 
-  it('Got it and the switch call their handlers and send no analytics themselves', () => {
-    const { onOpenLine, onGotIt } = renderBar(GOT_IT_MISSED);
-    fireEvent.click(screen.getByTestId('btn-analysis-explain-punish'));
-    expect(onOpenLine).toHaveBeenCalledWith('allowed');
+  it('Got it calls its handler and sends no analytics itself', () => {
+    const { onGotIt } = renderBar(GOT_IT_MISSED);
     fireEvent.click(screen.getByTestId('btn-analysis-explain-got-it'));
     expect(onGotIt).toHaveBeenCalledTimes(1);
     expect(track).not.toHaveBeenCalled();
