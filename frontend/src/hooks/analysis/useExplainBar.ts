@@ -141,9 +141,32 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     [isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, focusedFlaw, openLines, tacticLines, linesPly],
   );
 
-  /** Open (or re-enter, D-07) the `orientation` line of the flaw at `ply`. */
+  /**
+   * Delete every open line except `keepKey`. Only one tactic line is open at a time (UAT),
+   * the same rule as handlePvChipClick. deleteSubtree is a functional state update, so
+   * several calls compose; the cursor sits on the main line here, so no recovery runs.
+   */
+  const closeOtherLines = (keepKey: string): void => {
+    let closed = false;
+    for (const [key, line] of openLines) {
+      if (key === keepKey) continue;
+      deleteSubtree(line.rootNodeId);
+      closed = true;
+    }
+    if (!closed) return;
+    setOpenLines((prev) => {
+      const next = new Map<string, OpenLine>();
+      const kept = prev.get(keepKey);
+      if (kept !== undefined) next.set(keepKey, kept);
+      return next;
+    });
+  };
+
+  /** Open (or re-enter, D-07) the `orientation` line of the flaw at `ply`, closing any other line. */
   const openLine = (ply: number, orientation: ExplainOrientation): void => {
-    const existing = openLines.get(flawKey({ ply, orientation }));
+    const key = flawKey({ ply, orientation });
+    closeOtherLines(key);
+    const existing = openLines.get(key);
     if (existing !== undefined) {
       const forkNodeId = mainLine[forkPlyForOrientation(existing.ply, existing.orientation)];
       if (forkNodeId === undefined) goToNode(existing.rootNodeId);

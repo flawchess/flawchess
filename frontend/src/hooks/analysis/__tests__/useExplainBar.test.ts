@@ -6,8 +6,8 @@
  * the real useAnalysisRouteSeeding graft effect, the page's findFocusedFlaw rule
  * and fetchFlaw observer, and useExplainBar. Only the tactic-lines network hook
  * and the audio module are mocked. This proves first-move landing for both
- * buttons on either side's flaw, no line switch inside a line, the line stepper, Got it,
- * re-entry without duplicate grafts, the shared chip key and unchanged chip parking.
+ * buttons on either side's flaw, no line switch inside a line, one open line at a time,
+ * the line stepper, Got it, re-entry without duplicate grafts, the shared chip key and unchanged chip parking.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -397,7 +397,43 @@ describe('useExplainBar harness', () => {
 
     expect(currentSan(h)).toBe('Nf3');
     expect(h.result.current.openLines.has('2:missed')).toBe(true);
-    expect(h.result.current.openLines.has('3:missed')).toBe(true);
+    // One open line at a time: opening the blunder's line closed the mistake's.
+    expect(h.result.current.openLines.has('3:missed')).toBe(false);
+  });
+
+  it('UAT: Best/Punish close any other open line (one line at a time, like chips)', () => {
+    const h = renderHarness(BLUNDER_PLY);
+    openAndSettle(h, 'missed');
+    const blunderNodes = [...h.result.current.board.pvNodeIds];
+
+    // Leave the line via the move list (it stays open), then Punish the opponent mistake.
+    act(() => h.result.current.board.goToNode(mainLineId(h, MISTAKE_PLY)!));
+    expect(h.result.current.openLines.has('2:missed')).toBe(true);
+    openAndSettle(h, 'allowed');
+
+    expect([...h.result.current.openLines.keys()]).toEqual(['3:allowed']);
+    for (const id of blunderNodes) expect(h.result.current.board.nodes.has(id)).toBe(false);
+    expect(currentSan(h)).toBe('Bc4');
+  });
+
+  it('UAT: re-entering an open line closes the other open lines but keeps it', () => {
+    const h = renderHarness(BLUNDER_PLY);
+    openAndSettle(h, 'missed');
+    const blunderLine = h.result.current.openLines.get('2:missed');
+    // A second line opened the way the deep-link auto-open does (no enter flag, no close).
+    act(() => {
+      h.result.current.setPendingFlaw({ ply: MISTAKE_PLY, orientation: 'allowed' });
+      h.result.current.board.goToNode(mainLineId(h, MISTAKE_PLY)!);
+    });
+    expect(h.result.current.openLines.size).toBe(2);
+    const mistakeRoot = h.result.current.openLines.get('3:allowed')!.rootNodeId;
+
+    act(() => h.result.current.board.goToNode(mainLineId(h, BLUNDER_PLY)!));
+    openAndSettle(h, 'missed');
+
+    expect([...h.result.current.openLines.keys()]).toEqual(['2:missed']);
+    expect(h.result.current.board.nodes.has(mistakeRoot)).toBe(false);
+    expect(h.result.current.board.currentNodeId).toBe(blunderLine?.rootNodeId);
   });
 
   it('WR-02: a chip open that settles to no lines (404) releases the pending flaw so Explain works elsewhere', () => {
