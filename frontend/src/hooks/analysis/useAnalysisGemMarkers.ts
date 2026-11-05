@@ -336,18 +336,17 @@ export function useAnalysisGemMarkers(
       // noUncheckedIndexedAccess guard: skip out-of-range plies.
       const nodeId = mainLine[fm.ply];
       if (nodeId === undefined) continue;
-      // Opponent tactic tags are surfaced in the eval-chart
-      // tooltip (built separately in EvalChart) but NOT in the move list — suppress the
-      // opponent's motifs here. Severity glyphs stay both-color.
-      const missedMotif = fm.is_user ? fm.missed_tactic_motif : null;
-      const allowedMotif = fm.is_user ? fm.allowed_tactic_motif : null;
+      // Tactic tags show for both colors (the opponent's used to be suppressed here; the
+      // board arrows in useGameOverlay still gate on is_user).
+      const missedMotif = fm.missed_tactic_motif;
+      const allowedMotif = fm.allowed_tactic_motif;
       const sev = fm.severity;
       if (missedMotif !== null || allowedMotif !== null || sev === 'blunder' || sev === 'mistake') {
         map.set(nodeId, {
           missedMotif,
           allowedMotif,
-          missedDepth: fm.is_user ? fm.missed_tactic_depth : null,
-          allowedDepth: fm.is_user ? fm.allowed_tactic_depth : null,
+          missedDepth: fm.missed_tactic_depth,
+          allowedDepth: fm.allowed_tactic_depth,
           severity: sev,
           ply: fm.ply,
         });

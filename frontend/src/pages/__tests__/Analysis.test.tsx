@@ -2071,6 +2071,37 @@ describe('Book marker on an inaccuracy-severity ply', () => {
   });
 });
 
+// The move list used to suppress the opponent's tactic tags (is_user gate in
+// useAnalysisGemMarkers); they now show for both colors.
+describe('Opponent tactic tags in the move list', () => {
+  it("renders the opponent flaw's missed and allowed tactic chips", () => {
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5'],
+      flaw_markers: [
+        {
+          ply: 1,
+          severity: 'blunder',
+          tags: [],
+          is_user: false,
+          move_san: 'e5',
+          allowed_tactic_motif: 'pin',
+          allowed_tactic_confidence: 0.9,
+          allowed_tactic_depth: 1,
+          missed_tactic_motif: 'fork',
+          missed_tactic_confidence: 0.9,
+          missed_tactic_depth: 0,
+        },
+      ],
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    expect(desktopTree.querySelector('[data-testid^="flaw-inline-tag-missed-"]')).not.toBeNull();
+    expect(desktopTree.querySelector('[data-testid^="flaw-inline-tag-allowed-"]')).not.toBeNull();
+  });
+});
+
 // Live-polling analysis board with an in-place
 // pending pill. useLibraryGame itself is mocked (see the module mock above),
 // so these tests drive the pill/moves/no-remount behaviors by mutating the
