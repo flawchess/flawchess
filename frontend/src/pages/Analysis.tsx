@@ -42,6 +42,9 @@ import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useAnalysisRouteParams } from '@/hooks/analysis/useAnalysisRouteParams';
 import { useAnalysisEngineLines } from '@/hooks/analysis/useAnalysisEngineLines';
 import { useAnalysisRouteSeeding } from '@/hooks/analysis/useAnalysisRouteSeeding';
+import { useExplainBar } from '@/hooks/analysis/useExplainBar';
+import { useExplainLineEntry } from '@/hooks/analysis/useExplainLineEntry';
+import { ExplainBar } from '@/components/analysis/ExplainBar';
 import { useAnalysisBoardArrows } from '@/hooks/analysis/useAnalysisBoardArrows';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
@@ -71,7 +74,7 @@ import { setEngineToggle, useEngineDisplaySettings, useEngineToggles } from '@/l
 import type { FlawSeverity } from '@/types/library';
 import { isRareMoveTier } from '@/types/library';
 import { useFastForward, FAST_FORWARD_ANIMATION_MS } from '@/hooks/useFastForward';
-import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
+import { lineHasVisibleMotif, tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { TEMPERATURE_DEFAULT } from '@/components/analysis/TemperatureSelector';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
@@ -94,6 +97,7 @@ import {
   EloSelectorPanel,
   FlawChessCard,
   MoveListHeaderContent,
+  PgnFenMenu,
   HumanTab,
   FlawChessTab,
   MobileEngineLines,
@@ -113,8 +117,8 @@ import {
   forkPlyForOrientation,
   flawKey,
   bestSanFromPv,
-  type TacticRef,
-  type OpenLine,
+  findFocusedFlaw,
+  type PendingFlaw,
 } from '@/lib/analysisTactics';
 import {
   MOVE_HIGHLIGHT_GOOD,
@@ -278,60 +282,9 @@ function fenToRootPly(fen: string | undefined): number {
 }
 
 /**
- * Find the open (or pending) tactic line the board is currently "in" — extracted to a
- * pure module-scope function (not inlined in a component useMemo) because the React
- * Compiler's memoization-preservation lint cannot analyze this control flow (nested
- * for/while loop with early returns) inline; a plain function called FROM useMemo
- * satisfies it.
- *
- * Checks pendingFlaw first (its fork node always matches BEFORE any previously-focused
- * line would, since handlePvChipClick / the auto-open effect navigate there immediately),
- * then every open line: match by fork-node equality OR subtree containment (walk parentId
- * up from currentNodeId until it reaches the line's rootNodeId).
- */
-function findFocusedFlaw(
-  isGameMode: boolean,
-  currentNodeId: NodeId | null,
-  pendingFlaw: TacticRef | null,
-  openLines: Map<string, OpenLine>,
-  mainLine: NodeId[],
-  nodes: Map<NodeId, MoveNode>,
-): TacticRef | null {
-  if (!isGameMode || currentNodeId === null) return null;
-  if (pendingFlaw != null) {
-    const forkNodeId = mainLine[forkPlyForOrientation(pendingFlaw.ply, pendingFlaw.orientation)];
-    if (forkNodeId !== undefined && currentNodeId === forkNodeId) return pendingFlaw;
-  }
-  for (const line of openLines.values()) {
-    const forkNodeId = mainLine[forkPlyForOrientation(line.ply, line.orientation)];
-    if (forkNodeId !== undefined && currentNodeId === forkNodeId) {
-      return { ply: line.ply, orientation: line.orientation };
-    }
-    if (isNodeInsideSubtree(nodes, currentNodeId, line.rootNodeId)) {
-      return { ply: line.ply, orientation: line.orientation };
-    }
-  }
-  return null;
-}
-
-/** True iff walking parentId up from `nodeId` reaches `rootId`. */
-function isNodeInsideSubtree(
-  nodes: Map<NodeId, MoveNode>,
-  nodeId: NodeId,
-  rootId: NodeId,
-): boolean {
-  let id: NodeId | null = nodeId;
-  while (id !== null) {
-    if (id === rootId) return true;
-    id = nodes.get(id)?.parentId ?? null;
-  }
-  return false;
-}
-
-/**
  * Walk children from `rootNodeId` following the lowest-id child chain until it leaves
  * `pvNodeIds` — the ordered node array of an open tactic line. Module-scope pure
- * function for the same React Compiler reason as findFocusedFlaw above.
+ * function for the same React Compiler reason as findFocusedFlaw in lib/analysisTactics.ts.
  */
 function buildFocusedPvLine(
   nodes: Map<NodeId, MoveNode>,
@@ -444,10 +397,7 @@ export default function Analysis() {
   const [openLines, setOpenLines] = useState<
     Map<string, { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' }>
   >(() => new Map());
-  const [pendingFlaw, setPendingFlaw] = useState<{
-    ply: number;
-    orientation: 'missed' | 'allowed';
-  } | null>(null);
+  const [pendingFlaw, setPendingFlaw] = useState<PendingFlaw | null>(null);
 
   // Desktop-only hover-highlight from the tags panel onto
   // the eval chart's markers — mirrors LibraryGameCard's highlightedPlies. Not passed
@@ -815,6 +765,8 @@ export default function Analysis() {
   // goToNode/insertPvLine in response to the URL/game-mode inputs above.
   // seededKey/pasteHandoffConsumed are returned because ONE more effect below
   // (the Import-tab paste-handoff consume effect) still reads/writes them.
+  // Explain landing: fork preview, then the better move (missed lines).
+  const enterExplainLine = useExplainLineEntry(currentNodeId, goToNode);
   const { seededKeyRef, pasteHandoffConsumedRef } = useAnalysisRouteSeeding({
     isGameMode,
     gameId,
@@ -832,6 +784,7 @@ export default function Analysis() {
     loadMainLine,
     goToNode,
     insertPvLine,
+    enterExplainLine,
     setBoardFlipped,
     setPendingFlaw,
     setOpenLines,
@@ -1321,10 +1274,38 @@ export default function Analysis() {
   // -1 for free-variation nodes / no selection. Shared by the sweep's "already
   // resolved this ply?" check, needParentGemGrade's double-work guard below, and
   // both marker memos' book/sweep-gem gates — one computation, several readers.
+  //
+  // Bug fix (Explain bar): this used to gate on isOnMainLine(), which reads the board's
+  // stateRef — synced AFTER render. On the commit where loadMainLine lands the ref still
+  // held the empty previous tree, so the memo cached -1 and never recomputed when the
+  // cursor already sat on the target node (deep link to the last ply). indexOf on the
+  // render's own mainLine is the same test (-1 when absent) without the stale read.
   const currentMainlinePly = useMemo(
-    () => (currentNodeId !== null && isOnMainLine(currentNodeId) ? mainLine.indexOf(currentNodeId) : -1),
-    [currentNodeId, isOnMainLine, mainLine],
+    () => (currentNodeId !== null ? mainLine.indexOf(currentNodeId) : -1),
+    [currentNodeId, mainLine],
   );
+
+  // Contextual Explain bar (SEED-208): prefetch, state and handlers live in the hook.
+  const explainBarControls = useExplainBar({
+    isGameMode,
+    gameId,
+    flawMarkers: gameData?.flaw_markers,
+    landingPly: currentMainlinePly,
+    pendingFlaw,
+    focusedFlaw,
+    openLines,
+    fastForwardRunning,
+    nodes,
+    currentNodeId,
+    mainLine,
+    goToNode,
+    goForward,
+    goBack,
+    deleteSubtree,
+    enterExplainLine,
+    setPendingFlaw,
+    setOpenLines,
+  });
 
   // Live classification applies only to freely-played moves off the precomputed line:
   // any node that is NOT a game main-line node (game mode) and NOT a grafted PV node
@@ -1660,6 +1641,7 @@ export default function Analysis() {
       contextualOnStoredLine,
       contextualCurrentPly,
       focusedPvLine,
+      focusedLineHasMotif: lineHasVisibleMotif(gameData?.flaw_markers, focusedFlaw),
       hoveredQualityMoves,
       flawChessEnabled,
       flawChessRankedLines: flawChessEngine.rankedLines,
@@ -1770,9 +1752,8 @@ export default function Analysis() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Inline chip click: toggle off (SAME chip only — deleteSubtree removes just that
-  // line, others stay open) or open a new line WITHOUT touching any other open line
-  // (flat siblings: opening a chip never clears a previously opened PV).
+  // Inline chip click: toggle off (same chip) or open a new line. Only one line is
+  // open at a time (UAT): opening a chip closes every previously open line first.
   const handlePvChipClick = (
     nodeId: NodeId,
     flaw: { ply: number; orientation: 'missed' | 'allowed' },
@@ -1789,8 +1770,11 @@ export default function Analysis() {
       });
       return;
     }
-    // Different/new chip: open it. insertPvLine is called by the graft effect once
-    // contextualTacticData arrives; other open lines are left untouched.
+    // Different/new chip: close the other open lines, then open it. insertPvLine is
+    // called by the graft effect once contextualTacticData arrives. deleteSubtree is a
+    // functional state update, so several calls in one handler compose.
+    for (const line of openLines.values()) deleteSubtree(line.rootNodeId);
+    if (openLines.size > 0) setOpenLines(new Map());
     setPendingFlaw(flaw);
     // Navigate to the fork node — decision board (ply-1) for missed, flaw position (ply) for
     // allowed. Bounds guard.
@@ -2133,6 +2117,8 @@ export default function Analysis() {
       setTagCommandSeq,
       setTagsHighlightedPlies,
     },
+    // Rendered only in the mid layout (DesktopBoardStage ignores it elsewhere).
+    explainBar: <ExplainBar placement="mid" {...explainBarControls} />,
   };
 
   // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
@@ -2196,6 +2182,10 @@ export default function Analysis() {
   const moveListHeaderContent = (
     <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} />
   );
+  // Mobile: icon-only menu under the SF eval bar instead of the move-list header.
+  const pgnFenIconMenu = (
+    <PgnFenMenu onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} iconOnly />
+  );
 
   // The mobile "Moves" tab content's remount key — see MovesTab's own doc comment
   // (AnalysisTabs.tsx) for the bot-game live-analysis remount bug this fixes.
@@ -2213,7 +2203,7 @@ export default function Analysis() {
       movesTab={
         <MovesTab
           moveListKey={moveListKey}
-          moveListHeaderContent={moveListHeaderContent}
+          moveListHeaderContent={isMobile ? null : moveListHeaderContent}
           variationTree={
             <VariationTreePanel
               variant="vertical"
@@ -2539,9 +2529,12 @@ export default function Analysis() {
             rightEvalBar={rightEvalBarNode()}
             containerRef={containerRef}
           />
-          {showPlayerBars && (
-            <BoardFooterRow
-              player={
+          {/* Rendered even without player bars: the slot under the SF eval bar holds the
+              icon-only PGN/FEN menu, which replaces the mobile move-list header (UAT:
+              reclaims that header's vertical space). */}
+          <BoardFooterRow
+            player={
+              showPlayerBars ? (
                 <AnalysisPlayerBar
                   color={bottomPlayerColor}
                   pastedHeaders={pastedHeaders}
@@ -2549,9 +2542,10 @@ export default function Analysis() {
                   playerClocks={playerClocks}
                   position={position}
                 />
-              }
-            />
-          )}
+              ) : null
+            }
+            rightSlot={pgnFenIconMenu}
+          />
         </div>
 
         {/* Game load error (CLAUDE.md isError branch). */}
@@ -2574,6 +2568,13 @@ export default function Analysis() {
             from unanalyzed to analyzed via the live poll (no cursor/variation-tree
             loss). Free play and an idle unanalyzed game just omit the Stats tab. */}
         {analysisTabs}
+
+        {/* D-03: the Explain bar sits directly above the footer because the footer's 5
+            BoardControls columns are at their limit on a 360px phone. The AnalysisTabs
+            root is flex-1 min-h-0, so it absorbs this row's height. Never mount the bar
+            inside MovesTab / AnalysisTabs: that component is shared by mobile and mid and
+            would double-render on mobile. */}
+        <ExplainBar placement="mobile" {...explainBarControls} />
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
         <div
@@ -2704,7 +2705,13 @@ export default function Analysis() {
                 referenced in the mobile/mid Eval tab via mobileEngineLines; movesCard is
                 desktop-only (mid/mobile show the move tree in the Moves tab). */}
             <StockfishCard {...stockfishCardProps} />
-            <MovesCard onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} variationTreeProps={movesCardVariationTreeProps} />
+            <MovesCard
+              onOpenPasteModal={() => setPasteModalOpen(true)}
+              fen={position}
+              getPgn={getPgn}
+              variationTreeProps={movesCardVariationTreeProps}
+              footer={<ExplainBar placement="desktop" {...explainBarControls} />}
+            />
             </div>
 
             {/* Invisible spacer mirroring the board column's BOTTOM player bar so the

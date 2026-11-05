@@ -109,15 +109,17 @@ export function BoardHeaderRow({
 
 export type BoardFooterRowProps = {
   player: ReactNode;
+  /** Content of the slot under the right (SF) eval bar — the mobile PGN/FEN icon menu. */
+  rightSlot?: ReactNode;
 };
 
 // Bottom player row: same board-edge alignment as the header, no caps.
-export function BoardFooterRow({ player }: BoardFooterRowProps): ReactElement {
+export function BoardFooterRow({ player, rightSlot = null }: BoardFooterRowProps): ReactElement {
   return (
     <div className="flex flex-row items-center gap-2">
       <EvalBarSlot content={null} />
       <div className="min-w-0 flex-1">{player}</div>
-      <EvalBarSlot content={null} />
+      <EvalBarSlot content={rightSlot} />
     </div>
   );
 }

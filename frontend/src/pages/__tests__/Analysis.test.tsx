@@ -28,7 +28,7 @@ import { stockfishSecondaryArrowColor } from '@/lib/engineArrowGrades';
 import { ENGINE_TOGGLE_STORAGE_KEYS, SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { GameFlawCard, EvalPoint } from '@/types/library';
+import type { GameFlawCard, EvalPoint, TacticLinesResponse } from '@/types/library';
 import { sniffPastedInput } from '@/lib/pastedGame';
 import { savePastedGameHandoff } from '@/lib/pastedGameHandoff';
 import {
@@ -314,8 +314,15 @@ const libraryGameState: { data: GameFlawCard | undefined } = { data: undefined }
 // default — when a gameId has no entry the hook falls back to
 // libraryGameState.data, which is exactly the previous single-fixture behavior.
 const libraryGameById = new Map<number, GameFlawCard>();
+// Per-ply tactic-lines fixtures read at call time, so the Explain bar tests can register
+// the stored lines for a flaw ply. Empty by default (every other test sees no data).
+const tacticLinesByPly = new Map<number, TacticLinesResponse>();
 vi.mock('@/hooks/useLibrary', () => ({
-  useTacticLines: () => ({ data: undefined, isFetching: false, isError: false }),
+  useTacticLines: (_gameId: number | null, ply: number | null, enabled: boolean) => ({
+    data: enabled && ply != null ? tacticLinesByPly.get(ply) : undefined,
+    isFetching: false,
+    isError: false,
+  }),
   useLibraryGame: (gameId: number | null) => ({
     data: (gameId != null ? libraryGameById.get(gameId) : undefined) ?? libraryGameState.data,
     isError: false,
@@ -423,6 +430,7 @@ afterEach(() => {
   for (const key of Object.values(ENGINE_TOGGLE_STORAGE_KEYS)) localStorage.removeItem(key);
   libraryGameState.data = undefined;
   libraryGameById.clear();
+  tacticLinesByPly.clear();
   resetEngineAssetsForTests();
   // Warm cache is the DEFAULT for every test in this file — the
   // returning-user state — so no test suddenly renders a modal over the page it
@@ -439,6 +447,7 @@ afterEach(() => {
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
 import AnalysisPage from '../Analysis';
+import { EXPLAIN_FORK_PREVIEW_MS } from '@/hooks/analysis/useExplainLineEntry';
 
 // ── Render helper ──────────────────────────────────────────────────────────────
 function renderAnalysis(initialPath = '/analysis') {
@@ -2062,6 +2071,68 @@ describe('Book marker on an inaccuracy-severity ply', () => {
   });
 });
 
+// The move list used to suppress the opponent's tactic tags (is_user gate in
+// useAnalysisGemMarkers); they now show for both colors.
+describe('Opponent tactic tags in the move list', () => {
+  it("renders the opponent flaw's missed and allowed tactic chips", () => {
+    libraryGameState.data = buildGame({
+      moves: ['e4', 'e5'],
+      flaw_markers: [
+        {
+          ply: 1,
+          severity: 'blunder',
+          tags: [],
+          is_user: false,
+          move_san: 'e5',
+          allowed_tactic_motif: 'pin',
+          allowed_tactic_confidence: 0.9,
+          allowed_tactic_depth: 1,
+          missed_tactic_motif: 'fork',
+          missed_tactic_confidence: 0.9,
+          missed_tactic_depth: 0,
+        },
+      ],
+    });
+
+    renderAnalysis('/analysis?game_id=1');
+
+    const desktopTree = screen.getByTestId('variation-tree-desktop');
+    expect(desktopTree.querySelector('[data-testid^="flaw-inline-tag-missed-"]')).not.toBeNull();
+    expect(desktopTree.querySelector('[data-testid^="flaw-inline-tag-allowed-"]')).not.toBeNull();
+  });
+
+  // UAT: only one tactic line is open at a time; opening a chip closes the previous line.
+  it('opening a second tactic chip closes the previously opened line', () => {
+    const base = buildExplainGame();
+    libraryGameState.data = {
+      ...base,
+      flaw_markers: [
+        { ...explainMarker(2, 'Qh5', true, 'blunder'), missed_tactic_motif: 'fork', missed_tactic_confidence: 0.9, missed_tactic_depth: 1 },
+        { ...explainMarker(3, 'Nc6', false, 'mistake'), allowed_tactic_motif: 'pin', allowed_tactic_confidence: 0.9, allowed_tactic_depth: 1 },
+      ],
+    };
+    tacticLinesByPly.set(2, tacticLinesFixture({ missed_moves: ['Nf3', 'Nc6'], missed_motif: 'fork', missed_depth: 1 }));
+    tacticLinesByPly.set(
+      3,
+      tacticLinesFixture({ allowed_moves: ['Nc6', 'Bc4'], allowed_motif: 'pin', allowed_depth: 1, flaw_ply: 3, flaw_severity: 'mistake' }),
+    );
+    renderAnalysis('/analysis?game_id=1');
+
+    const tree = (): HTMLElement => screen.getByTestId('variation-tree-desktop');
+    const chip = (orientation: 'missed' | 'allowed'): HTMLElement =>
+      tree().querySelector(`[data-testid^="flaw-inline-tag-${orientation}-"]`) as HTMLElement;
+
+    fireEvent.click(chip('missed'));
+    expect(within(tree()).queryAllByText('Nf3')).toHaveLength(1);
+
+    fireEvent.click(chip('allowed'));
+    expect(within(tree()).queryAllByText('Bc4')).toHaveLength(1);
+    expect(within(tree()).queryAllByText('Nf3')).toHaveLength(0);
+    expect(chip('missed').getAttribute('aria-label')).toContain('Click to expand');
+    expect(chip('allowed').getAttribute('aria-label')).toContain('Click to collapse');
+  });
+});
+
 // Live-polling analysis board with an in-place
 // pending pill. useLibraryGame itself is mocked (see the module mock above),
 // so these tests drive the pill/moves/no-remount behaviors by mutating the
@@ -3133,5 +3204,267 @@ describe('Import-tab paste handoff consume', () => {
 
     renderAnalysis('/analysis');
     expect(screen.queryAllByText('Nf3').length).toBe(0);
+  });
+});
+
+// ── Explain bar (SEED-208) ─────────────────────────────────────────────────────
+
+const EXPLAIN_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+
+function explainMarker(
+  ply: number,
+  san: string,
+  isUser: boolean,
+  severity: 'inaccuracy' | 'mistake' | 'blunder',
+) {
+  return {
+    ply,
+    severity,
+    tags: [],
+    is_user: isUser,
+    move_san: san,
+    allowed_tactic_motif: null,
+    allowed_tactic_confidence: null,
+    allowed_tactic_depth: null,
+    missed_tactic_motif: null,
+    missed_tactic_confidence: null,
+    missed_tactic_depth: null,
+  };
+}
+
+function buildExplainGame(): GameFlawCard {
+  const point = (ply: number): EvalPoint => ({
+    ply,
+    es: 0.5,
+    eval_cp: 20,
+    eval_mate: null,
+    clock_seconds: null,
+    move_seconds: null,
+    best_move: null,
+  });
+  return buildGame({
+    moves: ['e4', 'e5', 'Qh5', 'Nc6'],
+    ply_count: 4,
+    user_color: 'white',
+    eval_series: [point(0), point(1), point(2), point(3)],
+    flaw_markers: [explainMarker(2, 'Qh5', true, 'blunder'), explainMarker(3, 'Nc6', false, 'mistake')],
+  });
+}
+
+function tacticLinesFixture(overrides: Partial<TacticLinesResponse>): TacticLinesResponse {
+  return {
+    missed_moves: null,
+    missed_depth: null,
+    missed_tactic_ply_index: null,
+    missed_motif: null,
+    missed_eval_cp: null,
+    missed_eval_mate: null,
+    allowed_moves: null,
+    allowed_depth: null,
+    allowed_tactic_ply_index: null,
+    allowed_motif: null,
+    allowed_eval_cp: null,
+    allowed_eval_mate: null,
+    position_fen: EXPLAIN_FEN,
+    flaw_move_san: null,
+    best_move_uci: null,
+    flaw_ply: 2,
+    flaw_severity: 'blunder',
+    ...overrides,
+  };
+}
+
+describe('Explain bar', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  // `hidden: true` on the role queries: when this describe runs first in the file (a -t filter) the
+  // engine-gate dialog is open and Radix aria-hides everything outside it, which makes the bar
+  // inaccessible to getByRole although it is rendered and clickable. The count still holds.
+  const currentSan = (): string | null =>
+    within(screen.getByTestId('variation-tree-desktop'))
+      .getAllByText(/./, { selector: '[aria-current="step"]' })
+      .at(0)?.textContent ?? null;
+
+  it('Best grafts the missed line on the owner blunder, previews the pre-flaw position, then lands on its first move', async () => {
+    libraryGameState.data = buildExplainGame();
+    tacticLinesByPly.set(
+      2,
+      tacticLinesFixture({
+        missed_moves: ['Nf3', 'Nc6'],
+        allowed_moves: ['Qh5', 'Nc6', 'Bc4'],
+        flaw_move_san: 'Qh5',
+      }),
+    );
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const bar = within(screen.getByTestId('analysis-movelist-card')).getByTestId('analysis-explain-bar');
+    expect(bar.getAttribute('data-state')).toBe('explain');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
+    expect(
+      within(bar)
+        .getAllByRole('button', { hidden: true })
+        .map((b) => b.getAttribute('data-testid')),
+    ).toEqual(['btn-analysis-explain-best', 'btn-analysis-explain-punish']);
+    expect(track).not.toHaveBeenCalledWith('board-tool', expect.anything());
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-best'));
+
+    // UAT: the board first steps back to the position before the blunder (ply 1, e5).
+    expect(currentSan()).toBe('e5');
+    await waitFor(() => expect(currentSan()).toBe('Nf3'), { timeout: EXPLAIN_FORK_PREVIEW_MS * 3 });
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-best' });
+
+    // Inside the line: the flaw headline stays, then stepper and Got it; no Punish (UAT).
+    expect(bar.getAttribute('data-state')).toBe('got-it');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
+    expect(within(bar).queryByTestId('btn-analysis-explain-punish')).toBeNull();
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-line-forward'));
+    expect(currentSan()).toBe('Nc6');
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-line-back'));
+    expect(currentSan()).toBe('Nf3');
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
+
+    const tree = screen.getByTestId('variation-tree-desktop');
+    expect(currentSan()).toBe('Qh5');
+    expect(within(tree).queryAllByText('Nf3')).toHaveLength(0);
+    expect(bar.getAttribute('data-state')).toBe('explain');
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-close' });
+  });
+
+  it('Punish lands on the refutation for the opponent mistake and Got it returns to the flaw move', () => {
+    libraryGameState.data = buildExplainGame();
+    tacticLinesByPly.set(
+      3,
+      tacticLinesFixture({
+        allowed_moves: ['Nc6', 'Bc4'],
+        flaw_move_san: 'Nc6',
+        flaw_ply: 3,
+        flaw_severity: 'mistake',
+      }),
+    );
+    renderAnalysis('/analysis?game_id=1&ply=3');
+
+    const bar = screen.getByTestId('analysis-explain-bar');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Nc6');
+    // No missed PV stored: Best is disabled, Punish works.
+    expect((within(bar).getByTestId('btn-analysis-explain-best') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-punish'));
+    expect(currentSan()).toBe('Bc4');
+    expect(bar.getAttribute('data-orientation')).toBe('allowed');
+    expect(within(bar).queryByTestId('btn-analysis-explain-best')).toBeNull();
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
+    expect(currentSan()).toBe('Nc6');
+    expect(within(screen.getByTestId('variation-tree-desktop')).queryAllByText('Bc4')).toHaveLength(0);
+  });
+
+  it('shows no bar while the tactic lines have not resolved (no flash)', () => {
+    libraryGameState.data = buildExplainGame();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+  });
+});
+
+// Placement: the bar mounts exactly once per layout (mobile above the footer, mid under the
+// board controls), never inside the shared Moves tab. jsdom has no layout, so these assert
+// DOM position only.
+describe('Explain bar placement', () => {
+  const origMatchMedia = window.matchMedia;
+  let clientWidthSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+  // Mirrors the 'Mobile Stats tab' override; pointer:coarse stays true so the board does
+  // not animate in jsdom.
+  function stubMatchMedia(matchesQuery: (query: string) => boolean): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: matchesQuery(query) || /pointer:\s*coarse/.test(query),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  beforeEach(() => {
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    window.matchMedia = origMatchMedia;
+    clientWidthSpy?.mockRestore();
+    clientWidthSpy = null;
+    window.history.pushState({}, '', '/');
+  });
+
+  function seedOwnerBlunderLines(): void {
+    libraryGameState.data = buildExplainGame();
+    tacticLinesByPly.set(
+      2,
+      tacticLinesFixture({
+        missed_moves: ['Nf3', 'Nc6'],
+        allowed_moves: ['Qh5', 'Nc6', 'Bc4'],
+        flaw_move_san: 'Qh5',
+      }),
+    );
+  }
+
+  it('mobile (360px): one bar directly above the footer, Best flips it to got-it', () => {
+    stubMatchMedia((q) => /max-width/.test(q));
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(360);
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const bars = screen.getAllByTestId('analysis-explain-bar');
+    expect(bars).toHaveLength(1);
+    const bar = bars[0]!;
+    expect(bar.getAttribute('data-placement')).toBe('mobile');
+    expect(screen.getByTestId('analysis-mobile-footer').previousElementSibling).toBe(bar);
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-best'));
+    expect(bar.getAttribute('data-state')).toBe('got-it');
+  });
+
+  it('mid (768-1199px): one bar, placed under the board controls, no MovesCard', () => {
+    stubMatchMedia((q) => /max-width:\s*1199px/.test(q));
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const bars = screen.getAllByTestId('analysis-explain-bar');
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.getAttribute('data-placement')).toBe('mid');
+    expect(screen.queryByTestId('analysis-movelist-card')).toBeNull();
+  });
+
+  it('D-08: an inaccuracy ply shows no bar even with usable tactic-line data', () => {
+    const base = buildExplainGame();
+    libraryGameState.data = {
+      ...base,
+      flaw_markers: [...(base.flaw_markers ?? []), explainMarker(1, 'e5', false, 'inaccuracy')],
+    };
+    tacticLinesByPly.set(
+      1,
+      tacticLinesFixture({ allowed_moves: ['e5', 'Nf3'], flaw_move_san: 'e5', flaw_ply: 1 }),
+    );
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+  });
+
+  it('free play shows no bar', () => {
+    renderAnalysis('/analysis');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
   });
 });

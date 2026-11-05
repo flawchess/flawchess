@@ -128,8 +128,8 @@ function buildPlyMaps(
     severityByPly.set(fm.ply, fm.severity);
     // Opponent tactic arrows (crimson allowed / teal missed) are surfaced in
     // the eval-chart tooltip (built separately in EvalChart) but NOT on the board — suppress
-    // the opponent's tactic depths here so no tactic arrow paints for them. Mirrors the same
-    // is_user gate on the move list. Severity glyphs stay both-color.
+    // the opponent's tactic depths here so no tactic arrow paints for them (the move list does
+    // show their tags). Severity glyphs stay both-color.
     if (!fm.is_user) continue;
     // tacticDepthBadge returns null for family-less / hidden motifs, so a bare depth
     // never paints on the board without its paired chip (same guard as the miniboard).
