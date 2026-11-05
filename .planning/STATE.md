@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 244
 current_phase_name: Analysis Contextual Explain Bar for Flaws (SEED-208)
-status: executing
-stopped_at: Completed 245-01-PLAN.md
-last_updated: "2026-11-05T09:43:28.067Z"
-state_head: b0b6c2f0bcceed664e1cffd439af2095bc8011c9
+status: verifying
+stopped_at: Completed 245-02-PLAN.md
+last_updated: "2026-11-05T09:52:11.196Z"
+state_head: 055f9dacc14db8210d9396a521ce01a1ff7b8d7e
 progress:
   total_phases: 4
   completed_phases: 103
@@ -24,7 +24,7 @@ last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the P
 Phase: 245 (Analysis Contextual Explain Bar for Flaws (SEED-208)) — EXECUTING
 Plan: 2 of 2
 
-Status: Ready to execute
+Status: Phase complete — ready for verification
 
 Open threads carried forward (not blockers):
 
@@ -899,6 +899,9 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 244]: Migration e2a7c4f9b244 computes dates in UTC and only pushes when floor > UTC today and due_date < floor (D-09 literal)
 - [Phase 245]: Explain sets pendingFlaw.enter and relies on the graft effect to land on the first grafted move; Got it is driven by the page's focusedFlaw; explain-open/close ride the board-tool verb
 - [Phase 245]: currentMainlinePly uses mainLine.indexOf (the isOnMainLine stateRef read was stale on the loadMainLine commit)
+- [Phase 245]: Mid layout mounts the Explain bar under the board controls (owner-UAT item)
+- [Phase 245]: Non-motif/opponent Explain lines show an unlabelled payoff-blue arrow, no tint (lineHasVisibleMotif gate)
+- [Phase 245]: useTacticLines maps 404 to null (no retry, no Sentry)
 
 ### Pending Todos
 
@@ -1134,8 +1137,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T09:43:27.593Z
-**Stopped at:** Completed 245-01-PLAN.md
+**Last session:** 2026-11-05T09:52:10.725Z
+**Stopped at:** Completed 245-02-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1390,6 +1393,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 244 P01 | 35min | 3 tasks | 8 files |
 | Phase 244 P02 | 15min | 2 tasks | 9 files |
 | Phase 245 P01 | 40 min | 3 tasks | 11 files |
+| Phase 245 P02 | 25min | 3 tasks | 13 files |
 
 ## Performance Metrics
 

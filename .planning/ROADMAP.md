@@ -313,14 +313,14 @@ reuse map in SEED-208.
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
 **Wave 1**
 - [x] 245-01-PLAN.md — Explain → Got it end-to-end on desktop (tracer): pure rules, D-11 prefetch, graft `enter` flag, MovesCard footer, real-board harness for D-05/D-06/D-07
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 245-02-PLAN.md — Mobile + mid placement, non-motif overlay gate, tactic-lines 404 → null, CHANGELOG/README, full frontend gate
+- [x] 245-02-PLAN.md — Mobile + mid placement, non-motif overlay gate, tactic-lines 404 → null, CHANGELOG/README, full frontend gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
