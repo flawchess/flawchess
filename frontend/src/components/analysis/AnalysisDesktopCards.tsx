@@ -99,6 +99,10 @@ export function StockfishCard({
 
 export type MovesCardProps = {
   onOpenPasteModal: () => void;
+  /** Full FEN of the shown position, for the PGN/FEN menu's Copy FEN item. */
+  fen: string;
+  /** Builds the move-tree PGN for the menu's Copy PGN item (lazy, on click). */
+  getPgn: () => string;
   variationTreeProps: Omit<VariationTreePanelProps, 'variant'>;
 };
 
@@ -108,11 +112,11 @@ export type MovesCardProps = {
 // height (a 0-height parent would render an empty list). The board controls no
 // longer sit in a footer band here — they moved under the board inside
 // DesktopBoardStage (hugging the board like the mid layout).
-export function MovesCard({ onOpenPasteModal, variationTreeProps }: MovesCardProps): ReactElement {
+export function MovesCard({ onOpenPasteModal, fen, getPgn, variationTreeProps }: MovesCardProps): ReactElement {
   return (
     <Card data-testid="analysis-movelist-card" className="relative flex min-h-0 flex-1 flex-col">
       <CardHeader size="compact" data-testid="analysis-movelist-header">
-        <MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} />
+        <MoveListHeaderContent onOpenPasteModal={onOpenPasteModal} fen={fen} getPgn={getPgn} />
       </CardHeader>
       <VariationTreePanel variant="responsive" {...variationTreeProps} />
     </Card>

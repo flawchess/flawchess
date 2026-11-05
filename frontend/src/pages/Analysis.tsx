@@ -64,6 +64,7 @@ import { useLiveMoveFlaw } from '@/hooks/useLiveMoveFlaw';
 import { useTacticLines, useLibraryGame } from '@/hooks/useLibrary';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import type { PasteParseResult, PastedGameHeaders } from '@/lib/pastedGame';
+import { buildAnalysisPgn, gamePgnHeaders } from '@/lib/pgn';
 import { takePastedGameHandoff } from '@/lib/pastedGameHandoff';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import { setEngineToggle, useEngineDisplaySettings, useEngineToggles } from '@/lib/engineSettings';
@@ -2185,7 +2186,16 @@ export default function Analysis() {
   // desktop; the whole flow must work at 375px). Rendered
   // unconditionally, including ?game_id= game mode. `<MoveListHeaderContent>`
   // is extracted to src/components/analysis/AnalysisTabs.tsx.
-  const moveListHeaderContent = <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} />;
+  // Copy PGN: the whole move tree (sidelines as variations). Headers prefer the
+  // pasted PGN (the more recently loaded source, same precedence as the player
+  // bars), then the fetched game. Built lazily on click, never per render.
+  const getPgn = (): string => {
+    const gameHeaders = isGameMode && gameData != null ? gamePgnHeaders(gameData) : null;
+    return buildAnalysisPgn({ nodes, mainLine, rootFen, headers: pastedHeaders?.headers ?? gameHeaders });
+  };
+  const moveListHeaderContent = (
+    <MoveListHeaderContent onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} />
+  );
 
   // The mobile "Moves" tab content's remount key — see MovesTab's own doc comment
   // (AnalysisTabs.tsx) for the bot-game live-analysis remount bug this fixes.
@@ -2694,7 +2704,7 @@ export default function Analysis() {
                 referenced in the mobile/mid Eval tab via mobileEngineLines; movesCard is
                 desktop-only (mid/mobile show the move tree in the Moves tab). */}
             <StockfishCard {...stockfishCardProps} />
-            <MovesCard onOpenPasteModal={() => setPasteModalOpen(true)} variationTreeProps={movesCardVariationTreeProps} />
+            <MovesCard onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} variationTreeProps={movesCardVariationTreeProps} />
             </div>
 
             {/* Invisible spacer mirroring the board column's BOTTOM player bar so the
