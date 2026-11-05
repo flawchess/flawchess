@@ -14,8 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
-import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
-import type { ExplainBarState, ExplainSeverity } from '@/lib/explainBar';
+import type { ExplainBarState, ExplainSeverity, ExplainTactic } from '@/lib/explainBar';
+import { TacticLineChip, type TacticLineChipClick } from '@/components/analysis/TacticLineChip';
 
 type ExplainBarPlacement = 'desktop' | 'mid' | 'mobile';
 
@@ -38,8 +38,7 @@ const SEVERITY_NOUN: Record<ExplainSeverity, string> = {
   mistake: ' Mistake',
 };
 
-const TACTIC_SEPARATOR = ': ';
-const TACTIC_COLOR: Record<LineOrientation, string> = { missed: TAC_MISSED, allowed: TAC_ALLOWED };
+const TACTIC_SEPARATOR = ':';
 
 const GOT_IT_LABEL = 'Got it';
 const GOT_IT_PREFIX: Record<LineOrientation, string> = { missed: 'Better than', allowed: 'Punishing' };
@@ -47,12 +46,50 @@ const GOT_IT_FALLBACK: Record<LineOrientation, string> = { missed: 'Better line'
 
 type LineOrientation = 'missed' | 'allowed';
 
-type ExplainBarProps = {
+/** Open-line state the tactic badges share with the move-list chips (same toggle, spinner and ring). */
+export type ExplainTacticChipProps = {
+  onTacticClick: TacticLineChipClick;
+  activePvKeys: Set<string>;
+  pvFetchPending: boolean;
+  pvFetchError: boolean;
+};
+
+type ExplainBarProps = ExplainTacticChipProps & {
   state: ExplainBarState;
   onExplain: () => void;
   onGotIt: () => void;
   placement: ExplainBarPlacement;
 };
+
+function TacticBadges({
+  tactics,
+  ply,
+  chip,
+}: {
+  tactics: ExplainTactic[];
+  ply: number;
+  chip: ExplainTacticChipProps;
+}): ReactElement {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {tactics.map((t) => (
+        <TacticLineChip
+          key={t.orientation}
+          testId={`btn-analysis-explain-tactic-${t.orientation}`}
+          label="long"
+          motif={t.motif}
+          orientation={t.orientation}
+          ply={ply}
+          depth={t.depth}
+          activePvKeys={chip.activePvKeys}
+          pvFetchPending={chip.pvFetchPending}
+          pvFetchError={chip.pvFetchError}
+          onClick={chip.onTacticClick}
+        />
+      ))}
+    </span>
+  );
+}
 
 type BarShellProps = {
   state: 'explain' | 'got-it';
@@ -79,7 +116,7 @@ function BarShell({ state, orientation, placement, children }: BarShellProps): R
   );
 }
 
-export function ExplainBar({ state, onExplain, onGotIt, placement }: ExplainBarProps): ReactElement | null {
+export function ExplainBar({ state, onExplain, onGotIt, placement, ...chip }: ExplainBarProps): ReactElement | null {
   if (state.kind === 'hidden') return null;
   if (state.kind === 'got-it') {
     return (
@@ -110,22 +147,21 @@ export function ExplainBar({ state, onExplain, onGotIt, placement }: ExplainBarP
   const glyph = SEVERITY_GLYPH[state.severity];
   return (
     <BarShell state="explain" orientation={state.flaw.orientation} placement={placement}>
-      <span data-testid="analysis-explain-headline" className="min-w-0 flex-1 truncate text-sm">
-        <span className="font-mono font-bold" style={{ color: glyph.color }}>
+      <span
+        data-testid="analysis-explain-headline"
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-sm"
+      >
+        <span className="shrink-0 font-mono font-bold" style={{ color: glyph.color }}>
           {state.san ?? ''}
           {glyph.symbol}
+          {state.tactics.length > 0 && <span className="text-muted-foreground">{TACTIC_SEPARATOR}</span>}
         </span>
-        {state.tactic !== null ? (
-          <>
-            {TACTIC_SEPARATOR}
-            <span data-testid="analysis-explain-tactic" style={{ color: TACTIC_COLOR[state.tactic.orientation] }}>
-              {state.tactic.text}
-            </span>
-          </>
-        ) : state.san !== null ? (
-          SEVERITY_SUFFIX[state.severity]
+        {state.tactics.length > 0 ? (
+          <TacticBadges tactics={state.tactics} ply={state.flaw.ply} chip={chip} />
         ) : (
-          SEVERITY_NOUN[state.severity]
+          <span className="truncate">
+            {state.san !== null ? SEVERITY_SUFFIX[state.severity] : SEVERITY_NOUN[state.severity]}
+          </span>
         )}
       </span>
       <Button

@@ -369,6 +369,7 @@ export const BOARD_TOOL_TARGETS = [
   'elo-reset',
   'explain-open',
   'explain-close',
+  'explain-tactic',
 ] as const;
 type BoardToolTarget = (typeof BOARD_TOOL_TARGETS)[number];
 

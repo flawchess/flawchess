@@ -25,8 +25,15 @@ const EXPLAIN_BLUNDER: ExplainBarState = {
   flaw: { ply: 2, orientation: 'missed' },
   san: 'Qh5',
   severity: 'blunder',
-  tactic: null,
+  tactics: [],
   pending: false,
+};
+
+const CHIP = {
+  onTacticClick: vi.fn(),
+  activePvKeys: new Set<string>(),
+  pvFetchPending: false,
+  pvFetchError: false,
 };
 
 function renderBar(
@@ -35,7 +42,7 @@ function renderBar(
 ): { onExplain: ReturnType<typeof vi.fn>; onGotIt: ReturnType<typeof vi.fn> } {
   const onExplain = vi.fn();
   const onGotIt = vi.fn();
-  render(<ExplainBar state={state} onExplain={onExplain} onGotIt={onGotIt} placement={placement} />);
+  render(<ExplainBar state={state} onExplain={onExplain} onGotIt={onGotIt} placement={placement} {...CHIP} />);
   return { onExplain, onGotIt };
 }
 
@@ -57,11 +64,30 @@ describe('ExplainBar states and copy', () => {
     expect(buttons[0]?.textContent).toBe('Explain');
   });
 
-  it('explain with a tactic: headline names the tactic in the orientation color', () => {
-    renderBar({ ...EXPLAIN_BLUNDER, tactic: { orientation: 'missed', text: 'missed fork in 1' } });
-    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qh5??: missed fork in 1');
-    const tactic = screen.getByTestId('analysis-explain-tactic');
-    expect(tactic.style.color).not.toBe('');
+  it('explain with tactics: long-label badges for both orientations, click opens that line', () => {
+    const onTacticClick = vi.fn();
+    render(
+      <ExplainBar
+        state={{
+          ...EXPLAIN_BLUNDER,
+          tactics: [
+            { orientation: 'missed', motif: 'fork', depth: 0 },
+            { orientation: 'allowed', motif: 'back-rank-mate', depth: 2 },
+          ],
+        }}
+        onExplain={vi.fn()}
+        onGotIt={vi.fn()}
+        placement="desktop"
+        {...CHIP}
+        onTacticClick={onTacticClick}
+      />,
+    );
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe(
+      'Qh5??:missed fork in 1allowed checkmate in 3',
+    );
+    fireEvent.click(screen.getByTestId('btn-analysis-explain-tactic-allowed'));
+    expect(onTacticClick).toHaveBeenCalledWith({ ply: 2, orientation: 'allowed' });
+    expect(screen.getByTestId('btn-analysis-explain-tactic-missed').textContent).toBe('missed fork in 1');
   });
 
   it('explain without a SAN falls back to the severity noun', () => {
@@ -83,6 +109,7 @@ describe('ExplainBar states and copy', () => {
         onExplain={vi.fn()}
         onGotIt={vi.fn()}
         placement="desktop"
+        {...CHIP}
       />,
     );
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Better than Qh5');
@@ -93,6 +120,7 @@ describe('ExplainBar states and copy', () => {
         onExplain={vi.fn()}
         onGotIt={vi.fn()}
         placement="desktop"
+        {...CHIP}
       />,
     );
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Punishing Nc6');
@@ -103,6 +131,7 @@ describe('ExplainBar states and copy', () => {
         onExplain={vi.fn()}
         onGotIt={vi.fn()}
         placement="desktop"
+        {...CHIP}
       />,
     );
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Better line');
@@ -113,6 +142,7 @@ describe('ExplainBar states and copy', () => {
         onExplain={vi.fn()}
         onGotIt={vi.fn()}
         placement="desktop"
+        {...CHIP}
       />,
     );
     expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Refutation');

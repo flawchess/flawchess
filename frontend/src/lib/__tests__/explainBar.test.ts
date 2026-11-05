@@ -129,12 +129,12 @@ describe('resolveExplainBarState', () => {
       flaw: { ply: 10, orientation: 'missed' },
       san: 'Qh5',
       severity: 'blunder',
-      tactic: null,
+      tactics: [],
       pending: false,
     });
   });
 
-  it('names the tactic of the opened line with its 1-based depth', () => {
+  it('lists both orientations, missed first, whichever line Explain opens', () => {
     const state = resolveExplainBarState(
       inputs({
         flawMarkers: [
@@ -148,28 +148,32 @@ describe('resolveExplainBarState', () => {
         ],
       }),
     );
-    expect(state).toMatchObject({ kind: 'explain', tactic: { orientation: 'missed', text: 'missed fork in 1' } });
-  });
-
-  it('opponent flaw names the allowed tactic (unanchored depth, mate collapses to checkmate)', () => {
-    const state = resolveExplainBarState(
-      inputs({
-        flawMarkers: [
-          marker({ ply: 10, is_user: false, allowed_tactic_motif: 'back-rank-mate', allowed_tactic_depth: 2 }),
-        ],
-      }),
-    );
     expect(state).toMatchObject({
       kind: 'explain',
-      tactic: { orientation: 'allowed', text: 'allowed checkmate in 3' },
+      flaw: { orientation: 'missed' },
+      tactics: [
+        { orientation: 'missed', motif: 'fork', depth: 0 },
+        { orientation: 'allowed', motif: 'pin', depth: 2 },
+      ],
     });
   });
 
-  it('no tactic when only the other orientation carries one', () => {
+  it('keeps an allowed tactic even when Explain opens the missed line', () => {
     const state = resolveExplainBarState(
       inputs({ flawMarkers: [marker({ ply: 10, allowed_tactic_motif: 'fork', allowed_tactic_depth: 0 })] }),
     );
-    expect(state).toMatchObject({ kind: 'explain', tactic: null });
+    expect(state).toMatchObject({
+      kind: 'explain',
+      flaw: { orientation: 'missed' },
+      tactics: [{ orientation: 'allowed', motif: 'fork', depth: 0 }],
+    });
+  });
+
+  it('drops family-less motifs (no chip exists for them)', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, missed_tactic_motif: 'clearance', missed_tactic_depth: 1 })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', tactics: [] });
   });
 
   it('is hidden when not game mode or while a fast-forward Jump runs', () => {
@@ -272,7 +276,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
       flaw: { ply: 9, orientation: 'allowed' },
       san: 'f6',
       severity: 'mistake',
-      tactic: null,
+      tactics: [],
       pending: false,
     });
   });

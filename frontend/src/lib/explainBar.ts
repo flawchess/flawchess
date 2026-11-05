@@ -69,10 +69,11 @@ export function chooseExplainOrientation(
   return null;
 }
 
-/** The tactic the Explain line shows, e.g. `{ orientation: 'missed', text: 'missed fork in 1' }`. */
+/** One tactic badge in the Explain bar (raw motif and 0-based depth; the chip formats them). */
 export interface ExplainTactic {
   orientation: 'missed' | 'allowed';
-  text: string;
+  motif: string;
+  depth: number | null;
 }
 
 export type ExplainBarState =
@@ -82,8 +83,11 @@ export type ExplainBarState =
       flaw: TacticRef;
       san: string | null;
       severity: ExplainSeverity;
-      /** Null when the opened line carries no visible tactic: the headline falls back to the severity copy. */
-      tactic: ExplainTactic | null;
+      /**
+       * Every visible tactic on this flaw (missed first, then allowed), independent of the
+       * line the Explain button opens. Empty: the headline falls back to the severity copy.
+       */
+      tactics: ExplainTactic[];
       pending: boolean;
     }
   | { kind: 'got-it'; line: OpenLine; san: string | null };
@@ -116,18 +120,19 @@ function eligibleSanAt(markers: FlawMarker[] | null | undefined, ply: number): s
 }
 
 /**
- * The tactic on the line Explain opens (same orientation, so the copy matches what plays
- * out on the board). resolveVisibleTactic applies the family guard; anchored=false matches
- * the analysis board's depth badges (allowed reads on the same plain scale as missed).
+ * The flaw's visible tactics, both orientations. resolveVisibleTactic applies the family
+ * guard (family-less motifs render no chip), the same rule the move-list chips follow.
  */
-function explainTactic(marker: FlawMarker, orientation: 'missed' | 'allowed'): ExplainTactic | null {
-  const visible =
-    orientation === 'missed'
-      ? resolveVisibleTactic('missed', marker.missed_tactic_motif, marker.missed_tactic_depth, undefined, false)
-      : resolveVisibleTactic('allowed', marker.allowed_tactic_motif, marker.allowed_tactic_depth, undefined, false);
-  if (visible === null) return null;
-  const depth = visible.depthLabel !== null ? ` in ${visible.depthLabel}` : '';
-  return { orientation, text: `${orientation} ${visible.motifLabel}${depth}` };
+function explainTactics(marker: FlawMarker): ExplainTactic[] {
+  const slots = [
+    { orientation: 'missed', motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
+    { orientation: 'allowed', motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
+  ] as const;
+  return slots.flatMap(({ orientation, motif, depth }) =>
+    resolveVisibleTactic(orientation, motif, depth) !== null && motif !== null
+      ? [{ orientation, motif, depth }]
+      : [],
+  );
 }
 
 /** Ordered early returns; see the numbered comments for each rule. */
@@ -172,7 +177,7 @@ function explainState(inputs: ExplainBarInputs): ExplainBarState {
     flaw: { ply: landingPly, orientation },
     san: marker.move_san,
     severity: marker.severity,
-    tactic: explainTactic(marker, orientation),
+    tactics: explainTactics(marker),
     pending: pendingFlaw?.ply === landingPly,
   };
 }

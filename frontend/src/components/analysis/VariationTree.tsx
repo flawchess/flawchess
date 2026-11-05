@@ -17,9 +17,9 @@
  * React auto-escapes all JSX children — no unsafe HTML injection.
  */
 
-import { useRef, useEffect, useState, Fragment } from 'react';
+import { useRef, useEffect, Fragment } from 'react';
 import type { ReactNode } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
@@ -30,18 +30,9 @@ import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
 import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
+import { TacticLineChip } from '@/components/analysis/TacticLineChip';
 import { moveLabel } from '@/lib/moveNumberLabel';
-import { tacticMotifLabel, tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import { cn } from '@/lib/utils';
-import {
-  TAC_MISSED,
-  TAC_MISSED_BG,
-  TAC_MISSED_BORDER,
-  TAC_ALLOWED,
-  TAC_ALLOWED_BG,
-  TAC_ALLOWED_BORDER,
-  ACTIVE_FILTER_RING_CLASS,
-} from '@/lib/theme';
 import type { FlawSeverity } from '@/types/library';
 import { trackFeature } from '@/lib/analytics';
 
@@ -548,114 +539,6 @@ function buildRowsFromPly(chain: NodeId[], startPly: number): DesktopRow[] {
   return rows;
 }
 
-// ─── Inline flaw chip renderer ────────────────────────────────────────────────
-
-// Same highlight-bg helper as TacticMotifChip/TagChip: bump the translucent alpha
-// from 0.15 to 0.3 on hover so the chip clearly reads as highlighted.
-const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.15)', '/ 0.3)');
-
-interface FlawChipProps {
-  nodeId: NodeId;
-  motif: string;
-  orientation: 'missed' | 'allowed';
-  ply: number;
-  depth: number | null;
-  /** Set of `${ply}:${orientation}` keys for every currently open tactic chip. */
-  activePvKeys: Set<string> | undefined;
-  pvFetchPending: boolean | undefined;
-  pvFetchError: boolean | undefined;
-  onPvChipClick:
-    | ((nodeId: NodeId, flaw: { ply: number; orientation: 'missed' | 'allowed' }) => void)
-    | undefined;
-}
-
-/**
- * Render a missed or allowed flaw pill chip for a mainLine move-list row.
- * Sibling to the SAN <button>, NOT nested inside it.
- * Loading: spinner on chip while pvFetchPending for this node.
- * Error: error text next to the chip when pvFetchError for this node.
- *
- * Hover affordance: mirrors the Games-card TacticMotifChip — pointer
- * cursor, lift, and brightened background on hover so the chip reads as clickable.
- */
-function FlawChip({
-  nodeId,
-  motif,
-  orientation,
-  ply,
-  depth,
-  activePvKeys,
-  pvFetchPending,
-  pvFetchError,
-  onPvChipClick,
-}: FlawChipProps): ReactNode {
-  // Multiple chips read active via key membership (flat siblings),
-  // not a node/orientation singleton match.
-  const isActive = activePvKeys?.has(`${ply}:${orientation}`) ?? false;
-  const isMissed = orientation === 'missed';
-  const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
-  const bg = isMissed ? TAC_MISSED_BG : TAC_ALLOWED_BG;
-  const border = isMissed ? TAC_MISSED_BORDER : TAC_ALLOWED_BORDER;
-  // Show the motif name + depth (e.g. "checkmate 4", "hanging-piece 2")
-  // instead of the orientation word. Mate-family motifs collapse to "checkmate";
-  // depth uses the same orientation-anchored display offset as the board badges.
-  const motifLabel = tacticMotifLabel(motif);
-  // anchored=false: the move list is a navigable surface,
-  // so the allowed +1 decision-anchor offset is dropped here (allowed reads like missed).
-  const depthLabel = tacticDepthBadge(motif, depth, orientation, false);
-  const label = depthLabel != null ? `${motifLabel} ${depthLabel}` : motifLabel;
-  const testId = `flaw-inline-tag-${orientation}-${nodeId}`;
-  const ariaCollapse = `${label} tactic. Click to collapse tactic line.`;
-  const ariaExpand = `${label} tactic. Click to expand tactic line.`;
-
-  // Brighten the chip while hovered/focused (tap-focus on mobile), like the Games card.
-  const [highlighted, setHighlighted] = useState(false);
-
-  const chipLabel =
-    isActive && pvFetchPending ? (
-      <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-    ) : (
-      <span className="text-sm font-medium">{label}</span>
-    );
-
-  return (
-    <span className="inline-flex items-center gap-1">
-      <button
-        type="button"
-        data-testid={testId}
-        aria-label={isActive ? ariaCollapse : ariaExpand}
-        className={cn(
-          'inline-flex items-center h-5 px-1.5 rounded-full border ml-1',
-          'cursor-pointer transition-all hover:-translate-y-px',
-          isActive && ACTIVE_FILTER_RING_CLASS,
-          isActive && pvFetchError && 'opacity-60',
-        )}
-        style={{
-          color,
-          backgroundColor: highlighted ? HIGHLIGHT_BG(bg) : bg,
-          borderColor: border,
-          filter: highlighted ? 'brightness(1.2)' : undefined,
-        }}
-        onMouseEnter={() => setHighlighted(true)}
-        onMouseLeave={() => setHighlighted(false)}
-        onFocus={() => setHighlighted(true)}
-        onBlur={() => setHighlighted(false)}
-        onClick={(e) => {
-          e.stopPropagation();
-          onPvChipClick?.(nodeId, { ply, orientation });
-        }}
-      >
-        {chipLabel}
-      </button>
-      {isActive && pvFetchError && (
-        <span className="text-sm text-muted-foreground ml-1" role="alert">
-          Tactic line not available for this flaw.
-        </span>
-      )}
-    </span>
-  );
-}
-
 // ─── Mobile sub-component ────────────────────────────────────────────────────
 
 /**
@@ -1037,9 +920,10 @@ function VerticalTree({
         {hasTacticChip && (flaw.missedMotif != null || flaw.allowedMotif != null) && (
           <span className="inline-flex items-center flex-wrap gap-1 pb-1">
             {flaw.missedMotif != null && (
-              <FlawChip
+              <TacticLineChip
                 key={`flaw-inline-tag-missed-${nodeId}`}
-                nodeId={nodeId}
+                testId={`flaw-inline-tag-missed-${nodeId}`}
+                className="ml-1"
                 motif={flaw.missedMotif}
                 orientation="missed"
                 // The missed chip's fetch/fork ply is its flaw's ply, even though the
@@ -1049,13 +933,14 @@ function VerticalTree({
                 activePvKeys={activePvKeys}
                 pvFetchPending={pvFetchPending}
                 pvFetchError={pvFetchError}
-                onPvChipClick={onPvChipClick}
+                onClick={(ref) => onPvChipClick?.(nodeId, ref)}
               />
             )}
             {flaw.allowedMotif != null && (
-              <FlawChip
+              <TacticLineChip
                 key={`flaw-inline-tag-allowed-${nodeId}`}
-                nodeId={nodeId}
+                testId={`flaw-inline-tag-allowed-${nodeId}`}
+                className="ml-1"
                 motif={flaw.allowedMotif}
                 orientation="allowed"
                 ply={flaw.ply}
@@ -1063,7 +948,7 @@ function VerticalTree({
                 activePvKeys={activePvKeys}
                 pvFetchPending={pvFetchPending}
                 pvFetchError={pvFetchError}
-                onPvChipClick={onPvChipClick}
+                onClick={(ref) => onPvChipClick?.(nodeId, ref)}
               />
             )}
           </span>
