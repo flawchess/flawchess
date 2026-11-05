@@ -4,8 +4,8 @@ milestone: v2.27
 current_phase: 244
 status: completed
 stopped_at: Phase 244 complete — all phases complete
-last_updated: "2026-11-04T20:04:21.494Z"
-state_head: 282a8dd7d57ad078a713c500d31b42784bacce66
+last_updated: "2026-11-05T06:57:35.208Z"
+state_head: 6088226c7e69375949142b7fa27787b98018f8c3
 progress:
   total_phases: 3
   completed_phases: 103
@@ -13,8 +13,8 @@ progress:
   completed_plans: 96
   percent: 100
 milestone_name: Codebase Cleanup
-last_activity: 2026-10-31
-last_activity_desc: "Completed quick task 261031-g4l: per-rating gem/great/best coloring of the best-move line in the Maia chart"
+last_activity: 2026-11-05
+last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the PGN/FEN dropdown"
 ---
 
 # Project State: FlawChess
@@ -1078,6 +1078,7 @@ None active.
 | 158 | ELO rating charts: filter-disabled time controls start hidden, stay toggleable in the legend | 2026-11-04 | fe12b59b1 | — |
 | 261104-hxl | Hide stale moves in opening findings behind Played before collapsible | 2026-11-04 | 18de95f60 | [261104-hxl-hide-stale-moves-in-opening-findings-beh](./quick/261104-hxl-hide-stale-moves-in-opening-findings-beh/) |
 | 261104-t65 | Analysis: PGN/FEN button becomes a menu with Import and Copy FEN | 2026-11-04 | 282a8dd7d | [261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe](./quick/261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe/) |
+| 261105-apc | Analysis Copy PGN in the PGN/FEN dropdown | 2026-11-05 | 6088226c7 | [261105-apc-in-the-analysis-page-add-a-copy-pgn-feat](./quick/261105-apc-in-the-analysis-page-add-a-copy-pgn-feat/) |
 
 ## Deferred Items
 
