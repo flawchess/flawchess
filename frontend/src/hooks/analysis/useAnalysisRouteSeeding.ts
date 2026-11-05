@@ -31,6 +31,7 @@
 import { useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
+import type { EnterExplainLine } from '@/hooks/analysis/useExplainLineEntry';
 import type { GameFlawCard, TacticLinesResponse } from '@/types/library';
 import {
   forkPlyForOrientation,
@@ -73,6 +74,8 @@ export interface UseAnalysisRouteSeedingOptions {
   loadMainLine: (sans: string[], newRootFen: string) => void;
   goToNode: (id: NodeId, opts?: { silent?: boolean }) => void;
   insertPvLine: (pvSans: string[], forkNodeId: NodeId) => void;
+  /** Explain landing (useExplainLineEntry): fork preview then the first move for missed lines. */
+  enterExplainLine: EnterExplainLine;
 
   // ── State setters ──────────────────────────────────────────────────────
   setBoardFlipped: (flipped: boolean) => void;
@@ -117,6 +120,7 @@ export function useAnalysisRouteSeeding(
     loadMainLine,
     goToNode,
     insertPvLine,
+    enterExplainLine,
     setBoardFlipped,
     setPendingFlaw,
     setOpenLines,
@@ -273,12 +277,12 @@ export function useAnalysisRouteSeeding(
     // grafted node (insertPvLine's batch-build loop starts at prev.nextId).
     const rootNodeId = nextId;
     insertPvLine(pvMoves, forkNodeId);
-    // Explain (D-05) lands on the first grafted move instead of parking at the fork. This
-    // functional updater is queued after insertPvLine's, so the new node exists in the
-    // chained prev and both commit together (no fork flash, one move sound). For an allowed
-    // line rootNodeId is already the refutation because the graft drops allowed_moves[0].
-    // Chips and initialTactic carry no flag and keep parking at the fork.
-    if (pendingFlaw.enter) goToNode(rootNodeId);
+    // Explain (D-05) lands on the first grafted move instead of parking at the fork. A missed
+    // line first shows the fork (the position before the mistake), then advances after a
+    // short pause (UAT); an allowed line forks at the flaw position the board already shows,
+    // so it lands on the refutation at once (rootNodeId is the refutation because the graft
+    // drops allowed_moves[0]). Chips and initialTactic carry no flag and park at the fork.
+    if (pendingFlaw.enter) enterExplainLine(forkNodeId, rootNodeId, pendingFlaw.orientation);
     setOpenLines((prev) => new Map(prev).set(key, { rootNodeId, ply: pendingFlaw.ply, orientation: pendingFlaw.orientation }));
     setPendingFlaw(null);
     // mainLine/openLines/nextId intentionally omitted — mainLine is stable after game load;

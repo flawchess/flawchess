@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useAnalysisRouteSeeding } from '@/hooks/analysis/useAnalysisRouteSeeding';
 import { useExplainBar } from '@/hooks/analysis/useExplainBar';
+import { EXPLAIN_FORK_PREVIEW_MS, useExplainLineEntry } from '@/hooks/analysis/useExplainLineEntry';
 import { findFocusedFlaw, type OpenLine, type PendingFlaw } from '@/lib/analysisTactics';
 import { useTacticLines } from '@/hooks/useLibrary';
 import type { GameFlawCard, TacticLinesResponse } from '@/types/library';
@@ -136,6 +137,7 @@ function useHarness(game: GameFlawCard, initialPly: number) {
   );
   const fetchFlaw = pendingFlaw ?? focusedFlaw;
   const { data } = useTacticLines(GAME_ID, fetchFlaw?.ply ?? null, fetchFlaw != null);
+  const enterExplainLine = useExplainLineEntry(currentNodeId, goToNode);
 
   useAnalysisRouteSeeding({
     isGameMode: true,
@@ -154,6 +156,7 @@ function useHarness(game: GameFlawCard, initialPly: number) {
     loadMainLine,
     goToNode,
     insertPvLine,
+    enterExplainLine,
     setBoardFlipped: () => {},
     setPendingFlaw,
     setOpenLines,
@@ -172,6 +175,7 @@ function useHarness(game: GameFlawCard, initialPly: number) {
     mainLine,
     goToNode,
     deleteSubtree,
+    enterExplainLine,
     setPendingFlaw,
     setOpenLines,
   });
@@ -194,9 +198,16 @@ function mainLineId(h: Harness, ply: number): number | undefined {
   return h.result.current.board.mainLine[ply];
 }
 
+/** Click Explain and let the missed-line fork preview run out. */
+function explainAndSettle(h: Harness): void {
+  act(() => h.result.current.explain.onExplain());
+  act(() => vi.advanceTimersByTime(EXPLAIN_FORK_PREVIEW_MS));
+}
+
 let track: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  vi.useFakeTimers();
   track = vi.fn();
   window.umami = { track, identify: vi.fn() };
   window.history.pushState({}, '', '/analysis');
@@ -205,6 +216,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   fixtures.clear();
   delete window.umami;
   window.history.pushState({}, '', '/');
@@ -215,7 +227,7 @@ describe('useExplainBar harness', () => {
     const h = renderHarness(BLUNDER_PLY);
     expect(h.result.current.explain.state).toMatchObject({ kind: 'explain', flaw: { orientation: 'missed' } });
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
 
     expect(currentSan(h)).toBe('Nf3');
     expect(h.result.current.openLines.has('2:missed')).toBe(true);
@@ -223,11 +235,40 @@ describe('useExplainBar harness', () => {
     expect(h.result.current.explain.state.kind).toBe('got-it');
   });
 
+  it('UAT: a missed Explain first shows the position before the mistake, then plays the better move', () => {
+    const h = renderHarness(BLUNDER_PLY);
+
+    act(() => h.result.current.explain.onExplain());
+
+    expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, BLUNDER_PLY - 1));
+    expect(h.result.current.openLines.has('2:missed')).toBe(true);
+    act(() => vi.advanceTimersByTime(EXPLAIN_FORK_PREVIEW_MS - 1));
+    expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, BLUNDER_PLY - 1));
+    act(() => vi.advanceTimersByTime(1));
+    expect(currentSan(h)).toBe('Nf3');
+  });
+
+  it('UAT: leaving the fork during the preview cancels the advance', () => {
+    const h = renderHarness(BLUNDER_PLY);
+    act(() => h.result.current.explain.onExplain());
+    act(() => h.result.current.board.goToNode(mainLineId(h, 0)!));
+
+    act(() => vi.advanceTimersByTime(EXPLAIN_FORK_PREVIEW_MS));
+
+    expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, 0));
+  });
+
+  it('UAT: an allowed Explain lands on the refutation without a preview', () => {
+    const h = renderHarness(MISTAKE_PLY);
+    act(() => h.result.current.explain.onExplain());
+    expect(currentSan(h)).toBe('Bc4');
+  });
+
   it('D-05 allowed: Explain on the opponent mistake lands on the refutation, not the prepended flaw move', () => {
     const h = renderHarness(MISTAKE_PLY);
     expect(h.result.current.explain.state).toMatchObject({ kind: 'explain', flaw: { orientation: 'allowed' } });
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
 
     expect(currentSan(h)).toBe('Bc4');
     const line = h.result.current.openLines.get('3:allowed');
@@ -239,7 +280,7 @@ describe('useExplainBar harness', () => {
     const h = renderHarness(BLUNDER_PLY);
     expect(h.result.current.explain.state).toMatchObject({ kind: 'explain', flaw: { orientation: 'allowed' } });
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
 
     const line = h.result.current.openLines.get('2:allowed');
     // The game also continued with Nc6, so assert on the node id, not only the SAN.
@@ -250,7 +291,7 @@ describe('useExplainBar harness', () => {
 
   it('D-06: Back/Forward step through the line and Got it removes it and returns to the flaw move', () => {
     const h = renderHarness(BLUNDER_PLY);
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
     const line = h.result.current.openLines.get('2:missed');
     const grafted = [...h.result.current.board.pvNodeIds];
     expect(grafted).toHaveLength(2);
@@ -273,7 +314,7 @@ describe('useExplainBar harness', () => {
 
   it('D-06: Got it on an allowed line returns to the flaw move', () => {
     const h = renderHarness(MISTAKE_PLY);
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
     act(() => h.result.current.explain.onGotIt());
 
     expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, 3));
@@ -282,7 +323,7 @@ describe('useExplainBar harness', () => {
 
   it('D-07: leaving the line keeps it open and Explain re-enters it without a duplicate graft', () => {
     const h = renderHarness(BLUNDER_PLY);
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
     const line = h.result.current.openLines.get('2:missed');
     const grafted = [...h.result.current.board.pvNodeIds];
 
@@ -295,7 +336,7 @@ describe('useExplainBar harness', () => {
     expect(h.result.current.explain.state.kind).toBe('explain');
     const size = h.result.current.board.nodes.size;
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
 
     expect(h.result.current.board.currentNodeId).toBe(line?.rootNodeId);
     expect(h.result.current.board.nodes.size).toBe(size);
@@ -318,7 +359,7 @@ describe('useExplainBar harness', () => {
     expect(h.result.current.explain.state.kind).toBe('explain');
     const size = h.result.current.board.nodes.size;
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
 
     expect(h.result.current.board.currentNodeId).toBe(line?.rootNodeId);
     expect(h.result.current.board.nodes.size).toBe(size);
@@ -338,7 +379,7 @@ describe('useExplainBar harness', () => {
       flaw: { ply: BLUNDER_PLY, orientation: 'missed' },
     });
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
 
     expect(currentSan(h)).toBe('Nf3');
     expect(h.result.current.openLines.has('2:missed')).toBe(true);
@@ -370,7 +411,7 @@ describe('useExplainBar harness', () => {
     act(() => h.result.current.board.goToNode(mainLineId(h, 2)!));
     expect(track).not.toHaveBeenCalled();
 
-    act(() => h.result.current.explain.onExplain());
+    explainAndSettle(h);
     expect(track).toHaveBeenCalledTimes(1);
     expect(track).toHaveBeenLastCalledWith('board-tool', { page: 'analysis', target: 'explain-open' });
 

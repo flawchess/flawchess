@@ -447,6 +447,7 @@ afterEach(() => {
 
 // Late import after vi.mock calls — Analysis.tsx is a default export (required by React.lazy).
 import AnalysisPage from '../Analysis';
+import { EXPLAIN_FORK_PREVIEW_MS } from '@/hooks/analysis/useExplainLineEntry';
 
 // ── Render helper ──────────────────────────────────────────────────────────────
 function renderAnalysis(initialPath = '/analysis') {
@@ -3233,7 +3234,7 @@ describe('Explain bar', () => {
       .getAllByText(/./, { selector: '[aria-current="step"]' })
       .at(0)?.textContent ?? null;
 
-  it('grafts the missed line on the owner blunder and lands on its first move', () => {
+  it('grafts the missed line on the owner blunder, previews the pre-flaw position, then lands on its first move', async () => {
     libraryGameState.data = buildExplainGame();
     tacticLinesByPly.set(
       2,
@@ -3254,7 +3255,9 @@ describe('Explain bar', () => {
 
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
 
-    expect(currentSan()).toBe('Nf3');
+    // UAT: the board first steps back to the position before the blunder (ply 1, e5).
+    expect(currentSan()).toBe('e5');
+    await waitFor(() => expect(currentSan()).toBe('Nf3'), { timeout: EXPLAIN_FORK_PREVIEW_MS * 3 });
     expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-open' });
 
     // D-06: inside the grafted line the single button reads Got it.

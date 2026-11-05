@@ -11,9 +11,10 @@
  * The second observer shares the `['tactic-lines', gameId, ply]` query key, so
  * the Explain click is a synchronous cache hit (D-11).
  *
- * Explain does NOT navigate to the fork first (unlike a chip click): with the
- * cached data the graft lands in one commit, while a fork navigation would add
- * a second commit, a one-frame back-step and a second move sound.
+ * Explain does not navigate to the fork itself (unlike a chip click): the graft
+ * effect hands the landing to useExplainLineEntry, which for a missed line shows
+ * the fork briefly before playing the better move. The D-07 re-entry path below
+ * goes through the same entry so both look identical.
  *
  * Got it deletes the line's whole subtree, so free moves the user played inside
  * the line go with it, exactly like a chip toggle-off.
@@ -24,7 +25,14 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTacticLines } from '@/hooks/useLibrary';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
 import type { FlawMarker } from '@/types/library';
-import { flawKey, type OpenLine, type PendingFlaw, type TacticRef } from '@/lib/analysisTactics';
+import {
+  flawKey,
+  forkPlyForOrientation,
+  type OpenLine,
+  type PendingFlaw,
+  type TacticRef,
+} from '@/lib/analysisTactics';
+import type { EnterExplainLine } from '@/hooks/analysis/useExplainLineEntry';
 import {
   eligibleExplainMarker,
   resolveExplainBarState,
@@ -52,6 +60,7 @@ export interface UseExplainBarOptions {
   mainLine: NodeId[];
   goToNode: (id: NodeId, opts?: { silent?: boolean }) => void;
   deleteSubtree: (rootId: NodeId) => void;
+  enterExplainLine: EnterExplainLine;
   setPendingFlaw: (flaw: PendingFlaw | null) => void;
   setOpenLines: Dispatch<SetStateAction<Map<string, OpenLine>>>;
 }
@@ -75,6 +84,7 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     mainLine,
     goToNode,
     deleteSubtree,
+    enterExplainLine,
     setPendingFlaw,
     setOpenLines,
   } = options;
@@ -108,7 +118,9 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     // effect's openLines.has early return would leave pendingFlaw stuck.
     const existing = openLines.get(flawKey(state.flaw));
     if (existing !== undefined) {
-      goToNode(existing.rootNodeId);
+      const forkNodeId = mainLine[forkPlyForOrientation(existing.ply, existing.orientation)];
+      if (forkNodeId === undefined) goToNode(existing.rootNodeId);
+      else enterExplainLine(forkNodeId, existing.rootNodeId, existing.orientation);
       return;
     }
     setPendingFlaw({ ...state.flaw, enter: true });

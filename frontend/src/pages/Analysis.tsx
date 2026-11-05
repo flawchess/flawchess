@@ -43,6 +43,7 @@ import { useAnalysisRouteParams } from '@/hooks/analysis/useAnalysisRouteParams'
 import { useAnalysisEngineLines } from '@/hooks/analysis/useAnalysisEngineLines';
 import { useAnalysisRouteSeeding } from '@/hooks/analysis/useAnalysisRouteSeeding';
 import { useExplainBar } from '@/hooks/analysis/useExplainBar';
+import { useExplainLineEntry } from '@/hooks/analysis/useExplainLineEntry';
 import { ExplainBar } from '@/components/analysis/ExplainBar';
 import { useAnalysisBoardArrows } from '@/hooks/analysis/useAnalysisBoardArrows';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
@@ -763,6 +764,8 @@ export default function Analysis() {
   // goToNode/insertPvLine in response to the URL/game-mode inputs above.
   // seededKey/pasteHandoffConsumed are returned because ONE more effect below
   // (the Import-tab paste-handoff consume effect) still reads/writes them.
+  // Explain landing: fork preview, then the better move (missed lines).
+  const enterExplainLine = useExplainLineEntry(currentNodeId, goToNode);
   const { seededKeyRef, pasteHandoffConsumedRef } = useAnalysisRouteSeeding({
     isGameMode,
     gameId,
@@ -780,6 +783,7 @@ export default function Analysis() {
     loadMainLine,
     goToNode,
     insertPvLine,
+    enterExplainLine,
     setBoardFlipped,
     setPendingFlaw,
     setOpenLines,
@@ -1293,6 +1297,7 @@ export default function Analysis() {
     mainLine,
     goToNode,
     deleteSubtree,
+    enterExplainLine,
     setPendingFlaw,
     setOpenLines,
   });
