@@ -12,7 +12,7 @@
  * the Explain click is a synchronous cache hit (D-11).
  *
  * Two buttons (Phase 245 UAT, replacing the single Explain button and its D-04
- * direction rule): Best move opens the MISSED line (undo the mistake, play the
+ * direction rule): Best opens the MISSED line (undo the mistake, play the
  * better move from ply-1), Punish opens the ALLOWED line (the refutation from the
  * flaw position). Neither navigates to the fork itself (unlike a chip click): the
  * graft effect hands the landing to useExplainLineEntry, which for a missed line

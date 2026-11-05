@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ExplainBar component coverage: states, static copy, the Best move / Punish buttons, the
+ * ExplainBar component coverage: states, static copy, the Best / Punish buttons, the
  * line stepper, the three placements and the absence of in-component analytics (tracking
  * lives in useExplainBar).
  */
@@ -82,17 +82,22 @@ describe('ExplainBar explain state', () => {
     expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
   });
 
-  it('headline names the move and severity, then Best move and Punish in that order', () => {
+  it('headline shows the severity icon, the move and severity, then Best and Punish in that order', () => {
     renderBar(EXPLAIN_BLUNDER);
     const bar = screen.getByTestId('analysis-explain-bar');
     expect(bar.getAttribute('data-state')).toBe('explain');
-    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Qh5?? is a blunder');
+    const headline = within(bar).getByTestId('analysis-explain-headline');
+    expect(headline.getAttribute('data-severity')).toBe('blunder');
+    expect(headline.querySelector('svg')).not.toBeNull();
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5 is a blunder');
     const buttons = within(bar).getAllByRole('button');
     expect(buttons.map((b) => b.getAttribute('data-testid'))).toEqual([
       'btn-analysis-explain-best',
       'btn-analysis-explain-punish',
     ]);
-    expect(buttons.map((b) => b.textContent)).toEqual(['Best move', 'Punish']);
+        expect(within(bar).getByRole('button', { name: 'Best' })).toBe(buttons[0]);
+    expect(within(bar).getByRole('button', { name: 'Punish' })).toBe(buttons[1]);
+    expect(buttons[0]?.querySelector('svg')).not.toBeNull();
     expect(within(bar).queryByTestId('analysis-explain-tactics')).toBeNull();
   });
 
@@ -139,7 +144,7 @@ describe('ExplainBar explain state', () => {
         onTacticClick={onTacticClick}
       />,
     );
-    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qh5?? is a blunder');
+    expect(screen.getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5 is a blunder');
     expect(screen.getByTestId('analysis-explain-tactics').textContent).toBe('missed fork in 1allowed checkmate in 3');
     fireEvent.click(screen.getByTestId('btn-analysis-explain-tactic-allowed'));
     expect(onTacticClick).toHaveBeenCalledWith({ ply: 2, orientation: 'allowed' });
@@ -147,7 +152,8 @@ describe('ExplainBar explain state', () => {
 
   it('without a SAN the headline falls back to the severity noun', () => {
     renderBar({ ...EXPLAIN_BLUNDER, san: null, severity: 'mistake' });
-    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('? Mistake');
+    expect(screen.getByTestId('analysis-explain-headline').getAttribute('data-severity')).toBe('mistake');
+    expect(screen.getByTestId('analysis-explain-headline-text').textContent).toBe('Mistake');
   });
 });
 

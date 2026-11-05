@@ -4,7 +4,7 @@
  * handlers.
  *
  * Phase 245 UAT replaced the single Explain button with two named lines:
- *   - Best move: undo the mistake and play the better move (the MISSED line).
+ *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
  * Row 1 is the headline (explain) or a line stepper (inside a line) plus the buttons;
  * row 2 holds the flaw's tactic chips, rendered in both states so opening a line never
@@ -13,11 +13,11 @@
  */
 
 import type { ReactElement, ReactNode } from 'react';
-import { Check, ChevronLeft, ChevronRight, Lightbulb, Swords } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Star, Swords } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
+import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import {
   otherOrientation,
   type ExplainBarState,
@@ -44,13 +44,13 @@ const SEVERITY_SUFFIX: Record<ExplainSeverity, string> = {
   mistake: ' is a mistake',
 };
 const SEVERITY_NOUN: Record<ExplainSeverity, string> = {
-  blunder: ' Blunder',
-  mistake: ' Mistake',
+  blunder: 'Blunder',
+  mistake: 'Mistake',
 };
 
-/** Button copy, testid suffix and icon per line. Best move first: it starts one ply earlier. */
-const LINE_BUTTON: Record<ExplainOrientation, { label: string; testId: string; icon: typeof Lightbulb }> = {
-  missed: { label: 'Best move', testId: 'btn-analysis-explain-best', icon: Lightbulb },
+/** Button copy, testid and icon per line. Best first: it starts one ply earlier. */
+const LINE_BUTTON: Record<ExplainOrientation, { label: string; testId: string; icon: typeof Star }> = {
+  missed: { label: 'Best', testId: 'btn-analysis-explain-best', icon: Star },
   allowed: { label: 'Punish', testId: 'btn-analysis-explain-punish', icon: Swords },
 };
 const LINE_ORDER: readonly ExplainOrientation[] = ['missed', 'allowed'];
@@ -224,7 +224,6 @@ export function ExplainBar({
       />
     );
   }
-  const glyph = SEVERITY_GLYPH[state.severity];
   return (
     <BarShell
       state="explain"
@@ -232,12 +231,22 @@ export function ExplainBar({
       tactics={<TacticBadges tactics={state.tactics} ply={state.ply} chip={chip} />}
       row={
         <>
-          <span data-testid="analysis-explain-headline" className="min-w-0 flex-1 truncate text-sm">
-            <span className="font-mono font-bold" style={{ color: glyph.color }}>
-              {state.san ?? ''}
-              {glyph.symbol}
+          <span
+            data-testid="analysis-explain-headline"
+            data-severity={state.severity}
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
+          >
+            <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
+            <span data-testid="analysis-explain-headline-text" className="truncate">
+              {state.san !== null ? (
+                <>
+                  <span className="font-mono font-bold text-foreground">{state.san}</span>
+                  {SEVERITY_SUFFIX[state.severity]}
+                </>
+              ) : (
+                SEVERITY_NOUN[state.severity]
+              )}
             </span>
-            {state.san !== null ? SEVERITY_SUFFIX[state.severity] : SEVERITY_NOUN[state.severity]}
           </span>
           {LINE_ORDER.map((orientation) => (
             <LineButton

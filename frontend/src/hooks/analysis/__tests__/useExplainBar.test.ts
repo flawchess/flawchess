@@ -203,7 +203,7 @@ function mainLineId(h: Harness, ply: number): number | undefined {
   return h.result.current.board.mainLine[ply];
 }
 
-/** Click Best move (missed) or Punish (allowed) and let a missed-line fork preview run out. */
+/** Click Best (missed) or Punish (allowed) and let a missed-line fork preview run out. */
 function openAndSettle(h: Harness, orientation: 'missed' | 'allowed' = 'missed'): void {
   act(() => h.result.current.explain.onOpenLine(orientation));
   act(() => vi.advanceTimersByTime(EXPLAIN_FORK_PREVIEW_MS));
@@ -228,7 +228,7 @@ afterEach(() => {
 });
 
 describe('useExplainBar harness', () => {
-  it('Best move on the owner blunder grafts the missed line and lands on its first move', () => {
+  it('Best on the owner blunder grafts the missed line and lands on its first move', () => {
     const h = renderHarness(BLUNDER_PLY);
     expect(h.result.current.explain.state).toMatchObject({
       kind: 'explain',
@@ -244,7 +244,7 @@ describe('useExplainBar harness', () => {
     expect(h.result.current.explain.state.kind).toBe('got-it');
   });
 
-  it('UAT: Best move first shows the position before the mistake, then plays the better move', () => {
+  it('UAT: Best first shows the position before the mistake, then plays the better move', () => {
     const h = renderHarness(BLUNDER_PLY);
 
     act(() => h.result.current.explain.onOpenLine('missed'));
@@ -282,7 +282,7 @@ describe('useExplainBar harness', () => {
     expect(h.result.current.board.currentNodeId).toBe(line?.rootNodeId);
   });
 
-  it('Best move works on the opponent mistake too (no direction rule)', () => {
+  it('Best works on the opponent mistake too (no direction rule)', () => {
     const h = renderHarness(MISTAKE_PLY);
     openAndSettle(h, 'missed');
     expect(currentSan(h)).toBe('Nf6');
@@ -437,7 +437,7 @@ describe('useExplainBar harness', () => {
     expect(track).toHaveBeenLastCalledWith('board-tool', { page: 'analysis', target: 'explain-close' });
   });
 
-  it('switch: Punish inside the Best move line closes it and lands on the refutation', () => {
+  it('switch: Punish inside the Best line closes it and lands on the refutation', () => {
     const h = renderHarness(BLUNDER_PLY);
     openAndSettle(h);
     const grafted = [...h.result.current.board.pvNodeIds];
@@ -453,7 +453,7 @@ describe('useExplainBar harness', () => {
     expect(track).toHaveBeenLastCalledWith('board-tool', { page: 'analysis', target: 'explain-punish' });
   });
 
-  it('switch: Best move inside the Punish line previews the fork, then plays the better move', () => {
+  it('switch: Best inside the Punish line previews the fork, then plays the better move', () => {
     const h = renderHarness(BLUNDER_PLY);
     openAndSettle(h, 'allowed');
 

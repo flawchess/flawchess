@@ -3265,7 +3265,7 @@ describe('Explain bar', () => {
       .getAllByText(/./, { selector: '[aria-current="step"]' })
       .at(0)?.textContent ?? null;
 
-  it('Best move grafts the missed line on the owner blunder, previews the pre-flaw position, then lands on its first move', async () => {
+  it('Best grafts the missed line on the owner blunder, previews the pre-flaw position, then lands on its first move', async () => {
     libraryGameState.data = buildExplainGame();
     tacticLinesByPly.set(
       2,
@@ -3279,7 +3279,7 @@ describe('Explain bar', () => {
 
     const bar = within(screen.getByTestId('analysis-movelist-card')).getByTestId('analysis-explain-bar');
     expect(bar.getAttribute('data-state')).toBe('explain');
-    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Qh5?? is a blunder');
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5 is a blunder');
     expect(
       within(bar)
         .getAllByRole('button', { hidden: true })
@@ -3324,8 +3324,8 @@ describe('Explain bar', () => {
     renderAnalysis('/analysis?game_id=1&ply=3');
 
     const bar = screen.getByTestId('analysis-explain-bar');
-    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Nc6? is a mistake');
-    // No missed PV stored: Best move is disabled, Punish works.
+    expect(within(bar).getByTestId('analysis-explain-headline-text').textContent).toBe('Nc6 is a mistake');
+    // No missed PV stored: Best is disabled, Punish works.
     expect((within(bar).getByTestId('btn-analysis-explain-best') as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-punish'));
@@ -3390,7 +3390,7 @@ describe('Explain bar placement', () => {
     );
   }
 
-  it('mobile (360px): one bar directly above the footer, Best move flips it to got-it', () => {
+  it('mobile (360px): one bar directly above the footer, Best flips it to got-it', () => {
     stubMatchMedia((q) => /max-width/.test(q));
     clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(360);
     seedOwnerBlunderLines();

@@ -37,7 +37,7 @@ export function eligibleExplainMarker(
   return markers.find((m) => m.ply === ply && isExplainSeverity(m.severity)) ?? null;
 }
 
-/** The two lines the bar can open, keyed by tactic orientation (Best move = missed, Punish = allowed). */
+/** The two lines the bar can open, keyed by tactic orientation (Best = missed, Punish = allowed). */
 export type ExplainOrientation = 'missed' | 'allowed';
 export type ExplainLineUsable = Record<ExplainOrientation, boolean>;
 
@@ -175,7 +175,7 @@ export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarStat
   return gotItState(inputs, openLine);
 }
 
-/** Rules (2)-(6): the Best move / Punish offer for the landing ply, or hidden. */
+/** Rules (2)-(6): the Best / Punish offer for the landing ply, or hidden. */
 function explainState(inputs: ExplainBarInputs): ExplainBarState {
   const { flawMarkers, landingPly, pendingFlaw, tacticLines, tacticLinesPly } = inputs;
   // (2) An unrelated chip or deep-link open is in flight.
@@ -189,7 +189,7 @@ function explainState(inputs: ExplainBarInputs): ExplainBarState {
   // disabled, so the row layout is the same on every flaw.
   const usable = usableExplainLines(tacticLines, landingPly);
   if (!usable.missed && !usable.allowed) return { kind: 'hidden' };
-  // (6) Offer both buttons (the D-04 direction rule is gone: Best move and Punish name
+  // (6) Offer both buttons (the D-04 direction rule is gone: Best and Punish name
   // their line, so neither side's flaw needs a default).
   return {
     kind: 'explain',
