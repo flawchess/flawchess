@@ -218,6 +218,50 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
     expect(state.kind).toBe('explain');
   });
 
+  // WR-01: P=10's missed line forks at mainLine[9]; ply 9 is the opponent's mistake.
+  const adjacent = {
+    focusedFlaw: { ply: 10, orientation: 'missed' as const },
+    openLines,
+    landingPly: 9,
+    flawMarkers: [marker({ ply: 9, is_user: false, severity: 'mistake', move_san: 'f6' }), marker({ ply: 10 })],
+  };
+
+  it('WR-01: on the missed-line fork, an explainable flaw at the landing ply wins over got-it', () => {
+    const state = resolveExplainBarState(inputs(adjacent));
+    expect(state).toEqual({
+      kind: 'explain',
+      flaw: { ply: 9, orientation: 'allowed' },
+      san: 'f6',
+      severity: 'mistake',
+      pending: false,
+    });
+  });
+
+  it('WR-01: the fork keeps got-it while the landing flaw has no usable lines yet', () => {
+    expect(resolveExplainBarState(inputs({ ...adjacent, tacticLines: undefined }))).toEqual({
+      kind: 'got-it',
+      line,
+      san: 'Qh5',
+    });
+  });
+
+  it('WR-01: the fork keeps got-it when the landing ply is not a mistake or blunder', () => {
+    const flawMarkers = [marker({ ply: 9, is_user: false, severity: 'inaccuracy' }), marker({ ply: 10 })];
+    expect(resolveExplainBarState(inputs({ ...adjacent, flawMarkers })).kind).toBe('got-it');
+  });
+
+  it("WR-01: an allowed line's fork is the flaw node itself and keeps got-it", () => {
+    const allowed: OpenLine = { rootNodeId: 41, ply: 10, orientation: 'allowed' };
+    const state = resolveExplainBarState(
+      inputs({
+        focusedFlaw: { ply: 10, orientation: 'allowed' },
+        openLines: new Map([['10:allowed', allowed]]),
+        landingPly: 10,
+      }),
+    );
+    expect(state).toEqual({ kind: 'got-it', line: allowed, san: 'Qh5' });
+  });
+
   it('still loses to rule 1 (not game mode, fast-forward running)', () => {
     const base = { focusedFlaw: { ply: 10, orientation: 'missed' as const }, openLines };
     expect(resolveExplainBarState(inputs({ ...base, isGameMode: false })).kind).toBe('hidden');

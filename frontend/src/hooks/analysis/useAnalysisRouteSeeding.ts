@@ -240,9 +240,22 @@ export function useAnalysisRouteSeeding(
   // Records the new line into openLines WITHOUT touching any previously
   // open line — insertPvLine unions ids into pvNodeIds, never clobbers.
   useEffect(() => {
-    if (!isGameMode || pendingFlaw == null || contextualTacticData == null) return;
+    if (!isGameMode || pendingFlaw == null || contextualTacticData === undefined) return;
+    // Bug fix (Phase 245 review WR-02): every path that cannot graft must clear pendingFlaw.
+    // A pending flaw that never clears hides the Explain bar on every other ply (rule 2 of
+    // resolveExplainBarState) and pins the contextual fetch to its ply for the rest of the
+    // session. Since 245-02 a 404 resolves to null instead of an error, so a drifted chip or
+    // deep-link open used to stick here silently.
+    if (contextualTacticData === null) {
+      setPendingFlaw(null);
+      return;
+    }
     const key = flawKey(pendingFlaw);
-    if (openLines.has(key)) return; // already recorded — guard against a stale re-run
+    if (openLines.has(key)) {
+      // Already recorded (stale re-run): nothing to graft, just release the pending flaw.
+      setPendingFlaw(null);
+      return;
+    }
     // Allowed lines start AT the flaw position and drop the prepended flaw move (index 0),
     // so the sideline begins with the opponent's response. Missed
     // lines start at the decision board and use the full PV.
@@ -252,7 +265,10 @@ export function useAnalysisRouteSeeding(
         : (contextualTacticData.allowed_moves ?? []).slice(1);
     // Guard the fork node lookup (out-of-bounds ply).
     const forkNodeId = mainLine[forkPlyForOrientation(pendingFlaw.ply, pendingFlaw.orientation)];
-    if (forkNodeId === undefined || pvMoves.length === 0) return;
+    if (forkNodeId === undefined || pvMoves.length === 0) {
+      setPendingFlaw(null); // WR-02: ungraftable (empty PV or fork out of bounds)
+      return;
+    }
     // Snapshot the line's root id BEFORE grafting — the hook assigns nextId to the first
     // grafted node (insertPvLine's batch-build loop starts at prev.nextId).
     const rootNodeId = nextId;

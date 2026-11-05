@@ -25,10 +25,11 @@ vi.mock('@/lib/sounds', () => ({
   unlockAudio: vi.fn(),
 }));
 
-const fixtures = new Map<number, TacticLinesResponse>();
+// A `null` fixture is a settled 404 ("no lines"); an absent ply is still loading (undefined).
+const fixtures = new Map<number, TacticLinesResponse | null>();
 vi.mock('@/hooks/useLibrary', () => ({
   useTacticLines: (_gameId: number | null, ply: number | null, enabled: boolean) => ({
-    data: enabled && ply != null ? fixtures.get(ply) : undefined,
+    data: enabled && ply != null && fixtures.has(ply) ? fixtures.get(ply) : undefined,
     isFetching: false,
     isError: false,
   }),
@@ -321,6 +322,46 @@ describe('useExplainBar harness', () => {
 
     expect(h.result.current.board.currentNodeId).toBe(line?.rootNodeId);
     expect(h.result.current.board.nodes.size).toBe(size);
+  });
+
+  it('WR-01: with a chip-opened missed line forking on the owner blunder, the blunder still offers Explain', () => {
+    const h = renderHarness(BLUNDER_PLY);
+    // The opponent mistake's MISSED line forks at mainLine[2], the owner blunder itself.
+    act(() => {
+      h.result.current.setPendingFlaw({ ply: MISTAKE_PLY, orientation: 'missed' });
+      h.result.current.board.goToNode(mainLineId(h, BLUNDER_PLY)!);
+    });
+    expect(h.result.current.openLines.has('3:missed')).toBe(true);
+    expect(h.result.current.board.currentNodeId).toBe(mainLineId(h, BLUNDER_PLY));
+    expect(h.result.current.explain.state).toMatchObject({
+      kind: 'explain',
+      flaw: { ply: BLUNDER_PLY, orientation: 'missed' },
+    });
+
+    act(() => h.result.current.explain.onExplain());
+
+    expect(currentSan(h)).toBe('Nf3');
+    expect(h.result.current.openLines.has('2:missed')).toBe(true);
+    expect(h.result.current.openLines.has('3:missed')).toBe(true);
+  });
+
+  it('WR-02: a chip open that settles to no lines (404) releases the pending flaw so Explain works elsewhere', () => {
+    fixtures.set(MISTAKE_PLY, null);
+    const h = renderHarness(BLUNDER_PLY);
+    act(() => h.result.current.setPendingFlaw({ ply: MISTAKE_PLY, orientation: 'allowed' }));
+
+    expect(h.result.current.pendingFlaw).toBeNull();
+    expect(h.result.current.openLines.size).toBe(0);
+    expect(h.result.current.explain.state).toMatchObject({ kind: 'explain', flaw: { ply: BLUNDER_PLY } });
+  });
+
+  it('WR-02: an ungraftable chip open (empty PV) releases the pending flaw too', () => {
+    fixtures.set(MISTAKE_PLY, lines({ allowed_moves: ['Nc6'], missed_moves: [], flaw_ply: MISTAKE_PLY }));
+    const h = renderHarness(BLUNDER_PLY);
+    act(() => h.result.current.setPendingFlaw({ ply: MISTAKE_PLY, orientation: 'allowed' }));
+
+    expect(h.result.current.pendingFlaw).toBeNull();
+    expect(h.result.current.explain.state.kind).toBe('explain');
   });
 
   it('tracking: render and navigation send nothing; the handlers send explain-open and explain-close', () => {

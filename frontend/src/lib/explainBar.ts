@@ -108,19 +108,30 @@ function eligibleSanAt(markers: FlawMarker[] | null | undefined, ply: number): s
 
 /** Ordered early returns; see the numbered comments for each rule. */
 export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarState {
-  const { isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, tacticLines } = inputs;
+  const { isGameMode, fastForwardRunning, flawMarkers, landingPly } = inputs;
   // (1) Not game mode, or a Jump run is animating: nothing to offer.
   if (!isGameMode || fastForwardRunning) return { kind: 'hidden' };
   // (1b) Got it (D-06): the board is in an open line. Following findFocusedFlaw semantics,
   // that covers the grafted subtree (including free moves played off a PV node), a missed
   // line's fork (ply-1) after stepping Back out, an allowed line's fork (the flaw node
-  // itself) and a deep-link auto-opened line. Accepted precedence edge: with P:missed open
-  // and the board at mainLine[P-1] that is itself an opponent flaw, Got it for P wins; one
-  // Back after Got it reaches P-1's Explain.
+  // itself) and a deep-link auto-opened line.
   const openLine = gotItLine(inputs);
-  if (openLine !== null) {
-    return { kind: 'got-it', line: openLine, san: eligibleSanAt(flawMarkers, openLine.ply) };
+  if (openLine === null) return explainState(inputs);
+  // Bug fix (Phase 245 review WR-01): a missed line for P forks at mainLine[P-1]. When the
+  // board sits on that fork (a main-line node that is not the line's own flaw ply) and P-1
+  // is itself an explainable flaw, the landing ply's Explain wins. Got it for P used to
+  // shadow it, so P-1's Explain was reachable only via Got it (which deletes P's line) and
+  // then Back. Inside the subtree landingPly is -1, so Got it is unaffected there.
+  if (landingPly >= 0 && landingPly !== openLine.ply) {
+    const landing = explainState(inputs);
+    if (landing.kind === 'explain') return landing;
   }
+  return { kind: 'got-it', line: openLine, san: eligibleSanAt(flawMarkers, openLine.ply) };
+}
+
+/** Rules (2)-(6): the Explain offer for the landing ply, or hidden. */
+function explainState(inputs: ExplainBarInputs): ExplainBarState {
+  const { flawMarkers, landingPly, pendingFlaw, tacticLines } = inputs;
   // (2) An unrelated chip or deep-link open is in flight.
   if (pendingFlaw != null && pendingFlaw.ply !== landingPly) return { kind: 'hidden' };
   // (3) Not on an eligible flaw ply (covers sidelines, the root and inaccuracies).
