@@ -29,6 +29,9 @@
  * The badges merge UNDER the existing square markers (they never displace one)
  * and follow the arrows actually drawn: none while the move-quality hover or the
  * PV-sideline overlay replaces the engine arrows.
+ *
+ * The PV-sideline tactic overlay (numbered countdown arrow + move-list tint) only draws for
+ * lines with a visible user motif (`focusedLineHasMotif`); other lines get a plain arrow.
  */
 
 import { useMemo } from 'react';
@@ -231,6 +234,12 @@ export interface UseAnalysisBoardArrowsOptions {
   contextualOnStoredLine: boolean;
   contextualCurrentPly: number;
   focusedPvLine: readonly NodeId[];
+  /**
+   * Whether the focused line has a user-visible tactic motif (lineHasVisibleMotif). When
+   * false (an Explain on a non-motif or opponent flaw) the PV overlay is a plain unlabelled
+   * next-move arrow with no numbered countdown and no move-list tint.
+   */
+  focusedLineHasMotif: boolean;
 
   // ── Move-quality bar hover preview ────────────────────────────────────
   hoveredQualityMoves: HoveredQualityMove[] | null;
@@ -299,6 +308,7 @@ export function useAnalysisBoardArrows(
     contextualOnStoredLine,
     contextualCurrentPly,
     focusedPvLine,
+    focusedLineHasMotif,
     hoveredQualityMoves,
     flawChessEnabled,
     flawChessRankedLines,
@@ -319,7 +329,10 @@ export function useAnalysisBoardArrows(
   // The *_tactic_ply_index indexes the PV moves, which line up 1:1 with focusedPvLine.
   const sidelineNodeColors = useMemo(() => {
     const colors = new Map<NodeId, string>();
+    // Bug fix (Phase 245): Explain is the first path that opens lines without a visible
+    // motif; the `?? 0` defaults below used to tint the first move as a fake one-move tactic.
     if (!isGameMode || focusedFlaw == null || contextualTacticData == null) return colors;
+    if (!focusedLineHasMotif) return colors;
     const isMissed = focusedFlaw.orientation === 'missed';
     // allowed_tactic_ply_index indexes the API allowed_moves (flaw move at index 0); the
     // grafted focusedPvLine drops that lead-in, so shift -1 to align.
@@ -332,7 +345,7 @@ export function useAnalysisBoardArrows(
       if (node !== undefined) colors.set(node, color);
     }
     return colors;
-  }, [isGameMode, focusedFlaw, contextualTacticData, focusedPvLine]);
+  }, [isGameMode, focusedFlaw, contextualTacticData, focusedPvLine, focusedLineHasMotif]);
 
   // Board "tactic overlay" while navigating a PV sideline: the depth-countdown
   // arrow on the next stored PV move. Anchored to
@@ -359,6 +372,11 @@ export function useAnalysisBoardArrows(
     const nextMove = nextPvNode ? { from: nextPvNode.from, to: nextPvNode.to } : null;
     if (!nextMove) return null;
 
+    // Bug fix (Phase 245): Explain is the first path that opens lines without a visible
+    // motif. The `?? 0` depth defaults above would draw a numbered "1" countdown arrow, i.e.
+    // a fake one-move tactic; draw a plain unlabelled payoff-blue next-move arrow instead.
+    if (!focusedLineHasMotif) return buildPvArrow(nextMove, 0, true, orientation);
+
     const displayDepth = Math.max(0, rootDisplayDepth - stepIntoPv);
     // Depth 0 is the move after the tactic resolves: treat it as payoff so it shows no
     // number and drops the orientation color — the tactic is over by then.
@@ -378,6 +396,7 @@ export function useAnalysisBoardArrows(
     currentNodeId,
     mainLine,
     focusedPvLine,
+    focusedLineHasMotif,
     nodes,
   ]);
 

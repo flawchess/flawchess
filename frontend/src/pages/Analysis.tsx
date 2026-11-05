@@ -73,7 +73,7 @@ import { setEngineToggle, useEngineDisplaySettings, useEngineToggles } from '@/l
 import type { FlawSeverity } from '@/types/library';
 import { isRareMoveTier } from '@/types/library';
 import { useFastForward, FAST_FORWARD_ANIMATION_MS } from '@/hooks/useFastForward';
-import { tacticOrientationAtPly } from '@/lib/tacticOrientation';
+import { lineHasVisibleMotif, tacticOrientationAtPly } from '@/lib/tacticOrientation';
 import { TEMPERATURE_DEFAULT } from '@/components/analysis/TemperatureSelector';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { ChessBoard } from '@/components/board/ChessBoard';
@@ -1631,6 +1631,7 @@ export default function Analysis() {
       contextualOnStoredLine,
       contextualCurrentPly,
       focusedPvLine,
+      focusedLineHasMotif: lineHasVisibleMotif(gameData?.flaw_markers, focusedFlaw),
       hoveredQualityMoves,
       flawChessEnabled,
       flawChessRankedLines: flawChessEngine.rankedLines,
