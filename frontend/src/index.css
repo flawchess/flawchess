@@ -16,10 +16,16 @@
     --breakpoint-desk3col: 1200px;
 }
 
-/* short releases the /analysis page's 100dvh lock below ~560px viewport
-   height so the whole page scrolls instead of clipping content. 559.98px makes
-   >=560px the locked band and <560px the release band. */
-@custom-variant short (@media (max-height: 559.98px));
+/* short releases the /analysis page's 100dvh lock below ~880px viewport
+   height so the whole page scrolls instead of clipping content. 879.98px makes
+   >=880px the locked band and <880px the release band.
+   Bug fix: this used to be 560px, but the desktop board floors at BOARD_MIN_WIDTH
+   (420px) and the side columns are overflow-hidden, so between ~560px and ~865px
+   tall (e.g. a maximized 1366x768 laptop) the eval chart and the right column's
+   Accuracy card were clipped with no way to scroll to them. 880px is the measured
+   fit height (~865px with the Explain bar showing) plus headroom. MUST match
+   BOARD_HEIGHT_LOCK_MIN_PX in hooks/analysis/useBoardStageSize.ts. */
+@custom-variant short (@media (max-height: 879.98px));
 
 :root {
     --background: oklch(1 0 0);
