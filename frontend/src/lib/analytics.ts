@@ -367,6 +367,7 @@ export const BOARD_TOOL_TARGETS = [
   'line-expand',
   'line-delete',
   'elo-reset',
+  'explain-open',
 ] as const;
 type BoardToolTarget = (typeof BOARD_TOOL_TARGETS)[number];
 

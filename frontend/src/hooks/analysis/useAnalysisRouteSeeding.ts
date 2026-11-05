@@ -32,7 +32,13 @@ import { useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { NodeId } from '@/hooks/useAnalysisBoard';
 import type { GameFlawCard, TacticLinesResponse } from '@/types/library';
-import { forkPlyForOrientation, flawKey, type TacticRef, type OpenLine } from '@/lib/analysisTactics';
+import {
+  forkPlyForOrientation,
+  flawKey,
+  type TacticRef,
+  type PendingFlaw,
+  type OpenLine,
+} from '@/lib/analysisTactics';
 
 /** Duplicated from `useAnalysisBoard.ts`'s own local copy of the same constant — an
  *  established pattern in this codebase (also duplicated in `useChessGame.ts`). */
@@ -56,8 +62,9 @@ export interface UseAnalysisRouteSeedingOptions {
   gameData: GameFlawCard | undefined;
 
   // ── Contextual tactic PV fetch (chip-open flow) ───────────────────────
-  pendingFlaw: TacticRef | null;
-  contextualTacticData: TacticLinesResponse | undefined;
+  pendingFlaw: PendingFlaw | null;
+  // `null` = the endpoint 404'd (no stored lines); treated like "no data" by the graft effect.
+  contextualTacticData: TacticLinesResponse | null | undefined;
   openLines: Map<string, OpenLine>;
 
   // ── Board imperative surface (useAnalysisBoard) ───────────────────────
@@ -69,7 +76,7 @@ export interface UseAnalysisRouteSeedingOptions {
 
   // ── State setters ──────────────────────────────────────────────────────
   setBoardFlipped: (flipped: boolean) => void;
-  setPendingFlaw: (flaw: TacticRef | null) => void;
+  setPendingFlaw: (flaw: PendingFlaw | null) => void;
   setOpenLines: Dispatch<SetStateAction<Map<string, OpenLine>>>;
 }
 
@@ -250,6 +257,12 @@ export function useAnalysisRouteSeeding(
     // grafted node (insertPvLine's batch-build loop starts at prev.nextId).
     const rootNodeId = nextId;
     insertPvLine(pvMoves, forkNodeId);
+    // Explain (D-05) lands on the first grafted move instead of parking at the fork. This
+    // functional updater is queued after insertPvLine's, so the new node exists in the
+    // chained prev and both commit together (no fork flash, one move sound). For an allowed
+    // line rootNodeId is already the refutation because the graft drops allowed_moves[0].
+    // Chips and initialTactic carry no flag and keep parking at the fork.
+    if (pendingFlaw.enter) goToNode(rootNodeId);
     setOpenLines((prev) => new Map(prev).set(key, { rootNodeId, ply: pendingFlaw.ply, orientation: pendingFlaw.orientation }));
     setPendingFlaw(null);
     // mainLine/openLines/nextId intentionally omitted — mainLine is stable after game load;

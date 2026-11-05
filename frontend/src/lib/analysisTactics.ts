@@ -12,7 +12,8 @@
  * textually diverged from the other three (logically equivalent today, but
  * a silent drift risk the moment the fork rule changes again — this rule has
  * changed before), and
- * `flawKey` is the `openLines` Map key, so three independent copies of a
+ * `flawKey` is the `openLines` Map key (the `PendingFlaw` type carries the
+ * Explain bar's `enter` flag), so three independent copies of a
  * key-format function was a lookup-miss bug waiting to happen. This module
  * is a lib file (not a page or hook), so every reader — page, hook, or
  * component — can import it directly without breaching the "hooks must not
@@ -26,6 +27,13 @@ import type { NodeId } from '@/hooks/useAnalysisBoard';
 
 /** A currently-open or pending in-tree tactic sideline. */
 export type TacticRef = { ply: number; orientation: 'missed' | 'allowed' };
+
+/**
+ * A tactic line awaiting its PV fetch. `enter: true` marks an Explain open (D-05): the
+ * graft effect then lands on the first grafted move instead of parking at the fork.
+ * Tactic chips and the deep-link auto-open omit it and keep parking at the fork.
+ */
+export type PendingFlaw = TacticRef & { enter?: boolean };
 
 /** An open tactic PV sideline rooted at a specific mainline node. */
 export type OpenLine = { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' };

@@ -28,7 +28,7 @@ import { stockfishSecondaryArrowColor } from '@/lib/engineArrowGrades';
 import { ENGINE_TOGGLE_STORAGE_KEYS, SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import type { GameFlawCard, EvalPoint } from '@/types/library';
+import type { GameFlawCard, EvalPoint, TacticLinesResponse } from '@/types/library';
 import { sniffPastedInput } from '@/lib/pastedGame';
 import { savePastedGameHandoff } from '@/lib/pastedGameHandoff';
 import {
@@ -314,8 +314,15 @@ const libraryGameState: { data: GameFlawCard | undefined } = { data: undefined }
 // default — when a gameId has no entry the hook falls back to
 // libraryGameState.data, which is exactly the previous single-fixture behavior.
 const libraryGameById = new Map<number, GameFlawCard>();
+// Per-ply tactic-lines fixtures read at call time, so the Explain bar tests can register
+// the stored lines for a flaw ply. Empty by default (every other test sees no data).
+const tacticLinesByPly = new Map<number, TacticLinesResponse>();
 vi.mock('@/hooks/useLibrary', () => ({
-  useTacticLines: () => ({ data: undefined, isFetching: false, isError: false }),
+  useTacticLines: (_gameId: number | null, ply: number | null, enabled: boolean) => ({
+    data: enabled && ply != null ? tacticLinesByPly.get(ply) : undefined,
+    isFetching: false,
+    isError: false,
+  }),
   useLibraryGame: (gameId: number | null) => ({
     data: (gameId != null ? libraryGameById.get(gameId) : undefined) ?? libraryGameState.data,
     isError: false,
@@ -423,6 +430,7 @@ afterEach(() => {
   for (const key of Object.values(ENGINE_TOGGLE_STORAGE_KEYS)) localStorage.removeItem(key);
   libraryGameState.data = undefined;
   libraryGameById.clear();
+  tacticLinesByPly.clear();
   resetEngineAssetsForTests();
   // Warm cache is the DEFAULT for every test in this file — the
   // returning-user state — so no test suddenly renders a modal over the page it
@@ -3133,5 +3141,118 @@ describe('Import-tab paste handoff consume', () => {
 
     renderAnalysis('/analysis');
     expect(screen.queryAllByText('Nf3').length).toBe(0);
+  });
+});
+
+// ── Explain bar (SEED-208) ─────────────────────────────────────────────────────
+
+const EXPLAIN_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+
+function explainMarker(ply: number, san: string, isUser: boolean, severity: 'mistake' | 'blunder') {
+  return {
+    ply,
+    severity,
+    tags: [],
+    is_user: isUser,
+    move_san: san,
+    allowed_tactic_motif: null,
+    allowed_tactic_confidence: null,
+    allowed_tactic_depth: null,
+    missed_tactic_motif: null,
+    missed_tactic_confidence: null,
+    missed_tactic_depth: null,
+  };
+}
+
+function buildExplainGame(): GameFlawCard {
+  const point = (ply: number): EvalPoint => ({
+    ply,
+    es: 0.5,
+    eval_cp: 20,
+    eval_mate: null,
+    clock_seconds: null,
+    move_seconds: null,
+    best_move: null,
+  });
+  return buildGame({
+    moves: ['e4', 'e5', 'Qh5', 'Nc6'],
+    ply_count: 4,
+    user_color: 'white',
+    eval_series: [point(0), point(1), point(2), point(3)],
+    flaw_markers: [explainMarker(2, 'Qh5', true, 'blunder'), explainMarker(3, 'Nc6', false, 'mistake')],
+  });
+}
+
+function tacticLinesFixture(overrides: Partial<TacticLinesResponse>): TacticLinesResponse {
+  return {
+    missed_moves: null,
+    missed_depth: null,
+    missed_tactic_ply_index: null,
+    missed_motif: null,
+    missed_eval_cp: null,
+    missed_eval_mate: null,
+    allowed_moves: null,
+    allowed_depth: null,
+    allowed_tactic_ply_index: null,
+    allowed_motif: null,
+    allowed_eval_cp: null,
+    allowed_eval_mate: null,
+    position_fen: EXPLAIN_FEN,
+    flaw_move_san: null,
+    best_move_uci: null,
+    flaw_ply: 2,
+    flaw_severity: 'blunder',
+    ...overrides,
+  };
+}
+
+describe('Explain bar', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  const currentSan = (): string | null =>
+    within(screen.getByTestId('variation-tree-desktop'))
+      .getAllByText(/./, { selector: '[aria-current="step"]' })
+      .at(0)?.textContent ?? null;
+
+  it('grafts the missed line on the owner blunder and lands on its first move', () => {
+    libraryGameState.data = buildExplainGame();
+    tacticLinesByPly.set(
+      2,
+      tacticLinesFixture({
+        missed_moves: ['Nf3', 'Nc6'],
+        allowed_moves: ['Qh5', 'Nc6', 'Bc4'],
+        flaw_move_san: 'Qh5',
+      }),
+    );
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const bar = within(screen.getByTestId('analysis-movelist-card')).getByTestId('analysis-explain-bar');
+    expect(bar.getAttribute('data-state')).toBe('explain');
+    expect(bar.getAttribute('data-orientation')).toBe('missed');
+    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Qh5?? is a blunder');
+    expect(within(bar).getAllByRole('button')).toHaveLength(1);
+    expect(track).not.toHaveBeenCalledWith('board-tool', expect.anything());
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
+
+    expect(currentSan()).toBe('Nf3');
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-open' });
+  });
+
+  it('shows no bar while the tactic lines have not resolved (no flash)', () => {
+    libraryGameState.data = buildExplainGame();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
   });
 });

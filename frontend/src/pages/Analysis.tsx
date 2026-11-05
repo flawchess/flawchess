@@ -42,6 +42,8 @@ import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import { useAnalysisRouteParams } from '@/hooks/analysis/useAnalysisRouteParams';
 import { useAnalysisEngineLines } from '@/hooks/analysis/useAnalysisEngineLines';
 import { useAnalysisRouteSeeding } from '@/hooks/analysis/useAnalysisRouteSeeding';
+import { useExplainBar } from '@/hooks/analysis/useExplainBar';
+import { ExplainBar } from '@/components/analysis/ExplainBar';
 import { useAnalysisBoardArrows } from '@/hooks/analysis/useAnalysisBoardArrows';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
@@ -115,6 +117,7 @@ import {
   bestSanFromPv,
   type TacticRef,
   type OpenLine,
+  type PendingFlaw,
 } from '@/lib/analysisTactics';
 import {
   MOVE_HIGHLIGHT_GOOD,
@@ -444,10 +447,7 @@ export default function Analysis() {
   const [openLines, setOpenLines] = useState<
     Map<string, { rootNodeId: NodeId; ply: number; orientation: 'missed' | 'allowed' }>
   >(() => new Map());
-  const [pendingFlaw, setPendingFlaw] = useState<{
-    ply: number;
-    orientation: 'missed' | 'allowed';
-  } | null>(null);
+  const [pendingFlaw, setPendingFlaw] = useState<PendingFlaw | null>(null);
 
   // Desktop-only hover-highlight from the tags panel onto
   // the eval chart's markers — mirrors LibraryGameCard's highlightedPlies. Not passed
@@ -1325,6 +1325,19 @@ export default function Analysis() {
     () => (currentNodeId !== null && isOnMainLine(currentNodeId) ? mainLine.indexOf(currentNodeId) : -1),
     [currentNodeId, isOnMainLine, mainLine],
   );
+
+  // Contextual Explain bar (SEED-208): prefetch, state and handlers live in the hook.
+  const explainBarControls = useExplainBar({
+    isGameMode,
+    gameId,
+    flawMarkers: gameData?.flaw_markers,
+    landingPly: currentMainlinePly,
+    pendingFlaw,
+    openLines,
+    fastForwardRunning,
+    goToNode,
+    setPendingFlaw,
+  });
 
   // Live classification applies only to freely-played moves off the precomputed line:
   // any node that is NOT a game main-line node (game mode) and NOT a grafted PV node
@@ -2704,7 +2717,13 @@ export default function Analysis() {
                 referenced in the mobile/mid Eval tab via mobileEngineLines; movesCard is
                 desktop-only (mid/mobile show the move tree in the Moves tab). */}
             <StockfishCard {...stockfishCardProps} />
-            <MovesCard onOpenPasteModal={() => setPasteModalOpen(true)} fen={position} getPgn={getPgn} variationTreeProps={movesCardVariationTreeProps} />
+            <MovesCard
+              onOpenPasteModal={() => setPasteModalOpen(true)}
+              fen={position}
+              getPgn={getPgn}
+              variationTreeProps={movesCardVariationTreeProps}
+              footer={<ExplainBar placement="desktop" {...explainBarControls} />}
+            />
             </div>
 
             {/* Invisible spacer mirroring the board column's BOTTOM player bar so the
