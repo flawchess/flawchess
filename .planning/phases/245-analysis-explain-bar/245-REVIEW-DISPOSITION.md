@@ -5,11 +5,11 @@ titles: json
 findings:
   - id: WR-01
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "An open adjacent-ply line makes a neighbouring flaw's Explain unreachable"
   - id: WR-02
     severity: warning
-    disposition: open
+    disposition: fixed
     title: "Mapping 404 to null removes the chip error signal and leaves `pendingFlaw` stuck, which hides the Explain bar on every other ply"
   - id: IN-01
     severity: info
@@ -28,8 +28,8 @@ recorded: 2026-11-05T10:00:42.073Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| WR-01 | warning | open | - |
-| WR-02 | warning | open | - |
+| WR-01 | warning | fixed | fix(245) commit, tests pinned by revert check |
+| WR-02 | warning | fixed | fix(245) commit, tests pinned by revert check |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
 
