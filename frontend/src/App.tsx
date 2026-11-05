@@ -816,10 +816,13 @@ function ProtectedLayout() {
             fill the space above the in-flow board-controls footer) AND the
             desktop 3-column grid (>=desk3col) so its move list / board+chart
             column scroll internally instead of the page.
-            Two range-scoped variants UNLOCK it: `md:max-desk3col:` (the
-            768-desk3col two-column band — that layout is a scrolling page) and
-            `short:` (<880px tall, at ANY width: below that the locked 3-column
-            grid no longer fits and would clip content with no scroll path).
+            Three range-scoped variants UNLOCK it: `md:max-desk3col:` (the
+            768-desk3col two-column band — that layout is a scrolling page),
+            `short:` (<560px tall, a safety-valve override at ANY width) and
+            `deskshort:` (>=desk3col wide AND <880px tall: below that the locked
+            3-column grid no longer fits and would clip content with no scroll
+            path). deskshort must stay width-scoped: unlocking the mobile
+            takeover collapses its tab panel (see index.css).
             The unlock lower bound (`md:` = 768px) MUST track MOBILE_BREAKPOINT_PX
             in Analysis.tsx: below it the mobile takeover renders and needs the
             lock; at/above it the two-column layout scrolls. Applied at this shell
@@ -830,10 +833,10 @@ function ProtectedLayout() {
             build, so a bare `md:h-auto` would win the cascade at >=1200px and
             silently keep desktop unlocked. Scoping to the explicit [768,1200)
             range sidesteps that ordering dependency entirely. */}
-        <div className="flex flex-col h-[100dvh] md:max-desk3col:h-auto md:max-desk3col:block short:h-auto short:block">
+        <div className="flex flex-col h-[100dvh] md:max-desk3col:h-auto md:max-desk3col:block short:h-auto short:block deskshort:h-auto deskshort:block">
           <NavHeader />
           <AnalysisMobileHeader />
-          <main className="flex-1 min-h-0 flex flex-col md:max-desk3col:block md:max-desk3col:flex-none short:block short:flex-none">
+          <main className="flex-1 min-h-0 flex flex-col md:max-desk3col:block md:max-desk3col:flex-none short:block short:flex-none deskshort:block deskshort:flex-none">
             <Outlet />
           </main>
         </div>
