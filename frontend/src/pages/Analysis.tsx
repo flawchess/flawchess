@@ -1294,13 +1294,13 @@ export default function Analysis() {
     focusedFlaw,
     openLines,
     fastForwardRunning,
-    mainLine,
     nodes,
     currentNodeId,
+    mainLine,
     goToNode,
-    deleteSubtree,
     goForward,
     goBack,
+    deleteSubtree,
     enterExplainLine,
     setPendingFlaw,
     setOpenLines,
@@ -1780,20 +1780,6 @@ export default function Analysis() {
     void nodeId; // nodeId passed for API symmetry with VariationTree; ply identifies the flaw
   };
 
-  // The Explain bar's tactic badges toggle lines exactly like the move-list chips (same
-  // handler, open-line keys and spinner); only the tracking target differs.
-  const explainBarProps = {
-    ...explainBarControls,
-    onTacticClick: (flaw: { ply: number; orientation: 'missed' | 'allowed' }): void => {
-      trackFeature('board-tool', { target: 'explain-tactic' });
-      const nodeId = mainLine[flaw.ply];
-      if (nodeId !== undefined) handlePvChipClick(nodeId, flaw);
-    },
-    activePvKeys,
-    pvFetchPending: contextualPending,
-    pvFetchError: contextualError,
-  };
-
   // EvalChart scrub callback: navigate the board to the scrubbed main-line ply.
   // Scrubbing works from a sideline too: goToNode only moves the
   // current-node pointer, so the sideline stays in the tree and is one move-list click
@@ -2129,7 +2115,7 @@ export default function Analysis() {
       setTagsHighlightedPlies,
     },
     // Rendered only in the mid layout (DesktopBoardStage ignores it elsewhere).
-    explainBar: <ExplainBar placement="mid" {...explainBarProps} />,
+    explainBar: <ExplainBar placement="mid" {...explainBarControls} />,
   };
 
   // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
@@ -2577,7 +2563,7 @@ export default function Analysis() {
             root is flex-1 min-h-0, so it absorbs this row's height. Never mount the bar
             inside MovesTab / AnalysisTabs: that component is shared by mobile and mid and
             would double-render on mobile. */}
-        <ExplainBar placement="mobile" {...explainBarProps} />
+        <ExplainBar placement="mobile" {...explainBarControls} />
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
         <div
@@ -2713,7 +2699,7 @@ export default function Analysis() {
               fen={position}
               getPgn={getPgn}
               variationTreeProps={movesCardVariationTreeProps}
-              footer={<ExplainBar placement="desktop" {...explainBarProps} />}
+              footer={<ExplainBar placement="desktop" {...explainBarControls} />}
             />
             </div>
 

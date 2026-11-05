@@ -10,7 +10,6 @@
 
 import type { FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
 import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
-import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
 const ALLOWED_PREPEND_LEN = 1;
@@ -58,13 +57,6 @@ export function otherOrientation(orientation: ExplainOrientation): ExplainOrient
   return orientation === 'missed' ? 'allowed' : 'missed';
 }
 
-/** One tactic badge in the Explain bar (raw motif and 0-based depth; the chip formats them). */
-export interface ExplainTactic {
-  orientation: ExplainOrientation;
-  motif: string;
-  depth: number | null;
-}
-
 export type ExplainBarState =
   | { kind: 'hidden' }
   | {
@@ -72,11 +64,6 @@ export type ExplainBarState =
       ply: number;
       san: string | null;
       severity: ExplainSeverity;
-      /**
-       * Every visible tactic on this flaw (missed first, then allowed), rendered as short
-       * chips after the move. Empty: no chips.
-       */
-      tactics: ExplainTactic[];
       /** Per-button availability; at least one is true (both false hides the bar, D-10). */
       usable: ExplainLineUsable;
       /** The line being opened for this ply (both buttons disabled), or null. */
@@ -111,22 +98,6 @@ export interface ExplainBarInputs {
 function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | null {
   if (focusedFlaw === null) return null;
   return openLines.get(flawKey(focusedFlaw)) ?? null;
-}
-
-/**
- * The flaw's visible tactics, both orientations. resolveVisibleTactic applies the family
- * guard (family-less motifs render no chip), the same rule the move-list chips follow.
- */
-function explainTactics(marker: FlawMarker): ExplainTactic[] {
-  const slots = [
-    { orientation: 'missed', motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
-    { orientation: 'allowed', motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
-  ] as const;
-  return slots.flatMap(({ orientation, motif, depth }) =>
-    resolveVisibleTactic(orientation, motif, depth) !== null && motif !== null
-      ? [{ orientation, motif, depth }]
-      : [],
-  );
 }
 
 /** The got-it state for an open line; the switch button needs the sibling to be open or graftable. */
@@ -187,7 +158,6 @@ function explainState(inputs: ExplainBarInputs): ExplainBarState {
     ply: landingPly,
     san: marker.move_san,
     severity: marker.severity,
-    tactics: explainTactics(marker),
     usable,
     pending: pendingFlaw?.ply === landingPly ? pendingFlaw.orientation : null,
   };

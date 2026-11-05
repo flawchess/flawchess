@@ -118,7 +118,6 @@ describe('resolveExplainBarState', () => {
       ply: 10,
       san: 'Qh5',
       severity: 'blunder',
-      tactics: [],
       usable: { missed: true, allowed: true },
       pending: null,
     });
@@ -134,46 +133,6 @@ describe('resolveExplainBarState', () => {
 
   it('is hidden when the lines belong to another ply (stale observer data)', () => {
     expect(resolveExplainBarState(inputs({ tacticLinesPly: 9 })).kind).toBe('hidden');
-  });
-
-  it('lists both orientations, missed first', () => {
-    const state = resolveExplainBarState(
-      inputs({
-        flawMarkers: [
-          marker({
-            ply: 10,
-            missed_tactic_motif: 'fork',
-            missed_tactic_depth: 0,
-            allowed_tactic_motif: 'pin',
-            allowed_tactic_depth: 2,
-          }),
-        ],
-      }),
-    );
-    expect(state).toMatchObject({
-      kind: 'explain',
-      tactics: [
-        { orientation: 'missed', motif: 'fork', depth: 0 },
-        { orientation: 'allowed', motif: 'pin', depth: 2 },
-      ],
-    });
-  });
-
-  it('lists an allowed-only tactic', () => {
-    const state = resolveExplainBarState(
-      inputs({ flawMarkers: [marker({ ply: 10, allowed_tactic_motif: 'fork', allowed_tactic_depth: 0 })] }),
-    );
-    expect(state).toMatchObject({
-      kind: 'explain',
-      tactics: [{ orientation: 'allowed', motif: 'fork', depth: 0 }],
-    });
-  });
-
-  it('drops family-less motifs (no chip exists for them)', () => {
-    const state = resolveExplainBarState(
-      inputs({ flawMarkers: [marker({ ply: 10, missed_tactic_motif: 'clearance', missed_tactic_depth: 1 })] }),
-    );
-    expect(state).toMatchObject({ kind: 'explain', tactics: [] });
   });
 
   it('is hidden when not game mode or while a fast-forward Jump runs', () => {
@@ -294,7 +253,6 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
       ply: 9,
       san: 'f6',
       severity: 'mistake',
-      tactics: [],
       usable: { missed: true, allowed: true },
       pending: null,
     });

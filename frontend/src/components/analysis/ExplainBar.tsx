@@ -6,9 +6,10 @@
  * Phase 245 UAT replaced the single Explain button with two named lines:
  *   - Best: undo the mistake and play the better move (the MISSED line).
  *   - Punish: the refutation of the mistake (the ALLOWED line).
- * One row: the headline (move, severity badge and short tactic chips, as in the move
- * list) or, inside a line, a line stepper, then the buttons. Copy is neutral (never
- * "your move"): `is_user` is the game OWNER and the viewer may be someone else.
+ * One row: the headline (move and severity badge, as in the move list) or, inside a
+ * line, a line stepper, then the buttons. Tactic chips live in the move list only.
+ * Copy is neutral (never "your move"): `is_user` is the game OWNER and the viewer may
+ * be someone else.
  */
 
 import type { ReactElement, ReactNode } from 'react';
@@ -22,10 +23,8 @@ import {
   type ExplainBarState,
   type ExplainOrientation,
   type ExplainSeverity,
-  type ExplainTactic,
 } from '@/lib/explainBar';
 import type { ExplainLineStepper } from '@/hooks/analysis/useExplainBar';
-import { TacticLineChip, type TacticLineChipClick } from '@/components/analysis/TacticLineChip';
 
 type ExplainBarPlacement = 'desktop' | 'mid' | 'mobile';
 
@@ -53,59 +52,13 @@ const LINE_ORDER: readonly ExplainOrientation[] = ['missed', 'allowed'];
 
 const GOT_IT_LABEL = 'Got it';
 
-/** Open-line state the tactic badges share with the move-list chips (same toggle, spinner and ring). */
-export type ExplainTacticChipProps = {
-  onTacticClick: TacticLineChipClick;
-  activePvKeys: Set<string>;
-  pvFetchPending: boolean;
-  pvFetchError: boolean;
-};
-
-type ExplainBarProps = ExplainTacticChipProps & {
+type ExplainBarProps = {
   state: ExplainBarState;
   onOpenLine: (orientation: ExplainOrientation) => void;
   onGotIt: () => void;
   stepper: ExplainLineStepper;
   placement: ExplainBarPlacement;
 };
-
-function TacticBadges({
-  tactics,
-  ply,
-  chip,
-}: {
-  tactics: ExplainTactic[];
-  ply: number;
-  chip: ExplainTacticChipProps;
-}): ReactElement | null {
-  if (tactics.length === 0) return null;
-  return (
-    // One-chip-high clipped wrap box: on a narrow phone a chip that does not fit wraps onto
-    // the hidden second line and drops out whole instead of being cut mid-word. py-1 and
-    // gap-y-2 keep the active ring and hover lift inside the box while pushing any wrapped
-    // line below its bottom edge.
-    <span
-      data-testid="analysis-explain-tactics"
-      className="flex h-7 min-w-0 flex-wrap content-start items-center gap-x-1 gap-y-2 overflow-hidden px-0.5 py-1"
-    >
-      {tactics.map((t) => (
-        <TacticLineChip
-          key={t.orientation}
-          testId={`btn-analysis-explain-tactic-${t.orientation}`}
-          label="short"
-          motif={t.motif}
-          orientation={t.orientation}
-          ply={ply}
-          depth={t.depth}
-          activePvKeys={chip.activePvKeys}
-          pvFetchPending={chip.pvFetchPending}
-          pvFetchError={chip.pvFetchError}
-          onClick={chip.onTacticClick}
-        />
-      ))}
-    </span>
-  );
-}
 
 function LineButton({
   orientation,
@@ -195,7 +148,6 @@ export function ExplainBar({
   onGotIt,
   stepper,
   placement,
-  ...chip
 }: ExplainBarProps): ReactElement | null {
   if (state.kind === 'hidden') return null;
   if (state.kind === 'got-it') {
@@ -213,22 +165,19 @@ export function ExplainBar({
   }
   return (
     <BarShell state="explain" placement={placement}>
-      {/* Move, badge and chips in move-list order. overflow-hidden: on a narrow phone the
-          headline gives way instead of pushing the buttons out of the row. */}
+      {/* Move then badge, as in the move list. */}
       <span
         data-testid="analysis-explain-headline"
         data-severity={state.severity}
-        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-sm"
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-sm"
       >
-        {/* shrink-0: the move never truncates away; the chips give way first. */}
         <span
           data-testid="analysis-explain-headline-text"
-          className={cn('shrink-0', state.san !== null && 'font-mono font-bold text-foreground')}
+          className={cn('truncate', state.san !== null && 'font-mono font-bold text-foreground')}
         >
           {state.san ?? SEVERITY_NOUN[state.severity]}
         </span>
         <MoveQualityIcon quality={state.severity} className="size-4 shrink-0" />
-        <TacticBadges tactics={state.tactics} ply={state.ply} chip={chip} />
       </span>
       {LINE_ORDER.map((orientation) => (
         <LineButton

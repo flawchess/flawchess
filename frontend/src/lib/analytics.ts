@@ -370,7 +370,6 @@ export const BOARD_TOOL_TARGETS = [
   'explain-best',
   'explain-punish',
   'explain-close',
-  'explain-tactic',
 ] as const;
 type BoardToolTarget = (typeof BOARD_TOOL_TARGETS)[number];
 

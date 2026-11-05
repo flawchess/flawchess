@@ -41,7 +41,7 @@ Overrides D-01, D-04 and D-09, and amends D-06 and D-10. The single Explain butt
 - Both are `brand-outline` (two solid CTAs would break the one-primary rule; making one primary would reintroduce D-04). Order: Best, then Punish (Best starts one ply earlier).
 - One usable line: the other button is **disabled**, not hidden, so the row layout is identical on every flaw. Neither usable: the bar stays hidden (D-10 unchanged for that case).
 - Headline: the SAN in white (`text-foreground`), then the mistake/blunder move-quality badge icon (as in the move list); no "is a blunder" copy and no ??/? text glyphs.
-- Tactic chips sit **inline after the move and its badge**, with the move list's short labels ("fork 1"); still clickable (same toggle as the move-list chips). Inside a line there is no headline, so no chips.
+- **No tactic chips in the bar** (owner, after trying a second row and then inline short chips): the move list's chips already carry them. The unreleased `explain-tactic` Umami target is removed.
 - Inside a line (amends D-06): the headline is replaced by **Back/Forward stepper buttons clamped to the line** (Back stops at the fork; Forward from the fork enters this line), then the **sibling line's button** (closes this line, opens the other) and Got it.
 - Umami: `explain-open` (never released) is replaced by `explain-best` / `explain-punish`; the switch button fires the same targets. Stepper clicks send nothing (high-frequency stepping).
 

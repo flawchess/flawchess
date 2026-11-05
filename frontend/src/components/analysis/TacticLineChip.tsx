@@ -1,10 +1,9 @@
 /**
  * TacticLineChip — the missed/allowed tactic pill that opens (or collapses) a
- * tactic line on /analysis. Shared by the move list (short label "fork 1") and
- * the Explain bar (long label "missed fork in 1"), so both read and behave the same.
+ * tactic line from the /analysis move list ("fork 1"; orientation shown by color).
  *
  * Loading: spinner on the chip while its line is pending. Error: an inline note
- * next to the chip (move list only; the Explain bar row has no room for it).
+ * next to the chip.
  *
  * Hover affordance mirrors the Games-card TacticMotifChip: pointer cursor, lift,
  * and a brightened background.
@@ -31,9 +30,6 @@ const HIGHLIGHT_BG = (bg: string): string => bg.replace('/ 0.15)', '/ 0.3)');
 
 type TacticOrientation = 'missed' | 'allowed';
 
-/** short: "fork 1" (move list, orientation shown by color). long: "missed fork in 1" (Explain bar). */
-export type TacticLineChipLabel = 'short' | 'long';
-
 export type TacticLineChipClick = (flaw: { ply: number; orientation: TacticOrientation }) => void;
 
 interface TacticLineChipProps {
@@ -46,19 +42,15 @@ interface TacticLineChipProps {
   pvFetchPending: boolean | undefined;
   pvFetchError: boolean | undefined;
   onClick: TacticLineChipClick | undefined;
-  label?: TacticLineChipLabel;
   testId: string;
   className?: string;
 }
 
-function chipText(motif: string, orientation: TacticOrientation, depth: number | null, label: TacticLineChipLabel): string {
+function chipText(motif: string, orientation: TacticOrientation, depth: number | null): string {
   // Mate-family motifs collapse to "checkmate". anchored=false: this is a navigable
   // surface, so the allowed +1 decision-anchor offset is dropped (allowed reads like missed).
   const motifLabel = tacticMotifLabel(motif);
   const depthLabel = tacticDepthBadge(motif, depth, orientation, false);
-  if (label === 'long') {
-    return depthLabel != null ? `${orientation} ${motifLabel} in ${depthLabel}` : `${orientation} ${motifLabel}`;
-  }
   return depthLabel != null ? `${motifLabel} ${depthLabel}` : motifLabel;
 }
 
@@ -71,7 +63,6 @@ export function TacticLineChip({
   pvFetchPending,
   pvFetchError,
   onClick,
-  label = 'short',
   testId,
   className,
 }: TacticLineChipProps): ReactNode {
@@ -82,10 +73,10 @@ export function TacticLineChip({
   const color = isMissed ? TAC_MISSED : TAC_ALLOWED;
   const bg = isMissed ? TAC_MISSED_BG : TAC_ALLOWED_BG;
   const border = isMissed ? TAC_MISSED_BORDER : TAC_ALLOWED_BORDER;
-  const text = chipText(motif, orientation, depth, label);
+  const text = chipText(motif, orientation, depth);
   const ariaCollapse = `${text} tactic. Click to collapse tactic line.`;
   const ariaExpand = `${text} tactic. Click to expand tactic line.`;
-  const showErrorNote = label === 'short' && isActive && pvFetchError;
+  const showErrorNote = isActive && pvFetchError;
 
   // Brighten the chip while hovered/focused (tap-focus on mobile), like the Games card.
   const [highlighted, setHighlighted] = useState(false);

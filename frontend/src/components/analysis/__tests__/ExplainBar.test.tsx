@@ -27,7 +27,6 @@ const EXPLAIN_BLUNDER: ExplainBarState = {
   ply: 2,
   san: 'Qh5',
   severity: 'blunder',
-  tactics: [],
   usable: { missed: true, allowed: true },
   pending: null,
 };
@@ -36,13 +35,6 @@ const GOT_IT_MISSED: ExplainBarState = {
   kind: 'got-it',
   line: { rootNodeId: 5, ply: 2, orientation: 'missed' },
   otherUsable: true,
-};
-
-const CHIP = {
-  onTacticClick: vi.fn(),
-  activePvKeys: new Set<string>(),
-  pvFetchPending: false,
-  pvFetchError: false,
 };
 
 function makeStepper(overrides: Partial<ExplainLineStepper> = {}): ExplainLineStepper {
@@ -69,7 +61,6 @@ function renderBar(
       onGotIt={onGotIt}
       stepper={stepper}
       placement={placement}
-      {...CHIP}
     />,
   );
   return { onOpenLine, onGotIt, stepper };
@@ -94,9 +85,10 @@ describe('ExplainBar explain state', () => {
       'btn-analysis-explain-best',
       'btn-analysis-explain-punish',
     ]);
-        expect(within(bar).getByRole('button', { name: 'Best' })).toBe(buttons[0]);
+    expect(within(bar).getByRole('button', { name: 'Best' })).toBe(buttons[0]);
     expect(within(bar).getByRole('button', { name: 'Punish' })).toBe(buttons[1]);
     expect(buttons[0]?.querySelector('svg')).not.toBeNull();
+    // Tactic chips live in the move list only.
     expect(within(bar).queryByTestId('analysis-explain-tactics')).toBeNull();
   });
 
@@ -122,33 +114,6 @@ describe('ExplainBar explain state', () => {
     expect(best.disabled && punish.disabled).toBe(true);
     expect(punish.getAttribute('aria-busy')).toBe('true');
     expect(best.getAttribute('aria-busy')).toBeNull();
-  });
-
-  it('tactics render inline after the move and badge as short chips; a click opens that line', () => {
-    const onTacticClick = vi.fn();
-    render(
-      <ExplainBar
-        state={{
-          ...EXPLAIN_BLUNDER,
-          tactics: [
-            { orientation: 'missed', motif: 'fork', depth: 0 },
-            { orientation: 'allowed', motif: 'back-rank-mate', depth: 2 },
-          ],
-        }}
-        onOpenLine={vi.fn()}
-        onGotIt={vi.fn()}
-        stepper={makeStepper()}
-        placement="desktop"
-        {...CHIP}
-        onTacticClick={onTacticClick}
-      />,
-    );
-    expect(screen.getByTestId('analysis-explain-headline-text').textContent).toBe('Qh5');
-    const headline = screen.getByTestId('analysis-explain-headline');
-    expect(headline.lastElementChild).toBe(screen.getByTestId('analysis-explain-tactics'));
-    expect(screen.getByTestId('analysis-explain-tactics').textContent).toBe('fork 1checkmate 3');
-    fireEvent.click(screen.getByTestId('btn-analysis-explain-tactic-allowed'));
-    expect(onTacticClick).toHaveBeenCalledWith({ ply: 2, orientation: 'allowed' });
   });
 
   it('without a SAN the headline falls back to the severity noun', () => {
