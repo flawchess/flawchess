@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 244
+current_phase_name: NOT PLANNED
 status: completed
-stopped_at: Phase 244 complete — all phases complete
-last_updated: "2026-11-05T06:57:35.208Z"
-state_head: 6088226c7e69375949142b7fa27787b98018f8c3
+stopped_at: Phase 245 context gathered
+last_updated: "2026-11-05T08:32:24.343Z"
+state_head: bbd609c6ba5466b5b1e613d96921da2a731e975c
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 103
   total_plans: 16
   completed_plans: 96
-  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-11-05
 last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the PGN/FEN dropdown"
@@ -1132,9 +1132,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-02T14:46:10.679Z
-**Stopped at:** Phase 244 complete — all phases complete
-**Resume file:** None
+**Last session:** 2026-11-05T08:32:23.402Z
+**Stopped at:** Phase 245 context gathered
+**Resume file:** .planning/phases/245-analysis-explain-bar/245-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
