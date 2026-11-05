@@ -10,6 +10,7 @@
 
 import type { FlawMarker, FlawSeverity, TacticLinesResponse } from '@/types/library';
 import { flawKey, type OpenLine, type TacticRef } from '@/lib/analysisTactics';
+import { resolveVisibleTactic } from '@/lib/tacticComparisonMeta';
 
 /** allowed_moves[0] is the prepended flaw move, already on the main line. */
 const ALLOWED_PREPEND_LEN = 1;
@@ -68,6 +69,12 @@ export function chooseExplainOrientation(
   return null;
 }
 
+/** The tactic the Explain line shows, e.g. `{ orientation: 'missed', text: 'missed fork in 1' }`. */
+export interface ExplainTactic {
+  orientation: 'missed' | 'allowed';
+  text: string;
+}
+
 export type ExplainBarState =
   | { kind: 'hidden' }
   | {
@@ -75,6 +82,8 @@ export type ExplainBarState =
       flaw: TacticRef;
       san: string | null;
       severity: ExplainSeverity;
+      /** Null when the opened line carries no visible tactic: the headline falls back to the severity copy. */
+      tactic: ExplainTactic | null;
       pending: boolean;
     }
   | { kind: 'got-it'; line: OpenLine; san: string | null };
@@ -104,6 +113,21 @@ function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | nul
 /** SAN of the marker at `ply` (any severity), null when absent. */
 function eligibleSanAt(markers: FlawMarker[] | null | undefined, ply: number): string | null {
   return markers?.find((m) => m.ply === ply)?.move_san ?? null;
+}
+
+/**
+ * The tactic on the line Explain opens (same orientation, so the copy matches what plays
+ * out on the board). resolveVisibleTactic applies the family guard; anchored=false matches
+ * the analysis board's depth badges (allowed reads on the same plain scale as missed).
+ */
+function explainTactic(marker: FlawMarker, orientation: 'missed' | 'allowed'): ExplainTactic | null {
+  const visible =
+    orientation === 'missed'
+      ? resolveVisibleTactic('missed', marker.missed_tactic_motif, marker.missed_tactic_depth, undefined, false)
+      : resolveVisibleTactic('allowed', marker.allowed_tactic_motif, marker.allowed_tactic_depth, undefined, false);
+  if (visible === null) return null;
+  const depth = visible.depthLabel !== null ? ` in ${visible.depthLabel}` : '';
+  return { orientation, text: `${orientation} ${visible.motifLabel}${depth}` };
 }
 
 /** Ordered early returns; see the numbered comments for each rule. */
@@ -148,6 +172,7 @@ function explainState(inputs: ExplainBarInputs): ExplainBarState {
     flaw: { ply: landingPly, orientation },
     san: marker.move_san,
     severity: marker.severity,
+    tactic: explainTactic(marker, orientation),
     pending: pendingFlaw?.ply === landingPly,
   };
 }

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
+import { TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type { ExplainBarState, ExplainSeverity } from '@/lib/explainBar';
 
 type ExplainBarPlacement = 'desktop' | 'mid' | 'mobile';
@@ -36,6 +37,9 @@ const SEVERITY_NOUN: Record<ExplainSeverity, string> = {
   blunder: ' Blunder',
   mistake: ' Mistake',
 };
+
+const TACTIC_SEPARATOR = ': ';
+const TACTIC_COLOR: Record<LineOrientation, string> = { missed: TAC_MISSED, allowed: TAC_ALLOWED };
 
 const GOT_IT_LABEL = 'Got it';
 const GOT_IT_PREFIX: Record<LineOrientation, string> = { missed: 'Better than', allowed: 'Punishing' };
@@ -111,7 +115,18 @@ export function ExplainBar({ state, onExplain, onGotIt, placement }: ExplainBarP
           {state.san ?? ''}
           {glyph.symbol}
         </span>
-        {state.san !== null ? SEVERITY_SUFFIX[state.severity] : SEVERITY_NOUN[state.severity]}
+        {state.tactic !== null ? (
+          <>
+            {TACTIC_SEPARATOR}
+            <span data-testid="analysis-explain-tactic" style={{ color: TACTIC_COLOR[state.tactic.orientation] }}>
+              {state.tactic.text}
+            </span>
+          </>
+        ) : state.san !== null ? (
+          SEVERITY_SUFFIX[state.severity]
+        ) : (
+          SEVERITY_NOUN[state.severity]
+        )}
       </span>
       <Button
         type="button"

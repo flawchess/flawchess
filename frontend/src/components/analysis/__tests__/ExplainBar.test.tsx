@@ -25,6 +25,7 @@ const EXPLAIN_BLUNDER: ExplainBarState = {
   flaw: { ply: 2, orientation: 'missed' },
   san: 'Qh5',
   severity: 'blunder',
+  tactic: null,
   pending: false,
 };
 
@@ -54,6 +55,13 @@ describe('ExplainBar states and copy', () => {
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toBe(within(bar).getByTestId('btn-analysis-explain'));
     expect(buttons[0]?.textContent).toBe('Explain');
+  });
+
+  it('explain with a tactic: headline names the tactic in the orientation color', () => {
+    renderBar({ ...EXPLAIN_BLUNDER, tactic: { orientation: 'missed', text: 'missed fork in 1' } });
+    expect(screen.getByTestId('analysis-explain-headline').textContent).toBe('Qh5??: missed fork in 1');
+    const tactic = screen.getByTestId('analysis-explain-tactic');
+    expect(tactic.style.color).not.toBe('');
   });
 
   it('explain without a SAN falls back to the severity noun', () => {

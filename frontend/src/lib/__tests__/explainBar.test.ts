@@ -129,8 +129,47 @@ describe('resolveExplainBarState', () => {
       flaw: { ply: 10, orientation: 'missed' },
       san: 'Qh5',
       severity: 'blunder',
+      tactic: null,
       pending: false,
     });
+  });
+
+  it('names the tactic of the opened line with its 1-based depth', () => {
+    const state = resolveExplainBarState(
+      inputs({
+        flawMarkers: [
+          marker({
+            ply: 10,
+            missed_tactic_motif: 'fork',
+            missed_tactic_depth: 0,
+            allowed_tactic_motif: 'pin',
+            allowed_tactic_depth: 2,
+          }),
+        ],
+      }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', tactic: { orientation: 'missed', text: 'missed fork in 1' } });
+  });
+
+  it('opponent flaw names the allowed tactic (unanchored depth, mate collapses to checkmate)', () => {
+    const state = resolveExplainBarState(
+      inputs({
+        flawMarkers: [
+          marker({ ply: 10, is_user: false, allowed_tactic_motif: 'back-rank-mate', allowed_tactic_depth: 2 }),
+        ],
+      }),
+    );
+    expect(state).toMatchObject({
+      kind: 'explain',
+      tactic: { orientation: 'allowed', text: 'allowed checkmate in 3' },
+    });
+  });
+
+  it('no tactic when only the other orientation carries one', () => {
+    const state = resolveExplainBarState(
+      inputs({ flawMarkers: [marker({ ply: 10, allowed_tactic_motif: 'fork', allowed_tactic_depth: 0 })] }),
+    );
+    expect(state).toMatchObject({ kind: 'explain', tactic: null });
   });
 
   it('is hidden when not game mode or while a fast-forward Jump runs', () => {
@@ -233,6 +272,7 @@ describe('resolveExplainBarState got-it rule (D-06)', () => {
       flaw: { ply: 9, orientation: 'allowed' },
       san: 'f6',
       severity: 'mistake',
+      tactic: null,
       pending: false,
     });
   });
