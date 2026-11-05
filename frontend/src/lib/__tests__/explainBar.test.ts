@@ -6,6 +6,7 @@ import {
   usableExplainLines,
   type ExplainBarInputs,
 } from '@/lib/explainBar';
+import type { OpenLine } from '@/lib/analysisTactics';
 import type { FlawMarker, TacticLinesResponse } from '@/types/library';
 
 // Pure rules for the contextual Explain bar (D-04, D-08, D-09, D-10, D-11).
@@ -59,6 +60,8 @@ function inputs(overrides: Partial<ExplainBarInputs>): ExplainBarInputs {
     flawMarkers: [marker({ ply: 10 })],
     landingPly: 10,
     pendingFlaw: null,
+    focusedFlaw: null,
+    openLines: new Map(),
     tacticLines: tacticLines({ missed_moves: ['Nf3', 'Nc6'], allowed_moves: ['Qh5', 'Nc6', 'Bc4'] }),
     ...overrides,
   };
@@ -174,5 +177,50 @@ describe('resolveExplainBarState', () => {
       inputs({ pendingFlaw: { ply: 10, orientation: 'missed' } }),
     );
     expect(state).toMatchObject({ kind: 'explain', pending: true });
+  });
+});
+
+describe('resolveExplainBarState got-it rule (D-06)', () => {
+  const line: OpenLine = { rootNodeId: 40, ply: 10, orientation: 'missed' };
+  const openLines = new Map<string, OpenLine>([['10:missed', line]]);
+
+  it('returns got-it when the focused flaw maps to an open line, with the marker san', () => {
+    const state = resolveExplainBarState(
+      inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, openLines }),
+    );
+    expect(state).toEqual({ kind: 'got-it', line, san: 'Qh5' });
+  });
+
+  it('has a null san when no marker exists at the line ply', () => {
+    const state = resolveExplainBarState(
+      inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, openLines, flawMarkers: [] }),
+    );
+    expect(state).toEqual({ kind: 'got-it', line, san: null });
+  });
+
+  it('wins over every later rule, including a pending flaw and an off-flaw landing ply', () => {
+    const state = resolveExplainBarState(
+      inputs({
+        focusedFlaw: { ply: 10, orientation: 'missed' },
+        openLines,
+        pendingFlaw: { ply: 10, orientation: 'missed' },
+        landingPly: -1,
+        tacticLines: undefined,
+      }),
+    );
+    expect(state.kind).toBe('got-it');
+  });
+
+  it('does not show got-it for a focused flaw that is only pending (not in openLines)', () => {
+    const state = resolveExplainBarState(
+      inputs({ focusedFlaw: { ply: 10, orientation: 'missed' }, pendingFlaw: { ply: 10, orientation: 'missed' } }),
+    );
+    expect(state.kind).toBe('explain');
+  });
+
+  it('still loses to rule 1 (not game mode, fast-forward running)', () => {
+    const base = { focusedFlaw: { ply: 10, orientation: 'missed' as const }, openLines };
+    expect(resolveExplainBarState(inputs({ ...base, isGameMode: false })).kind).toBe('hidden');
+    expect(resolveExplainBarState(inputs({ ...base, fastForwardRunning: true })).kind).toBe('hidden');
   });
 });

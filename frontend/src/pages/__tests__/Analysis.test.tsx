@@ -3248,6 +3248,44 @@ describe('Explain bar', () => {
 
     expect(currentSan()).toBe('Nf3');
     expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-open' });
+
+    // D-06: inside the grafted line the single button reads Got it.
+    expect(bar.getAttribute('data-state')).toBe('got-it');
+    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Better than Qh5');
+    expect(within(bar).getAllByRole('button')).toHaveLength(1);
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
+
+    const tree = screen.getByTestId('variation-tree-desktop');
+    expect(currentSan()).toBe('Qh5');
+    expect(within(tree).queryAllByText('Nf3')).toHaveLength(0);
+    expect(bar.getAttribute('data-state')).toBe('explain');
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-close' });
+  });
+
+  it('lands on the refutation for the opponent mistake and Got it returns to the flaw move', () => {
+    libraryGameState.data = buildExplainGame();
+    tacticLinesByPly.set(
+      3,
+      tacticLinesFixture({
+        allowed_moves: ['Nc6', 'Bc4'],
+        flaw_move_san: 'Nc6',
+        flaw_ply: 3,
+        flaw_severity: 'mistake',
+      }),
+    );
+    renderAnalysis('/analysis?game_id=1&ply=3');
+
+    const bar = screen.getByTestId('analysis-explain-bar');
+    expect(bar.getAttribute('data-orientation')).toBe('allowed');
+    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Nc6? is a mistake');
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
+    expect(currentSan()).toBe('Bc4');
+    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Punishing Nc6');
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
+    expect(currentSan()).toBe('Nc6');
+    expect(within(screen.getByTestId('variation-tree-desktop')).queryAllByText('Bc4')).toHaveLength(0);
   });
 
   it('shows no bar while the tactic lines have not resolved (no flash)', () => {
