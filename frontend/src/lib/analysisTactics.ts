@@ -3,7 +3,8 @@
  * cluster.
  *
  * `forkPlyForOrientation`, `flawKey`, `bestSanFromPv` and the `TacticRef`/
- * `OpenLine` types previously existed as up to four independent copies
+ * `OpenLine` types (plus `findFocusedFlaw`, moved here so the Explain bar tests
+ * can use the page's exact focus rule) previously existed as up to four independent copies
  * across `Analysis.tsx` and its extracted hooks/components
  * (`useAnalysisBoardArrows.ts`, `useAnalysisRouteSeeding.ts`,
  * `AnalysisTabs.tsx`, `useAnalysisEngineLines.ts`) — each justified at the
@@ -23,7 +24,7 @@
 
 import { Chess } from 'chess.js';
 import { uciToSquares } from '@/lib/sanToSquares';
-import type { NodeId } from '@/hooks/useAnalysisBoard';
+import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 
 /** A currently-open or pending in-tree tactic sideline. */
 export type TacticRef = { ply: number; orientation: 'missed' | 'allowed' };
@@ -79,4 +80,55 @@ export function bestSanFromPv(baseFen: string, uci: string | null): string | nul
   } catch {
     return null;
   }
+}
+
+/**
+ * Find the open (or pending) tactic line the board is currently "in" — extracted to a
+ * pure module-scope function (not inlined in a component useMemo) because the React
+ * Compiler's memoization-preservation lint cannot analyze this control flow (nested
+ * for/while loop with early returns) inline; a plain function called FROM useMemo
+ * satisfies it.
+ *
+ * Checks pendingFlaw first (its fork node always matches BEFORE any previously-focused
+ * line would, since handlePvChipClick / the auto-open effect navigate there immediately),
+ * then every open line: match by fork-node equality OR subtree containment (walk parentId
+ * up from currentNodeId until it reaches the line's rootNodeId).
+ */
+export function findFocusedFlaw(
+  isGameMode: boolean,
+  currentNodeId: NodeId | null,
+  pendingFlaw: TacticRef | null,
+  openLines: Map<string, OpenLine>,
+  mainLine: NodeId[],
+  nodes: Map<NodeId, MoveNode>,
+): TacticRef | null {
+  if (!isGameMode || currentNodeId === null) return null;
+  if (pendingFlaw != null) {
+    const forkNodeId = mainLine[forkPlyForOrientation(pendingFlaw.ply, pendingFlaw.orientation)];
+    if (forkNodeId !== undefined && currentNodeId === forkNodeId) return pendingFlaw;
+  }
+  for (const line of openLines.values()) {
+    const forkNodeId = mainLine[forkPlyForOrientation(line.ply, line.orientation)];
+    if (forkNodeId !== undefined && currentNodeId === forkNodeId) {
+      return { ply: line.ply, orientation: line.orientation };
+    }
+    if (isNodeInsideSubtree(nodes, currentNodeId, line.rootNodeId)) {
+      return { ply: line.ply, orientation: line.orientation };
+    }
+  }
+  return null;
+}
+
+/** True iff walking parentId up from `nodeId` reaches `rootId`. */
+function isNodeInsideSubtree(
+  nodes: Map<NodeId, MoveNode>,
+  nodeId: NodeId,
+  rootId: NodeId,
+): boolean {
+  let id: NodeId | null = nodeId;
+  while (id !== null) {
+    if (id === rootId) return true;
+    id = nodes.get(id)?.parentId ?? null;
+  }
+  return false;
 }

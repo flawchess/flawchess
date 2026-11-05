@@ -115,8 +115,7 @@ import {
   forkPlyForOrientation,
   flawKey,
   bestSanFromPv,
-  type TacticRef,
-  type OpenLine,
+  findFocusedFlaw,
   type PendingFlaw,
 } from '@/lib/analysisTactics';
 import {
@@ -281,60 +280,9 @@ function fenToRootPly(fen: string | undefined): number {
 }
 
 /**
- * Find the open (or pending) tactic line the board is currently "in" — extracted to a
- * pure module-scope function (not inlined in a component useMemo) because the React
- * Compiler's memoization-preservation lint cannot analyze this control flow (nested
- * for/while loop with early returns) inline; a plain function called FROM useMemo
- * satisfies it.
- *
- * Checks pendingFlaw first (its fork node always matches BEFORE any previously-focused
- * line would, since handlePvChipClick / the auto-open effect navigate there immediately),
- * then every open line: match by fork-node equality OR subtree containment (walk parentId
- * up from currentNodeId until it reaches the line's rootNodeId).
- */
-function findFocusedFlaw(
-  isGameMode: boolean,
-  currentNodeId: NodeId | null,
-  pendingFlaw: TacticRef | null,
-  openLines: Map<string, OpenLine>,
-  mainLine: NodeId[],
-  nodes: Map<NodeId, MoveNode>,
-): TacticRef | null {
-  if (!isGameMode || currentNodeId === null) return null;
-  if (pendingFlaw != null) {
-    const forkNodeId = mainLine[forkPlyForOrientation(pendingFlaw.ply, pendingFlaw.orientation)];
-    if (forkNodeId !== undefined && currentNodeId === forkNodeId) return pendingFlaw;
-  }
-  for (const line of openLines.values()) {
-    const forkNodeId = mainLine[forkPlyForOrientation(line.ply, line.orientation)];
-    if (forkNodeId !== undefined && currentNodeId === forkNodeId) {
-      return { ply: line.ply, orientation: line.orientation };
-    }
-    if (isNodeInsideSubtree(nodes, currentNodeId, line.rootNodeId)) {
-      return { ply: line.ply, orientation: line.orientation };
-    }
-  }
-  return null;
-}
-
-/** True iff walking parentId up from `nodeId` reaches `rootId`. */
-function isNodeInsideSubtree(
-  nodes: Map<NodeId, MoveNode>,
-  nodeId: NodeId,
-  rootId: NodeId,
-): boolean {
-  let id: NodeId | null = nodeId;
-  while (id !== null) {
-    if (id === rootId) return true;
-    id = nodes.get(id)?.parentId ?? null;
-  }
-  return false;
-}
-
-/**
  * Walk children from `rootNodeId` following the lowest-id child chain until it leaves
  * `pvNodeIds` — the ordered node array of an open tactic line. Module-scope pure
- * function for the same React Compiler reason as findFocusedFlaw above.
+ * function for the same React Compiler reason as findFocusedFlaw in lib/analysisTactics.ts.
  */
 function buildFocusedPvLine(
   nodes: Map<NodeId, MoveNode>,
