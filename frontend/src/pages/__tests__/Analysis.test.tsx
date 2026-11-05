@@ -3265,7 +3265,7 @@ describe('Explain bar', () => {
       .getAllByText(/./, { selector: '[aria-current="step"]' })
       .at(0)?.textContent ?? null;
 
-  it('grafts the missed line on the owner blunder, previews the pre-flaw position, then lands on its first move', async () => {
+  it('Best move grafts the missed line on the owner blunder, previews the pre-flaw position, then lands on its first move', async () => {
     libraryGameState.data = buildExplainGame();
     tacticLinesByPly.set(
       2,
@@ -3279,22 +3279,28 @@ describe('Explain bar', () => {
 
     const bar = within(screen.getByTestId('analysis-movelist-card')).getByTestId('analysis-explain-bar');
     expect(bar.getAttribute('data-state')).toBe('explain');
-    expect(bar.getAttribute('data-orientation')).toBe('missed');
     expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Qh5?? is a blunder');
-    expect(within(bar).getAllByRole('button', { hidden: true })).toHaveLength(1);
+    expect(
+      within(bar)
+        .getAllByRole('button', { hidden: true })
+        .map((b) => b.getAttribute('data-testid')),
+    ).toEqual(['btn-analysis-explain-best', 'btn-analysis-explain-punish']);
     expect(track).not.toHaveBeenCalledWith('board-tool', expect.anything());
 
-    fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-best'));
 
     // UAT: the board first steps back to the position before the blunder (ply 1, e5).
     expect(currentSan()).toBe('e5');
     await waitFor(() => expect(currentSan()).toBe('Nf3'), { timeout: EXPLAIN_FORK_PREVIEW_MS * 3 });
-    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-open' });
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-best' });
 
-    // D-06: inside the grafted line the single button reads Got it.
+    // Inside the line: stepper, the Punish switch and Got it; no headline.
     expect(bar.getAttribute('data-state')).toBe('got-it');
-    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Better than Qh5');
-    expect(within(bar).getAllByRole('button', { hidden: true })).toHaveLength(1);
+    expect(within(bar).queryByTestId('analysis-explain-headline')).toBeNull();
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-line-forward'));
+    expect(currentSan()).toBe('Nc6');
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-line-back'));
+    expect(currentSan()).toBe('Nf3');
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
 
     const tree = screen.getByTestId('variation-tree-desktop');
@@ -3304,7 +3310,7 @@ describe('Explain bar', () => {
     expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'explain-close' });
   });
 
-  it('lands on the refutation for the opponent mistake and Got it returns to the flaw move', () => {
+  it('Punish lands on the refutation for the opponent mistake and Got it returns to the flaw move', () => {
     libraryGameState.data = buildExplainGame();
     tacticLinesByPly.set(
       3,
@@ -3318,12 +3324,14 @@ describe('Explain bar', () => {
     renderAnalysis('/analysis?game_id=1&ply=3');
 
     const bar = screen.getByTestId('analysis-explain-bar');
-    expect(bar.getAttribute('data-orientation')).toBe('allowed');
     expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Nc6? is a mistake');
+    // No missed PV stored: Best move is disabled, Punish works.
+    expect((within(bar).getByTestId('btn-analysis-explain-best') as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-punish'));
     expect(currentSan()).toBe('Bc4');
-    expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Punishing Nc6');
+    expect(bar.getAttribute('data-orientation')).toBe('allowed');
+    expect((within(bar).getByTestId('btn-analysis-explain-best') as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
     expect(currentSan()).toBe('Nc6');
@@ -3382,7 +3390,7 @@ describe('Explain bar placement', () => {
     );
   }
 
-  it('mobile (360px): one bar directly above the footer, Explain flips it to got-it', () => {
+  it('mobile (360px): one bar directly above the footer, Best move flips it to got-it', () => {
     stubMatchMedia((q) => /max-width/.test(q));
     clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(360);
     seedOwnerBlunderLines();
@@ -3394,7 +3402,7 @@ describe('Explain bar placement', () => {
     expect(bar.getAttribute('data-placement')).toBe('mobile');
     expect(screen.getByTestId('analysis-mobile-footer').previousElementSibling).toBe(bar);
 
-    fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain-best'));
     expect(bar.getAttribute('data-state')).toBe('got-it');
   });
 

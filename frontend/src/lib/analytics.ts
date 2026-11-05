@@ -367,7 +367,8 @@ export const BOARD_TOOL_TARGETS = [
   'line-expand',
   'line-delete',
   'elo-reset',
-  'explain-open',
+  'explain-best',
+  'explain-punish',
   'explain-close',
   'explain-tactic',
 ] as const;

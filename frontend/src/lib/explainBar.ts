@@ -37,41 +37,30 @@ export function eligibleExplainMarker(
   return markers.find((m) => m.ply === ply && isExplainSeverity(m.severity)) ?? null;
 }
 
+/** The two lines the bar can open, keyed by tactic orientation (Best move = missed, Punish = allowed). */
+export type ExplainOrientation = 'missed' | 'allowed';
+export type ExplainLineUsable = Record<ExplainOrientation, boolean>;
+
 /**
  * Which stored lines can actually be grafted at `ply`. The graft effect
- * early-returns on an empty PV or a missing fork WITHOUT clearing pendingFlaw,
- * so offering Explain on an ungraftable line would leave the bar stuck pending.
+ * releases pendingFlaw on an empty PV or a missing fork without grafting,
+ * so an ungraftable line's button is disabled instead of doing nothing.
  */
-export function usableExplainLines(
-  data: TacticLinesResponse,
-  ply: number,
-): { missed: boolean; allowed: boolean } {
+export function usableExplainLines(data: TacticLinesResponse, ply: number): ExplainLineUsable {
   return {
     missed: ply >= MIN_MISSED_FORK_PLY && (data.missed_moves?.length ?? 0) > 0,
     allowed: (data.allowed_moves?.length ?? 0) > ALLOWED_PREPEND_LEN,
   };
 }
 
-/**
- * Direction rule (D-04): the game owner's own flaw opens the MISSED line, the
- * opponent's flaw the ALLOWED line. Falls back to the other line when the
- * preferred one is unusable (D-09); null when neither (D-10). `is_user` is
- * relative to the game OWNER, not the viewer.
- */
-export function chooseExplainOrientation(
-  isUser: boolean,
-  usable: { missed: boolean; allowed: boolean },
-): 'missed' | 'allowed' | null {
-  const preferred = isUser ? 'missed' : 'allowed';
-  const fallback = isUser ? 'allowed' : 'missed';
-  if (usable[preferred]) return preferred;
-  if (usable[fallback]) return fallback;
-  return null;
+/** The line a got-it bar can switch to: the open line's sibling orientation. */
+export function otherOrientation(orientation: ExplainOrientation): ExplainOrientation {
+  return orientation === 'missed' ? 'allowed' : 'missed';
 }
 
 /** One tactic badge in the Explain bar (raw motif and 0-based depth; the chip formats them). */
 export interface ExplainTactic {
-  orientation: 'missed' | 'allowed';
+  orientation: ExplainOrientation;
   motif: string;
   depth: number | null;
 }
@@ -80,17 +69,27 @@ export type ExplainBarState =
   | { kind: 'hidden' }
   | {
       kind: 'explain';
-      flaw: TacticRef;
+      ply: number;
       san: string | null;
       severity: ExplainSeverity;
       /**
-       * Every visible tactic on this flaw (missed first, then allowed), independent of the
-       * line the Explain button opens. Empty: the headline falls back to the severity copy.
+       * Every visible tactic on this flaw (missed first, then allowed), rendered on the
+       * bar's second line. Empty: no second line.
        */
       tactics: ExplainTactic[];
-      pending: boolean;
+      /** Per-button availability; at least one is true (both false hides the bar, D-10). */
+      usable: ExplainLineUsable;
+      /** The line being opened for this ply (both buttons disabled), or null. */
+      pending: ExplainOrientation | null;
     }
-  | { kind: 'got-it'; line: OpenLine; san: string | null };
+  | {
+      kind: 'got-it';
+      line: OpenLine;
+      /** Same second line as the explain state, so opening a line never shifts the bar height. */
+      tactics: ExplainTactic[];
+      /** Whether the sibling line (the switch button) can be opened. */
+      otherUsable: boolean;
+    };
 
 export interface ExplainBarInputs {
   isGameMode: boolean;
@@ -106,6 +105,8 @@ export interface ExplainBarInputs {
   focusedFlaw: TacticRef | null;
   openLines: Map<string, OpenLine>;
   tacticLines: TacticLinesResponse | null | undefined;
+  /** The ply `tacticLines` was fetched for, so a got-it bar never reads another flaw's lines. */
+  tacticLinesPly: number | null;
 }
 
 /** The open line the focused flaw maps to, or null. */
@@ -114,16 +115,17 @@ function gotItLine({ focusedFlaw, openLines }: ExplainBarInputs): OpenLine | nul
   return openLines.get(flawKey(focusedFlaw)) ?? null;
 }
 
-/** SAN of the marker at `ply` (any severity), null when absent. */
-function eligibleSanAt(markers: FlawMarker[] | null | undefined, ply: number): string | null {
-  return markers?.find((m) => m.ply === ply)?.move_san ?? null;
+/** The marker at `ply` (any severity), null when absent. */
+function markerAt(markers: FlawMarker[] | null | undefined, ply: number): FlawMarker | null {
+  return markers?.find((m) => m.ply === ply) ?? null;
 }
 
 /**
  * The flaw's visible tactics, both orientations. resolveVisibleTactic applies the family
  * guard (family-less motifs render no chip), the same rule the move-list chips follow.
  */
-function explainTactics(marker: FlawMarker): ExplainTactic[] {
+function explainTactics(marker: FlawMarker | null): ExplainTactic[] {
+  if (marker === null) return [];
   const slots = [
     { orientation: 'missed', motif: marker.missed_tactic_motif, depth: marker.missed_tactic_depth },
     { orientation: 'allowed', motif: marker.allowed_tactic_motif, depth: marker.allowed_tactic_depth },
@@ -135,9 +137,24 @@ function explainTactics(marker: FlawMarker): ExplainTactic[] {
   );
 }
 
+/** The got-it state for an open line; the switch button needs the sibling to be open or graftable. */
+function gotItState(inputs: ExplainBarInputs, line: OpenLine): ExplainBarState {
+  const { flawMarkers, openLines, tacticLines, tacticLinesPly } = inputs;
+  const other = otherOrientation(line.orientation);
+  const otherOpen = openLines.has(flawKey({ ply: line.ply, orientation: other }));
+  const otherGraftable =
+    tacticLines != null && tacticLinesPly === line.ply && usableExplainLines(tacticLines, line.ply)[other];
+  return {
+    kind: 'got-it',
+    line,
+    tactics: explainTactics(markerAt(flawMarkers, line.ply)),
+    otherUsable: otherOpen || otherGraftable,
+  };
+}
+
 /** Ordered early returns; see the numbered comments for each rule. */
 export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarState {
-  const { isGameMode, fastForwardRunning, flawMarkers, landingPly } = inputs;
+  const { isGameMode, fastForwardRunning, landingPly } = inputs;
   // (1) Not game mode, or a Jump run is animating: nothing to offer.
   if (!isGameMode || fastForwardRunning) return { kind: 'hidden' };
   // (1b) Got it (D-06): the board is in an open line. Following findFocusedFlaw semantics,
@@ -148,36 +165,39 @@ export function resolveExplainBarState(inputs: ExplainBarInputs): ExplainBarStat
   if (openLine === null) return explainState(inputs);
   // Bug fix (Phase 245 review WR-01): a missed line for P forks at mainLine[P-1]. When the
   // board sits on that fork (a main-line node that is not the line's own flaw ply) and P-1
-  // is itself an explainable flaw, the landing ply's Explain wins. Got it for P used to
-  // shadow it, so P-1's Explain was reachable only via Got it (which deletes P's line) and
+  // is itself an explainable flaw, the landing ply's buttons win. Got it for P used to
+  // shadow them, so P-1's lines were reachable only via Got it (which deletes P's line) and
   // then Back. Inside the subtree landingPly is -1, so Got it is unaffected there.
   if (landingPly >= 0 && landingPly !== openLine.ply) {
     const landing = explainState(inputs);
     if (landing.kind === 'explain') return landing;
   }
-  return { kind: 'got-it', line: openLine, san: eligibleSanAt(flawMarkers, openLine.ply) };
+  return gotItState(inputs, openLine);
 }
 
-/** Rules (2)-(6): the Explain offer for the landing ply, or hidden. */
+/** Rules (2)-(6): the Best move / Punish offer for the landing ply, or hidden. */
 function explainState(inputs: ExplainBarInputs): ExplainBarState {
-  const { flawMarkers, landingPly, pendingFlaw, tacticLines } = inputs;
+  const { flawMarkers, landingPly, pendingFlaw, tacticLines, tacticLinesPly } = inputs;
   // (2) An unrelated chip or deep-link open is in flight.
   if (pendingFlaw != null && pendingFlaw.ply !== landingPly) return { kind: 'hidden' };
   // (3) Not on an eligible flaw ply (covers sidelines, the root and inaccuracies).
   const marker = eligibleExplainMarker(flawMarkers, landingPly);
   if (marker === null || !isExplainSeverity(marker.severity)) return { kind: 'hidden' };
   // (4) D-11: loading and no-lines both render nothing, never a placeholder.
-  if (tacticLines == null) return { kind: 'hidden' };
-  // (5) D-10: neither line is usable.
-  const orientation = chooseExplainOrientation(marker.is_user, usableExplainLines(tacticLines, landingPly));
-  if (orientation === null) return { kind: 'hidden' };
-  // (6) Offer Explain.
+  if (tacticLines == null || tacticLinesPly !== landingPly) return { kind: 'hidden' };
+  // (5) D-10: neither line is usable. One usable line still shows both buttons, the other
+  // disabled, so the row layout is the same on every flaw.
+  const usable = usableExplainLines(tacticLines, landingPly);
+  if (!usable.missed && !usable.allowed) return { kind: 'hidden' };
+  // (6) Offer both buttons (the D-04 direction rule is gone: Best move and Punish name
+  // their line, so neither side's flaw needs a default).
   return {
     kind: 'explain',
-    flaw: { ply: landingPly, orientation },
+    ply: landingPly,
     san: marker.move_san,
     severity: marker.severity,
     tactics: explainTactics(marker),
-    pending: pendingFlaw?.ply === landingPly,
+    usable,
+    pending: pendingFlaw?.ply === landingPly ? pendingFlaw.orientation : null,
   };
 }

@@ -11,11 +11,16 @@
  * The second observer shares the `['tactic-lines', gameId, ply]` query key, so
  * the Explain click is a synchronous cache hit (D-11).
  *
- * Explain does not navigate to the fork itself (unlike a chip click): the graft
- * effect hands the landing to useExplainLineEntry, which for a missed line shows
- * the fork briefly before playing the better move. The D-07 re-entry path below
- * goes through the same entry so both look identical.
+ * Two buttons (Phase 245 UAT, replacing the single Explain button and its D-04
+ * direction rule): Best move opens the MISSED line (undo the mistake, play the
+ * better move from ply-1), Punish opens the ALLOWED line (the refutation from the
+ * flaw position). Neither navigates to the fork itself (unlike a chip click): the
+ * graft effect hands the landing to useExplainLineEntry, which for a missed line
+ * shows the fork briefly before playing the better move. The D-07 re-entry path
+ * below goes through the same entry so both look identical.
  *
+ * Inside a line the bar shows a line stepper (Back/Forward clamped to the line),
+ * the sibling line's button (closes this line, opens the other) and Got it.
  * Got it deletes the line's whole subtree, so free moves the user played inside
  * the line go with it, exactly like a chip toggle-off.
  */
@@ -23,7 +28,7 @@
 import { useMemo } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTacticLines } from '@/hooks/useLibrary';
-import type { NodeId } from '@/hooks/useAnalysisBoard';
+import type { MoveNode, NodeId } from '@/hooks/useAnalysisBoard';
 import type { FlawMarker } from '@/types/library';
 import {
   flawKey,
@@ -35,11 +40,15 @@ import {
 import type { EnterExplainLine } from '@/hooks/analysis/useExplainLineEntry';
 import {
   eligibleExplainMarker,
+  otherOrientation,
   resolveExplainBarState,
   type ExplainBarState,
+  type ExplainOrientation,
 } from '@/lib/explainBar';
 import { trackFeature } from '@/lib/analytics';
 import { unlockAudio } from '@/lib/sounds';
+
+const OPEN_TARGET = { missed: 'explain-best', allowed: 'explain-punish' } as const;
 
 export interface UseExplainBarOptions {
   // ── Route / game data ─────────────────────────────────────────────────
@@ -57,18 +66,36 @@ export interface UseExplainBarOptions {
   fastForwardRunning: boolean;
 
   // ── Board / state setters ─────────────────────────────────────────────
+  nodes: Map<NodeId, MoveNode>;
+  currentNodeId: NodeId | null;
   mainLine: NodeId[];
   goToNode: (id: NodeId, opts?: { silent?: boolean }) => void;
+  goForward: () => void;
+  goBack: () => void;
   deleteSubtree: (rootId: NodeId) => void;
   enterExplainLine: EnterExplainLine;
   setPendingFlaw: (flaw: PendingFlaw | null) => void;
   setOpenLines: Dispatch<SetStateAction<Map<string, OpenLine>>>;
 }
 
+/** Back/Forward clamped to the open line: Back stops at the fork, Forward starts into the line. */
+export interface ExplainLineStepper {
+  canBack: boolean;
+  canForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
+}
+
 export interface UseExplainBarResult {
   state: ExplainBarState;
-  onExplain: () => void;
+  onOpenLine: (orientation: ExplainOrientation) => void;
   onGotIt: () => void;
+  stepper: ExplainLineStepper;
+}
+
+function hasChild(nodes: Map<NodeId, MoveNode>, id: NodeId | null): boolean {
+  for (const node of nodes.values()) if (node.parentId === id) return true;
+  return false;
 }
 
 export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResult {
@@ -81,16 +108,24 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     focusedFlaw,
     openLines,
     fastForwardRunning,
+    nodes,
+    currentNodeId,
     mainLine,
     goToNode,
+    goForward,
+    goBack,
     deleteSubtree,
     enterExplainLine,
     setPendingFlaw,
     setOpenLines,
   } = options;
 
-  const eligiblePly = eligibleExplainMarker(flawMarkers, landingPly) !== null ? landingPly : null;
-  const { data: tacticLines } = useTacticLines(gameId, eligiblePly, isGameMode && eligiblePly !== null);
+  // The landing flaw's lines when it is explainable, else the focused line's (the got-it
+  // bar's switch button needs to know whether the sibling line is graftable). Same query key
+  // as the page's fetchFlaw observer, so this is a cache hit in both cases.
+  const linesPly =
+    eligibleExplainMarker(flawMarkers, landingPly) !== null ? landingPly : (focusedFlaw?.ply ?? null);
+  const { data: tacticLines } = useTacticLines(gameId, linesPly, isGameMode && linesPly !== null);
 
   const state = useMemo(
     () =>
@@ -103,40 +138,60 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
         focusedFlaw,
         openLines,
         tacticLines,
+        tacticLinesPly: linesPly,
       }),
-    [isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, focusedFlaw, openLines, tacticLines],
+    [isGameMode, fastForwardRunning, flawMarkers, landingPly, pendingFlaw, focusedFlaw, openLines, tacticLines, linesPly],
   );
 
-  const onExplain = (): void => {
-    if (state.kind !== 'explain' || state.pending) return;
-    // The graft effect's goToNode runs outside the user gesture, so iOS/WebKit
-    // needs the audio unlock here.
-    unlockAudio();
-    trackFeature('board-tool', { target: 'explain-open' });
-    // D-07 re-entry: a line with this key is already open (Explain- or chip-opened).
-    // Navigate into it instead of grafting a duplicate; without this branch the graft
-    // effect's openLines.has early return would leave pendingFlaw stuck.
-    const existing = openLines.get(flawKey(state.flaw));
+  /** Open (or re-enter, D-07) the `orientation` line of the flaw at `ply`. */
+  const openLine = (ply: number, orientation: ExplainOrientation): void => {
+    const existing = openLines.get(flawKey({ ply, orientation }));
     if (existing !== undefined) {
       const forkNodeId = mainLine[forkPlyForOrientation(existing.ply, existing.orientation)];
       if (forkNodeId === undefined) goToNode(existing.rootNodeId);
       else enterExplainLine(forkNodeId, existing.rootNodeId, existing.orientation);
       return;
     }
-    setPendingFlaw({ ...state.flaw, enter: true });
+    // Without the re-entry branch above the graft effect's openLines.has early return
+    // would release pendingFlaw without landing in the line.
+    setPendingFlaw({ ply, orientation, enter: true });
+  };
+
+  /** Delete the line's subtree and forget it; the cursor recovers to the fork when it was inside. */
+  const closeLine = (line: OpenLine): void => {
+    deleteSubtree(line.rootNodeId);
+    setOpenLines((prev) => {
+      const next = new Map(prev);
+      next.delete(flawKey(line));
+      return next;
+    });
+  };
+
+  const onOpenLine = (orientation: ExplainOrientation): void => {
+    // The graft effect's goToNode runs outside the user gesture, so iOS/WebKit
+    // needs the audio unlock here.
+    unlockAudio();
+    if (state.kind === 'explain') {
+      if (state.pending !== null || !state.usable[orientation]) return;
+      trackFeature('board-tool', { target: OPEN_TARGET[orientation] });
+      openLine(state.ply, orientation);
+      return;
+    }
+    // Got it state: the sibling button swaps lines (closes this one, opens the other).
+    if (state.kind !== 'got-it' || !state.otherUsable || orientation !== otherOrientation(state.line.orientation)) return;
+    trackFeature('board-tool', { target: OPEN_TARGET[orientation] });
+    closeLine(state.line);
+    // Park on the flaw move so the bar shows the pending explain state while the graft
+    // runs, instead of hiding (rule 2) while the cursor sits on a missed line's fork.
+    const flawNodeId = mainLine[state.line.ply];
+    if (flawNodeId !== undefined) goToNode(flawNodeId, { silent: true });
+    openLine(state.line.ply, orientation);
   };
 
   const onGotIt = (): void => {
     if (state.kind !== 'got-it') return;
     trackFeature('board-tool', { target: 'explain-close' });
-    const key = flawKey(state.line);
-    // Removes the line's subtree; recovers the cursor to the fork when it was inside.
-    deleteSubtree(state.line.rootNodeId);
-    setOpenLines((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
+    closeLine(state.line);
     // D-06: back to the flaw move on the main line for both orientations. For an allowed
     // line the recovery already lands there and goToNode bails; main-line nodes are never
     // deleted.
@@ -144,5 +199,30 @@ export function useExplainBar(options: UseExplainBarOptions): UseExplainBarResul
     if (flawNodeId !== undefined) goToNode(flawNodeId);
   };
 
-  return { state, onExplain, onGotIt };
+  // Line stepper (UAT): only meaningful in the got-it state. Move stepping is
+  // high-frequency, so it sends no Umami event (frontend CLAUDE.md, D-06).
+  const line = state.kind === 'got-it' ? state.line : null;
+  const forkNodeId = line !== null ? mainLine[forkPlyForOrientation(line.ply, line.orientation)] : undefined;
+  const atFork = forkNodeId !== undefined && currentNodeId === forkNodeId;
+  const canForward = useMemo(
+    () => line !== null && (atFork || hasChild(nodes, currentNodeId)),
+    [line, atFork, nodes, currentNodeId],
+  );
+  const stepper: ExplainLineStepper = {
+    canBack: line !== null && !atFork,
+    canForward,
+    onBack: () => {
+      if (line !== null && !atFork) goBack();
+    },
+    onForward: () => {
+      if (line === null) return;
+      // At the fork, goForward would pick the lowest-id PV child, which can belong to
+      // another line forking at the same node (missed of P and allowed of P-1 share
+      // mainLine[P-1]). Step into THIS line explicitly.
+      if (atFork) goToNode(line.rootNodeId);
+      else goForward();
+    },
+  };
+
+  return { state, onOpenLine, onGotIt, stepper };
 }
