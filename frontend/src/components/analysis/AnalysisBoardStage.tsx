@@ -68,6 +68,8 @@ export type DesktopBoardStageProps = {
   evalPending: boolean;
   evalChartPanelProps: Omit<Parameters<typeof EvalChartPanel>[0], 'heightClass'>;
   tagsPanelProps: Omit<TagsPanelProps, 'withHighlight' | 'section'>;
+  /** The contextual Explain bar, rendered only in the mid layout (under the board controls). */
+  explainBar?: ReactNode;
 };
 
 // Desktop board column. The outer div is the measured "stage" (see
@@ -101,6 +103,7 @@ export function DesktopBoardStage({
   evalPending,
   evalChartPanelProps,
   tagsPanelProps,
+  explainBar,
 }: DesktopBoardStageProps): ReactElement {
   return (
     <div
@@ -162,6 +165,13 @@ export function DesktopBoardStage({
         <Card className="w-full px-1">
           <BoardControls {...boardControlsProps} flat size="sm" />
         </Card>
+
+        {/* Explain bar: mid layout only. In mid the move list lives in a tab that can be
+            hidden while the board controls stay visible, so the bar sits under them. The
+            3-column desktop mounts the bar in the MovesCard footer and mobile mounts it
+            above analysis-mobile-footer. Mid placement is a discretion call (D-03 names
+            desktop and mobile only), flagged for owner UAT. */}
+        {isMid && explainBar}
 
         {/* EvalChart with slider — game mode only, aligned to the board width.
             highlightedPlies: dims non-matching markers on tags-panel hover.

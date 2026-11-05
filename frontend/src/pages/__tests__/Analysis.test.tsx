@@ -3148,7 +3148,12 @@ describe('Import-tab paste handoff consume', () => {
 
 const EXPLAIN_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
 
-function explainMarker(ply: number, san: string, isUser: boolean, severity: 'mistake' | 'blunder') {
+function explainMarker(
+  ply: number,
+  san: string,
+  isUser: boolean,
+  severity: 'inaccuracy' | 'mistake' | 'blunder',
+) {
   return {
     ply,
     severity,
@@ -3220,6 +3225,9 @@ describe('Explain bar', () => {
     window.history.pushState({}, '', '/');
   });
 
+  // `hidden: true` on the role queries: when this describe runs first in the file (a -t filter) the
+  // engine-gate dialog is open and Radix aria-hides everything outside it, which makes the bar
+  // inaccessible to getByRole although it is rendered and clickable. The count still holds.
   const currentSan = (): string | null =>
     within(screen.getByTestId('variation-tree-desktop'))
       .getAllByText(/./, { selector: '[aria-current="step"]' })
@@ -3241,7 +3249,7 @@ describe('Explain bar', () => {
     expect(bar.getAttribute('data-state')).toBe('explain');
     expect(bar.getAttribute('data-orientation')).toBe('missed');
     expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Qh5?? is a blunder');
-    expect(within(bar).getAllByRole('button')).toHaveLength(1);
+    expect(within(bar).getAllByRole('button', { hidden: true })).toHaveLength(1);
     expect(track).not.toHaveBeenCalledWith('board-tool', expect.anything());
 
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
@@ -3252,7 +3260,7 @@ describe('Explain bar', () => {
     // D-06: inside the grafted line the single button reads Got it.
     expect(bar.getAttribute('data-state')).toBe('got-it');
     expect(within(bar).getByTestId('analysis-explain-headline').textContent).toBe('Better than Qh5');
-    expect(within(bar).getAllByRole('button')).toHaveLength(1);
+    expect(within(bar).getAllByRole('button', { hidden: true })).toHaveLength(1);
     fireEvent.click(within(bar).getByTestId('btn-analysis-explain-got-it'));
 
     const tree = screen.getByTestId('variation-tree-desktop');
@@ -3291,6 +3299,98 @@ describe('Explain bar', () => {
   it('shows no bar while the tactic lines have not resolved (no flash)', () => {
     libraryGameState.data = buildExplainGame();
     renderAnalysis('/analysis?game_id=1&ply=2');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+  });
+});
+
+// Placement: the bar mounts exactly once per layout (mobile above the footer, mid under the
+// board controls), never inside the shared Moves tab. jsdom has no layout, so these assert
+// DOM position only.
+describe('Explain bar placement', () => {
+  const origMatchMedia = window.matchMedia;
+  let clientWidthSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+  // Mirrors the 'Mobile Stats tab' override; pointer:coarse stays true so the board does
+  // not animate in jsdom.
+  function stubMatchMedia(matchesQuery: (query: string) => boolean): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: matchesQuery(query) || /pointer:\s*coarse/.test(query),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  beforeEach(() => {
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    window.matchMedia = origMatchMedia;
+    clientWidthSpy?.mockRestore();
+    clientWidthSpy = null;
+    window.history.pushState({}, '', '/');
+  });
+
+  function seedOwnerBlunderLines(): void {
+    libraryGameState.data = buildExplainGame();
+    tacticLinesByPly.set(
+      2,
+      tacticLinesFixture({
+        missed_moves: ['Nf3', 'Nc6'],
+        allowed_moves: ['Qh5', 'Nc6', 'Bc4'],
+        flaw_move_san: 'Qh5',
+      }),
+    );
+  }
+
+  it('mobile (360px): one bar directly above the footer, Explain flips it to got-it', () => {
+    stubMatchMedia((q) => /max-width/.test(q));
+    clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(360);
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const bars = screen.getAllByTestId('analysis-explain-bar');
+    expect(bars).toHaveLength(1);
+    const bar = bars[0]!;
+    expect(bar.getAttribute('data-placement')).toBe('mobile');
+    expect(screen.getByTestId('analysis-mobile-footer').previousElementSibling).toBe(bar);
+
+    fireEvent.click(within(bar).getByTestId('btn-analysis-explain'));
+    expect(bar.getAttribute('data-state')).toBe('got-it');
+  });
+
+  it('mid (768-1199px): one bar, placed under the board controls, no MovesCard', () => {
+    stubMatchMedia((q) => /max-width:\s*1199px/.test(q));
+    seedOwnerBlunderLines();
+    renderAnalysis('/analysis?game_id=1&ply=2');
+
+    const bars = screen.getAllByTestId('analysis-explain-bar');
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.getAttribute('data-placement')).toBe('mid');
+    expect(screen.queryByTestId('analysis-movelist-card')).toBeNull();
+  });
+
+  it('D-08: an inaccuracy ply shows no bar even with usable tactic-line data', () => {
+    const base = buildExplainGame();
+    libraryGameState.data = {
+      ...base,
+      flaw_markers: [...(base.flaw_markers ?? []), explainMarker(1, 'e5', false, 'inaccuracy')],
+    };
+    tacticLinesByPly.set(
+      1,
+      tacticLinesFixture({ allowed_moves: ['e5', 'Nf3'], flaw_move_san: 'e5', flaw_ply: 1 }),
+    );
+    renderAnalysis('/analysis?game_id=1&ply=1');
+    expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
+  });
+
+  it('free play shows no bar', () => {
+    renderAnalysis('/analysis');
     expect(screen.queryByTestId('analysis-explain-bar')).toBeNull();
   });
 });

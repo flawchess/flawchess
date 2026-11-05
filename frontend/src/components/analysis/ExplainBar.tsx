@@ -11,14 +11,20 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Check, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { SEVERITY_GLYPH } from '@/lib/severityGlyph';
 import type { ExplainBarState, ExplainSeverity } from '@/lib/explainBar';
 
-type ExplainBarPlacement = 'desktop';
+type ExplainBarPlacement = 'desktop' | 'mid' | 'mobile';
 
+// desktop: footer row inside the move-list Card. mid: its own Card under the board
+// controls. mobile: a row directly above analysis-mobile-footer, mirroring that footer's
+// border and background.
 const PLACEMENT_CLASS: Record<ExplainBarPlacement, string> = {
   desktop: 'border-t border-border px-2 py-2',
+  mid: 'w-full px-2 py-2',
+  mobile: 'border-t border-border bg-background px-2 py-2',
 };
 
 const EXPLAIN_LABEL = 'Explain';
@@ -53,8 +59,11 @@ type BarShellProps = {
 
 /** Same root, classes and row structure for both states, so the Explain/Got it swap never shifts the row height. */
 function BarShell({ state, orientation, placement, children }: BarShellProps): ReactElement {
+  // The mid placement is a charcoal Card (matches the BoardControls Card it sits under);
+  // the other placements are plain rows.
+  const Root = placement === 'mid' ? Card : 'div';
   return (
-    <div
+    <Root
       data-testid="analysis-explain-bar"
       data-state={state}
       data-orientation={orientation}
@@ -62,7 +71,7 @@ function BarShell({ state, orientation, placement, children }: BarShellProps): R
       className={cn('flex shrink-0 items-center gap-2', PLACEMENT_CLASS[placement])}
     >
       {children}
-    </div>
+    </Root>
   );
 }
 

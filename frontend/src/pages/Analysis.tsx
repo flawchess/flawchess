@@ -2104,6 +2104,8 @@ export default function Analysis() {
       setTagCommandSeq,
       setTagsHighlightedPlies,
     },
+    // Rendered only in the mid layout (DesktopBoardStage ignores it elsewhere).
+    explainBar: <ExplainBar placement="mid" {...explainBarControls} />,
   };
 
   // Shared ELO slider: drives BOTH the FlawChess and Maia engines, so on desktop it
@@ -2545,6 +2547,13 @@ export default function Analysis() {
             from unanalyzed to analyzed via the live poll (no cursor/variation-tree
             loss). Free play and an idle unanalyzed game just omit the Stats tab. */}
         {analysisTabs}
+
+        {/* D-03: the Explain bar sits directly above the footer because the footer's 5
+            BoardControls columns are at their limit on a 360px phone. The AnalysisTabs
+            root is flex-1 min-h-0, so it absorbs this row's height. Never mount the bar
+            inside MovesTab / AnalysisTabs: that component is shared by mobile and mid and
+            would double-render on mobile. */}
+        <ExplainBar placement="mobile" {...explainBarControls} />
 
         {/* In-flow board-controls footer — replaces the suppressed mobile nav bar. */}
         <div
