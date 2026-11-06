@@ -1,6 +1,7 @@
 ---
 id: SEED-188
-status: dormant
+status: closed
+closed: 2026-11-06 (the 6 highs no longer report: `npm audit` shows 0 high with shadcn 4.23.0 and braces 3.0.3 still in the tree, no work done here. 6 low remain from a different advisory, deepmerge GHSA-gcqx-w48m-w2h4, via shadcn and vite-plugin-pwa)
 planted: 2026-10-04
 planted_during: Phase 232 (SEED-187) Plan 02, override re-check
 trigger_when: next dependency maintenance phase, or any of these advisories becoming reachable from the shipped bundle

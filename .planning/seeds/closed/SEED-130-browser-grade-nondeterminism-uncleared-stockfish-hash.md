@@ -1,7 +1,7 @@
 # SEED-130 — The shipped engine is not bit-deterministic in the browser, and the parity gate cannot see it
 
 **Captured:** 2026-07-31, during Phase 198's second independent design review (finding Y-1).
-**Status:** open
+**Status:** closed 2026-11-06. Q1 answered by Phase 226 D-05 (relaxed expected-score contract), Q2 by the `--no-clear-hash` arm in `calibration-determinism.check.mjs` (226 D-03), Q5 by the "Determinism scope" header in `mctsSearch.ts`; Phase 227 shipped continuous dispatch against that target. Q3 (per-slot TT affinity) and Q4 (`ucinewgame` per bot game) were never picked up and stay optional ideas.
 **Source:** `reports/continuous-dispatch/apply-order-design.md` §9d (Y-1); confirmed against code and
 against this project's own committed measurement.
 
