@@ -357,10 +357,26 @@ feature (SEED-261106-q92) and a Stats tab. Locked decisions, traps and breadcrum
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
+**Plans:** 8 plans
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 246, then /gsd-plan-phase 246)
+**Wave 1**
+- [ ] 246-01-PLAN.md — `GET /train/archive` end-to-end (tracer): sort by latest solve, evicted and unreplayable rows stay listed, ownership and bounds; pins the hidden and guest rank fact
+- [ ] 246-02-PLAN.md — Train layout with URL-routed tabs (tracer: Leaderboard deep link with no session or engine): `useTrainLoop` latch, immersive first paint, Back out of the loop, deferred session re-read
+- [ ] 246-04-PLAN.md — Archive card (tracer: see a puzzle and analyze it): `TrainPuzzleCard`, game details and status line with no spoilers, shared `ply - 1` Analyze helper
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 246-08-PLAN.md — What the landing mounts (tracer: a landing the player cannot see records nothing): `isVisible` gate, medal host in the layout, leaderboard card off Today, stated outcome for leaving the first-visit intro
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 246-03-PLAN.md — Today tab (tracer: rank line): Points today on the streak card, full schedule card, `TrainStatsCard` deleted
+- [ ] 246-05-PLAN.md — Archive tab (tracer: open the Archive by URL with no session or engine): API client and query, toggle with counts and popovers, URL-held pagination, per-list empty states
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 246-06-PLAN.md — Running-stack walk in a real browser (tracer: live API check), run inline by the orchestrator, with an evidence gate that rejects unmeasured steps
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 246-07-PLAN.md — CHANGELOG and README, full pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

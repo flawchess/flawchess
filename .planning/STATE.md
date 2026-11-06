@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 244
-current_phase_name: Analysis Contextual Explain Bar for Flaws (SEED-208)
+current_phase_name: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
 status: verifying
 stopped_at: Phase 246 context gathered
-last_updated: "2026-11-06T18:02:17.978Z"
-state_head: 41a3299afc083feeda988f7c6849dfd373ed5c10
+last_updated: "2026-11-06T19:37:16.589Z"
+state_head: 72211beae703a25c0f7f11a3dd3680b63507c42a
 progress:
   total_phases: 5
   completed_phases: 103
-  total_plans: 18
+  total_plans: 26
   completed_plans: 96
 milestone_name: Codebase Cleanup
 last_activity: 2026-11-05
@@ -21,7 +21,7 @@ last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the P
 
 ## Current Position
 
-Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — NOT PLANNED
+Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — READY TO EXECUTE
 Plan: 0 of TBD
 
 Status: Phase 246 added 2026-11-06, ready to discuss. Phase 245 is on `main` with UAT complete, but 245-VERIFICATION.md still reads `human_needed` and it has no Progress row yet
