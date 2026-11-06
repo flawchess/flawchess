@@ -1,6 +1,8 @@
 ---
 id: SEED-261106-gw8
-status: dormant
+status: promoted
+promoted_to: Phase 246
+promoted: 2026-11-06
 planted: 2026-11-06
 planted_during: v2.27, phase 244 (/gsd-explore session)
 trigger_when: when Train page navigation, the Train landing, or mastered/parked puzzle browsing is next prioritized
