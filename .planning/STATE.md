@@ -5,8 +5,8 @@ current_phase: 244
 current_phase_name: Analysis Contextual Explain Bar for Flaws (SEED-208)
 status: verifying
 stopped_at: Completed 245-02-PLAN.md
-last_updated: "2026-11-05T09:52:11.196Z"
-state_head: 055f9dacc14db8210d9396a521ce01a1ff7b8d7e
+last_updated: "2026-11-06T17:32:03.872Z"
+state_head: 053622ae735eda55abcbb77a14676d4b84a14ccb
 progress:
   total_phases: 4
   completed_phases: 103
@@ -1085,6 +1085,7 @@ None active.
 | 261104-hxl | Hide stale moves in opening findings behind Played before collapsible | 2026-11-04 | 18de95f60 | [261104-hxl-hide-stale-moves-in-opening-findings-beh](./quick/261104-hxl-hide-stale-moves-in-opening-findings-beh/) |
 | 261104-t65 | Analysis: PGN/FEN button becomes a menu with Import and Copy FEN | 2026-11-04 | 282a8dd7d | [261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe](./quick/261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe/) |
 | 261105-apc | Analysis Copy PGN in the PGN/FEN dropdown | 2026-11-05 | 6088226c7 | [261105-apc-in-the-analysis-page-add-a-copy-pgn-feat](./quick/261105-apc-in-the-analysis-page-add-a-copy-pgn-feat/) |
+| 261106-peq | Fix the crash and filter the CSP reports | 2026-11-06 | 053622ae7 | [261106-peq-fix-the-crash-and-filter-the-csp-reports](./quick/261106-peq-fix-the-crash-and-filter-the-csp-reports/) |
 
 ## Deferred Items
 
