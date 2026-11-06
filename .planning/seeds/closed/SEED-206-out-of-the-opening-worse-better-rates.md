@@ -26,7 +26,7 @@ about 70% of the between-player IQR per TC, benchmark §5.6/§5.15; the closed-f
 The Library "Game phase → Opening" row shows that delta, so it is no substitute for this stat. This
 stat replaces the tabled LLM opening narration as the first step, and a later narration can consume it.
 
-Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-the-opening-metric-design.md`.
+Full reasoning, benchmark tables and rejected options: `../../notes/out-of-the-opening-metric-design.md`.
 
 ## Locked decisions (owner, 2026-10-31)
 
@@ -43,7 +43,7 @@ Full reasoning, benchmark tables and rejected options: `.planning/notes/out-of-t
 
 ### Peer basis
 - **Rating × TC CDFs on the Endgames canonical slice.** Add a new builder in
-  `app/services/canonical_slice_sql.py`, reused by both `gen_global_percentile_cdf.py` and
+  `../../../app/services/canonical_slice_sql.py`, reused by both `gen_global_percentile_cdf.py` and
   `user_benchmark_percentiles_service.py`.
   - Slice: most recent 3000 games within 36 months per TC, rated, opponents within ±100.
   - Floor: 30 games per colour × TC.
@@ -198,16 +198,16 @@ sampling noise.
 
 ## Breadcrumbs
 
-- Sketch: `.planning/sketches/013-out-of-the-opening/` (index.html; `analysis/` holds the benchmark
+- Sketch: `../../sketches/013-out-of-the-opening` (index.html; `analysis/` holds the benchmark
   scripts: `fetch_cells.py`, `analyze.py`, `fetch_sweep.py`, `analyze_sweep.py`,
   `analyze_opponent_gap.py`).
-- Reasoning note: `.planning/notes/out-of-the-opening-metric-design.md`.
-- Backend: `app/services/canonical_slice_sql.py`, `app/services/user_benchmark_percentiles_service.py`,
+- Reasoning note: `../../notes/out-of-the-opening-metric-design.md`.
+- Backend: `../../../app/services/canonical_slice_sql.py`, `app/services/user_benchmark_percentiles_service.py`,
   `app/services/endgame_ranked_service.py`, `app/repositories/benchmark_cohort_cdf_repository.py`,
   `app/services/position_classifier.py` (phase rule), `app/services/opening_insights_constants.py`
   (baseline), `scripts/gen_global_percentile_cdf.py`.
-- Frontend: `frontend/src/components/endgames/stats/RankedMetricRow.tsx`, `PercentileBar.tsx`,
+- Frontend: `../../../frontend/src/components/endgames/stats/RankedMetricRow.tsx`, `PercentileBar.tsx`,
   `RankedMetricPopover.tsx`; `frontend/src/pages/openings/StatsTab.tsx`;
   `frontend/src/components/openings/stats/RepertoireCard.tsx` (expanded card).
 - Related: SEED-204 / Phase 242 (Openings Stats rework, baseline centring, current/past grouping);
-  `.planning/notes/percentile-chip-canonical-slice.md`; benchmark §2.1 and §5.6/§5.15.
+  `../../notes/percentile-chip-canonical-slice.md`; benchmark §2.1 and §5.6/§5.15.

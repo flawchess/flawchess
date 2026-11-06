@@ -97,11 +97,11 @@ button exposes those lines for every flaw, both sides, with no new data.
 
 ## Breadcrumbs
 
-- `frontend/src/pages/Analysis.tsx` (handlePvChipClick ~1776, findFocusedFlaw ~292, mobile footer ~2578)
-- `frontend/src/components/analysis/AnalysisTabs.tsx` (BoardControls wrapper, mobile footer)
-- `frontend/src/components/board/BoardControls.tsx` (labelled 5-column footer)
-- `frontend/src/hooks/useAnalysisBoard.ts` (goForward PV preference, insertPvLine, deleteSubtree)
-- `frontend/src/hooks/useLibrary.ts` (`useTacticLines`)
-- `frontend/src/lib/tacticOrientation.ts`
-- `frontend/src/hooks/useFastForward.ts` (existing Next equivalent)
-- `app/repositories/library_repository.py` (`fetch_tactic_lines`)
+- `../../../frontend/src/pages/Analysis.tsx` (handlePvChipClick ~1776, findFocusedFlaw ~292, mobile footer ~2578)
+- `../../../frontend/src/components/analysis/AnalysisTabs.tsx` (BoardControls wrapper, mobile footer)
+- `../../../frontend/src/components/board/BoardControls.tsx` (labelled 5-column footer)
+- `../../../frontend/src/hooks/useAnalysisBoard.ts` (goForward PV preference, insertPvLine, deleteSubtree)
+- `../../../frontend/src/hooks/useLibrary.ts` (`useTacticLines`)
+- `../../../frontend/src/lib/tacticOrientation.ts`
+- `../../../frontend/src/hooks/useFastForward.ts` (existing Next equivalent)
+- `../../../app/repositories/library_repository.py` (`fetch_tactic_lines`)

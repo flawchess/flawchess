@@ -15,14 +15,14 @@ Auto-update plan agreed 2026-10-27, in four layers:
 
 1. **Host OS** (DONE 2026-10-27): unattended-upgrades for Ubuntu security + updates and the Docker
    apt repo, an automatic reboot at 02:15 UTC when one is needed, Docker `live-restore`. See
-   `docs/production-runbook.md` → "Automatic updates".
+   `../../../docs/production-runbook.md` → "Automatic updates".
 2. **Renovate automerge** (DONE 2026-10-27): non-major updates of stable (>= 1.0) packages, digests,
    GitHub Actions and lock file maintenance merge into `main` on their own once the required `test`
    check passes. Majors, 0.x packages, onnxruntime*, Postgres majors stay manual.
 3. **Postgres image pin** (DONE 2026-10-27): `postgres:18.6-alpine@sha256:…` in prod, dev, benchmark
    and CI compose/workflow files, grouped in Renovate so all four move together.
 4. **This seed:** automerge only reaches `main`. Prod still moves only when the owner runs
-   `bin/deploy.sh` / `/deploy`, so dependency fixes (including security ones) sit undeployed until the
+   `../../../bin/deploy.sh` / `/deploy`, so dependency fixes (including security ones) sit undeployed until the
    next feature release.
 
 ## Idea
@@ -30,10 +30,10 @@ Auto-update plan agreed 2026-10-27, in four layers:
 A weekly scheduled workflow (e.g. Tuesday 04:00 UTC, after Renovate's Monday window) that:
 
 - checks whether every commit in `origin/production..origin/main` was authored by Renovate
-  (`renovate[bot]`) and touches only dependency files (`uv.lock`, `pyproject.toml`,
+  (`renovate[bot]`) and touches only dependency files (`../../../uv.lock`, `pyproject.toml`,
   `frontend/package*.json`, `Dockerfile*`, `docker-compose*.yml`, `.github/workflows/*`);
 - if yes, opens the `main → production` release PR, waits for CI on it, squash-merges it, dispatches
-  `deploy.yml`, then does the forward-port step that `bin/deploy.sh` / the `/deploy` skill does today
+  `deploy.yml`, then does the forward-port step that `../../../bin/deploy.sh` / the `/deploy` skill does today
   (see `docs/git-workflow.md`);
 - if any non-Renovate commit is present, does nothing (feature work always waits for the owner).
 
@@ -54,5 +54,5 @@ A weekly scheduled workflow (e.g. Tuesday 04:00 UTC, after Renovate's Monday win
 ## Related drift spotted on 2026-10-27
 
 - `ci.yml` validates the Caddyfile with `caddy:2.11.6` in a `docker run` step, while
-  `frontend/Dockerfile` ships `caddy:2.11.7`. Renovate does not see image references inside `run:`
+  `../../../frontend/Dockerfile` ships `caddy:2.11.7`. Renovate does not see image references inside `run:`
   scripts, so the CI version will keep lagging unless it gets a regex manager or an env var.

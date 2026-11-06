@@ -31,7 +31,7 @@ raw memory of the move to fade.
 
 ## Current Ladder (as of 2026-11-02)
 
-`app/services/train_scheduler.py`:
+`../../../app/services/train_scheduler.py`:
 - `LADDER_DAYS = {0: 0, 1: 3, 2: 10}` (streak 0 = next scheduled session)
 - `MASTERY_STREAK_THRESHOLD = 3` (3 consecutive correct)
 - Fail: streak -> 0, due at the next scheduled session (`next_scheduled_day(today)`)
@@ -84,7 +84,7 @@ Considered and rejected:
   streak at 1" reasoning change: with 2-in-a-row mastery, alternation can no
   longer trap an item the same way.
 - `drill_item.py` docstring mentions "3 ... spaced-correct solves" and "6".
-- Tests: `tests/services/test_train_scheduler.py` (ladder offsets, mastery at 2,
+- Tests: `../../../tests/services/test_train_scheduler.py` (ladder offsets, mastery at 2,
   door B at 4, fail delay snaps to a scheduled weekday).
 - Copy (no client logic reads the thresholds, prose only):
   - `frontend/src/pages/Home.tsx:69` ("next session, then after three days, then ten, until you've solved it three times")
@@ -253,7 +253,7 @@ that matters most, which singles out the old next-session fail retry.
    with the same tactic motif (from the user's other games, the cross-user
    herring pool, or the sharp-filler set). Directly addresses response
    congruency and interleaving. Building blocks already exist: tactic motif
-   tagging (`app/services/tactic_detector.py`), the global herring pool,
+   tagging (`../../../app/services/tactic_detector.py`), the global herring pool,
    `SHARP_FILLER`. Open questions: motif-tag confidence gate, how mastery maps
    to "item" vs "motif", and whether to keep the identical-position retry at
    all after a fail. Capture as its own seed when this one is promoted.
@@ -263,14 +263,14 @@ that matters most, which singles out the old next-session fail retry.
 
 ## Breadcrumbs
 
-- `app/services/train_scheduler.py` (LADDER_DAYS, MASTERY_STREAK_THRESHOLD,
+- `../../../app/services/train_scheduler.py` (LADDER_DAYS, MASTERY_STREAK_THRESHOLD,
   PARK_FAIL_THRESHOLD, LEECH_FAIL_THRESHOLD, apply_result, next_scheduled_day)
-- `app/models/drill_item.py` (status/streak/due_date/fail_count/ever_correct, docstring)
-- `app/models/drill_solve.py` (correct_move, solved_at, telemetry JSONB with guess_ms/move_ms)
-- `app/services/train_pool.py`, `app/repositories/train_repository.py` (item creation, composition, mastered/parked counts)
-- `tests/services/test_train_scheduler.py`
+- `../../../app/models/drill_item.py` (status/streak/due_date/fail_count/ever_correct, docstring)
+- `../../../app/models/drill_solve.py` (correct_move, solved_at, telemetry JSONB with guess_ms/move_ms)
+- `../../../app/services/train_pool.py`, `app/repositories/train_repository.py` (item creation, composition, mastered/parked counts)
+- `../../../tests/services/test_train_scheduler.py`
 - `frontend/src/pages/Home.tsx:69`, `frontend/src/lib/trainBotCopy.ts:521`, `frontend/src/components/train/TrainStatsCard.tsx:34-41`
-- `.planning/seeds/closed/SEED-037-train-spaced-repetition-blunder-drills.md` (original SR design)
+- `SEED-037-train-spaced-repetition-blunder-drills.md` (original SR design)
 
 ### Evidence queries (prod, read-only)
 

@@ -60,7 +60,7 @@ Overrides D-01, D-04 and D-09, and amends D-06 and D-10. The single Explain butt
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase scope and locked decisions
-- `.planning/seeds/SEED-208-analysis-explain-button.md` — locked decisions, chess.com reference observations, reuse map, breadcrumbs
+- `../../seeds/closed/SEED-208-analysis-explain-button.md` — locked decisions, chess.com reference observations, reuse map, breadcrumbs
 - `.planning/ROADMAP.md` §"Phase 245" — goal and scope (its inaccuracy bullet is superseded by D-08)
 
 ### Frontend rules

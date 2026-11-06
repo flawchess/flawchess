@@ -12,7 +12,7 @@ scope: small to medium (sticky subnav + tab styling + nav-dot gating are small; 
 Status: **ideas need refinement before implementation.** The data below says *where* users drop off;
 the suggestions are candidate levers, not decided designs.
 
-Screenshots (gitignored, local only): `temp/subnav-uat/desktop-openings.jpg`, `temp/subnav-uat/desktop-endgames.jpg`.
+Screenshots (gitignored, local only): `../../../temp/subnav-uat/desktop-openings.jpg`, `temp/subnav-uat/desktop-endgames.jpg`.
 
 ## Why This Matters
 
@@ -106,11 +106,11 @@ called; how to measure impact (fixed-window funnel before/after).
 
 ## Breadcrumbs
 
-- `frontend/src/App.tsx` (`useNavIndicators`, `NavDot`, `NavIndicator`, ~lines 193-318)
-- `frontend/src/hooks/useUserFlag.ts` (localStorage flags behind the dots)
-- `frontend/src/pages/library/LibraryPage.tsx` (desktop + mobile subnav)
-- `frontend/src/pages/Openings.tsx` (~line 589 desktop tabs), `frontend/src/pages/Endgames.tsx` (~lines 403, 448)
-- `frontend/src/components/ui/tabs.tsx` (`brand` variant styling)
-- `frontend/src/components/import/importBotBubbleCopy.ts` (post-import links)
-- `frontend/src/lib/analytics.ts` (`identifyUser`; Umami `distinct_id` = `users.id`, Phase 229)
+- `../../../frontend/src/App.tsx` (`useNavIndicators`, `NavDot`, `NavIndicator`, ~lines 193-318)
+- `../../../frontend/src/hooks/useUserFlag.ts` (localStorage flags behind the dots)
+- `../../../frontend/src/pages/library/LibraryPage.tsx` (desktop + mobile subnav)
+- `../../../frontend/src/pages/Openings.tsx` (~line 589 desktop tabs), `frontend/src/pages/Endgames.tsx` (~lines 403, 448)
+- `../../../frontend/src/components/ui/tabs.tsx` (`brand` variant styling)
+- `../../../frontend/src/components/import/importBotBubbleCopy.ts` (post-import links)
+- `../../../frontend/src/lib/analytics.ts` (`identifyUser`; Umami `distinct_id` = `users.id`, Phase 229)
 - Related: SEED-198 / Phase 239 (Library Stats redesign), SEED-196 / Phase 238 (Endgame Stats redesign)

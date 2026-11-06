@@ -9,7 +9,7 @@
 
 ### Locked Decisions
 
-The locked decisions in SEED-206 (`.planning/seeds/SEED-206-out-of-the-opening-worse-better-rates.md`) carry over
+The locked decisions in SEED-206 (`../../seeds/closed/SEED-206-out-of-the-opening-worse-better-rates.md`) carry over
 verbatim and are summarised here so the planner has them in one place. This discussion settled the seed's open
 questions and dropped the popover histogram.
 
