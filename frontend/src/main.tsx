@@ -7,6 +7,7 @@ import App from "./App.tsx";
 import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
 import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
 import { installStalePreloadReload } from "@/lib/stalePreloadReload";
+import { installDomMutationGuard } from "@/lib/domMutationGuard";
 import { reloadAutomatically } from "@/lib/autoReload";
 import { captureFirstTouch } from "@/lib/firstTouch";
 import { identifyFromStoredToken, installUmamiBeforeSend } from "@/lib/analytics";
@@ -18,6 +19,10 @@ reportMaiaPageKillFromPreviousSession();
 
 // FLAWCHESS-C0: reload once when a lazy chunk from the previous deploy is gone.
 installStalePreloadReload();
+
+// FLAWCHESS-BV: keep Google Translate's DOM edits from crashing React. Must run
+// before createRoot below.
+installDomMutationGuard();
 
 // Remember where this browser first arrived from (referrer host,
 // utm tags, landing path) before the router rewrites the URL.
