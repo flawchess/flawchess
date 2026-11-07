@@ -4,14 +4,20 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { TrainArchiveItem } from '@/types/train';
 
-// Expose the props the card hands to the board, so the spoiler-free contract
-// (pre-mistake FEN, no arrows) is asserted on the real call, not on pixels.
+// Expose the props the card hands to the board, so the contract (pre-mistake FEN,
+// the played move as the only arrow) is asserted on the real call, not on pixels.
 const boardProps = vi.fn();
 vi.mock('@/components/board/LazyMiniBoard', () => ({
   LazyMiniBoard: (props: Record<string, unknown>) => {
     boardProps(props);
     return <div data-testid="mock-mini-board" />;
   },
+}));
+
+// The Library's severity filter, narrowed by one test to prove the card ignores it.
+const flawFilter = vi.hoisted(() => ({ severity: [] as ('blunder' | 'mistake')[] }));
+vi.mock('@/hooks/useFlawFilterStore', () => ({
+  useFlawFilterStore: () => [flawFilter],
 }));
 
 const trackFeature = vi.fn();
@@ -23,6 +29,7 @@ vi.mock('@/lib/analytics', async () => {
   };
 });
 
+import { SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
 import { TrainPuzzleCard } from '../TrainPuzzleCard';
 
 const FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2';
@@ -33,6 +40,9 @@ function makeItem(overrides: Partial<TrainArchiveItem> = {}): TrainArchiveItem {
     ply: 20,
     fen: FEN,
     last_move_uci: 'g1f3',
+    played_move_uci: 'b8c6',
+    played_move_san: 'Nc6',
+    severity: 'blunder',
     user_color: 'white',
     last_solved_at: '2026-10-03T12:00:00Z',
     fail_count: 4,
@@ -85,7 +95,7 @@ describe('TrainPuzzleCard board', () => {
   });
 
   it.each(['mastered', 'parked'] as const)(
-    'gives the board the pre-mistake FEN, the arriving move and no arrows on the %s list',
+    'gives the board the pre-mistake FEN, the arriving move and only the played move on the %s list',
     (list) => {
       renderCard(makeItem(), list);
       expect(boardProps).toHaveBeenCalled();
@@ -93,9 +103,22 @@ describe('TrainPuzzleCard board', () => {
       expect(props.fen).toBe(FEN);
       expect(props.lastMove).toEqual({ from: 'g1', to: 'f3' });
       expect(props.flipped).toBe(false);
-      expect('arrows' in props).toBe(false);
+      // Exactly one arrow: a second one would be the best move, which stays hidden.
+      expect(props.arrows).toEqual([{ from: 'b8', to: 'c6', color: SEV_BLUNDER }]);
     },
   );
+
+  it('colors the played-move arrow by severity', () => {
+    renderCard(makeItem({ severity: 'mistake' }));
+    const props = boardProps.mock.calls[0]![0] as Record<string, unknown>;
+    expect(props.arrows).toEqual([{ from: 'b8', to: 'c6', color: SEV_MISTAKE }]);
+  });
+
+  it('draws no arrow for an evicted puzzle with no severity', () => {
+    renderCard(makeItem({ severity: null }));
+    const props = boardProps.mock.calls[0]![0] as Record<string, unknown>;
+    expect(props.arrows).toBeUndefined();
+  });
 
   it('flips the board for a black user', () => {
     renderCard(makeItem({ user_color: 'black' }));
@@ -104,12 +127,42 @@ describe('TrainPuzzleCard board', () => {
   });
 
   it('renders the empty board slot for an unreplayable PGN and keeps Analyze working', () => {
-    renderCard(makeItem({ fen: null, last_move_uci: null }));
+    renderCard(
+      makeItem({ fen: null, last_move_uci: null, played_move_uci: null, played_move_san: null }),
+    );
     expect(screen.getByTestId('train-puzzle-board-unavailable')).toBeTruthy();
     expect(screen.queryByTestId('mock-mini-board')).toBeNull();
     expect(screen.getByTestId('btn-train-puzzle-analyze').getAttribute('href')).toBe(
       '/analysis?game_id=100&ply=19',
     );
+  });
+});
+
+describe('TrainPuzzleCard played move', () => {
+  it.each([
+    [20, 'Nc6', '11. Nc6'],
+    [21, 'Nc6', '11... Nc6'],
+  ])('at ply %i shows %s as %s', (ply, san, expected) => {
+    renderCard(makeItem({ ply, played_move_san: san }));
+    expect(screen.getByTestId('train-puzzle-played-move').textContent).toBe(expected);
+  });
+
+  it.each(['mistake', 'blunder'] as const)('shows the %s severity badge', (severity) => {
+    renderCard(makeItem({ severity }));
+    expect(screen.getByTestId(`severity-${severity}-100`)).toBeTruthy();
+  });
+
+  it('shows neither move nor badge for an evicted puzzle with no severity', () => {
+    renderCard(makeItem({ severity: null }));
+    expect(screen.queryByTestId('train-puzzle-played-move')).toBeNull();
+    expect(screen.queryByTestId('severity-blunder-100')).toBeNull();
+    expect(screen.queryByTestId('severity-mistake-100')).toBeNull();
+  });
+
+  it('omits the move and the badge when the PGN cannot be replayed', () => {
+    renderCard(makeItem({ fen: null, played_move_uci: null, played_move_san: null }));
+    expect(screen.queryByTestId('train-puzzle-played-move')).toBeNull();
+    expect(screen.queryByTestId('severity-blunder-100')).toBeNull();
   });
 });
 
@@ -197,14 +250,23 @@ describe('TrainPuzzleCard status line', () => {
   });
 });
 
-describe('TrainPuzzleCard spoiler-free contract (D-08)', () => {
-  it('holds no SAN move, motif or severity text', () => {
+describe('TrainPuzzleCard keeps the answer hidden', () => {
+  it('names only the played move, with no motif', () => {
     renderCard(makeItem(), 'parked');
     const content = screen.getByTestId('train-puzzle-card-100-20').textContent ?? '';
     // SAN token: a piece move (Nf3, Qxd5), castling, or a pawn move (e4, exd5).
     const SAN_TOKEN = /\b([KQRBN][a-h]?[1-8]?x?[a-h][1-8]|O-O(-O)?|[a-h]x?[a-h]?[1-8])\b/;
-    expect(content).not.toMatch(SAN_TOKEN);
-    expect(content).not.toMatch(/blunder|mistake|inaccuracy|fork|pin|skewer|retry/i);
+    const playedMove = text('train-puzzle-played-move');
+    expect(playedMove).toBe('11. Nc6');
+    expect(content.replace(playedMove, '')).not.toMatch(SAN_TOKEN);
+    expect(content).not.toMatch(/fork|pin|skewer|retry/i);
     expect(screen.queryByTestId('train-puzzle-retry')).toBeNull();
+  });
+
+  it('ignores the Library severity filter, so the badge never rings', () => {
+    flawFilter.severity = ['blunder'];
+    renderCard(makeItem({ severity: 'blunder' }));
+    expect(screen.getByTestId('severity-blunder-100').className).not.toContain('ring');
+    flawFilter.severity = [];
   });
 });

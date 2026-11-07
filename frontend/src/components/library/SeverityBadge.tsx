@@ -83,6 +83,11 @@ interface SeverityBadgeProps {
    * (Games card keeps the count + plural, e.g. "3 Blunders").
    */
   showCount?: boolean;
+  /**
+   * When false, never ring for the Library's severity filter. For surfaces outside
+   * the Library (Train Archive), where that filter does not apply. Defaults to true.
+   */
+  showActiveFilterRing?: boolean;
   /** Extra classes merged onto the badge span (e.g. `self-start` to size to content). */
   className?: string;
 }
@@ -106,10 +111,12 @@ export function SeverityBadge({
   onHover,
   onActivate,
   showCount = true,
+  showActiveFilterRing = true,
   className,
 }: SeverityBadgeProps) {
   const [flawFilter] = useFlawFilterStore();
   const isActive =
+    showActiveFilterRing &&
     (severity === 'blunder' || severity === 'mistake') &&
     flawFilter.severity.length === 1 &&
     flawFilter.severity.includes(severity);

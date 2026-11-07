@@ -13,7 +13,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis: every mistake and blunder, yours and your opponent's, now gets an Explain bar (under the move list on desktop, above the board controls on mobile) naming the move, its severity and the tactic behind it. Best plays the better move instead, Punish plays the refutation, both right on the board; step through the line with Back and Forward, and Got it takes you back to the game move.
 - Analysis: the move list now shows your opponent's tactic tags too, and only one tactic line is open at a time. On mobile the PGN/FEN menu moved to an icon under the board to free up space for the move list.
 - Analysis: the PGN/FEN button now opens a menu with "Import PGN/FEN", "Copy PGN" (the whole move tree, with your side lines as variations and the game's players, ratings, date and result as headers) and "Copy FEN" (the position on the board).
-- Train: mastered and parked puzzles are now browsable in a new Archive tab, newest first, with the position, the game details and when you mastered or parked each one. Analyze opens the game on that position.
+- Train: mastered and parked puzzles are now browsable in a new Archive tab, newest first, with the position, the mistake or blunder you played, the game details and when you mastered or parked each one. Analyze opens the game on that position.
 - Openings Stats now opens with "Out of the opening": how often you leave the opening clearly worse or clearly better than a typical position for your colour, ranked against benchmarked Lichess players at your rating in each time control. The popover breaks it down by time control.
 
 ### Changed

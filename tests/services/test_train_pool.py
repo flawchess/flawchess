@@ -68,6 +68,7 @@ from app.services.train_pool import (
     classify_puzzle_type,
     expected_score_for,
     fen_and_last_move_at_ply,
+    replay_at_ply,
     full_fen_at_ply,
     graded_moves_from_vetted,
     herring_stmt,
@@ -622,6 +623,35 @@ class TestVettedMovesFromLadder:
 # TestFenAndLastMoveAtPly — the shared PGN-replay helper
 # behind TrainPuzzle.last_move_uci and full_fen_at_ply's delegation.
 # ---------------------------------------------------------------------------
+
+
+class TestReplayAtPly:
+    """replay_at_ply: the position plus the moves either side of it."""
+
+    def test_next_move_is_the_one_played_from_the_position(self) -> None:
+        # _PGN's half-move at index 5 follows 3. Bb5 (index 4).
+        replay = replay_at_ply(_PGN, 5)
+        assert replay is not None
+        assert replay.last_move_uci == "f1b5"
+        assert replay.next_move_uci == "a7a6"
+        assert replay.next_move_san == "a6"
+
+    def test_ply_zero_has_a_next_move_and_no_last_move(self) -> None:
+        replay = replay_at_ply(_PGN, 0)
+        assert replay is not None
+        assert replay.last_move_uci is None
+        assert replay.next_move_uci == "e2e4"
+        assert replay.next_move_san == "e4"
+
+    def test_end_of_game_has_no_next_move(self) -> None:
+        # _PGN has 14 half-moves.
+        replay = replay_at_ply(_PGN, 14)
+        assert replay is not None
+        assert replay.next_move_uci is None
+        assert replay.next_move_san is None
+
+    def test_unparseable_pgn_returns_none(self) -> None:
+        assert replay_at_ply("not a real pgn {{{", 1) is None
 
 
 class TestFenAndLastMoveAtPly:

@@ -385,8 +385,8 @@ async def get_train_archive(
 
     Read-only, so no commit. The user id comes only from `current_active_user`
     (V4/IDOR guard) and guests are allowed. ACTIVE puzzles cannot be listed:
-    `list` admits only `mastered` and `parked`. Items carry no move, motif or
-    severity (D-08), so nothing here spoils a later Retry.
+    `list` admits only `mastered` and `parked`. Items name the played mistake but
+    carry no best move or motif, so the answer stays out of the list.
     """
     try:
         page = await train_repository.get_archive_page(
@@ -403,6 +403,9 @@ async def get_train_archive(
                 ply=row.ply,
                 fen=row.fen,
                 last_move_uci=row.last_move_uci,
+                played_move_uci=row.played_move_uci,
+                played_move_san=row.played_move_san,
+                severity=row.severity,
                 user_color=row.user_color,
                 last_solved_at=row.last_solved_at,
                 fail_count=row.fail_count,

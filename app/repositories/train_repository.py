@@ -46,8 +46,15 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
+from app.repositories.game_flaws_repository import _SEVERITY_INT
 from app.schemas.normalization import TimeControlBucket
-from app.schemas.train import ArchiveList, OnboardingStep, PhoneGrade, SolveRecheck
+from app.schemas.train import (
+    ArchiveList,
+    ArchiveSeverity,
+    OnboardingStep,
+    PhoneGrade,
+    SolveRecheck,
+)
 from app.services.best_move_candidates import mover_color_for_ply
 from app.services.flaws_service import classify_severity
 from app.services.sharp_filler import (
@@ -69,6 +76,7 @@ from app.services.train_pool import (
     compose_slots,
     dead_band_admissible,
     fen_and_last_move_at_ply,
+    replay_at_ply,
     full_fen_at_ply,
     herring_stmt,
     legal_answer_key,
@@ -585,6 +593,12 @@ ARCHIVE_LIST_STATUS: Final[dict[ArchiveList, DrillStatus]] = {
     "parked": DrillStatus.PARKED,
 }
 
+#: `game_flaws.severity` as the Archive's wire value (game_flaws is M+B only).
+_ARCHIVE_SEVERITY: Final[dict[int, ArchiveSeverity]] = {
+    _SEVERITY_INT["mistake"]: "mistake",
+    _SEVERITY_INT["blunder"]: "blunder",
+}
+
 
 @dataclass(frozen=True)
 class ArchiveItemRow:
@@ -594,6 +608,9 @@ class ArchiveItemRow:
     ply: int
     fen: str | None
     last_move_uci: str | None
+    played_move_uci: str | None
+    played_move_san: str | None
+    severity: ArchiveSeverity | None
     user_color: Literal["white", "black"]
     last_solved_at: datetime.datetime | None
     fail_count: int
@@ -619,8 +636,9 @@ def _archive_page_stmt(
 ) -> Select[Any]:
     """Build the Archive page query: sort and page first, join `games` after.
 
-    Evicted items stay listed per D-14: nothing selected comes from `game_flaws`,
-    so that table is not joined at all.
+    Evicted items stay listed per D-14, so `game_flaws` is an OUTER join on its
+    primary key: it cannot drop or multiply rows, and an evicted item's severity
+    is null.
     """
     # Deliberately ONE grouped scan: `drill_solves` has no user or game index, so
     # a correlated per-item subquery would be one full scan per item.
@@ -678,9 +696,18 @@ def _archive_page_stmt(
             Game.played_at,
             Game.time_control_bucket,
             Game.time_control_str,
+            GameFlaw.severity,
         )
         .select_from(page)
         .join(Game, Game.id == page.c.game_id)
+        .outerjoin(
+            GameFlaw,
+            and_(
+                GameFlaw.user_id == user_id,
+                GameFlaw.game_id == page.c.game_id,
+                GameFlaw.ply == page.c.ply,
+            ),
+        )
         .order_by(
             page.c.last_solved_at.desc().nulls_last(),
             page.c.game_id.desc(),
@@ -719,14 +746,16 @@ async def get_archive_page(
         # Unlike `load_session_puzzles`, which drops a puzzle whose position cannot
         # be rebuilt, an unreplayable PGN keeps its row here with a null fen: dropping
         # it would make the list shorter than the count and drift the page math.
-        replay = fen_and_last_move_at_ply(row.pgn, row.ply)
-        fen, last_move_uci = replay if replay is not None else (None, None)
+        replay = replay_at_ply(row.pgn, row.ply)
         rows.append(
             ArchiveItemRow(
                 game_id=row.game_id,
                 ply=row.ply,
-                fen=fen,
-                last_move_uci=last_move_uci,
+                fen=replay.fen if replay is not None else None,
+                last_move_uci=replay.last_move_uci if replay is not None else None,
+                played_move_uci=replay.next_move_uci if replay is not None else None,
+                played_move_san=replay.next_move_san if replay is not None else None,
+                severity=_ARCHIVE_SEVERITY[row.severity] if row.severity is not None else None,
                 user_color=cast(Literal["white", "black"], row.user_color),
                 last_solved_at=row.last_solved_at,
                 fail_count=row.fail_count,

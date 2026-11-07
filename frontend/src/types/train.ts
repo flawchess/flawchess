@@ -577,6 +577,8 @@ export interface MedalKey {
 /** Which archive list a puzzle lives in. Mirrors the status filter of GET /train/archive. */
 export type ArchiveList = 'mastered' | 'parked';
 
+export type ArchiveSeverity = 'mistake' | 'blunder';
+
 /**
  * One archived (mastered or parked) puzzle. Mirrors app/schemas/train.py
  * field for field. Deliberately carries no spoiler field (no played move,
@@ -588,6 +590,11 @@ export interface TrainArchiveItem {
   /** null only for an unreplayable PGN. */
   fen: string | null;
   last_move_uci: string | null;
+  /** The move the user originally played from `fen`; null for an unreplayable PGN. */
+  played_move_uci: string | null;
+  played_move_san: string | null;
+  /** null for an evicted puzzle, no longer classified as a mistake. */
+  severity: ArchiveSeverity | null;
   user_color: 'white' | 'black';
   last_solved_at: string | null;
   fail_count: number;

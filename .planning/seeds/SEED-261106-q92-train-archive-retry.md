@@ -35,7 +35,7 @@ Mastered puzzles stop coming back and parked puzzles are set aside, so the Archi
 - **Separate solve path:** solves currently go through `POST /train/sessions/{session_id}/solve`, and `drill_solves` rows require a session (primary key `session_id` + `position`). Retry needs its own session-less path that writes nothing to `drill_solves`. A row there could affect stats and the Archive's newest-first sort, which relies on the latest `drill_solves.solved_at` per puzzle.
 - **Solve screen:** `TrainSolveScreen` takes the `trainSession` object as a prop and is tightly bound to it, so reusing it needs a seam for a session-less run. The reveal endpoint is also keyed by session and position.
 - **Guess step (inferred from the schema, not confirmed):** each puzzle includes a guess (`drill_solves.guess`, `correct_guess`) and red herrings exist, but archive puzzles are never herrings. If the guess is about spotting herrings, it is spoiled in a retry, so retry should probably go straight to the move. Confirm what the guess asks during planning.
-- **Cards:** they already show the pre-mistake position with no arrows so the answer isn't given away, and SEED-261106-gw8 reserves space for the button.
+- **Cards:** they show the pre-mistake position and, since 2026-11-07, the played mistake (arrow, notation, severity) but never the best move, so the answer isn't given away, though a retry starts knowing which move to avoid. SEED-261106-gw8 reserves space for the button.
 - **Analytics:** a retry writes no row, so unlike DB-known actions it needs a `trackFeature` event registered in `FeatureEventMap`.
 
 ## Breadcrumbs

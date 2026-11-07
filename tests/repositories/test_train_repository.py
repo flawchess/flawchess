@@ -6510,7 +6510,54 @@ async def test_archive_corrupt_pgn_keeps_row_with_null_fen(db_session: AsyncSess
     assert bad.game_id == bad_game
     assert bad.fen is None
     assert bad.last_move_uci is None
+    assert bad.played_move_uci is None
+    assert bad.played_move_san is None
     assert page.rows[1].fen is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("severity_int", "expected"), [(1, "mistake"), (2, "blunder")], ids=["mistake", "blunder"]
+)
+async def test_archive_reports_the_played_move_and_severity(
+    db_session: AsyncSession, severity_int: int, expected: str
+) -> None:
+    """The move comes from the PGN at the puzzle's own ply, not the arriving move,
+    and the severity from its flaw row."""
+    await ensure_test_user(db_session, _USER_ID)
+    game_id = await _seed_flaw_game(db_session, _USER_ID, "arch-played")
+    await _add_archive_item(db_session, _USER_ID, game_id)
+    await db_session.execute(
+        update(GameFlaw)
+        .where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+        .values(severity=severity_int)
+    )
+    await db_session.flush()
+
+    page = await _archive_rows(db_session)
+
+    row = page.rows[0]
+    assert row.last_move_uci == "e7e5"
+    assert row.played_move_uci == "g1f3"
+    assert row.played_move_san == "Nf3"
+    assert row.severity == expected
+
+
+@pytest.mark.asyncio
+async def test_archive_evicted_puzzle_stays_listed_with_null_severity(
+    db_session: AsyncSession,
+) -> None:
+    """D-14: with its flaw row gone the puzzle is still listed, and severity is null."""
+    await ensure_test_user(db_session, _USER_ID)
+    game_id = await _seed_flaw_game(db_session, _USER_ID, "arch-evicted")
+    await _add_archive_item(db_session, _USER_ID, game_id)
+    await db_session.execute(delete(GameFlaw).where(GameFlaw.game_id == game_id))
+    await db_session.flush()
+
+    page = await _archive_rows(db_session)
+
+    assert page.total == len(page.rows) == 1
+    assert page.rows[0].severity is None
 
 
 @pytest.mark.asyncio

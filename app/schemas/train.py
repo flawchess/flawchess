@@ -841,19 +841,23 @@ class TrainProgressResponse(BaseModel):
 
 
 ArchiveList = Literal["mastered", "parked"]
+ArchiveSeverity = Literal["mistake", "blunder"]
 
 
 class TrainArchiveItem(BaseModel):
     """One mastered or parked puzzle in the Archive list (GET /train/archive).
 
-    Deliberately carries NO `played_move`, `best_move`, `move_san`, severity or
-    motif (D-08): any of them would spoil a later Retry of the same puzzle, and
-    Analyze shows them anyway for a user who wants them.
+    Carries the move the user originally played and its severity, but deliberately
+    NOT `best_move` or a motif: the card names the mistake, never the answer, and
+    Analyze shows the rest for a user who wants it.
 
-    `fen` and `last_move_uci` are null only when the game's PGN cannot be
-    replayed to `ply`. The row is kept (rather than dropped, as session
+    `fen`, `last_move_uci` and `played_move_*` are null when the game's PGN cannot
+    be replayed to `ply`. The row is kept (rather than dropped, as session
     composition does) so that the list length always equals `total`, which
     equals the toggle count from GET /train/progress.
+
+    `severity` is null for an evicted puzzle whose `game_flaws` row is gone (D-14):
+    it is no longer classified as a mistake, so the card shows no played move.
 
     `last_solved_at` is the latest SR_ITEM solve of this user for the puzzle;
     null when no such solve row exists.
@@ -863,6 +867,9 @@ class TrainArchiveItem(BaseModel):
     ply: int
     fen: str | None
     last_move_uci: str | None
+    played_move_uci: str | None
+    played_move_san: str | None
+    severity: ArchiveSeverity | None
     user_color: Literal["white", "black"]
     last_solved_at: datetime | None
     fail_count: int
