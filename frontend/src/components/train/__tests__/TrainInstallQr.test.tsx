@@ -33,12 +33,29 @@ describe('TrainInstallQr', () => {
     );
   });
 
-  it('renders the caption text beneath the chip', async () => {
-    render(<TrainInstallQr testId="qr-handoff-test" />);
+  it('renders the caption text after the chip', async () => {
+    const { container } = render(<TrainInstallQr testId="qr-handoff-test" />);
 
     await waitFor(() => {
       expect(screen.getByText(QR_CAPTION)).not.toBeNull();
     });
+    const chip = container.querySelector('.bg-white');
+    expect(chip?.nextElementSibling?.textContent).toBe(QR_CAPTION);
+  });
+
+  it('renders children before the chip and caption', async () => {
+    render(
+      <TrainInstallQr testId="qr-handoff-test">
+        <span>Test child</span>
+      </TrainInstallQr>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Test child')).not.toBeNull();
+    });
+    const root = screen.getByTestId('qr-handoff-test');
+    expect(root.firstElementChild?.textContent).toBe('Test child');
+    expect(root.lastElementChild?.textContent).toBe(QR_CAPTION);
   });
 
   it('applies the caller-supplied testId to its root; two instances with different testIds are both independently queryable', async () => {

@@ -163,6 +163,12 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+      # A bundle/version.json build-ID split would reload every client on every
+      # resume, so it must never reach a release.
+      - name: PWA build invariants
+        run: npm run check:pwa-build
+        working-directory: frontend
+
       - name: Run tests (vitest)
         run: npm test
         working-directory: frontend

@@ -18,7 +18,7 @@
  * overshoots the array, leaving `currentPuzzle` permanently null — the
  * "Resume session — N of M done" button renders correctly (it reads
  * `solved_count`/`puzzle_count` directly) but clicking it does nothing,
- * because `Train.tsx`'s `showLoop` gate never turns true.
+ * because `useTrainLoop`'s `showLoop` gate never turns true.
  * `puzzles[0]` IS the correct resume point in BOTH the fresh case (the full
  * array, so index 0 is the first puzzle) and the resume case (already only
  * the remaining puzzles, so index 0 is the next unsolved one) — the array's
@@ -32,16 +32,16 @@
  * screen whether the user has a fresh/short/
  * resumable/completed/empty session — there is no separate preview GET. The
  * call is resume-safe (idempotent per local day, see
- * `compose_and_materialize_session`'s docstring), so `Train.tsx` fires
- * `startSession()` automatically on mount as a STATUS fetch; "no
+ * `compose_and_materialize_session`'s docstring), so `useTrainLoop` fires
+ * `startSession()` automatically on the first Today visit as a STATUS fetch; "no
  * auto-start on visit" means never skipping straight into the solve loop
  * UI, not about avoiding this read. Pressing Start/Resume only flips local
  * loop-entry state — it does not call this again.
  *
  * `startSession()` IS re-fired once more, from
  * `TrainScheduleSettings`'s `onSaved` callback (threaded through
- * `TrainStartScreen`'s `onSettingsSaved` prop to `Train.tsx`'s own
- * `startSession`) after a schedule-settings save actually persists. Without
+ * `TrainStartScreen`'s `onSettingsSaved` prop to `useTrainLoop`'s
+ * `requestSessionReread`) after a schedule-settings save actually persists. Without
  * this, an untouched session composed at mount under the OLD
  * `puzzles_per_session` would stay frozen at the stale size for the rest of the
  * visit even after the setting changed — the backend's own resize-discard
@@ -92,8 +92,8 @@ export interface UseTrainSessionResult {
    * `session.solved_count` for that. */
   currentIndex: number | null;
   currentPuzzle: TrainPuzzle | null;
-  /** Fetch/resume today's session. Called once automatically by `Train.tsx`
-   * on mount (a status read, not a loop-entry action — see module docstring). */
+  /** Fetch/resume today's session. Called once automatically by `useTrainLoop`
+   * on the first Today visit (a status read, not a loop-entry action — see module docstring). */
   startSession: () => void;
   /** Records the Start/Resume press server-side (fire-and-forget). The
    * mount-time `startSession()` status read persists a session row too, so
@@ -268,7 +268,7 @@ export function useTrainSession(): UseTrainSessionResult {
   //
   // This is not a micro-optimization. An unstable callback makes any CALLER
   // effect that depends on it re-run every render, and the workaround for
-  // that (a "fire only once" ref latch in Train.tsx's mount effect) hung the
+  // that (a "fire only once" ref latch in useTrainLoop's mount effect) hung the
   // page under StrictMode — see that effect's comment for the full story.
   const { mutate: mutateSession } = sessionMutation;
   const startSession = useCallback(() => {

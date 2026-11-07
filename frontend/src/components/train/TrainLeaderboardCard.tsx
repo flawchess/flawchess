@@ -1,6 +1,6 @@
 /**
- * TrainLeaderboardCard — the one "This week" card on the Train landing
- * with a Points | Accuracy tab toggle (the choice is remembered in
+ * TrainLeaderboardCard — the one "This week" card on the Train Leaderboard tab
+ * under Points | Accuracy filter pills (the choice is remembered in
  * localStorage), the top 5 plus the viewer's own row (highlighted) and its
  * neighbours with a gap marker between the two (and a trailing one when lower
  * ranks are cut), one viewer hint line under the board, a "Not yet qualified
@@ -14,7 +14,7 @@
  *
  * `TrainLeaderboardCard` is the thin container, self-contained apart from
  * `isGuest`: it calls `useTrainLeaderboard()` itself, exactly like
- * `TrainStatsCard` calls `useTrainProgress()`, and owns the countdown, tab
+ * `TrainStreakCard` calls `useTrainProgress()`, and owns the countdown, tab
  * state and the Umami tab-switch. `TrainLeaderboardCardView` renders the whole
  * card from props, so the admin "Leaderboard medals demo" shows production
  * markup from fixtures. Names are other users' self-typed platform usernames,
@@ -28,6 +28,7 @@ import { Card } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { TRAIN_FILTER_PILL_CLASS, TRAIN_FILTER_PILL_SPACING } from '@/components/train/buttonStyles';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { LastWeekPodium } from '@/components/train/medals/LastWeekPodium';
 import { MedalTally } from '@/components/train/medals/MedalTally';
@@ -199,21 +200,22 @@ function LeaderboardTabs({ tab, onChange }: LeaderboardTabsProps): ReactElement 
       onValueChange={onChange}
       variant="outline"
       size="sm"
-      className="mb-2 w-full"
+      spacing={TRAIN_FILTER_PILL_SPACING}
+      className="mb-4"
       aria-label="Leaderboard"
       data-testid="train-leaderboard-tabs"
     >
       <ToggleGroupItem
         value="points"
         data-testid="train-leaderboard-tab-points"
-        className="min-h-11 flex-1 text-sm sm:min-h-0"
+        className={TRAIN_FILTER_PILL_CLASS}
       >
         Points
       </ToggleGroupItem>
       <ToggleGroupItem
         value="accuracy"
         data-testid="train-leaderboard-tab-accuracy"
-        className="min-h-11 flex-1 text-sm sm:min-h-0"
+        className={TRAIN_FILTER_PILL_CLASS}
       >
         Accuracy
       </ToggleGroupItem>
@@ -363,50 +365,56 @@ export function TrainLeaderboardCardView({
   onTabChange,
   isGuest,
 }: TrainLeaderboardCardViewProps): ReactElement {
+  // The selected board is known before the data arrives, so the pills show during
+  // loading too. Without data after a failed load there is no board to switch.
+  const showTabs = isPending || data !== undefined;
+
   return (
-    <Card as="section" className="w-full p-4" data-testid="train-leaderboard-card">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          <h2 className="text-base font-semibold">This week</h2>
-          <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
-            <div className="space-y-1">
-              <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
-              <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
-              {/* Guests never appear on the boards, so the opt-out hint is for signed-in users only. */}
-              {!isGuest && (
-                <p data-testid="train-leaderboard-info-opt-out">
-                  You can hide yourself from the leaderboards in the{' '}
-                  <SettingsIcon className="inline h-3.5 w-3.5 align-text-bottom" aria-label="Settings" />{' '}
-                  settings.
-                </p>
-              )}
-            </div>
-          </InfoPopover>
+    <>
+      {showTabs && <LeaderboardTabs tab={tab} onChange={onTabChange} />}
+      <Card as="section" className="w-full p-4" data-testid="train-leaderboard-card">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-semibold">This week</h2>
+            <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
+              <div className="space-y-1">
+                <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
+                <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
+                {/* Guests never appear on the boards, so the opt-out hint is for signed-in users only. */}
+                {!isGuest && (
+                  <p data-testid="train-leaderboard-info-opt-out">
+                    You can hide yourself from the leaderboards in the{' '}
+                    <SettingsIcon className="inline h-3.5 w-3.5 align-text-bottom" aria-label="Settings" />{' '}
+                    settings.
+                  </p>
+                )}
+              </div>
+            </InfoPopover>
+          </div>
+          {secondsRemaining !== null && (
+            <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
+              {formatCountdown(secondsRemaining)}
+            </span>
+          )}
         </div>
-        {secondsRemaining !== null && (
-          <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
-            {formatCountdown(secondsRemaining)}
-          </span>
+        {isPending && (
+          <div
+            data-testid="train-leaderboard-loading"
+            className="h-24 w-full animate-pulse rounded-md bg-muted"
+            aria-hidden="true"
+          />
         )}
-      </div>
-      {isPending && (
-        <div
-          data-testid="train-leaderboard-loading"
-          className="h-24 w-full animate-pulse rounded-md bg-muted"
-          aria-hidden="true"
-        />
-      )}
-      {!isPending && (isError || data === undefined) && (
-        <LoadError resource="the leaderboard" variant="inline" data-testid="train-leaderboard-error" />
-      )}
-      {data !== undefined && (
-        <>
-          <LeaderboardTabs tab={tab} onChange={onTabChange} />
-          <LeaderboardBoardView tab={tab} data={data} />
-          {isGuest && <LeaderboardGuestCta />}
-        </>
-      )}
-    </Card>
+        {!isPending && (isError || data === undefined) && (
+          <LoadError resource="the leaderboard" variant="inline" data-testid="train-leaderboard-error" />
+        )}
+        {data !== undefined && (
+          <>
+            <LeaderboardBoardView tab={tab} data={data} />
+            {isGuest && <LeaderboardGuestCta />}
+          </>
+        )}
+      </Card>
+    </>
   );
 }
 

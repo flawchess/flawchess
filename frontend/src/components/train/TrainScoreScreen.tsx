@@ -55,6 +55,7 @@ import { TrainScoreRankLines } from '@/components/train/TrainScoreRankLines';
 import { pickBot, scoreBubbleCopy, type ReminderAsk, type TrainCopyAudience } from '@/lib/trainBotCopy';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
+import { useHoldUpdateReload } from '@/lib/updateReload';
 import type { SolvedResult } from '@/types/train';
 import {
   TRAIN_RATING_GREEN,
@@ -159,6 +160,8 @@ export function TrainScoreScreen({
   isGuest,
   sessionId,
 }: TrainScoreScreenProps): ReactElement {
+  // The score screen is local Train.tsx state, so an update reload here would lose it.
+  useHoldUpdateReload();
   const percentage = displaySessionPercentage(score);
   const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
   const bandColor = band !== null ? RATING_BAND_COLOR[band] : null;

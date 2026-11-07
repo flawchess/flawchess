@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { createHash } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { defineConfig, type Plugin, type ViteDevServer, type PreviewServer } from 'vite'
@@ -7,6 +7,37 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { vitePrerenderPlugin } from 'vite-prerender-plugin'
+import {
+  HTML_SHELL_CACHE_NAME,
+  htmlShellCacheKeyPlugin,
+  isHtmlShellNavigation,
+} from './src/lib/htmlShellCache.ts'
+
+// Build ID: the running bundle compares this against /version.json to notice it
+// is outdated (src/lib/buildVersionCheck.ts). Generated once at config
+// evaluation so the compiled-in literal (`define` below) and the emitted
+// version.json can never disagree. Not derived from git: .dockerignore lists
+// `.git`, the node:24-alpine build image ships no git, and docker-compose
+// passes no commit build arg. The compact UTC timestamp doubles as the running
+// build's age in Sentry diagnostics.
+const BUILD_ID_RANDOM_BYTES = 3
+const BUILD_ID = `${new Date().toISOString().replace(/\.\d+Z$/, 'Z').replace(/[-:]/g, '')}-${randomBytes(BUILD_ID_RANDOM_BYTES).toString('hex')}`
+
+// Emits dist/version.json ({ buildId }) from the same BUILD_ID the bundle was
+// compiled with. Caddy serves it no-cache (deploy/Caddyfile).
+function buildVersionPlugin(): Plugin {
+  return {
+    name: 'build-version',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ buildId: BUILD_ID }),
+      })
+    },
+  }
+}
 
 // Social media crawlers aggressively cache OG images by URL. Appending a
 // content hash as a query string forces re-fetch when the image changes.
@@ -93,6 +124,11 @@ export default defineConfig({
     setupFiles: ['src/vitest.setup.ts'],
   },
   envDir: path.resolve(import.meta.dirname, '..'), // Load .env from project root
+  define: {
+    // Replaced only when written as the exact dotted expression
+    // `import.meta.env.VITE_BUILD_ID` in source (no destructuring or aliasing).
+    'import.meta.env.VITE_BUILD_ID': JSON.stringify(BUILD_ID),
+  },
   optimizeDeps: {
     // Prevent Vite's esbuild optimizer from relocating the stockfish/onnxruntime-web
     // package JS to .vite/deps/, which would break their relative WASM paths.
@@ -102,6 +138,7 @@ export default defineConfig({
   plugins: [
     crossOriginIsolationPlugin(),
     ogImageHashPlugin(),
+    buildVersionPlugin(),
     react(),
     tailwindcss(),
     vitePrerenderPlugin({
@@ -186,12 +223,22 @@ export default defineConfig({
             // networkTimeoutSeconds — a timeout would reintroduce a staleness window
             // where a slow-but-online resume serves an old shell referencing deleted
             // hashed assets (404s).
-            urlPattern: ({ request, url }) =>
-              request.mode === 'navigate' && !url.pathname.startsWith('/api/'),
+            //
+            // Bug fix: entries were keyed per full URL with no expiry, so
+            // /?utm_source=pwa (the PWA start_url) could hold a weeks-old shell,
+            // served whenever its network fetch threw. All route-like navigations
+            // now share ONE entry, the latest successful load (see
+            // src/lib/htmlShellCache.ts; isHtmlShellNavigation and the key plugin
+            // are serialized into sw.js, so they must stay self-contained).
+            // Legacy per-URL entries in the existing `html-shell` cache stay in
+            // place: unreachable, a handful of small documents, and their `date`
+            // headers are evidence in the stale-build diagnostics.
+            urlPattern: isHtmlShellNavigation,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'html-shell',
+              cacheName: HTML_SHELL_CACHE_NAME,
               cacheableResponse: { statuses: [200] },
+              plugins: [htmlShellCacheKeyPlugin],
             },
           },
         ],

@@ -201,7 +201,7 @@ discuss-phase" and record defaults for the rest.
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Locked design
-- `.planning/seeds/SEED-204-openings-stats-insights-rework.md` — locked decisions and implied work (binding)
+- `../../seeds/closed/SEED-204-openings-stats-insights-rework.md` — locked decisions and implied work (binding)
 - `.planning/sketches/012-opening-stats-repertoire/README.md` — Round 2 decisions (binding)
 - `.planning/sketches/012-opening-stats-repertoire/index.html` + `data.js` — visual target (phone/tablet/desktop)
 - `.planning/sketches/MANIFEST.md` — "012 →" winner summary

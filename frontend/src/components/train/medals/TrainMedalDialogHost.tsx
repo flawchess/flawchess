@@ -1,10 +1,10 @@
 /**
  * TrainMedalDialogHost — fetches the user's unclaimed weekly medals and shows
- * the claim dialog on the Train landing.
+ * the claim dialog.
  *
- * Mounted by TrainStartScreen's empty, completed and fresh/resume/warmup
- * branches only (never loading or error; Train.tsx renders the landing outside
- * the solve loop and the score screen is separate), and never for guests. It
+ * Mounted by the Train page layout (Train.tsx) outside the immersive views
+ * (the solve loop, the score screen and a restored reveal), so it opens on any
+ * tab and never over a session, and never fetches for guests. It
  * opens once per mount, when the list fetched AFTER this mount is non-empty:
  * `isFetchedAfterMount` rules out a stale cache entry showing medals that were
  * already claimed. Claim and dismiss both close it for the visit and POST the

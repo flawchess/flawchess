@@ -285,6 +285,31 @@ describe('TrainLeaderboardCard tabs', () => {
     expect(screen.getByTestId('train-leaderboard-tab-points').textContent).toBe('Points');
   });
 
+  it('puts the pills above the card, not inside it', async () => {
+    respondWith(TABBED_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-rows');
+    const tabs = screen.getByTestId('train-leaderboard-tabs');
+    const card = screen.getByTestId('train-leaderboard-card');
+    expect(card.contains(tabs)).toBe(false);
+    expect(tabs.nextElementSibling).toBe(card);
+  });
+
+  it('shows the pills while the board loads, with the remembered board selected', () => {
+    localStorage.setItem('flawchess_train_leaderboard_tab', 'accuracy');
+    getSpy.mockReturnValue(new Promise(() => undefined));
+    renderCard();
+    expect(screen.getByTestId('train-leaderboard-loading')).not.toBeNull();
+    expect(screen.getByTestId('train-leaderboard-tab-accuracy').getAttribute('data-state')).toBe('on');
+  });
+
+  it('hides the pills after a failed load, when there is no board to switch', async () => {
+    getSpy.mockRejectedValue(new Error('boom'));
+    renderCard();
+    await screen.findByTestId('train-leaderboard-error');
+    expect(screen.queryByTestId('train-leaderboard-tabs')).toBeNull();
+  });
+
   it('clicking Accuracy shows % rows, one qualify divider with the threshold and rank-less tentative rows', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();

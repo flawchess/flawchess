@@ -4379,3 +4379,319 @@ async def test_phone_grade_never_earns_disagreement_credit(test_engine) -> None:
         assert body["correct_guess"] is False
     finally:
         await _delete_games(test_engine, [game_id])
+
+
+# ---------------------------------------------------------------------------
+# GET /train/archive: the mastered / parked puzzle list
+# ---------------------------------------------------------------------------
+
+ARCHIVE_ENDPOINT = "/api/train/archive"
+
+#: The exact wire key set of one archive item (D-08): no played move, best move,
+#: motif or severity, because any of them would spoil a later Retry.
+_ARCHIVE_ITEM_KEYS = {
+    "game_id",
+    "ply",
+    "fen",
+    "last_move_uci",
+    "user_color",
+    "last_solved_at",
+    "fail_count",
+    "white_username",
+    "black_username",
+    "white_rating",
+    "black_rating",
+    "played_at",
+    "time_control_bucket",
+    "time_control_str",
+}
+
+
+async def _seed_archive_puzzle(
+    test_engine,
+    user_id: int,
+    game_id: int,
+    ply: int,
+    *,
+    status: int,
+    fail_count: int,
+    solved_at: datetime.datetime | None,
+) -> int:
+    """Seed a drill_items row plus one closed session holding one SR_ITEM solve.
+
+    Returns the session id so the caller can clean it up.
+    """
+    await _seed_drill_item(test_engine, user_id, game_id, ply, status=status, fail_count=fail_count)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    async with session_maker() as session:
+        async with session.begin():
+            drill_session = DrillSession(
+                user_id=user_id,
+                session_date=today,
+                status="completed",
+                puzzle_count=1,
+                expires_on=today + datetime.timedelta(days=7),
+            )
+            session.add(drill_session)
+            await session.flush()
+            session.add(
+                DrillSolve(
+                    session_id=drill_session.id,
+                    position=0,
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=ply,
+                    source=int(DrillSource.SR_ITEM),
+                    solved_at=solved_at,
+                )
+            )
+            return drill_session.id
+
+
+_ARCHIVE_SOLVED_AT = datetime.datetime(2026, 3, 4, 12, 0, tzinfo=datetime.timezone.utc)
+
+
+async def _get_archive(token: str, query: str = "") -> httpx.Response:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return await client.get(
+            f"{ARCHIVE_ENDPOINT}{query}", headers={"Authorization": f"Bearer {token}"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_archive_lists_a_mastered_puzzle_end_to_end(test_engine) -> None:
+    """A mastered puzzle comes back over HTTP with position, game details, solve
+    date and miss count, and with exactly the documented key set."""
+    user_id, token = await _register_and_login(f"train-archive-{uuid.uuid4().hex[:8]}@example.com")
+    game_id = await _seed_game_with_pgn(test_engine, user_id, _PGN, "archive")
+    solved_at = datetime.datetime(2026, 3, 4, 12, 0, tzinfo=datetime.timezone.utc)
+    session_id = await _seed_archive_puzzle(
+        test_engine,
+        user_id,
+        game_id,
+        2,
+        status=DrillStatus.MASTERED,
+        fail_count=1,
+        solved_at=solved_at,
+    )
+
+    try:
+        resp = await _get_archive(token, "?list=mastered")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        item = body["items"][0]
+        assert set(item.keys()) == _ARCHIVE_ITEM_KEYS
+        assert item["game_id"] == game_id
+        assert item["ply"] == 2
+        assert item["fail_count"] == 1
+        assert datetime.datetime.fromisoformat(item["last_solved_at"]) == solved_at
+        # Position after 1. e4 e5 (2 half-moves), arrived at by e7e5.
+        assert item["fen"] == "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+        assert item["last_move_uci"] == "e7e5"
+        assert item["user_color"] == "white"
+        assert item["time_control_bucket"] == "blitz"
+        assert item["time_control_str"] == "600+0"
+    finally:
+        await _delete_sessions(test_engine, [session_id])
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_archive_requires_auth() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get(ARCHIVE_ENDPOINT)
+
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "?list=active",
+        "?limit=0",
+        "?limit=51",
+        "?offset=-1",
+        "?offset=2147483648",
+    ],
+)
+async def test_archive_rejects_bad_params(query: str) -> None:
+    """ACTIVE cannot be listed, and out-of-range paging is a 422 before any SQL runs."""
+    _, token = await _register_and_login(f"train-archive-422-{uuid.uuid4().hex[:8]}@example.com")
+
+    resp = await _get_archive(token, query)
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The largest offset the UI can send: (ARCHIVE_PAGE_MAX - 1) * 20 with
+        # ARCHIVE_PAGE_MAX = 1_000_000 in TrainArchiveTab.tsx.
+        "?list=mastered&offset=19999980",
+        # _ARCHIVE_OFFSET_MAX itself: the accepting side of the 422 bound above.
+        "?offset=2147483647",
+    ],
+)
+async def test_archive_accepts_large_offset_with_empty_items(test_engine, query: str) -> None:
+    """An offset past the end is a 200 with no items and the true total, never a 500.
+
+    The frontend redirects an over-range page to the last page based on exactly
+    this shape (items == [], total > 0), so a regression in the bound or an
+    asyncpg overflow at a large offset would surface as a Sentry 500 instead.
+    """
+    user_id, token = await _register_and_login(
+        f"train-archive-bigoff-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    game_id = await _seed_game_with_pgn(test_engine, user_id, _PGN, "archive-bigoff")
+    session_id = await _seed_archive_puzzle(
+        test_engine,
+        user_id,
+        game_id,
+        2,
+        status=DrillStatus.MASTERED,
+        fail_count=0,
+        solved_at=_ARCHIVE_SOLVED_AT,
+    )
+
+    try:
+        resp = await _get_archive(token, query)
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 1
+    finally:
+        await _delete_sessions(test_engine, [session_id])
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_archive_default_list_is_mastered(test_engine) -> None:
+    """With no `list` param the response is the mastered list, never the parked one."""
+    user_id, token = await _register_and_login(
+        f"train-archive-default-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    mastered_game = await _seed_game_with_pgn(test_engine, user_id, _PGN, "archive-def-m")
+    parked_game = await _seed_game_with_pgn(test_engine, user_id, _PGN, "archive-def-p")
+    session_ids = [
+        await _seed_archive_puzzle(
+            test_engine,
+            user_id,
+            mastered_game,
+            2,
+            status=DrillStatus.MASTERED,
+            fail_count=0,
+            solved_at=_ARCHIVE_SOLVED_AT,
+        ),
+        await _seed_archive_puzzle(
+            test_engine,
+            user_id,
+            parked_game,
+            2,
+            status=DrillStatus.PARKED,
+            fail_count=3,
+            solved_at=_ARCHIVE_SOLVED_AT,
+        ),
+    ]
+
+    try:
+        default = await _get_archive(token)
+        parked = await _get_archive(token, "?list=parked")
+
+        assert [i["game_id"] for i in default.json()["items"]] == [mastered_game]
+        assert [i["game_id"] for i in parked.json()["items"]] == [parked_game]
+    finally:
+        await _delete_sessions(test_engine, session_ids)
+        await _delete_games(test_engine, [mastered_game, parked_game])
+
+
+@pytest.mark.asyncio
+async def test_archive_other_user_items_absent(test_engine) -> None:
+    """Another user's mastered puzzle never shows up, and does not move `total`."""
+    user_id, token = await _register_and_login(
+        f"train-archive-mine-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    other_id, _ = await _register_and_login(
+        f"train-archive-other-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    mine = await _seed_game_with_pgn(test_engine, user_id, _PGN, "archive-mine")
+    theirs = await _seed_game_with_pgn(test_engine, other_id, _PGN, "archive-theirs")
+    session_ids = [
+        await _seed_archive_puzzle(
+            test_engine,
+            user_id,
+            mine,
+            2,
+            status=DrillStatus.MASTERED,
+            fail_count=0,
+            solved_at=_ARCHIVE_SOLVED_AT,
+        ),
+        await _seed_archive_puzzle(
+            test_engine,
+            other_id,
+            theirs,
+            2,
+            status=DrillStatus.MASTERED,
+            fail_count=0,
+            solved_at=_ARCHIVE_SOLVED_AT,
+        ),
+    ]
+
+    try:
+        body = (await _get_archive(token, "?list=mastered")).json()
+
+        assert [i["game_id"] for i in body["items"]] == [mine]
+        assert body["total"] == 1
+    finally:
+        await _delete_sessions(test_engine, session_ids)
+        await _delete_games(test_engine, [mine, theirs])
+
+
+@pytest.mark.asyncio
+async def test_archive_total_matches_progress_counts(test_engine) -> None:
+    """The unpaged total equals mastered_count / parked_count from GET /progress,
+    including when the page is smaller than the list."""
+    user_id, token = await _register_and_login(
+        f"train-archive-total-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    game_ids: list[int] = []
+    session_ids: list[int] = []
+    for index, status in enumerate(
+        [DrillStatus.MASTERED, DrillStatus.MASTERED, DrillStatus.PARKED]
+    ):
+        game_id = await _seed_game_with_pgn(test_engine, user_id, _PGN, f"archive-total-{index}")
+        game_ids.append(game_id)
+        session_ids.append(
+            await _seed_archive_puzzle(
+                test_engine,
+                user_id,
+                game_id,
+                2,
+                status=status,
+                fail_count=0,
+                solved_at=_ARCHIVE_SOLVED_AT + datetime.timedelta(days=index),
+            )
+        )
+
+    try:
+        progress = (await _get_progress(token)).json()
+        mastered = (await _get_archive(token, "?list=mastered&limit=1")).json()
+        parked = (await _get_archive(token, "?list=parked&limit=1")).json()
+
+        assert mastered["total"] == progress["mastered_count"] == 2
+        assert len(mastered["items"]) == 1
+        assert parked["total"] == progress["parked_count"] == 1
+    finally:
+        await _delete_sessions(test_engine, session_ids)
+        await _delete_games(test_engine, game_ids)

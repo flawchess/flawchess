@@ -172,12 +172,12 @@ const revealPuzzle = vi.fn(async () => ({
   has_tactic_lines: false,
 }));
 
-// TrainStatsCard/TrainStreakCard (rendered by every non-loading/error landing
-// state) call useTrainProgress() -> trainApi.getProgress internally. Without
-// a resolved mock they stay in their loading skeleton forever (no queryFn ->
-// react-query never settles) — harmless for the earlier tests here (they
-// never assert on these cards), but the completed-session score regression test below
-// DOES need the 'completed' state's TrainStatsCard to actually resolve.
+// TrainStreakCard (rendered by every non-loading/error landing state) calls
+// useTrainProgress() -> trainApi.getProgress internally. Without a resolved
+// mock it stays in its loading skeleton forever (no queryFn -> react-query
+// never settles) — harmless for the earlier tests here (they never assert on
+// the card), but the completed-session score regression test below DOES need
+// the 'completed' landing's Points today line to actually resolve.
 const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   session_streak_count: 0,
   shield_level: 0,
@@ -293,7 +293,7 @@ async function renderTrainPage() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={['/train']}>
       <QueryClientProvider client={queryClient}>
         {/* The reveal bar's BoardControls use tooltips (the App shell provides this). */}
         <TooltipProvider>
@@ -586,8 +586,8 @@ describe('Train solve loop (end-to-end tracer)', () => {
 
     await renderTrainPage();
 
-    await waitFor(() => expect(screen.getByTestId('train-stats-today-score')).not.toBeNull());
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('14/18Points today');
+    await waitFor(() => expect(screen.getByTestId('train-points-today')).not.toBeNull());
+    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 14/18');
     // Never touched browser storage for the score — the whole point of this
     // test. The streak hero's last-seen snapshot is unrelated
     // cosmetic state and is the only key allowed.

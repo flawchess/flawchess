@@ -15,7 +15,7 @@ scope: large; ONE phase with several plans (owner decision 2026-10-17): a backen
 
 Rework the Openings Stats and Insights tabs the way phases 238/239 reworked the Endgame and Library Stats
 pages: simpler, more readable, no loss of information. The design is settled in
-`.planning/sketches/012-opening-stats-repertoire/` (open `index.html`; README "Round 2" lists every
+`../../sketches/012-opening-stats-repertoire` (open `index.html`; README "Round 2" lists every
 decision, MANIFEST "012 →" summarises the winner). The 238/239 system decisions apply unchanged: one
 verdict bar per metric with a grey typical band and a red/blue/green dot, uncoloured values, words for
 gaps, Search-icon popover with a greyed stats footer, red/green only at 99% (D-14), symmetric bands
@@ -109,9 +109,9 @@ gaps, Search-icon popover with a greyed stats footer, red/green only at 99% (D-1
 
 ## References
 
-- Sketch: `.planning/sketches/012-opening-stats-repertoire/` (index.html, README.md, data.js).
+- Sketch: `../../sketches/012-opening-stats-repertoire` (index.html, README.md, data.js).
 - System decisions: `.planning/milestones/v2.25-phases/238-*/238-CONTEXT.md`, `239-*/239-CONTEXT.md`
   (D-00..D-17); sketches 009 / 010.
-- Benchmark: `reports/benchmark/benchmarks-latest.md` §2.1 (MG-entry eval baseline +25.21 cp, centred IQR
+- Benchmark: `../../../reports/benchmark/benchmarks-latest.md` §2.1 (MG-entry eval baseline +25.21 cp, centred IQR
   [−23, +34] cp → ±0.30).
 - Related: SEED-203 (Endgames expected-score refit).

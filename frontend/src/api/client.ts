@@ -36,6 +36,8 @@ import type {
   TrainSettingsUpdate,
   TrainProgressResponse,
   TrainLeaderboardResponse,
+  TrainArchiveResponse,
+  ArchiveList,
   UnclaimedMedalsResponse,
   MedalKey,
   ReviewRequest,
@@ -346,6 +348,9 @@ export const trainApi = {
         params: sessionId !== undefined ? { session_id: sessionId } : undefined,
       })
       .then(r => r.data),
+  /** One page of the mastered or parked puzzles, newest first. Read-only: no session. */
+  getArchive: (params: { list: ArchiveList; limit: number; offset: number }) =>
+    apiClient.get<TrainArchiveResponse>('/train/archive', { params }).then(r => r.data),
   /** Medals won in closed weeks that the user has not celebrated yet. */
   getUnclaimedMedals: () =>
     apiClient.get<UnclaimedMedalsResponse>('/train/medals/unclaimed').then(r => r.data),

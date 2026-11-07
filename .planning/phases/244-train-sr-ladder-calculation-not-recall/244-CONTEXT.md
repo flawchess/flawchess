@@ -120,7 +120,7 @@ drift by deploy day).
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Design and evidence
-- `.planning/seeds/SEED-207-train-sr-ladder-calculation-not-recall.md` — locked decisions, evidence tables,
+- `../../seeds/closed/SEED-207-train-sr-ladder-calculation-not-recall.md` — locked decisions, evidence tables,
   rejected options, implementation sketch. NOTE: D-02/D-06/D-08/D-11 above override its snapping,
   streak-remap and 14-day lines.
 - `.planning/ROADMAP.md` § Phase 244 — scope, tests, out-of-scope list.

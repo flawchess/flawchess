@@ -75,11 +75,11 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import {
   TrainScheduleSettings,
   PUZZLES_PER_SESSION_MAX,
-  weekdaySummary,
   PUZZLES_PER_SESSION_MIN,
   PUZZLES_PER_SESSION_STEP,
   TRAIN_SETTINGS_SAVE_DEBOUNCE_MS,
 } from '@/components/train/TrainScheduleSettings';
+import { QR_CAPTION } from '@/components/train/TrainInstallQr';
 import { REMINDER_HOUR_VALUES, TRAIN_PUZZLES_PER_SESSION_VALUES } from '@/lib/analytics';
 import { REMINDER_HOUR_OPTIONS } from '@/lib/push';
 import type { TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
@@ -172,14 +172,7 @@ function renderWithClient(onSaved?: () => void, isGuest = false): QueryClient {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
   render(<TrainScheduleSettings onSaved={onSaved} isGuest={isGuest} />, { wrapper: Wrapper });
-  // The card starts collapsed; these tests exercise the controls.
-  expandSchedule();
   return client;
-}
-
-function expandSchedule(): void {
-  const toggle = screen.queryByTestId('btn-train-schedule-toggle');
-  if (toggle !== null) fireEvent.click(toggle);
 }
 
 /** Real-time wait past the debounce window, wrapped in `act` so the
@@ -458,7 +451,7 @@ describe('TrainScheduleSettings', () => {
     await waitFor(() => {
       expect(screen.getByTestId('qr-handoff-settings')).not.toBeNull();
     });
-    expect(screen.getByText('Reminders work better with FlawChess on your phone')).not.toBeNull();
+    expect(screen.getByText(QR_CAPTION)).not.toBeNull();
     const qrBlock = screen.getByTestId('qr-handoff-settings');
     expect(qrBlock.querySelectorAll('button')).toHaveLength(0);
     expect(qrBlock.querySelector('[aria-label*="dismiss" i], [aria-label*="close" i]')).toBeNull();
@@ -475,6 +468,39 @@ describe('TrainScheduleSettings', () => {
       expect(screen.getByTestId('qr-handoff-settings')).not.toBeNull();
     });
     expect(screen.queryByTestId('filter-reminder-enabled')).toBeNull();
+  });
+
+  it('on desktop, the reminder controls render inside the QR block', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    mockVapidConfigured();
+    stubBrowserGlobals();
+    renderWithClient(undefined, false);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-reminder-enabled')).not.toBeNull();
+    });
+    const qrBlock = screen.getByTestId('qr-handoff-settings');
+    expect(qrBlock.contains(screen.getByTestId('filter-reminder-enabled'))).toBe(true);
+  });
+
+  it('on mobile, the reminder controls stand alone above a full-width Install FlawChess button', async () => {
+    vi.mocked(useInstallPrompt).mockReturnValue({
+      ...defaultInstallPrompt(),
+      isMobile: true,
+      canInstall: true,
+    });
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    mockVapidConfigured();
+    stubBrowserGlobals();
+    renderWithClient(undefined, false);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-reminder-enabled')).not.toBeNull();
+    });
+    expect(screen.queryByTestId('qr-handoff-settings')).toBeNull();
+    const installButton = screen.getByTestId('btn-install-mobile-settings');
+    expect(installButton.className).toContain('w-full');
+    expect(installButton.className).toContain('h-12');
   });
 
   describe('phone section platform gating', () => {
@@ -869,7 +895,7 @@ describe('TrainScheduleSettings — guest visibility', () => {
     });
     expect(screen.getByTestId('qr-handoff-settings')).not.toBeNull();
     expect(
-      screen.getByText('Reminders work better with FlawChess on your phone'),
+      screen.getByText(QR_CAPTION),
     ).not.toBeNull();
     // The weekday cadence controls are untouched for a guest.
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
@@ -887,7 +913,7 @@ describe('TrainScheduleSettings — guest visibility', () => {
     });
     expect(screen.queryByTestId('filter-reminder-enabled')).toBeNull();
     expect(screen.queryByTestId('filter-reminder-hour')).toBeNull();
-    expect(screen.queryByText('Reminders work better with FlawChess on your phone')).toBeNull();
+    expect(screen.queryByText(QR_CAPTION)).toBeNull();
     expect(screen.queryByTestId('qr-handoff-settings')).toBeNull();
     // A guest loses only the reminder block and phone/QR section — the
     // weekday cadence and puzzles-per-session controls stay for a guest.
@@ -909,59 +935,30 @@ describe('TrainScheduleSettings — guest visibility', () => {
       expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(false);
     });
     expect(screen.queryByTestId('btn-install-mobile-settings')).toBeNull();
-    expect(screen.queryByText('Reminders work better with FlawChess on your phone')).toBeNull();
+    expect(screen.queryByText(QR_CAPTION)).toBeNull();
   });
 });
 
-describe('collapsed schedule card', () => {
-  function renderCollapsed(nextSessionDate?: string): void {
+describe('schedule card is always open', () => {
+  it('renders the controls and the next-session line with no click and no disclosure button', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <TrainScheduleSettings isGuest={false} nextSessionDate={nextSessionDate} />
+        <TrainScheduleSettings isGuest={false} nextSessionDate="2026-10-05" />
       </QueryClientProvider>,
     );
-  }
 
-  it('starts collapsed to a header summary of the saved schedule', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    renderCollapsed();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('train-schedule-summary').textContent).toBe('Mo We · 12 puzzles');
-    });
-    expect(screen.queryByTestId('filter-weekday-mo')).toBeNull();
-    expect(screen.getByTestId('btn-train-schedule-toggle').getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('expands to the controls on tap and collapses again', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    renderCollapsed();
-    await waitFor(() => expect(screen.getByTestId('train-schedule-summary')).not.toBeNull());
-
-    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
+    await waitFor(() => expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12'));
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+    expect(screen.queryByTestId('btn-train-schedule-toggle')).toBeNull();
     expect(screen.queryByTestId('train-schedule-summary')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
-    expect(screen.queryByTestId('filter-weekday-mo')).toBeNull();
-  });
-
-  it('keeps the next-session line visible while collapsed', async () => {
-    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    renderCollapsed('2026-10-05');
-    await waitFor(() => expect(screen.getByTestId('train-schedule-summary')).not.toBeNull());
-    expect(screen.getByTestId('train-next-session').textContent).toBe('Next session: Oct 5, 2026');
-  });
-
-  it.each([
-    [0b1111111, 'Every day'],
-    [0, 'Any day'],
-    [0b0011111, 'Mo–Fr'],
-    [0b1100000, 'Sa Su'],
-    [0b0010101, 'Mo We Fr'],
-  ])('weekdaySummary(%i) is "%s"', (mask, expected) => {
-    expect(weekdaySummary(mask)).toBe(expected);
+    expect(screen.queryByRole('button', { name: /Train schedule/ })).toBeNull();
+    const nextSession = screen.getByTestId('train-next-session');
+    expect(nextSession.textContent).toBe('Next session: Oct 5, 2026');
+    // First in the card body, ahead of the pickers.
+    const firstPicker = screen.getByTestId('filter-weekday-mo');
+    expect(nextSession.compareDocumentPosition(firstPicker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -979,11 +976,6 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
     window.history.pushState({}, '', '/');
   });
 
-  /** Calls other than the card's own panel-open (sent by renderWithClient's expand). */
-  function trackedExceptPanelOpen(): unknown[][] {
-    return track.mock.calls.filter((call) => call[0] !== 'panel-open');
-  }
-
   async function waitForControls(): Promise<void> {
     await waitFor(() => {
       expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(false);
@@ -999,13 +991,13 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
     expect([...REMINDER_HOUR_VALUES]).toEqual(REMINDER_HOUR_OPTIONS.map(String));
   });
 
-  it('mount, settings load and draft seeding send nothing but the expand panel-open', async () => {
+  it('mount, settings load and draft seeding send no events', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
     renderWithClient();
     await waitForControls();
     await advanceDebounce();
 
-    expect(trackedExceptPanelOpen()).toEqual([]);
+    expect(track.mock.calls).toEqual([]);
   });
 
   it('clicking Fr while Friday is off sends train-day-fri on', async () => {
@@ -1016,7 +1008,7 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
 
     fireEvent.click(screen.getByTestId('filter-weekday-fr'));
 
-    expect(trackedExceptPanelOpen()).toEqual([['toggle', { page: 'train', target: 'train-day-fri', value: 'on' }]]);
+    expect(track.mock.calls).toEqual([['toggle', { page: 'train', target: 'train-day-fri', value: 'on' }]]);
     await advanceDebounce();
   });
 
@@ -1028,7 +1020,7 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
 
     fireEvent.click(screen.getByTestId('filter-weekday-mo'));
 
-    expect(trackedExceptPanelOpen()).toEqual([['toggle', { page: 'train', target: 'train-day-mon', value: 'off' }]]);
+    expect(track.mock.calls).toEqual([['toggle', { page: 'train', target: 'train-day-mon', value: 'off' }]]);
     await advanceDebounce();
   });
 
@@ -1044,12 +1036,12 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
     fireEvent.keyDown(thumb, { key: 'ArrowRight' });
     fireEvent.keyDown(thumb, { key: 'ArrowRight' });
     // Pending, not sent yet.
-    expect(trackedExceptPanelOpen()).toEqual([]);
+    expect(track.mock.calls).toEqual([]);
 
-    // Collapsing the card unmounts the slider, which flushes the pending event.
-    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
+    // Unmounting the card flushes the pending event.
+    cleanup();
 
-    expect(trackedExceptPanelOpen()).toEqual([
+    expect(track.mock.calls).toEqual([
       ['option-change', { page: 'train', target: 'train-puzzles-per-session', value: '18' }],
     ]);
   });
@@ -1070,7 +1062,7 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
         fireEvent.click(screen.getByTestId('filter-reminder-enabled'));
       });
 
-      expect(trackedExceptPanelOpen()).toEqual([
+      expect(track.mock.calls).toEqual([
         ['toggle', { page: 'train', target: 'train-reminder', value: 'on' }],
         [
           'action',
@@ -1093,7 +1085,7 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
         fireEvent.click(screen.getByTestId('filter-reminder-enabled'));
       });
 
-      expect(trackedExceptPanelOpen()).toEqual([
+      expect(track.mock.calls).toEqual([
         ['toggle', { page: 'train', target: 'train-reminder', value: 'on' }],
         [
           'action',
@@ -1116,7 +1108,7 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
         fireEvent.click(screen.getByTestId('filter-reminder-enabled'));
       });
 
-      expect(trackedExceptPanelOpen()).toEqual([['toggle', { page: 'train', target: 'train-reminder', value: 'off' }]]);
+      expect(track.mock.calls).toEqual([['toggle', { page: 'train', target: 'train-reminder', value: 'off' }]]);
       await advanceDebounce();
     });
 
@@ -1136,7 +1128,7 @@ describe('Umami tracking (settings rows overwritten in place)', () => {
       });
       fireEvent.click(screen.getByTestId('filter-reminder-hour-9'));
 
-      expect(trackedExceptPanelOpen()).toEqual([
+      expect(track.mock.calls).toEqual([
         ['option-change', { page: 'train', target: 'train-reminder-hour', value: '9' }],
       ]);
       await advanceDebounce();

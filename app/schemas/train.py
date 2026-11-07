@@ -35,6 +35,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.schemas.normalization import TimeControlBucket
 from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
 
 
@@ -839,6 +840,48 @@ class TrainProgressResponse(BaseModel):
     badge_visible: bool
 
 
+ArchiveList = Literal["mastered", "parked"]
+
+
+class TrainArchiveItem(BaseModel):
+    """One mastered or parked puzzle in the Archive list (GET /train/archive).
+
+    Deliberately carries NO `played_move`, `best_move`, `move_san`, severity or
+    motif (D-08): any of them would spoil a later Retry of the same puzzle, and
+    Analyze shows them anyway for a user who wants them.
+
+    `fen` and `last_move_uci` are null only when the game's PGN cannot be
+    replayed to `ply`. The row is kept (rather than dropped, as session
+    composition does) so that the list length always equals `total`, which
+    equals the toggle count from GET /train/progress.
+
+    `last_solved_at` is the latest SR_ITEM solve of this user for the puzzle;
+    null when no such solve row exists.
+    """
+
+    game_id: int
+    ply: int
+    fen: str | None
+    last_move_uci: str | None
+    user_color: Literal["white", "black"]
+    last_solved_at: datetime | None
+    fail_count: int
+    white_username: str | None
+    black_username: str | None
+    white_rating: int | None
+    black_rating: int | None
+    played_at: datetime | None
+    time_control_bucket: TimeControlBucket | None
+    time_control_str: str | None
+
+
+class TrainArchiveResponse(BaseModel):
+    """One page of the Archive list plus the unpaged total for the chosen list."""
+
+    items: list[TrainArchiveItem]
+    total: int
+
+
 LeaderboardBoardKind = Literal["points", "accuracy"]
 LeaderboardVisibility = Literal["public", "hidden", "guest"]
 MedalKind = Literal["gold", "silver", "bronze"]
@@ -992,6 +1035,7 @@ class ClaimMedalsRequest(BaseModel):
 
 __all__ = [
     "MEDAL_CLAIM_MAX_ITEMS",
+    "ArchiveList",
     "ClaimMedalsRequest",
     "LeaderboardBoard",
     "LeaderboardBoardKind",
@@ -1008,6 +1052,8 @@ __all__ = [
     "SolveRequest",
     "SolveResponse",
     "SolvedResult",
+    "TrainArchiveItem",
+    "TrainArchiveResponse",
     "TrainLeaderboardResponse",
     "TrainProgressResponse",
     "TrainPuzzle",

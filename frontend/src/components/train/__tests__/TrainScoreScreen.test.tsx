@@ -27,6 +27,7 @@ import type { TrainScoreScreenProps } from '@/components/train/TrainScoreScreen'
 import type { SolvedResult, TrainSettingsResponse } from '@/types/train';
 import type { TrainSessionScore } from '@/lib/trainScore';
 import { GUEST_SIGNUP_ASK_SCORE } from '@/lib/trainBotCopy';
+import { isUpdateSessionActive } from '@/lib/updateReload';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
@@ -165,6 +166,22 @@ describe('TrainScoreScreen rank lines', () => {
     const lines = screen.getByTestId('train-score-rank-lines');
     expect(total.nextElementSibling).toBe(lines);
     expect(lines.getAttribute('data-session-id')).toBe('42');
+  });
+});
+
+describe('TrainScoreScreen update-reload hold', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('holds update reloads while rendered and releases them on unmount', () => {
+    expect(isUpdateSessionActive()).toBe(false);
+
+    const { unmount } = renderScoreScreen({ total: 12, max: 20 });
+    expect(isUpdateSessionActive()).toBe(true);
+
+    unmount();
+    expect(isUpdateSessionActive()).toBe(false);
   });
 });
 

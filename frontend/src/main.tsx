@@ -4,10 +4,11 @@ import { createRoot } from "react-dom/client";
 import * as Sentry from "@sentry/react";
 import "./index.css";
 import App from "./App.tsx";
-import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
+import { createSwUpdateChecker, installSwControllerReload, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
 import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
 import { installStalePreloadReload } from "@/lib/stalePreloadReload";
-import { reloadAutomatically } from "@/lib/autoReload";
+import { installBuildVersionCheck } from "@/lib/buildVersionCheck";
+import { installDomMutationGuard } from "@/lib/domMutationGuard";
 import { captureFirstTouch } from "@/lib/firstTouch";
 import { identifyFromStoredToken, installUmamiBeforeSend } from "@/lib/analytics";
 
@@ -18,6 +19,16 @@ reportMaiaPageKillFromPreviousSession();
 
 // FLAWCHESS-C0: reload once when a lazy chunk from the previous deploy is gone.
 installStalePreloadReload();
+
+// Compare the compiled-in build ID with /version.json at startup and on every
+// resume. Deliberately outside the serviceWorker branch below: when the
+// service worker is already current, reg.update() finds nothing, so an old
+// bundle could otherwise keep running indefinitely.
+installBuildVersionCheck();
+
+// FLAWCHESS-BV: keep Google Translate's DOM edits from crashing React. Must run
+// before createRoot below.
+installDomMutationGuard();
 
 // Remember where this browser first arrived from (referrer host,
 // utm tags, landing path) before the router rewrites the URL.
@@ -35,22 +46,10 @@ installUmamiBeforeSend();
 identifyFromStoredToken();
 
 // ── Service Worker update handling ────────────────────────────────────────
-// When a new service worker activates (after deploy), reload the page so the
-// browser picks up the new precached assets. Without this, the PWA can serve
-// stale JS indefinitely — causing API route mismatches when endpoints are renamed.
-// Bug fix: PWA on mobile kept serving old frontend calling /api/analysis/* after
-// backend was deployed with renamed /api/openings/* routes, causing 404 errors.
+// When a new service worker takes over (after deploy), reload the page so the
+// browser picks up the new precached assets (see installSwControllerReload).
 if ("serviceWorker" in navigator) {
-  // Only add reload listener when a SW already controls this page (not first visit)
-  if (navigator.serviceWorker.controller) {
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (refreshing) return;
-      refreshing = true;
-      // Marked as automatic so Umami drops the reload's pageview.
-      reloadAutomatically();
-    });
-  }
+  installSwControllerReload();
 
   // Check for SW updates on a slow hourly safety net AND opportunistically when
   // the app is resumed. Android freezes backgrounded PWAs, so a resumed app fires

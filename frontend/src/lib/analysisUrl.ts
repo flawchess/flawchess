@@ -114,6 +114,15 @@ export function buildGameAnalysisUrl(gameId: number, ply?: number | null): strin
 }
 
 /**
+ * /analysis deep link landing on a Train puzzle's own position. `drill_items.ply` is the
+ * position after P half-moves, while `?ply=N` opens mainLine[N], the position after move N
+ * has been played. So P-1 shows the puzzle's board, and P would show it after the mistake.
+ */
+export function buildTrainPuzzleAnalysisUrl(gameId: number, ply: number): string {
+  return buildGameAnalysisUrl(gameId, ply > 0 ? ply - 1 : null);
+}
+
+/**
  * Constructs a navigable /analysis URL carrying an arbitrary mid-game FEN as a
  * `?fen=` snapshot param (additive restoration — see module
  * doc comment). `encodeURIComponent` handles the FEN's spaces (`%20`) and

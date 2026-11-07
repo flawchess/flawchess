@@ -2,29 +2,29 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 244
-current_phase_name: Analysis Contextual Explain Bar for Flaws (SEED-208)
-status: verifying
-stopped_at: Completed 245-02-PLAN.md
-last_updated: "2026-11-05T09:52:11.196Z"
-state_head: 055f9dacc14db8210d9396a521ce01a1ff7b8d7e
+current_phase_name: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
+status: executing
+stopped_at: Phase 246 context gathered
+last_updated: "2026-11-07T09:26:34.524Z"
+state_head: afa8867b0efb7776cf5487986c95aa2dd393de51
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 103
-  total_plans: 18
+  total_plans: 26
   completed_plans: 96
 milestone_name: Codebase Cleanup
-last_activity: 2026-11-05
-last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the PGN/FEN dropdown"
+last_activity: 2026-11-07
+last_activity_desc: "Completed quick task 261107-dnz: Stop the installed PWA showing outdated builds"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 245 (Analysis Contextual Explain Bar for Flaws (SEED-208)) — EXECUTING
-Plan: 2 of 2
+Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — EXECUTING
+Plan: 1 of 8
 
-Status: Phase complete — ready for verification
+Status: Executing Phase 246
 
 Open threads carried forward (not blockers):
 
@@ -188,6 +188,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 246 added 2026-11-06 (explicit user request via `/gsd-phase .planning/seeds/SEED-261106-gw8-train-subnav-split.md`, planted the same day from a `/gsd-explore` session): **Train Subnav Split, Today / Leaderboard / Archive** (SEED-261106-gw8). Three URL-routed tabs behind a thin layout: Today at `/train` (streak card with rank line, full schedule card), Leaderboard at `/train/leaderboard`, Archive at `/train/archive` (Mastered / Parked lists of new `TrainPuzzleCard`s, 20 per page, newest first, Analyze button, no arrows). Session and engine hooks move to the Today route; subnav hidden during solve, score and restored-reveal views. One new backend list endpoint, no migration expected. Base for SEED-261106-q92 (retry). Written by hand as 246 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 246`.
 - Phase 245 added 2026-11-05 (explicit user request via `/gsd-phase .planning/seeds/SEED-208-analysis-explain-button.md`, planted the same day from the `/gsd-explore` session on chess.com Game Review's Explain/Best/Next bar): **Analysis Contextual Explain Bar for Flaws** (SEED-208). One Explain button in a contextual bar (under the move list on desktop, above the mobile footer on phones) for every flaw of both sides, motif or not: user's flaw opens the MISSED PV at ply-1, opponent's flaw the ALLOWED PV at the flaw ply; plays the first move immediately, Back/Forward step through, Explain becomes Got it (closes the line, returns to the flaw). No Best/Next buttons, no prose/LLM. Frontend only, reuses the tactic-lines endpoint and the tactic-chip line machinery. Written by hand as 245 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 245`.
 - Phase 244 added 2026-11-02 (explicit user request via `/gsd-phase .planning/seeds/SEED-207-train-sr-ladder-calculation-not-recall.md`, planted the same day from the `/gsd-explore` session on Train spaced repetition vs memorization): **Train SR Ladder Rework, Calculation Not Recall** (SEED-207). Correct -> retry in 14 days (first attempt included), wrong -> retry in 4 days, mastered after 2 consecutive correct (was 3), Door B leech threshold 6 -> 4, Door A unchanged at 3; one-off migration of in-flight streaks/due dates from `drill_solves`, copy updates, scheduler tests. No schema change, no A/B test. Written by hand as 244 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 244`.
 - Phase 243 added 2026-10-31 (explicit user request via `/gsd-phase @SEED-206`, planted the same day from the `/gsd-explore` opening-narration session + sketch 013): **Out of the Opening Worse/Better Rates** (SEED-206). New "Out of the opening" section at the top of the Openings Stats tab: the share of games left clearly worse (primary) and clearly better (secondary) out of the opening (eval at first middlegame ply minus colour baseline, ±1.0; pre-middlegame decisive endings count by result) ranked per TC against rating × TC peer CDFs on the Endgames canonical slice, displayed as one game-weighted value per colour (collapsed over TC, owner 2026-10-31, after prod cross-TC correlations of blitz–rapid 0.82, bullet 0.56–0.62), 95% gate, filter-independent; popover histogram with ±1.0 cuts, per-TC breakdown and the percentile-chip disclosures. Backend first (slice builder, CDF regen, ranked read path, per-source parity test), then frontend. No per-opening bars. Written by hand as 243 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 243`.
@@ -1085,6 +1086,8 @@ None active.
 | 261104-hxl | Hide stale moves in opening findings behind Played before collapsible | 2026-11-04 | 18de95f60 | [261104-hxl-hide-stale-moves-in-opening-findings-beh](./quick/261104-hxl-hide-stale-moves-in-opening-findings-beh/) |
 | 261104-t65 | Analysis: PGN/FEN button becomes a menu with Import and Copy FEN | 2026-11-04 | 282a8dd7d | [261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe](./quick/261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe/) |
 | 261105-apc | Analysis Copy PGN in the PGN/FEN dropdown | 2026-11-05 | 6088226c7 | [261105-apc-in-the-analysis-page-add-a-copy-pgn-feat](./quick/261105-apc-in-the-analysis-page-add-a-copy-pgn-feat/) |
+| 261106-peq | Fix the crash and filter the CSP reports | 2026-11-06 | 053622ae7 | [261106-peq-fix-the-crash-and-filter-the-csp-reports](./quick/261106-peq-fix-the-crash-and-filter-the-csp-reports/) |
+| 261107-dnz | Stop the installed PWA showing outdated builds | 2026-11-07 | afa8867b0 | [261107-dnz-stop-the-installed-pwa-showing-outdated-](./quick/261107-dnz-stop-the-installed-pwa-showing-outdated-/) |
 
 ## Deferred Items
 
@@ -1137,9 +1140,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-05T09:52:10.725Z
-**Stopped at:** Completed 245-02-PLAN.md
-**Resume file:** None
+**Last session:** 2026-11-06T18:02:16.616Z
+**Stopped at:** Phase 246 context gathered
+**Resume file:** .planning/phases/246-train-subnav-split/246-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

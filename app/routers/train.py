@@ -33,6 +33,7 @@ from app.models.user import User
 from app.repositories import push_repository, train_repository
 from app.repositories.train_repository import TrainSettingsRow
 from app.schemas.train import (
+    ArchiveList,
     ClaimMedalsRequest,
     OnboardingStep,
     PuzzleRevealResponse,
@@ -41,6 +42,8 @@ from app.schemas.train import (
     SolveRequest,
     SolveResponse,
     SolvedResult,
+    TrainArchiveItem,
+    TrainArchiveResponse,
     TrainLeaderboardResponse,
     TrainProgressResponse,
     TrainPuzzle,
@@ -70,6 +73,12 @@ _SESSION_ID_MAX: Final = 2**31 - 1
 # drill_solves.position is SmallInteger; a larger value would overflow in asyncpg and
 # reach Sentry as a 500, so the Path bound turns it into a 422 before any SQL runs.
 _DRILL_POSITION_MAX: Final = 2**15 - 1
+# Archive page size: 20 by default, capped so one request replays at most 50 PGNs.
+ARCHIVE_PAGE_SIZE_DEFAULT: Final = 20
+ARCHIVE_PAGE_SIZE_MAX: Final = 50
+# A huge offset could overflow in asyncpg and reach Sentry as a 500, so the Query
+# bound turns it into a 422 before any SQL runs (same reasoning as _SESSION_ID_MAX).
+_ARCHIVE_OFFSET_MAX: Final = 2**31 - 1
 
 
 @router.post("/sessions", response_model=TrainSessionResponse)
@@ -362,6 +371,53 @@ async def _finalize_medal_weeks(
         await session.rollback()
         sentry_sdk.set_context("train", {"user_id": str(user_id)})
         sentry_sdk.capture_exception()
+
+
+@router.get("/archive", response_model=TrainArchiveResponse)
+async def get_train_archive(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    list_: Annotated[ArchiveList, Query(alias="list")] = "mastered",
+    limit: Annotated[int, Query(ge=1, le=ARCHIVE_PAGE_SIZE_MAX)] = ARCHIVE_PAGE_SIZE_DEFAULT,
+    offset: Annotated[int, Query(ge=0, le=_ARCHIVE_OFFSET_MAX)] = 0,
+) -> TrainArchiveResponse:
+    """Return one page of the user's mastered or parked puzzles, newest solve first.
+
+    Read-only, so no commit. The user id comes only from `current_active_user`
+    (V4/IDOR guard) and guests are allowed. ACTIVE puzzles cannot be listed:
+    `list` admits only `mastered` and `parked`. Items carry no move, motif or
+    severity (D-08), so nothing here spoils a later Retry.
+    """
+    try:
+        page = await train_repository.get_archive_page(
+            session, user_id=user.id, list_name=list_, limit=limit, offset=offset
+        )
+    except Exception:
+        sentry_sdk.set_context("train", {"user_id": str(user.id), "list": list_})
+        sentry_sdk.capture_exception()
+        raise
+    return TrainArchiveResponse(
+        items=[
+            TrainArchiveItem(
+                game_id=row.game_id,
+                ply=row.ply,
+                fen=row.fen,
+                last_move_uci=row.last_move_uci,
+                user_color=row.user_color,
+                last_solved_at=row.last_solved_at,
+                fail_count=row.fail_count,
+                white_username=row.white_username,
+                black_username=row.black_username,
+                white_rating=row.white_rating,
+                black_rating=row.black_rating,
+                played_at=row.played_at,
+                time_control_bucket=row.time_control_bucket,
+                time_control_str=row.time_control_str,
+            )
+            for row in page.rows
+        ],
+        total=page.total,
+    )
 
 
 @router.get("/leaderboard", response_model=TrainLeaderboardResponse)

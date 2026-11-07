@@ -8,14 +8,22 @@
  * not scattered inline ternaries — the states are mutually exclusive and
  * exactly one always matches.
  *
- * Wherever a `TrainStreakCard` renders, the weekly `TrainLeaderboardCard`
- * follows it (before `TrainStatsCard`). The schedule card sits between the
- * streak card and the leaderboard on the completed and start/resume landings.
+ * Wherever a `TrainStreakCard` renders, the schedule card follows it: the
+ * landing is those two cards. The completed state also passes today's Points
+ * to the streak card. The weekly leaderboard lives on its own tab, not here
+ * (the streak card's rank line links to it).
  *
- * `TrainMedalDialogHost` is the first child of the empty, completed and
- * fresh/resume/warmup landings (not loading or error). Train.tsx renders this
- * component only outside the solve loop and the score screen is separate, so
- * the medal dialog never appears mid-session.
+ * The medal dialog is not rendered here: the Train page layout owns
+ * `TrainMedalDialogHost`, outside the immersive views, so it opens on any tab
+ * and never over a session.
+ *
+ * `isVisible` is false while the Today panel is mounted but hidden (the player
+ * is on another tab). `TrainLandingHost` (a feedback-ask view POST on mount)
+ * and `TrainStreakCard` (reads and rewrites the streak arrival snapshot on
+ * mount) are one-shot consumers, so they mount only while visible; a landing
+ * the player cannot see must record nothing. `TrainScheduleSettings` stays
+ * mounted at a stable child position so its debounced save survives a tab
+ * switch.
  */
 
 import type { ReactElement } from 'react';
@@ -28,12 +36,9 @@ import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
-import { TrainLeaderboardCard } from '@/components/train/TrainLeaderboardCard';
-import { TrainMedalDialogHost } from '@/components/train/medals/TrainMedalDialogHost';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
-import { TrainStatsCard } from '@/components/train/TrainStatsCard';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
@@ -80,6 +85,14 @@ export interface TrainStartScreenProps {
    * the user's active days for Hilda's copy. From
    * `feedbackAskDays(useUserProfile().data)`. */
   feedbackAskDays: number | null;
+  /**
+   * False while the Today panel is hidden behind another tab. The one-shot
+   * landing children (`TrainLandingHost`, `TrainStreakCard`) mount only while
+   * this is true, so a landing the player cannot see records no feedback-ask
+   * view and consumes no streak arrival. The schedule card ignores it, to keep
+   * its pending debounced save.
+   */
+  isVisible: boolean;
 }
 
 /**
@@ -92,13 +105,11 @@ export interface TrainStartScreenProps {
  * Only the landing states use this — `TrainSolveScreen` is a two-column lg
  * layout that must keep the full page width.
  *
- * Vertical padding is `py-6 md:py-8`, not `py-12`: stacked on the page's own
- * `py-6` that would put 72px of dead space above the first card on a phone.
- * The phone host bubble is hidden for returning users, so `max-sm:pt-0`
- * leaves just the page's 24px above the streak card.
+ * There is no top padding: the Today panel's `mt-4` supplies the gap under the
+ * tabs. Bottom padding is `pb-6 md:pb-8`.
  */
 const LANDING_CONTAINER_CLASS =
-  'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 py-6 text-left max-sm:pt-0 md:py-8';
+  'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 pb-6 text-left md:pb-8';
 
 
 type LandingState =
@@ -139,9 +150,8 @@ function resolveLandingState(
 ): LandingState {
   // Only the FIRST load blanks the landing. A schedule save re-fetches the
   // session while the old one is still in hand; showing "Loading…"
-  // then unmounted the whole landing and snapped the schedule card shut
-  // mid-edit. The old session keeps rendering instead, with Start disabled
-  // until the fresh one lands.
+  // then unmounted the whole landing mid-edit. The old session keeps
+  // rendering instead, with Start disabled until the fresh one lands.
   if (isLoading && session === null) return { kind: 'loading' };
   if (isError) return { kind: 'error' };
   // Per TrainSessionResponse's own contract, session_id is null exactly when
@@ -314,10 +324,10 @@ function landingActions(showSignupAsk: boolean, showImportAsk: boolean): ReactEl
  */
 function TrainEmptyBody({
   progress,
-  isGuest,
+  isVisible,
 }: {
   progress: ReturnType<typeof useTrainProgress>;
-  isGuest: boolean;
+  isVisible: boolean;
 }): ReactElement {
   const poolState = progress.isPending || progress.isError ? undefined : progress.data?.pool_state;
 
@@ -348,8 +358,7 @@ function TrainEmptyBody({
         : 'Nothing due right now — nice work.';
     return (
       <>
-        <TrainStreakCard />
-        <TrainLeaderboardCard isGuest={isGuest} />
+        {isVisible && <TrainStreakCard />}
         <div data-testid="train-empty-exhausted">
           <EmptyState layout="page" title="All caught up!" subtitle={`${mastered_count} mastered. ${nextDueCopy}`} />
         </div>
@@ -379,6 +388,7 @@ export function TrainStartScreen({
   isGuest,
   hasGames,
   feedbackAskDays,
+  isVisible,
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
@@ -404,9 +414,8 @@ export function TrainStartScreen({
   if (state.kind === 'empty') {
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
-        <TrainMedalDialogHost isGuest={isGuest} />
         <TrainReminderResurfaceBanner />
-        <TrainEmptyBody progress={progress} isGuest={isGuest} />
+        <TrainEmptyBody progress={progress} isVisible={isVisible} />
       </div>
     );
   }
@@ -414,23 +423,22 @@ export function TrainStartScreen({
   if (state.kind === 'completed') {
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
-        <TrainMedalDialogHost isGuest={isGuest} />
         <TrainReminderResurfaceBanner />
-        <TrainLandingHost
-          session={session}
-          isGuest={isGuest}
-          hasGames={hasGames}
-          feedbackAskDays={feedbackAskDays}
-          sessionCompleted
-        />
-        <TrainStreakCard />
+        {isVisible && (
+          <TrainLandingHost
+            session={session}
+            isGuest={isGuest}
+            hasGames={hasGames}
+            feedbackAskDays={feedbackAskDays}
+            sessionCompleted
+          />
+        )}
+        {isVisible && <TrainStreakCard pointsToday={{ total: state.score, max: state.totalPoints }} />}
         <TrainScheduleSettings
           onSaved={onSettingsSaved}
           nextSessionDate={state.nextSessionDate}
           isGuest={isGuest}
         />
-        <TrainLeaderboardCard isGuest={isGuest} />
-        <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
       </div>
     );
   }
@@ -448,32 +456,33 @@ export function TrainStartScreen({
   // phone.
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
-      <TrainMedalDialogHost isGuest={isGuest} />
       <TrainReminderResurfaceBanner />
-      <TrainLandingHost
-        session={session}
-        isGuest={isGuest}
-        hasGames={hasGames}
-        feedbackAskDays={feedbackAskDays}
-        sessionCompleted={false}
-      />
-      <TrainStreakCard
-        action={
-          <Button
-            variant="default"
-            className={`${TRAIN_BUTTON_CLASS} w-full`}
-            data-testid={state.kind === 'resume' ? 'btn-train-resume' : 'btn-train-start'}
-            // A re-fetch after a schedule save may replace this session.
-            disabled={isLoading}
-            onClick={onEnterLoop}
-          >
-            {buttonLabel}
-          </Button>
-        }
-      />
+      {isVisible && (
+        <TrainLandingHost
+          session={session}
+          isGuest={isGuest}
+          hasGames={hasGames}
+          feedbackAskDays={feedbackAskDays}
+          sessionCompleted={false}
+        />
+      )}
+      {isVisible && (
+        <TrainStreakCard
+          action={
+            <Button
+              variant="default"
+              className={`${TRAIN_BUTTON_CLASS} w-full`}
+              data-testid={state.kind === 'resume' ? 'btn-train-resume' : 'btn-train-start'}
+              // A re-fetch after a schedule save may replace this session.
+              disabled={isLoading}
+              onClick={onEnterLoop}
+            >
+              {buttonLabel}
+            </Button>
+          }
+        />
+      )}
       <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
-      <TrainLeaderboardCard isGuest={isGuest} />
-      <TrainStatsCard />
     </div>
   );
 }

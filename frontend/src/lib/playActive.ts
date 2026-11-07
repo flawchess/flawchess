@@ -26,6 +26,14 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** Non-React read of the flag (the update-reload gate holds reloads while it is set). */
+export function isPlayActive(): boolean {
+  return active;
+}
+
+/** Non-React subscription to flag changes; returns the unsubscribe function. */
+export const subscribePlayActive = subscribe;
+
 /** Marks immersive play active for the lifetime of the calling component. */
 export function useMarkPlayActive(): void {
   useEffect(() => {

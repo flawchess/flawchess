@@ -322,6 +322,62 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 245-02-PLAN.md — Mobile + mid placement, non-motif overlay gate, tactic-lines 404 → null, CHANGELOG/README, full frontend gate
 
+### Phase 246: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
+
+**Goal**: Split the single-column Train landing into three URL-routed tabs and turn the mastered and parked counts
+into a browsable archive. Today users can see those puzzles only as numbers. Also the base for the later retry
+feature (SEED-261106-q92) and a Stats tab. Locked decisions, traps and breadcrumbs in SEED-261106-gw8.
+
+- **Tabs:** Today at `/train` (must keep working for reminders, PWA and nav), Leaderboard at `/train/leaderboard`
+  (existing `TrainLeaderboardCard`), Archive at `/train/archive`. Archive keeps its name; statistics get a separate
+  fourth Stats tab later. Desktop and mobile, following the Endgames/Openings `TabsList variant="brand"` pattern.
+- **Today:** streak card with Start button and a new rank line ("#4 this week") linking to Leaderboard, plus the full
+  schedule card (collapsible and collapsed summary removed; the completed state's "Next session" line stays). The
+  Points today tile leaves with `TrainStatsCard` and needs a new home, probably the streak card.
+- **Archive:** Mastered / Parked toggle with counts and the existing explainer popovers, replacing `TrainStatsCard`.
+  20 per page via the existing `Pagination`, newest first, tab and page in the URL so browser back from Analysis
+  returns to the same spot. No filters in v1.
+- **Card:** new small `TrainPuzzleCard` on `LazyMiniBoard` (not `FlawCard`). Horizontal, board left, details and
+  buttons right; one column on phones, two on desktop. Pre-mistake position with no arrows on both lists, Analyze via
+  `buildGameAnalysisUrl(game_id, ply)`, space reserved for a later Retry button.
+- **Backend:** one new list endpoint. No migration expected.
+- **Traps to resolve in planning:**
+  - `POST /train/sessions` (`useTrainSession`) and `useTrainGradingEngine` must move to the Today route behind a thin
+    layout, or viewing Leaderboard/Archive creates a session and loads the engine.
+  - Hide the subnav during solve, score and restored-reveal views (the phone board is sized to the viewport).
+  - `TrainMedalDialogHost` moves to the layout so a Leaderboard deep link still shows medals.
+  - Sort key: `drill_items` has no `mastered_at`/`parked_at`, so sort by latest `drill_solves.solved_at`; verify that
+    status only changes on a solve across all write paths.
+  - Count mismatch: `mastered_count`/`parked_count` don't join `game_flaws` and lazy eviction can drop a flaw row, so
+    the list must tolerate a missing row or the counts must change.
+  - Leaderboard and Archive need their own empty states (`TrainEmptyBody` only covers the landing).
+  - New interactive elements need `data-testid`; the Mastered/Parked toggle needs an Umami event if not URL-routed.
+- **Out of scope:** Retry (SEED-261106-q92), the Stats tab, archive filters. Never list active puzzles with an Analyze
+  button: seeing the solution before the next review defeats spaced repetition.
+
+**Depends on**: nothing in flight
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 8/8 plans executed
+
+Plans:
+**Wave 1**
+- [x] 246-01-PLAN.md — `GET /train/archive` end-to-end (tracer): sort by latest solve, evicted and unreplayable rows stay listed, ownership and bounds; pins the hidden and guest rank fact
+- [x] 246-02-PLAN.md — Train layout with URL-routed tabs (tracer: Leaderboard deep link with no session or engine): `useTrainLoop` latch, immersive first paint, Back out of the loop, deferred session re-read
+- [x] 246-04-PLAN.md — Archive card (tracer: see a puzzle and analyze it): `TrainPuzzleCard`, game details and status line with no spoilers, shared `ply - 1` Analyze helper
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 246-08-PLAN.md — What the landing mounts (tracer: a landing the player cannot see records nothing): `isVisible` gate, medal host in the layout, leaderboard card off Today, stated outcome for leaving the first-visit intro
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 246-03-PLAN.md — Today tab (tracer: rank line): Points today on the streak card, full schedule card, `TrainStatsCard` deleted
+- [x] 246-05-PLAN.md — Archive tab (tracer: open the Archive by URL with no session or engine): API client and query, toggle with counts and popovers, URL-held pagination, per-list empty states
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 246-06-PLAN.md — Running-stack walk in a real browser (tracer: live API check), run inline by the orchestrator, with an evidence gate that rejects unmeasured steps
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 246-07-PLAN.md — CHANGELOG and README, full pre-merge gate
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

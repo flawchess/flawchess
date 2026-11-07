@@ -578,3 +578,37 @@ export interface MedalKey {
   week_start: string;
   board: LeaderboardBoardKind;
 }
+
+// ─── Archive ─────────────────────────────────────────────────────
+
+/** Which archive list a puzzle lives in. Mirrors the status filter of GET /train/archive. */
+export type ArchiveList = 'mastered' | 'parked';
+
+/**
+ * One archived (mastered or parked) puzzle. Mirrors app/schemas/train.py
+ * field for field. Deliberately carries no spoiler field (no played move,
+ * motif or severity): a later Retry must not be hinted at.
+ */
+export interface TrainArchiveItem {
+  game_id: number;
+  ply: number;
+  /** null only for an unreplayable PGN. */
+  fen: string | null;
+  last_move_uci: string | null;
+  user_color: 'white' | 'black';
+  last_solved_at: string | null;
+  fail_count: number;
+  white_username: string | null;
+  black_username: string | null;
+  white_rating: number | null;
+  black_rating: number | null;
+  played_at: string | null;
+  time_control_bucket: 'bullet' | 'blitz' | 'rapid' | 'classical' | null;
+  time_control_str: string | null;
+}
+
+/** GET /train/archive: one page of items plus the list's full size. Mirrors app/schemas/train.py. */
+export interface TrainArchiveResponse {
+  items: TrainArchiveItem[];
+  total: number;
+}

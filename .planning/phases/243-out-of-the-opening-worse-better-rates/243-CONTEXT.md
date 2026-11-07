@@ -22,7 +22,7 @@ popover (see D-09).
 <decisions>
 ## Implementation Decisions
 
-The locked decisions in SEED-206 (`.planning/seeds/SEED-206-out-of-the-opening-worse-better-rates.md`) carry over
+The locked decisions in SEED-206 (`../../seeds/closed/SEED-206-out-of-the-opening-worse-better-rates.md`) carry over
 verbatim and are summarised here so the planner has them in one place. This discussion settled the seed's open
 questions and dropped the popover histogram.
 
@@ -129,7 +129,7 @@ questions and dropped the popover histogram.
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase design
-- `.planning/seeds/SEED-206-out-of-the-opening-worse-better-rates.md`: locked decisions, rejected options (do not
+- `../../seeds/closed/SEED-206-out-of-the-opening-worse-better-rates.md`: locked decisions, rejected options (do not
   reopen), feasibility findings (floor coverage, eval source, cross-TC agreement, FlawChess skew).
 - `.planning/notes/out-of-the-opening-metric-design.md`: reasoning, benchmark tables (reliability, colour/TC/ELO d,
   score per SD), the threshold sweep.

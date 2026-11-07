@@ -93,7 +93,11 @@ flawchess.com {
         # Reporting-Endpoints mechanism; enforces nothing. Directive-by-
         # directive evidence is in 216-RESEARCH.md Pattern 3. Flip to an
         # enforcing Content-Security-Policy header only after reviewing a
-        # few weeks of Sentry violation reports.
+        # few weeks of Sentry violation reports. Browsers post these reports
+        # straight to Sentry, so the SDK's filters don't apply: Google
+        # Translate noise (translate.google.com, fonts.gstatic.com,
+        # www.gstatic.com) is dropped by "Additional ignored sources" under
+        # Sentry Project Settings > Security Headers > CSP.
         Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://analytics.flawchess.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.ingest.de.sentry.io https://analytics.flawchess.com https://fonts.googleapis.com blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; report-uri https://o4511084502450176.ingest.de.sentry.io/api/4511084868272208/security/?sentry_key=5ac850dda8e5ec8b838c6dfbf50fc89d; report-to csp-endpoint"
         Reporting-Endpoints "csp-endpoint=\"https://o4511084502450176.ingest.de.sentry.io/api/4511084868272208/security/?sentry_key=5ac850dda8e5ec8b838c6dfbf50fc89d\""
     }
@@ -171,8 +175,15 @@ flawchess.com {
         # browser to apply its own heuristic freshness lifetime — so a deploy
         # that changes only push-sw.js (leaving the generated sw.js
         # byte-identical) could go unnoticed on an already-installed device.
-        @nocache path /sw.js /registerSW.js /manifest.webmanifest /push-sw.js
+        @nocache path /sw.js /registerSW.js /manifest.webmanifest /push-sw.js /version.json
         header @nocache Cache-Control "no-cache"
+
+        # HTML that exists on disk (/, /index.html, prerendered pages) must be
+        # revalidated too, or an installed app can keep an old shell whose
+        # /assets/* are immutable. /version.json (above) is what the running
+        # bundle compares its build ID with.
+        @html path / *.html
+        header @html Cache-Control "no-cache"
 
         # Content-hashed assets (Vite output: /assets/index-Bb5kahVl.js etc.) are
         # safe to cache forever — any content change produces a new filename.
@@ -228,7 +239,14 @@ flawchess.com {
     # SPA fallback — all remaining paths get index.html
     handle {
         root * /srv
-        header /index.html Cache-Control "no-cache"
+        # Bug fix: this used to be `header /index.html Cache-Control ...`, which
+        # never fired. Caddy's directive order runs `header` BEFORE `try_files`,
+        # so the matcher saw the original path (/train) and not /index.html, and
+        # live /train had no Cache-Control at all, leaving freshness to the
+        # browser's heuristic. This handle only ever serves index.html, so the
+        # header is unconditional. (`/` and `/index.html` were also uncovered
+        # in @static; see @html above.)
+        header Cache-Control "no-cache"
         try_files /index.html
         file_server
     }

@@ -2,8 +2,10 @@
  * TrainStreakCard — the Train landing's hero card: the session streak drawn
  * inside a 3-layer flame on the left; on the right the weekly tally, the 0-7
  * freeze meter and, when the session is startable, the Start/Resume button
- * passed in as `action`. Self-contained: calls `useTrainProgress()`
- * internally.
+ * passed in as `action`. Under the weekly tally sits the rank line: the
+ * viewer's Points rank this week (`#4 this week`) as a link to the Leaderboard
+ * tab, left out with no rank. Self-contained: calls `useTrainProgress()` and
+ * `useTrainLeaderboard()` internally.
  *
  * The streak buffer is shown as snowflake "freezes" (cold color family,
  * distinct from the flame, which is reserved for the streak). The
@@ -15,11 +17,13 @@
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { Link } from 'react-router';
 import { Card, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { FreezeMeter } from '@/components/train/FreezeMeter';
 import { StreakFlame } from '@/components/train/StreakFlame';
+import { useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import {
@@ -30,6 +34,8 @@ import {
   writeStreakLastSeen,
 } from '@/lib/streakArrival';
 import type { StreakArrival } from '@/lib/streakArrival';
+import { trackFeature } from '@/lib/analytics';
+import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import type { TrainProgressResponse } from '@/types/train';
 
 /** A freeze earned together with a streak tick pops in once the ignite settles. */
@@ -53,6 +59,43 @@ function thisWeekCaption(completed: number, required: number | null): string {
   if (required !== null) return `${completed} of ${required} this week`;
   // "Train anytime" mode has no denominator to show.
   return `${completed} this week`;
+}
+
+/**
+ * The viewer's Points rank this week as a link to the Leaderboard tab. Reads
+ * the Points board only: Accuracy stays tentative and unranked until 20
+ * puzzles. Hidden and guest viewers carry an integer rank too (pinned
+ * server-side), so their line reads like anyone else's. With no rank, or on a
+ * query error, there is no line; the Leaderboard tab shows its own LoadError
+ * and the global QueryCache reports the failure to Sentry.
+ */
+function TrainRankLine(): ReactElement | null {
+  const { data, isPending, isError } = useTrainLeaderboard();
+  if (isPending) {
+    // Reserve the row while loading, so nothing shifts when a rank arrives. The
+    // reservation only holds for viewers who have a rank: with no rank (or on
+    // error) this returns null below and the row collapses once the query
+    // resolves, which is intended (the line is simply left out).
+    return (
+      <span className="text-sm" aria-hidden="true" data-testid="train-rank-line-pending">
+        {'\u00a0'}
+      </span>
+    );
+  }
+  const rank = isError ? null : (data?.points.viewer?.rank ?? null);
+  if (rank === null) return null;
+  return (
+    <Link
+      to={TRAIN_TAB_PATHS.leaderboard}
+      data-testid="train-rank-line"
+      className="w-fit text-sm text-brand-brown-light transition-colors hover:text-brand-brown-highlight"
+      // Not data-umami-event: on a router Link it downgrades the client-side
+      // navigation into a full page reload.
+      onClick={() => trackFeature('nav-click', { target: 'train', value: 'train-rank-line' })}
+    >
+      {`#${rank} this week`}
+    </Link>
+  );
 }
 
 /**
@@ -125,9 +168,15 @@ function buildStreakVisuals({
 export interface TrainStreakCardProps {
   /** The Start/Resume button, in the states where a session is startable. */
   action?: ReactNode;
+  /**
+   * Today's score, passed only by the completed landing. The label says
+   * "Points" because a bare `5/9` next to "Puzzles per session" reads as a
+   * puzzle count.
+   */
+  pointsToday?: { total: number; max: number };
 }
 
-export function TrainStreakCard({ action }: TrainStreakCardProps): ReactElement {
+export function TrainStreakCard({ action, pointsToday }: TrainStreakCardProps): ReactElement {
   const { data, isPending, isError } = useTrainProgress();
   const profile = useUserProfile();
   const arrival = useStreakArrival(
@@ -189,6 +238,12 @@ export function TrainStreakCard({ action }: TrainStreakCardProps): ReactElement 
           {data !== undefined && (
             <span className="text-sm text-muted-foreground" data-testid="train-this-week">
               {thisWeekCaption(data.current_week_completed, data.current_week_required)}
+            </span>
+          )}
+          <TrainRankLine />
+          {pointsToday !== undefined && (
+            <span className="text-sm text-muted-foreground" data-testid="train-points-today">
+              {`Points today: ${pointsToday.total}/${pointsToday.max}`}
             </span>
           )}
           {details}
