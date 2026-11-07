@@ -725,6 +725,7 @@ describe('scoreBubbleCopy', () => {
     reminderAsk: 'remind_me',
     band: 'yellow',
     audience: AUDIENCE_HAS_GAMES,
+    nextSessionSeeYou: 'tomorrow',
   };
 
   it('regular first completed session: opener + rationale, then the habit line and the reminder ask, for every band and ask', () => {
@@ -759,6 +760,15 @@ describe('scoreBubbleCopy', () => {
     }
     expect(scoreBubbleCopy({ ...BASE, missedCount: 1, band: null }).lines).toEqual([
       'Session done. See you tomorrow.',
+    ]);
+  });
+
+  it('regular later session names the real next day, not always tomorrow', () => {
+    expect(scoreBubbleCopy({ ...BASE, missedCount: 1, nextSessionSeeYou: 'Friday' }).lines).toEqual([
+      `${OPENER.yellow} See you Friday.`,
+    ]);
+    expect(scoreBubbleCopy({ ...BASE, missedCount: 1, nextSessionSeeYou: 'on Nov 14' }).lines).toEqual([
+      `${OPENER.yellow} See you on Nov 14.`,
     ]);
   });
 

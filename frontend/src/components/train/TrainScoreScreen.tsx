@@ -11,16 +11,17 @@
  * celebration (`useBotGame.ts`'s `finalizeGame`) rather than a new palette or
  * effect.
  *
- * The percentage is the screen's hero: it renders inside a band-colored
- * circular badge that pops in on arrival, with the raw points line demoted
- * to supporting text beneath it. Each band also gets a result sound: green =
- * WinChime (reserved for this verdict and bot-game wins), yellow =
- * PartialScore, red = Defeat. Yellow additionally gets the smaller
- * `firePartialConfetti` burst — acknowledged, not celebrated.
+ * The percentage is the screen's hero: `TrainScoreBadge`, a band-colored ring
+ * that fills as the number counts up, with the points, rank and next-session
+ * lines stacked beside it as supporting text.
+ * Each band also gets a result sound: green = WinChime (reserved for this
+ * verdict and bot-game wins), yellow = PartialScore, red = Defeat. Yellow
+ * additionally gets the smaller `firePartialConfetti` burst — acknowledged,
+ * not celebrated.
  *
- * The screen ends on the next-session date, which states when training
- * resumes, and "Done" (primary, right of the Remind me control), which
- * returns to the landing so the session ends on the streak card's new tick.
+ * The stack ends on when the next session is, and the screen ends on "Done"
+ * (primary, right of the Remind me control), which returns to the landing so
+ * the session ends on the streak card's new tick.
  * There is no "Train again" button: sessions are once-per-day with no
  * same-day resume path, so a primary button that can never enable would read
  * as broken.
@@ -31,66 +32,44 @@
  * recasts mid-read. The bubble's copy comes from `scoreBubbleCopy`, fed by
  * the miss count derived from `solvedOutcomes` — the same array is correct
  * whether the session was played straight through or resumed/reloaded/handed
- * off. The bubble does not say what returns or when.
+ * off. The bubble does not say what returns or when; it only names the day of
+ * the next session.
  *
  * The first-completed-session copy (the practice rationale in line 1) shows
  * exactly once, gated on `useTrainSettings().data.sr_explained_at === null`
  * and stamped in ANY branch that rendered it: without that, an
  * all-warm-up guest would read the rationale every session.
+ *
+ * `TrainScoreScreenView` is the screen from props, with no fetching, writes or
+ * sound, so the admin "Session feedback demo" shows production markup.
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { format, parseISO } from 'date-fns';
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { useTrainReminderSlot } from '@/components/train/useTrainReminderSlot';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
-import { fireWinConfetti, firePartialConfetti, prefersReducedMotion } from '@/lib/confetti';
-import { playSound, type SoundEvent } from '@/lib/sounds';
+import { prefersReducedMotion } from '@/lib/confetti';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
+import { TrainScoreBadge } from '@/components/train/TrainScoreBadge';
 import { TrainScoreRankLines } from '@/components/train/TrainScoreRankLines';
 import { pickBot, scoreBubbleCopy, type ReminderAsk, type TrainCopyAudience } from '@/lib/trainBotCopy';
+import type { Persona } from '@/lib/personas/personaRegistry';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
 import { useHoldUpdateReload } from '@/lib/updateReload';
+import { localTodayIso, nextSessionWhen } from '@/lib/trainNextSession';
+import { celebrateScore } from '@/lib/trainScoreCelebration';
 import type { SolvedResult } from '@/types/train';
 import {
-  TRAIN_RATING_GREEN,
-  TRAIN_RATING_YELLOW,
-  TRAIN_RATING_RED,
-} from '@/lib/theme';
-import {
+  countMissedPuzzles,
   resolveRatingBand,
   displaySessionPercentage,
-  type TrainRatingBand,
   type TrainSessionScore,
 } from '@/lib/trainScore';
-
-const RATING_BAND_COLOR: Record<TrainRatingBand, string> = {
-  green: TRAIN_RATING_GREEN,
-  yellow: TRAIN_RATING_YELLOW,
-  red: TRAIN_RATING_RED,
-};
-
-/** Result sound per band. `green` keeps WinChime, which is reserved for this
- * session verdict and bot-game wins — the per-puzzle reveal's full-score case
- * has its own `score-full` clip, so the session end does not sound like just
- * one more solved puzzle. The other two bands share the reveal's clips. */
-const RATING_BAND_SOUND: Record<TrainRatingBand, SoundEvent> = {
-  green: 'game-win',
-  yellow: 'score-partial',
-  red: 'game-loss',
-};
-
-/** Opacity of the badge's band-colored fill, as a color-mix percentage. Low
- * enough that the large percentage text stays legible on both themes. */
-const BADGE_TINT_PERCENT = 14;
-
-/** Thickness of the badge ring, in px. */
-const BADGE_RING_WIDTH_PX = 4;
 
 /** The bubble and button column. 384px (max-w-sm) on phones, which
  * fills the screen anyway; 512px from md up, where the narrow column wrapped
@@ -162,9 +141,7 @@ export function TrainScoreScreen({
 }: TrainScoreScreenProps): ReactElement {
   // The score screen is local Train.tsx state, so an update reload here would lose it.
   useHoldUpdateReload();
-  const percentage = displaySessionPercentage(score);
   const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
-  const bandColor = band !== null ? RATING_BAND_COLOR[band] : null;
   // A random smart bot hosts the score bubble regardless of the
   // session's rating band — memoised once per mount so a re-render can never
   // recast mid-read (no deps: pickBot('smart') has no external inputs, so
@@ -186,10 +163,11 @@ export function TrainScoreScreen({
 
   // ScoreBubbleInput's own docstring: "NOT fully correct" (guess or move
   // wrong).
-  const missedCount = useMemo(
-    () => solvedOutcomes.filter((outcome) => !(outcome.correct_guess && outcome.move_quality === 'good'))
-      .length,
-    [solvedOutcomes],
+  const missedCount = useMemo(() => countMissedPuzzles(solvedOutcomes), [solvedOutcomes]);
+  const timeZone = settings?.timezone;
+  const nextSession = useMemo(
+    () => nextSessionWhen(nextSessionDate, localTodayIso(timeZone)),
+    [nextSessionDate, timeZone],
   );
 
   // Render no bubble copy until `data !== undefined`, so a first-timer never
@@ -218,6 +196,7 @@ export function TrainScoreScreen({
           reminderAsk,
           band,
           audience: { hasGames, isGuest } satisfies TrainCopyAudience,
+          nextSessionSeeYou: nextSession.seeYou,
         });
 
   // Stamp whenever the first-completed variant actually rendered,
@@ -245,17 +224,57 @@ export function TrainScoreScreen({
 
   useEffect(() => {
     // Fire once per mount only — the exact reduced-motion guard shape
-    // `useBotGame.ts`'s `finalizeGame` uses for the bot-win burst. The sound
-    // is NOT motion-gated: reduced-motion users still get the result sound
-    // (playSound honors the shared mute preference on its own), they just
-    // lose the confetti.
-    if (band === null) return;
-    playSound(RATING_BAND_SOUND[band]);
-    if (reducedMotion) return;
-    if (band === 'green') fireWinConfetti();
-    else if (band === 'yellow') firePartialConfetti();
+    // `useBotGame.ts`'s `finalizeGame` uses for the bot-win burst.
+    celebrateScore(band, reducedMotion);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  return (
+    <TrainScoreScreenView
+      score={score}
+      nextSessionLine={nextSession.line}
+      persona={bot}
+      bubbleLines={bubbleCopy?.lines ?? null}
+      bubbleActions={scoreBubbleActions(isGuest, hasGames)}
+      rankLines={<TrainScoreRankLines sessionId={sessionId} />}
+      // A guest has no reminder slot and no QR/install block.
+      reminderControl={isGuest ? null : reminderControl}
+      reminderBelowRow={isGuest ? null : reminderBelowRow}
+      reducedMotion={reducedMotion}
+      onDone={onDone}
+    />
+  );
+}
+
+export interface TrainScoreScreenViewProps {
+  score: TrainSessionScore;
+  /** Follows "Next session: ": `NextSessionWhen.line`. */
+  nextSessionLine: string;
+  persona: Persona;
+  /** Null until the copy is known: the bubble chrome renders without text, so nothing jumps. */
+  bubbleLines: string[] | null;
+  bubbleActions: ReactElement | undefined;
+  rankLines: ReactNode;
+  reminderControl: ReactElement | null;
+  reminderBelowRow: ReactElement | null;
+  reducedMotion: boolean;
+  onDone: () => void;
+}
+
+export function TrainScoreScreenView({
+  score,
+  nextSessionLine,
+  persona,
+  bubbleLines,
+  bubbleActions,
+  rankLines,
+  reminderControl,
+  reminderBelowRow,
+  reducedMotion,
+  onDone,
+}: TrainScoreScreenViewProps): ReactElement {
+  const percentage = displaySessionPercentage(score);
+  const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
 
   return (
     // No extra top/bottom padding on phones — stacked
@@ -267,47 +286,35 @@ export function TrainScoreScreen({
     >
       {/* The bubble opens the screen, before the Remind me ask. */}
       <div className={cn('w-full text-left', SCORE_COLUMN_MAX_W)} data-testid="train-score-bubble">
-        <TrainBotBubble
-          persona={bot}
-          state="verdict"
-          actions={scoreBubbleActions(isGuest, hasGames)}
-        >
-          {bubbleCopy !== null && (
+        <TrainBotBubble persona={persona} state="verdict" actions={bubbleActions}>
+          {bubbleLines !== null && (
             <div data-testid="train-score-bubble-returns">
-              {bubbleCopy.lines.map((line, index) => (
+              {bubbleLines.map((line, index) => (
                 <p key={index}>{line}</p>
               ))}
             </div>
           )}
         </TrainBotBubble>
       </div>
-      {percentage !== null && bandColor !== null && (
-        <div
-          className={`flex size-36 items-center justify-center rounded-full ${
-            reducedMotion ? '' : 'animate-train-score-badge-pop'
-          }`}
-          data-testid="train-score-badge"
-          style={{
-            border: `${BADGE_RING_WIDTH_PX}px solid ${bandColor}`,
-            backgroundColor: `color-mix(in oklch, ${bandColor} ${BADGE_TINT_PERCENT}%, transparent)`,
-          }}
-        >
-          <span
-            className="text-5xl font-bold leading-none"
-            data-testid="train-score-percentage"
-            style={{ color: bandColor }}
-          >
-            {percentage}%
-          </span>
+      {/* Badge left, supporting lines right, on phones too. The badge steps down
+          a size below sm so the lines still fit beside it at 360px. */}
+      <div
+        className={cn('flex w-full items-center justify-center gap-4 md:gap-6', SCORE_COLUMN_MAX_W)}
+        data-testid="train-score-summary"
+      >
+        {percentage !== null && band !== null && (
+          <TrainScoreBadge percentage={percentage} band={band} reducedMotion={reducedMotion} />
+        )}
+        <div className="flex min-w-0 flex-col items-start gap-2 text-left" data-testid="train-score-details">
+          <p className="text-lg font-semibold text-muted-foreground" data-testid="train-score-total">
+            Points: {score.total}/{score.max}
+          </p>
+          {rankLines}
+          <p className="text-sm font-semibold text-muted-foreground" data-testid="train-score-next-session">
+            Next session: {nextSessionLine}
+          </p>
         </div>
-      )}
-      <p className="text-lg font-semibold text-muted-foreground" data-testid="train-score-total">
-        Points: {score.total}/{score.max}
-      </p>
-      <TrainScoreRankLines sessionId={sessionId} />
-      <p className="text-sm font-semibold text-muted-foreground">
-        Next session: {format(parseISO(nextSessionDate), 'MMM d, yyyy')}
-      </p>
+      </div>
       {/* Remind me (left, brand-outline) then Done (right, default/primary).
           The column is width-capped because the Train page container has no
           max width, so a bare w-full row would stretch Done across the whole
@@ -320,7 +327,7 @@ export function TrainScoreScreen({
           pieces stay inside the same max-w-sm column. */}
       <div className={cn('flex w-full flex-col gap-2', SCORE_COLUMN_MAX_W)}>
         <div className="flex w-full items-center gap-2" data-testid="train-score-button-row">
-          <GuardedReminderControl isGuest={isGuest} reminderControl={reminderControl} />
+          {reminderControl}
           <Button
             variant="default"
             className={cn('flex-1', TRAIN_BUTTON_CLASS)}
@@ -330,7 +337,7 @@ export function TrainScoreScreen({
             Done
           </Button>
         </div>
-        <GuardedReminderBelowRow isGuest={isGuest} reminderBelowRow={reminderBelowRow} />
+        {reminderBelowRow}
       </div>
     </div>
   );
@@ -352,30 +359,4 @@ function resolveReminderAsk({
 }): ReminderAsk {
   if (hasMobileSubscription) return 'none';
   return isDesktop ? 'scan_qr' : 'remind_me';
-}
-
-/**
- * GuardedReminderControl / GuardedReminderBelowRow — suppress the reminder
- * row's two pieces entirely for a guest (no reminder slot, no QR/install
- * block). Fragments are transparent in the DOM, so this changes no rendered
- * markup.
- */
-function GuardedReminderControl({
-  isGuest,
-  reminderControl,
-}: {
-  isGuest: boolean;
-  reminderControl: ReactElement | null;
-}): ReactElement {
-  return <>{isGuest ? null : reminderControl}</>;
-}
-
-function GuardedReminderBelowRow({
-  isGuest,
-  reminderBelowRow,
-}: {
-  isGuest: boolean;
-  reminderBelowRow: ReactElement | null;
-}): ReactElement {
-  return <>{isGuest ? null : reminderBelowRow}</>;
 }

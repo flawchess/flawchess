@@ -18,6 +18,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train session results: the score now sits in a ring that fills as the number counts up, with your points, ranks and next session beside it, so the feedback fits on one phone screen.
 - Train leaderboard: the card has a proper header with the countdown, last week's medal winners and your own finish now share one line below the board, and the point and puzzle columns line up. The "points to pass" hint is gone, and the help popover now explains medals.
 - Train now has three tabs: Today, Leaderboard and Archive. Today holds your streak and schedule, with your weekly rank one tap from the streak card, and the schedule card is shown in full instead of collapsing.
 - Openings Stats: in "Moves that Work" and "Moves that Cost You", moves you have not played recently now sit in a collapsed "Played before" group under each list, so the up to 10 cards on top all come from your current repertoire.
@@ -38,6 +39,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Train: the end-of-session message no longer says "See you tomorrow" when your next training day is later in the week. It now names the actual day.
 - The installed app no longer gets stuck on an old version. It now checks for a new version when it opens and when you come back to it, and updates itself, waiting until you finish your puzzle session or bot game.
 - Translating the page with Google Translate no longer crashes the app to the error screen.
 - Analysis: on smaller laptop screens (a maximized window under about 880px tall), the page now scrolls instead of cutting off the eval chart and the Accuracy card.

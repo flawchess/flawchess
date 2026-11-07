@@ -5,6 +5,7 @@ import { ImpersonationSelector } from '@/components/admin/ImpersonationSelector'
 import { LeaderboardMedalsDemo } from '@/components/admin/LeaderboardMedalsDemo';
 import { SentryTestButtons } from '@/components/admin/SentryTestButtons';
 import { TrainReminderTestCard } from '@/components/admin/TrainReminderTestCard';
+import { TrainScoreScreenDemo } from '@/components/admin/TrainScoreScreenDemo';
 
 /**
  * Admin page — superuser-only.
@@ -64,6 +65,15 @@ export function AdminPage() {
       >
         <h2 className="text-lg font-medium">Leaderboard medals demo</h2>
         <LeaderboardMedalsDemo />
+      </section>
+
+      {/* Client-only fixtures as well, same reasoning as the medals demo above. */}
+      <section
+        className="space-y-3"
+        data-testid="admin-section-train-score-demo"
+      >
+        <h2 className="text-lg font-medium">Session feedback demo</h2>
+        <TrainScoreScreenDemo />
       </section>
 
       <section

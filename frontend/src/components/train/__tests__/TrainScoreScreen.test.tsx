@@ -19,7 +19,7 @@
  * are both suppressed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router';
 import { TrainScoreScreen } from '@/components/train/TrainScoreScreen';
@@ -28,6 +28,7 @@ import type { SolvedResult, TrainSettingsResponse } from '@/types/train';
 import type { TrainSessionScore } from '@/lib/trainScore';
 import { GUEST_SIGNUP_ASK_SCORE } from '@/lib/trainBotCopy';
 import { isUpdateSessionActive } from '@/lib/updateReload';
+import { SCORE_COUNT_UP_DURATION_MS } from '@/components/train/TrainScoreBadge';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router', async () => {
@@ -166,6 +167,90 @@ describe('TrainScoreScreen rank lines', () => {
     const lines = screen.getByTestId('train-score-rank-lines');
     expect(total.nextElementSibling).toBe(lines);
     expect(lines.getAttribute('data-session-id')).toBe('42');
+  });
+
+  it('puts the badge left of the details, with points, ranks and next session in the details', () => {
+    renderScoreScreen({ total: 12, max: 20 });
+    const summary = screen.getByTestId('train-score-summary');
+    const details = screen.getByTestId('train-score-details');
+    expect(summary.children[0]).toBe(screen.getByTestId('train-score-badge'));
+    expect(summary.children[1]).toBe(details);
+    expect(details.contains(screen.getByTestId('train-score-total'))).toBe(true);
+    expect(details.contains(screen.getByTestId('train-score-rank-lines'))).toBe(true);
+    expect(details.contains(screen.getByTestId('train-score-next-session'))).toBe(true);
+  });
+
+  it('keeps the details when there is no badge (max: 0)', () => {
+    renderScoreScreen({ total: 0, max: 0 });
+    const summary = screen.getByTestId('train-score-summary');
+    expect(summary.children).toHaveLength(1);
+    expect(summary.children[0]).toBe(screen.getByTestId('train-score-details'));
+  });
+});
+
+describe('TrainScoreScreen next session day', () => {
+  // A Friday. Only Date is faked, so RTL's async helpers keep working.
+  const FRIDAY_NOON = new Date('2026-07-31T12:00:00Z');
+  const MISSED_ONE = [makeSolvedResult({ correct_guess: false, move_quality: 'wrong' })];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FRIDAY_NOON);
+    prefersReducedMotion.mockReturnValue(true);
+    getSettingsMock.mockReturnValue({ data: SETTINGS_FIXTURE });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+  });
+
+  it.each([
+    ['2026-08-01', 'See you tomorrow.', 'Next session: tomorrow'],
+    ['2026-08-04', 'See you Tuesday.', 'Next session: Tuesday'],
+    ['2026-08-07', 'See you on Aug 7.', 'Next session: Aug 7'],
+  ])('next session %s: the bubble and the line name the same day', (nextSessionDate, bubble, line) => {
+    renderScoreScreen({ total: 12, max: 20 }, { nextSessionDate, solvedOutcomes: MISSED_ONE });
+    expect(screen.getByTestId('train-score-bubble-returns').textContent).toContain(bubble);
+    expect(screen.getByTestId('train-score-next-session').textContent).toBe(line);
+  });
+});
+
+describe('TrainScoreScreen score ring', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+  });
+
+  it('under reduced motion the number and the arc are final from the first render', () => {
+    prefersReducedMotion.mockReturnValue(true);
+    renderScoreScreen({ total: 36, max: 45 });
+    expect(screen.getByTestId('train-score-percentage').textContent).toBe('80%');
+    expect(screen.getByTestId('train-score-ring-arc').getAttribute('stroke-dasharray')).toBe('80 100');
+  });
+
+  it('otherwise it starts at zero with no arc and counts up to the final value', async () => {
+    prefersReducedMotion.mockReturnValue(false);
+    // The first frame already lands past the duration, so the test does not wait it out.
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(performance.now() + SCORE_COUNT_UP_DURATION_MS), 0),
+    );
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
+    renderScoreScreen({ total: 36, max: 45 });
+    expect(screen.getByTestId('train-score-percentage').textContent).toBe('0%');
+    expect(screen.queryByTestId('train-score-ring-arc')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('train-score-percentage').textContent).toBe('80%');
+    });
+    expect(screen.getByTestId('train-score-ring-arc').getAttribute('stroke-dasharray')).toBe('80 100');
+    expect(screen.getByTestId('train-score-badge').getAttribute('aria-label')).toBe('80%');
+  });
+
+  it('draws no arc at 0%', () => {
+    prefersReducedMotion.mockReturnValue(true);
+    renderScoreScreen({ total: 0, max: 45 });
+    expect(screen.getByTestId('train-score-percentage').textContent).toBe('0%');
+    expect(screen.queryByTestId('train-score-ring-arc')).toBeNull();
   });
 });
 
@@ -482,6 +567,8 @@ describe('TrainScoreScreen', () => {
     });
 
     it('sr_explained_at non-null renders the one-liner and never stamps', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-07-31T12:00:00Z'));
       renderScoreScreen(
         { total: 12, max: 20 },
         {
@@ -491,6 +578,7 @@ describe('TrainScoreScreen', () => {
         },
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
+      vi.useRealTimers();
       expect(text).toContain('See you tomorrow.');
       expect(text).not.toContain(PRACTICE_RATIONALE_TEXT);
       expect(stampMock).not.toHaveBeenCalled();

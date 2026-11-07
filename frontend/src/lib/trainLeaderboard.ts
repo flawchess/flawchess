@@ -176,8 +176,7 @@ const RANK_LINE_LABEL: Record<LeaderboardBoardKind, string> = {
 };
 
 /** Viewer has Points entries but no Accuracy entry: never a count. */
-export const ACCURACY_NOT_ENTERED_LINE =
-  "Accuracy: not on this board yet (tactics puzzles don't count)";
+export const ACCURACY_NOT_ENTERED_LINE = 'Accuracy: not ranked';
 
 /**
  * One score-screen rank line for a board.
@@ -210,6 +209,8 @@ export function rankLineCopy(kind: LeaderboardBoardKind, viewer: LeaderboardView
 export interface ScoreRankLine {
   id: 'points' | 'accuracy' | 'hidden';
   text: string;
+  /** Explanation for an info popover beside the line. */
+  info?: string;
 }
 
 /**
@@ -226,7 +227,7 @@ export function scoreRankLines(data: TrainLeaderboardResponse): ScoreRankLine[] 
   if (accuracy !== null) {
     lines.push({ id: 'accuracy', text: rankLineCopy('accuracy', accuracy) });
   } else {
-    lines.push({ id: 'accuracy', text: ACCURACY_NOT_ENTERED_LINE });
+    lines.push({ id: 'accuracy', text: ACCURACY_NOT_ENTERED_LINE, info: ACCURACY_NOT_ENTERED_COPY });
   }
   if (points?.visibility === 'hidden') lines.push({ id: 'hidden', text: HIDDEN_FROM_OTHERS_LABEL });
   return lines;

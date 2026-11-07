@@ -385,6 +385,7 @@ export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
 
 import type { EloComboKey } from '@/types/endgames';
 import type { MedalKind } from '@/types/train';
+import type { TrainRatingBand } from '@/lib/trainScore';
 
 export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: string }> = {
   chess_com_bullet:    { bright: 'oklch(0.62 0.22 30)',  dark: 'oklch(0.42 0.18 30)'  },
@@ -606,6 +607,11 @@ export const TRAIN_VERDICT_INCORRECT = WDL_LOSS;
 export const TRAIN_RATING_GREEN = WDL_WIN;
 export const TRAIN_RATING_YELLOW = 'oklch(0.75 0.15 85)'; // amber
 export const TRAIN_RATING_RED = WDL_LOSS;
+export const TRAIN_RATING_BAND_COLOR: Record<TrainRatingBand, string> = {
+  green: TRAIN_RATING_GREEN,
+  yellow: TRAIN_RATING_YELLOW,
+  red: TRAIN_RATING_RED,
+};
 
 // Train "Points: +N" flash badge foregrounds. The badge now
 // covers 4 background tiers (ZONE_DANGER/SEV_MISTAKE/SEV_INACCURACY/

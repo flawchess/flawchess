@@ -318,9 +318,13 @@ describe('scoreRankLines, not-entered and hidden rules', () => {
     const lines = scoreRankLines(response({ viewer: VIEWER }, {}));
     expect(lines).toEqual([
       { id: 'points', text: 'Points board: #7 this week' },
-      { id: 'accuracy', text: "Accuracy: not on this board yet (tactics puzzles don't count)" },
+      {
+        id: 'accuracy',
+        text: 'Accuracy: not ranked',
+        info: "You're not on this board yet: tactics puzzles don't count here.",
+      },
     ]);
-    expect(ACCURACY_NOT_ENTERED_LINE).toBe("Accuracy: not on this board yet (tactics puzzles don't count)");
+    expect(ACCURACY_NOT_ENTERED_LINE).toBe('Accuracy: not ranked');
   });
 
   it('both viewers null gives no lines', () => {

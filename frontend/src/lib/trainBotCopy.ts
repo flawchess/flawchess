@@ -844,6 +844,8 @@ export interface ScoreBubbleInput {
    * `isGuest` is true, replaces the warm-up reminder ask with
    * `GUEST_SIGNUP_ASK_SCORE` (a guest gets no reminder slot). */
   audience: TrainCopyAudience;
+  /** Follows "See you ": `NextSessionWhen.seeYou` from `lib/trainNextSession.ts`. */
+  nextSessionSeeYou: string;
 }
 
 export interface ScoreBubbleCopy {
@@ -924,5 +926,7 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
       ],
     };
   }
-  return { lines: [`${sessionOpener(input.band)} See you tomorrow.`] };
+  // BUG FIX: this said "See you tomorrow." unconditionally, which was wrong on
+  // any sparse schedule (Tue/Fri) and contradicted the date under the bubble.
+  return { lines: [`${sessionOpener(input.band)} See you ${input.nextSessionSeeYou}.`] };
 }
