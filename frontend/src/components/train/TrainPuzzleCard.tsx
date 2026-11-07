@@ -1,10 +1,11 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
 import { format, parseISO } from 'date-fns';
-import { Search } from 'lucide-react';
+import { CircleCheck, Search } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { uciToSquares } from '@/lib/sanToSquares';
@@ -12,7 +13,14 @@ import { buildTrainPuzzleAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import { formatMoveNotation } from '@/lib/openingInsights';
-import { SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
+import { cn } from '@/lib/utils';
+import {
+  FLAWCHESS_ENGINE_ACCENT,
+  FLAW_FIXED_BRONZE,
+  FLAW_FIXED_GLOW_SOFT,
+  SEV_BLUNDER,
+  SEV_MISTAKE,
+} from '@/lib/theme';
 import type { ArchiveList, ArchiveSeverity, TrainArchiveItem } from '@/types/train';
 
 /**
@@ -23,6 +31,11 @@ import type { ArchiveList, ArchiveSeverity, TrainArchiveItem } from '@/types/tra
  * played (arrow, notation, severity), like `FlawCard`. The best move and the
  * motif are deliberately absent, as text and as board arrows, because they would
  * give away the answer on a later Retry. The wire shape carries neither.
+ *
+ * A mastered card takes the bronze "Flaw fixed" look of `TrainFlawFixedBanner`,
+ * with a softer halo because a whole grid of them is on screen at once. Its heading
+ * spans the card above the board, and the played mistake shrinks to a move-quality
+ * icon, keeping its severity color: it is the flaw the user fixed.
  *
  * One horizontal tree at every width (D-05): `useMiniBoardSize` already
  * resolves the right board size above and below the `sm` breakpoint.
@@ -37,19 +50,82 @@ const SEVERITY_COLOR: Record<ArchiveSeverity, string> = {
   mistake: SEV_MISTAKE,
 };
 
-const LIST_LABEL: Record<ArchiveList, string> = {
-  mastered: 'Mastered',
-  parked: 'Parked',
+const PARKED_LABEL = 'Parked';
+
+// Grid placement per list. A mastered card stacks its heading above the board and the
+// details at every width, so auto-placement is enough. A parked card's played move sits on
+// its own row above the board below sm, where the narrow text column has no height to spare
+// for the badge (it would push Analyze below the board), and beside the board from sm.
+const CARD_LAYOUT: Record<ArchiveList, { grid: string; board: string; details: string }> = {
+  mastered: { grid: '', board: '', details: '' },
+  parked: {
+    grid: 'sm:grid-rows-[auto_1fr] sm:gap-y-0',
+    board: 'sm:col-start-1 sm:row-span-2 sm:row-start-1',
+    details: 'sm:col-start-2 sm:row-start-2',
+  },
 };
 
 function capitalize(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
-/** `Mastered Oct 3, 2026` or `Parked Oct 3, 2026`. A null date drops the date part. */
-function statusLine(list: ArchiveList, lastSolvedAt: string | null): string {
-  if (lastSolvedAt === null) return LIST_LABEL[list];
-  return `${LIST_LABEL[list]} ${format(parseISO(lastSolvedAt), ARCHIVE_DATE_FORMAT)}`;
+function formatArchiveDate(isoDate: string): string {
+  return format(parseISO(isoDate), ARCHIVE_DATE_FORMAT);
+}
+
+/** `Parked Oct 3, 2026`. A null date drops the date part. */
+function parkedLine(lastSolvedAt: string | null): string {
+  if (lastSolvedAt === null) return PARKED_LABEL;
+  return `${PARKED_LABEL} ${formatArchiveDate(lastSolvedAt)}`;
+}
+
+/** The mastered card's heading: "Flaw fixed" and the date it was mastered. */
+function FlawFixedHeading({ masteredAt }: { masteredAt: string | null }): ReactElement {
+  return (
+    <div className="col-span-2 flex flex-wrap items-center gap-x-2">
+      <p
+        className="flex items-center gap-1.5 text-lg font-semibold"
+        style={{ color: FLAWCHESS_ENGINE_ACCENT }}
+        data-testid="train-puzzle-flaw-fixed"
+      >
+        <CircleCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
+        Flaw fixed
+      </p>
+      {masteredAt !== null && (
+        <p className="text-sm text-muted-foreground" data-testid="train-puzzle-status">
+          {formatArchiveDate(masteredAt)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The played mistake on a mastered card: the move and its quality icon, no tag. */
+function MasteredMoveLine({
+  ply,
+  san,
+  severity,
+}: {
+  ply: number;
+  san: string;
+  severity: ArchiveSeverity;
+}): ReactElement {
+  return (
+    <div className="flex flex-wrap items-center gap-x-1.5 text-sm">
+      <span className="font-medium text-foreground" data-testid="train-puzzle-played-move">
+        {formatMoveNotation(ply, san)}
+      </span>
+      {/* The icon itself is aria-hidden, so the wrapper names the severity. */}
+      <span
+        role="img"
+        aria-label={capitalize(severity)}
+        title={capitalize(severity)}
+        data-testid="train-puzzle-severity-icon"
+      >
+        <MoveQualityIcon quality={severity} className="h-5 w-5" />
+      </span>
+    </div>
+  );
 }
 
 /** Opponent name and rating: the side the user is NOT playing. Null name is `?`. */
@@ -76,19 +152,20 @@ export function TrainPuzzleCard({
   // played move is not called out.
   const severityColor = item.severity !== null ? SEVERITY_COLOR[item.severity] : undefined;
   const playedSquares = severityColor !== undefined ? uciToSquares(item.played_move_uci) : null;
+  const isMastered = list === 'mastered';
+  const layout = CARD_LAYOUT[list];
 
   return (
     <Card
       as="article"
-      accentColor={severityColor}
+      accentColor={isMastered ? FLAW_FIXED_BRONZE : severityColor}
+      className={isMastered ? FLAW_FIXED_GLOW_SOFT : undefined}
       overflowVisible
       data-testid={`train-puzzle-card-${item.game_id}-${item.ply}`}
     >
-      {/* One DOM order, two placements: the played move sits on its own row above the
-          board below sm, where the narrow text column has no height to spare (it would
-          push Analyze below the board), and beside the board from sm. */}
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 p-3 sm:grid-rows-[auto_1fr] sm:gap-y-0">
-        {item.severity !== null && item.played_move_san !== null && (
+      <div className={cn('grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 p-3', layout.grid)}>
+        {isMastered && <FlawFixedHeading masteredAt={item.last_solved_at} />}
+        {!isMastered && item.severity !== null && item.played_move_san !== null && (
           <div className="col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:mb-2">
             <span className="font-medium text-foreground" data-testid="train-puzzle-played-move">
               {formatMoveNotation(item.ply, item.played_move_san)}
@@ -103,7 +180,7 @@ export function TrainPuzzleCard({
             />
           </div>
         )}
-        <div className="sm:col-start-1 sm:row-span-2 sm:row-start-1">
+        <div className={layout.board}>
           {item.fen === null ? (
             // Unreplayable PGN: keep the row (list equals count) with an empty board slot.
             <div
@@ -128,7 +205,14 @@ export function TrainPuzzleCard({
         </div>
         {/* Tighter gaps below sm: index.css bumps text-sm to 16/24 there, which made this
             column taller than the board on phones under ~392px and pushed Analyze below it. */}
-        <div className="flex min-w-0 flex-col gap-1 self-stretch sm:col-start-2 sm:row-start-2 sm:gap-2">
+        <div className={cn('flex min-w-0 flex-col gap-1 self-stretch sm:gap-2', layout.details)}>
+          {isMastered && item.severity !== null && item.played_move_san !== null && (
+            <MasteredMoveLine
+              ply={item.ply}
+              san={item.played_move_san}
+              severity={item.severity}
+            />
+          )}
           {/* Game details and status (D-07). Usernames are React text children only. */}
           <div className="flex flex-col text-sm text-muted-foreground sm:gap-1">
             {/* break-words: a long unbroken username would otherwise spill out of the
@@ -138,9 +222,7 @@ export function TrainPuzzleCard({
               {opponent.rating !== null ? ` (${opponent.rating})` : ''}
             </span>
             {item.played_at !== null && (
-              <span data-testid="train-puzzle-date">
-                {format(parseISO(item.played_at), ARCHIVE_DATE_FORMAT)}
-              </span>
+              <span data-testid="train-puzzle-date">{formatArchiveDate(item.played_at)}</span>
             )}
             {item.time_control_bucket !== null && (
               <span data-testid="train-puzzle-time-control">
@@ -148,9 +230,9 @@ export function TrainPuzzleCard({
                 {item.time_control_str ? ` ${formatTimeControl(item.time_control_str)}` : ''}
               </span>
             )}
-            <span data-testid="train-puzzle-status">
-              {statusLine(list, item.last_solved_at)}
-            </span>
+            {!isMastered && (
+              <span data-testid="train-puzzle-status">{parkedLine(item.last_solved_at)}</span>
+            )}
           </div>
           {/* Action row: Analyze is flex-1 so a later Retry button drops in beside it.
               mt-auto bottom-aligns it with the board. */}

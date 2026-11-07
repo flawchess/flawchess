@@ -139,6 +139,15 @@ export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
 // from Stockfish's cold blue and doesn't collide with the brand-brown primary UI.
 // Rendered as colored text/elements on the dark card, so a bright gold is legible.
 export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
+// Train "Flaw fixed" mastery look. Bronze border + halo, identical to the homepage
+// feature-card treatment (Home.tsx) so it reads as the same "brand glow". The soft
+// variant is for the Archive's Mastered grid: the full 24px halo is built for one
+// moment on screen, and on every card in a grid the halos bleed into each other.
+export const FLAW_FIXED_BRONZE = 'rgba(205, 127, 50, 0.85)';
+export const FLAW_FIXED_GLOW =
+  'border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)]';
+export const FLAW_FIXED_GLOW_SOFT =
+  'border border-[rgba(205,127,50,0.85)] shadow-[0_0_16px_rgba(205,127,50,0.3)]';
 // Solid FlawChess primary badge: the fill of
 // the first (best) line's practical-score badge and the terminal-position badge. It is
 // the board arrow's gold (FLAWCHESS_ENGINE_ARROW) so badge and arrow

@@ -29,7 +29,7 @@ vi.mock('@/lib/analytics', async () => {
   };
 });
 
-import { SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
+import { FLAW_FIXED_BRONZE, SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
 import { TrainPuzzleCard } from '../TrainPuzzleCard';
 
 const FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2';
@@ -147,9 +147,32 @@ describe('TrainPuzzleCard played move', () => {
     expect(screen.getByTestId('train-puzzle-played-move').textContent).toBe(expected);
   });
 
-  it.each(['mistake', 'blunder'] as const)('shows the %s severity badge', (severity) => {
-    renderCard(makeItem({ severity }));
+  it.each(['mistake', 'blunder'] as const)('shows the %s badge on a parked card', (severity) => {
+    renderCard(makeItem({ severity }), 'parked');
     expect(screen.getByTestId(`severity-${severity}-100`)).toBeTruthy();
+    expect(screen.queryByTestId('train-puzzle-severity-icon')).toBeNull();
+  });
+
+  it.each([
+    ['mistake', 'Mistake'],
+    ['blunder', 'Blunder'],
+  ] as const)('shows the %s quality icon instead of the tag on a mastered card', (severity, label) => {
+    renderCard(makeItem({ severity }), 'mastered');
+    const icon = screen.getByTestId('train-puzzle-severity-icon');
+    expect(icon.getAttribute('aria-label')).toBe(label);
+    expect(icon.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByTestId(`severity-${severity}-100`)).toBeNull();
+  });
+
+  it('puts the move first in the details beside the board on a mastered card', () => {
+    renderCard(makeItem(), 'mastered');
+    const move = screen.getByTestId('train-puzzle-played-move');
+    const opponent = screen.getByTestId('train-puzzle-opponent');
+    expect(move.compareDocumentPosition(opponent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const board = screen.getByTestId('mock-mini-board');
+    expect(board.compareDocumentPosition(move) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const heading = screen.getByTestId('train-puzzle-flaw-fixed');
+    expect(heading.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows neither move nor badge for an evicted puzzle with no severity', () => {
@@ -226,9 +249,9 @@ describe('TrainPuzzleCard game details', () => {
 describe('TrainPuzzleCard status line', () => {
   const SOLVED_AT = '2026-10-03T12:00:00Z';
 
-  it('shows Mastered with the date and no miss count', () => {
+  it('shows the mastered date alone under the Flaw fixed heading, with no miss count', () => {
     renderCard(makeItem({ last_solved_at: SOLVED_AT, fail_count: 4 }), 'mastered');
-    expect(text('train-puzzle-status')).toBe('Mastered Oct 3, 2026');
+    expect(text('train-puzzle-status')).toBe('Oct 3, 2026');
   });
 
   it('shows Parked with the date and no miss count', () => {
@@ -238,10 +261,43 @@ describe('TrainPuzzleCard status line', () => {
 
   it('drops the date when last_solved_at is null', () => {
     renderCard(makeItem({ last_solved_at: null, fail_count: 4 }), 'mastered');
-    expect(text('train-puzzle-status')).toBe('Mastered');
+    expect(text('train-puzzle-flaw-fixed')).toBe('Flaw fixed');
+    expect(screen.queryByTestId('train-puzzle-status')).toBeNull();
     cleanup();
     renderCard(makeItem({ last_solved_at: null, fail_count: 4 }), 'parked');
     expect(text('train-puzzle-status')).toBe('Parked');
+  });
+});
+
+describe('TrainPuzzleCard mastered look', () => {
+  const card = (): HTMLElement => screen.getByTestId('train-puzzle-card-100-20');
+
+  it('gives a mastered card the Flaw fixed heading, bronze spine and glow', () => {
+    renderCard(makeItem(), 'mastered');
+    expect(text('train-puzzle-flaw-fixed')).toBe('Flaw fixed');
+    expect(card().className).toContain('shadow-');
+    expect(card().style.borderLeftColor).toBe(FLAW_FIXED_BRONZE);
+  });
+
+  it('keeps the bronze look on an evicted mastered puzzle with no severity', () => {
+    renderCard(makeItem({ severity: null }), 'mastered');
+    expect(text('train-puzzle-flaw-fixed')).toBe('Flaw fixed');
+    expect(card().style.borderLeftColor).toBe(FLAW_FIXED_BRONZE);
+  });
+
+  it('keeps the played mistake and its severity color on a mastered card', () => {
+    renderCard(makeItem(), 'mastered');
+    expect(text('train-puzzle-played-move')).toBe('11. Nc6');
+    expect(screen.getByTestId('train-puzzle-severity-icon')).toBeTruthy();
+    const props = boardProps.mock.lastCall![0] as Record<string, unknown>;
+    expect(props.arrows).toEqual([{ from: 'b8', to: 'c6', color: SEV_BLUNDER }]);
+  });
+
+  it('leaves a parked card without the heading, bronze spine or glow', () => {
+    renderCard(makeItem(), 'parked');
+    expect(screen.queryByTestId('train-puzzle-flaw-fixed')).toBeNull();
+    expect(card().className).not.toContain('shadow-');
+    expect(card().style.borderLeftColor).not.toBe(FLAW_FIXED_BRONZE);
   });
 });
 
@@ -260,7 +316,7 @@ describe('TrainPuzzleCard keeps the answer hidden', () => {
 
   it('ignores the Library severity filter, so the badge never rings', () => {
     flawFilter.severity = ['blunder'];
-    renderCard(makeItem({ severity: 'blunder' }));
+    renderCard(makeItem({ severity: 'blunder' }), 'parked');
     expect(screen.getByTestId('severity-blunder-100').className).not.toContain('ring');
     flawFilter.severity = [];
   });
