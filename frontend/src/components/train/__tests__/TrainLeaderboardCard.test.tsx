@@ -25,7 +25,7 @@ vi.mock('@/lib/analytics', async () => {
 
 import { apiClient } from '@/api/client';
 import { TrainLeaderboardCard, TrainLeaderboardCardView } from '@/components/train/TrainLeaderboardCard';
-import { ROLLOVER_MAX_RETRIES, ROLLOVER_RETRY_MS } from '@/lib/trainLeaderboard';
+import { LEADERBOARD_INFO_MEDALS_COPY, ROLLOVER_MAX_RETRIES, ROLLOVER_RETRY_MS } from '@/lib/trainLeaderboard';
 import type {
   LeaderboardBoard,
   LeaderboardLastWeek,
@@ -33,7 +33,7 @@ import type {
   TrainLeaderboardResponse,
 } from '@/types/train';
 
-const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, pass_target: null, last_week: null };
+const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, last_week: null };
 
 function makeRow(overrides: Partial<LeaderboardRow> = {}): LeaderboardRow {
   return {
@@ -137,7 +137,6 @@ describe('TrainLeaderboardCard (Points board)', () => {
             makeRow({ rank: 4, name: 'dave', value: 9, puzzles: 1 }),
           ],
           viewer: null,
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -164,7 +163,6 @@ describe('TrainLeaderboardCard (Points board)', () => {
         points: {
           rows: [makeRow({ rank: 1 }), makeRow({ rank: 2, name: 'me', is_viewer: true })],
           viewer: null,
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -185,7 +183,6 @@ describe('TrainLeaderboardCard (Points board)', () => {
             makeRow({ rank: 9, name: 'me', is_viewer: true, gap_before: true }),
           ],
           viewer: null,
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -207,7 +204,6 @@ describe('TrainLeaderboardCard (Points board)', () => {
             makeRow({ rank: 3, gap_after: true }),
           ],
           viewer: null,
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -221,7 +217,7 @@ describe('TrainLeaderboardCard (Points board)', () => {
   });
 
   it('guest: shows the claim-your-spot nudge with the shared sign-up pair (train-leaderboard source)', async () => {
-    respondWith(makeResponse({ points: { rows: [makeRow()], viewer: null, pass_target: null, last_week: null } }));
+    respondWith(makeResponse({ points: { rows: [makeRow()], viewer: null, last_week: null } }));
     renderCard(true);
     const cta = await screen.findByTestId('train-leaderboard-guest-cta');
     expect(cta.textContent).toContain('Sign up to claim your spot');
@@ -231,7 +227,7 @@ describe('TrainLeaderboardCard (Points board)', () => {
   });
 
   it('registered user: renders no sign-up element', async () => {
-    respondWith(makeResponse({ points: { rows: [makeRow()], viewer: null, pass_target: null, last_week: null } }));
+    respondWith(makeResponse({ points: { rows: [makeRow()], viewer: null, last_week: null } }));
     renderCard(false);
     await screen.findByTestId('train-leaderboard-rows');
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
@@ -251,7 +247,6 @@ const TABBED_RESPONSE = makeResponse({
   points: {
     rows: [makeRow({ rank: 1, name: 'alice', value: 20, puzzles: 8 })],
     viewer: VIEWER,
-    pass_target: { name: 'alice', points_needed: 4 },
     last_week: null,
   },
   accuracy: {
@@ -261,7 +256,6 @@ const TABBED_RESPONSE = makeResponse({
       makeRow({ rank: null, name: 'xia', value: 100, puzzles: 2, tentative: true }),
     ],
     viewer: { ...VIEWER, rank: null, tentative: true, puzzles_to_qualify: 18 },
-    pass_target: null,
     last_week: null,
   },
 });
@@ -340,14 +334,13 @@ describe('TrainLeaderboardCard tabs', () => {
   it('renders the gap marker, then the divider, then the row when one row is both', async () => {
     respondWith(
       makeResponse({
-        points: { rows: [makeRow()], viewer: null, pass_target: null, last_week: null },
+        points: { rows: [makeRow()], viewer: null, last_week: null },
         accuracy: {
           rows: [
             makeRow({ rank: 1, name: 'zed', value: 95, puzzles: 30 }),
             makeRow({ rank: null, name: 'yan', value: 80, puzzles: 5, tentative: true, gap_before: true }),
           ],
           viewer: null,
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -402,20 +395,20 @@ describe('TrainLeaderboardCard tabs', () => {
     expect(screen.getByTestId('train-leaderboard-empty').textContent).toBe('No accuracy entries yet this week.');
   });
 
-  it('viewer hints: pass target on Points, none for a tentative viewer on Accuracy', async () => {
+  it('viewer hints: none once on Points, none for a tentative viewer on Accuracy', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();
     await screen.findByTestId('train-leaderboard-rows');
-    expect(screen.getByTestId('train-leaderboard-pass-target').textContent).toBe('4 points to pass alice');
+    expect(screen.queryByTestId('train-leaderboard-enter-hint')).toBeNull();
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     expect(screen.queryByTestId('train-leaderboard-qualify')).toBeNull();
-    expect(screen.queryByTestId('train-leaderboard-pass-target')).toBeNull();
+    expect(screen.queryByTestId('train-leaderboard-accuracy-not-entered')).toBeNull();
   });
 
   it('a viewer with Points entries but no Accuracy entry gets the not-entered line', async () => {
     respondWith(
       makeResponse({
-        points: { rows: [makeRow()], viewer: VIEWER, pass_target: null, last_week: null },
+        points: { rows: [makeRow()], viewer: VIEWER, last_week: null },
       }),
     );
     renderCard();
@@ -472,7 +465,7 @@ describe('TrainLeaderboardCard countdown and private rows', () => {
     const info = screen.getByTestId('train-leaderboard-info');
     expect(info.getAttribute('aria-label')).toBe('About the weekly leaderboards');
     expect(info.compareDocumentPosition(countdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(info.parentElement?.querySelector('h2')?.textContent).toBe('This week');
+    expect(info.closest('h2')?.textContent).toContain('This week');
     fireEvent.click(info);
     expect(await screen.findByText('Points mainly rewards how many puzzles you solve.')).not.toBeNull();
     expect(
@@ -564,7 +557,6 @@ describe('TrainLeaderboardCard countdown and private rows', () => {
         points: {
           rows: [makeRow({ rank: 5, name: 'me', is_viewer: true, visibility: 'hidden' })],
           viewer: { ...VIEWER, visibility: 'hidden' },
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -581,7 +573,6 @@ describe('TrainLeaderboardCard countdown and private rows', () => {
         points: {
           rows: [makeRow({ rank: 5, name: 'Anonymous', is_viewer: true, visibility: 'guest' })],
           viewer: { ...VIEWER, visibility: 'guest' },
-          pass_target: null,
           last_week: null,
         },
       }),
@@ -593,7 +584,7 @@ describe('TrainLeaderboardCard countdown and private rows', () => {
   });
 
   it('renders users without a username as the server-sent "Anonymous"', async () => {
-    respondWith(makeResponse({ points: { rows: [makeRow({ name: 'Anonymous' })], viewer: null, pass_target: null, last_week: null } }));
+    respondWith(makeResponse({ points: { rows: [makeRow({ name: 'Anonymous' })], viewer: null, last_week: null } }));
     renderCard();
     expect((await screen.findByTestId('train-leaderboard-row-0')).textContent).toContain('Anonymous');
   });
@@ -624,14 +615,14 @@ describe('TrainLeaderboardCard last-week podium', () => {
       }),
     );
     renderCard();
-    const podium = await screen.findByTestId('train-leaderboard-podium');
-    expect(podium.textContent).toContain('Last week:');
+    const line = await screen.findByTestId('train-leaderboard-last-week');
+    expect(line.textContent).toContain('Last week:');
     expect(screen.getByTestId('train-leaderboard-podium-entry-0').textContent).toContain('alice');
     expect(screen.getByTestId('train-leaderboard-podium-entry-1').textContent).toContain('bob');
     expect(screen.getByTestId('train-leaderboard-podium-entry-2').textContent).toContain('dave');
   });
 
-  it('on the Accuracy tab the podium precedes the Accuracy helper', async () => {
+  it('on the Accuracy tab the podium follows the board', async () => {
     respondWith(
       makeResponse({
         points: { ...EMPTY_BOARD, rows: [makeRow()] },
@@ -647,7 +638,7 @@ describe('TrainLeaderboardCard last-week podium', () => {
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     const podium = screen.getByTestId('train-leaderboard-podium');
     const rows = screen.getByTestId('train-leaderboard-rows');
-    expect(podium.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rows.compareDocumentPosition(podium) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows the podium of the active tab only', async () => {
@@ -816,36 +807,27 @@ describe('TrainLeaderboardCard lifetime medal tally', () => {
   });
 });
 
-describe('TrainLeaderboardCard last-week finish line', () => {
-  it('sits below this week\'s hint on the Points tab', async () => {
+describe('TrainLeaderboardCard last-week finish', () => {
+  const ALICE_GOLD = [{ medal: 'gold' as const, name: 'alice', is_viewer: false }];
+
+  it('sits on the last-week line, below the rows', async () => {
     respondWith(
       makeResponse({
-        points: {
-          ...EMPTY_BOARD,
-          rows: [makeRow()],
-          viewer: VIEWER,
-          pass_target: { name: 'alice', points_needed: 4 },
-          last_week: lastWeekOf([{ medal: 'gold', name: 'alice', is_viewer: false }], 12),
-        },
+        points: { ...EMPTY_BOARD, rows: [makeRow()], viewer: VIEWER, last_week: lastWeekOf(ALICE_GOLD, 12) },
       }),
     );
     renderCard();
     const finish = await screen.findByTestId('train-leaderboard-last-week-finish');
-    const hint = screen.getByTestId('train-leaderboard-pass-target');
-    expect(finish.textContent).toBe('You finished #12 last week');
-    expect(hint.compareDocumentPosition(finish) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(hint.textContent).toBe('4 points to pass alice');
+    const rows = screen.getByTestId('train-leaderboard-rows');
+    expect(finish.textContent).toBe('You: #12');
+    expect(screen.getByTestId('train-leaderboard-last-week').contains(finish)).toBe(true);
+    expect(rows.compareDocumentPosition(finish) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('sits below this week\'s hint on the Accuracy tab, using that board\'s rank', async () => {
+  it("follows this week's hint on the Accuracy tab, using that board's rank", async () => {
     respondWith(
       makeResponse({
-        points: {
-          ...EMPTY_BOARD,
-          rows: [makeRow()],
-          viewer: VIEWER,
-          last_week: lastWeekOf([{ medal: 'gold', name: 'alice', is_viewer: false }], 12),
-        },
+        points: { ...EMPTY_BOARD, rows: [makeRow()], viewer: VIEWER, last_week: lastWeekOf(ALICE_GOLD, 12) },
         accuracy: {
           ...EMPTY_BOARD,
           rows: [makeRow({ value: 90, puzzles: 30 })],
@@ -858,42 +840,47 @@ describe('TrainLeaderboardCard last-week finish line', () => {
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     const hint = screen.getByTestId('train-leaderboard-accuracy-not-entered');
     const finish = screen.getByTestId('train-leaderboard-last-week-finish');
-    expect(finish.textContent).toBe('You finished #5 last week');
+    expect(finish.textContent).toBe('You: #5');
     expect(hint.compareDocumentPosition(finish) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('renders alone when there is no current hint', async () => {
+  it('renders alone when no medal was awarded', async () => {
     respondWith(
       makeResponse({
-        points: {
-          ...EMPTY_BOARD,
-          rows: [makeRow()],
-          viewer: VIEWER,
-          pass_target: null,
-          last_week: lastWeekOf([], 9),
-        },
+        points: { ...EMPTY_BOARD, rows: [makeRow()], viewer: VIEWER, last_week: lastWeekOf([], 9) },
       }),
     );
     renderCard();
     const finish = await screen.findByTestId('train-leaderboard-last-week-finish');
-    expect(finish.textContent).toBe('You finished #9 last week');
-    expect(finish.className).toContain('mt-2');
+    expect(finish.textContent).toBe('You: #9');
+    expect(screen.queryByTestId('train-leaderboard-podium')).toBeNull();
   });
 
   it('renders nothing extra when viewer_final_rank is null', async () => {
     respondWith(
       makeResponse({
-        points: {
-          ...EMPTY_BOARD,
-          rows: [makeRow()],
-          viewer: VIEWER,
-          pass_target: { name: 'alice', points_needed: 4 },
-          last_week: lastWeekOf([{ medal: 'gold', name: 'alice', is_viewer: false }], null),
-        },
+        points: { ...EMPTY_BOARD, rows: [makeRow()], viewer: VIEWER, last_week: lastWeekOf(ALICE_GOLD, null) },
       }),
     );
     renderCard();
-    await screen.findByTestId('train-leaderboard-pass-target');
+    await screen.findByTestId('train-leaderboard-podium');
     expect(screen.queryByTestId('train-leaderboard-last-week-finish')).toBeNull();
+  });
+
+  it("keeps the guest sign-up nudge above last week's line", async () => {
+    respondWith(
+      makeResponse({ points: { ...EMPTY_BOARD, rows: [makeRow()], last_week: lastWeekOf(ALICE_GOLD) } }),
+    );
+    renderCard(true);
+    const cta = await screen.findByTestId('train-leaderboard-guest-cta');
+    const line = screen.getByTestId('train-leaderboard-last-week');
+    expect(cta.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('explains medals in the info popover', async () => {
+    respondWith(makeResponse());
+    renderCard();
+    fireEvent.click(await screen.findByTestId('train-leaderboard-info'));
+    expect((await screen.findByText(LEADERBOARD_INFO_MEDALS_COPY)).textContent).toContain('win a medal');
   });
 });

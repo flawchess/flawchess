@@ -7,7 +7,6 @@
  */
 import type {
   LeaderboardBoardKind,
-  LeaderboardPassTarget,
   LeaderboardRow,
   LeaderboardViewer,
   TrainLeaderboardResponse,
@@ -30,6 +29,8 @@ export const ACCURACY_QUALIFY_MIN_PUZZLES = 20;
 export const LEADERBOARD_INFO_POINTS_COPY = 'Points mainly rewards how many puzzles you solve.';
 export const LEADERBOARD_INFO_ACCURACY_COPY =
   'Accuracy is your score across all puzzles this week: it rewards how carefully you solve. At equal accuracy, more puzzles ranks higher.';
+export const LEADERBOARD_INFO_MEDALS_COPY =
+  "The top 3 on each board win a medal every week. The icons next to a name show that player's medals on this board.";
 /** Viewer has Points entries but no Accuracy entry: never a misleading count. */
 export const ACCURACY_NOT_ENTERED_COPY =
   "You're not on this board yet: tactics puzzles don't count here.";
@@ -89,18 +90,11 @@ export function firstUnrankedRowIndex(rows: readonly LeaderboardRow[]): number {
   return rows.findIndex((row) => row.rank === null);
 }
 
-/** '1 point to pass X' / 'N points to pass X'. */
-export function passTargetCopy(target: LeaderboardPassTarget): string {
-  const unit = target.points_needed === 1 ? 'point' : 'points';
-  return `${target.points_needed} ${unit} to pass ${target.name}`;
-}
-
-export type ViewerHintId = 'pass-target' | 'accuracy-not-entered' | 'enter-hint';
+export type ViewerHintId = 'accuracy-not-entered' | 'enter-hint';
 
 /**
- * The one hint line under the active board, or null. The pass-target number
- * comes from the server (`points_needed`); the client never counts the
- * viewer's solves itself. A tentative Accuracy viewer gets no hint: the
+ * The one hint line under the active board, or null: only for a viewer who
+ * is not on that board yet. A tentative Accuracy viewer gets no hint: the
  * "Not yet qualified" divider already states the threshold.
  */
 export function viewerHint(
@@ -112,11 +106,8 @@ export function viewerHint(
 }
 
 function pointsHint(data: TrainLeaderboardResponse): { id: ViewerHintId; text: string } | null {
-  if (data.points.viewer === null) return { id: 'enter-hint', text: ENTER_BOARD_HINT_COPY };
-  if (data.points.pass_target !== null) {
-    return { id: 'pass-target', text: passTargetCopy(data.points.pass_target) };
-  }
-  return null;
+  if (data.points.viewer !== null) return null;
+  return { id: 'enter-hint', text: ENTER_BOARD_HINT_COPY };
 }
 
 function accuracyHint(data: TrainLeaderboardResponse): { id: ViewerHintId; text: string } | null {

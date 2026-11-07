@@ -529,17 +529,10 @@ export interface LeaderboardViewer {
   visibility: LeaderboardVisibility;
 }
 
-/** The nearest strictly better Points row. Mirrors app/schemas/train.py. */
-export interface LeaderboardPassTarget {
-  name: string;
-  points_needed: number;
-}
-
-/** One board: rows, the viewer's standing and (points board only) a pass target. */
+/** One board: rows, the viewer's standing and last week's result. */
 export interface LeaderboardBoard {
   rows: LeaderboardRow[];
   viewer: LeaderboardViewer | null;
-  pass_target: LeaderboardPassTarget | null;
   /** Previous ISO week only; null means there is nothing to show. */
   last_week: LeaderboardLastWeek | null;
 }

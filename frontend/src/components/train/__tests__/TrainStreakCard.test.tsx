@@ -200,8 +200,8 @@ describe('TrainStreakCard', () => {
               ...viewer,
             };
       return {
-        points: { rows: [], viewer: full, pass_target: null, last_week: null },
-        accuracy: { rows: [], viewer: null, pass_target: null, last_week: null },
+        points: { rows: [], viewer: full, last_week: null },
+        accuracy: { rows: [], viewer: null, last_week: null },
       } as unknown as TrainLeaderboardResponse;
     }
 
@@ -271,7 +271,7 @@ describe('TrainStreakCard', () => {
     it('renders "Points today: 5/9" after the rank line and before the freeze row', async () => {
       vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
       vi.mocked(trainApi.getLeaderboard).mockResolvedValue({
-        points: { rows: [], viewer: { rank: 4 }, pass_target: null, last_week: null },
+        points: { rows: [], viewer: { rank: 4 }, last_week: null },
       } as unknown as TrainLeaderboardResponse);
       renderWithClient(undefined, { total: 5, max: 9 });
       const rank = await screen.findByTestId('train-rank-line');

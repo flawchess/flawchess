@@ -954,23 +954,13 @@ class LeaderboardViewer(BaseModel):
     visibility: LeaderboardVisibility
 
 
-class LeaderboardPassTarget(BaseModel):
-    """The nearest strictly-better row and the points needed to pass it."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    name: str
-    points_needed: int
-
-
 class LeaderboardBoard(BaseModel):
-    """One board: sliced rows, the viewer's standing, and the Points pass target."""
+    """One board: sliced rows, the viewer's standing, and last week's result."""
 
     model_config = ConfigDict(from_attributes=True)
 
     rows: list[LeaderboardRow]
     viewer: LeaderboardViewer | None
-    pass_target: LeaderboardPassTarget | None  # Points board only
     # The immediately previous ISO week only; null when that board awarded no
     # medal and the viewer has no non-medal row there.
     last_week: LeaderboardLastWeek | None
@@ -1041,7 +1031,6 @@ __all__ = [
     "LeaderboardBoardKind",
     "LeaderboardLastWeek",
     "LeaderboardMedals",
-    "LeaderboardPassTarget",
     "LeaderboardPodiumEntry",
     "LeaderboardRow",
     "LeaderboardViewer",

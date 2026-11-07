@@ -140,7 +140,7 @@ const composeOrResumeSession = vi.fn(async (): Promise<TrainSessionResponse> => 
 const markSessionEntered = vi.fn<(sessionId: number) => Promise<void>>(async () => undefined);
 const getSettings = vi.fn(async () => SETTINGS_RESPONSE);
 const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
-const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, pass_target: null, last_week: null };
+const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, last_week: null };
 const getLeaderboard = vi.fn(async () => ({
   week_start: '2032-01-05',
   week_end: '2032-01-12',

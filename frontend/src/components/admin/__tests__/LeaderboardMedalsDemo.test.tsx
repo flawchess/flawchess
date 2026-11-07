@@ -92,11 +92,10 @@ describe('LeaderboardMedalsDemo scenarios', () => {
     );
   });
 
-  it('shows the second hint line when the viewer finished #12 last week', () => {
+  it('shows the finish on the last-week line when the viewer finished #12', () => {
     render(<LeaderboardMedalsDemo />);
     clickBoard('finished-12');
-    expect(screen.getByTestId('train-leaderboard-pass-target')).toBeTruthy();
-    expect(screen.getByTestId('train-leaderboard-last-week-finish').textContent).toBe('You finished #12 last week');
+    expect(screen.getByTestId('train-leaderboard-last-week-finish').textContent).toBe('You: #12');
   });
 
   it('renders the full tally with its aria-label for all three medal types', () => {

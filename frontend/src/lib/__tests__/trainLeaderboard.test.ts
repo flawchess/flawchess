@@ -7,7 +7,6 @@ import {
   boardValueLabel,
   firstUnrankedRowIndex,
   parseLeaderboardTab,
-  passTargetCopy,
   formatCountdown,
   NOT_YET_QUALIFIED_DIVIDER_COPY,
   puzzleCountLabel,
@@ -126,14 +125,9 @@ describe('readLeaderboardTab / writeLeaderboardTab', () => {
   });
 });
 
-describe('qualifier and pass-target copy', () => {
+describe('qualifier copy', () => {
   it('the divider states the Accuracy threshold', () => {
     expect(NOT_YET_QUALIFIED_DIVIDER_COPY).toBe('Not yet qualified (20+ puzzles)');
-  });
-
-  it('passTargetCopy is singular for 1 point', () => {
-    expect(passTargetCopy({ name: 'magnus', points_needed: 1 })).toBe('1 point to pass magnus');
-    expect(passTargetCopy({ name: 'magnus', points_needed: 5 })).toBe('5 points to pass magnus');
   });
 });
 
@@ -144,7 +138,7 @@ const VIEWER: LeaderboardViewer = {
   puzzles_to_qualify: 0,
   visibility: 'public',
 };
-const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, pass_target: null, last_week: null };
+const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, last_week: null };
 
 function response(points: Partial<LeaderboardBoard>, accuracy: Partial<LeaderboardBoard>): TrainLeaderboardResponse {
   return {
@@ -157,17 +151,12 @@ function response(points: Partial<LeaderboardBoard>, accuracy: Partial<Leaderboa
 }
 
 describe('viewerHint', () => {
-  it('points: pass-target when the viewer has a pass target', () => {
-    const data = response({ viewer: VIEWER, pass_target: { name: 'magnus', points_needed: 3 } }, {});
-    expect(viewerHint('points', data)).toEqual({ id: 'pass-target', text: '3 points to pass magnus' });
-  });
-
   it('points: enter-hint when the viewer has no points entry', () => {
     const hint = viewerHint('points', response({}, {}));
     expect(hint?.id).toBe('enter-hint');
   });
 
-  it('points: no hint for a viewer already on top (no pass target)', () => {
+  it('points: no hint for a viewer already on the board', () => {
     expect(viewerHint('points', response({ viewer: VIEWER }, {}))).toBeNull();
   });
 
