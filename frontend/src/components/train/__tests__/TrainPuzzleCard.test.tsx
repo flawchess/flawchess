@@ -226,19 +226,14 @@ describe('TrainPuzzleCard game details', () => {
 describe('TrainPuzzleCard status line', () => {
   const SOLVED_AT = '2026-10-03T12:00:00Z';
 
-  it('shows Mastered with the date and never a miss count', () => {
+  it('shows Mastered with the date and no miss count', () => {
     renderCard(makeItem({ last_solved_at: SOLVED_AT, fail_count: 4 }), 'mastered');
     expect(text('train-puzzle-status')).toBe('Mastered Oct 3, 2026');
   });
 
-  it('shows Parked with the date and a plural miss count', () => {
+  it('shows Parked with the date and no miss count', () => {
     renderCard(makeItem({ last_solved_at: SOLVED_AT, fail_count: 4 }), 'parked');
-    expect(text('train-puzzle-status')).toBe('Parked Oct 3, 2026 · 4 misses');
-  });
-
-  it('uses 1 miss in the singular', () => {
-    renderCard(makeItem({ last_solved_at: SOLVED_AT, fail_count: 1 }), 'parked');
-    expect(text('train-puzzle-status')).toBe('Parked Oct 3, 2026 · 1 miss');
+    expect(text('train-puzzle-status')).toBe('Parked Oct 3, 2026');
   });
 
   it('drops the date when last_solved_at is null', () => {
@@ -246,7 +241,7 @@ describe('TrainPuzzleCard status line', () => {
     expect(text('train-puzzle-status')).toBe('Mastered');
     cleanup();
     renderCard(makeItem({ last_solved_at: null, fail_count: 4 }), 'parked');
-    expect(text('train-puzzle-status')).toBe('Parked · 4 misses');
+    expect(text('train-puzzle-status')).toBe('Parked');
   });
 });
 

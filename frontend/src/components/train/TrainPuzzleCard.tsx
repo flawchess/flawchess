@@ -46,16 +46,10 @@ function capitalize(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
-/**
- * `Mastered Oct 3, 2026` or `Parked Oct 3, 2026 · 4 misses`. A null date drops the
- * date part; only Parked carries a miss count (`1 miss` singular).
- */
-function statusLine(list: ArchiveList, lastSolvedAt: string | null, failCount: number): string {
-  const parts: string[] = [LIST_LABEL[list]];
-  if (lastSolvedAt !== null) parts.push(format(parseISO(lastSolvedAt), ARCHIVE_DATE_FORMAT));
-  const base = parts.join(' ');
-  if (list !== 'parked') return base;
-  return `${base} · ${failCount} ${failCount === 1 ? 'miss' : 'misses'}`;
+/** `Mastered Oct 3, 2026` or `Parked Oct 3, 2026`. A null date drops the date part. */
+function statusLine(list: ArchiveList, lastSolvedAt: string | null): string {
+  if (lastSolvedAt === null) return LIST_LABEL[list];
+  return `${LIST_LABEL[list]} ${format(parseISO(lastSolvedAt), ARCHIVE_DATE_FORMAT)}`;
 }
 
 /** Opponent name and rating: the side the user is NOT playing. Null name is `?`. */
@@ -155,7 +149,7 @@ export function TrainPuzzleCard({
               </span>
             )}
             <span data-testid="train-puzzle-status">
-              {statusLine(list, item.last_solved_at, item.fail_count)}
+              {statusLine(list, item.last_solved_at)}
             </span>
           </div>
           {/* Action row: Analyze is flex-1 so a later Retry button drops in beside it.
