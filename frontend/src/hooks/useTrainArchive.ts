@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { trainApi } from '@/api/client';
 import type { ArchiveList, TrainArchiveResponse } from '@/types/train';
 
-/** Cards per Archive page. The backend allows more; 20 matches the Library lists. */
-export const ARCHIVE_PAGE_SIZE = 20;
+/** Cards per Archive page. The backend allows more; 24 fills every row at 2 and 3 columns. */
+export const ARCHIVE_PAGE_SIZE = 24;
 
 /**
  * GET /train/archive, one page of the mastered or parked puzzles.

@@ -67,7 +67,9 @@ export function TrainPuzzleCard({
   item: TrainArchiveItem;
   list: ArchiveList;
 }): ReactElement {
-  const boardSize = useMiniBoardSize(DESKTOP_BOARD_SIZE);
+  // Capped because the hook returns an uncapped 50vw below sm: the board reached 320px
+  // at a 639px viewport, then snapped back to 200px at 640px.
+  const boardSize = Math.min(useMiniBoardSize(DESKTOP_BOARD_SIZE), DESKTOP_BOARD_SIZE);
   const opponent = opponentLabel(item);
 
   return (
@@ -92,10 +94,14 @@ export function TrainPuzzleCard({
             size={boardSize}
             lastMove={uciToSquares(item.last_move_uci) ?? undefined}          />
         )}
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {/* Tighter gaps below sm: index.css bumps text-sm to 16/24 there, which made this
+            column taller than the board on phones under ~392px and pushed Analyze below it. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1 self-stretch sm:gap-2">
           {/* Game details and status (D-07). Usernames are React text children only. */}
-          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-            <span data-testid="train-puzzle-opponent">
+          <div className="flex flex-col text-sm text-muted-foreground sm:gap-1">
+            {/* break-words: a long unbroken username would otherwise spill out of the
+                narrow text column, since the card sets overflowVisible. */}
+            <span className="break-words" data-testid="train-puzzle-opponent">
               <span className="text-foreground">{opponent.name}</span>
               {opponent.rating !== null ? ` (${opponent.rating})` : ''}
             </span>
@@ -114,8 +120,9 @@ export function TrainPuzzleCard({
               {statusLine(list, item.last_solved_at, item.fail_count)}
             </span>
           </div>
-          {/* Action row: Analyze is flex-1 so a later Retry button drops in beside it. */}
-          <div className="flex gap-2">
+          {/* Action row: Analyze is flex-1 so a later Retry button drops in beside it.
+              mt-auto bottom-aligns it with the board. */}
+          <div className="mt-auto flex gap-2">
             <Button asChild variant="brand-outline" className="flex-1">
               {/* Real <a> via Link for middle-click / cmd-click new-tab support. */}
               <Link

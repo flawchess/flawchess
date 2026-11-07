@@ -39,9 +39,10 @@ const ARCHIVE_EXPLAINER: Record<ArchiveList, string> = {
 };
 
 /** Placeholder cards while a page loads. */
-const ARCHIVE_SKELETON_COUNT = 4;
+const ARCHIVE_SKELETON_COUNT = 6;
 
-const ARCHIVE_GRID_CLASS = 'grid grid-cols-1 lg:grid-cols-2 gap-4';
+// Three columns only from xl: below that a 200px board leaves too little text width.
+const ARCHIVE_GRID_CLASS = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4';
 
 interface ArchiveEmptyCopy {
   testId: string;

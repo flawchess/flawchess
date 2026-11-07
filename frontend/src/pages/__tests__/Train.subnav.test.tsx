@@ -165,7 +165,7 @@ const ARCHIVE_ITEM: TrainArchiveItem = {
   time_control_bucket: 'blitz',
   time_control_str: '600+0',
 };
-const ARCHIVE_PAGE_SIZE_UNDER_TEST = 20;
+const ARCHIVE_PAGE_SIZE_UNDER_TEST = 24;
 const getArchive = vi.fn<
   (params: { list: string; limit: number; offset: number }) => Promise<TrainArchiveResponse>
 >(async () => ({ items: [ARCHIVE_ITEM], total: 1 }));
@@ -860,7 +860,7 @@ describe('Train layout: the Archive tab', () => {
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);
   });
 
-  it('/train/archive/parked?page=2 asks for parked at offset 20, and a remount repeats it with no session', async () => {
+  it('/train/archive/parked?page=2 asks for parked at offset 24, and a remount repeats it with no session', async () => {
     getArchive.mockImplementation(async () => ({ items: [ARCHIVE_ITEM], total: 25 }));
     const first = renderTrainPage(['/train/archive/parked?page=2']);
 

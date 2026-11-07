@@ -64,6 +64,26 @@ describe('TrainPuzzleCard board', () => {
     trackFeature.mockClear();
   });
 
+  describe('board size', () => {
+    const originalInnerWidth = window.innerWidth;
+    afterEach(() => {
+      window.innerWidth = originalInnerWidth;
+    });
+
+    // 639 is the regression: an uncapped 50vw gave 320px just below the sm breakpoint.
+    it.each([
+      [320, 160],
+      [400, 200],
+      [639, 200],
+      [640, 200],
+    ])('at a %ipx viewport the board is %ipx', (viewport, expected) => {
+      window.innerWidth = viewport;
+      renderCard(makeItem());
+      const props = boardProps.mock.calls[0]![0] as Record<string, unknown>;
+      expect(props.size).toBe(expected);
+    });
+  });
+
   it.each(['mastered', 'parked'] as const)(
     'gives the board the pre-mistake FEN, the arriving move and no arrows on the %s list',
     (list) => {

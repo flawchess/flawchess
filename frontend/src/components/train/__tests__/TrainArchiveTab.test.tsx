@@ -40,7 +40,7 @@ import { TrainArchiveTab } from '@/components/train/TrainArchiveTab';
 const getArchive = vi.mocked(trainApi.getArchive);
 const getProgress = vi.mocked(trainApi.getProgress);
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 24;
 const MASTERED_COUNT = 12;
 const PARKED_COUNT = 3;
 
@@ -251,7 +251,7 @@ describe('toggle', () => {
 });
 
 describe('pagination', () => {
-  it('/train/archive/parked?page=2 asks for parked at offset 20 and marks page 2 active', async () => {
+  it('/train/archive/parked?page=2 asks for parked at offset 24 and marks page 2 active', async () => {
     getArchive.mockImplementation(async () => page([makeItem(21)], 25));
     renderTab(['/train/archive/parked?page=2']);
 
