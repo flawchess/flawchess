@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react';
+import { requestUpdateReload } from '@/lib/updateReload';
 
 // ── Service Worker update handling ────────────────────────────────────────
 // Extracted from main.tsx (FLAWCHESS-91) so the checker is unit-testable:
@@ -61,4 +62,44 @@ export function createSwUpdateChecker(): () => Promise<void> {
       Sentry.captureException(error, { tags: { source: 'sw-update' } });
     }
   };
+}
+
+/**
+ * Reloads when a new service worker takes over (after a deploy), so the page
+ * picks up the new precached assets. Without this the PWA can serve stale JS
+ * indefinitely and call API routes that were renamed (PWA on mobile kept
+ * calling /api/analysis/* after the backend renamed them to /api/openings/*).
+ *
+ * Bug fix: the listener used to be registered only when a controller existed
+ * at load. A page first opened without one (hard reload, or a worker that had
+ * not claimed yet) never reloaded on any later deploy. The listener is now
+ * always registered; the very first claim of a first-ever install is consumed
+ * without reloading, every later takeover reloads.
+ *
+ * The first-install race: registerSW.js registers only on window `load` and
+ * main.tsx evaluates before it, so on a true first visit getRegistration
+ * resolves undefined, or a registration whose `active` is still null (install
+ * and precache take far longer than that callback). Losing the race costs at
+ * most one extra reload, never a loop (the reload gate has a cooldown).
+ */
+export function installSwControllerReload(): void {
+  let takeoverIsUpdate = Boolean(navigator.serviceWorker.controller);
+
+  void (async () => {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration?.active) takeoverIsUpdate = true;
+    } catch {
+      // Same benign WebKit conditions as the checker above: never an unhandled
+      // rejection (FLAWCHESS-91). Falls back to the controller-at-load rule.
+    }
+  })();
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!takeoverIsUpdate) {
+      takeoverIsUpdate = true;
+      return;
+    }
+    requestUpdateReload({ reason: 'sw-update', atStartup: false });
+  });
 }

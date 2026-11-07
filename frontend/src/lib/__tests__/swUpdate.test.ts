@@ -106,3 +106,113 @@ describe('createSwUpdateChecker', () => {
     expect(SW_UPDATE_DEBOUNCE_MS).toBeGreaterThan(0);
   });
 });
+
+// ── installSwControllerReload ─────────────────────────────────────────────
+// Dynamic imports + vi.resetModules(): the reload gate is a module singleton.
+
+const originalLocation = window.location;
+
+interface ServiceWorkerStub extends EventTarget {
+  controller: unknown;
+  getRegistration: ReturnType<typeof vi.fn>;
+}
+
+function stubServiceWorkerTarget(controller: unknown, getRegistration: ReturnType<typeof vi.fn>): ServiceWorkerStub {
+  const target = new EventTarget() as ServiceWorkerStub;
+  target.controller = controller;
+  target.getRegistration = getRegistration;
+  Object.defineProperty(navigator, 'serviceWorker', { value: target, configurable: true });
+  return target;
+}
+
+describe('installSwControllerReload', () => {
+  let reload: ReturnType<typeof vi.fn>;
+
+  async function install(): Promise<{
+    gate: typeof import('../updateReload');
+    playActive: typeof import('../playActive');
+  }> {
+    vi.resetModules();
+    const swUpdate = await import('../swUpdate');
+    swUpdate.installSwControllerReload();
+    // Let the getRegistration promise settle.
+    await vi.advanceTimersByTimeAsync(0);
+    return { gate: await import('../updateReload'), playActive: await import('../playActive') };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_800_000_000_000);
+    window.sessionStorage.clear();
+    reload = vi.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  async function fireControllerChange(target: ServiceWorkerStub): Promise<void> {
+    target.dispatchEvent(new Event('controllerchange'));
+    await vi.advanceTimersByTimeAsync(10);
+  }
+
+  it('no controller and no registration: the first controllerchange (first install) does not reload, a later one does', async () => {
+    const target = stubServiceWorkerTarget(null, vi.fn().mockResolvedValue(undefined));
+    await install();
+
+    await fireControllerChange(target);
+    expect(reload).not.toHaveBeenCalled();
+
+    // Past the cooldown-free state: the gate has not stamped anything yet.
+    await fireControllerChange(target);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('no controller but an active registration: the first controllerchange reloads', async () => {
+    const target = stubServiceWorkerTarget(null, vi.fn().mockResolvedValue({ active: {} }));
+    await install();
+
+    await fireControllerChange(target);
+
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('a controller at load: the first controllerchange reloads', async () => {
+    const target = stubServiceWorkerTarget({}, vi.fn().mockResolvedValue(undefined));
+    await install();
+
+    await fireControllerChange(target);
+
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('getRegistration rejecting is swallowed and leaves the first-install rule intact', async () => {
+    // Vitest fails the run on any unhandled rejection, so reaching the
+    // assertions at all proves there was none.
+    const target = stubServiceWorkerTarget(null, vi.fn().mockRejectedValue(new Error('no registration')));
+    await install();
+
+    await fireControllerChange(target);
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a controllerchange during a session holds, and applies when the session ends', async () => {
+    const target = stubServiceWorkerTarget({}, vi.fn().mockResolvedValue(undefined));
+    const { gate, playActive } = await install();
+    const { renderHook } = await import('@testing-library/react');
+    const session = renderHook(() => playActive.useMarkPlayActive());
+
+    await fireControllerChange(target);
+    await vi.advanceTimersByTimeAsync(gate.SESSION_END_SETTLE_MS * 3);
+    expect(reload).not.toHaveBeenCalled();
+
+    session.unmount();
+    await vi.advanceTimersByTimeAsync(gate.SESSION_END_SETTLE_MS + 1);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+});

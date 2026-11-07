@@ -35,6 +35,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- The installed app no longer gets stuck on an old version. It now checks for a new version when it opens and when you come back to it, and updates itself, waiting until you finish your puzzle session or bot game.
 - Translating the page with Google Translate no longer crashes the app to the error screen.
 - Analysis: on smaller laptop screens (a maximized window under about 880px tall), the page now scrolls instead of cutting off the eval chart and the Accuracy card.
 - Background analysis no longer replaces a lichess-analyzed game's lichess evaluations with FlawChess engine evaluations.

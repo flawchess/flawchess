@@ -5,16 +5,16 @@ current_phase: 244
 current_phase_name: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
 status: verifying
 stopped_at: Phase 246 context gathered
-last_updated: "2026-11-06T19:37:16.589Z"
-state_head: 72211beae703a25c0f7f11a3dd3680b63507c42a
+last_updated: "2026-11-07T09:26:34.524Z"
+state_head: afa8867b0efb7776cf5487986c95aa2dd393de51
 progress:
   total_phases: 5
   completed_phases: 103
   total_plans: 26
   completed_plans: 96
 milestone_name: Codebase Cleanup
-last_activity: 2026-11-05
-last_activity_desc: "Completed quick task 261105-apc: Analysis Copy PGN in the PGN/FEN dropdown"
+last_activity: 2026-11-07
+last_activity_desc: "Completed quick task 261107-dnz: Stop the installed PWA showing outdated builds"
 ---
 
 # Project State: FlawChess
@@ -1087,6 +1087,7 @@ None active.
 | 261104-t65 | Analysis: PGN/FEN button becomes a menu with Import and Copy FEN | 2026-11-04 | 282a8dd7d | [261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe](./quick/261104-t65-analysis-copy-fen-dropdown-on-the-pgn-fe/) |
 | 261105-apc | Analysis Copy PGN in the PGN/FEN dropdown | 2026-11-05 | 6088226c7 | [261105-apc-in-the-analysis-page-add-a-copy-pgn-feat](./quick/261105-apc-in-the-analysis-page-add-a-copy-pgn-feat/) |
 | 261106-peq | Fix the crash and filter the CSP reports | 2026-11-06 | 053622ae7 | [261106-peq-fix-the-crash-and-filter-the-csp-reports](./quick/261106-peq-fix-the-crash-and-filter-the-csp-reports/) |
+| 261107-dnz | Stop the installed PWA showing outdated builds | 2026-11-07 | afa8867b0 | [261107-dnz-stop-the-installed-pwa-showing-outdated-](./quick/261107-dnz-stop-the-installed-pwa-showing-outdated-/) |
 
 ## Deferred Items
 

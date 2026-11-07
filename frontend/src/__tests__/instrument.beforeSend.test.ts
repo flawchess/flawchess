@@ -525,3 +525,28 @@ describe('sentryBeforeSend (FLAWCHESS-C6)', () => {
     expect(sentryBeforeSend(makeEvent() as never, { originalException: lazyError } as never)).toBeNull();
   });
 });
+
+describe('stale-build diagnostic event (quick 261107-dnz)', () => {
+  it('is kept by sentryBeforeSend', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+    const { STALE_BUILD_SENTRY_MESSAGE } = await import('@/lib/staleBuildDiagnostics');
+    const event = { message: STALE_BUILD_SENTRY_MESSAGE, level: 'info' };
+
+    expect(sentryBeforeSend(event as never, {} as never)).toBe(event);
+  });
+
+  it('matches none of the ignoreErrors patterns passed to Sentry.init', async () => {
+    await import('@/instrument');
+    const Sentry = await import('@sentry/react');
+    const { STALE_BUILD_SENTRY_MESSAGE } = await import('@/lib/staleBuildDiagnostics');
+    const options = vi.mocked(Sentry.init).mock.calls[0][0] as { ignoreErrors: Array<string | RegExp> };
+
+    expect(options.ignoreErrors.length).toBeGreaterThan(0);
+    for (const pattern of options.ignoreErrors) {
+      const matches = typeof pattern === 'string'
+        ? STALE_BUILD_SENTRY_MESSAGE.includes(pattern)
+        : pattern.test(STALE_BUILD_SENTRY_MESSAGE);
+      expect(matches).toBe(false);
+    }
+  });
+});
