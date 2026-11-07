@@ -4387,13 +4387,16 @@ async def test_phone_grade_never_earns_disagreement_credit(test_engine) -> None:
 
 ARCHIVE_ENDPOINT = "/api/train/archive"
 
-#: The exact wire key set of one archive item (D-08): no played move, best move,
-#: motif or severity, because any of them would spoil a later Retry.
+#: The exact wire key set of one archive item: the played move and its severity,
+#: but no best move or motif, because those would give away the answer.
 _ARCHIVE_ITEM_KEYS = {
     "game_id",
     "ply",
     "fen",
     "last_move_uci",
+    "played_move_uci",
+    "played_move_san",
+    "severity",
     "user_color",
     "last_solved_at",
     "fail_count",
@@ -4494,6 +4497,11 @@ async def test_archive_lists_a_mastered_puzzle_end_to_end(test_engine) -> None:
         # Position after 1. e4 e5 (2 half-moves), arrived at by e7e5.
         assert item["fen"] == "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
         assert item["last_move_uci"] == "e7e5"
+        # The move actually played from that position: 2. Nf3.
+        assert item["played_move_uci"] == "g1f3"
+        assert item["played_move_san"] == "Nf3"
+        # No game_flaws row seeded here, so the puzzle reads as evicted.
+        assert item["severity"] is None
         assert item["user_color"] == "white"
         assert item["time_control_bucket"] == "blitz"
         assert item["time_control_str"] == "600+0"

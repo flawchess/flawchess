@@ -150,10 +150,11 @@ describe('TrainScoreRankLines variants', () => {
     respondWith(makeResponse({ viewer: makeViewer({ rank: 2, rank_without_session: 3 }) }));
     renderLines(42);
     await waitFor(() => {
-      expect(screen.getByTestId('train-score-rank-accuracy').textContent).toBe(
-        "Accuracy: not on this board yet (tactics puzzles don't count)",
-      );
+      expect(screen.getByTestId('train-score-rank-accuracy').textContent).toBe('Accuracy: not ranked');
     });
+    // The tactics explanation moved into the popover beside the line.
+    expect(screen.getByTestId('train-score-rank-accuracy-info')).not.toBeNull();
+    expect(screen.queryByTestId('train-score-rank-points-info')).toBeNull();
   });
 
   it('a hidden viewer gets the "Hidden from others" line', async () => {

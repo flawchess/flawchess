@@ -1487,19 +1487,67 @@ def blob_pending_stmt(user_id: int) -> Select[tuple[int]]:
     )
 
 
+@dataclass(frozen=True)
+class PlyReplay:
+    """A game's position at one ply, plus the half-moves either side of it.
+
+    `last_move_uci` is the move that reached the position (None at ply 0).
+    `next_move_uci` and `next_move_san` are the move actually played FROM it
+    (None at the end of the game). For a Train puzzle that next move is the
+    user's original mistake, so it is display data for the Archive only: it must
+    never go into a puzzle served for solving.
+    """
+
+    fen: str
+    last_move_uci: str | None
+    next_move_uci: str | None
+    next_move_san: str | None
+
+
+def replay_at_ply(pgn: str, ply: int) -> PlyReplay | None:
+    """Replay `pgn` to `ply`: the single PGN-replay implementation for Train.
+
+    Wrapped in try/except per the project's PGN-parsing constraint. An unparseable
+    PGN or a ply past the game's end is an EXPECTED case for old/malformed imports,
+    not a bug, so it is not `sentry_sdk.capture_exception`'d.
+
+    Args:
+        pgn: The game's full PGN text.
+        ply: The half-move index to reconstruct the position at (0 = the
+            starting position).
+
+    Returns:
+        The replay, or None if the PGN could not be parsed or `ply` is past the
+        end of the game.
+    """
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn))
+        if game is None:
+            return None
+        moves = list(game.mainline_moves())
+        if ply > len(moves):
+            return None
+        board = game.board()
+        for move in moves[:ply]:
+            board.push(move)
+        next_move = moves[ply] if ply < len(moves) else None
+        return PlyReplay(
+            fen=board.fen(),
+            last_move_uci=moves[ply - 1].uci() if ply > 0 else None,
+            next_move_uci=next_move.uci() if next_move is not None else None,
+            next_move_san=board.san(next_move) if next_move is not None else None,
+        )
+    except ValueError, IndexError, AttributeError:
+        return None
+
+
 def fen_and_last_move_at_ply(pgn: str, ply: int) -> tuple[str, str | None] | None:
     """Reconstruct the FULL FEN and the arriving move's UCI at `ply`.
 
-    The single PGN-replay implementation shared by `full_fen_at_ply` (FEN
-    only) and every Train puzzle-construction site that also needs the
-    arriving move. `game_flaws.fen` is `board_fen()` (piece placement
+    Delegates to `replay_at_ply`, for every Train puzzle-construction site that
+    needs the arriving move. `game_flaws.fen` is `board_fen()` (piece placement
     only — see its model docstring) and loses castling rights/en-passant,
-    which a puzzle needs for legal-move generation. Parses `pgn` and
-    replays `ply` half-moves. Wrapped in try/except per the project's
-    PGN-parsing constraint (per-game try/except, handle malformed input
-    gracefully) — an unparseable PGN or a ply past the game's end is an
-    EXPECTED case for old/malformed imports, not a bug, so it is not
-    `sentry_sdk.capture_exception`'d.
+    which a puzzle needs for legal-move generation.
 
     The returned move describes HOW the position was reached — the
     half-move immediately before `ply` (the opponent's or the user's own
@@ -1518,20 +1566,8 @@ def fen_and_last_move_at_ply(pgn: str, ply: int) -> tuple[str, str | None] | Non
         puzzle whose FEN cannot be reconstructed rather than serving a
         broken board.
     """
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn))
-        if game is None:
-            return None
-        moves = list(game.mainline_moves())
-        if ply > len(moves):
-            return None
-        board = game.board()
-        for move in moves[:ply]:
-            board.push(move)
-        last_move_uci = moves[ply - 1].uci() if ply > 0 else None
-        return board.fen(), last_move_uci
-    except ValueError, IndexError, AttributeError:
-        return None
+    replay = replay_at_ply(pgn, ply)
+    return (replay.fen, replay.last_move_uci) if replay is not None else None
 
 
 def full_fen_at_ply(pgn: str, ply: int) -> str | None:
@@ -1563,6 +1599,7 @@ __all__ = [
     "SECOND_BEST_WINNING_FLOOR_CP",
     "SHARP_GAP_ES",
     "WINNABILITY_FLOOR_ES",
+    "PlyReplay",
     "PuzzleAnswerKey",
     "PuzzleType",
     "ServerGradedMove",
@@ -1585,6 +1622,7 @@ __all__ = [
     "legal_server_graded_moves",
     "pick_one_per_game",
     "pool_entry_stmt",
+    "replay_at_ply",
     "second_best_not_winning_admissible",
     "server_graded_moves_for",
     "sharp_runner_up_graded_move",

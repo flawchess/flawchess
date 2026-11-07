@@ -139,6 +139,14 @@ export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
 // from Stockfish's cold blue and doesn't collide with the brand-brown primary UI.
 // Rendered as colored text/elements on the dark card, so a bright gold is legible.
 export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
+// Train "Flaw fixed" mastery look. Bronze border + halo, identical to the homepage
+// feature-card treatment (Home.tsx) so it reads as the same "brand glow". The soft
+// variant is for the Archive's Mastered grid: the full 24px halo is built for one
+// moment on screen, and on every card in a grid the halos bleed into each other.
+export const FLAW_FIXED_GLOW =
+  'border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)]';
+export const FLAW_FIXED_GLOW_SOFT =
+  'border border-[rgba(205,127,50,0.85)] shadow-[0_0_16px_rgba(205,127,50,0.3)]';
 // Solid FlawChess primary badge: the fill of
 // the first (best) line's practical-score badge and the terminal-position badge. It is
 // the board arrow's gold (FLAWCHESS_ENGINE_ARROW) so badge and arrow
@@ -385,6 +393,7 @@ export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
 
 import type { EloComboKey } from '@/types/endgames';
 import type { MedalKind } from '@/types/train';
+import type { TrainRatingBand } from '@/lib/trainScore';
 
 export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: string }> = {
   chess_com_bullet:    { bright: 'oklch(0.62 0.22 30)',  dark: 'oklch(0.42 0.18 30)'  },
@@ -606,6 +615,11 @@ export const TRAIN_VERDICT_INCORRECT = WDL_LOSS;
 export const TRAIN_RATING_GREEN = WDL_WIN;
 export const TRAIN_RATING_YELLOW = 'oklch(0.75 0.15 85)'; // amber
 export const TRAIN_RATING_RED = WDL_LOSS;
+export const TRAIN_RATING_BAND_COLOR: Record<TrainRatingBand, string> = {
+  green: TRAIN_RATING_GREEN,
+  yellow: TRAIN_RATING_YELLOW,
+  red: TRAIN_RATING_RED,
+};
 
 // Train "Points: +N" flash badge foregrounds. The badge now
 // covers 4 background tiers (ZONE_DANGER/SEV_MISTAKE/SEV_INACCURACY/

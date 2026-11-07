@@ -15,7 +15,7 @@ import { Chess } from 'chess.js';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Card } from '@/components/ui/card';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
-import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
+import { FLAWCHESS_ENGINE_ACCENT, FLAW_FIXED_GLOW } from '@/lib/theme';
 
 /** Thumbnail size — small enough to sit beside the heading/subline without
  * pushing the reveal panel wider than the board column. Mobile gets a 50%
@@ -23,11 +23,6 @@ import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
  * reads as an unidentifiable smudge on a phone. */
 const FLAW_FIXED_THUMB_SIZE = 48;
 const FLAW_FIXED_THUMB_SIZE_MOBILE = 72;
-
-/** Bronze border + halo, identical to the homepage feature-card treatment
- * (`Home.tsx`) so the mastery celebration reads as the same "brand glow". */
-const FLAW_FIXED_GLOW =
-  'border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)]';
 
 export interface TrainFlawFixedBannerProps {
   fen: string;

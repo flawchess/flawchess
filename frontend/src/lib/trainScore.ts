@@ -85,6 +85,13 @@ export function aggregateSessionScore(perPuzzleScores: number[]): TrainSessionSc
   return { total, max: perPuzzleScores.length * TRAIN_POINTS_PER_PUZZLE };
 }
 
+/** Puzzles NOT fully correct (guess or move wrong): `ScoreBubbleInput.missedCount`. */
+export function countMissedPuzzles(
+  outcomes: ReadonlyArray<{ correct_guess: boolean; move_quality: TrainMoveTier }>,
+): number {
+  return outcomes.filter((outcome) => !(outcome.correct_guess && outcome.move_quality === 'good')).length;
+}
+
 /**
  * Maps an EXACT ratio (never the floored percentage — see
  * `displaySessionPercentage`) to one of three mutually exclusive, exhaustive

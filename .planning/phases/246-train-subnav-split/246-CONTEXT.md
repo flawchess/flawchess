@@ -25,7 +25,7 @@ Out of scope: Retry (SEED-261106-q92), the Stats tab, archive filters. Never lis
 
 ### Archive card details
 - **D-07:** Beside the board, above Analyze: game details (opponent and rating, game date, time control) plus a status line, for example `Mastered Oct 3, 2026` or `Parked Oct 3, 2026 · 4 misses`. The date is the latest solve date for that puzzle (see D-13) and the miss count is `drill_items.fail_count`.
-- **D-08:** No originally played move on the card, as text or otherwise. No motif or severity either: all would hint at the answer on a later Retry, and Analyze shows them anyway.
+- **D-08:** No originally played move on the card, as text or otherwise. No motif or severity either: all would hint at the answer on a later Retry, and Analyze shows them anyway. **Changed (2026-11-07, owner):** the card now shows the played move (arrow and notation) and its severity badge, like `FlawCard`. The best move and motif stay off the card and the wire.
 - **D-09:** An empty Mastered or Parked list shows per-list explainer copy based on the existing explainers, plus a link to Today. Example: "No mastered puzzles yet. Solve a puzzle correctly twice in a row to master it." The copy for an empty Parked list should read as good news, not a dead end. Zero-game accounts get the same empty state, no import button. **Changed in UAT (2026-11-07, owner):** the empty lists show the title and the Today link only, because the D-04 sentence already sits just above them.
 
 ### Streak card additions
