@@ -143,7 +143,6 @@ export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
 // feature-card treatment (Home.tsx) so it reads as the same "brand glow". The soft
 // variant is for the Archive's Mastered grid: the full 24px halo is built for one
 // moment on screen, and on every card in a grid the halos bleed into each other.
-export const FLAW_FIXED_BRONZE = 'rgba(205, 127, 50, 0.85)';
 export const FLAW_FIXED_GLOW =
   'border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)]';
 export const FLAW_FIXED_GLOW_SOFT =

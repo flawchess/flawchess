@@ -16,7 +16,6 @@ import { formatMoveNotation } from '@/lib/openingInsights';
 import { cn } from '@/lib/utils';
 import {
   FLAWCHESS_ENGINE_ACCENT,
-  FLAW_FIXED_BRONZE,
   FLAW_FIXED_GLOW_SOFT,
   SEV_BLUNDER,
   SEV_MISTAKE,
@@ -158,7 +157,7 @@ export function TrainPuzzleCard({
   return (
     <Card
       as="article"
-      accentColor={isMastered ? FLAW_FIXED_BRONZE : severityColor}
+      accentColor={isMastered ? undefined : severityColor}
       className={isMastered ? FLAW_FIXED_GLOW_SOFT : undefined}
       overflowVisible
       data-testid={`train-puzzle-card-${item.game_id}-${item.ply}`}

@@ -29,7 +29,7 @@ vi.mock('@/lib/analytics', async () => {
   };
 });
 
-import { FLAW_FIXED_BRONZE, SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
+import { SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
 import { TrainPuzzleCard } from '../TrainPuzzleCard';
 
 const FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2';
@@ -272,17 +272,17 @@ describe('TrainPuzzleCard status line', () => {
 describe('TrainPuzzleCard mastered look', () => {
   const card = (): HTMLElement => screen.getByTestId('train-puzzle-card-100-20');
 
-  it('gives a mastered card the Flaw fixed heading, bronze spine and glow', () => {
+  it('gives a mastered card the Flaw fixed heading and glow, with no accent spine', () => {
     renderCard(makeItem(), 'mastered');
     expect(text('train-puzzle-flaw-fixed')).toBe('Flaw fixed');
     expect(card().className).toContain('shadow-');
-    expect(card().style.borderLeftColor).toBe(FLAW_FIXED_BRONZE);
+    expect(card().className).not.toContain('border-l-4');
   });
 
   it('keeps the bronze look on an evicted mastered puzzle with no severity', () => {
     renderCard(makeItem({ severity: null }), 'mastered');
     expect(text('train-puzzle-flaw-fixed')).toBe('Flaw fixed');
-    expect(card().style.borderLeftColor).toBe(FLAW_FIXED_BRONZE);
+    expect(card().className).toContain('shadow-');
   });
 
   it('keeps the played mistake and its severity color on a mastered card', () => {
@@ -293,11 +293,11 @@ describe('TrainPuzzleCard mastered look', () => {
     expect(props.arrows).toEqual([{ from: 'b8', to: 'c6', color: SEV_BLUNDER }]);
   });
 
-  it('leaves a parked card without the heading, bronze spine or glow', () => {
+  it('leaves a parked card with its severity spine and without the heading or glow', () => {
     renderCard(makeItem(), 'parked');
     expect(screen.queryByTestId('train-puzzle-flaw-fixed')).toBeNull();
     expect(card().className).not.toContain('shadow-');
-    expect(card().style.borderLeftColor).not.toBe(FLAW_FIXED_BRONZE);
+    expect(card().className).toContain('border-l-4');
   });
 });
 
