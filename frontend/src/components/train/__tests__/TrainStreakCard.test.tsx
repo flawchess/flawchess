@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, useLocation } from 'react-router';
 
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
@@ -19,8 +20,14 @@ vi.mock('@/api/client', async () => {
     trainApi: {
       ...actual.trainApi,
       getProgress: vi.fn(),
+      getLeaderboard: vi.fn(),
     },
   };
+});
+
+vi.mock('@/lib/analytics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/analytics')>('@/lib/analytics');
+  return { ...actual, trackFeature: vi.fn() };
 });
 
 vi.mock('@/hooks/useUserProfile', () => ({
@@ -28,9 +35,15 @@ vi.mock('@/hooks/useUserProfile', () => ({
 }));
 
 import { trainApi } from '@/api/client';
+import { trackFeature } from '@/lib/analytics';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { FREEZE_CAP, readStreakLastSeen, writeStreakLastSeen } from '@/lib/streakArrival';
-import type { TrainProgressResponse } from '@/types/train';
+import type {
+  LeaderboardViewer,
+  LeaderboardVisibility,
+  TrainLeaderboardResponse,
+  TrainProgressResponse,
+} from '@/types/train';
 
 const OWNER = 'user@example.com';
 
@@ -38,21 +51,39 @@ const OWNER = 'user@example.com';
 // run) and the earned-freeze pop-in delay, with headroom.
 const ARRIVAL_ANIMATIONS_SETTLE_MS = 2000;
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  // Default: the leaderboard never resolves, so tests that do not care about
+  // the rank line see only its reserved (invisible) pending row.
+  vi.mocked(trainApi.getLeaderboard).mockReturnValue(new Promise(() => undefined));
+});
 
 afterEach(() => {
   vi.useRealTimers();
   cleanup();
   vi.mocked(trainApi.getProgress).mockReset();
+  vi.mocked(trainApi.getLeaderboard).mockReset();
+  vi.mocked(trackFeature).mockReset();
   vi.unstubAllGlobals();
 });
 
-function renderWithClient(action?: ReactNode): void {
+function LocationProbe(): ReactNode {
+  return <span data-testid="location-probe">{useLocation().pathname}</span>;
+}
+
+function renderWithClient(action?: ReactNode, pointsToday?: { total: number; max: number }): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/train']}>
+          {children}
+          <LocationProbe />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
   }
-  render(<TrainStreakCard action={action} />, { wrapper: Wrapper });
+  render(<TrainStreakCard action={action} pointsToday={pointsToday} />, { wrapper: Wrapper });
 }
 
 const BASE: TrainProgressResponse = {
@@ -152,6 +183,103 @@ describe('TrainStreakCard', () => {
     it('drops the denominator in "train anytime" mode', async () => {
       await renderPopulated({ current_week_completed: 1, current_week_required: null });
       expect(screen.getByTestId('train-this-week').textContent).toBe('1 this week');
+    });
+  });
+
+  describe('rank line', () => {
+    function leaderboard(viewer: Partial<LeaderboardViewer> | null): TrainLeaderboardResponse {
+      const full: LeaderboardViewer | null =
+        viewer === null
+          ? null
+          : {
+              rank: 4,
+              rank_without_session: null,
+              tentative: false,
+              puzzles_to_qualify: 0,
+              visibility: 'public',
+              ...viewer,
+            };
+      return {
+        points: { rows: [], viewer: full, pass_target: null, last_week: null },
+        accuracy: { rows: [], viewer: null, pass_target: null, last_week: null },
+      } as unknown as TrainLeaderboardResponse;
+    }
+
+    it('shows the Points rank as a link to the leaderboard tab', async () => {
+      vi.mocked(trainApi.getLeaderboard).mockResolvedValue(leaderboard({ rank: 4 }));
+      await renderPopulated();
+      const link = await screen.findByTestId('train-rank-line');
+      expect(link.textContent).toBe('#4 this week');
+      expect(link.getAttribute('href')).toBe('/train/leaderboard');
+    });
+
+    it('renders no line when the viewer has no Points rank', async () => {
+      vi.mocked(trainApi.getLeaderboard).mockResolvedValue(leaderboard(null));
+      await renderPopulated();
+      await waitFor(() => expect(screen.queryByTestId('train-rank-line-pending')).toBeNull());
+      expect(screen.queryByTestId('train-rank-line')).toBeNull();
+    });
+
+    it('reserves the row and shows no link while the leaderboard is pending', async () => {
+      // getLeaderboard never resolves (default mock).
+      await renderPopulated();
+      expect(screen.getByTestId('train-rank-line-pending')).not.toBeNull();
+      expect(screen.queryByTestId('train-rank-line')).toBeNull();
+    });
+
+    it('renders no line when the leaderboard query fails', async () => {
+      vi.mocked(trainApi.getLeaderboard).mockRejectedValue(new Error('boom'));
+      await renderPopulated();
+      await waitFor(() => expect(screen.queryByTestId('train-rank-line-pending')).toBeNull());
+      expect(screen.queryByTestId('train-rank-line')).toBeNull();
+    });
+
+    it.each<LeaderboardVisibility>(['hidden', 'guest'])('a %s viewer reads like any other', async (visibility) => {
+      vi.mocked(trainApi.getLeaderboard).mockResolvedValue(leaderboard({ rank: 2, visibility }));
+      await renderPopulated();
+      const link = await screen.findByTestId('train-rank-line');
+      expect(link.textContent).toBe('#2 this week');
+    });
+
+    it('a tap navigates client-side to the leaderboard and tracks one nav-click', async () => {
+      vi.mocked(trainApi.getLeaderboard).mockResolvedValue(leaderboard({ rank: 4 }));
+      await renderPopulated();
+      fireEvent.click(await screen.findByTestId('train-rank-line'));
+
+      expect(screen.getByTestId('location-probe').textContent).toBe('/train/leaderboard');
+      expect(trackFeature).toHaveBeenCalledTimes(1);
+      expect(trackFeature).toHaveBeenCalledWith('nav-click', { target: 'train', value: 'train-rank-line' });
+    });
+
+    it('sits after the week caption and before the freeze row', async () => {
+      vi.mocked(trainApi.getLeaderboard).mockResolvedValue(leaderboard({ rank: 4 }));
+      await renderPopulated();
+      const week = screen.getByTestId('train-this-week');
+      const rank = await screen.findByTestId('train-rank-line');
+      const shield = screen.getByTestId('train-shield-row');
+      expect(week.compareDocumentPosition(rank) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(rank.compareDocumentPosition(shield) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  describe('points today', () => {
+    it('absent unless the pointsToday prop is passed', async () => {
+      await renderPopulated();
+      expect(screen.queryByTestId('train-points-today')).toBeNull();
+    });
+
+    it('renders "Points today: 5/9" after the rank line and before the freeze row', async () => {
+      vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
+      vi.mocked(trainApi.getLeaderboard).mockResolvedValue({
+        points: { rows: [], viewer: { rank: 4 }, pass_target: null, last_week: null },
+      } as unknown as TrainLeaderboardResponse);
+      renderWithClient(undefined, { total: 5, max: 9 });
+      const rank = await screen.findByTestId('train-rank-line');
+      const points = await screen.findByTestId('train-points-today');
+      const shield = await screen.findByTestId('train-shield-row');
+      expect(points.textContent).toBe('Points today: 5/9');
+      expect(rank.compareDocumentPosition(points) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(points.compareDocumentPosition(shield) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
   });
 

@@ -18,19 +18,19 @@ Out of scope: Retry (SEED-261106-q92), the Stats tab, archive filters. Never lis
 ### Carried forward from SEED-261106-gw8 (locked, not re-discussed)
 - **D-01:** Tabs and URLs as above. `/train` must keep working for reminders, PWA and nav. Archive keeps its name; statistics get a separate fourth Stats tab later. Desktop and mobile follow the `TabsList variant="brand"` pattern.
 - **D-02:** Today holds the streak card with Start button and a new rank line, plus the full schedule card. The collapsible and its collapsed summary are removed. The completed state's "Next session" line stays.
-- **D-03:** Leaderboard holds the existing `TrainLeaderboardCard`.
-- **D-04:** Archive has a Mastered / Parked toggle with counts and the existing explainer popovers, replacing `TrainStatsCard`. 20 per page via the existing `Pagination`, newest first, list and page in the URL so browser back from Analysis returns to the same spot. No filters in v1.
+- **D-03:** Leaderboard holds the existing `TrainLeaderboardCard`. **Changed (2026-11-07, owner):** its Points / Accuracy toggle becomes the Archive's compact pills, moved above the card so both tabs read subnav, pills, content.
+- **D-04:** Archive has a Mastered / Parked toggle with counts and the existing explainer popovers, replacing `TrainStatsCard`. 20 per page via the existing `Pagination`, newest first, list and page in the URL so browser back from Analysis returns to the same spot. No filters in v1. **Changed in UAT (2026-11-06, owner):** the explainer popovers are replaced by one sentence below a full-width joined toggle, for the selected list: `Solved correctly twice in a row.` / `Missed 3 or more times and set aside.` **Changed again (2026-11-07, owner):** the full-width joined toggle competed with the Today / Leaderboard / Archive subnav, so it is now compact left-aligned pills with the sentence beside them, and the pills are hidden on Mastered when `parked_count` is 0.
 - **D-05:** New small `TrainPuzzleCard` on `LazyMiniBoard`, not `FlawCard`. Horizontal, board left, details and buttons right. One column on phones, two on desktop. Pre-mistake position with no arrows on both lists.
 - **D-06:** Hide the subnav during solve, score and restored-reveal views. `TrainMedalDialogHost` moves to the layout. `POST /train/sessions` and the grading engine must not run on Leaderboard or Archive.
 
 ### Archive card details
 - **D-07:** Beside the board, above Analyze: game details (opponent and rating, game date, time control) plus a status line, for example `Mastered Oct 3, 2026` or `Parked Oct 3, 2026 · 4 misses`. The date is the latest solve date for that puzzle (see D-13) and the miss count is `drill_items.fail_count`.
 - **D-08:** No originally played move on the card, as text or otherwise. No motif or severity either: all would hint at the answer on a later Retry, and Analyze shows them anyway.
-- **D-09:** An empty Mastered or Parked list shows per-list explainer copy based on the existing explainers, plus a link to Today. Example: "No mastered puzzles yet. Solve a puzzle correctly twice in a row to master it." The copy for an empty Parked list should read as good news, not a dead end. Zero-game accounts get the same empty state, no import button.
+- **D-09:** An empty Mastered or Parked list shows per-list explainer copy based on the existing explainers, plus a link to Today. Example: "No mastered puzzles yet. Solve a puzzle correctly twice in a row to master it." The copy for an empty Parked list should read as good news, not a dead end. Zero-game accounts get the same empty state, no import button. **Changed in UAT (2026-11-07, owner):** the empty lists show the title and the Today link only, because the D-04 sentence already sits just above them.
 
 ### Streak card additions
 - **D-10:** The rank line uses the Points board only and reads `#4 this week`, linking to `/train/leaderboard`. Accuracy is excluded because it stays tentative and unranked until 20 puzzles.
-- **D-11:** With no Points rank this week, the same spot shows a link reading `See this week's leaderboard`. Guests and opted-out players get the same rank line they see on their own board view. Planning must confirm `viewer.rank` is populated for hidden and guest rows; if it isn't, they get this link instead.
+- **D-11:** With no Points rank this week, the same spot shows a link reading `See this week's leaderboard`. Guests and opted-out players get the same rank line they see on their own board view. Planning must confirm `viewer.rank` is populated for hidden and guest rows; if it isn't, they get this link instead. **Superseded in UAT (2026-11-07, owner):** with no Points rank, or on a query error, the line is left out; the `See this week's leaderboard` link is removed.
 - **D-12:** `Points today: 5/9` is a muted text line in the streak card's details column, under the week caption and rank line, on the completed state only. `TrainStatsCard` is deleted.
 
 ### Archive data
@@ -38,7 +38,7 @@ Out of scope: Retry (SEED-261106-q92), the Stats tab, archive filters. Never lis
 - **D-14:** Keep puzzles whose `game_flaws` row was evicted: `LEFT JOIN` to `game_flaws`, with `mastered_count` and `parked_count` unchanged, so the list always matches the toggle counts. This matches the anchoring rule in `app/models/drill_item.py`. The user did not select this area, so this is a default rather than a discussed choice. Nothing on the card needs the flaw row, since the FEN comes from `games.pgn` via `fen_and_last_move_at_ply`. Later Retry needs a rule for these puzzles (see Deferred Ideas).
 
 ### Tab width and visibility
-- **D-15:** Tabs span `max-w-7xl` on every tab, matching Library, where the narrow Import form already sits under wide tabs. Today and Leaderboard stay in a centered `max-w-2xl` column; Archive uses the full width. Tabs must not change size or position when switching.
+- **D-15:** Tabs span `max-w-7xl` on every tab, matching Library, where the narrow Import form already sits under wide tabs. Today and Leaderboard stay in a centered `max-w-2xl` column; Archive uses the full width. Tabs must not change size or position when switching. **UAT (2026-11-07, owner):** no shift seen, so no `scrollbar-gutter`. The 6.82px shift measured on a 25-item list on a classic-scrollbar browser stays a known limitation.
 - **D-16:** Tabs always show on the landing, including during Tank's first-visit intro and in the no-games state. The only hidden states are those in D-06. Accepted cost: Start moves down about 40px on a phone.
 
 ### Claude's Discretion

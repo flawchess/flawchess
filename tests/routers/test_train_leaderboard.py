@@ -530,6 +530,9 @@ async def test_guest_viewer_sees_ghost_row(
         assert own_rows[0]["is_viewer"] is True
         assert own_rows[0]["visibility"] == "guest"
         assert guest_body["points"]["viewer"]["visibility"] == "guest"
+        # D-11: a guest who solved this week carries an integer Points rank (5 solves
+        # against 2 and 1), same as a hidden viewer, so no fallback branch is needed.
+        assert guest_body["points"]["viewer"]["rank"] == 1
         for board in ("points", "accuracy"):
             assert g_name not in {r["name"] for r in other_body[board]["rows"]}
         assert other_body["points"]["viewer"]["rank"] == 2

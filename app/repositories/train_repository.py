@@ -16,7 +16,7 @@ import random
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, cast
+from typing import Any, Final, Literal, cast
 
 import chess
 from sqlalchemy import (
@@ -26,6 +26,7 @@ from sqlalchemy import (
     exists,
     func,
     literal,
+    Select,
     or_,
     select,
     tuple_,
@@ -45,7 +46,8 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
-from app.schemas.train import OnboardingStep, PhoneGrade, SolveRecheck
+from app.schemas.normalization import TimeControlBucket
+from app.schemas.train import ArchiveList, OnboardingStep, PhoneGrade, SolveRecheck
 from app.services.best_move_candidates import mover_color_for_ply
 from app.services.flaws_service import classify_severity
 from app.services.sharp_filler import (
@@ -570,6 +572,176 @@ async def _count_drill_items_by_status(
         .where(DrillItem.user_id == user_id, DrillItem.status == status)
     )
     return (await session.execute(stmt)).scalar_one()
+
+
+# ---------------------------------------------------------------------------
+# Archive (mastered / parked puzzle list)
+# ---------------------------------------------------------------------------
+
+#: Which `DrillStatus` each Archive list shows. ACTIVE is deliberately absent:
+#: seeing a solution before the next review would defeat spaced repetition.
+ARCHIVE_LIST_STATUS: Final[dict[ArchiveList, DrillStatus]] = {
+    "mastered": DrillStatus.MASTERED,
+    "parked": DrillStatus.PARKED,
+}
+
+
+@dataclass(frozen=True)
+class ArchiveItemRow:
+    """One Archive row; mirrors `app.schemas.train.TrainArchiveItem` field for field."""
+
+    game_id: int
+    ply: int
+    fen: str | None
+    last_move_uci: str | None
+    user_color: Literal["white", "black"]
+    last_solved_at: datetime.datetime | None
+    fail_count: int
+    white_username: str | None
+    black_username: str | None
+    white_rating: int | None
+    black_rating: int | None
+    played_at: datetime.datetime | None
+    time_control_bucket: TimeControlBucket | None
+    time_control_str: str | None
+
+
+@dataclass(frozen=True)
+class ArchivePage:
+    """One page of Archive rows plus the unpaged total for the chosen list."""
+
+    rows: list[ArchiveItemRow]
+    total: int
+
+
+def _archive_page_stmt(
+    *, user_id: int, status: DrillStatus, limit: int, offset: int
+) -> Select[Any]:
+    """Build the Archive page query: sort and page first, join `games` after.
+
+    Evicted items stay listed per D-14: nothing selected comes from `game_flaws`,
+    so that table is not joined at all.
+    """
+    # Deliberately ONE grouped scan: `drill_solves` has no user or game index, so
+    # a correlated per-item subquery would be one full scan per item.
+    last_solve = (
+        select(
+            DrillSolve.game_id,
+            DrillSolve.ply,
+            func.max(DrillSolve.solved_at).label("last_solved_at"),
+        )
+        .where(
+            DrillSolve.user_id == user_id,
+            DrillSolve.source == DrillSource.SR_ITEM,
+            DrillSolve.solved_at.is_not(None),
+        )
+        .group_by(DrillSolve.game_id, DrillSolve.ply)
+        .subquery("last_solve")
+    )
+    order_by = (
+        last_solve.c.last_solved_at.desc().nulls_last(),
+        DrillItem.game_id.desc(),
+        DrillItem.ply.desc(),
+    )
+    # Sorting and paging happen BEFORE `games` is joined, so `pgn` is read only
+    # for the page's rows.
+    page = (
+        select(
+            DrillItem.game_id,
+            DrillItem.ply,
+            DrillItem.fail_count,
+            last_solve.c.last_solved_at,
+        )
+        .outerjoin(
+            last_solve,
+            and_(last_solve.c.game_id == DrillItem.game_id, last_solve.c.ply == DrillItem.ply),
+        )
+        .where(DrillItem.user_id == user_id, DrillItem.status == status)
+        .order_by(*order_by)
+        .limit(limit)
+        .offset(offset)
+        .subquery("page")
+    )
+    # The inner join cannot drop rows: drill_items.game_id is ON DELETE CASCADE.
+    return (
+        select(
+            page.c.game_id,
+            page.c.ply,
+            page.c.fail_count,
+            page.c.last_solved_at,
+            Game.pgn,
+            Game.user_color,
+            Game.white_username,
+            Game.black_username,
+            Game.white_rating,
+            Game.black_rating,
+            Game.played_at,
+            Game.time_control_bucket,
+            Game.time_control_str,
+        )
+        .select_from(page)
+        .join(Game, Game.id == page.c.game_id)
+        .order_by(
+            page.c.last_solved_at.desc().nulls_last(),
+            page.c.game_id.desc(),
+            page.c.ply.desc(),
+        )
+    )
+
+
+async def get_archive_page(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    list_name: ArchiveList,
+    limit: int,
+    offset: int,
+) -> ArchivePage:
+    """Return one page of the user's mastered or parked puzzles, newest solve first.
+
+    Sort: latest SR_ITEM solve of this user DESC NULLS LAST, then game_id DESC,
+    then ply DESC (D-13). Rows and `total` come from one function so a single
+    place owns the "list equals toggle count" invariant.
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        list_name: `mastered` or `parked`; ACTIVE cannot be requested.
+        limit: Page size.
+        offset: Rows to skip.
+    """
+    status = ARCHIVE_LIST_STATUS[list_name]
+    result = await session.execute(
+        _archive_page_stmt(user_id=user_id, status=status, limit=limit, offset=offset)
+    )
+    rows: list[ArchiveItemRow] = []
+    for row in result.all():
+        # Unlike `load_session_puzzles`, which drops a puzzle whose position cannot
+        # be rebuilt, an unreplayable PGN keeps its row here with a null fen: dropping
+        # it would make the list shorter than the count and drift the page math.
+        replay = fen_and_last_move_at_ply(row.pgn, row.ply)
+        fen, last_move_uci = replay if replay is not None else (None, None)
+        rows.append(
+            ArchiveItemRow(
+                game_id=row.game_id,
+                ply=row.ply,
+                fen=fen,
+                last_move_uci=last_move_uci,
+                user_color=cast(Literal["white", "black"], row.user_color),
+                last_solved_at=row.last_solved_at,
+                fail_count=row.fail_count,
+                white_username=row.white_username,
+                black_username=row.black_username,
+                white_rating=row.white_rating,
+                black_rating=row.black_rating,
+                played_at=row.played_at,
+                time_control_bucket=cast(TimeControlBucket | None, row.time_control_bucket),
+                time_control_str=row.time_control_str,
+            )
+        )
+    # Sequential on the same session: never asyncio.gather on one AsyncSession.
+    total = await _count_drill_items_by_status(session, user_id=user_id, status=status)
+    return ArchivePage(rows=rows, total=total)
 
 
 @dataclass(frozen=True)

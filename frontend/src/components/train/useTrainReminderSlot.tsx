@@ -447,7 +447,7 @@ function confirmedUpsell({
         onClick={() => void triggerInstall()}
       >
         <Smartphone className="size-4" aria-hidden="true" />
-        Install FlawChess
+        Install FlawChess App
       </Button>
     );
   }

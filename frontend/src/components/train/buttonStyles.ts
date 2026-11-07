@@ -19,3 +19,16 @@ export const TRAIN_BUTTON_CLASS = 'h-12 sm:h-8';
 /** Height + mobile full width — for standalone CTAs, the direct analog of the
  * Bots Play button. */
 export const TRAIN_CTA_BUTTON_CLASS = 'h-12 w-full sm:h-8 sm:w-auto';
+
+/**
+ * One filter pill, for a `ToggleGroupItem` (Archive lists, Leaderboard boards).
+ *
+ * A plain min-h-11 made the pills visibly too tall on mobile. The pill is drawn at
+ * 32px and the transparent ::before keeps its tap area above 44px (46px: the inset
+ * is measured from inside the 1px border, so -inset-y-1.5 only reached 42px).
+ */
+export const TRAIN_FILTER_PILL_CLASS =
+  'relative h-8 rounded-full px-3 text-sm before:absolute before:inset-x-0 before:-inset-y-2 sm:h-7 sm:before:hidden';
+
+/** Gap between filter pills, for `ToggleGroup`'s `spacing` prop (Tailwind units). */
+export const TRAIN_FILTER_PILL_SPACING = 2;

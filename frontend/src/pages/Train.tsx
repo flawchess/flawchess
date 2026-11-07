@@ -1,68 +1,111 @@
 /**
- * Train — the /train page.
+ * Train — the /train layout.
  *
  * Default export (required by React.lazy in App.tsx, mirroring Bots.tsx /
  * Analysis.tsx's divergence from the app's named-export convention).
  *
- * Visiting /train never auto-starts a session — the landing
- * always shows a status line plus a single Start/Resume button, and the loop
- * begins only on that press. `useTrainSession.startSession()` is fired
- * automatically on MOUNT below, but that is a status READ (there is no
- * separate preview endpoint — see useTrainSession.ts's module docstring),
- * not entering the loop: `hasEnteredLoop` is the only thing that reveals
- * `TrainSolveScreen`, and it flips only on a user press inside
- * `TrainStartScreen`.
+ * `/train/*` is one route, so this page parses the pathname
+ * (`lib/trainRoute.ts`) and renders URL-routed tabs: Today (the landing, the
+ * solve loop and the score screen), Leaderboard and Archive. An unknown `/train/*` path
+ * redirects to `/train`. The session, the grading Worker and the loop flags
+ * live in `useTrainLoop` (see its docstring for the session and loop rules
+ * and the Today latch that keeps a Leaderboard-only visit from creating a
+ * session or loading the engine).
  *
- * The grading engine's Worker is created HERE, at the page level — session
- * scope, not per-puzzle — and threaded down to
- * `TrainSolveScreen` so exactly one Worker exists for the whole session.
- *
- * Session-complete -> score-screen
- * transition: when the final puzzle's solve response reports
- * `session_complete` and the user presses Next on its reveal, `handleNext`
- * shows `TrainScoreScreen` instead of calling `trainSession.advance()` (which
- * would otherwise leave `currentPuzzle` parked on the last puzzle rather than
- * becoming null — there is no "puzzle past the end" state to fall through to
- * automatically). `showScoreScreen` is local view state, not the accurate
- * source of truth on a later day's revisit — that's `TrainStartScreen`'s
- * 'completed' landing state, which reads real session
- * data on a fresh mount instead of this transient in-session flag. The score
- * screen's "Done" routes into exactly that state via
- * `returnToLanding`, which re-reads session status rather than merely
- * flipping the flag back.
- *
- * Leaving a reveal via its Analyze deep link and pressing
- * the browser back button restores that puzzle's SOLVED reveal (not the
- * start screen) from the sessionStorage cache written on the Analyze click —
- * see `trainRevealCache.ts` and the `restoredReveal` state below.
+ * The tab bar shows everywhere except the immersive states (the solve loop,
+ * the score screen and a cached restored reveal, from the first paint), where
+ * the solve screen needs the full page height. The wrapper keeps the same element across tabs and only swaps
+ * its class, so nothing remounts.
  */
 
-import { useEffect, useState } from 'react';
+import { Navigate, useLocation } from 'react-router';
 import type { ReactElement } from 'react';
-import { useTrainSession } from '@/hooks/useTrainSession';
-import { useTrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import { useTrainLoop } from '@/hooks/useTrainLoop';
+import type { UseTrainLoopResult } from '@/hooks/useTrainLoop';
 import { hasImportedGames, useUserProfile } from '@/hooks/useUserProfile';
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { TrainScoreScreen } from '@/components/train/TrainScoreScreen';
 import { TrainDevClock } from '@/components/train/TrainDevClock';
-import { clearTrainRevealCache, readTrainRevealCache } from '@/lib/trainRevealCache';
-import type { CachedTrainReveal } from '@/lib/trainRevealCache';
+import { TrainLeaderboardCard } from '@/components/train/TrainLeaderboardCard';
+import { TrainMedalDialogHost } from '@/components/train/medals/TrainMedalDialogHost';
+import { TrainSubnav } from '@/components/train/TrainSubnav';
+import { TrainArchiveTab } from '@/components/train/TrainArchiveTab';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
 import { feedbackAskDays } from '@/lib/feedbackAsk';
+import { parseTrainRoute, TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 
-/** The page wrapper's classes; a puzzle on screen (the loop or a restored
- * reveal) drops the phone top padding (see the comment at the call site).
- * Module-level so the branching stays out of `TrainPage`'s own gated
- * complexity. */
+/** The page wrapper's classes while a session view is on screen (the loop or a
+ * restored reveal); it drops the phone top padding (see the comment at the
+ * call site). Module-level so the branching stays out of `TrainPage`'s own
+ * gated complexity. */
 function trainPageClass(showLoop: boolean, restoredActive: boolean): string {
   return cn('px-4 py-6 md:px-6', (showLoop || restoredActive) && 'max-sm:pt-0');
 }
 
+/** The wrapper's classes on the tab views: the same max-w-7xl on every tab. */
+const TRAIN_TAB_PAGE_CLASS = 'mx-auto w-full max-w-7xl px-4 py-2 md:px-6 md:py-6';
+
+/** The solve loop, restored reveal and score screen. They render only on
+ * Today, so one `isToday` gate covers all three. */
+function TrainSessionViews({
+  isToday,
+  loop,
+  isGuest,
+  hasGames,
+}: {
+  isToday: boolean;
+  loop: UseTrainLoopResult;
+  isGuest: boolean;
+  hasGames: boolean;
+}): ReactElement | null {
+  const { trainSession, gradingEngine, restoredActive, restoredReveal, showLoop, showScoreScreen } =
+    loop;
+  if (!isToday) return null;
+  return (
+    <>
+      {restoredActive && restoredReveal && (
+        <TrainSolveScreen
+          puzzle={restoredReveal.puzzle}
+          trainSession={trainSession}
+          gradingEngine={gradingEngine}
+          restoredSolve={restoredReveal}
+          onNext={loop.handleRestoredNext}
+        />
+      )}
+      {showLoop && trainSession.currentPuzzle && (
+        <TrainSolveScreen
+          puzzle={trainSession.currentPuzzle}
+          trainSession={trainSession}
+          gradingEngine={gradingEngine}
+          onNext={loop.handleNext}
+        />
+      )}
+      {showScoreScreen && trainSession.session && (
+        <TrainScoreScreen
+          score={{
+            total: trainSession.sessionScore,
+            max: trainSession.session.puzzle_count * TRAIN_POINTS_PER_PUZZLE,
+          }}
+          nextSessionDate={trainSession.session.expires_on}
+          onDone={loop.returnToLanding}
+          solvedOutcomes={trainSession.solvedOutcomes}
+          isWarmup={trainSession.session.is_warmup}
+          hasGames={hasGames}
+          isGuest={isGuest}
+          sessionId={trainSession.session.session_id}
+        />
+      )}
+    </>
+  );
+}
+
 export default function TrainPage(): ReactElement {
-  const trainSession = useTrainSession();
+  const { pathname } = useLocation();
+  const route = parseTrainRoute(pathname);
+  const isToday = route?.tab === 'today';
   // FLAWCHESS-64: is_guest read from useUserProfile(), never useAuth().user
   // (always null, carries no is_guest; cf. Analysis.tsx's free-play ELO
   // default source comment).
@@ -75,106 +118,12 @@ export default function TrainPage(): ReactElement {
   // No /train/* handler rejects guests, so canTrain only waits for the
   // profile to resolve.
   const canTrain = profile != null;
-  const gradingEngine = useTrainGradingEngine({ enabled: canTrain });
-  const [hasEnteredLoop, setHasEnteredLoop] = useState(false);
-  const [showScoreScreen, setShowScoreScreen] = useState(false);
-  // Analyze -> browser back: a cached solved reveal,
-  // read once at mount. While it validates against the freshly resumed
-  // session (same session_id), the page skips the start screen and mounts
-  // straight into that puzzle's solved reveal — see trainRevealCache.ts.
-  const [restoredReveal, setRestoredReveal] = useState<CachedTrainReveal | null>(() =>
-    readTrainRevealCache(),
-  );
+  const loop = useTrainLoop({ isToday, canTrain });
+  const { trainSession, showLoop, showScoreScreen, restoredActive, immersive } = loop;
 
-  const { startSession } = trainSession;
-  useEffect(() => {
-    // This only waits for the profile to resolve before firing the status
-    // read (canTrain = profile != null).
-    //
-    // NO ref latch here, deliberately. A "fire only once per mount" latch
-    // looks harmless but hangs the page under StrictMode (dev): React mounts,
-    // runs this effect, unmounts, and remounts. The throwaway first pass
-    // fires the mutation, and TanStack's MutationObserver.onUnsubscribe
-    // detaches the observer from that in-flight mutation when the simulated
-    // unmount removes its last listener (query-core mutationObserver.js) —
-    // re-subscribing never re-attaches, so the result freezes at
-    // isPending:true and onSuccess never runs. The landing screen then sits
-    // on "Loading…" forever, and a reload does not help. The second effect
-    // pass calling startSession() again IS the recovery: mutate() rebuilds
-    // the mutation and re-adds the live observer. Composition is idempotent
-    // server-side (it resumes the day's open session), so the extra dev-only
-    // call is free. `startSession` is stable (see useTrainSession), so this
-    // runs once per mount in production, and again only if canTrain flips.
-    if (!canTrain) return;
-    startSession();
-  }, [canTrain, startSession]);
-
-  // Drop a cached reveal from another session (e.g. a new day's session was
-  // composed since the cache was written) — never restore across sessions.
-  const session = trainSession.session;
-  useEffect(() => {
-    if (restoredReveal !== null && session !== null && session.session_id !== restoredReveal.sessionId) {
-      clearTrainRevealCache();
-      setRestoredReveal(null);
-    }
-  }, [restoredReveal, session]);
-
-  const restoredActive =
-    restoredReveal !== null && session !== null && session.session_id === restoredReveal.sessionId;
-
-  const showLoop =
-    hasEnteredLoop && !showScoreScreen && !restoredActive && trainSession.currentPuzzle !== null;
-
-  function handleNext(): void {
-    // A stale Analyze-click cache must never restore a puzzle the user has
-    // already moved past — clear it the moment the loop advances.
-    clearTrainRevealCache();
-    if (trainSession.lastSolveResponse?.session_complete) {
-      setShowScoreScreen(true);
-      return;
-    }
-    trainSession.advance();
-  }
-
-  // Next on a RESTORED reveal: leave restore mode and continue the normal
-  // loop at the resumed queue's head (or the score screen when the restored
-  // puzzle had completed the session).
-  function handleRestoredNext(): void {
-    clearTrainRevealCache();
-    const wasComplete = restoredReveal?.verdict.session_complete === true;
-    setRestoredReveal(null);
-    setHasEnteredLoop(true);
-    if (wasComplete) setShowScoreScreen(true);
-  }
-
-  // Leave whatever in-loop view is showing and re-read session status, exactly
-  // as a fresh page mount would. The re-read is load-bearing, not a refresh
-  // nicety: `TrainStartScreen`'s landing state is resolved from
-  // `session.solved_count`, which is still the compose-time value in local
-  // state, so skipping it would render a "Start session" landing on a day the
-  // user has already finished.
-  function returnToLanding(): void {
-    clearTrainRevealCache();
-    setRestoredReveal(null);
-    setHasEnteredLoop(false);
-    setShowScoreScreen(false);
-    // Drop the last solve verdict too, so the session
-    // just left cannot bleed into the next one. Without this the mutation
-    // still held the previous session's response when the user pressed Start
-    // again (dev-clock time travel is the fast way to hit this), and the
-    // freshly mounted solve screen replayed its result sound and points flash
-    // over the first puzzle. TrainSolveScreen guards its own mount as well —
-    // this keeps the page state honest to the "as a fresh page mount would"
-    // contract above.
-    trainSession.resetSolve();
-    startSession();
-  }
-
-  // Dev-only time travel: a shifted clock can compose a DIFFERENT session (or
-  // none at all), so drop back to the landing screen instead of leaving the
-  // loop parked on puzzles from the previous "now".
-  function handleDevClockChange(): void {
-    returnToLanding();
+  // All hooks are above: an unknown /train/* path lands on Today.
+  if (route === null) {
+    return <Navigate to={TRAIN_TAB_PATHS.today} replace />;
   }
 
   if (profile == null) {
@@ -193,69 +142,71 @@ export default function TrainPage(): ReactElement {
     );
   }
 
+  const landingActive = !(showLoop || showScoreScreen || restoredActive);
+
   return (
-    // Same horizontal padding as the Import page content (`px-4 py-6 md:px-6`
-    // in Import.tsx) instead of a flat `p-6`. While a puzzle is on screen the
-    // phone header is suppressed (`useMarkPlayActive`), so the top padding
-    // would only push the pinned progress row + board down — drop it below
-    // `sm`, the header's own breakpoint.
-    <div className={trainPageClass(showLoop, restoredActive)} data-testid="train-page">
-      {/* Landing screen only: the strip is vertical chrome above the solve
-          screen's board column, which on mobile is pinned and sized to the
-          viewport — every row above it comes straight out of the board. Time
-          travel is only ever ARMED from the landing screen anyway (a change
-          bounces back here via handleDevClockChange), so nothing is lost by
-          hiding it once a session is running. Same gate as TrainStartScreen. */}
-      {DEV_CLOCK_ENABLED && !showLoop && !showScoreScreen && !restoredActive && (
-        <TrainDevClock onChange={handleDevClockChange} />
+    // While a puzzle is on screen the phone header is suppressed
+    // (`useMarkPlayActive`), so the top padding would only push the pinned
+    // progress row + board down — drop it below `sm`, the header's own
+    // breakpoint. Otherwise the tab views share one max-w-7xl wrapper.
+    <div
+      className={immersive ? trainPageClass(showLoop, restoredActive) : TRAIN_TAB_PAGE_CLASS}
+      data-testid="train-page"
+    >
+      {!immersive && <TrainSubnav active={route.tab} />}
+      {/* The layout owns the medal dialog so it opens on any tab (a Leaderboard
+          deep link included). It is unmounted in the immersive views, so it
+          never covers a session, and it sits at a stable position so a tab
+          switch keeps its dismissed state. */}
+      {!immersive && <TrainMedalDialogHost isGuest={isGuest} />}
+      {/* The landing stays mounted but hidden on the other tabs once Today has
+          been visited: `TrainScheduleSettings` debounces saves by 600 ms, so an
+          edit followed by a quick tab switch would otherwise lose the save, and
+          the return to Today shows no skeleton flash. `isVisible` keeps the
+          one-shot effects (feedback-ask view, streak arrival snapshot) from
+          firing out of sight: the host bubble and streak card mount only
+          while Today is on screen. */}
+      {loop.todayVisited && landingActive && (
+        <div className={cn('mt-4', !isToday && 'hidden')} data-testid="train-today-panel">
+          {/* Landing screen only: the strip is vertical chrome above the solve
+              screen's board column, which on mobile is pinned and sized to the
+              viewport — every row above it comes straight out of the board. Time
+              travel is only ever ARMED from the landing screen anyway (a change
+              bounces back here via returnToLanding), so nothing is lost by
+              hiding it once a session is running. Today panel only: its handler
+              fires a session read. */}
+          {DEV_CLOCK_ENABLED && <TrainDevClock onChange={loop.returnToLanding} />}
+          <TrainStartScreen
+            session={trainSession.session}
+            // The session mutation is idle on the first commit, before the mount
+            // effect fires it, so `isSessionPending` alone would flash the
+            // empty state on every first Today click. No session and no error
+            // yet means the first load is still to come.
+            isLoading={
+              trainSession.isSessionPending ||
+              (trainSession.session === null && !trainSession.isSessionError)
+            }
+            isError={trainSession.isSessionError}
+            sessionScore={trainSession.sessionScore}
+            onEnterLoop={loop.enterLoop}
+            onSettingsSaved={loop.requestSessionReread}
+            isGuest={isGuest}
+            hasGames={hasGames}
+            feedbackAskDays={feedbackAskDays(profile)}
+            isVisible={isToday}
+          />
+        </div>
       )}
-      {!showLoop && !showScoreScreen && !restoredActive && (
-        <TrainStartScreen
-          session={trainSession.session}
-          isLoading={trainSession.isSessionPending}
-          isError={trainSession.isSessionError}
-          sessionScore={trainSession.sessionScore}
-          onEnterLoop={() => {
-            trainSession.markSessionEntered();
-            setHasEnteredLoop(true);
-          }}
-          onSettingsSaved={startSession}
-          isGuest={isGuest}
-          hasGames={hasGames}
-          feedbackAskDays={feedbackAskDays(profile)}
-        />
+      <TrainSessionViews isToday={isToday} loop={loop} isGuest={isGuest} hasGames={hasGames} />
+      {route.tab === 'leaderboard' && (
+        <div className="mx-auto mt-4 w-full max-w-2xl" data-testid="train-leaderboard-panel">
+          <TrainLeaderboardCard isGuest={isGuest} />
+        </div>
       )}
-      {restoredActive && restoredReveal && (
-        <TrainSolveScreen
-          puzzle={restoredReveal.puzzle}
-          trainSession={trainSession}
-          gradingEngine={gradingEngine}
-          restoredSolve={restoredReveal}
-          onNext={handleRestoredNext}
-        />
-      )}
-      {showLoop && trainSession.currentPuzzle && (
-        <TrainSolveScreen
-          puzzle={trainSession.currentPuzzle}
-          trainSession={trainSession}
-          gradingEngine={gradingEngine}
-          onNext={handleNext}
-        />
-      )}
-      {showScoreScreen && trainSession.session && (
-        <TrainScoreScreen
-          score={{
-            total: trainSession.sessionScore,
-            max: trainSession.session.puzzle_count * TRAIN_POINTS_PER_PUZZLE,
-          }}
-          nextSessionDate={trainSession.session.expires_on}
-          onDone={returnToLanding}
-          solvedOutcomes={trainSession.solvedOutcomes}
-          isWarmup={trainSession.session.is_warmup}
-          hasGames={hasGames}
-          isGuest={isGuest}
-          sessionId={trainSession.session.session_id}
-        />
+      {route.tab === 'archive' && (
+        <div className="mt-4" data-testid="train-archive-panel">
+          <TrainArchiveTab list={route.list} />
+        </div>
       )}
     </div>
   );

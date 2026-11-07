@@ -380,7 +380,6 @@ export const PANEL_TARGETS = [
   'bookmark-suggestions',
   'settings',
   'more-drawer',
-  'train-schedule',
   'train-verdict-strip',
   'opening-insights-more',
   'opening-insights-played-before',
@@ -416,7 +415,7 @@ type ActionTarget = (typeof ACTION_TARGETS)[number];
 export const NAV_DESTINATIONS = ['library', 'train', 'bots', 'openings', 'endgames', 'analysis'] as const;
 type NavDestination = (typeof NAV_DESTINATIONS)[number];
 
-export const NAV_SOURCES = ['more-drawer'] as const;
+export const NAV_SOURCES = ['more-drawer', 'train-rank-line'] as const;
 type NavSource = (typeof NAV_SOURCES)[number];
 
 /** Map a nav link path to its destination; null for anything else (admin and activity can never be named). */

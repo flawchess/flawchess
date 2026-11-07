@@ -5,8 +5,8 @@
  * with an inline "Saved"/"Couldn't save. Try again." indicator.
  *
  * Renders below the Start/Resume CTA, deliberately quiet, `text-sm` labels.
- * It is boxed in the app's standard `Card`/`CardHeader` ("Train schedule")
- * alongside `TrainStreakCard`/`TrainStatsCard`, and the completed state's
+ * It is boxed in the standard `Card`/`CardHeader` ("Train schedule") below
+ * `TrainStreakCard`, always open, and the completed state's
  * "Next session" line lives in here: it describes the schedule, so it
  * belongs with the pickers that determine it rather than floating above
  * them as loose page text.
@@ -47,7 +47,9 @@
  * A phone showing a QR that asks the user to scan their own screen, or an
  * installed PWA offering to install itself again, would be nonsense.
  * `TrainInstallQr` itself only ever mounts on the desktop branch (see that
- * component's own docstring).
+ * component's own docstring), where the reminder block renders inside it (above
+ * the QR on a narrow window, beside it from `sm` up); everywhere else the
+ * reminder block stands alone above this section.
  *
  * Both the reminder block and the phone section are hidden from guest
  * accounts. `app.repositories.train_reminder_repository`'s fan-out filters
@@ -58,18 +60,11 @@
  * for a guest) therefore extends to this landing card, not only the score
  * screen. `resolveScheduleCardVisibility` is the single place both `isGuest`
  * terms live.
- *
- * The card is set-once configuration that would dominate a phone's height,
- * so it starts COLLAPSED to its header, which doubles as a disclosure button
- * carrying a one-line summary of the draft ("Mo–Fr · 6 puzzles · 16:00").
- * The save indicator and the completed state's "Next session" line stay
- * visible while collapsed; the controls unmount (all draft state lives in
- * this component, so nothing is lost).
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Check, ChevronDown, Smartphone } from 'lucide-react';
+import { Check, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
@@ -77,6 +72,7 @@ import { ToggleChipButton } from '@/components/ui/toggle-chip-button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LoadError } from '@/components/ui/load-error';
+import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainInstallQr } from '@/components/train/TrainInstallQr';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
@@ -93,7 +89,6 @@ import {
   type TrainDayToggleTarget,
 } from '@/lib/analytics';
 import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
-import { cn } from '@/lib/utils';
 
 export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
 export const TRAIN_SETTINGS_SAVED_INDICATOR_MS = 2000;
@@ -106,6 +101,8 @@ export const TRAIN_SETTINGS_SAVED_INDICATOR_MS = 2000;
 export const PUZZLES_PER_SESSION_MIN = 3;
 export const PUZZLES_PER_SESSION_MAX = 30;
 export const PUZZLES_PER_SESSION_STEP = 3;
+
+const PHONE_SECTION_HEADING = 'Reminders work better with FlawChess on your phone';
 
 interface WeekdayChip {
   /** Matches `date.weekday()` (Monday=0..Sunday=6) — the IDENTICAL bit
@@ -147,8 +144,8 @@ type IndicatorState = 'idle' | 'saved' | 'error' | 'reminder-error';
 export interface TrainScheduleSettingsProps {
   /**
    * Called after a save actually persists (not on mount, not on a no-op
-   * re-save of the same values). `Train.tsx` composes
-   * the day's session once on page MOUNT — before the user has a chance to
+   * re-save of the same values). `useTrainLoop` composes
+   * the day's session once on the first Today visit — before the user has a chance to
    * edit this component on the same visit (see `useTrainSession.ts`'s
    * module docstring) — and pressing Start/Resume never re-fetches it. An
    * untouched session whose size no longer matches the new setting is only
@@ -175,30 +172,6 @@ export interface TrainScheduleSettingsProps {
   isGuest: boolean;
 }
 
-/** A contiguous run of at least this many days reads as a range ("Mo–Fr"). */
-const MIN_WEEKDAY_RANGE = 3;
-const ALL_WEEKDAYS_MASK = (1 << WEEKDAY_CHIPS.length) - 1;
-
-/** "Every day", "Any day" (train anytime, mask 0), "Mo–Fr", or "Mo We Fr". */
-// eslint-disable-next-line react-refresh/only-export-components -- pure helper shared with tests, not a component
-export function weekdaySummary(mask: number): string {
-  if (mask === ALL_WEEKDAYS_MASK) return 'Every day';
-  const on = WEEKDAY_CHIPS.filter((chip) => isWeekdayBitSet(mask, chip.bit));
-  const first = on[0];
-  const last = on[on.length - 1];
-  if (first === undefined || last === undefined) return 'Any day';
-  const contiguous = last.bit - first.bit === on.length - 1;
-  if (contiguous && on.length >= MIN_WEEKDAY_RANGE) return `${first.label}–${last.label}`;
-  return on.map((chip) => chip.label).join(' ');
-}
-
-/** The collapsed header's one-line summary of the current draft. */
-function scheduleSummary(draft: Draft, showReminder: boolean): string {
-  const parts = [weekdaySummary(draft.weekdayMask), `${draft.puzzlesPerSession} puzzles`];
-  if (showReminder && draft.reminderEnabled) parts.push(formatReminderHour(draft.reminderHour));
-  return parts.join(' · ');
-}
-
 /**
  * The card shell, shared by the error and populated bodies so a failed
  * settings fetch still reads as the same "Train schedule" box.
@@ -212,14 +185,7 @@ function scheduleSummary(draft: Draft, showReminder: boolean): string {
  */
 interface ScheduleCardShellProps {
   indicator: IndicatorState;
-  /** Disclosure state; omit both for a non-collapsible shell (error state). */
-  open?: boolean;
-  onToggle?: () => void;
-  /** Shown in the header while collapsed and the indicator is idle. */
-  summary?: string | null;
-  /** Body content that stays visible while collapsed ("Next session"). */
-  persistent?: ReactNode;
-  children: ReactElement;
+  children: ReactNode;
 }
 
 function SaveIndicator({ indicator }: { indicator: IndicatorState }): ReactElement | null {
@@ -251,60 +217,14 @@ function SaveIndicator({ indicator }: { indicator: IndicatorState }): ReactEleme
   return null;
 }
 
-function ScheduleCardShell({
-  indicator,
-  open,
-  onToggle,
-  summary,
-  persistent,
-  children,
-}: ScheduleCardShellProps): ReactElement {
-  const collapsible = onToggle !== undefined;
-  const expanded = !collapsible || open === true;
-  const showSummary = collapsible && !expanded && indicator === 'idle' && summary;
+function ScheduleCardShell({ indicator, children }: ScheduleCardShellProps): ReactElement {
   return (
     <Card as="section" className="w-full" data-testid="train-schedule-settings">
-      <CardHeader size="compact" className={cn(collapsible && 'p-0')}>
-        {collapsible ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={expanded}
-            data-testid="btn-train-schedule-toggle"
-            className="flex w-full min-w-0 items-center gap-2 px-4 py-2 text-left pointer-fine:hover:bg-white/5"
-          >
-            <span className="shrink-0">Train schedule</span>
-            {showSummary && (
-              <span
-                data-testid="train-schedule-summary"
-                className="ml-auto truncate text-sm font-normal text-muted-foreground"
-              >
-                {summary}
-              </span>
-            )}
-            <SaveIndicator indicator={indicator} />
-            <ChevronDown
-              aria-hidden="true"
-              className={cn(
-                'size-4 shrink-0 text-muted-foreground transition-transform',
-                !showSummary && indicator === 'idle' && 'ml-auto',
-                expanded && 'rotate-180',
-              )}
-            />
-          </button>
-        ) : (
-          <>
-            Train schedule
-            <SaveIndicator indicator={indicator} />
-          </>
-        )}
+      <CardHeader size="compact">
+        Train schedule
+        <SaveIndicator indicator={indicator} />
       </CardHeader>
-      {(expanded || persistent) && (
-        <CardBody className="flex w-full flex-col gap-4">
-          {persistent}
-          {expanded && children}
-        </CardBody>
-      )}
+      <CardBody className="flex w-full flex-col gap-4">{children}</CardBody>
     </Card>
   );
 }
@@ -335,6 +255,7 @@ function ReminderControls({
   onHourChange,
 }: ReminderControlsProps): ReactElement {
   const checked = !blocked && draft?.reminderEnabled === true;
+  const showHourPicker = checked && draft !== null;
 
   return (
     <div className="w-full">
@@ -348,22 +269,20 @@ function ReminderControls({
           disabled={disabled || subscribing || blocked}
           onCheckedChange={onToggle}
         />
-        <p className="text-sm text-muted-foreground">Remind me to train</p>
-      </div>
-      {blocked && (
-        <p className="mt-1 text-sm text-muted-foreground" data-testid="train-reminder-blocked">
-          Reminders are blocked in your browser settings.
+        <p className="min-w-0 text-sm text-muted-foreground">
+          Remind me to train{showHourPicker && ' at'}
         </p>
-      )}
-      {checked && draft !== null && (
-        <div className="mt-4">
-          <p className="mb-1 text-sm text-muted-foreground">Remind at</p>
+        {showHourPicker && (
           <Select
             value={String(draft.reminderHour)}
             disabled={disabled}
             onValueChange={(value: string) => onHourChange(Number(value))}
           >
-            <SelectTrigger className="w-full" data-testid="filter-reminder-hour">
+            <SelectTrigger
+              className="w-fit shrink-0"
+              aria-label="Reminder time"
+              data-testid="filter-reminder-hour"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -374,7 +293,12 @@ function ReminderControls({
               ))}
             </SelectContent>
           </Select>
-        </div>
+        )}
+      </div>
+      {blocked && (
+        <p className="mt-1 text-sm text-muted-foreground" data-testid="train-reminder-blocked">
+          Reminders are blocked in your browser settings.
+        </p>
       )}
     </div>
   );
@@ -511,7 +435,6 @@ export function TrainScheduleSettings({
   const [draft, setDraft] = useState<Draft | null>(null);
   const hasEditedRef = useRef(false);
   const [indicator, setIndicator] = useState<IndicatorState>('idle');
-  const [open, setOpen] = useState(false);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True while ensureDeviceSubscribed() is in flight for the master toggle.
   const [subscribing, setSubscribing] = useState(false);
@@ -671,18 +594,23 @@ export function TrainScheduleSettings({
       </p>
     ) : undefined;
 
+  const reminderControls = showReminderBlock ? (
+    <ReminderControls
+      draft={draft}
+      disabled={disabled}
+      subscribing={subscribing}
+      blocked={blocked}
+      onToggle={handleReminderToggle}
+      onHourChange={handleReminderHourChange}
+    />
+  ) : null;
+  // With a QR on screen the reminder row lives inside its block, so
+  // TrainInstallQr can place it responsively around the QR and caption.
+  const reminderBesideQr = showPhoneSection && showQr;
+
   return (
-    <ScheduleCardShell
-      indicator={indicator}
-      open={open}
-      onToggle={() => {
-        // Only the opening transition counts as a panel open.
-        if (!open) trackFeature('panel-open', { target: 'train-schedule' });
-        setOpen((prev) => !prev);
-      }}
-      summary={draft === null ? null : scheduleSummary(draft, showReminderBlock && !blocked)}
-      persistent={nextSessionLine}
-    >
+    <ScheduleCardShell indicator={indicator}>
+      {nextSessionLine}
       <div className="flex w-full flex-col gap-4">
         {/*
           Matches the game filter panel exactly:
@@ -714,34 +642,26 @@ export function TrainScheduleSettings({
           disabled={disabled}
           onChange={handlePuzzlesPerSessionChange}
         />
-        {showReminderBlock && (
-          <ReminderControls
-            draft={draft}
-            disabled={disabled}
-            subscribing={subscribing}
-            blocked={blocked}
-            onToggle={handleReminderToggle}
-            onHourChange={handleReminderHourChange}
-          />
-        )}
+        {!reminderBesideQr && reminderControls}
         {/* This section's permanent home in the card — never gated on the
             reminder toggle state or push capability, but gated on device
             platform: see the three-branch comment above `showQr`/
             `showMobileInstallButton`/`showPhoneSection`. */}
-        {showPhoneSection && (
-          <div className="w-full text-center">
-            <p className="mb-1 text-sm font-semibold">Reminders work better with FlawChess on your phone</p>
-            {showQr && <TrainInstallQr testId="qr-handoff-settings" />}
-            {showMobileInstallButton && (
-              <Button
-                variant="default"
-                data-testid="btn-install-mobile-settings"
-                onClick={() => void triggerInstall()}
-              >
-                <Smartphone className="size-4" aria-hidden="true" />
-                Install FlawChess
-              </Button>
-            )}
+        {reminderBesideQr && (
+          <TrainInstallQr testId="qr-handoff-settings">{reminderControls}</TrainInstallQr>
+        )}
+        {showPhoneSection && showMobileInstallButton && (
+          <div className="flex w-full flex-col gap-2">
+            <p className="text-sm font-semibold">{PHONE_SECTION_HEADING}</p>
+            <Button
+              variant="default"
+              className={`${TRAIN_BUTTON_CLASS} w-full`}
+              data-testid="btn-install-mobile-settings"
+              onClick={() => void triggerInstall()}
+            >
+              <Smartphone className="size-4" aria-hidden="true" />
+              Install FlawChess App
+            </Button>
           </div>
         )}
       </div>

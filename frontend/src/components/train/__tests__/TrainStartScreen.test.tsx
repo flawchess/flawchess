@@ -9,11 +9,11 @@ import { MemoryRouter } from 'react-router';
 import { GUEST_SIGNUP_ASK_SCORE, IMPORT_ASK_LANDING, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
 // TrainStartScreen calls useTrainProgress() directly (for the
-// tailored empty states) AND renders <TrainStreakCard /> +
-// <TrainStatsCard /> internally, which call the SAME hook — mocked once here
+// tailored empty states) AND renders <TrainStreakCard />
+// internally, which calls the SAME hook — mocked once here
 // with a mutable module-level object so every call site reads the identical
 // resolved value per test, mirroring App.test.tsx's `trainProgressData`
-// pattern (TrainStreakCard.test.tsx / TrainStatsCard.test.tsx cover the
+// pattern (TrainStreakCard.test.tsx covers the
 // hook's own loading/error/populated states in isolation).
 const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
   session_streak_count: 0,
@@ -41,6 +41,13 @@ let trainProgressMock: {
 
 vi.mock('@/hooks/useTrainProgress', () => ({
   useTrainProgress: () => trainProgressMock,
+}));
+
+// The streak card's rank line reads useTrainLeaderboard, which needs a
+// QueryClientProvider this suite deliberately does not add. A pending query
+// renders the line's reserved row, which is all these landing tests need.
+vi.mock('@/hooks/useTrainLeaderboard', () => ({
+  useTrainLeaderboard: () => ({ data: undefined, isPending: true, isError: false }),
 }));
 
 // The streak hero keys its last-seen snapshot on the profile email.
@@ -167,25 +174,6 @@ vi.mock('@/hooks/useReminderResurface', () => ({
   TRAIN_RESURFACE_DISMISSED_KEY: 'train-resurface-dismissed',
 }));
 
-// The real card needs a QueryClientProvider (and, for guests, the
-// sign-up action pair), which this suite deliberately lacks and whose
-// registered-account tests assert no btn-signup- element. A stub carrying the
-// isGuest prop is enough here; TrainLeaderboardCard.test.tsx covers the card.
-vi.mock('@/components/train/TrainLeaderboardCard', () => ({
-  TrainLeaderboardCard: ({ isGuest }: { isGuest: boolean }) => (
-    <div data-testid="train-leaderboard-card" data-guest={String(isGuest)} />
-  ),
-}));
-
-// The real host fetches (QueryClientProvider, useUserProfile with an
-// impersonation field), which this suite lacks. A stub carrying isGuest proves
-// where it mounts; TrainMedalDialogHost.test.tsx covers the host itself.
-vi.mock('@/components/train/medals/TrainMedalDialogHost', () => ({
-  TrainMedalDialogHost: ({ isGuest }: { isGuest: boolean }) => (
-    <div data-testid="train-medal-dialog-host" data-guest={String(isGuest)} />
-  ),
-}));
-
 // The real bubble needs a QueryClientProvider (it owns a TanStack
 // mutation), which this suite deliberately lacks. A stub exposing the props
 // proves what the Train landing hands it; FeedbackAskBubble.test.tsx covers
@@ -284,6 +272,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         isGuest={false}
         hasGames={true}
         feedbackAskDays={null}
+        isVisible={true}
         {...props}
       />
     </MemoryRouter>,
@@ -292,7 +281,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
 }
 
 describe('TrainStartScreen — refetch after a schedule save', () => {
-  it('keeps the landing (and the open schedule card) mounted, with Start disabled until the fresh session lands', () => {
+  it('keeps the landing mounted, with Start disabled until the fresh session lands', () => {
     const props = {
       session: BASE_SESSION,
       isError: false,
@@ -302,13 +291,13 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       isGuest: false,
       hasGames: true,
       feedbackAskDays: null,
+      isVisible: true,
     };
     const { rerender } = render(
       <MemoryRouter>
         <TrainStartScreen {...props} isLoading={false} />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
 
     rerender(
@@ -396,7 +385,11 @@ describe('TrainStartScreen — six landing states', () => {
     });
     // The max is puzzle_count * TRAIN_POINTS_PER_PUZZLE (3),
     // not a hardcoded * 2.
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('9/18Points today');
+    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 9/18');
+    // Points today sits in the streak card's details column, ahead of the freeze row.
+    const pointsToday = screen.getByTestId('train-points-today');
+    const shieldRow = screen.getByTestId('train-shield-row');
+    expect(pointsToday.compareDocumentPosition(shieldRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
@@ -410,7 +403,7 @@ describe('TrainStartScreen — six landing states', () => {
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 5, expires_on: '2026-08-01' },
       sessionScore: 7,
     });
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('7/18Points today');
+    expect(screen.getByTestId('train-points-today').textContent).toBe('Points today: 7/18');
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
@@ -456,20 +449,6 @@ describe('TrainStartScreen — six landing states', () => {
     expect(btn.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('the schedule card sits above the leaderboard (fresh and completed)', () => {
-    renderScreen();
-    const isBefore = (a: HTMLElement, b: HTMLElement): boolean =>
-      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      isBefore(screen.getByTestId('train-schedule-settings'), screen.getByTestId('train-leaderboard-card')),
-    ).toBe(true);
-    cleanup();
-    renderScreen({ session: { ...BASE_SESSION, solved_count: BASE_SESSION.puzzle_count } });
-    expect(
-      isBefore(screen.getByTestId('train-schedule-settings'), screen.getByTestId('train-leaderboard-card')),
-    ).toBe(true);
-  });
-
   it('the host bubble is phone-hidden once the intro is seen, but Tank\'s intro stays', () => {
     renderScreen();
     expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
@@ -502,8 +481,6 @@ describe('TrainStartScreen — six landing states', () => {
     const { onSettingsSaved } = renderScreen();
     expect(onSettingsSaved).not.toHaveBeenCalled();
 
-    // The schedule card starts collapsed.
-    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
     fireEvent.click(screen.getByTestId('filter-weekday-fr'));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, TRAIN_SETTINGS_SAVE_DEBOUNCE_MS + 100));
@@ -802,81 +779,56 @@ describe('TrainStartScreen — re-surface banner (additive, not a seventh state)
   });
 });
 
-describe('TrainStartScreen — weekly leaderboard card position', () => {
-  function expectOrder(...testIds: string[]): void {
-    for (let i = 0; i < testIds.length - 1; i += 1) {
-      const a = screen.getByTestId(testIds[i]!);
-      const b = screen.getByTestId(testIds[i + 1]!);
-      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-  }
-
-  it('fresh: streak card, then leaderboard card, then stats card', () => {
+describe('TrainStartScreen: no leaderboard card on the landing', () => {
+  it('the fresh, completed and exhausted landings render no leaderboard card; exhausted keeps the streak card first', () => {
     renderScreen();
-    expectOrder('train-streak-card', 'train-leaderboard-card', 'train-stats-card');
-  });
-
-  it('completed: streak card, then leaderboard card, then stats card', () => {
+    expect(screen.queryByTestId('train-leaderboard-card')).toBeNull();
+    cleanup();
     renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 },
       sessionScore: 6,
     });
-    expectOrder('train-streak-card', 'train-leaderboard-card', 'train-stats-card');
-  });
-
-  it('exhausted empty state: the card follows the streak card, before the caught-up body', () => {
+    expect(screen.queryByTestId('train-leaderboard-card')).toBeNull();
+    cleanup();
     trainProgressMock = {
       data: { ...DEFAULT_TRAIN_PROGRESS, pool_state: 'exhausted', mastered_count: 4 },
       isPending: false,
       isError: false,
     };
     renderScreen({ session: EMPTY_SESSION });
-    expectOrder('train-streak-card', 'train-leaderboard-card', 'train-empty-exhausted');
-  });
-
-  it('threads isGuest into the card', () => {
-    renderScreen({ isGuest: true });
-    expect(screen.getByTestId('train-leaderboard-card').getAttribute('data-guest')).toBe('true');
-    cleanup();
-    renderScreen({ isGuest: false });
-    expect(screen.getByTestId('train-leaderboard-card').getAttribute('data-guest')).toBe('false');
+    expect(screen.queryByTestId('train-leaderboard-card')).toBeNull();
+    const streak = screen.getByTestId('train-streak-card');
+    const body = screen.getByTestId('train-empty-exhausted');
+    expect(streak.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
-describe('TrainStartScreen — medal dialog host mount', () => {
-  it('mounts in the empty branch', () => {
-    renderScreen({ session: EMPTY_SESSION });
-    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
-  });
-
-  it('mounts in the completed branch', () => {
-    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 }, sessionScore: 6 });
-    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
-  });
-
-  it('mounts in the fresh and resume branches', () => {
+describe('TrainStartScreen: Points today and the retired stats card', () => {
+  it('only the completed landing shows Points today', () => {
     renderScreen();
-    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
+    expect(screen.queryByTestId('train-points-today')).toBeNull();
     cleanup();
     renderScreen({ session: { ...BASE_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] } });
-    expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
-    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
+    expect(screen.queryByTestId('train-points-today')).toBeNull();
+    cleanup();
+    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true } });
+    expect(screen.queryByTestId('train-points-today')).toBeNull();
+    cleanup();
+    trainProgressMock = {
+      data: { ...DEFAULT_TRAIN_PROGRESS, pool_state: 'exhausted', mastered_count: 4 },
+      isPending: false,
+      isError: false,
+    };
+    renderScreen({ session: EMPTY_SESSION });
+    expect(screen.queryByTestId('train-points-today')).toBeNull();
   });
 
-  it('does not mount while loading or on error', () => {
-    renderScreen({ isLoading: true, session: null });
-    expect(screen.queryByTestId('train-medal-dialog-host')).toBeNull();
+  it('no landing renders the old stats card', () => {
+    renderScreen();
+    expect(screen.queryByTestId('train-stats-card')).toBeNull();
     cleanup();
-    renderScreen({ isError: true, session: null });
-    expect(screen.queryByTestId('train-medal-dialog-host')).toBeNull();
-  });
-
-  it('threads isGuest into the host', () => {
-    renderScreen({ isGuest: true });
-    expect(screen.getByTestId('train-medal-dialog-host').getAttribute('data-guest')).toBe('true');
-    cleanup();
-    renderScreen({ isGuest: false });
-    expect(screen.getByTestId('train-medal-dialog-host').getAttribute('data-guest')).toBe('false');
+    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 }, sessionScore: 6 });
+    expect(screen.queryByTestId('train-stats-card')).toBeNull();
   });
 });
 
@@ -925,5 +877,74 @@ describe('TrainStartScreen: milestone feedback ask', () => {
       feedbackAskDays: ASK_DAYS,
     });
     expect(screen.getByTestId('feedback-ask-train-landing')).not.toBeNull();
+  });
+});
+
+describe('TrainStartScreen: isVisible gates the one-shot landing children', () => {
+  const ASK_DAYS = 7;
+
+  beforeEach(() => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: '2026-07-01T10:00:00Z' };
+  });
+
+  const COMPLETED_SESSION = { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 };
+
+  function expectNoOneShotChildren(): void {
+    expect(screen.queryByTestId('train-landing-host')).toBeNull();
+    expect(screen.queryByTestId('feedback-ask-train-landing')).toBeNull();
+    expect(screen.queryByTestId('train-streak-card')).toBeNull();
+  }
+
+  it('fresh: a hidden landing renders neither the host, the ask nor the streak card', () => {
+    renderScreen({ isVisible: false, feedbackAskDays: ASK_DAYS });
+    expectNoOneShotChildren();
+    expect(screen.getByTestId('train-schedule-settings')).not.toBeNull();
+  });
+
+  it('completed: a hidden landing renders neither the host, the ask nor the streak card', () => {
+    renderScreen({ isVisible: false, feedbackAskDays: ASK_DAYS, session: COMPLETED_SESSION, sessionScore: 6 });
+    expectNoOneShotChildren();
+    expect(screen.getByTestId('train-schedule-settings')).not.toBeNull();
+  });
+
+  it('exhausted: a hidden landing renders no streak card but keeps the caught-up body', () => {
+    trainProgressMock = {
+      data: { ...DEFAULT_TRAIN_PROGRESS, pool_state: 'exhausted', mastered_count: 4 },
+      isPending: false,
+      isError: false,
+    };
+    renderScreen({ isVisible: false, session: EMPTY_SESSION });
+    expectNoOneShotChildren();
+    expect(screen.getByTestId('train-empty-exhausted')).not.toBeNull();
+  });
+
+  it('flipping isVisible keeps the schedule card on the same DOM node, so a pending save survives', () => {
+    const props = {
+      session: BASE_SESSION,
+      isLoading: false,
+      isError: false,
+      sessionScore: 0,
+      onEnterLoop: vi.fn(),
+      onSettingsSaved: vi.fn(),
+      isGuest: false,
+      hasGames: true,
+      feedbackAskDays: ASK_DAYS,
+    };
+    const { rerender } = render(
+      <MemoryRouter>
+        <TrainStartScreen {...props} isVisible={false} />
+      </MemoryRouter>,
+    );
+    const hiddenNode = screen.getByTestId('train-schedule-settings');
+    expectNoOneShotChildren();
+
+    rerender(
+      <MemoryRouter>
+        <TrainStartScreen {...props} isVisible={true} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('train-schedule-settings')).toBe(hiddenNode);
+    expect(screen.getByTestId('train-landing-host')).not.toBeNull();
+    expect(screen.getByTestId('train-streak-card')).not.toBeNull();
   });
 });

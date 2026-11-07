@@ -797,7 +797,7 @@ export function parseTrainRoute(pathname: string): TrainRoute | null {
 
 ## Prod checks for the orchestrator
 
-**Status (2026-11-06): NOT RUN.** The prod tunnel is down, and opening it was denied by the session's permission classifier. Planning proceeds on the documented fallback (no migration), so A4 and the P4/P5 expectations remain unverified against prod. Dev shows P5 = 0 and no mastered item without a solved row, but dev has only 135 `drill_solves` rows.
+**Status (2026-11-06, during execution): RUN against prod, all pass, no migration.** P1: 19,493 rows (11,353 SR solved, 8.5 MB heap), below 300k. P2, user 28 (largest list), one run: 3.6 ms execution with a seq scan on `drill_solves`, below 50 ms. P3: largest list is 170 mastered (user 28), about 9 pages. P4: 0. P5: 0. P6: 0 evicted archive items, 0 ply-0 items. A4 holds, and T-246-07 is confirmed safe in prod. These checks were NOT run at planning time (the tunnel was down then), and the plans were written on the no-migration fallback.
 
 All read-only. P1 and P2 decide the migration; the rest confirm assumptions without changing the plan unless noted. Replace `28` with another heavy user if P3 shows one.
 

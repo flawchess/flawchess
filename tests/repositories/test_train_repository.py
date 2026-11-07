@@ -6303,3 +6303,258 @@ async def test_first_session_without_sharp_or_several_slots_keeps_the_shuffled_o
     assert len(spy.calls) == 1
     received, returned = spy.calls[0]
     assert returned == received
+
+
+# ---------------------------------------------------------------------------
+# get_archive_page: the mastered / parked puzzle list
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_T0 = datetime.datetime(2026, 2, 1, 9, 0, tzinfo=datetime.timezone.utc)
+
+
+def _archive_day(days: int) -> datetime.datetime:
+    """A solve instant `days` after the fixed base, so tests read as an ordering."""
+    return _ARCHIVE_T0 + datetime.timedelta(days=days)
+
+
+async def _add_archive_item(
+    db_session: AsyncSession,
+    user_id: int,
+    game_id: int,
+    ply: int = 2,
+    *,
+    status: DrillStatus = DrillStatus.MASTERED,
+    fail_count: int = 0,
+) -> None:
+    db_session.add(
+        DrillItem(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            status=int(status),
+            streak=0,
+            due_date=_TODAY,
+            fail_count=fail_count,
+            ever_correct=(status == DrillStatus.MASTERED),
+        )
+    )
+    await db_session.flush()
+
+
+async def _add_archive_solve(
+    db_session: AsyncSession,
+    solver_id: int,
+    game_id: int,
+    ply: int,
+    *,
+    source: DrillSource = DrillSource.SR_ITEM,
+    solved_at: datetime.datetime | None,
+) -> None:
+    """Insert one drill_solves row in its OWN session.
+
+    One session per solve because `uq_drill_solves_session_puzzle` is unique on
+    (session_id, game_id, ply), and a puzzle needs several solves in these tests.
+    """
+    drill_session = DrillSession(
+        user_id=solver_id,
+        session_date=_TODAY,
+        status="completed",
+        puzzle_count=1,
+        expires_on=_TODAY + datetime.timedelta(days=7),
+    )
+    db_session.add(drill_session)
+    await db_session.flush()
+    db_session.add(
+        DrillSolve(
+            session_id=drill_session.id,
+            position=0,
+            user_id=solver_id,
+            game_id=game_id,
+            ply=ply,
+            source=int(source),
+            solved_at=solved_at,
+        )
+    )
+    await db_session.flush()
+
+
+async def _archive_rows(
+    db_session: AsyncSession,
+    *,
+    list_name: Literal["mastered", "parked"] = "mastered",
+    limit: int = 50,
+    offset: int = 0,
+) -> train_repository.ArchivePage:
+    return await train_repository.get_archive_page(
+        db_session, user_id=_USER_ID, list_name=list_name, limit=limit, offset=offset
+    )
+
+
+@pytest.mark.asyncio
+async def test_archive_orders_by_latest_solve_newest_first(db_session: AsyncSession) -> None:
+    """An item with solves on two dates reports the LATER one and sorts by it.
+
+    Item A has solves on day 1 and day 3 while B has day 2: sorting by the earliest
+    (or any arbitrary) solve would put B first, sorting by the latest puts A first.
+    """
+    await ensure_test_user(db_session, _USER_ID)
+    game_a = await _seed_flaw_game(db_session, _USER_ID, "arch-order-a")
+    game_b = await _seed_flaw_game(db_session, _USER_ID, "arch-order-b")
+    game_c = await _seed_flaw_game(db_session, _USER_ID, "arch-order-c")
+    for game_id in (game_a, game_b, game_c):
+        await _add_archive_item(db_session, _USER_ID, game_id)
+    await _add_archive_solve(db_session, _USER_ID, game_a, 2, solved_at=_archive_day(1))
+    await _add_archive_solve(db_session, _USER_ID, game_a, 2, solved_at=_archive_day(3))
+    await _add_archive_solve(db_session, _USER_ID, game_b, 2, solved_at=_archive_day(2))
+    await _add_archive_solve(db_session, _USER_ID, game_c, 2, solved_at=_archive_day(0))
+
+    page = await _archive_rows(db_session)
+
+    assert [row.game_id for row in page.rows] == [game_a, game_b, game_c]
+    assert page.rows[0].last_solved_at == _archive_day(3)
+    assert page.total == 3
+
+
+@pytest.mark.asyncio
+async def test_archive_tiebreak_is_stable_across_pages(db_session: AsyncSession) -> None:
+    """Equal solve dates order by game_id DESC then ply DESC, and one-row pages
+    cover every item exactly once."""
+    await ensure_test_user(db_session, _USER_ID)
+    game_low = await _seed_flaw_game(db_session, _USER_ID, "arch-tie-low")
+    game_high = await _seed_flaw_game(db_session, _USER_ID, "arch-tie-high")
+    assert game_high > game_low
+    keys = [(game_low, 2), (game_high, 2), (game_high, 4)]
+    for game_id, ply in keys:
+        await _add_archive_item(db_session, _USER_ID, game_id, ply)
+        await _add_archive_solve(db_session, _USER_ID, game_id, ply, solved_at=_archive_day(1))
+
+    full = await _archive_rows(db_session)
+    expected = [(game_high, 4), (game_high, 2), (game_low, 2)]
+    assert [(row.game_id, row.ply) for row in full.rows] == expected
+
+    paged: list[tuple[int, int]] = []
+    for offset in range(3):
+        one = await _archive_rows(db_session, limit=1, offset=offset)
+        assert one.total == 3
+        paged.extend((row.game_id, row.ply) for row in one.rows)
+    assert paged == expected
+
+
+@pytest.mark.asyncio
+async def test_archive_ignores_herring_filler_and_other_user_solves(
+    db_session: AsyncSession,
+) -> None:
+    """Only THIS user's SR_ITEM solves feed the date and the order.
+
+    A later RED_HERRING solve on the same (game_id, ply), and another user's later
+    SR solve on the same (game_id, ply), must change neither.
+    """
+    await ensure_test_user(db_session, _USER_ID)
+    await ensure_test_user(db_session, _OTHER_USER_ID)
+    game_a = await _seed_flaw_game(db_session, _USER_ID, "arch-src-a")
+    game_b = await _seed_flaw_game(db_session, _USER_ID, "arch-src-b")
+    await _add_archive_item(db_session, _USER_ID, game_a)
+    await _add_archive_item(db_session, _USER_ID, game_b)
+    await _add_archive_solve(db_session, _USER_ID, game_a, 2, solved_at=_archive_day(1))
+    await _add_archive_solve(db_session, _USER_ID, game_b, 2, solved_at=_archive_day(3))
+    # Both are later than B's real solve, so a leak would put A first.
+    await _add_archive_solve(
+        db_session, _USER_ID, game_a, 2, source=DrillSource.RED_HERRING, solved_at=_archive_day(5)
+    )
+    await _add_archive_solve(db_session, _OTHER_USER_ID, game_a, 2, solved_at=_archive_day(6))
+
+    page = await _archive_rows(db_session)
+
+    assert [row.game_id for row in page.rows] == [game_b, game_a]
+    assert page.rows[1].last_solved_at == _archive_day(1)
+
+
+@pytest.mark.asyncio
+async def test_archive_keeps_item_without_game_flaw_row(db_session: AsyncSession) -> None:
+    """D-14: a puzzle whose game_flaws row was evicted is still listed, and the
+    total still equals the toggle count."""
+    await ensure_test_user(db_session, _USER_ID)
+    game_id = await _seed_flaw_game(db_session, _USER_ID, "arch-evicted")
+    await _add_archive_item(db_session, _USER_ID, game_id, status=DrillStatus.PARKED)
+    await _add_archive_solve(db_session, _USER_ID, game_id, 2, solved_at=_archive_day(1))
+    await db_session.execute(delete(GameFlaw).where(GameFlaw.game_id == game_id, GameFlaw.ply == 2))
+    await db_session.flush()
+
+    page = await _archive_rows(db_session, list_name="parked")
+
+    assert [(row.game_id, row.ply) for row in page.rows] == [(game_id, 2)]
+    assert page.rows[0].fen is not None
+    assert page.total == await train_repository._count_drill_items_by_status(
+        db_session, user_id=_USER_ID, status=DrillStatus.PARKED
+    )
+
+
+@pytest.mark.asyncio
+async def test_archive_corrupt_pgn_keeps_row_with_null_fen(db_session: AsyncSession) -> None:
+    """An unreplayable PGN keeps the row with a null position, so the list length
+    still equals the total (dropping it would drift the page math)."""
+    await ensure_test_user(db_session, _USER_ID)
+    good_game = await _seed_flaw_game(db_session, _USER_ID, "arch-corrupt-good")
+    bad_game = await _seed_flaw_game(db_session, _USER_ID, "arch-corrupt-bad")
+    await _add_archive_item(db_session, _USER_ID, good_game)
+    await _add_archive_item(db_session, _USER_ID, bad_game)
+    await _add_archive_solve(db_session, _USER_ID, good_game, 2, solved_at=_archive_day(1))
+    await _add_archive_solve(db_session, _USER_ID, bad_game, 2, solved_at=_archive_day(2))
+    await db_session.execute(update(Game).where(Game.id == bad_game).values(pgn="not a pgn"))
+    await db_session.flush()
+
+    page = await _archive_rows(db_session)
+
+    assert len(page.rows) == page.total == 2
+    bad = page.rows[0]
+    assert bad.game_id == bad_game
+    assert bad.fen is None
+    assert bad.last_move_uci is None
+    assert page.rows[1].fen is not None
+
+
+@pytest.mark.asyncio
+async def test_archive_item_without_solve_sorts_last(db_session: AsyncSession) -> None:
+    """An item with no solve row, or only an unattempted one, sorts last with a
+    null date."""
+    await ensure_test_user(db_session, _USER_ID)
+    game_solved = await _seed_flaw_game(db_session, _USER_ID, "arch-null-solved")
+    game_none = await _seed_flaw_game(db_session, _USER_ID, "arch-null-none")
+    game_unattempted = await _seed_flaw_game(db_session, _USER_ID, "arch-null-unattempted")
+    for game_id in (game_solved, game_none, game_unattempted):
+        await _add_archive_item(db_session, _USER_ID, game_id)
+    await _add_archive_solve(db_session, _USER_ID, game_solved, 2, solved_at=_archive_day(1))
+    await _add_archive_solve(db_session, _USER_ID, game_unattempted, 2, solved_at=None)
+
+    page = await _archive_rows(db_session)
+
+    assert page.rows[0].game_id == game_solved
+    # Both undated items follow, tiebroken by game_id DESC.
+    assert [row.game_id for row in page.rows[1:]] == sorted(
+        [game_none, game_unattempted], reverse=True
+    )
+    assert all(row.last_solved_at is None for row in page.rows[1:])
+
+
+@pytest.mark.asyncio
+async def test_archive_excludes_active_and_other_users_items(db_session: AsyncSession) -> None:
+    """ACTIVE puzzles never appear, nor does another user's mastered puzzle; each
+    list shows only its own status."""
+    await ensure_test_user(db_session, _USER_ID)
+    await ensure_test_user(db_session, _OTHER_USER_ID)
+    mine_mastered = await _seed_flaw_game(db_session, _USER_ID, "arch-excl-mastered")
+    mine_parked = await _seed_flaw_game(db_session, _USER_ID, "arch-excl-parked")
+    mine_active = await _seed_flaw_game(db_session, _USER_ID, "arch-excl-active")
+    other_mastered = await _seed_flaw_game(db_session, _OTHER_USER_ID, "arch-excl-other")
+    await _add_archive_item(db_session, _USER_ID, mine_mastered)
+    await _add_archive_item(db_session, _USER_ID, mine_parked, status=DrillStatus.PARKED)
+    await _add_archive_item(db_session, _USER_ID, mine_active, status=DrillStatus.ACTIVE)
+    await _add_archive_item(db_session, _OTHER_USER_ID, other_mastered)
+
+    mastered = await _archive_rows(db_session)
+    parked = await _archive_rows(db_session, list_name="parked")
+
+    assert [row.game_id for row in mastered.rows] == [mine_mastered]
+    assert mastered.total == 1
+    assert [row.game_id for row in parked.rows] == [mine_parked]
+    assert parked.total == 1

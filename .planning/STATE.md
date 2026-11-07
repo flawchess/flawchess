@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 244
 current_phase_name: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
-status: verifying
+status: executing
 stopped_at: Phase 246 context gathered
 last_updated: "2026-11-07T09:26:34.524Z"
 state_head: afa8867b0efb7776cf5487986c95aa2dd393de51
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261107-dnz: Stop the installed PWA sho
 
 ## Current Position
 
-Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — READY TO EXECUTE
-Plan: 0 of TBD
+Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — EXECUTING
+Plan: 1 of 8
 
-Status: Phase 246 added 2026-11-06, ready to discuss. Phase 245 is on `main` with UAT complete, but 245-VERIFICATION.md still reads `human_needed` and it has no Progress row yet
+Status: Executing Phase 246
 
 Open threads carried forward (not blockers):
 

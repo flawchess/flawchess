@@ -3,10 +3,21 @@ import {
   buildAnalysisLineUrl,
   parseAnalysisLineParam,
   buildGameAnalysisUrl,
+  buildTrainPuzzleAnalysisUrl,
   buildAnalysisFenUrl,
   parseAnalysisFenParam,
   parseAnalysisOrientationParam,
 } from './analysisUrl';
+
+describe('buildTrainPuzzleAnalysisUrl', () => {
+  it('lands on the puzzle position by passing ply - 1', () => {
+    expect(buildTrainPuzzleAnalysisUrl(100, 20)).toBe('/analysis?game_id=100&ply=19');
+  });
+
+  it('omits the ply param for a puzzle at ply 0', () => {
+    expect(buildTrainPuzzleAnalysisUrl(100, 0)).toBe('/analysis?game_id=100');
+  });
+});
 
 describe('buildAnalysisLineUrl', () => {
   it('returns the bare /analysis path for an empty move list', () => {

@@ -34,7 +34,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { Chess, type Move } from 'chess.js';
 import { Loader2 } from 'lucide-react';
-import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { buildAnalysisFenUrl, buildTrainPuzzleAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
@@ -944,7 +944,7 @@ export function TrainSolveScreen({
   const analyzeTo = useMemo<string>(
     () =>
       analyzeOpens === 'game' && puzzle.game_id !== null
-        ? buildGameAnalysisUrl(puzzle.game_id, puzzle.ply > 0 ? puzzle.ply - 1 : null)
+        ? buildTrainPuzzleAnalysisUrl(puzzle.game_id, puzzle.ply)
         : buildAnalysisFenUrl(puzzle.fen, puzzle.side_to_move),
     [analyzeOpens, puzzle.game_id, puzzle.ply, puzzle.fen, puzzle.side_to_move],
   );
