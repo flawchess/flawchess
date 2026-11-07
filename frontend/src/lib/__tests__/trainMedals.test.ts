@@ -55,7 +55,7 @@ describe('BOARD_LABEL', () => {
 
 describe('lastWeekFinishCopy', () => {
   it('words the rank as a plain finish', () => {
-    expect(lastWeekFinishCopy(12)).toBe('You finished #12 last week');
+    expect(lastWeekFinishCopy(12)).toBe('You: #12');
   });
 });
 

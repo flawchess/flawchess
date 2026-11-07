@@ -21,7 +21,7 @@ export const MEDAL_LABEL: Record<MedalKind, string> = {
   bronze: 'Bronze',
 };
 
-/** Lead-in of the podium line at the top of each tab. */
+/** Lead-in of the last-week line below each board. */
 export const LAST_WEEK_PODIUM_LABEL = 'Last week:';
 
 /** Display order of medal types in a tally: best first. */
@@ -46,9 +46,9 @@ export function tallyAriaLabel(medals: LeaderboardMedals, board: LeaderboardBoar
   return `${counts} ${BOARD_LABEL[board]} ${total === 1 ? 'medal' : 'medals'}`;
 }
 
-/** The viewer's own finish last week, for a non-medal row. */
+/** The viewer's own finish on the last-week line, for a non-medal row. */
 export function lastWeekFinishCopy(rank: number): string {
-  return `You finished #${rank} last week`;
+  return `You: #${rank}`;
 }
 
 /** Label of the dialog's primary button; the tap is also the audio-unlock gesture. */

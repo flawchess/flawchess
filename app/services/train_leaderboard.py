@@ -109,12 +109,6 @@ class ViewerStanding:
 
 
 @dataclass(frozen=True)
-class PassTarget:
-    name: str
-    points_needed: int
-
-
-@dataclass(frozen=True)
 class PodiumEntry:
     medal: MedalKind
     name: str  # read-time masked, see _podium_name
@@ -134,7 +128,6 @@ class LastWeek:
 class Board:
     rows: tuple[BoardRow, ...]
     viewer: ViewerStanding | None
-    pass_target: PassTarget | None
     last_week: LastWeek | None = None
 
 
@@ -289,19 +282,6 @@ def _slice_indices(size: int, viewer_index: int | None) -> tuple[list[int], int 
     if window_start <= LEADERBOARD_TOP_N:
         return list(range(max(top_end, window_end))), None
     return list(range(top_end)) + list(range(window_start, window_end)), window_start
-
-
-def _pass_target(
-    kind: LeaderboardBoardKind, ordered: Sequence[_Entry], viewer_index: int | None
-) -> PassTarget | None:
-    """Nearest row above the viewer with a strictly greater value (Points board only)."""
-    if kind != "points" or viewer_index is None:
-        return None
-    viewer_value = ordered[viewer_index].value
-    for entry in reversed(ordered[:viewer_index]):
-        if entry.value > viewer_value:
-            return PassTarget(name=entry.name, points_needed=entry.value - viewer_value + 1)
-    return None
 
 
 def totals_without(total: SolveTotals, contribution: SolveTotals) -> SolveTotals:
@@ -554,7 +534,6 @@ def build_board(
     return Board(
         rows=rows,
         viewer=viewer,
-        pass_target=_pass_target(kind, ordered, viewer_index),
         last_week=last_week,
     )
 

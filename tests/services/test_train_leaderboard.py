@@ -2,7 +2,7 @@
 
 Every test builds WeeklyAggregate / SolveTotals values directly. Test names carry a
 rule token (window, display_name, accuracy_percent, qualify, rank, slice,
-pass_target, hidden, guest, without_session, totals_without, tier, final_standings, medal_for,
+hidden, guest, without_session, totals_without, tier, final_standings, medal_for,
 last_week, podium, viewer_final_rank, tally, visible_keys) so the VALIDATION map can select them with pytest -k.
 """
 
@@ -356,45 +356,6 @@ def test_slice_without_a_viewer_entry_returns_only_the_top_n() -> None:
     assert [r.gap_after for r in board.rows] == [False] * (LEADERBOARD_TOP_N - 1) + [True]
 
 
-# --- pass_target ------------------------------------------------------------
-
-
-def test_pass_target_is_the_nearest_strictly_better_row_skipping_ties() -> None:
-    aggs = [
-        _agg(1, points=20, name="leader"),
-        _agg(2, points=10, puzzles=5, name="tied"),
-        _agg(3, points=10, puzzles=3, name="viewer"),
-    ]
-    target = _points(aggs, viewer_id=3).pass_target
-    assert target is not None
-    assert (target.name, target.points_needed) == ("leader", 11)
-
-
-def test_pass_target_is_the_row_directly_above_when_strictly_better() -> None:
-    aggs = [
-        _agg(1, points=30, name="top"),
-        _agg(2, points=14, name="next"),
-        _agg(3, points=10, name="viewer"),
-    ]
-    target = _points(aggs, viewer_id=3).pass_target
-    assert target is not None
-    assert (target.name, target.points_needed) == ("next", 5)
-
-
-def test_pass_target_is_none_at_rank_one() -> None:
-    aggs = [_agg(1, points=20), _agg(2, points=10)]
-    assert _points(aggs, viewer_id=1).pass_target is None
-
-
-def test_pass_target_is_none_when_the_viewer_has_no_entry() -> None:
-    assert _points([_agg(1, points=20)], viewer_id=999).pass_target is None
-
-
-def test_pass_target_is_never_set_on_the_accuracy_board() -> None:
-    aggs = [_agg(1, points=3, puzzles=1), _agg(2, points=1, puzzles=1)]
-    assert _accuracy(aggs, viewer_id=2).pass_target is None
-
-
 # --- hidden -----------------------------------------------------------------
 
 
@@ -408,8 +369,6 @@ def test_hidden_user_is_absent_from_a_public_viewers_board_and_rank() -> None:
     assert [r.name for r in board.rows] == ["visible", "viewer"]
     assert board.viewer is not None
     assert board.viewer.rank == 2
-    assert board.pass_target is not None
-    assert board.pass_target.name == "visible"
 
 
 def test_hidden_viewer_gets_a_private_would_be_row_among_visible_users() -> None:

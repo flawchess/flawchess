@@ -68,6 +68,21 @@ describe('LastWeekPodium', () => {
 
   it('shows the "Last week:" lead-in', () => {
     render(<LastWeekPodium lastWeek={lastWeek([{ medal: 'gold', name: 'alice', is_viewer: false }])} />);
-    expect(screen.getByTestId('train-leaderboard-podium').textContent).toContain('Last week:');
+    expect(screen.getByTestId('train-leaderboard-last-week').textContent).toContain('Last week:');
+  });
+
+  it("merges the viewer's own finish into the line, after the podium", () => {
+    const podium = [{ medal: 'gold' as const, name: 'alice', is_viewer: false }];
+    render(<LastWeekPodium lastWeek={{ ...lastWeek(podium), viewer_final_rank: 9 }} />);
+    const finish = screen.getByTestId('train-leaderboard-last-week-finish');
+    expect(finish.textContent).toBe('You: #9');
+    const entry = screen.getByTestId('train-leaderboard-podium-entry-0');
+    expect(entry.compareDocumentPosition(finish) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows the finish alone when no medal was awarded', () => {
+    render(<LastWeekPodium lastWeek={{ ...lastWeek([]), viewer_final_rank: 9 }} />);
+    expect(screen.queryByTestId('train-leaderboard-podium')).toBeNull();
+    expect(screen.getByTestId('train-leaderboard-last-week').textContent).toBe('Last week:You: #9');
   });
 });

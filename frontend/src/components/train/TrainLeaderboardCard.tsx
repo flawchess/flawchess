@@ -3,14 +3,14 @@
  * under Points | Accuracy filter pills (the choice is remembered in
  * localStorage), the top 5 plus the viewer's own row (highlighted) and its
  * neighbours with a gap marker between the two (and a trailing one when lower
- * ranks are cut), one viewer hint line under the board, a "Not yet qualified
+ * ranks are cut), a hint line under the board for a viewer not on it yet, a "Not yet qualified
  * (20+ puzzles)" divider before the first unranked (tentative) Accuracy row,
  * and for guests a "Sign up to claim your spot" nudge. Each row's puzzle count
  * is a Puzzle icon plus the number, and an info popover next to the title
  * explains what each board rewards.
  *
- * Each board has the "Last week:" podium above it and a lifetime medal tally
- * in every row's name block.
+ * Each board has the "Last week:" line below it (the podium plus the viewer's
+ * own finish) and a lifetime medal tally in every row's name block.
  *
  * `TrainLeaderboardCard` is the thin container, self-contained apart from
  * `isGuest`: it calls `useTrainLeaderboard()` itself, exactly like
@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Puzzle, Settings as SettingsIcon } from 'lucide-react';
-import { Card } from '@/components/ui/card';
+import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -32,7 +32,6 @@ import { TRAIN_FILTER_PILL_CLASS, TRAIN_FILTER_PILL_SPACING } from '@/components
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { LastWeekPodium } from '@/components/train/medals/LastWeekPodium';
 import { MedalTally } from '@/components/train/medals/MedalTally';
-import { lastWeekFinishCopy } from '@/lib/trainMedals';
 import { useQueryClient } from '@tanstack/react-query';
 import { TRAIN_LEADERBOARD_QUERY_KEY, useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
 import { trackFeature } from '@/lib/analytics';
@@ -45,6 +44,7 @@ import {
   GUEST_ROW_LABEL,
   HIDDEN_FROM_OTHERS_LABEL,
   LEADERBOARD_INFO_ACCURACY_COPY,
+  LEADERBOARD_INFO_MEDALS_COPY,
   LEADERBOARD_INFO_POINTS_COPY,
   NOT_YET_QUALIFIED_DIVIDER_COPY,
   ROLLOVER_MAX_RETRIES,
@@ -151,7 +151,10 @@ function LeaderboardRowItem({
           role="img"
           aria-label={puzzleCountLabel(row.puzzles)}
           data-testid={`train-leaderboard-row-${index}-puzzles`}
-          className="inline-flex shrink-0 items-baseline gap-1 text-muted-foreground"
+          // Bug fix: the width followed the digit count, so the values to its left
+          // lost their right alignment between rows (424 pts vs 178 pts). Fixed width,
+          // icon left and count right, keeps both columns straight.
+          className="inline-flex w-12 shrink-0 items-baseline justify-between text-muted-foreground"
         >
           <Puzzle aria-hidden="true" className="size-3.5 self-center" />
           <span className="tabular-nums">{row.puzzles}</span>
@@ -231,39 +234,26 @@ function LeaderboardHint({
   data: TrainLeaderboardResponse;
 }): ReactElement | null {
   const hint = viewerHint(tab, data);
-  const finalRank = data[tab].last_week?.viewer_final_rank ?? null;
-  if (hint === null && finalRank === null) return null;
+  if (hint === null) return null;
   return (
-    <>
-      {hint !== null && (
-        <p data-testid={`train-leaderboard-${hint.id}`} className="mt-2 text-sm text-muted-foreground">
-          {hint.text}
-        </p>
-      )}
-      {/* A separate line below this week's hint, never replacing it. */}
-      {finalRank !== null && (
-        <p
-          data-testid="train-leaderboard-last-week-finish"
-          className={cn('text-sm text-muted-foreground', hint === null ? 'mt-2' : 'mt-1')}
-        >
-          {lastWeekFinishCopy(finalRank)}
-        </p>
-      )}
-    </>
+    <p data-testid={`train-leaderboard-${hint.id}`} className="mt-2 text-sm text-muted-foreground">
+      {hint.text}
+    </p>
   );
 }
 
 function LeaderboardBoardView({
   tab,
   data,
+  isGuest,
 }: {
   tab: LeaderboardBoardKind;
   data: TrainLeaderboardResponse;
+  isGuest: boolean;
 }): ReactElement {
   const rows = data[tab].rows;
   return (
     <>
-      <LastWeekPodium lastWeek={data[tab].last_week} />
       {rows.length === 0 ? (
         <p data-testid="train-leaderboard-empty" className="text-sm text-muted-foreground">
           {EMPTY_BOARD_COPY[tab]}
@@ -272,6 +262,9 @@ function LeaderboardBoardView({
         <LeaderboardRows rows={rows} kind={tab} />
       )}
       <LeaderboardHint tab={tab} data={data} />
+      {/* The sign-up nudge is about this week's board, so it sits above last week's line. */}
+      {isGuest && <LeaderboardGuestCta />}
+      <LastWeekPodium lastWeek={data[tab].last_week} />
     </>
   );
 }
@@ -372,47 +365,43 @@ export function TrainLeaderboardCardView({
   return (
     <>
       {showTabs && <LeaderboardTabs tab={tab} onChange={onTabChange} />}
-      <Card as="section" className="w-full p-4" data-testid="train-leaderboard-card">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <h2 className="text-base font-semibold">This week</h2>
-            <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
-              <div className="space-y-1">
-                <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
-                <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
-                {/* Guests never appear on the boards, so the opt-out hint is for signed-in users only. */}
-                {!isGuest && (
-                  <p data-testid="train-leaderboard-info-opt-out">
-                    You can hide yourself from the leaderboards in the{' '}
-                    <SettingsIcon className="inline h-3.5 w-3.5 align-text-bottom" aria-label="Settings" />{' '}
-                    settings.
-                  </p>
-                )}
-              </div>
-            </InfoPopover>
-          </div>
+      <Card as="section" className="w-full" data-testid="train-leaderboard-card">
+        <CardHeader as="h2">
+          This week
+          <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
+            <div className="space-y-1">
+              <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
+              <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
+              <p>{LEADERBOARD_INFO_MEDALS_COPY}</p>
+              {/* Guests never appear on the boards, so the opt-out hint is for signed-in users only. */}
+              {!isGuest && (
+                <p data-testid="train-leaderboard-info-opt-out">
+                  You can hide yourself from the leaderboards in the{' '}
+                  <SettingsIcon className="inline h-3.5 w-3.5 align-text-bottom" aria-label="Settings" />{' '}
+                  settings.
+                </p>
+              )}
+            </div>
+          </InfoPopover>
           {secondsRemaining !== null && (
-            <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
+            <span data-testid="train-leaderboard-countdown" className="ml-auto text-sm font-normal text-muted-foreground">
               {formatCountdown(secondsRemaining)}
             </span>
           )}
-        </div>
-        {isPending && (
-          <div
-            data-testid="train-leaderboard-loading"
-            className="h-24 w-full animate-pulse rounded-md bg-muted"
-            aria-hidden="true"
-          />
-        )}
-        {!isPending && (isError || data === undefined) && (
-          <LoadError resource="the leaderboard" variant="inline" data-testid="train-leaderboard-error" />
-        )}
-        {data !== undefined && (
-          <>
-            <LeaderboardBoardView tab={tab} data={data} />
-            {isGuest && <LeaderboardGuestCta />}
-          </>
-        )}
+        </CardHeader>
+        <CardBody>
+          {isPending && (
+            <div
+              data-testid="train-leaderboard-loading"
+              className="h-24 w-full animate-pulse rounded-md bg-muted"
+              aria-hidden="true"
+            />
+          )}
+          {!isPending && (isError || data === undefined) && (
+            <LoadError resource="the leaderboard" variant="inline" data-testid="train-leaderboard-error" />
+          )}
+          {data !== undefined && <LeaderboardBoardView tab={tab} data={data} isGuest={isGuest} />}
+        </CardBody>
       </Card>
     </>
   );

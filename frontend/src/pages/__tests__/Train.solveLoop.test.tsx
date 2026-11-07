@@ -195,7 +195,7 @@ const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
 
 // The landing's TrainLeaderboardCard calls trainApi.getLeaderboard.
 // Empty boards, null viewers and null pass targets keep it inert here.
-const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, pass_target: null, last_week: null };
+const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, last_week: null };
 const getLeaderboard = vi.fn(async () => ({
   week_start: '2032-01-05',
   week_end: '2032-01-12',

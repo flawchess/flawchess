@@ -269,7 +269,7 @@ async def test_response_key_set_has_no_user_ids(
         assert set(body) == {"week_start", "week_end", "seconds_remaining", "points", "accuracy"}
         for board_name in ("points", "accuracy"):
             board = body[board_name]
-            assert set(board) == {"rows", "viewer", "pass_target", "last_week"}
+            assert set(board) == {"rows", "viewer", "last_week"}
             assert len(board["rows"]) == 2
             for row in board["rows"]:
                 assert set(row) == {
@@ -301,13 +301,6 @@ async def test_response_key_set_has_no_user_ids(
             elif isinstance(node, list):
                 for item in node:
                     walk(item)
-
-        # V is behind A on points (3 vs 6), so the Points board carries a pass target
-        # naming A; the Accuracy board never does.
-        assert set(body["points"]["pass_target"]) == {"name", "points_needed"}
-        assert body["points"]["pass_target"]["name"] == f"lb_keyset_a_{tag}"
-        assert body["points"]["pass_target"]["points_needed"] == 4
-        assert body["accuracy"]["pass_target"] is None
 
         walk(body)
         assert a_email not in resp.text

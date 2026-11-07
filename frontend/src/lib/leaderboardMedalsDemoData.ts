@@ -72,7 +72,7 @@ function viewerRow(rank: number | null, name: string, value: number, puzzles: nu
 }
 
 function emptyBoard(): LeaderboardBoard {
-  return { rows: [], viewer: null, pass_target: null, last_week: null };
+  return { rows: [], viewer: null, last_week: null };
 }
 
 function lastWeek(podium: LeaderboardLastWeek['podium'], viewerFinalRank: number | null = null): LeaderboardLastWeek {
@@ -99,7 +99,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
     data: response({
       rows: [row(1, 'alice', 320, 22), row(2, 'bob', 280, 19), row(3, 'carol', 240, 17)],
       viewer: null,
-      pass_target: null,
       last_week: null,
     }),
   },
@@ -109,7 +108,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
     data: response({
       rows: [row(1, 'alice', 320, 22, { gold: 3 }), row(2, 'bob', 280, 19), row(3, 'carol', 240, 17)],
       viewer: null,
-      pass_target: null,
       last_week: null,
     }),
   },
@@ -123,7 +121,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
         row(3, 'carol', 240, 17),
       ],
       viewer: null,
-      pass_target: null,
       last_week: null,
     }),
   },
@@ -137,7 +134,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
         row(3, LONG_NAME_C, 390, 28, { gold: 1, bronze: 5 }),
       ],
       viewer: null,
-      pass_target: null,
       last_week: lastWeek([
         { medal: 'gold', name: LONG_NAME_A, is_viewer: false },
         { medal: 'silver', name: LONG_NAME_B, is_viewer: false },
@@ -154,7 +150,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
         { ...row(null, 'bob', 96, 8, { silver: 1 }), tentative: true },
       ],
       viewer: null,
-      pass_target: null,
       last_week: null,
     }),
   },
@@ -164,7 +159,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
     data: response({
       rows: [row(1, 'Anonymous', 410, 30, { gold: 2, bronze: 1 }), row(2, 'bob', 350, 26), row(3, 'carol', 300, 21)],
       viewer: null,
-      pass_target: null,
       last_week: null,
     }),
   },
@@ -178,7 +172,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
         row(3, 'carol', 455, 29, { bronze: 2 }),
       ],
       viewer: null,
-      pass_target: null,
       last_week: lastWeek([
         { medal: 'gold', name: 'alice', is_viewer: false },
         { medal: 'gold', name: 'bob', is_viewer: false },
@@ -192,7 +185,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
     data: response({
       rows: [row(1, 'bob', 498, 31, { gold: 1 }), row(2, 'carol', 455, 29), row(3, 'dave', 410, 25)],
       viewer: null,
-      pass_target: null,
       last_week: lastWeek([
         { medal: 'gold', name: 'Deleted user', is_viewer: false },
         { medal: 'silver', name: 'bob', is_viewer: false },
@@ -210,7 +202,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
         row(3, 'carol', 455, 29),
       ],
       viewer: { rank: 1, rank_without_session: null, tentative: false, puzzles_to_qualify: 0, visibility: 'public' },
-      pass_target: null,
       last_week: lastWeek([
         { medal: 'gold', name: 'alice', is_viewer: false },
         { medal: 'silver', name: 'You', is_viewer: true },
@@ -228,7 +219,6 @@ export const DEMO_BOARD_SCENARIOS: Record<
         viewerRow(3, 'You', 455, 29),
       ],
       viewer: { rank: 3, rank_without_session: null, tentative: false, puzzles_to_qualify: 0, visibility: 'public' },
-      pass_target: { name: 'bob', points_needed: 43 },
       last_week: lastWeek(
         [
           { medal: 'gold', name: 'alice', is_viewer: false },

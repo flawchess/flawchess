@@ -18,6 +18,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train leaderboard: the card has a proper header with the countdown, last week's medal winners and your own finish now share one line below the board, and the point and puzzle columns line up. The "points to pass" hint is gone, and the help popover now explains medals.
 - Train now has three tabs: Today, Leaderboard and Archive. Today holds your streak and schedule, with your weekly rank one tap from the streak card, and the schedule card is shown in full instead of collapsing.
 - Openings Stats: in "Moves that Work" and "Moves that Cost You", moves you have not played recently now sit in a collapsed "Played before" group under each list, so the up to 10 cards on top all come from your current repertoire.
 - The Library Stats ELO rating charts now follow the time control switch, which stays pinned while you scroll to them. They start on the selected time control, and the others stay in the legend, switched off, so you can click to bring them back.
