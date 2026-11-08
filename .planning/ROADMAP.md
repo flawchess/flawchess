@@ -167,7 +167,7 @@ decisions, measurements, traps and breadcrumbs in SEED-261108-zkp.
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-16 from discuss-phase)
-**Plans:** 5/7 plans executed
+**Plans:** 6/7 plans executed
 
 Plans:
 **Wave 1**
@@ -182,7 +182,7 @@ Plans:
 - [x] 247-05-PLAN.md — `scripts/backfill_maia_flaws.py`: sharded, stamp-checkpointed backfill; dev smoke + benchmark dry-run (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 247-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, squash-merge, deploy, live-scoring check (orchestrator-inline, wave 4)
+- [x] 247-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, squash-merge, deploy, live-scoring check (orchestrator-inline, wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
