@@ -76,6 +76,19 @@ Flaws tab, and a future data story. None of those consumers are built here.
   verification on prod: at least 99% of flaws in fully evaluated games carry `maia_played_prob`, and the NULL
   remainder is explained by bucket (unreplayable PGN, missing rating, and so on).
 
+### Post-research decisions (owner, 2026-11-08, during plan-phase)
+- **D-13: Post-commit scorer.** Go-forward scoring runs AFTER the apply commits, not inside `apply_full_eval`'s
+  locked write transaction: a short read, inference off-thread on the in-memory boards, then a short guarded write of
+  the 8 columns plus the stamp under the per-game advisory lock (re-checking inputs). One shared function serves the
+  local drain, remote atomic submit, tier-4 blob submit, and the backfill script. Incomplete (Path B) applies are
+  scored too (literal D-08).
+- **D-14: Re-score after tier-4 `/flaw-blob-submit`.** The blob submit fills `missed_pv_lines` late; call the shared
+  scorer after that commit so `maia_second_*` is filled on already stamped games. This is a hook on an existing path,
+  not a new drain or lottery tier (D-11 holds).
+- **D-15: `second == best` stores NULL.** `maia_second_*` is NULL when `missed_pv_lines[0].su` is empty, illegal, or
+  equal to `game_positions.best_move` (remote workers compute them in separate searches); counted as a reason bucket.
+- **D-16: `--db dev|prod|benchmark`.** The backfill script also accepts `dev`, used for the dev smoke run and tests.
+
 ### Claude's Discretion
 - **Edge cases (defaults the owner accepted without discussion):** guest flaws are scored like everyone else (go-forward
   covers them anyway; 27.7k rows is noise). A missing Stockfish best or second move leaves only that pair NULL, while the
