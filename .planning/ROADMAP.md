@@ -136,9 +136,42 @@
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.29's Phase 246.
+No open milestone. Standalone phases continue absolute numbering from v2.29's Phase 246. The owner plans to open the next milestone with Phase 247 as its first phase.
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
+
+### Phase 247: Maia Stats on game_flaws (SEED-261108-zkp)
+
+**Goal**: Store Maia-3 statistics for every mistake and blunder in `game_flaws` (both players, 7.6M rows on prod),
+scored at the mover's rating at game time. This is the data base for blunder check's face-palm selection
+(SEED-261108-dk0, the next feature), a face-palm filter on the Flaws tab, and a future data story. Locked
+decisions, measurements, traps and breadcrumbs in SEED-261108-zkp.
+
+- **Columns (typed, nullable; not JSONB):** `maia_played_prob`, `maia_played_rank`, `maia_best_prob`,
+  `maia_best_rank`, `maia_second_prob`, `maia_second_rank`, `maia_top_prob`, `maia_effective_moves` (2^entropy).
+  "Best" and "second" are Stockfish's best and second-best moves at the flaw ply. No `maia_elo` column. Plus a
+  per-game completion stamp mirroring `games.best_moves_completed_at` and its `is_maia_available` guardrail.
+- **One inference per flaw:** a full-policy helper next to `score_move`; Elo via `pinned_elo_for_mover` (parity with
+  the analysis-board Maia card), fed symmetrically as `elo_self` and `elo_oppo`.
+- **Go-forward:** score flaws in the eval-apply path alongside the best-move pass (about 0.5-1 s CPU per game).
+- **Backfill:** run locally on the dev machine against prod over the tunnel, 8-10 processes, ordered like the ES
+  lottery's priority (recently active users, newer games first), deterministic, checkpointed and resumable. About one
+  day (about 16 h compute + about 5 h of overlappable writes).
+- **Traps to resolve in planning:**
+  - Rebuild exact positions by replaying `games.pgn`, not from `game_flaws.fen` (piece placement only; Maia's
+    softmax masks to legal moves, so guessed castling or en-passant rights skew probabilities).
+  - Flaw reclassification (`_classify_and_fill_oracle`, a 4-way diff/upsert) must carry the Maia columns through,
+    like the PV blobs, or re-analysis silently clears them.
+- **Out of scope:** blunder-check selection, UI and threshold calibration (SEED-261108-dk0); the Flaws-tab filter
+  UI; Maia WDL; full policy / top-k storage; Elo-ladder curves; Maia on non-flaw moves.
+
+**Depends on**: nothing in flight
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run `/gsd-discuss-phase 247`)
 
 ## Backlog
 
