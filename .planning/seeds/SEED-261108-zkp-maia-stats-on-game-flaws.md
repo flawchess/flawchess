@@ -43,7 +43,7 @@ All nullable (NULL = not scored yet). "Best" and "second" are Stockfish's best a
 | `maia_second_prob` | REAL | With `maia_best_prob`, a lower bound on Maia's mass on safe moves (when the second-best move is Good) |
 | `maia_second_rank` | SMALLINT | Top-move safety via the second-best move; NULL when there is no second legal move |
 | `maia_top_prob` | REAL | The optional "top move holds at least Y%" test |
-| `maia_entropy` | REAL | How spread out peers' choices are: position difficulty, for selection tuning and stories |
+| `maia_effective_moves` | REAL | How spread out peers' choices are: 2^H, where H = −Σ p·log₂ p is the entropy of Maia's policy over all legal moves. 1.0 = one obvious move; 12 = probability scattered as if over 12 equally likely moves. Puts P(played) in context (a 3% move is an outlier at 1.2 effective moves but close to average at 30) and measures position difficulty for selection tuning and stories |
 
 Ranks replace a stored `maia_top_uci` string: `maia_best_rank = 1` or `maia_second_rank = 1` answers "is the top move safe" without string comparisons. About 26-32 bytes per row, roughly 230 MB over 7.6M rows.
 
