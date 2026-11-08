@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 246
 current_phase_name: Maia Stats on game_flaws (SEED-261108-zkp)
-status: completed
-stopped_at: Phase 247 context gathered
-last_updated: "2026-11-08T18:09:36.785Z"
-state_head: 4960b4368dd88e7ed077c179f02e4eae10f90478
+status: executing
+stopped_at: Completed 247-05-PLAN.md
+last_updated: "2026-11-08T19:56:57.851Z"
+state_head: fed1bb4f32b7028be4cbe4b1168c0bf1e97de99f
 progress:
   total_phases: 1
   completed_phases: 63
@@ -21,10 +21,10 @@ last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) wi
 
 ## Current Position
 
-Phase: 247 (Maia Stats on game_flaws (SEED-261108-zkp)) — READY TO EXECUTE
-Plan: Not started
+Phase: 247 (Maia Stats on game_flaws (SEED-261108-zkp)) — EXECUTING
+Plan: 6 of 7
 
-Status: No open milestone; v2.28 and v2.29 closed 2026-11-08, both deployed to production
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
@@ -907,6 +907,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 245]: Mid layout mounts the Explain bar under the board controls (owner-UAT item)
 - [Phase 245]: Non-motif/opponent Explain lines show an unlabelled payoff-blue arrow, no tint (lineHasVisibleMotif gate)
 - [Phase 245]: useTacticLines maps 404 to null (no retry, no Sentry)
+- [Phase 247]: 247-01: Maia rank = 1 + count of strictly more probable legal moves (ties share a rank); second-pair reason precedence single_legal_move, second_missing, second_equals_best, second_not_legal
+- [Phase 247]: 247-02: scorer write locks games via unnest WITH ORDINALITY in ascending key order; outcome precedence game_missing > already_stamped > fingerprint_changed > stamped
+- [Phase 247]: 247-03: Maia stamp cleared in _classify_and_fill_oracle after the diff/upsert; survivors keep Maia values by omission from flaw_record_to_row
+- [Phase 247]: 247-03: rederive clears the stamp on the GameNotAnalyzed branch too, since propagate already rewrote opening best_move rows
+- [Phase 247]: Plan 04: remote-worker lanes call the shared Maia scorer post-commit (atomic-submit with in-memory targets, flaw-blob-submit with targets=None gated on a non-empty survivor blob_map)
+- [Phase 247]: [247-05] Backfill batch write failure retries per game; shard aborts after 5 consecutive failing batches; parent forwards SIGTERM to shards
 
 ### Pending Todos
 
@@ -1144,9 +1150,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-08T16:59:48.896Z
-**Stopped at:** Phase 247 context gathered
-**Resume file:** .planning/phases/247-maia-stats-on-game-flaws/247-CONTEXT.md
+**Last session:** 2026-11-08T19:56:57.785Z
+**Stopped at:** Completed 247-05-PLAN.md
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1401,6 +1407,11 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 244 P02 | 15min | 2 tasks | 9 files |
 | Phase 245 P01 | 40 min | 3 tasks | 11 files |
 | Phase 245 P02 | 25min | 3 tasks | 13 files |
+| Phase 247 P01 | 25min | 3 tasks | 5 files |
+| Phase 247 P02 | ~40min | 3 tasks | 8 files |
+| Phase 247 P03 | 35min | 2 tasks | 7 files |
+| Phase 247 P04 | 25min | 2 tasks | 2 files |
+| Phase 247 P05 | 25min | 3 tasks | 3 files |
 
 ## Performance Metrics
 

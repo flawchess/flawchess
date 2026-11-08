@@ -2845,6 +2845,12 @@ class TestBestMoveBackfill:
         )
         monkeypatch.setattr(maia_engine, "_session", object())
         monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        # The post-commit Maia scorer (Phase 247) runs on this lane too; fake its inference
+        # so the test does not depend on the scorer's exception path.
+        from app.services import maia_flaw_scoring
+        from tests.services.maia_fakes import fake_full_policy
+
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", fake_full_policy)
 
         # Full path re-evaluates all 8 non-terminal plies + 1 terminal donor.
         engine_mock = AsyncMock(
@@ -2882,6 +2888,148 @@ class TestBestMoveBackfill:
                 "The full path must gather all 8 non-terminal plies + 1 terminal "
                 f"donor; got {engine_mock.await_count} calls."
             )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_full_drain_tick_maia_flaw_scores_and_stamps(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Phase 247 tracer (D-08/D-13): a Maia-loaded full-path drain apply scores every
+        game_flaws row of the game AFTER the apply commit and stamps
+        games.maia_flaws_completed_at, all through the shared scorer."""
+        import app.services.eval_apply as eval_apply_module
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+        from app.services import maia_engine, maia_flaw_scoring
+        from tests.services.maia_fakes import fake_full_policy
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F4_1000
+        )
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=3,
+        )
+        monkeypatch.setattr(maia_engine, "_session", object())
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", fake_full_policy)
+        engine_mock = AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (60, None, "f8c5", "f8c5", None, None, ""),
+                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),
+                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),
+                (5, None, "a2a3", "a2a3", None, None, ""),
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", engine_mock)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True
+
+            async with full_drain_session_maker() as verify:
+                flaws = (
+                    (await verify.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+                    .scalars()
+                    .all()
+                )
+                stamp = (
+                    await verify.execute(
+                        select(Game.maia_flaws_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+            assert flaws, "the seeded evals must classify at least one flaw"
+            for flaw in flaws:
+                assert flaw.maia_played_prob is not None
+                assert flaw.maia_played_rank is not None
+                assert flaw.maia_top_prob is not None
+                assert flaw.maia_effective_moves is not None
+            assert stamp is not None, "a completed Maia pass must stamp the game"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_full_drain_tick_maia_flaw_absent_leaves_unstamped(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D-05 adjacency: with no Maia session the drain tick scores nothing and never
+        stamps, so the game stays visible to the backfill selector."""
+        import app.services.eval_apply as eval_apply_module
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+        from app.services import maia_engine, maia_flaw_scoring
+        from tests.services.maia_fakes import fake_full_policy
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F4_2000
+        )
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=3,
+        )
+        monkeypatch.setattr(maia_engine, "_session", None)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: None)
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", fake_full_policy)
+        engine_mock = AsyncMock(
+            side_effect=[
+                (20, None, "e2e4", "e2e4", None, None, ""),
+                (20, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+                (30, None, "b8c6", "b8c6", None, None, ""),
+                (60, None, "f1c4", "f1c4", None, None, ""),
+                (60, None, "f8c5", "f8c5", None, None, ""),
+                (300, None, "h2h3", "h2h3", -100, None, "e7e6"),
+                (10, None, "a7a6", "a7a6", 5, None, "b7b6"),
+                (5, None, "a2a3", "a2a3", None, None, ""),
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", engine_mock)
+
+        try:
+            assert await drain_module._full_drain_tick() is True
+            async with full_drain_session_maker() as verify:
+                flaws = (
+                    (await verify.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+                    .scalars()
+                    .all()
+                )
+                stamp = (
+                    await verify.execute(
+                        select(Game.maia_flaws_completed_at).where(Game.id == game_id)
+                    )
+                ).scalar_one()
+            assert flaws, "the seeded evals must classify at least one flaw"
+            for flaw in flaws:
+                for col in (
+                    "maia_played_prob",
+                    "maia_played_rank",
+                    "maia_best_prob",
+                    "maia_best_rank",
+                    "maia_second_prob",
+                    "maia_second_rank",
+                    "maia_top_prob",
+                    "maia_effective_moves",
+                ):
+                    assert getattr(flaw, col) is None, col
+            assert stamp is None, "a Maia-absent apply must never stamp"
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 

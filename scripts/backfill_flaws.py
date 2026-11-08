@@ -69,6 +69,7 @@ from app.models.user import User  # noqa: E402, F401
 from app.repositories.flaws_repository import fetch_game_positions_ordered  # noqa: E402
 from app.repositories.game_flaws_repository import (  # noqa: E402
     bulk_insert_game_flaws,
+    clear_maia_flaws_completed,
     delete_flaws_for_game,
     flaw_record_to_row,
 )
@@ -78,6 +79,7 @@ from app.services.eval_apply import (  # noqa: E402
     _load_game_and_positions,
 )
 from app.services.flaws_service import classify_game_flaws  # noqa: E402
+from app.services.maia_flaw_scoring import format_maia_backfill_reminder  # noqa: E402
 from scripts.opening_cache_repair import run_rederive  # noqa: E402
 
 # No magic numbers (CLAUDE.md rule).
@@ -159,11 +161,12 @@ def _parse_args() -> argparse.Namespace:
 
 async def _rederive_oracle_gap_game(
     session_maker: async_sessionmaker[AsyncSession], game_id: int, dry_run: bool
-) -> bool:
+) -> tuple[bool, bool]:
     """Reclassify one oracle-gap game in its own transaction, under the same
-    per-game advisory lock the drain takes. Returns False when the game is still
-    GameNotAnalyzed (expected: genuinely sparse evals), True when it was (or, in
-    dry-run, would be) filled."""
+    per-game advisory lock the drain takes. Returns (filled, maia_unstamped):
+    filled is False when the game is still GameNotAnalyzed (expected: genuinely
+    sparse evals), True when it was (or, in dry-run, would be) filled;
+    maia_unstamped is True when the reclassify cleared the game's Maia stamp (D-09)."""
     async with session_maker() as session:
         await session.execute(
             text("SELECT pg_advisory_xact_lock(:lock_key)"),
@@ -171,19 +174,19 @@ async def _rederive_oracle_gap_game(
         )
         loaded = await _load_game_and_positions(session, game_id)
         if loaded is None:
-            return False
+            return False, False
         game, positions = loaded
         if game.white_blunders is not None:
-            return False  # filled concurrently by the drain since selection
+            return False, False  # filled concurrently by the drain since selection
         if "reason" in classify_game_flaws(game, positions):
-            return False
+            return False, False
         if dry_run:
-            return True
-        await _classify_and_fill_oracle(
+            return True, False
+        maia_unstamped = await _classify_and_fill_oracle(
             session, game_id, {}, flaw_pv_blobs=None, blobs_pending=True
         )
         await session.commit()
-        return True
+        return True, maia_unstamped
 
 
 async def run_oracle_gap(
@@ -192,8 +195,11 @@ async def run_oracle_gap(
     user_id: int | None,
     dry_run: bool,
     limit: int | None,
+    db: str,
 ) -> tuple[int, int, int]:
-    """Re-derive every oracle-gap game. Returns (filled, skipped, errors)."""
+    """Re-derive every oracle-gap game. Returns (filled, skipped, errors).
+
+    Prints the D-11 Maia backfill reminder when the reclassify cleared any stamp."""
     async with session_maker() as session:
         stmt = select(Game.id).where(
             Game.full_evals_completed_at.isnot(None),
@@ -208,10 +214,10 @@ async def run_oracle_gap(
         game_ids = list((await session.execute(stmt)).scalars().all())
 
     _log(f"Oracle-gap candidates: {len(game_ids)}")
-    filled = skipped = errors = 0
+    filled = skipped = errors = maia_unstamped_total = 0
     for i, game_id in enumerate(game_ids, start=1):
         try:
-            ok = await _rederive_oracle_gap_game(session_maker, game_id, dry_run)
+            ok, maia_unstamped = await _rederive_oracle_gap_game(session_maker, game_id, dry_run)
         except Exception as exc:
             # Per-game errors must not abort the run. No variables in the message.
             sentry_sdk.set_context("oracle_gap_rederive", {"game_id": game_id})
@@ -223,6 +229,7 @@ async def run_oracle_gap(
             filled += 1
         else:
             skipped += 1
+        maia_unstamped_total += int(maia_unstamped)
         if i % BACKFILL_GAMES_PER_BATCH == 0:
             _log(f"  {i}/{len(game_ids)} games: {filled} filled, {skipped} skipped")
 
@@ -230,6 +237,9 @@ async def run_oracle_gap(
     _log(
         f"Oracle gap done: {verb} {filled}, skipped (still not analyzed) {skipped}, errors {errors}"
     )
+    reminder = format_maia_backfill_reminder(maia_unstamped_total, db)
+    if reminder is not None:
+        _log(reminder)
     return filled, skipped, errors
 
 
@@ -285,7 +295,7 @@ async def run_backfill(
 
     if oracle_gap:
         await run_oracle_gap(
-            session_maker=session_maker, user_id=user_id, dry_run=dry_run, limit=limit
+            session_maker=session_maker, user_id=user_id, dry_run=dry_run, limit=limit, db=db
         )
         return
 
@@ -334,6 +344,7 @@ async def run_backfill(
     total_flaws_written = 0
     total_skipped = 0
     total_errors = 0
+    total_maia_unstamped = 0
 
     for batch_start in range(0, total_games, BACKFILL_GAMES_PER_BATCH):
         batch = game_rows[batch_start : batch_start + BACKFILL_GAMES_PER_BATCH]
@@ -400,6 +411,11 @@ async def run_backfill(
                         for flaw in flaw_list
                     ]
                     await bulk_insert_game_flaws(session, rows)
+                    # Delete-then-insert wipes the Maia values together with the rows
+                    # (RESEARCH Pitfall 4), so the stamp must go too or the Maia backfill
+                    # would skip this game forever (D-09).
+                    if await clear_maia_flaws_completed(session, game_id_val):
+                        total_maia_unstamped += 1
                     batch_flaws += len(rows)
                     total_flaws_written += len(rows)
                 except Exception as exc:
@@ -431,6 +447,9 @@ async def run_backfill(
     _log(f"  Games skipped (no analysis): {total_skipped}")
     _log(f"  Errors: {total_errors}")
     _log(f"  Flaw rows {'counted' if dry_run else 'written'}: {total_flaws_written}")
+    reminder = format_maia_backfill_reminder(total_maia_unstamped, db)
+    if reminder is not None:
+        _log(reminder)
 
 
 if __name__ == "__main__":

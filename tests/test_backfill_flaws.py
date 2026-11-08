@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import undefer
 
@@ -855,6 +855,128 @@ class TestOracleGapRederive:
             assert mate_game.black_blunders >= 1, "3...Nf6?? allowing mate is a blunder"
             assert 5 in flaw_plies
             assert games[sparse_id].white_blunders is None
+        finally:
+            async with session_factory() as session:
+                await session.execute(delete(Game).where(Game.user_id == user_id))
+                await session.execute(delete(User).where(User.id == user_id))
+                await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Maia stamp handling (Phase 247 D-09 / D-11)
+# ---------------------------------------------------------------------------
+
+_MAIA_REMINDER_FRAGMENT = "backfill_maia_flaws.py --db dev"
+
+
+async def _stamp_game(session_factory: async_sessionmaker[AsyncSession], game_id: int) -> None:
+    async with session_factory() as session:
+        await session.execute(
+            update(Game).where(Game.id == game_id).values(maia_flaws_completed_at=func.now())
+        )
+        await session.commit()
+
+
+async def _read_stamp(
+    session_factory: async_sessionmaker[AsyncSession], game_id: int
+) -> datetime | None:
+    async with session_factory() as session:
+        return (
+            await session.execute(select(Game.maia_flaws_completed_at).where(Game.id == game_id))
+        ).scalar_one()
+
+
+def _reminder_lines(captured: str) -> list[str]:
+    return [line for line in captured.splitlines() if _MAIA_REMINDER_FRAGMENT in line]
+
+
+class TestMaiaStampHandling:
+    """The no-Maia reclassify paths clear the stamp and print the D-11 reminder."""
+
+    @pytest.mark.asyncio
+    async def test_backfill_default_branch_maia_unstamps_and_reminds(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        committed_analyzed_game: tuple[Game, int, int],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from scripts.backfill_flaws import run_backfill
+
+        game, _blunder_ply, _mistake_ply = committed_analyzed_game
+        await _stamp_game(session_factory, game.id)
+
+        await run_backfill(
+            db="dev",
+            user_id=game.user_id,
+            dry_run=False,
+            limit=None,
+            session_maker=session_factory,
+        )
+
+        assert await _read_stamp(session_factory, game.id) is None
+        lines = _reminder_lines(capsys.readouterr().out)
+        assert len(lines) == 1
+        assert lines[0].count("1 games") == 1
+
+    @pytest.mark.asyncio
+    async def test_backfill_dry_run_maia_keeps_stamp(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        committed_analyzed_game: tuple[Game, int, int],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from scripts.backfill_flaws import run_backfill
+
+        game, _blunder_ply, _mistake_ply = committed_analyzed_game
+        await _stamp_game(session_factory, game.id)
+
+        await run_backfill(
+            db="dev",
+            user_id=game.user_id,
+            dry_run=True,
+            limit=None,
+            session_maker=session_factory,
+        )
+
+        assert await _read_stamp(session_factory, game.id) is not None
+        assert _reminder_lines(capsys.readouterr().out) == []
+
+    @pytest.mark.asyncio
+    async def test_oracle_gap_maia_unstamps_and_reminds(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from scripts.backfill_flaws import run_backfill
+
+        user_id = _ORACLE_GAP_USER_ID
+        try:
+            async with session_factory() as session:
+                session.add(
+                    User(
+                        id=user_id,
+                        email=f"test-oracle-gap-maia-{user_id}@example.com",
+                        hashed_password="x",
+                    )
+                )
+                await session.flush()
+                game_id = await _seed_oracle_gap_game(session, user_id, _MATE_EVALS)
+                await session.commit()
+            await _stamp_game(session_factory, game_id)
+
+            await run_backfill(
+                db="dev",
+                user_id=user_id,
+                dry_run=False,
+                limit=None,
+                oracle_gap=True,
+                session_maker=session_factory,
+            )
+
+            assert await _read_stamp(session_factory, game_id) is None
+            lines = _reminder_lines(capsys.readouterr().out)
+            assert len(lines) == 1
+            assert lines[0].count("1 games") == 1
         finally:
             async with session_factory() as session:
                 await session.execute(delete(Game).where(Game.user_id == user_id))

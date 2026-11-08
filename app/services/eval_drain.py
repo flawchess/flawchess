@@ -100,6 +100,7 @@ from app.services.eval_utils import (
     eval_cp_to_expected_score,
     eval_mate_to_expected_score,
 )
+from app.services.maia_flaw_scoring import score_game_flaws_after_apply
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 
 logger = logging.getLogger(__name__)
@@ -1574,6 +1575,13 @@ async def _full_drain_tick() -> bool:
         return False
 
     _failed_ply_count, stamp_complete, _flaws_written = outcome
+
+    # Phase 247 (D-08/D-13): score the game's flaws with Maia AFTER the apply commit, so
+    # inference never runs inside the eval write transaction. Runs before the Path-B
+    # early return so an incomplete apply is scored too (literal D-08). Never raises.
+    await score_game_flaws_after_apply(
+        async_session_maker, game_id, targets=targets, source="full_eval_drain"
+    )
 
     if not stamp_complete:
         # Path B: game is left pending — not a processed game.

@@ -87,8 +87,13 @@ def _model_bytes_ok() -> bool:
     return True
 
 
-async def start_maia() -> None:
+async def start_maia(*, intra_op_num_threads: int | None = None) -> None:
     """Eager-load the one process-wide Maia ONNX session at lifespan startup.
+
+    `intra_op_num_threads` (default None = ORT's own default, today's behavior, what
+    the backend lifespan uses) pins the session's intra-op thread count. The Phase 247
+    backfill passes 1 because one ORT thread per process measured 80.5 ms vs 95.3 ms
+    per position at the default, and throughput scales by processes, not threads.
 
     Idempotent: a second call is a no-op. onnxruntime lives in the isolated
     maia-inference group and may be absent (lean/worker images) — catch ImportError,
@@ -107,9 +112,18 @@ async def start_maia() -> None:
     if not _model_bytes_ok():
         return
     try:
-        _session = onnxruntime.InferenceSession(
-            str(_MODEL_PATH), providers=["CPUExecutionProvider"]
-        )
+        if intra_op_num_threads is None:
+            _session = onnxruntime.InferenceSession(
+                str(_MODEL_PATH), providers=["CPUExecutionProvider"]
+            )
+        else:
+            sess_options = onnxruntime.SessionOptions()
+            sess_options.intra_op_num_threads = intra_op_num_threads
+            _session = onnxruntime.InferenceSession(
+                str(_MODEL_PATH),
+                sess_options=sess_options,
+                providers=["CPUExecutionProvider"],
+            )
     except Exception:
         # Bug guard: a corrupt model / onnxruntime init failure must not crash the
         # app — disable Maia and report.
@@ -148,14 +162,16 @@ async def stop_maia() -> None:
     _session = None
 
 
-def score_move(fen: str, elo: float, played_uci: str) -> float | None:
-    """Return the Maia policy probability (0..1) of `played_uci` at `fen`, rated
-    `elo`, using the Plan-01 encoding + the eager-loaded session.
+def full_policy(fen: str, elo: float) -> dict[str, float] | None:
+    """Return Maia's probability for EVERY legal move at `fen`, rated `elo`, from one
+    forward pass (uses the Plan-01 encoding + the eager-loaded session).
 
-    Returns None when the session is unavailable (caller: "no Maia candidate") or
-    when `played_uci` is not among the position's legal moves. numpy is imported
-    lazily (isolated group): a live session implies the group is synced, but the
-    import is still guarded so a partial env degrades to None rather than raising.
+    `fen` must be the FULL FEN (castling and en-passant fields), because the softmax
+    masks to the position's legal moves. The same `elo_to_input(elo)` value is fed as
+    both elo_self and elo_oppo (symmetric feed, parity with the analysis-board Maia
+    card). Returns None when the session is unavailable or numpy is missing (a live
+    session implies the isolated maia-inference group is synced, but the import is
+    still guarded so a partial env degrades to None rather than raising).
     """
     if _session is None:
         return None
@@ -171,5 +187,18 @@ def score_move(fen: str, elo: float, played_uci: str) -> float | None:
     feeds = {_TOKENS_INPUT: tokens, _ELO_SELF_INPUT: elo_in, _ELO_OPPO_INPUT: elo_in}
     outputs = _session.run([_LOGITS_OUTPUT], feeds)
     policy = np.asarray(outputs[0]).reshape(-1).astype(np.float32)
-    probs = mask_and_softmax(policy.tolist(), fen)
+    return mask_and_softmax(policy.tolist(), fen)
+
+
+def score_move(fen: str, elo: float, played_uci: str) -> float | None:
+    """Return the Maia policy probability (0..1) of `played_uci` at `fen`, rated
+    `elo`.
+
+    Returns None when the session is unavailable (caller: "no Maia candidate") or
+    when `played_uci` is not among the position's legal moves. Delegates to
+    full_policy so both share one encoding and one softmax.
+    """
+    probs = full_policy(fen, elo)
+    if probs is None:
+        return None
     return probs.get(played_uci)

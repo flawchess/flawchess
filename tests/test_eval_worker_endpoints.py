@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+import chess
 import httpx
 import pytest
 import pytest_asyncio
@@ -299,6 +300,19 @@ _PATH_C_CAP_MESSAGE: str = (
     "atomic-submit: stamping complete after MAX_EVAL_ATTEMPTS with residual holes"
 )
 _PATH_C_WORKER_ID: str = "w-path-c"
+
+# The eight Phase 247 Maia columns on game_flaws (D-01), asserted NULL/non-NULL by the
+# Maia hook tests below.
+_MAIA_FLAW_COLUMNS: tuple[str, ...] = (
+    "maia_played_prob",
+    "maia_played_rank",
+    "maia_best_prob",
+    "maia_best_rank",
+    "maia_second_prob",
+    "maia_second_rank",
+    "maia_top_prob",
+    "maia_effective_moves",
+)
 
 
 def _make_client() -> httpx.AsyncClient:
@@ -4377,6 +4391,183 @@ class TestAtomicSubmitEndpoint:
             # Idempotent — the game is already gone by the time we get here.
             await _delete_games(eval_worker_session_maker, [game_id])
 
+    # ── Phase 247 (D-08/D-13): Maia flaw scoring after /atomic-submit ──────────────
+
+    async def _submit_blunder_game_for_maia(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        user_id: int,
+        hash_base: int,
+    ) -> tuple[int, httpx.Response]:
+        """Seed the 6-ply blunder game with rating metadata and POST its /atomic-submit.
+
+        Returns (game_id, response). Caller owns cleanup of game_id. The ratings and
+        time-control bucket are what the Maia scorer needs to pin the Elo (no_rating
+        otherwise leaves every flaw all-NULL).
+        """
+        from app.models.game import Game
+
+        game_id = await _insert_game(session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": hash_base + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+        async with session_maker() as rating_session:
+            await rating_session.execute(
+                sa.update(Game)
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500, time_control_bucket="blitz")
+            )
+            await rating_session.commit()
+        payload = {
+            "game_id": game_id,
+            "sf_version": "Stockfish 18",
+            "worker_schema_version": 1,
+            "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+            "blob_nodes": [],
+            "job_id": None,
+        }
+        async with _make_client() as client:
+            resp = await client.post(
+                _ATOMIC_SUBMIT_URL, json=payload, headers={"X-Operator-Token": _TEST_TOKEN}
+            )
+        return game_id, resp
+
+    async def _read_maia_state(
+        self, session_maker: async_sessionmaker[AsyncSession], game_id: int
+    ) -> tuple[list[Any], datetime | None]:
+        """Return (game_flaws rows, games.maia_flaws_completed_at) for the game."""
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+
+        async with session_maker() as verify:
+            flaws = list(
+                (await verify.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+                .scalars()
+                .all()
+            )
+            stamp = (
+                await verify.execute(select(Game.maia_flaws_completed_at).where(Game.id == game_id))
+            ).scalar_one()
+        return flaws, stamp
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_maia_flaw_scores_and_stamps(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """Tracer (D-08/D-13): a Maia-loaded /atomic-submit scores every game_flaws row
+        of the game after the apply commit and stamps games.maia_flaws_completed_at;
+        the response body is the usual one."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine, maia_flaw_scoring
+        from tests.services.maia_fakes import fake_full_policy
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(maia_engine, "_session", object())
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", fake_full_policy)
+
+        game_id, resp = await self._submit_blunder_game_for_maia(
+            eval_worker_session_maker, eval_worker_test_user, 61100
+        )
+        try:
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            body = resp.json()
+            assert body["game_id"] == game_id
+            assert body["flaws_written"] >= 1
+
+            flaws, stamp = await self._read_maia_state(eval_worker_session_maker, game_id)
+            assert flaws, "the blunder eval sequence must classify at least one flaw"
+            for flaw in flaws:
+                assert flaw.maia_played_prob is not None
+                assert flaw.maia_top_prob is not None
+                assert flaw.maia_effective_moves is not None
+            assert stamp is not None, "a completed Maia pass must stamp the game"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_maia_flaw_absent_leaves_unstamped(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """D-05: with no Maia session the submit still returns 200 but writes no Maia
+        column and leaves the stamp NULL."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine, maia_flaw_scoring
+        from tests.services.maia_fakes import fake_full_policy
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(maia_engine, "_session", None)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: None)
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", fake_full_policy)
+
+        game_id, resp = await self._submit_blunder_game_for_maia(
+            eval_worker_session_maker, eval_worker_test_user, 61200
+        )
+        try:
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            flaws, stamp = await self._read_maia_state(eval_worker_session_maker, game_id)
+            assert flaws
+            for flaw in flaws:
+                for col in _MAIA_FLAW_COLUMNS:
+                    assert getattr(flaw, col) is None, col
+            assert stamp is None, "a Maia-absent submit must never stamp"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_submit_maia_flaw_scorer_error_still_200(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """A Maia fault inside the post-commit scorer never turns the submit into a 5xx:
+        evals and flaws stay committed and the game stays unstamped."""
+        import app.services.eval_apply as eval_apply_module
+        from app.services import maia_engine, maia_flaw_scoring
+
+        def _boom(fen: str, elo: float) -> dict[str, float]:
+            raise RuntimeError("simulated Maia inference failure")
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        monkeypatch.setattr(maia_engine, "_session", object())
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", _boom)
+
+        game_id, resp = await self._submit_blunder_game_for_maia(
+            eval_worker_session_maker, eval_worker_test_user, 61300
+        )
+        try:
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            flaws, stamp = await self._read_maia_state(eval_worker_session_maker, game_id)
+            assert flaws, "the flaw rows must stay committed despite the scorer error"
+            for flaw in flaws:
+                for col in _MAIA_FLAW_COLUMNS:
+                    assert getattr(flaw, col) is None, col
+            assert stamp is None, "a failed scorer pass must not stamp"
+            gp = await _get_game_position(eval_worker_session_maker, game_id, 1)
+            assert gp is not None and gp["eval_cp"] is not None, "evals must stay committed"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
 
 # ─── Blob assembly from worker results ───
 
@@ -4658,6 +4849,279 @@ class TestFlawBlobSubmitEndpoint:
             _ply, allowed, missed = flaw_rows[0]
             assert allowed is not None, "allowed_pv_lines must be non-NULL after submit (D-01)"
             assert missed is not None, "missed_pv_lines must be non-NULL after submit (D-01)"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    # ── Phase 247 (D-14): re-score after a late blob submit fills maia_second ──────
+
+    async def _seed_stamped_blob_game_for_maia(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session_maker: async_sessionmaker[AsyncSession],
+        user_id: int,
+        *,
+        best_move: str,
+    ) -> int:
+        """Seed a tier-4 blob game whose flaw is Maia-scored and stamped, with
+        missed_pv_lines still NULL (so maia_second_* is NULL, the D-14 starting state).
+
+        The flaw at ply 2 sits on the position after 1. e4 e5 (white to move, played
+        g1f3). game_positions.best_move at ply 2 is set to `best_move`. The initial
+        scoring pass runs through the real shared scorer (targets=None, PGN replay) with
+        the fake policy and a sentinel Maia session. Caller owns cleanup of the game.
+        """
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+        from app.models.game_position import GamePosition
+        from app.services import maia_engine, maia_flaw_scoring
+        from tests.services.maia_fakes import fake_full_policy
+
+        monkeypatch.setattr(maia_engine, "_session", object())
+        monkeypatch.setattr(maia_flaw_scoring, "full_policy", fake_full_policy)
+
+        game_id = await _insert_game(
+            session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(session_maker, user_id, game_id, ply=2)
+        for ply, pv in [(0, None), (1, None), (2, _WALKABLE_PV_PLY2), (3, _WALKABLE_PV_PLY3)]:
+            await _insert_game_position_pv(session_maker, user_id, game_id, ply, pv)
+
+        # The helper's placeholder flaw FEN is the position after 1. e4; the scorer's
+        # fen_mismatch guard needs the real pre-move placement at ply 2 (after 1. e4 e5).
+        pre_flaw_board = chess.Board()
+        pre_flaw_board.push_san("e4")
+        pre_flaw_board.push_san("e5")
+        async with session_maker() as session:
+            await session.execute(
+                sa.update(Game)
+                .where(Game.id == game_id)
+                .values(white_rating=1500, black_rating=1500, time_control_bucket="blitz")
+            )
+            await session.execute(
+                sa.update(GameFlaw)
+                .where(GameFlaw.game_id == game_id)
+                .values(fen=pre_flaw_board.board_fen())
+            )
+            await session.execute(
+                sa.update(GamePosition)
+                .where(GamePosition.game_id == game_id, GamePosition.ply == 2)
+                .values(best_move=best_move)
+            )
+            await session.commit()
+
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+        stamped = await maia_flaw_scoring.score_game_flaws_after_apply(
+            session_maker, game_id, targets=None, source="backfill"
+        )
+        assert stamped, "the pre-seed scoring pass must stamp the game"
+        return game_id
+
+    async def _lease_blob_evals(
+        self, *, missed_node0_second_uci: str | None
+    ) -> list[dict[str, object]]:
+        """Lease the game's blob positions and build one worker eval per token.
+
+        Only the missed node-0 token carries `missed_node0_second_uci`; the worker
+        payload controls the su that ends up in missed_pv_lines[0].
+        """
+        async with _make_client() as client:
+            lease_resp = await client.post(
+                _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+            )
+        assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.status_code}"
+        return [
+            {
+                "token": pos["token"],
+                "best_cp": 80,
+                "best_mate": None,
+                "second_cp": None,
+                "second_mate": None,
+                "second_uci": missed_node0_second_uci if pos["token"] == "2:missed:0" else None,
+            }
+            for pos in lease_resp.json()["positions"]
+        ]
+
+    async def _submit_blob_evals(
+        self, game_id: int, evals: list[dict[str, object]]
+    ) -> httpx.Response:
+        async with _make_client() as client:
+            return await client.post(
+                _FLAW_BLOB_SUBMIT_URL,
+                json={"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals},
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+
+    async def _lease_and_submit_blobs(
+        self, game_id: int, *, missed_node0_second_uci: str | None
+    ) -> httpx.Response:
+        evals = await self._lease_blob_evals(missed_node0_second_uci=missed_node0_second_uci)
+        return await self._submit_blob_evals(game_id, evals)
+
+    async def _read_flaw_maia_values(
+        self, session_maker: async_sessionmaker[AsyncSession], game_id: int
+    ) -> tuple[dict[str, Any], datetime | None]:
+        """Return (the ply-2 flaw's eight Maia values, games.maia_flaws_completed_at)."""
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+
+        async with session_maker() as verify:
+            flaw = (
+                await verify.execute(
+                    select(GameFlaw).where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                )
+            ).scalar_one()
+            stamp = (
+                await verify.execute(select(Game.maia_flaws_completed_at).where(Game.id == game_id))
+            ).scalar_one()
+        return {col: getattr(flaw, col) for col in _MAIA_FLAW_COLUMNS}, stamp
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_maia_flaw_rescore_fills_second(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """D-14: a late blob submit supplies missed_pv_lines[0].su (a legal move
+        different from best_move), so the already-stamped flaw gains maia_second_*."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        game_id = await self._seed_stamped_blob_game_for_maia(
+            monkeypatch, eval_worker_session_maker, eval_worker_test_user, best_move="d2d4"
+        )
+        try:
+            before, stamp_before = await self._read_flaw_maia_values(
+                eval_worker_session_maker, game_id
+            )
+            assert before["maia_second_prob"] is None and before["maia_second_rank"] is None
+            assert before["maia_best_prob"] is not None
+            assert stamp_before is not None
+
+            resp = await self._lease_and_submit_blobs(game_id, missed_node0_second_uci="b1c3")
+            assert resp.status_code == 200, f"Submit failed: {resp.status_code} {resp.text}"
+            assert resp.json()["blobs_written"] >= 1
+
+            after, stamp_after = await self._read_flaw_maia_values(
+                eval_worker_session_maker, game_id
+            )
+            assert after["maia_second_prob"] is not None
+            assert after["maia_second_rank"] is not None
+            assert stamp_after is not None, "the game must stay stamped after the re-score"
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_maia_flaw_second_equals_best_stays_null(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """D-15: when the submitted su equals game_positions.best_move the second pair
+        stays NULL (a second-best that collides with the best is not a second-best)."""
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        game_id = await self._seed_stamped_blob_game_for_maia(
+            monkeypatch, eval_worker_session_maker, eval_worker_test_user, best_move="d2d4"
+        )
+        try:
+            resp = await self._lease_and_submit_blobs(game_id, missed_node0_second_uci="d2d4")
+            assert resp.status_code == 200, f"Submit failed: {resp.status_code} {resp.text}"
+            assert resp.json()["blobs_written"] >= 1
+
+            after, stamp_after = await self._read_flaw_maia_values(
+                eval_worker_session_maker, game_id
+            )
+            assert after["maia_second_prob"] is None
+            assert after["maia_second_rank"] is None
+            assert after["maia_best_prob"] is not None, "the best pair is unaffected"
+            assert stamp_after is not None
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_maia_flaw_idempotent_no_rescore(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """D-14 boundary: the repeated identical submit hits the idempotent early return
+        (blobs_written=0), never calls the scorer, and leaves all eight values unchanged."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        game_id = await self._seed_stamped_blob_game_for_maia(
+            monkeypatch, eval_worker_session_maker, eval_worker_test_user, best_move="d2d4"
+        )
+
+        real_scorer = eval_remote_module.score_game_flaws_after_apply
+        calls: list[str] = []
+
+        async def _spy(*args: Any, **kwargs: Any) -> bool:
+            calls.append(kwargs["source"])
+            return await real_scorer(*args, **kwargs)
+
+        monkeypatch.setattr(eval_remote_module, "score_game_flaws_after_apply", _spy)
+        try:
+            evals = await self._lease_blob_evals(missed_node0_second_uci="b1c3")
+            resp1 = await self._submit_blob_evals(game_id, evals)
+            assert resp1.status_code == 200
+            assert resp1.json()["blobs_written"] >= 1
+            assert calls == ["flaw_blob_submit"], "the first submit must re-score exactly once"
+            values_after_first, stamp_after_first = await self._read_flaw_maia_values(
+                eval_worker_session_maker, game_id
+            )
+
+            resp2 = await self._submit_blob_evals(game_id, evals)
+            assert resp2.status_code == 200
+            assert resp2.json()["blobs_written"] == 0
+            assert calls == ["flaw_blob_submit"], "the idempotent no-op must not call the scorer"
+            values_after_second, stamp_after_second = await self._read_flaw_maia_values(
+                eval_worker_session_maker, game_id
+            )
+            assert values_after_second == values_after_first
+            assert stamp_after_second == stamp_after_first
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_blob_submit_maia_flaw_absent_noop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """D-05: with no Maia session the blob submit succeeds unchanged and leaves every
+        Maia column (and the stamp) exactly as it was."""
+        from app.services import maia_engine
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        game_id = await self._seed_stamped_blob_game_for_maia(
+            monkeypatch, eval_worker_session_maker, eval_worker_test_user, best_move="d2d4"
+        )
+        try:
+            before = await self._read_flaw_maia_values(eval_worker_session_maker, game_id)
+            monkeypatch.setattr(maia_engine, "_session", None)
+
+            resp = await self._lease_and_submit_blobs(game_id, missed_node0_second_uci="b1c3")
+            assert resp.status_code == 200
+            assert resp.json()["blobs_written"] >= 1
+
+            after = await self._read_flaw_maia_values(eval_worker_session_maker, game_id)
+            assert after == before
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 

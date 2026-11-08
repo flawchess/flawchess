@@ -73,7 +73,10 @@ from app.models.opening_cache_audit import (  # noqa: E402
     OpeningCacheRepairRow,
 )
 from app.models.opening_position_eval import OpeningPositionEval  # noqa: E402
-from app.repositories.game_flaws_repository import _SEVERITY_INT  # noqa: E402
+from app.repositories.game_flaws_repository import (  # noqa: E402
+    _SEVERITY_INT,
+    clear_maia_flaws_completed,
+)
 from app.services.engine import EnginePool, get_stockfish_version, read_pool_size  # noqa: E402
 from app.services.eval_apply import (  # noqa: E402
     _classify_and_fill_oracle,
@@ -91,6 +94,7 @@ from app.services.best_move_candidates import (  # noqa: E402
     passes_inaccuracy_gate,
 )
 from app.services.flaws_service import classify_game_flaws  # noqa: E402
+from app.services.maia_flaw_scoring import format_maia_backfill_reminder  # noqa: E402
 from app.services.zobrist import EVAL_CP_MAX_ABS, compute_hashes  # noqa: E402
 
 # ─── Named constants (each cites the decision or measurement it comes from) ──
@@ -2021,12 +2025,13 @@ async def _write_rederive_failure(
 
 async def _rederive_reclassify_game(
     session: AsyncSession, game_id: int, user_id: int
-) -> tuple[dict[str, Any], dict[str, Any], int, int] | None:
+) -> tuple[dict[str, Any], dict[str, Any], int, int, bool] | None:
     """Steps 2-5 of one game's rederive, inside the caller's locked
     transaction. Returns None (and leaves the repair-games row untouched) when
     `classify_game_flaws` reports insufficient eval coverage (`GameNotAnalyzed`
     -- an expected condition, not an error); otherwise (before, after,
-    drill_items_pruned, herrings_touched)."""
+    drill_items_pruned, herrings_touched, maia_unstamped), where maia_unstamped
+    is True when the reclassify cleared the game's Maia stamp (D-09)."""
     loaded = await _load_game_and_positions(session, game_id)
     if loaded is None:
         raise ValueError("rederive: game not found")
@@ -2037,16 +2042,18 @@ async def _rederive_reclassify_game(
         return None
 
     before = await _snapshot_rederive_state(session, game_id, user_id)
-    await _classify_and_fill_oracle(session, game_id, {}, flaw_pv_blobs=None, blobs_pending=True)
+    maia_unstamped = await _classify_and_fill_oracle(
+        session, game_id, {}, flaw_pv_blobs=None, blobs_pending=True
+    )
     drill_items_pruned = await _prune_orphaned_drills(session, game_id, user_id)
     herrings_touched = await _count_touched_herrings(session, game_id)
     after = await _snapshot_rederive_state(session, game_id, user_id)
-    return before, after, drill_items_pruned, herrings_touched
+    return before, after, drill_items_pruned, herrings_touched, maia_unstamped
 
 
 async def _rederive_one_game(
     session_maker: async_sessionmaker[AsyncSession], game_id: int, user_id: int
-) -> None:
+) -> bool:
     """Reclassify one game's flaws/oracle counts under the per-game advisory
     lock (D-04), through `_classify_and_fill_oracle` -- the drain's own
     diff/upsert classifier, never the blob-destructive delete-then-insert
@@ -2055,6 +2062,9 @@ async def _rederive_one_game(
     expected condition (marked `failed` with that reason, no Sentry capture);
     every other exception is captured to Sentry with no variables in the
     message string and the game is marked `failed` with the exception repr.
+
+    Returns True when the game's Maia stamp was cleared (D-09/D-11), so the caller
+    can count the games that need `scripts/backfill_maia_flaws.py`.
     """
     try:
         async with session_maker() as session:
@@ -2064,11 +2074,16 @@ async def _rederive_one_game(
             )
             result = await _rederive_reclassify_game(session, game_id, user_id)
             if result is None:
+                # propagate already rewrote this game's opening best_move rows without a
+                # reclassify, so its maia_best values may be stale even though classify
+                # is skipped here: clear the stamp (D-09).
+                maia_unstamped = await clear_maia_flaws_completed(session, game_id)
+                await session.commit()
                 await _write_rederive_failure(
                     session_maker, game_id, error="GameNotAnalyzed: insufficient eval coverage"
                 )
-                return
-            before, after, drill_items_pruned, herrings_touched = result
+                return maia_unstamped
+            before, after, drill_items_pruned, herrings_touched, maia_unstamped = result
             repair_game = await session.get(OpeningCacheRepairGame, game_id)
             if repair_game is not None:
                 _apply_rederive_result(
@@ -2079,11 +2094,13 @@ async def _rederive_one_game(
                     herrings_touched=herrings_touched,
                 )
             await session.commit()
+            return maia_unstamped
     except Exception as exc:
         sentry_sdk.set_context("opening_cache_rederive", {"game_id": game_id, "user_id": user_id})
         sentry_sdk.set_tag("source", "opening-cache-repair")
         sentry_sdk.capture_exception(exc)
         await _write_rederive_failure(session_maker, game_id, error=repr(exc))
+        return False
 
 
 async def run_rederive(
@@ -2138,8 +2155,11 @@ async def run_rederive(
                 await session.commit()
 
         _install_signal_handlers()
-        processed_total = await _walk_rederive(session_maker, limit=limit)
+        processed_total, maia_unstamped_total = await _walk_rederive(session_maker, limit=limit)
         print(f"rederive: processed {processed_total} game(s).")
+        reminder = format_maia_backfill_reminder(maia_unstamped_total, db)
+        if reminder is not None:
+            print(reminder)
     finally:
         if owns_engine and engine is not None:
             await engine.dispose()
@@ -2147,12 +2167,13 @@ async def run_rederive(
 
 async def _walk_rederive(
     session_maker: async_sessionmaker[AsyncSession], *, limit: int | None
-) -> int:
+) -> tuple[int, int]:
     """Page through `pending` `opening_cache_repair_games` rows (game_id ASC)
     until none remain, `limit` units have been processed, or a signal
     arrives. Stamps `rederive_finished_at` ONLY on true exhaustion. Returns
-    the total games processed."""
+    (games processed, games whose Maia stamp was cleared)."""
     processed_total = 0
+    maia_unstamped_total = 0
     while not _stop_requested:
         if limit is not None and processed_total >= limit:
             break
@@ -2176,9 +2197,9 @@ async def _walk_rederive(
                 break
             if limit is not None and processed_total >= limit:
                 break
-            await _rederive_one_game(session_maker, game_id, user_id)
+            maia_unstamped_total += int(await _rederive_one_game(session_maker, game_id, user_id))
             processed_total += 1
-    return processed_total
+    return processed_total, maia_unstamped_total
 
 
 # ─── `report` (CACHEFIX-07) ──────────────────────────────────────────────────

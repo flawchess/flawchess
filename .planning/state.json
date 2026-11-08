@@ -320,9 +320,9 @@
     }
   ],
   "next": {
-    "command": "/gsd-new-milestone",
-    "label": "Start a new milestone",
-    "reason": "All phases complete — start a new milestone"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 246 (63 of 63 roadmap phases complete) · executing"
   },
-  "updated_at": "2026-11-08T18:09:36.854Z"
+  "updated_at": "2026-11-08T19:56:57.137Z"
 }

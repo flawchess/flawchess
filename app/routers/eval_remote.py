@@ -144,6 +144,7 @@ from app.services.eval_utils import (
     selection_gate_clause,
 )
 from app.services.flaws_service import _classify_tactic_gated, _recompute_fen_map
+from app.services.maia_flaw_scoring import score_game_flaws_after_apply
 
 logger = logging.getLogger(__name__)
 
@@ -1087,6 +1088,15 @@ async def _apply_flaw_blob_submit(
         )
         await write_session.commit()
 
+    # Phase 247 (D-14): this submit fills missed_pv_lines late, so the second-best Maia
+    # pair can only be scored now. blob_map is the in-lock survivor-filtered map, so an
+    # empty write never re-scores. targets=None: the scorer rebuilds exact boards from
+    # games.pgn (D-06). Never raises.
+    if blob_map:
+        await score_game_flaws_after_apply(
+            async_session_maker, game_id, targets=None, source="flaw_blob_submit"
+        )
+
     return FlawBlobSubmitResponse(game_id=game_id, blobs_written=len(blob_map))
 
 
@@ -1467,6 +1477,13 @@ async def _apply_atomic_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
 
     failed_ply_count, stamp_complete, flaws_written = outcome
+
+    # Phase 247 (D-08/D-13): score the game's flaws with Maia AFTER the apply committed
+    # (Path B submits included). The scorer swallows and reports its own failures, so
+    # the submit response never depends on Maia; the bool result is intentionally unused.
+    await score_game_flaws_after_apply(
+        async_session_maker, game_id, targets=targets, source="remote_eval_worker"
+    )
 
     # Signal after commit so the hook never fires for a partially-committed game.
     # Gate on stamp_complete — a Path-B late submit must not prematurely
