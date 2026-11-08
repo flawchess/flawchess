@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 246
+current_phase_name: Maia Stats on game_flaws
 status: completed
-stopped_at: v2.28 and v2.29 closed (phases 242–246 regrouped), no open milestone
-last_updated: "2026-11-08T12:00:00.000Z"
-state_head: afa8867b0efb7776cf5487986c95aa2dd393de51
+stopped_at: Phase 247 context gathered
+last_updated: "2026-11-08T16:59:48.975Z"
+state_head: d9b0984943ded79be3f8fd4f3e1eafb82ee1b692
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 26
+  total_phases: 1
+  completed_phases: 63
+  total_plans: 0
   completed_plans: 26
-  percent: 100
 milestone_name: Train Spacing & Archive, Analysis Explain
 last_activity: 2026-11-08
-last_activity_desc: "Closed milestones v2.28 (242–243) and v2.29 (244–246) with tags and GitHub releases"
+last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) with tags and GitHub releases
 ---
 
 # Project State: FlawChess
@@ -1144,9 +1144,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T18:02:16.616Z
-**Stopped at:** Phase 246 context gathered
-**Resume file:** .planning/phases/246-train-subnav-split/246-CONTEXT.md
+**Last session:** 2026-11-08T16:59:48.896Z
+**Stopped at:** Phase 247 context gathered
+**Resume file:** .planning/phases/247-maia-stats-on-game-flaws/247-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
