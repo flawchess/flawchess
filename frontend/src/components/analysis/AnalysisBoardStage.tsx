@@ -163,7 +163,7 @@ export function DesktopBoardStage({
             group width by the parent's maxWidth, so it aligns to the board edges.
             Charcoal container (Card) to match the surrounding engine cards. */}
         <Card className="w-full px-1">
-          <BoardControls {...boardControlsProps} flat size="sm" />
+          <BoardControls {...boardControlsProps} flat size="wide" />
         </Card>
 
         {/* Explain bar: mid layout only. In mid the move list lives in a tab that can be

@@ -16,7 +16,7 @@
  */
 
 import type { ReactElement, ReactNode } from 'react';
-import { Check, ChevronLeft, ChevronRight, Star, Swords } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Star, Swords } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -55,7 +55,11 @@ const LINE_BUTTON: Record<ExplainOrientation, { label: string; testId: string; i
 };
 const LINE_ORDER: readonly ExplainOrientation[] = ['missed', 'allowed'];
 
-const GOT_IT_LABEL = 'Got it';
+const GOT_IT_LABEL = 'Done';
+
+/** Line stepper buttons: wider than the square icon-lg (size-9) to use the room the
+ *  shorter, icon-less Done button frees up. */
+const STEPPER_BUTTON_CLASS = 'w-11';
 
 const TACTIC_COLOR: Record<ExplainOrientation, string> = { missed: TAC_MISSED, allowed: TAC_ALLOWED };
 const TACTIC_SEPARATOR = ', ';
@@ -118,6 +122,7 @@ function LineStepper({ stepper }: { stepper: ExplainLineStepper }): ReactElement
         type="button"
         variant="brand-outline"
         size="icon-lg"
+        className={STEPPER_BUTTON_CLASS}
         aria-label="Previous move in line"
         data-testid="btn-analysis-explain-line-back"
         disabled={!stepper.canBack}
@@ -129,6 +134,7 @@ function LineStepper({ stepper }: { stepper: ExplainLineStepper }): ReactElement
         type="button"
         variant="brand-outline"
         size="icon-lg"
+        className={STEPPER_BUTTON_CLASS}
         aria-label="Next move in line"
         data-testid="btn-analysis-explain-line-forward"
         disabled={!stepper.canForward}
@@ -216,7 +222,6 @@ export function ExplainBar({
         {state.headline !== null ? <Headline headline={state.headline} /> : <span className="flex-1" />}
         <LineStepper stepper={stepper} />
         <Button type="button" variant="brand-outline" size="lg" data-testid="btn-analysis-explain-got-it" onClick={onGotIt}>
-          <Check data-icon="inline-start" aria-hidden="true" />
           {GOT_IT_LABEL}
         </Button>
       </BarShell>

@@ -5,6 +5,8 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { trackFeature } from '@/lib/analytics';
 
+type BoardControlsSize = 'sm' | 'wide' | 'md' | 'lg' | 'xl';
+
 interface BoardControlsProps {
   onBack: () => void;
   onForward: () => void;
@@ -46,16 +48,19 @@ interface BoardControlsProps {
    * right beside it, and two "Next" labels read as the same action.
    */
   forwardLabel?: string;
-  /** Button size. 'sm' = h-8 w-8 (desktop), 'md' = h-9 w-9 (mobile slim row), 'lg' = h-11 w-11 (mobile vertical column), 'xl' = each button fills an equal share of the bar at a 48px tap target (bot play, matching that page's other action buttons). Defaults to 'lg' when vertical, 'sm' otherwise. */
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Button size. 'sm' = h-8 w-8 (desktop), 'wide' = h-8 w-16 (horizontal bar under the board), 'md' = h-9 w-9 (mobile slim row), 'lg' = h-11 w-11 (mobile vertical column), 'xl' = each button fills an equal share of the bar at a 48px tap target (bot play, matching that page's other action buttons). Defaults to 'lg' when vertical, 'sm' otherwise. */
+  size?: BoardControlsSize;
   /** Explicit Tailwind size classes for the buttons. Overrides `size` when provided — use when width and height need to be decoupled (e.g. `h-9 w-11`). */
   buttonClassName?: string;
   /** Additional CSS classes for the root container */
   className?: string;
 }
 
-const SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
+const SIZE_CLASSES: Record<BoardControlsSize, string> = {
   sm: 'h-8 w-8',
+  // The 'sm' height, double width: easier-to-hit ghost buttons in a horizontal bar
+  // under the board (Analysis desktop/mid, Openings desktop/mobile).
+  wide: 'h-8 w-16',
   md: 'h-9 w-9',
   lg: 'h-11 w-11',
   xl: 'flex-1 h-12',
