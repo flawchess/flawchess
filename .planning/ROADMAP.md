@@ -166,12 +166,26 @@ decisions, measurements, traps and breadcrumbs in SEED-261108-zkp.
   UI; Maia WDL; full policy / top-k storage; Elo-ladder curves; Maia on non-flaw moves.
 
 **Depends on**: nothing in flight
-**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-16 from discuss-phase)
+**Plans:** 7 plans
 
 Plans:
+**Wave 1**
+- [ ] 247-01-PLAN.md — Maia primitives: `full_policy`, pure per-flaw stats (D-01/D-15), single-thread ORT option, `fake_full_policy` (wave 1)
 
-- [ ] TBD (run `/gsd-discuss-phase 247`)
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 247-02-PLAN.md — Tracer + scoring core: schema, shared post-commit scorer, local-drain hook (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 247-03-PLAN.md — No-Maia reclassify keeps survivors and clears the stamp (D-09); script reminders (D-11) (wave 3)
+- [ ] 247-04-PLAN.md — Remote lanes: `/atomic-submit` scoring and `/flaw-blob-submit` re-score (D-13/D-14) (wave 3)
+- [ ] 247-05-PLAN.md — `scripts/backfill_maia_flaws.py`: sharded, stamp-checkpointed backfill; dev smoke + benchmark dry-run (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 247-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, squash-merge, deploy, live-scoring check (orchestrator-inline, wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
 
 ## Backlog
 

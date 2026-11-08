@@ -321,8 +321,8 @@
   ],
   "next": {
     "command": "/gsd-new-milestone",
-    "label": "Start the next milestone",
-    "reason": "No open milestone; v2.28 and v2.29 closed"
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-11-08T12:00:00.000Z"
+  "updated_at": "2026-11-08T18:09:36.854Z"
 }

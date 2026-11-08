@@ -2,15 +2,15 @@
 gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 246
-current_phase_name: Maia Stats on game_flaws
+current_phase_name: Maia Stats on game_flaws (SEED-261108-zkp)
 status: completed
 stopped_at: Phase 247 context gathered
-last_updated: "2026-11-08T16:59:48.975Z"
-state_head: d9b0984943ded79be3f8fd4f3e1eafb82ee1b692
+last_updated: "2026-11-08T18:09:36.785Z"
+state_head: 4960b4368dd88e7ed077c179f02e4eae10f90478
 progress:
   total_phases: 1
   completed_phases: 63
-  total_plans: 0
+  total_plans: 7
   completed_plans: 26
 milestone_name: Train Spacing & Archive, Analysis Explain
 last_activity: 2026-11-08
@@ -21,7 +21,7 @@ last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) wi
 
 ## Current Position
 
-Phase: 247 (Maia Stats on game_flaws), added, not planned
+Phase: 247 (Maia Stats on game_flaws (SEED-261108-zkp)) — READY TO EXECUTE
 Plan: Not started
 
 Status: No open milestone; v2.28 and v2.29 closed 2026-11-08, both deployed to production
