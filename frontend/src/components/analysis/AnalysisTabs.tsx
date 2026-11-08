@@ -117,7 +117,7 @@ export type BoardControlsProps = {
   flat?: boolean;
   /** Icon-over-label columns for the mobile footer. */
   labels?: boolean;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'wide' | 'md' | 'lg';
   onBack: () => void;
   onForward: () => void;
   onReset: () => void;
@@ -136,7 +136,7 @@ export type BoardControlsProps = {
 };
 
 // Board controls — shared. Desktop/mid render them under the board in
-// DesktopBoardStage (flat, sm); the mobile footer passes flat with no size so the
+// DesktopBoardStage (flat, wide); the mobile footer passes flat with no size so the
 // buttons fill the width like the main nav.
 export function BoardControls({
   flat = false,
@@ -527,7 +527,10 @@ export function PgnFenMenu({
             <FileText className="h-4 w-4" aria-hidden="true" />
           </Button>
         ) : (
-          <Button variant="ghost" size="default" className="ml-auto gap-1" data-testid="analysis-btn-paste">
+          // -my-1.5: the h-8 button keeps its tap target but no longer sets the header
+          // row height, so the Moves header matches the Stockfish/FlawChess/Maia headers
+          // (whose tallest content is a 20px text line).
+          <Button variant="ghost" size="default" className="-my-1.5 ml-auto gap-1" data-testid="analysis-btn-paste">
             PGN/FEN
             <ChevronDown className="h-4 w-4" aria-hidden="true" />
           </Button>

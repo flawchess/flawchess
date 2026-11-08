@@ -116,6 +116,7 @@ export function OpeningsMobileBoardPanel({
             onFlip={onFlip}
             canGoBack={canGoBack}
             canGoForward={canGoForward}
+            size="wide"
           />
         </div>
         {/* Settings column: stacked 44px buttons — filters, played-as, bookmarks,

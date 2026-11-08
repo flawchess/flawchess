@@ -628,6 +628,7 @@ export function OpeningsPage() {
                   onFlip={() => setBoardFlipped((f) => !f)}
                   canGoBack={chess.currentPly > 0}
                   canGoForward={chess.currentPly < chess.moveHistory.length}
+                  size="wide"
                   infoSlot={
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
                       <ChessboardInfoCopy />
