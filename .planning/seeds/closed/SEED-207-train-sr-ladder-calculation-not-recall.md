@@ -1,6 +1,6 @@
 ---
 id: SEED-207
-status: closed. Resolved by Phase 244 (squash 7336dcfd3 on main, 2026-11-02, release #452; milestone v2.29). Post-ship re-check (Follow-up 1) still open, due ~2026-12-02.
+status: closed. Resolved by Phase 244 (squash 7336dcfd3 on main, 2026-11-02, release #452; milestone v2.29). Post-ship re-check (Follow-up 1) dropped by owner decision 2026-11-08.
 promoted_to: Phase 244
 promoted: 2026-11-02
 planted: 2026-11-02
@@ -243,7 +243,7 @@ that matters most, which singles out the old next-session fail retry.
 
 ## Follow-ups (not in this seed's scope)
 
-1. **Post-ship re-check (~1 month after deploy, cheap).** Re-run the Table 2
+1. **Post-ship re-check (~1 month after deploy, cheap). DROPPED by owner 2026-11-08.** Re-run the Table 2
    and Table 3 queries. The new ladder fills exactly the thin long-gap buckets
    (4d after fail, 14d after correct). Check that think-time ratios at those
    gaps are ~1.0x (memory faded) and watch Door A/B park rates and the

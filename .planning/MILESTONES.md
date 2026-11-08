@@ -12,12 +12,11 @@
 
 - **Phase 244 — Train SR Ladder, Calculation Not Recall (SEED-207, 2 plans).** Named constants `CORRECT_RETRY_DAYS`, `FAIL_RETRY_DAYS`, `MASTERY_STREAK_THRESHOLD` replace `LADDER_DAYS`, no weekday snapping, new items stay due immediately; migration `e2a7c4f9b244` only ever moves due dates later. VERIFICATION 11/11. Code review 3 infos, all fixed.
 - **Phase 245 — Analysis Contextual Explain Bar (SEED-208, 2 plans).** Pure direction rules (own flaw opens MISSED at ply-1, opponent flaw opens ALLOWED at the flaw ply) shared with the tactic chips via `flawKey`, desktop footer / mid card / mobile row placements, tactic-lines 404 mapped to null. VERIFICATION 11/11; the four layout checks passed in Claude-in-Chrome UAT at 1280, 1021 and 360px. Code review 2 warnings fixed (revert-checked), 2 infos open.
-- **Phase 246 — Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8, 8 plans).** `useTrainLoop` latch, immersive first paint and the `isVisible` gate so a hidden landing records nothing; Points today moved to the streak card, `TrainStatsCard` deleted; a running-stack browser walk with an evidence gate. VERIFICATION 16/16. Code review 2 warnings fixed, 1 deferred, 1 skipped, 3 infos open.
+- **Phase 246 — Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8, 8 plans).** `useTrainLoop` latch, immersive first paint and the `isVisible` gate so a hidden landing records nothing; Points today moved to the streak card, `TrainStatsCard` deleted; a running-stack browser walk with an evidence gate. VERIFICATION 16/16. Code review 2 warnings fixed, 1 deferred, 1 accepted by the owner (WR-03: "Missed 3 or more times" also covers a 4th miss), 3 infos open.
 
 **Known gaps, recorded rather than smoothed over:**
 
-- **SEED-207 post-ship re-check due ~2026-12-02**: re-run Tables 2/3; if attempt-2 think time in the 10-11 day bucket is clearly below the first solve, raise `CORRECT_RETRY_DAYS` to 14.
-- **246 WR-03 open (owner copy call)**: the Archive's Parked explainer says "Missed 3 or more times", which is wrong for puzzles solved at least once (parked at the 4th lapse).
+- **SEED-207 post-ship re-check dropped by owner decision (2026-11-08).**
 - **246 WR-01 deferred**: the archive query has no supporting `drill_solves` index; prod measured 19,493 rows / 3.6 ms, revisit near 300k rows.
 
 ---

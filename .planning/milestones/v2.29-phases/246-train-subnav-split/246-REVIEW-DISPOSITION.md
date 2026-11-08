@@ -13,7 +13,7 @@ findings:
     title: "No test pins the upper boundary of the archive `offset` bound"
   - id: WR-03
     severity: warning
-    disposition: skipped
+    disposition: accepted
     title: "The new Parked sentence misstates the park rule for puzzles that were ever solved"
   - id: WR-04
     severity: warning
@@ -46,7 +46,7 @@ recorded: 2026-11-07T07:54:12.954Z
 |---------|----------|-------------|--------|
 | WR-01 | warning | deferred | Prod checks P1/P2 ran during execution: 19,493 rows and 3.6 ms with the seq scan, under the 300k/50 ms migration rule. No migration; revisit if the table nears 300k. Evidence in 246-RESEARCH.md. |
 | WR-02 | warning | fixed | 246-REVIEW-FIX.md |
-| WR-03 | warning | skipped | 246-REVIEW-FIX.md |
+| WR-03 | warning | accepted | Owner 2026-11-08: "Missed 3 or more times" also covers a 4th miss; copy is good enough. |
 | WR-04 | warning | fixed | 246-REVIEW-FIX.md |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
