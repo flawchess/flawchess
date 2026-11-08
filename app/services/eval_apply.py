@@ -47,6 +47,7 @@ from app.repositories.game_flaws_repository import (
     FLAW_BLOB_AND_TACTIC_COLUMNS,
     bulk_insert_game_flaws,
     bulk_update_game_flaw_rows,
+    clear_maia_flaws_completed,
     delete_flaw_plies,
     flaw_record_to_row,
 )
@@ -998,7 +999,7 @@ async def _classify_and_fill_oracle(
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     flaw_pv_blobs: dict[int, tuple[list[PvNode], list[PvNode]]] | None = None,
     blobs_pending: bool = False,
-) -> None:
+) -> bool:
     """Classify game_flaws and fill oracle count columns for one engine-analyzed game.
 
     Runs inside the caller's write session (same transaction as _apply_full_eval_results)
@@ -1013,6 +1014,8 @@ async def _classify_and_fill_oracle(
     5. UPDATE games oracle columns (white/black inaccuracies/mistakes/blunders).
     6. For each FlawRecord at ply N, write game_positions.pv at ply N (ideal
        continuation) and N+1 (refutation from the post-flaw board).
+    7. Clear games.maia_flaws_completed_at (right after the diff/upsert, D-09) so the
+       Maia backfill re-scores a game whose flaw set or best move may have moved.
 
     Diff/upsert:
     the full/oracle pass is still authoritative and still fully REPLACES the
@@ -1067,6 +1070,12 @@ async def _classify_and_fill_oracle(
             PV-line blob is deferred to the tier-4 pass are suppressed to NULL
             instead of persisted raw/ungated.
 
+    Returns:
+        True when the game's Maia stamp (games.maia_flaws_completed_at) was cleared by
+        this call, False when the game was not found, was not analyzed
+        (GameNotAnalyzed) or carried no stamp. Operator scripts use it to count the
+        games that need `scripts/backfill_maia_flaws.py` (D-11).
+
     Errors in the flaw delete/insert/update statements and the oracle-count UPDATE
     are intentionally NOT caught here — they must propagate to the caller so the
     write-session transaction is aborted and the completion markers
@@ -1080,7 +1089,7 @@ async def _classify_and_fill_oracle(
     """
     loaded = await _load_game_and_positions(session, game_id)
     if loaded is None:
-        return
+        return False
     game, positions = loaded
 
     flaw_result, freshly_blobbed = await _classify_flaw_rows(
@@ -1088,7 +1097,7 @@ async def _classify_and_fill_oracle(
     )
     if "reason" in flaw_result:
         # GameNotAnalyzed: insufficient eval coverage — skip.
-        return
+        return False
     flaw_list = flaw_result  # list[FlawRecord]
 
     # existing_plies / already_blobbed_plies MUST be read here, in the orchestrator,
@@ -1130,10 +1139,19 @@ async def _classify_and_fill_oracle(
         flaw_pv_blobs,
     )
 
+    # D-09: a reclassify can change the flaw set or the Stockfish best move, so the
+    # Maia stamp is cleared here, the one choke point for every reclassifier (drain,
+    # atomic submit, backfill_flaws --oracle-gap, opening_cache_repair rederive).
+    # Surviving flaw rows keep their eight Maia values BY OMISSION: flaw_record_to_row
+    # never emits Maia keys, so neither update bucket's SET clause names them; new
+    # plies insert with the Maia columns NULL. A Maia-loaded apply re-stamps after its
+    # commit via app/services/maia_flaw_scoring.py (D-08), so the two compose.
+    maia_unstamped = await clear_maia_flaws_completed(session, game.id)
+
     oracle_counts_written = await refresh_game_flaw_counts_and_accuracy(session, game, positions)
     if not oracle_counts_written:
         # Shouldn't happen (same coverage gate as classify_game_flaws), but be defensive.
-        return
+        return maia_unstamped
 
     # Stage 5: flaw PV write, dedup by ply, one batched UPDATE.
     # Extracted to _write_flaw_pvs — see its docstring for the full ply-N/ply-N+1
@@ -1152,6 +1170,7 @@ async def _classify_and_fill_oracle(
     # NULL-blob ply on a game that already carries a blobs_completed_at stamp
     # from an earlier tier-4 pass.
     await _refresh_blobs_completed(session, game_id)
+    return maia_unstamped
 
 
 async def _load_game_and_positions(

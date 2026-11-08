@@ -13,7 +13,7 @@ is the one denormalized display column that cannot be recovered without PGN repl
 from typing import Any, Optional
 
 from sqlalchemy import Boolean, ForeignKey, Index, SmallInteger, String
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -94,6 +94,24 @@ class GameFlaw(Base):
     missed_tactic_piece: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     missed_tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     missed_tactic_depth: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
+    # Phase 247 Maia per-flaw stats (D-01). All nullable, NULL = not scored (or Maia could
+    # not score this row). Written only by app/services/maia_flaw_scoring.py, never by
+    # flaw_record_to_row, so a delete-free diff/upsert preserves them by omission (D-09).
+    #   rank  = 1 + number of legal moves with STRICTLY higher Maia probability
+    #           (1 = Maia's top choice; ties share a rank).
+    #   played = the move actually played; best = game_positions.best_move at the flaw ply;
+    #   second = missed_pv_lines[0].su, NULL when empty / illegal / equal to best (D-15).
+    #   top_prob = probability of Maia's own most likely move.
+    #   effective_moves = 2^H with H the Shannon entropy in bits over all legal moves.
+    maia_played_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_played_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    maia_best_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_best_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    maia_second_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_second_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    maia_top_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_effective_moves: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
 
     # PV-line blob family: write-once JSONB blobs, nullable.
     # These store the principal-variation nodes for the forcing-line tactic gate.

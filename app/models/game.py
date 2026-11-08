@@ -260,6 +260,14 @@ class Game(Base):
     best_moves_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    # Phase 247: per-game marker for the Maia per-flaw stats pass
+    # (game_flaws.maia_* columns). Stamped by app/services/maia_flaw_scoring.py only
+    # when maia_engine.is_maia_available() and the scoring pass for the game completed
+    # without an exception (D-05); stamped for zero-flaw games too. NULL = not scored,
+    # or cleared by a Maia-absent reclassification (D-09). No index on purpose.
+    maia_flaws_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
     # Per-GAME rollup of a per-FLAW-PLY condition — unlike the four
     # completion columns above (naturally per-game), this one summarizes
     # `game_flaws.allowed_pv_lines`. The authoritative predicate is "no

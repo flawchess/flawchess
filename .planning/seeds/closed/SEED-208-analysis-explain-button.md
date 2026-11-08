@@ -1,6 +1,6 @@
 ---
 id: SEED-208
-status: promoted
+status: closed. Resolved by Phase 245 (squash cf09b3737 on main, 2026-11-05, release #457; milestone v2.29).
 promoted_to: Phase 245
 promoted: 2026-11-05
 planted: 2026-11-05

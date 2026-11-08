@@ -536,6 +536,24 @@ async def _insert_rederive_game(
     return game_id
 
 
+async def _stamp_maia(session_maker: async_sessionmaker[AsyncSession], game_id: int) -> None:
+    """Stamp games.maia_flaws_completed_at (Phase 247) for a test game."""
+    async with session_maker() as session:
+        await session.execute(
+            update(Game).where(Game.id == game_id).values(maia_flaws_completed_at=func.now())
+        )
+        await session.commit()
+
+
+async def _maia_stamp(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int
+) -> datetime.datetime | None:
+    async with session_maker() as session:
+        return (
+            await session.execute(select(Game.maia_flaws_completed_at).where(Game.id == game_id))
+        ).scalar_one()
+
+
 async def _seed_flaw_rows(
     session_maker: async_sessionmaker[AsyncSession],
     game_id: int,
@@ -2705,10 +2723,10 @@ class TestRederive:
 
             async def _classify_maybe_raise(
                 session: AsyncSession, game_id: int, *args: object, **kwargs: object
-            ) -> None:
+            ) -> bool:
                 if game_id == failing_game_id:
                     raise RuntimeError("injected rederive failure")
-                await real_classify(session, game_id, *args, **kwargs)  # ty: ignore[invalid-argument-type]
+                return await real_classify(session, game_id, *args, **kwargs)  # ty: ignore[invalid-argument-type]
 
             monkeypatch.setattr(ocr_module, "_classify_and_fill_oracle", _classify_maybe_raise)
 
@@ -2726,6 +2744,69 @@ class TestRederive:
         finally:
             await _delete_games(session_maker, [failing_game_id, ok_game_id])
             await _reset_progress(session_maker)
+
+    async def test_rederive_maia_unstamps_and_reminds(
+        self, test_engine: AsyncEngine, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """run_rederive clears the Maia stamp of a reclassified game and prints the
+        D-11 reminder naming the catch-up script and the unstamped count."""
+        session_maker = _session_maker(test_engine)
+        await _ensure_user(session_maker, _TEST_USER_ID)
+        game_id = await _insert_rederive_game(session_maker, include_mistake=True)
+        try:
+            await _seed_flaw_rows(session_maker, game_id, _TEST_USER_ID)
+            await _stamp_maia(session_maker, game_id)
+            async with session_maker() as session:
+                session.add(
+                    OpeningCacheRepairGame(game_id=game_id, user_id=_TEST_USER_ID, status="pending")
+                )
+                await session.commit()
+            await _seed_propagate_finished(session_maker)
+
+            await run_rederive(db="dev", dry_run=False, limit=None, session_maker=session_maker)
+
+            assert await _maia_stamp(session_maker, game_id) is None
+            out = capsys.readouterr().out
+            reminder_lines = [ln for ln in out.splitlines() if "backfill_maia_flaws.py" in ln]
+            assert len(reminder_lines) == 1
+            assert "1 games" in reminder_lines[0]
+            assert "--db dev" in reminder_lines[0]
+        finally:
+            await _delete_games(session_maker, [game_id])
+            await _reset_progress(session_maker)
+
+    async def test_rederive_not_analyzed_maia_clears_stamp(self, test_engine: AsyncEngine) -> None:
+        """A game rederive marks GameNotAnalyzed never reaches classify, but propagate
+        already rewrote its opening best_move rows, so its Maia stamp is cleared too
+        (the repair row still ends failed with the GameNotAnalyzed error)."""
+        session_maker = _session_maker(test_engine)
+        await _ensure_user(session_maker, _TEST_USER_ID)
+        game_id = await _insert_rederive_game(session_maker, include_mistake=True)
+        try:
+            async with session_maker() as session:
+                await session.execute(
+                    update(GamePosition)
+                    .where(GamePosition.game_id == game_id)
+                    .values(eval_cp=None, eval_mate=None)
+                )
+                session.add(
+                    OpeningCacheRepairGame(game_id=game_id, user_id=_TEST_USER_ID, status="pending")
+                )
+                await session.commit()
+            await _stamp_maia(session_maker, game_id)
+
+            unstamped = await _rederive_one_game(session_maker, game_id, _TEST_USER_ID)
+
+            assert unstamped is True
+            assert await _maia_stamp(session_maker, game_id) is None
+            async with session_maker() as session:
+                repair_game = await session.get(OpeningCacheRepairGame, game_id)
+                assert repair_game is not None
+                assert repair_game.status == "failed"
+                assert repair_game.error is not None
+                assert "GameNotAnalyzed" in repair_game.error
+        finally:
+            await _delete_games(session_maker, [game_id])
 
     async def test_rederive_idempotent(self, test_engine: AsyncEngine) -> None:
         """Running rederive twice over an unchanged game is a no-op the
@@ -2772,7 +2853,7 @@ class TestRederive:
         await _ensure_user(session_maker, _TEST_USER_ID)
         game_id = await _insert_rederive_game(session_maker, include_mistake=True)
         holder = session_maker()
-        task: asyncio.Task[None] | None = None
+        task: asyncio.Task[bool] | None = None
         try:
             lock_key = _game_write_lock_key(game_id)
             await holder.execute(

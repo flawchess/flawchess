@@ -1,41 +1,40 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.27
-current_phase: 244
-current_phase_name: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
+milestone: v2.29
+current_phase: 246
+current_phase_name: Maia Stats on game_flaws (SEED-261108-zkp)
 status: executing
-stopped_at: Phase 246 context gathered
-last_updated: "2026-11-07T09:26:34.524Z"
-state_head: afa8867b0efb7776cf5487986c95aa2dd393de51
+stopped_at: Completed 247-05-PLAN.md
+last_updated: "2026-11-08T19:56:57.851Z"
+state_head: fed1bb4f32b7028be4cbe4b1168c0bf1e97de99f
 progress:
-  total_phases: 5
-  completed_phases: 103
-  total_plans: 26
-  completed_plans: 96
-milestone_name: Codebase Cleanup
-last_activity: 2026-11-07
-last_activity_desc: "Completed quick task 261107-dnz: Stop the installed PWA showing outdated builds"
+  total_phases: 1
+  completed_phases: 63
+  total_plans: 7
+  completed_plans: 26
+milestone_name: Train Spacing & Archive, Analysis Explain
+last_activity: 2026-11-08
+last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) with tags and GitHub releases
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — EXECUTING
-Plan: 1 of 8
+Phase: 247 (Maia Stats on game_flaws (SEED-261108-zkp)) — EXECUTING
+Plan: 6 of 7
 
-Status: Executing Phase 246
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
-- Deploy v2.27: Phase 241 (1,119 files, comment/rename only) plus the three audit fixes and the feedback-button label sit on `main`; the `v2.27` tag is on the close commit, not a production forward-port.
+- Phase 246 WR-01: archive query has no `drill_solves` index, revisit near 300k rows.
 - Phase 241 follow-ups: suspected bugs (INVENTORY §7.2) verified and captured as SEED-202 (start with the tier-4 lichess flag); §7.1 (50 seed candidates) still awaits an owner pass; review IN-01 (`frontend/CLAUDE.md` names two nonexistent components) open.
 - Phase 240 after-change funnel not read yet: compare first-session abandonment against `milestones/v2.26-phases/240-.../240-FUNNEL-BEFORE.md`.
 - Train grade audit (SEED-193 follow-up): tooling done 2026-10-09 as `temp/grade-audit/phone_grade_audit.py` (gitignored; reads `drill_solves.phone_grade` over the prod tunnel in a READ ONLY transaction, derives keys with the app's own `answer_key_for`, then a depth-18 spot check with local Stockfish). Run around 2026-10-22: `bin/prod_db_tunnel.sh` then `uv run python temp/grade-audit/phone_grade_audit.py --db prod --sample 300 --workers 8 > temp/grade-audit/report-$(date +%F).txt`. Smoke reading at n=140 records (report-smoke-2026-10-09.txt): server-graded moves 30/30 phone agreement; phone vs d18 31/40, phone `inaccuracy` the weak tier (2/8 confirmed). Too small to act on. Missing records skew toward fast Next presses and slow devices (236 WR-02, deferred).
 - Pending reads: Train telemetry and the weekly-leaderboard effect (~2026-10-25, data from 2026-10-05); feedback-ask yield (`feedback.source = 'milestone_ask'` vs `floating_button`); Umami funnels on `train-explore-exit` go flat from release #404 (`train-sideline-fork` replaces it).
 - Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); real-phone throughput for Phases 226/227 never measured.
-- SEED-207 post-ship re-check (Follow-up 1), about one month after the release that ships Phase 244: re-run the SEED-207 Table 2/3 queries; the attempt-2 10-11 day bucket after a correct first solve now fills; if think time there is clearly below 1.0x of the first solve, raise `CORRECT_RETRY_DAYS` to 14 (244-CONTEXT D-11). Also watch Door A/B park rates and the first-attempt share of SR slots.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - TypeScript 7 adopted in Phase 232 (D-01, supersedes Phase 217 D-11) via Microsoft's side-by-side alias: `typescript` is `@typescript/typescript6` (TS6 JS API for typescript-eslint and eslint-plugin-sonarjs) and `@typescript/native` is `typescript@7` (the `tsc` in `npm run build`). Unwind once TS 7.1 ships its API and a typescript-eslint release accepts it (typescript-eslint#10940); never merge Renovate's `typescript-7.x` branch as-is (it installs 7 under the `typescript` name and breaks lint).
@@ -50,6 +49,10 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **v2.28 and v2.29 closed 2026-11-08**; phases 242–246 regrouped into v2.28 Openings Stats Rework (242–243, releases #427–#447) and v2.29 Train Spacing & Archive, Analysis Explain (244–246, #452–#463), each tagged with a GitHub release on a production forward-port. No open milestone: next is `/gsd-new-milestone` or standalone Phase 247.
+
+### Superseded: focus after Phase 242
+
 Current focus: **Phase 242 (Openings Stats + Insights rework, SEED-204) complete 2026-10-18**, squash-merged to `main` via PR #428; no milestone holds it yet. Next: deploy (v2.27 + 242), then `/gsd-new-milestone`.
 
 Previous focus: **v2.25, v2.26 and v2.27 closed 2026-10-17**; phases 238–241 regrouped into v2.25 Readable Endgame & Library Stats (238–239, releases #406–#422), v2.26 Train First-Session Onboarding (240, #423–#426) and v2.27 Codebase Cleanup (241, not yet deployed), each tagged with a GitHub release. No open milestone: next is a deploy of v2.27, then `/gsd-new-milestone` or standalone Phase 242.
@@ -188,6 +191,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 247 added 2026-11-08 (explicit user request via `/gsd-phase .planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`, planted the same day from the `/gsd-explore` session on blunder-check selection): **Maia Stats on game_flaws** (SEED-261108-zkp). Eight typed nullable Maia columns on `game_flaws` (played/best/second probability and rank, top-move probability, effective moves) plus a per-game completion stamp; go-forward scoring in eval-apply; local backfill against prod over the tunnel with 8-10 processes in ES-lottery priority order. Prerequisite for blunder check (SEED-261108-dk0); the owner plans to open the next milestone with this phase. Written by hand as 247 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 247`.
 - Phase 246 added 2026-11-06 (explicit user request via `/gsd-phase .planning/seeds/SEED-261106-gw8-train-subnav-split.md`, planted the same day from a `/gsd-explore` session): **Train Subnav Split, Today / Leaderboard / Archive** (SEED-261106-gw8). Three URL-routed tabs behind a thin layout: Today at `/train` (streak card with rank line, full schedule card), Leaderboard at `/train/leaderboard`, Archive at `/train/archive` (Mastered / Parked lists of new `TrainPuzzleCard`s, 20 per page, newest first, Analyze button, no arrows). Session and engine hooks move to the Today route; subnav hidden during solve, score and restored-reveal views. One new backend list endpoint, no migration expected. Base for SEED-261106-q92 (retry). Written by hand as 246 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 246`.
 - Phase 245 added 2026-11-05 (explicit user request via `/gsd-phase .planning/seeds/SEED-208-analysis-explain-button.md`, planted the same day from the `/gsd-explore` session on chess.com Game Review's Explain/Best/Next bar): **Analysis Contextual Explain Bar for Flaws** (SEED-208). One Explain button in a contextual bar (under the move list on desktop, above the mobile footer on phones) for every flaw of both sides, motif or not: user's flaw opens the MISSED PV at ply-1, opponent's flaw the ALLOWED PV at the flaw ply; plays the first move immediately, Back/Forward step through, Explain becomes Got it (closes the line, returns to the flaw). No Best/Next buttons, no prose/LLM. Frontend only, reuses the tactic-lines endpoint and the tactic-chip line machinery. Written by hand as 245 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 245`.
 - Phase 244 added 2026-11-02 (explicit user request via `/gsd-phase .planning/seeds/SEED-207-train-sr-ladder-calculation-not-recall.md`, planted the same day from the `/gsd-explore` session on Train spaced repetition vs memorization): **Train SR Ladder Rework, Calculation Not Recall** (SEED-207). Correct -> retry in 14 days (first attempt included), wrong -> retry in 4 days, mastered after 2 consecutive correct (was 3), Door B leech threshold 6 -> 4, Door A unchanged at 3; one-off migration of in-flight streaks/due dates from `drill_solves`, copy updates, scheduler tests. No schema change, no A/B test. Written by hand as 244 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 244`.
@@ -903,6 +907,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 245]: Mid layout mounts the Explain bar under the board controls (owner-UAT item)
 - [Phase 245]: Non-motif/opponent Explain lines show an unlabelled payoff-blue arrow, no tint (lineHasVisibleMotif gate)
 - [Phase 245]: useTacticLines maps 404 to null (no retry, no Sentry)
+- [Phase 247]: 247-01: Maia rank = 1 + count of strictly more probable legal moves (ties share a rank); second-pair reason precedence single_legal_move, second_missing, second_equals_best, second_not_legal
+- [Phase 247]: 247-02: scorer write locks games via unnest WITH ORDINALITY in ascending key order; outcome precedence game_missing > already_stamped > fingerprint_changed > stamped
+- [Phase 247]: 247-03: Maia stamp cleared in _classify_and_fill_oracle after the diff/upsert; survivors keep Maia values by omission from flaw_record_to_row
+- [Phase 247]: 247-03: rederive clears the stamp on the GameNotAnalyzed branch too, since propagate already rewrote opening best_move rows
+- [Phase 247]: Plan 04: remote-worker lanes call the shared Maia scorer post-commit (atomic-submit with in-memory targets, flaw-blob-submit with targets=None gated on a non-empty survivor blob_map)
+- [Phase 247]: [247-05] Backfill batch write failure retries per game; shard aborts after 5 consecutive failing batches; parent forwards SIGTERM to shards
 
 ### Pending Todos
 
@@ -1140,9 +1150,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-06T18:02:16.616Z
-**Stopped at:** Phase 246 context gathered
-**Resume file:** .planning/phases/246-train-subnav-split/246-CONTEXT.md
+**Last session:** 2026-11-08T19:56:57.785Z
+**Stopped at:** Completed 247-05-PLAN.md
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1397,6 +1407,11 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 244 P02 | 15min | 2 tasks | 9 files |
 | Phase 245 P01 | 40 min | 3 tasks | 11 files |
 | Phase 245 P02 | 25min | 3 tasks | 13 files |
+| Phase 247 P01 | 25min | 3 tasks | 5 files |
+| Phase 247 P02 | ~40min | 3 tasks | 8 files |
+| Phase 247 P03 | 35min | 2 tasks | 7 files |
+| Phase 247 P04 | 25min | 2 tasks | 2 files |
+| Phase 247 P05 | 25min | 3 tasks | 3 files |
 
 ## Performance Metrics
 

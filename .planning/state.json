@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.27",
+  "milestone": "v2.29",
   "phases": [
     {
       "number": "1",
@@ -310,24 +310,19 @@
     },
     {
       "number": "242",
-      "name": "standalone phase",
-      "status": "complete"
-    },
-    {
-      "number": "243",
-      "name": "standalone phase",
+      "name": "243. v2.28 phases",
       "status": "complete"
     },
     {
       "number": "244",
-      "name": "standalone phase",
+      "name": "246. v2.29 phases",
       "status": "complete"
     }
   ],
   "next": {
     "command": "/gsd-progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 3 of 5 · executing"
+    "reason": "Phase 246 (63 of 63 roadmap phases complete) · executing"
   },
-  "updated_at": "2026-11-06T19:55:50.907Z"
+  "updated_at": "2026-11-08T19:56:57.137Z"
 }

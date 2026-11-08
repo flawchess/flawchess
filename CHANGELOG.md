@@ -10,11 +10,16 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
+
+## [v2.29] Train Spacing & Archive, Analysis Explain — 2026-11-08
+
+### Added
+
 - Analysis: every mistake and blunder, yours and your opponent's, now gets an Explain bar (under the move list on desktop, above the board controls on mobile) naming the move, its severity and the tactic behind it. Best plays the better move instead, Punish plays the refutation, both right on the board; step through the line with Back and Forward, and Done takes you back to the game move.
 - Analysis: the move list now shows your opponent's tactic tags too, and only one tactic line is open at a time. On mobile the PGN/FEN menu moved to an icon under the board to free up space for the move list.
 - Analysis: the PGN/FEN button now opens a menu with "Import PGN/FEN", "Copy PGN" (the whole move tree, with your side lines as variations and the game's players, ratings, date and result as headers) and "Copy FEN" (the position on the board).
 - Train: mastered and parked puzzles are now browsable in a new Archive tab, newest first, with the position, the mistake or blunder you played, the game details and when you mastered or parked each one. Analyze opens the game on that position.
-- Openings Stats now opens with "Out of the opening": how often you leave the opening clearly worse or clearly better than a typical position for your colour, ranked against benchmarked Lichess players at your rating in each time control. The popover breaks it down by time control.
 
 ### Changed
 
@@ -24,6 +29,23 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Openings Stats: in "Moves that Work" and "Moves that Cost You", moves you have not played recently now sit in a collapsed "Played before" group under each list, so the up to 10 cards on top all come from your current repertoire.
 - The Library Stats ELO rating charts now follow the time control switch, which stays pinned while you scroll to them. They start on the selected time control, and the others stay in the legend, switched off, so you can click to bring them back.
 - Train's spaced repetition now tests whether you can still find the move rather than whether you remember it: a missed puzzle comes back after 4 days instead of next session, a solved one after 10 days, and two correct solves in a row master it (was three). A puzzle missed 4 times in total is set aside (was 6). Puzzles already in progress move to the new spacing, never earlier than planned.
+- Train: each player now gets their own order of "several good moves" positions, mixing opening, middlegame and endgame, instead of everyone seeing the same few positions in the same order. These positions now start from move 10 in the opening and skip positions that are already clearly won or lost.
+
+### Fixed
+
+- Train: the end-of-session message no longer says "See you tomorrow" when your next training day is later in the week. It now names the actual day.
+- The installed app no longer gets stuck on an old version. It now checks for a new version when it opens and when you come back to it, and updates itself, waiting until you finish your puzzle session or bot game.
+- Translating the page with Google Translate no longer crashes the app to the error screen.
+- Analysis: on smaller laptop screens (a maximized window under about 880px tall), the page now scrolls instead of cutting off the eval chart and the Accuracy card.
+
+## [v2.28] Openings Stats Rework — 2026-10-31
+
+### Added
+
+- Openings Stats now opens with "Out of the opening": how often you leave the opening clearly worse or clearly better than a typical position for your colour, ranked against benchmarked Lichess players at your rating in each time control. The popover breaks it down by time control.
+
+### Changed
+
 - Peer rankings on Endgame Stats and in "Out of the opening" now use your most recent 1,000 games per time control (was 3,000), the same depth as the benchmarked players you are compared with, so recent improvement shows up sooner.
 - In the Maia chart, when the best move is the only good one, its line changes color with rating: violet (gem) where at most 30% of players at that rating would find it, blue (great) up to 70%, green (best) above. The tooltip shows the tier at the hovered rating.
 - Openings Stats now holds your opening insights: up to 10 moves that work and 10 that cost you per colour, clearest first, coloured only when the difference is clear at 95% confidence. They sit below your bookmarks and most-played openings, one colour at a time, switched with a White | Black toggle that also sets the Played as filter.
@@ -34,15 +56,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The Insights tab and the per-bookmark "Include in opening results" switch are gone. Old Insights links open Stats.
 - Train: the puzzle verdict is now one short sentence that states what the position was and what you scored ("Only one move works here. You called it +1 and found it +2."), replacing three blocks that repeated each other. Return dates read "Back in 3 days", and motif and alternative moves share one line.
 - Train: on the Accuracy leaderboard, players with equal accuracy are now ranked by puzzles solved (more puzzles ranks higher), so ties are rarer. Medals from earlier weeks are unchanged.
-- Train: each player now gets their own order of "several good moves" positions, mixing opening, middlegame and endgame, instead of everyone seeing the same few positions in the same order. These positions now start from move 10 in the opening and skip positions that are already clearly won or lost.
 - Gem and great moves are now about twice as common. A gem is the only good move that fewer than 3 in 10 rating peers would find (was 1 in 5); a great move is one found by 3 to 7 in 10 peers (was 1 in 5 to 1 in 2). Existing games are reclassified automatically.
 
 ### Fixed
 
-- Train: the end-of-session message no longer says "See you tomorrow" when your next training day is later in the week. It now names the actual day.
-- The installed app no longer gets stuck on an old version. It now checks for a new version when it opens and when you come back to it, and updates itself, waiting until you finish your puzzle session or bot game.
-- Translating the page with Google Translate no longer crashes the app to the error screen.
-- Analysis: on smaller laptop screens (a maximized window under about 880px tall), the page now scrolls instead of cutting off the eval chart and the Accuracy card.
 - Background analysis no longer replaces a lichess-analyzed game's lichess evaluations with FlawChess engine evaluations.
 - Newly imported games no longer show the platform's accuracy and ACPL as FlawChess's own before FlawChess has analyzed them; the platform values are kept separately.
 - Move explorer: on touchscreen laptops a mouse click on a move now plays it again instead of only highlighting the row.
@@ -1717,7 +1734,9 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.27...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.29...HEAD
+[v2.29]: https://github.com/flawchess/flawchess/compare/v2.28...v2.29
+[v2.28]: https://github.com/flawchess/flawchess/compare/v2.27...v2.28
 [v2.27]: https://github.com/flawchess/flawchess/compare/v2.26...v2.27
 [v2.26]: https://github.com/flawchess/flawchess/compare/v2.25...v2.26
 [v2.25]: https://github.com/flawchess/flawchess/compare/v2.24...v2.25

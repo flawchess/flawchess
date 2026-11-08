@@ -1,6 +1,6 @@
 ---
 id: SEED-204
-status: promoted
+status: closed. Resolved by Phase 242 (PR #428 squash e732b7e64 on main, 2026-10-18, release #429; milestone v2.28).
 promoted_to: Phase 242
 promoted: 2026-10-17
 planted: 2026-10-17
