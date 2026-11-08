@@ -1,34 +1,34 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.27
-current_phase: 244
-current_phase_name: Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)
-status: executing
-stopped_at: Phase 246 context gathered
-last_updated: "2026-11-07T09:26:34.524Z"
+milestone: v2.29
+current_phase: 246
+status: completed
+stopped_at: v2.28 and v2.29 closed (phases 242–246 regrouped), no open milestone
+last_updated: "2026-11-08T12:00:00.000Z"
 state_head: afa8867b0efb7776cf5487986c95aa2dd393de51
 progress:
   total_phases: 5
-  completed_phases: 103
+  completed_phases: 5
   total_plans: 26
-  completed_plans: 96
-milestone_name: Codebase Cleanup
-last_activity: 2026-11-07
-last_activity_desc: "Completed quick task 261107-dnz: Stop the installed PWA showing outdated builds"
+  completed_plans: 26
+  percent: 100
+milestone_name: Train Spacing & Archive, Analysis Explain
+last_activity: 2026-11-08
+last_activity_desc: "Closed milestones v2.28 (242–243) and v2.29 (244–246) with tags and GitHub releases"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 246 (Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8)) — EXECUTING
-Plan: 1 of 8
+Phase: none (next standalone phase is 247)
+Plan: Not started
 
-Status: Executing Phase 246
+Status: No open milestone; v2.28 and v2.29 closed 2026-11-08, both deployed to production
 
 Open threads carried forward (not blockers):
 
-- Deploy v2.27: Phase 241 (1,119 files, comment/rename only) plus the three audit fixes and the feedback-button label sit on `main`; the `v2.27` tag is on the close commit, not a production forward-port.
+- Phase 246 WR-03 (owner copy call): the Archive's Parked explainer (`TrainArchiveTab.tsx` `ARCHIVE_EXPLAINER.parked`) says "Missed 3 or more times", wrong for puzzles solved at least once (parked at the 4th lapse). WR-01: archive query has no `drill_solves` index, revisit near 300k rows.
 - Phase 241 follow-ups: suspected bugs (INVENTORY §7.2) verified and captured as SEED-202 (start with the tier-4 lichess flag); §7.1 (50 seed candidates) still awaits an owner pass; review IN-01 (`frontend/CLAUDE.md` names two nonexistent components) open.
 - Phase 240 after-change funnel not read yet: compare first-session abandonment against `milestones/v2.26-phases/240-.../240-FUNNEL-BEFORE.md`.
 - Train grade audit (SEED-193 follow-up): tooling done 2026-10-09 as `temp/grade-audit/phone_grade_audit.py` (gitignored; reads `drill_solves.phone_grade` over the prod tunnel in a READ ONLY transaction, derives keys with the app's own `answer_key_for`, then a depth-18 spot check with local Stockfish). Run around 2026-10-22: `bin/prod_db_tunnel.sh` then `uv run python temp/grade-audit/phone_grade_audit.py --db prod --sample 300 --workers 8 > temp/grade-audit/report-$(date +%F).txt`. Smoke reading at n=140 records (report-smoke-2026-10-09.txt): server-graded moves 30/30 phone agreement; phone vs d18 31/40, phone `inaccuracy` the weak tier (2/8 confirmed). Too small to act on. Missing records skew toward fast Next presses and slow devices (236 WR-02, deferred).
@@ -50,6 +50,10 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **v2.28 and v2.29 closed 2026-11-08**; phases 242–246 regrouped into v2.28 Openings Stats Rework (242–243, releases #427–#447) and v2.29 Train Spacing & Archive, Analysis Explain (244–246, #452–#463), each tagged with a GitHub release on a production forward-port. No open milestone: next is `/gsd-new-milestone` or standalone Phase 247.
+
+### Superseded: focus after Phase 242
+
 Current focus: **Phase 242 (Openings Stats + Insights rework, SEED-204) complete 2026-10-18**, squash-merged to `main` via PR #428; no milestone holds it yet. Next: deploy (v2.27 + 242), then `/gsd-new-milestone`.
 
 Previous focus: **v2.25, v2.26 and v2.27 closed 2026-10-17**; phases 238–241 regrouped into v2.25 Readable Endgame & Library Stats (238–239, releases #406–#422), v2.26 Train First-Session Onboarding (240, #423–#426) and v2.27 Codebase Cleanup (241, not yet deployed), each tagged with a GitHub release. No open milestone: next is a deploy of v2.27, then `/gsd-new-milestone` or standalone Phase 242.

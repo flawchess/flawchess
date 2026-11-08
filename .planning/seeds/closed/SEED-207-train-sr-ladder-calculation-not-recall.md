@@ -1,6 +1,6 @@
 ---
 id: SEED-207
-status: promoted
+status: closed. Resolved by Phase 244 (squash 7336dcfd3 on main, 2026-11-02, release #452; milestone v2.29). Post-ship re-check (Follow-up 1) still open, due ~2026-12-02.
 promoted_to: Phase 244
 promoted: 2026-11-02
 planted: 2026-11-02

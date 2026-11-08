@@ -1,6 +1,48 @@
 # Milestones: FlawChess
 
-## v2.27 Codebase Cleanup (Shipped: 2026-10-17, not yet deployed)
+## v2.29 Train Spacing & Archive, Analysis Explain (Shipped: 2026-11-08)
+
+**Phases completed:** 3 phases (244–246), 12 plans, 82 commits on `main` since the `v2.28` tag (157 non-planning files, +13,021 / −2,098; the range also carries per-user red herring order without book or decided positions, "Played before" for stale opening findings, toggleable time controls in the ELO charts, the Copy FEN / Copy PGN menu (quick 261104-t65, 261105-apc), the Analysis scroll and mobile tab-panel fixes, the PWA stale-build fix (quick 261107-dnz), the Train score-ring and leaderboard card reworks and the played mistake on Archive cards)
+
+**Delivered:** Three standalone phases about learning from your own mistakes. Phase 244 made Train's spaced repetition test calculation instead of recall: prod evidence showed repeats after a fail ran +14 points accurate at day 1 and back to baseline by day 3-4, so a missed puzzle now returns after 4 days and a solved one after 10, mastery takes 2 correct in a row (was 3) and Door B parks at 4 lifetime lapses (was 6), with in-flight due dates pushed forward by a one-off migration. Phase 245 gave every mistake and blunder on Analysis, both sides, with or without a tactic motif, an Explain bar (Best / Punish, later "Done" to close) that grafts the stored missed or allowed PV and steps through it with Back and Forward, no backend change. Phase 246 split Train into URL-routed Today / Leaderboard / Archive tabs behind a thin layout (no session or engine load on Leaderboard or Archive), moved the medal host to the layout, and added `GET /train/archive` with a paginated Mastered / Parked archive of `TrainPuzzleCard`s that open Analysis at the pre-mistake position.
+
+**Closeout:** Retroactive lightweight close of three standalone phases. Phase 244 sourced from SEED-207, Phase 245 from SEED-208, Phase 246 from SEED-261106-gw8 (all closed). **Deployed throughout**: Phase 244 as release #452 (2026-11-02), Phase 245 as #457 (2026-11-05), Phase 246 as #460 (2026-11-07), with releases #453–#463 carrying the quick tasks and polish. The `v2.29` tag sits on the forward-port of release #463 and is byte-identical to `origin/production` outside `.planning/`.
+
+**Key accomplishments:**
+
+- **Phase 244 — Train SR Ladder, Calculation Not Recall (SEED-207, 2 plans).** Named constants `CORRECT_RETRY_DAYS`, `FAIL_RETRY_DAYS`, `MASTERY_STREAK_THRESHOLD` replace `LADDER_DAYS`, no weekday snapping, new items stay due immediately; migration `e2a7c4f9b244` only ever moves due dates later. VERIFICATION 11/11. Code review 3 infos, all fixed.
+- **Phase 245 — Analysis Contextual Explain Bar (SEED-208, 2 plans).** Pure direction rules (own flaw opens MISSED at ply-1, opponent flaw opens ALLOWED at the flaw ply) shared with the tactic chips via `flawKey`, desktop footer / mid card / mobile row placements, tactic-lines 404 mapped to null. VERIFICATION 11/11; the four layout checks passed in Claude-in-Chrome UAT at 1280, 1021 and 360px. Code review 2 warnings fixed (revert-checked), 2 infos open.
+- **Phase 246 — Train Subnav Split, Today / Leaderboard / Archive (SEED-261106-gw8, 8 plans).** `useTrainLoop` latch, immersive first paint and the `isVisible` gate so a hidden landing records nothing; Points today moved to the streak card, `TrainStatsCard` deleted; a running-stack browser walk with an evidence gate. VERIFICATION 16/16. Code review 2 warnings fixed, 1 deferred, 1 skipped, 3 infos open.
+
+**Known gaps, recorded rather than smoothed over:**
+
+- **SEED-207 post-ship re-check due ~2026-12-02**: re-run Tables 2/3; if attempt-2 think time in the 10-11 day bucket is clearly below the first solve, raise `CORRECT_RETRY_DAYS` to 14.
+- **246 WR-03 open (owner copy call)**: the Archive's Parked explainer says "Missed 3 or more times", which is wrong for puzzles solved at least once (parked at the 4th lapse).
+- **246 WR-01 deferred**: the archive query has no supporting `drill_solves` index; prod measured 19,493 rows / 3.6 ms, revisit near 300k rows.
+
+---
+
+## v2.28 Openings Stats Rework (Shipped: 2026-10-31)
+
+**Phases completed:** 2 phases (242–243), 14 plans, 95 commits on `main` since the `v2.27` tag (296 non-planning files, +43,093 / −8,882; the range also carries the v2.27 deploy itself (release #427) with the SEED-202 fixes (lichess eval provenance, platform accuracy columns kept separate), the one-sentence Train puzzle verdict, leaderboard medal stacking and the Accuracy puzzle-count tiebreak, base image and dependency security bumps, gem/great Maia ceilings retuned to 0.30/0.70 (quick 261031-et9) with per-rating best-move line coloring (quick 261031-g4l), and the ranked sample capped at 1000 games per TC (quick 261031-sly))
+
+**Delivered:** The Openings Stats tab got the same treatment Phases 238/239 gave Endgame and Library Stats. Phase 242 merged the Insights tab into Stats (old links redirect): one sticky White | Black switch, 99%-gated "Moves that work" / "Moves that cost you" findings with a faded "Not clear yet" list, and a repertoire table (bookmarks pinned, then most played, deduped, "Played before" for openings outside the last 200 games or 60 days) whose rows expand into a board, Score and Eval verdict bars and a per-opening score-over-time chart with weekly volume. The eval z-test and bar are now centred on the colour baseline (±0.25) for Openings only. Phase 243 answered "how solid am I out of the opening?": the share of games left clearly worse (primary) or clearly better (≥1.0 from the colour baseline at the first middlegame ply) ranked against rating × TC peer CDFs from a new shared canonical-slice builder, collapsed over TC as one game-weighted percentile per colour with a 95% gate and a per-TC popover breakdown.
+
+**Closeout:** Retroactive lightweight close of two standalone phases. Phase 242 sourced from SEED-204, Phase 243 from SEED-206 (both closed). **Deployed throughout**: v2.27 shipped as release #427 (2026-10-17), Phase 242 as #429 (2026-10-18), Phase 243 as #447 (2026-10-31), with releases #434–#445 carrying the quick tasks. The `v2.28` tag sits on the forward-port of release #447 and is byte-identical to `origin/production` outside `.planning/`.
+
+**Key accomplishments:**
+
+- **Phase 242 — Openings Stats + Insights Rework (SEED-204, 9 plans).** Backend wave first (current/past cutoff under the active filters and dev clock, most-played dedupe with bookmark-twin drop, baseline-centred eval with 99% CIs, weekly series), then verdict primitives, the Stats shell, repertoire table, merged findings, Insights removal and the expanded row. 15 UAT rounds; VERIFICATION 12/12 with 5 human items closed by owner override. Code review 3 warnings fixed, 7 infos open.
+- **Phase 243 — Out of the Opening Worse/Better Rates (SEED-206, 5 plans).** Shared worse/better classification builder, metric ENUM → TEXT + CHECK, colour-pooled peer CDFs with a scoped regen, a Stage B per-colour family with a three-path parity test, `GET /openings/out-of-opening-stats` and the chart-free popover with the percentile disclosures. VERIFICATION 12/12. Code review 3 warnings fixed, 3 infos open.
+
+**Known gaps, recorded rather than smoothed over:**
+
+- **Out of scope, not seeded**: per-opening worse/better bars in the expanded repertoire card, and LLM narration of the metric.
+- **Review infos open**: 242 IN-01..IN-07 and 243 IN-01..IN-03 (see the REVIEW-DISPOSITION files in `milestones/v2.28-phases/`).
+
+---
+
+## v2.27 Codebase Cleanup (Shipped: 2026-10-17; deployed as release #427 the same day, after the tag)
 
 **Phases completed:** 1 phase (241), 70 plans, 14 commits on `main` since the `v2.26` tag (1,119 non-planning files, +23,872 / −26,714; the range also carries three fixes from the Phase 241 audit (expired guest session, NULL `sample_pair` in opening insights, Tactic Depth summary highlight), the "Feedback" label on the floating feedback button and the SEED-201 test-infra hardening (quick 261017-986))
 

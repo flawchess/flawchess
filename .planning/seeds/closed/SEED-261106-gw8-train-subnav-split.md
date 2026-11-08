@@ -1,6 +1,6 @@
 ---
 id: SEED-261106-gw8
-status: promoted
+status: closed. Resolved by Phase 246 (squash 88c696e59 on main, 2026-11-07, release #460; milestone v2.29). Retry follow-up lives in SEED-261106-q92.
 promoted_to: Phase 246
 promoted: 2026-11-06
 planted: 2026-11-06
