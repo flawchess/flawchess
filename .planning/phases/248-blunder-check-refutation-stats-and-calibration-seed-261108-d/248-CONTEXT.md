@@ -97,6 +97,21 @@ No selection service, API, UI, leaderboard or session logic is built here.
 - **D-19:** selection service, session/scoring API, drill UI, Train schedule integration, leaderboards, cross-mode
   cooldown, spaced repetition, any concreteness test, the Flaws-tab face-palm filter, benchmark-DB run.
 
+### Post-research resolutions (orchestrator, 2026-11-09; defaults, not owner decisions)
+- **D-20: Refutation source** (research Q1, proven on 800 dev rows): `game_positions.best_move` at
+  `ply = game_flaws.ply + 1`, falling back to the first move of `game_positions.pv` at the same row
+  (`COALESCE(best_move, pv[0])`). Both are Stockfish's best move from the post-blunder position; they agree on 99.7% of
+  engine rows (disagreements only in the opening dedup region). The fallback covers game-ending blunders.
+- **D-21: The 99% bar (D-11) stands.** Prod NULL-budget probe (2% TABLESAMPLE, 45,906 user-side blunders in fully
+  evaluated games, 2026-11-09): no mover rating 0.05%; terminal ply+1 0.89%, of which 0.58% have only `pv` (fallback
+  covers them) and 0.07% have neither; non-terminal `best_move` NULL 0.07% (0.06% with no pv either, none pending a
+  MultiPV pass). Structural NULLs with the fallback ≈ 0.2%, without it ≈ 0.8%. Lichess-eval games are 10.3% of the
+  denominator.
+- **D-22: Completion signal** (research Q3): separate stamp `games.maia_refutation_completed_at`, no index; full-mode
+  scoring sets both stamps, `clear_maia_flaws_completed` clears both, backfill gets `--mode refutation`.
+- **D-23: Per-user supply** in the report may be an estimate (exact per-user blunder counts × per-bucket pass rates
+  from the sample); exact per-user counts are not required.
+
 ### Claude's Discretion
 - Completion-signal shape (D-09), migration shape, partial indexes for the selector.
 - Whether the refutation pass lives inside the existing scorer function or a sibling called from the same hook.
