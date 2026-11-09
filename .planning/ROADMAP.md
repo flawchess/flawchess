@@ -187,6 +187,42 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
 
+### Phase 248: Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)
+
+**Goal**: Store how likely a player at the blunderer's rating is to find the punishment of each user-side blunder,
+and calibrate blunder-check selection on prod data, so the selection phase builds on measured constants. Locked
+decisions, prod measurements and traps in SEED-261108-dk0 ("Face-palm test v2", "Miss classification", "Precompute").
+
+- **Columns (typed, nullable, on `game_flaws`):** `maia_refutation_prob` (REAL) and `maia_refutation_rank`
+  (SMALLINT): Maia's probability and rank for Stockfish's best reply in the position after the blunder (opponent to
+  move). Same rank definition as Phase 247.
+- **Scope:** every user-side blunder (`severity = 2`, ply parity matches `user_color`), misses included (about 2.3M
+  rows on prod). Not mistakes, not opponents' blunders.
+- **Elo:** the blunderer's rating at game time via `pinned_elo_for_mover`, fed as both `elo_self` and `elo_oppo`.
+- **Go-forward and backfill:** extend the Phase 247 scorer, lanes and `scripts/backfill_maia_flaws.py` pattern
+  (local run against prod over the tunnel, sharded, checkpointed, resumable; about half a day).
+- **Calibration report** (by Elo bucket, and by case: allowed / pure miss / mixed, see the seed):
+  - share passing findability over a grid of R (refutation) and X′ (miss) thresholds;
+  - mixed share among `is_miss` blunders (needs ES from per-ply evals with the correct ply convention);
+  - effect of the eval band (pre-move ES bounds) on blunders and herring windows;
+  - window fit under the hazard model (Good bar on the judged user moves before the blunder, positions 1-5) and
+    supply per user after all filters, including the `MAX_MISS_SHARE` = 0.30 cap;
+  - arrow-oddness diagnostic: Maia played-move probability of judged Good moves vs blunders (sample, Maia run in the
+    report script);
+  - recommended constants, plus an exported sample of about 20 windows per Elo bucket for a hand spot-check.
+- **Traps to resolve in planning:**
+  - Completion tracking: games already carry the Phase 247 stamp, so the new columns need their own completion
+    signal (or a stamp version) to drive the backfill and go-forward catch-up.
+  - Which `game_positions` row holds the post-blunder best move / PV (two eval ply conventions).
+  - Rebuild positions from `games.pgn`; flaw reclassification (`_classify_and_fill_oracle`) must carry the new
+    columns through.
+- **Out of scope:** the selection service, session/scoring API, drill UI, schedule integration, leaderboards,
+  cross-mode cooldown, any concreteness test (dropped), Flaws-tab filter.
+
+**Depends on**: Phase 247 code (shipped). The calibration's miss numbers need 247-07's backfill at >=99% coverage.
+**Requirements**: TBD
+**Plans:** 0 plans
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
