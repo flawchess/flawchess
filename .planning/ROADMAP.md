@@ -220,8 +220,29 @@ decisions, prod measurements and traps in SEED-261108-dk0 ("Face-palm test v2", 
   cross-mode cooldown, any concreteness test (dropped), Flaws-tab filter.
 
 **Depends on**: Phase 247 code (shipped). The calibration's miss numbers need 247-07's backfill at >=99% coverage.
-**Requirements**: TBD
-**Plans:** 0 plans
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-23)
+**Plans:** 8 plans
+
+Plans:
+**Wave 1**
+- [ ] 248-01-PLAN.md — Go-forward refutation scoring: migration, pure stats, shared scorer full mode with both stamps, reclassify and lane tests (wave 1)
+- [ ] 248-02-PLAN.md — Calibration pure metrics (miss cases, findability, eval band, hazard window fit, herring and supply math) (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 248-03-PLAN.md — `scripts/backfill_maia_flaws.py --mode refutation`: selector, scorer mode, status, reports, dev smoke (wave 2)
+- [ ] 248-04-PLAN.md — Calibration report: read-only sampler, per-ply records, aggregate sections, cache (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 248-05-PLAN.md — Calibration report: Maia arrow-oddness, spot-check export, recommended constants, full dev smoke (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion and on 247-07's full run ending)*
+- [ ] 248-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, docs, changelog, squash-merge, deploy, live-lane check (orchestrator-inline, wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 248-07-PLAN.md — Prod refutation backfill, catch-up, >=99% coverage verification (orchestrator-inline, wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion and 247 coverage)*
+- [ ] 248-08-PLAN.md — Prod calibration report and spot-check, committed (orchestrator-inline, wave 6)
 
 ## Backlog
 
