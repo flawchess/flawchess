@@ -221,7 +221,7 @@ decisions, prod measurements and traps in SEED-261108-dk0 ("Face-palm test v2", 
 
 **Depends on**: Phase 247 code (shipped). The calibration's miss numbers need 247-07's backfill at >=99% coverage.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-23)
-**Plans:** 8/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 **Wave 1**
