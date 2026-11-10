@@ -39,3 +39,22 @@ but no base stamp = 0.
 Pace: 6.14 refutations/s for one shard (includes model load on 50 games). ETA for the full run, per the plan formula
 (2,297,495 - 103) / (9 x 6.14) = about 41,600 s, so roughly 11.5 h. That is an upper-bound estimate on throughput per
 shard: 9 Maia shards share 8 physical cores, so the observed full-run rate may come in lower.
+
+## Full run
+
+- When: 2026-11-10 05:26:10 to 13:29:14 UTC (about 8 h 03 min), run_stamp `20261110T052610Z`, 9 shards
+- Command: `setsid nohup bash -c 'PYTHONUNBUFFERED=1 uv run python -u scripts/backfill_maia_flaws.py --db prod --mode refutation --workers 9 --report-dir temp/maia-refutation-backfill; echo EXIT=$?'`
+- Exit 0 (one `EXIT=` line in the log, no tracebacks). Total line: games_selected=1026584 games_scored=1026584
+  games_stamped=1026584 games_already_stamped=0 games_fingerprint_changed=0 games_missing=0 games_write_failed=0
+  games_score_failed=0 refutations_scored=2293321 refutations_null=4071 refutations_from_pv=13240
+- Null reasons: refutation_missing=2923, no_rating=860, no_legal_reply=260, invalid_root=17, ply_beyond_mainline=11
+- Pace: about 8.4 to 8.8 refutations/s per shard, so the plan's 11.5 h estimate was pessimistic
+- Shard JSONs: `prod-refutation-20261110T052610Z-shard{0..8}.json`
+
+Prod state right after the run (MCP): refutation-stamped games 1,028,905 (backfill plus live lanes since deploy),
+base-stamped games without the refutation stamp 76 (live imports since the run started, picked up by the catch-up),
+games with flaws but no base stamp 0. User-side blunders 2,301,294, of which 2,297,221 (99.82%) carry a refutation
+value.
+
+Live lanes: games scored by the live eval lanes after the deploy carried the refutation value without any backfill
+(460 games, 678 of 679 user blunders with a refutation value), so new imports are covered going forward.
