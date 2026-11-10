@@ -705,3 +705,18 @@ No blocking missing dependencies. The dev Maia backfill currently running lowers
 
 **Research date:** 2026-11-10
 **Valid until:** 2026-12-10 (stable internals; re-check if Phase 248 constants change after the spot-check)
+
+## Prod Latency Probe (orchestrator, 2026-11-10, read-only via prod MCP)
+
+Heaviest beta user on prod: user 95, 40,218 fully evaluated chess.com/lichess games (the next four users are not beta).
+
+| Step | Cold cache | Warm cache |
+|---|---|---|
+| Pick 40 random fully evaluated games (bitmap heap scan on `ix_games_user_played_at`, 28k heap blocks) | 371 ms | 121 ms |
+| Load `game_positions` for the 40 games (3,481 rows, index scan on `ix_game_positions_game_id`) | n/a | ~100 ms (366 blocks read from disk) |
+
+Pick + positions warm: 237 ms. With flaws (~same as positions) and the Python judgements (45-75 ms on dev), a session
+start for the heaviest beta user lands around 350-450 ms warm and up to ~800 ms cold: inside the < 1 s target.
+The game pick dominates on a cold cache because it touches every heap block of the user's games; the recommended
+partial index `games (user_id, id) WHERE full_evals_completed_at IS NOT NULL` turns it into an index-only scan.
+Planner's call whether to ship it in this phase (cheap, `CREATE INDEX` on ~1.1M games rows).
