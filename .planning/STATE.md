@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 246
-current_phase_name: Maia Stats on game_flaws (SEED-261108-zkp)
+current_phase: 248
+current_phase_name: Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)
 status: executing
 stopped_at: Completed 247-05-PLAN.md
-last_updated: "2026-11-08T19:56:57.851Z"
-state_head: fed1bb4f32b7028be4cbe4b1168c0bf1e97de99f
+last_updated: "2026-11-09T19:24:38.913Z"
+state_head: 9f55213cf975a7f59766c5074187cc1b9f41276b
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 63
-  total_plans: 7
+  total_plans: 15
   completed_plans: 26
 milestone_name: Train Spacing & Archive, Analysis Explain
 last_activity: 2026-11-08
@@ -21,10 +21,10 @@ last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) wi
 
 ## Current Position
 
-Phase: 247 (Maia Stats on game_flaws (SEED-261108-zkp)) — EXECUTING
-Plan: 6 of 7
+Phase: 248 (Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)) — EXECUTING
+Plan: 1 of 8
 
-Status: Ready to execute
+Status: Executing Phase 248
 
 Open threads carried forward (not blockers):
 

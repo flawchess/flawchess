@@ -13,7 +13,7 @@ import io
 import uuid
 from collections import Counter
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
 import chess
 import chess.pgn
@@ -27,7 +27,11 @@ from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
-from app.repositories.game_flaws_repository import MAIA_FLAW_COLUMNS
+from app.repositories.game_flaws_repository import (
+    MAIA_FLAW_COLUMNS,
+    MAIA_REFUTATION_COLUMNS,
+    clear_maia_flaws_completed,
+)
 from app.services.eval_apply import _classify_and_fill_oracle
 from app.services import maia_engine, maia_flaw_scoring
 from app.services.best_move_candidates import pinned_elo_for_mover
@@ -39,6 +43,7 @@ from app.services.maia_flaw_scoring import (
     score_game_flaws_after_apply,
     write_game_maia_scores,
 )
+from app.services.maia_flaw_stats import MaiaReason
 from tests.services.maia_fakes import fake_full_policy
 
 # Unique to this module (grep tests/ before changing).
@@ -47,6 +52,12 @@ _TEST_USER_ID: int = 247_002
 _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
 # PGN with a legal en-passant capture at ply 4 (exd6), castling rights intact.
 _EP_PGN = "1. e4 a6 2. e5 d5 3. exd6 *"
+# The last move (ply 18, Qe6) stalemates Black: the blunder leaves no legal reply.
+_STALEMATE_PGN = (
+    "1. e3 a5 2. Qh5 Ra6 3. Qxa5 h5 4. h4 Rah6 5. Qxc7 f6 6. Qxd7+ Kf7 7. Qxb7 Qd3 "
+    "8. Qxb8 Qh7 9. Qxc8 Kg6 10. Qe6 1/2-1/2"
+)
+_STALEMATE_PLY = 18
 
 _WHITE_RATING = 1500
 _BLACK_RATING = 1600
@@ -129,6 +140,9 @@ async def make_game(
         missed_pv: dict[int, list[Any]] | None = None,
         stale_plies: tuple[int, ...] = (),
         evals: dict[int, int | None] | None = None,
+        user_color: str = "white",
+        severities: dict[int, int] | None = None,
+        pv: dict[int, str] | None = None,
     ) -> int:
         replayed = _replayed(pgn)
         best_by_ply = {**_BEST, **(best or {})}
@@ -144,7 +158,7 @@ async def make_game(
                 platform_game_id=f"maia-flaw-{uuid.uuid4().hex}",
                 pgn=pgn,
                 result="1-0",
-                user_color="white",
+                user_color=user_color,
                 white_rating=white_rating,
                 black_rating=black_rating,
                 time_control_str="300+0",
@@ -174,6 +188,7 @@ async def make_game(
                         endgame_class=None,
                         move_san=None,
                         best_move=best_by_ply.get(ply),
+                        pv=(pv or {}).get(ply),
                     )
                 )
             await session.flush()
@@ -196,7 +211,7 @@ async def make_game(
                         user_id=_TEST_USER_ID,
                         game_id=game_id,
                         ply=ply,
-                        severity=2,
+                        severity=(severities or {}).get(ply, 2),
                         tempo=None,
                         phase=1,
                         is_miss=False,
@@ -239,6 +254,39 @@ async def _stamp(maker: async_sessionmaker[AsyncSession], game_id: int) -> Any:
         ).scalar_one_or_none()
 
 
+async def _refutation_rows(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, dict[str, Any]]:
+    async with maker() as session:
+        flaws = (
+            (await session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+            .scalars()
+            .all()
+        )
+    return {f.ply: {c: getattr(f, c) for c in MAIA_REFUTATION_COLUMNS} for f in flaws}
+
+
+async def _refutation_stamp(maker: async_sessionmaker[AsyncSession], game_id: int) -> Any:
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(Game.maia_refutation_completed_at).where(Game.id == game_id)
+            )
+        ).scalar_one_or_none()
+
+
+def _expected_refutation(
+    replayed: dict[int, tuple[chess.Board, str]], ply: int, refutation_uci: str
+) -> tuple[float, int]:
+    """Independent (prob, rank) for the reply after the move played at `ply`."""
+    pre, played = replayed[ply]
+    post = pre.copy()
+    post.push_uci(played)
+    probs = fake_full_policy(post.fen(), 0.0)
+    own = probs[refutation_uci]
+    return own, 1 + sum(1 for p in probs.values() if p > own)
+
+
 async def _inputs(maker: async_sessionmaker[AsyncSession], game_id: int) -> Any:
     async with maker() as session:
         return (await load_game_maia_inputs(session, [game_id]))[game_id]
@@ -273,6 +321,8 @@ async def test_schema_maia_columns_typed_nullable(
         ).all()
     by_name = {(r[0], r[1]): r for r in rows}
     expected_types = {
+        "maia_refutation_prob": "real",
+        "maia_refutation_rank": "smallint",
         "maia_played_prob": "real",
         "maia_played_rank": "smallint",
         "maia_best_prob": "real",
@@ -283,17 +333,391 @@ async def test_schema_maia_columns_typed_nullable(
         "maia_effective_moves": "real",
     }
     flaw_cols = {name for (table, name) in by_name if table == "game_flaws"}
-    assert flaw_cols == set(expected_types), "exactly the eight D-01 columns (no maia_elo)"
+    assert flaw_cols == set(expected_types), "eight D-01 columns plus the two refutation columns"
     for name, data_type in expected_types.items():
         row = by_name[("game_flaws", name)]
         assert row[2] == data_type
         assert row[3] == "YES"
         assert row[4] is None
-    stamp = by_name[("games", "maia_flaws_completed_at")]
-    assert stamp[2] == "timestamp with time zone"
-    assert stamp[3] == "YES"
-    assert stamp[4] is None
-    assert [c for (t, c) in by_name if t == "games"] == ["maia_flaws_completed_at"]
+    game_cols = sorted(c for (t, c) in by_name if t == "games")
+    assert game_cols == ["maia_flaws_completed_at", "maia_refutation_completed_at"]
+    for stamp_name in game_cols:
+        stamp = by_name[("games", stamp_name)]
+        assert stamp[2] == "timestamp with time zone"
+        assert stamp[3] == "YES"
+        assert stamp[4] is None
+
+
+# ---------------------------------------------------------------------------
+# Refutation (Phase 248)
+# ---------------------------------------------------------------------------
+
+# Black's legal reply to the post-Nf3 board (white user's ply-2 blunder).
+_REPLY_AFTER_NF3 = "b8c6"
+
+
+async def test_refutation_tracer_user_blunder_scored_and_both_stamps(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """One user-side blunder end to end: pair written, opponent blunder NULL, both stamps."""
+    game_id = await make_game(flaw_plies=(2, 5), best={3: _REPLY_AFTER_NF3})
+    replayed = _replayed(_PGN)
+    assert await score_game_flaws_after_apply(
+        session_factory, game_id, targets=None, source="backfill"
+    )
+    rows = await _refutation_rows(session_factory, game_id)
+    prob, rank = _expected_refutation(replayed, 2, _REPLY_AFTER_NF3)
+    assert rows[2]["maia_refutation_prob"] == pytest.approx(prob, abs=_REAL_TOLERANCE)
+    assert rows[2]["maia_refutation_rank"] == rank
+    assert rows[5] == {"maia_refutation_prob": None, "maia_refutation_rank": None}
+    assert await _stamp(session_factory, game_id) is not None
+    assert await _refutation_stamp(session_factory, game_id) is not None
+
+
+_NULL_PAIR: dict[str, None] = {"maia_refutation_prob": None, "maia_refutation_rank": None}
+# White's legal replies after Black's Nc6 (ply 3) and Black's Nf6 (ply 7) in _PGN.
+_REPLY_AFTER_NC6 = "f1b5"
+_REPLY_AFTER_NF6 = "d2d3"
+
+
+def _recording_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, float]]:
+    """Patch full_policy with a fake that records every (fen, elo) call."""
+    calls: list[tuple[str, float]] = []
+
+    def _spy(fen: str, elo: float) -> dict[str, float]:
+        calls.append((fen, elo))
+        return fake_full_policy(fen, elo)
+
+    monkeypatch.setattr(maia_flaw_scoring, "full_policy", _spy)
+    return calls
+
+
+def _pinned_elo(raw: int) -> float:
+    return pinned_elo_for_mover(
+        raw_rating=raw, platform="lichess", time_control_bucket="blitz", is_correspondence=False
+    )
+
+
+async def _score(
+    maker: async_sessionmaker[AsyncSession], game_id: int, *, targets: Any = None
+) -> bool:
+    return await score_game_flaws_after_apply(maker, game_id, targets=targets, source="backfill")
+
+
+async def test_refutation_scope_black_user_scores_only_own_blunders(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-03 for a black user: ply 3 and 7 (black blunders) scored, ply 4 (white) NULL."""
+    game_id = await make_game(
+        flaw_plies=(3, 4, 7), user_color="black", best={4: _REPLY_AFTER_NC6, 8: _REPLY_AFTER_NF6}
+    )
+    replayed = _replayed(_PGN)
+    assert await _score(session_factory, game_id)
+    rows = await _refutation_rows(session_factory, game_id)
+    for ply, reply in ((3, _REPLY_AFTER_NC6), (7, _REPLY_AFTER_NF6)):
+        prob, rank = _expected_refutation(replayed, ply, reply)
+        assert rows[ply]["maia_refutation_prob"] == pytest.approx(prob, abs=_REAL_TOLERANCE)
+        assert rows[ply]["maia_refutation_rank"] == rank
+    assert rows[4] == _NULL_PAIR
+
+
+@pytest.mark.parametrize(
+    ("user_color", "flaw_plies", "mistake_ply", "opponent_ply", "scored_ply", "best"),
+    [
+        # White user: ply 2 mistake, ply 5 black blunder (reply b5a4 at 6, so scoring it
+        # would be possible), ply 4 white blunder (reply g8f6 at 5).
+        ("white", (2, 4, 5), 2, 5, 4, {6: "b5a4"}),
+        # Black user: ply 3 mistake, ply 4 white blunder, ply 7 black blunder (reply d2d3 at 8).
+        ("black", (3, 4, 7), 3, 4, 7, {}),
+    ],
+)
+async def test_refutation_scope_mistakes_and_opponent_stay_null(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    user_color: Literal["white", "black"],
+    flaw_plies: tuple[int, ...],
+    mistake_ply: int,
+    opponent_ply: int,
+    scored_ply: int,
+    best: dict[int, str | None],
+) -> None:
+    """D-03: user mistakes and opponent blunders never receive a pair, for both colors."""
+    game_id = await make_game(
+        flaw_plies=flaw_plies, user_color=user_color, severities={mistake_ply: 1}, best=best
+    )
+    assert await _score(session_factory, game_id)
+    rows = await _refutation_rows(session_factory, game_id)
+    assert rows[mistake_ply] == _NULL_PAIR
+    assert rows[opponent_ply] == _NULL_PAIR
+    assert rows[scored_ply]["maia_refutation_prob"] is not None
+    assert rows[scored_ply]["maia_refutation_rank"] is not None
+
+
+@pytest.mark.parametrize(
+    ("user_color", "flaw_ply", "reply_ply", "reply"),
+    [("white", 2, 3, _REPLY_AFTER_NF3), ("black", 3, 4, _REPLY_AFTER_NC6)],
+)
+async def test_refutation_elo_is_the_blunderers_for_both_colors(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+    user_color: Literal["white", "black"],
+    flaw_ply: int,
+    reply_ply: int,
+    reply: str,
+) -> None:
+    """D-04: the refutation call is fed the blunderer's pinned Elo, never the opponent's."""
+    game_id = await make_game(
+        flaw_plies=(flaw_ply,), user_color=user_color, best={reply_ply: reply}
+    )
+    calls = _recording_policy(monkeypatch)
+    assert await _score(session_factory, game_id)
+    own = _pinned_elo(_WHITE_RATING if user_color == "white" else _BLACK_RATING)
+    opp = _pinned_elo(_BLACK_RATING if user_color == "white" else _WHITE_RATING)
+    assert own != opp, "the test needs distinct pinned Elos to be meaningful"
+    assert len(calls) == 2
+    pre_fen, pre_elo = calls[0]
+    post_fen, post_elo = calls[1]
+    # Base call: blunderer to move. Refutation call: opponent to move, SAME (blunderer) Elo.
+    assert pre_fen.split(" ")[1] == ("w" if user_color == "white" else "b")
+    assert post_fen.split(" ")[1] == ("b" if user_color == "white" else "w")
+    assert pre_elo == own
+    assert post_elo == own
+    assert post_elo != opp
+
+
+async def test_refutation_en_passant_board_is_exact(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-05: the post-blunder board keeps the ep square; the reply is legal only with it."""
+    game_id = await make_game(pgn=_EP_PGN, flaw_plies=(3,), user_color="black")
+    calls = _recording_policy(monkeypatch)
+    assert await _score(session_factory, game_id)
+    rows = await _refutation_rows(session_factory, game_id)
+    assert rows[3]["maia_refutation_prob"] is not None, "exd6 needs the d6 ep square"
+    assert any(" d6 " in fen for fen, _ in calls)
+
+
+async def test_refutation_castling_board_is_exact(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-05: castling rights survive into the post-blunder board; O-O is the reply."""
+    game_id = await make_game(flaw_plies=(7,), user_color="black", best={8: "e1g1"})
+    assert await _score(session_factory, game_id)
+    rows = await _refutation_rows(session_factory, game_id)
+    assert rows[7]["maia_refutation_prob"] is not None, "e1g1 needs the castling rights"
+
+
+def test_refutation_target_boards_are_never_mutated() -> None:
+    """D-05: the drain's own target boards keep their FEN and move stack after scoring."""
+    replayed = _replayed(_PGN)
+    boards = {ply: (board, uci) for ply, (board, uci) in replayed.items()}
+    before = {ply: (b.fen(), list(b.move_stack)) for ply, (b, _) in boards.items()}
+    inputs = maia_flaw_scoring.GameMaiaInputs(
+        game_id=1,
+        user_id=_TEST_USER_ID,
+        pgn=_PGN,
+        white_rating=_WHITE_RATING,
+        black_rating=_BLACK_RATING,
+        platform="lichess",
+        time_control_bucket="blitz",
+        is_correspondence=False,
+        user_color="white",
+        flaws=tuple(
+            maia_flaw_scoring.FlawMaiaInput(
+                ply=ply,
+                fen=replayed[ply][0].board_fen(),
+                best_uci=None,
+                second_uci=None,
+                severity=2,
+                refutation_uci=_REPLY_AFTER_NF3 if ply == 2 else None,
+                refutation_from_pv=False,
+            )
+            for ply in (2, 8)
+        ),
+    )
+    score = score_game(inputs, boards)
+    assert score.rows[0]["maia_refutation_prob"] is not None, "ply 2 must have been scored"
+    after = {ply: (b.fen(), list(b.move_stack)) for ply, (b, _) in boards.items()}
+    assert after == before
+
+
+async def test_refutation_pv_fallback_when_best_move_null(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-20: ply+1 best_move NULL falls back to the first pv token and is counted."""
+    game_id = await make_game(
+        flaw_plies=(2,), best={3: None}, pv={3: f"{_REPLY_AFTER_NF3} d2d4 e5d4"}
+    )
+    replayed = _replayed(_PGN)
+    score = score_game(await _inputs(session_factory, game_id), None)
+    assert score.refutations_from_pv == 1
+    assert score.user_blunders == 1
+    assert await _score(session_factory, game_id)
+    prob, rank = _expected_refutation(replayed, 2, _REPLY_AFTER_NF3)
+    row = (await _refutation_rows(session_factory, game_id))[2]
+    assert row["maia_refutation_prob"] == pytest.approx(prob, abs=_REAL_TOLERANCE)
+    assert row["maia_refutation_rank"] == rank
+
+
+async def test_refutation_best_move_wins_over_pv(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-20: when best_move is present the pv token is ignored and nothing is counted."""
+    game_id = await make_game(flaw_plies=(2,), best={3: _REPLY_AFTER_NF3}, pv={3: "a7a6 d2d4"})
+    score = score_game(await _inputs(session_factory, game_id), None)
+    assert score.refutations_from_pv == 0
+    prob, rank = _expected_refutation(_replayed(_PGN), 2, _REPLY_AFTER_NF3)
+    assert await _score(session_factory, game_id)
+    row = (await _refutation_rows(session_factory, game_id))[2]
+    assert row["maia_refutation_prob"] == pytest.approx(prob, abs=_REAL_TOLERANCE)
+    assert row["maia_refutation_rank"] == rank
+
+
+@pytest.mark.parametrize(
+    ("best", "pv", "reason"),
+    [
+        (None, None, "refutation_missing"),
+        ("a1a8", None, "refutation_not_legal"),
+        ("zz", None, "refutation_not_legal"),
+        (None, "a1a8 e2e4", "refutation_not_legal"),
+    ],
+)
+async def test_refutation_unusable_reply_leaves_null_without_inference(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+    best: str | None,
+    pv: str | None,
+    reason: MaiaReason,
+) -> None:
+    """Missing, illegal or malformed replies: NULL pair, counted reason, no extra call."""
+    game_id = await make_game(
+        flaw_plies=(2,), best={3: best}, pv={3: pv} if pv is not None else None
+    )
+    score = score_game(await _inputs(session_factory, game_id), None)
+    assert score.reasons[reason] == 1
+    calls = _recording_policy(monkeypatch)
+    assert await _score(session_factory, game_id)
+    assert len(calls) == 1, "only the base call: the unusable reply costs no inference"
+    assert (await _refutation_rows(session_factory, game_id))[2] == _NULL_PAIR
+    assert await _stamp(session_factory, game_id) is not None
+    assert await _refutation_stamp(session_factory, game_id) is not None
+
+
+async def test_refutation_blunder_that_stalemates_has_no_legal_reply(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stalemating blunder leaves the pair NULL (no_legal_reply); the game is stamped."""
+    final = _replayed(_STALEMATE_PGN)[_STALEMATE_PLY]
+    post = final[0].copy()
+    post.push_uci(final[1])
+    assert post.is_stalemate(), "fixture sanity: the last move must stalemate Black"
+    game_id = await make_game(pgn=_STALEMATE_PGN, flaw_plies=(_STALEMATE_PLY,))
+    score = score_game(await _inputs(session_factory, game_id), None)
+    assert score.reasons["no_legal_reply"] == 1
+    calls = _recording_policy(monkeypatch)
+    assert await _score(session_factory, game_id)
+    assert len(calls) == 1
+    assert (await _refutation_rows(session_factory, game_id))[_STALEMATE_PLY] == _NULL_PAIR
+    assert await _stamp(session_factory, game_id) is not None
+    assert await _refutation_stamp(session_factory, game_id) is not None
+
+
+async def test_refutation_call_count_is_base_plus_scorable_user_blunders(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """White user, flaws (2, 5, 8): three base calls plus one refutation call (ply 2 only).
+
+    Ply 5 is the opponent's blunder; ply 8's reply (ply 9) has no row (refutation_missing).
+    """
+    game_id = await make_game(best={3: _REPLY_AFTER_NF3})
+    calls = _recording_policy(monkeypatch)
+    assert await _score(session_factory, game_id)
+    assert len(calls) == 4
+
+
+async def test_refutation_game_without_user_blunders_stamped_without_calls(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-09: opponent-only blunders and user mistakes still stamp both columns, no extra call."""
+    game_id = await make_game(flaw_plies=(2, 5), severities={2: 1})
+    calls = _recording_policy(monkeypatch)
+    assert await _score(session_factory, game_id)
+    assert len(calls) == 2
+    assert all(r == _NULL_PAIR for r in (await _refutation_rows(session_factory, game_id)).values())
+    assert await _stamp(session_factory, game_id) is not None
+    assert await _refutation_stamp(session_factory, game_id) is not None
+
+
+async def test_refutation_maia_absent_stamps_neither(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    game_id = await make_game(best={3: _REPLY_AFTER_NF3})
+    monkeypatch.setattr(maia_engine, "_session", None)
+    assert not await _score(session_factory, game_id)
+    assert await _stamp(session_factory, game_id) is None
+    assert await _refutation_stamp(session_factory, game_id) is None
+    assert all(r == _NULL_PAIR for r in (await _refutation_rows(session_factory, game_id)).values())
+
+
+@pytest.mark.parametrize("change", ["ply_plus_one_best_move", "severity"])
+async def test_refutation_fingerprint_changed_skips_write(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, change: str
+) -> None:
+    """A mid-flight change of the ply+1 best_move or of a severity writes nothing."""
+    game_id = await make_game(flaw_plies=(2,), best={3: _REPLY_AFTER_NF3})
+    score = score_game(await _inputs(session_factory, game_id), None)
+    async with session_factory() as session:
+        if change == "ply_plus_one_best_move":
+            await session.execute(
+                sa.update(GamePosition)
+                .where(GamePosition.game_id == game_id, GamePosition.ply == 3)
+                .values(best_move="a7a6")
+            )
+        else:
+            await session.execute(
+                sa.update(GameFlaw)
+                .where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+                .values(severity=1)
+            )
+        await session.commit()
+    async with session_factory() as session:
+        outcomes = await write_game_maia_scores(session, [score], require_unstamped=False)
+        await session.commit()
+    assert outcomes == {game_id: "fingerprint_changed"}
+    assert all(r == _NULL_PAIR for r in (await _refutation_rows(session_factory, game_id)).values())
+    assert await _stamp(session_factory, game_id) is None
+    assert await _refutation_stamp(session_factory, game_id) is None
+
+
+async def test_refutation_full_rescore_clears_row_downgraded_from_blunder(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-08: a Maia-loaded full re-score writes a NULL pair on a now-out-of-scope row."""
+    game_id = await make_game(flaw_plies=(2,), severities={2: 1}, best={3: _REPLY_AFTER_NF3})
+    async with session_factory() as session:
+        await session.execute(
+            sa.update(GameFlaw)
+            .where(GameFlaw.game_id == game_id, GameFlaw.ply == 2)
+            .values(maia_refutation_prob=0.5, maia_refutation_rank=2)
+        )
+        await session.commit()
+    assert (await _refutation_rows(session_factory, game_id))[2] != _NULL_PAIR
+    assert await _score(session_factory, game_id)
+    assert (await _refutation_rows(session_factory, game_id))[2] == _NULL_PAIR
 
 
 # ---------------------------------------------------------------------------
@@ -775,6 +1199,7 @@ _PRIOR_MAIA: dict[str, Any] = {
     "maia_top_prob": 0.5,
     "maia_effective_moves": 5.5,
 }
+_PRIOR_REFUTATION: dict[str, Any] = {"maia_refutation_prob": 0.0625, "maia_refutation_rank": 2}
 # A real forcing blob (same shape the write-path golden scenarios use) so the survivor
 # lands in the freshly-blobbed update bucket.
 _FRESH_BLOB: list[dict[str, Any]] = [
@@ -787,16 +1212,21 @@ _FRESH_BLOB: list[dict[str, Any]] = [
 async def _seed_prior_maia_and_stamp(
     maker: async_sessionmaker[AsyncSession], game_id: int, plies: tuple[int, ...]
 ) -> None:
-    """Give every listed flaw row non-NULL Maia values and stamp the game."""
+    """Give every listed flaw row non-NULL Maia values (incl. refutation) and stamp both columns."""
     async with maker() as session:
         for ply in plies:
             await session.execute(
                 sa.update(GameFlaw)
                 .where(GameFlaw.game_id == game_id, GameFlaw.ply == ply)
-                .values(**_PRIOR_MAIA)
+                .values(**_PRIOR_MAIA, **_PRIOR_REFUTATION)
             )
         await session.execute(
-            sa.update(Game).where(Game.id == game_id).values(maia_flaws_completed_at=sa.func.now())
+            sa.update(Game)
+            .where(Game.id == game_id)
+            .values(
+                maia_flaws_completed_at=sa.func.now(),
+                maia_refutation_completed_at=sa.func.now(),
+            )
         )
         await session.commit()
 
@@ -821,7 +1251,13 @@ async def _assert_reclassify_outcome(
     assert set(rows) == {_RECLASSIFY_SURVIVOR_PLY, _RECLASSIFY_NEW_PLY}, "stale ply must be gone"
     assert rows[_RECLASSIFY_SURVIVOR_PLY] == _PRIOR_MAIA, "survivor must keep its Maia values"
     assert _all_null(rows[_RECLASSIFY_NEW_PLY]), "a new flaw ply starts with NULL Maia values"
+    refutation = await _refutation_rows(maker, game_id)
+    assert refutation[_RECLASSIFY_SURVIVOR_PLY] == _PRIOR_REFUTATION, (
+        "survivor keeps its pair (D-08)"
+    )
+    assert refutation[_RECLASSIFY_NEW_PLY] == _NULL_PAIR, "a new flaw ply starts with a NULL pair"
     assert await _stamp(maker, game_id) is None
+    assert await _refutation_stamp(maker, game_id) is None, "both stamps are cleared (D-08)"
     assert unstamped is True
 
 
@@ -879,11 +1315,58 @@ async def test_reclassify_not_analyzed_returns_false_keeps_stamp(
     unstamped = await _reclassify(session_factory, game_id)
     assert unstamped is False
     assert await _stamp(session_factory, game_id) is not None
+    assert await _refutation_stamp(session_factory, game_id) is not None
     rows = await _flaw_rows(session_factory, game_id)
     assert rows[_RECLASSIFY_SURVIVOR_PLY] == _PRIOR_MAIA
+    refutation = await _refutation_rows(session_factory, game_id)
+    assert refutation[_RECLASSIFY_SURVIVOR_PLY] == _PRIOR_REFUTATION
 
 
 async def test_reclassify_unknown_game_returns_false(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     assert await _reclassify(session_factory, 2_000_000_000) is False
+
+
+@pytest.mark.parametrize(
+    ("base_stamp", "refutation_stamp", "expected_cleared"),
+    [(True, True, True), (True, False, True), (False, True, True), (False, False, False)],
+)
+async def test_reclassify_clear_helper_clears_both_stamps(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    base_stamp: bool,
+    refutation_stamp: bool,
+    expected_cleared: bool,
+) -> None:
+    """D-08/D-22: one UPDATE clears both stamps; True when either was set (incl. refutation-only)."""
+    game_id = await make_game(flaw_plies=())
+    async with session_factory() as session:
+        await session.execute(
+            sa.update(Game)
+            .where(Game.id == game_id)
+            .values(
+                maia_flaws_completed_at=sa.func.now() if base_stamp else None,
+                maia_refutation_completed_at=sa.func.now() if refutation_stamp else None,
+            )
+        )
+        await session.commit()
+    async with session_factory() as session:
+        assert await clear_maia_flaws_completed(session, game_id) is expected_cleared
+        await session.commit()
+    assert await _stamp(session_factory, game_id) is None
+    assert await _refutation_stamp(session_factory, game_id) is None
+
+
+async def test_write_rejects_batch_mixing_full_and_refutation_scores(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """Refutation rows carry two keys, full rows ten: one executemany cannot take both."""
+    full_game = await make_game()
+    refutation_game = await make_game()
+    full = score_game(await _inputs(session_factory, full_game), None)
+    refutation = score_game(await _inputs(session_factory, refutation_game), None, "refutation")
+
+    async with session_factory() as session:
+        with pytest.raises(ValueError, match="mixing"):
+            await write_game_maia_scores(session, [full, refutation], require_unstamped=False)

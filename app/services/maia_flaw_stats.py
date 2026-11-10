@@ -47,6 +47,9 @@ MaiaReason = Literal[
     "second_not_legal",
     "second_equals_best",
     "single_legal_move",
+    "no_legal_reply",
+    "refutation_missing",
+    "refutation_not_legal",
 ]
 
 
@@ -73,6 +76,16 @@ def null_maia_stats() -> MaiaFlawStats:
         maia_top_prob=None,
         maia_effective_moves=None,
     )
+
+
+class MaiaRefutationStats(TypedDict):
+    maia_refutation_prob: float | None
+    maia_refutation_rank: int | None
+
+
+def null_refutation_stats() -> MaiaRefutationStats:
+    """Both Phase 248 refutation values None (out of scope or not scorable)."""
+    return MaiaRefutationStats(maia_refutation_prob=None, maia_refutation_rank=None)
 
 
 def _rank(probs: Mapping[str, float], uci: str) -> int:
@@ -148,3 +161,28 @@ def compute_maia_flaw_stats(
         stats["maia_second_rank"] = int(_rank(probs, second_uci))
 
     return stats, reasons
+
+
+def compute_refutation_stats(
+    probs: Mapping[str, float], refutation_uci: str | None
+) -> tuple[MaiaRefutationStats, MaiaReason | None]:
+    """Derive the refutation pair from the post-blunder policy (no I/O).
+
+    ``probs`` is Maia's full policy for the position AFTER the blunder (opponent to
+    move); ``refutation_uci`` is Stockfish's best reply there. Returns the null pair with a
+    reason for an empty policy, a missing reply or a reply absent from the policy; else
+    the reply's probability and strict-greater rank (ties share a rank).
+    """
+    if not probs:
+        return null_refutation_stats(), "no_legal_reply"
+    if refutation_uci is None:
+        return null_refutation_stats(), "refutation_missing"
+    if refutation_uci not in probs:
+        return null_refutation_stats(), "refutation_not_legal"
+    return (
+        MaiaRefutationStats(
+            maia_refutation_prob=float(probs[refutation_uci]),
+            maia_refutation_rank=int(_rank(probs, refutation_uci)),
+        ),
+        None,
+    )

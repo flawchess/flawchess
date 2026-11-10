@@ -3,9 +3,17 @@
 Phase 247 (D-06, D-10, D-11, D-13, D-16). Scores every flaw of every UNSTAMPED game that has
 flaws, from boards replayed out of games.pgn (never from game_flaws.fen), through the same
 shared scorer the live lanes use (app/services/maia_flaw_scoring.py), and stamps each game in
-the same transaction as its eight-column write.
+the same transaction as its column write.
 
-The stamp games.maia_flaws_completed_at IS the checkpoint: a crash, a SIGTERM, or a D-09
+Two modes (Phase 248 D-10, D-22):
+    --mode full        (default) games with maia_flaws_completed_at NULL; writes the eight base
+                       values plus the refutation pair and BOTH stamps.
+    --mode refutation  games with maia_refutation_completed_at NULL that are base-stamped; scores
+                       only user-side blunders (about one inference each) and writes only
+                       maia_refutation_prob/rank plus maia_refutation_completed_at. A game with
+                       no user-side blunder is stamped without a PGN replay or any inference.
+
+The stamp of the chosen mode IS the checkpoint: a crash, a SIGTERM, or a D-09
 unstamp (a reclassification that clears stamps) is caught by simply re-running. A second run
 over the same scope selects zero games and writes nothing. Zero-flaw games are never selected
 (the go-forward scorer stamps them), so there is no scan of all games.
@@ -30,6 +38,8 @@ Usage:
     PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --workers 9
     uv run python scripts/backfill_maia_flaws.py --db prod --status
     uv run python scripts/backfill_maia_flaws.py --db dev --shard 2 --num-shards 9
+    PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --mode refutation --workers 9
+    uv run python scripts/backfill_maia_flaws.py --db prod --status --mode refutation
 """
 
 from __future__ import annotations
@@ -49,7 +59,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import sentry_sdk
-from sqlalchemy import text
+from sqlalchemy import Select, func, not_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Bootstrap project root so `app.*` imports resolve when running as a script.
@@ -60,13 +70,18 @@ from app.core.config import db_url_for_target, settings  # noqa: E402
 
 # Game.user_id has a FK to users.id and User declares a relationship to OAuthAccount, so the
 # mapped classes must all be imported before any select() against them compiles.
+from app.models.game import Game  # noqa: E402
+from app.models.game_flaw import GameFlaw  # noqa: E402
 from app.models.oauth_account import OAuthAccount  # noqa: E402, F401
 from app.models.user import User  # noqa: E402, F401
+from app.repositories.game_flaws_repository import _SEVERITY_INT  # noqa: E402
+from app.repositories.query_utils import is_opponent_expr  # noqa: E402
 from app.services import maia_engine  # noqa: E402
 from app.services.maia_flaw_scoring import (  # noqa: E402
     MAX_GAMES_PER_WRITE_TXN,
     GameMaiaScore,
     MaiaInferenceUnavailableError,
+    ScoringMode,
     load_game_maia_inputs,
     score_game,
     write_game_maia_scores,
@@ -90,6 +105,9 @@ MS_PER_SECOND: int = 1000
 BackfillDb = Literal["dev", "benchmark", "prod"]
 BACKFILL_DB_CHOICES: tuple[str, ...] = ("dev", "benchmark", "prod")
 AbortReason = Literal["maia_unavailable", "too_many_batch_failures"]
+BackfillMode = ScoringMode
+BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "refutation")
+DEFAULT_MODE: BackfillMode = "full"
 
 # Top 8 hex digits of md5(game id) as an unsigned 32-bit integer. Unseeded and pure, so a
 # game's shard is stable across processes, runs and table growth.
@@ -100,13 +118,21 @@ _SELECT_SHARD_SQL: str = f"""
 SELECT g.id
 FROM games g
 JOIN users u ON u.id = g.user_id
-WHERE g.maia_flaws_completed_at IS NULL
+WHERE {{stamp_clause}}
   AND EXISTS (SELECT 1 FROM game_flaws f WHERE f.game_id = g.id)
   AND {SHARD_RESIDUE_SQL} % CAST(:num_shards AS bigint) = CAST(:shard AS bigint)
   {{user_clause}}
 ORDER BY u.last_activity DESC NULLS LAST, g.played_at DESC NULLS LAST, g.id DESC
 {{limit_clause}}
 """
+
+# The only mode-dependent part of the selector: one of these two constants, never user input.
+_STAMP_CLAUSE_BY_MODE: dict[BackfillMode, str] = {
+    "full": "g.maia_flaws_completed_at IS NULL",
+    "refutation": (
+        "g.maia_refutation_completed_at IS NULL AND g.maia_flaws_completed_at IS NOT NULL"
+    ),
+}
 
 # Set by the SIGTERM/SIGINT handler; run_shard stops after the current batch.
 _stop_requested: bool = False
@@ -130,10 +156,12 @@ async def select_shard_game_ids(
     num_shards: int,
     user_id: int | None,
     limit: int | None,
+    mode: BackfillMode = DEFAULT_MODE,
 ) -> list[int]:
-    """Ids of this shard's unstamped games that have flaws, in priority order.
+    """Ids of this shard's games still needing the mode's stamp that have flaws, in priority order.
 
-    One snapshot at shard start; batches iterate it. Bound parameters only.
+    One snapshot at shard start; batches iterate it. Bound parameters only; the mode picks one
+    of two constant predicates.
     """
     params: dict[str, Any] = {"shard": shard, "num_shards": num_shards}
     user_clause = ""
@@ -144,7 +172,11 @@ async def select_shard_game_ids(
     if limit is not None:
         limit_clause = "LIMIT :limit"
         params["limit"] = limit
-    sql = _SELECT_SHARD_SQL.format(user_clause=user_clause, limit_clause=limit_clause)
+    sql = _SELECT_SHARD_SQL.format(
+        stamp_clause=_STAMP_CLAUSE_BY_MODE[mode],
+        user_clause=user_clause,
+        limit_clause=limit_clause,
+    )
     result = await session.execute(text(sql), params)
     return [row[0] for row in result.all()]
 
@@ -161,6 +193,7 @@ class ShardReport:
     num_shards: int
     run_stamp: str
     dry_run: bool
+    mode: str = DEFAULT_MODE
     games_selected: int = 0
     games_scored: int = 0
     games_stamped: int = 0
@@ -172,10 +205,16 @@ class ShardReport:
     # Flaw rows that received Maia values / that were written all-NULL (reason in `reasons`).
     flaws_scored: int = 0
     flaws_null: int = 0
+    # User-side blunders whose refutation pair was written / left NULL (reason in `reasons`);
+    # `refutations_from_pv` counts scored pairs whose reply came from the pv fallback.
+    refutations_scored: int = 0
+    refutations_null: int = 0
+    refutations_from_pv: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     aborted_reason: str | None = None
     elapsed_s: float = 0.0
     flaws_per_s: float = 0.0
+    refutations_per_s: float = 0.0
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
@@ -183,7 +222,7 @@ class ShardReport:
 
 def _write_report(report: ShardReport, report_dir: Path) -> Path:
     report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / f"{report.db}-{report.run_stamp}-shard{report.shard}.json"
+    path = report_dir / f"{report.db}-{report.mode}-{report.run_stamp}-shard{report.shard}.json"
     path.write_text(report.to_json() + "\n")
     return path
 
@@ -209,15 +248,25 @@ def _install_signal_handlers() -> None:
 
 def _tally_stamped(report: ShardReport, score: GameMaiaScore) -> None:
     """Count one scored game's flaws and reasons (stamped, or would-be in a dry run)."""
-    scored = sum(1 for row in score.rows if row["maia_played_prob"] is not None)
-    report.flaws_scored += scored
-    report.flaws_null += len(score.rows) - scored
+    if score.mode == "full":
+        scored = sum(1 for row in score.rows if row["maia_played_prob"] is not None)
+        report.flaws_scored += scored
+        report.flaws_null += len(score.rows) - scored
+    # Full-mode rows carry the pair for every flaw (NULL out of scope); only user-side
+    # blunders count, so the pair is tallied over the score's own blunder count.
+    refuted = sum(1 for row in score.rows if row["maia_refutation_prob"] is not None)
+    report.refutations_scored += refuted
+    report.refutations_null += score.user_blunders - refuted
+    report.refutations_from_pv += score.refutations_from_pv
     for reason, n in score.reasons.items():
         report.reasons[reason] = report.reasons.get(reason, 0) + n
 
 
 def _score_batch(
-    inputs_by_game: dict[int, Any], batch_ids: list[int], report: ShardReport
+    inputs_by_game: dict[int, Any],
+    batch_ids: list[int],
+    report: ShardReport,
+    mode: BackfillMode = DEFAULT_MODE,
 ) -> list[GameMaiaScore]:
     """Score each loaded game from a PGN replay (D-06). MaiaInferenceUnavailableError aborts."""
     scores: list[GameMaiaScore] = []
@@ -227,7 +276,7 @@ def _score_batch(
             report.games_missing += 1
             continue
         try:
-            scores.append(score_game(inputs, None))
+            scores.append(score_game(inputs, None, mode))
         except MaiaInferenceUnavailableError:
             raise
         except Exception:
@@ -257,6 +306,7 @@ def _tally_outcomes(
 async def _write_scores(
     session_maker: async_sessionmaker[AsyncSession], scores: list[GameMaiaScore]
 ) -> dict[int, str]:
+    # The mode rides on the scores; write_game_maia_scores checks that mode's own stamp.
     async with session_maker() as session:
         outcomes = await write_game_maia_scores(session, scores, require_unstamped=True)
         await session.commit()
@@ -303,10 +353,11 @@ async def _process_batch(
     *,
     shard: int,
     dry_run: bool,
+    mode: BackfillMode,
 ) -> None:
     async with session_maker() as read_session:
         inputs_by_game = await load_game_maia_inputs(read_session, batch_ids)
-    scores = _score_batch(inputs_by_game, batch_ids, report)
+    scores = _score_batch(inputs_by_game, batch_ids, report, mode)
     report.games_scored += len(scores)
     if dry_run:
         for score in scores:
@@ -323,6 +374,9 @@ def _finish_report(report: ShardReport, started: float) -> None:
     report.flaws_per_s = (
         round(report.flaws_scored / report.elapsed_s, 2) if report.elapsed_s else 0.0
     )
+    report.refutations_per_s = (
+        round(report.refutations_scored / report.elapsed_s, 2) if report.elapsed_s else 0.0
+    )
 
 
 def _progress_line(report: ShardReport, done: int, started: float) -> str:
@@ -330,7 +384,9 @@ def _progress_line(report: ShardReport, done: int, started: float) -> str:
     return (
         f"shard {report.shard}/{report.num_shards}: {done}/{report.games_selected} games, "
         f"stamped={report.games_stamped} flaws_scored={report.flaws_scored} "
-        f"({report.flaws_scored / elapsed:.1f} flaws/s)"
+        f"({report.flaws_scored / elapsed:.1f} flaws/s) "
+        f"refutations_scored={report.refutations_scored} "
+        f"({report.refutations_scored / elapsed:.1f} refutations/s)"
     )
 
 
@@ -343,6 +399,7 @@ async def _run_batches(
     dry_run: bool,
     throttle_ms: int,
     started: float,
+    mode: BackfillMode,
 ) -> None:
     consecutive_failures = 0
     for start in range(0, len(game_ids), batch_games):
@@ -357,6 +414,7 @@ async def _run_batches(
                 report,
                 shard=report.shard,
                 dry_run=dry_run,
+                mode=mode,
             )
         except MaiaInferenceUnavailableError:
             report.aborted_reason = "maia_unavailable"
@@ -389,6 +447,7 @@ async def run_shard(
     report_dir: Path,
     run_stamp: str,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
+    mode: BackfillMode = DEFAULT_MODE,
 ) -> ShardReport:
     """Select, score and stamp one shard's games. Always writes the shard report."""
     engine = None
@@ -398,16 +457,19 @@ async def run_shard(
         )
         session_maker = async_sessionmaker(engine, expire_on_commit=False)
     report = ShardReport(
-        db=db, shard=shard, num_shards=num_shards, run_stamp=run_stamp, dry_run=dry_run
+        db=db, shard=shard, num_shards=num_shards, run_stamp=run_stamp, dry_run=dry_run, mode=mode
     )
     started = time.monotonic()
     try:
         async with session_maker() as session:
             game_ids = await select_shard_game_ids(
-                session, shard=shard, num_shards=num_shards, user_id=user_id, limit=limit
+                session, shard=shard, num_shards=num_shards, user_id=user_id, limit=limit, mode=mode
             )
         report.games_selected = len(game_ids)
-        _log(f"shard {shard}/{num_shards}: {len(game_ids)} games selected (dry_run={dry_run})")
+        _log(
+            f"shard {shard}/{num_shards}: {len(game_ids)} games selected "
+            f"(mode={mode}, dry_run={dry_run})"
+        )
         await _run_batches(
             session_maker,
             game_ids,
@@ -416,6 +478,7 @@ async def run_shard(
             dry_run=dry_run,
             throttle_ms=throttle_ms,
             started=started,
+            mode=mode,
         )
     finally:
         _finish_report(report, started)
@@ -454,6 +517,7 @@ def _shard_process_entry(
     throttle_ms: int,
     report_dir: str,
     run_stamp: str,
+    mode: BackfillMode = DEFAULT_MODE,
 ) -> int:
     """One shard process: own Sentry, own single-threaded Maia session, own DB engine."""
     if settings.SENTRY_DSN:
@@ -471,6 +535,7 @@ def _shard_process_entry(
             throttle_ms=throttle_ms,
             report_dir=Path(report_dir),
             run_stamp=run_stamp,
+            mode=mode,
         )
     )
 
@@ -505,6 +570,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Run exactly this one shard in-process (no spawn).",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=list(BACKFILL_MODE_CHOICES),
+        default=DEFAULT_MODE,
+        help="full: all ten values + both stamps. refutation: only the refutation pair of "
+        "user-side blunders, on base-stamped games (Phase 248).",
     )
     parser.add_argument("--user-id", type=int, default=None, dest="user_id")
     parser.add_argument("--limit", type=int, default=None, help="Max games per shard.")
@@ -565,10 +637,70 @@ _STATUS_QUERIES: dict[str, str] = {
 }
 
 
+_REFUTATION_STATUS_QUERIES: dict[str, str] = {
+    "refutation_stamped_games": (
+        "SELECT count(*) FROM games g WHERE g.maia_refutation_completed_at IS NOT NULL{u}"
+    ),
+    "refutation_unstamped_games_with_flaws": (
+        "SELECT count(*) FROM games g WHERE g.maia_refutation_completed_at IS NULL"
+        " AND g.maia_flaws_completed_at IS NOT NULL"
+        " AND EXISTS (SELECT 1 FROM game_flaws f WHERE f.game_id = g.id){u}"
+    ),
+}
+
+
+def _user_blunder_count_stmt(user_id: int | None, *, with_refutation: bool) -> Select[Any]:
+    """Count of user-side blunders (severity blunder AND NOT is_opponent_expr, D-03)."""
+    stmt = (
+        select(func.count())
+        .select_from(GameFlaw)
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.severity == _SEVERITY_INT["blunder"],
+            not_(is_opponent_expr(GameFlaw.ply, Game.user_color)),
+        )
+    )
+    if with_refutation:
+        stmt = stmt.where(GameFlaw.maia_refutation_prob.is_not(None))
+    if user_id is not None:
+        stmt = stmt.where(Game.user_id == user_id)
+    return stmt
+
+
+async def _fetch_refutation_status(session: AsyncSession, user_id: int | None) -> dict[str, int]:
+    user_clause = " AND g.user_id = :user_id" if user_id is not None else ""
+    params: dict[str, Any] = {"user_id": user_id} if user_id is not None else {}
+    counts: dict[str, int] = {}
+    for key, sql in _REFUTATION_STATUS_QUERIES.items():
+        counts[key] = int(
+            (await session.execute(text(sql.format(u=user_clause)), params)).scalar_one()
+        )
+    counts["user_blunders_with_refutation"] = int(
+        (
+            await session.execute(_user_blunder_count_stmt(user_id, with_refutation=True))
+        ).scalar_one()
+    )
+    counts["user_blunders_total"] = int(
+        (
+            await session.execute(_user_blunder_count_stmt(user_id, with_refutation=False))
+        ).scalar_one()
+    )
+    return counts
+
+
 async def fetch_status(
-    session_maker: async_sessionmaker[AsyncSession], user_id: int | None
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int | None,
+    mode: BackfillMode = DEFAULT_MODE,
 ) -> dict[str, int]:
-    """The four progress counts, SELECT-only, optionally for one user."""
+    """The progress counts, SELECT-only, optionally for one user.
+
+    Full mode keeps the four 247 counts (the 247-07 monitor greps that line); refutation
+    mode returns the four Phase 248 counts.
+    """
+    if mode == "refutation":
+        async with session_maker() as session:
+            return await _fetch_refutation_status(session, user_id)
     user_clause = " AND g.user_id = :user_id" if user_id is not None else ""
     params: dict[str, Any] = {"user_id": user_id} if user_id is not None else {}
     counts: dict[str, int] = {}
@@ -579,10 +711,14 @@ async def fetch_status(
     return counts
 
 
-async def _print_status(db: BackfillDb, user_id: int | None) -> None:
+async def _print_status(
+    db: BackfillDb, user_id: int | None, mode: BackfillMode = DEFAULT_MODE
+) -> None:
     engine = create_async_engine(db_url_for_target(db), pool_size=1, max_overflow=0)
     try:
-        counts = await fetch_status(async_sessionmaker(engine, expire_on_commit=False), user_id)
+        counts = await fetch_status(
+            async_sessionmaker(engine, expire_on_commit=False), user_id, mode
+        )
     finally:
         await engine.dispose()
     print(" ".join(f"{k}={v}" for k, v in counts.items()), flush=True)
@@ -600,6 +736,7 @@ def _shard_kwargs(args: argparse.Namespace, run_stamp: str, shard: int) -> dict[
         "throttle_ms": args.throttle_ms,
         "report_dir": str(args.report_dir),
         "run_stamp": run_stamp,
+        "mode": args.mode,
     }
 
 
@@ -615,6 +752,9 @@ def _combined_total_line(reports: list[dict[str, Any]]) -> str:
         "games_score_failed",
         "flaws_scored",
         "flaws_null",
+        "refutations_scored",
+        "refutations_null",
+        "refutations_from_pv",
     )
     totals = {k: sum(int(r.get(k, 0)) for r in reports) for k in keys}
     reasons: Counter[str] = Counter()
@@ -660,7 +800,7 @@ def _read_reports(
 ) -> list[dict[str, Any]]:
     reports: list[dict[str, Any]] = []
     for shard in shards:
-        path = args.report_dir / f"{args.db}-{run_stamp}-shard{shard}.json"
+        path = args.report_dir / f"{args.db}-{args.mode}-{run_stamp}-shard{shard}.json"
         if path.exists():
             reports.append(json.loads(path.read_text()))
         else:
@@ -672,7 +812,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     asyncio.run(_print_banner(args.db))
     if args.status:
-        asyncio.run(_print_status(args.db, args.user_id))
+        asyncio.run(_print_status(args.db, args.user_id, args.mode))
         return EXIT_OK
     run_stamp = datetime.now(timezone.utc).strftime(RUN_STAMP_FORMAT)
     if args.shard is not None:

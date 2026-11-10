@@ -10,7 +10,9 @@ import pytest
 from app.services.maia_flaw_stats import (
     MaiaFlawStats,
     compute_maia_flaw_stats,
+    compute_refutation_stats,
     null_maia_stats,
+    null_refutation_stats,
 )
 from tests.services.maia_fakes import fake_full_policy
 
@@ -134,3 +136,50 @@ def test_fake_full_policy_deterministic() -> None:
         assert len(set(probs.values())) == len(probs)
         assert fake_full_policy(fen, 2200.0) == probs
     assert "e1g1" in fake_full_policy(_CASTLING_FEN, 1500.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 248 refutation pair (pure)
+# ---------------------------------------------------------------------------
+
+
+def test_refutation_stats_strict_greater_rank_ties_share() -> None:
+    probs = {"a": 0.4, "b": 0.3, "c": 0.3}
+    stats, reason = compute_refutation_stats(probs, "c")
+    assert reason is None
+    assert stats["maia_refutation_rank"] == 2  # tie with b, only a is strictly higher
+    stats, _ = compute_refutation_stats({"a": 0.3, "b": 0.3, "c": 0.2}, "c")
+    assert stats["maia_refutation_rank"] == 3  # move just below a tied pair
+    stats, _ = compute_refutation_stats(probs, "a")
+    assert stats["maia_refutation_rank"] == 1
+
+
+def test_refutation_stats_prob_float_rank_int() -> None:
+    stats, reason = compute_refutation_stats({"a": 0.75, "b": 0.25}, "b")
+    assert reason is None
+    assert isinstance(stats["maia_refutation_prob"], float)
+    assert isinstance(stats["maia_refutation_rank"], int)
+    assert stats["maia_refutation_prob"] == pytest.approx(0.25, abs=_TOL)
+    assert stats["maia_refutation_rank"] == 2
+
+
+def test_refutation_stats_empty_policy_is_no_legal_reply() -> None:
+    stats, reason = compute_refutation_stats({}, "e2e4")
+    assert reason == "no_legal_reply"
+    assert stats == null_refutation_stats()
+
+
+def test_refutation_stats_missing_and_not_legal() -> None:
+    probs = {"a": 0.6, "b": 0.4}
+    stats, reason = compute_refutation_stats(probs, None)
+    assert (stats, reason) == (null_refutation_stats(), "refutation_missing")
+    stats, reason = compute_refutation_stats(probs, "z")
+    assert (stats, reason) == (null_refutation_stats(), "refutation_not_legal")
+
+
+def test_refutation_stats_matches_full_policy_rank() -> None:
+    probs = fake_full_policy(_START_FEN, 0.0)
+    for uci, own in probs.items():
+        stats, reason = compute_refutation_stats(probs, uci)
+        assert reason is None
+        assert stats["maia_refutation_rank"] == 1 + sum(1 for p in probs.values() if p > own)
