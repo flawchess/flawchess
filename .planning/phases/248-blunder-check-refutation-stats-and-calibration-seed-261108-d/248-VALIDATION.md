@@ -2,9 +2,9 @@
 phase: "248"
 slug: "blunder-check-refutation-stats-and-calibration-seed-261108-dk0"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-11-09"
 ---
 
@@ -40,25 +40,25 @@ created: "2026-11-09"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 248-01-T1 | 01 | 1 | D-01, D-02, D-20, D-22 | T-248-02 | three nullable columns, both stamps written together | migration + DB tracer | `uv run alembic upgrade head && uv run alembic check`; `uv run pytest tests/services/test_maia_flaw_scoring.py -k "refutation_tracer or schema" -x` | ✅ extend | ⬜ pending |
-| 248-01-T2 | 01 | 1 | D-03, D-04, D-05, D-09, D-20 | T-248-01, T-248-02 | illegal/malformed refutation never reaches inference; fingerprint covers ply+1 inputs | pure + DB unit, mutation proofs | `uv run pytest tests/services/test_maia_flaw_stats.py tests/services/test_maia_flaw_scoring.py -x` | ✅ extend | ⬜ pending |
-| 248-01-T3 | 01 | 1 | D-07, D-08 | T-248-02 | no-Maia reclassify preserves by omission, clears both stamps | DB unit + lane integration | `uv run pytest tests/services/test_maia_flaw_scoring.py -k reclassify -x`; `uv run pytest tests/services/test_full_eval_drain.py -k "maia_flaw or non_tier4b" -x`; `uv run pytest tests/test_eval_worker_endpoints.py -k maia -x` | ✅ extend | ⬜ pending |
-| 248-02-T1 | 02 | 1 | D-13, D-16 | T-248-04 | ES from the classifier's own pass | pure tracer | `uv run pytest tests/scripts/test_blunder_check_metrics.py -x` | ❌ W0 (created by this task) | ⬜ pending |
-| 248-02-T2 | 02 | 1 | D-14, D-15, D-16, D-23 | T-248-04 | boundary rules pinned | pure unit, mutation proofs | `uv run pytest tests/scripts/test_blunder_check_metrics.py -x` | ❌ W0 | ⬜ pending |
-| 248-03-T1 | 03 | 2 | D-10, D-22 | T-248-05, T-248-07 | refutation mode writes only the pair + its stamp | script tracer | `uv run pytest tests/scripts/test_backfill_maia_flaws.py -k refutation_mode -x` | ✅ extend | ⬜ pending |
-| 248-03-T2 | 03 | 2 | D-03, D-05, D-09, D-10 | T-248-06, T-248-07 | selector constants, bound params, own-stamp require_unstamped | script tests + dev smoke | `uv run pytest tests/scripts/test_backfill_maia_flaws.py tests/services/test_maia_flaw_scoring.py -x`; `uv run python scripts/backfill_maia_flaws.py --db dev --status --mode refutation --user-id 28` | ✅ extend | ⬜ pending |
-| 248-04-T1 | 04 | 2 | D-13, D-14 | T-248-08 | report session is read-only (write raises) | DB tracer + dev run | `uv run pytest tests/scripts/test_blunder_check_calibration.py -x`; dev run of `scripts/blunder_check_calibration.py` | ❌ W0 | ⬜ pending |
-| 248-04-T2 | 04 | 2 | D-14, D-15, D-16, D-23 | T-248-09, T-248-10 | aggregates only, one connection, statement_timeout | render unit + dev run + cache diff | `uv run pytest tests/scripts/test_blunder_check_calibration.py tests/scripts/test_blunder_check_metrics.py -x` | ❌ W0 | ⬜ pending |
-| 248-05-T1 | 05 | 3 | D-17 | T-248-12 | Maia absent -> exit 3, no partial report | unit + real-ORT dev smoke | `uv run pytest tests/scripts/test_blunder_check_calibration.py -k "oddness or maia" -x` | ❌ W0 | ⬜ pending |
-| 248-05-T2 | 05 | 3 | D-18 | T-248-11 | spot-check holds no FlawChess user identifiers | unit + dev smoke + determinism diff | `uv run pytest tests/scripts/test_blunder_check_calibration.py tests/scripts/test_blunder_check_metrics.py -x` | ❌ W0 | ⬜ pending |
-| 248-06-T1 | 06 | 4 | D-11, D-12 | T-248-13, T-248-14 | owner go-ahead; 247-07 ended | checkpoint | manual (owner answer) | n/a | ⬜ pending |
-| 248-06-T2 | 06 | 4 | D-11, D-19 | T-248-13 | deploy only via /deploy | gate + prod MCP | `git rev-list --left-right --count main...origin/main`; `uv run python scripts/backfill_maia_flaws.py --db prod --status --mode refutation` | n/a | ⬜ pending |
-| 248-06-T3 | 06 | 4 | D-11 | T-248-14 | connection headroom recorded | prod MCP + Sentry | `git log origin/production -1 --format=%H` | n/a | ⬜ pending |
-| 248-07-T1 | 07 | 5 | D-10, D-12 | T-248-15, T-248-16 | bounded slice before the long run | prod slice + MCP | `PYTHONUNBUFFERED=1 uv run python -u scripts/backfill_maia_flaws.py --db prod --mode refutation --shard 0 --num-shards 9 --limit 50` | n/a | ⬜ pending |
-| 248-07-T2 | 07 | 5 | D-10 | T-248-15 | 9 shards max, no overlap | detached run | `grep -c "EXIT=0" temp/maia-refutation-backfill/prod-full.log` | n/a | ⬜ pending |
-| 248-07-T3 | 07 | 5 | D-11, D-20, D-21 | T-248-16 | coverage >= 99.000 with buckets | catch-up + MCP coverage SQL | `grep -c "pct_scored" reports/maia-flaws-backfill/prod-refutation-coverage.md` | n/a | ⬜ pending |
-| 248-08-T1 | 08 | 6 | D-13..D-17 | T-248-17 | read-only prod session | detached prod run | `grep -c "EXIT=0" temp/blunder-check/prod-run.log` | n/a | ⬜ pending |
-| 248-08-T2 | 08 | 6 | D-11, D-18, D-19, D-23 | T-248-18 | committed files hold no user identifiers | committed report + spot-check | `git ls-files --error-unmatch reports/blunder-check/blunder-check-calibration-*.md reports/blunder-check/spot-check-*.md` | n/a | ⬜ pending |
+| 248-01-T1 | 01 | 1 | D-01, D-02, D-20, D-22 | T-248-02 | three nullable columns, both stamps written together | migration + DB tracer | `uv run alembic upgrade head && uv run alembic check`; `uv run pytest tests/services/test_maia_flaw_scoring.py -k "refutation_tracer or schema" -x` | ✅ | ✅ green |
+| 248-01-T2 | 01 | 1 | D-03, D-04, D-05, D-09, D-20 | T-248-01, T-248-02 | illegal/malformed refutation never reaches inference; fingerprint covers ply+1 inputs | pure + DB unit, mutation proofs | `uv run pytest tests/services/test_maia_flaw_stats.py tests/services/test_maia_flaw_scoring.py -x` | ✅ | ✅ green |
+| 248-01-T3 | 01 | 1 | D-07, D-08 | T-248-02 | no-Maia reclassify preserves by omission, clears both stamps | DB unit + lane integration | `uv run pytest tests/services/test_maia_flaw_scoring.py -k reclassify -x`; `uv run pytest tests/services/test_full_eval_drain.py -k "maia_flaw or non_tier4b" -x`; `uv run pytest tests/test_eval_worker_endpoints.py -k maia -x` | ✅ | ✅ green |
+| 248-02-T1 | 02 | 1 | D-13, D-16 | T-248-04 | ES from the classifier's own pass | pure tracer | `uv run pytest tests/scripts/test_blunder_check_metrics.py -x` | ✅ | ✅ green |
+| 248-02-T2 | 02 | 1 | D-14, D-15, D-16, D-23 | T-248-04 | boundary rules pinned | pure unit, mutation proofs | `uv run pytest tests/scripts/test_blunder_check_metrics.py -x` | ✅ | ✅ green |
+| 248-03-T1 | 03 | 2 | D-10, D-22 | T-248-05, T-248-07 | refutation mode writes only the pair + its stamp | script tracer | `uv run pytest tests/scripts/test_backfill_maia_flaws.py -k refutation_mode -x` | ✅ | ✅ green |
+| 248-03-T2 | 03 | 2 | D-03, D-05, D-09, D-10 | T-248-06, T-248-07 | selector constants, bound params, own-stamp require_unstamped | script tests + dev smoke | `uv run pytest tests/scripts/test_backfill_maia_flaws.py tests/services/test_maia_flaw_scoring.py -x`; `uv run python scripts/backfill_maia_flaws.py --db dev --status --mode refutation --user-id 28` | ✅ | ✅ green |
+| 248-04-T1 | 04 | 2 | D-13, D-14 | T-248-08 | report session is read-only (write raises) | DB tracer + dev run | `uv run pytest tests/scripts/test_blunder_check_calibration.py -x`; dev run of `scripts/blunder_check_calibration.py` | ✅ | ✅ green |
+| 248-04-T2 | 04 | 2 | D-14, D-15, D-16, D-23 | T-248-09, T-248-10 | aggregates only, one connection, statement_timeout | render unit + dev run + cache diff | `uv run pytest tests/scripts/test_blunder_check_calibration.py tests/scripts/test_blunder_check_metrics.py -x` | ✅ | ✅ green |
+| 248-05-T1 | 05 | 3 | D-17 | T-248-12 | Maia absent -> exit 3, no partial report | unit + real-ORT dev smoke | `uv run pytest tests/scripts/test_blunder_check_calibration.py -k "oddness or maia" -x` | ✅ | ✅ green |
+| 248-05-T2 | 05 | 3 | D-18 | T-248-11 | spot-check holds no FlawChess user identifiers | unit + dev smoke + determinism diff | `uv run pytest tests/scripts/test_blunder_check_calibration.py tests/scripts/test_blunder_check_metrics.py -x` | ✅ | ✅ green |
+| 248-06-T1 | 06 | 4 | D-11, D-12 | T-248-13, T-248-14 | owner go-ahead; 247-07 ended | checkpoint | manual (owner answer) | n/a | ✅ green |
+| 248-06-T2 | 06 | 4 | D-11, D-19 | T-248-13 | deploy only via /deploy | gate + prod MCP | `git rev-list --left-right --count main...origin/main`; `uv run python scripts/backfill_maia_flaws.py --db prod --status --mode refutation` | n/a | ✅ green |
+| 248-06-T3 | 06 | 4 | D-11 | T-248-14 | connection headroom recorded | prod MCP + Sentry | `git log origin/production -1 --format=%H` | n/a | ✅ green |
+| 248-07-T1 | 07 | 5 | D-10, D-12 | T-248-15, T-248-16 | bounded slice before the long run | prod slice + MCP | `PYTHONUNBUFFERED=1 uv run python -u scripts/backfill_maia_flaws.py --db prod --mode refutation --shard 0 --num-shards 9 --limit 50` | n/a | ✅ green |
+| 248-07-T2 | 07 | 5 | D-10 | T-248-15 | 9 shards max, no overlap | detached run | `grep -c "EXIT=0" temp/maia-refutation-backfill/prod-full.log` | n/a | ✅ green |
+| 248-07-T3 | 07 | 5 | D-11, D-20, D-21 | T-248-16 | coverage >= 99.000 with buckets | catch-up + MCP coverage SQL | `grep -c "pct_scored" reports/maia-flaws-backfill/prod-refutation-coverage.md` | n/a | ✅ green |
+| 248-08-T1 | 08 | 6 | D-13..D-17 | T-248-17 | read-only prod session | detached prod run | `grep -c "EXIT=0" temp/blunder-check/prod-run.log` | n/a | ✅ green |
+| 248-08-T2 | 08 | 6 | D-11, D-18, D-19, D-23 | T-248-18 | committed files hold no user identifiers | committed report + spot-check | `git ls-files --error-unmatch reports/blunder-check/blunder-check-calibration-*.md reports/blunder-check/spot-check-*.md` | n/a | ✅ green |
 
 Requirement → test map (from research):
 
@@ -83,10 +83,10 @@ Requirement → test map (from research):
 
 ## Wave 0 Requirements
 
-- [ ] `tests/scripts/test_blunder_check_calibration.py`: pure report functions (no DB)
+- [x] `tests/scripts/test_blunder_check_calibration.py`: pure report functions (no DB)
 - [x] Prod NULL-budget probe: done 2026-11-09 (CONTEXT D-21), structural NULLs ≈ 0.2% with the pv fallback
-- [ ] Fixtures: user blunder as final move (pv only), stalemating blunder, white and black users with distinct ratings, opponent blunder at the adjacent ply; unique `_TEST_USER_ID`, `finally` cleanup; backfill tests scoped with `--user-id`
-- [ ] Mutation proofs: drop the user-side check, Elo from `post.turn`, drop the refutation from the fingerprint, add a refutation key to `flaw_record_to_row`, clear only the base stamp; each must fail a test
+- [x] Fixtures: user blunder as final move (pv only), stalemating blunder, white and black users with distinct ratings, opponent blunder at the adjacent ply; unique `_TEST_USER_ID`, `finally` cleanup; backfill tests scoped with `--user-id`
+- [x] Mutation proofs: drop the user-side check, Elo from `post.turn`, drop the refutation from the fingerprint, add a refutation key to `flaw_record_to_row`, clear only the base stamp; each must fail a test
 
 ---
 
@@ -102,11 +102,19 @@ Requirement → test map (from research):
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-11-10 (343 tests green across the 7 phase test files, `alembic check` clean, mutation proofs in 248-01-SUMMARY.md; prod legs evidenced in 248-06..08 SUMMARYs)
+
+## Validation Audit 2026-11-10
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
