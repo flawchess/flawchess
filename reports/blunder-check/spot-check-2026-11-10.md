@@ -4,13 +4,13 @@ Windows drawn the way the feature would draw them: length L uniform over 3 to 5 
 
 Thresholds: refutation R = 0.3, best-move X' = 0.2, eval band [0.10, 0.90] on the pre-move ES. A recommendation only; nothing here is wired into app code.
 
-How to read: for each window, play through the lead-in and the judged moves on the board (the game link opens the full game), decide whether the position is a fair question, then compare with the answer. A blunder window is fair when the refutation or the missed move is something a player of that rating could find. Moves are in SAN; a stored move that is not legal on the replayed board prints as its UCI with the word illegal.
+How to read: for each window, play through the lead-in and the judged moves on the board (the game link opens the game on FlawChess at the first judged move), decide whether the position is a fair question, then compare with the answer. A blunder window is fair when the refutation or the missed move is something a player of that rating could find. Moves are in SAN; a stored move that is not legal on the replayed board prints as its UCI with the word illegal.
 
 ### <800
 
 #### Window 1: allowed (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/185809311430
+- **Game:** https://flawchess.com/analysis?game_id=3182327&ply=10
 - **User rating:** 287 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `r1bqkb1r/ppp2ppp/2np1n2/4p3/4P3/5NP1/PPPPQP1P/RNB1KB1R w KQkq - 0 5`
 - **Lead-in:** 5. d3 Be6 6. Bg5
@@ -24,7 +24,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 2: allowed (length 5, blunder at 3)
 
-- **Game:** https://www.chess.com/game/daily/104734235
+- **Game:** https://flawchess.com/analysis?game_id=2515481&ply=16
 - **User rating:** 683 (pinned Maia Elo 683)
 - **FEN before the lead-in:** `r2qk2r/ppp2ppp/2np1n2/2b5/2B3bP/4PQ2/PPP2PP1/RNB1K1NR w KQkq - 4 8`
 - **Lead-in:** 8. Qf4 Qe7 9. Bd2
@@ -37,7 +37,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 3: mixed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/73652575441
+- **Game:** https://flawchess.com/analysis?game_id=2168724&ply=17
 - **User rating:** 721 (pinned Maia Elo 721)
 - **FEN before the lead-in:** `r1b1k2r/pppp1ppp/1bn2q2/4p3/1P4n1/P4PPN/1BPPP1BP/RN1QK2R b KQkq - 0 8`
 - **Lead-in:** 8... Nh6 9. Nc3 e4
@@ -49,7 +49,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 4: allowed (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/165455386860
+- **Game:** https://flawchess.com/analysis?game_id=2525548&ply=9
 - **User rating:** 568 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rn1qkbnr/ppp2ppp/4b3/3pQ3/4P3/5N2/PPPP1PPP/RNB1KB1R b KQkq - 2 4`
 - **Lead-in:** 4... f6 5. Qd4 c5
@@ -61,7 +61,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 5: mixed (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/82136047456
+- **Game:** https://flawchess.com/analysis?game_id=2304944&ply=3
 - **User rating:** 334 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1`
 - **Lead-in:** 1... e5 2. Qh5 Nf6
@@ -74,7 +74,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 6: allowed (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/141441374434
+- **Game:** https://flawchess.com/analysis?game_id=1650806&ply=34
 - **User rating:** 374 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `r1b3k1/ppp1np2/7p/4P1pn/2B5/2N2N1P/PPP3P1/3R2K1 w - - 0 17`
 - **Lead-in:** 17. g4 Nf4 18. Kh2
@@ -85,7 +85,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 7: allowed (length 4, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/164449671336
+- **Game:** https://flawchess.com/analysis?game_id=2637863&ply=32
 - **User rating:** 514 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `1r3rk1/pp2bppp/4p3/3nq3/1P6/P2BPQ2/3N1PPP/R4RK1 w - - 0 16`
 - **Lead-in:** 16. Nc4 Qc3 17. Rfd1
@@ -97,7 +97,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 8: herring (length 5, no blunder)
 
-- **Game:** https://www.chess.com/game/live/136120532522
+- **Game:** https://flawchess.com/analysis?game_id=2460103&ply=44
 - **User rating:** 639 (pinned Maia Elo 639)
 - **FEN before the lead-in:** `1r3rk1/1Np2ppp/p1B5/1p4P1/4PbPq/5Q2/PP3P2/R4RK1 w - - 0 22`
 - **Lead-in:** 22. Qxf4 f6 23. Qh2
@@ -111,7 +111,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 9: allowed (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/184923975262
+- **Game:** https://flawchess.com/analysis?game_id=3243188&ply=65
 - **User rating:** 593 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `8/R6p/B4k2/8/b3p3/r7/3K3P/8 b - - 0 32`
 - **Lead-in:** 32... e3+ 33. Ke2 Bb5+
@@ -125,7 +125,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 10: allowed (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/185451253812
+- **Game:** https://flawchess.com/analysis?game_id=3101877&ply=2
 - **User rating:** 202 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. Nf3 d5 2. d4
@@ -139,7 +139,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 11: allowed (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/167670799472
+- **Game:** https://flawchess.com/analysis?game_id=2444120&ply=33
 - **User rating:** 603 (pinned Maia Elo 603)
 - **FEN before the lead-in:** `2k2b1r/ppp1pppp/4b3/8/5B2/P1P3P1/2P2PBP/5K1R b - - 0 16`
 - **Lead-in:** 16... Bc4+ 17. Ke1 g5
@@ -153,7 +153,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 12: allowed (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/54514165547
+- **Game:** https://flawchess.com/analysis?game_id=2285910&ply=0
 - **User rating:** 442 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. d4
@@ -167,7 +167,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 13: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/122789436108
+- **Game:** https://flawchess.com/analysis?game_id=1661678&ply=24
 - **User rating:** 376 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `r4b1r/ppp1pppp/4k3/4N3/4n3/8/PPP3PP/R1B1K2R w KQ - 2 12`
 - **Lead-in:** 12. Bf4 f6 13. Nc4
@@ -179,7 +179,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 14: pure_miss (length 4, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/99278060621
+- **Game:** https://flawchess.com/analysis?game_id=2099808&ply=20
 - **User rating:** 712 (pinned Maia Elo 712)
 - **FEN before the lead-in:** `r1bqk1nr/p5pp/2p2p2/4p1P1/1b1pP3/6Q1/PPP2P1P/RNB1K1NR w KQkq - 2 10`
 - **Lead-in:** 10. c3 dxc3 11. bxc3
@@ -191,7 +191,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 15: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/108369792294
+- **Game:** https://flawchess.com/analysis?game_id=2607626&ply=16
 - **User rating:** 540 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `r1bqk2r/ppp2ppp/2n5/2bnp3/8/2PP1NP1/PP3PBP/RNBQK2R w KQkq - 1 8`
 - **Lead-in:** 8. O-O O-O 9. h3
@@ -203,7 +203,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 16: allowed (length 4, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/139820044504
+- **Game:** https://flawchess.com/analysis?game_id=1918601&ply=0
 - **User rating:** 258 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. b3
@@ -216,7 +216,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 17: pure_miss (length 4, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/174436063170
+- **Game:** https://flawchess.com/analysis?game_id=3118210&ply=26
 - **User rating:** 347 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rnb1k2r/pp3p1p/2p5/2bB4/6P1/5N2/PPP4P/RNB1K2R w KQkq - 0 13`
 - **Lead-in:** 13. Bc4 Be6 14. Ng5
@@ -228,7 +228,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 18: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/160370849523
+- **Game:** https://flawchess.com/analysis?game_id=1667285&ply=7
 - **User rating:** 496 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `rnbqk1nr/pppp1ppp/8/2b1N3/4P3/8/PPPP1PPP/RNBQKB1R b KQkq - 0 3`
 - **Lead-in:** 3... Qh4 4. Qf3 f6
@@ -241,7 +241,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 19: pure_miss (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/108720205698
+- **Game:** https://flawchess.com/analysis?game_id=1940430&ply=57
 - **User rating:** 592 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `6k1/ppp4p/4b1p1/4B3/2P5/6P1/P6P/5K2 b - - 0 28`
 - **Lead-in:** 28... Bxc4+ 29. Kg2 Bxa2
@@ -253,7 +253,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 20: allowed (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/6079149399
+- **Game:** https://flawchess.com/analysis?game_id=472361&ply=32
 - **User rating:** 549 (pinned Maia Elo 600)
 - **FEN before the lead-in:** `r5k1/pp3ppn/2nNq3/3p3b/3P4/2P1rP1N/PP4PP/R2QR1K1 w - - 1 16`
 - **Lead-in:** 16. Nf5 Rxe1+ 17. Qxe1
@@ -269,7 +269,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 1: allowed (length 4, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/42847783851
+- **Game:** https://flawchess.com/analysis?game_id=2996307&ply=66
 - **User rating:** 638 (pinned Maia Elo 1102)
 - **FEN before the lead-in:** `4rrk1/7p/p2b2pQ/3P4/2p5/4P3/P3K1R1/1q4R1 w - - 0 33`
 - **Lead-in:** 33. Rxg6+ hxg6 34. Qxg6+
@@ -280,7 +280,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 2: allowed (length 5, blunder at 1)
 
-- **Game:** https://lichess.org/s87xe3Zq
+- **Game:** https://flawchess.com/analysis?game_id=2690804&ply=2
 - **User rating:** 1005 (pinned Maia Elo 1005)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. e4 e5 2. Bc4
@@ -291,7 +291,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 3: allowed (length 3, blunder at 2)
 
-- **Game:** https://lichess.org/OBOBYgIF
+- **Game:** https://flawchess.com/analysis?game_id=3086828&ply=40
 - **User rating:** 1389 (pinned Maia Elo 1190)
 - **FEN before the lead-in:** `3r2k1/pp3pp1/2n5/q1p1n2B/2P1P3/P2r4/1P2QPPP/R2R2K1 w - - 4 20`
 - **Lead-in:** 20. Rab1 Nd4 21. Qe1
@@ -303,7 +303,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 4: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/166715507104
+- **Game:** https://flawchess.com/analysis?game_id=3135759&ply=34
 - **User rating:** 740 (pinned Maia Elo 1167)
 - **FEN before the lead-in:** `r2q1rk1/2pp1ppp/3b2n1/1p2p3/1P1Pb3/N1P5/1B2BPPP/R2Q1RK1 w - - 0 17`
 - **Lead-in:** 17. f3 Bf5 18. Nxb5
@@ -315,7 +315,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 5: herring (length 5, no blunder)
 
-- **Game:** https://www.chess.com/game/live/119762359336
+- **Game:** https://flawchess.com/analysis?game_id=1077108&ply=71
 - **User rating:** 599 (pinned Maia Elo 1075)
 - **FEN before the lead-in:** `r5k1/1R4p1/Pb5p/4p3/8/7K/8/R7 b - - 3 35`
 - **Lead-in:** 35... Bd4 36. Re7 Bxa1
@@ -329,7 +329,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 6: allowed (length 5, blunder at 1)
 
-- **Game:** https://lichess.org/YbkW4Phe
+- **Game:** https://flawchess.com/analysis?game_id=2654642&ply=62
 - **User rating:** 1056 (pinned Maia Elo 1056)
 - **FEN before the lead-in:** `5r1k/6pp/1p6/p3n3/P3Q3/4P1K1/1P4PP/R1B1q3 w - - 5 31`
 - **Lead-in:** 31. Kh3 Ng6 32. b4
@@ -340,7 +340,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 7: allowed (length 4, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/138070935196
+- **Game:** https://flawchess.com/analysis?game_id=563046&ply=52
 - **User rating:** 762 (pinned Maia Elo 1042)
 - **FEN before the lead-in:** `1k1r1b1r/1p4p1/7p/1n3p2/1P5Q/B2q1P2/P5PP/2R1R1K1 w - - 0 26`
 - **Lead-in:** 26. Qf4+ Rd6 27. Bb2
@@ -351,7 +351,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 8: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/20176799295
+- **Game:** https://flawchess.com/analysis?game_id=3087926&ply=24
 - **User rating:** 698 (pinned Maia Elo 1144)
 - **FEN before the lead-in:** `2r1kb1r/pppb1ppp/2np2q1/3BP3/3P4/5N2/PPP2PPP/R1BQ1RK1 w k - 1 12`
 - **Lead-in:** 12. Ng5 Be6 13. Bxc6+
@@ -363,7 +363,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 9: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/171540696088
+- **Game:** https://flawchess.com/analysis?game_id=2268725&ply=1
 - **User rating:** 447 (pinned Maia Elo 1031)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. e4 e5
@@ -376,7 +376,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 10: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/169053762538
+- **Game:** https://flawchess.com/analysis?game_id=2525187&ply=56
 - **User rating:** 767 (pinned Maia Elo 1044)
 - **FEN before the lead-in:** `4k3/1pr1n1b1/pN3p2/B1P2bp1/2P1p3/6R1/P4PPP/R5K1 w - - 2 28`
 - **Lead-in:** 28. Nd5 Rxc5 29. Nxe7
@@ -388,7 +388,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 11: pure_miss (length 4, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/120019919396
+- **Game:** https://flawchess.com/analysis?game_id=470063&ply=13
 - **User rating:** 918 (pinned Maia Elo 1128)
 - **FEN before the lead-in:** `rnbqk2r/ppp2ppp/8/2bnN3/2B5/7P/PPPP1PP1/RNBQK2R b KQkq - 0 6`
 - **Lead-in:** 6... Qe7 7. Qe2 Bxf2+
@@ -399,7 +399,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 12: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/162382627121
+- **Game:** https://flawchess.com/analysis?game_id=2606323&ply=43
 - **User rating:** 657 (pinned Maia Elo 1115)
 - **FEN before the lead-in:** `r1bq1rk1/5pp1/p3pB1p/3p4/6Q1/PPNBP3/2P2PPP/R4RK1 b - - 0 21`
 - **Lead-in:** 21... Qxf6 22. e4 Qxc3
@@ -411,7 +411,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 13: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/166273566174
+- **Game:** https://flawchess.com/analysis?game_id=3254604&ply=0
 - **User rating:** 939 (pinned Maia Elo 1142)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. e4
@@ -424,7 +424,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 14: allowed (length 5, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/184515966174
+- **Game:** https://flawchess.com/analysis?game_id=3100535&ply=40
 - **User rating:** 598 (pinned Maia Elo 1074)
 - **FEN before the lead-in:** `4r1qk/1bp1Q1pp/2p5/p2p4/3p4/4P1N1/PPPB2PP/5RK1 w - - 1 20`
 - **Lead-in:** 20. Qxc7 dxe3 21. Bxe3
@@ -437,7 +437,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 15: allowed (length 4, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/94340035215
+- **Game:** https://flawchess.com/analysis?game_id=2960460&ply=37
 - **User rating:** 706 (pinned Maia Elo 1148)
 - **FEN before the lead-in:** `r2q1k1r/1b1p1npp/p4b2/1pB5/8/P1NB4/1P3PPP/R2QR1K1 b - - 3 18`
 - **Lead-in:** 18... d6 19. Bb4 a5
@@ -448,7 +448,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 16: allowed (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/100654999161
+- **Game:** https://flawchess.com/analysis?game_id=469393&ply=17
 - **User rating:** 554 (pinned Maia Elo 1054)
 - **FEN before the lead-in:** `r2qk1nr/pppb2pp/2n1p3/1B1pPp2/3P4/5N2/PPPQ1PPP/RN3RK1 b kq - 2 8`
 - **Lead-in:** 8... Nge7 9. Nc3 Nb4
@@ -460,7 +460,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 17: allowed (length 5, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/120964816794
+- **Game:** https://flawchess.com/analysis?game_id=1079289&ply=32
 - **User rating:** 696 (pinned Maia Elo 1142)
 - **FEN before the lead-in:** `4rrk1/ppp3pp/3q2b1/n2p1p2/3P1P2/2PBP3/PP2Q2P/2KR2NR w - - 5 16`
 - **Lead-in:** 16. b4 Nc4 17. Bxc4
@@ -473,7 +473,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 18: pure_miss (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/148018678326
+- **Game:** https://flawchess.com/analysis?game_id=2404406&ply=13
 - **User rating:** 854 (pinned Maia Elo 1087)
 - **FEN before the lead-in:** `rn1qk1nr/pbpp1pbp/1p2p1p1/8/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 b kq - 2 6`
 - **Lead-in:** 6... Nf6 7. Bg5 O-O
@@ -484,7 +484,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 19: allowed (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/13354437639
+- **Game:** https://flawchess.com/analysis?game_id=1310189&ply=64
 - **User rating:** 616 (pinned Maia Elo 1086)
 - **FEN before the lead-in:** `2k5/r4p1p/5Kp1/1p6/p1pR2P1/2P5/PP5P/8 w - - 0 32`
 - **Lead-in:** 32. b4 cxb3 33. axb3
@@ -495,7 +495,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 20: allowed (length 4, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/2148779715
+- **Game:** https://flawchess.com/analysis?game_id=1993360&ply=40
 - **User rating:** 916 (pinned Maia Elo 1127)
 - **FEN before the lead-in:** `r5k1/2p2pp1/p1n1rq1p/1p2p2Q/3pR2N/1P1P3P/P1P2PP1/R5K1 w - - 0 20`
 - **Lead-in:** 20. f4 exf4 21. Rxe6
@@ -510,7 +510,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 1: herring (length 4, no blunder)
 
-- **Game:** https://lichess.org/Kjb1NiHA
+- **Game:** https://flawchess.com/analysis?game_id=2822198&ply=71
 - **User rating:** 1566 (pinned Maia Elo 1566)
 - **FEN before the lead-in:** `7k/1q3pp1/pb2pn1p/1p2N3/1P1P1Q2/P5PP/5P2/2B3K1 b - - 0 35`
 - **Lead-in:** 35... Bxd4 36. Qxd4 Qd5
@@ -523,7 +523,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 2: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/147341735780
+- **Game:** https://flawchess.com/analysis?game_id=2082263&ply=16
 - **User rating:** 1101 (pinned Maia Elo 1293)
 - **FEN before the lead-in:** `2kr1bnr/pp1npppp/2p5/8/4PBb1/5N2/PPP1BPPP/RN1K3R w - - 5 8`
 - **Lead-in:** 8. Nbd2 Ngf6 9. c3
@@ -534,7 +534,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 3: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/daily/653089841
+- **Game:** https://flawchess.com/analysis?game_id=2648448&ply=26
 - **User rating:** 1304 (pinned Maia Elo 1304)
 - **FEN before the lead-in:** `r2q1rk1/pp2b2p/2n1p2p/2ppNp2/3P4/2P5/PP3PPP/RN1QR1K1 w - - 0 13`
 - **Lead-in:** 13. Qh5 cxd4 14. Qxh6
@@ -546,7 +546,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 4: allowed (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/171053976266
+- **Game:** https://flawchess.com/analysis?game_id=1691805&ply=77
 - **User rating:** 1228 (pinned Maia Elo 1418)
 - **FEN before the lead-in:** `1r4k1/8/2q3p1/Qppb1pNp/8/PP6/5PPP/4R1K1 b - - 0 38`
 - **Lead-in:** 38... Bxg2 39. Qa7 Qb7
@@ -557,7 +557,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 5: pure_miss (length 4, blunder at 2)
 
-- **Game:** https://lichess.org/0NZ2RwKI
+- **Game:** https://flawchess.com/analysis?game_id=3149603&ply=29
 - **User rating:** 1484 (pinned Maia Elo 1484)
 - **FEN before the lead-in:** `r4rk1/4qppp/p1np4/1p1p1p2/1P1Pn3/P3PN1P/2PN1PP1/2RQR1K1 b - - 0 14`
 - **Lead-in:** 14... a5 15. bxa5 Rxa5
@@ -569,7 +569,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 6: pure_miss (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/168153185584
+- **Game:** https://flawchess.com/analysis?game_id=2544347&ply=85
 - **User rating:** 876 (pinned Maia Elo 1303)
 - **FEN before the lead-in:** `8/kp6/p5PR/6Kp/8/8/P4r2/8 b - - 2 42`
 - **Lead-in:** 42... Rg2+ 43. Kxh5 Rxa2
@@ -580,7 +580,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 7: mixed (length 3, blunder at 2)
 
-- **Game:** https://lichess.org/M3ju8fq2
+- **Game:** https://flawchess.com/analysis?game_id=2537509&ply=34
 - **User rating:** 1757 (pinned Maia Elo 1556)
 - **FEN before the lead-in:** `r3r1k1/p1qn1pbp/5np1/1p1p2B1/2pp2BN/1PP1P2P/P4PP1/2RQ1RK1 w - - 0 17`
 - **Lead-in:** 17. cxd4 Qb6 18. Bxf6
@@ -593,7 +593,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 8: herring (length 3, no blunder)
 
-- **Game:** https://lichess.org/TyOreRrT
+- **Game:** https://flawchess.com/analysis?game_id=761656&ply=62
 - **User rating:** 1693 (pinned Maia Elo 1479)
 - **FEN before the lead-in:** `1kr5/1pp5/p7/8/2Pq3N/1Q6/PP4PP/5RK1 w - - 1 31`
 - **Lead-in:** 31. Kh1 Qxh4 32. h3
@@ -605,7 +605,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 9: allowed (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/148255729216
+- **Game:** https://flawchess.com/analysis?game_id=2177741&ply=20
 - **User rating:** 851 (pinned Maia Elo 1269)
 - **FEN before the lead-in:** `r3kbnr/pp3ppp/1q2p3/3p4/3n1B2/1P3B1P/P1P2PP1/RN1QK2R w KQkq - 0 10`
 - **Lead-in:** 10. O-O Nxf3+ 11. Qxf3
@@ -617,7 +617,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 10: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/145780476996
+- **Game:** https://flawchess.com/analysis?game_id=479978&ply=6
 - **User rating:** 1292 (pinned Maia Elo 1458)
 - **FEN before the lead-in:** `rnbqkbnr/pp2pppp/2p5/3p4/4PP2/8/PPPP2PP/RNBQKBNR w KQkq - 0 3`
 - **Lead-in:** 3. Nc3 e6 4. Nf3
@@ -630,7 +630,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 11: pure_miss (length 4, blunder at 1)
 
-- **Game:** https://lichess.org/8w6XShFr
+- **Game:** https://flawchess.com/analysis?game_id=2337764&ply=40
 - **User rating:** 1468 (pinned Maia Elo 1280)
 - **FEN before the lead-in:** `4r1k1/2p2pbp/pnqpr1p1/8/2P5/BPN5/P1Q2PPP/2RR2K1 w - - 2 20`
 - **Lead-in:** 20. Qb1 Re5 21. Nd5
@@ -641,7 +641,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 12: allowed (length 4, blunder at 1)
 
-- **Game:** https://lichess.org/UGQ0FFNC
+- **Game:** https://flawchess.com/analysis?game_id=3200128&ply=27
 - **User rating:** 1238 (pinned Maia Elo 1369)
 - **FEN before the lead-in:** `r2q1rk1/pp3ppp/2pp1b2/4p3/4P3/1P1P1Q1P/1PP2PP1/R1B2RK1 b - - 0 13`
 - **Lead-in:** 13... a5 14. Bd2 b5
@@ -652,7 +652,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 13: mixed (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/43341588839
+- **Game:** https://flawchess.com/analysis?game_id=2964619&ply=19
 - **User rating:** 1317 (pinned Maia Elo 1473)
 - **FEN before the lead-in:** `rn1q1rk1/ppp1b1pp/5pb1/3p4/8/1PN2N2/P1PPQPPP/R3KB1R b KQ - 7 9`
 - **Lead-in:** 9... Nc6 10. O-O-O Ba3+
@@ -665,7 +665,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 14: allowed (length 5, blunder at 5)
 
-- **Game:** https://www.chess.com/game/live/170038975290
+- **Game:** https://flawchess.com/analysis?game_id=2177270&ply=93
 - **User rating:** 988 (pinned Maia Elo 1410)
 - **FEN before the lead-in:** `8/5p1R/4p1p1/5k2/6pP/r7/6PK/8 b - - 1 46`
 - **Lead-in:** 46... f6 47. Rg7 e5
@@ -680,7 +680,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 15: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/139635861700
+- **Game:** https://flawchess.com/analysis?game_id=1546209&ply=49
 - **User rating:** 839 (pinned Maia Elo 1348)
 - **FEN before the lead-in:** `4r3/1nk5/1pp3pp/5p2/1P4n1/2N1B2P/P1P1KPP1/3R4 b - - 0 24`
 - **Lead-in:** 24... Nxe3 25. fxe3 f4
@@ -691,7 +691,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 16: allowed (length 3, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/81449421443
+- **Game:** https://flawchess.com/analysis?game_id=1560534&ply=40
 - **User rating:** 1100 (pinned Maia Elo 1292)
 - **FEN before the lead-in:** `4rrk1/p1p2ppp/8/3P1Q2/1b6/qP2B2P/P5P1/R6K w - - 1 20`
 - **Lead-in:** 20. Bd4 Re1+ 21. Rxe1
@@ -704,7 +704,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 17: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/94064476751
+- **Game:** https://flawchess.com/analysis?game_id=2933328&ply=5
 - **User rating:** 1106 (pinned Maia Elo 1481)
 - **FEN before the lead-in:** `rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2`
 - **Lead-in:** 2... c6 3. d4 cxd5
@@ -717,7 +717,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 18: allowed (length 3, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/94250553895
+- **Game:** https://flawchess.com/analysis?game_id=1462027&ply=15
 - **User rating:** 1171 (pinned Maia Elo 1542)
 - **FEN before the lead-in:** `r2qk1nr/p1p2ppp/2p1b3/3pP3/1b6/2N1P3/PPPB1PPP/R2QK1NR b KQkq - 1 7`
 - **Lead-in:** 7... Qg5 8. Qf3 Qxe5
@@ -730,7 +730,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 19: allowed (length 5, blunder at 1)
 
-- **Game:** https://lichess.org/11Mmynzr
+- **Game:** https://flawchess.com/analysis?game_id=3250649&ply=19
 - **User rating:** 1457 (pinned Maia Elo 1457)
 - **FEN before the lead-in:** `r1bq1rk1/ppp2ppp/3p4/2b1p1N1/2BnP1n1/3P2N1/PPP2PPP/R1BQ1RK1 b - - 6 9`
 - **Lead-in:** 9... h6 10. Nf3 Re8
@@ -741,7 +741,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 20: herring (length 4, no blunder)
 
-- **Game:** https://lichess.org/mngSm9zy
+- **Game:** https://flawchess.com/analysis?game_id=1674823&ply=55
 - **User rating:** 1755 (pinned Maia Elo 1554)
 - **FEN before the lead-in:** `3b1k2/p4ppp/4p3/4P3/5B2/4P2P/P3KPP1/8 b - - 3 27`
 - **Lead-in:** 27... Ke7 28. Kd3 Kd7
@@ -756,7 +756,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 1: herring (length 5, no blunder)
 
-- **Game:** https://www.chess.com/game/live/173880123542
+- **Game:** https://flawchess.com/analysis?game_id=3221749&ply=43
 - **User rating:** 1725 (pinned Maia Elo 1845)
 - **FEN before the lead-in:** `3r1rk1/2q2ppp/1p3n2/pPPp4/P7/3Q3P/N1P2PP1/RR4K1 b - - 0 21`
 - **Lead-in:** 21... Qxc5 22. Rc1 Ne4
@@ -770,7 +770,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 2: allowed (length 4, blunder at 3)
 
-- **Game:** https://lichess.org/uB76tv55
+- **Game:** https://flawchess.com/analysis?game_id=1602669&ply=8
 - **User rating:** 1776 (pinned Maia Elo 1776)
 - **FEN before the lead-in:** `rnbqkbnr/pp2pppp/8/3p4/8/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 4`
 - **Lead-in:** 4. d4 Nc6 5. c4
@@ -783,7 +783,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 3: allowed (length 3, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/112901958115
+- **Game:** https://flawchess.com/analysis?game_id=2152595&ply=26
 - **User rating:** 1805 (pinned Maia Elo 1908)
 - **FEN before the lead-in:** `r3kb1r/p3p1pp/2p2p2/5b2/3P4/2P2N2/P4PPP/R1B1K2R w KQkq - 0 13`
 - **Lead-in:** 13. Nh4 Be4 14. f3
@@ -796,7 +796,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 4: mixed (length 5, blunder at 5)
 
-- **Game:** https://www.chess.com/game/live/172881316698
+- **Game:** https://flawchess.com/analysis?game_id=2469050&ply=21
 - **User rating:** 1769 (pinned Maia Elo 1885)
 - **FEN before the lead-in:** `r2qk2r/5ppp/p1p2n2/2b1p3/6b1/2N5/PPPPNPPP/R1BQR2K b kq - 5 10`
 - **Lead-in:** 10... Bxf2 11. Rf1 Ba7
@@ -812,7 +812,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 5: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/175698556165
+- **Game:** https://flawchess.com/analysis?game_id=1654437&ply=1
 - **User rating:** 1723 (pinned Maia Elo 1928)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. c4 Nf6
@@ -824,7 +824,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 6: allowed (length 4, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/98340871937
+- **Game:** https://flawchess.com/analysis?game_id=1584706&ply=24
 - **User rating:** 1476 (pinned Maia Elo 1621)
 - **FEN before the lead-in:** `r3r1k1/pppq1pbp/2n1pnp1/2Pp2B1/3P3P/2NBPQ2/PP3PP1/R3K2R w KQ - 0 12`
 - **Lead-in:** 12. h5 Nxh5 13. g4
@@ -835,7 +835,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 7: mixed (length 4, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/184297978120
+- **Game:** https://flawchess.com/analysis?game_id=2998105&ply=69
 - **User rating:** 1462 (pinned Maia Elo 1612)
 - **FEN before the lead-in:** `4r3/3r4/1p3k2/6p1/pPP4p/P2N1P1P/5KP1/3R4 b - - 2 34`
 - **Lead-in:** 34... Kf5 35. Nb2 Rxd1
@@ -848,7 +848,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 8: herring (length 5, no blunder)
 
-- **Game:** https://lichess.org/smOtXDMT
+- **Game:** https://flawchess.com/analysis?game_id=2596959&ply=113
 - **User rating:** 2026 (pinned Maia Elo 1901)
 - **FEN before the lead-in:** `8/8/1K6/p3rRk1/6P1/R6P/P2r4/8 b - - 14 56`
 - **Lead-in:** 56... Rxf5 57. gxf5 Kxf5
@@ -862,7 +862,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 9: allowed (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/121886441529
+- **Game:** https://flawchess.com/analysis?game_id=570349&ply=43
 - **User rating:** 1742 (pinned Maia Elo 1861)
 - **FEN before the lead-in:** `3r2k1/4npp1/4p2p/nB6/NP6/P3PP2/5P1P/5RK1 b - - 0 21`
 - **Lead-in:** 21... Nb3 22. Bc4 Nd2
@@ -873,7 +873,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 10: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/96560829165
+- **Game:** https://flawchess.com/analysis?game_id=484229&ply=19
 - **User rating:** 1745 (pinned Maia Elo 1946)
 - **FEN before the lead-in:** `r2qk2r/pp2bppp/2n1bn2/2pp2B1/3P4/2N2NP1/PP2PPBP/R2Q1RK1 b kq - 6 9`
 - **Lead-in:** 9... c4 10. b3 Qa5
@@ -885,7 +885,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 11: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/173477845804
+- **Game:** https://flawchess.com/analysis?game_id=2543659&ply=12
 - **User rating:** 1452 (pinned Maia Elo 1606)
 - **FEN before the lead-in:** `r1bqk2r/pppnppbp/3p1np1/8/3PPP2/2N2N2/PPP3PP/R1BQKB1R w KQkq - 2 6`
 - **Lead-in:** 6. Bd3 e5 7. fxe5
@@ -897,7 +897,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 12: allowed (length 5, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/164348000000
+- **Game:** https://flawchess.com/analysis?game_id=2729278&ply=18
 - **User rating:** 1289 (pinned Maia Elo 1628)
 - **FEN before the lead-in:** `rn1qk2r/pp2ppbp/2p2np1/6B1/2P3b1/2NB1N2/PP3PPP/R2Q1RK1 w kq - 2 9`
 - **Lead-in:** 9. Re1 e6 10. Ne4
@@ -910,7 +910,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 13: pure_miss (length 5, blunder at 1)
 
-- **Game:** https://lichess.org/ULABWdAX
+- **Game:** https://flawchess.com/analysis?game_id=3051288&ply=26
 - **User rating:** 1792 (pinned Maia Elo 1792)
 - **FEN before the lead-in:** `r3k1nr/p1p1p1bp/5pp1/2q5/5B2/8/PPP2PPP/RN1Q1RK1 w kq - 0 13`
 - **Lead-in:** 13. Be3 Qb5 14. Bd4
@@ -921,7 +921,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 14: allowed (length 4, blunder at 1)
 
-- **Game:** https://lichess.org/jRLBeLys
+- **Game:** https://flawchess.com/analysis?game_id=2626184&ply=44
 - **User rating:** 1813 (pinned Maia Elo 1813)
 - **FEN before the lead-in:** `4rrk1/pb4bp/1p4p1/3q4/8/1PpB3Q/P2B2PP/R4RK1 w - - 0 22`
 - **Lead-in:** 22. Bc4 Qxc4 23. Rxf8+
@@ -932,7 +932,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 15: pure_miss (length 5, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/164972189972
+- **Game:** https://flawchess.com/analysis?game_id=2239389&ply=50
 - **User rating:** 1663 (pinned Maia Elo 1899)
 - **FEN before the lead-in:** `3N2k1/5ppp/4p3/p4b2/q7/B2p4/P4PPP/2R2RK1 w - - 0 25`
 - **Lead-in:** 25. Rc8 h6 26. Nxe6+
@@ -945,7 +945,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 16: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/165848895572
+- **Game:** https://flawchess.com/analysis?game_id=2116386&ply=28
 - **User rating:** 1804 (pinned Maia Elo 1973)
 - **FEN before the lead-in:** `r1b1kb1r/pp3qpp/2p2n2/8/3Np3/8/PPP1B1PP/R1BQ1RK1 w kq - 0 14`
 - **Lead-in:** 14. b3 Bc5 15. Bb2
@@ -956,7 +956,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 17: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/126785388339
+- **Game:** https://flawchess.com/analysis?game_id=1586440&ply=75
 - **User rating:** 1782 (pinned Maia Elo 1896)
 - **FEN before the lead-in:** `2R5/6p1/6kp/6p1/8/2P4P/2r3P1/6K1 b - - 3 37`
 - **Lead-in:** 37... Kh5 38. c4 g6
@@ -968,7 +968,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 18: pure_miss (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/183982396124
+- **Game:** https://flawchess.com/analysis?game_id=2919613&ply=14
 - **User rating:** 1167 (pinned Maia Elo 1606)
 - **FEN before the lead-in:** `r2qkbnr/pp1nppp1/2p4p/3pP3/3P4/3Q1N2/PPP2PPP/RNB1K2R w KQkq - 1 7`
 - **Lead-in:** 7. O-O Qc7 8. Nc3
@@ -979,7 +979,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 19: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/35294867745
+- **Game:** https://flawchess.com/analysis?game_id=553082&ply=51
 - **User rating:** 1414 (pinned Maia Elo 1716)
 - **FEN before the lead-in:** `2r5/pp3pkp/8/2pN1bp1/8/1P3PB1/PKPnr1PP/6R1 b - - 3 25`
 - **Lead-in:** 25... Be6 26. Ne7 Rc7
@@ -991,7 +991,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 20: allowed (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/12343607653
+- **Game:** https://flawchess.com/analysis?game_id=869520&ply=33
 - **User rating:** 1518 (pinned Maia Elo 1650)
 - **FEN before the lead-in:** `r3k1r1/1pp2p2/pbnp3p/5b2/2BPn2N/N7/PP3PPP/R1B1R1K1 b q - 4 16`
 - **Lead-in:** 16... Bh7 17. f3 Bxd4+
@@ -1004,7 +1004,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 1: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/45457231241
+- **Game:** https://flawchess.com/analysis?game_id=605393&ply=79
 - **User rating:** 2052 (pinned Maia Elo 2179)
 - **FEN before the lead-in:** `8/p5kp/4p1p1/8/4N3/1R2K1P1/PPr2P1P/3r4 b - - 23 39`
 - **Lead-in:** 39... Rf1 40. Rb7+ Kh6
@@ -1015,7 +1015,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 2: allowed (length 5, blunder at 1)
 
-- **Game:** https://lichess.org/QDq1Jq1Z
+- **Game:** https://flawchess.com/analysis?game_id=1898542&ply=84
 - **User rating:** 2123 (pinned Maia Elo 2060)
 - **FEN before the lead-in:** `8/8/1b6/pN4kp/P3B3/5KP1/1P6/8 w - - 2 42`
 - **Lead-in:** 42. Nd6 h4 43. Nf7+
@@ -1026,7 +1026,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 3: herring (length 5, no blunder)
 
-- **Game:** https://lichess.org/PMP7WJcu
+- **Game:** https://flawchess.com/analysis?game_id=764120&ply=57
 - **User rating:** 2418 (pinned Maia Elo 2310)
 - **FEN before the lead-in:** `6k1/p4p1p/4p1p1/1N2b3/2P5/1P3P2/P6P/7K b - - 0 28`
 - **Lead-in:** 28... a6 29. Kg2 axb5
@@ -1040,7 +1040,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 4: allowed (length 5, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/166250216734
+- **Game:** https://flawchess.com/analysis?game_id=499159&ply=81
 - **User rating:** 1947 (pinned Maia Elo 2111)
 - **FEN before the lead-in:** `8/2k5/2rpR3/6r1/1p6/1P6/2PR4/2K5 b - - 3 40`
 - **Lead-in:** 40... Rg1+ 41. Rd1 Rg2
@@ -1053,7 +1053,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 5: herring (length 5, no blunder)
 
-- **Game:** https://www.chess.com/game/live/63586738445
+- **Game:** https://flawchess.com/analysis?game_id=608029&ply=39
 - **User rating:** 2110 (pinned Maia Elo 2210)
 - **FEN before the lead-in:** `r2qr1k1/1p3ppp/p1pb4/2Np4/1P1P4/P3P1P1/5PKP/2RQ1R2 b - - 0 19`
 - **Lead-in:** 19... Bxc5 20. bxc5 Re7
@@ -1067,7 +1067,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 6: allowed (length 5, blunder at 2)
 
-- **Game:** https://lichess.org/scKFgksk
+- **Game:** https://flawchess.com/analysis?game_id=2841911&ply=20
 - **User rating:** 2201 (pinned Maia Elo 2201)
 - **FEN before the lead-in:** `r1bqr1k1/pp1n1ppp/2p1pn2/2Pp4/P2P4/B1P2N2/4PPPP/R2QKB1R w KQ - 2 10`
 - **Lead-in:** 10. Ne5 Nxe5 11. dxe5
@@ -1079,7 +1079,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 7: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/3655293329
+- **Game:** https://flawchess.com/analysis?game_id=2734898&ply=52
 - **User rating:** 2089 (pinned Maia Elo 2162)
 - **FEN before the lead-in:** `r3kbr1/1p5p/p2qp1p1/3n4/4Q3/4B3/PP3PPP/2R2RK1 w q - 6 26`
 - **Lead-in:** 26. Rfe1 Kf7 27. Bd4
@@ -1090,7 +1090,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 8: herring (length 3, no blunder)
 
-- **Game:** https://lichess.org/i55vY0qu
+- **Game:** https://flawchess.com/analysis?game_id=2341463&ply=52
 - **User rating:** 2359 (pinned Maia Elo 2359)
 - **FEN before the lead-in:** `rr4k1/5ppp/1q1p4/3Pp1bP/1B4P1/P2Q1P2/1P6/1K1R3R w - - 5 26`
 - **Lead-in:** 26. Rh2 Bf4 27. Rc2
@@ -1102,7 +1102,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 9: mixed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/141840195678
+- **Game:** https://flawchess.com/analysis?game_id=2836466&ply=34
 - **User rating:** 2276 (pinned Maia Elo 2281)
 - **FEN before the lead-in:** `1rb2k1r/2qn1pp1/p3p3/b1ppP2p/N4PQ1/2P1BR2/PP2B1PP/R5K1 w - - 0 17`
 - **Lead-in:** 17. Qg5 g6 18. Rg3
@@ -1115,7 +1115,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 10: mixed (length 4, blunder at 1)
 
-- **Game:** https://lichess.org/ZZ1JjkrL
+- **Game:** https://flawchess.com/analysis?game_id=2627024&ply=67
 - **User rating:** 2168 (pinned Maia Elo 2086)
 - **FEN before the lead-in:** `r3r1k1/ppR5/3p2qp/8/3bPP2/7Q/1P6/1K3R2 b - - 0 33`
 - **Lead-in:** 33... Rxe4 34. f5 Qg5
@@ -1127,7 +1127,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 11: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/48302965083
+- **Game:** https://flawchess.com/analysis?game_id=605798&ply=64
 - **User rating:** 1993 (pinned Maia Elo 2142)
 - **FEN before the lead-in:** `6k1/pp1R2pp/2p1p3/r7/2P5/1P5P/P5P1/6K1 w - - 2 32`
 - **Lead-in:** 32. a4 b6 33. Rc7
@@ -1138,7 +1138,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 12: allowed (length 5, blunder at 1)
 
-- **Game:** https://lichess.org/T0AHJ8hQ
+- **Game:** https://flawchess.com/analysis?game_id=1896548&ply=73
 - **User rating:** 2180 (pinned Maia Elo 2092)
 - **FEN before the lead-in:** `8/pp2k1n1/6P1/2p1KP2/8/8/PP6/8 b - - 2 36`
 - **Lead-in:** 36... Nxf5 37. Kxf5 b5
@@ -1149,7 +1149,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 13: pure_miss (length 3, blunder at 2)
 
-- **Game:** https://lichess.org/A70m2nbj
+- **Game:** https://flawchess.com/analysis?game_id=2653316&ply=68
 - **User rating:** 2332 (pinned Maia Elo 2332)
 - **FEN before the lead-in:** `2r5/8/1np2kp1/1p2p3/4Pb2/1PP3N1/6K1/3R1R2 w - - 0 34`
 - **Lead-in:** 34. Ne2 g5 35. Rd6+
@@ -1161,7 +1161,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 14: allowed (length 4, blunder at 3)
 
-- **Game:** https://lichess.org/MtNiMeUW
+- **Game:** https://flawchess.com/analysis?game_id=1887342&ply=16
 - **User rating:** 2126 (pinned Maia Elo 2126)
 - **FEN before the lead-in:** `rn1qk2r/pp2bppp/4pn2/3p1bB1/3P4/2N1PN2/PP3PPP/R2QKB1R w KQkq - 1 8`
 - **Lead-in:** 8. Bb5+ Nc6 9. Ne5
@@ -1174,7 +1174,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 15: allowed (length 5, blunder at 3)
 
-- **Game:** https://lichess.org/yeZbVhfs
+- **Game:** https://flawchess.com/analysis?game_id=2335848&ply=4
 - **User rating:** 2288 (pinned Maia Elo 2288)
 - **FEN before the lead-in:** `rnbqkbnr/ppp1pppp/8/3p4/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 2`
 - **Lead-in:** 2. g3 g6 3. Bg2
@@ -1187,7 +1187,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 16: herring (length 5, no blunder)
 
-- **Game:** https://www.chess.com/game/live/146285982628
+- **Game:** https://flawchess.com/analysis?game_id=1889807&ply=25
 - **User rating:** 2057 (pinned Maia Elo 2140)
 - **FEN before the lead-in:** `r1b2rk1/pp2qppp/1nn1p3/2pP4/2P5/2N2N2/PP2BPPP/R2Q1RK1 b - - 0 12`
 - **Lead-in:** 12... exd5 13. cxd5 Ne5
@@ -1201,7 +1201,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 17: mixed (length 5, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/116996417071
+- **Game:** https://flawchess.com/analysis?game_id=1887859&ply=33
 - **User rating:** 2009 (pinned Maia Elo 2106)
 - **FEN before the lead-in:** `rn1qr1k1/pp2p3/2p2ppB/4Nb1p/3P1Q1P/2P5/PP3PP1/R3K2R b KQ - 1 16`
 - **Lead-in:** 16... Qd5 17. c4 Qxg2
@@ -1214,7 +1214,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 18: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/168375313176
+- **Game:** https://flawchess.com/analysis?game_id=2155333&ply=28
 - **User rating:** 1986 (pinned Maia Elo 2137)
 - **FEN before the lead-in:** `r2q1rk1/pb3ppp/1p1p1n2/4p3/4n2N/2P3P1/PP3PBP/R1BQR1K1 w - - 0 14`
 - **Lead-in:** 14. Nf5 Nc5 15. Bxb7
@@ -1226,7 +1226,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 19: herring (length 4, no blunder)
 
-- **Game:** https://lichess.org/MQw2b2pr
+- **Game:** https://flawchess.com/analysis?game_id=1063589&ply=1
 - **User rating:** 2018 (pinned Maia Elo 2018)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. d4 Nf6
@@ -1239,7 +1239,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 20: allowed (length 3, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/170456664670
+- **Game:** https://flawchess.com/analysis?game_id=1588821&ply=44
 - **User rating:** 2119 (pinned Maia Elo 2216)
 - **FEN before the lead-in:** `5rk1/2r2ppp/p2qp3/np1p4/3P2P1/P1PQ1B1P/1P3P2/R3R1K1 w - - 1 22`
 - **Lead-in:** 22. a4 bxa4 23. Rxa4
@@ -1254,7 +1254,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 1: pure_miss (length 5, blunder at 4)
 
-- **Game:** https://www.chess.com/game/live/3069776409
+- **Game:** https://flawchess.com/analysis?game_id=642126&ply=50
 - **User rating:** 2578 (pinned Maia Elo 2535)
 - **FEN before the lead-in:** `r3q3/1QRnrppk/3R3p/p2p4/3P1B2/1P4P1/P4P1P/6K1 w - - 4 25`
 - **Lead-in:** 25. Qxd5 Re1+ 26. Kg2
@@ -1268,7 +1268,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 2: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/139254646919
+- **Game:** https://flawchess.com/analysis?game_id=2875334&ply=10
 - **User rating:** 2651 (pinned Maia Elo 2593)
 - **FEN before the lead-in:** `r1bqkb1r/pppn1ppp/3p1n2/4p3/3PP3/2N2N2/PPP2PPP/R1BQKB1R w KQkq - 4 5`
 - **Lead-in:** 5. g4 exd4 6. Nxd4
@@ -1280,7 +1280,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 3: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/2278175040
+- **Game:** https://flawchess.com/analysis?game_id=654640&ply=18
 - **User rating:** 2482 (pinned Maia Elo 2432)
 - **FEN before the lead-in:** `r1bqk2r/1p1nbppp/p1n1p3/2ppP3/3P1P2/2N1BN2/PPPQ2PP/R3KB1R w KQkq - 0 9`
 - **Lead-in:** 9. Qf2 b6 10. O-O-O
@@ -1292,7 +1292,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 4: herring (length 4, no blunder)
 
-- **Game:** https://lichess.org/tHaa3Un7
+- **Game:** https://flawchess.com/analysis?game_id=1506644&ply=1
 - **User rating:** 2904 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
 - **Lead-in:** 1. d4 Nf6
@@ -1305,7 +1305,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 5: allowed (length 5, blunder at 2)
 
-- **Game:** https://lichess.org/48FWFxdN
+- **Game:** https://flawchess.com/analysis?game_id=1513671&ply=83
 - **User rating:** 2725 (pinned Maia Elo 2585)
 - **FEN before the lead-in:** `R7/5pkp/3P2p1/1p6/8/6PB/p5KP/3r4 b - - 3 41`
 - **Lead-in:** 41... Ra1 42. d7 Rd1
@@ -1317,7 +1317,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 6: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/165760503496
+- **Game:** https://flawchess.com/analysis?game_id=1536766&ply=70
 - **User rating:** 3189 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `3r4/4bk1p/p3p3/5p2/P1q2P2/1pPP2rP/1P1R1B2/2K1R3 w - - 0 35`
 - **Lead-in:** 35. dxc4 Rxd2 36. Kxd2
@@ -1329,7 +1329,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 7: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/84462890627
+- **Game:** https://flawchess.com/analysis?game_id=1515853&ply=13
 - **User rating:** 2837 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `rn1qkbnr/pp3ppp/2p1p3/3p4/4P3/2NP1Q1P/PPP2PP1/R1B1KB1R b KQkq - 0 6`
 - **Lead-in:** 6... Bb4 7. Bd2 d4
@@ -1341,7 +1341,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 8: allowed (length 5, blunder at 3)
 
-- **Game:** https://lichess.org/SO8cUh1w
+- **Game:** https://flawchess.com/analysis?game_id=1526033&ply=51
 - **User rating:** 2449 (pinned Maia Elo 2449)
 - **FEN before the lead-in:** `1r2qr2/p3kp1Q/2p1p3/2pp4/5N2/2PP1R2/Pb4PP/5R1K b - - 2 25`
 - **Lead-in:** 25... Kd6 26. Nxe6 Qxe6
@@ -1354,7 +1354,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 9: allowed (length 5, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/105110488005
+- **Game:** https://flawchess.com/analysis?game_id=1523069&ply=130
 - **User rating:** 2878 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `8/8/8/1R6/7r/3KB2k/8/8 w - - 18 65`
 - **Lead-in:** 65. Ke2 Rg4 66. Bf2
@@ -1365,7 +1365,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 10: herring (length 3, no blunder)
 
-- **Game:** https://www.chess.com/game/live/166712769260
+- **Game:** https://flawchess.com/analysis?game_id=1537679&ply=34
 - **User rating:** 3177 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `r3k2r/pp3p1p/2p1p3/q3P1p1/2P3n1/3B1bB1/PP2K2P/R2Q3R w kq - 0 17`
 - **Lead-in:** 17. Kxf3 Nxe5+ 18. Bxe5
@@ -1377,7 +1377,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 11: allowed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/86895006623
+- **Game:** https://flawchess.com/analysis?game_id=1516450&ply=56
 - **User rating:** 2842 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `1nr3k1/4bpp1/p1q1p2p/5b1P/1p2p3/1Q2B1N1/P3BPP1/3R2K1 w - - 1 28`
 - **Lead-in:** 28. Nxf5 exf5 29. Rc1
@@ -1389,7 +1389,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 12: allowed (length 3, blunder at 3)
 
-- **Game:** https://www.chess.com/game/live/143722145680
+- **Game:** https://flawchess.com/analysis?game_id=616869&ply=38
 - **User rating:** 2370 (pinned Maia Elo 2574)
 - **FEN before the lead-in:** `1r1q1rk1/2p2pp1/p2bb2p/2pNR3/8/1P1B1Q1P/P1P2PP1/R5K1 w - - 1 19`
 - **Lead-in:** 19. Rh5 g6 20. Nf6+
@@ -1402,7 +1402,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 13: mixed (length 3, blunder at 1)
 
-- **Game:** https://www.chess.com/game/live/137413440298
+- **Game:** https://flawchess.com/analysis?game_id=645626&ply=62
 - **User rating:** 2621 (pinned Maia Elo 2574)
 - **FEN before the lead-in:** `5rk1/pb3pp1/1p3q2/2n2NQ1/8/6P1/5P1P/3RR1K1 w - - 5 31`
 - **Lead-in:** 31. Qh5 g6 32. Qg4
@@ -1414,7 +1414,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 14: allowed (length 5, blunder at 2)
 
-- **Game:** https://lichess.org/2joxkwbc
+- **Game:** https://flawchess.com/analysis?game_id=1523636&ply=100
 - **User rating:** 2449 (pinned Maia Elo 2449)
 - **FEN before the lead-in:** `2r5/2P2p2/6p1/7p/6kP/2R3P1/8/2K5 w - - 1 50`
 - **Lead-in:** 50. Kb2 f5 51. Kb3
@@ -1426,7 +1426,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 15: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/142673664126
+- **Game:** https://flawchess.com/analysis?game_id=616610&ply=21
 - **User rating:** 2503 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `rn2k2r/pppb1pb1/5qpp/3Np3/2B1P3/8/PPP1QPPP/3RK1NR b Kkq - 1 10`
 - **Lead-in:** 10... Qd8 11. Qf3 O-O
@@ -1439,7 +1439,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 16: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/112348824103
+- **Game:** https://flawchess.com/analysis?game_id=1525381&ply=37
 - **User rating:** 2996 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `2rqr1k1/pp1n1pbp/2nP2p1/3Np3/4p3/2P4P/PP3PP1/R1BQRBK1 b - - 2 18`
 - **Lead-in:** 18... Nc5 19. Nc7 Rxc7
@@ -1452,7 +1452,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 17: mixed (length 3, blunder at 2)
 
-- **Game:** https://www.chess.com/game/live/3610968136
+- **Game:** https://flawchess.com/analysis?game_id=642763&ply=30
 - **User rating:** 2600 (pinned Maia Elo 2560)
 - **FEN before the lead-in:** `r2qr1k1/2p2pp1/bp1p1n1p/p1bpn3/2P1P3/PPN4P/2B1NPP1/1RBQ1R1K w - - 0 15`
 - **Lead-in:** 15. exd5 Nfg4 16. Ne4
@@ -1465,7 +1465,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 18: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/85965622551
+- **Game:** https://flawchess.com/analysis?game_id=1516167&ply=49
 - **User rating:** 2803 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `4r1k1/1pq1r2p/2p1bppb/p2n4/P1NPBp2/2PQ3P/1P2RPPB/4R1K1 b - - 9 24`
 - **Lead-in:** 24... Kg7 25. Bf3 Bg5
@@ -1478,7 +1478,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 19: allowed (length 4, blunder at 1)
 
-- **Game:** https://lichess.org/sOkW0kDD
+- **Game:** https://flawchess.com/analysis?game_id=640610&ply=51
 - **User rating:** 2636 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `5rk1/1q5p/2p2rp1/1pQ4n/2p1P3/2N4P/1PR2PB1/3R2K1 b - - 1 25`
 - **Lead-in:** 25... Nf4 26. e5 Re6
@@ -1489,7 +1489,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 
 #### Window 20: herring (length 4, no blunder)
 
-- **Game:** https://www.chess.com/game/live/98895336663
+- **Game:** https://flawchess.com/analysis?game_id=1519984&ply=49
 - **User rating:** 2864 (pinned Maia Elo 2600)
 - **FEN before the lead-in:** `r2R2k1/pp2rpbp/1np3p1/N7/2P5/P5B1/1PK2PPP/3R4 b - - 6 24`
 - **Lead-in:** 24... Re8 25. Rxa8 Rxa8

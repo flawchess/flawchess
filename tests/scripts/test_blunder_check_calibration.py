@@ -60,6 +60,7 @@ from scripts.blunder_check.spot_check import (
     SpotWindow,
     SpotWindowDetail,
     WindowShape,
+    analysis_link,
     draw_window_shape,
     fetch_window_details,
     pick_windows,
@@ -790,7 +791,7 @@ class TestCliMaiaLifecycle:
 SHAPE_DRAWS = 20_000
 SHARE_TOLERANCE = 0.01
 SPOT_PER_BUCKET = 12
-PUBLIC_LINK = "https://lichess.org/abc12345"
+PUBLIC_LINK = "https://flawchess.com/analysis?game_id=1&ply=3"
 MISSED_BEST_UCI = "d2d3"
 REPLY_UCI = "b7b5"
 BEST_RANK = 1
@@ -912,6 +913,14 @@ def _detail(
     return detail
 
 
+class TestAnalysisLink:
+    def test_points_at_the_board_before_the_first_judged_move(self) -> None:
+        assert analysis_link(42, 10) == "https://flawchess.com/analysis?game_id=42&ply=9"
+
+    def test_first_move_of_the_game_omits_ply(self) -> None:
+        assert analysis_link(42, 0) == "https://flawchess.com/analysis?game_id=42"
+
+
 class TestRenderSpotCheck:
     def test_allowed_window_prints_link_lead_in_judged_moves_answer_and_refutation(self) -> None:
         blunder = _blunder(case="allowed", refutation=(0.31, 2))
@@ -938,12 +947,9 @@ class TestRenderSpotCheck:
         assert "**Missed best move:** d3 (Maia probability 0.500, rank 1)" in text_out
         assert "**Refutation:**" not in text_out
 
-    def test_herring_says_all_safe_and_missing_link_is_stated(self) -> None:
-        text_out = render_spot_check(
-            [_detail(None, link="no public link")], SpotCheckParams(PARAMS, 20)
-        )
+    def test_herring_says_all_safe(self) -> None:
+        text_out = render_spot_check([_detail(None)], SpotCheckParams(PARAMS, 20))
         assert "all safe" in text_out
-        assert "no public link" in text_out
         assert "blunder 5." not in text_out
 
 
@@ -954,10 +960,6 @@ class TestFetchWindowDetails:
     ) -> None:
         game_id = await make_game()
         async with session_factory() as session:
-            await session.execute(
-                text("UPDATE games SET platform_url = :url WHERE id = :id"),
-                {"url": PUBLIC_LINK, "id": game_id},
-            )
             for ply, best, pv in ((8, MISSED_BEST_UCI, None), (9, None, f"{REPLY_UCI} a2a3")):
                 await session.execute(
                     text(
@@ -980,7 +982,8 @@ class TestFetchWindowDetails:
         )
         [detail] = await fetch_window_details(session_factory, [window])
 
-        assert detail.link == PUBLIC_LINK
+        # The link skips the lead-in: the board before the first judged move (ply 4) is ply=3.
+        assert detail.link == f"https://flawchess.com/analysis?game_id={game_id}&ply=3"
         assert detail.user_rating == 1500
         assert detail.lead_in == "1... e5 2. Nf3 Nc6"
         assert [(j.move, j.reply) for j in detail.judged] == [
@@ -1017,7 +1020,10 @@ class TestFetchWindowDetails:
         window = SpotWindow(BUCKET, WindowShape(1, 1), game_id, 1500.0, (), blunder)
         [detail] = await fetch_window_details(session_factory, [window])
         assert detail.missed_best == "e2e4 (illegal)"
-        assert detail.link == "no public link"
+        # No Good moves before the blunder: the link opens the board before the blunder itself.
+        assert detail.link == (
+            f"https://flawchess.com/analysis?game_id={game_id}&ply={USER_BLUNDER_PLY - 1}"
+        )
 
 
 class TestRecommendedConstants:
