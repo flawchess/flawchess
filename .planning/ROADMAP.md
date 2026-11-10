@@ -263,8 +263,32 @@ SEED-261108-dk0.
   cross-mode cooldown, Points and Score % leaderboards, guests and public launch.
 
 **Depends on**: Phase 248 (refutation stats backfilled on prod, constants calibrated)
-**Requirements**: TBD (coverage contract = CONTEXT decisions)
-**Plans:** 0 plans
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-19)
+**Plans:** 9 plans
+
+Plans:
+**Wave 1**
+- [ ] 249-01-PLAN.md — Selection rules in the app: port the Phase 248 math, pure candidate judging and hazard slot assignment (wave 1)
+- [ ] 249-02-PLAN.md — Persistence (three own tables), backend beta gate, GET open session, candidate loaders and served sets (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 249-03-PLAN.md — POST /sessions: own-first composition, rating-matched foreign fallback, no repeats, resume and race (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 249-04-PLAN.md — Drill API: window start, server-graded answers, forfeits, server timer, key secrecy, finish with Score % (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 249-05-PLAN.md — Better-move submit and solution API (false alarm withholds the blunder, foreign game info) (wave 4)
+- [ ] 249-06-PLAN.md — Frontend: beta-only tab and start screen, wire types, API client, session hook, pure drill state machine (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 249-07-PLAN.md — Frontend: drill board loop, 15 s timer, points and forfeits with sounds, reload resume, end screen with Score % (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 249-08-PLAN.md — Frontend: better-move step and solution screens (own vs foreign copy) (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 249-09-PLAN.md — Agent-run browser UAT, owner go-ahead, pre-merge gate, changelog, squash-merge, deploy, prod beta check (orchestrator-inline, wave 7)
 
 ### Phase 250: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
