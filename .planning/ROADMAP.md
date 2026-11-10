@@ -244,6 +244,39 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion and 247 coverage)*
 - [x] 248-08-PLAN.md — Prod calibration report and spot-check, committed (orchestrator-inline, wave 6)
 
+### Phase 249: Blunder-Check Playable MVP (SEED-261108-dk0)
+
+**Goal**: A playable blunder-check drill for beta users: select face-palm windows from the user's own games with the
+Phase 248 constants, serve 6-window sessions, and run the drill (lead-in replay, arrow prompt "Safe / Blunder", 15 s
+timer, points and forfeits, better-move chain, solution screen) on a beta-only Train tab, persisting every window and
+answer so Phase 250 can build schedule, reviews and leaderboards on it. Locked decisions in 249-CONTEXT.md and
+SEED-261108-dk0.
+
+- **Selection:** hazard model (h = 0.265, L uniform 3-5), Good bar on every judged user move, eval band [0.10, 0.90]
+  on pre-move ES, findability by case (allowed: refutation R = 0.3; pure miss: best move X' = 0.2; mixed: either).
+  Missed punishments included with no session cap. Herrings from L Good in-band user moves. Own games first, then
+  similarly rated users' windows when own supply runs out.
+- **Drill:** 3-ply lead-in, ask before the move and before the reply, 1 point per correct "safe", 3 for a caught
+  blunder plus 2 for finding the better move, false alarm ends the window, a missed blunder or a timeout forfeits the
+  window's safe points.
+- **Out of scope (Phase 250):** shared Train schedule and per-mode counts, streak, spaced-repetition reviews,
+  cross-mode cooldown, Points and Score % leaderboards, guests and public launch.
+
+**Depends on**: Phase 248 (refutation stats backfilled on prod, constants calibrated)
+**Requirements**: TBD (coverage contract = CONTEXT decisions)
+**Plans:** 0 plans
+
+### Phase 250: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
+
+**Goal**: Turn the Phase 249 MVP into a full Train mode: shared schedule and reminders with a per-mode session size
+(0 allowed), session streak across both modes, spaced-repetition reviews of missed-blunder windows (re-drawn,
+unlabelled, 4 days), a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
+and the launch decision for guests and non-beta users. To be scoped after the owner has played the MVP.
+
+**Depends on**: Phase 249
+**Requirements**: TBD
+**Plans:** 0 plans
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
