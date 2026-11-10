@@ -53,9 +53,9 @@
       "dependencyDashboardApproval": true
     },
     {
+      "description": "onnxruntime-web is frozen by owner decision (2026-09-20, re-confirmed 2026-11-10 when PR #467 was closed): the vendored Maia wasm runtime is tuned for iOS (patched reservation maximum in the vendored .mjs files, Cloudflare edge cache, COEP headers). A bump means re-vendoring plus scripts/bench_maia_ort_wasm.mjs and device UAT, so Renovate never proposes it.",
       "matchPackageNames": ["onnxruntime-web"],
-      "groupName": "onnxruntime-web (run scripts/bench_maia_ort_wasm.mjs before merging — Phase 219)",
-      "automerge": false
+      "enabled": false
     },
     {
       "description": "Python is held at 3.14: the pinned onnxruntime 1.29.0 ships only cp314 wheels (>=1.30 segfaults on the Maia model, see the next rule). Lift this cap together with the onnxruntime bump.",
