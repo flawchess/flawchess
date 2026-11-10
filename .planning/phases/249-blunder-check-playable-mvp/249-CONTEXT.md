@@ -18,7 +18,7 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
 3. Session API: start a session, fetch the next window, submit answers, finish.
 4. Drill UI on a beta-only Train tab: start screen, lead-in replay, arrow prompt, timer, points and forfeits,
    better-move chain, solution screen, session end screen.
-5. Umami telemetry for tuning (session start/finish, window outcome, abandon after a forfeit).
+5. Tuning metrics come from the persisted tables (D-19), not Umami.
 
 </domain>
 
@@ -93,6 +93,20 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
 - **D-16: Answer key is server-side.** The client gets the window (positions, lead-in, the judged moves as arrows)
   but not which move is the blunder; answers are graded by the server so the key cannot be read from the payload.
 
+### Post-research resolutions (owner, 2026-11-10)
+- **D-17: Better-move grading reuses the personalized-puzzle contract.** After a correct "Blunder" the server sends
+  the key (Stockfish best move at the blunder ply) and the vetted alternatives; the browser engine grades any other
+  move and the server resolves the tier as `_resolve_grade` does. The same move set counts for allowed, pure-miss and
+  mixed blunders. Points are computed by the server only.
+- **D-18: Timing is server-side.** The 15 s timer runs from the server's prompt timestamp; a reload mid-prompt keeps
+  the original timestamp (a slow reload usually counts as a timeout). Late answers past the ceiling are graded as
+  timeouts by the server.
+- **D-19: No Umami events.** Per frontend/CLAUDE.md, facts the DB holds are not sent to Umami: session start/finish,
+  window outcomes and "abandoned after a forfeit" are computed from the D-15 tables.
+- Orchestrator defaults (not owner decisions): selection does not require `missed_pv_lines` (27% of engine-game user
+  blunders on dev lack it); session selection runs on the fly per session start (prod probe: about 350-450 ms warm
+  for the heaviest beta user, see 249-RESEARCH "Prod Latency Probe").
+
 ### Claude's Discretion
 - Selection mechanics (on-the-fly SQL per session vs a precomputed window pool like `herring_pool`), as long as a
   session starts fast (target well under 1 s server time) and D-03 holds.
@@ -160,6 +174,7 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
 - Points and Score % leaderboards with medals and a minimum window count.
 - Guests and non-beta launch; replacing the lichess warm-up puzzles with similarly rated users' flaws.
 - A `MAX_MISS_SHARE` cap or the low-rating capture/check/mate rule, only if telemetry or the spot-check calls for it.
+- Herrings made of opening book moves near the game start may be too easy; watch in play-testing (research Q5).
 
 </deferred>
 
