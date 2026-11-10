@@ -5,8 +5,8 @@ current_phase: 248
 current_phase_name: Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)
 status: executing
 stopped_at: Completed 247-05-PLAN.md
-last_updated: "2026-11-09T19:24:38.913Z"
-state_head: 9f55213cf975a7f59766c5074187cc1b9f41276b
+last_updated: "2026-11-10T04:57:33.592Z"
+state_head: 1a3841de41bdd1f3a614c8da29b1d7ef0248743f
 progress:
   total_phases: 2
   completed_phases: 63
@@ -1098,6 +1098,7 @@ None active.
 | 261105-apc | Analysis Copy PGN in the PGN/FEN dropdown | 2026-11-05 | 6088226c7 | [261105-apc-in-the-analysis-page-add-a-copy-pgn-feat](./quick/261105-apc-in-the-analysis-page-add-a-copy-pgn-feat/) |
 | 261106-peq | Fix the crash and filter the CSP reports | 2026-11-06 | 053622ae7 | [261106-peq-fix-the-crash-and-filter-the-csp-reports](./quick/261106-peq-fix-the-crash-and-filter-the-csp-reports/) |
 | 261107-dnz | Stop the installed PWA showing outdated builds | 2026-11-07 | afa8867b0 | [261107-dnz-stop-the-installed-pwa-showing-outdated-](./quick/261107-dnz-stop-the-installed-pwa-showing-outdated-/) |
+| 261110-87i | Arrow-oddness unselected baseline in blunder-check report | 2026-11-10 | 1a3841de4 | [261110-87i-arrow-oddness-unselected-baseline-in-blu](./quick/261110-87i-arrow-oddness-unselected-baseline-in-blu/) |
 
 ## Deferred Items
 
