@@ -550,3 +550,47 @@ describe('stale-build diagnostic event (quick 261107-dnz)', () => {
     }
   });
 });
+
+describe('sentryBeforeSend hidden-tab engine failures (FLAWCHESS-C2/C3/C4)', () => {
+  const ENGINE_MESSAGES = [
+    'Stockfish engine worker: worker load failure',
+    'Stockfish grading worker: worker load failure',
+    'Stockfish worker pool: worker load failure',
+    'Maia worker: worker load failure',
+    'FlawChess engine: a provider failed to become ready',
+  ];
+
+  function hide(): void {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+  }
+
+  it.each(ENGINE_MESSAGES)('drops "%s" while the tab is hidden', async (message) => {
+    const { sentryBeforeSend } = await import('@/instrument');
+    hide();
+
+    expect(
+      sentryBeforeSend(makeEvent() as never, { originalException: new Error(message) } as never),
+    ).toBeNull();
+  });
+
+  it.each(ENGINE_MESSAGES)('keeps "%s" while the tab is visible', async (message) => {
+    const { sentryBeforeSend } = await import('@/instrument');
+    const event = makeEvent();
+
+    expect(sentryBeforeSend(event as never, { originalException: new Error(message) } as never)).toBe(
+      event,
+    );
+  });
+
+  it('keeps an unrelated error while the tab is hidden', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+    hide();
+    const event = makeEvent();
+
+    expect(
+      sentryBeforeSend(event as never, {
+        originalException: new Error('Maia worker: page was killed while Maia was active'),
+      } as never),
+    ).toBe(event);
+  });
+});

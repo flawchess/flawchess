@@ -41,6 +41,8 @@ import sqlalchemy as sa
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.services.maia_fakes import assert_refutation_lane_state
+
 # ─── Module-level test constants ──────────────────────────────────────────────
 
 _TEST_USER_ID: int = 99200  # unique to this module to avoid FK conflicts
@@ -2957,6 +2959,8 @@ class TestBestMoveBackfill:
                 assert flaw.maia_top_prob is not None
                 assert flaw.maia_effective_moves is not None
             assert stamp is not None, "a completed Maia pass must stamp the game"
+            scored = await assert_refutation_lane_state(full_drain_session_maker, game_id)
+            assert scored >= 1, "the seed must hold a scored user-side blunder (ply 6)"
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
@@ -3030,6 +3034,9 @@ class TestBestMoveBackfill:
                 ):
                     assert getattr(flaw, col) is None, col
             assert stamp is None, "a Maia-absent apply must never stamp"
+            await assert_refutation_lane_state(
+                full_drain_session_maker, game_id, expect_stamped=False
+            )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 

@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.main import app
 from app.services.eval_queue_service import ClaimedJob
+from tests.services.maia_fakes import assert_refutation_lane_state
 
 # ─── URL constants (no magic numbers) ─────────────────────────────────────────
 
@@ -4493,6 +4494,9 @@ class TestAtomicSubmitEndpoint:
                 assert flaw.maia_top_prob is not None
                 assert flaw.maia_effective_moves is not None
             assert stamp is not None, "a completed Maia pass must stamp the game"
+            # Phase 248 (D-07): the same pass writes the refutation pair and its stamp.
+            scored = await assert_refutation_lane_state(eval_worker_session_maker, game_id)
+            assert scored >= 1, "the seed holds a user-side blunder (white ply 2, reply b8c6)"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
@@ -4527,6 +4531,9 @@ class TestAtomicSubmitEndpoint:
                 for col in _MAIA_FLAW_COLUMNS:
                     assert getattr(flaw, col) is None, col
             assert stamp is None, "a Maia-absent submit must never stamp"
+            await assert_refutation_lane_state(
+                eval_worker_session_maker, game_id, expect_stamped=False
+            )
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
@@ -5003,6 +5010,9 @@ class TestFlawBlobSubmitEndpoint:
             assert before["maia_second_prob"] is None and before["maia_second_rank"] is None
             assert before["maia_best_prob"] is not None
             assert stamp_before is not None
+            # Phase 248: the seed's user-side blunder (white ply 2) has its reply as the
+            # ply-3 pv token (best_move is NULL there), so the pair is scored.
+            assert await assert_refutation_lane_state(eval_worker_session_maker, game_id) == 1
 
             resp = await self._lease_and_submit_blobs(game_id, missed_node0_second_uci="b1c3")
             assert resp.status_code == 200, f"Submit failed: {resp.status_code} {resp.text}"
@@ -5014,6 +5024,8 @@ class TestFlawBlobSubmitEndpoint:
             assert after["maia_second_prob"] is not None
             assert after["maia_second_rank"] is not None
             assert stamp_after is not None, "the game must stay stamped after the re-score"
+            # The blob re-score also re-writes the pair and keeps both stamps (D-07).
+            assert await assert_refutation_lane_state(eval_worker_session_maker, game_id) == 1
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 

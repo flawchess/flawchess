@@ -27,7 +27,7 @@ from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
-from app.repositories.game_flaws_repository import MAIA_FLAW_COLUMNS
+from app.repositories.game_flaws_repository import MAIA_FLAW_COLUMNS, MAIA_REFUTATION_COLUMNS
 from app.services import maia_engine, maia_flaw_scoring
 from scripts import backfill_maia_flaws as backfill
 from tests.services.maia_fakes import fake_full_policy
@@ -41,6 +41,19 @@ _FLAW_PLIES: tuple[int, ...] = (2, 5, 8)
 _BEST: dict[int, str] = {2: "d2d4", 5: "g8f6", 8: "d2d3"}
 _SECOND: dict[int, str] = {2: "b1c3", 5: "d7d6", 8: "c2c3"}
 _RUN_STAMP = "20261108T000000Z"
+# Stockfish's best reply after the white flaw at ply 2 (black, ply 3) and after black's ply 5 (white, ply 6).
+_REPLY_BEST: dict[int, str] = {3: "b8c6", 6: "b1c3"}
+# Distinct, non-NULL stand-ins for already-written base values (refutation mode must not touch them).
+_SEEDED_BASE: dict[str, float | int] = {
+    "maia_played_prob": 0.11,
+    "maia_played_rank": 3,
+    "maia_best_prob": 0.22,
+    "maia_best_rank": 1,
+    "maia_second_prob": 0.05,
+    "maia_second_rank": 2,
+    "maia_top_prob": 0.33,
+    "maia_effective_moves": 4.5,
+}
 
 MakeGame = Callable[..., Awaitable[int]]
 
@@ -95,8 +108,14 @@ async def make_game(
         *,
         flaw_plies: tuple[int, ...] = _FLAW_PLIES,
         fen_override: dict[int, str] | None = None,
+        user_color: str = "white",
+        severities: dict[int, int] | None = None,
+        best: dict[int, str] | None = None,
+        base_stamped: bool = False,
+        seed_base: bool = False,
     ) -> int:
         fens = _board_fens(_PGN)
+        best_by_ply = {**_BEST, **(best or {})}
         async with session_factory() as session:
             game = Game(
                 user_id=_TEST_USER_ID,
@@ -104,7 +123,7 @@ async def make_game(
                 platform_game_id=f"backfill-maia-{uuid.uuid4().hex}",
                 pgn=_PGN,
                 result="1-0",
-                user_color="white",
+                user_color=user_color,
                 white_rating=1500,
                 black_rating=1600,
                 time_control_str="300+0",
@@ -114,6 +133,7 @@ async def make_game(
                 increment_seconds=0.0,
                 rated=True,
                 is_computer_game=False,
+                maia_flaws_completed_at=func.now() if base_stamped else None,
             )
             session.add(game)
             await session.flush()
@@ -133,7 +153,7 @@ async def make_game(
                         black_hash=ply,
                         endgame_class=None,
                         move_san=None,
-                        best_move=_BEST.get(ply),
+                        best_move=best_by_ply.get(ply),
                     )
                 )
             await session.flush()
@@ -143,7 +163,7 @@ async def make_game(
                         user_id=_TEST_USER_ID,
                         game_id=game_id,
                         ply=ply,
-                        severity=2,
+                        severity=(severities or {}).get(ply, 2),
                         tempo=None,
                         phase=1,
                         is_miss=False,
@@ -152,6 +172,7 @@ async def make_game(
                         is_squandered=False,
                         fen=(fen_override or {}).get(ply, fens[ply]),
                         missed_pv_lines=[{"su": _SECOND[ply]}] if ply in _SECOND else None,
+                        **(_SEEDED_BASE if seed_base else {}),
                     )
                 )
             await session.commit()
@@ -175,6 +196,7 @@ async def _run(
     num_shards: int = 1,
     limit: int | None = None,
     dry_run: bool = False,
+    mode: backfill.BackfillMode = "full",
 ) -> backfill.ShardReport:
     return await backfill.run_shard(
         db="dev",
@@ -188,6 +210,7 @@ async def _run(
         report_dir=tmp_path,
         run_stamp=_RUN_STAMP,
         session_maker=maker,
+        mode=mode,
     )
 
 
@@ -234,9 +257,62 @@ async def test_run_shard_scores_and_stamps_user_games(
     assert await _stamp(session_factory, zero_flaw_game) is None
     assert report.games_selected == 3
     assert report.games_stamped == 3
-    saved = json.loads((tmp_path / f"dev-{_RUN_STAMP}-shard0.json").read_text())
+    saved = json.loads((tmp_path / f"dev-full-{_RUN_STAMP}-shard0.json").read_text())
     assert saved["games_stamped"] == 3
     assert saved["flaws_scored"] == 9
+
+
+async def _refutation_values(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, dict[str, Any]]:
+    async with maker() as session:
+        flaws = (
+            (await session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+            .scalars()
+            .all()
+        )
+    return {f.ply: {c: getattr(f, c) for c in MAIA_REFUTATION_COLUMNS} for f in flaws}
+
+
+async def _refutation_stamp(maker: async_sessionmaker[AsyncSession], game_id: int) -> Any:
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(Game.maia_refutation_completed_at).where(Game.id == game_id)
+            )
+        ).scalar_one()
+
+
+def _no_pair() -> dict[str, None]:
+    return {c: None for c in MAIA_REFUTATION_COLUMNS}
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_scores_and_stamps_only_the_pair(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """Tracer (D-10): a base-stamped game gets exactly its user-blunder pair and the new stamp."""
+    game_id = await make_game(
+        flaw_plies=(2, 5), best=_REPLY_BEST, base_stamped=True, seed_base=True
+    )
+    base_stamp_before = await _stamp(session_factory, game_id)
+    base_before = await _flaw_values(session_factory, game_id)
+    assert all(v is not None for row in base_before.values() for v in row.values())
+
+    report = await _run(session_factory, tmp_path, mode="refutation")
+
+    assert report.games_stamped == 1
+    pairs = await _refutation_values(session_factory, game_id)
+    assert pairs[2]["maia_refutation_prob"] is not None
+    assert pairs[2]["maia_refutation_rank"] is not None
+    assert pairs[5] == _no_pair()
+    assert await _flaw_values(session_factory, game_id) == base_before
+    assert await _stamp(session_factory, game_id) == base_stamp_before
+    assert await _refutation_stamp(session_factory, game_id) is not None
+    saved = json.loads((tmp_path / f"dev-refutation-{_RUN_STAMP}-shard0.json").read_text())
+    assert saved["mode"] == "refutation"
+    assert saved["refutations_scored"] == 1
+    assert saved["games_stamped"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -467,3 +543,233 @@ async def test_status_counts(
     await backfill._print_status("dev", _TEST_USER_ID)
     line = capsys.readouterr().out.strip().splitlines()[-1]
     assert line == "stamped_games=1 unstamped_games_with_flaws=2 flaws_with_maia=3 flaws_total=9"
+
+
+# ---------------------------------------------------------------------------
+# Refutation mode: selector, idempotence, race, no-blunder shortcut, full-mode default, status
+# ---------------------------------------------------------------------------
+
+
+async def _select(
+    maker: async_sessionmaker[AsyncSession],
+    mode: backfill.BackfillMode,
+    *,
+    shard: int = 0,
+    num_shards: int = 1,
+) -> list[int]:
+    async with maker() as session:
+        return await backfill.select_shard_game_ids(
+            session,
+            shard=shard,
+            num_shards=num_shards,
+            user_id=_TEST_USER_ID,
+            limit=None,
+            mode=mode,
+        )
+
+
+async def _set_refutation_stamp(maker: async_sessionmaker[AsyncSession], game_id: int) -> None:
+    async with maker() as session:
+        await session.execute(
+            update(Game).where(Game.id == game_id).values(maia_refutation_completed_at=func.now())
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_selector_needs_base_stamp_and_no_refutation_stamp(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-10: refutation mode takes base-stamped, refutation-unstamped games; full mode is unchanged."""
+    eligible = await make_game(base_stamped=True)
+    base_unstamped = await make_game()
+    refutation_done = await make_game(base_stamped=True)
+    await _set_refutation_stamp(session_factory, refutation_done)
+
+    assert await _select(session_factory, "refutation") == [eligible]
+    assert await _select(session_factory, "full") == [base_unstamped]
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_rerun_selects_nothing_and_changes_nothing(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """The refutation stamp is the checkpoint; a second run over the same scope is a no-op."""
+    game_ids = [await make_game(best=_REPLY_BEST, base_stamped=True) for _ in range(3)]
+    first = await _run(session_factory, tmp_path, mode="refutation")
+    before = {gid: await _refutation_values(session_factory, gid) for gid in game_ids}
+    stamps = {gid: await _refutation_stamp(session_factory, gid) for gid in game_ids}
+
+    second = await _run(session_factory, tmp_path, mode="refutation")
+
+    assert first.games_stamped == 3
+    assert second.games_selected == 0
+    assert second.games_stamped == 0
+    assert {gid: await _refutation_values(session_factory, gid) for gid in game_ids} == before
+    assert {gid: await _refutation_stamp(session_factory, gid) for gid in game_ids} == stamps
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_shard_partition_disjoint_exhaustive(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    game_ids = {await make_game(base_stamped=True) for _ in range(_SHARD_GAMES)}
+    per_shard = [
+        await _select(session_factory, "refutation", shard=shard, num_shards=_SHARD_COUNT)
+        for shard in range(_SHARD_COUNT)
+    ]
+    flat = [gid for ids in per_shard for gid in ids]
+    assert len(flat) == len(set(flat)), "a game landed in two shards"
+    assert set(flat) == game_ids
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_skips_game_refutation_stamped_mid_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """require_unstamped checks the mode's own stamp: a game another lane stamped is not overwritten."""
+    raced = await make_game(best=_REPLY_BEST, base_stamped=True)
+    other = await make_game(best=_REPLY_BEST, base_stamped=True)
+    real_write = backfill.write_game_maia_scores
+
+    async def _stamp_then_write(session: AsyncSession, scores: Any, **kwargs: Any) -> Any:
+        await _set_refutation_stamp(session_factory, raced)
+        return await real_write(session, scores, **kwargs)
+
+    monkeypatch.setattr(backfill, "write_game_maia_scores", _stamp_then_write)
+
+    report = await _run(session_factory, tmp_path, mode="refutation")
+
+    assert report.games_already_stamped == 1
+    assert report.games_stamped == 1
+    assert all(v == _no_pair() for v in (await _refutation_values(session_factory, raced)).values())
+    assert (await _refutation_values(session_factory, other))[2]["maia_refutation_prob"] is not None
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_game_without_user_blunder_stamped_without_replay_or_inference(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-09: opponent blunders and user mistakes only -> stamped, zero inference, no PGN replay."""
+    game_id = await make_game(severities={2: 1, 5: 2, 8: 1}, base_stamped=True)
+    policy_calls: list[str] = []
+    replay_calls: list[Any] = []
+
+    def _spy_policy(fen: str, elo: float) -> dict[str, float]:
+        policy_calls.append(fen)
+        return fake_full_policy(fen, elo)
+
+    def _spy_replay(*args: Any, **kwargs: Any) -> Any:
+        replay_calls.append(args)
+        raise AssertionError("no PGN replay expected")
+
+    monkeypatch.setattr(maia_flaw_scoring, "full_policy", _spy_policy)
+    monkeypatch.setattr(maia_flaw_scoring, "replay_flaw_boards", _spy_replay)
+
+    report = await _run(session_factory, tmp_path, mode="refutation")
+
+    assert report.games_stamped == 1
+    assert policy_calls == []
+    assert replay_calls == []
+    assert await _refutation_stamp(session_factory, game_id) is not None
+    assert all(
+        v == _no_pair() for v in (await _refutation_values(session_factory, game_id)).values()
+    )
+    assert (await _select(session_factory, "refutation")) == []
+
+
+@pytest.mark.asyncio
+async def test_refutation_mode_replays_only_blunder_plies(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-05: the PGN replay is asked for the user-blunder plies only."""
+    await make_game(best=_REPLY_BEST, base_stamped=True)
+    wanted: list[set[int]] = []
+    real_replay = maia_flaw_scoring.replay_flaw_boards
+
+    def _spy_replay(pgn_text: str, plies: Any) -> Any:
+        wanted.append(set(plies))
+        return real_replay(pgn_text, plies)
+
+    monkeypatch.setattr(maia_flaw_scoring, "replay_flaw_boards", _spy_replay)
+
+    await _run(session_factory, tmp_path, mode="refutation")
+
+    assert wanted == [{2, 8}]
+
+
+@pytest.mark.asyncio
+async def test_full_mode_default_writes_pair_and_both_stamps(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    game_id = await make_game(best=_REPLY_BEST)
+
+    report = await _run(session_factory, tmp_path)
+
+    assert report.mode == "full"
+    assert report.games_stamped == 1
+    assert report.refutations_scored == 1
+    assert await _stamp(session_factory, game_id) is not None
+    assert await _refutation_stamp(session_factory, game_id) is not None
+    pairs = await _refutation_values(session_factory, game_id)
+    assert pairs[2]["maia_refutation_prob"] is not None
+    assert pairs[5] == _no_pair()
+    base = await _flaw_values(session_factory, game_id)
+    assert all(v["maia_played_prob"] is not None for v in base.values())
+
+
+def test_cli_mode_choices() -> None:
+    assert backfill._parse_args(["--db", "dev"]).mode == "full"
+    assert backfill._parse_args(["--db", "dev", "--mode", "refutation"]).mode == "refutation"
+    with pytest.raises(SystemExit):
+        backfill._parse_args(["--db", "dev", "--mode", "everything"])
+
+
+@pytest.mark.asyncio
+async def test_refutation_status_counts(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exact refutation counts; the black-user game proves the user side comes from is_opponent_expr."""
+    await make_game(best=_REPLY_BEST, base_stamped=True)
+    await make_game(best=_REPLY_BEST, base_stamped=True)
+    # Black user: of plies 2/5/8 only the black mover at ply 5 is a user blunder.
+    await make_game(user_color="black")
+    await _run(session_factory, tmp_path, limit=1, mode="refutation")
+
+    counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "refutation")
+
+    assert counts == {
+        "refutation_stamped_games": 1,
+        "refutation_unstamped_games_with_flaws": 1,
+        "user_blunders_with_refutation": 1,
+        "user_blunders_total": 5,
+    }
+    # The 247 status line is untouched without --mode.
+    assert set(await backfill.fetch_status(session_factory, _TEST_USER_ID)) == {
+        "stamped_games",
+        "unstamped_games_with_flaws",
+        "flaws_with_maia",
+        "flaws_total",
+    }
+    test_url = test_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
+    await backfill._print_status("dev", _TEST_USER_ID, "refutation")
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    assert line == (
+        "refutation_stamped_games=1 refutation_unstamped_games_with_flaws=1 "
+        "user_blunders_with_refutation=1 user_blunders_total=5"
+    )

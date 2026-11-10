@@ -113,6 +113,15 @@ class GameFlaw(Base):
     maia_top_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
     maia_effective_moves: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
 
+    # Phase 248 blunder-check refutation stats (D-01). Nullable, NULL = not scored.
+    # refutation = COALESCE(game_positions.best_move, first pv token) at ply + 1 (opponent
+    # to move after the blunder); Maia prob / rank (same strict-greater rank definition as
+    # above) for that reply at the BLUNDERER's pinned Elo. Only user-side blunders
+    # (severity 2, user parity) are scored. Written only by app/services/maia_flaw_scoring.py,
+    # never by flaw_record_to_row, so a diff/upsert preserves them by omission (D-08).
+    maia_refutation_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_refutation_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+
     # PV-line blob family: write-once JSONB blobs, nullable.
     # These store the principal-variation nodes for the forcing-line tactic gate.
     # `deferred=True` is the structural leak guard: the columns are never emitted in

@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
+- Analysis data: each of your blunders now also records how likely a player at your rating was to find the punishing reply, the next piece of groundwork for blunder-check training.
 
 ## [v2.29] Train Spacing & Archive, Analysis Explain — 2026-11-08
 

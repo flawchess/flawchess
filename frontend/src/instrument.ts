@@ -117,6 +117,25 @@ function isDroppableAxiosError(error: AxiosLikeError): boolean {
   );
 }
 
+// FLAWCHESS-C2/C3/C4: iOS suspends or kills a backgrounded tab's workers, so
+// every engine worker "fails to load" at once while document.visibilityState
+// is "hidden" (all three issues were one iPhone event cluster). Not a bug we
+// can fix. Matched by exact message so a hidden-tab failure of anything else
+// still reports; a foreground worker failure always reports.
+const HIDDEN_TAB_ENGINE_FAILURE_MESSAGES: ReadonlySet<string> = new Set([
+  "Stockfish engine worker: worker load failure",
+  "Stockfish grading worker: worker load failure",
+  "Stockfish worker pool: worker load failure",
+  "Maia worker: worker load failure",
+  "FlawChess engine: a provider failed to become ready",
+]);
+
+function isHiddenTabEngineFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (!HIDDEN_TAB_ENGINE_FAILURE_MESSAGES.has(error.message)) return false;
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 const FILTERED_QUERY_PLACEHOLDER = "[Filtered]";
 
 /** Replaces everything after the first "?"; applied to the page URL and navigation breadcrumbs so query-string tokens never leave the browser. */
@@ -136,6 +155,7 @@ function sentryBeforeSend(
   // to undefined) is fixed by the reload itself.
   if (isStalePreloadReloadPending()) return null;
   const error = hint.originalException;
+  if (isHiddenTabEngineFailure(error)) return null;
   if (isAxiosLikeError(error)) {
     if (isDroppableAxiosError(error)) {
       return null;

@@ -11,7 +11,7 @@ from collections.abc import Collection, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, or_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,6 +186,14 @@ MAIA_FLAW_COLUMNS: tuple[str, ...] = (
     "maia_effective_moves",
 )
 
+# Phase 248: the blunder-check refutation pair. Its OWN tuple, deliberately NOT part of
+# MAIA_FLAW_COLUMNS or FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit
+# these keys: the diff/upsert in _classify_and_fill_oracle preserves them by omission (D-08).
+MAIA_REFUTATION_COLUMNS: tuple[str, ...] = (
+    "maia_refutation_prob",
+    "maia_refutation_rank",
+)
+
 
 async def bulk_update_tactic_tags(
     session: AsyncSession,
@@ -285,11 +293,12 @@ async def bulk_update_flaw_maia_stats(
     session: AsyncSession,
     rows: list[dict[str, Any]],
 ) -> None:
-    """Write the eight Maia stat columns on existing game_flaws rows (bulk update by PK).
+    """Write the Maia stat columns on existing game_flaws rows (bulk update by PK).
 
-    Every dict carries user_id, game_id, ply plus ALL eight MAIA_FLAW_COLUMNS keys
-    (None for a value Maia could not produce), so one executemany statement compiles
-    and a re-score never leaves a stale value behind (D-08). No-op on an empty list.
+    Every dict carries user_id, game_id, ply plus the SAME key set (full mode: the eight
+    MAIA_FLAW_COLUMNS plus the two MAIA_REFUTATION_COLUMNS; None for a value Maia could
+    not produce), so one executemany statement compiles and a re-score never leaves a
+    stale value behind (D-08). No-op on an empty list.
     """
     if not rows:
         return
@@ -314,22 +323,44 @@ async def mark_maia_flaws_completed(session: AsyncSession, game_ids: Sequence[in
     await session.execute(stmt)
 
 
+async def mark_maia_refutation_completed(session: AsyncSession, game_ids: Sequence[int]) -> None:
+    """Stamp games.maia_refutation_completed_at for the given games (no-op on empty ids).
+
+    Same D-05 guardrail as mark_maia_flaws_completed: callers MUST only pass games whose
+    scoring pass completed with a Maia session loaded; a wrong stamp permanently hides the
+    game from the backfill selector. Games with zero user-side blunders are stamped too.
+    """
+    if not game_ids:
+        return
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id.in_(list(game_ids)))
+        .values(maia_refutation_completed_at=datetime.now(timezone.utc))
+    )
+    await session.execute(stmt)
+
+
 async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> bool:
-    """Clear games.maia_flaws_completed_at for one game (D-09).
+    """Clear both Maia stamps (maia_flaws_completed_at, maia_refutation_completed_at) for one game.
 
     A reclassification can change a game's flaw set or its Stockfish best move, so the
-    stored Maia values may be stale. Clearing the stamp makes the re-runnable Maia
-    backfill re-score the game. Returns True only when a stamp was actually cleared
-    (the game was stamped), so callers can count games that need the backfill (D-11).
+    stored Maia values (including the Phase 248 refutation pair, D-08) may be stale.
+    Clearing both stamps in one UPDATE makes the re-runnable Maia backfill re-score the
+    game. All five reclassify callers go through this helper. Returns True when either
+    stamp was actually cleared, so callers can count games that need the backfill.
     """
     games_table = Game.__table__
     stmt = (
         update(games_table)  # ty: ignore[invalid-argument-type]
         .where(
             games_table.c.id == game_id,
-            games_table.c.maia_flaws_completed_at.isnot(None),
+            or_(
+                games_table.c.maia_flaws_completed_at.isnot(None),
+                games_table.c.maia_refutation_completed_at.isnot(None),
+            ),
         )
-        .values(maia_flaws_completed_at=None)
+        .values(maia_flaws_completed_at=None, maia_refutation_completed_at=None)
         .returning(games_table.c.id)
     )
     result = await session.execute(stmt)

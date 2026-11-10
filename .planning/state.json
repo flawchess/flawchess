@@ -322,7 +322,7 @@
   "next": {
     "command": "/gsd-progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 246 (63 of 63 roadmap phases complete) · executing"
+    "reason": "Phase 2 of 2 · executing"
   },
-  "updated_at": "2026-11-08T19:56:57.137Z"
+  "updated_at": "2026-11-09T19:24:38.986Z"
 }

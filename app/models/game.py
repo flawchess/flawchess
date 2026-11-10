@@ -268,6 +268,14 @@ class Game(Base):
     maia_flaws_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    # Phase 248: per-game marker for the blunder-check refutation pass
+    # (game_flaws.maia_refutation_* columns). Stamped by app/services/maia_flaw_scoring.py
+    # together with maia_flaws_completed_at, only when Maia was available and the pass
+    # completed; stamped for games with zero user-side blunders too. Cleared together with
+    # the 247 stamp by a reclassification (clear_maia_flaws_completed). No index on purpose.
+    maia_refutation_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
     # Per-GAME rollup of a per-FLAW-PLY condition — unlike the four
     # completion columns above (naturally per-game), this one summarizes
     # `game_flaws.allowed_pv_lines`. The authoritative predicate is "no
