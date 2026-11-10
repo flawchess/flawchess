@@ -221,7 +221,7 @@ decisions, prod measurements and traps in SEED-261108-dk0 ("Face-palm test v2", 
 
 **Depends on**: Phase 247 code (shipped). The calibration's miss numbers need 247-07's backfill at >=99% coverage.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-23)
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 **Wave 1**
@@ -236,7 +236,7 @@ Plans:
 - [x] 248-05-PLAN.md — Calibration report: Maia arrow-oddness, spot-check export, recommended constants, full dev smoke (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion and on 247-07's full run ending)*
-- [ ] 248-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, docs, changelog, squash-merge, deploy, live-lane check (orchestrator-inline, wave 4)
+- [x] 248-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, docs, changelog, squash-merge, deploy, live-lane check (orchestrator-inline, wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 248-07-PLAN.md — Prod refutation backfill, catch-up, >=99% coverage verification (orchestrator-inline, wave 5)

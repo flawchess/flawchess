@@ -728,6 +728,33 @@ class TestArrowOddnessSection:
         assert row[1] == "4"  # the out-of-band Good move is dropped
         assert row[-1] == f"{EXPECTED_AUC:.3f}"
 
+    def test_baseline_table_separates_band_and_findability_selection(self) -> None:
+        # Drill: the 4 usable blunders vs the 4 in-band Good moves (EXPECTED_AUC).
+        usable = [_scored_blunder(p, 3) for p in BLUNDER_PROBS]
+        # Not findable (refutation far below R) but in band: counted by "band only" only.
+        unfindable = _blunder(case="allowed", refutation=(0.01, 9))
+        unfindable.maia_played_prob, unfindable.maia_played_rank = 0.95, 1
+        # Findable but out of band: counted by "unselected" only.
+        out_of_band = _scored_blunder(0.95, 1)
+        out_of_band.es_before = OUT_OF_BAND_ES
+        collection = Collection(
+            meta=RunMeta(date="2026-11-10"),
+            blunders=[*usable, unfindable, out_of_band],
+            oddness=[*(_good(p) for p in GOOD_PROBS), _good(0.01, es_before=OUT_OF_BAND_ES)],
+        )
+        section = render_report(collection, PARAMS).split("### Drill against the unselected")[1]
+        row = _row(section, BUCKET)
+        # Unselected: 5 Good x 6 blunders, 10.5 wins (the 0.01 Good and the 0.95s add none).
+        unselected_auc = 10.5 / 30
+        # Band only: 4 Good x 5 blunders, 10.5 wins.
+        band_auc = 10.5 / 20
+        assert row[1:3] == ["5", "6"]
+        assert row[3] == f"{unselected_auc:.3f}"
+        assert row[4] == f"{band_auc:.3f}"
+        assert row[5] == f"{EXPECTED_AUC:.3f}"
+        assert row[6] == f"{EXPECTED_AUC - unselected_auc:+.3f}"
+        assert _row(section, "all")[5] == f"{EXPECTED_AUC:.3f}"
+
     def test_oddness_records_survive_the_cache(self, tmp_path: Path) -> None:
         collection = Collection(
             meta=RunMeta(date="2026-11-09", db_target="dev", seed=7, oddness_sample=4),

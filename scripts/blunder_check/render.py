@@ -691,6 +691,77 @@ def _oddness_cells(row: OddnessRow) -> list[str]:
     ]
 
 
+def _auc_cell(auc_value: float | None) -> str:
+    return "n/a" if auc_value is None else f"{auc_value:.3f}"
+
+
+def _delta_cell(drill: float | None, baseline: float | None) -> str:
+    return "n/a" if drill is None or baseline is None else f"{drill - baseline:+.3f}"
+
+
+def _oddness_baseline_table(collection: Collection, params: ReportParams) -> str:
+    """Drill AUC against the unselected baseline (SEED-261108-dk0 "match real games").
+
+    Unselected: every scored Good move against every rated user-side blunder, no band and no
+    findability filter, i.e. how much odder blunders look than Good moves in real games.
+    Band only: both sides inside the eval band, so the band's own effect is separated from
+    the findability selection. Drill: the main table (band + findable). A drill AUC well above
+    the unselected one means selection widens the real-game gap and teaches a shortcut.
+    """
+    good_all = list(collection.oddness)
+    good_band = [g for g in good_all if in_band(g.es_before, params.band_low, params.band_high)]
+    rated = [b for b in analysis_blunders(collection) if b.bucket is not None]
+    band_blunders = [b for b in rated if in_band(b.es_before, params.band_low, params.band_high)]
+    usable = usable_blunders(rated, params)
+    unselected = summarize_oddness(good_all, rated)
+    band_only = summarize_oddness(good_band, band_blunders)
+    drill = summarize_oddness(good_band, usable)
+    pooled = (
+        summarize_group(good_all, rated),
+        summarize_group(good_band, band_blunders),
+        summarize_group(good_band, usable),
+    )
+    triples: list[tuple[str, OddnessRow, OddnessRow, OddnessRow]] = [
+        (bucket, unselected[bucket], band_only[bucket], drill[bucket]) for bucket in ELO_BUCKETS
+    ]
+    triples.append(("all", *pooled))
+    rows = [
+        [
+            label,
+            str(u.n_good),
+            str(u.n_blunder),
+            _auc_cell(u.auc),
+            _auc_cell(b.auc),
+            _auc_cell(d.auc),
+            _delta_cell(d.auc, u.auc),
+        ]
+        for label, u, b, d in triples
+    ]
+    headers = [
+        "Elo bucket",
+        "n Good (unselected)",
+        "n blunder (unselected)",
+        "AUC unselected",
+        "AUC band only",
+        "AUC drill",
+        "drill - unselected",
+    ]
+    return "\n".join(
+        [
+            "### Drill against the unselected baseline",
+            "",
+            "The target is not AUC 0.5: blunders looking somewhat odd is a real signal the drill "
+            "should train. The target is a drill AUC close to the unselected one, i.e. selection "
+            "does not widen the real-game gap. Unselected = every scored Good move against every "
+            "rated user-side blunder (no band, no findability); band only = both sides inside the "
+            "eval band; drill = the table above. A clearly positive drill - unselected means "
+            "flagging odd-looking arrows pays more in the drill than in games.",
+            "",
+            md_table(headers, rows),
+        ]
+    )
+
+
 def section_arrow_oddness(collection: Collection, params: ReportParams) -> str:
     """D-17: does the arrow's oddness (Maia probability of the played move) separate blunders from Good moves?"""
     good = [
@@ -727,6 +798,8 @@ def section_arrow_oddness(collection: Collection, params: ReportParams) -> str:
             "wins without reading the position.",
             "",
             md_table(headers, rows),
+            "",
+            _oddness_baseline_table(collection, params),
         ]
     )
 
