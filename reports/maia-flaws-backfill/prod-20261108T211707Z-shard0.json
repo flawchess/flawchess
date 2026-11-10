@@ -1,0 +1,28 @@
+{
+  "aborted_reason": null,
+  "db": "prod",
+  "dry_run": false,
+  "elapsed_s": 31837.4,
+  "flaws_null": 2082,
+  "flaws_per_s": 8.61,
+  "flaws_scored": 274069,
+  "games_already_stamped": 0,
+  "games_fingerprint_changed": 0,
+  "games_missing": 0,
+  "games_score_failed": 0,
+  "games_scored": 37650,
+  "games_selected": 114130,
+  "games_stamped": 37650,
+  "games_write_failed": 0,
+  "num_shards": 9,
+  "reasons": {
+    "best_missing": 2583,
+    "no_rating": 2081,
+    "ply_beyond_mainline": 1,
+    "second_equals_best": 16067,
+    "second_missing": 35838,
+    "single_legal_move": 120
+  },
+  "run_stamp": "20261108T211707Z",
+  "shard": 0
+}

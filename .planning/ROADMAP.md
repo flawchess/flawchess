@@ -167,7 +167,7 @@ decisions, measurements, traps and breadcrumbs in SEED-261108-zkp.
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-16 from discuss-phase)
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -185,7 +185,7 @@ Plans:
 - [x] 247-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, squash-merge, deploy, live-scoring check (orchestrator-inline, wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
+- [x] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
 
 ### Phase 248: Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)
 
@@ -221,7 +221,7 @@ decisions, prod measurements and traps in SEED-261108-dk0 ("Face-palm test v2", 
 
 **Depends on**: Phase 247 code (shipped). The calibration's miss numbers need 247-07's backfill at >=99% coverage.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-23)
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 Plans:
 **Wave 1**
@@ -239,7 +239,7 @@ Plans:
 - [x] 248-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, docs, changelog, squash-merge, deploy, live-lane check (orchestrator-inline, wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 248-07-PLAN.md — Prod refutation backfill, catch-up, >=99% coverage verification (orchestrator-inline, wave 5)
+- [x] 248-07-PLAN.md — Prod refutation backfill, catch-up, >=99% coverage verification (orchestrator-inline, wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion and 247 coverage)*
 - [ ] 248-08-PLAN.md — Prod calibration report and spot-check, committed (orchestrator-inline, wave 6)

@@ -58,3 +58,49 @@ value.
 
 Live lanes: games scored by the live eval lanes after the deploy carried the refutation value without any backfill
 (460 games, 678 of 679 user blunders with a refutation value), so new imports are covered going forward.
+
+## Catch-up
+
+Both runs ran after the full run, 2026-11-10 ~13:31 UTC, `--workers 9`:
+
+- `--mode full` (`prod-catchup-full.log`, run_stamp `20261110T133134Z`): EXIT=0, games_selected=0
+- `--mode refutation` (`prod-catchup-refutation.log`, run_stamp `20261110T133202Z`): EXIT=0, games_selected=0
+
+The live lanes kept every newly scored game current during the 8 h run. 76 games remain base-stamped without the
+refutation stamp. All 76 have zero `game_flaws` rows today (stamped 11-09 before the deploy, flaws removed since), so the
+selector's `EXISTS (game_flaws)` skips them and they have nothing to score.
+
+## Coverage
+
+D-11 coverage SQL (248-RESEARCH, verbatim) on prod via MCP, 2026-11-10 ~13:40 UTC:
+
+| denom | scored | pct_scored | null_unstamped | null_no_rating | null_terminal_no_pv | null_pv_pending | null_other |
+|---|---|---|---|---|---|---|---|
+| 2,301,338 | 2,297,262 | **99.823** | 3 | 860 | 1,786 | 0 | 17 |
+
+Pass (D-11 bar 99.000). NULLs total 4,076 (0.177%), largest first:
+
+| Bucket | Rows | Share of denom | D-21 probe | Explanation |
+|---|---|---|---|---|
+| Terminal ply+1 with neither best_move nor pv | 1,786 | 0.078% | ~0.07% | Blunder on the last move or into a finished position (1,741 lichess, 34 engine, 11 with no ply+1 row) |
+| Non-terminal ply+1, best_move and pv NULL, PV pass done | 1,410 | 0.061% | ~0.07% | Not in a named SQL bucket (falls between null_pv_pending and null_other), so split here: 972 engine games, 438 lichess games. Shard reason `refutation_missing` |
+| Mover rating NULL | 860 | 0.037% | ~0.05% | Shard reason `no_rating` (860, exact match) |
+| null_other (best_move or pv present) | 17 | 0.001% | n/a | Shard reason `invalid_root` (17, exact match) |
+| Unstamped | 3 | 0.000% | n/a | Games stamped by neither the backfill nor yet the live lane at query time (in flight) |
+
+Reconciliation with the summed shard reasons (full run plus slice): refutation_missing 2,923 + no_legal_reply 260 +
+ply_beyond_mainline 11 = 3,194 against the two structural buckets 1,786 + 1,410 = 3,196 (the gap of 2 comes from
+live-lane scoring). `no_legal_reply` (checkmate after the blunder, so no reply exists) lands in the terminal
+bucket. refutations_from_pv = 13,240 (0.58% of scored values took the refutation from the pv fallback). All three
+structural buckets sit at or below the D-21 probe estimates.
+
+## Health
+
+Read-only, 2026-11-10 ~13:40 UTC (no VACUUM, MCP role is read-only):
+
+| Table | n_live_tup | n_dead_tup | last_autovacuum | last_autoanalyze | Total size |
+|---|---|---|---|---|---|
+| game_flaws | 7,653,589 | 237,178 | 12:21 | 11:35 | 13 GB |
+| games | 1,112,665 | 158,374 | 11:06 | 12:49 | 4.3 GB |
+
+Autovacuum keeps up during the run (dead tuples about 3% and 14% of live rows), so there is nothing to raise.
