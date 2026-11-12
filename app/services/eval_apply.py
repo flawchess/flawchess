@@ -99,6 +99,30 @@ MAX_EVAL_ATTEMPTS: int = 5
 # of the ix_gp_full_hash_opening partial index.
 _DEDUP_MAX_PLY: int = DEDUP_MAX_PLY
 
+# A cached opening pv shorter than this many plies is treated exactly like a NULL pv.
+# Bug-fix note: until the engine fix on main (`_select_final_infos`), about a quarter of
+# 1M-node lines were cut to 1-2 plies by a final aspiration-window bound line, and the
+# opening cache (opening_position_eval) stored and re-served them to every later game
+# (SEED-261112-s4v). A 1-2 ply cached pv is therefore "missing": it does not omit the
+# position from a remote lease, it is never transplanted into a game, and a fresh search
+# with a strictly longer pv heals it (eval_drain._cached_pv_heals). This is the ONE place
+# the rule is defined; pv_ply_count / cached_pv_usable below are its only readers.
+# Accepted cost: a genuinely short line (mate in 1-2, or a line ending in a terminal
+# position inside the opening) is re-searched each time it appears and never healed,
+# deliberately without special-casing.
+CACHED_PV_MIN_PLIES: int = 3
+
+
+def pv_ply_count(pv: str | None) -> int:
+    """Number of plies in a space-joined UCI pv string (0 for None or empty)."""
+    return len(pv.split()) if pv else 0
+
+
+def cached_pv_usable(pv: str | None) -> bool:
+    """True when a cached pv is long enough to omit/transplant/keep (>= CACHED_PV_MIN_PLIES)."""
+    return pv_ply_count(pv) >= CACHED_PV_MIN_PLIES
+
+
 # Namespace for the per-game write
 # advisory-lock key space (see `_game_write_lock_key` below), packed into the
 # HIGH 32 bits of a bigint key. Value is the ASCII bytes of "FLAW" read as one
@@ -361,8 +385,11 @@ async def _fetch_dedup_evals(
     there, or the two read paths can drift.
 
     Returns {full_hash: (eval_cp, eval_mate, best_move, pv)} for CONFIRMED hashes
-    present in the cache. pv is the cached PV string FROM the position; it may be None for cache rows written before the pv column existed
-    or not yet backfilled.
+    present in the cache. pv is the cached PV string FROM the position; it is None for
+    a NULL row (written before the pv column existed or not yet backfilled) OR for a pv
+    shorter than CACHED_PV_MIN_PLIES (a truncated engine line, see that constant). The
+    normalization lives here, the single read choke point for both lanes, so the lease
+    omission and the transplant treat a short pv exactly like a missing one.
     """
     if not full_hashes:
         return {}
@@ -378,7 +405,12 @@ async def _fetch_dedup_evals(
             OpeningPositionEval.confirmed.is_(True),
         )
     )
-    return {row[0]: (row[1], row[2], row[3], row[4]) for row in result.all()}
+    # Bug-fix: a 1-2 ply cached pv (truncated engine line, see CACHED_PV_MIN_PLIES) reads
+    # as None so it is neither lease-omitted nor transplanted; eval/best_move stay valid.
+    return {
+        row[0]: (row[1], row[2], row[3], row[4] if cached_pv_usable(row[4]) else None)
+        for row in result.all()
+    }
 
 
 def _resolve_full_eval(

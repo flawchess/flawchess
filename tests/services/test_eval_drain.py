@@ -1000,6 +1000,14 @@ _CACHE_HASH_DISAGREE: int = 9_900_000_103
 _CACHE_HASH_DISAGREE_2: int = 9_900_000_104
 _CACHE_HASH_CONFIRMED: int = 9_900_000_105
 _CACHE_HASH_SELF: int = 9_900_000_106
+# Short-cached-pv tests (quick 261112-k56): rows whose pv is NULL / 1 / 2 / 3 plies.
+_CACHE_HASH_PV_NULL: int = 9_900_000_107
+_CACHE_HASH_PV_1PLY: int = 9_900_000_108
+_CACHE_HASH_PV_2PLY: int = 9_900_000_109
+_CACHE_HASH_PV_3PLY: int = 9_900_000_110
+_CACHE_HASH_HEAL_LONGER: int = 9_900_000_111
+_CACHE_HASH_HEAL_EQUAL: int = 9_900_000_112
+_CACHE_HASH_HEAL_SHORTER: int = 9_900_000_113
 _SOURCE_GAME_ORIGINAL: int = 88_800_001  # the candidate's original source_game_id
 _SOURCE_GAME_SECOND: int = 88_800_002  # a genuinely different second game
 _SOURCE_GAME_THIRD: int = 88_800_003  # a third, also-different game (disagree_second)
@@ -1175,6 +1183,41 @@ class TestOpeningEvalCacheRead:
         async with drain_test_session_maker() as session:
             result = await _fetch_dedup_evals(session, [])
         assert result == {}, f"expected empty dict, got {result}"
+
+    async def test_fetch_dedup_evals_short_cached_pv_reads_as_missing(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A confirmed row whose pv is NULL or shorter than CACHED_PV_MIN_PLIES reads
+        back with pv None (eval/best_move untouched); a 3-ply pv is returned verbatim."""
+        from app.services.eval_drain import _fetch_dedup_evals
+
+        rows: list[tuple[int, str | None, int]] = [
+            (_CACHE_HASH_PV_NULL, None, 10),
+            (_CACHE_HASH_PV_1PLY, "e2e4", 11),
+            (_CACHE_HASH_PV_2PLY, "e2e4 e7e5", 12),
+            (_CACHE_HASH_PV_3PLY, "e2e4 e7e5 g1f3", 13),
+        ]
+        hashes = [r[0] for r in rows]
+        for fh, pv, cp in rows:
+            await _seed_opening_eval_cache_full(
+                drain_test_session_maker,
+                fh,
+                eval_cp=cp,
+                best_move="e2e4",
+                pv=pv,
+                confirmed=True,
+                n_sources=2,
+            )
+        try:
+            async with drain_test_session_maker() as session:
+                result = await _fetch_dedup_evals(session, hashes)
+            assert result[_CACHE_HASH_PV_NULL] == (10, None, "e2e4", None)
+            assert result[_CACHE_HASH_PV_1PLY] == (11, None, "e2e4", None)
+            assert result[_CACHE_HASH_PV_2PLY] == (12, None, "e2e4", None)
+            assert result[_CACHE_HASH_PV_3PLY] == (13, None, "e2e4", "e2e4 e7e5 g1f3")
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, hashes)
 
 
 class TestOpeningEvalCacheWrite:
@@ -1628,7 +1671,8 @@ class TestOpeningEvalCacheWrite:
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
         """A write against a confirmed=true row changes nothing except the pv
-        self-heal when pv IS NULL -- the one permitted mutation of a confirmed row."""
+        self-heal when the stored pv is unusable (here NULL) -- the one permitted
+        mutation of a confirmed row."""
         from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
         import chess
 
@@ -1675,6 +1719,71 @@ class TestOpeningEvalCacheWrite:
             assert row.pv == "a7a8q h7h6", "a NULL pv must self-heal even on a confirmed row"
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_CONFIRMED])
+
+    async def test_confirmed_short_cached_pv_healed_by_longer_only(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Three confirmed rows holding a 2-ply pv are written with a wildly different
+        eval/best_move and incoming pvs of 4, 2 and 1 plies: only the strictly longer
+        pv heals; eval, best_move and the confirmation columns never change."""
+        import chess
+
+        from app.services.eval_drain import _FullPlyEvalTarget, _upsert_opening_cache
+
+        hashes = [_CACHE_HASH_HEAL_LONGER, _CACHE_HASH_HEAL_EQUAL, _CACHE_HASH_HEAL_SHORTER]
+        incoming = {
+            _CACHE_HASH_HEAL_LONGER: "a2a4 a7a5 b2b4 b7b5",
+            _CACHE_HASH_HEAL_EQUAL: "c2c4 c7c5",
+            _CACHE_HASH_HEAL_SHORTER: "d2d4",
+        }
+        await _delete_opening_eval_rows(drain_test_session_maker, hashes)
+        for fh in hashes:
+            await _seed_opening_eval_cache_full(
+                drain_test_session_maker,
+                fh,
+                eval_cp=200,
+                best_move="e2e4",
+                pv="e2e4 e7e5",
+                confirmed=True,
+                n_sources=2,
+                source_game_id=_SOURCE_GAME_ORIGINAL,
+            )
+        board = chess.Board()
+        targets = [
+            _FullPlyEvalTarget(
+                game_id=_SOURCE_GAME_SECOND,
+                ply=i + 1,
+                full_hash=fh,
+                board=board,
+                eval_cp=None,
+                eval_mate=None,
+            )
+            for i, fh in enumerate(hashes)
+        ]
+        result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            i + 1: (999, None, "a7a8q", incoming[fh]) for i, fh in enumerate(hashes)
+        }
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, targets, result_map, _SOURCE_GAME_SECOND)
+                await session.commit()
+
+            expected_pv = {
+                _CACHE_HASH_HEAL_LONGER: incoming[_CACHE_HASH_HEAL_LONGER],
+                _CACHE_HASH_HEAL_EQUAL: "e2e4 e7e5",
+                _CACHE_HASH_HEAL_SHORTER: "e2e4 e7e5",
+            }
+            for fh in hashes:
+                row = await _fetch_opening_eval_row(drain_test_session_maker, fh)
+                assert row is not None
+                assert row.pv == expected_pv[fh], f"pv of {fh}: {row.pv}"
+                assert row.eval_cp == 200 and row.eval_mate is None
+                assert row.best_move == "e2e4"
+                assert row.confirmed is True and row.n_sources == 2
+                assert row.disagreements == 0
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, hashes)
 
     async def test_self_promotion_guarded_by_source_game_id(
         self,
@@ -1726,6 +1835,92 @@ class TestOpeningEvalCacheWrite:
             assert row.pv == "a2a4 b7b6", "pv self-heal still applies to a same-source (skip) row"
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_SELF])
+
+
+class TestPartitionShortCachedPv:
+    """Pure tests on _partition_cache_writes for the short-cached-pv heal rule
+    (quick 261112-k56): a stored pv shorter than CACHED_PV_MIN_PLIES counts as missing
+    and a strictly longer incoming pv heals it, on confirmed and same-source rows only;
+    eval/best_move are untouched on that path."""
+
+    _HASH: int = 4_242
+
+    @staticmethod
+    def _existing(
+        pv: str | None, *, confirmed: bool, source: int | None = _SOURCE_GAME_ORIGINAL
+    ) -> dict[int, Any]:
+        from app.services.eval_drain import _ExistingCacheRow
+
+        return {
+            TestPartitionShortCachedPv._HASH: _ExistingCacheRow(
+                eval_cp=100, eval_mate=None, pv=pv, confirmed=confirmed, source_game_id=source
+            )
+        }
+
+    def _partition(
+        self,
+        existing: dict[int, Any],
+        incoming_pv: str | None,
+        *,
+        cp: int = 100,
+        source: int = _SOURCE_GAME_SECOND,
+    ) -> Any:
+        from app.services.eval_drain import _partition_cache_writes
+
+        return _partition_cache_writes(
+            [(self._HASH, cp, None, "e2e4", incoming_pv)], existing, source
+        )
+
+    def test_confirmed_short_cached_pv_heals_with_longer(self) -> None:
+        buckets = self._partition(
+            self._existing("e2e4 e7e5", confirmed=True), "e2e4 e7e5 g1f3 b8c6"
+        )
+        assert [(h.full_hash, h.pv, h.expected_pv) for h in buckets.heal] == [
+            (self._HASH, "e2e4 e7e5 g1f3 b8c6", "e2e4 e7e5")
+        ]
+        assert not (buckets.insert or buckets.promote or buckets.replace)
+
+    def test_confirmed_short_cached_pv_not_healed_by_equal_or_shorter(self) -> None:
+        for incoming in ("d2d4 d7d5", "d2d4", None):
+            buckets = self._partition(self._existing("e2e4 e7e5", confirmed=True), incoming)
+            assert not (buckets.heal or buckets.insert or buckets.promote or buckets.replace), (
+                f"incoming {incoming!r} must not write"
+            )
+
+    def test_short_cached_pv_confirmed_null_heals_even_with_one_ply(self) -> None:
+        buckets = self._partition(self._existing(None, confirmed=True), "e2e4")
+        assert [(h.pv, h.expected_pv) for h in buckets.heal] == [("e2e4", None)]
+
+    def test_short_cached_pv_rule_leaves_usable_confirmed_pv_alone(self) -> None:
+        buckets = self._partition(
+            self._existing("e2e4 e7e5 g1f3", confirmed=True), "e2e4 e7e5 g1f3 b8c6 f1c4 f8c5"
+        )
+        assert not (buckets.heal or buckets.insert or buckets.promote or buckets.replace)
+
+    def test_short_cached_pv_unconfirmed_same_source_heals(self) -> None:
+        buckets = self._partition(
+            self._existing("e2e4 e7e5", confirmed=False),
+            "e2e4 e7e5 g1f3",
+            source=_SOURCE_GAME_ORIGINAL,
+            cp=999,  # a disagreeing value must not matter for a same-source write
+        )
+        assert [(h.pv, h.expected_pv) for h in buckets.heal] == [("e2e4 e7e5 g1f3", "e2e4 e7e5")]
+        assert not (buckets.promote or buckets.replace)
+
+    def test_short_cached_pv_unconfirmed_other_source_agreeing_promotes_longer(self) -> None:
+        pv12 = " ".join(["e2e4", "e7e5"] * 6)
+        buckets = self._partition(self._existing("e2e4 e7e5", confirmed=False), pv12)
+        assert [(p.full_hash, p.pv) for p in buckets.promote] == [(self._HASH, pv12)]
+        assert not (buckets.heal or buckets.replace)
+
+    def test_short_cached_pv_unconfirmed_other_source_disagreeing_replaces(self) -> None:
+        buckets = self._partition(
+            self._existing("e2e4 e7e5", confirmed=False), "a2a4 a7a5 b2b4", cp=900
+        )
+        assert [(r.full_hash, r.eval_cp, r.pv) for r in buckets.replace] == [
+            (self._HASH, 900, "a2a4 a7a5 b2b4")
+        ]
+        assert not (buckets.heal or buckets.promote)
 
 
 # ─── _build_flaw_blob_lease_positions tests ───────────────────────────────────

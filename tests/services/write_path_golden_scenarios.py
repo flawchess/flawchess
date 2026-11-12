@@ -348,7 +348,9 @@ async def _scenario_6(
 
     # Cache ply 2's position (the flaw's own board, "missed" line node 0) WITH a
     # real, walkable pv. The worker's partial submit omits ply 2 accordingly.
-    cached_pv = "g1f3 b8c6"
+    # 3 plies: a cached pv shorter than CACHED_PV_MIN_PLIES counts as missing
+    # (SEED-261112-s4v) and would no longer be transplanted.
+    cached_pv = "g1f3 b8c6 f1c4"
     await _insert_opening_cache_with_pv(session_maker, [(base + 2, 30, None, "g1f3", cached_pv)])
     # Ply 3 ("allowed" line node 0) is submitted directly with a real, walkable pv
     # too, so only the missed line's cache-merged pv is under test.

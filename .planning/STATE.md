@@ -5,8 +5,8 @@ current_phase: 249
 current_phase_name: Blunder-Check Playable MVP (SEED-261108-dk0)
 status: completed
 stopped_at: Phase 248 complete — all phases complete
-last_updated: "2026-11-12T13:05:45.113Z"
-state_head: c87b9009000a84208403c6321f8708ead8680f0a
+last_updated: "2026-11-12T13:51:10.380Z"
+state_head: 74fd92567fb8ddfcf4f5534e8ad5af77a34c6242
 progress:
   total_phases: 4
   completed_phases: 63
@@ -1100,6 +1100,7 @@ None active.
 | 261107-dnz | Stop the installed PWA showing outdated builds | 2026-11-07 | afa8867b0 | [261107-dnz-stop-the-installed-pwa-showing-outdated-](./quick/261107-dnz-stop-the-installed-pwa-showing-outdated-/) |
 | 261110-87i | Arrow-oddness unselected baseline in blunder-check report | 2026-11-10 | 1a3841de4 | [261110-87i-arrow-oddness-unselected-baseline-in-blu](./quick/261110-87i-arrow-oddness-unselected-baseline-in-blu/) |
 | 261112-j47 | Engine wrapper keeps last exact info line; schema v3 gate on 1M-node lease lanes (SEED-261112-s4v Part A backend) | 2026-11-12 | c87b90090 | [261112-j47-engine-wrapper-keep-last-exact-info-line](./quick/261112-j47-engine-wrapper-keep-last-exact-info-line/) |
+| 261112-k56 | Opening cache: 1-2 ply cached lines count as missing, are re-searched and healed (SEED-261112-s4v Part A item 3) | 2026-11-12 | 74fd92567 | [261112-k56-opening-cache-treat-1-2-ply-cached-lines](./quick/261112-k56-opening-cache-treat-1-2-ply-cached-lines/) |
 
 ## Deferred Items
 
