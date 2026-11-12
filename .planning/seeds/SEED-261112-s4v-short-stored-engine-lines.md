@@ -96,8 +96,8 @@ Status 2026-11-12: items 1 and 2 shipped (quick task 261112-j47, release PR #471
 on the server pool and on updated workers store exact lines; builds below schema version 3 idle on the 1M-node
 lanes. Item 3 (opening cache) done by quick task 261112-k56: short (1-2 ply) and NULL cached pvs are treated as
 missing on lease and transplant, and confirmed rows heal from a strictly longer fresh pv in both lanes (remote lane
-through the atomic submit, local drain through its PV-recovery pass), with eval and best_move immutable. Open: item 4
-(frontend hooks), the benchmark backend restart, and all of Part B.
+through the atomic submit, local drain through its PV-recovery pass), with eval and best_move immutable. Item 3 released with PR #472 (prod at `1fcae718`).
+Open: item 4 (frontend hooks), the benchmark backend restart, and all of Part B.
 
 1. **Engine wrapper.** In `_acquire_and_analyse`, use `protocol.analysis()` and keep, per multipv index, the last raw
    info with a PV that is neither bound; fall back to the bound line only when no exact line exists (0 of 800 runs).
@@ -136,6 +136,14 @@ games with eval holes, and the remote atomic lane re-searches only NULL plies.
 2. **Blob re-walk.** NULL the blob column(s) of flaws whose line was repaired and clear `games.blobs_completed_at`.
    The existing tier-4 lane then re-walks them on the fleet and the server re-derives tactic tags and clears the
    Maia stamp on submit. Needs a selector tweak: tier 4 keys on `allowed_pv_lines IS NULL` only.
+   Also pick up empty `[]` sentinel lines at opening plies (ply <= 20). Since quick task 261112-k56 a short cached
+   pv reads as missing, so when an already-analysed game is re-leased and the incremental lease skips an opening
+   flaw ply whose cache row still has a short pv, that flaw line is stored as `[]` instead of a 1-2 ply stub. Neither
+   yields a tag, but `[]` is not NULL (tier 4 skips it) and the position's `game_positions.pv` is not short (the
+   step 1 selector skips it), so these need their own selector: flaws with a `[]` line at ply <= 20 whose position
+   has no usable pv. Expected to be rare (re-leased games only); count them in the pilot. The 3-11 ply lines need
+   no repair: bound lines are always exactly 1 ply (lowerbound) or 2 plies (upperbound), 174 of 174 in the
+   experiment, and stored 3-5 ply lines are 79% mate lines (prod sample 2026-11-12).
 3. **Opening cache.** The NULLing UPDATE is no longer needed (quick task 261112-k56): short cache pvs heal on their
    own as positions are re-searched. A cache-wide repair (step 1's hash dedupe) is only worth it if the heal rate
    proves too slow.
