@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 249
-current_phase_name: Blunder-Check Playable MVP (SEED-261108-dk0)
-status: completed
-stopped_at: Phase 248 complete — all phases complete
-last_updated: "2026-11-12T14:30:11.791Z"
-state_head: be2e625e96e4e316367f8687520f4328152a3280
+current_phase: 252
+current_phase_name: Short Engine Line Repair Backfill (SEED-261112-s4v)
+status: executing
+stopped_at: Completed 252-04-PLAN.md
+last_updated: "2026-11-12T17:38:00.370Z"
+state_head: 6edcfffb93dc2f6c2ae938129c7631971abc5ac1
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 63
-  total_plans: 24
+  total_plans: 33
   completed_plans: 26
 milestone_name: Train Spacing & Archive, Analysis Explain
 last_activity: 2026-11-08
@@ -21,10 +21,10 @@ last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) wi
 
 ## Current Position
 
-Phase: 249 (Blunder-Check Playable MVP (SEED-261108-dk0)) — READY TO EXECUTE
-Plan: Not started
+Phase: 252 (Short Engine Line Repair Backfill (SEED-261112-s4v)) — EXECUTING
+Plan: 5 of 9
 
-Status: All phases complete
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
@@ -913,6 +913,11 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 247]: 247-03: rederive clears the stamp on the GameNotAnalyzed branch too, since propagate already rewrote opening best_move rows
 - [Phase 247]: Plan 04: remote-worker lanes call the shared Maia scorer post-commit (atomic-submit with in-memory targets, flaw-blob-submit with targets=None gated on a non-empty survivor blob_map)
 - [Phase 247]: [247-05] Backfill batch write failure retries per game; shard aborts after 5 consecutive failing batches; parent forwards SIGTERM to shards
+- [Phase 252]: 252-01: guarded UPDATE uses unnest array binds (fixed parameter count) and lane scope uses EXISTS on benchmark_selection; connection/latency monitor only on real targets; dry run also freezes the work list
+- [Phase 252]: Tier-4 blob lane is per-line: every blob write is COALESCE(existing, new) (_batch_fill_null_flaw_pv_lines), the stamp probe checks either NULL line, and the submit core is eval_apply.apply_flaw_blob_results (shared with the plan-03 drain tick)
+- [Phase 252]: Plan 03: tier guard lives in /atomic-lease, not claim_eval_job; server-pool tier-4 claim is blob-only via apply_flaw_blob_results; no version bump (D-12, D-15)
+- [Phase 252]: 252-04: feeder clock is wall-clock (fed_at persisted across restarts); feed predicate also requires a usable pv (>= CACHED_PV_MIN_PLIES); fingerprints taken under the per-game lock before the NULL write
+- [Phase 252]: 252-04: measure-flips 3-game dev smoke shows control (exact vs exact) flip share 0.31 vs stored-vs-exact 0.33, so the 2% gate may trip on search noise alone; owner call on gate definition
 
 ### Pending Todos
 
@@ -1154,8 +1159,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-08T19:56:57.785Z
-**Stopped at:** Phase 248 complete — all phases complete
+**Last session:** 2026-11-12T17:37:59.909Z
+**Stopped at:** Completed 252-04-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1416,6 +1421,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 247 P03 | 35min | 2 tasks | 7 files |
 | Phase 247 P04 | 25min | 2 tasks | 2 files |
 | Phase 247 P05 | 25min | 3 tasks | 3 files |
+| Phase 252 P01 | 35 min | 3 tasks | 7 files |
+| Phase 252 P02 | 40 min | 2 tasks | 5 files |
+| Phase 252 P03 | 45min | 3 tasks | 4 files |
+| Phase 252 P04 | 70min | 3 tasks | 3 files |
 
 ## Performance Metrics
 

@@ -301,6 +301,51 @@ and the launch decision for guests and non-beta users. To be scoped after the ow
 **Requirements**: TBD
 **Plans:** 0 plans
 
+### Phase 252: Short Engine Line Repair Backfill (SEED-261112-s4v)
+
+**Goal**: Repair the stored Stockfish lines that were truncated to 1-2 plies before the 2026-11-12 fix (releases
+#471 to #473 stopped new damage; this phase repairs what is already stored). On prod: re-search the roughly 3.4M
+short `game_positions.pv` rows, re-walk the affected `game_flaws` line blobs through the existing tier-4 lane so
+tactic tags are re-derived, and pick up the empty opening-line sentinels. On the benchmark DB: repair the classical
+and rapid lane tranches, retag, re-run the §5 tactic zones and update `tactic_delta_zones.py`. Targeted repair, not
+a full re-evaluation; evals stay untouched unless the discuss-phase decides otherwise. Starts with a 1% pilot to
+measure throughput. Plan, sizing and open questions in the seed (Part B).
+
+**Depends on**: nothing in the blunder-check line (runs in parallel, own worktree). Phase 250's (facepalm selection,
+numbered 250 on the phase-249 branch) prod backfill should run after this phase's pv repair step.
+**Requirements**: TBD
+**Plans:** 4/9 plans executed
+
+Plans:
+**Wave 1**
+- [x] 252-01-PLAN.md — root_moves through the engine wrapper and the `repair` subcommand (S1, S3, D-01/02/04/07/08/10/13)
+- [x] 252-02-PLAN.md — per-line tier-4 lease/submit/sentinels, fill-NULL-only writes, shared apply core (D-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 252-03-PLAN.md — blob-only server-pool tier-4 tick (D-12) and mixed-fleet safety for version-2 workers (D-15)
+- [x] 252-04-PLAN.md — `feed`, `measure-flips` and `status` subcommands (D-11, D-05, D-10, D-15)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 252-05-PLAN.md — owner go-ahead, pre-merge gate, squash-merge, deploy, post-deploy baselines (orchestrator-inline)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 252-06-PLAN.md — prod line repair: read-only preview, one-way checkpoint, pilot then full run (orchestrator-inline)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 252-07-PLAN.md — prod re-walk feed, benchmark line repair alongside, prod retag (orchestrator-inline)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 252-08-PLAN.md — benchmark re-walk on the restarted :8001 backend and benchmark retag (orchestrator-inline)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 252-09-PLAN.md — §5 tactic zone refresh, owner has_zone checkpoint, registry update (orchestrator-inline)
+
+**Cross-cutting constraints:** <!-- gsd:generated -->
+- every task is a gate=blocking-human checkpoint, so the execute-phase dispatcher's executor returns control at each one and never performs a prod write, a prod MCP read or a long run itself
+
+Numbering note: 251 is taken on the phase-249 branch (schedule phase, renumbered there), so this phase is 252 on
+both lines.
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)

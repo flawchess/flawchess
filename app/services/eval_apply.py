@@ -21,7 +21,7 @@ semantics with it, whichever file the code lives in.
 import asyncio
 import io
 import json
-from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Collection, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal, TypeVar, cast
@@ -45,8 +45,10 @@ from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.opening_position_eval import OpeningPositionEval
 from app.repositories.game_flaws_repository import (
     FLAW_BLOB_AND_TACTIC_COLUMNS,
+    TACTIC_TAG_COLUMNS,
     bulk_insert_game_flaws,
     bulk_update_game_flaw_rows,
+    bulk_update_tactic_tags,
     clear_maia_flaws_completed,
     delete_flaw_plies,
     flaw_record_to_row,
@@ -72,6 +74,8 @@ from app.services.best_move_candidates import (
 from app.services.flaws_service import (
     FlawRecord,
     GameFlawsResult,
+    _classify_tactic_gated,
+    _recompute_fen_map,
     classify_game_flaws,
     count_game_severities,
 )
@@ -1814,20 +1818,56 @@ async def _derive_atomic_sentinel_lines(
     return sentinel_lines
 
 
-async def _batch_update_flaw_pv_lines(
-    session: AsyncSession,
-    game_id: int,
-    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]],
-) -> None:
-    """Write allowed_pv_lines + missed_pv_lines for each flaw ply.
+FlawBlobLine = Literal["allowed", "missed"]
 
-    One batched UPDATE mirroring _batch_update_pv_rows: CAST(:param AS jsonb) syntax for
-    asyncpg compatibility (not :: cast). Does NOT catch exceptions — caller decides fault
-    tolerance. Guard: empty blob_map is a no-op.
+# (line, node0 offset from the flaw ply): the missed line starts at the flaw ply, the allowed
+# line one ply later. Order matters: the lease emits missed tokens before allowed ones.
+_FLAW_BLOB_LINE_NODE0_OFFSETS: tuple[tuple[FlawBlobLine, int], ...] = (
+    ("missed", 0),
+    ("allowed", 1),
+)
+
+
+async def _null_blob_lines_by_ply(
+    session: AsyncSession, game_id: int
+) -> dict[int, frozenset[FlawBlobLine]]:
+    """Return {flaw_ply: lines whose blob column is SQL NULL} for one game.
+
+    The single per-line NULL definition of the tier-4 lane (lease, sentinel branches and
+    submit all read it). Only flaws with at least one NULL line appear. SQL NULL only: a
+    JSON null literal (what an ORM None bound into a JSONB column writes, Pitfall 6) is
+    NOT picked up, which is why no tier-4 write path ever binds None.
     """
-    if not blob_map:
-        return
-    params: dict[str, Any] = {"game_id": game_id}
+    result = await session.execute(
+        sa.select(
+            GameFlaw.ply,
+            GameFlaw.allowed_pv_lines.is_(None),
+            GameFlaw.missed_pv_lines.is_(None),
+        ).where(
+            GameFlaw.game_id == game_id,
+            sa.or_(GameFlaw.allowed_pv_lines.is_(None), GameFlaw.missed_pv_lines.is_(None)),
+        )
+    )
+    null_lines: dict[int, frozenset[FlawBlobLine]] = {}
+    for ply, allowed_is_null, missed_is_null in result.all():
+        lines: set[FlawBlobLine] = set()
+        if allowed_is_null:
+            lines.add("allowed")
+        if missed_is_null:
+            lines.add("missed")
+        null_lines[ply] = frozenset(lines)
+    return null_lines
+
+
+def _flaw_pv_values_clause(
+    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]],
+) -> tuple[str, dict[str, Any]]:
+    """Build the `(VALUES ...)` SQL and bind params shared by the two blob writers.
+
+    CAST(:param AS jsonb) syntax for asyncpg compatibility (not :: cast). Every value is
+    a JSON-serialised list, never None (a bound None would write JSON null, not SQL NULL).
+    """
+    params: dict[str, Any] = {}
     values_parts: list[str] = []
     for i, (ply, (allowed_blobs, missed_blobs)) in enumerate(blob_map.items()):
         params[f"ply_{i}"] = ply
@@ -1836,7 +1876,28 @@ async def _batch_update_flaw_pv_lines(
         values_parts.append(
             f"(CAST(:ply_{i} AS smallint), CAST(:allowed_{i} AS jsonb), CAST(:missed_{i} AS jsonb))"
         )
-    values_sql = ", ".join(values_parts)
+    return ", ".join(values_parts), params
+
+
+async def _batch_update_flaw_pv_lines(
+    session: AsyncSession,
+    game_id: int,
+    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]],
+) -> None:
+    """Write allowed_pv_lines + missed_pv_lines for each flaw ply, OVERWRITING both.
+
+    One batched UPDATE mirroring _batch_update_pv_rows: CAST(:param AS jsonb) syntax for
+    asyncpg compatibility (not :: cast). Does NOT catch exceptions — caller decides fault
+    tolerance. Guard: empty blob_map is a no-op.
+
+    Overwrite semantics are required by _diff_upsert_flaw_rows (a re-classified flaw gets
+    fresh blobs). The tier-4 backfill lane must NOT use this writer: it goes through
+    _batch_fill_null_flaw_pv_lines so a non-NULL line is never clobbered (D-03).
+    """
+    if not blob_map:
+        return
+    values_sql, value_params = _flaw_pv_values_clause(blob_map)
+    params: dict[str, Any] = {"game_id": game_id, **value_params}
     sql = sa.text(
         f"UPDATE game_flaws"  # noqa: S608 — no user input; params are bound
         f" SET allowed_pv_lines = v.allowed_pv_lines,"
@@ -1848,12 +1909,41 @@ async def _batch_update_flaw_pv_lines(
     await session.execute(sql, params)
 
 
+async def _batch_fill_null_flaw_pv_lines(
+    session: AsyncSession,
+    game_id: int,
+    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]],
+) -> None:
+    """Fill-NULL-only variant of _batch_update_flaw_pv_lines for the tier-4 lane (D-03).
+
+    `SET col = COALESCE(game_flaws.col, v.col)` per column: a non-NULL blob (a kept line of
+    a flaw whose other line was re-walked) is never overwritten, and a SQL NULL line gets
+    the new value. Callers may therefore pass a both-line map or `([], [])` sentinels
+    and the untouched line stays byte-identical. Callers always pass JSON lists, never
+    None (None would bind JSON null, which COALESCE treats as a value and IS NULL never
+    sees again). Does NOT catch exceptions; empty blob_map is a no-op.
+    """
+    if not blob_map:
+        return
+    values_sql, value_params = _flaw_pv_values_clause(blob_map)
+    params: dict[str, Any] = {"game_id": game_id, **value_params}
+    sql = sa.text(
+        f"UPDATE game_flaws"  # noqa: S608 — no user input; params are bound
+        f" SET allowed_pv_lines = COALESCE(game_flaws.allowed_pv_lines, v.allowed_pv_lines),"
+        f"     missed_pv_lines = COALESCE(game_flaws.missed_pv_lines, v.missed_pv_lines)"
+        f" FROM (VALUES {values_sql}) AS v(ply, allowed_pv_lines, missed_pv_lines)"
+        f" WHERE game_flaws.game_id = :game_id"
+        f" AND game_flaws.ply = v.ply"
+    )
+    await session.execute(sql, params)
+
+
 async def _refresh_blobs_completed(session: AsyncSession, game_id: int) -> None:
     """Maintain `games.blobs_completed_at` BIDIRECTIONALLY.
 
-    Probes for any remaining NULL-blob flaw ply (index-only via
-    ix_game_flaws_blob_backfill, sub-ms) and stamps the games-side column
-    accordingly: `now()` when no NULL-blob ply remains, NULL when one does.
+    Probes for any flaw of the game with a NULL blob line (either column; a per-game
+    lookup on the game_id index, not index-only) and stamps the games-side column
+    accordingly: `now()` when no NULL line remains, NULL when one does.
 
     Load-bearing rule: the invariant runs in BOTH directions. A stamp-only-if-empty
     design would silently drop a reclassified game out of the tier-4 blob-backfill
@@ -1866,9 +1956,13 @@ async def _refresh_blobs_completed(session: AsyncSession, game_id: int) -> None:
     Does NOT commit — the caller owns the transaction (mirrors
     _batch_update_flaw_pv_lines, not _stamp_best_moves_completed_directly).
     """
+    # SEED-261112-s4v D-03: the short-line repair NULLs a single line of a flaw. The probe
+    # used to look at allowed_pv_lines only, so a missed-only NULL would have been stamped
+    # complete and never re-walked; either NULL line keeps the game pending.
     probe = await session.execute(
         sa.text(
-            "SELECT 1 FROM game_flaws WHERE game_id = :game_id AND allowed_pv_lines IS NULL LIMIT 1"
+            "SELECT 1 FROM game_flaws WHERE game_id = :game_id"
+            " AND (allowed_pv_lines IS NULL OR missed_pv_lines IS NULL) LIMIT 1"
         ),
         {"game_id": game_id},
     )
@@ -1880,34 +1974,59 @@ async def _refresh_blobs_completed(session: AsyncSession, game_id: int) -> None:
     )
 
 
+def _replay_board_at_ply(pgn_text: str, game_id: int) -> dict[int, chess.Board] | None:
+    """Replay a stored PGN to {ply: board before that ply's move}; None on parse failure.
+
+    A raise here is a bug (stored PGN parsed cleanly at import), so it is captured to
+    Sentry the same way _collect_full_ply_targets does; the caller returns an empty lease,
+    which silently skips the whole tier-4 blob otherwise.
+    """
+    try:
+        pgn_game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception as exc:
+        sentry_sdk.set_tag("source", "full_eval_drain")
+        sentry_sdk.set_context("flaw_blob", {"game_id": game_id, "stage": "pgn_parse"})
+        sentry_sdk.capture_exception(exc)
+        return None
+    if pgn_game is None:
+        return None
+
+    board_at_ply: dict[int, chess.Board] = {}
+    board = pgn_game.board()
+    for ply, node in enumerate(pgn_game.mainline()):
+        board_at_ply[ply] = board.copy()
+        board.push(node.move)
+    return board_at_ply
+
+
 async def _build_flaw_blob_lease_positions(
     game_id: int,
 ) -> tuple[list[FlawBlobLeasePosition], set[tuple[int, str]]]:
-    """Build lease positions for one game's NULL-blob flaws.
+    """Build lease positions for one game's NULL blob lines.
 
-    Opens a READ session, loads the game PGN, flaw rows (allowed_pv_lines IS NULL),
-    and game_positions PV strings at {flaw_ply, flaw_ply+1} for each flaw.
-    Closes the session, then replays the PGN to a per-ply board map and, for each
-    flaw's two lines ("missed" at flaw_ply, "allowed" at flaw_ply+1), calls
-    _walk_pv_boards with the stored game_positions.pv string.
+    Opens a READ session, loads the game PGN, each flaw's NULL lines (_null_blob_lines_by_ply:
+    a flaw may have only its allowed or only its missed line NULL after a short-line
+    repair, D-03), and game_positions PV strings at the node-0 plies of those lines only.
+    Closes the session, then replays the PGN to a per-ply board map and, for each NULL
+    line ("missed" starts at flaw_ply, "allowed" at flaw_ply+1), calls _walk_pv_boards
+    with the stored game_positions.pv string.
 
     Returns (lease_positions, sentinel_lines):
     - lease_positions: FlawBlobLeasePosition list. Token = "{flaw_ply}:{line}:{node_k}".
       fen = board.fen() for each EVEN (solver) node k in a walkable PV (walk length
       >= 2). Odd (defender) nodes are never leased: the gate only reads
-      solver nodes, so defender continuation evals are dead weight.
-    - sentinel_lines: set of (flaw_ply, line) for lines with NULL pv, missing start board,
-      or < 2-node walks (un-fillable; caller writes [] sentinel for these).
+      solver nodes, so defender continuation evals are dead weight. Only NULL lines are
+      leased, so the submit's token validation rejects a token for a kept line.
+    - sentinel_lines: set of (flaw_ply, line) for NULL lines with NULL pv, missing start
+      board, or < 2-node walks (un-fillable; caller writes [] sentinel for these).
 
     Engine and lichess %eval games are handled identically: no is_lichess
     branch in the PV walk — game_positions.pv is populated for both at flaw plies.
-    Only flaws with allowed_pv_lines IS NULL are considered (predicate consistency with
-    the tier-4 lottery in _claim_tier4_blob).
 
     No asyncio.gather, no engine calls — all CPU work (PGN replay, PV walk) happens after
     the session closes. CLAUDE.md hard rule: AsyncSession is not safe for concurrent use.
     """
-    # ── Read phase: load game, flaws, and per-ply PV strings ──────────────────
+    # ── Read phase: load game, NULL lines, and per-ply PV strings ─────────────
     async with async_session_maker() as session:
         game = await session.scalar(select(Game).where(Game.id == game_id))
         if game is None:
@@ -1916,22 +2035,17 @@ async def _build_flaw_blob_lease_positions(
         pgn_text: str = game.pgn
 
         # Only flaws that still need blobs (predicate consistency with tier-4 lottery).
-        flaw_plies_result = await session.execute(
-            sa.select(GameFlaw.ply).where(
-                GameFlaw.game_id == game_id,
-                GameFlaw.allowed_pv_lines.is_(None),
-            )
-        )
-        flaw_plies: list[int] = list(flaw_plies_result.scalars().all())
-
-        if not flaw_plies:
+        null_lines = await _null_blob_lines_by_ply(session, game_id)
+        if not null_lines:
             return [], set()
 
-        # PV walk uses boards at {flaw_ply (missed start), flaw_ply+1 (allowed start)}.
-        target_plies: list[int] = []
-        for ply in flaw_plies:
-            target_plies.append(ply)
-            target_plies.append(ply + 1)
+        # PV walk uses boards at the node-0 ply of each NULL line only.
+        target_plies: set[int] = {
+            flaw_ply + offset
+            for flaw_ply, lines in null_lines.items()
+            for line, offset in _FLAW_BLOB_LINE_NODE0_OFFSETS
+            if line in lines
+        }
 
         pv_result = await session.execute(
             sa.select(GamePosition.ply, GamePosition.pv).where(
@@ -1944,37 +2058,24 @@ async def _build_flaw_blob_lease_positions(
     # read_session closed — no sessions open during CPU work below
 
     # ── CPU phase: replay PGN to build per-ply board map ──────────────────────
-    try:
-        pgn_game = chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception as exc:
-        # Same reasoning as _collect_full_ply_targets: stored PGN, so a raise is
-        # a bug, and the empty result silently skips the whole tier-4 blob.
-        sentry_sdk.set_tag("source", "full_eval_drain")
-        sentry_sdk.set_context("flaw_blob", {"game_id": game_id, "stage": "pgn_parse"})
-        sentry_sdk.capture_exception(exc)
+    board_at_ply = _replay_board_at_ply(pgn_text, game_id)
+    if board_at_ply is None:
         return [], set()
-    if pgn_game is None:
-        return [], set()
-
-    board_at_ply: dict[int, chess.Board] = {}
-    board = pgn_game.board()
-    for ply, node in enumerate(pgn_game.mainline()):
-        board_at_ply[ply] = board.copy()
-        board.push(node.move)
 
     cap = engine_service.PV_CAP_PLIES
     lease_positions: list[FlawBlobLeasePosition] = []
     sentinel_lines: set[tuple[int, str]] = set()
 
-    for flaw_ply in flaw_plies:
-        for line, node0_ply in [("missed", flaw_ply), ("allowed", flaw_ply + 1)]:
-            start_board = board_at_ply.get(node0_ply)
+    for flaw_ply in sorted(null_lines):
+        for line, offset in _FLAW_BLOB_LINE_NODE0_OFFSETS:
+            if line not in null_lines[flaw_ply]:
+                continue
+            start_board = board_at_ply.get(flaw_ply + offset)
             if start_board is None:
                 # Board beyond the game end or PGN parse gap → un-fillable sentinel.
                 sentinel_lines.add((flaw_ply, line))
                 continue
-            pv = pv_at_ply.get(node0_ply)
-            walk = _walk_pv_boards(start_board, pv, cap)
+            walk = _walk_pv_boards(start_board, pv_at_ply.get(flaw_ply + offset), cap)
             if len(walk) < 2:
                 # NULL pv → 1-node walk (just start_board); gate discards 1-node blobs.
                 sentinel_lines.add((flaw_ply, line))
@@ -2112,6 +2213,247 @@ def _assemble_flaw_blobs_from_submit(
         blob_map[flaw_ply] = (allowed_blob, missed_blob)
 
     return blob_map
+
+
+@dataclass(frozen=True)
+class FlawBlobApplyOutcome:
+    """Result of apply_flaw_blob_results; the caller maps `status` to its transport.
+
+    The router turns game_missing into 404 and foreign_token into 422; the server-pool
+    drain tick (D-12) ignores the HTTP shape and reads blobs_written only.
+    """
+
+    status: Literal["applied", "nothing_pending", "game_missing", "foreign_token"]
+    blobs_written: int
+    foreign_token: str | None = None
+
+
+def _flaw_line_tag_columns(
+    line: FlawBlobLine,
+    flaw_ply: int,
+    fen_map: dict[int, str],
+    positions: list[GamePosition],
+    blob: list[PvNode] | None,
+    pre_flaw_eval_cp: int | None,
+) -> dict[str, int | None]:
+    """Re-derive one line's four tactic columns via the live gated classifier."""
+    motif, piece, confidence, depth = _classify_tactic_gated(
+        flaw_ply, fen_map, positions, line, blob, pre_flaw_eval_cp
+    )
+    return {
+        f"{line}_tactic_motif": motif,
+        f"{line}_tactic_piece": piece,
+        f"{line}_tactic_confidence": confidence,
+        f"{line}_tactic_depth": depth,
+    }
+
+
+def _build_flaw_blob_tag_updates(
+    game: Game,
+    null_lines: dict[int, frozenset[FlawBlobLine]],
+    blob_map: dict[int, tuple[list[PvNode], list[PvNode]]],
+    positions: list[GamePosition],
+    fen_map: dict[int, str],
+) -> list[dict[str, Any]]:
+    """Per-flaw tag updates for the NULL lines only (D-03).
+
+    A flaw with only its missed line re-walked gets only the four missed_tactic_* keys;
+    the allowed_tactic_* columns keep their stored values (bulk_update_tactic_tags SETs
+    exactly the keys it is given). The caller groups the result by key set before the
+    executemany so no batch mixes column sets.
+    """
+    updates: list[dict[str, Any]] = []
+    for flaw_ply, lines in null_lines.items():
+        blob_pair = blob_map.get(flaw_ply)
+        blobs_by_line: dict[FlawBlobLine, list[PvNode] | None] = {
+            "allowed": blob_pair[0] if blob_pair is not None else None,
+            "missed": blob_pair[1] if blob_pair is not None else None,
+        }
+        pre_flaw_eval_cp: int | None = (
+            positions[flaw_ply - 1].eval_cp
+            if flaw_ply >= 1 and flaw_ply - 1 < len(positions)
+            else None
+        )
+        update_row: dict[str, Any] = {
+            "user_id": game.user_id,
+            "game_id": game.id,
+            "ply": flaw_ply,
+        }
+        for line in sorted(lines):
+            update_row.update(
+                _flaw_line_tag_columns(
+                    line,
+                    flaw_ply,
+                    fen_map,
+                    positions,
+                    blobs_by_line[line],
+                    pre_flaw_eval_cp,
+                )
+            )
+        updates.append(update_row)
+    return updates
+
+
+async def _write_flaw_blob_tag_updates(
+    session: AsyncSession, updates: list[dict[str, Any]]
+) -> None:
+    """bulk_update_tactic_tags once per distinct column set (no mixed-key executemany)."""
+    groups: dict[frozenset[str], list[dict[str, Any]]] = {}
+    for update_row in updates:
+        tag_keys = frozenset(k for k in update_row if k in TACTIC_TAG_COLUMNS)
+        groups.setdefault(tag_keys, []).append(update_row)
+    for group in groups.values():
+        await bulk_update_tactic_tags(session, group)
+
+
+async def stamp_flaw_blob_sentinels(game_id: int, plies: Collection[int] | None) -> None:
+    """Write `[]` sentinels into the NULL blob lines of `plies` and refresh the game stamp.
+
+    Used by the /flaw-blob-lease branches that return 204 without a lease: the all-sentinel
+    branch (`plies` = the flaw plies of the un-fillable lines) and the over-cap branch
+    (`plies=None` = every ply that still has a NULL line). The write is fill-NULL-only
+    (D-03: a kept non-NULL line is never clobbered by the sentinel), serialised against
+    the submit path by the per-game advisory lock, and always ends in
+    _refresh_blobs_completed. An empty `plies` collection writes nothing and only refreshes
+    the stamp: the forward-progress backstop that stops the tier-4 lottery re-picking a
+    game forever after a missed stamp.
+    """
+    async with async_session_maker() as session:
+        await session.execute(
+            sa.text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _game_write_lock_key(game_id)},
+        )
+        target_plies: Collection[int]
+        if plies is None:
+            target_plies = (await _null_blob_lines_by_ply(session, game_id)).keys()
+        else:
+            target_plies = plies
+        sentinel_blob_map: dict[int, tuple[list[PvNode], list[PvNode]]] = {
+            ply: ([], []) for ply in target_plies
+        }
+        await _batch_fill_null_flaw_pv_lines(session, game_id, sentinel_blob_map)
+        await _refresh_blobs_completed(session, game_id)
+        await session.commit()
+
+
+async def apply_flaw_blob_results(
+    game_id: int,
+    evals: Sequence[FlawBlobSubmitEval],
+    *,
+    in_tx_hook: Callable[[AsyncSession], Awaitable[None]] | None = None,
+) -> FlawBlobApplyOutcome:
+    """Apply tier-4 flaw-blob results for one game: the shared core of /flaw-blob-submit
+    and the server-pool blob-only drain tick (D-12).
+
+    Isolated from the atomic-submit write path (apply_full_eval): does not call
+    _classify_and_fill_oracle, does not stamp full_evals_completed_at, never writes
+    game_best_moves, eval_cp or eval_mate (D-06). Only NULL blob lines are written
+    (fill-NULL-only) and only those lines' four tactic columns are re-derived (D-03). No
+    engine calls, no asyncio.gather. Raises no HTTPException: statuses are returned.
+
+    Flow:
+    1. Read phase: load Game + all GamePosition rows + the per-line NULL set.
+    2. Idempotency gate: no NULL line left -> stamp refresh, status nothing_pending.
+    3. Re-derive the per-line lease and reject any token outside it (foreign_token): a
+       token for a kept (non-NULL) line was never leased.
+    4. CPU phase: assemble blob_map, build fen_map, classify per NULL line.
+    5. Write phase under the per-game advisory lock: survivor re-read, fill-NULL-only blob
+       write, per-column-set tag write, stamp refresh, `in_tx_hook`, commit.
+
+    `in_tx_hook(write_session)` runs inside the write transaction right before the commit
+    (the router uses it for the worker heartbeat upsert). The Maia re-score stays with the
+    callers: maia_flaw_scoring imports this module.
+    """
+    # ── Read phase ────────────────────────────────────────────────────────────
+    async with async_session_maker() as read_session:
+        game = await read_session.scalar(select(Game).where(Game.id == game_id))
+        if game is None:
+            return FlawBlobApplyOutcome(status="game_missing", blobs_written=0)
+
+        positions_result = await read_session.execute(
+            select(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.user_id == game.user_id)
+            .order_by(GamePosition.ply)
+        )
+        positions = list(positions_result.scalars().all())
+        null_lines = await _null_blob_lines_by_ply(read_session, game_id)
+    # read_session closed
+
+    # ── Idempotency gate: all blobs already written → no-op double-submit ──
+    # Backstop: no session is open here (read_session is closed) — open a
+    # short one to run the stamp refresh. Same forward-progress rationale as the
+    # /flaw-blob-lease backstop: this is a nothing-to-do path that must not
+    # let a previously-missed stamp go uncorrected forever.
+    if not null_lines:
+        async with async_session_maker() as write_session:
+            await _refresh_blobs_completed(write_session, game_id)
+            await write_session.commit()
+        return FlawBlobApplyOutcome(status="nothing_pending", blobs_written=0)
+
+    # ── Re-derive lease for token validation and sentinel detection ───────────
+    # _build_flaw_blob_lease_positions opens its own sessions (after our read_session
+    # was closed) so the CLAUDE.md no-concurrent-session rule is satisfied.
+    lease_positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
+    valid_tokens: set[str] = {pos.token for pos in lease_positions}
+
+    # Security: reject tokens not issued in the current lease. Workers only receive tokens
+    # for walkable PV nodes of NULL lines; sentinel-line tokens and tokens for a kept
+    # (non-NULL) line were never emitted and must never be accepted (T-252-04).
+    for e in evals:
+        if e.token not in valid_tokens:
+            return FlawBlobApplyOutcome(
+                status="foreign_token", blobs_written=0, foreign_token=e.token
+            )
+
+    # ── CPU phase: assemble blobs + classify ─────────────────────────────────
+    blob_map = _assemble_flaw_blobs_from_submit(game_id, evals, sentinel_lines)
+    fen_map = _recompute_fen_map(game.pgn)
+
+    # Per-game gated retag — only the tactic columns of the NULL lines; no severity/phase
+    # reclassification.
+    updates = _build_flaw_blob_tag_updates(game, null_lines, blob_map, positions, fen_map)
+
+    # ── Write phase: blobs + tactic tags in one transaction ──────────────────
+    async with async_session_maker() as write_session:
+        # Bug fix (Sentry FLAWCHESS-8D): `null_lines` above was computed in
+        # a read session that CLOSED before this write session opened. If
+        # scripts/opening_cache_repair.py's `rederive` stage deletes one of
+        # those plies in the window between that read and this write, `updates`
+        # (built from null_lines, independent of which tokens the worker
+        # submitted) still carries an entry for the now-vanished ply, and
+        # bulk_update_tactic_tags's ORM bulk-update-by-PK asserts exactly one
+        # row matched per parameter set — raising StaleDataError on that ply
+        # and turning this 200 into a 500 that loses every blob in the batch.
+        # The advisory lock alone does not close the window (the stale read
+        # already happened); the in-lock re-read below, filtering BOTH write
+        # payloads down to plies still present, is the load-bearing half.
+        await write_session.execute(
+            sa.text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _game_write_lock_key(game_id)},
+        )
+        surviving_plies: set[int] = set(
+            (
+                await write_session.execute(
+                    sa.select(GameFlaw.ply).where(
+                        GameFlaw.game_id == game_id,
+                        GameFlaw.user_id == game.user_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        blob_map = {ply: blob for ply, blob in blob_map.items() if ply in surviving_plies}
+        updates = [u for u in updates if u["ply"] in surviving_plies]
+
+        await _batch_fill_null_flaw_pv_lines(write_session, game_id, blob_map)
+        await _write_flaw_blob_tag_updates(write_session, updates)
+        await _refresh_blobs_completed(write_session, game_id)
+        if in_tx_hook is not None:
+            await in_tx_hook(write_session)
+        await write_session.commit()
+
+    return FlawBlobApplyOutcome(status="applied", blobs_written=len(blob_map))
 
 
 # Minimal duck-typed view so count_game_severities can be called with a

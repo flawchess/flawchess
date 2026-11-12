@@ -6130,3 +6130,449 @@ class TestTier4bMinimalDrainLichessBestCp:
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
+
+
+# ─── SEED-261112-s4v D-12: server-pool tier-4 tick is blob-only ───────────────
+
+# New user-id range for the tier-4 blob tick tests.
+_TEST_USER_ID_252: int = 252_300
+
+_T4_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
+_T4_FLAW_PLY: int = 2
+# Plies 2 and 3 carry long (4-ply) stored pvs so the missed (flaw ply) and allowed
+# (flaw ply + 1) walks both lease several solver nodes.
+_T4_PV_BY_PLY: dict[int, str | None] = {
+    0: None,
+    1: None,
+    2: "g1f3 b8c6 f1c4 g8f6",
+    3: "b8c6 f1c4 g8f6 d2d3",
+    4: None,
+}
+# Varied evals incl. mate scores: a full re-evaluation or reclassification would move them.
+_T4_EVALS_BY_PLY: dict[int, tuple[int | None, int | None]] = {
+    0: (20, None),
+    1: (15, None),
+    2: (-310, None),
+    3: (None, -4),
+    4: (45, None),
+}
+_T4_KEPT_BLOB: list[dict[str, Any]] = [
+    {"b": 42, "bm": None, "s": 7, "sm": None, "su": "d7d5"},
+    {"b": 0, "bm": None, "s": None, "sm": None, "su": ""},
+]
+# Deterministic MultiPV-2 7-tuple: (eval_cp, eval_mate, best_move, pv, second_cp,
+# second_mate, second_uci).
+_T4_ENGINE_RESULT: tuple[Any, ...] = (80, None, "g1f3", "g1f3 b8c6", 10, None, "d2d3")
+_T4_ENGINE_FAILURE: tuple[Any, ...] = (None, None, None, None, None, None, None)
+
+
+@pytest_asyncio.fixture(scope="session")
+async def full_drain_test_user_252(
+    full_drain_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure the tier-4 blob tick test user exists. Returns user_id."""
+    from app.models.user import User
+
+    async with full_drain_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _TEST_USER_ID_252))
+        if result.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_252,
+                    email=f"full-drain-test-{_TEST_USER_ID_252}@example.com",
+                    hashed_password="fakehash",
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_252
+
+
+async def _seed_tier4_game(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    *,
+    null_lines: frozenset[str],
+    pv_by_ply: dict[int, str | None] | None = None,
+    lichess: bool = False,
+    with_best_move: bool = True,
+) -> int:
+    """Seed an analyzed game that is pending only for the tier-4 blob backfill.
+
+    One flaw at ply 2 whose `null_lines` blob columns stay SQL NULL (never write an explicit
+    None: asyncpg would store JSON null); the other line holds _T4_KEPT_BLOB.
+    """
+    from app.models.game_best_move import GameBestMove
+    from app.models.game_flaw import GameFlaw
+    from app.models.game_position import GamePosition
+
+    now = datetime.now(timezone.utc)
+    game_id = await _insert_game(
+        session_maker,
+        user_id,
+        pgn=_T4_PGN,
+        evals_completed_at=now,
+        full_evals_completed_at=now,
+        full_pv_completed_at=now,
+        lichess_evals_at=now if lichess else None,
+    )
+    async with session_maker() as session:
+        for ply, pv in (pv_by_ply or _T4_PV_BY_PLY).items():
+            eval_cp, eval_mate = _T4_EVALS_BY_PLY[ply]
+            session.add(
+                GamePosition(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=ply,
+                    full_hash=hash((game_id, ply)) & 0x7FFFFFFFFFFFFFFF,
+                    white_hash=0,
+                    black_hash=0,
+                    eval_cp=eval_cp,
+                    eval_mate=eval_mate,
+                    pv=pv,
+                )
+            )
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=_T4_FLAW_PLY,
+            severity=2,
+            phase=0,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
+        )
+        for line in ("allowed", "missed"):
+            if line not in null_lines:
+                setattr(flaw, f"{line}_pv_lines", _T4_KEPT_BLOB)
+        session.add(flaw)
+        if with_best_move:
+            session.add(
+                GameBestMove(
+                    game_id=game_id,
+                    ply=4,
+                    maia_prob=0.25,
+                    best_cp=33,
+                    best_mate=None,
+                    second_cp=-5,
+                    second_mate=None,
+                )
+            )
+        await session.commit()
+    return game_id
+
+
+async def _snapshot_tier4_game(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[str, Any]:
+    """Everything the blob-only tick must leave alone, plus the blob columns it may fill."""
+    async with session_maker() as session:
+        evals = (
+            await session.execute(
+                sa.text(
+                    "SELECT ply, eval_cp, eval_mate FROM game_positions"
+                    " WHERE game_id = :g ORDER BY ply"
+                ),
+                {"g": game_id},
+            )
+        ).all()
+        flaws = (
+            await session.execute(
+                sa.text("SELECT ply, severity FROM game_flaws WHERE game_id = :g ORDER BY ply"),
+                {"g": game_id},
+            )
+        ).all()
+        best_moves = (
+            await session.execute(
+                sa.text(
+                    "SELECT ply, maia_prob, best_cp, best_mate, second_cp, second_mate"
+                    " FROM game_best_moves WHERE game_id = :g ORDER BY ply"
+                ),
+                {"g": game_id},
+            )
+        ).all()
+        blobs = (
+            (
+                await session.execute(
+                    sa.text(
+                        "SELECT ply, allowed_pv_lines::text AS allowed_text,"
+                        " missed_pv_lines::text AS missed_text,"
+                        " allowed_pv_lines IS NULL AS allowed_is_null,"
+                        " missed_pv_lines IS NULL AS missed_is_null"
+                        " FROM game_flaws WHERE game_id = :g ORDER BY ply"
+                    ),
+                    {"g": game_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        stamp = await session.scalar(
+            sa.text("SELECT blobs_completed_at FROM games WHERE id = :g"), {"g": game_id}
+        )
+    return {
+        "evals": [tuple(r) for r in evals],
+        "flaws": [tuple(r) for r in flaws],
+        "best_moves": [tuple(r) for r in best_moves],
+        "blobs": [dict(r) for r in blobs],
+        "stamp": stamp,
+    }
+
+
+def _patch_tier4_tick(
+    monkeypatch: pytest.MonkeyPatch,
+    session_maker: async_sessionmaker[AsyncSession],
+    game_id: int,
+    user_id: int,
+    engine_results: list[tuple[Any, ...]] | tuple[Any, ...] = _T4_ENGINE_RESULT,
+) -> tuple[Any, AsyncMock, AsyncMock, AsyncMock]:
+    """Patch one tier-4 claim end to end. Returns (drain_module, engine, maia, full_eval).
+
+    `apply_full_eval` raises: a tier-4 tick must never reach the full re-evaluation path.
+    """
+    from app.models.eval_jobs import TIER_BLOB_BACKFILL
+
+    drain_module = _patch_drain_for_tick_tests(
+        monkeypatch, session_maker, game_id, user_id, tier=TIER_BLOB_BACKFILL
+    )
+    if isinstance(engine_results, list):
+        engine = AsyncMock(side_effect=engine_results)
+    else:
+        engine = AsyncMock(return_value=engine_results)
+    monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", engine)
+    maia = AsyncMock(return_value=None)
+    monkeypatch.setattr(drain_module, "score_game_flaws_after_apply", maia)
+    full_eval = AsyncMock(
+        side_effect=AssertionError("a tier-4 tick must never call apply_full_eval")
+    )
+    monkeypatch.setattr(drain_module, "apply_full_eval", full_eval)
+    return drain_module, engine, maia, full_eval
+
+
+class TestTier4BlobDrainTick:
+    """D-12: a TIER_BLOB_BACKFILL claim in the server pool is blob-only (no re-evaluation)."""
+
+    async def test_tier4_tick_fills_null_line_and_keeps_evals(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tracer: the missed NULL line is filled; evals, flaws, best moves and the allowed
+        line are byte-identical afterwards, and the full re-evaluation never runs."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker, full_drain_test_user_252, null_lines=frozenset({"missed"})
+        )
+        drain_module, engine, maia, full_eval = _patch_tier4_tick(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_252
+        )
+        try:
+            before = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert (
+                before["blobs"][0]["missed_is_null"] and not before["blobs"][0]["allowed_is_null"]
+            )
+            assert before["stamp"] is None
+            assert before["best_moves"], "seed must carry a game_best_moves row"
+
+            processed = await drain_module._full_drain_tick()
+
+            assert processed is True
+            full_eval.assert_not_awaited()
+            assert engine.await_count >= 2, "the missed walk leases several solver nodes"
+            after = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert after["evals"] == before["evals"]
+            assert after["flaws"] == before["flaws"]
+            assert after["best_moves"] == before["best_moves"]
+            # The NULL missed line is now a real blob; the allowed line is byte-identical.
+            assert not after["blobs"][0]["missed_is_null"]
+            assert after["blobs"][0]["missed_text"] not in (None, "[]")
+            assert after["blobs"][0]["allowed_text"] == before["blobs"][0]["allowed_text"]
+            assert after["stamp"] is not None
+            maia.assert_awaited_once()
+            assert maia.await_args is not None
+            assert maia.await_args.kwargs["source"] == "full_eval_drain"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_natural_tier4_game_gets_both_lines(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A natural tier-4 game (both lines NULL) takes the same blob-only tick."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker,
+            full_drain_test_user_252,
+            null_lines=frozenset({"allowed", "missed"}),
+        )
+        drain_module, _engine, maia, full_eval = _patch_tier4_tick(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_252
+        )
+        try:
+            before = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert await drain_module._full_drain_tick() is True
+
+            after = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            full_eval.assert_not_awaited()
+            assert not after["blobs"][0]["allowed_is_null"]
+            assert not after["blobs"][0]["missed_is_null"]
+            assert after["blobs"][0]["allowed_text"] != "[]"
+            assert after["blobs"][0]["missed_text"] != "[]"
+            assert after["evals"] == before["evals"]
+            assert after["flaws"] == before["flaws"]
+            assert after["best_moves"] == before["best_moves"]
+            assert after["stamp"] is not None
+            maia.assert_awaited_once()
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_lichess_eval_game_keeps_lichess_evals(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A lichess-eval game's stored %evals are unchanged by the blob-only tick."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker,
+            full_drain_test_user_252,
+            null_lines=frozenset({"missed"}),
+            lichess=True,
+        )
+        drain_module, _engine, _maia, full_eval = _patch_tier4_tick(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_252,
+            # Fresh engine evals differ from the stored lichess ones on purpose.
+            engine_results=(999, None, "g1f3", "g1f3 b8c6", 5, None, "d2d3"),
+        )
+        try:
+            before = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert await drain_module._full_drain_tick() is True
+
+            after = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            full_eval.assert_not_awaited()
+            assert after["evals"] == before["evals"]
+            assert not after["blobs"][0]["missed_is_null"]
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_zero_leasable_positions_sentinels_and_stamps(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Node-0 pv NULL: the missed line becomes [], the kept line stays, game is stamped."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker,
+            full_drain_test_user_252,
+            null_lines=frozenset({"missed"}),
+            pv_by_ply={**_T4_PV_BY_PLY, _T4_FLAW_PLY: None},
+        )
+        drain_module, engine, maia, full_eval = _patch_tier4_tick(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_252
+        )
+        try:
+            before = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert await drain_module._full_drain_tick() is True
+
+            after = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            full_eval.assert_not_awaited()
+            assert engine.await_count == 0, "nothing leasable, so no engine search"
+            assert after["blobs"][0]["missed_text"] == "[]"
+            assert after["blobs"][0]["allowed_text"] == before["blobs"][0]["allowed_text"]
+            assert after["stamp"] is not None
+            assert after["evals"] == before["evals"]
+            maia.assert_not_awaited()
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_over_cap_sentinels_only_null_lines(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """More leased positions than MAX_SUBMIT_EVALS: NULL lines get [], kept line is intact."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker, full_drain_test_user_252, null_lines=frozenset({"missed"})
+        )
+        drain_module, engine, _maia, full_eval = _patch_tier4_tick(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_252
+        )
+        # The missed walk leases 2+ solver nodes, so a cap of 1 trips the over-cap branch.
+        monkeypatch.setattr(drain_module, "MAX_SUBMIT_EVALS", 1)
+        try:
+            before = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert await drain_module._full_drain_tick() is True
+
+            after = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            full_eval.assert_not_awaited()
+            assert engine.await_count == 0
+            assert after["blobs"][0]["missed_text"] == "[]"
+            assert after["blobs"][0]["allowed_text"] == before["blobs"][0]["allowed_text"]
+            assert after["stamp"] is not None
+            assert after["evals"] == before["evals"]
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_all_searches_failed_writes_nothing(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every engine search returns the all-None tuple: False, no write, game stays pending."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker, full_drain_test_user_252, null_lines=frozenset({"missed"})
+        )
+        drain_module, engine, maia, full_eval = _patch_tier4_tick(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_252,
+            engine_results=_T4_ENGINE_FAILURE,
+        )
+        try:
+            before = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            assert await drain_module._full_drain_tick() is False
+
+            after = await _snapshot_tier4_game(full_drain_session_maker, game_id)
+            full_eval.assert_not_awaited()
+            assert engine.await_count >= 1
+            assert after == before, "an all-fail tick must not write anything"
+            assert after["blobs"][0]["missed_is_null"]
+            assert after["stamp"] is None
+            maia.assert_not_awaited()
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_game_deleted_during_engine_phase_returns_false(
+        self,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        full_drain_test_user_252: int,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The game vanishes between the lease build and the apply: False, no exception."""
+        game_id = await _seed_tier4_game(
+            full_drain_session_maker, full_drain_test_user_252, null_lines=frozenset({"missed"})
+        )
+        drain_module, engine, maia, full_eval = _patch_tier4_tick(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_252
+        )
+
+        async def _delete_then_result(_board: chess.Board) -> tuple[Any, ...]:
+            await _delete_games(full_drain_session_maker, [game_id])
+            return _T4_ENGINE_RESULT
+
+        engine.side_effect = _delete_then_result
+        try:
+            assert await drain_module._full_drain_tick() is False
+            full_eval.assert_not_awaited()
+            maia.assert_not_awaited()
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])

@@ -201,6 +201,20 @@ class TestPoolPath:
         assert limit.depth is None
         assert multipv == 2
 
+    async def test_root_moves_reach_analysis_and_default_is_none(self) -> None:
+        """D-01: root_moves is threaded to protocol.analysis; every other caller sends None."""
+        board = _repro_board()
+        pin = next(iter(board.legal_moves))
+        protocol = ScriptedAnalysisProtocol([make_info(EXACT_DEPTH, cp=EXACT_CP, pv=EXACT_PV)])
+        pool = make_pool(protocol)
+
+        await pool.evaluate_nodes_with_pv(board)
+        await pool.evaluate_nodes_with_pv(board, root_moves=[pin])
+        await pool.evaluate_nodes(board)
+        await pool.evaluate_nodes_multipv2(board)
+
+        assert protocol.root_moves_calls == [None, [pin], None, None]
+
     async def test_timeout_returns_none_stops_search_and_releases_slot(self) -> None:
         protocol = ScriptedAnalysisProtocol(mode="hang")
         pool = make_pool(protocol)

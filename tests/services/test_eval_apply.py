@@ -36,13 +36,16 @@ from app.core.config import settings
 from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.services import eval_apply
+from app.services.forcing_line_gate import PvNode
 from app.services.eval_apply import (
+    _batch_fill_null_flaw_pv_lines,
     _build_best_move_candidates,
     _build_bestmove_lease_positions,
     _contiguous_san_prefix,
     _eval_of_position_map,
     _FullPlyEvalTarget,
     _game_write_lock_key,
+    _refresh_blobs_completed,
     _upsert_best_move_rows,
     apply_full_eval,
     commit_unless_game_deleted,
@@ -1329,5 +1332,223 @@ class TestCommitUnlessGameDeleted:
 
             assert await _game_exists(ea_session_maker, game_id)
             assert await _count_best_moves(ea_session_maker, game_id) == 0
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+
+# ─── SEED-261112-s4v D-03: fill-NULL-only blob writer and the OR stamp probe ───
+
+_TEST_USER_ID_252_APPLY: int = 252_250  # per-line tier-4 tests (range 252_250..252_299)
+_KEPT_NODE: dict[str, Any] = {"b": 11, "bm": None, "s": 3, "sm": None, "su": "e7e5"}
+
+
+@pytest_asyncio.fixture(scope="session")
+async def per_line_apply_user(ea_session_maker: async_sessionmaker[AsyncSession]) -> int:
+    """Ensure the per-line test user exists (committed)."""
+    from app.models.user import User
+
+    async with ea_session_maker() as session:
+        result = await session.execute(select(User).where(User.id == _TEST_USER_ID_252_APPLY))
+        if result.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_252_APPLY,
+                    email=f"eval-apply-{_TEST_USER_ID_252_APPLY}@example.com",
+                    hashed_password="fakehash",
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_252_APPLY
+
+
+async def _insert_blob_flaw(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    ply: int,
+    *,
+    allowed: list[dict[str, Any]] | None,
+    missed: list[dict[str, Any]] | None,
+) -> None:
+    """Insert a flaw; a None line is left unset so it stays SQL NULL (not JSON null)."""
+    async with session_maker() as session:
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            severity=2,
+            phase=0,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+        )
+        if allowed is not None:
+            flaw.allowed_pv_lines = allowed
+        if missed is not None:
+            flaw.missed_pv_lines = missed
+        session.add(flaw)
+        await session.commit()
+
+
+async def _blob_columns(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int, ply: int
+) -> dict[str, Any]:
+    async with session_maker() as session:
+        row = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT allowed_pv_lines::text AS allowed_text,"
+                        " missed_pv_lines::text AS missed_text,"
+                        " jsonb_typeof(allowed_pv_lines) AS allowed_type,"
+                        " jsonb_typeof(missed_pv_lines) AS missed_type,"
+                        " allowed_pv_lines IS NULL AS allowed_is_null,"
+                        " missed_pv_lines IS NULL AS missed_is_null"
+                        " FROM game_flaws WHERE game_id = :g AND ply = :p"
+                    ),
+                    {"g": game_id, "p": ply},
+                )
+            )
+            .mappings()
+            .one()
+        )
+    return dict(row)
+
+
+async def _stamp_of(session_maker: async_sessionmaker[AsyncSession], game_id: int) -> object:
+    async with session_maker() as session:
+        return await session.scalar(
+            text("SELECT blobs_completed_at FROM games WHERE id = :g"), {"g": game_id}
+        )
+
+
+class TestFillNullOnlyWriter:
+    """_batch_fill_null_flaw_pv_lines never overwrites a non-NULL line (D-03)."""
+
+    async def test_keeps_non_null_line_and_fills_null_line(
+        self,
+        per_line_apply_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        game_id = await _insert_game(ea_session_maker, per_line_apply_user)
+        try:
+            await _insert_blob_flaw(
+                ea_session_maker,
+                per_line_apply_user,
+                game_id,
+                2,
+                allowed=[_KEPT_NODE],
+                missed=None,
+            )
+            before = await _blob_columns(ea_session_maker, game_id, 2)
+            new_missed: Any = [{"b": 99, "bm": None, "s": None, "sm": None, "su": ""}]
+            async with ea_session_maker() as session:
+                # The writer is handed a different allowed line too: it must be ignored.
+                await _batch_fill_null_flaw_pv_lines(
+                    session,
+                    game_id,
+                    {2: ([{"b": -1, "bm": None, "s": None, "sm": None, "su": ""}], new_missed)},
+                )
+                await session.commit()
+            after = await _blob_columns(ea_session_maker, game_id, 2)
+            assert after["allowed_text"] == before["allowed_text"]
+            assert after["missed_is_null"] is False
+            # jsonb_typeof is 'array' (a JSON null literal would read 'null').
+            assert after["missed_type"] == "array"
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_sentinel_fill_writes_array_not_json_null(
+        self,
+        per_line_apply_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        game_id = await _insert_game(ea_session_maker, per_line_apply_user)
+        try:
+            await _insert_blob_flaw(
+                ea_session_maker, per_line_apply_user, game_id, 2, allowed=None, missed=None
+            )
+            async with ea_session_maker() as session:
+                await _batch_fill_null_flaw_pv_lines(session, game_id, {2: ([], [])})
+                await session.commit()
+            after = await _blob_columns(ea_session_maker, game_id, 2)
+            assert after["allowed_type"] == "array" and after["missed_type"] == "array"
+            assert after["allowed_text"] == "[]" and after["missed_text"] == "[]"
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+
+class TestRefreshBlobsCompletedPerLine:
+    """_refresh_blobs_completed treats either NULL line as pending (D-03)."""
+
+    async def test_missed_only_null_keeps_game_pending_until_filled(
+        self,
+        per_line_apply_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        game_id = await _insert_game(ea_session_maker, per_line_apply_user)
+        try:
+            # Flaw A is complete; flaw B has only its missed line NULL.
+            await _insert_blob_flaw(
+                ea_session_maker,
+                per_line_apply_user,
+                game_id,
+                2,
+                allowed=[_KEPT_NODE],
+                missed=[_KEPT_NODE],
+            )
+            await _insert_blob_flaw(
+                ea_session_maker,
+                per_line_apply_user,
+                game_id,
+                4,
+                allowed=[_KEPT_NODE],
+                missed=None,
+            )
+            async with ea_session_maker() as session:
+                await _refresh_blobs_completed(session, game_id)
+                await session.commit()
+            assert await _stamp_of(ea_session_maker, game_id) is None
+
+            async with ea_session_maker() as session:
+                missed_node = PvNode(b=11, bm=None, s=3, sm=None, su="e7e5")
+                await _batch_fill_null_flaw_pv_lines(session, game_id, {4: ([], [missed_node])})
+                await _refresh_blobs_completed(session, game_id)
+                await session.commit()
+            assert await _stamp_of(ea_session_maker, game_id) is not None
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_stamp_clears_again_when_a_line_is_re_nulled(
+        self,
+        per_line_apply_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """The repair feeder NULLs one line of a stamped game: the probe re-opens it."""
+        game_id = await _insert_game(ea_session_maker, per_line_apply_user)
+        try:
+            await _insert_blob_flaw(
+                ea_session_maker,
+                per_line_apply_user,
+                game_id,
+                2,
+                allowed=[_KEPT_NODE],
+                missed=[_KEPT_NODE],
+            )
+            async with ea_session_maker() as session:
+                await _refresh_blobs_completed(session, game_id)
+                await session.commit()
+            assert await _stamp_of(ea_session_maker, game_id) is not None
+
+            async with ea_session_maker() as session:
+                await session.execute(
+                    text("UPDATE game_flaws SET missed_pv_lines = NULL WHERE game_id = :g"),
+                    {"g": game_id},
+                )
+                await _refresh_blobs_completed(session, game_id)
+                await session.commit()
+            assert await _stamp_of(ea_session_maker, game_id) is None
         finally:
             await _delete_game(ea_session_maker, game_id)
