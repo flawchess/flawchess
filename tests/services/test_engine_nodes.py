@@ -371,3 +371,33 @@ class TestRealEngineNoBoundLines:
                         assert len(info.get("pv", [])) > MAX_TRUNCATED_PV_PLIES, info
         finally:
             await pool.stop()
+
+
+# Pinned-search contract (SEED-261112-s4v, Phase 252 D-01). Real 1M-node search through
+# `root_moves`; the generous timeout is a local constant (never patch `_NODES_TIMEOUT_S`).
+PINNED_SEARCH_TIMEOUT_S: float = 60.0
+PINNED_MOVE_UCI = "f6g5"  # a legal black king move in REPRO_FEN, not the free best (a7a6)
+
+
+@skip_if_no_stockfish
+class TestRealEnginePinnedSearch:
+    """A pinned search returns a pv that starts with the pin and is not a bound stub."""
+
+    async def test_pinned_search_pv_starts_with_pin_and_is_long(self) -> None:
+        from app.services.engine import EnginePool
+        from app.services.eval_apply import CACHED_PV_MIN_PLIES, pv_ply_count
+
+        board = chess.Board(REPRO_FEN)
+        pin = chess.Move.from_uci(PINNED_MOVE_UCI)
+        assert board.is_legal(pin)
+        pool = EnginePool(size=1)
+        await pool.start()
+        try:
+            _cp, _mate, best_move, pv = await pool.evaluate_nodes_with_pv(
+                board, timeout_s=PINNED_SEARCH_TIMEOUT_S, root_moves=[pin]
+            )
+        finally:
+            await pool.stop()
+        assert best_move == PINNED_MOVE_UCI
+        assert pv is not None and pv.split()[0] == PINNED_MOVE_UCI
+        assert pv_ply_count(pv) >= CACHED_PV_MIN_PLIES

@@ -74,6 +74,9 @@ class ScriptedAnalysisProtocol:
         self.mode = mode
         self.error = error
         self.calls: list[tuple[chess.engine.Limit, int | None]] = []
+        # Every call's `root_moves` kwarg (None when the caller did not pass it); kept
+        # apart from `calls` because existing tests assert that tuple's shape.
+        self.root_moves_calls: list[Sequence[chess.Move] | None] = []
         self.boards: list[chess.Board] = []
         self.stop_calls = 0
 
@@ -90,6 +93,10 @@ class ScriptedAnalysisProtocol:
     ) -> chess.engine.AnalysisResult:
         assert limit is not None
         self.calls.append((limit, multipv))
+        root_moves = kwargs.get("root_moves")
+        self.root_moves_calls.append(
+            list(typing.cast(Sequence[chess.Move], root_moves)) if root_moves is not None else None
+        )
         self.boards.append(board)
         result = chess.engine.AnalysisResult(stop=self._on_stop)
         if self.mode == "hang":

@@ -5452,7 +5452,11 @@ class TestFlawBlobSubmitEndpoint:
             # read session closes and BEFORE its write session opens) to
             # delete the row as a side effect, then delegate to the real
             # implementation (which now correctly sees only ply=2).
-            real_build = eval_remote_module._build_flaw_blob_lease_positions
+            # The submit core now lives in eval_apply (apply_flaw_blob_results), so its
+            # re-derive call resolves through eval_apply's module binding, not the router's.
+            import app.services.eval_apply as eval_apply_module
+
+            real_build = eval_apply_module._build_flaw_blob_lease_positions
 
             async def _build_and_concurrently_delete(
                 gid: int,
@@ -5465,7 +5469,7 @@ class TestFlawBlobSubmitEndpoint:
                 return await real_build(gid)
 
             monkeypatch.setattr(
-                eval_remote_module,
+                eval_apply_module,
                 "_build_flaw_blob_lease_positions",
                 _build_and_concurrently_delete,
             )
@@ -7532,3 +7536,792 @@ class TestTier4LeaseVersionGate:
             )
         assert resp.status_code == 204, f"{resp.status_code} {resp.text}"
         assert spy.await_count == 1
+
+
+# ─── SEED-261112-s4v D-03: tier-4 lane with a single NULL blob line ────────────
+
+# New user-id range for the per-line tests (never 992xx / 993xx).
+_TEST_USER_ID_252: int = 252_200
+
+# A five-ply game whose positions at the flaw ply (2) and the next ply (3) carry long (4-ply)
+# stored pvs, so both the missed (3 solver nodes) and the allowed (2 solver nodes) walks lease
+# several tokens.
+_PER_LINE_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
+_PER_LINE_FLAW_PLY: int = 2
+_PER_LINE_PV_BY_PLY: dict[int, str | None] = {
+    0: None,
+    1: None,
+    2: "g1f3 b8c6 f1c4 g8f6",
+    3: "b8c6 f1c4 g8f6 d2d3",
+    4: None,
+}
+# A stored (kept) blob and its tags, used to prove the untouched line stays byte-identical.
+_KEPT_BLOB: list[dict[str, Any]] = [
+    {"b": 42, "bm": None, "s": 7, "sm": None, "su": "d7d5"},
+    {"b": 0, "bm": None, "s": None, "sm": None, "su": ""},
+    {"b": -13, "bm": None, "s": -90, "sm": None, "su": "a7a6"},
+]
+_KEPT_TAGS: dict[str, int] = {"motif": 5, "piece": 3, "confidence": 70, "depth": 1}
+# A stale tag on the line being re-walked: it must be re-derived (the classifier finds no
+# tactic in this quiet position, so the value ends up NULL).
+_STALE_TAG_MOTIF: int = 9
+
+
+@pytest_asyncio.fixture(scope="session")
+async def per_line_test_user(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure the per-line test user exists in the per-run test DB. Returns user_id."""
+    from app.models.user import User
+
+    async with eval_worker_session_maker() as session:
+        existing = await session.execute(select(User).where(User.id == _TEST_USER_ID_252))
+        if existing.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_252,
+                    email=f"eval-worker-test-{_TEST_USER_ID_252}@example.com",
+                    hashed_password="fakehash",
+                    is_active=True,
+                    is_superuser=False,
+                    is_verified=True,
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_252
+
+
+async def _seed_per_line_game(
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int,
+    *,
+    null_lines: frozenset[str],
+    pv_by_ply: dict[int, str | None] | None = None,
+    second_flaw_ply: int | None = None,
+) -> int:
+    """Seed a tier-4 game with one flaw (ply 2) whose `null_lines` blob columns are SQL NULL.
+
+    `pv_by_ply` overrides the stored pvs; `second_flaw_ply` adds a bare flaw (both lines NULL).
+
+    Lines not in `null_lines` get _KEPT_BLOB and carry _KEPT_TAGS in their four tactic
+    columns; NULL lines carry a stale motif so a re-derivation is observable. The game has
+    full_evals_completed_at set and blobs_completed_at NULL (a pending tier-4 game).
+    """
+    from app.models.game_flaw import GameFlaw
+    from app.models.game_position import GamePosition
+
+    game_id = await _insert_game(
+        session_maker,
+        user_id,
+        pgn=_PER_LINE_PGN,
+        full_evals_completed_at=datetime.now(timezone.utc),
+    )
+    async with session_maker() as session:
+        for ply, pv in (pv_by_ply or _PER_LINE_PV_BY_PLY).items():
+            session.add(
+                GamePosition(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=ply,
+                    full_hash=hash((game_id, ply)) & 0x7FFFFFFFFFFFFFFF,
+                    white_hash=0,
+                    black_hash=0,
+                    eval_cp=0,
+                    pv=pv,
+                )
+            )
+        flaw = GameFlaw(
+            user_id=user_id,
+            game_id=game_id,
+            ply=_PER_LINE_FLAW_PLY,
+            severity=2,
+            phase=0,
+            is_miss=False,
+            is_lucky=False,
+            is_reversed=False,
+            is_squandered=False,
+            fen="rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
+        )
+        for line in ("allowed", "missed"):
+            if line in null_lines:
+                # Do NOT set the blob column: it stays SQL NULL (asyncpg JSONB caution,
+                # an explicit None would write JSON null). The stale tag must be re-derived.
+                setattr(flaw, f"{line}_tactic_motif", _STALE_TAG_MOTIF)
+            else:
+                setattr(flaw, f"{line}_pv_lines", _KEPT_BLOB)
+                for suffix, value in _KEPT_TAGS.items():
+                    setattr(flaw, f"{line}_tactic_{suffix}", value)
+        session.add(flaw)
+        if second_flaw_ply is not None:
+            session.add(
+                GameFlaw(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=second_flaw_ply,
+                    severity=2,
+                    phase=0,
+                    is_miss=False,
+                    is_lucky=False,
+                    is_reversed=False,
+                    is_squandered=False,
+                    fen="rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR",
+                )
+            )
+        await session.commit()
+    return game_id
+
+
+async def _fetch_per_line_flaw(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int, ply: int = _PER_LINE_FLAW_PLY
+) -> dict[str, Any]:
+    """Read the seeded flaw's blob (as text, for byte comparison) and tag columns."""
+    async with session_maker() as session:
+        row = (
+            (
+                await session.execute(
+                    sa.text(
+                        "SELECT allowed_pv_lines::text AS allowed_text,"
+                        " missed_pv_lines::text AS missed_text,"
+                        " allowed_pv_lines IS NULL AS allowed_is_null,"
+                        " missed_pv_lines IS NULL AS missed_is_null,"
+                        " allowed_tactic_motif, allowed_tactic_piece,"
+                        " allowed_tactic_confidence, allowed_tactic_depth,"
+                        " missed_tactic_motif, missed_tactic_piece,"
+                        " missed_tactic_confidence, missed_tactic_depth"
+                        " FROM game_flaws WHERE game_id = :g AND ply = :p"
+                    ),
+                    {"g": game_id, "p": ply},
+                )
+            )
+            .mappings()
+            .one()
+        )
+    return dict(row)
+
+
+async def _fetch_blobs_completed_at(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int
+) -> datetime | None:
+    async with session_maker() as session:
+        return await session.scalar(
+            sa.text("SELECT blobs_completed_at FROM games WHERE id = :g"), {"g": game_id}
+        )
+
+
+async def _fetch_position_evals(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int
+) -> list[tuple[int, int | None, int | None]]:
+    """(ply, eval_cp, eval_mate) of every position row, to prove they are left alone."""
+    async with session_maker() as session:
+        rows = await session.execute(
+            sa.text(
+                "SELECT ply, eval_cp, eval_mate FROM game_positions WHERE game_id = :g ORDER BY ply"
+            ),
+            {"g": game_id},
+        )
+        return [(r.ply, r.eval_cp, r.eval_mate) for r in rows]
+
+
+def _constant_submit_evals(lease_positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One worker eval per leased token (constant best_cp, no second move)."""
+    return [
+        {
+            "token": pos["token"],
+            "best_cp": 80,
+            "best_mate": None,
+            "second_cp": None,
+            "second_mate": None,
+            "second_uci": None,
+        }
+        for pos in lease_positions
+    ]
+
+
+class TestFlawBlobSingleNullLine:
+    """Tier-4 lane for a flaw with only ONE NULL blob line (D-03)."""
+
+    @pytest.mark.asyncio
+    async def test_missed_only_null_line_end_to_end(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """Lease -> submit with only missed NULL: only missed is leased, written and retagged."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        user_id = per_line_test_user
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker, user_id, null_lines=frozenset({"missed"})
+        )
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+        try:
+            before = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            assert before["missed_is_null"] and not before["allowed_is_null"]
+            evals_before = await _fetch_position_evals(eval_worker_session_maker, game_id)
+
+            async with _make_client() as client:
+                lease_resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert lease_resp.status_code == 200, lease_resp.text
+            positions = lease_resp.json()["positions"]
+            assert len(positions) >= 2, "a 4-ply missed pv leases several solver nodes"
+            prefix = f"{_PER_LINE_FLAW_PLY}:missed:"
+            assert all(p["token"].startswith(prefix) for p in positions), positions
+
+            async with _make_client() as client:
+                submit_resp = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json={
+                        "game_id": game_id,
+                        "sf_version": "Stockfish 18",
+                        "evals": _constant_submit_evals(positions),
+                    },
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert submit_resp.status_code == 200, submit_resp.text
+            assert submit_resp.json()["blobs_written"] == 1
+
+            after = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            # The re-walked line is now a real, non-empty blob.
+            assert not after["missed_is_null"]
+            assert after["missed_text"] not in (None, "[]")
+            # The kept line is byte-identical (jsonb text equality) and its tags unchanged.
+            assert after["allowed_text"] == before["allowed_text"]
+            for suffix in _KEPT_TAGS:
+                assert after[f"allowed_tactic_{suffix}"] == _KEPT_TAGS[suffix]
+            # The re-walked line's stale tag was re-derived (quiet position -> no tactic).
+            assert after["missed_tactic_motif"] != _STALE_TAG_MOTIF
+            # Both lines filled: the game leaves the tier-4 backlog.
+            assert await _fetch_blobs_completed_at(eval_worker_session_maker, game_id) is not None
+            # D-06: the tier-4 per-line path never touches evals or best-move rows.
+            assert await _fetch_position_evals(eval_worker_session_maker, game_id) == evals_before
+            assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 0
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    # ── helpers shared by the behaviour tests ────────────────────────────────
+
+    async def _lease(self, client: httpx.AsyncClient) -> httpx.Response:
+        return await client.post(
+            _FLAW_BLOB_LEASE_URL,
+            params=_CURRENT_WORKER_PARAMS,
+            headers={"X-Operator-Token": _TEST_TOKEN},
+        )
+
+    async def _submit(
+        self, client: httpx.AsyncClient, game_id: int, evals: list[dict[str, Any]]
+    ) -> httpx.Response:
+        return await client.post(
+            _FLAW_BLOB_SUBMIT_URL,
+            json={"game_id": game_id, "sf_version": "Stockfish 18", "evals": evals},
+            headers={"X-Operator-Token": _TEST_TOKEN},
+        )
+
+    def _wire(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session_maker: async_sessionmaker[AsyncSession],
+        game_id: int,
+        user_id: int,
+    ) -> None:
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, session_maker)
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+
+    # ── sentinel branches ────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_all_sentinel_missed_only_keeps_allowed_line(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """A missed-only NULL line whose node-0 pv is NULL -> 204, missed [], allowed intact."""
+        no_pv = {**_PER_LINE_PV_BY_PLY, _PER_LINE_FLAW_PLY: None}
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker,
+            per_line_test_user,
+            null_lines=frozenset({"missed"}),
+            pv_by_ply=no_pv,
+        )
+        self._wire(monkeypatch, eval_worker_session_maker, game_id, per_line_test_user)
+        try:
+            before = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            async with _make_client() as client:
+                resp = await self._lease(client)
+            assert resp.status_code == 204, resp.text
+            after = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            assert after["missed_text"] == "[]"
+            assert after["allowed_text"] == before["allowed_text"]
+            for suffix in _KEPT_TAGS:
+                assert after[f"allowed_tactic_{suffix}"] == _KEPT_TAGS[suffix]
+            assert await _fetch_blobs_completed_at(eval_worker_session_maker, game_id) is not None
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_over_cap_sentinels_only_null_lines(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """>MAX_SUBMIT_EVALS lease -> 204; every NULL line is sentineled, a kept line is not."""
+        import app.routers.eval_remote as eval_remote_module
+        from app.schemas.eval_remote import MAX_SUBMIT_EVALS, FlawBlobLeasePosition
+
+        second_ply = 4
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker,
+            per_line_test_user,
+            null_lines=frozenset({"missed"}),
+            second_flaw_ply=second_ply,
+        )
+        self._wire(monkeypatch, eval_worker_session_maker, game_id, per_line_test_user)
+        oversized = [
+            FlawBlobLeasePosition(
+                token=f"{_PER_LINE_FLAW_PLY}:missed:{k}", fen="8/8/8/8/8/8/8/8 w - - 0 1"
+            )
+            for k in range(MAX_SUBMIT_EVALS + 1)
+        ]
+        monkeypatch.setattr(
+            eval_remote_module,
+            "_build_flaw_blob_lease_positions",
+            AsyncMock(return_value=(oversized, set())),
+        )
+        try:
+            before = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            async with _make_client() as client:
+                resp = await self._lease(client)
+            assert resp.status_code == 204, resp.text
+
+            after = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            # Missed-only flaw: its NULL line is sentineled, its kept allowed line is not.
+            assert after["missed_text"] == "[]"
+            assert after["allowed_text"] == before["allowed_text"]
+            for suffix in _KEPT_TAGS:
+                assert after[f"allowed_tactic_{suffix}"] == _KEPT_TAGS[suffix]
+            # Both-NULL flaw: both lines sentineled.
+            other = await _fetch_per_line_flaw(eval_worker_session_maker, game_id, second_ply)
+            assert other["allowed_text"] == "[]" and other["missed_text"] == "[]"
+            assert await _fetch_blobs_completed_at(eval_worker_session_maker, game_id) is not None
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    # ── allowed-only, foreign line, both-NULL, idempotency ───────────────────
+
+    @pytest.mark.asyncio
+    async def test_allowed_only_null_line_end_to_end(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """Mirror case: only allowed is NULL -> only allowed leased, written and retagged."""
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker, per_line_test_user, null_lines=frozenset({"allowed"})
+        )
+        self._wire(monkeypatch, eval_worker_session_maker, game_id, per_line_test_user)
+        try:
+            before = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            async with _make_client() as client:
+                lease_resp = await self._lease(client)
+                assert lease_resp.status_code == 200, lease_resp.text
+                positions = lease_resp.json()["positions"]
+                assert positions
+                prefix = f"{_PER_LINE_FLAW_PLY}:allowed:"
+                assert all(p["token"].startswith(prefix) for p in positions), positions
+                submit_resp = await self._submit(client, game_id, _constant_submit_evals(positions))
+            assert submit_resp.status_code == 200, submit_resp.text
+
+            after = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            assert not after["allowed_is_null"] and after["allowed_text"] != "[]"
+            assert after["missed_text"] == before["missed_text"]
+            for suffix in _KEPT_TAGS:
+                assert after[f"missed_tactic_{suffix}"] == _KEPT_TAGS[suffix]
+            assert after["allowed_tactic_motif"] != _STALE_TAG_MOTIF
+            assert await _fetch_blobs_completed_at(eval_worker_session_maker, game_id) is not None
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_token_for_kept_line_rejected_422(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """A token for the allowed line of a missed-only flaw is outside the lease: 422, no write."""
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker, per_line_test_user, null_lines=frozenset({"missed"})
+        )
+        self._wire(monkeypatch, eval_worker_session_maker, game_id, per_line_test_user)
+        try:
+            before = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            foreign = _constant_submit_evals(
+                [{"token": f"{_PER_LINE_FLAW_PLY}:allowed:0", "fen": ""}]
+            )
+            async with _make_client() as client:
+                resp = await self._submit(client, game_id, foreign)
+            assert resp.status_code == 422, resp.text
+            after = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            assert after == before, "a rejected submit must not write anything"
+            assert after["missed_is_null"]
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_both_null_flaw_behaves_as_before(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """Both lines NULL: both leased and written, both lines' tags re-derived."""
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker,
+            per_line_test_user,
+            null_lines=frozenset({"allowed", "missed"}),
+        )
+        self._wire(monkeypatch, eval_worker_session_maker, game_id, per_line_test_user)
+        try:
+            async with _make_client() as client:
+                lease_resp = await self._lease(client)
+                assert lease_resp.status_code == 200, lease_resp.text
+                positions = lease_resp.json()["positions"]
+                lines = {p["token"].split(":")[1] for p in positions}
+                assert lines == {"allowed", "missed"}
+                submit_resp = await self._submit(client, game_id, _constant_submit_evals(positions))
+            assert submit_resp.status_code == 200, submit_resp.text
+            after = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+            for line in ("allowed", "missed"):
+                assert not after[f"{line}_is_null"] and after[f"{line}_text"] != "[]"
+                assert after[f"{line}_tactic_motif"] != _STALE_TAG_MOTIF
+            assert await _fetch_blobs_completed_at(eval_worker_session_maker, game_id) is not None
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_second_identical_submit_is_a_noop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        per_line_test_user: int,
+    ) -> None:
+        """Re-submitting after a successful submit returns blobs_written 0 and writes nothing."""
+        game_id = await _seed_per_line_game(
+            eval_worker_session_maker, per_line_test_user, null_lines=frozenset({"missed"})
+        )
+        self._wire(monkeypatch, eval_worker_session_maker, game_id, per_line_test_user)
+        try:
+            async with _make_client() as client:
+                lease_resp = await self._lease(client)
+                evals = _constant_submit_evals(lease_resp.json()["positions"])
+                first = await self._submit(client, game_id, evals)
+                assert first.status_code == 200 and first.json()["blobs_written"] == 1
+                snapshot = await _fetch_per_line_flaw(eval_worker_session_maker, game_id)
+                second = await self._submit(client, game_id, evals)
+            assert second.status_code == 200, second.text
+            assert second.json()["blobs_written"] == 0
+            assert await _fetch_per_line_flaw(eval_worker_session_maker, game_id) == snapshot
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+
+# ─── SEED-261112-s4v D-15: a mixed worker fleet can never reach a re-walk game ─────
+
+# New user-id range for the mixed-fleet tests.
+_TEST_USER_ID_252_FLEET: int = 252_350
+
+# A repaired (long) stored pv at the flaw ply: 12 legal plies from the position after 1.e4 e5.
+_REWALK_REPAIRED_PV: str = "g1f3 b8c6 f1c4 g8f6 d2d3 f8c5 e1g1 d7d6 c2c3 e8g8 b1d2 c8e6"
+_STALE_WORKER_PARAM_SETS: list[dict[str, int]] = [
+    {"worker_schema_version": 2},
+    {},  # param omitted: the un-updated-binary default of 1
+]
+
+
+@pytest_asyncio.fixture(scope="session")
+async def mixed_fleet_test_user(
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> int:
+    """Ensure the mixed-fleet test user exists in the per-run test DB. Returns user_id."""
+    from app.models.user import User
+
+    async with eval_worker_session_maker() as session:
+        existing = await session.execute(select(User).where(User.id == _TEST_USER_ID_252_FLEET))
+        if existing.unique().scalar_one_or_none() is None:
+            session.add(
+                User(
+                    id=_TEST_USER_ID_252_FLEET,
+                    email=f"eval-worker-test-{_TEST_USER_ID_252_FLEET}@example.com",
+                    hashed_password="fakehash",
+                    is_active=True,
+                    is_superuser=False,
+                    is_verified=True,
+                )
+            )
+            await session.commit()
+    return _TEST_USER_ID_252_FLEET
+
+
+async def _seed_fed_rewalk_game(
+    session_maker: async_sessionmaker[AsyncSession], user_id: int
+) -> int:
+    """A fed re-walk game: analyzed, entry-complete, missed line SQL NULL, repaired 12-ply pv.
+
+    full_evals_completed_at and evals_completed_at are set, blobs_completed_at and
+    best_moves_completed_at are NULL, so tier 4 AND tier 4b would both match it.
+    """
+    return await _seed_per_line_game(
+        session_maker,
+        user_id,
+        null_lines=frozenset({"missed"}),
+        pv_by_ply={**_PER_LINE_PV_BY_PLY, _PER_LINE_FLAW_PLY: _REWALK_REPAIRED_PV},
+    )
+
+
+async def _snapshot_rewalk_game(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[str, Any]:
+    """Every column a wrongly served re-walk lease could change (pv, blobs, evals, stamps)."""
+    async with session_maker() as session:
+        positions = (
+            await session.execute(
+                sa.text(
+                    "SELECT ply, eval_cp, eval_mate, pv, best_move FROM game_positions"
+                    " WHERE game_id = :g ORDER BY ply"
+                ),
+                {"g": game_id},
+            )
+        ).all()
+        stamps = (
+            (
+                await session.execute(
+                    sa.text(
+                        "SELECT evals_completed_at, full_evals_completed_at, blobs_completed_at,"
+                        " best_moves_completed_at, entry_eval_lease_expiry"
+                        " FROM games WHERE id = :g"
+                    ),
+                    {"g": game_id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+    return {
+        "positions": [tuple(r) for r in positions],
+        "flaw": await _fetch_per_line_flaw(session_maker, game_id),
+        "stamps": dict(stamps),
+    }
+
+
+class TestMixedFleetRewalkSafety:
+    """D-15: version-2 workers and scope-less atomic leases can never reach a re-walk game."""
+
+    @pytest.mark.asyncio
+    async def test_version2_workers_get_204_on_every_gated_lane(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        mixed_fleet_test_user: int,
+    ) -> None:
+        """v2 and param-omitted calls 204 on /atomic-lease (3 scopes), /flaw-blob-lease and
+        /bestmove-lease, and never reach a claim; the fed game is byte-identical afterwards."""
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.eval_jobs import TIER_EXPLICIT
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        user_id = mixed_fleet_test_user
+        game_id = await _seed_fed_rewalk_game(eval_worker_session_maker, user_id)
+        # If the gate leaked, each claim would hand out the fed game: a tier-1 claim would
+        # lease it for a full re-evaluation, the tier-4/4b picks for a re-walk.
+        atomic_claim = AsyncMock(
+            return_value=ClaimedJob(
+                game_id=game_id,
+                user_id=user_id,
+                tier=TIER_EXPLICIT,
+                is_lichess_eval_game=False,
+                job_id=None,
+            )
+        )
+        blob_claim = AsyncMock(return_value=(game_id, user_id))
+        bestmove_claim = AsyncMock(return_value=(game_id, user_id))
+        monkeypatch.setattr(eval_remote_module, "claim_eval_job", atomic_claim)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", blob_claim)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_bestmove", bestmove_claim)
+        try:
+            before = await _snapshot_rewalk_game(eval_worker_session_maker, game_id)
+            leaks: list[tuple[str, dict[str, int], dict[str, str]]] = []
+            async with _make_client() as client:
+                for version_params in _STALE_WORKER_PARAM_SETS:
+                    for scope_params in ({"scope": "explicit"}, {"scope": "idle"}, {}):
+                        resp = await client.post(
+                            _ATOMIC_LEASE_URL,
+                            params={**version_params, **scope_params},
+                            headers={"X-Operator-Token": _TEST_TOKEN},
+                        )
+                        if resp.status_code != 204:
+                            leaks.append(("atomic-lease", version_params, scope_params))
+                    for url in (_FLAW_BLOB_LEASE_URL, _BESTMOVE_LEASE_URL):
+                        resp = await client.post(
+                            url, params=version_params, headers={"X-Operator-Token": _TEST_TOKEN}
+                        )
+                        if resp.status_code != 204:
+                            leaks.append((url, version_params, {}))
+            assert not leaks, f"version-2 worker reached a lease lane: {leaks}"
+            atomic_claim.assert_not_awaited()
+            blob_claim.assert_not_awaited()
+            bestmove_claim.assert_not_awaited()
+            assert await _snapshot_rewalk_game(eval_worker_session_maker, game_id) == before
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
+    @pytest.mark.asyncio
+    async def test_entry_lane_never_claims_a_fed_game(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        mixed_fleet_test_user: int,
+    ) -> None:
+        """The only lane a v2 worker still claims selects evals_completed_at IS NULL games only."""
+        from app.services.eval_entry import _claim_entry_eval_games
+
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        game_id = await _seed_fed_rewalk_game(eval_worker_session_maker, mixed_fleet_test_user)
+        # A pending entry game proves the claim itself works, so "fed game absent" is meaningful.
+        pending_id = await _insert_game(
+            eval_worker_session_maker, mixed_fleet_test_user, evals_completed_at=None
+        )
+        try:
+            before = await _snapshot_rewalk_game(eval_worker_session_maker, game_id)
+            async with eval_worker_session_maker() as session:
+                claimed = await _claim_entry_eval_games(session, "v2-worker", 50, 600)
+                await session.rollback()  # discard the lease stamp
+            assert pending_id in claimed
+            assert game_id not in claimed
+            assert await _snapshot_rewalk_game(eval_worker_session_maker, game_id) == before
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id, pending_id])
+
+    @pytest.mark.asyncio
+    async def test_atomic_lease_never_serves_tier4_or_tier4b_claims(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        mixed_fleet_test_user: int,
+    ) -> None:
+        """A v3 scope-omitted /atomic-lease handed a tier-4/4b claim 204s; tier 1 still leases."""
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.eval_jobs import (
+            TIER_BESTMOVE_BACKFILL,
+            TIER_BLOB_BACKFILL,
+            TIER_EXPLICIT,
+        )
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        user_id = mixed_fleet_test_user
+        fed_id = await _seed_fed_rewalk_game(eval_worker_session_maker, user_id)
+        control_id = await _insert_game(eval_worker_session_maker, user_id)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            control_id,
+            [
+                {"ply": ply, "full_hash": 52000 + ply, "eval_cp": None, "eval_mate": None}
+                for ply in range(4)
+            ],
+        )
+
+        def _claim(game_id: int, tier: int) -> AsyncMock:
+            return AsyncMock(
+                return_value=ClaimedJob(
+                    game_id=game_id,
+                    user_id=user_id,
+                    tier=tier,
+                    is_lichess_eval_game=False,
+                    job_id=None,
+                )
+            )
+
+        try:
+            before = await _snapshot_rewalk_game(eval_worker_session_maker, fed_id)
+            async with _make_client() as client:
+                for tier in (TIER_BLOB_BACKFILL, TIER_BESTMOVE_BACKFILL):
+                    monkeypatch.setattr(eval_remote_module, "claim_eval_job", _claim(fed_id, tier))
+                    resp = await client.post(
+                        _ATOMIC_LEASE_URL,
+                        params=_CURRENT_WORKER_PARAMS,  # scope omitted: the bundled path
+                        headers={"X-Operator-Token": _TEST_TOKEN},
+                    )
+                    assert resp.status_code == 204, (tier, resp.text)
+
+                # Control: an ordinary tier-1 claim still leases the full game (200).
+                monkeypatch.setattr(
+                    eval_remote_module, "claim_eval_job", _claim(control_id, TIER_EXPLICIT)
+                )
+                resp = await client.post(
+                    _ATOMIC_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+                assert resp.status_code == 200, resp.text
+                assert resp.json()["game_id"] == control_id
+            assert await _snapshot_rewalk_game(eval_worker_session_maker, fed_id) == before
+        finally:
+            await _delete_games(eval_worker_session_maker, [fed_id, control_id])
+
+    @pytest.mark.asyncio
+    async def test_v3_flaw_blob_lease_serves_only_the_null_line(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        mixed_fleet_test_user: int,
+    ) -> None:
+        """Positive control: a version-3 /flaw-blob-lease leases the fed game, missed tokens only,
+        and leasing alone writes nothing."""
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        user_id = mixed_fleet_test_user
+        game_id = await _seed_fed_rewalk_game(eval_worker_session_maker, user_id)
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+        try:
+            before = await _snapshot_rewalk_game(eval_worker_session_maker, game_id)
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 200, resp.text
+            tokens = [p["token"] for p in resp.json()["positions"]]
+            assert tokens
+            assert all(t.startswith(f"{_PER_LINE_FLAW_PLY}:missed:") for t in tokens), tokens
+            assert await _snapshot_rewalk_game(eval_worker_session_maker, game_id) == before
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])

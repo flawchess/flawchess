@@ -1744,8 +1744,12 @@ async def _insert_game_flaw(
     *,
     ply: int = 2,
     allowed_pv_lines: list[dict[str, object]] | None = None,
+    missed_pv_lines: list[dict[str, object]] | None = None,
 ) -> None:
     """Insert a GameFlaw row and commit via the ORM.
+
+    missed_pv_lines behaves like allowed_pv_lines; since SEED-261112-s4v D-03 a flaw counts
+    as blobbed only when BOTH lines are non-NULL.
 
     allowed_pv_lines=None  → column NOT set → PostgreSQL stores SQL NULL → IS NULL matches.
     allowed_pv_lines=[...] → JSONB blob via asyncpg codec → IS NULL does NOT match.
@@ -1775,6 +1779,8 @@ async def _insert_game_flaw(
         # codec, which stores the JSONB null atom, not SQL NULL (see comment above).
         if allowed_pv_lines is not None:
             flaw.allowed_pv_lines = allowed_pv_lines
+        if missed_pv_lines is not None:
+            flaw.missed_pv_lines = missed_pv_lines
         session.add(flaw)
         await session.commit()
 
@@ -1865,7 +1871,11 @@ class TestTier4BlobBackfill:
             full_evals_completed_at=now,
         )
         await _insert_game_flaw(
-            queue_session_maker, user_id, game_id, allowed_pv_lines=written_blob
+            queue_session_maker,
+            user_id,
+            game_id,
+            allowed_pv_lines=written_blob,
+            missed_pv_lines=written_blob,
         )
 
         try:
@@ -1991,7 +2001,7 @@ class TestTier4BlobBackfill:
                 await session.execute(
                     sa_update2(GameFlaw)
                     .where(GameFlaw.game_id == game_id, GameFlaw.ply == 4)
-                    .values(allowed_pv_lines=written_blob)
+                    .values(allowed_pv_lines=written_blob, missed_pv_lines=written_blob)
                 )
                 await _refresh_blobs_completed(session, game_id)
                 await session.commit()

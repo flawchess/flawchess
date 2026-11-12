@@ -13,7 +13,7 @@ import pytest
 from app.services.engine import _STOCKFISH_PATH, evaluate
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Coroutine
+    from collections.abc import Callable, Coroutine, Sequence
     from typing import Any
 from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
 from tests.services.engine_fakes import ScriptedAnalysisProtocol, make_info, make_pool
@@ -230,6 +230,7 @@ class TestNodesTimeoutOverride:
             timeout: int | float,
             *,
             multipv: int | None = None,
+            root_moves: Sequence[chess.Move] | None = None,
         ) -> None:
             captured["timeout"] = timeout
             return None

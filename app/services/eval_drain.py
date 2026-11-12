@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import asyncpg
+import chess
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import TextClause, select, text, update
@@ -38,13 +39,13 @@ from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker
-from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL, TIER_BLOB_BACKFILL
 from app.models.game import Game
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
 from app.models.opening_position_eval import OpeningPositionEval
 from app.repositories.game_repository import users_with_no_pending_evals_or_imports
-from app.schemas.eval_remote import MAX_SUBMIT_EVALS
+from app.schemas.eval_remote import MAX_SUBMIT_EVALS, FlawBlobLeasePosition, FlawBlobSubmitEval
 from app.services import engine as engine_service
 from app.services import maia_engine
 from app.services import percentile_compute_registry
@@ -62,7 +63,7 @@ from app.services.eval_apply import (
     _assemble_one_line_blob,  # noqa: F401 — backward-compat re-export (tests)
     _build_best_move_candidates,
     _build_bestmove_lease_positions,
-    _build_flaw_blob_lease_positions,  # noqa: F401 — backward-compat re-export (tests/scripts)
+    _build_flaw_blob_lease_positions,
     _build_flaw_multipv2_blobs,
     _build_line_blobs,  # noqa: F401 — backward-compat re-export (tests)
     _classify_with_overlay,
@@ -75,10 +76,12 @@ from app.services.eval_apply import (
     _stamp_best_moves_completed_directly,
     _upsert_best_move_rows,
     _walk_pv_boards,  # noqa: F401 — backward-compat re-export (scripts)
+    apply_flaw_blob_results,
     apply_full_eval,
     cached_pv_usable,
     commit_unless_game_deleted,
     pv_ply_count,
+    stamp_flaw_blob_sentinels,
 )
 
 # The entry-ply (import-time, no-shift) collection/write/classify primitives live in
@@ -1357,6 +1360,89 @@ async def _tier4b_minimal_drain_tick(game_id: int, user_id: int) -> bool:
     return True
 
 
+def _evals_from_multipv2_results(
+    lease_positions: Sequence[FlawBlobLeasePosition],
+    results: Sequence[tuple[Any, ...]],
+) -> list[FlawBlobSubmitEval]:
+    """Map MultiPV-2 7-tuples to FlawBlobSubmitEval, dropping failed searches.
+
+    Same index mapping as scripts/remote_eval_worker.py `_eval_flaw_blob_positions`
+    ((eval_cp, eval_mate, best_move, pv, second_cp, second_mate, second_uci); best_move and
+    pv are PV-continuation data, not part of the blob contract). An engine-failure tuple has
+    BOTH eval_cp and eval_mate None (a mate-only score is a real result); it is dropped so
+    the shared apply core never sees a hole.
+    """
+    evals: list[FlawBlobSubmitEval] = []
+    for pos, r in zip(lease_positions, results, strict=True):
+        if r[0] is None and r[1] is None:
+            continue
+        evals.append(
+            FlawBlobSubmitEval(
+                token=pos.token,
+                best_cp=r[0],
+                best_mate=r[1],
+                second_cp=r[4],
+                second_mate=r[5],
+                second_uci=r[6],
+            )
+        )
+    return evals
+
+
+async def _tier4_blob_drain_tick(game_id: int, user_id: int) -> bool:
+    """Blob-only drain path for a TIER_BLOB_BACKFILL claim (SEED-261112-s4v, D-12).
+
+    `claim_eval_job` has already picked `game_id` via `_claim_tier4_blob`; this function
+    does what a remote worker does between `/flaw-blob-lease` and `/flaw-blob-submit`,
+    in-process, and writes through the SAME core (`apply_flaw_blob_results`). It never runs
+    the every-ply MultiPV-2 gather or `apply_full_eval`, so `eval_cp`, `eval_mate`, the flaw
+    set and `game_best_moves` stay untouched (D-03, D-05, D-06).
+
+    Flow:
+    1. `_build_flaw_blob_lease_positions`: server-recomputed FENs for the NULL blob lines.
+    2. Nothing leasable: stamp the un-fillable lines with `[]` sentinels (fill-NULL-only)
+       and return True. Over `MAX_SUBMIT_EVALS`: sentinel every NULL line, return True.
+       Either way the game leaves the tier-4 backlog (forward progress).
+    3. ONE `asyncio.gather` of MultiPV-2 searches, NO session open (CLAUDE.md hard rule).
+    4. No search survived: write nothing, return False (game stays pending, the same
+       contract as the full-drain all-fail circuit breaker).
+    5. `apply_flaw_blob_results`; on a non-empty write run the Maia re-score so the stats
+       follow the new missed line (it stays here because maia_flaw_scoring imports
+       eval_apply).
+
+    `user_id` is accepted for signature parity with the claimed `(game_id, user_id)` pair.
+    """
+    _ = user_id
+
+    lease_positions, sentinel_lines = await _build_flaw_blob_lease_positions(game_id)
+    if not lease_positions:
+        await stamp_flaw_blob_sentinels(game_id, {ply for ply, _line in sentinel_lines})
+        return True
+    if len(lease_positions) > MAX_SUBMIT_EVALS:
+        await stamp_flaw_blob_sentinels(game_id, None)
+        return True
+
+    results = await asyncio.gather(
+        *(engine_service.evaluate_nodes_multipv2(chess.Board(p.fen)) for p in lease_positions)
+    )
+    evals = _evals_from_multipv2_results(lease_positions, results)
+    if not evals:
+        return False
+
+    outcome = await apply_flaw_blob_results(game_id, evals)
+    if outcome.status == "game_missing":
+        return False
+    if outcome.status == "foreign_token":
+        # The lease changed between build and apply (a concurrent rederive); retry later.
+        logger.info("tier4_blob_drain: lease changed before apply, discarding tick")
+        return False
+    if outcome.blobs_written > 0:
+        await score_game_flaws_after_apply(
+            async_session_maker, game_id, targets=None, source="full_eval_drain"
+        )
+    return True
+
+
 async def _full_drain_tick() -> bool:
     """Run ONE full-drain tick: yield gate, queue claim, collect, dedup, gather, write.
 
@@ -1400,6 +1486,14 @@ async def _full_drain_tick() -> bool:
     # reclassify below.
     if tier == TIER_BESTMOVE_BACKFILL:
         return await _tier4b_minimal_drain_tick(game_id, user_id)
+
+    # A TIER_BLOB_BACKFILL claim takes the blob-only path. Bug fix (SEED-261112-s4v, D-12):
+    # before Phase 252 a tier-4 claim fell through to the every-ply MultiPV-2 gather plus
+    # apply_full_eval below, which rewrote eval_cp, re-classified flaws (drill-item orphans
+    # through eval non-determinism) and rebuilt both blobs. The server pool is now blob-only
+    # like the remote lane, sharing its apply core.
+    if tier == TIER_BLOB_BACKFILL:
+        return await _tier4_blob_drain_tick(game_id, user_id)
 
     # Step 2: load PGN + game_positions rows for this game.
     # Build targets via _collect_full_ply_targets; partition dedup candidates.

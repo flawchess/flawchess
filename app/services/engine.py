@@ -461,15 +461,19 @@ async def _collect_analysis_infos(
     board: chess.Board,
     limit: chess.engine.Limit,
     multipv: int | None,
+    root_moves: Sequence[chess.Move] | None = None,
 ) -> list[chess.engine.InfoDict]:
     """Run one search and return every raw info line Stockfish streamed, in order.
+
+    `root_moves` restricts the root search to those moves (UCI `searchmoves`);
+    None sends exactly what every pre-existing caller sent.
 
     The `with analysis:` block sends UCI `stop` when the caller's
     `asyncio.wait_for` cancels mid-search (AnalysisResult.__exit__ -> stop()), so a
     timeout leaves the protocol reusable. An engine crash surfaces as
     EngineError/EngineTerminatedError out of the iteration.
     """
-    analysis = await protocol.analysis(board, limit, multipv=multipv)
+    analysis = await protocol.analysis(board, limit, multipv=multipv, root_moves=root_moves)
     infos: list[chess.engine.InfoDict] = []
     with analysis:
         async for info in analysis:
@@ -605,14 +609,15 @@ class EnginePool:
         timeout: float,
         *,
         multipv: int | None = None,
+        root_moves: Sequence[chess.Move] | None = None,
     ) -> chess.engine.InfoDict | list[chess.engine.InfoDict] | None:
         """Shared worker-acquisition / analyse / failure-restart path.
 
         Single implementation behind every public evaluate* method — the
         acquisition, exception handling, restart-on-crash, and slot-release logic
         must never diverge between them. Only genuine difference across
-        callers is whether `multipv` is passed to `protocol.analysis()`; everything
-        else (post-processing into (cp, mate), raw InfoDict, or list[InfoDict])
+        callers is whether `multipv` and `root_moves` are passed to
+        `protocol.analysis()`; everything else (post-processing into (cp, mate), raw InfoDict, or list[InfoDict])
         is the caller's responsibility.
 
         Returns the final exact info line(s) of the search (see
@@ -652,7 +657,7 @@ class EnginePool:
                 # either: the merge never removes a `lowerbound: True` key, so an
                 # earlier bound line taints a later exact one.
                 infos = await asyncio.wait_for(
-                    _collect_analysis_infos(protocol, board, limit, multipv),
+                    _collect_analysis_infos(protocol, board, limit, multipv, root_moves),
                     timeout=timeout,
                 )
             except asyncio.TimeoutError:
@@ -715,6 +720,7 @@ class EnginePool:
         board: chess.Board,
         *,
         timeout_s: float | None = None,
+        root_moves: Sequence[chess.Move] | None = None,
     ) -> tuple[int | None, int | None, str | None, str | None]:
         """Evaluate at 1M nodes, returning (eval_cp, eval_mate, best_move_uci, pv_uci_string).
 
@@ -730,11 +736,17 @@ class EnginePool:
         oversubscribed box passes a longer wall clock here. A 1M-node search
         always terminates, so this is a wall-clock allowance, not a larger search
         budget — no server-side caller passes it.
+
+        root_moves: restrict the root search to these moves (UCI `searchmoves`), so the
+        returned pv starts with one of them. python-chess does NOT validate root moves
+        and native Stockfish silently ignores an illegal one and searches freely, so
+        callers check `board.is_legal(move)` first (and compare pv[0] afterwards).
         """
         result = await self._acquire_and_analyse(
             board,
             chess.engine.Limit(nodes=_NODES_BUDGET),
             timeout_s if timeout_s is not None else _NODES_TIMEOUT_S,
+            root_moves=root_moves,
         )
         if result is None or isinstance(result, list):
             return None, None, None, None
