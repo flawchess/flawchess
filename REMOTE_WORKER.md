@@ -92,6 +92,8 @@ The container restarts automatically if it crashes, freezes up, or your computer
 
 Every so often the worker gets improvements and fixes. Updating is worth doing occasionally, and it takes two steps: get the latest files, then restart.
 
+**Important for builds older than the November 2026 update (worker schema version 3).** Workers older than this update no longer receive full-game analysis, mistake and blunder line, or best-move work: the server simply answers "no work", and the worker only keeps doing the short opening-position jobs. Updating with the two steps below fixes it.
+
 **Step 1 — Get the latest files.**
 
 - *If you downloaded the ZIP:* download a fresh ZIP the same way as [step 1](#setup-linux-and-macos) and unzip it over your existing folder (or into a new folder). Your `.env` file is not in the download, so keep your old one or copy it across, your token does not change.

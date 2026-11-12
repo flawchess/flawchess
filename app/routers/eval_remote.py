@@ -152,11 +152,18 @@ logger = logging.getLogger(__name__)
 # ("server-pool") so the eval_jobs.leased_by column is traceable per worker type.
 _WORKER_ID_REMOTE: str = "remote-worker"
 
-# Minimum worker_schema_version accepted on the WHOLE atomic
-# lane (both scope=explicit and scope=idle). A v1 worker (or one that
-# omits the query param entirely, the un-updated-binary default) gets 204 no-work
-# rather than a hard error, so it idles harmlessly until the fleet is upgraded.
-WORKER_SCHEMA_VERSION_MIN: int = 2
+# Minimum worker_schema_version accepted on the 1M-node lease lanes. Version 3 marks
+# workers whose engine wrapper keeps the last EXACT Stockfish info line of a node-limited
+# search (SEED-261112-s4v); older builds stored 1-2 ply pvs in about 27% of positions
+# because the final aspiration-window bound line overwrote the last complete iteration.
+# The gate covers the three 1M-node lanes: /atomic-lease (both scope=explicit and
+# scope=idle), /flaw-blob-lease and /bestmove-lease. A worker below the minimum (or one
+# that omits the query param entirely, the un-updated-binary default of 1) gets 204
+# no-work rather than a hard error, so it idles harmlessly until the fleet is upgraded.
+# /entry-lease stays ungated: its depth-15 searches stop on a completed iteration, so old
+# builds keep doing useful work there. No submit endpoint gates on the version either: an
+# old worker rejected at submit would burn a full game per cycle and crash-loop.
+WORKER_SCHEMA_VERSION_MIN: int = 3
 
 router = APIRouter(prefix="/eval/remote", tags=["eval-remote"])
 
@@ -829,6 +836,9 @@ async def entry_submit_eval(
 @router.post("/flaw-blob-lease", response_model=None)
 async def flaw_blob_lease(
     _auth: Annotated[None, Depends(require_operator_token)],
+    # Default 1 covers an un-updated worker binary that omits the param entirely — it must
+    # 204 exactly like an explicit worker_schema_version=1 would.
+    worker_schema_version: Annotated[int, Query()] = 1,
 ) -> Response | FlawBlobLeaseResponse:
     """Claim one tier-4-selected game's flaw-blob FENs for MultiPV=2 evaluation.
 
@@ -836,6 +846,8 @@ async def flaw_blob_lease(
     path (apply_full_eval).
 
     Flow:
+    0. worker_schema_version below WORKER_SCHEMA_VERSION_MIN (or omitted) — 204
+       before any claim (old workers store truncated engine lines).
     1. Call _claim_tier4_blob — random pick of one analyzed non-guest game with
        at least one NULL-blob flaw (allowed_pv_lines IS NULL). Returns 204 when the
        backfill queue is empty.
@@ -854,6 +866,10 @@ async def flaw_blob_lease(
     Token format: "{flaw_ply}:{line}:{node_k}" — opaque to worker. The worker
     echoes the token unchanged on submit; the server parses it to reassemble PvNode blobs.
     """
+    # Version gate FIRST, before any claim.
+    if worker_schema_version < WORKER_SCHEMA_VERSION_MIN:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     # ── Tier-4 pick: open own session, close after pick ───────────────────────
     async with async_session_maker() as session:
         blob_pick = await _claim_tier4_blob(session)
@@ -1548,6 +1564,9 @@ async def atomic_submit_eval(
 @router.post("/bestmove-lease", response_model=None)
 async def bestmove_lease(
     _auth: Annotated[None, Depends(require_operator_token)],
+    # Default 1 covers an un-updated worker binary that omits the param entirely — it must
+    # 204 exactly like an explicit worker_schema_version=1 would.
+    worker_schema_version: Annotated[int, Query()] = 1,
 ) -> Response | BestMoveLeaseResponse:
     """Claim one tier-4b-selected game's server-recomputed candidate-ply FENs for
     worker-side MultiPV=2 runner-up search.
@@ -1558,7 +1577,9 @@ async def bestmove_lease(
     directly, same as /flaw-blob-lease calls _claim_tier4_blob directly.
 
     Flow:
-    1. BEST_MOVE_BACKFILL_ENABLED gate FIRST (single switch) — 204 before any
+    0. worker_schema_version below WORKER_SCHEMA_VERSION_MIN (or omitted) — 204
+       before anything else (old workers store truncated engine lines).
+    1. BEST_MOVE_BACKFILL_ENABLED gate (single switch) — 204 before any
        DB round-trip when off.
     2. _claim_tier4_bestmove — 204 when the tier-4b queue is empty.
     3. _build_bestmove_lease_positions — the server-recomputed candidate-ply set
@@ -1569,6 +1590,10 @@ async def bestmove_lease(
     5. Otherwise return BestMoveLeaseResponse with the candidate FENs (no move_uci
        on the wire — the server already validated candidacy).
     """
+    # Version gate FIRST, before the feature flag and any claim.
+    if worker_schema_version < WORKER_SCHEMA_VERSION_MIN:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     if not settings.BEST_MOVE_BACKFILL_ENABLED:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 

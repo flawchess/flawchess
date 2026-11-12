@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.main import app
+from app.routers.eval_remote import WORKER_SCHEMA_VERSION_MIN
 from app.models.worker_heartbeat import WorkerHeartbeat
 from app.repositories.worker_heartbeat_repository import upsert_worker_heartbeat
 from tests.test_eval_worker_endpoints import (
@@ -259,6 +260,7 @@ async def test_worker_heartbeat_accumulates_across_all_three_submit_lanes(
         async with _make_client() as client:
             lease_resp = await client.post(
                 _FLAW_BLOB_LEASE_URL,
+                params={"worker_schema_version": WORKER_SCHEMA_VERSION_MIN},
                 headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert lease_resp.status_code == 200, f"flaw-blob-lease: {lease_resp.text}"

@@ -7,7 +7,7 @@ instead of Limit(depth=15); timeout is 5.0s (_NODES_TIMEOUT_S) rather than 2.0s.
 
 import asyncio
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import chess
 import chess.engine
@@ -18,10 +18,12 @@ from app.services.engine import (
     _NODES_BUDGET,
     _STOCKFISH_PATH,
     _THREADS,
+    _collect_analysis_infos,
     _engine_popen_kwargs,
     evaluate_nodes,
 )
 from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
+from tests.services.engine_fakes import ScriptedAnalysisProtocol, make_info, make_pool
 
 # Reuse the same stockfish-presence detection as test_engine.py.
 stockfish_missing = not (os.path.isfile(_STOCKFISH_PATH) and os.access(_STOCKFISH_PATH, os.X_OK))
@@ -38,7 +40,6 @@ DENSE_MIDDLEGAME_FEN = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w
 SIXTEEN_WHITE_PAWNS_FEN = "rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 EXPECTED_NONE_RESULT: tuple[None, None] = (None, None)
 MOCK_EVAL_CP: int = 150
-MOCK_EVAL_MATE: int = 3
 # Cancellation-safety probe budgets.
 _CANCEL_PROBE_TIMEOUT_S: float = 0.05  # forces asyncio.wait_for to cancel mid-search
 _REUSE_PROBE_DEPTH: int = 6  # cheap second search on the SAME protocol
@@ -80,49 +81,19 @@ class TestEvaluateNodesWithMock:
     """
 
     async def test_evaluate_nodes_uses_limit_nodes(self) -> None:
-        """evaluate_nodes() calls protocol.analyse with Limit(nodes=1_000_000).
+        """evaluate_nodes() calls protocol.analysis with Limit(nodes=1_000_000).
 
-        Records the Limit instance passed to analyse() and asserts nodes=1_000_000
+        Records the Limit instance passed to analysis() and asserts nodes=1_000_000
         is used, NOT depth. This is the core contract.
         """
-        from app.services.engine import EnginePool, _NODES_BUDGET
-
-        # Create a pool and mock its internal protocol
-        pool = EnginePool(size=1)
-        pool._started = True
-
-        # Build a mock InfoDict with a valid score
-        mock_score = MagicMock(spec=chess.engine.PovScore)
-        mock_white_score = MagicMock()
-        mock_white_score.score.return_value = MOCK_EVAL_CP
-        mock_white_score.mate.return_value = None
-        mock_score.white.return_value = mock_white_score
-
-        mock_info: chess.engine.InfoDict = chess.engine.InfoDict({"score": mock_score})  # type: ignore[misc]
-
-        captured_limits: list[chess.engine.Limit] = []
-
-        async def mock_analyse(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> chess.engine.InfoDict:
-            captured_limits.append(limit)
-            return mock_info
-
-        mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
-        mock_protocol.analyse = mock_analyse
-
-        pool._transports = [None]
-        pool._protocols = [mock_protocol]
-        pool._available.put_nowait(0)
+        protocol = ScriptedAnalysisProtocol([make_info(15, cp=MOCK_EVAL_CP, pv="e2e4")])
+        pool = make_pool(protocol)
 
         board = chess.Board()
         await pool.evaluate_nodes(board)
 
-        assert len(captured_limits) == 1, "Expected exactly one analyse() call"
-        limit = captured_limits[0]
+        assert len(protocol.calls) == 1, "Expected exactly one analysis() call"
+        limit, _multipv = protocol.calls[0]
         assert limit.nodes == _NODES_BUDGET, (
             f"Expected nodes={_NODES_BUDGET}, got nodes={limit.nodes}"
         )
@@ -143,27 +114,9 @@ class TestEvaluateNodesWithMock:
         asserts a genuine EngineError DOES still restart — together the two are the
         regression test for the split except handlers.
         """
-        from app.services.engine import EnginePool
-
-        pool = EnginePool(size=1)
-        pool._started = True
-
-        async def mock_analyse_slow(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> chess.engine.InfoDict:
-            # Simulate a hung engine by sleeping longer than _NODES_TIMEOUT_S
-            await asyncio.sleep(9999)
-            raise AssertionError("Should have been cancelled before this")  # unreachable
-
-        mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
-        mock_protocol.analyse = mock_analyse_slow
-
-        pool._transports = [None]
-        pool._protocols = [mock_protocol]
-        pool._available.put_nowait(0)
+        # Hang mode: a search that never finishes (a hung engine).
+        protocol = ScriptedAnalysisProtocol(mode="hang")
+        pool = make_pool(protocol)
 
         # Patch _restart_worker to avoid spawning a real process
         restart_called = False
@@ -184,28 +137,15 @@ class TestEvaluateNodesWithMock:
             "260725-da3: a timeout must NOT restart the worker — a slow box is not a "
             "broken engine, and restarting amplifies holes (FLAWCHESS-8B)"
         )
+        assert protocol.stop_calls == 1, "timeout must send UCI stop via `with analysis:`"
+        assert pool._available.qsize() == 1, "slot must be released after a timeout"
 
     async def test_evaluate_nodes_engine_error_returns_none(self) -> None:
         """evaluate_nodes() returns (None, None) on chess.engine.EngineError."""
-        from app.services.engine import EnginePool
-
-        pool = EnginePool(size=1)
-        pool._started = True
-
-        async def mock_analyse_error(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> chess.engine.InfoDict:
-            raise chess.engine.EngineError("mock engine error")
-
-        mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
-        mock_protocol.analyse = mock_analyse_error
-
-        pool._transports = [None]
-        pool._protocols = [mock_protocol]
-        pool._available.put_nowait(0)
+        protocol = ScriptedAnalysisProtocol(
+            mode="error", error=chess.engine.EngineError("mock engine error")
+        )
+        pool = make_pool(protocol)
 
         restart_called = False
 
@@ -227,33 +167,13 @@ class TestEvaluateNodesWithMock:
 
     async def test_invalid_board_never_reaches_the_engine(self) -> None:
         """An impossible position (16 white pawns) returns (None, None) without
-        calling protocol.analyse and without consuming the worker slot.
+        calling protocol.analysis and without consuming the worker slot.
 
         Stockfish dies on such boards
         (chess.com custom-position games), taking a pool worker with it.
         """
-        from app.services.engine import EnginePool
-
-        pool = EnginePool(size=1)
-        pool._started = True
-
-        analyse_calls: list[chess.Board] = []
-
-        async def mock_analyse(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> chess.engine.InfoDict:
-            analyse_calls.append(board)
-            return chess.engine.InfoDict()
-
-        mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
-        mock_protocol.analyse = mock_analyse
-
-        pool._transports = [None]
-        pool._protocols = [mock_protocol]
-        pool._available.put_nowait(0)
+        protocol = ScriptedAnalysisProtocol([make_info(15, cp=MOCK_EVAL_CP, pv="e2e4")])
+        pool = make_pool(protocol)
 
         board = chess.Board(SIXTEEN_WHITE_PAWNS_FEN)
         assert not board.is_valid()
@@ -261,7 +181,7 @@ class TestEvaluateNodesWithMock:
         result = await pool.evaluate_nodes(board)
 
         assert result == EXPECTED_NONE_RESULT
-        assert analyse_calls == [], "invalid board must never reach protocol.analyse"
+        assert protocol.calls == [], "invalid board must never reach protocol.analysis"
         assert pool._available.qsize() == 1, "worker slot must not be consumed"
 
     async def test_restart_worker_spawn_failure_captures_and_marks_slot_dead(self) -> None:
@@ -345,26 +265,27 @@ class TestEvaluateNodesRealEngine:
             assert -EVAL_MATE_MAX_ABS <= mate <= EVAL_MATE_MAX_ABS
 
     async def test_protocol_reusable_after_cancelled_analyse(self) -> None:
-        """A cancelled `analyse()` leaves the UCI protocol usable for the NEXT one.
+        """A cancelled search leaves the UCI protocol usable for the NEXT one.
 
         This is the correctness gate for skipping
         `_restart_worker` on `asyncio.TimeoutError`. Keeping a slot after a
         timeout is only safe if the cancellation does NOT desync the protocol,
         so this asserts it against the real binary rather than assuming it.
 
+        The pool path is `_collect_analysis_infos` (`Protocol.analysis` plus
+        `with analysis:`), which this test cancels under `asyncio.wait_for`.
+
         Why it holds (python-chess 1.11.2 source):
-          - `Protocol.analyse` (L1127-1132) awaits the result inside `with analysis:`.
-          - `AnalysisResult.__exit__` (L2836) -> `.stop()` (L2761) -> the
-            `stop=lambda: self.cancel()` hook installed by
-            `UciAnalysisCommand.start` (L1712) -> `.cancel()` (L1766) sends `stop`.
+          - `with analysis:` exits through `AnalysisResult.__exit__` -> `.stop()` ->
+            the `stop` hook installed by `UciAnalysisCommand.start`, which sends
+            UCI `stop` (only if the end marker was not posted yet).
           - Stockfish answers `stop` with `bestmove`, which reaches
-            `UciAnalysisCommand._bestmove` (L1758-1763) -> `set_finished()`
-            (L1268) -> resolves the command's `finished` future.
-          - `Protocol.communicate` (L986-1021) queues the NEXT command as
-            `next_command` and only `_start()`s it from
-            `previous_command_finished` (L1001-1012), i.e. AFTER that `finished`
-            future resolves. The next `analyse()` is therefore serialized behind
-            the stale `bestmove` instead of racing it.
+            `UciAnalysisCommand._bestmove` -> `set_finished()` -> resolves the
+            command's `finished` future.
+          - `Protocol.communicate` queues the NEXT command as `next_command` and
+            only starts it once that `finished` future resolves, i.e. AFTER the
+            stale `bestmove`. The next search is therefore serialized behind it
+            instead of racing it.
         """
         transport, protocol = await chess.engine.popen_uci(
             _STOCKFISH_PATH, **_engine_popen_kwargs()
@@ -385,7 +306,9 @@ class TestEvaluateNodesRealEngine:
             board = chess.Board(DENSE_MIDDLEGAME_FEN)
             with pytest.raises((asyncio.TimeoutError, TimeoutError)):
                 await asyncio.wait_for(
-                    protocol.analyse(board, chess.engine.Limit(nodes=_NODES_BUDGET)),
+                    _collect_analysis_infos(
+                        protocol, board, chess.engine.Limit(nodes=_NODES_BUDGET), None
+                    ),
                     timeout=_CANCEL_PROBE_TIMEOUT_S,
                 )
 
@@ -408,3 +331,43 @@ class TestEvaluateNodesRealEngine:
             except chess.engine.EngineError, chess.engine.EngineTerminatedError, RuntimeError:
                 pass
             transport.close()
+
+
+# Bound-line regression (SEED-261112-s4v). A chance-based smoke check against the real
+# binary: planning probe saw 1 of 12 searches end on a 1-ply lowerbound line, with
+# last-exact pvs of 8-26 plies. The deterministic proof lives in
+# test_engine_bound_lines.py.
+REPRO_FEN = "8/p6R/4rkp1/3p1p2/8/P5P1/1P3PK1/8 b - - 0 34"
+BOUND_REGRESSION_ROUNDS: int = 4
+BOUND_REGRESSION_TIMEOUT_S: float = 60.0  # generous: SCHED_IDLE starves under -n auto
+MAX_TRUNCATED_PV_PLIES: int = 2
+BOUND_KEYS: tuple[str, ...] = ("lowerbound", "upperbound")
+
+
+@skip_if_no_stockfish
+class TestRealEngineNoBoundLines:
+    """Real 1M-node searches never return a bound line or a 1-2 ply pv."""
+
+    async def test_no_bound_key_and_no_truncated_pv(self) -> None:
+        from app.services.engine import EnginePool
+
+        board = chess.Board(REPRO_FEN)
+        board.push_uci("e6e7")
+        pool = EnginePool(size=1)
+        await pool.start()
+        try:
+            for _ in range(BOUND_REGRESSION_ROUNDS):
+                for multipv in (None, 2):
+                    result = await pool._acquire_and_analyse(
+                        board,
+                        chess.engine.Limit(nodes=_NODES_BUDGET),
+                        BOUND_REGRESSION_TIMEOUT_S,
+                        multipv=multipv,
+                    )
+                    assert result is not None
+                    infos = result if isinstance(result, list) else [result]
+                    for info in infos:
+                        assert not any(key in info for key in BOUND_KEYS), info
+                        assert len(info.get("pv", [])) > MAX_TRUNCATED_PV_PLIES, info
+        finally:
+            await pool.stop()

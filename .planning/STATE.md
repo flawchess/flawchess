@@ -5,8 +5,8 @@ current_phase: 249
 current_phase_name: Blunder-Check Playable MVP (SEED-261108-dk0)
 status: completed
 stopped_at: Phase 248 complete — all phases complete
-last_updated: "2026-11-10T18:57:43.445Z"
-state_head: 011a39c75d591d8b28688119445ad5843bc54275
+last_updated: "2026-11-12T13:05:45.113Z"
+state_head: c87b9009000a84208403c6321f8708ead8680f0a
 progress:
   total_phases: 4
   completed_phases: 63
@@ -1099,6 +1099,7 @@ None active.
 | 261106-peq | Fix the crash and filter the CSP reports | 2026-11-06 | 053622ae7 | [261106-peq-fix-the-crash-and-filter-the-csp-reports](./quick/261106-peq-fix-the-crash-and-filter-the-csp-reports/) |
 | 261107-dnz | Stop the installed PWA showing outdated builds | 2026-11-07 | afa8867b0 | [261107-dnz-stop-the-installed-pwa-showing-outdated-](./quick/261107-dnz-stop-the-installed-pwa-showing-outdated-/) |
 | 261110-87i | Arrow-oddness unselected baseline in blunder-check report | 2026-11-10 | 1a3841de4 | [261110-87i-arrow-oddness-unselected-baseline-in-blu](./quick/261110-87i-arrow-oddness-unselected-baseline-in-blu/) |
+| 261112-j47 | Engine wrapper keeps last exact info line; schema v3 gate on 1M-node lease lanes (SEED-261112-s4v Part A backend) | 2026-11-12 | c87b90090 | [261112-j47-engine-wrapper-keep-last-exact-info-line](./quick/261112-j47-engine-wrapper-keep-last-exact-info-line/) |
 
 ## Deferred Items
 

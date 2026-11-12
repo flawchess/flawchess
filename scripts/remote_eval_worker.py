@@ -109,7 +109,13 @@ _WORKER_ID_DEFAULT_LEN: int = 8
 # lane and idles harmlessly until upgraded, rather than leasing tier-1/2/3 work it
 # cannot compute the new fresh-lane second_best[] for. See WORKER_SCHEMA_VERSION_MIN
 # in app/routers/eval_remote.py (the server-side gate this value must clear).
-WORKER_SCHEMA_VERSION: int = 2
+#
+# SEED-261112-s4v: bumped 2 -> 3. Version 3 marks a worker whose engine wrapper keeps the
+# last EXACT Stockfish info line of a 1M-node search (older builds stored 1-2 ply pvs in
+# about 27% of positions). The param is now sent on all four 1M-node lease calls
+# (/atomic-lease both scopes, /flaw-blob-lease, /bestmove-lease); the server answers 204
+# to anything below WORKER_SCHEMA_VERSION_MIN. /entry-lease (depth 15) stays param-less.
+WORKER_SCHEMA_VERSION: int = 3
 
 # SEED-063 D3: internal marker distinguishing the supervisor (parent, no marker) from
 # the child (marker set) it spawns. NOT an argparse flag — kept out of --help (D3).
@@ -983,7 +989,8 @@ async def _run_cycle(
     /lease + /submit pair (and this file's own now-removed full-ply response
     handler, which called it) has been deleted server-side and here — Phase 149-03
     PRUNE-01, after confirming zero legacy traffic across the fleet:
-      1. POST /atomic-lease?scope=explicit&worker_schema_version=2 (tier-1/2 only)
+      1. POST /atomic-lease?scope=explicit&worker_schema_version=WORKER_SCHEMA_VERSION
+         (tier-1/2 only)
          200 → eval full-ply (MultiPV-1) + local flaw-ply hint + MultiPV-2 blobs +
                the Phase 177 targeted second-best re-search, submit to
                /atomic-submit, done.
@@ -991,13 +998,16 @@ async def _run_cycle(
       2. POST /entry-lease (entry-ply, gated by D-5 backlog probe server-side)
          200 → eval at depth-15, submit to /entry-submit, done.
          204 → fall to rung 3.
-      3. POST /atomic-lease?scope=idle&worker_schema_version=2 (tier-3 only)
+      3. POST /atomic-lease?scope=idle&worker_schema_version=WORKER_SCHEMA_VERSION
+         (tier-3 only)
          200 → same atomic eval+blob+second-best+submit path as rung 1.
          204 → fall to rung 4.
-      4. POST /flaw-blob-lease (tier-4 blob drain, Phase 146 D-04)
+      4. POST /flaw-blob-lease?worker_schema_version=WORKER_SCHEMA_VERSION
+         (tier-4 blob drain, Phase 146 D-04)
          200 → eval continuation FENs at MultiPV-2, submit to /flaw-blob-submit, done.
          204 → fall to rung 5.
-      5. POST /bestmove-lease (tier-4b best-move backfill, Phase 177 BACK-02/03)
+      5. POST /bestmove-lease?worker_schema_version=WORKER_SCHEMA_VERSION
+         (tier-4b best-move backfill, Phase 177 BACK-02/03)
          200 → eval leased candidate-ply FENs at MultiPV-2 ONLY (no full pass, no
                blob walk), submit to /bestmove-submit, done.
          204 → all queues empty; sleep idle_sleep.
@@ -1008,10 +1018,11 @@ async def _run_cycle(
     own tier-number priority even though the worker never sees the tier numbers
     themselves.
 
-    Both /atomic-lease calls send worker_schema_version=WORKER_SCHEMA_VERSION as a
-    query param (Phase 177 PROTO-01/S-03/Pitfall 4) — a v1 (or version-omitting)
-    worker binary would be gated to 204 on this WHOLE lane by the server, not just
-    the new tier-4b path.
+    All four 1M-node lease calls (both /atomic-lease scopes, /flaw-blob-lease,
+    /bestmove-lease) send worker_schema_version=WORKER_SCHEMA_VERSION as a query
+    param (Phase 177 PROTO-01/S-03/Pitfall 4, widened by SEED-261112-s4v) — a worker
+    below the server's WORKER_SCHEMA_VERSION_MIN (or one omitting it) is gated to 204
+    on each of those lanes. /entry-lease does not send it and is not gated.
 
     Busy paths (tier-1, entry-ply) stay at 1-2 calls. Only the fully-idle path
     makes all 5 round-trips. Entry-ply is always-on (D-08); the server D-5 gate
@@ -1053,11 +1064,17 @@ async def _run_cycle(
 
     if idle_resp.status_code == 204:
         # Rung 4: tier-3 empty → try tier-4 flaw-blob drain (Phase 146 D-04).
-        blob_resp = await client.post("/api/eval/remote/flaw-blob-lease")
+        blob_resp = await client.post(
+            "/api/eval/remote/flaw-blob-lease",
+            params={"worker_schema_version": WORKER_SCHEMA_VERSION},
+        )
         if blob_resp.status_code == 204:
             # Rung 5: tier-4 blob empty → try tier-4b best-move backfill
             # (Phase 177 BACK-02/03, Pitfall 6: strictly AFTER rung 4).
-            bestmove_resp = await client.post("/api/eval/remote/bestmove-lease")
+            bestmove_resp = await client.post(
+                "/api/eval/remote/bestmove-lease",
+                params={"worker_schema_version": WORKER_SCHEMA_VERSION},
+            )
             if bestmove_resp.status_code == 204:
                 if sleep_when_idle:
                     _log("Queue fully empty (204). Sleeping...")
