@@ -2265,6 +2265,109 @@ class TestFlawPv:
             )
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
+            # The tick writes its engine-evaluated opening plies (and, since the local
+            # drain feeds recovered flaw plies to the cache write, ply 3 too) into
+            # opening_position_eval: clean up every hash this test produced.
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [ply3_hash, *(0x5EED_0056_0010 + i for i in range(6))]
+            )
+
+    async def test_local_drain_short_cached_pv_healed_by_recovery_pass(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Same setup as the pv-recovery test above, but with NO stub of the dedup lookup:
+        ply 3's position has a real CONFIRMED opening_position_eval row holding a SHORT
+        (2-ply) pv. The cached pv reads as missing (not transplanted), the recovery pass
+        re-searches ply 3, and its 3-ply pv is written back to the cache row: the pv is
+        healed while eval_cp, best_move and confirmed stay unchanged."""
+        from app.models.game_position import GamePosition
+
+        ply3_hash = 0x5EED_0261_0003
+        hashes = [ply3_hash, *(0x5EED_0261_0010 + i for i in range(6))]
+        eval_by_ply = {0: 20, 1: 20, 2: 30, 3: -500, 4: -480, 5: 60, 6: 30}
+        ply3_pv = "g1f3 g8f6 d2d4"
+
+        def _eval_for_board(board: chess.Board) -> tuple[int, None, str, str, None, None, str]:
+            ply = 2 * (board.fullmove_number - 1) + (0 if board.turn == chess.WHITE else 1)
+            pv = ply3_pv if ply == 3 else f"e2e4 {ply}"
+            return (eval_by_ply[ply], None, pv.split()[0], pv, None, None, "")
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            pgn=_SIX_PLY_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_117
+        )
+        monkeypatch.setattr(
+            drain_module.engine_service,
+            "evaluate_nodes_multipv2",
+            AsyncMock(side_effect=_eval_for_board),
+        )
+        monkeypatch.setattr(
+            drain_module.engine_service,
+            "evaluate_nodes_with_pv",
+            AsyncMock(side_effect=lambda board: _eval_for_board(board)[:4]),
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_117,
+            game_id,
+            [
+                {
+                    "ply": i,
+                    "full_hash": ply3_hash if i == 3 else 0x5EED_0261_0010 + i,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                }
+                for i in range(6)
+            ],
+        )
+        try:
+            async with full_drain_session_maker() as session:
+                await session.execute(
+                    sa.text(
+                        "INSERT INTO opening_position_eval (full_hash, eval_cp, best_move, pv,"
+                        " confirmed, n_sources, disagreements)"
+                        " VALUES (:fh, -500, 'g1f3', 'g1f3 g8f6', true, 2, 0)"
+                    ),
+                    {"fh": ply3_hash},
+                )
+                await session.commit()
+
+            assert await drain_module._full_drain_tick() is True
+
+            async with full_drain_session_maker() as verify:
+                gp_pv = (
+                    await verify.execute(
+                        select(GamePosition.pv).where(
+                            GamePosition.game_id == game_id, GamePosition.ply == 3
+                        )
+                    )
+                ).scalar_one()
+                cache = (
+                    await verify.execute(
+                        sa.text(
+                            "SELECT eval_cp, eval_mate, best_move, pv, confirmed, n_sources,"
+                            " disagreements FROM opening_position_eval WHERE full_hash = :fh"
+                        ),
+                        {"fh": ply3_hash},
+                    )
+                ).one()
+            assert gp_pv == ply3_pv, f"recovered pv must reach game_positions, got {gp_pv!r}"
+            assert cache.pv == ply3_pv, f"the short cache pv must be healed, got {cache.pv!r}"
+            assert (cache.eval_cp, cache.eval_mate, cache.best_move) == (-500, None, "g1f3")
+            assert cache.confirmed is True and cache.n_sources == 2 and cache.disagreements == 0
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+            await _delete_opening_eval_rows(full_drain_session_maker, hashes)
 
 
 # ─── Lichess best-move backfill ───────────────────────────────────────────────

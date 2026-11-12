@@ -216,16 +216,19 @@ async def _fetch_cached_opening_hashes(
     gp_rows: list[tuple[int, int, int | None, int | None]],
 ) -> frozenset[int]:
     """The game's opening full_hashes (ply <= DEDUP_MAX_PLY) that
-    are server-fillable — present in opening_position_eval WITH a cached pv.
+    are server-fillable — present (confirmed) in opening_position_eval WITH a USABLE
+    cached pv (`cached_pv_usable`: at least CACHED_PV_MIN_PLIES plies).
 
     Reuses the same position-keyed cache lookup the local drain and submit dedup use
     (`_fetch_dedup_evals`) so the lease's cache-aware omission and the submit's dedup fill
-    agree on exactly which openings are server-fillable. Gated on pv IS NOT NULL:
-    a pv-less cache row can fill the eval at submit but NOT the pv, so the
-    worker must still evaluate that opening fresh — omitting it here would leave a flaw at
-    that ply permanently []-sentineled (no PV to walk). As `_upsert_opening_cache`'s
-    DO UPDATE backfill fills pv onto existing rows over time, omission coverage ramps back
-    up naturally. Returns an empty set for a game with no opening rows.
+    agree on exactly which openings are server-fillable. `_fetch_dedup_evals` already
+    normalizes an unusable pv (NULL or shorter than CACHED_PV_MIN_PLIES) to None, so
+    gating on pv IS NOT NULL here IS gating on `cached_pv_usable`: a row without a
+    usable pv can fill the eval at submit but NOT the pv, so the worker must still
+    evaluate that opening fresh — omitting it here would leave a flaw at that ply
+    permanently []-sentineled (no PV to walk). The worker's fresh pv then heals the cache
+    row (`_partition_cache_writes`), so omission coverage ramps back up naturally.
+    Returns an empty set for a game with no opening rows.
     """
     opening_hashes = [fh for (ply, fh, _cp, _mate) in gp_rows if ply <= DEDUP_MAX_PLY]
     if not opening_hashes:
@@ -245,7 +248,8 @@ def _lease_position_redundant(
     round-trip:
 
     - Cache-aware: an opening position (ply <= DEDUP_MAX_PLY) whose full_hash is already
-      in `opening_position_eval` — the submit dedup_map fills it server-side. (Never
+      in `opening_position_eval` with a usable cached pv (`cached_pv_usable`, see
+      `_fetch_cached_opening_hashes`) — the submit dedup_map fills it server-side. (Never
       applies to the terminal donor: its full_hash is 0 and is never cached.)
     - Incremental: position Q's eval is stored, post-move, at DB row Q-1. If
       that row already carries an eval, or is the legit game-over NULL (ends_game), the
@@ -273,7 +277,7 @@ def _merge_dedup_pv_into_engine_map(
     dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
 ) -> None:
-    """Merge a cached opening position's pv into engine_result_map.
+    """Merge a cached opening position's eval + usable pv into engine_result_map.
 
     The cache-aware lease omits opening positions already in opening_position_eval, so
     the worker never sends an eval/pv for them — the submit dedup_map fills the eval, but
@@ -281,7 +285,10 @@ def _merge_dedup_pv_into_engine_map(
     never saw the cached pv. This is the crux fix: for each non-terminal target in the
     opening region whose full_hash is in dedup_map AND whose ply the worker did NOT
     evaluate fresh, insert the cached 4-tuple (cp, mate, best_move, pv) into
-    engine_result_map. Never overrides a ply the worker resolved itself. Mutates
+    engine_result_map. The pv element is already None for an unusable cached pv
+    (`cached_pv_usable`, normalized in `_fetch_dedup_evals`), so a short cached line is
+    never transplanted while its eval/best_move still merge (the sentinel derivation
+    rebuilds evals from engine_result_map, so the tuple must not be skipped). Never overrides a ply the worker resolved itself. Mutates
     engine_result_map in place; a no-op tuple for a dedup miss is never inserted.
 
     MUST run before `_classify_and_fill_oracle` (so classify writes the merged pv) and,
@@ -1406,6 +1413,16 @@ async def _apply_atomic_submit(
     # sites — eval_drain.py's `_full_drain_tick` is the other). A lichess-eval game
     # writes no cache rows, matching the provenance rule enforced elsewhere for that
     # source (dedup_map is already {} for it above).
+    #
+    # Bug-fix: the exclusion used to cover EVERY dedup hit, so a worker's fresh pv for a
+    # confirmed row never reached `_upsert_opening_cache` and short / NULL cached pvs
+    # were never repaired in this lane. dedup_map's pv element is already None when the
+    # cached pv is not usable (`cached_pv_usable`, normalized in `_fetch_dedup_evals`),
+    # so only dedup hits WITH a usable pv are excluded now. A confirmed row reaching the
+    # cache write can only take the pv-heal bucket (never promote or replace), so its
+    # eval and best_move stay immutable. Confirmed NULL-pv rows heal here too, as the
+    # partition docstring always claimed. Plies filled only by the dedup merge are still
+    # excluded via worker_evaluated_plies, so they never round-trip into the cache.
     cache_targets: list[_FullPlyEvalTarget] = (
         []
         if is_lichess_eval_game
@@ -1415,7 +1432,7 @@ async def _apply_atomic_submit(
             if not t.is_terminal
             and t.ply <= DEDUP_MAX_PLY
             and t.ply in worker_evaluated_plies
-            and t.full_hash not in dedup_map
+            and (t.full_hash not in dedup_map or dedup_map[t.full_hash][3] is None)
         ]
     )
 

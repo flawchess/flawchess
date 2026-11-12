@@ -76,7 +76,9 @@ from app.services.eval_apply import (
     _upsert_best_move_rows,
     _walk_pv_boards,  # noqa: F401 — backward-compat re-export (scripts)
     apply_full_eval,
+    cached_pv_usable,
     commit_unless_game_deleted,
+    pv_ply_count,
 )
 
 # The entry-ply (import-time, no-shift) collection/write/classify primitives live in
@@ -540,13 +542,25 @@ class _ReplaceWrite:
 
 
 @dataclass(slots=True)
+class _HealWrite:
+    """A pv-only heal of a confirmed (or same-source) row. expected_pv is the pv the
+    partition decision was made against: the UPDATE only lands while the row still holds
+    exactly that pv (optimistic guard, so two lanes racing on one hash cannot overwrite a
+    pv another lane just healed)."""
+
+    full_hash: int
+    pv: str
+    expected_pv: str | None
+
+
+@dataclass(slots=True)
 class _CacheWriteBuckets:
     """A batch of freshly-computed opening evals, partitioned by what write each one
     needs. See `_partition_cache_writes`'s docstring for the
     four buckets' meaning."""
 
     insert: list[_InsertWrite] = field(default_factory=list)
-    skip_pv_heal: list[tuple[int, str]] = field(default_factory=list)
+    heal: list[_HealWrite] = field(default_factory=list)
     promote: list[_PromoteWrite] = field(default_factory=list)
     replace: list[_ReplaceWrite] = field(default_factory=list)
 
@@ -580,6 +594,15 @@ def _cache_values_agree(
     return abs(new_score - existing_score) <= OPENING_CACHE_AGREE_MAX_SCORE_DELTA
 
 
+def _cached_pv_heals(existing_pv: str | None, incoming_pv: str | None) -> bool:
+    """True when a stored pv is unusable (NULL or shorter than CACHED_PV_MIN_PLIES) and
+    the incoming pv is strictly longer in plies. A usable stored pv is never replaced, an
+    equal or shorter incoming pv never heals. The rule's thresholds live in eval_apply."""
+    return not cached_pv_usable(existing_pv) and pv_ply_count(incoming_pv) > pv_ply_count(
+        existing_pv
+    )
+
+
 def _partition_cache_writes(
     cache_rows: list[tuple[int, int | None, int | None, str | None, str | None]],
     existing_by_hash: dict[int, _ExistingCacheRow],
@@ -591,10 +614,12 @@ def _partition_cache_writes(
     limits.
 
     insert: no existing row for this full_hash yet — a brand-new candidate.
-    skip_pv_heal: existing row is confirmed, OR its source_game_id equals this
+    heal: existing row is confirmed, OR its source_game_id equals this
         batch's source_game_id (the self-promotion guard — a re-drained or
         resubmitted game is the same source, not a second one). The one permitted
-        mutation in either case is filling a NULL pv from this write.
+        mutation in either case is replacing an unusable pv (NULL or shorter than
+        CACHED_PV_MIN_PLIES) with a strictly longer one from this write; eval_cp,
+        eval_mate, best_move and the confirmation columns never change.
     promote: unconfirmed, a genuinely different source, and the two values agree
         within OPENING_CACHE_AGREE_MAX_SCORE_DELTA — becomes confirmed.
     replace: unconfirmed, a genuinely different source, and the two values disagree
@@ -608,8 +633,11 @@ def _partition_cache_writes(
             continue
         same_source = existing.source_game_id == source_game_id
         if existing.confirmed or same_source:
-            if existing.pv is None and pv is not None:
-                buckets.skip_pv_heal.append((full_hash, pv))
+            # Bug-fix: confirmed rows kept truncated 1-2 ply lines forever because only a
+            # NULL pv could be filled. A strictly longer incoming pv now heals a short
+            # one too (via _cached_pv_heals); a usable pv is never touched.
+            if pv is not None and _cached_pv_heals(existing.pv, pv):
+                buckets.heal.append(_HealWrite(full_hash, pv, existing.pv))
             continue
         if _cache_values_agree(existing.eval_cp, existing.eval_mate, cp, mate):
             kept_pv = (
@@ -718,21 +746,30 @@ async def _insert_cache_candidates(
     await session.execute(sql, params)
 
 
-async def _heal_cache_pv(session: AsyncSession, rows: list[tuple[int, str]]) -> None:
-    """Batched pv self-heal: fill a NULL pv from a later write. The one permitted
-    mutation of a confirmed (or same-source) row."""
-    params: dict[str, int | str] = {}
+async def _heal_cache_pv(session: AsyncSession, rows: list[_HealWrite]) -> None:
+    """Batched pv self-heal: replace an unusable (NULL or short) pv with a strictly
+    longer one from a later write. The one permitted mutation of a confirmed (or
+    same-source) row; it sets pv only.
+
+    The usability/length rule lives in Python (`_cached_pv_heals`); the SQL only
+    guards that the row still holds the pv snapshot the partition decided against
+    (`IS NOT DISTINCT FROM` handles the NULL snapshot), so a concurrent lane that already
+    healed the row is not overwritten."""
+    params: dict[str, int | str | None] = {}
     values_parts: list[str] = []
-    for i, (fh, pv) in enumerate(rows):
-        params[f"fh_{i}"] = fh
-        params[f"pv_{i}"] = pv
-        values_parts.append(f"(CAST(:fh_{i} AS bigint), CAST(:pv_{i} AS text))")
+    for i, row in enumerate(rows):
+        params[f"fh_{i}"] = row.full_hash
+        params[f"pv_{i}"] = row.pv
+        params[f"exp_{i}"] = row.expected_pv
+        values_parts.append(
+            f"(CAST(:fh_{i} AS bigint), CAST(:pv_{i} AS text), CAST(:exp_{i} AS text))"
+        )
     values_sql = ", ".join(values_parts)
     await session.execute(
         sa.text(
             "UPDATE opening_position_eval AS o SET pv = v.pv"  # noqa: S608
-            f" FROM (VALUES {values_sql}) AS v(full_hash, pv)"
-            " WHERE o.full_hash = v.full_hash AND o.pv IS NULL"
+            f" FROM (VALUES {values_sql}) AS v(full_hash, pv, expected_pv)"
+            " WHERE o.full_hash = v.full_hash AND o.pv IS NOT DISTINCT FROM v.expected_pv"
         ),
         params,
     )
@@ -815,8 +852,8 @@ async def _apply_cache_writes(
     write transaction."""
     if buckets.insert:
         await _insert_cache_candidates(session, buckets.insert, source_game_id)
-    if buckets.skip_pv_heal:
-        await _heal_cache_pv(session, buckets.skip_pv_heal)
+    if buckets.heal:
+        await _heal_cache_pv(session, buckets.heal)
     if buckets.promote:
         await _promote_cache_rows(session, buckets.promote)
     if buckets.replace:
@@ -875,7 +912,8 @@ async def _upsert_opening_cache(
     equals the candidate's own source_game_id neither promotes nor counts
     as a disagreement — the caller passes `source_game_id` for exactly this
     guard. A confirmed row is never overwritten by this path; its only permitted
-    mutation is the pre-existing pv self-heal.
+    mutation is the pv self-heal (an unusable NULL/short pv replaced by a strictly
+    longer one).
 
     source_game_id: the game this batch's engine results came from — either
     _full_drain_tick's own game_id, or apply_full_eval's game_id parameter for
@@ -903,11 +941,11 @@ async def _upsert_opening_cache(
     # transposition or repetition), so cache_rows may hold multiple entries with the
     # same full_hash. Collapse duplicates by full_hash before partitioning so each
     # position gets exactly one write decision. The eval is identical for a given
-    # position; prefer a pv-bearing row so the pv heal still fires.
+    # position; prefer the row with the longest pv so the pv heal still fires.
     deduped: dict[int, tuple[int, int | None, int | None, str | None, str | None]] = {}
     for row in cache_rows:
         existing = deduped.get(row[0])
-        if existing is None or (existing[4] is None and row[4] is not None):
+        if existing is None or pv_ply_count(row[4]) > pv_ply_count(existing[4]):
             deduped[row[0]] = row
     cache_rows = list(deduped.values())
 
@@ -980,7 +1018,7 @@ async def _fill_engine_game_flaw_pvs(
     dedup_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
     is_lichess_eval_game: bool,
-) -> None:
+) -> list[_FullPlyEvalTarget]:
     """Targeted second engine pass for pv-less opening flaw plies (engine games).
 
     Engine games can't pre-know their flaws (no evals until after the gather), so an
@@ -990,21 +1028,29 @@ async def _fill_engine_game_flaw_pvs(
     the pv back into engine_result_map (mutated in place) so the write-session classify
     (tactic tagging) and the pv write pick it up like any engine-evaluated ply.
 
+    Returns the targets whose recovered pv was merged into engine_result_map (empty on
+    every early return), so the caller can feed those freshly-searched plies to the
+    opening-cache write: a confirmed cache row with a NULL or short pv is then healed by
+    the recovered pv (`_partition_cache_writes`; eval/best_move stay immutable).
+    The recovery predicate does NOT key on the cached pv being unusable: it already
+    re-searches EVERY dedup-transplanted flaw ply, because the local drain never merges
+    a cached pv into engine_result_map, so no predicate change was needed for the heal.
+
     No-op for lichess games (they get every ply engine-evaluated directly —
     dedup_map is always empty for them, so there is never a dedup transplant to recover a
     pv from) and when there were no opening dedup hits (no possible gap). MUST be called
     with NO session open — it runs asyncio.gather (CLAUDE.md hard rule).
     """
     if is_lichess_eval_game:
-        return
+        return []
     has_opening_dedup = any(
         not t.is_terminal and t.ply <= _DEDUP_MAX_PLY and t.full_hash in dedup_map for t in targets
     )
     if not has_opening_dedup:
-        return
+        return []
     pv_gap_targets = await _missing_flaw_pv_targets(game_id, targets, dedup_map, engine_result_map)
     if not pv_gap_targets:
-        return
+        return []
     # Use evaluate_nodes_multipv2 so the PV-recovery pass also returns
     # multipv=2 data. Slice to 4-tuple before writing to engine_result_map (which is keyed
     # as dict[int, tuple[...*4]] to avoid blast radius on _apply_full_eval_results).
@@ -1013,11 +1059,14 @@ async def _fill_engine_game_flaw_pvs(
     ] = await asyncio.gather(
         *(engine_service.evaluate_nodes_multipv2(t.board) for t in pv_gap_targets)
     )
+    recovered: list[_FullPlyEvalTarget] = []
     for t, res in zip(pv_gap_targets, pv_gap_results, strict=True):
         # Only merge a real pv — a failed re-pass (pv None) leaves the status quo (eval
         # still served from the dedup transplant; pv stays NULL).
         if res[3] is not None:
             engine_result_map[t.ply] = (res[0], res[1], res[2], res[3])
+            recovered.append(t)
+    return recovered
 
 
 async def _fill_engine_game_flaw_second_best(
@@ -1481,7 +1530,7 @@ async def _full_drain_tick() -> bool:
     # Step 3b: recover pv for engine-game opening flaw plies that took a
     # pv-less dedup transplant. Runs another gather internally — still NO session open
     # (CLAUDE.md hard rule). Mutates engine_result_map in place; no-op for lichess games.
-    await _fill_engine_game_flaw_pvs(
+    recovered_pv_targets = await _fill_engine_game_flaw_pvs(
         game_id, targets, dedup_map, engine_result_map, is_lichess_eval_game
     )
 
@@ -1564,7 +1613,18 @@ async def _full_drain_tick() -> bool:
                 # comment states (lichess games neither seed nor draw from the cache).
                 update_opening_cache=not is_lichess_eval_game,
                 upsert_opening_cache_fn=_upsert_opening_cache,
-                engine_targets_for_cache=[] if is_lichess_eval_game else engine_targets,
+                # Bug-fix: the PV-recovery pass's fresh searches used to be discarded
+                # after the game write (engine_targets is the pre-recovery list), so a
+                # short or NULL confirmed cache pv was never repaired by the local
+                # drain. The recovered flaw plies now go through the same cache write:
+                # a confirmed row only takes the pv heal (strictly longer pv over an
+                # unusable one, eval/best_move immutable), a usable pv is left alone.
+                # The local drain heals only flaw-ply positions; it does not re-search
+                # every short-pv dedup hit (engine time outside this scope), the remote
+                # lane heals the rest through the lease.
+                engine_targets_for_cache=(
+                    [] if is_lichess_eval_game else [*engine_targets, *recovered_pv_targets]
+                ),
                 best_move_rows=best_move_rows,
             )
 

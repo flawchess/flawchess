@@ -6025,8 +6025,8 @@ async def test_fetch_cached_opening_hashes_gates_on_pv_presence(
     monkeypatch: pytest.MonkeyPatch,
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """A cache row WITH pv is omittable from the lease; a cache row
-    WITHOUT pv is NOT (the worker must still evaluate it fresh to get a pv)."""
+    """A cache row WITH a usable pv (3+ plies) is omittable from the lease; a cache row
+    WITHOUT a usable pv is NOT (the worker must still evaluate it fresh to get a pv)."""
     from app.routers.eval_remote import _fetch_cached_opening_hashes
 
     _patch_router_session(monkeypatch, eval_worker_session_maker)
@@ -6035,7 +6035,7 @@ async def test_fetch_cached_opening_hashes_gates_on_pv_presence(
     hash_with_pv = base
     hash_without_pv = base + 1
     await _insert_opening_cache_with_pv(
-        eval_worker_session_maker, [(hash_with_pv, 30, None, "g1f3", "g1f3 b8c6")]
+        eval_worker_session_maker, [(hash_with_pv, 30, None, "g1f3", "g1f3 b8c6 f1c4")]
     )
     await _insert_opening_cache(eval_worker_session_maker, [(hash_without_pv, 10, None, "d2d4")])
 
@@ -6079,7 +6079,7 @@ async def test_fetch_cached_opening_hashes_confirmed_only(
     )
     await _insert_opening_cache_with_pv(
         eval_worker_session_maker,
-        [(confirmed_hash, 10, None, "d2d4", "d2d4 d7d5")],
+        [(confirmed_hash, 10, None, "d2d4", "d2d4 d7d5 g1f3")],
         confirmed=True,
     )
 
@@ -6133,7 +6133,7 @@ async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
     # Cache ply 2's position (the flaw's own board, "missed" line node 0) WITH a real,
     # walkable pv — matching what _fetch_cached_opening_hashes would have made the
     # lease omit. The worker's partial submit below omits ply 2 accordingly.
-    cached_pv = "g1f3 b8c6"
+    cached_pv = "g1f3 b8c6 f1c4"
     await _insert_opening_cache_with_pv(
         eval_worker_session_maker, [(base + 2, 30, None, "g1f3", cached_pv)]
     )
@@ -6186,12 +6186,164 @@ async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
 
 
 @pytest.mark.asyncio
+async def test_lease_short_cached_pv_not_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A CONFIRMED cache row whose pv is 1-2 plies is not omitted from the lease (the
+    worker searches it again); a confirmed 3-ply row still is. An UNCONFIRMED 2-ply row
+    (the benchmark-cache shape) stays leased exactly as before: the confirmed filter is
+    unchanged."""
+    from app.routers.eval_remote import _fetch_cached_opening_hashes
+
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    base = 77100
+    h_3ply, h_2ply, h_1ply, h_unconfirmed = base, base + 1, base + 2, base + 3
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker,
+        [
+            (h_3ply, 30, None, "g1f3", "g1f3 b8c6 f1c4"),
+            (h_2ply, 31, None, "g1f3", "g1f3 b8c6"),
+            (h_1ply, 32, None, "g1f3", "g1f3"),
+        ],
+        confirmed=True,
+    )
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker,
+        [(h_unconfirmed, 33, None, "g1f3", "g1f3 b8c6")],
+        confirmed=False,
+    )
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (2, h_3ply, None, None),
+        (4, h_2ply, None, None),
+        (6, h_1ply, None, None),
+        (8, h_unconfirmed, None, None),
+    ]
+    try:
+        async with eval_worker_session_maker() as session:
+            cached = await _fetch_cached_opening_hashes(session, gp_rows)
+        assert h_3ply in cached, "a confirmed 3-ply pv is usable and still omittable"
+        assert h_2ply not in cached, "a confirmed 2-ply pv is not usable: must be leased"
+        assert h_1ply not in cached, "a confirmed 1-ply pv is not usable: must be leased"
+        assert h_unconfirmed not in cached, "an unconfirmed row stays leased (unchanged)"
+    finally:
+        await _delete_opening_cache(
+            eval_worker_session_maker, [h_3ply, h_2ply, h_1ply, h_unconfirmed]
+        )
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_short_cached_pv_not_transplanted(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """Mirror of test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled with a
+    SHORT (2-ply) confirmed cached pv at ply 2 and the worker omitting ply 2: the hole is
+    still filled from the cache (eval + best_move, failed_ply_count 0) but the short line
+    is never written into game_positions.pv (identical to a NULL cached pv)."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 77200
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker, [(base + 2, 30, None, "g1f3", "g1f3 b8c6")]
+    )
+    partial = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 2]
+    for e in partial:
+        if e["ply"] == 3:
+            e["pv"] = "b8c6 f1c4"
+
+    try:
+        resp = await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, partial), worker_id="test-worker", last_ip=None
+        )
+        assert resp.failed_ply_count == 0, "the cached eval must still fill the hole"
+        row2 = await _get_game_position(eval_worker_session_maker, game_id, 2)
+        assert row2 is not None and row2["pv"] is None, (
+            f"a short cached pv must not be transplanted into game_positions.pv, got {row2}"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, [base + p for p in range(6)])
+
+
+@pytest.mark.asyncio
+async def test_atomic_submit_short_cached_pv_heals_cache_row(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """A worker that evaluates an opening ply whose CONFIRMED cache row holds a short
+    (2-ply) pv delivers its longer pv to the cache: the row's pv is healed while its
+    eval_cp/best_move stay immutable. A confirmed row with a usable 3-ply pv that the
+    worker also evaluates stays byte-identical."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 77300
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    short_hash, usable_hash = base + 2, base + 4
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker,
+        [
+            (short_hash, 30, None, "g1f3", "g1f3 b8c6"),
+            (usable_hash, 12, None, "f1c4", "f1c4 f8c5 d2d3"),
+        ],
+    )
+    worker_pv = "g1f3 b8c6 f1c4 f8c5"
+    evals = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+    for e in evals:
+        if e["ply"] == 2:
+            e["pv"] = worker_pv
+            e["eval_cp"] = 777
+            e["best_move"] = "b1c3"
+        if e["ply"] == 4:
+            e["pv"] = "f1c4 f8c5 d2d3 g8f6 b1c3"
+    hashes = [base + p for p in range(6)]
+    try:
+        before_usable = await _fetch_cache_rows(eval_worker_session_maker, [usable_hash])
+        resp = await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, evals), worker_id="test-worker", last_ip=None
+        )
+        assert resp.failed_ply_count == 0
+        rows = await _fetch_cache_rows(eval_worker_session_maker, [short_hash, usable_hash])
+        assert rows[short_hash] == (30, None, "g1f3", worker_pv), (
+            f"short confirmed row: pv healed, eval/best_move immutable, got {rows[short_hash]}"
+        )
+        assert rows[usable_hash] == before_usable[usable_hash], "a usable pv is never touched"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, hashes)
+
+
+@pytest.mark.asyncio
 async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_existing_pv(
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
     """_upsert_opening_cache's self-heal backfills pv onto
     a pv-less existing row without touching eval_cp/eval_mate/best_move, and leaves an
-    existing non-NULL pv untouched (first-write-wins for pv too, once set)."""
+    existing USABLE pv (3+ plies) untouched, even when the incoming pv is longer."""
     import chess
 
     from app.models.opening_position_eval import OpeningPositionEval
@@ -6206,7 +6358,7 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
     await _insert_opening_cache(eval_worker_session_maker, [(hash_pv_less, 42, None, "e2e4")])
     # Row B: pre-existing cache row that ALREADY has a real pv — must not be clobbered.
     await _insert_opening_cache_with_pv(
-        eval_worker_session_maker, [(hash_pv_bearing, 10, None, "d2d4", "d2d4 d7d5")]
+        eval_worker_session_maker, [(hash_pv_bearing, 10, None, "d2d4", "d2d4 d7d5 g1f3")]
     )
 
     t_a = _FullPlyEvalTarget(
@@ -6220,7 +6372,7 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
     # backfilled from this fresh engine result.
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
         2: (99, None, "a2a4", "a2a4 a7a5"),
-        4: (55, None, "c2c4", "c2c4 c7c5"),
+        4: (55, None, "c2c4", "c2c4 c7c5 b1c3 b8c6"),
     }
 
     try:
@@ -6250,7 +6402,7 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
             f"row A must keep its original eval/best_move and self-heal pv only: "
             f"{by_hash[hash_pv_less]}"
         )
-        assert by_hash[hash_pv_bearing] == (10, None, "d2d4", "d2d4 d7d5"), (
+        assert by_hash[hash_pv_bearing] == (10, None, "d2d4", "d2d4 d7d5 g1f3"), (
             f"row B's existing pv must NOT be overwritten: {by_hash[hash_pv_bearing]}"
         )
     finally:
@@ -6379,7 +6531,7 @@ async def test_lease_shrinks_after_submit(
     with_pv = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
     for e in with_pv:
         if e["ply"] == 2:
-            e["pv"] = "g1f3 b8c6"
+            e["pv"] = "g1f3 b8c6 f1c4"
     hashes = [base + p for p in range(6)]
 
     try:

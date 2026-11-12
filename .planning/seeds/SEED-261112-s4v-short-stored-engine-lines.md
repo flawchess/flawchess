@@ -92,6 +92,13 @@ evals are lichess's and are fine.
 
 ## Part A: stop the damage (small, ship first)
 
+Status 2026-11-12: items 1 and 2 shipped (quick task 261112-j47, release PR #471, prod at `fa57f757`). New searches
+on the server pool and on updated workers store exact lines; builds below schema version 3 idle on the 1M-node
+lanes. Item 3 (opening cache) done by quick task 261112-k56: short (1-2 ply) and NULL cached pvs are treated as
+missing on lease and transplant, and confirmed rows heal from a strictly longer fresh pv in both lanes (remote lane
+through the atomic submit, local drain through its PV-recovery pass), with eval and best_move immutable. Open: item 4
+(frontend hooks), the benchmark backend restart, and all of Part B.
+
 1. **Engine wrapper.** In `_acquire_and_analyse`, use `protocol.analysis()` and keep, per multipv index, the last raw
    info with a PV that is neither bound; fall back to the bound line only when no exact line exists (0 of 800 runs).
    Covers server pool, drains, scripts and remote workers. Add a real-Stockfish regression test on the example
@@ -129,8 +136,9 @@ games with eval holes, and the remote atomic lane re-searches only NULL plies.
 2. **Blob re-walk.** NULL the blob column(s) of flaws whose line was repaired and clear `games.blobs_completed_at`.
    The existing tier-4 lane then re-walks them on the fleet and the server re-derives tactic tags and clears the
    Maia stamp on submit. Needs a selector tweak: tier 4 keys on `allowed_pv_lines IS NULL` only.
-3. **Opening cache.** Either covered by step 1's hash dedupe, or one UPDATE that NULLs short cache pvs; the existing
-   heal path fills a NULL pv and the local drain re-searches pv-less transplants.
+3. **Opening cache.** The NULLing UPDATE is no longer needed (quick task 261112-k56): short cache pvs heal on their
+   own as positions are re-searched. A cache-wide repair (step 1's hash dedupe) is only worth it if the heal rate
+   proves too slow.
 4. **Benchmark DB.** Same code produced the lane (285k games with pv, about 3.1M pv rows, about 33% short, about 1M).
    Repair pv and blobs for the classical + rapid tranches that feed §5, run the benchmark retag sweep, re-run §5
    (`chapter5.compute()` fast path) and update `tactic_delta_zones.py`. Bullet is still in flight and picks up the
