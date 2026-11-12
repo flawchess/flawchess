@@ -92,6 +92,10 @@ evals are lichess's and are fine.
 
 ## Part A: stop the damage (small, ship first)
 
+Status 2026-11-12: items 1 and 2 shipped (quick task 261112-j47, release PR #471, prod at `fa57f757`). New searches
+on the server pool and on updated workers store exact lines; builds below schema version 3 idle on the 1M-node
+lanes. Open: item 3 (opening cache), item 4 (frontend hooks), the benchmark backend restart, and all of Part B.
+
 1. **Engine wrapper.** In `_acquire_and_analyse`, use `protocol.analysis()` and keep, per multipv index, the last raw
    info with a PV that is neither bound; fall back to the bound line only when no exact line exists (0 of 800 runs).
    Covers server pool, drains, scripts and remote workers. Add a real-Stockfish regression test on the example
