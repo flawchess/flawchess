@@ -167,6 +167,14 @@ export function useStockfishGradingEngine({
   /** Per-FEN grade cache: Map<fen, Map<san, MoveGrade>> — ephemeral, board-session-scoped FIFO (mirrors useMaiaEngine's MAIA_CACHE_MAX). */
   const cacheRef = useRef<Map<string, Map<string, MoveGrade>>>(new Map());
 
+  /**
+   * Cache entries that came from an EXACT info line. A WeakSet needs no
+   * eviction bookkeeping (entries die with the grade objects the FIFO cache
+   * evicts) and leaves the exported `MoveGrade` type unchanged. A bound line
+   * never overwrites a grade held here.
+   */
+  const exactGradesRef = useRef(new WeakSet<MoveGrade>());
+
   /** The FEN + side-to-move of the search currently in flight, set when a go is sent. */
   const gradingFenRef = useRef<string | null>(null);
   const gradingSideRef = useRef<'w' | 'b'>('w');
@@ -396,6 +404,23 @@ export function useStockfishGradingEngine({
           const san = sanFromUci(fenKey, uci);
           if (san === null) return;
 
+          // Bug fix (SEED-261112-s4v): a stop that lands during an aspiration
+          // re-search emits a final lowerbound (1 move) or upperbound (2 moves)
+          // line with a bound score, not an evaluation of the move. Keyed by
+          // pv[0] it used to overwrite that move's exact grade, and the per-FEN
+          // cache kept re-serving the truncated, bound-valued grade to analysis
+          // grading, gem grading and the gem sweep. A bound line is stored only
+          // for a move with no entry or only a bound entry; an exact line still
+          // always overwrites.
+          const existing = cacheRef.current.get(fenKey)?.get(san);
+          if (
+            parsed.bound !== 'exact' &&
+            existing !== undefined &&
+            exactGradesRef.current.has(existing)
+          ) {
+            return;
+          }
+
           // Normalize the mover-POV UCI score to white-POV.
           const whitePovSign = gradingSideRef.current === 'b' ? -1 : 1;
           const toWhitePov = (v: number | null): number | null => (v === null ? null : v * whitePovSign);
@@ -410,7 +435,7 @@ export function useStockfishGradingEngine({
               if (oldest !== undefined) cacheRef.current.delete(oldest);
             }
           }
-          cache.set(san, {
+          const grade: MoveGrade = {
             evalCp: toWhitePov(parsed.scoreCp),
             evalMate: toWhitePov(parsed.scoreMate),
             depth: parsed.depth,
@@ -418,7 +443,9 @@ export function useStockfishGradingEngine({
             // graded line's move sequence when the reconciled ranking surfaces
             // a move outside the free run's own top-2.
             pv: parsed.pv,
-          });
+          };
+          cache.set(san, grade);
+          if (parsed.bound === 'exact') exactGradesRef.current.add(grade);
 
           // Stream progressively: refine the displayed gradeMap on every info
           // line.

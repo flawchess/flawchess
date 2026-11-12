@@ -17,6 +17,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Engine analysis: the Stockfish line saved behind each mistake and blunder (which also drives puzzle solutions and tactic tags) is no longer cut off after one or two moves for newly analyzed games, which happened in about a quarter of positions.
 - Engine analysis: opening positions whose saved Stockfish line had been cut short are now re-analyzed and repaired the next time they come up, instead of passing the short line on to newly analyzed games.
+- Analysis board and puzzle and blunder-check solutions: the Stockfish lines no longer shrink to one or two moves, or show the same move twice, when a search ends. They keep the last complete line, and the analysis board's move grades and gem badges no longer take their evaluation from a cut-off search.
 
 ## [v2.29] Train Spacing & Archive, Analysis Explain — 2026-11-08
 

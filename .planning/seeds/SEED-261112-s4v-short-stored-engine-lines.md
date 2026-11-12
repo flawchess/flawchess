@@ -97,7 +97,8 @@ on the server pool and on updated workers store exact lines; builds below schema
 lanes. Item 3 (opening cache) done by quick task 261112-k56: short (1-2 ply) and NULL cached pvs are treated as
 missing on lease and transplant, and confirmed rows heal from a strictly longer fresh pv in both lanes (remote lane
 through the atomic submit, local drain through its PV-recovery pass), with eval and best_move immutable. Item 3 released with PR #472 (prod at `1fcae718`).
-Open: item 4 (frontend hooks), the benchmark backend restart, and all of Part B.
+Item 4 (frontend hooks) done by quick task 261112-l25 (not yet released).
+Open: the benchmark backend restart and all of Part B.
 
 1. **Engine wrapper.** In `_acquire_and_analyse`, use `protocol.analysis()` and keep, per multipv index, the last raw
    info with a PV that is neither bound; fall back to the bound line only when no exact line exists (0 of 800 runs).
@@ -122,6 +123,14 @@ Open: item 4 (frontend hooks), the benchmark backend restart, and all of Part B.
    output, not stored data. `useTrainGradingEngine.ts:494` and the worker pool already filter on `exact` and are the
    template. Open choice: drop bound lines entirely, or let a bound line update the live score but never replace
    the PV. No stored frontend data to repair.
+   Chosen rule (quick task 261112-l25): `useStockfishEngine` shows a bound line as-is on a rank with no exact line
+   yet. On a rank whose exact line starts with the same move, the bound line updates only the live score and depth.
+   A bound line for a different move (a new move failing high) is ignored, live and final. At bestmove each rank
+   restores its last exact line (moves, score, depth). Only when a bound line was overlaid or ignored is the final
+   list deduplicated by first move, so exact-only searches are untouched. The shown best move can lag Stockfish's
+   bestmove by one unfinished iteration, the same choice as the backend fix (261112-j47).
+   `useStockfishGradingEngine` never lets a bound line overwrite a move's exact cache entry; a bound line is stored
+   only for a move with no entry or only a bound entry.
 
 ## Part B: repair (operator-run, large)
 
@@ -190,7 +199,7 @@ active users.
 - When a repaired pv's first move differs from the stored `best_move`, update `best_move` and `game_best_moves`, or
   keep them and accept the mismatch with the answer key?
 - Re-walk only the repaired line of a flaw, or both lines (simpler selector, 60% more searches)?
-- Frontend: drop bound lines, or keep live bound scores without their PV?
+- Frontend: drop bound lines, or keep live bound scores without their PV? Resolved by 261112-l25: live bound score and depth only for the same move, never the PV; a bound line for a new move is ignored.
 - Is the flaw-classification flip rate from bound evals small enough to leave the evals alone?
 - Why remote workers run higher than the server pool (30% vs 21%); likely multipv 1 vs 2, not verified.
 
