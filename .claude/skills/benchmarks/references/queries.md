@@ -2,6 +2,277 @@
 
 QA reference for what `scripts/gen_benchmarks.py` computes (`scripts/benchmarks/chapter*.py`). Do not execute these by hand to produce a report; the generator is the source of numbers. Building blocks (Standard CTE, `user_elo_at_game` / `elo_bucket`, equal-footing filter) live in SKILL.md "Shared SQL building blocks".
 
+## 1. Full-game analysis share
+
+```sql
+WITH selected_users AS ( /* Standard CTE */ ),
+gt AS (
+  SELECT (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS ueag,
+         su.tc_bucket AS tc,
+         (g.white_blunders IS NOT NULL) AS analyzed,
+         (g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+          AND abs(...) <= 100)                                   AS ef
+  FROM games g JOIN selected_users su ON su.user_id = g.user_id
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+)
+SELECT (/* canonical elo_bucket CASE */) AS elo, tc,
+       count(*) AS games,
+       count(*) FILTER (WHERE analyzed)          AS analyzed,
+       count(*) FILTER (WHERE ef)                AS games_ef,
+       count(*) FILTER (WHERE ef AND analyzed)   AS analyzed_ef
+FROM gt WHERE ueag >= 800 GROUP BY 1, 2;
+```
+
+## 2.1 Middlegame-entry eval
+
+```sql
+-- Pass 1: symmetric engine baseline at MG entry, deduped per physical game.
+-- NO equal-footing filter.
+WITH first_phase AS (
+  SELECT game_id, MIN(ply) AS entry_ply
+  FROM game_positions
+  WHERE phase = 1   -- swap to 2 for EG entry (see 3.1.2)
+  GROUP BY game_id
+),
+phase_entry AS (
+  SELECT g.platform, g.platform_game_id, gp.eval_cp AS raw_cp_white_pov
+  FROM games g
+  JOIN first_phase fp ON fp.game_id = g.id
+  JOIN game_positions gp ON gp.game_id = g.id AND gp.ply = fp.entry_ply
+  WHERE g.rated AND NOT g.is_computer_game
+    AND gp.eval_cp IS NOT NULL AND gp.eval_mate IS NULL
+    AND abs(gp.eval_cp) < 2000   -- match production trim from D-08
+),
+deduped AS (
+  SELECT DISTINCT ON (platform, platform_game_id) raw_cp_white_pov
+  FROM phase_entry
+  ORDER BY platform, platform_game_id
+)
+SELECT
+  COUNT(*) AS n_games,
+  ROUND(AVG(raw_cp_white_pov)::numeric, 2) AS baseline_cp_white,
+  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY raw_cp_white_pov)::numeric, 1) AS median_white_pov,
+  ROUND(STDDEV_SAMP(raw_cp_white_pov)::numeric, 1) AS sd_white_pov
+FROM deduped;
+```
+
+```sql
+-- Pass 2: per-(user, color) centered, pooled distribution at MG entry.
+-- Substitute baseline value from pass 1 below (BASELINE_CP_WHITE).
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.tc_bucket,
+         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
+         bsu.median_elo
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+first_middlegame AS (
+  SELECT game_id, min(ply) AS entry_ply FROM game_positions WHERE phase = 1 GROUP BY game_id
+),
+games_filtered AS (
+  SELECT g.id AS game_id, g.user_id, g.user_color::text AS user_color,
+         -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
+         (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
+         (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
+               ELSE 2400 END) AS elo_bucket, su.tc_bucket AS tc
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color::text='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+),
+mid_entry AS (
+  -- Match production filter: continuous in-domain eval only.
+  SELECT gf.user_id, gf.elo_bucket, gf.tc, gf.user_color, gp.eval_cp AS raw_cp
+  FROM games_filtered gf
+  JOIN first_middlegame fm ON fm.game_id = gf.game_id
+  JOIN game_positions gp ON gp.game_id = gf.game_id AND gp.ply = fm.entry_ply
+  WHERE gp.eval_cp IS NOT NULL AND gp.eval_mate IS NULL AND abs(gp.eval_cp) < 2000
+),
+mid_per_user_color AS (
+  -- One row per (user, color) cell.
+  SELECT user_id, elo_bucket, tc, user_color,
+         avg(CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END) AS mean_signed_cp
+  FROM mid_entry
+  GROUP BY user_id, elo_bucket, tc, user_color
+  HAVING count(*) >= 20
+),
+mid_centered AS (
+  -- Symmetric centering. Sparse-cell exclusion applied here.
+  SELECT mean_signed_cp - (CASE WHEN user_color='white' THEN 25.0 ELSE -25.0 END) AS centered_cp,
+         elo_bucket, tc
+  FROM mid_per_user_color
+  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  count(*) AS n,
+  round(avg(centered_cp)::numeric, 2) AS ctr_mean,
+  round(stddev_samp(centered_cp)::numeric, 1) AS ctr_sd,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p95
+FROM mid_centered;
+```
+
+## 3.1.1 Non-Endgame Score (per-user)
+
+```sql
+-- Reuse 3.1.6's per_user CTE and aggregate non_eg_score directly.
+SELECT
+  count(*) AS n_users,
+  round(avg(non_eg_score)::numeric, 4) AS non_eg_mean,
+  round(stddev_samp(non_eg_score)::numeric, 4) AS non_eg_sd,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY non_eg_score)::numeric, 4) AS non_eg_p95
+FROM per_user
+WHERE NOT (elo_bucket = 2400 AND tc = 'classical');
+```
+
+## 3.1.2 Endgame-entry eval (pawns)
+
+```sql
+-- Pass 1: symmetric engine baseline at EG entry, deduped per physical game.
+-- NO equal-footing filter.
+WITH first_phase AS (
+  SELECT game_id, MIN(ply) AS entry_ply
+  FROM game_positions
+  WHERE phase = 2
+  GROUP BY game_id
+),
+phase_entry AS (
+  SELECT g.platform, g.platform_game_id, gp.eval_cp AS raw_cp_white_pov
+  FROM games g
+  JOIN first_phase fp ON fp.game_id = g.id
+  JOIN game_positions gp ON gp.game_id = g.id AND gp.ply = fp.entry_ply
+  WHERE g.rated AND NOT g.is_computer_game
+    AND gp.eval_cp IS NOT NULL AND gp.eval_mate IS NULL
+    AND abs(gp.eval_cp) < 2000   -- match production trim from D-08
+),
+deduped AS (
+  SELECT DISTINCT ON (platform, platform_game_id) raw_cp_white_pov
+  FROM phase_entry
+  ORDER BY platform, platform_game_id
+)
+SELECT
+  COUNT(*) AS n_games,
+  ROUND(AVG(raw_cp_white_pov)::numeric, 2) AS baseline_cp_white,
+  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY raw_cp_white_pov)::numeric, 1) AS median_white_pov,
+  ROUND(STDDEV_SAMP(raw_cp_white_pov)::numeric, 1) AS sd_white_pov
+FROM deduped;
+```
+
+```sql
+-- Pass 2: per-(user, color) pooled distribution at EG entry.
+-- Substitute the EG baseline from pass 1 in place of 25.0 below.
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.tc_bucket,
+         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
+         bsu.median_elo
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+first_endgame AS (
+  SELECT game_id, min(ply) AS entry_ply FROM game_positions WHERE phase = 2 GROUP BY game_id
+),
+games_filtered AS (
+  SELECT g.id AS game_id, g.user_id, g.user_color::text AS user_color,
+         -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
+         (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
+         (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
+               WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
+               ELSE 2400 END) AS elo_bucket, su.tc_bucket AS tc
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color::text='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+),
+eg_entry AS (
+  -- Match production filter: continuous in-domain eval only.
+  SELECT gf.user_id, gf.elo_bucket, gf.tc, gf.user_color, gp.eval_cp AS raw_cp
+  FROM games_filtered gf
+  JOIN first_endgame fe ON fe.game_id = gf.game_id
+  JOIN game_positions gp ON gp.game_id = gf.game_id AND gp.ply = fe.entry_ply
+  WHERE gp.eval_cp IS NOT NULL AND gp.eval_mate IS NULL AND abs(gp.eval_cp) < 2000
+),
+eg_per_user_color AS (
+  -- One row per (user, color) cell — UNCENTERED user-POV mean (drives the live tile).
+  SELECT user_id, elo_bucket, tc, user_color,
+         avg(CASE WHEN user_color='white' THEN raw_cp ELSE -raw_cp END) AS mean_signed_cp
+  FROM eg_entry
+  GROUP BY user_id, elo_bucket, tc, user_color
+  HAVING count(*) >= 20
+),
+eg_uncentered AS (
+  -- Uncentered — feeds the 0-centered EG-entry bullet (recommendations read from this).
+  SELECT mean_signed_cp AS uncentered_cp, elo_bucket, tc
+  FROM eg_per_user_color
+  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+),
+eg_centered AS (
+  -- Centered (reported for Cohen's d / methodological parity with 2.1).
+  -- Replace 25.0 with the pass-1 baseline_cp_white from this subchapter.
+  SELECT mean_signed_cp - (CASE WHEN user_color='white' THEN 25.0 ELSE -25.0 END) AS centered_cp,
+         elo_bucket, tc
+  FROM eg_per_user_color
+  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  'uncentered' AS variant,
+  count(*) AS n,
+  round(avg(uncentered_cp)::numeric, 2) AS mean_cp,
+  round(stddev_samp(uncentered_cp)::numeric, 1) AS sd_cp,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY uncentered_cp)::numeric, 1) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY uncentered_cp)::numeric, 1) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY uncentered_cp)::numeric, 1) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY uncentered_cp)::numeric, 1) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY uncentered_cp)::numeric, 1) AS p95
+FROM eg_uncentered
+UNION ALL
+SELECT
+  'centered' AS variant,
+  count(*) AS n,
+  round(avg(centered_cp)::numeric, 2) AS mean_cp,
+  round(stddev_samp(centered_cp)::numeric, 1) AS sd_cp,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p95
+FROM eg_centered;
+```
+
 ## 3.1.3 Achievable Score (Stockfish-predicted expected score at EG entry)
 
 
@@ -760,6 +1031,41 @@ HAVING count(*) >= 10
 ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
 ```
 
+## 3.3.1 clock-gap-%
+
+```sql
+-- Extend the §3.3.1 query: replace per_user_cell with per_user_gap
+per_user_gap AS (
+  SELECT
+    user_id, elo_bucket, tc,
+    count(*) AS games,
+    avg((user_clk - opp_clk) / NULLIF(base_time_seconds, 0)) AS mean_gap_frac
+  FROM routed
+  WHERE user_clk IS NOT NULL AND opp_clk IS NOT NULL
+    AND base_time_seconds > 0
+    AND user_clk <= 2.0 * base_time_seconds
+    AND opp_clk <= 2.0 * base_time_seconds
+    -- Equal-footing filter already applied in clock_raw
+  GROUP BY user_id, elo_bucket, tc
+  HAVING count(*) >= 20
+)
+SELECT
+  elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(mean_gap_frac)::numeric, 4) AS gap_mean,
+  round(var_samp(mean_gap_frac)::numeric, 6) AS gap_var,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p95
+FROM per_user_gap
+GROUP BY elo_bucket, tc
+HAVING count(*) >= 10
+ORDER BY elo_bucket,
+  CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
 ## 3.3.2 Time pressure vs performance
 
 ```sql
@@ -1049,6 +1355,119 @@ GROUP BY elo_bucket, tc, endgame_class_int
 ORDER BY elo_bucket,
          CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END,
          endgame_class_int;
+```
+
+## 3.4.1 Per-user per-class score distribution
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.tc_bucket,
+         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
+         bsu.median_elo
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+class_span AS (
+  SELECT game_id, endgame_class, min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id, endgame_class
+  HAVING count(*) >= 6
+),
+per_user_class AS (
+  SELECT
+    g.user_id,
+    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
+    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
+    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
+          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
+          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
+          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
+          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
+          ELSE 2400 END) AS elo_bucket,
+    su.tc_bucket AS tc,
+    cs.endgame_class AS endgame_class_int,
+    count(*) AS n_games,
+    avg(
+      CASE
+        WHEN (g.result='1-0' AND g.user_color='white')
+          OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+        WHEN g.result='1/2-1/2' THEN 0.5
+        ELSE 0.0
+      END
+    ) AS user_class_score
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  JOIN class_span cs ON cs.game_id = g.id
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) >= 800  -- drop sub-800 (game-time ELO)
+  GROUP BY g.user_id, user_elo_at_game, elo_bucket, su.tc_bucket, cs.endgame_class
+  HAVING count(*) >= 10        -- min 10 games per user per class
+)
+SELECT
+  CASE endgame_class_int
+    WHEN 1 THEN 'rook'
+    WHEN 2 THEN 'minor_piece'
+    WHEN 3 THEN 'pawn'
+    WHEN 4 THEN 'queen'
+    WHEN 5 THEN 'mixed'
+    WHEN 6 THEN 'pawnless'
+  END AS endgame_class,
+  count(*) AS n_users,
+  round(avg(user_class_score)::numeric, 4) AS mean_score,
+  round(percentile_cont(0.10) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p10,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p75,
+  round(percentile_cont(0.90) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p90
+FROM per_user_class
+GROUP BY endgame_class_int
+ORDER BY endgame_class_int;
+```
+
+## 3.4.1 Per-class per-axis conv/recov rate distribution
+
+```sql
+-- TC-axis pass: unit = (user, tc, class), pooling ELO.
+-- (CTEs selected_users / class_span / bucketed identical to the cell-level query,
+--  EXCEPT classified adds: WHERE uelo>=800 AND NOT (elo_bucket=2400 AND tc='classical'))
+, per_user_tc AS (
+  SELECT user_id, tc, cls,
+    avg(CASE WHEN score=1.0  THEN 1.0 ELSE 0.0 END) FILTER (WHERE bucket='conversion') AS conv_rate,
+    count(*) FILTER (WHERE bucket='conversion') AS conv_n,
+    avg(CASE WHEN score>=0.5 THEN 1.0 ELSE 0.0 END) FILTER (WHERE bucket='recovery')   AS recov_rate,
+    count(*) FILTER (WHERE bucket='recovery')   AS recov_n
+  FROM classified GROUP BY user_id, tc, cls
+)
+SELECT cls, tc,
+  count(*) FILTER (WHERE conv_n>=10)  AS conv_users,
+  round(avg(conv_rate)      FILTER (WHERE conv_n>=10)::numeric,4)  AS conv_mean,
+  round(var_samp(conv_rate) FILTER (WHERE conv_n>=10)::numeric,6)  AS conv_var,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p75,
+  count(*) FILTER (WHERE recov_n>=10) AS recov_users,
+  round(avg(recov_rate)      FILTER (WHERE recov_n>=10)::numeric,4) AS recov_mean,
+  round(var_samp(recov_rate) FILTER (WHERE recov_n>=10)::numeric,6) AS recov_var,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p75
+FROM per_user_tc WHERE cls <= 5
+GROUP BY cls, tc
+ORDER BY cls, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 ELSE 4 END;
+
+-- ELO-axis pass: identical, but per_user_elo groups by (user_id, elo_bucket, cls)
+-- and the final SELECT groups by (cls, elo_bucket) ORDER BY cls, elo_bucket.
 ```
 
 ## 3.4.2 Per-span Score Gap by Endgame Type (Phase 87.1 SEED-016)
