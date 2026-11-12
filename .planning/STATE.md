@@ -5,8 +5,8 @@ current_phase: 249
 current_phase_name: Blunder-Check Playable MVP (SEED-261108-dk0)
 status: completed
 stopped_at: Phase 248 complete — all phases complete
-last_updated: "2026-11-12T13:51:10.380Z"
-state_head: 74fd92567fb8ddfcf4f5534e8ad5af77a34c6242
+last_updated: "2026-11-12T14:30:11.791Z"
+state_head: be2e625e96e4e316367f8687520f4328152a3280
 progress:
   total_phases: 4
   completed_phases: 63
@@ -1101,6 +1101,7 @@ None active.
 | 261110-87i | Arrow-oddness unselected baseline in blunder-check report | 2026-11-10 | 1a3841de4 | [261110-87i-arrow-oddness-unselected-baseline-in-blu](./quick/261110-87i-arrow-oddness-unselected-baseline-in-blu/) |
 | 261112-j47 | Engine wrapper keeps last exact info line; schema v3 gate on 1M-node lease lanes (SEED-261112-s4v Part A backend) | 2026-11-12 | c87b90090 | [261112-j47-engine-wrapper-keep-last-exact-info-line](./quick/261112-j47-engine-wrapper-keep-last-exact-info-line/) |
 | 261112-k56 | Opening cache: 1-2 ply cached lines count as missing, are re-searched and healed (SEED-261112-s4v Part A item 3) | 2026-11-12 | 74fd92567 | [261112-k56-opening-cache-treat-1-2-ply-cached-lines](./quick/261112-k56-opening-cache-treat-1-2-ply-cached-lines/) |
+| 261112-l25 | Frontend engine hooks: bound lines never replace an exact line's moves (SEED-261112-s4v Part A item 4) | 2026-11-12 | be2e625e9 | [261112-l25-frontend-engine-hooks-bound-lines-never-](./quick/261112-l25-frontend-engine-hooks-bound-lines-never-/) |
 
 ## Deferred Items
 

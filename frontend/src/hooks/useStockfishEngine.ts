@@ -14,8 +14,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
 import { workerErrorContext } from '@/lib/engine/workerErrorContext';
-import { parseInfoLine } from './uciParser';
-import type { PvLine } from './uciParser';
+import { dedupePvLinesByFirstMove, parseInfoLine } from './uciParser';
+import type { ParsedInfoLine, PvLine } from './uciParser';
 import {
   markEngineAssetFailed,
   markEngineAssetPending,
@@ -48,6 +48,51 @@ const RAPID_STEP_DEBOUNCE_MS = 150;
  * own onSnapshot throttle.
  */
 const PV_COMMIT_THROTTLE_MS = 150;
+
+// ─── Bound-line helpers ──────────────────────────────────────────────────────
+
+/**
+ * Decide what a parsed info line writes into the display map for its rank.
+ *
+ * - Exact line, or a bound line on a rank with no exact line yet: the line
+ *   itself (a fresh PvLine), so first paint is never delayed.
+ * - Bound line whose first move equals the rank's last exact line's first
+ *   move: a copy of the exact line carrying only the bound line's live score
+ *   and depth (the exact moves are kept).
+ * - Bound line for a different move (a new move failing high): null, meaning
+ *   "ignore", so a shown line's moves[0] and its score always belong to the
+ *   same move.
+ */
+function pvEntryForInfo(parsed: ParsedInfoLine, lastExact: PvLine | undefined): PvLine | null {
+  if (parsed.bound === 'exact' || lastExact === undefined) {
+    return {
+      multipv: parsed.multipv,
+      depth: parsed.depth,
+      moves: parsed.pv,
+      evalCp: parsed.scoreCp,
+      evalMate: parsed.scoreMate,
+    };
+  }
+  if (parsed.pv[0] !== lastExact.moves[0]) return null;
+  return { ...lastExact, depth: parsed.depth, evalCp: parsed.scoreCp, evalMate: parsed.scoreMate };
+}
+
+/**
+ * Collapse a rank map by first move and renumber the survivors 1..k.
+ * `dedupePvLinesByFirstMove` keeps the deeper duplicate at the earlier
+ * position but with its own `multipv`, while `commitPvSnapshotNow` reads the
+ * flat evalCp/evalMate/depth from rank 1. Renumbering keeps those flat fields
+ * equal to `pvLines[0]`; no consumer reads `PvLine.multipv` except to sort.
+ */
+function dedupeRankMap(pvMap: ReadonlyMap<number, PvLine>): Map<number, PvLine> {
+  const sorted = [...pvMap.values()].sort((a, b) => a.multipv - b.multipv);
+  const deduped = new Map<number, PvLine>();
+  dedupePvLinesByFirstMove(sorted).forEach((line, index) => {
+    const rank = index + 1;
+    deduped.set(rank, { ...line, multipv: rank });
+  });
+  return deduped;
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -134,8 +179,28 @@ export function useStockfishEngine({
    */
   const appliedMultiPvRef = useRef<number | null>(null);
 
-  /** In-flight MultiPV map: keyed by multipv index, updated on exact info lines. */
+  /**
+   * In-flight MultiPV display map, keyed by multipv index. An exact info line
+   * replaces its rank. A bound (lowerbound/upperbound) line is stored as-is on
+   * a rank with no exact line yet, overlays only score and depth on a rank
+   * whose exact line starts with the same move, and is ignored otherwise
+   * (see `pvEntryForInfo`).
+   */
   const pvMapRef = useRef<Map<number, PvLine>>(new Map());
+
+  /**
+   * Last EXACT info line per MultiPV rank for the in-flight search (mover POV,
+   * like `pvMapRef`). The final bestmove commit restores these over the
+   * display map.
+   */
+  const exactPvMapRef = useRef<Map<number, PvLine>>(new Map());
+
+  /**
+   * True once a bound line arrived for a rank that already held an exact line
+   * (overlaid or ignored) during the in-flight search. Gates the first-move
+   * dedupe at the final commit, so exact-only searches are never deduped.
+   */
+  const boundOnExactRankRef = useRef(false);
 
   /**
    * Side to move of the FEN currently being analyzed. UCI scores are reported
@@ -354,8 +419,11 @@ export function useStockfishEngine({
     }
 
     // Clear pvMap so stale lines from the previous position do not bleed into
-    // the snapshot that will be committed on the next bestmove.
+    // the snapshot that will be committed on the next bestmove. The last-exact
+    // map and its bound flag are per-search state and reset with it.
     pvMapRef.current.clear();
+    exactPvMapRef.current.clear();
+    boundOnExactRankRef.current = false;
     // Record the side to move so the committed score can be normalized to
     // white-POV (UCI reports it from the mover's POV).
     analyzedSideToMoveRef.current = fenToAnalyze.split(' ')[1] === 'b' ? 'b' : 'w';
@@ -463,10 +531,11 @@ export function useStockfishEngine({
        * never called for a superseded search; this function itself does no
        * staleness check of its own.
        *
-       * Note: bound filtering is intentionally relaxed — lowerbound and
-       * upperbound lines paint immediately so the eval sharpens in place as depth
-       * climbs. The eval may visibly bounce ~200-300ms; this is accepted
-       * (lichess-style live streaming behavior).
+       * Note on bound (lowerbound/upperbound) lines: one paints as-is only on a
+       * rank without an exact line yet (first paint is not delayed), moves just
+       * the live score and depth when it is for the same move as the rank's
+       * exact line, and is ignored for a different move. The final bestmove
+       * flush restores each rank's last exact line.
        */
       function commitPvSnapshotNow(): void {
         // Normalize UCI's side-to-move score to white-POV (negate for black to
@@ -544,19 +613,29 @@ export function useStockfishEngine({
           // its lines belong to the old position.
           if (stateRef.current !== 'thinking' || stopPendingRef.current) return;
           const parsed = parseInfoLine(line);
-          // Relaxed bound filtering for live first-paint: accept lowerbound/upperbound
-          // lines too — eval bounces briefly then settles (lichess-style).
-          if (parsed !== null) {
-            pvMapRef.current.set(parsed.multipv, {
-              multipv: parsed.multipv,
-              depth: parsed.depth,
-              moves: parsed.pv,
-              evalCp: parsed.scoreCp,
-              evalMate: parsed.scoreMate,
-            });
-            // Throttled, not committed on every line.
-            commitPvSnapshotThrottled();
+          if (parsed === null) return;
+          // Bug fix (SEED-261112-s4v): a stop that lands during an aspiration
+          // re-search leaves a final lowerbound (1 move) or upperbound (2 moves)
+          // line with a bound score. Writing it straight into the map used to
+          // replace the rank's full exact line, so the analysis board and the
+          // puzzle and blunder-check solution screens showed 1-2 move lines.
+          // A bound line for the SAME move therefore only moves the live score
+          // and depth; one for a DIFFERENT move is ignored, because its score
+          // belongs to another move and keeping moves[0] and the score from one
+          // move keeps buildEvalLookup and the reveal tree's live eval
+          // consistent. Accepted: the shown best move can lag Stockfish's
+          // bestmove by one unfinished iteration (same choice as backend fix
+          // 261112-j47).
+          const lastExact = exactPvMapRef.current.get(parsed.multipv);
+          if (parsed.bound !== 'exact' && lastExact !== undefined) {
+            boundOnExactRankRef.current = true;
           }
+          const entry = pvEntryForInfo(parsed, lastExact);
+          if (entry === null) return;
+          pvMapRef.current.set(parsed.multipv, entry);
+          if (parsed.bound === 'exact') exactPvMapRef.current.set(parsed.multipv, entry);
+          // Throttled, not committed on every line.
+          commitPvSnapshotThrottled();
           return;
         }
 
@@ -581,6 +660,19 @@ export function useStockfishEngine({
           // the final pvMap snapshot immediately and unconditionally (the
           // final snapshot must never be delayed or dropped), then mark idle.
           clearPendingPvCommit();
+          // Bug fix (SEED-261112-s4v): the search is over, so every rank
+          // settles on its last exact line (moves, score, depth); only a rank
+          // that never got an exact line keeps its bound line. Restoring after
+          // a new move failed high can show the old best move twice (the same
+          // final print puts it on another rank as an exact line), so dedupe by
+          // first move in exactly that case. Never for an exact-only search,
+          // which keeps its pre-existing behavior.
+          exactPvMapRef.current.forEach((exactLine, rank) => {
+            pvMapRef.current.set(rank, exactLine);
+          });
+          if (boundOnExactRankRef.current) {
+            pvMapRef.current = dedupeRankMap(pvMapRef.current);
+          }
           commitPvSnapshotNow();
           stateRef.current = 'idle';
           setIsAnalyzing(false);

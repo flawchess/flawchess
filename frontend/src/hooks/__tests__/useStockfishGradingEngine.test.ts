@@ -263,6 +263,108 @@ describe('useStockfishGradingEngine', () => {
     expect([...result.current.gradeMap.keys()].sort()).toEqual(['c5', 'e5']);
   });
 
+  it('a bound line never overwrites the exact grade of the same move', async () => {
+    const { result } = renderHook(() =>
+      useStockfishGradingEngine({ fen: TEST_FEN, candidateSans: CANDIDATES, enabled: true }),
+    );
+    driveInit(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    act(() => {
+      mockWorker.simulateMessage('info depth 14 multipv 1 score cp -10 nodes 1000 pv e7e5 g1f3 b8c6');
+    });
+    // Aspiration re-search cut off by the stop: a 2-move upperbound line.
+    act(() => {
+      mockWorker.simulateMessage('info depth 15 multipv 1 score cp 25 upperbound nodes 2000 pv e7e5 g1f3');
+    });
+
+    const grade = result.current.gradeMap.get('e5');
+    expect(grade?.evalCp).toBe(10);
+    expect(grade?.depth).toBe(14);
+    expect(grade?.pv).toEqual(['e7e5', 'g1f3', 'b8c6']);
+  });
+
+  it('a bound line is accepted for a move with no entry or only a bound entry; an exact line always replaces it and then wins', async () => {
+    const { result } = renderHook(() =>
+      useStockfishGradingEngine({ fen: TEST_FEN, candidateSans: CANDIDATES, enabled: true }),
+    );
+    driveInit(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    // No entry yet: the bound line is stored.
+    act(() => {
+      mockWorker.simulateMessage('info depth 9 multipv 2 score cp -20 lowerbound nodes 900 pv c7c5');
+    });
+    expect(result.current.gradeMap.get('c5')?.depth).toBe(9);
+    expect(result.current.gradeMap.get('c5')?.pv).toEqual(['c7c5']);
+
+    // Bound-only entry: a later bound line replaces it.
+    act(() => {
+      mockWorker.simulateMessage('info depth 10 multipv 2 score cp -25 lowerbound nodes 1000 pv c7c5');
+    });
+    expect(result.current.gradeMap.get('c5')?.depth).toBe(10);
+    expect(result.current.gradeMap.get('c5')?.evalCp).toBe(25);
+
+    // An exact line replaces the bound entry.
+    act(() => {
+      mockWorker.simulateMessage('info depth 11 multipv 2 score cp -15 nodes 2000 pv c7c5 g1f3 d7d6');
+    });
+    expect(result.current.gradeMap.get('c5')?.evalCp).toBe(15);
+    expect(result.current.gradeMap.get('c5')?.depth).toBe(11);
+    expect(result.current.gradeMap.get('c5')?.pv).toEqual(['c7c5', 'g1f3', 'd7d6']);
+
+    // A further bound line leaves the exact grade untouched.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 2 score cp -90 lowerbound nodes 3000 pv c7c5');
+    });
+    expect(result.current.gradeMap.get('c5')?.evalCp).toBe(15);
+    expect(result.current.gradeMap.get('c5')?.depth).toBe(11);
+    expect(result.current.gradeMap.get('c5')?.pv).toEqual(['c7c5', 'g1f3', 'd7d6']);
+  });
+
+  it('the cache keeps serving the exact grade after a trailing bound line (cache hit, no new go)', async () => {
+    const { rerender, result } = renderHook(
+      ({ candidateSans }: { candidateSans: string[] }) =>
+        useStockfishGradingEngine({ fen: TEST_FEN, candidateSans, enabled: true }),
+      { initialProps: { candidateSans: CANDIDATES } },
+    );
+    driveInit(mockWorker);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    act(() => {
+      mockWorker.simulateMessage('info depth 14 multipv 1 score cp -10 nodes 1000 pv e7e5 g1f3 b8c6');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 14 multipv 2 score cp -20 nodes 1000 pv c7c5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 14 multipv 3 score cp -30 nodes 1000 pv e7e6');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 15 multipv 1 score cp 25 upperbound nodes 2000 pv e7e5 g1f3');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove e7e5');
+    });
+
+    rerender({ candidateSans: ['e5'] });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(1);
+    const grade = result.current.gradeMap.get('e5');
+    expect(grade?.depth).toBe(14);
+    expect(grade?.evalCp).toBe(10);
+    expect(grade?.pv).toEqual(['e7e5', 'g1f3', 'b8c6']);
+  });
+
   it('gradeMapFen reports the FEN the displayed grades belong to, and clears with the map on navigation', async () => {
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) =>

@@ -8,7 +8,12 @@
  * 3. Adaptive debounce: settled move fires immediately; rapid steps coalesce.
  * 4. Search command contains movetime 1500 and nodes 2000000.
  * 5. Stop-pending discard: stale bestmove is discarded; only final FEN result committed.
- * 6. lowerbound/upperbound info lines DO paint evalCp live (relaxed bound).
+ * 6. Bound (lowerbound/upperbound) info lines, per MultiPV rank: (a) a rank with no
+ *    exact line yet paints the bound line as-is; (b) a rank whose exact line starts
+ *    with the same move gets only the live score and depth overlaid; (c) a bound
+ *    line for a different move is ignored; (d) the final bestmove restores each
+ *    rank's last exact line; (e) the final list is deduped by first move only when
+ *    a bound line was overlaid or ignored on a rank holding an exact line.
  * 7. Exact info line paints evalCp before bestmove; bestmove confirms + stops analysis.
  * 8. Visibility hidden → stop sent, worker NOT terminated.
  * 9. Unmount → stop + terminate.
@@ -334,7 +339,7 @@ describe('useStockfishEngine', () => {
     expect(goCmd).toContain('nodes 2000000');
   });
 
-  it('lowerbound info line paints evalCp live (relaxed bound, lichess-style)', async () => {
+  it('lowerbound info line on a rank with no exact line yet paints as-is (first paint not delayed)', async () => {
     const { result } = renderHook(() =>
       useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
@@ -350,12 +355,13 @@ describe('useStockfishEngine', () => {
       );
     });
 
-    // Lowerbound info lines now paint immediately (relaxed bound for live first-paint).
+    // No exact line exists for rank 1 yet, so the bound line paints as-is.
     // TEST_FEN is black-to-move: UCI +45 (mover POV) → white-POV = -45.
     expect(result.current.evalCp).toBe(-45);
+    expect(result.current.pvLines[0]?.moves).toEqual(['e2e4', 'e7e5']);
   });
 
-  it('upperbound info line paints evalCp live (relaxed bound, lichess-style)', async () => {
+  it('upperbound info line on a rank with no exact line yet paints as-is (first paint not delayed)', async () => {
     const { result } = renderHook(() =>
       useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
@@ -371,9 +377,10 @@ describe('useStockfishEngine', () => {
       );
     });
 
-    // Upperbound info lines now paint immediately (relaxed bound for live first-paint).
+    // No exact line exists for rank 1 yet, so the bound line paints as-is.
     // TEST_FEN is black-to-move: UCI +60 (mover POV) → white-POV = -60.
     expect(result.current.evalCp).toBe(-60);
+    expect(result.current.pvLines[0]?.moves).toEqual(['d2d4', 'd7d5']);
   });
 
   it('exact info line already paints evalCp; bestmove confirms and stops analysis', async () => {
@@ -606,6 +613,168 @@ describe('useStockfishEngine', () => {
       mockWorker.messages.filter((m) => m === `position fen ${TEST_FEN_2}`).length,
     ).toBe(1);
     expect(mockWorker.messages.filter((m) => m.startsWith('go ')).length).toBe(2);
+  });
+
+  // ─── bound lines never replace an exact line's moves (SEED-261112-s4v) ────
+
+  describe('bound info lines vs a rank holding an exact line', () => {
+    const EXACT_E5_LINE = 'info depth 17 multipv 1 score cp 30 nodes 50000 pv e7e5 g1f3 b8c6 f1b5';
+    const EXACT_E5_MOVES = ['e7e5', 'g1f3', 'b8c6', 'f1b5'];
+
+    /** Mount at TEST_FEN (black to move, MultiPV 2) and start the search. */
+    async function startSearch(): Promise<{ current: ReturnType<typeof useStockfishEngine> }> {
+      const { result } = renderHook(() =>
+        useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
+      );
+      await flushWorkerSpawn();
+      driveInit(mockWorker);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      return result;
+    }
+
+    function send(line: string): void {
+      act(() => {
+        mockWorker.simulateMessage(line);
+      });
+    }
+
+    /** Advance past the pvLines commit throttle so a trailing commit lands. */
+    async function passThrottle(): Promise<void> {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(150);
+      });
+    }
+
+    it('same-move lowerbound overlays only the live score and depth; the final commit restores the exact line', async () => {
+      const result = await startSearch();
+      send(EXACT_E5_LINE);
+      await passThrottle();
+      send('info depth 18 multipv 1 score cp 45 lowerbound nodes 60000 pv e7e5');
+      await passThrottle();
+
+      // LIVE: exact moves kept, bound score and depth overlaid (white POV: -45).
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-45);
+      expect(result.current.pvLines[0]?.depth).toBe(18);
+      expect(result.current.evalCp).toBe(-45);
+      expect(result.current.depth).toBe(18);
+
+      send('bestmove e7e5');
+
+      // FINAL: the exact line's moves, score and depth.
+      expect(result.current.pvLines).toHaveLength(1);
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-30);
+      expect(result.current.pvLines[0]?.depth).toBe(17);
+      expect(result.current.evalCp).toBe(-30);
+      expect(result.current.depth).toBe(17);
+      expect(result.current.isAnalyzing).toBe(false);
+    });
+
+    it('same-move upperbound overlays only the live score and depth; the final commit restores the exact line', async () => {
+      const result = await startSearch();
+      send(EXACT_E5_LINE);
+      await passThrottle();
+      send('info depth 18 multipv 1 score cp 10 upperbound nodes 60000 pv e7e5 g1f3');
+      await passThrottle();
+
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-10);
+      expect(result.current.pvLines[0]?.depth).toBe(18);
+
+      send('bestmove e7e5');
+
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-30);
+      expect(result.current.pvLines[0]?.depth).toBe(17);
+      expect(result.current.evalCp).toBe(-30);
+      expect(result.current.depth).toBe(17);
+    });
+
+    it('a bound line for a different move (new move failing high) is ignored, live and final', async () => {
+      const result = await startSearch();
+      send(EXACT_E5_LINE);
+      await passThrottle();
+      send('info depth 18 multipv 1 score cp 45 lowerbound nodes 60000 pv d7d5');
+      await passThrottle();
+
+      // LIVE: unchanged, so moves[0] and the score still belong to the same move.
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-30);
+      expect(result.current.pvLines[0]?.depth).toBe(17);
+      expect(result.current.evalCp).toBe(-30);
+      expect(result.current.depth).toBe(17);
+
+      send('bestmove d7d5');
+
+      expect(result.current.pvLines).toHaveLength(1);
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-30);
+      expect(result.current.pvLines[0]?.depth).toBe(17);
+      expect(result.current.pvLines.some((l) => l.moves[0] === 'd7d5')).toBe(false);
+    });
+
+    it('a bound-only rank 2 keeps its bound line as-is through the final commit', async () => {
+      const result = await startSearch();
+      send(EXACT_E5_LINE);
+      send('info depth 12 multipv 2 score cp 5 lowerbound nodes 9000 pv c7c5');
+      send('bestmove e7e5');
+
+      expect(result.current.pvLines).toHaveLength(2);
+      expect(result.current.pvLines[0]?.moves).toEqual(EXACT_E5_MOVES);
+      expect(result.current.pvLines[1]?.moves).toEqual(['c7c5']);
+      expect(result.current.pvLines[1]?.evalCp).toBe(-5);
+    });
+
+    it('a later exact line always replaces the rank, even after a same-move bound line', async () => {
+      const result = await startSearch();
+      send(EXACT_E5_LINE);
+      send('info depth 18 multipv 1 score cp 45 lowerbound nodes 60000 pv e7e5');
+      send('info depth 19 multipv 1 score cp 25 nodes 80000 pv e7e5 b1c3 g8f6');
+      send('bestmove e7e5');
+
+      expect(result.current.pvLines).toHaveLength(1);
+      expect(result.current.pvLines[0]?.moves).toEqual(['e7e5', 'b1c3', 'g8f6']);
+      expect(result.current.pvLines[0]?.evalCp).toBe(-25);
+      expect(result.current.pvLines[0]?.depth).toBe(19);
+    });
+
+    it('dedupes by first move when a failed-high move leaves the old best move on rank 2', async () => {
+      const result = await startSearch();
+      send(EXACT_E5_LINE.replace('pv e7e5 g1f3 b8c6 f1b5', 'pv e7e5 g1f3 b8c6'));
+      send('info depth 17 multipv 2 score cp 20 nodes 50000 pv c7c5 g1f3 d7d6');
+      await passThrottle();
+      // Final print: new move d7d5 fails high on rank 1 (ignored), and the old
+      // best move e7e5 is re-printed as an exact line on rank 2.
+      send('info depth 18 multipv 1 score cp 60 lowerbound nodes 90000 pv d7d5');
+      send('info depth 18 multipv 2 score cp 35 nodes 90000 pv e7e5 g1f3 b8c6 f1c4');
+      send('bestmove d7d5');
+
+      expect(result.current.pvLines).toHaveLength(1);
+      const only = result.current.pvLines[0];
+      expect(only?.moves[0]).toBe('e7e5');
+      expect(only?.multipv).toBe(1);
+      expect(only?.depth).toBe(18);
+      expect(only?.evalCp).toBe(-35);
+      expect(result.current.evalCp).toBe(-35);
+      expect(result.current.depth).toBe(18);
+      expect(result.current.pvLines.some((l) => l.moves[0] === 'd7d5')).toBe(false);
+      expect(result.current.pvLines.some((l) => l.moves[0] === 'c7c5')).toBe(false);
+    });
+
+    it('does NOT dedupe an exact-only search (no bound line arrived)', async () => {
+      const result = await startSearch();
+      send('info depth 17 multipv 1 score cp 30 nodes 50000 pv e7e5 g1f3');
+      send('info depth 17 multipv 2 score cp 20 nodes 50000 pv c7c5 g1f3');
+      // Partial next iteration: c5 climbs to rank 1, rank 2 is not re-emitted.
+      send('info depth 18 multipv 1 score cp 40 nodes 90000 pv c7c5 g1f3 d7d6');
+      send('bestmove c7c5');
+
+      expect(result.current.pvLines).toHaveLength(2);
+      expect(result.current.pvLines.every((l) => l.moves[0] === 'c7c5')).toBe(true);
+    });
   });
 
   // ─── throttle pvLines commits during a search ────
