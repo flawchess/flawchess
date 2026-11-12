@@ -15,7 +15,7 @@ If the user needs a fully isolated stack (separate backend, separate DB, migrati
 
 ## Why frontend-only
 
-`bin/run_local.sh` begins with `pkill -f "uvicorn app.main:app"`, `pkill -f vite`, `fuser -k 8000/tcp`, and `fuser -k 5173/tcp`. Running it in a second worktree would kill the primary session's backend and frontend. So this skill avoids `run_local.sh` entirely and only starts Vite.
+`bin/run_local.sh` runs an unscoped `pkill -f "uvicorn app.main:app"`, which kills the primary session's backend, and then exits with an error if ports 8000 or 5173 are held by another checkout's process. Running it in a second worktree would take down the primary backend and still fail to start. So this skill avoids `run_local.sh` entirely and only starts Vite.
 
 The Vite proxy in `frontend/vite.config.ts` forwards `/api` requests to `localhost:8000`, so the second frontend automatically hits the backend the primary session is already running. The database is shared through Docker Postgres on `:5432` — both sessions see the same data.
 
@@ -103,8 +103,7 @@ Detached so it outlives the current shell. Use `--strictPort` so Vite fails loud
 ### 5. Verify it's serving and proxying
 
 ```bash
-sleep 3
-curl -s -o /dev/null -w "html:%{http_code} api:%{http_code}\n" http://localhost:<port>/ http://localhost:<port>/api/health
+curl -s --retry 10 --retry-delay 1 --retry-connrefused -o /dev/null -w "html:%{http_code} api:%{http_code}\n" http://localhost:<port>/ http://localhost:<port>/api/health
 ```
 
 Both should return `200`. If `html` is not 200, read `/tmp/vite-<branch-name>.log` and surface the error. If `api` is not 200, the backend on `:8000` is down — tell the user.

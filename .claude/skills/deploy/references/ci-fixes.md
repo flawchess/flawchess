@@ -73,7 +73,7 @@ git commit -m "style: apply ruff format"
 git push origin main
 ```
 
-This is the single most common preventable CI failure on this project — see CLAUDE.md "Pre-PR checklist". The pre-push hook should catch it; if it didn't, the hook isn't installed (`bin/install_pre_push_hook.sh`).
+This is the single most common preventable CI failure on this project — see the root CLAUDE.md "Pre-merge gate". The pre-push hook should catch it; if it didn't, the hook isn't installed (`bin/install_pre_push_hook.sh`).
 
 ## CI: ruff lint errors
 
@@ -142,7 +142,7 @@ npm --prefix frontend run knip     # dead code / unused deps
 
 `knip` failures are usually leftover exports or unused deps from a removed feature. Delete them.
 
-`tsc` failures with `noUncheckedIndexedAccess` are common — narrow the index access (see CLAUDE.md Frontend section).
+`tsc` failures with `noUncheckedIndexedAccess` are common — narrow the index access (see `frontend/CLAUDE.md`, Code Style & Safety).
 
 ```bash
 git add -u

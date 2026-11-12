@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
 
+from app.routers.eval_remote import WORKER_SCHEMA_VERSION_MIN
 from scripts.remote_eval_worker import (
     EVAL_RETRY_MAX_POSITIONS,
     EVAL_RETRY_TIMEOUT_S,
@@ -394,6 +395,13 @@ async def test_ladder_flaw_blob_on_all_tier123_204() -> None:
     assert "/api/eval/remote/flaw-blob-lease" in called_urls, (
         "rung-4 /flaw-blob-lease was not called after all tier-1/2/3 returned 204"
     )
+    assert (
+        call(
+            "/api/eval/remote/flaw-blob-lease",
+            params={"worker_schema_version": WORKER_SCHEMA_VERSION},
+        )
+        in client.post.call_args_list
+    ), "rung-4 must send worker_schema_version (server gates the lane on it)"
     assert "/api/eval/remote/flaw-blob-submit" in called_urls, (
         "/flaw-blob-submit was not POSTed after a 200 from /flaw-blob-lease"
     )
@@ -1036,9 +1044,11 @@ _TARGETED_SECOND_BEST_POSITIONS: list[dict[str, object]] = [
 ]
 
 
-def test_worker_schema_version_is_2() -> None:
-    """WORKER_SCHEMA_VERSION bumped 1 -> 2."""
-    assert WORKER_SCHEMA_VERSION == 2
+def test_worker_schema_version_is_3() -> None:
+    """WORKER_SCHEMA_VERSION bumped 2 -> 3 (SEED-261112-s4v: keeps the last exact info
+    line). The shipped worker must always clear the server's lease gate."""
+    assert WORKER_SCHEMA_VERSION == 3
+    assert WORKER_SCHEMA_VERSION >= WORKER_SCHEMA_VERSION_MIN
 
 
 async def test_eval_atomic_game_targeted_second_best_only_played_best() -> None:
@@ -1145,6 +1155,14 @@ async def test_ladder_bestmove_lease_only_after_flaw_blob_204() -> None:
         "rung-5 /bestmove-lease must be called strictly after rung-4 /flaw-blob-lease"
     )
     assert "/api/eval/remote/bestmove-submit" in called_urls
+    for lease_url in ("flaw-blob-lease", "bestmove-lease"):
+        assert (
+            call(
+                f"/api/eval/remote/{lease_url}",
+                params={"worker_schema_version": WORKER_SCHEMA_VERSION},
+            )
+            in client.post.call_args_list
+        ), f"{lease_url} must send worker_schema_version"
 
 
 async def test_handle_bestmove_response_submits_n_entries_no_atomic_submit() -> None:

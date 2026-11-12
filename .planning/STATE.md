@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 248
-current_phase_name: Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)
-status: executing
-stopped_at: Completed 247-05-PLAN.md
-last_updated: "2026-11-10T04:57:33.592Z"
-state_head: 1a3841de41bdd1f3a614c8da29b1d7ef0248743f
+current_phase: 249
+current_phase_name: Blunder-Check Playable MVP (SEED-261108-dk0)
+status: completed
+stopped_at: Phase 248 complete — all phases complete
+last_updated: "2026-11-12T13:05:45.113Z"
+state_head: c87b9009000a84208403c6321f8708ead8680f0a
 progress:
-  total_phases: 2
+  total_phases: 4
   completed_phases: 63
-  total_plans: 15
+  total_plans: 24
   completed_plans: 26
 milestone_name: Train Spacing & Archive, Analysis Explain
 last_activity: 2026-11-08
@@ -21,10 +21,10 @@ last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) wi
 
 ## Current Position
 
-Phase: 248 (Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)) — EXECUTING
-Plan: 1 of 8
+Phase: 249 (Blunder-Check Playable MVP (SEED-261108-dk0)) — READY TO EXECUTE
+Plan: Not started
 
-Status: Executing Phase 248
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -1099,6 +1099,7 @@ None active.
 | 261106-peq | Fix the crash and filter the CSP reports | 2026-11-06 | 053622ae7 | [261106-peq-fix-the-crash-and-filter-the-csp-reports](./quick/261106-peq-fix-the-crash-and-filter-the-csp-reports/) |
 | 261107-dnz | Stop the installed PWA showing outdated builds | 2026-11-07 | afa8867b0 | [261107-dnz-stop-the-installed-pwa-showing-outdated-](./quick/261107-dnz-stop-the-installed-pwa-showing-outdated-/) |
 | 261110-87i | Arrow-oddness unselected baseline in blunder-check report | 2026-11-10 | 1a3841de4 | [261110-87i-arrow-oddness-unselected-baseline-in-blu](./quick/261110-87i-arrow-oddness-unselected-baseline-in-blu/) |
+| 261112-j47 | Engine wrapper keeps last exact info line; schema v3 gate on 1M-node lease lanes (SEED-261112-s4v Part A backend) | 2026-11-12 | c87b90090 | [261112-j47-engine-wrapper-keep-last-exact-info-line](./quick/261112-j47-engine-wrapper-keep-last-exact-info-line/) |
 
 ## Deferred Items
 
@@ -1152,7 +1153,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 ## Session Continuity
 
 **Last session:** 2026-11-08T19:56:57.785Z
-**Stopped at:** Completed 247-05-PLAN.md
+**Stopped at:** Phase 248 complete — all phases complete
 **Resume file:** None
 
 Previous session note (Phase 227):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import chess
 import chess.engine
@@ -15,9 +15,8 @@ from app.services.engine import _STOCKFISH_PATH, evaluate
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
     from typing import Any
-
-    from app.services.engine import EnginePool
 from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
+from tests.services.engine_fakes import ScriptedAnalysisProtocol, make_info, make_pool
 
 # ─── Constants (CLAUDE.md: no magic numbers) ──────────────────────────────────
 MOCK_BEST_CP: int = 200
@@ -97,40 +96,6 @@ class TestEngineWrapper:
             assert -EVAL_MATE_MAX_ABS <= mate <= EVAL_MATE_MAX_ABS
 
 
-def _make_mock_cp_score(cp: int) -> MagicMock:
-    """Build a mock PovScore returning a centipawn value (white perspective)."""
-    mock_score = MagicMock(spec=chess.engine.PovScore)
-    mock_white = MagicMock()
-    mock_white.score.return_value = cp
-    mock_white.mate.return_value = None
-    mock_score.white.return_value = mock_white
-    return mock_score
-
-
-def _make_mock_mate_score(mate_in: int) -> MagicMock:
-    """Build a mock PovScore returning a forced-mate value (white perspective)."""
-    mock_score = MagicMock(spec=chess.engine.PovScore)
-    mock_white = MagicMock()
-    mock_white.score.return_value = None
-    mock_white.mate.return_value = mate_in
-    mock_score.white.return_value = mock_white
-    return mock_score
-
-
-def _make_pool_with_mock_protocol(mock_analyse_fn: object) -> "EnginePool":
-    """Construct a started EnginePool with a mock protocol, ready for one call."""
-    from app.services.engine import EnginePool
-
-    pool = EnginePool(size=1)
-    pool._started = True
-    mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
-    mock_protocol.analyse = mock_analyse_fn
-    pool._transports = [None]
-    pool._protocols = [mock_protocol]
-    pool._available.put_nowait(0)
-    return pool
-
-
 class TestEvaluateNodesMultipv2:
     """Unit tests for evaluate_nodes_multipv2.
 
@@ -163,25 +128,11 @@ class TestEvaluateNodesMultipv2:
         Verifies correct extraction from each InfoDict by index — the list must
         never be passed whole to scalar helpers (_score_to_cp_mate etc.).
         """
-        best_move = chess.Move.from_uci("e2e4")
-        second_move = chess.Move.from_uci("d2d4")
-
-        info_best: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
-            {"score": _make_mock_cp_score(MOCK_BEST_CP), "pv": [best_move]}
-        )
-        info_second: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
-            {"score": _make_mock_cp_score(MOCK_SECOND_CP), "pv": [second_move]}
-        )
-
-        async def mock_analyse(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> list[chess.engine.InfoDict]:
-            return [info_best, info_second]
-
-        pool = _make_pool_with_mock_protocol(mock_analyse)
+        lines = [
+            make_info(16, cp=MOCK_BEST_CP, pv="e2e4", multipv=1),
+            make_info(16, cp=MOCK_SECOND_CP, pv="d2d4", multipv=2),
+        ]
+        pool = make_pool(ScriptedAnalysisProtocol(lines))
         (
             eval_cp,
             eval_mate,
@@ -206,22 +157,9 @@ class TestEvaluateNodesMultipv2:
         PvNode.su is str (not str | None) — the empty string sentinel must be used,
         never None.
         """
-        info_only: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
-            {
-                "score": _make_mock_cp_score(MOCK_BEST_CP),
-                "pv": [chess.Move.from_uci("e1e2")],
-            }
+        pool = make_pool(
+            ScriptedAnalysisProtocol([make_info(16, cp=MOCK_BEST_CP, pv="e1e2", multipv=1)])
         )
-
-        async def mock_analyse_single(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> list[chess.engine.InfoDict]:
-            return [info_only]
-
-        pool = _make_pool_with_mock_protocol(mock_analyse_single)
         (
             eval_cp,
             eval_mate,
@@ -246,28 +184,11 @@ class TestEvaluateNodesMultipv2:
         With multipv=2 and a forced mate, Stockfish may still return a second PV
         line — verify it is extracted correctly.
         """
-        info_mate: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
-            {
-                "score": _make_mock_mate_score(MOCK_MATE_IN_2),
-                "pv": [chess.Move.from_uci("a1a8")],
-            }
-        )
-        info_second: chess.engine.InfoDict = chess.engine.InfoDict(  # type: ignore[misc]
-            {
-                "score": _make_mock_cp_score(MOCK_SECOND_MATE_CP),
-                "pv": [chess.Move.from_uci("d7d5")],
-            }
-        )
-
-        async def mock_analyse_mate(
-            board: chess.Board,
-            limit: chess.engine.Limit,
-            *args: object,
-            **kwargs: object,
-        ) -> list[chess.engine.InfoDict]:
-            return [info_mate, info_second]
-
-        pool = _make_pool_with_mock_protocol(mock_analyse_mate)
+        lines = [
+            make_info(16, mate=MOCK_MATE_IN_2, pv="a1a8", multipv=1),
+            make_info(16, cp=MOCK_SECOND_MATE_CP, pv="d7d5", multipv=2),
+        ]
+        pool = make_pool(ScriptedAnalysisProtocol(lines))
         (
             eval_cp,
             eval_mate,

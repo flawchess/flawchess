@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.main import app
+from app.routers.eval_remote import WORKER_SCHEMA_VERSION_MIN
 from app.services.eval_queue_service import ClaimedJob
 from tests.services.maia_fakes import assert_refutation_lane_state
 
@@ -1744,6 +1745,8 @@ _BLUNDER_SUBMIT_EVALS_142: list[dict[str, object]] = [
 # ─── FlawBlob lease/submit schema tests ───────────────────
 
 _FLAW_BLOB_LEASE_URL = "/api/eval/remote/flaw-blob-lease"
+# Always the current minimum, so a future gate bump needs no test edits.
+_CURRENT_WORKER_PARAMS: dict[str, int] = {"worker_schema_version": WORKER_SCHEMA_VERSION_MIN}
 
 
 def test_flaw_blob_schema_lease_position() -> None:
@@ -2004,6 +2007,7 @@ class TestFlawBlobLeaseEndpoint:
         async with _make_client() as client:
             resp = await client.post(
                 _FLAW_BLOB_LEASE_URL,
+                params=_CURRENT_WORKER_PARAMS,
                 headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
@@ -2048,6 +2052,7 @@ class TestFlawBlobLeaseEndpoint:
             async with _make_client() as client:
                 resp = await client.post(
                     _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
@@ -2103,6 +2108,7 @@ class TestFlawBlobLeaseEndpoint:
             async with _make_client() as client:
                 resp = await client.post(
                     _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
@@ -2170,6 +2176,7 @@ class TestFlawBlobLeaseEndpoint:
             async with _make_client() as client:
                 resp = await client.post(
                     _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             # All-sentinel game → 204 (forward progress, no empty lease returned)
@@ -2277,6 +2284,7 @@ class TestFlawBlobLeaseEndpoint:
             async with _make_client() as client:
                 resp = await client.post(
                     _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 204, (
@@ -2387,7 +2395,7 @@ class TestAtomicLeaseEndpoint:
         async with _make_client() as client:
             response = await client.post(
                 _ATOMIC_LEASE_URL,
-                params={"worker_schema_version": 2},
+                params=_CURRENT_WORKER_PARAMS,
                 headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert response.status_code == 204, (
@@ -2443,7 +2451,7 @@ class TestAtomicLeaseEndpoint:
             async with _make_client() as client:
                 response = await client.post(
                     _ATOMIC_LEASE_URL,
-                    params={"worker_schema_version": 2},
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
 
@@ -2526,7 +2534,7 @@ class TestAtomicLeaseEndpoint:
             async with _make_client() as client:
                 response = await client.post(
                     _ATOMIC_LEASE_URL,
-                    params={"worker_schema_version": 2},
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert response.status_code == 204, (
@@ -2592,7 +2600,7 @@ class TestAtomicLeaseEndpoint:
             async with _make_client() as client:
                 response = await client.post(
                     _ATOMIC_LEASE_URL,
-                    params={"worker_schema_version": 2},
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
 
@@ -2687,7 +2695,7 @@ class TestAtomicLeaseEndpoint:
             async with _make_client() as client:
                 response = await client.post(
                     _ATOMIC_LEASE_URL,
-                    params={"worker_schema_version": 2},
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
 
@@ -2747,6 +2755,8 @@ class TestAtomicLeaseEndpoint:
             for scope in ("explicit", "idle"):
                 for params in (
                     {"scope": scope, "worker_schema_version": 1},
+                    # Today's previous fleet (v2) is gated off the 1M-node lane too.
+                    {"scope": scope, "worker_schema_version": WORKER_SCHEMA_VERSION_MIN - 1},
                     {"scope": scope},  # param omitted entirely — un-updated binary
                 ):
                     claim_mock = AsyncMock(
@@ -2821,7 +2831,7 @@ class TestAtomicLeaseEndpoint:
             async with _make_client() as client:
                 response = await client.post(
                     _ATOMIC_LEASE_URL,
-                    params={"worker_schema_version": 2},
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert response.status_code == 200, (
@@ -4809,7 +4819,9 @@ class TestFlawBlobSubmitEndpoint:
             # Step 1: lease
             async with _make_client() as client:
                 lease_resp = await client.post(
-                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
             lease_positions = lease_resp.json()["positions"]
@@ -4939,7 +4951,9 @@ class TestFlawBlobSubmitEndpoint:
         """
         async with _make_client() as client:
             lease_resp = await client.post(
-                _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                _FLAW_BLOB_LEASE_URL,
+                params=_CURRENT_WORKER_PARAMS,
+                headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.status_code}"
         return [
@@ -5174,7 +5188,9 @@ class TestFlawBlobSubmitEndpoint:
             # Lease: should return only missed tokens (allowed is sentinel)
             async with _make_client() as client:
                 lease_resp = await client.post(
-                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
             lease_positions = lease_resp.json()["positions"]
@@ -5319,7 +5335,9 @@ class TestFlawBlobSubmitEndpoint:
             # Lease tokens
             async with _make_client() as client:
                 lease_resp = await client.post(
-                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert lease_resp.status_code == 200
             lease_positions = lease_resp.json()["positions"]
@@ -5419,7 +5437,9 @@ class TestFlawBlobSubmitEndpoint:
             # Lease while BOTH flaws (ply=2, ply=4) still exist.
             async with _make_client() as client:
                 lease_resp = await client.post(
-                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                    _FLAW_BLOB_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
             lease_positions = lease_resp.json()["positions"]
@@ -6569,6 +6589,7 @@ class TestBestMoveLeaseEndpoint:
         async with _make_client() as client:
             resp = await client.post(
                 _BESTMOVE_LEASE_URL,
+                params=_CURRENT_WORKER_PARAMS,
                 headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
@@ -6592,6 +6613,7 @@ class TestBestMoveLeaseEndpoint:
         async with _make_client() as client:
             resp = await client.post(
                 _BESTMOVE_LEASE_URL,
+                params=_CURRENT_WORKER_PARAMS,
                 headers={"X-Operator-Token": _TEST_TOKEN},
             )
         assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
@@ -6640,6 +6662,7 @@ class TestBestMoveLeaseEndpoint:
             async with _make_client() as client:
                 resp = await client.post(
                     _BESTMOVE_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
@@ -6692,6 +6715,7 @@ class TestBestMoveLeaseEndpoint:
             async with _make_client() as client:
                 resp = await client.post(
                     _BESTMOVE_LEASE_URL,
+                    params=_CURRENT_WORKER_PARAMS,
                     headers={"X-Operator-Token": _TEST_TOKEN},
                 )
             assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
@@ -7250,3 +7274,109 @@ class TestBestMoveSubmitEndpoint:
             assert after == before, "game_flaws rows must be byte-identical after a bestmove submit"
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
+
+
+class TestTier4LeaseVersionGate:
+    """SEED-261112-s4v: /flaw-blob-lease and /bestmove-lease gate on worker_schema_version.
+
+    The claim functions are replaced by spies, so no DB rows are needed: an old worker
+    must get 204 with the spy never awaited; the minimum version reaches the claim.
+    """
+
+    _OLD_VERSION_PARAMS: tuple[dict[str, int], ...] = (
+        {},  # omitted entirely: un-updated binary
+        {"worker_schema_version": 1},
+        {"worker_schema_version": WORKER_SCHEMA_VERSION_MIN - 1},
+    )
+
+    @pytest.mark.asyncio
+    async def test_flaw_blob_lease_old_worker_204_before_claim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        spy = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", spy)
+
+        for params in self._OLD_VERSION_PARAMS:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL,
+                    params=params,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 204, f"params={params}: {resp.status_code} {resp.text}"
+        assert spy.await_count == 0, "old workers must be gated before _claim_tier4_blob"
+
+    @pytest.mark.asyncio
+    async def test_flaw_blob_lease_current_worker_reaches_claim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        spy = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_blob", spy)
+
+        async with _make_client() as client:
+            resp = await client.post(
+                _FLAW_BLOB_LEASE_URL,
+                params=_CURRENT_WORKER_PARAMS,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 204, f"{resp.status_code} {resp.text}"
+        assert spy.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_old_worker_204_before_claim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        spy = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_bestmove", spy)
+
+        for params in self._OLD_VERSION_PARAMS:
+            async with _make_client() as client:
+                resp = await client.post(
+                    _BESTMOVE_LEASE_URL,
+                    params=params,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert resp.status_code == 204, f"params={params}: {resp.status_code} {resp.text}"
+        assert spy.await_count == 0, "old workers must be gated before _claim_tier4_bestmove"
+
+    @pytest.mark.asyncio
+    async def test_bestmove_lease_current_worker_reaches_claim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        import app.routers.eval_remote as eval_remote_module
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "BEST_MOVE_BACKFILL_ENABLED", True)
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+        spy = AsyncMock(return_value=None)
+        monkeypatch.setattr(eval_remote_module, "_claim_tier4_bestmove", spy)
+
+        async with _make_client() as client:
+            resp = await client.post(
+                _BESTMOVE_LEASE_URL,
+                params=_CURRENT_WORKER_PARAMS,
+                headers={"X-Operator-Token": _TEST_TOKEN},
+            )
+        assert resp.status_code == 204, f"{resp.status_code} {resp.text}"
+        assert spy.await_count == 1

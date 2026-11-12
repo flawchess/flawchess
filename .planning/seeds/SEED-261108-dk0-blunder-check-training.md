@@ -52,7 +52,7 @@ Train's puzzles announce that something critical is happening. In a real game no
 - **A missed blunder forfeits the window's safe points** (owner, 2026-11-09). Show them being discarded with a small animation and the 0-points feedback sound, so more feels at stake. This drops the "always safe" strategy from about 1.9 to about 1.2 points per window (herrings only), against about 5.4 for a perfect player. Watch for frustration in telemetry (abandon rate after a forfeit) and soften if needed.
 - **Spaced repetition: only missed-blunder windows are reviewed**, 4 days later as in personalized puzzle training. Red herrings are never repeated.
 - **Reviews are not labelled.** The player must not be able to tell a review from a new window. A review re-draws L and the blunder's position within the window from the hazard model, so it starts at a different move and feels less familiar.
-- **Missed punishments: included, capped at about 30% per session** (owner, 2026-11-09, revised; replaces "no cap for now"). The calibration probe showed misses would be about 58% of qualifying blunders at every rating, not a beginner thing. The cap is a named constant (`MAX_MISS_SHARE` = 0.30) and is a share of the session's **blunder windows** (herrings excluded; owner, 2026-11-09). Reviews count toward it. **Not final:** the owner will discuss including or excluding misses with GM Noel Studer before the final call. On prod, 39% of blunders are misses (1.78M of 4.59M).
+- **SUPERSEDED 2026-11-10: missed punishments included with NO session cap** (owner; pure misses are 19-23% of the calibrated supply at every rating, so the cap would rarely bind; see 249-CONTEXT D-07). Earlier decision kept for history: **Missed punishments: included, capped at about 30% per session** (owner, 2026-11-09, revised; replaces "no cap for now"). The calibration probe showed misses would be about 58% of qualifying blunders at every rating, not a beginner thing. The cap is a named constant (`MAX_MISS_SHARE` = 0.30) and is a share of the session's **blunder windows** (herrings excluded; owner, 2026-11-09). Reviews count toward it. **Not final:** the owner will discuss including or excluding misses with GM Noel Studer before the final call. On prod, 39% of blunders are misses (1.78M of 4.59M).
 - **Clean window (herring) completed:** each safe answer already earned its point with animation and sound. There is no separate herring payoff.
 - **Timer: a fixed 15 s per own move.** On timeout at a safe move, that move's point is lost **and all safe points accumulated in the window are discarded** (same animation and sound as the missed-blunder forfeit), so ignoring the timer doesn't pay. The window continues, and the user can still earn the blunder points by catching the blunder. A timeout on the blunder move counts as a missed blunder.
 - **Cold start and thin supply: blunders from similarly rated FlawChess users** (owner, 2026-11-09). A user with no imported games or no analyzed flaws gets windows from other users' games, matched on the mover's rating at game time. This replaces the need for a lichess-puzzle-style warm-up and covers guests. (Owner idea for later, separate scope: replace the lichess warm-up puzzles in personalized puzzle training the same way.)
@@ -74,6 +74,13 @@ Train's puzzles announce that something critical is happening. In a real game no
 - **Other users' games:** no ownership gate needed (owner, 2026-11-09). Game deep links are public, as on chess.com and lichess. Copy must still not say "your move" for a stranger's game (precedent: the cross-user herring pool).
 - **Session composition:** count reviews toward the ~70/30 blunder-to-herring mix (owner agreed, 2026-11-09).
 - **False alarm inside a blunder window:** return the unreached blunder to the pool as unseen; herring false alarms are dropped (owner agreed, 2026-11-09).
+
+### Owner decisions 2026-11-10 (Phase 249 planning)
+
+- Constants adopted from the Phase 248 calibration: R = 0.3, X' = 0.2, eval band [0.10, 0.90].
+- No low-rating capture/check/mate rule; selection rests on findability alone.
+- Split: Phase 249 = playable MVP on a beta-only Train tab, 6 windows per session; Phase 250 = schedule, streak,
+  spaced repetition, cross-mode cooldown, leaderboards, launch.
 
 ## Proposed (discussed, not yet decided)
 

@@ -50,6 +50,7 @@ import logging
 import os
 import shutil
 import sys
+from collections.abc import Sequence
 from typing import Any
 
 import chess
@@ -370,7 +371,7 @@ def _pv_to_uci_string(info: chess.engine.InfoDict, cap: int = PV_CAP_PLIES) -> s
 def _score_to_cp_mate(
     info: chess.engine.InfoDict,
 ) -> tuple[int | None, int | None]:
-    """Extract (eval_cp, eval_mate) from an analyse() result.
+    """Extract (eval_cp, eval_mate) from a selected engine info line.
 
     Sign convention and clamping match zobrist.py:183-197 byte-for-byte.
     """
@@ -385,6 +386,95 @@ def _score_to_cp_mate(
     if eval_mate is not None:
         eval_mate = max(-EVAL_MATE_MAX_ABS, min(EVAL_MATE_MAX_ABS, eval_mate))
     return eval_cp, eval_mate
+
+
+# python-chess sets these keys to True on a UCI info line whose score is only a
+# bound (an aspiration-window fail-low / fail-high). They are not declared on the
+# InfoDict TypedDict, so they are tested by membership with a str key.
+_BOUND_KEYS: tuple[str, ...] = ("lowerbound", "upperbound")
+
+
+def _is_bound_line(info: chess.engine.InfoDict) -> bool:
+    return any(key in info for key in _BOUND_KEYS)
+
+
+class _LineCandidates:
+    """Per-multipv-index best candidates, in descending preference order."""
+
+    __slots__ = ("exact", "bound", "score_only")
+
+    def __init__(self) -> None:
+        self.exact: chess.engine.InfoDict | None = None
+        self.bound: chess.engine.InfoDict | None = None
+        self.score_only: chess.engine.InfoDict | None = None
+
+    def offer(self, info: chess.engine.InfoDict) -> None:
+        """Record `info` as the newest line of its kind; ignore pv-less, score-less lines."""
+        if info.get("pv"):
+            if _is_bound_line(info):
+                self.bound = info
+            else:
+                self.exact = info
+        elif "score" in info:
+            # A mated/stalemated root: Stockfish sends only `info depth 0 score mate 0`.
+            self.score_only = info
+
+    def pick(self) -> chess.engine.InfoDict | None:
+        return self.exact or self.bound or self.score_only
+
+
+def _select_final_infos(
+    infos: Sequence[chess.engine.InfoDict], multipv: int | None
+) -> chess.engine.InfoDict | list[chess.engine.InfoDict]:
+    """Pick, per multipv index, the last EXACT pv-bearing line of a raw info stream.
+
+    Preference per index: last exact line (pv, no bound key), else last bound line
+    (pv), else last score-only line (no pv, e.g. a mated root). Lines with neither
+    pv nor score (`info string`, currmove) are ignored. The raw line objects are
+    returned as-is, never copied or merged, so a bound key from an earlier line
+    cannot leak into a later exact one.
+
+    Return shape: scalar InfoDict when `multipv` is None; list[InfoDict] ordered by
+    index otherwise. Never an empty list: when nothing was selected the multipv
+    result is a one-element list holding an empty InfoDict, because
+    evaluate_nodes_multipv2 indexes [0] unguarded.
+    """
+    by_index: dict[int, _LineCandidates] = {}
+    for info in infos:
+        by_index.setdefault(info.get("multipv", 1), _LineCandidates()).offer(info)
+
+    selected = [
+        (index, line)
+        for index, candidates in sorted(by_index.items())
+        if (line := candidates.pick()) is not None
+    ]
+    if multipv is None:
+        index_one = [line for index, line in selected if index == 1]
+        return index_one[0] if index_one else chess.engine.InfoDict()
+    if not selected:
+        return [chess.engine.InfoDict()]
+    return [line for _, line in selected]
+
+
+async def _collect_analysis_infos(
+    protocol: chess.engine.UciProtocol,
+    board: chess.Board,
+    limit: chess.engine.Limit,
+    multipv: int | None,
+) -> list[chess.engine.InfoDict]:
+    """Run one search and return every raw info line Stockfish streamed, in order.
+
+    The `with analysis:` block sends UCI `stop` when the caller's
+    `asyncio.wait_for` cancels mid-search (AnalysisResult.__exit__ -> stop()), so a
+    timeout leaves the protocol reusable. An engine crash surfaces as
+    EngineError/EngineTerminatedError out of the iteration.
+    """
+    analysis = await protocol.analysis(board, limit, multipv=multipv)
+    infos: list[chess.engine.InfoDict] = []
+    with analysis:
+        async for info in analysis:
+            infos.append(info)
+    return infos
 
 
 async def get_stockfish_version() -> str:
@@ -404,7 +494,7 @@ class EnginePool:
     """Parallel Stockfish workers for batch evaluation jobs.
 
     Owns N independent UCI subprocesses, each with its own protocol. evaluate()
-    grabs an idle worker from an asyncio.Queue, runs analyse() against its
+    grabs an idle worker from an asyncio.Queue, runs one search against its
     process, and releases it back to the queue. With N callers awaiting
     evaluate() concurrently (e.g. via asyncio.gather), up to N positions
     analyse in parallel.
@@ -521,12 +611,13 @@ class EnginePool:
         Single implementation behind every public evaluate* method — the
         acquisition, exception handling, restart-on-crash, and slot-release logic
         must never diverge between them. Only genuine difference across
-        callers is whether `multipv` is passed to `protocol.analyse()`; everything
+        callers is whether `multipv` is passed to `protocol.analysis()`; everything
         else (post-processing into (cp, mate), raw InfoDict, or list[InfoDict])
         is the caller's responsibility.
 
-        Returns the raw analyse() result — a scalar InfoDict when multipv is None,
-        or list[InfoDict] when multipv is set — or None on failure (not started,
+        Returns the final exact info line(s) of the search (see
+        `_select_final_infos`) — a scalar InfoDict when multipv is None, or a
+        non-empty list[InfoDict] when multipv is set — or None on failure (not started,
         missing protocol, timeout, or engine crash/restart). Only the crash cases
         restart the worker; a timeout does not.
         """
@@ -549,16 +640,21 @@ class EnginePool:
             if protocol is None:
                 return None
             try:
-                if multipv is not None:
-                    result = await asyncio.wait_for(
-                        protocol.analyse(board, limit, multipv=multipv),
-                        timeout=timeout,
-                    )
-                else:
-                    result = await asyncio.wait_for(
-                        protocol.analyse(board, limit),
-                        timeout=timeout,
-                    )
+                # Bug fix (SEED-261112-s4v): about 27% of stored game_positions.pv
+                # lines were 1-2 plies long. python-chess's one-shot `analyse()`
+                # returns the per-multipv MERGE of every info line (dict.update).
+                # When the 1M-node limit lands during an aspiration-window
+                # re-search, Stockfish's final info line is a lowerbound/upperbound
+                # line with a 1-2 ply pv, and it overwrote depth, score and pv of
+                # the last complete iteration. We therefore read the raw line stream
+                # and pick the last exact line per multipv index ourselves. The
+                # merged `analysis.multipv` / `analysis.info` must not be used
+                # either: the merge never removes a `lowerbound: True` key, so an
+                # earlier bound line taints a later exact one.
+                infos = await asyncio.wait_for(
+                    _collect_analysis_infos(protocol, board, limit, multipv),
+                    timeout=timeout,
+                )
             except asyncio.TimeoutError:
                 # Bug fix (2026-07-25, FLAWCHESS-8B): a
                 # timeout used to share the restart path below. It shouldn't — a
@@ -586,7 +682,7 @@ class EnginePool:
                 sentry_sdk.capture_exception(exc)
                 await self._restart_worker(idx)
                 return None
-            return result
+            return _select_final_infos(infos, multipv)
         finally:
             self._available.put_nowait(idx)
 

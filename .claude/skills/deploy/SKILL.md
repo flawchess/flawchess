@@ -221,7 +221,7 @@ When in doubt: prefer continuing with a noted caveat over halting. Halting waste
 - **Never `git push --no-verify`** unless the pre-push hook itself is broken (then fix the hook, don't skip it). The hook catches the most common preventable CI failure on this project.
 - **Never delete the `main` or `production` branch.** `gh pr merge` defaults to deleting the head branch — always pass `--delete-branch=false`.
 - **Never edit `production` directly** outside of an approved hotfix flow. Releases go `main → PR → squash-merge to production`.
-- **Hotfix path is separate.** If the user says "hotfix", route to the `hotfix/*` flow in `CLAUDE.md` (branch off `production`, PR into `production`, deploy, then forward-port to `main`). This skill is for the normal `main → production` release path.
+- **Hotfix path is separate.** If the user says "hotfix", route to the `hotfix/*` flow in `docs/git-workflow.md` (branch off `production`, PR into `production`, deploy, then forward-port to `main`). This skill is for the normal `main → production` release path.
 
 ## References
 

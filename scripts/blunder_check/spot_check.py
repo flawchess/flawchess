@@ -5,10 +5,11 @@ module exports a small, reproducible sample of windows drawn the way the feature
 them: window length L uniform over 3 to 5 user moves, a per-move blunder hazard of 0.265, so
 about 30% of windows are herrings (every judged move Good, nothing to find).
 
-Each window shows the public game link, a 3-ply lead-in, the judged user moves with the
+Each window shows a FlawChess game link, a 3-ply lead-in, the judged user moves with the
 opponent replies, the answer (the blunder, or "all safe") and the refutation or missed best move
 with its Maia probability and rank. The file may be shown to GM Noel Studer, so it carries only
-public game links, ratings and moves: no FlawChess user ids, usernames or emails (T-248-11).
+game links, ratings and moves: no FlawChess user ids, usernames or emails (T-248-11). FlawChess
+game deep links are public (owner decision, SEED-261108-dk0), so a game id is not personal data.
 """
 
 from __future__ import annotations
@@ -47,7 +48,9 @@ from scripts.blunder_check.sample import BlunderRecord, Collection
 DEFAULT_SPOT_CHECK_PER_BUCKET: int = 20
 # Draw attempts allowed per wanted window; an attempt is wasted when its pool is empty or used up.
 MAX_DRAW_ATTEMPTS_PER_WINDOW: int = 50
-NO_PUBLIC_LINK: str = "no public link"
+# FlawChess analysis board; `?game_id=G&ply=N` opens game G at mainLine[N] (the position after
+# 0-based move N), mirroring frontend/src/lib/analysisUrl.ts::buildGameAnalysisUrl.
+ANALYSIS_URL_BASE: str = "https://flawchess.com/analysis"
 # Separator of game_positions.pv (space-joined UCI line); its first token is the reply fallback.
 PV_SEPARATOR: str = " "
 HERRING_CASE: str = "herring"
@@ -265,8 +268,20 @@ def pick_windows(
 @dataclass(frozen=True)
 class _GameInfo:
     pgn: str
-    platform_url: str | None
     user_rating: int | None
+
+
+def analysis_link(game_id: int, first_judged_ply: int) -> str:
+    """FlawChess deep link to the board before the window's first judged user move.
+
+    The lead-in is skipped: the link opens where the user is about to play the first judged
+    move. `?ply=N` shows the position after 0-based move N, so the board before move P is
+    `ply=P-1` (the same off-by-one as buildTrainPuzzleAnalysisUrl). For P = 0 the param is
+    omitted and the game opens at its start.
+    """
+    if first_judged_ply <= 0:
+        return f"{ANALYSIS_URL_BASE}?game_id={game_id}"
+    return f"{ANALYSIS_URL_BASE}?game_id={game_id}&ply={first_judged_ply - 1}"
 
 
 def move_label(ply: int, san: str) -> str:
@@ -336,7 +351,6 @@ async def _load_game_info(
     stmt = select(
         Game.id,
         Game.pgn,
-        Game.platform_url,
         Game.user_color,
         Game.white_rating,
         Game.black_rating,
@@ -346,8 +360,7 @@ async def _load_game_info(
     return {
         int(row[0]): _GameInfo(
             pgn=str(row[1]),
-            platform_url=row[2],
-            user_rating=row[4] if row[3] == "white" else row[5],
+            user_rating=row[3] if row[2] == "white" else row[4],
         )
         for row in rows
     }
@@ -392,7 +405,7 @@ def _build_detail(
     start_board = replay.board.get(lead_start)
     detail = SpotWindowDetail(
         window=window,
-        link=info.platform_url or NO_PUBLIC_LINK,
+        link=analysis_link(window.game_id, first),
         user_rating=info.user_rating,
         start_fen=start_board.fen() if start_board is not None else "unknown",
         lead_in=format_line(
@@ -509,7 +522,7 @@ def render_spot_check(details: Sequence[SpotWindowDetail], params: SpotCheckPara
         "the pre-move ES. A recommendation only; nothing here is wired into app code.",
         "",
         "How to read: for each window, play through the lead-in and the judged moves on the "
-        "board (the game link opens the full game), decide whether the position is a fair "
+        "board (the game link opens the game on FlawChess at the first judged move), decide whether the position is a fair "
         "question, then compare with the answer. A blunder window is fair when the refutation or "
         "the missed move is something a player of that rating could find. Moves are in SAN; a "
         "stored move that is not legal on the replayed board prints as its UCI with the word "

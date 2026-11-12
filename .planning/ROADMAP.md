@@ -167,7 +167,7 @@ decisions, measurements, traps and breadcrumbs in SEED-261108-zkp.
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-16 from discuss-phase)
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -185,7 +185,7 @@ Plans:
 - [x] 247-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, squash-merge, deploy, live-scoring check (orchestrator-inline, wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
+- [x] 247-07-PLAN.md — Prod backfill, catch-up re-run, >=99% coverage verification (orchestrator-inline, wave 5)
 
 ### Phase 248: Blunder-Check Refutation Stats and Calibration (SEED-261108-dk0)
 
@@ -221,7 +221,7 @@ decisions, prod measurements and traps in SEED-261108-dk0 ("Face-palm test v2", 
 
 **Depends on**: Phase 247 code (shipped). The calibration's miss numbers need 247-07's backfill at >=99% coverage.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-23)
-**Plans:** 6/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 **Wave 1**
@@ -239,10 +239,67 @@ Plans:
 - [x] 248-06-PLAN.md — Ship: owner go-ahead, pre-merge gate, docs, changelog, squash-merge, deploy, live-lane check (orchestrator-inline, wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 248-07-PLAN.md — Prod refutation backfill, catch-up, >=99% coverage verification (orchestrator-inline, wave 5)
+- [x] 248-07-PLAN.md — Prod refutation backfill, catch-up, >=99% coverage verification (orchestrator-inline, wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion and 247 coverage)*
-- [ ] 248-08-PLAN.md — Prod calibration report and spot-check, committed (orchestrator-inline, wave 6)
+- [x] 248-08-PLAN.md — Prod calibration report and spot-check, committed (orchestrator-inline, wave 6)
+
+### Phase 249: Blunder-Check Playable MVP (SEED-261108-dk0)
+
+**Goal**: A playable blunder-check drill for beta users: select face-palm windows from the user's own games with the
+Phase 248 constants, serve 6-window sessions, and run the drill (lead-in replay, arrow prompt "Safe / Blunder", 15 s
+timer, points and forfeits, better-move chain, solution screen) on a beta-only Train tab, persisting every window and
+answer so Phase 250 can build schedule, reviews and leaderboards on it. Locked decisions in 249-CONTEXT.md and
+SEED-261108-dk0.
+
+- **Selection:** hazard model (h = 0.265, L uniform 3-5), Good bar on every judged user move, eval band [0.10, 0.90]
+  on pre-move ES, findability by case (allowed: refutation R = 0.3; pure miss: best move X' = 0.2; mixed: either).
+  Missed punishments included with no session cap. Herrings from L Good in-band user moves. Own games first, then
+  similarly rated users' windows when own supply runs out.
+- **Drill:** 3-ply lead-in, ask before the move and before the reply, 1 point per correct "safe", 3 for a caught
+  blunder plus 2 for finding the better move, false alarm ends the window, a missed blunder or a timeout forfeits the
+  window's safe points.
+- **Out of scope (Phase 250):** shared Train schedule and per-mode counts, streak, spaced-repetition reviews,
+  cross-mode cooldown, Points and Score % leaderboards, guests and public launch.
+
+**Depends on**: Phase 248 (refutation stats backfilled on prod, constants calibrated)
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-19)
+**Plans:** 9 plans
+
+Plans:
+**Wave 1**
+- [ ] 249-01-PLAN.md — Selection rules in the app: port the Phase 248 math, pure candidate judging and hazard slot assignment (wave 1)
+- [ ] 249-02-PLAN.md — Persistence (three own tables), backend beta gate, GET open session, candidate loaders and served sets (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 249-03-PLAN.md — POST /sessions: own-first composition, rating-matched foreign fallback, no repeats, resume and race (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 249-04-PLAN.md — Drill API: window start, server-graded answers, forfeits, server timer, key secrecy, finish with Score % (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 249-05-PLAN.md — Better-move submit and solution API (false alarm withholds the blunder, foreign game info) (wave 4)
+- [ ] 249-06-PLAN.md — Frontend: beta-only tab and start screen, wire types, API client, session hook, pure drill state machine (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 249-07-PLAN.md — Frontend: drill board loop, 15 s timer, points and forfeits with sounds, reload resume, end screen with Score % (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 249-08-PLAN.md — Frontend: better-move step and solution screens (own vs foreign copy) (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 249-09-PLAN.md — Agent-run browser UAT, owner go-ahead, pre-merge gate, changelog, squash-merge, deploy, prod beta check (orchestrator-inline, wave 7)
+
+### Phase 250: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
+
+**Goal**: Turn the Phase 249 MVP into a full Train mode: shared schedule and reminders with a per-mode session size
+(0 allowed), session streak across both modes, spaced-repetition reviews of missed-blunder windows (re-drawn,
+unlabelled, 4 days), a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
+and the launch decision for guests and non-beta users. To be scoped after the owner has played the MVP.
+
+**Depends on**: Phase 249
+**Requirements**: TBD
+**Plans:** 0 plans
 
 ## Backlog
 
