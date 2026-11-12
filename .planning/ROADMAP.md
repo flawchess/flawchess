@@ -314,7 +314,7 @@ measure throughput. Plan, sizing and open questions in the seed (Part B).
 **Depends on**: nothing in the blunder-check line (runs in parallel, own worktree). Phase 250's (facepalm selection,
 numbered 250 on the phase-249 branch) prod backfill should run after this phase's pv repair step.
 **Requirements**: TBD
-**Plans:** 4/9 plans executed
+**Plans:** 5/9 plans executed
 
 Plans:
 **Wave 1**
@@ -326,7 +326,7 @@ Plans:
 - [x] 252-04-PLAN.md — `feed`, `measure-flips` and `status` subcommands (D-11, D-05, D-10, D-15)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 252-05-PLAN.md — owner go-ahead, pre-merge gate, squash-merge, deploy, post-deploy baselines (orchestrator-inline)
+- [x] 252-05-PLAN.md — owner go-ahead, pre-merge gate, squash-merge, deploy, post-deploy baselines (orchestrator-inline)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 252-06-PLAN.md — prod line repair: read-only preview, one-way checkpoint, pilot then full run (orchestrator-inline)
