@@ -3,10 +3,10 @@
 **Gathered:** 2026-11-12, revised 2026-11-13 (facepalm score replaces the hard rule; own / foreign / herring window
 mix). Distilled from SEED-261110-p7k, the label study in
 `reports/blunder-check/leg2-labels-2026-11-11.tsv` and owner answers in session; not a discuss-phase run)
-**Status:** Un-parked (owner, 2026-11-13): plan and build now. Code, migration and dev-DB work do not depend on
-the short-stored-line repair (Phase 252). Two steps stay gated on that repair being complete on prod: the prod
-backfill (D-08), and the score refit on the repaired lines that locks the threshold (D-01). Plan them as the last,
-separately runnable steps; until the refit, the coefficients are the 2026-11-13 fit on the lines as stored.
+**Status:** Un-parked (owner, 2026-11-13): plan and build now, including the prod backfill. Nothing in this phase
+waits for the short-stored-line repair (Phase 252). Instead the line-dependent values are recomputed once that repair
+has finished on prod (D-18): the line losses, the mate ply and `facepalm_score`. Until then they are computed from
+the lines as stored, and the score coefficients are the fit on those lines.
 
 <domain>
 ## Phase Boundary
@@ -136,6 +136,22 @@ retires the Maia columns the old rule used. Deliverables:
   Phase 251 has no reviews of missed-blunder windows. 249 D-10's no-repeat rule becomes permanent, not MVP-only.
   Its exception is removed: a blunder window that ended on a false alarm before the blunder was reached no longer
   returns to the pool. This phase removes that code path.
+
+### Recompute after the Phase 252 line repair (owner, 2026-11-13)
+- **D-18: A line-only recompute pass, run once Phase 252's prod pv repair is complete.** It recomputes the line
+  losses (all depths), the mate ply and `facepalm_score` for every scored user blunder, and scores blunders that had
+  no stored line before the repair. `maia_played_prob` and `maia_reply_spread` do not depend on the stored line and
+  are not recomputed. Consequences for the plan:
+  - the backfill is built as two separable passes: a Maia pass (reply spread) and a line pass (line losses, mate
+    ply, score). The line pass needs no Maia and no engine, must be re-runnable over rows that already hold values
+    (not only NULL rows), and is the tool for D-18;
+  - the score refit is part of D-18: refit on the labels with the repaired lines, update the coefficient constants
+    and `FACEPALM_SCORE_MIN`, then run the line pass so the stored scores match;
+  - the first prod backfill may run while the Phase 252 repair is still writing `game_positions.pv`. Keep operator
+    connections within the prod limit (max_connections 50, both runs together under about 25) and expect rows whose
+    line changes mid-run; D-18 is what makes that harmless;
+  - D-18 and the column drop (D-11) are the last, separately runnable, human-gated steps of the phase. Long prod
+    runs are run by the orchestrator, not a backgrounded executor.
 
 ### Column cleanup (owner intent 2026-11-11, confirmed direction 2026-11-12)
 - **D-11: Keep `maia_played_prob`. Drop the other nine** once the new selection is live and checked on prod:

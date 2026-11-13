@@ -312,10 +312,11 @@ no worker lane. Locked decisions in 250-CONTEXT.md and SEED-261110-p7k.
   the score on drill answers (the threshold is set a little below the precision-optimal cut so those answers also
   cover blunders believed slightly too hard), rating-dependent line depth above 2000 (no labels there).
 
-**Status**: Un-parked (owner, 2026-11-13): build now. Code, migration and dev-DB work do not depend on the line
-repair. Two steps stay gated on Phase 252's prod pv repair being complete: the prod backfill, and the score refit
-that locks `FACEPALM_SCORE_MIN`.
-**Depends on**: Phase 249 (merged; this phase rewrites its selection predicate), SEED-261112-s4v fix and backfill
+**Status**: Un-parked (owner, 2026-11-13): build now, including the prod backfill. Nothing waits for Phase 252;
+once its prod pv repair is complete, a line-only pass recomputes the line losses, the mate ply and `facepalm_score`
+(with the score refitted on the repaired lines). 250-CONTEXT D-18.
+**Depends on**: Phase 249 (merged; this phase rewrites its selection predicate). Its final recompute pass (D-18)
+runs after Phase 252's prod pv repair
 **Requirements**: TBD (coverage contract = CONTEXT decisions)
 **Plans:** 0 plans
 
@@ -343,7 +344,8 @@ a full re-evaluation; evals stay untouched unless the discuss-phase decides othe
 measure throughput. Plan, sizing and open questions in the seed (Part B).
 
 **Depends on**: nothing in the blunder-check line (runs in parallel, own worktree). Phase 250's (facepalm selection,
-numbered 250 on the phase-249 branch) prod backfill should run after this phase's pv repair step.
+numbered 250 on the phase-249 branch) first prod backfill may overlap this phase's pv repair; its line-only
+recompute pass (250-CONTEXT D-18) runs after the repair is complete.
 **Requirements**: TBD
 **Plans:** 5/9 plans executed
 
