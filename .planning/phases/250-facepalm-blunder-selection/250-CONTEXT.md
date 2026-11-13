@@ -3,10 +3,10 @@
 **Gathered:** 2026-11-12, revised 2026-11-13 (facepalm score replaces the hard rule; own / foreign / herring window
 mix). Distilled from SEED-261110-p7k, the label study in
 `reports/blunder-check/leg2-labels-2026-11-11.tsv` and owner answers in session; not a discuss-phase run)
-**Status:** Parked (owner, 2026-11-12). Resume planning once the short-stored-line fix (SEED-261112-s4v) is in and
-the truncated lines are re-evaluated on prod. On resume: re-check the pass rates and, if possible, the labels
-against the corrected lines, since the label study ran on the truncated lines as stored. The score (D-01) must be
-refitted on the repaired lines before its threshold is locked.
+**Status:** Un-parked (owner, 2026-11-13): plan and build now. Code, migration and dev-DB work do not depend on
+the short-stored-line repair (Phase 252). Two steps stay gated on that repair being complete on prod: the prod
+backfill (D-08), and the score refit on the repaired lines that locks the threshold (D-01). Plan them as the last,
+separately runnable steps; until the refit, the coefficients are the 2026-11-13 fit on the lines as stored.
 
 <domain>
 ## Phase Boundary
@@ -42,12 +42,19 @@ retires the Maia columns the old rule used. Deliverables:
   - **Inputs** (all stored, no engine at scoring time):
     1. **Peers rarely play it:** `maia_played_prob`, log-transformed. Already stored (Phase 247).
     2. **The punishment is obvious:** reply spread = effective number of opponent replies at ply+1: `exp(entropy)`
-       of the Maia policy at the user's pinned Elo (`pinned_elo_for_mover`), over the top moves up to 90%
-       cumulative mass, at most 8, renormalised. This truncation is part of the definition: the labels were scored
-       with it.
+       of the full Maia policy (all legal moves) at the user's pinned Elo (`pinned_elo_for_mover`). This is the
+       `maia_effective_moves` formula (Phase 247) applied one ply later; reuse that code. No truncation (owner,
+       2026-11-13): the label study used the top moves up to 90% mass, max 8, only because that was what the
+       exploratory cache held. Recomputed on all 180 labels the two correlate at 0.98 and separate equally well
+       (AUC 0.717 full, 0.712 truncated; score model 0.836 both). Full-policy values run higher (median 3.0 vs
+       2.1), so the retired hard rule's "<= 3.0" cut does not carry over.
     3. **It loses material fast:** net material the blunderer is down after following the stored refutation line
        (`game_positions.pv` at flaw ply + 1) for `LINE_DEPTH` (3) plies, capped; mate within the depth counts as a
-       large loss.
+       large loss. The cap (5) and the mate value (+5) are provisional picks from the 2026-11-13 quick fit.
+  - **Provisional coefficients** (2026-11-13, old line-3 count, truncated spread): ln(played_prob + 0.01) -0.71,
+    reply spread -0.69, loss +0.32. They are placeholders: the phase must refit on the D-02 refined count, the
+    full-policy spread and (for the final lock) the repaired lines, and compare this form against raw played
+    probability with a binary "loses >= 2 or mate" input, which did about as well.
   - Engine drop and Elo were tried as extra inputs and added nothing.
   - **Measured 2026-11-13** (163 decided labels with a stored line, 10-fold cross-validated, old line-3 count,
     unrepaired lines), fair / unfair among passers: score >= 0.8: 59 / 5 (92%); >= 0.7: 67 / 8 (89%); >= 0.5:
@@ -96,8 +103,13 @@ retires the Maia columns the old rule used. Deliverables:
 - **D-05: Store the raw facts and the derived score,** so a refit is a plain UPDATE with no engine work. On `game_flaws`,
   nullable, NULL = not scored:
   - `maia_reply_spread` REAL;
-  - the net line loss at depths 1, 3 and 5 (three SMALLINT) and the ply of mate within the line (SMALLINT, NULL =
-    no mate). Depth 1, 3, 5 are the depths measured in the study;
+  - the net line loss at depths 1, 3, 5, 7 and 9 (five SMALLINT) and the ply of mate within the line (SMALLINT,
+    NULL = no mate). Depths 1, 3, 5 were measured in the study. Depths 7 and 9 (owner, 2026-11-13) are stored for
+    later refits at higher ratings, where a tactic cashes in a few moves later; the score does not read them in
+    this phase and there are no labels above 2000 to back them. A depth the stored line does not reach is NULL
+    ("line too short to tell"), not 0, unless D-02's mate or recapture-credit rule settles it earlier. Kept as
+    stored columns on purpose (owner, 2026-11-13): about 12 bytes per row, against a multi-hour PGN and line
+    replay over the tunnel to recompute them for a refit;
   - `facepalm_score` REAL, derived from the facts above and `maia_played_prob`.
   The planner may propose a tighter shape, but the predicate must stay a plain SQL filter on `game_flaws`.
 - **D-06: Scope = user-side blunders only** (severity blunder, mover is the game's user), as in Phase 248's

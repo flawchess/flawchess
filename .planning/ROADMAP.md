@@ -294,7 +294,7 @@ Plans:
 
 **Goal**: Replace the Phase 249 findability rule (D-06) with a facepalm score per user blunder (0 = no chance to see
 it at the mover's level, 1 = very careless), fitted on the owner labels from three stored facts: how rarely peers play
-the blunder (`maia_played_prob`), how obvious the opponent's reply is (reply spread, Maia at ply+1) and how much
+the blunder (`maia_played_prob`), how obvious the opponent's reply is (reply spread, full Maia policy at ply+1) and how much
 material the stored refutation line wins within 3 plies (captures only, desperado and short-line handling, mate
 counts). Selection keeps blunders at or above one score threshold. Also change the window mix: each window is, at one
 third each, a red herring, a blunder from the user's own games, or a blunder from another user at the same level
@@ -312,8 +312,9 @@ no worker lane. Locked decisions in 250-CONTEXT.md and SEED-261110-p7k.
   the score on drill answers (the threshold is set a little below the precision-optimal cut so those answers also
   cover blunders believed slightly too hard), rating-dependent line depth above 2000 (no labels there).
 
-**Status**: Parked (owner, 2026-11-12) until the short-stored-line fix (SEED-261112-s4v) is in and the affected
-lines are re-evaluated; the material test reads those lines.
+**Status**: Un-parked (owner, 2026-11-13): build now. Code, migration and dev-DB work do not depend on the line
+repair. Two steps stay gated on Phase 252's prod pv repair being complete: the prod backfill, and the score refit
+that locks `FACEPALM_SCORE_MIN`.
 **Depends on**: Phase 249 (merged; this phase rewrites its selection predicate), SEED-261112-s4v fix and backfill
 **Requirements**: TBD (coverage contract = CONTEXT decisions)
 **Plans:** 0 plans

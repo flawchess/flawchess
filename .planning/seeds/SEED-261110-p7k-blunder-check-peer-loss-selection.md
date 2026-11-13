@@ -41,7 +41,13 @@ agreed; "stupidity" would insult the user in a filter).
 - **It is a ranking, not a probability.** Sets 5 and 6 are mostly rule passers, so the fitted values are not
   calibrated to all blunders. Do not present 0.8 as "80% of peers see this".
 - **Storage:** the raw facts (250-CONTEXT D-05) plus one derived REAL column for SQL filtering. A refit is a plain
-  UPDATE from the stored facts, no engine work.
+  UPDATE from the stored facts, no engine work. Facts: `maia_played_prob` (exists), `maia_reply_spread`, the
+  line loss at depths 1, 3, 5, 7, 9 and the mate ply. The score reads depth 3; 7 and 9 are stored for later
+  refits at higher ratings (no labels there yet).
+- **Reply spread uses the full Maia policy** (owner, 2026-11-13), not the top moves up to 90% mass / max 8 that
+  the label study below used. Recomputed on all 180 labels: correlation 0.98, AUC 0.717 full vs 0.712 truncated,
+  score model 0.836 both. Same formula as `maia_effective_moves`, at ply+1. Values run higher (median 3.0 vs
+  2.1), so the "<= 3.0" cut in the history below is on the truncated scale.
 - **Refit on repaired lines** before the threshold is locked: the material feature reads the stored lines that
   Phase 252 is repairing.
 - **Label file:** `reports/blunder-check/leg2-labels-2026-11-11.tsv` holds 180 rows (105 fair, 68 unfair, 7
