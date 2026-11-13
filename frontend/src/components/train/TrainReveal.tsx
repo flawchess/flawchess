@@ -148,6 +148,22 @@ export interface TrainRevealProps {
   /** Fired once per strip expansion (collapsed -> open), for the board owner's
    * telemetry. The Umami event itself is sent by the strip. */
   onStripExpand?: () => void;
+  /**
+   * Desktop only: the board controls (`TrainRevealControlsRow`),
+   * rendered between the chips and the move list.
+   */
+  controlsRow?: ReactNode;
+  /**
+   * Desktop only: Analyze and Next (`TrainRevealFooter`), this column's footer. The
+   * column is at least as tall as the board, so its `mt-auto` pins it to the
+   * board's bottom edge whenever the content fits.
+   */
+  nextButton?: ReactNode;
+  /**
+   * False on desktop, where the board owner renders the game info under the
+   * board instead of in this column (Phase 249 UAT). Defaults to true.
+   */
+  showGameFooter?: boolean;
 }
 
 export function TrainReveal({
@@ -176,6 +192,9 @@ export function TrainReveal({
   expiresOn,
   isWarmup,
   onStripExpand,
+  controlsRow,
+  nextButton,
+  showGameFooter = true,
 }: TrainRevealProps): ReactElement | null {
   const { startGameMoveSearch } = gradingEngine;
   const isDesktop = useIsDesktop();
@@ -326,13 +345,14 @@ export function TrainReveal({
     ) : null;
 
   return (
-    // lg:mt-[46px]: on desktop the board column starts
-    // with its progress block (20px text row + 4px gap + 6px bar + the
-    // column's 16px gap = 46px before the board itself), so this offset
-    // top-aligns the Guess verdict with the TOP OF THE BOARD, not the
-    // progress text. Keep in sync with TrainSolveScreen's progress block.
+    // lg:mt-8: on desktop the board column starts with its one-line progress
+    // row (20px text row + the pinned block's 12px `gap-3` = 32px before the
+    // board itself), so this offset top-aligns the verdict card with the TOP OF
+    // THE BOARD, not the progress text. Bug fix (Phase 249 UAT): it was 46px,
+    // sized for an older two-row progress block, and sat the card 14px low.
+    // Keep in sync with TrainSolveScreen's progress block.
     <div
-      className="flex w-full flex-col gap-4 lg:mt-[46px] lg:max-w-sm"
+      className="flex w-full flex-col gap-4 lg:mt-8 lg:max-w-sm lg:self-stretch"
       data-testid="train-reveal"
     >
       {/* 1. The verdict surface. Phones: the one-line strip
@@ -375,7 +395,7 @@ export function TrainReveal({
           server line. The tour spotlights the chips row, the
           list, or (the understand step) this wrapper around both; the wrapper
           keeps the reveal column's gap, so the layout does not move. */}
-      {(showChipRow || chips.length > 0) && (
+      {(showChipRow || chips.length > 0 || controlsRow) && (
         <div
           data-testid="train-lines-tour-target"
           className={cn('flex flex-col gap-4 rounded-md', tourTarget === 'lines' && TOUR_SPOTLIGHT_CLASS)}
@@ -393,6 +413,7 @@ export function TrainReveal({
               />
             </div>
           )}
+          {controlsRow}
           {chips.length > 0 && (
             <div
               data-tour-target="tree"
@@ -405,9 +426,10 @@ export function TrainReveal({
         </div>
       )}
 
-      {/* 4. Game footer: "Game: <TC> · vs <opponent> (<elo>) · <date>", with
+      {/* 4. Game footer (phones and tablets): "Game: <TC> · vs <opponent> (<elo>) · <date>", with
           its `sr_item` gate and game query, in TrainRevealGameFooter. */}
-      <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} />
+      {showGameFooter && <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} />}
+      {nextButton}
     </div>
   );
 }

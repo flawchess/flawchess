@@ -11,6 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { scorePuzzle } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
 import {
+  BLUNDER_CHECK_RATIONALES,
+  blunderCheckScoreBubbleCopy,
   BY_TEMPERAMENT,
   GRADING_COPY,
   GUEST_SIGNUP_ASK_SCORE,
@@ -998,6 +1000,29 @@ describe('scoreBubbleCopy, games-less warm-up audience branch', () => {
       const noGamesGuest = scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES_GUEST });
       expect(noGames).toEqual(hasGames);
       expect(noGamesGuest).toEqual(hasGames);
+    }
+  });
+});
+
+describe('blunderCheckScoreBubbleCopy', () => {
+  it('follows the band opener with the rationale the rng selects', () => {
+    BLUNDER_CHECK_RATIONALES.forEach((rationale, index) => {
+      const rng = (): number => index / BLUNDER_CHECK_RATIONALES.length;
+      expect(blunderCheckScoreBubbleCopy('green', rng).lines).toEqual([
+        `Strong session. ${rationale}`,
+      ]);
+    });
+  });
+
+  it('stays in range when the rng returns its upper bound', () => {
+    const lines = blunderCheckScoreBubbleCopy('red', () => 1).lines;
+    const last = BLUNDER_CHECK_RATIONALES[BLUNDER_CHECK_RATIONALES.length - 1];
+    expect(lines).toEqual([`Tough session. That is exactly what Train is for. ${last}`]);
+  });
+
+  it('keeps every rationale to a single em-dash-free line', () => {
+    for (const rationale of BLUNDER_CHECK_RATIONALES) {
+      expect(rationale).not.toMatch(/[\u2014\n]/);
     }
   });
 });

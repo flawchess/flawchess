@@ -20,6 +20,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 8... g5 (Good, pre-move ES 0.64), reply 9. Nf5
 - **FEN before the answer move:** `r2qk2r/ppp1bp2/2npbn1p/4pNp1/4P3/3PB1P1/PPP1QP1P/RN2KB1R b KQkq - 1 9`
 - **Answer:** blunder 9... d5 (pre-move ES 0.61, ES after 0.45).
+- **Peer legs:** expected loss 0.12, reply loss 0.12, practical loss 0.03 (engine drop 0.15): fails (expected loss, practical loss).
 - **Refutation:** Ng7+ (Maia probability 0.260, rank 1).
 
 #### Window 2: allowed (length 5, blunder at 3)
@@ -33,6 +34,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 10... d5 (Good, pre-move ES 0.67), reply 11. Nxd5
 - **FEN before the answer move:** `2kr3r/ppp1qppp/2n2n2/2bN4/2B2QbP/4P3/PPPB1PP1/R3K1NR b KQ - 0 11`
 - **Answer:** blunder 11... Nxd5 (pre-move ES 0.68, ES after 0.42).
+- **Peer legs:** expected loss 0.31, reply loss 0.07, practical loss 0.20 (engine drop 0.28): fails (expected loss).
 - **Refutation:** Qxg4+ (Maia probability 0.604, rank 1).
 
 #### Window 3: mixed (length 5, blunder at 1)
@@ -44,6 +46,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r1b1k2r/pppp1ppp/1bn2q1n/8/1P2p3/P1N2PPN/1BPPP1BP/R2QK2R w KQkq - 0 10`
 - **Answer:** blunder 10. Nxe4 (pre-move ES 0.69, ES after 0.29).
+- **Peer legs:** expected loss 0.17, reply loss 0.27, practical loss 0.14 (engine drop 0.41): fails (expected loss, practical loss).
 - **Refutation:** Qxb2 (Maia probability 0.476, rank 1).
 - **Missed best move:** fxe4 (Maia probability 0.378, rank 1).
 
@@ -57,6 +60,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 6. Qa4+ (Good, pre-move ES 0.61), reply 6... Bd7
 - **FEN before the answer move:** `rn1qkbnr/pp1b2pp/5p2/2pp4/Q3P3/5N2/PPPP1PPP/RNB1KB1R w KQkq - 2 7`
 - **Answer:** blunder 7. Qb3 (pre-move ES 0.63, ES after 0.41).
+- **Peer legs:** expected loss 0.20, reply loss 0.19, practical loss 0.03 (engine drop 0.23): fails (expected loss, practical loss).
 - **Refutation:** dxe4 (Maia probability 0.290, rank 1).
 
 #### Window 5: mixed (length 5, blunder at 2)
@@ -69,6 +73,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 3. Qxe5+ (Good, pre-move ES 0.47), reply 3... Qe7
 - **FEN before the answer move:** `rnb1kb1r/ppppqppp/5n2/4Q3/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 1 4`
 - **Answer:** blunder 4. Qd5 (pre-move ES 0.63, ES after 0.09).
+- **Peer legs:** expected loss 0.08, reply loss 0.04, practical loss 0.51 (engine drop 0.56): passes.
 - **Refutation:** Nxd5 (Maia probability 0.816, rank 1).
 - **Missed best move:** Qxe7+ (Maia probability 0.266, rank 2).
 
@@ -81,6 +86,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r1b3k1/ppp1np2/7p/4P1p1/2B2nP1/2N2N1P/PPP4K/3R4 b - - 2 18`
 - **Answer:** blunder 18... Neg6 (pre-move ES 0.48, ES after 0.31).
+- **Peer legs:** expected loss 0.11, reply loss 0.09, practical loss 0.10 (engine drop 0.19): fails (expected loss, practical loss).
 - **Refutation:** Rd8+ (Maia probability 0.604, rank 1).
 
 #### Window 7: allowed (length 4, blunder at 2)
@@ -93,6 +99,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 17... Rfd8 (Good, pre-move ES 0.52), reply 18. g3
 - **FEN before the answer move:** `1r1r2k1/pp2bppp/4p3/3n4/1PN5/P1qBPQP1/5P1P/R2R2K1 b - - 0 18`
 - **Answer:** blunder 18... Nf6 (pre-move ES 0.54, ES after 0.38).
+- **Peer legs:** expected loss 0.04, reply loss 0.12, practical loss 0.01 (engine drop 0.13): fails (practical loss).
 - **Refutation:** Rac1 (Maia probability 0.317, rank 1).
 
 #### Window 8: herring (length 5, no blunder)
@@ -121,6 +128,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 36. Kf4 (Good, pre-move ES 0.25), reply 36... Re5
 - **FEN before the answer move:** `8/7p/5k2/1B2r3/5K2/8/7P/8 w - - 3 37`
 - **Answer:** blunder 37. h4 (pre-move ES 0.23, ES after 0.01).
+- **Peer legs:** expected loss 0.10, reply loss 0.04, practical loss 0.24 (engine drop 0.29): passes.
 - **Refutation:** Rxb5 (Maia probability 0.644, rank 1).
 
 #### Window 10: allowed (length 5, blunder at 4)
@@ -135,6 +143,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 4... e5 (Good, pre-move ES 0.50), reply 5. dxe5
 - **FEN before the answer move:** `r2qkbnr/ppp2ppp/2n5/3pP3/6b1/2N1PN2/PPP2PPP/R1BQKB1R b KQkq - 0 5`
 - **Answer:** blunder 5... d4 (pre-move ES 0.50, ES after 0.27).
+- **Peer legs:** expected loss 0.06, reply loss 0.04, practical loss 0.21 (engine drop 0.25): passes.
 - **Refutation:** exd4 (Maia probability 0.852, rank 1).
 
 #### Window 11: allowed (length 5, blunder at 4)
@@ -149,6 +158,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 20. Bd2 (Good, pre-move ES 0.45), reply 20... e6
 - **FEN before the answer move:** `1k3b1r/ppp2p2/4p2p/8/2b5/P1P3PB/2PB1P1P/4K2R w - - 0 21`
 - **Answer:** blunder 21. Kd1 (pre-move ES 0.44, ES after 0.29).
+- **Peer legs:** expected loss 0.13, reply loss 0.04, practical loss 0.12 (engine drop 0.16): fails (expected loss, practical loss).
 - **Refutation:** Bxa3 (Maia probability 0.582, rank 1).
 
 #### Window 12: allowed (length 5, blunder at 4)
@@ -163,6 +173,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 3... Bf5 (Good, pre-move ES 0.50), reply 4. Bd3
 - **FEN before the answer move:** `r2qkbnr/ppp1pppp/2n5/3p1b2/3P4/2NBP3/PPP2PPP/R1BQK1NR b KQkq - 2 4`
 - **Answer:** blunder 4... e5 (pre-move ES 0.50, ES after 0.18).
+- **Peer legs:** expected loss 0.07, reply loss 0.21, practical loss 0.12 (engine drop 0.33): fails (practical loss).
 - **Refutation:** Bxf5 (Maia probability 0.495, rank 1).
 
 #### Window 13: herring (length 3, no blunder)
@@ -187,6 +198,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 11... Ba5 (Good, pre-move ES 0.62), reply 12. gxf6
 - **FEN before the answer move:** `r1bqk1nr/p5pp/2p2P2/b3p3/4P3/2P3Q1/P4P1P/RNB1K1NR b KQkq - 0 12`
 - **Answer:** blunder 12... Qxf6 (pre-move ES 0.73, ES after 0.54).
+- **Peer legs:** expected loss 0.09, reply loss 0.10, practical loss 0.10 (engine drop 0.20): fails (practical loss).
 - **Missed best move:** Nxf6 (Maia probability 0.331, rank 2).
 
 #### Window 15: allowed (length 3, blunder at 2)
@@ -199,6 +211,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 9... Bf5 (Good, pre-move ES 0.50), reply 10. Nh4
 - **FEN before the answer move:** `r2q1rk1/ppp2ppp/2n5/2bnpb2/7N/2PP2PP/PP3PB1/RNBQ1RK1 b - - 2 10`
 - **Answer:** blunder 10... Qd7 (pre-move ES 0.54, ES after 0.22).
+- **Peer legs:** expected loss 0.20, reply loss 0.09, practical loss 0.25 (engine drop 0.33): fails (expected loss).
 - **Refutation:** Nxf5 (Maia probability 0.682, rank 1).
 
 #### Window 16: allowed (length 4, blunder at 3)
@@ -212,6 +225,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 2... Nc6 (Good, pre-move ES 0.51), reply 3. d4
 - **FEN before the answer move:** `r1bqkbnr/pppp1ppp/2n5/4p3/3P4/1P6/PBP1PPPP/RN1QKBNR b KQkq - 0 3`
 - **Answer:** blunder 3... Qe7 (pre-move ES 0.58, ES after 0.42).
+- **Peer legs:** expected loss 0.08, reply loss 0.08, practical loss 0.10 (engine drop 0.17): fails (practical loss).
 - **Refutation:** dxe5 (Maia probability 0.295, rank 1).
 
 #### Window 17: pure_miss (length 4, blunder at 2)
@@ -224,6 +238,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 14... Bxc4 (Good, pre-move ES 0.50), reply 15. b3
 - **FEN before the answer move:** `rn2k2r/pp3p1p/2p5/2b3N1/2b3P1/1P6/P1P4P/RNB1K2R b KQkq - 0 15`
 - **Answer:** blunder 15... Bb4+ (pre-move ES 0.65, ES after 0.47).
+- **Peer legs:** expected loss 0.12, reply loss 0.06, practical loss 0.10 (engine drop 0.16): fails (expected loss, practical loss).
 - **Missed best move:** Bd5 (Maia probability 0.400, rank 1).
 
 #### Window 18: herring (length 4, no blunder)
@@ -249,6 +264,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 30. Bxc7 (Good, pre-move ES 0.21), reply 30... Bd5+
 - **FEN before the answer move:** `6k1/ppB4p/6p1/3b4/8/6P1/6KP/8 w - - 1 31`
 - **Answer:** blunder 31. Kh3 (pre-move ES 0.45, ES after 0.20).
+- **Peer legs:** expected loss 0.10, reply loss 0.14, practical loss 0.06 (engine drop 0.20): fails (practical loss).
 - **Missed best move:** Kf2 (Maia probability 0.319, rank 2).
 
 #### Window 20: allowed (length 5, blunder at 4)
@@ -263,6 +279,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 19... Qd8 (Good, pre-move ES 0.86), reply 20. b4
 - **FEN before the answer move:** `r2q2k1/pp3ppn/2n5/3p3b/1P1P4/2P2P1N/P3Q1PP/4R1K1 b - - 0 20`
 - **Answer:** blunder 20... Ne7 (pre-move ES 0.86, ES after 0.65).
+- **Peer legs:** expected loss 0.08, reply loss 0.11, practical loss 0.09 (engine drop 0.20): fails (practical loss).
 - **Refutation:** Qxe7 (Maia probability 0.368, rank 1).
 
 ### 800-1199
@@ -276,6 +293,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `4rrk1/8/p2b2Q1/3P4/2p5/4P3/P3K3/1q4R1 b - - 0 34`
 - **Answer:** blunder 34... Kh8 (pre-move ES 0.14, ES after 0.02).
+- **Peer legs:** expected loss 0.29, reply loss 0.18, practical loss 0.68 (engine drop 0.86): fails (expected loss).
 - **Refutation:** Qg7# (Maia probability 0.537, rank 1).
 
 #### Window 2: allowed (length 5, blunder at 1)
@@ -287,6 +305,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `rnbqkbnr/pppp1ppp/8/4p3/2B1P3/8/PPPP1PPP/RNBQK1NR b KQkq - 1 2`
 - **Answer:** blunder 2... Qg5 (pre-move ES 0.50, ES after 0.34).
+- **Peer legs:** expected loss 0.01, reply loss 0.09, practical loss 0.03 (engine drop 0.12): fails (practical loss).
 - **Refutation:** Nf3 (Maia probability 0.243, rank 1).
 
 #### Window 3: allowed (length 3, blunder at 2)
@@ -299,6 +318,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 21... Rxd1 (Good, pre-move ES 0.86), reply 22. Rxd1
 - **FEN before the answer move:** `3r2k1/pp3pp1/8/q1p1n2B/2PnP3/P7/1P3PPP/3RQ1K1 b - - 0 22`
 - **Answer:** blunder 22... Ndf3+ (pre-move ES 0.87, ES after 0.46).
+- **Peer legs:** expected loss 0.13, reply loss 0.04, practical loss 0.38 (engine drop 0.42): fails (expected loss).
 - **Refutation:** Bxf3 (Maia probability 0.384, rank 2).
 
 #### Window 4: allowed (length 3, blunder at 2)
@@ -311,6 +331,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 18... Rxa1 (Good, pre-move ES 0.57), reply 19. Bxa1
 - **FEN before the answer move:** `3q1rk1/2pp1ppp/3b2n1/1N2pb2/1P1P4/2P2P2/4B1PP/B2Q1RK1 b - - 0 19`
 - **Answer:** blunder 19... exd4 (pre-move ES 0.57, ES after 0.37).
+- **Peer legs:** expected loss 0.15, reply loss 0.21, practical loss 0.00 (engine drop 0.21): fails (expected loss, practical loss).
 - **Refutation:** Nxd6 (Maia probability 0.411, rank 1).
 
 #### Window 5: herring (length 5, no blunder)
@@ -336,6 +357,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `5r1k/6pp/1p4n1/p7/PP2Q3/4P2K/6PP/R1B1q3 b - - 0 32`
 - **Answer:** blunder 32... axb4 (pre-move ES 0.88, ES after 0.51).
+- **Peer legs:** expected loss 0.31, reply loss 0.13, practical loss 0.25 (engine drop 0.37): fails (expected loss).
 - **Refutation:** Bb2 (Maia probability 0.600, rank 1).
 
 #### Window 7: allowed (length 4, blunder at 1)
@@ -347,6 +369,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `1k3b1r/1p4p1/3r3p/1n3p2/1P3Q2/3q1P2/PB4PP/2R1R1K1 b - - 3 27`
 - **Answer:** blunder 27... g5 (pre-move ES 0.53, ES after 0.32).
+- **Peer legs:** expected loss 0.16, reply loss 0.19, practical loss 0.03 (engine drop 0.22): fails (expected loss, practical loss).
 - **Refutation:** Qe5 (Maia probability 0.296, rank 1).
 
 #### Window 8: herring (length 3, no blunder)
@@ -395,6 +418,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `rnb1k2r/ppp1qppp/8/3nN3/2B5/7P/PPPPQbP1/RNB1K2R w KQkq - 0 8`
 - **Answer:** blunder 8. Qxf2 (pre-move ES 0.83, ES after 0.53).
+- **Peer legs:** expected loss 0.05, reply loss 0.01, practical loss 0.28 (engine drop 0.28): passes.
 - **Missed best move:** Kxf2 (Maia probability 0.803, rank 1).
 
 #### Window 12: herring (length 3, no blunder)
@@ -433,6 +457,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 22... Re6 (Good, pre-move ES 0.15), reply 23. Nf5
 - **FEN before the answer move:** `6qk/1Q4pp/2p1r3/p2p1N2/8/8/PPP3PP/5RK1 b - - 2 23`
 - **Answer:** blunder 23... Qf7 (pre-move ES 0.16, ES after 0.02).
+- **Peer legs:** expected loss 0.03, reply loss 0.02, practical loss 0.12 (engine drop 0.13): fails (practical loss).
 - **Refutation:** Qxf7 (Maia probability 0.782, rank 1).
 
 #### Window 15: allowed (length 4, blunder at 1)
@@ -444,6 +469,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r2q1k1r/1b3npp/3p1b2/pp6/1B6/P1NB4/1P3PPP/R2QR1K1 w - - 0 20`
 - **Answer:** blunder 20. Nxb5 (pre-move ES 0.50, ES after 0.35).
+- **Peer legs:** expected loss 0.12, reply loss 0.05, practical loss 0.12 (engine drop 0.16): fails (expected loss, practical loss).
 - **Refutation:** axb4 (Maia probability 0.794, rank 1).
 
 #### Window 16: allowed (length 5, blunder at 2)
@@ -456,6 +482,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 10. a3 (Good, pre-move ES 0.64), reply 10... Bxb5
 - **FEN before the answer move:** `r2qk2r/ppp1n1pp/4p3/1b1pPp2/1n1P4/P1N2N2/1PPQ1PPP/R4RK1 w kq - 0 11`
 - **Answer:** blunder 11. axb4 (pre-move ES 0.60, ES after 0.36).
+- **Peer legs:** expected loss 0.06, reply loss 0.04, practical loss 0.21 (engine drop 0.25): passes.
 - **Refutation:** Bxf1 (Maia probability 0.802, rank 1).
 
 #### Window 17: allowed (length 5, blunder at 3)
@@ -469,6 +496,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 18... Bf7 (Good, pre-move ES 0.74), reply 19. Qd3
 - **FEN before the answer move:** `4rrk1/ppp2bpp/3q4/5p2/1P1P1P2/2PQP3/P6P/2KR2NR b - - 2 19`
 - **Answer:** blunder 19... g6 (pre-move ES 0.76, ES after 0.59).
+- **Peer legs:** expected loss 0.08, reply loss 0.07, practical loss 0.10 (engine drop 0.17): fails (practical loss).
 - **Refutation:** Nf3 (Maia probability 0.463, rank 1).
 
 #### Window 18: pure_miss (length 5, blunder at 1)
@@ -480,6 +508,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `rn1q1rk1/pbpp1pbp/1p2pnp1/6B1/2B1P3/2NP1N2/PPP2PPP/R2Q1RK1 w - - 5 8`
 - **Answer:** blunder 8. Qd2 (pre-move ES 0.77, ES after 0.50).
+- **Peer legs:** expected loss 0.16, reply loss 0.10, practical loss 0.19 (engine drop 0.29): fails (expected loss).
 - **Missed best move:** e5 (Maia probability 0.388, rank 1).
 
 #### Window 19: allowed (length 3, blunder at 1)
@@ -491,6 +520,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `2k5/r4p1p/5Kp1/1p6/p2R2P1/1PP5/7P/8 b - - 0 33`
 - **Answer:** blunder 33... axb3 (pre-move ES 0.81, ES after 0.54).
+- **Peer legs:** expected loss 0.13, reply loss 0.02, practical loss 0.23 (engine drop 0.25): fails (expected loss).
 - **Refutation:** Rb4 (Maia probability 0.865, rank 1).
 
 #### Window 20: allowed (length 4, blunder at 3)
@@ -504,6 +534,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 22... g5 (Good, pre-move ES 0.69), reply 23. Nf3
 - **FEN before the answer move:** `r5k1/2p2p2/p1n1q2p/1p4pQ/3p1p2/1P1P1N1P/P1P3P1/5RK1 b - - 1 23`
 - **Answer:** blunder 23... Re8 (pre-move ES 0.72, ES after 0.48).
+- **Peer legs:** expected loss 0.15, reply loss 0.10, practical loss 0.11 (engine drop 0.22): fails (expected loss, practical loss).
 - **Refutation:** Re1 (Maia probability 0.472, rank 1).
 
 ### 1200-1599
@@ -530,6 +561,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `2kr1b1r/pp1npppp/2p2n2/8/4PBb1/2P2N2/PP1NBPPP/R2K3R b - - 0 9`
 - **Answer:** blunder 9... Nxe4 (pre-move ES 0.51, ES after 0.26).
+- **Peer legs:** expected loss 0.09, reply loss 0.07, practical loss 0.20 (engine drop 0.27): passes.
 - **Refutation:** Nxe4 (Maia probability 0.793, rank 1).
 
 #### Window 3: allowed (length 3, blunder at 2)
@@ -542,6 +574,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 14... Rf6 (Good, pre-move ES 0.64), reply 15. Qf4
 - **FEN before the answer move:** `r2q2k1/pp2b2p/2n1pr2/3pNp2/3p1Q2/2P5/PP3PPP/RN2R1K1 b - - 2 15`
 - **Answer:** blunder 15... Bf8 (pre-move ES 0.68, ES after 0.53).
+- **Peer legs:** expected loss 0.09, reply loss 0.03, practical loss 0.13 (engine drop 0.16): fails (practical loss).
 - **Refutation:** cxd4 (Maia probability 0.696, rank 1).
 
 #### Window 4: allowed (length 3, blunder at 1)
@@ -553,6 +586,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `1r4k1/Qq6/6p1/1pp2pNp/8/PP6/5PbP/4R1K1 w - - 2 40`
 - **Answer:** blunder 40. Re8+ (pre-move ES 0.73, ES after 0.06).
+- **Peer legs:** expected loss 0.07, reply loss 0.15, practical loss 0.52 (engine drop 0.67): passes.
 - **Refutation:** Rxe8 (Maia probability 0.813, rank 1).
 
 #### Window 5: pure_miss (length 4, blunder at 2)
@@ -565,6 +599,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 16. Ra1 (Good, pre-move ES 0.44), reply 16... b4
 - **FEN before the answer move:** `5rk1/4qppp/2np4/r2p1p2/1p1Pn3/P3PN1P/2PN1PP1/R2QR1K1 w - - 0 17`
 - **Answer:** blunder 17. Nxe4 (pre-move ES 0.61, ES after 0.42).
+- **Peer legs:** expected loss 0.02, reply loss 0.04, practical loss 0.16 (engine drop 0.20): passes.
 - **Missed best move:** axb4 (Maia probability 0.839, rank 1).
 
 #### Window 6: pure_miss (length 3, blunder at 1)
@@ -576,6 +611,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `8/kp6/p5PR/7K/8/8/r7/8 w - - 0 44`
 - **Answer:** blunder 44. Kg5 (pre-move ES 0.85, ES after 0.52).
+- **Peer legs:** expected loss 0.00, reply loss 0.05, practical loss 0.31 (engine drop 0.36): passes.
 - **Missed best move:** g7 (Maia probability 0.917, rank 1).
 
 #### Window 7: mixed (length 3, blunder at 2)
@@ -588,6 +624,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 18... Nxf6 (Good, pre-move ES 0.59), reply 19. Nf3
 - **FEN before the answer move:** `r3r1k1/p4pbp/1q3np1/1p1p4/2pP2B1/1P2PN1P/P4PP1/2RQ1RK1 b - - 1 19`
 - **Answer:** blunder 19... Bh6 (pre-move ES 0.82, ES after 0.55).
+- **Peer legs:** expected loss 0.17, reply loss 0.03, practical loss 0.21 (engine drop 0.24): fails (expected loss).
 - **Refutation:** Ne5 (Maia probability 0.565, rank 1).
 - **Missed best move:** h5 (Maia probability 0.155, rank 3).
 
@@ -613,6 +650,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 11... Qd4 (Good, pre-move ES 0.61), reply 12. Nc3
 - **FEN before the answer move:** `r3kbnr/pp3ppp/4p3/3p4/3q1B2/1PN2Q1P/P1P2PP1/R4RK1 b kq - 2 12`
 - **Answer:** blunder 12... Bb4 (pre-move ES 0.53, ES after 0.19).
+- **Peer legs:** expected loss 0.20, reply loss 0.09, practical loss 0.26 (engine drop 0.35): fails (expected loss).
 - **Refutation:** Nb5 (Maia probability 0.713, rank 1).
 
 #### Window 10: herring (length 4, no blunder)
@@ -637,6 +675,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `4r1k1/2p2pbp/pnqp2p1/3Nr3/2P5/BP6/P4PPP/1QRR2K1 b - - 5 21`
 - **Answer:** blunder 21... Qb7 (pre-move ES 0.68, ES after 0.49).
+- **Peer legs:** expected loss 0.07, reply loss 0.08, practical loss 0.13 (engine drop 0.21): fails (practical loss).
 - **Missed best move:** Nxd5 (Maia probability 0.633, rank 1).
 
 #### Window 12: allowed (length 4, blunder at 1)
@@ -648,6 +687,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r2q1rk1/5ppp/2pp1b2/pp2p3/4P3/1P1P1Q1P/1PPB1PP1/R4RK1 w - - 0 15`
 - **Answer:** blunder 15. Bxa5 (pre-move ES 0.53, ES after 0.20).
+- **Peer legs:** expected loss 0.03, reply loss 0.00, practical loss 0.32 (engine drop 0.32): passes.
 - **Refutation:** Rxa5 (Maia probability 0.907, rank 1).
 
 #### Window 13: mixed (length 5, blunder at 2)
@@ -660,6 +700,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 11. Kb1 (Good, pre-move ES 0.23), reply 11... f5
 - **FEN before the answer move:** `r2q1rk1/ppp3pp/2n3b1/3p1p2/8/bPN2N2/P1PPQPPP/1K1R1B1R w - - 0 12`
 - **Answer:** blunder 12. Ng5 (pre-move ES 0.50, ES after 0.15).
+- **Peer legs:** expected loss 0.08, reply loss 0.05, practical loss 0.29 (engine drop 0.34): passes.
 - **Refutation:** Qxg5 (Maia probability 0.717, rank 1).
 - **Missed best move:** Qb5 (Maia probability 0.227, rank 1).
 
@@ -676,6 +717,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 51. Kf1 (Good, pre-move ES 0.46), reply 51... e2+
 - **FEN before the answer move:** `8/4R3/5pp1/5k2/6pP/6P1/r3p3/5K2 w - - 0 52`
 - **Answer:** blunder 52. Rxe2 (pre-move ES 0.46, ES after 0.06).
+- **Peer legs:** expected loss 0.33, reply loss 0.14, practical loss 0.32 (engine drop 0.46): fails (expected loss).
 - **Refutation:** Rxe2 (Maia probability 0.672, rank 1).
 
 #### Window 15: allowed (length 5, blunder at 1)
@@ -687,6 +729,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `4r3/1nk5/1pp3pp/8/1P3p2/2N1P2P/P1P1K1P1/3R4 w - - 0 26`
 - **Answer:** blunder 26. Kf3 (pre-move ES 0.56, ES after 0.19).
+- **Peer legs:** expected loss 0.06, reply loss 0.24, practical loss 0.13 (engine drop 0.37): fails (practical loss).
 - **Refutation:** Rxe3+ (Maia probability 0.309, rank 2).
 
 #### Window 16: allowed (length 3, blunder at 3)
@@ -700,6 +743,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 22... g6 (Good, pre-move ES 0.86), reply 23. Qf4
 - **FEN before the answer move:** `5rk1/p1p2p1p/6p1/3P4/3B1Q2/qP5P/P5P1/4b2K b - - 1 23`
 - **Answer:** blunder 23... Qxa2 (pre-move ES 0.85, ES after 0.02).
+- **Peer legs:** expected loss 0.45, reply loss 0.31, practical loss 0.53 (engine drop 0.85): fails (expected loss).
 - **Refutation:** Qf6 (Maia probability 0.579, rank 1).
 
 #### Window 17: herring (length 4, no blunder)
@@ -726,6 +770,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 10. Nge2 (Good, pre-move ES 0.49), reply 10... Bg4
 - **FEN before the answer move:** `r3k2r/p1p2ppp/2p2n2/3pq3/1b4b1/2N1PQ2/PPPBNPPP/2KR3R w kq - 4 11`
 - **Answer:** blunder 11. Qg3 (pre-move ES 0.47, ES after 0.31).
+- **Peer legs:** expected loss 0.10, reply loss 0.17, practical loss -0.01 (engine drop 0.16): fails (practical loss).
 - **Refutation:** Qxg3 (Maia probability 0.410, rank 1).
 
 #### Window 19: allowed (length 5, blunder at 1)
@@ -737,6 +782,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r1bqr1k1/ppp2pp1/3p3p/2b1p3/2BnP1n1/3P1NN1/PPP2PPP/R1BQ1RK1 w - - 2 11`
 - **Answer:** blunder 11. Nf5 (pre-move ES 0.55, ES after 0.31).
+- **Peer legs:** expected loss 0.01, reply loss 0.02, practical loss 0.19 (engine drop 0.21): passes.
 - **Refutation:** Nxf5 (Maia probability 0.606, rank 1).
 
 #### Window 20: herring (length 4, no blunder)
@@ -779,6 +825,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 6... Qxd5 (Good, pre-move ES 0.47), reply 7. Nc3
 - **FEN before the answer move:** `r3kbnr/pp2pppp/2n5/3q4/3P2b1/2N2N2/PP3PPP/R1BQKB1R b KQkq - 1 7`
 - **Answer:** blunder 7... Qxd4 (pre-move ES 0.45, ES after 0.15).
+- **Peer legs:** expected loss 0.15, reply loss 0.01, practical loss 0.31 (engine drop 0.31): fails (expected loss).
 - **Refutation:** Nxd4 (Maia probability 0.525, rank 1).
 
 #### Window 3: allowed (length 3, blunder at 3)
@@ -792,6 +839,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 15... e6 (Good, pre-move ES 0.52), reply 16. Ne3
 - **FEN before the answer move:** `r3kb1r/p5pp/2p1pp2/3b4/3P4/2P1NP2/P5PP/R1B1K2R b KQkq - 1 16`
 - **Answer:** blunder 16... Kf7 (pre-move ES 0.49, ES after 0.26).
+- **Peer legs:** expected loss 0.11, reply loss 0.06, practical loss 0.18 (engine drop 0.24): fails (expected loss).
 - **Refutation:** c4 (Maia probability 0.716, rank 1).
 
 #### Window 4: mixed (length 5, blunder at 5)
@@ -807,6 +855,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 15. Qe1 (Good, pre-move ES 0.57), reply 15... Kh7
 - **FEN before the answer move:** `r2q1r2/b4p1k/p1p2p1p/4p3/6b1/2NP4/PPP1N1PP/R3QR1K w - - 2 16`
 - **Answer:** blunder 16. Qh4 (pre-move ES 0.78, ES after 0.49).
+- **Peer legs:** expected loss 0.21, reply loss 0.11, practical loss 0.19 (engine drop 0.30): fails (expected loss).
 - **Refutation:** f5 (Maia probability 0.566, rank 1).
 - **Missed best move:** Ng3 (Maia probability 0.199, rank 3).
 
@@ -831,6 +880,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r3r1k1/pppq1pbp/2n1p1p1/2Pp2Bn/3P2P1/2NBPQ2/PP3P2/R3K2R b KQ - 0 13`
 - **Answer:** blunder 13... Nf6 (pre-move ES 0.38, ES after 0.17).
+- **Peer legs:** expected loss 0.08, reply loss 0.05, practical loss 0.14 (engine drop 0.20): fails (practical loss).
 - **Refutation:** Bxf6 (Maia probability 0.793, rank 1).
 
 #### Window 7: mixed (length 4, blunder at 2)
@@ -843,6 +893,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 36. Nxd1 (Good, pre-move ES 0.30), reply 36... Kf4
 - **FEN before the answer move:** `4r3/8/1p6/6p1/pPP2k1p/P4P1P/5KP1/3N4 w - - 1 37`
 - **Answer:** blunder 37. Ne3 (pre-move ES 0.48, ES after 0.04).
+- **Peer legs:** expected loss 0.06, reply loss 0.00, practical loss 0.46 (engine drop 0.46): passes.
 - **Refutation:** Rxe3 (Maia probability 0.917, rank 1).
 - **Missed best move:** Nc3 (Maia probability 0.727, rank 1).
 
@@ -869,6 +920,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `3r2k1/4npp1/4p2p/8/NPB5/P3PP2/3n1P1P/5RK1 w - - 3 23`
 - **Answer:** blunder 23. Rd1 (pre-move ES 0.68, ES after 0.19).
+- **Peer legs:** expected loss 0.13, reply loss 0.00, practical loss 0.51 (engine drop 0.51): fails (expected loss).
 - **Refutation:** Nxf3+ (Maia probability 0.946, rank 1).
 
 #### Window 10: allowed (length 3, blunder at 2)
@@ -881,6 +933,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 11. Rc1 (Good, pre-move ES 0.54), reply 11... Bb4
 - **FEN before the answer move:** `r3k2r/pp3ppp/2n1bn2/q2p2B1/1bpP4/1PN2NP1/P3PPBP/2RQ1RK1 w kq - 3 12`
 - **Answer:** blunder 12. Qd2 (pre-move ES 0.57, ES after 0.26).
+- **Peer legs:** expected loss 0.04, reply loss 0.00, practical loss 0.33 (engine drop 0.33): passes.
 - **Refutation:** Ne4 (Maia probability 0.942, rank 1).
 
 #### Window 11: herring (length 3, no blunder)
@@ -906,6 +959,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 11... Bxf3 (Good, pre-move ES 0.49), reply 12. Qxf3
 - **FEN before the answer move:** `rn1q1rk1/pp3pbp/2p1pnp1/6B1/2P1N3/3B1Q1P/PP3PP1/R3R1K1 b - - 0 12`
 - **Answer:** blunder 12... h6 (pre-move ES 0.45, ES after 0.16).
+- **Peer legs:** expected loss 0.00, reply loss 0.02, practical loss 0.28 (engine drop 0.29): passes.
 - **Refutation:** Bxf6 (Maia probability 0.512, rank 1).
 
 #### Window 13: pure_miss (length 5, blunder at 1)
@@ -917,6 +971,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r3k1nr/p1p1p1bp/5pp1/1q6/3B4/8/PPP2PPP/RN1Q1RK1 b kq - 3 14`
 - **Answer:** blunder 14... e5 (pre-move ES 0.65, ES after 0.40).
+- **Peer legs:** expected loss 0.12, reply loss 0.13, practical loss 0.13 (engine drop 0.26): fails (expected loss, practical loss).
 - **Missed best move:** Rd8 (Maia probability 0.428, rank 1).
 
 #### Window 14: allowed (length 4, blunder at 1)
@@ -928,6 +983,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `4rRk1/pb4bp/1p4p1/8/2q5/1Pp4Q/P2B2PP/R5K1 b - - 0 23`
 - **Answer:** blunder 23... Rxf8 (pre-move ES 0.50, ES after 0.25).
+- **Peer legs:** expected loss 0.18, reply loss 0.00, practical loss 0.25 (engine drop 0.25): fails (expected loss).
 - **Refutation:** bxc4 (Maia probability 0.948, rank 1).
 
 #### Window 15: pure_miss (length 5, blunder at 3)
@@ -941,6 +997,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 27... Kh8 (Good, pre-move ES 0.50), reply 28. Bd6
 - **FEN before the answer move:** `2R2N1k/5pp1/3B3p/p4b2/q7/3p4/P4PPP/5RK1 b - - 4 28`
 - **Answer:** blunder 28... d2 (pre-move ES 0.90, ES after 0.50).
+- **Peer legs:** expected loss 0.06, reply loss 0.00, practical loss 0.40 (engine drop 0.40): passes.
 - **Missed best move:** Bxc8 (Maia probability 0.791, rank 1).
 
 #### Window 16: allowed (length 5, blunder at 1)
@@ -952,6 +1009,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r1b1k2r/pp3qpp/2p2n2/2b5/3Np3/1P6/PBP1B1PP/R2Q1RK1 b kq - 2 15`
 - **Answer:** blunder 15... Bxd4+ (pre-move ES 0.65, ES after 0.44).
+- **Peer legs:** expected loss 0.01, reply loss 0.02, practical loss 0.19 (engine drop 0.21): passes.
 - **Refutation:** Qxd4 (Maia probability 0.403, rank 2).
 
 #### Window 17: herring (length 3, no blunder)
@@ -975,6 +1033,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r3kbnr/ppqnppp1/2p4p/3pP3/3P4/2NQ1N2/PPP2PPP/R1B2RK1 b kq - 4 8`
 - **Answer:** blunder 8... O-O-O (pre-move ES 0.44, ES after 0.25).
+- **Peer legs:** expected loss 0.04, reply loss 0.17, practical loss 0.02 (engine drop 0.19): fails (practical loss).
 - **Missed best move:** e6 (Maia probability 0.657, rank 1).
 
 #### Window 19: allowed (length 3, blunder at 2)
@@ -987,6 +1046,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 27. Bxc7 (Good, pre-move ES 0.50), reply 27... c4
 - **FEN before the answer move:** `8/ppB1Npkp/4b3/6p1/2p5/1P3P2/PKPnr1PP/6R1 w - - 0 28`
 - **Answer:** blunder 28. g4 (pre-move ES 0.52, ES after 0.20).
+- **Peer legs:** expected loss 0.17, reply loss 0.00, practical loss 0.33 (engine drop 0.33): fails (expected loss).
 - **Refutation:** Nxf3 (Maia probability 0.345, rank 2).
 
 #### Window 20: allowed (length 3, blunder at 1)
@@ -998,6 +1058,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r3k1r1/1pp2p1b/p1np3p/8/2Bbn2N/N4P2/PP4PP/R1B1R1K1 w q - 0 18`
 - **Answer:** blunder 18. Kh1 (pre-move ES 0.51, ES after 0.28).
+- **Peer legs:** expected loss 0.14, reply loss 0.17, practical loss 0.08 (engine drop 0.24): fails (expected loss, practical loss).
 - **Refutation:** Bf2 (Maia probability 0.376, rank 2).
 
 ### 2000-2399
@@ -1011,6 +1072,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `8/pR5p/4p1pk/8/4N3/4K1P1/PPr2P1P/5r2 w - - 26 41`
 - **Answer:** blunder 41. Rb8 (pre-move ES 0.51, ES after 0.35).
+- **Peer legs:** expected loss 0.01, reply loss 0.02, practical loss 0.14 (engine drop 0.17): fails (practical loss).
 - **Refutation:** Re1+ (Maia probability 0.453, rank 1).
 
 #### Window 2: allowed (length 5, blunder at 1)
@@ -1022,6 +1084,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `8/5N2/1b6/p5k1/P3B2p/5KP1/1P6/8 b - - 1 43`
 - **Answer:** blunder 43... Kh5 (pre-move ES 0.18, ES after 0.02).
+- **Peer legs:** expected loss 0.08, reply loss 0.02, practical loss 0.17 (engine drop 0.19): passes.
 - **Refutation:** g4# (Maia probability 0.823, rank 1).
 
 #### Window 3: herring (length 5, no blunder)
@@ -1049,6 +1112,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 43. Kb2 (Good, pre-move ES 0.50), reply 43... Rg3
 - **FEN before the answer move:** `8/2k5/2rpR3/8/1p6/1P4r1/1KPR4/8 w - - 10 44`
 - **Answer:** blunder 44. Rexd6 (pre-move ES 0.53, ES after 0.18).
+- **Peer legs:** expected loss 0.01, reply loss 0.05, practical loss 0.34 (engine drop 0.39): passes.
 - **Refutation:** Rxd6 (Maia probability 0.852, rank 1).
 
 #### Window 5: herring (length 5, no blunder)
@@ -1075,6 +1139,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 11... Nd7 (Good, pre-move ES 0.62), reply 12. f4
 - **FEN before the answer move:** `r1bqr1k1/pp1n1ppp/2p1p3/2PpP3/P4P2/B1P5/4P1PP/R2QKB1R b KQ - 0 12`
 - **Answer:** blunder 12... g5 (pre-move ES 0.63, ES after 0.42).
+- **Peer legs:** expected loss 0.03, reply loss 0.02, practical loss 0.22 (engine drop 0.24): passes.
 - **Refutation:** e3 (Maia probability 0.735, rank 1).
 
 #### Window 7: allowed (length 5, blunder at 1)
@@ -1086,6 +1151,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r4br1/1p3k1p/p2qp1p1/3n4/3BQ3/8/PP3PPP/2R1R1K1 b - - 9 27`
 - **Answer:** blunder 27... Bg7 (pre-move ES 0.75, ES after 0.53).
+- **Peer legs:** expected loss 0.20, reply loss 0.17, practical loss 0.06 (engine drop 0.24): fails (expected loss, practical loss).
 - **Refutation:** Qf3+ (Maia probability 0.321, rank 2).
 
 #### Window 8: herring (length 3, no blunder)
@@ -1110,6 +1176,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 18... Qc6 (Good, pre-move ES 0.51), reply 19. Nxc5
 - **FEN before the answer move:** `1rb2k1r/3n1p2/p1q1p1p1/b1NpP1Qp/5P2/2P1B1R1/PP2B1PP/R5K1 b - - 0 19`
 - **Answer:** blunder 19... Bd8 (pre-move ES 0.70, ES after 0.03).
+- **Peer legs:** expected loss 0.02, reply loss 0.24, practical loss 0.45 (engine drop 0.69): passes.
 - **Refutation:** Qxd8+ (Maia probability 0.610, rank 1).
 - **Missed best move:** Nxc5 (Maia probability 0.861, rank 1).
 
@@ -1122,6 +1189,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `r5k1/ppR5/3p3p/5Pq1/3br3/7Q/1P6/1K3R2 w - - 1 35`
 - **Answer:** blunder 35. Qf3 (pre-move ES 0.65, ES after 0.21).
+- **Peer legs:** expected loss 0.25, reply loss 0.04, practical loss 0.44 (engine drop 0.48): fails (expected loss).
 - **Refutation:** Rae8 (Maia probability 0.620, rank 1).
 - **Missed best move:** Qb3+ (Maia probability 0.411, rank 2).
 
@@ -1134,6 +1202,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `6k1/p1R3pp/1pp1p3/r7/P1P5/1P5P/6P1/6K1 b - - 1 33`
 - **Answer:** blunder 33... c5 (pre-move ES 0.50, ES after 0.19).
+- **Peer legs:** expected loss 0.21, reply loss 0.02, practical loss 0.27 (engine drop 0.29): fails (expected loss).
 - **Refutation:** Kf2 (Maia probability 0.567, rank 1).
 
 #### Window 12: allowed (length 5, blunder at 1)
@@ -1145,6 +1214,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `8/p3k3/6P1/1pp2K2/8/8/PP6/8 w - - 0 38`
 - **Answer:** blunder 38. Kg5 (pre-move ES 0.86, ES after 0.50).
+- **Peer legs:** expected loss 0.00, reply loss 0.08, practical loss 0.31 (engine drop 0.39): passes.
 - **Refutation:** Kf8 (Maia probability 0.699, rank 1).
 
 #### Window 13: pure_miss (length 3, blunder at 2)
@@ -1157,6 +1227,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 35... Ke7 (Good, pre-move ES 0.30), reply 36. Rfd1
 - **FEN before the answer move:** `2r5/4k3/1npR4/1p2p1p1/4Pb2/1PP5/4N1K1/3R4 b - - 3 36`
 - **Answer:** blunder 36... Rc7 (pre-move ES 0.50, ES after 0.25).
+- **Peer legs:** expected loss 0.19, reply loss 0.09, practical loss 0.19 (engine drop 0.28): fails (expected loss).
 - **Missed best move:** Nd5 (Maia probability 0.212, rank 2).
 
 #### Window 14: allowed (length 4, blunder at 3)
@@ -1170,6 +1241,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 10... Qb6 (Good, pre-move ES 0.48), reply 11. O-O
 - **FEN before the answer move:** `2r1k2r/pp2bppp/1qn1pn2/1B1pNbB1/Q2P4/2N1P3/PP3PPP/R4RK1 b k - 8 11`
 - **Answer:** blunder 11... O-O (pre-move ES 0.49, ES after 0.29).
+- **Peer legs:** expected loss 0.13, reply loss 0.02, practical loss 0.19 (engine drop 0.21): fails (expected loss).
 - **Refutation:** Bxf6 (Maia probability 0.802, rank 1).
 
 #### Window 15: allowed (length 5, blunder at 3)
@@ -1183,6 +1255,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 4... e5 (Good, pre-move ES 0.49), reply 5. d3
 - **FEN before the answer move:** `rnbqk1nr/ppp2pbp/6p1/3pp3/8/3P1NP1/PPP1PPBP/RNBQ1RK1 b kq - 0 5`
 - **Answer:** blunder 5... e4 (pre-move ES 0.48, ES after 0.31).
+- **Peer legs:** expected loss 0.01, reply loss 0.02, practical loss 0.16 (engine drop 0.18): passes.
 - **Refutation:** dxe4 (Maia probability 0.866, rank 1).
 
 #### Window 16: herring (length 5, no blunder)
@@ -1209,6 +1282,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 18. O-O-O (Good, pre-move ES 0.32), reply 18... Nd7
 - **FEN before the answer move:** `r3r1k1/pp1np3/2p2ppB/4Nb1p/2PP1Q1P/8/PP3Pq1/2KR3R w - - 2 19`
 - **Answer:** blunder 19. Rde1 (pre-move ES 0.66, ES after 0.16).
+- **Peer legs:** expected loss 0.18, reply loss 0.04, practical loss 0.48 (engine drop 0.52): fails (expected loss).
 - **Refutation:** fxe5 (Maia probability 0.824, rank 1).
 - **Missed best move:** Nxd7 (Maia probability 0.355, rank 1).
 
@@ -1248,6 +1322,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 24... Nb2 (Good, pre-move ES 0.81), reply 25. Qxa6
 - **FEN before the answer move:** `5rk1/2r2ppp/Q2qp3/3p4/R2P2P1/1PP2B1P/1n3P2/4R1K1 b - - 0 25`
 - **Answer:** blunder 25... Qxa6 (pre-move ES 0.79, ES after 0.53).
+- **Peer legs:** expected loss 0.13, reply loss 0.00, practical loss 0.27 (engine drop 0.27): fails (expected loss).
 - **Refutation:** Rxa6 (Maia probability 0.998, rank 1).
 
 ### 2400+
@@ -1264,6 +1339,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 28... Qe4+ (Good, pre-move ES 0.37), reply 29. Qf3
 - **FEN before the answer move:** `r5k1/2R2pp1/3R1n1B/p7/3Pq3/1P3QP1/P4PKP/4r3 b - - 2 29`
 - **Answer:** blunder 29... Qxf3+ (pre-move ES 0.84, ES after 0.52).
+- **Peer legs:** expected loss 0.00, reply loss 0.00, practical loss 0.34 (engine drop 0.34): passes.
 - **Missed best move:** Rg1+ (Maia probability 0.969, rank 1).
 
 #### Window 2: herring (length 3, no blunder)
@@ -1313,6 +1389,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 43. Rxa2 (Good, pre-move ES 0.75), reply 43... f5
 - **FEN before the answer move:** `8/3P2kp/6p1/1p3p2/8/6PB/R5KP/3r4 w - - 0 44`
 - **Answer:** blunder 44. Re2 (pre-move ES 0.73, ES after 0.51).
+- **Peer legs:** expected loss 0.04, reply loss 0.00, practical loss 0.25 (engine drop 0.25): passes.
 - **Refutation:** Rxd7 (Maia probability 0.977, rank 1).
 
 #### Window 6: allowed (length 3, blunder at 2)
@@ -1325,6 +1402,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 36... Rxh3 (Good, pre-move ES 0.56), reply 37. c5
 - **FEN before the answer move:** `8/4bk1p/p3p3/2P2p2/P4P2/1pP4r/1P1K1B2/4R3 b - - 0 37`
 - **Answer:** blunder 37... Rf3 (pre-move ES 0.62, ES after 0.39).
+- **Peer legs:** expected loss 0.07, reply loss 0.11, practical loss 0.11 (engine drop 0.21): fails (practical loss).
 - **Refutation:** Be3 (Maia probability 0.568, rank 1).
 
 #### Window 7: herring (length 3, no blunder)
@@ -1350,6 +1428,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 28. Rxe6+ (Good, pre-move ES 0.50), reply 28... fxe6
 - **FEN before the answer move:** `1r3r2/p6Q/2pkp3/2pp4/8/2bP4/P5PP/5R1K w - - 0 29`
 - **Answer:** blunder 29. Rxf8 (pre-move ES 0.49, ES after 0.02).
+- **Peer legs:** expected loss 0.12, reply loss 0.29, practical loss 0.17 (engine drop 0.46): fails (expected loss).
 - **Refutation:** Rb1+ (Maia probability 0.403, rank 2).
 
 #### Window 9: allowed (length 5, blunder at 1)
@@ -1361,6 +1440,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `8/8/8/1R6/6r1/7k/4KB2/8 b - - 21 66`
 - **Answer:** blunder 66... Rg3 (pre-move ES 0.49, ES after 0.02).
+- **Peer legs:** expected loss 0.09, reply loss 0.17, practical loss 0.30 (engine drop 0.47): passes.
 - **Refutation:** Bxg3 (Maia probability 0.579, rank 1).
 
 #### Window 10: herring (length 3, no blunder)
@@ -1385,6 +1465,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 29... Qd7 (Good, pre-move ES 0.63), reply 30. Bc4
 - **FEN before the answer move:** `1nr3k1/3qbpp1/p6p/5p1P/1pB1p3/1Q2B3/P4PP1/2R3K1 b - - 3 30`
 - **Answer:** blunder 30... Bf6 (pre-move ES 0.64, ES after 0.41).
+- **Peer legs:** expected loss 0.19, reply loss 0.02, practical loss 0.22 (engine drop 0.24): fails (expected loss).
 - **Refutation:** Bxf7+ (Maia probability 0.802, rank 1).
 
 #### Window 12: allowed (length 3, blunder at 3)
@@ -1398,6 +1479,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 21... gxh5 (Good, pre-move ES 0.75), reply 22. Qxh5
 - **FEN before the answer move:** `1r1q1r2/2p2pk1/p2bb2p/2p4Q/4N3/1P1B3P/P1P2PP1/R5K1 b - - 0 22`
 - **Answer:** blunder 22... Bd5 (pre-move ES 0.82, ES after 0.50).
+- **Peer legs:** expected loss 0.02, reply loss 0.14, practical loss 0.18 (engine drop 0.32): passes.
 - **Refutation:** Qg4+ (Maia probability 0.484, rank 1).
 
 #### Window 13: mixed (length 3, blunder at 1)
@@ -1409,6 +1491,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `5rk1/pb3p2/1p3qp1/2n2N2/6Q1/6P1/5P1P/3RR1K1 b - - 1 32`
 - **Answer:** blunder 32... Ne6 (pre-move ES 0.77, ES after 0.39).
+- **Peer legs:** expected loss 0.05, reply loss 0.06, practical loss 0.33 (engine drop 0.39): passes.
 - **Refutation:** Nd6 (Maia probability 0.448, rank 1).
 - **Missed best move:** Qxf5 (Maia probability 0.756, rank 1).
 
@@ -1422,6 +1505,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 51... f4 (Good, pre-move ES 0.50), reply 52. gxf4
 - **FEN before the answer move:** `2r5/2P5/6p1/7p/5PkP/1KR5/8/8 b - - 0 52`
 - **Answer:** blunder 52... Kxf4 (pre-move ES 0.50, ES after 0.32).
+- **Peer legs:** expected loss 0.04, reply loss 0.08, practical loss 0.14 (engine drop 0.22): fails (practical loss).
 - **Refutation:** Kb4 (Maia probability 0.571, rank 1).
 
 #### Window 15: herring (length 4, no blunder)
@@ -1460,6 +1544,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
   - 16... Qh4 (Good, pre-move ES 0.38), reply 17. Kg1
 - **FEN before the answer move:** `r3r1k1/2p2pp1/bp1p3p/p1bPn3/2P1N1nq/PP5P/2B1NPP1/1RBQ1RK1 b - - 4 17`
 - **Answer:** blunder 17... a4 (pre-move ES 0.50, ES after 0.33).
+- **Peer legs:** expected loss 0.06, reply loss 0.16, practical loss 0.01 (engine drop 0.18): fails (practical loss).
 - **Refutation:** Nxc5 (Maia probability 0.352, rank 1).
 - **Missed best move:** Nf3+ (Maia probability 0.580, rank 1).
 
@@ -1485,6 +1570,7 @@ How to read: for each window, play through the lead-in and the judged moves on t
 - **Judged user moves:**
 - **FEN before the answer move:** `5rk1/1q5p/2p1r1p1/1pQ1P3/2p2n2/2N4P/1PR2PB1/3R2K1 w - - 1 27`
 - **Answer:** blunder 27. Rd6 (pre-move ES 0.78, ES after 0.61).
+- **Peer legs:** expected loss 0.06, reply loss 0.10, practical loss 0.06 (engine drop 0.16): fails (practical loss).
 - **Refutation:** Qe7 (Maia probability 0.475, rank 1).
 
 #### Window 20: herring (length 4, no blunder)

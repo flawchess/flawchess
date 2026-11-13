@@ -1,0 +1,181 @@
+n	set	elo	move	link	engine_drop	expected_loss	reply_loss	practical_loss	played_prob	reply_spread	line_loss3	mate3	label
+1	1	608	Qb6	https://flawchess.com/analysis?game_id=1940139&ply=21	0.24	0.10	0.33	-0.09	0.06	7.3	0	0	0
+2	1	254	Rde8	https://flawchess.com/analysis?game_id=3251685&ply=31	0.18	0.06	0.18	0.00	0.09	4.2	3	0	1
+3	1	517	g6	https://flawchess.com/analysis?game_id=1990843&ply=13	0.31	0.03	0.29	0.01	0.01	3.2	-1	0	0
+4	1	771	Qxe5	https://flawchess.com/analysis?game_id=993344&ply=17	0.16	0.04	0.12	0.05	0.03	4.0	8	0	0
+5	1	369	g4	https://flawchess.com/analysis?game_id=1689678&ply=16	0.18	0.07	0.15	0.03	0.09	2.2	0	0	1
+6	1	1066	f5	https://flawchess.com/analysis?game_id=549443&ply=25	0.18	0.07	0.03	0.15	0.01	1.8	2	0	1
+7	1	1011	Bd3	https://flawchess.com/analysis?game_id=1987162&ply=24	0.30	0.03	0.18	0.11	0.01	3.1	0	0	0
+8	1	842	Bd2	https://flawchess.com/analysis?game_id=3069554&ply=8	0.17	0.07	0.02	0.15	0.30	1.3	-1	0	1
+9	1	1053	Qe2	https://flawchess.com/analysis?game_id=1638673&ply=16	0.17	0.09	0.07	0.11	0.01	6.9	3	0	0
+10	1	1148	Rb1	https://flawchess.com/analysis?game_id=3059436&ply=69	0.23	0.01	0.14	0.09	0.04	5.9	0	0	0
+11	1	1474	Rbd8	https://flawchess.com/analysis?game_id=2752284&ply=53	0.21	0.09	0.11	0.10	0.03	2.8	0	0	1
+12	1	1491	Rfe8	https://flawchess.com/analysis?game_id=1508344&ply=39	0.16	0.09	0.02	0.13	0.34	3.2	0	0	0
+13	1	1241	Bg5	https://flawchess.com/analysis?game_id=1222607&ply=16	0.21	0.01	0.08	0.13	0.01	2.8	3	0	1
+14	1	1435	Bd4+	https://flawchess.com/analysis?game_id=2669428&ply=59	0.25	0.05	0.19	0.06	0.22	3.7	0	0	0
+15	1	1343	O-O-O	https://flawchess.com/analysis?game_id=2625135&ply=12	0.20	0.01	0.13	0.07	0.06	4.2	1	0	1
+16	1	1657	Qg3	https://flawchess.com/analysis?game_id=1585786&ply=30	0.16	0.06	0.11	0.05	0.17	3.4	0	0	0
+17	1	1835	Rh7	https://flawchess.com/analysis?game_id=2408591&ply=70	0.26	0.04	0.17	0.09	0.45	3.4	0	0	0
+18	1	1621	exd6	https://flawchess.com/analysis?game_id=2458446&ply=12	0.19	0.08	0.16	0.03	0.32	2.2	-2	0	0
+19	1	1729	Ne4	https://flawchess.com/analysis?game_id=2780723&ply=78	0.26	0.09	0.18	0.08	0.14	2.5	-1	0	0
+20	1	1656	Na5	https://flawchess.com/analysis?game_id=3064720&ply=28	0.17	0.07	0.07	0.10	0.01	3.5	0	0	1
+31	2	780	a2	https://flawchess.com/analysis?game_id=2997065&ply=101	0.45	0.04	0.09	0.36	0.09	1.6	1	0	1
+32	2	1687	Ke8	https://flawchess.com/analysis?game_id=2847507&ply=19	0.29	0.09	0.07	0.21	0.00	2.4	0	0	0
+33	2	1463	Ne4	https://flawchess.com/analysis?game_id=2664191&ply=38	0.23	0.04	0.26	-0.03	0.07	3.7	1	0	0
+34	2	927	O-O	https://flawchess.com/analysis?game_id=3198339&ply=27	0.20	0.09	0.00	0.20	0.21	1.0	1	1	1
+35	2	1703	cxb5	https://flawchess.com/analysis?game_id=1539774&ply=64	0.19	0.01	0.03	0.16	0.04	1.6	8	0	1
+36	2	1556	Nf5	https://flawchess.com/analysis?game_id=1554814&ply=31	0.17	0.05	0.04	0.14	0.16	2.1	1	0	1
+37	2	1173	Bd5	https://flawchess.com/analysis?game_id=627424&ply=18	0.18	0.03	0.06	0.12	0.01	3.6	1	0	0
+38	2	1686	Bg6	https://flawchess.com/analysis?game_id=492266&ply=31	0.19	0.06	0.01	0.17	0.00	2.6	0	0	1
+39	2	1416	Bb4	https://flawchess.com/analysis?game_id=2043934&ply=42	0.55	0.07	0.12	0.43	0.03	2.1	3	0	1
+40	2	1153	Kb2	https://flawchess.com/analysis?game_id=2900182&ply=58	0.16	0.03	0.09	0.07	0.01	6.3	0	0	0
+41	2	880	Re4	https://flawchess.com/analysis?game_id=2992127&ply=34	0.39	0.03	0.01	0.38	0.01	1.0			1
+42	2	1399	Rf7	https://flawchess.com/analysis?game_id=2075032&ply=41	0.21	0.04	0.04	0.18	0.02	2.5	0	0	0
+43	2	1296	Nxe3	https://flawchess.com/analysis?game_id=3191007&ply=23	0.24	0.05	0.05	0.19	0.17	1.8	0	0	0
+44	2	879	Qb4	https://flawchess.com/analysis?game_id=2831122&ply=53	0.17	0.03	0.02	0.15	0.02	1.5			0
+45	2	1005	Nfe5	https://flawchess.com/analysis?game_id=2645894&ply=36	0.25	0.05	0.00	0.25	0.04	1.0	9	0	1
+46	2	1056	f4	https://flawchess.com/analysis?game_id=1942563&ply=38	0.27	0.05	0.01	0.26	0.17	1.0	1	0	0.5
+47	2	1306	Rd8	https://flawchess.com/analysis?game_id=2542852&ply=41	0.61	0.01	0.12	0.49	0.00	2.5			1
+48	2	1307	d6	https://flawchess.com/analysis?game_id=867617&ply=65	0.27	0.02	0.01	0.27	0.03	1.4	1	0	1
+49	2	1125	f6	https://flawchess.com/analysis?game_id=1941795&ply=33	0.26	0.09	0.06	0.20	0.00	2.3	0	0	1
+50	2	1886	Nxd6	https://flawchess.com/analysis?game_id=2150286&ply=48	0.24	0.04	0.20	0.04	0.15	3.3			0.5
+51	3	1873	Bf2	https://flawchess.com/analysis?game_id=2078364&ply=50	0.27	0.08	0.07	0.20	0.06	2.9	1	0	1
+52	3	1683	b5	https://flawchess.com/analysis?game_id=3149094&ply=23	0.28	0.10	0.09	0.19	0.01	6.0	0	0	0
+53	3	1017	Bd2	https://flawchess.com/analysis?game_id=1987185&ply=89	0.28	0.01	0.25	0.03	0.01	1.3	1	0	0
+54	3	1577	Rc8+	https://flawchess.com/analysis?game_id=1557392&ply=102	0.50	0.00	0.02	0.48	0.00	1.2	3	0	1
+55	3	887	g4	https://flawchess.com/analysis?game_id=1667001&ply=36	0.47	0.07	0.34	0.12	0.08	5.6	0	0	0
+56	3	1493	Nd5	https://flawchess.com/analysis?game_id=2718033&ply=15	0.34	0.02	0.03	0.31	0.00	1.0	2	0	1
+57	3	1912	Ne7	https://flawchess.com/analysis?game_id=3263946&ply=59	0.26	0.07	0.16	0.10	0.26	3.9	0	0	0
+58	3	1884	Rc1	https://flawchess.com/analysis?game_id=606360&ply=48	0.20	0.06	0.02	0.18	0.06	1.3	1	0	1
+59	3	586	Bb3	https://flawchess.com/analysis?game_id=1940131&ply=106	0.25	0.09	0.41	-0.16	0.06	6.1	4	0	0
+60	3	1885	Bf7	https://flawchess.com/analysis?game_id=2709092&ply=81	0.26	0.04	0.12	0.13	0.15	2.9	2	0	1
+61	3	829	Kf8	https://flawchess.com/analysis?game_id=2423001&ply=37	0.22	0.09	0.01	0.21	0.09	3.7	0	0	0
+62	3	1770	Rc3	https://flawchess.com/analysis?game_id=2307121&ply=75	0.22	0.05	0.00	0.22	0.14	1.0			1
+63	3	618	Qf3+	https://flawchess.com/analysis?game_id=3237211&ply=48	0.48	0.06	0.24	0.24	0.03	2.0	9	0	1
+64	3	1874	Nd1	https://flawchess.com/analysis?game_id=2602392&ply=46	0.34	0.07	0.23	0.11	0.02	3.7	3	0	1
+65	3	1129	g5	https://flawchess.com/analysis?game_id=2138115&ply=27	0.24	0.01	0.02	0.22	0.01	1.4	1	0	1
+66	3	1494	e6	https://flawchess.com/analysis?game_id=2499164&ply=35	0.28	0.03	0.25	0.03	0.01	7.2	2	0	0
+67	3	584	Bxa2	https://flawchess.com/analysis?game_id=2350172&ply=33	0.28	0.06	0.19	0.09	0.11	5.9	-1	0	0
+68	3	739	Bd6	https://flawchess.com/analysis?game_id=2611325&ply=11	0.24	0.02	0.05	0.19	0.04	2.1	6	0	1
+69	3	1885	Qh4	https://flawchess.com/analysis?game_id=606033&ply=45	0.19	0.03	0.01	0.18	0.08	1.6	3	0	1
+70	3	1315	Bb4+	https://flawchess.com/analysis?game_id=2643137&ply=21	0.35	0.02	0.24	0.12	0.03	2.0	2	0	1
+71	4	1497	cxd3	https://flawchess.com/analysis?game_id=2893505&ply=23	0.18	0.13	0.01	0.17	0.45	1.4	0	0	0
+72	4	988	Kg5	https://flawchess.com/analysis?game_id=2823630&ply=69	0.91	0.21	0.59	0.32	0.23	2.5			1
+73	4	612	Bxf2+	https://flawchess.com/analysis?game_id=1561298&ply=41	0.40	0.21	0.02	0.38	0.01	1.7	2	0	1
+74	4	1681	cxd5	https://flawchess.com/analysis?game_id=3160509&ply=34	0.20	0.08	0.04	0.16	0.22	1.8	0	0	0
+75	4	759	Nc5	https://flawchess.com/analysis?game_id=2446731&ply=46	0.38	0.06	0.05	0.33	0.08	2.8	0	0	1
+76	4	1852	dxe4	https://flawchess.com/analysis?game_id=625770&ply=21	0.19	0.11	0.06	0.13	0.56	2.2	0	0	0.5
+77	4	450	Nxf3+	https://flawchess.com/analysis?game_id=2811460&ply=27	0.28	0.16	0.20	0.08	0.13	2.5	2	0	1
+78	4	1989	d5	https://flawchess.com/analysis?game_id=1902788&ply=9	0.18	0.02	0.08	0.10	0.01	2.0			0.5
+79	4	1890	Bxc6	https://flawchess.com/analysis?game_id=2116428&ply=58	0.51	0.30	0.17	0.34	0.54	1.9	2	0	1
+80	4	250	Bxd7+	https://flawchess.com/analysis?game_id=1918941&ply=24	0.43	0.19	0.00	0.43	0.05	1.0	2	0	1
+81	4	1345	Qxc4+	https://flawchess.com/analysis?game_id=2792123&ply=47	0.66	0.06	0.20	0.46	0.05	1.8	5	0	1
+82	4	1838	g5	https://flawchess.com/analysis?game_id=2878882&ply=62	0.33	0.10	0.07	0.26	0.03	1.8	0	0	1
+83	4	615	Bxe5	https://flawchess.com/analysis?game_id=2447052&ply=24	0.23	0.20	0.35	-0.12	0.81	2.7	1	0	0
+84	4	326	Nxe5	https://flawchess.com/analysis?game_id=2274578&ply=27	0.48	0.27	0.05	0.43	0.39	1.4			0
+85	4	1064	Nxd3+	https://flawchess.com/analysis?game_id=1638839&ply=37	0.56	0.39	0.18	0.38	0.62	1.7	0	0	0.5
+86	4	809	Kxa2	https://flawchess.com/analysis?game_id=2956440&ply=44	0.69	0.48	0.00	0.69	0.62	1.0			0
+87	4	1260	Be3	https://flawchess.com/analysis?game_id=2789968&ply=10	0.18	0.18	0.05	0.13	0.15	2.4	0	0	0
+88	4	639	Qc7	https://flawchess.com/analysis?game_id=1869584&ply=62	0.85	0.21	0.14	0.72	0.03	2.1	13	0	1
+89	4	1358	Rf1	https://flawchess.com/analysis?game_id=3194358&ply=60	0.23	0.20	0.20	0.03	0.73	2.3	0	0	0
+90	4	758	Re5	https://flawchess.com/analysis?game_id=1078853&ply=77	0.18	0.07	0.05	0.12	0.01	1.8	1	0	0.5
+91	5	1589	g5	https://flawchess.com/analysis?game_id=762702&ply=45	0.18	0.03	0.02	0.16	0.00	2.7	0	0	1
+92	5	1606	Nd7	https://flawchess.com/analysis?game_id=2240105&ply=50	0.21	0.06	0.05	0.16	0.02	1.7	3	0	1
+93	5	1799	b6	https://flawchess.com/analysis?game_id=1907494&ply=23	0.30	0.08	0.03	0.27	0.00	2.0	1	0	1
+94	5	1023	Rac8	https://flawchess.com/analysis?game_id=1668542&ply=51	0.43	0.36	0.47	-0.04	0.43	6.2	-5	0	0
+95	5	1916	b3	https://flawchess.com/analysis?game_id=1237218&ply=52	0.24	0.17	0.08	0.16	0.20	2.9	0	0	1
+96	5	1123	Rc8	https://flawchess.com/analysis?game_id=2993134&ply=23	0.25	0.09	0.22	0.03	0.30	5.9	3	0	0
+97	5	1453	Na2	https://flawchess.com/analysis?game_id=508685&ply=42	0.29	0.21	0.00	0.28	0.01	1.5	-5	0	0
+98	5	611	Nxe5	https://flawchess.com/analysis?game_id=2611273&ply=9	0.22	0.05	0.00	0.21	0.05	1.0	2	0	1
+99	5	777	Qg5	https://flawchess.com/analysis?game_id=2972865&ply=27	0.24	0.06	0.22	0.02	0.09	3.0	1	0	1
+100	5	1669	g5	https://flawchess.com/analysis?game_id=2109556&ply=43	0.47	0.43	0.00	0.47	0.01	1.2	1	0	1
+101	5	306	Qd5+	https://flawchess.com/analysis?game_id=1871647&ply=73	0.79	0.03	0.17	0.61	0.01	2.0	9	0	1
+102	5	1666	c6	https://flawchess.com/analysis?game_id=2312975&ply=27	0.30	0.21	0.05	0.25	0.01	2.7	0	0	0
+103	5	1837	Nd5	https://flawchess.com/analysis?game_id=1884190&ply=93	0.26	0.08	0.13	0.13	0.22	2.0			1
+104	5	1378	Ra1	https://flawchess.com/analysis?game_id=871586&ply=77	0.17	0.06	0.07	0.10	0.19	3.0	-2	0	1
+105	5	1491	f4	https://flawchess.com/analysis?game_id=2679152&ply=36	0.23	0.13	0.01	0.22	0.15	2.0	1	0	0
+106	5	1904	g4	https://flawchess.com/analysis?game_id=3230634&ply=39	0.18	0.10	0.03	0.15	0.39	1.6	0	0	0
+107	5	1097	Qxh6	https://flawchess.com/analysis?game_id=2404626&ply=30	0.30	0.11	0.09	0.21	0.26	2.4	-1	0	0
+108	5	340	Bxc2	https://flawchess.com/analysis?game_id=2642224&ply=31	0.25	0.13	0.02	0.23	0.14	1.5	0	1	1
+109	5	1425	Nxd4	https://flawchess.com/analysis?game_id=3151087&ply=15	0.37	0.00	0.05	0.32	0.05	2.5	2	0	1
+110	5	537	g6	https://flawchess.com/analysis?game_id=1657893&ply=25	0.57	0.06	0.09	0.48	0.06	2.0	5	0	1
+111	5	1538	Bxf3	https://flawchess.com/analysis?game_id=1581100&ply=43	0.29	0.11	0.18	0.11	0.08	1.8	-2	0	0
+112	5	935	Bxb5	https://flawchess.com/analysis?game_id=2439721&ply=64	0.47	0.05	0.03	0.43	0.01	1.3	2	0	1
+113	5	1531	Nd4+	https://flawchess.com/analysis?game_id=1656033&ply=25	0.33	0.00	0.06	0.27	0.04	1.7	-6	0	1
+114	5	1888	e6	https://flawchess.com/analysis?game_id=496082&ply=14	0.20	0.04	0.01	0.20	0.00	2.0	1	0	1
+115	5	1720	Rc6	https://flawchess.com/analysis?game_id=492808&ply=73	0.45	0.10	0.20	0.25	0.15	2.0	5	0	1
+116	5	1256	Nd4	https://flawchess.com/analysis?game_id=3201119&ply=13	0.47	0.09	0.00	0.47	0.14	1.0	1	1	1
+117	5	1538	Be2	https://flawchess.com/analysis?game_id=1327193&ply=16	0.27	0.00	0.01	0.25	0.05	2.9	0	0	1
+118	5	951	Nf3	https://flawchess.com/analysis?game_id=2261099&ply=12	0.16	0.15	0.03	0.13	0.27	4.5	0	0	0
+119	5	853	fxg4	https://flawchess.com/analysis?game_id=3061087&ply=26	0.41	0.24	0.14	0.27	0.22	2.5	0	0	0
+120	5	1692	Qe2	https://flawchess.com/analysis?game_id=1675212&ply=32	0.18	0.10	0.02	0.15	0.14	2.0	9	0	1
+121	5	549	Kd6	https://flawchess.com/analysis?game_id=1829832&ply=51	0.16	0.13	0.16	-0.00	0.31	3.0	0	0	0
+122	5	707	h5	https://flawchess.com/analysis?game_id=2862249&ply=47	0.21	0.21	0.26	-0.05	0.16	3.9	0	0	0
+123	5	1549	Be5	https://flawchess.com/analysis?game_id=1606423&ply=62	0.32	0.03	0.17	0.15	0.01	2.7	0	0	0
+124	5	364	Rd8	https://flawchess.com/analysis?game_id=1921326&ply=55	0.18	0.13	0.08	0.10	0.01	4.4			1
+125	5	1827	Be2	https://flawchess.com/analysis?game_id=755718&ply=26	0.40	0.05	0.01	0.38	0.13	2.4	0	0	0
+126	5	684	Nxg6	https://flawchess.com/analysis?game_id=2365442&ply=10	0.35	0.09	0.03	0.32	0.03	2.0	2	0	1
+127	5	1457	Nf4	https://flawchess.com/analysis?game_id=1946762&ply=95	0.40	0.05	0.02	0.38	0.04	1.2	3	0	1
+128	5	866	Ke3	https://flawchess.com/analysis?game_id=2098702&ply=70	0.36	0.32	0.00	0.36	0.03	1.2	1	0	0
+129	5	1653	Nd2	https://flawchess.com/analysis?game_id=2239413&ply=40	0.42	0.08	0.00	0.42	0.16	1.0			1
+130	5	1778	Rf2	https://flawchess.com/analysis?game_id=3066120&ply=50	0.40	0.18	0.12	0.28	0.09	2.5	5	0	0.5
+131	5	1982	Nd2	https://flawchess.com/analysis?game_id=2782206&ply=41	0.16	0.17	0.01	0.15	0.08	1.5	-2	0	0
+132	5	1799	Nxe3	https://flawchess.com/analysis?game_id=1588738&ply=51	0.54	0.05	0.02	0.53	0.01	1.0	5	0	1
+133	5	1609	e5	https://flawchess.com/analysis?game_id=2664869&ply=26	0.20	0.05	0.13	0.07	0.17	1.9	1	0	0
+134	5	1412	a6	https://flawchess.com/analysis?game_id=1426461&ply=27	0.29	0.16	0.06	0.23	0.02	1.8	0	0	0
+135	5	908	Qe3	https://flawchess.com/analysis?game_id=473172&ply=38	0.56	0.19	0.24	0.33	0.00	2.5	7	0	1
+136	5	1084	Ne7	https://flawchess.com/analysis?game_id=504615&ply=25	0.19	0.18	0.20	-0.01	0.09	6.0	-9	0	0
+137	5	1131	Bf4	https://flawchess.com/analysis?game_id=2633412&ply=18	0.17	0.12	0.03	0.14	0.03	1.8	0	0	0
+138	5	1430	Kb5	https://flawchess.com/analysis?game_id=3122480&ply=93	0.19	0.02	0.01	0.18	0.11	1.2	1	0	1
+139	5	678	Ke1	https://flawchess.com/analysis?game_id=2657540&ply=58	0.25	0.13	0.06	0.19	0.32	1.4	9	0	0
+140	5	1651	Bb5+	https://flawchess.com/analysis?game_id=2793368&ply=18	0.17	0.09	0.09	0.08	0.31	2.4	3	0	0
+141	6	1136	Kd3	https://flawchess.com/analysis?game_id=2395051&ply=70					0.08	2.0	0	0	0
+142	6	1103	Qxc2	https://flawchess.com/analysis?game_id=1995151&ply=29					0.30	5.5	-1	0	0
+143	6	1938	Bd3	https://flawchess.com/analysis?game_id=496425&ply=18					0.03	1.0	6	0	1
+144	6	1368	Bd3	https://flawchess.com/analysis?game_id=2963320&ply=14					0.01	2.4	3	0	1
+145	6	1676	N4e5	https://flawchess.com/analysis?game_id=3189857&ply=39					0.19	1.9	3	0	1
+146	6	1747	Bg3	https://flawchess.com/analysis?game_id=2742995&ply=51					0.04	1.0	2	0	1
+147	6	1200	Rxd4	https://flawchess.com/analysis?game_id=1216301&ply=41					0.00	1.0	2	0	1
+148	6	1141	e4	https://flawchess.com/analysis?game_id=1460085&ply=12					0.04	1.7	3	0	1
+149	6	892	Qb1	https://flawchess.com/analysis?game_id=1081412&ply=70					0.00	1.9	5	0	1
+150	6	755	Be6	https://flawchess.com/analysis?game_id=1983784&ply=9					0.00	2.6	3	0	1
+151	6	1965	Nb3	https://flawchess.com/analysis?game_id=1232919&ply=66					0.04	2.4	2	0	1
+152	6	891	Bh6+	https://flawchess.com/analysis?game_id=2194716&ply=46					0.01	1.0	5	0	1
+153	6	931	Qa4+	https://flawchess.com/analysis?game_id=1164073&ply=28					0.08	1.9	3	0	0
+154	6	1987	Qb8	https://flawchess.com/analysis?game_id=1239475&ply=43					0.11	1.9	4	0	1
+155	6	1888	Qb5	https://flawchess.com/analysis?game_id=496096&ply=29					0.00	1.0	9	0	1
+156	6	512	Qa4+	https://flawchess.com/analysis?game_id=2471877&ply=30					0.03	2.7	2	0	0
+157	6	989	Bh6	https://flawchess.com/analysis?game_id=1876823&ply=16					0.06	1.7	3	0	1
+158	6	1369	h5	https://flawchess.com/analysis?game_id=2268262&ply=47					0.05	1.4	3	0	1
+159	6	1667	b6	https://flawchess.com/analysis?game_id=2241539&ply=19					0.00	1.2	5	0	1
+160	6	1086	Ba2	https://flawchess.com/analysis?game_id=1547772&ply=83					0.03	2.8	3	0	1
+161	6	627	Qf6	https://flawchess.com/analysis?game_id=2854717&ply=10					0.01	1.7	9	0	1
+162	6	1303	b8=Q	https://flawchess.com/analysis?game_id=2391548&ply=70					0.29	2.3	-8	1	1
+163	6	504	b6	https://flawchess.com/analysis?game_id=1074062&ply=19					0.01	2.8	5	0	1
+164	6	1214	Nxd4	https://flawchess.com/analysis?game_id=476993&ply=14					0.18	2.8	-3	0	1
+165	6	777	Nxe4	https://flawchess.com/analysis?game_id=3197784&ply=11					0.11	1.8	2	0	0
+166	6	1257	Bb6	https://flawchess.com/analysis?game_id=2655292&ply=50					0.02	1.5	3	0	1
+167	6	759	Bh5	https://flawchess.com/analysis?game_id=2613053&ply=11					0.20	3.9	0	0	0
+168	6	1323	Rh2	https://flawchess.com/analysis?game_id=771091&ply=101					0.16	2.0	0	1	1
+169	6	1200	Nf7	https://flawchess.com/analysis?game_id=1220300&ply=33					0.03	2.8	3	0	1
+170	6	855	Rb2	https://flawchess.com/analysis?game_id=2869941&ply=67					0.27	1.6	5	0	0
+171	6	371	Kh2	https://flawchess.com/analysis?game_id=2274686&ply=32					0.00	2.0	3	0	1
+172	6	797	Bc5	https://flawchess.com/analysis?game_id=1342152&ply=51					0.05	1.9	3	0	1
+173	6	612	b4	https://flawchess.com/analysis?game_id=2960017&ply=51					0.01	3.4	1	0	1
+174	6	482	Kh2	https://flawchess.com/analysis?game_id=3216830&ply=22					0.24	3.4	1	0	0
+175	6	1257	Qxf4	https://flawchess.com/analysis?game_id=1218742&ply=59					0.01	1.9	2	0	1
+176	6	1564	Re7	https://flawchess.com/analysis?game_id=483089&ply=67					0.28	2.4	5	0	0
+177	6	1004	Kxd5	https://flawchess.com/analysis?game_id=2439620&ply=106					0.08	1.3	5	0	0
+178	6	1979	Bh7+	https://flawchess.com/analysis?game_id=1060887&ply=38					0.13	1.0	3	0	1
+179	6	1131	Bg4	https://flawchess.com/analysis?game_id=502266&ply=7					0.01	2.1	2	0	1
+180	6	735	Bd6	https://flawchess.com/analysis?game_id=1869868&ply=19					0.23	2.1	2	0	1
+181	6	1901	Rxc2	https://flawchess.com/analysis?game_id=2345398&ply=44					0.05	2.3	-3	1	1
+182	6	1070	e5	https://flawchess.com/analysis?game_id=771486&ply=28					0.14	1.0	1	1	1
+183	6	1340	e5	https://flawchess.com/analysis?game_id=1559564&ply=28					0.03	2.7	0	0	1
+184	6	1357	Qd2	https://flawchess.com/analysis?game_id=770044&ply=12					0.19	1.7	3	0	1
+185	6	1782	Rh2	https://flawchess.com/analysis?game_id=1458394&ply=34					0.08	5.7	0	0	0
+186	6	1661	Qa1	https://flawchess.com/analysis?game_id=1215250&ply=85					0.10	3.0	0	0	0
+187	6	528	Qd6	https://flawchess.com/analysis?game_id=1940054&ply=13					0.01	6.6	1	0	1
+188	6	508	Nf3	https://flawchess.com/analysis?game_id=563171&ply=14					0.02	1.4	3	0	1
+189	6	235	Bxa1	https://flawchess.com/analysis?game_id=2632426&ply=25					0.07	1.9	4	0	1
+190	6	1981	Nh5+	https://flawchess.com/analysis?game_id=497688&ply=46					0.03	1.0	3	0	1

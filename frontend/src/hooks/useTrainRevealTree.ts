@@ -124,6 +124,11 @@ export interface UseTrainRevealTreeOptions {
    * can offer live good-move alternatives; default none.
    */
   rootMinMultiPv?: number;
+  /**
+   * The chip lit when the reveal opens and restored when a rewind lands on the root with
+   * no chip focused. Default Your; the blunder-check solution opens a missed blunder on Game.
+   */
+  defaultFocus?: RoleKey;
 }
 
 /** The reveal engine's reading of the shown position (the eval bar's input). */
@@ -252,6 +257,7 @@ export function useTrainRevealTree({
   seedEval = null,
   engineEnabled = true,
   rootMinMultiPv = NO_MULTIPV_FLOOR,
+  defaultFocus = DEFAULT_ROOT_FOCUS,
 }: UseTrainRevealTreeOptions): TrainRevealTree {
   const board = useAnalysisBoard(startFen);
   const {
@@ -288,9 +294,9 @@ export function useTrainRevealTree({
   const focusKey = active ? startFen : null;
   const [focusState, setFocusState] = useState<{ key: string | null; focus: RoleKey | null }>({
     key: focusKey,
-    focus: DEFAULT_ROOT_FOCUS,
+    focus: defaultFocus,
   });
-  const rootFocus = focusState.key === focusKey ? focusState.focus : DEFAULT_ROOT_FOCUS;
+  const rootFocus = focusState.key === focusKey ? focusState.focus : defaultFocus;
   const setRootFocus = useCallback(
     (focus: RoleKey | null): void => setFocusState({ key: focusKey, focus }),
     [focusKey],
@@ -573,18 +579,18 @@ export function useTrainRevealTree({
     boardGoToRoot();
     // Rewinding with no chip focused restores the default focus so the puzzle
     // position always shows a lit arrow.
-    if (latestRef.current.rootFocus === null) setRootFocus(DEFAULT_ROOT_FOCUS);
-  }, [boardGoToRoot, setRootFocus]);
+    if (latestRef.current.rootFocus === null) setRootFocus(defaultFocus);
+  }, [boardGoToRoot, setRootFocus, defaultFocus]);
 
   const goBack = useCallback((): void => {
     const { nodes: liveNodes, currentNodeId: liveCurrent, rootFocus: liveFocus } = latestRef.current;
     if (liveCurrent === null) return;
     boardGoBack();
     if (liveNodes.get(liveCurrent)?.parentId === null && liveFocus === null) {
-      setRootFocus(DEFAULT_ROOT_FOCUS); // stepped back onto the puzzle position
+      setRootFocus(defaultFocus); // stepped back onto the puzzle position
     }
     onUserStepRef.current?.();
-  }, [boardGoBack, setRootFocus]);
+  }, [boardGoBack, setRootFocus, defaultFocus]);
 
   // The first id NOT yet consumed once the commit(s) queued in the current
   // event have been applied. `latestRef` only syncs after a render, so a second
@@ -669,10 +675,10 @@ export function useTrainRevealTree({
       // Closing the root fork the board sits in lands on the puzzle position with
       // no chip focused; restore the default so an arrow is lit there.
       if (live.rootFocus === null && node.parentId === null && insideDeleted) {
-        setRootFocus(DEFAULT_ROOT_FOCUS);
+        setRootFocus(defaultFocus);
       }
     },
-    [boardDeleteSubtree, setRootFocus],
+    [boardDeleteSubtree, setRootFocus, defaultFocus],
   );
 
   // Arrow keys, Home and the wheel act only while active and a board wrapper is

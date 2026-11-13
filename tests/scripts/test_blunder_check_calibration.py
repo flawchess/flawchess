@@ -985,7 +985,8 @@ class TestFetchWindowDetails:
         # The link skips the lead-in: the board before the first judged move (ply 4) is ply=3.
         assert detail.link == f"https://flawchess.com/analysis?game_id={game_id}&ply=3"
         assert detail.user_rating == 1500
-        assert detail.lead_in == "1... e5 2. Nf3 Nc6"
+        # LEAD_IN_PLIES is 1: only the opponent's move before the first judged move is replayed.
+        assert detail.lead_in == "2... Nc6"
         assert [(j.move, j.reply) for j in detail.judged] == [
             ("3. Bb5", "3... a6"),
             ("4. Ba4", "4... Nf6"),

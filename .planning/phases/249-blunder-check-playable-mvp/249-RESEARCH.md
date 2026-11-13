@@ -13,7 +13,7 @@
 - **D-01: Beta-only Train tab.** A 4th tab "Blunder check" on `/train` (beside Today, Leaderboard, Archive), visible
   and reachable only for users with `beta_enabled`. A non-beta user hitting the route or the API gets the normal
   not-found/forbidden behaviour. Start screen with a Start button. No guests in the MVP (guests cannot be beta).
-- **D-02: Session size 6 windows**, a named constant (`BLUNDER_CHECK_SESSION_WINDOWS = 6`). Phase 250 turns it into a
+- **D-02: Session size 6 windows**, a named constant (`BLUNDER_CHECK_SESSION_WINDOWS = 6`). Phase 251 turns it into a
   per-mode setting. A session is not tied to the Train schedule, streak or reminders in this phase, and does not
   touch the personalized-puzzle session tables' semantics (see D-14).
 
@@ -45,7 +45,7 @@
   precedent).
 - **D-10: No repeats in the MVP.** A blunder or herring window already served to the user is not served again, except:
   a blunder window that ended on a false alarm before the blunder was reached returns to the pool as unseen (herring
-  false alarms are simply dropped). Re-serving missed blunders is Phase 250's spaced repetition.
+  false alarms are simply dropped). Re-serving missed blunders is Phase 251's spaced repetition.
 - **D-11: Session composition** is whatever the hazard model draws per window (about 30% herrings), no forced mix.
 
 #### Drill interaction and scoring (SEED decisions, owner 2026-11-09)
@@ -70,7 +70,7 @@
   plus `BLUNDER_POINTS` + `BETTER_MOVE_POINTS` when it holds a blunder, including the unreached blunder after a false
   alarm).
 - **D-15: Persistence from day one.** Store sessions, served windows (game, plies, shape, case, own/foreign, answer
-  key) and per-move answers with timing and outcome, so Phase 250 can compute leaderboards, reviews and the
+  key) and per-move answers with timing and outcome, so Phase 251 can compute leaderboards, reviews and the
   cross-mode cooldown from MVP data. Own tables (SMALLINT IntEnum + CHECK for high-volume enum columns, TEXT + CHECK
   for low-volume ones, FKs with `ondelete`), not new columns on the personalized-puzzle tables, unless research shows a
   clean shared-session design; the planner decides with the reasoning written down.
@@ -117,7 +117,7 @@ No REQ-IDs are registered; the coverage contract is CONTEXT decisions D-01..D-16
 | D-12 | Flow, points, better move | Q3, Q4, Pattern 4/5 |
 | D-13 | 15 s timer | Q4, Pattern 6 |
 | D-14 | Solution + end screen, Score % | Q5, Pattern 3 (`points_possible` frozen at composition) |
-| D-15 | Persistence for Phase 250 | Q2, Pattern 3 |
+| D-15 | Persistence for Phase 251 | Q2, Pattern 3 |
 | D-16 | Server-side key | Q4, Pitfall 2/3 |
 </phase_requirements>
 
@@ -145,7 +145,7 @@ The right selection design is **on-the-fly, game-first, per session start**: pic
 
 Persist **own tables**: `blunder_check_sessions` (TEXT status, one open session per user via a partial unique index), `blunder_check_windows` (frozen shape, case, own/foreign, blunder ply as the secret key, frozen `points_possible`, outcome, points) and `blunder_check_answers` (one pre-inserted row per prompt with server `prompted_at`, claimed by an `UPDATE ... WHERE answered_at IS NULL`). Sharing `drill_sessions` is not clean: its `expires_on` and `session_date` are schedule-bound NOT NULL columns and `uq_drill_sessions_user_open` would make an open puzzle session block a blunder-check session. The API must reveal the window **incrementally**: start FEN + lead-in + first arrow, then one POST per answer that returns the opponent's reply and the next arrow only after grading. Sending the whole window at once would leak the punishing reply and the window length, and sending `game_id` before the window ends leaks the key through the public `GET /library/games/{game_id}` flaw card.
 
-The better-move step should reuse the personalized-puzzle grading contract exactly: after the server confirms "Blunder", it returns the key (`game_positions.best_move` at the blunder ply) plus `server_graded_moves` derived from `missed_pv_lines[0]`, the in-browser `useTrainGradingEngine` grades off-key moves, and the server resolves the tier with the existing `_resolve_grade`-style precedence (server-graded move wins, otherwise the client tier). The same move set is correct for all three cases (allowed, pure miss, mixed): any move within `INACCURACY_DROP` of the key's expected score. Points are server-authoritative so Phase 250's leaderboards can aggregate SQL rows without a frontend/backend parity test.
+The better-move step should reuse the personalized-puzzle grading contract exactly: after the server confirms "Blunder", it returns the key (`game_positions.best_move` at the blunder ply) plus `server_graded_moves` derived from `missed_pv_lines[0]`, the in-browser `useTrainGradingEngine` grades off-key moves, and the server resolves the tier with the existing `_resolve_grade`-style precedence (server-graded move wins, otherwise the client tier). The same move set is correct for all three cases (allowed, pure miss, mixed): any move within `INACCURACY_DROP` of the key's expected score. Points are server-authoritative so Phase 251's leaderboards can aggregate SQL rows without a frontend/backend parity test.
 
 **Primary recommendation:** Build `app/services/blunder_check_rules.py` (ported pure functions), `app/services/blunder_check_selection.py` (game-first composer with own-then-foreign batches), `app/repositories/blunder_check_repository.py`, `app/routers/blunder_check.py` (prefix `/blunder-check`, beta-gated dependency), three new tables in one migration, and a self-contained frontend drill (`BlunderCheckTab` + a pure reducer for the drill state machine) that reuses `ChessBoard`, `sounds.ts`, `useTrainGradingEngine`, `useTrainRevealTree`, `TrainLineChips`, `TrainMoveTreeList` and `buildTrainPuzzleAnalysisUrl`, but not `TrainSolveScreen`/`TrainReveal` wholesale.
 
@@ -154,9 +154,9 @@ The better-move step should reuse the personalized-puzzle grading contract exact
 | Capability | Primary Tier | Secondary Tier | Rationale |
 |------------|-------------|----------------|-----------|
 | Window selection (hazard draw, Good/band/case/findability/fit) | API / Backend (service, Python) | Database (candidate narrowing, indexed loads) | Mate-ladder severity and ES live in Python (`_run_all_moves_pass`); SQL only narrows |
-| Answer key (which ply is the blunder), points, forfeits | API / Backend | Database (persisted key + outcomes) | D-16; Phase 250 leaderboards aggregate server rows |
+| Answer key (which ply is the blunder), points, forfeits | API / Backend | Database (persisted key + outcomes) | D-16; Phase 251 leaderboards aggregate server rows |
 | Better-move grading | API / Backend (key, vetted set, final tier) | Browser (Stockfish WASM grades off-key moves) | Same contract as personalized puzzles; no server Stockfish at request time |
-| Move timer | Browser (countdown, timeout submit) | API / Backend (server `prompted_at`, ceiling check) | UX needs a local clock; server records timing for Phase 250 |
+| Move timer | Browser (countdown, timeout submit) | API / Backend (server `prompted_at`, ceiling check) | UX needs a local clock; server records timing for Phase 251 |
 | Lead-in replay, arrow prompt, animations, sounds | Browser | — | Pure presentation from server-sent UCI moves |
 | Beta gate | API / Backend (dependency) | Browser (tab + route hidden) | D-01 requires the API to refuse too; library precedent of frontend-only gating is not enough |
 | Persistence of sessions/windows/answers | Database | API / Backend (repository) | D-15 |
@@ -234,14 +234,14 @@ The two-convention trap (lichess post-move vs entry-lane aligned) does not bite 
 - **Grading**: `_resolve_grade` precedence: (1) a played move the server grades itself (`server_graded_moves_for`) takes the server tier, (2) an accepted confirmed phone disagreement, (3) else the client's tier [VERIFIED: train_repository.py:3166-3290].
 - **Scoring**: server mirror `MOVE_TIER_POINTS = {"good": 2, "inaccuracy": 1, "wrong": 0}`, `GUESS_POINTS = 1`, `TRAIN_POINTS_PER_PUZZLE = 3`, pinned to `trainScore.ts` by `tests/services/test_train_score_parity.py` [VERIFIED: app/services/train_score.py:24-32].
 
-**Decision for D-15: own tables.** A shared session table is not clean: `drill_sessions.expires_on`/`session_date` are schedule-derived NOT NULL (D-02 says blunder check is not tied to the schedule), and `uq_drill_sessions_user_open` would forbid an open puzzle session and an open blunder-check session at once. Phase 250's cross-mode needs (streak across modes, shared schedule) are served by a UNION over both session tables, which needs no migration of MVP rows. Reuse the *patterns* (partial unique open index, SAVEPOINT + IntegrityError resume, pre-materialized rows + claiming UPDATE, SET NULL game FK for cross-user rows), the PGN replay (`replay_at_ply`), and the grading helpers (`server_graded_moves_for`, `vetted_moves_from_pv_node`, `_matching_server_graded_move`, `_resolve_grade` precedence).
+**Decision for D-15: own tables.** A shared session table is not clean: `drill_sessions.expires_on`/`session_date` are schedule-derived NOT NULL (D-02 says blunder check is not tied to the schedule), and `uq_drill_sessions_user_open` would forbid an open puzzle session and an open blunder-check session at once. Phase 251's cross-mode needs (streak across modes, shared schedule) are served by a UNION over both session tables, which needs no migration of MVP rows. Reuse the *patterns* (partial unique open index, SAVEPOINT + IntegrityError resume, pre-materialized rows + claiming UPDATE, SET NULL game FK for cross-user rows), the PGN replay (`replay_at_ply`), and the grading helpers (`server_graded_moves_for`, `vetted_moves_from_pv_node`, `_matching_server_graded_move`, `_resolve_grade` precedence).
 
-**What Phase 250 needs from MVP rows (so no data migration later):**
+**What Phase 251 needs from MVP rows (so no data migration later):**
 - Leaderboards (Points, Score %): per-window `points_scored`, `points_possible`, `ended_at`, `user_id`, `is_own` (in case foreign windows are scored differently). An index on `ended_at` can be added in 250 (metadata-only).
 - Spaced repetition of missed blunders: `(user_id, game_id, blunder_ply, outcome = MISSED, ended_at)` identifies the item; re-drawing needs only game + blunder ply.
 - Cross-mode cooldown keyed on the flaw: own windows' `(user_id, game_id, blunder_ply, served_at)` vs `drill_solves (game_id, ply, solved_at)`.
 - Timing analysis / abuse checks: per-answer `prompted_at`, `answered_at`, `client_elapsed_ms`.
-- Review vs new: Phase 250 can add an `origin` column with a server default (metadata-only ALTER, no row migration).
+- Review vs new: Phase 251 can add an `origin` column with a server default (metadata-only ALTER, no row migration).
 
 ### Q3. Better-move grading (D-12)
 
@@ -278,7 +278,7 @@ Tier -> points: reuse `MOVE_TIER_POINTS` (good 2 / inaccuracy 1 / wrong 0); `BET
 **Timer.** Client-authoritative countdown with a server ceiling:
 - The server stamps `prompted_at` (from `dev_now_utc`) when it issues a prompt (window start or the previous answer's response).
 - Client sends `timeout` when its 15 s countdown (started after the lead-in or move+reply animation finishes) expires, or the answer with its measured `client_elapsed_ms`.
-- Server grades an answer as `timeout` when `server_elapsed > MOVE_TIMER_SECONDS + PROMPT_ANIMATION_ALLOWANCE + NETWORK_GRACE` (named constants, e.g. 15 + 3 + 2 s) [ASSUMED values]. Store both elapsed values. This is enough for beta and gives Phase 250 the data to tighten later; the existing Train leaderboard already trusts client-reported move tiers, so this is not a weaker trust level than shipped.
+- Server grades an answer as `timeout` when `server_elapsed > MOVE_TIMER_SECONDS + PROMPT_ANIMATION_ALLOWANCE + NETWORK_GRACE` (named constants, e.g. 15 + 3 + 2 s) [ASSUMED values]. Store both elapsed values. This is enough for beta and gives Phase 251 the data to tighten later; the existing Train leaderboard already trusts client-reported move tiers, so this is not a weaker trust level than shipped.
 
 **Idempotency/concurrency:** the answer row is pre-inserted at prompt time; the answer is a claiming `UPDATE ... WHERE window_id=:w AND move_index=:i AND answered_at IS NULL RETURNING ...` (drill_solves precedent). A double submit gets 0 rows -> return the stored result (or 409).
 
@@ -428,7 +428,7 @@ LIMIT :n
 
 `blunder_check_windows` (one row per served window; SMALLINT enums):
 - `id` BIGINT PK; `session_id` FK CASCADE; `position` SMALLINT; UNIQUE (`session_id`, `position`).
-- `user_id` FK users CASCADE (the solver; denormalized for per-user exclusion and Phase 250 aggregates).
+- `user_id` FK users CASCADE (the solver; denormalized for per-user exclusion and Phase 251 aggregates).
 - `game_id` FK games `ON DELETE SET NULL` (a foreign owner deleting a game must not delete rows from another user's history; drill_solves precedent); `is_own` BOOLEAN.
 - `window_length` SMALLINT CHECK 3..5; `blunder_position` SMALLINT NULL CHECK 1..5 (NULL = herring); `first_ply` SMALLINT; `blunder_ply` SMALLINT NULL (the secret key; NULL iff herring, CHECK); `case` SMALLINT CHECK IN (0 herring, 1 allowed, 2 pure_miss, 3 mixed) backed by IntEnum; `mover_elo` SMALLINT (pinned).
 - `points_possible` SMALLINT frozen at composition (`judged safe moves + (BLUNDER_POINTS + BETTER_MOVE_POINTS if blunder)`, D-14); `points_scored` SMALLINT default 0.

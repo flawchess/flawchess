@@ -23,6 +23,11 @@ from app.models.bot_game_settings import BotGameSettings  # noqa: F401
 from app.models.user_import_settings import UserImportSettings  # noqa: F401
 from app.models.drill_item import DrillItem  # noqa: F401
 from app.models.drill_session import DrillSession  # noqa: F401
+from app.models.blunder_check import (  # noqa: F401
+    BlunderCheckAnswer,
+    BlunderCheckSession,
+    BlunderCheckWindow,
+)
 from app.models.drill_solve import DrillSolve  # noqa: F401
 from app.models.train_settings import TrainSettings  # noqa: F401
 from app.models.train_weekly_standing import TrainWeeklyFinalization, TrainWeeklyStanding  # noqa: F401

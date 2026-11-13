@@ -478,7 +478,6 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
         onRewind={resolveBoardControlsReset(boardControls.onReset)}
         onBack={boardControls.onBack}
         onForward={boardControls.onForward}
-        onFlip={boardControls.onFlip}
         canRewind={boardControls.canReset ?? boardControls.canGoBack}
         canGoBack={boardControls.canGoBack}
         canGoForward={boardControls.canGoForward}

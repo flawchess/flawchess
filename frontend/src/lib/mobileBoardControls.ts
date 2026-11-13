@@ -84,6 +84,12 @@ export function useMobileBoardControls(): MobileBoardControls | null {
 }
 
 /**
+ * What a publisher hands over: `onFlip` may be omitted by a bar that renders no
+ * flip control (the Train reveal); the stored payload still carries the no-op.
+ */
+type PublishedBoardControls = Omit<MobileBoardControls, 'onFlip'> & { onFlip?: () => void };
+
+/**
  * Publishes `controls` for the lifetime of the calling component (null while
  * unmounted, on unmount, or whenever the caller passes null — e.g. Train
  * leaving free-move mode). The effect's dependency array lists only the
@@ -91,7 +97,7 @@ export function useMobileBoardControls(): MobileBoardControls | null {
  * changes every render and would otherwise loop the store write against the
  * App re-render it triggers.
  */
-export function usePublishMobileBoardControls(controls: MobileBoardControls | null): void {
+export function usePublishMobileBoardControls(controls: PublishedBoardControls | null): void {
   const {
     onBack = NOOP_PAYLOAD.onBack,
     onForward = NOOP_PAYLOAD.onForward,

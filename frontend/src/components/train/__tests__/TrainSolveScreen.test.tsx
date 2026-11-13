@@ -2132,10 +2132,14 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
   // ─── The action bar under the board ──
 
-  it('the action bar appears under the board only once the verdict lands; rewind is disabled at the puzzle position and live after a list step', async () => {
+  it('the reveal controls appear only once the verdict lands; rewind is disabled at the puzzle position and live after a list step', async () => {
     await renderScreen(makePuzzle({ ply: 20 }));
-    expect(screen.queryByTestId('train-reveal-action-bar')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-controls-row')).toBeNull();
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
+    // Desktop holds the game-info slot under the board before the reveal too, so the
+    // height-fitted board never resizes; the game info renders there, not in the sidebar.
+    const infoSlot = screen.getByTestId('train-game-info-slot');
+    expect(screen.getByTestId('train-pinned-board').contains(infoSlot)).toBe(true);
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
@@ -2151,13 +2155,22 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     tapListMove(0);
     await waitFor(() => expect(reset().disabled).toBe(false));
 
-    const bar = screen.getByTestId('train-reveal-action-bar');
+    // Desktop: the controls row (with flip) sits in the reveal column above the
+    // move list; Analyze and Next are the column's footer.
+    const row = screen.getByTestId('train-reveal-controls-row');
+    const footer = screen.getByTestId('train-reveal-actions-footer');
     const analyzeBtn = screen.getByTestId('btn-train-analyze');
     const nextBtn = screen.getByTestId('btn-train-next');
-    // The bar owns the controls; the verdict bubble carries copy only.
-    expect(bar.contains(analyzeBtn)).toBe(true);
-    expect(bar.contains(nextBtn)).toBe(true);
-    expect(bar.contains(reset())).toBe(true);
+    // The row owns the controls; the verdict bubble carries copy only.
+    expect(row.contains(reset())).toBe(true);
+    expect(row.contains(screen.getByTestId('board-btn-flip'))).toBe(true);
+    expect(Array.from(footer.children)).toEqual([analyzeBtn, nextBtn]);
+    expect(screen.getByTestId('train-reveal').contains(footer)).toBe(true);
+    expect(screen.getByTestId('train-reveal').querySelector('[data-testid="train-reveal-footer"]')).toBeNull();
+    expect(
+      row.compareDocumentPosition(screen.getByTestId('train-move-tree')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const bubble = screen.getByTestId('train-verdict-card');
     expect(bubble.contains(analyzeBtn)).toBe(false);
     expect(bubble.contains(nextBtn)).toBe(false);
@@ -2252,7 +2265,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe(
       buildAnalysisFenUrl(START_FEN, 'black'),
     );
-    expect(screen.getByTestId('train-reveal-action-bar').contains(screen.getByTestId('btn-train-next'))).toBe(true);
+    expect(screen.getByTestId('train-reveal').contains(screen.getByTestId('btn-train-next'))).toBe(true);
     await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
     tapListMove(0);
     await waitFor(() =>
@@ -2922,7 +2935,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(screen.getByTestId('mbc-can-reset').textContent).toBe('false');
   });
 
-  it('the published flip toggles board orientation, and a puzzle transition restores the solver-color default', async () => {
+  it('a puzzle transition starts the board at its own solver-color default (no flip control)', async () => {
     smUpMatches = false; // phone: only the published bottom-bar payload exists
     composeOrResumeSession.mockResolvedValue(makeSession());
     const queryClient = new QueryClient({
@@ -2953,11 +2966,11 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
     );
 
+    // The published payload's flip is the store's no-op: a solution screen has no flip.
     fireEvent.click(screen.getByTestId('mbc-btn-flip'));
-    await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('true'));
+    expect(board().getAttribute('data-flipped')).toBe('false');
 
-    // Orientation is a per-position affordance, not a session preference: the
-    // next puzzle starts at its own solver-color default again.
+    // The next puzzle starts at its own solver-color default.
     rerender(
       renderTree(
         makePuzzle({
@@ -3484,46 +3497,6 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
       expect(within(screen.getByTestId('train-move-tree')).getByText('d4')).not.toBeNull();
     });
-
-    it('invoking the published onFlip flips the shared board', async () => {
-      await renderScreenWithProbe(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitForReveal();
-      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
-      await waitFor(() =>
-        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
-      );
-
-      const board = () => screen.getByTestId('chessboard');
-      expect(board().getAttribute('data-flipped')).toBe('false'); // white to move
-      fireEvent.click(screen.getByTestId('mbc-btn-flip'));
-      await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('true'));
-    });
-
-    it('a flip survives a rewind (flip is a permanent bar control now)', async () => {
-      await renderScreenWithProbe(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitForReveal();
-      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
-      await waitFor(() =>
-        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
-      );
-
-      const board = () => screen.getByTestId('chessboard');
-      fireEvent.click(screen.getByTestId('mbc-btn-flip'));
-      await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('true'));
-
-      // Rewind returns to the puzzle position and leaves the orientation alone.
-      fireEvent.click(screen.getByTestId('mbc-btn-reset'));
-      await waitFor(() => expect(screen.getByTestId('mbc-can-reset').textContent).toBe('false'));
-      expect(board().getAttribute('data-flipped')).toBe('true');
-    });
   });
 
   describe('first-session intro stepper', () => {
@@ -3993,7 +3966,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
     });
 
-    it('the verdict bubble renders no buttons (the actions live in the reveal bar) and the mute toggle is gone', async () => {
+    it('the verdict bubble renders no buttons (the actions live in the reveal controls) and the mute toggle is gone', async () => {
       await renderScreen(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
@@ -4003,9 +3976,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       const bubble = screen.getByTestId('train-verdict-card');
       expect(bubble.querySelector('button')).toBeNull();
       expect(bubble.contains(screen.getByTestId('btn-train-next'))).toBe(false);
-      const bar = screen.getByTestId('train-reveal-action-bar');
-      expect(bar.contains(screen.getByTestId('btn-train-next'))).toBe(true);
-      expect(bar.contains(screen.getByTestId('btn-train-analyze'))).toBe(true);
+      expect(screen.getByTestId('train-reveal').contains(screen.getByTestId('btn-train-next'))).toBe(true);
+      expect(
+        screen.getByTestId('train-reveal-actions-footer').contains(screen.getByTestId('btn-train-analyze')),
+      ).toBe(true);
       expect(screen.queryByTestId('board-btn-mute')).toBeNull();
     });
   });

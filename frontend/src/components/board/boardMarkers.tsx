@@ -58,6 +58,12 @@ export interface SquareMarker {
    * `gem` field already carries).
    */
   good?: boolean;
+  /**
+   * Renders the "good move or blunder?" badge: the good badge and the blunder badge
+   * side by side, overlapping. The blunder-check drill puts it on the judged move's
+   * target square while the question is open. Mutually exclusive with the others.
+   */
+  goodOrBlunder?: boolean;
   /** Optional depth label (e.g. allowed-tactic depth) rendered top-left. */
   label?: string;
   /** Fill color for the depth label. Defaults to white. */
@@ -98,6 +104,60 @@ const GEM_ICON_DIAMETER_RATIO = 0.8;
 // inside its 24×24 box, so at the shared iconSize it reads smaller than the
 // lucide glyphs. Scale it up so it fills the badge like the move-list star.
 const BEST_STAR_SCALE = 1.4;
+
+// The "good move or blunder?" pair: the good badge sits this many radii left of the
+// blunder badge (which keeps the usual corner spot), so the two overlap by a quarter
+// of a badge and the blunder badge still clears the check glyph.
+const GOOD_OR_BLUNDER_OFFSET = 1.5;
+
+interface BadgeGeometry {
+  cx: number;
+  cy: number;
+  r: number;
+}
+
+/** The green good-move badge (white check), as a circle of radius `r` at (cx, cy). */
+function GoodBadge({ cx, cy, r }: BadgeGeometry) {
+  // Same ratio/geometry as the gem badge, reused verbatim.
+  const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={r} fill={GOOD_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
+      {/* White checkmark — matches the move-list GoodMoveIcon glyph. */}
+      <Check
+        x={cx - iconSize / 2}
+        y={cy - iconSize / 2}
+        width={iconSize}
+        height={iconSize}
+        stroke="#fff"
+      />
+    </g>
+  );
+}
+
+/** A severity NAG badge (??/?/?!), as a circle of radius `r` at (cx, cy). */
+function SeverityBadge({ cx, cy, r, severity }: BadgeGeometry & { severity: FlawSeverity }) {
+  const glyph = SEVERITY_GLYPH[severity];
+  // Reuse SeverityGlyphIcon's font-to-diameter ratio so the on-board glyph matches.
+  const fontPx = (glyph.fontSize / GLYPH_VIEWBOX_DIAMETER) * (2 * r);
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={r} fill={glyph.color} stroke={MARKER_STROKE} strokeWidth={1} />
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="#fff"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fontWeight="700"
+        fontSize={fontPx}
+      >
+        {glyph.symbol}
+      </text>
+    </g>
+  );
+}
 
 /** A depth-badge number anchored to a square's TOP-LEFT corner. */
 export function DepthLabel({
@@ -229,48 +289,22 @@ function SquareMarkerBadge({
     );
   }
 
-  if (marker.good) {
-    // Same ratio/geometry as the gem badge, reused verbatim.
-    const iconSize = 2 * r * GEM_ICON_DIAMETER_RATIO;
+  if (marker.goodOrBlunder) {
     return (
       <g>
-        <circle cx={cx} cy={cy} r={r} fill={GOOD_GLYPH.color} stroke={MARKER_STROKE} strokeWidth={1} />
-        {/* White checkmark — matches the move-list GoodMoveIcon glyph. */}
-        <Check
-          x={cx - iconSize / 2}
-          y={cy - iconSize / 2}
-          width={iconSize}
-          height={iconSize}
-          stroke="#fff"
-        />
+        <GoodBadge cx={cx - r * GOOD_OR_BLUNDER_OFFSET} cy={cy} r={r} />
+        <SeverityBadge cx={cx} cy={cy} r={r} severity="blunder" />
       </g>
     );
   }
 
-  // Severity-less markers are only possible when `gem`/`great`/`book`/`best`/`good` is set
+  if (marker.good) return <GoodBadge cx={cx} cy={cy} r={r} />;
+
+  // Severity-less markers are only possible when one of the flags above is set
   // (handled above, and mutually exclusive by construction) — guard
   // defensively rather than indexing SEVERITY_GLYPH with an undefined key.
   if (!marker.severity) return null;
-  const glyph = SEVERITY_GLYPH[marker.severity];
-  // Reuse SeverityGlyphIcon's font-to-diameter ratio so the on-board glyph matches.
-  const fontPx = (glyph.fontSize / GLYPH_VIEWBOX_DIAMETER) * (2 * r);
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={r} fill={glyph.color} stroke={MARKER_STROKE} strokeWidth={1} />
-      <text
-        x={cx}
-        y={cy}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#fff"
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fontWeight="700"
-        fontSize={fontPx}
-      >
-        {glyph.symbol}
-      </text>
-    </g>
-  );
+  return <SeverityBadge cx={cx} cy={cy} r={r} severity={marker.severity} />;
 }
 
 /** Renders the severity glyph (top-right) plus its optional depth label (top-left). */

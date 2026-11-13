@@ -110,6 +110,16 @@ class Game(Base):
                 "full_evals_completed_at IS NOT NULL AND blobs_completed_at IS NULL"
             ),
         ),
+        # Phase 249: backs the blunder-check per-session random pick of a user's fully
+        # evaluated games as an index-only scan (prod probe: 371 ms cold heap scan for the
+        # heaviest beta user). postgresql_where text MUST stay byte-identical to the
+        # migration's create_index call, or alembic check reports drift.
+        Index(
+            "ix_games_user_full_evals",
+            "user_id",
+            "id",
+            postgresql_where=sa.text("full_evals_completed_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

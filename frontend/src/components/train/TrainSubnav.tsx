@@ -1,5 +1,5 @@
 /**
- * TrainSubnav — the URL-routed tab bar of the /train layout (Today, Leaderboard, Archive).
+ * TrainSubnav — the URL-routed tab bar of the /train layout (Today, Leaderboard, Archive, and Blunder check for beta users).
  *
  * Nav-only: `Tabs` wraps just the `TabsList`, and the page renders its panels
  * as plain divs rather than `TabsContent`. Two reasons. One responsive list
@@ -16,7 +16,7 @@
 import { useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 import { useNavigate } from 'react-router';
-import { Archive, CalendarCheck, Trophy } from 'lucide-react';
+import { Archive, CalendarCheck, ShieldCheck, Trophy } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TRAIN_TAB_PATHS } from '@/lib/trainRoute';
 import type { TrainTab } from '@/lib/trainRoute';
@@ -25,7 +25,14 @@ function isTrainTab(value: string): value is TrainTab {
   return Object.hasOwn(TRAIN_TAB_PATHS, value);
 }
 
-export function TrainSubnav({ active }: { active: TrainTab }): ReactElement {
+export function TrainSubnav({
+  active,
+  showBlunderCheck,
+}: {
+  active: TrainTab;
+  /** Beta users only (D-01): the fourth tab is hidden for everyone else. */
+  showBlunderCheck: boolean;
+}): ReactElement {
   const navigate = useNavigate();
 
   // Radix fires `onValueChange` on mousedown and again on the trigger's focus,
@@ -59,6 +66,12 @@ export function TrainSubnav({ active }: { active: TrainTab }): ReactElement {
           <Archive className="mr-1.5 h-4 w-4" />
           Archive
         </TabsTrigger>
+        {showBlunderCheck && (
+          <TabsTrigger value="blunder-check" className="flex-1" data-testid="tab-train-blunder-check">
+            <ShieldCheck className="mr-1.5 h-4 w-4" />
+            Blunder check
+          </TabsTrigger>
+        )}
       </TabsList>
     </Tabs>
   );

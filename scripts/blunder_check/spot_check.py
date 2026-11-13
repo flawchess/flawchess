@@ -5,7 +5,7 @@ module exports a small, reproducible sample of windows drawn the way the feature
 them: window length L uniform over 3 to 5 user moves, a per-move blunder hazard of 0.265, so
 about 30% of windows are herrings (every judged move Good, nothing to find).
 
-Each window shows a FlawChess game link, a 3-ply lead-in, the judged user moves with the
+Each window shows a FlawChess game link, the lead-in (`LEAD_IN_PLIES`), the judged user moves with the
 opponent replies, the answer (the blunder, or "all safe") and the refutation or missed best move
 with its Maia probability and rank. The file may be shown to GM Noel Studer, so it carries only
 game links, ratings and moves: no FlawChess user ids, usernames or emails (T-248-11). FlawChess
@@ -27,14 +27,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from scripts.blunder_check.metrics import (
-    ELO_BUCKETS,
+from app.services.blunder_check_rules import (
     HAZARD,
     LEAD_IN_PLIES,
+    WindowShape,
+    draw_window_shape,
+    herring_flags,
+)
+from scripts.blunder_check.metrics import (
+    ELO_BUCKETS,
     WINDOW_LENGTHS,
     EloBucket,
     MoveJudgement,
-    herring_flags,
 )
 from scripts.blunder_check.render import (
     ReportParams,
@@ -54,14 +58,6 @@ ANALYSIS_URL_BASE: str = "https://flawchess.com/analysis"
 # Separator of game_positions.pv (space-joined UCI line); its first token is the reply fallback.
 PV_SEPARATOR: str = " "
 HERRING_CASE: str = "herring"
-
-
-@dataclass(frozen=True)
-class WindowShape:
-    """A drawn window: length in user moves and the blunder position (None for a herring)."""
-
-    length: int
-    blunder_position: int | None
 
 
 @dataclass(frozen=True)
@@ -125,15 +121,6 @@ class SpotWindowDetail:
 # ---------------------------------------------------------------------------
 # Drawing
 # ---------------------------------------------------------------------------
-
-
-def draw_window_shape(rng: random.Random) -> WindowShape:
-    """L uniform over WINDOW_LENGTHS; the blunder sits at the first position whose hazard fires."""
-    length = rng.choice(WINDOW_LENGTHS)
-    for position in range(1, length + 1):
-        if rng.random() < HAZARD:
-            return WindowShape(length, position)
-    return WindowShape(length, None)
 
 
 def _herring_candidates(

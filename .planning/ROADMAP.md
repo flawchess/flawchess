@@ -249,7 +249,7 @@ Plans:
 **Goal**: A playable blunder-check drill for beta users: select face-palm windows from the user's own games with the
 Phase 248 constants, serve 6-window sessions, and run the drill (lead-in replay, arrow prompt "Safe / Blunder", 15 s
 timer, points and forfeits, better-move chain, solution screen) on a beta-only Train tab, persisting every window and
-answer so Phase 250 can build schedule, reviews and leaderboards on it. Locked decisions in 249-CONTEXT.md and
+answer so Phase 251 can build schedule, reviews and leaderboards on it. Locked decisions in 249-CONTEXT.md and
 SEED-261108-dk0.
 
 - **Selection:** hazard model (h = 0.265, L uniform 3-5), Good bar on every judged user move, eval band [0.10, 0.90]
@@ -259,45 +259,69 @@ SEED-261108-dk0.
 - **Drill:** 3-ply lead-in, ask before the move and before the reply, 1 point per correct "safe", 3 for a caught
   blunder plus 2 for finding the better move, false alarm ends the window, a missed blunder or a timeout forfeits the
   window's safe points.
-- **Out of scope (Phase 250):** shared Train schedule and per-mode counts, streak, spaced-repetition reviews,
+- **Out of scope (Phase 251):** shared Train schedule and per-mode counts, streak, spaced-repetition reviews,
   cross-mode cooldown, Points and Score % leaderboards, guests and public launch.
 
 **Depends on**: Phase 248 (refutation stats backfilled on prod, constants calibrated)
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-19)
-**Plans:** 9 plans
+**Plans:** 8/9 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 249-01-PLAN.md — Selection rules in the app: port the Phase 248 math, pure candidate judging and hazard slot assignment (wave 1)
-- [ ] 249-02-PLAN.md — Persistence (three own tables), backend beta gate, GET open session, candidate loaders and served sets (wave 1)
+- [x] 249-01-PLAN.md — Selection rules in the app: port the Phase 248 math, pure candidate judging and hazard slot assignment (wave 1)
+- [x] 249-02-PLAN.md — Persistence (three own tables), backend beta gate, GET open session, candidate loaders and served sets (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 249-03-PLAN.md — POST /sessions: own-first composition, rating-matched foreign fallback, no repeats, resume and race (wave 2)
+- [x] 249-03-PLAN.md — POST /sessions: own-first composition, rating-matched foreign fallback, no repeats, resume and race (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 249-04-PLAN.md — Drill API: window start, server-graded answers, forfeits, server timer, key secrecy, finish with Score % (wave 3)
+- [x] 249-04-PLAN.md — Drill API: window start, server-graded answers, forfeits, server timer, key secrecy, finish with Score % (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 249-05-PLAN.md — Better-move submit and solution API (false alarm withholds the blunder, foreign game info) (wave 4)
-- [ ] 249-06-PLAN.md — Frontend: beta-only tab and start screen, wire types, API client, session hook, pure drill state machine (wave 4)
+- [x] 249-05-PLAN.md — Better-move submit and solution API (false alarm withholds the blunder, foreign game info) (wave 4)
+- [x] 249-06-PLAN.md — Frontend: beta-only tab and start screen, wire types, API client, session hook, pure drill state machine (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 249-07-PLAN.md — Frontend: drill board loop, 15 s timer, points and forfeits with sounds, reload resume, end screen with Score % (wave 5)
+- [x] 249-07-PLAN.md — Frontend: drill board loop, 15 s timer, points and forfeits with sounds, reload resume, end screen with Score % (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 249-08-PLAN.md — Frontend: better-move step and solution screens (own vs foreign copy) (wave 6)
+- [x] 249-08-PLAN.md — Frontend: better-move step and solution screens (own vs foreign copy) (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 249-09-PLAN.md — Agent-run browser UAT, owner go-ahead, pre-merge gate, changelog, squash-merge, deploy, prod beta check (orchestrator-inline, wave 7)
 
-### Phase 250: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
+### Phase 250: Facepalm-Blunder Selection (SEED-261110-p7k)
+
+**Goal**: Replace the Phase 249 findability rule (D-06) with the facepalm-blunder rule derived from 190 owner labels:
+a user blunder qualifies when peers rarely play it (`maia_played_prob` <= 0.3), the opponent's reply is obvious
+(reply spread <= 3.0, Maia at ply+1), and the stored refutation line wins >= 2 points of material or mates within
+3 plies (captures only, desperado and short-line handling). No new Stockfish searches and no worker lane: one
+server-side Maia inference per user blunder plus a pure replay of the stored line. Locked decisions in
+250-CONTEXT.md and SEED-261110-p7k.
+
+- **Store:** reply spread and the line material result per user blunder on `game_flaws`; backfill prod; score new
+  games in the existing post-apply Maia hook.
+- **Select:** swap the blunder-check candidate predicate onto the new columns, all thresholds as named constants
+  (the tuning knobs in the seed), re-run the calibration and spot-check.
+- **Clean up:** drop the nine Maia columns the new rule no longer reads (keep `maia_played_prob`) once the new
+  selection is live and checked on prod.
+- **Out of scope:** a facepalm filter tag for games, opponent-side blunders, rating-dependent line depth above
+  2000 (no labels there), fixing short stored engine lines (separate investigation).
+
+**Status**: Parked (owner, 2026-11-12) until the short-stored-line fix (SEED-261112-s4v) is in and the affected
+lines are re-evaluated; the material test reads those lines.
+**Depends on**: Phase 249 (merged; this phase rewrites its selection predicate), SEED-261112-s4v fix and backfill
+**Requirements**: TBD (coverage contract = CONTEXT decisions)
+**Plans:** 0 plans
+
+### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
 **Goal**: Turn the Phase 249 MVP into a full Train mode: shared schedule and reminders with a per-mode session size
 (0 allowed), session streak across both modes, spaced-repetition reviews of missed-blunder windows (re-drawn,
 unlabelled, 4 days), a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
 and the launch decision for guests and non-beta users. To be scoped after the owner has played the MVP.
 
-**Depends on**: Phase 249
+**Depends on**: Phase 250
 **Requirements**: TBD
 **Plans:** 0 plans
 

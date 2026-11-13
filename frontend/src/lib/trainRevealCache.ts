@@ -159,7 +159,7 @@ function isOptionalCommittedPaths(value: unknown): boolean {
 /** Shape + cap check of a persisted tree snapshot. Paths are replayed through
  * chess.js by the tree hook (an illegal move stops the graft), and the snapshot
  * never feeds grading, scoring or the solve POST. */
-function isRevealTreeSnapshot(value: unknown): value is RevealTreeSnapshot {
+export function isRevealTreeSnapshot(value: unknown): value is RevealTreeSnapshot {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   const focusOk = v.rootFocus === null || CANONICAL_ROLE_ORDER.some((role) => role === v.rootFocus);

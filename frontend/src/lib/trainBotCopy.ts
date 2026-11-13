@@ -819,6 +819,38 @@ function sessionOpener(band: TrainRatingBand | null): string {
   return band === null ? SESSION_OPENER_NEUTRAL : SESSION_OPENER[band];
 }
 
+/** One-sentence rationales for the blunder-check drill. The end screen has no
+ * call to action yet (no schedule or reminders until Phase 251), so the band
+ * opener alone read as empty; one of these is drawn at random to follow it. */
+export const BLUNDER_CHECK_RATIONALES: readonly string[] = [
+  'Most games are decided by blunders, not brilliancies, so checking a move before you play it is the cheapest rating you can gain.',
+  'Puzzles tell you a tactic is there. Your games never do, and this drill trains you to ask the question yourself.',
+  'The goal is a habit: one quick "is this safe?" before every move, until it runs on autopilot.',
+  'A blunder check takes seconds at the board and saves the whole game, which is why it is worth drilling.',
+  'Strong players are not blunder-free because they calculate more, but because they check every move before playing it.',
+  'Knowing a good move from a blunder matters more than finding the best move, since avoiding the bad one is usually enough.',
+  'Every position here asks what your opponent does next, which is the question that catches most blunders.',
+  'Trusting a good move is a skill too: this drill also trains you not to see ghosts.',
+  'Spotting the blunder here is easy to do slowly, and the reps are what make it fast enough for a real game.',
+];
+
+/** The blunder-check end screen's bubble: the band opener and a random training
+ * rationale, as one line. Blunder check has no schedule or reminders yet (Phase 251), so there is
+ * no "See you ..." or reminder ask. `rng` is injectable per the `pickBot` convention. */
+export function blunderCheckScoreBubbleCopy(
+  band: TrainRatingBand,
+  rng: () => number = Math.random,
+): ScoreBubbleCopy {
+  const index = Math.min(
+    Math.floor(rng() * BLUNDER_CHECK_RATIONALES.length),
+    BLUNDER_CHECK_RATIONALES.length - 1,
+  );
+  const rationale = BLUNDER_CHECK_RATIONALES[index];
+  const opener = sessionOpener(band);
+  // One line on purpose: the rationale runs on from the opener, with no line break.
+  return { lines: [rationale === undefined ? opener : `${opener} ${rationale}`] };
+}
+
 export type ReminderAsk = 'remind_me' | 'scan_qr' | 'none';
 
 export interface ScoreBubbleInput {

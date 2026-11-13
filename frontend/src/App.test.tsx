@@ -1202,7 +1202,8 @@ describe('MobileBottomBar swaps to the Train reveal bar', () => {
     expect(screen.getByTestId('board-btn-reset')).toBeTruthy();
     expect(screen.getByTestId('board-btn-back')).toBeTruthy();
     expect(screen.getByTestId('board-btn-forward')).toBeTruthy();
-    expect(screen.getByTestId('board-btn-flip')).toBeTruthy();
+    // The reveal bar has no flip control (Phase 249 UAT).
+    expect(screen.queryByTestId('board-btn-flip')).toBeNull();
     expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe('/analysis/100?ply=19');
 
     fireEvent.click(screen.getByTestId('btn-train-next'));

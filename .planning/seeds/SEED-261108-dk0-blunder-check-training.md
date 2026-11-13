@@ -79,7 +79,7 @@ Train's puzzles announce that something critical is happening. In a real game no
 
 - Constants adopted from the Phase 248 calibration: R = 0.3, X' = 0.2, eval band [0.10, 0.90].
 - No low-rating capture/check/mate rule; selection rests on findability alone.
-- Split: Phase 249 = playable MVP on a beta-only Train tab, 6 windows per session; Phase 250 = schedule, streak,
+- Split: Phase 249 = playable MVP on a beta-only Train tab, 6 windows per session; Phase 251 = schedule, streak,
   spaced repetition, cross-mode cooldown, leaderboards, launch.
 
 ## Proposed (discussed, not yet decided)
@@ -147,6 +147,7 @@ Findings:
 ## Breadcrumbs
 
 - `.planning/seeds/SEED-261108-zkp-maia-stats-on-game-flaws.md`: prerequisite phase, first of the next milestone
+- `.planning/seeds/SEED-261110-p7k-blunder-check-peer-loss-selection.md`: proposed replacement for the findability test (D-06), from the 2026-11-10 spot-check
 - `app/services/maia_engine.py`, `app/services/maia_encoding.py`, `app/services/best_move_candidates.py`
 - `app/models/game_flaw.py`, `app/models/game_best_move.py`, `app/models/herring_pool.py`
 - `app/services/train_pool.py`, `app/repositories/train_repository.py`
