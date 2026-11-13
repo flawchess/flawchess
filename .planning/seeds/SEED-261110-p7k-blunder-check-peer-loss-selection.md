@@ -1,13 +1,74 @@
 ---
 id: SEED-261110-p7k
-status: dormant
+status: active
 planted: 2026-11-10
 planted_during: Phase 249 planning (owner spot-check of the Phase 248 sample)
-trigger_when: Phase 249 is playable and the owner has labelled spot-check windows as fair / unfair; or play-testing shows unfair "Blunder" answers under D-06
-scope: large (schema + scorer + backfill on the worker fleet; cost is the open risk, see "Cost and cheaper alternatives")
+trigger_when: Phase 250 planning, after the Phase 252 line repair has run on prod
+scope: medium (two stored facts + one derived score on game_flaws, server-side Maia, backfill, selection swap; no Stockfish, no worker lane)
 ---
 
-# SEED-261110-p7k: Blunder-check selection by expected loss and reply loss (replaces findability D-06)
+# SEED-261110-p7k: Facepalm score for blunder-check selection (replaces findability D-06)
+
+## Current direction (owner, 2026-11-13)
+
+Read this section first. Everything below it is the history that led here; where they disagree, this section wins.
+
+### Facepalm score
+
+One number per blunder in [0, 1], at the mover's level: 0 = basically no chance the player could have seen it,
+1 = a very careless blunder the player should absolutely have seen and avoided. Name: "facepalm score" (owner
+agreed; "stupidity" would insult the user in a filter).
+
+- **It replaces the hard three-condition rule** in the drill. Selection keeps blunders with score >=
+  `FACEPALM_SCORE_MIN` (a lower bound; one named constant instead of three thresholds).
+- **The threshold sits a little below the precision-optimal cut on purpose** (owner, 2026-11-13): blunders believed
+  a bit too hard are served too, so drill answers cover both sides of the eventual cut. Starting value 0.7.
+- **Form:** a logistic regression on the owner labels over the stored facts: played probability (log), reply
+  spread, and material lost along the stored line (capped, mate counted as a large loss). Engine drop and Elo
+  added nothing.
+- **Measured 2026-11-13** on the 163 decided labels with a stored line, 10-fold cross-validated, old line-3 count,
+  lines as stored before the Phase 252 repair. Counts are fair / unfair among passers:
+
+  | Selection | Passers | Share fair |
+  |---|---|---|
+  | Hard rule | 66 / 6 | 92% |
+  | Score >= 0.8 | 59 / 5 | 92% |
+  | Score >= 0.7 | 67 / 8 | 89% |
+  | Score >= 0.5 | 81 / 20 | 80% |
+
+  AUC 0.85 cross-validated; 0.79 trained on sets 1-5 and tested on set 6. The score matches the hard rule's
+  precision, it does not beat it. What it buys is one knob and a range filter.
+- **It is a ranking, not a probability.** Sets 5 and 6 are mostly rule passers, so the fitted values are not
+  calibrated to all blunders. Do not present 0.8 as "80% of peers see this".
+- **Storage:** the raw facts (250-CONTEXT D-05) plus one derived REAL column for SQL filtering. A refit is a plain
+  UPDATE from the stored facts, no engine work.
+- **Refit on repaired lines** before the threshold is locked: the material feature reads the stored lines that
+  Phase 252 is repairing.
+- **Label file:** `reports/blunder-check/leg2-labels-2026-11-11.tsv` holds 180 rows (105 fair, 68 unfair, 7
+  undecided). Planning docs said 190; the file is the source.
+
+### Window mix (owner with GM Noel Studer, 2026-11-13)
+
+- Each window is drawn independently, one third each: a red herring, a blunder from the user's own games, a
+  blunder from another user's game. Not a fixed 1-1-1 per three windows, which would make the third one guessable.
+- **Foreign blunders are strength-matched:** the mover's rating at game time is within +-150 of the drilling
+  user's level. Rating only, no time-control match. The score was computed at the mover's rating, so it stays valid.
+- **The user's level:** lichess-blitz-normalised pinned Elo of their most-played time control (reuse the existing
+  Elo source in `app/repositories/blunder_check_repository.py`).
+- **No imported or analysed games:** all blunders come from strength-matched users. Same code path.
+- **Herrings follow the same own / foreign ratio as blunders.** Otherwise recognising one's own game gives the
+  answer away (herrings are about 91% foreign today).
+- Replaces 249 D-09 (own first, foreign as fallback) and D-11 (composition from the hazard model alone).
+
+### Deferred
+
+- **Library side-panel range filter** on the facepalm score (owner, 2026-11-13: deferred). Needs a decision on
+  scoring opponent blunders and mistakes; the labels cover user blunders below 2000 only.
+- **Refit from drill answers** (owner, 2026-11-13): once blunder check ships, users' answers act as labels (did a
+  player at that level spot the blunder) and the curve is refitted on them. The lowered threshold above is what
+  gives the refit data on blunders believed slightly too hard; below it there is still none.
+- **No spaced repetition for blunder check** (owner, 2026-11-13): a sequence is shown to a user once. Phase 251
+  drops its review item.
 
 ## Why This Matters
 

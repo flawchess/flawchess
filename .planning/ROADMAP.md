@@ -292,21 +292,25 @@ Plans:
 
 ### Phase 250: Facepalm-Blunder Selection (SEED-261110-p7k)
 
-**Goal**: Replace the Phase 249 findability rule (D-06) with the facepalm-blunder rule derived from 190 owner labels:
-a user blunder qualifies when peers rarely play it (`maia_played_prob` <= 0.3), the opponent's reply is obvious
-(reply spread <= 3.0, Maia at ply+1), and the stored refutation line wins >= 2 points of material or mates within
-3 plies (captures only, desperado and short-line handling). No new Stockfish searches and no worker lane: one
-server-side Maia inference per user blunder plus a pure replay of the stored line. Locked decisions in
-250-CONTEXT.md and SEED-261110-p7k.
+**Goal**: Replace the Phase 249 findability rule (D-06) with a facepalm score per user blunder (0 = no chance to see
+it at the mover's level, 1 = very careless), fitted on the owner labels from three stored facts: how rarely peers play
+the blunder (`maia_played_prob`), how obvious the opponent's reply is (reply spread, Maia at ply+1) and how much
+material the stored refutation line wins within 3 plies (captures only, desperado and short-line handling, mate
+counts). Selection keeps blunders at or above one score threshold. Also change the window mix: each window is, at one
+third each, a red herring, a blunder from the user's own games, or a blunder from another user at the same level
+(mover's rating within +-150); users without analysed games get foreign blunders only. No new Stockfish searches and
+no worker lane. Locked decisions in 250-CONTEXT.md and SEED-261110-p7k.
 
-- **Store:** reply spread and the line material result per user blunder on `game_flaws`; backfill prod; score new
-  games in the existing post-apply Maia hook.
-- **Select:** swap the blunder-check candidate predicate onto the new columns, all thresholds as named constants
-  (the tuning knobs in the seed), re-run the calibration and spot-check.
-- **Clean up:** drop the nine Maia columns the new rule no longer reads (keep `maia_played_prob`) once the new
+- **Store:** reply spread and the line material result per user blunder on `game_flaws`, plus the derived
+  `facepalm_score`; backfill prod; score new games in the existing post-apply Maia hook.
+- **Select:** swap the blunder-check candidate predicate onto the score (one named threshold), implement the
+  own / foreign / herring mix with herrings following the same own / foreign ratio, re-run the calibration and
+  spot-check.
+- **Clean up:** drop the nine Maia columns the score no longer reads (keep `maia_played_prob`) once the new
   selection is live and checked on prod.
-- **Out of scope:** a facepalm filter tag for games, opponent-side blunders, rating-dependent line depth above
-  2000 (no labels there), fixing short stored engine lines (separate investigation).
+- **Out of scope:** the library side-panel facepalm-score filter, opponent-side blunders and mistakes, refitting
+  the score on drill answers (the threshold is set a little below the precision-optimal cut so those answers also
+  cover blunders believed slightly too hard), rating-dependent line depth above 2000 (no labels there).
 
 **Status**: Parked (owner, 2026-11-12) until the short-stored-line fix (SEED-261112-s4v) is in and the affected
 lines are re-evaluated; the material test reads those lines.
@@ -317,9 +321,11 @@ lines are re-evaluated; the material test reads those lines.
 ### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
 **Goal**: Turn the Phase 249 MVP into a full Train mode: shared schedule and reminders with a per-mode session size
-(0 allowed), session streak across both modes, spaced-repetition reviews of missed-blunder windows (re-drawn,
-unlabelled, 4 days), a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
+(0 allowed), session streak across both modes, a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
 and the launch decision for guests and non-beta users. To be scoped after the owner has played the MVP.
+
+- **No spaced repetition for blunder check** (owner, 2026-11-13): a sequence is shown to a user once and never
+  re-served, so there are no reviews of missed-blunder windows. This drops the review item from the seed's scope.
 
 **Depends on**: Phase 250
 **Requirements**: TBD

@@ -1,6 +1,8 @@
 ---
 id: SEED-261108-zkp
-status: dormant
+status: closed
+closed: 2026-11-13
+closed_reason: shipped as Phase 247 (Maia stats on game_flaws); nine of its ten columns are retired by Phase 250 (250-CONTEXT D-11), `maia_played_prob` stays. Successor: SEED-261110-p7k
 planted: 2026-11-08
 planted_during: v2.27 (/gsd-explore session on blunder-check selection)
 trigger_when: first phase of the next milestone, before blunder-check planning (SEED-261108-dk0 depends on it)
@@ -8,6 +10,10 @@ scope: medium-large (one phase: schema + go-forward scoring + local backfill)
 ---
 
 # SEED-261108-zkp: Maia stats on game_flaws
+
+> **Closed 2026-11-13.** Built in Phase 247. The selection test it was meant to feed (single-move Maia
+> probabilities) did not hold up in the label study; the facepalm score in SEED-261110-p7k / Phase 250 replaces it and
+> keeps only `maia_played_prob`. The Flaws-tab filter idea lives on as the deferred library facepalm-score filter.
 
 ## Why This Matters
 

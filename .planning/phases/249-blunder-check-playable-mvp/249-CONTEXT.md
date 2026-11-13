@@ -63,9 +63,11 @@ before Phase 251 builds the schedule, reviews and leaderboards. Deliverables:
   FlawChess users' games, matched on the mover's rating at game time (band is a named constant; Claude's discretion
   on the value). Own vs foreign is recorded per window. Copy never says "your move" on a foreign game (herring-pool
   precedent).
-- **D-10: No repeats in the MVP.** A blunder or herring window already served to the user is not served again, except:
-  a blunder window that ended on a false alarm before the blunder was reached returns to the pool as unseen (herring
-  false alarms are simply dropped). Re-serving missed blunders is Phase 251's spaced repetition.
+- **D-10: No repeats.** A blunder or herring window already served to the user is not served again.
+  - *Amendment (owner, 2026-11-13; 250-CONTEXT D-17):* this is permanent, not MVP-only. The earlier exception (a
+    blunder window that ended on a false alarm before the blunder was reached returned to the pool as unseen) is
+    removed, and there is no spaced repetition of missed blunders in Phase 251. The code still implements the
+    exception until Phase 250 removes it.
   - *UAT amendment (owner, 2026-11-12):* a false alarm's solution now shows the lines at the flagged move and the
     Analyze button (game id and flagged ply). The window's case and blunder are still not sent, but the user can
     reach the blunder by stepping forward in Analyze, so a re-served window may no longer be truly unseen.
