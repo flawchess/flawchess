@@ -6,8 +6,9 @@ Coverage:
   session CASCADE)
 - insert_session under the one-open-session race
 - pick_own_game_ids / pick_foreign_game_ids filters (D-09)
-- load_positions / load_blunder_flaws
-- served_for_games (D-10)
+- load_positions / load_blunder_flaws (facepalm filter, 250 D-09)
+- served_for_games (250 D-17), require_facepalm picks
+- recent_rated_games (250 D-14): rated human games only, scoped to the user, newest first
 
 Every seeded game is deleted in `finally` (tier-3 lottery isolation).
 """
@@ -17,7 +18,7 @@ from __future__ import annotations
 import datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -28,16 +29,23 @@ from app.models.blunder_check import (
     BlunderCheckWindow,
     WindowCase,
 )
+from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import blunder_check_repository as repo
 from app.repositories.blunder_check_repository import NewWindow
+from app.services.blunder_check_rules import FACEPALM_SCORE_MIN
+from app.services.blunder_check_candidates import judge_game
+from app.services.blunder_check_selection import legal_key_plies
 from tests.blunder_check_seed import (
+    SEED_FACEPALM_SCORE,
+    SEED_PGN,
     SeedBlunder,
     delete_blunder_check_sessions,
     delete_games,
     flat_evals,
     register_user,
     seed_judged_game,
+    with_opponent_gift,
     with_user_blunder,
 )
 
@@ -46,6 +54,8 @@ _START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 _ROWS = 60
 _BLUNDER_PLY = 20
 _BLUNDER_DROP_CP = 500
+# Plies of the tracer game's three user blunders: below threshold, qualifying, unscored.
+_TRACER_PLIES = (20, 30, 40)
 
 
 def _blunder_evals() -> list[int]:
@@ -328,6 +338,48 @@ async def test_pick_own_game_ids_filters_and_excludes(test_engine) -> None:
 
 
 @pytest.mark.asyncio
+async def test_recent_rated_games_keeps_rated_human_games_newest_first(test_engine) -> None:
+    user_id, _ = await register_user("bc-level", beta=False, test_engine=test_engine)
+    other_id, _ = await register_user("bc-level-other", beta=False, test_engine=test_engine)
+    evals = _blunder_evals()
+    # Distinct user-side ratings (the user plays white) identify each game in the result.
+    ratings = {"newer": 1600, "older": 1400, "unrated": 1700, "bot": 1800, "other": 1900}
+    ids = {
+        name: await seed_judged_game(
+            test_engine,
+            user_id=other_id if name == "other" else user_id,
+            evals_cp=evals,
+            blunders=[],
+            white_rating=rating,
+        )
+        for name, rating in ratings.items()
+    }
+    played = {"older": 1, "newer": 3, "unrated": 4, "bot": 5, "other": 6}
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            async with session.begin():
+                for name, day in played.items():
+                    values: dict[str, object] = {
+                        "played_at": datetime.datetime(2026, 6, day, tzinfo=datetime.timezone.utc)
+                    }
+                    if name == "unrated":
+                        values["rated"] = False
+                    if name == "bot":
+                        values["is_computer_game"] = True
+                    await session.execute(update(Game).where(Game.id == ids[name]).values(**values))
+        async with maker() as session:
+            rows = await repo.recent_rated_games(session, user_id=user_id, limit=10)
+            limited = await repo.recent_rated_games(session, user_id=user_id, limit=1)
+    finally:
+        await delete_games(test_engine, list(ids.values()))
+    # The unrated game and the game against a computer are excluded even though they are newer
+    # (the bot-rating echo), and the other user's game never leaks in (T-250-17).
+    assert [row.rating for row in rows] == [ratings["newer"], ratings["older"]]
+    assert [row.rating for row in limited] == [ratings["newer"]]
+
+
+@pytest.mark.asyncio
 async def test_pick_foreign_game_ids_applies_every_filter(test_engine) -> None:
     caller_id, caller_game = await _user_and_game(test_engine, "bc-foreign-caller")
     owner_id, _ = await register_user("bc-foreign-owner", beta=False, test_engine=test_engine)
@@ -372,6 +424,138 @@ async def test_pick_foreign_game_ids_applies_every_filter(test_engine) -> None:
         await delete_games(test_engine, seeded)
 
 
+@pytest.mark.asyncio
+async def test_pick_own_require_facepalm_skips_games_without_unserved_qualifying_blunder(
+    test_engine,
+) -> None:
+    low_ply, qualifying_ply, _ = _TRACER_PLIES
+    user_id, _ = await register_user("bc-pick-fp", beta=True, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    qualifying = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=qualifying_ply)],
+    )
+    below = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=low_ply, facepalm_score=FACEPALM_SCORE_MIN - 0.2)],
+    )
+    unscored = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=low_ply, facepalm_score=None)],
+    )
+    served = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=qualifying_ply)],
+    )
+    session_id = await _insert(
+        test_engine,
+        user_id,
+        [_window(served, 0, first_ply=qualifying_ply - 2, blunder_ply=qualifying_ply)],
+    )
+    seeded = [qualifying, below, unscored, served]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            plain = await repo.pick_own_game_ids(session, user_id=user_id, limit=10, exclude_ids=[])
+            required = await repo.pick_own_game_ids(
+                session, user_id=user_id, limit=10, exclude_ids=[], require_facepalm=True
+            )
+        assert set(plain) == set(seeded)
+        # Below-threshold, unscored and already-served blunders do not make a game eligible.
+        assert set(required) == {qualifying}
+    finally:
+        await delete_blunder_check_sessions(test_engine, [session_id])
+        await delete_games(test_engine, seeded)
+
+
+@pytest.mark.asyncio
+async def test_pick_foreign_require_facepalm_skips_games_without_unserved_qualifying_blunder(
+    test_engine,
+) -> None:
+    low_ply, qualifying_ply, _ = _TRACER_PLIES
+    caller_id, caller_game = await _user_and_game(test_engine, "bc-fpf-caller")
+    owner_id, _ = await register_user("bc-fpf-owner", beta=False, test_engine=test_engine)
+    evals = _three_blunder_evals()
+    qualifying = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=qualifying_ply)],
+    )
+    below = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=low_ply, facepalm_score=FACEPALM_SCORE_MIN - 0.2)],
+    )
+    served_to_caller = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=qualifying_ply)],
+    )
+    served_to_other = await seed_judged_game(
+        test_engine,
+        user_id=owner_id,
+        evals_cp=evals,
+        blunders=[SeedBlunder(ply=qualifying_ply)],
+    )
+    other_id, _ = await register_user("bc-fpf-other", beta=True, test_engine=test_engine)
+    caller_session = await _insert(
+        test_engine,
+        caller_id,
+        [_window(served_to_caller, 0, first_ply=qualifying_ply - 2, blunder_ply=qualifying_ply)],
+    )
+    other_session = await _insert(
+        test_engine,
+        other_id,
+        [_window(served_to_other, 0, first_ply=qualifying_ply - 2, blunder_ply=qualifying_ply)],
+    )
+    seeded = [caller_game, qualifying, below, served_to_caller, served_to_other]
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            picked = await repo.pick_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                raw_low=1400,
+                raw_high=1600,
+                limit=100_000,
+                exclude_ids=[],
+                sample_percent=100.0,
+                require_facepalm=True,
+            )
+            unfiltered = await repo.pick_foreign_game_ids(
+                session,
+                user_id=caller_id,
+                raw_low=1400,
+                raw_high=1600,
+                limit=100_000,
+                exclude_ids=[],
+                sample_percent=100.0,
+            )
+        # Other tests' leaked games may exist; only the seeded ids are asserted on. A window served
+        # to ANOTHER user never hides a game from the caller (T-250-08).
+        assert set(picked) & set(seeded) == {qualifying, served_to_other}
+        assert set(unfiltered) & set(seeded) == {
+            qualifying,
+            below,
+            served_to_caller,
+            served_to_other,
+        }
+    finally:
+        await delete_blunder_check_sessions(test_engine, [caller_session, other_session])
+        await delete_games(test_engine, seeded)
+
+
 # ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
@@ -396,12 +580,12 @@ async def test_load_positions_contiguous_with_best_move(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_load_blunder_flaws_only_blunders_with_maia_values(test_engine) -> None:
+async def test_load_blunder_flaws_only_qualifying_blunders(test_engine) -> None:
     user_id, game_id = await _user_and_game(test_engine, "bc-load-flaws")
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     try:
         async with maker() as session:
-            # A mistake-severity row must not come back.
+            # A mistake-severity row must not come back, even with a qualifying score.
             async with session.begin():
                 session.add(
                     GameFlaw(
@@ -415,14 +599,59 @@ async def test_load_blunder_flaws_only_blunders_with_maia_values(test_engine) ->
                         is_reversed=False,
                         is_squandered=False,
                         fen="8/8/8/8/8/8/8/8",
+                        facepalm_score=SEED_FACEPALM_SCORE,
                     )
                 )
         async with maker() as session:
             flaws = await repo.load_blunder_flaws(session, [game_id])
         assert [(f.ply, f.severity) for f in flaws[game_id]] == [(_BLUNDER_PLY, 2)]
-        flaw = flaws[game_id][0]
-        assert (flaw.maia_refutation_prob, flaw.maia_refutation_rank) == (0.5, 1)
-        assert (flaw.maia_best_prob, flaw.maia_best_rank) == (0.5, 1)
+        assert flaws[game_id][0].facepalm_score == pytest.approx(SEED_FACEPALM_SCORE)
+    finally:
+        await delete_games(test_engine, [game_id])
+
+
+def _three_blunder_evals() -> list[int]:
+    """White user blunders at plies 20, 30 and 40; black hands the balance back right after each."""
+    evals = flat_evals(_ROWS, 0)
+    for ply in _TRACER_PLIES:
+        evals = with_user_blunder(evals, ply, _BLUNDER_DROP_CP)
+        evals = with_opponent_gift(evals, ply + 1, _BLUNDER_DROP_CP)
+    return evals
+
+
+@pytest.mark.asyncio
+async def test_facepalm_loader_and_judge_keep_only_qualifying(test_engine) -> None:
+    """Tracer (250 D-09): the SQL filter and the pure judge both keep only the qualifying blunder."""
+    low_ply, qualifying_ply, null_ply = _TRACER_PLIES
+    user_id, _ = await register_user("bc-facepalm", beta=True, test_engine=test_engine)
+    game_id = await seed_judged_game(
+        test_engine,
+        user_id=user_id,
+        evals_cp=_three_blunder_evals(),
+        blunders=[
+            SeedBlunder(ply=low_ply, facepalm_score=FACEPALM_SCORE_MIN - 0.2),
+            SeedBlunder(ply=qualifying_ply, facepalm_score=SEED_FACEPALM_SCORE),
+            SeedBlunder(ply=null_ply, facepalm_score=None),
+        ],
+    )
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    try:
+        async with maker() as session:
+            flaws = (await repo.load_blunder_flaws(session, [game_id]))[game_id]
+            positions = (await repo.load_positions(session, [game_id]))[game_id]
+        assert [f.ply for f in flaws] == [qualifying_ply]
+        key_plies = legal_key_plies(SEED_PGN, positions, {f.ply for f in flaws})
+        candidates = judge_game(
+            game_id=game_id,
+            user_is_white=True,
+            positions=positions,
+            flaws=flaws,
+            key_plies=key_plies,
+            served_blunder_plies=set(),
+            served_ply_ranges=[],
+        )
+        assert candidates is not None
+        assert [c.ply for c in candidates.blunders] == [qualifying_ply]
     finally:
         await delete_games(test_engine, [game_id])
 
@@ -433,24 +662,26 @@ async def test_load_blunder_flaws_only_blunders_with_maia_values(test_engine) ->
 
 
 @pytest.mark.asyncio
-async def test_served_blunder_unserved_until_its_ply_was_prompted(test_engine) -> None:
+async def test_served_blunder_counts_once_its_window_was_served(test_engine) -> None:
+    """250 D-17: a false-alarm window still burns its blunder, answered at that ply or not."""
     user_id, game_id = await _user_and_game(test_engine, "bc-served")
     session_id = await _insert(test_engine, user_id, [_window(game_id)])
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     try:
         window_id = await _window_id(test_engine, session_id, 0)
-        # A false alarm at move 1 ends the window before the blunder ply is prompted.
+        # A false alarm at move 1 ends the window before the blunder ply is prompted: no answer
+        # row exists for the blunder ply, yet the blunder is served.
         await _add_answer(test_engine, window_id, 1, _BLUNDER_PLY - 2)
         async with maker() as session:
             served = await repo.served_for_games(session, user_id=user_id, game_ids=[game_id])
-        assert served.prompted.get(game_id, set()) == set()
-        # The window's judged range is (first_ply, blunder_ply) either way.
+            other = await repo.served_for_games(
+                session, user_id=user_id + 10**6, game_ids=[game_id]
+            )
+        assert served.served_blunder_plies[game_id] == {_BLUNDER_PLY}
+        # The window's judged range is (first_ply, blunder_ply).
         assert served.judged_ranges[game_id] == [(_BLUNDER_PLY - 2, _BLUNDER_PLY)]
-
-        await _add_answer(test_engine, window_id, 2, _BLUNDER_PLY)
-        async with maker() as session:
-            served = await repo.served_for_games(session, user_id=user_id, game_ids=[game_id])
-        assert served.prompted[game_id] == {_BLUNDER_PLY}
+        # Another solver has been served nothing (user-scoped, T-250-08).
+        assert other.served_blunder_plies.get(game_id, set()) == set()
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id])
         await delete_games(test_engine, [game_id])

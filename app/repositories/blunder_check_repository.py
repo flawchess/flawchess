@@ -12,11 +12,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 
-from sqlalchemy import case, func, select, tablesample, update
+from sqlalchemy import ColumnElement, and_, case, exists, func, not_, select, tablesample, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
+from sqlalchemy.sql.expression import SQLColumnExpression
 
 from app.models.blunder_check import (
     AnswerKind,
@@ -33,7 +34,8 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
 from app.repositories.game_flaws_repository import _SEVERITY_INT
-from app.repositories.query_utils import ANALYTICS_INCLUDED_PLATFORMS
+from app.repositories.query_utils import ANALYTICS_INCLUDED_PLATFORMS, apply_game_filters
+from app.services.blunder_check_rules import FACEPALM_SCORE_MIN
 
 # The partial unique index that makes the one-open-session invariant a DB guarantee.
 _OPEN_SESSION_INDEX: Final = "uq_blunder_check_sessions_user_open"
@@ -188,17 +190,55 @@ async def insert_session(
 # ---------------------------------------------------------------------------
 
 
-async def pick_own_game_ids(
-    session: AsyncSession, *, user_id: int, limit: int, exclude_ids: Sequence[int]
-) -> list[int]:
-    """Random ids of the user's fully evaluated games (index-only on ix_games_user_full_evals).
+def _unserved_qualifying_blunder_exists(
+    game_id_col: SQLColumnExpression[int], user_id: int
+) -> ColumnElement[bool]:
+    """EXISTS a qualifying blunder (facepalm_score >= FACEPALM_SCORE_MIN) this user was not served yet.
 
-    Platform is filtered at load time, not here, to keep the scan index-only. No age
-    weighting: ordering by age needs the heap and defeats the index-only scan.
+    "Served" is a window of this user on the same game whose blunder_ply is the blunder's ply
+    (250 D-17). The probe uses ix_game_flaws_game_id for the flaw rows and
+    ix_blunder_check_windows_user_game for the NOT EXISTS; no new index (research Q3 item 5).
+    """
+    # correlate_except: the games table (or the TABLESAMPLE alias) sits two SELECT levels up, past
+    # the flaw EXISTS, so auto-correlation would pull it into this FROM list as a cross join.
+    already_served = (
+        exists()
+        .where(
+            BlunderCheckWindow.user_id == user_id,
+            BlunderCheckWindow.game_id == game_id_col,
+            BlunderCheckWindow.blunder_ply == GameFlaw.ply,
+        )
+        .correlate_except(BlunderCheckWindow)
+    )
+    return exists().where(
+        and_(
+            GameFlaw.game_id == game_id_col,
+            GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
+            not_(already_served),
+        )
+    )
+
+
+async def pick_own_game_ids(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    limit: int,
+    exclude_ids: Sequence[int],
+    require_facepalm: bool = False,
+) -> list[int]:
+    """Random ids of the user's fully evaluated games (index scan on ix_games_user_full_evals).
+
+    Platform is filtered at load time, not here, to keep the scan on the index. No age
+    weighting: ordering by age needs the heap and defeats the index scan. `require_facepalm`
+    keeps only games holding a qualifying blunder the user has not been served yet; the EXISTS
+    probes ix_game_flaws_game_id per candidate game.
     """
     stmt = select(Game.id).where(Game.user_id == user_id, Game.full_evals_completed_at.isnot(None))
     if exclude_ids:
         stmt = stmt.where(Game.id.notin_(exclude_ids))
+    if require_facepalm:
+        stmt = stmt.where(_unserved_qualifying_blunder_exists(Game.id, user_id))
     stmt = stmt.order_by(func.random()).limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
 
@@ -212,11 +252,14 @@ async def pick_foreign_game_ids(
     limit: int,
     exclude_ids: Sequence[int],
     sample_percent: float,
+    require_facepalm: bool = False,
 ) -> list[int]:
     """Ids of other users' fully evaluated games whose owner's rating at game time is in range (D-09).
 
     Uses TABLESAMPLE SYSTEM so the pick never scans the whole games table. Guests are
     excluded (their games never get the full pipeline) and so are the caller's own games.
+    `require_facepalm` keeps only games holding a qualifying blunder the caller has not been
+    served yet (the NOT EXISTS is scoped to the caller's own windows).
     Only game ids leave the repository: no usernames, emails or owner ids.
     """
     sampled = tablesample(Game.__table__, func.system(sample_percent), name="g")
@@ -237,6 +280,8 @@ async def pick_foreign_game_ids(
     )
     if exclude_ids:
         stmt = stmt.where(sampled.c.id.notin_(exclude_ids))
+    if require_facepalm:
+        stmt = stmt.where(_unserved_qualifying_blunder_exists(sampled.c.id, user_id))
     stmt = stmt.limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
 
@@ -327,21 +372,23 @@ async def load_positions(
 
 @dataclass(frozen=True)
 class BlunderFlawRow:
-    """A stored blunder with its Maia stats (structurally the plan 01 FlawLike protocol)."""
+    """A stored blunder with its facepalm score (structurally the candidates FlawLike protocol)."""
 
     ply: int
     severity: int
     is_miss: bool
-    maia_refutation_prob: float | None
-    maia_refutation_rank: int | None
-    maia_best_prob: float | None
-    maia_best_rank: int | None
+    facepalm_score: float | None
 
 
 async def load_blunder_flaws(
     session: AsyncSession, game_ids: Sequence[int]
 ) -> dict[int, list[BlunderFlawRow]]:
-    """Stored blunder-severity flaws per game, BOTH players (parity is checked in the pure layer)."""
+    """Qualifying stored blunders per game: severity blunder with facepalm_score >= FACEPALM_SCORE_MIN.
+
+    The threshold is a plain SQL filter on game_flaws (250 D-05 / D-09); NULL scores drop out by
+    SQL semantics. Opponent rows carry a NULL score (the fit scores user blunders only) and drop
+    out too, but parity is still re-checked in the pure layer.
+    """
     by_game: dict[int, list[BlunderFlawRow]] = defaultdict(list)
     if not game_ids:
         return by_game
@@ -351,12 +398,13 @@ async def load_blunder_flaws(
             GameFlaw.ply,
             GameFlaw.severity,
             GameFlaw.is_miss,
-            GameFlaw.maia_refutation_prob,
-            GameFlaw.maia_refutation_rank,
-            GameFlaw.maia_best_prob,
-            GameFlaw.maia_best_rank,
+            GameFlaw.facepalm_score,
         )
-        .where(GameFlaw.game_id.in_(game_ids), GameFlaw.severity == _SEVERITY_INT["blunder"])
+        .where(
+            GameFlaw.game_id.in_(game_ids),
+            GameFlaw.severity == _SEVERITY_INT["blunder"],
+            GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
+        )
         .order_by(GameFlaw.game_id, GameFlaw.ply)
     )
     for row in (await session.execute(stmt)).all():
@@ -373,34 +421,25 @@ async def load_blunder_flaws(
 class ServedSets:
     """What this solver has already been served, per game."""
 
-    prompted: dict[int, set[int]]
+    served_blunder_plies: dict[int, set[int]]
     judged_ranges: dict[int, list[tuple[int, int]]]
 
 
 async def served_for_games(
     session: AsyncSession, *, user_id: int, game_ids: Sequence[int]
 ) -> ServedSets:
-    """Blunder plies actually prompted and judged ply ranges of every window served (D-10).
+    """Blunder plies of every window served and the judged ply ranges of every window served.
 
-    A blunder counts as served only once its ply was prompted, so a false alarm before it
-    leaves the blunder unserved. The judged range of a window is (first_ply, last judged
+    The no-repeat rule is permanent (250 D-17 amends 249 D-10): a blunder counts as served as soon
+    as a window carrying it was served, whether or not its ply was ever answered. A window that
+    ended on a false alarm before the blunder was reached still burns that blunder, so the
+    249 false-alarm exception is gone. The judged range of a window is (first_ply, last judged
     ply): the blunder ply for a blunder window, else the last user move of the window.
     """
-    prompted: dict[int, set[int]] = defaultdict(set)
+    served: dict[int, set[int]] = defaultdict(set)
     ranges: dict[int, list[tuple[int, int]]] = defaultdict(list)
     if not game_ids:
-        return ServedSets(prompted=prompted, judged_ranges=ranges)
-    prompted_stmt = (
-        select(BlunderCheckWindow.game_id, BlunderCheckAnswer.ply)
-        .join(BlunderCheckAnswer, BlunderCheckAnswer.window_id == BlunderCheckWindow.id)
-        .where(
-            BlunderCheckWindow.user_id == user_id,
-            BlunderCheckWindow.game_id.in_(game_ids),
-            BlunderCheckAnswer.ply == BlunderCheckWindow.blunder_ply,
-        )
-    )
-    for game_id, ply in (await session.execute(prompted_stmt)).all():
-        prompted[game_id].add(ply)
+        return ServedSets(served_blunder_plies=served, judged_ranges=ranges)
     window_stmt = select(
         BlunderCheckWindow.game_id,
         BlunderCheckWindow.first_ply,
@@ -410,13 +449,15 @@ async def served_for_games(
     for game_id, first_ply, blunder_ply, window_length in (
         await session.execute(window_stmt)
     ).all():
+        if blunder_ply is not None:
+            served[game_id].add(blunder_ply)
         last = (
             blunder_ply
             if blunder_ply is not None
             else first_ply + _PLIES_PER_USER_MOVE * (window_length - 1)
         )
         ranges[game_id].append((first_ply, last))
-    return ServedSets(prompted=prompted, judged_ranges=ranges)
+    return ServedSets(served_blunder_plies=served, judged_ranges=ranges)
 
 
 # ---------------------------------------------------------------------------
@@ -437,14 +478,27 @@ class EloSourceRow:
 async def recent_rated_games(
     session: AsyncSession, *, user_id: int, limit: int
 ) -> list[EloSourceRow]:
-    """The user's most recent games (by played_at) with the user's side rating present."""
+    """The user's most recent rated games against humans (by played_at), user-side rating present.
+
+    250 D-14: the level behind the foreign rating band must not echo a bot's rating, so the rated
+    and opponent_type predicates come from `apply_game_filters` (never hand-rolled, see
+    current_strength_repository for the bot-rating echo this prevents). The default platform
+    population (no flawchess / pgn practice games) applies as well.
+    """
     user_rating = case((Game.user_color == "white", Game.white_rating), else_=Game.black_rating)
-    stmt = (
-        select(Game.platform, Game.time_control_bucket, Game.time_control_str, user_rating)
-        .where(Game.user_id == user_id, user_rating.isnot(None))
-        .order_by(Game.played_at.desc())
-        .limit(limit)
+    stmt = select(
+        Game.platform, Game.time_control_bucket, Game.time_control_str, user_rating
+    ).where(Game.user_id == user_id, user_rating.isnot(None))
+    stmt = apply_game_filters(
+        stmt,
+        time_control=None,
+        platform=None,
+        rated=True,
+        opponent_type="human",
+        from_date=None,
+        to_date=None,
     )
+    stmt = stmt.order_by(Game.played_at.desc()).limit(limit)
     return [
         EloSourceRow(
             platform=row[0], time_control_bucket=row[1], time_control_str=row[2], rating=row[3]

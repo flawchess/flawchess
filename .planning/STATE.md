@@ -4,14 +4,14 @@ milestone: v2.29
 current_phase: 250
 current_phase_name: Facepalm-Blunder Selection (SEED-261110-p7k)
 status: executing
-stopped_at: Completed 252-04-PLAN.md
-last_updated: "2026-11-13T18:58:14.064Z"
-state_head: 69d7121ea37d9cb3a1e827da0f81da0de8c3f426
+stopped_at: Completed 250-08-PLAN.md
+last_updated: "2026-11-13T21:32:03.759Z"
+state_head: 92e7cc0d96d60a0c18eddfe30c3dab56a15dc244
 progress:
   total_phases: 6
   completed_phases: 63
   total_plans: 44
-  completed_plans: 29
+  completed_plans: 37
 milestone_name: Train Spacing & Archive, Analysis Explain
 last_activity: 2026-11-08
 last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) with tags and GitHub releases
@@ -21,8 +21,8 @@ last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) wi
 
 ## Current Position
 
-Phase: 250 (Facepalm-Blunder Selection (SEED-261110-p7k)) — READY TO EXECUTE
-Plan: 5 of 9
+Phase: 250 (Facepalm-Blunder Selection (SEED-261110-p7k)) — EXECUTING
+Plan: 9 of 11
 
 Status: Ready to execute
 
@@ -918,6 +918,21 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 252]: Plan 03: tier guard lives in /atomic-lease, not claim_eval_job; server-pool tier-4 claim is blob-only via apply_flaw_blob_results; no version bump (D-12, D-15)
 - [Phase 252]: 252-04: feeder clock is wall-clock (fed_at persisted across restarts); feed predicate also requires a usable pv (>= CACHED_PV_MIN_PLIES); fingerprints taken under the per-game lock before the NULL write
 - [Phase 252]: 252-04: measure-flips 3-game dev smoke shows control (exact vs exact) flip share 0.31 vs stored-vs-exact 0.33, so the 2% gate may trip on search noise alone; owner call on gate definition
+- [Phase 250]: 250-01: recapture credit settles a short line even at value 0, and applies whenever the legal line length <= depth (reference behaviour)
+- [Phase 250]: 250-01: no CHECK on facepalm_score range; migration e8b3c6d2f250 stays catalog-only
+- [Phase 250]: 250-02: FitForm covers Form A and Form B through one fit path; severity_not_a_blunder note set in resolve_feature_row
+- [Phase 250]: 250-02: 33 of 181 provisional label rows have a line too short for the loss feature; flag for plan 04 and D-18 refit after Phase 252
+- [Phase 250]: 250-03: served_for_games folds served_blunder_plies into the single windows query (one fewer round trip)
+- [Phase 250]: 250-03: 249 D-06 thresholds and findability helpers stay in blunder_check_rules.py until plan 08 (calibration scripts still import them)
+- [Phase 250]: Plan 04: shipped facepalm Form A as fitted (loss floor 0, FACEPALM_SCORE_MIN 0.7); Window 14 stays unscored (1-ply line) until the D-18 refit; short-line blunders have NULL facepalm_score and are unselectable until then
+- [Phase 250]: 250-05: refutation mode shares _derive_post_blunder, so an unusable reply spends the post-board inference there too (spread dropped)
+- [Phase 250]: 250-05: the stored ply+1 line (game_positions.pv) is the 7th FlawFingerprint element; FlawMaiaInput.refutation_pv is required
+- [Phase 250]: 250-06: window length uniform for both kinds, blunder position drawn from the conditional hazard h(1-h)^(k-1) over 1..L (anti-leak kept, herring share equals D-12 constant)
+- [Phase 250]: 250-06: a require_facepalm pick returning nothing marks blunder supply exhausted for that origin; later rounds serve only herring slots with plain picks
+- [Phase 250]: Plan 07: line mode rows reuse _facepalm_values and drop the spread key; the line pass checkpoint is the bound --cutoff (same value resumes, later value = new recompute); spread mode keeps line facts for unrated games like the hook
+- [Phase 250]: 250-08: calibration NULL reasons are checked in a fixed order (no spread, no line, no played prob, line too short) so scored share plus the four reason columns sum to all user blunders
+- [Phase 250]: 250-08: D-03 fair-share proxies in the report are median played prob, median reply spread and share with mate or >= 2 material points down per threshold, plus the owner's label-measured fair share (80/89/92% at 0.5/0.7/0.8) as a named constant
+- [Phase 250]: 250-08: hazard_position_weights deleted; the report weights window positions with blunder_position_marginals (conditional weights marginalised over the uniform length draw)
 
 ### Pending Todos
 
@@ -1159,8 +1174,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-12T17:37:59.909Z
-**Stopped at:** Completed 252-04-PLAN.md
+**Last session:** 2026-11-13T21:32:03.448Z
+**Stopped at:** Completed 250-08-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1425,6 +1440,14 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 252 P02 | 40 min | 2 tasks | 5 files |
 | Phase 252 P03 | 45min | 3 tasks | 4 files |
 | Phase 252 P04 | 70min | 3 tasks | 3 files |
+| Phase 250 P01 | 13 min | 3 tasks | 11 files |
+| Phase 250 P02 | n/a | 3 tasks | 5 files |
+| Phase 250 P03 | 25 min | 2 tasks | 8 files |
+| Phase 250 P04 | not recorded | 2 tasks | 6 files |
+| Phase 250 P05 | 9 min | 2 tasks | 5 files |
+| Phase 250 P06 | 9 min | 2 tasks | 8 files |
+| Phase 250 P07 | 13 min | 2 tasks | 4 files |
+| Phase 250 P08 | 37 min | 3 tasks | 13 files |
 
 ## Performance Metrics
 

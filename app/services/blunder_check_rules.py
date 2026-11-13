@@ -1,9 +1,12 @@
-"""Selection rules for the blunder-check drill (SEED-261108-dk0, Phase 249).
+"""Selection rules for the blunder-check drill (SEED-261108-dk0, Phase 249, 250).
 
-This module is the single home of the selection math (249 D-03..D-06) that both the app and the
-Phase 248 calibration report (scripts/blunder_check/) use. The app must not import from
-scripts/, so the pure functions moved here and the report re-exports them. Everything here is
-pure (no DB, no Maia, no I/O).
+This module is the single home of the selection math that both the app and the Phase 248
+calibration report (scripts/blunder_check/) use: the facepalm threshold and its fitted
+coefficients (250 D-01, D-04), the eval band and window fit (249 D-03..D-05) and the window
+mix draws (250 D-12, D-16). The app must not import from scripts/, so the pure functions live
+here and the report re-exports them. The 249 findability rule (Maia probability of the
+refutation or best move) was retired by the facepalm score. Everything here is pure (no DB, no
+Maia, no I/O).
 
 Expected-score (ES) conventions come from the flaw pipeline's own
 ``_run_all_moves_pass`` output ``{ply: (mover, severity, es_before, es_after)}``, all in
@@ -19,7 +22,7 @@ from __future__ import annotations
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal
 
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services.eval_utils import eval_cp_to_expected_score
@@ -27,7 +30,6 @@ from app.services.eval_utils import eval_cp_to_expected_score
 # Private import by design: the threshold and the per-ply entry shape must be the classifier's
 # own, never re-derived (precedent: scripts/remote_eval_worker.py imports _run_all_moves_pass).
 from app.services.flaws_service import INACCURACY_DROP, _MoveEntry  # noqa: PLC2701
-from app.services.maia_flaw_stats import RANK_BASE
 from app.services.train_pool import (
     HERRING_MIN_OPENING_PLY,
     HERRING_MIN_PLY,
@@ -49,10 +51,29 @@ LEAD_IN_PLIES: int = 1
 # Latest window position at which a blunder is modelled (matches max(WINDOW_LENGTHS)).
 MAX_BLUNDER_POSITION: int = 5
 
-# 249 D-06 findability thresholds: a blunder is served only if Maia finds the refutation
-# (allowed) or the best move (pure miss) with at least this probability, or ranks it first.
-REFUTATION_PROB_MIN: float = 0.3
-BEST_PROB_MIN: float = 0.2
+# 250 D-01 / D-04 facepalm score (app/services/facepalm_score.py). A user blunder qualifies when its
+# score is at least FACEPALM_SCORE_MIN: the owner's starting value, deliberately below the
+# precision-optimal cut (0.8) so drill answers cover both sides of the eventual threshold; D-18
+# resets it after the refit on the repaired lines.
+FACEPALM_SCORE_MIN: float = 0.7
+# Added to the played move's Maia probability inside the log, so a probability of 0 stays finite.
+PLAYED_PROB_OFFSET: float = 0.01
+# Plies of the stored refutation line the score reads (one depth for all ratings in this phase).
+LINE_DEPTH: int = 3
+# Cap of the material-loss input (pawn units).
+LOSS_CAP: int = 5
+# Loss value of a mate within LINE_DEPTH plies.
+MATE_LOSS: int = 5
+# 250 D-01 / D-04 fitted facepalm coefficients: the output of scripts/blunder_check/fit_facepalm.py
+# on reports/blunder-check/facepalm-features-2026-11-13.tsv (report:
+# reports/blunder-check/facepalm-fit-2026-11-13.md), pasted as printed, never hand-adjusted.
+# Fitted on the lines as stored at label time; D-18 refits on the repaired lines.
+# `fit_facepalm.py --check-constants` proves they still equal the refit.
+FACEPALM_INTERCEPT: float = -1.4193
+FACEPALM_PLAYED_COEF: float = -0.6629
+FACEPALM_SPREAD_COEF: float = -0.3304
+FACEPALM_LOSS_COEF: float = 1.1570
+FACEPALM_LOSS_FLOOR: int | None = 0
 # 249 D-05 eval band: every judged and herring move must have its pre-move ES inside [low, high].
 ES_BAND_LOW: float = 0.10
 ES_BAND_HIGH: float = 0.90
@@ -71,6 +92,16 @@ BLUNDER_ES_HIGH: float = eval_cp_to_expected_score(BLUNDER_MAX_PRE_EVAL_CP, "whi
 # opening-phase position needs the stricter floor (move 10+).
 BLUNDER_MIN_PLY: int = HERRING_MIN_PLY
 BLUNDER_MIN_OPENING_PLY: int = HERRING_MIN_OPENING_PLY
+# 250 D-12 window source mix: every slot independently draws a red herring, an own blunder or a
+# foreign blunder at these shares (one third each), never a fixed 1-1-1 per three windows.
+HERRING_SHARE: float = 1 / 3
+OWN_BLUNDER_SHARE: float = 1 / 3
+FOREIGN_BLUNDER_SHARE: float = 1 - HERRING_SHARE - OWN_BLUNDER_SHARE
+# 250 D-16: a herring's origin is own with the same own / foreign ratio as blunders, so recognising
+# one's own game gives nothing away.
+HERRING_OWN_SHARE: float = OWN_BLUNDER_SHARE / (OWN_BLUNDER_SHARE + FOREIGN_BLUNDER_SHARE)
+# 250 D-13: half-width of the pinned-Elo band around the user's level for a foreign window's mover.
+FOREIGN_RATING_BAND: int = 150
 # 249 D-02 windows per session.
 BLUNDER_CHECK_SESSION_WINDOWS: int = 6
 # 249 D-14 points: 1 per correctly judged safe move, 3 for flagging the blunder, plus the better
@@ -80,6 +111,7 @@ BLUNDER_POINTS: int = 3
 BETTER_MOVE_POINTS: int = MOVE_TIER_POINTS["good"]
 
 MissCase = Literal["allowed", "pure_miss", "mixed", "unclassified"]
+SlotOrigin = Literal["own", "foreign"]
 
 _FIRST_POSITION: Final[int] = 1
 
@@ -99,29 +131,20 @@ class WindowShape:
 
 
 @dataclass(frozen=True)
+class SlotPlan:
+    """One session slot as drawn (250 D-12, D-16): whose game it comes from and the window shape."""
+
+    origin: SlotOrigin
+    shape: WindowShape
+
+
+@dataclass(frozen=True)
 class MoveJudgement:
     """One user move: Good (no severity at all, so inaccuracies are excluded) and its pre-move ES."""
 
     ply: int
     good: bool
     es_before: float | None
-
-
-class HazardWeights(TypedDict):
-    """Hazard-model output: raw P(blunder at k), the herring (no-blunder) share, normalized weights."""
-
-    raw: dict[int, float]
-    herring_share: float
-    normalized: dict[int, float]
-
-
-class FindabilityInputs(TypedDict):
-    """Maia numbers for one blunder: refutation pair (allowed) and best-move pair (pure miss)."""
-
-    refutation_prob: float | None
-    refutation_rank: int | None
-    best_prob: float | None
-    best_rank: int | None
 
 
 # ---------------------------------------------------------------------------
@@ -229,63 +252,44 @@ def max_fit_position(
     return best
 
 
-def hazard_position_weights(
-    hazard: float = HAZARD,
-    lengths: Sequence[int] = WINDOW_LENGTHS,
-) -> HazardWeights:
-    """Raw P(blunder at position k) = P(L >= k) * h * (1 - h)^(k-1), herring share = 1 - sum."""
-    max_position = max(lengths)
-    raw: dict[int, float] = {}
-    for k in range(1, max_position + 1):
-        reach = sum(1 for length in lengths if length >= k) / len(lengths)
-        raw[k] = reach * hazard * (1.0 - hazard) ** (k - 1)
+def blunder_position_weights(length: int, hazard: float = HAZARD) -> dict[int, float]:
+    """P(blunder at position k | the hazard fires within `length` moves), k in 1..length.
+
+    Proportional to h * (1 - h)^(k - 1) and normalised to sum to 1. This is the 249 D-03 anti-leak
+    rule: the position is conditional on the blunder existing, so a late position stays as likely
+    as the hazard model says and the window length alone never reveals whether a blunder follows.
+    """
+    raw = {k: hazard * (1.0 - hazard) ** (k - 1) for k in range(1, length + 1)}
     total = sum(raw.values())
-    return HazardWeights(
-        raw=raw,
-        herring_share=1.0 - total,
-        normalized={k: v / total for k, v in raw.items()},
-    )
+    return {k: value / total for k, value in raw.items()}
 
 
-def draw_window_shape(rng: random.Random) -> WindowShape:
-    """L uniform over WINDOW_LENGTHS; the blunder sits at the first position whose hazard fires."""
+def draw_herring_shape(rng: random.Random) -> WindowShape:
+    """A herring window: length uniform over WINDOW_LENGTHS, no blunder (250 D-12)."""
+    return WindowShape(rng.choice(WINDOW_LENGTHS), None)
+
+
+def draw_blunder_shape(rng: random.Random) -> WindowShape:
+    """A blunder window (250 D-12): length uniform over WINDOW_LENGTHS, as for a herring, and the
+    position drawn from `blunder_position_weights(length)`. Composition choice with the 249 hazard
+    model: the length draw is shared by both kinds so length carries no information (249 D-03)."""
     length = rng.choice(WINDOW_LENGTHS)
-    for position in range(1, length + 1):
-        if rng.random() < HAZARD:
-            return WindowShape(length, position)
-    return WindowShape(length, None)
+    weights = blunder_position_weights(length)
+    positions = sorted(weights)
+    position = rng.choices(positions, weights=[weights[k] for k in positions])[0]
+    return WindowShape(length, position)
 
 
-# ---------------------------------------------------------------------------
-# Findability (248 D-14, 249 D-06)
-# ---------------------------------------------------------------------------
-
-
-def _pair_passes(prob: float | None, rank: int | None, threshold: float) -> bool:
-    """A (prob, rank) pair passes on prob >= threshold or being the top-ranked move; NULL never passes."""
-    if prob is None or rank is None:
-        return False
-    return prob >= threshold or rank == RANK_BASE
-
-
-def findable(
-    case: MissCase,
-    row: FindabilityInputs,
-    refutation_threshold: float,
-    miss_threshold: float,
-) -> bool:
-    """248 D-14: allowed tests the refutation pair at R, pure miss the best pair at X', mixed passes if either does."""
-    refutation_ok = _pair_passes(
-        row["refutation_prob"], row["refutation_rank"], refutation_threshold
-    )
-    best_ok = _pair_passes(row["best_prob"], row["best_rank"], miss_threshold)
-    if case == "allowed":
-        return refutation_ok
-    if case == "pure_miss":
-        return best_ok
-    if case == "mixed":
-        return refutation_ok or best_ok
-    return False
+def draw_slot_plan(rng: random.Random) -> SlotPlan:
+    """Draw one slot independently (250 D-12, D-16): one uniform picks herring / own blunder /
+    foreign blunder at the D-12 shares; a herring then draws its origin at HERRING_OWN_SHARE."""
+    roll = rng.random()
+    if roll < HERRING_SHARE:
+        origin: SlotOrigin = "own" if rng.random() < HERRING_OWN_SHARE else "foreign"
+        return SlotPlan(origin, draw_herring_shape(rng))
+    if roll < HERRING_SHARE + OWN_BLUNDER_SHARE:
+        return SlotPlan("own", draw_blunder_shape(rng))
+    return SlotPlan("foreign", draw_blunder_shape(rng))
 
 
 # ---------------------------------------------------------------------------

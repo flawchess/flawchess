@@ -3,7 +3,7 @@
 Two stages, both pure (no DB, no I/O):
 
 1. ``judge_game`` turns one analyzed game into candidates: user blunders (with their case,
-   findability and the latest window position they can occupy) and herring runs (L consecutive
+   facepalm score and the latest window position they can occupy) and herring runs (L consecutive
    safe user moves per window length). Severity and expected score come only from the stored-flaw
    classifier's own ``_run_all_moves_pass``; they are never re-derived (T-249-01).
 2. ``assign_windows`` fills the session's drawn slots from the candidates of many games. Shapes
@@ -11,8 +11,11 @@ Two stages, both pure (no DB, no I/O):
    position, never the position derived from a blunder. There is no case cap (D-07) and no forced
    blunder/herring mix (D-11).
 
-The quality gates on a blunder are findability (D-06, D-08), the early-ply floor and the
-undecided-position rule: no played-probability cap and no capture/check/mate rule.
+The quality gates on a blunder are the stored facepalm score (250 D-01, overturning 249 D-08:
+``facepalm_score >= FACEPALM_SCORE_MIN``, the same for allowed, pure-miss and mixed blunders), the
+early-ply floor and the undecided-position rule: no played-probability cap and no
+capture/check/mate rule. A blunder that was served in any window is never composed again (250
+D-17).
 """
 
 from __future__ import annotations
@@ -27,22 +30,19 @@ from app.models.game_position import GamePosition
 from app.repositories.game_flaws_repository import _SEVERITY_INT  # noqa: PLC2701
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.services.blunder_check_rules import (
-    BEST_PROB_MIN,
     BETTER_MOVE_POINTS,
     BLUNDER_POINTS,
     ES_BAND_HIGH,
     ES_BAND_LOW,
+    FACEPALM_SCORE_MIN,
     LEAD_IN_PLIES,
     MAX_BLUNDER_POSITION,
-    REFUTATION_PROB_MIN,
     SAFE_POINTS,
     WINDOW_LENGTHS,
-    FindabilityInputs,
     MoveJudgement,
     WindowShape,
     blunder_es,
     blunder_position_undecided,
-    findable,
     herring_flags,
     max_fit_position,
     miss_case,
@@ -77,16 +77,7 @@ class FlawLike(Protocol):
     def is_miss(self) -> bool: ...
 
     @property
-    def maia_refutation_prob(self) -> float | None: ...
-
-    @property
-    def maia_refutation_rank(self) -> int | None: ...
-
-    @property
-    def maia_best_prob(self) -> float | None: ...
-
-    @property
-    def maia_best_rank(self) -> int | None: ...
+    def facepalm_score(self) -> float | None: ...
 
 
 @dataclass(frozen=True)
@@ -180,17 +171,18 @@ def _blunder_candidate(
     game: _JudgedGame,
     flaw: FlawLike,
     key_plies: AbstractSet[int],
-    prompted_blunder_plies: AbstractSet[int],
+    served_blunder_plies: AbstractSet[int],
 ) -> BlunderCandidate | None:
-    """A stored blunder becomes a candidate only if it is the user's, still a blunder when
-    recomputed (consistency guard, T-249-01), from an undecided position (`blunder_position_undecided`),
-    findable (D-06) and fits window position 1+ (D-04, D-05).
+    """A stored blunder becomes a candidate only if it is the user's, not served before (250 D-17),
+    still a blunder when recomputed (consistency guard, T-249-01), from an undecided position
+    (`blunder_position_undecided`), scored at or above FACEPALM_SCORE_MIN (250 D-01) and fits
+    window position 1+ (D-04, D-05).
     """
     if flaw.severity != _BLUNDER_SEVERITY_INT:
         return None
     if mover_is_white_at_ply(flaw.ply) != game.user_is_white:
         return None
-    if flaw.ply not in key_plies or flaw.ply in prompted_blunder_plies:
+    if flaw.ply not in key_plies or flaw.ply in served_blunder_plies:
         return None
     # Phase 249 UAT: no blunders from the early plies (same floors as personalized puzzles).
     if not _past_floor(game, flaw.ply):
@@ -206,13 +198,9 @@ def _blunder_candidate(
     case = miss_case(flaw.is_miss, es_ref, es_played)
     if case == "unclassified":
         return None
-    maia = FindabilityInputs(
-        refutation_prob=flaw.maia_refutation_prob,
-        refutation_rank=flaw.maia_refutation_rank,
-        best_prob=flaw.maia_best_prob,
-        best_rank=flaw.maia_best_rank,
-    )
-    if not findable(case, maia, REFUTATION_PROB_MIN, BEST_PROB_MIN):
+    # 250 D-01: one score gate for every case. The loader already filters in SQL; re-checked here
+    # so the pure judge stays correct for any caller (a NULL score never qualifies).
+    if flaw.facepalm_score is None or flaw.facepalm_score < FACEPALM_SCORE_MIN:
         return None
     preceding = [j for j in game.judgements if j.ply < flaw.ply][-_PRECEDING_KEPT:]
     max_position = min(max_fit_position(preceding, es_before), _floor_position_cap(game, preceding))
@@ -262,7 +250,7 @@ def judge_game(
     positions: Sequence[GamePosition],
     flaws: Sequence[FlawLike],
     key_plies: AbstractSet[int],
-    prompted_blunder_plies: AbstractSet[int],
+    served_blunder_plies: AbstractSet[int],
     served_ply_ranges: Sequence[tuple[int, int]],
 ) -> GameCandidates | None:
     """Judge one game into blunder candidates and herring runs; None for gapped positions."""
@@ -278,7 +266,7 @@ def judge_game(
         phases=[p.phase for p in positions],
     )
     candidates = (
-        _blunder_candidate(game, flaw, key_plies, prompted_blunder_plies)
+        _blunder_candidate(game, flaw, key_plies, served_blunder_plies)
         for flaw in sorted(flaws, key=lambda f: f.ply)
     )
     return GameCandidates(

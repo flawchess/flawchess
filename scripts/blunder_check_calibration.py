@@ -2,9 +2,10 @@
 
 Read-only: samples fully evaluated games deterministically, rebuilds per-ply severities and
 expected scores through the flaw classifier's own pass, and writes a dated markdown report of
-the findability, eval-band, window-fit and supply statistics the blunder-check selection will
-be built on. Every database session opens with default_transaction_read_only = on and a named
-statement timeout (T-248-08, T-248-09); the script contains no write statement.
+the facepalm-score, eval-band, window-fit and own / foreign supply statistics the blunder-check
+selection is built on (Phase 250 replaced the 249 findability grid with the facepalm score).
+Every database session opens with default_transaction_read_only = on and a named statement
+timeout (T-248-08, T-248-09); the script contains no write statement.
 
 DB target host:port mapping (CLAUDE.md):
     dev:  localhost:5432  (Docker compose flawchess-dev)
@@ -55,8 +56,7 @@ from scripts.blunder_check.oddness import (  # noqa: E402
 )
 from scripts.blunder_check.render import (  # noqa: E402
     DEFAULT_BAND,
-    DEFAULT_MISS_THRESHOLD,
-    DEFAULT_REFUTATION_THRESHOLD,
+    DEFAULT_FACEPALM_THRESHOLD,
     MIN_USER_WINDOWS,
     ReportParams,
     render_report,
@@ -145,7 +145,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=DEFAULT_SPOT_CHECK_PER_BUCKET,
         dest="spot_check_per_bucket",
-        help="Hazard-model windows per Elo bucket in the spot-check file (0 skips it).",
+        help="Windows per Elo bucket in the spot-check file, drawn with the D-12 mix (0 skips it).",
     )
     parser.add_argument(
         "--seed",
@@ -154,13 +154,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Seed for the Good-move sample and the spot-check draws.",
     )
     parser.add_argument(
-        "--refutation-threshold",
+        "--facepalm-threshold",
         type=float,
-        default=DEFAULT_REFUTATION_THRESHOLD,
-        dest="refutation_threshold",
-    )
-    parser.add_argument(
-        "--miss-threshold", type=float, default=DEFAULT_MISS_THRESHOLD, dest="miss_threshold"
+        default=DEFAULT_FACEPALM_THRESHOLD,
+        dest="facepalm_threshold",
+        help="Facepalm score at or above which a user blunder qualifies (default: the app's FACEPALM_SCORE_MIN).",
     )
     parser.add_argument("--band-low", type=float, default=DEFAULT_BAND[0], dest="band_low")
     parser.add_argument("--band-high", type=float, default=DEFAULT_BAND[1], dest="band_high")
@@ -180,6 +178,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--batch-games must be at least 1")
     if not 0.0 <= args.band_low < args.band_high <= 1.0:
         parser.error("need 0 <= --band-low < --band-high <= 1")
+    if not 0.0 <= args.facepalm_threshold <= 1.0:
+        parser.error("--facepalm-threshold must be between 0 and 1")
     return args
 
 
@@ -273,7 +273,7 @@ def _spot_check_path(args: argparse.Namespace, date: str) -> Path:
 async def _write_spot_check(
     target: str, collection: Collection, params: ReportParams, args: argparse.Namespace, path: Path
 ) -> None:
-    """Draw the hazard-model windows and resolve them through one read-only connection (D-18)."""
+    """Draw the D-12 windows and resolve them through one read-only connection (D-18)."""
     spot_params = SpotCheckParams(params, args.spot_check_per_bucket)
     windows = pick_windows(collection, spot_params, random.Random(args.seed))
     engine = make_readonly_engine(db_url_for_target(target))
@@ -317,8 +317,7 @@ async def _run(args: argparse.Namespace) -> int:
         _log("skipping the spot-check: the cache has no db target; pass --db")
         want_spot_check = False
     params = ReportParams(
-        refutation_threshold=args.refutation_threshold,
-        miss_threshold=args.miss_threshold,
+        facepalm_threshold=args.facepalm_threshold,
         band_low=args.band_low,
         band_high=args.band_high,
         min_user_windows=args.min_user_windows,

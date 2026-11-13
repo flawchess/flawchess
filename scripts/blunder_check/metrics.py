@@ -31,15 +31,12 @@ from app.services.blunder_check_rules import (
     LEAD_IN_PLIES,
     MAX_BLUNDER_POSITION,
     WINDOW_LENGTHS,
-    FindabilityInputs,
-    HazardWeights,
     MissCase,
     MoveJudgement,
     blunder_es,
     blunder_fits_position,
+    blunder_position_weights,
     count_herring_windows,
-    findable,
-    hazard_position_weights,
     herring_flags,
     in_band,
     miss_case,
@@ -55,8 +52,6 @@ __all__ = [
     "MAX_MISS_SHARE",
     "WINDOW_LENGTHS",
     "EloBucket",
-    "FindabilityInputs",
-    "HazardWeights",
     "MissCase",
     "MoveJudgement",
     "Provenance",
@@ -64,13 +59,12 @@ __all__ = [
     "auc",
     "blunder_es",
     "blunder_fits_position",
+    "blunder_position_marginals",
     "capped_blunder_supply",
     "count_herring_windows",
     "elo_bucket",
     "estimated_user_windows",
-    "findable",
     "flaw_control",
-    "hazard_position_weights",
     "herring_flags",
     "in_band",
     "miss_case",
@@ -130,11 +124,28 @@ def capped_blunder_supply(
     return non_pure + min(pure, pure_cap)
 
 
+def blunder_position_marginals(
+    lengths: Sequence[int] = WINDOW_LENGTHS,
+) -> dict[int, float]:
+    """P(blunder position k | blunder window) under the 250 D-12 composition, k in 1..max(lengths).
+
+    A blunder window draws its length uniformly over `lengths` (as a herring does), then the
+    position from `blunder_position_weights(length)`; this is the marginal over the length.
+    It sums to 1 and replaces the 249 hazard model's herring-inclusive weights, whose herring
+    share no longer describes the window mix.
+    """
+    marginals = dict.fromkeys(range(1, max(lengths) + 1), 0.0)
+    for length in lengths:
+        for position, weight in blunder_position_weights(length).items():
+            marginals[position] += weight / len(lengths)
+    return marginals
+
+
 def weighted_fit_share(
     fit_by_position: Mapping[int, float],
     normalized_weights: Mapping[int, float],
 ) -> float:
-    """Hazard-weighted average of the per-position fit shares."""
+    """Weighted average of the per-position fit shares."""
     return sum(normalized_weights[k] * fit_by_position.get(k, 0.0) for k in normalized_weights)
 
 

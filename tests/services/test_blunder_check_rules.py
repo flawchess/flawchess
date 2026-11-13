@@ -7,22 +7,32 @@ the app-owned selection rules to the expected case and window fit.
 
 from __future__ import annotations
 
+import random
+from collections import Counter
+
+import pytest
+
 from app.models.game_position import GamePosition
 from app.services import blunder_check_rules as rules
 from app.services.blunder_check_rules import (
-    BEST_PROB_MIN,
     BETTER_MOVE_POINTS,
     BLUNDER_CHECK_SESSION_WINDOWS,
     BLUNDER_POINTS,
     ES_BAND_HIGH,
     ES_BAND_LOW,
+    FOREIGN_BLUNDER_SHARE,
+    FOREIGN_RATING_BAND,
+    HAZARD,
+    HERRING_OWN_SHARE,
+    HERRING_SHARE,
     MAX_BLUNDER_POSITION,
-    REFUTATION_PROB_MIN,
+    OWN_BLUNDER_SHARE,
     SAFE_POINTS,
-    FindabilityInputs,
+    WINDOW_LENGTHS,
     MoveJudgement,
     blunder_es,
-    findable,
+    blunder_position_weights,
+    draw_slot_plan,
     max_fit_position,
     miss_case,
     user_move_judgements,
@@ -45,18 +55,6 @@ def _synthetic_game() -> list[GamePosition]:
     return [GamePosition(eval_cp=cp, eval_mate=None) for cp in evals]
 
 
-def _inputs(
-    refutation: tuple[float | None, int | None] = (None, None),
-    best: tuple[float | None, int | None] = (None, None),
-) -> FindabilityInputs:
-    return FindabilityInputs(
-        refutation_prob=refutation[0],
-        refutation_rank=refutation[1],
-        best_prob=best[0],
-        best_rank=best[1],
-    )
-
-
 class TestTracer:
     def test_app_rules_judge_a_synthetic_game_end_to_end(self) -> None:
         all_moves = _run_all_moves_pass(_synthetic_game())
@@ -74,21 +72,15 @@ class TestTracer:
         )
         preceding = [j for j in judgements if j.ply < BLUNDER_PLY]
         assert all(j.good for j in preceding)
-        # Pure miss: the best pair decides; 0.25 clears X' = 0.2, the refutation pair is ignored.
-        assert findable(case, _inputs(best=(0.25, 3)), REFUTATION_PROB_MIN, BEST_PROB_MIN)
-        assert not findable(
-            case, _inputs(best=(0.1, 3), refutation=(0.9, 1)), REFUTATION_PROB_MIN, BEST_PROB_MIN
-        )
         # Three clean preceding moves in band: the blunder fits positions 1..4 but not 5.
         assert max_fit_position(preceding, es_before) == 4
 
 
 class TestSharedImplementation:
     def test_report_reexports_are_the_app_objects(self) -> None:
-        assert metrics.findable is rules.findable
         assert metrics.blunder_fits_position is rules.blunder_fits_position
         assert metrics.HAZARD is rules.HAZARD
-        assert spot_check.draw_window_shape is rules.draw_window_shape
+        assert spot_check.draw_slot_plan is rules.draw_slot_plan
         assert spot_check.WindowShape is rules.WindowShape
 
 
@@ -98,7 +90,21 @@ class TestConstants:
         assert BLUNDER_CHECK_SESSION_WINDOWS == 6
         assert (SAFE_POINTS, BLUNDER_POINTS) == (1, 3)
         assert (ES_BAND_LOW, ES_BAND_HIGH) == (0.10, 0.90)
-        assert (REFUTATION_PROB_MIN, BEST_PROB_MIN) == (0.3, 0.2)
+
+
+class TestRetiredSelectionCode:
+    def test_the_249_findability_rule_and_the_hazard_weights_are_gone(self) -> None:
+        retired = (
+            "findable",
+            "FindabilityInputs",
+            "_pair_passes",
+            "REFUTATION_PROB_MIN",
+            "BEST_PROB_MIN",
+            "hazard_position_weights",
+            "HazardWeights",
+        )
+        assert [name for name in retired if hasattr(rules, name)] == []
+        assert [name for name in retired if hasattr(metrics, name)] == []
 
 
 class TestMaxFitPosition:
@@ -134,3 +140,86 @@ class TestMaxFitPosition:
             MoveJudgement(6, True, IN_BAND_ES),
         ]
         assert max_fit_position(preceding, IN_BAND_ES) == 3
+
+
+# ---------------------------------------------------------------------------
+# 250 D-12 / D-13 / D-16 slot plans
+# ---------------------------------------------------------------------------
+
+DRAWS = 30000
+SHARE_TOLERANCE = 0.02
+PLAN_SEED = 250
+SESSION_SEED = 12
+SESSIONS = 1000
+SESSION_SLOTS = 6
+MANY_HERRINGS = 3
+
+
+class TestSlotShares:
+    def test_named_constants(self) -> None:
+        assert (HERRING_SHARE, OWN_BLUNDER_SHARE) == (1 / 3, 1 / 3)
+        assert FOREIGN_BLUNDER_SHARE == pytest.approx(1 / 3)
+        assert HERRING_OWN_SHARE == pytest.approx(0.5)
+        assert FOREIGN_RATING_BAND == 150
+
+    def test_kind_and_origin_shares_match_d12_and_d16(self) -> None:
+        rng = random.Random(PLAN_SEED)
+        plans = [draw_slot_plan(rng) for _ in range(DRAWS)]
+        herrings = [p for p in plans if p.shape.blunder_position is None]
+        own_blunders = [p for p in plans if p.shape.blunder_position and p.origin == "own"]
+        foreign_blunders = [p for p in plans if p.shape.blunder_position and p.origin == "foreign"]
+        assert len(herrings) / DRAWS == pytest.approx(HERRING_SHARE, abs=SHARE_TOLERANCE)
+        assert len(own_blunders) / DRAWS == pytest.approx(OWN_BLUNDER_SHARE, abs=SHARE_TOLERANCE)
+        assert len(foreign_blunders) / DRAWS == pytest.approx(
+            FOREIGN_BLUNDER_SHARE, abs=SHARE_TOLERANCE
+        )
+        own_herrings = sum(1 for p in herrings if p.origin == "own")
+        assert own_herrings / len(herrings) == pytest.approx(HERRING_OWN_SHARE, abs=SHARE_TOLERANCE)
+
+    def test_length_is_uniform_for_both_kinds(self) -> None:
+        rng = random.Random(PLAN_SEED)
+        plans = [draw_slot_plan(rng) for _ in range(DRAWS)]
+        for blunder in (False, True):
+            kind = [p for p in plans if (p.shape.blunder_position is not None) == blunder]
+            lengths = Counter(p.shape.length for p in kind)
+            for length in WINDOW_LENGTHS:
+                assert lengths[length] / len(kind) == pytest.approx(
+                    1 / len(WINDOW_LENGTHS), abs=SHARE_TOLERANCE
+                )
+
+    def test_blunder_position_follows_the_conditional_hazard(self) -> None:
+        rng = random.Random(PLAN_SEED)
+        blunders = [
+            p.shape
+            for p in (draw_slot_plan(rng) for _ in range(DRAWS))
+            if p.shape.blunder_position is not None
+        ]
+        for length in WINDOW_LENGTHS:
+            of_length = [s for s in blunders if s.length == length]
+            positions = Counter(s.blunder_position for s in of_length)
+            for position, weight in blunder_position_weights(length).items():
+                assert positions[position] / len(of_length) == pytest.approx(
+                    weight, abs=SHARE_TOLERANCE
+                )
+
+    def test_slots_are_drawn_independently(self) -> None:
+        rng = random.Random(SESSION_SEED)
+        herring_counts = [
+            sum(
+                1
+                for _ in range(SESSION_SLOTS)
+                if draw_slot_plan(rng).shape.blunder_position is None
+            )
+            for _ in range(SESSIONS)
+        ]
+        assert min(herring_counts) == 0, "some sessions carry no herring at all"
+        assert max(herring_counts) >= MANY_HERRINGS, "some sessions carry three or more"
+
+
+class TestBlunderPositionWeights:
+    def test_length_three_is_proportional_to_the_geometric_hazard(self) -> None:
+        weights = blunder_position_weights(3)
+        raw = (1.0, 1 - HAZARD, (1 - HAZARD) ** 2)
+        total = sum(raw)
+        assert sum(weights.values()) == pytest.approx(1.0)
+        assert [weights[k] for k in (1, 2, 3)] == pytest.approx([r / total for r in raw])

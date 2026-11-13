@@ -1,15 +1,17 @@
-"""Session composition for the blunder-check drill (SEED-261108-dk0, Phase 249).
+"""Session composition for the blunder-check drill (SEED-261108-dk0, Phases 249 and 250).
 
-`compose_windows` draws the session's window shapes first (D-03/D-11), then fills them from
-games in bounded batches: the user's own unserved fully evaluated games first, and only for the
-slots own supply cannot fit, other non-guest users' games whose mover's pinned Elo sits in a band
-around the user's reference Elo (D-09). Every pick becomes a `NewWindow` carrying a
-self-sufficient snapshot (start FEN + UCI moves) so a later delete of a foreign game never breaks
-the session (D-15).
+`compose_windows` draws one `SlotPlan` per session slot (250 D-12, D-16): a red herring, an own
+blunder or a foreign blunder at one third each, with a herring's origin split own / foreign like
+the blunders. It then fills the own slots from the user's unserved fully evaluated games, converts
+every own slot own supply cannot fill into a foreign slot (D-15, same code path for a user with no
+analysed games), and fills the foreign slots from other non-guest users' games whose mover's
+pinned Elo sits within FOREIGN_RATING_BAND of the user's level (D-13). Every pick becomes a
+`NewWindow` carrying a self-sufficient snapshot (start FEN + UCI moves) so a later delete of a
+foreign game never breaks the session (249 D-15). At most one window per game per session.
 
 Mechanics (Claude's discretion, recorded in the plan): on the fly per session start, game-first,
-Python judgements on the classifier's own pass. Queries per start are bounded by
-MAX_OWN_BATCHES, len(FOREIGN_ELO_BANDS) and MAX_SHAPE_REDRAWS (redraws reuse loaded batches).
+Python judgements on the classifier's own pass. Queries per start are bounded by MAX_OWN_BATCHES,
+MAX_FOREIGN_BATCHES and MAX_SHAPE_REDRAWS (redraws reuse loaded batches).
 
 All awaits on the one AsyncSession are sequential (CLAUDE.md: never gather on a session).
 """
@@ -19,7 +21,8 @@ from __future__ import annotations
 import io
 import random
 import statistics
-from collections.abc import Mapping, Sequence
+from collections import Counter
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
 from typing import Final, cast
@@ -49,8 +52,13 @@ from app.services.blunder_check_candidates import (
 )
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
+    FOREIGN_RATING_BAND,
+    SlotOrigin,
+    SlotPlan,
     WindowShape,
-    draw_window_shape,
+    draw_blunder_shape,
+    draw_herring_shape,
+    draw_slot_plan,
 )
 from app.services.normalization import is_correspondence_time_control
 
@@ -58,17 +66,22 @@ from app.services.normalization import is_correspondence_time_control
 OWN_BATCH_GAMES: int = 40
 # Own batches per session start; the first batch already covers a typical session.
 MAX_OWN_BATCHES: int = 3
-# Foreign games loaded per Elo band.
+# Foreign games loaded per batch.
 FOREIGN_BATCH_GAMES: int = 40
+# Foreign batches per session start (250 D-13: one rating band, no widening).
+MAX_FOREIGN_BATCHES: int = 2
 # TABLESAMPLE SYSTEM percentage for the foreign pick, so it never scans the whole games table.
 FOREIGN_SAMPLE_PERCENT: float = 2.0
-# Pinned-Elo half-widths around the user's reference Elo; one batch per band (widened once).
-FOREIGN_ELO_BANDS: tuple[int, ...] = (100, 200)
 # The raw-rating prefilter is wider than the band because chess.com and lichess scales differ;
-# the exact band is checked on the pinned Elo after loading.
+# the exact band (FOREIGN_RATING_BAND) is checked on the pinned Elo after loading.
 FOREIGN_RAW_PREFILTER_MARGIN: int = 500
-# Recent games whose median pinned Elo is the user's reference Elo.
+# Recent rated human games scanned to find the user's most-played time control (250 D-14).
+USER_LEVEL_SCAN_GAMES: int = 200
+# Newest games of that time control whose median pinned Elo is the user's level.
 REFERENCE_ELO_GAMES: int = 50
+# Level for a user with no rated games at all; mirrors the frontend FREE_PLAY_DEFAULT_ELO
+# (frontend/src/hooks/useMaiaEloDefault.ts), the 250 CONTEXT default for such a user.
+DEFAULT_USER_LEVEL_ELO: float = 1500.0
 # Rounds that redraw only the still-empty slots (re-using already loaded batches).
 MAX_SHAPE_REDRAWS: int = 5
 
@@ -121,8 +134,8 @@ def mover_pinned_elo(game: CandidateGame) -> float | None:
     )
 
 
-def reference_elo(rows: Sequence[EloSourceRow]) -> float | None:
-    """Median pinned Elo of the user's recent rated games; None for no rows."""
+def _median_pinned(rows: Sequence[EloSourceRow]) -> float | None:
+    """Median pinned Elo of the rows; None when no row has a pinned Elo."""
     elos = [
         elo
         for row in rows
@@ -137,6 +150,32 @@ def reference_elo(rows: Sequence[EloSourceRow]) -> float | None:
         is not None
     ]
     return statistics.median(elos) if elos else None
+
+
+def user_level_elo(rows: Sequence[EloSourceRow]) -> float:
+    """The user's level (250 D-14): median pinned Elo of the newest games in their most-played
+    time control. `rows` are the user's rated human games, newest first.
+
+    The bucket is the one with the most rows (a count tie goes to the bucket whose newest row comes
+    first); correspondence rows and rows without a bucket never decide it. With no bucketed rows the
+    level is the median over all rows, and with no rows DEFAULT_USER_LEVEL_ELO.
+    """
+    bucketed = [
+        row
+        for row in rows
+        if row.time_control_bucket is not None
+        and not is_correspondence_time_control(row.time_control_str)
+    ]
+    chosen: Sequence[EloSourceRow] = rows
+    if bucketed:
+        counts = Counter(row.time_control_bucket for row in bucketed)
+        # max() keeps the first maximal key, and Counter preserves first-seen (newest) order.
+        top_bucket = max(counts, key=lambda bucket: counts[bucket])
+        chosen = [row for row in bucketed if row.time_control_bucket == top_bucket][
+            :REFERENCE_ELO_GAMES
+        ]
+    level = _median_pinned(chosen)
+    return DEFAULT_USER_LEVEL_ELO if level is None else level
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +318,7 @@ async def _load_batch(
             positions=game_positions,
             flaws=game_flaws,
             key_plies=key_plies,
-            prompted_blunder_plies=served.prompted.get(game.game_id, set()),
+            served_blunder_plies=served.served_blunder_plies.get(game.game_id, set()),
             served_ply_ranges=served.judged_ranges.get(game.game_id, []),
         )
         if candidates is not None:
@@ -321,89 +360,149 @@ def _fill_from_pool(
         filled[pick.slot] = _Filled(pick, pool.batches[pick.game_id])
 
 
-def _empty_slots(
-    slots: Mapping[int, WindowShape], filled: Mapping[int, _Filled]
+def _empty_shapes(
+    plans: Mapping[int, SlotPlan], filled: Mapping[int, _Filled], origin: SlotOrigin
 ) -> dict[int, WindowShape]:
-    return {slot: shape for slot, shape in slots.items() if slot not in filled}
+    """Shapes of the still-empty slots of one origin."""
+    return {
+        slot: plan.shape
+        for slot, plan in plans.items()
+        if plan.origin == origin and slot not in filled
+    }
 
 
-async def _fill_from_own(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    slots: Mapping[int, WindowShape],
-    own: _Pool,
-    filled: dict[int, _Filled],
-    rng: random.Random,
-) -> None:
-    for _ in range(MAX_OWN_BATCHES):
-        if not _empty_slots(slots, filled):
-            return
-        ids = await repo.pick_own_game_ids(
-            session, user_id=user_id, limit=OWN_BATCH_GAMES, exclude_ids=own.seen_ids
-        )
-        if not ids:
-            return
-        await _load_into_pool(
-            session, own, user_id=user_id, game_ids=ids, is_own=True, elo_window=None
-        )
-        _fill_from_pool(_empty_slots(slots, filled), own, filled, rng=rng)
+def _wants_blunder(shape: WindowShape) -> bool:
+    return shape.blunder_position is not None
 
 
-async def _fill_from_foreign(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    slots: Mapping[int, WindowShape],
-    foreign: _Pool,
-    filled: dict[int, _Filled],
-    rng: random.Random,
-) -> None:
-    reference = reference_elo(
-        await repo.recent_rated_games(session, user_id=user_id, limit=REFERENCE_ELO_GAMES)
-    )
-    if reference is None:
-        return
-    for band in FOREIGN_ELO_BANDS:
-        if not _empty_slots(slots, filled):
-            return
-        raw_margin = band + FOREIGN_RAW_PREFILTER_MARGIN
-        ids = await repo.pick_foreign_game_ids(
+# Picks one batch of candidate game ids: (session, require_facepalm, exclude_ids) -> ids.
+_PickFn = Callable[[AsyncSession, bool, Sequence[int]], Awaitable[list[int]]]
+
+
+@dataclass(frozen=True)
+class _Source:
+    """Where the slots of one origin are filled from: the pick query and its limits."""
+
+    origin: SlotOrigin
+    max_rounds: int
+    elo_window: tuple[float, float] | None
+    pick: _PickFn
+
+
+def _own_source(user_id: int) -> _Source:
+    async def pick(
+        session: AsyncSession, require_facepalm: bool, exclude_ids: Sequence[int]
+    ) -> list[int]:
+        return await repo.pick_own_game_ids(
             session,
             user_id=user_id,
-            raw_low=int(reference - raw_margin),
-            raw_high=int(reference + raw_margin),
-            limit=FOREIGN_BATCH_GAMES,
-            exclude_ids=foreign.seen_ids,
-            sample_percent=FOREIGN_SAMPLE_PERCENT,
+            limit=OWN_BATCH_GAMES,
+            exclude_ids=exclude_ids,
+            require_facepalm=require_facepalm,
         )
+
+    return _Source("own", MAX_OWN_BATCHES, None, pick)
+
+
+async def _foreign_source(session: AsyncSession, user_id: int) -> _Source:
+    """Foreign games whose mover's pinned Elo is within FOREIGN_RATING_BAND of the user's level.
+
+    250 D-13: rating only (no time-control match), one band, no widening. The level is read once
+    per session start (D-14).
+    """
+    level = user_level_elo(
+        await repo.recent_rated_games(session, user_id=user_id, limit=USER_LEVEL_SCAN_GAMES)
+    )
+    raw_margin = FOREIGN_RATING_BAND + FOREIGN_RAW_PREFILTER_MARGIN
+
+    async def pick(
+        session: AsyncSession, require_facepalm: bool, exclude_ids: Sequence[int]
+    ) -> list[int]:
+        return await repo.pick_foreign_game_ids(
+            session,
+            user_id=user_id,
+            raw_low=int(level - raw_margin),
+            raw_high=int(level + raw_margin),
+            limit=FOREIGN_BATCH_GAMES,
+            exclude_ids=exclude_ids,
+            sample_percent=FOREIGN_SAMPLE_PERCENT,
+            require_facepalm=require_facepalm,
+        )
+
+    window = (level - FOREIGN_RATING_BAND, level + FOREIGN_RATING_BAND)
+    return _Source("foreign", MAX_FOREIGN_BATCHES, window, pick)
+
+
+async def _fill_from_source(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    source: _Source,
+    plans: Mapping[int, SlotPlan],
+    pool: _Pool,
+    filled: dict[int, _Filled],
+    rng: random.Random,
+) -> None:
+    """Load batches from one origin until its slots are full or the rounds run out.
+
+    A round asks for games holding an unserved qualifying blunder while a blunder slot is still
+    empty (`require_facepalm`); once such a pick comes back empty the origin has no blunder supply
+    left and later rounds only serve the herring slots with plain picks.
+    """
+    blunders_exhausted = False
+    for _ in range(source.max_rounds):
+        empty = _empty_shapes(plans, filled, source.origin)
+        want_blunder = any(_wants_blunder(shape) for shape in empty.values())
+        want_herring = any(not _wants_blunder(shape) for shape in empty.values())
+        require_facepalm = want_blunder and not blunders_exhausted
+        if not (require_facepalm or want_herring):
+            return
+        ids = await source.pick(session, require_facepalm, pool.seen_ids)
+        if not ids:
+            if not require_facepalm:
+                return
+            blunders_exhausted = True
+            continue
         await _load_into_pool(
             session,
-            foreign,
+            pool,
             user_id=user_id,
             game_ids=ids,
-            is_own=False,
-            elo_window=(reference - band, reference + band),
+            is_own=source.origin == "own",
+            elo_window=source.elo_window,
         )
-        _fill_from_pool(_empty_slots(slots, filled), foreign, filled, rng=rng)
+        _fill_from_pool(_empty_shapes(plans, filled, source.origin), pool, filled, rng=rng)
+
+
+def _redraw_shape(shape: WindowShape, rng: random.Random) -> WindowShape:
+    """A fresh shape of the same kind (blunder stays a blunder, herring stays a herring)."""
+    return draw_blunder_shape(rng) if _wants_blunder(shape) else draw_herring_shape(rng)
 
 
 def _redraw_and_refill(
-    slots: dict[int, WindowShape],
-    pools: Sequence[_Pool],
+    plans: dict[int, SlotPlan],
+    origin: SlotOrigin,
+    pool: _Pool,
     filled: dict[int, _Filled],
     *,
     rng: random.Random,
 ) -> None:
-    """Redraw only the empty slots and retry own then foreign pools without new queries."""
+    """Redraw only the empty slots of one origin and retry its pool without new queries."""
     for _ in range(MAX_SHAPE_REDRAWS):
-        empty = _empty_slots(slots, filled)
+        empty = _empty_shapes(plans, filled, origin)
         if not empty:
             return
-        for slot in empty:
-            slots[slot] = draw_window_shape(rng)
-        for pool in pools:
-            _fill_from_pool(_empty_slots(slots, filled), pool, filled, rng=rng)
+        for slot, shape in empty.items():
+            plans[slot] = SlotPlan(origin, _redraw_shape(shape, rng))
+        _fill_from_pool(_empty_shapes(plans, filled, origin), pool, filled, rng=rng)
+
+
+def _convert_empty_own_to_foreign(
+    plans: dict[int, SlotPlan], filled: Mapping[int, _Filled]
+) -> None:
+    """250 D-15 / D-16: own slots own supply could not fill become foreign slots, herrings included."""
+    for slot in _empty_shapes(plans, filled, "own"):
+        plans[slot] = SlotPlan("foreign", plans[slot].shape)
 
 
 # ---------------------------------------------------------------------------
@@ -452,16 +551,32 @@ def _new_window(position: int, item: _Filled) -> NewWindow | None:
 async def compose_windows(
     session: AsyncSession, *, user_id: int, rng: random.Random
 ) -> list[NewWindow]:
-    """Compose up to BLUNDER_CHECK_SESSION_WINDOWS windows for the user (D-02, D-09)."""
-    slots = {slot: draw_window_shape(rng) for slot in range(BLUNDER_CHECK_SESSION_WINDOWS)}
+    """Compose up to BLUNDER_CHECK_SESSION_WINDOWS windows for the user (250 D-12..D-16)."""
+    plans = {slot: draw_slot_plan(rng) for slot in range(BLUNDER_CHECK_SESSION_WINDOWS)}
     own, foreign = _Pool(), _Pool()
     filled: dict[int, _Filled] = {}
-    await _fill_from_own(session, user_id=user_id, slots=slots, own=own, filled=filled, rng=rng)
-    if _empty_slots(slots, filled):
-        await _fill_from_foreign(
-            session, user_id=user_id, slots=slots, foreign=foreign, filled=filled, rng=rng
+    await _fill_from_source(
+        session,
+        user_id=user_id,
+        source=_own_source(user_id),
+        plans=plans,
+        pool=own,
+        filled=filled,
+        rng=rng,
+    )
+    _redraw_and_refill(plans, "own", own, filled, rng=rng)
+    _convert_empty_own_to_foreign(plans, filled)
+    if _empty_shapes(plans, filled, "foreign"):
+        await _fill_from_source(
+            session,
+            user_id=user_id,
+            source=await _foreign_source(session, user_id),
+            plans=plans,
+            pool=foreign,
+            filled=filled,
+            rng=rng,
         )
-    _redraw_and_refill(slots, (own, foreign), filled, rng=rng)
+        _redraw_and_refill(plans, "foreign", foreign, filled, rng=rng)
     # Positions are renumbered contiguously so a short session keeps a gap-free sequence.
     windows: list[NewWindow] = []
     for _, item in sorted(filled.items()):

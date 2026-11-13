@@ -31,7 +31,7 @@ from app.models.blunder_check import (
 from app.models.user import User
 from app.services import blunder_check_selection
 from app.services.blunder_check_candidates import points_possible
-from app.services.blunder_check_rules import BLUNDER_CHECK_SESSION_WINDOWS, WindowShape
+from app.services.blunder_check_rules import BLUNDER_CHECK_SESSION_WINDOWS, SlotPlan, WindowShape
 from tests.blunder_check_seed import (
     SeedBlunder,
     delete_blunder_check_sessions,
@@ -223,6 +223,18 @@ async def _seed_own_games(test_engine, user_id: int, count: int) -> list[int]:
     ]
 
 
+def _force_own_blunder_slots(monkeypatch) -> None:
+    """Every slot is an own blunder window: these tests cover persistence and the API, not the
+    mix (250 D-15 converts own slots to foreign, never the reverse, so a random plan with
+    foreign slots would shorten a session that only has own supply)."""
+    shape = WindowShape(3, 1)
+    monkeypatch.setattr(
+        blunder_check_selection, "draw_slot_plan", lambda rng: SlotPlan("own", shape)
+    )
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: shape)
+    monkeypatch.setattr(blunder_check_selection, "draw_herring_shape", lambda rng: shape)
+
+
 async def _post(token: str) -> httpx.Response:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -256,6 +268,7 @@ def _board_at_ply(window: BlunderCheckWindow, ply: int) -> chess.Board:
 
 @pytest.mark.asyncio
 async def test_start_session_composes_six_own_windows(test_engine, monkeypatch) -> None:
+    _force_own_blunder_slots(monkeypatch)
     monkeypatch.setattr(
         blunder_check_selection, "new_session_rng", lambda: random.Random(_RNG_SEED)
     )
@@ -315,7 +328,8 @@ async def _window_count(test_engine, user_id: int) -> int:
 
 
 @pytest.mark.asyncio
-async def test_resume_second_post_returns_same_session(test_engine) -> None:
+async def test_resume_second_post_returns_same_session(test_engine, monkeypatch) -> None:
+    _force_own_blunder_slots(monkeypatch)
     user_id, token = await _register("bc-resume", beta=True, test_engine=test_engine)
     game_ids = await _seed_own_games(test_engine, user_id, _SEED_GAMES)
     session_id: int | None = None
@@ -334,7 +348,8 @@ async def test_resume_second_post_returns_same_session(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_concurrent_start_yields_one_open_session(test_engine) -> None:
+async def test_concurrent_start_yields_one_open_session(test_engine, monkeypatch) -> None:
+    _force_own_blunder_slots(monkeypatch)
     """Two simultaneous POSTs from independent clients (own DB session each) leave one open row."""
     user_id, token = await _register("bc-concurrent", beta=True, test_engine=test_engine)
     game_ids = await _seed_own_games(test_engine, user_id, _SEED_GAMES)
@@ -364,7 +379,8 @@ async def test_concurrent_start_yields_one_open_session(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_open_session_after_start_reports_pending_windows(test_engine) -> None:
+async def test_open_session_after_start_reports_pending_windows(test_engine, monkeypatch) -> None:
+    _force_own_blunder_slots(monkeypatch)
     user_id, token = await _register("bc-open-after", beta=True, test_engine=test_engine)
     game_ids = await _seed_own_games(test_engine, user_id, _SEED_GAMES)
     session_id: int | None = None

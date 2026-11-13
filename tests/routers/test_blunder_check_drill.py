@@ -39,7 +39,7 @@ from app.repositories.blunder_check_repository import NewWindow, insert_session
 from app.services import blunder_check_selection
 from app.services.blunder_check_candidates import points_possible
 from app.services.blunder_check_grading import judged_ply
-from app.services.blunder_check_rules import LEAD_IN_PLIES, WindowShape
+from app.services.blunder_check_rules import LEAD_IN_PLIES, SlotPlan, WindowShape
 from app.services.blunder_check_selection import build_snapshot
 from tests.blunder_check_seed import (
     SEED_PGN,
@@ -206,6 +206,15 @@ async def _setup(test_engine, specs: list[_Spec], *, user_id_token: tuple[int, s
     finally:
         await delete_blunder_check_sessions(test_engine, [session_id] if session_id else [])
         await delete_games(test_engine, [w.game_id for w in windows])
+
+
+def _force_own_shape(monkeypatch, shape: WindowShape) -> None:
+    """Every composed slot is an own slot of `shape` (the mix is the composer tests' concern)."""
+    monkeypatch.setattr(
+        blunder_check_selection, "draw_slot_plan", lambda rng: SlotPlan("own", shape)
+    )
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: shape)
+    monkeypatch.setattr(blunder_check_selection, "draw_herring_shape", lambda rng: shape)
 
 
 async def _call(token: str, path: str, body: dict[str, Any] | None = None) -> httpx.Response:
@@ -422,7 +431,7 @@ async def test_timeout_on_the_blunder_counts_as_missed(test_engine, clock) -> No
 
 
 @pytest.mark.asyncio
-async def test_false_alarm_keeps_safe_points_and_leaves_the_blunder_unserved(
+async def test_false_alarm_keeps_safe_points_and_the_blunder_is_never_served_again(
     test_engine, clock, monkeypatch
 ) -> None:
     async with _setup(test_engine, [_BLUNDER_AT_THREE]) as s:
@@ -436,18 +445,17 @@ async def test_false_alarm_keeps_safe_points_and_leaves_the_blunder_unserved(
         assert alarm["window_ended"] is True and alarm["outcome"] == "false_alarm"
         assert alarm["reply_uci"] is None
         assert window.outcome == int(WindowOutcome.FALSE_ALARM) and window.points_scored == 1
-        # D-10: the blunder ply was never prompted, so no answer row exists for it ...
+        # The blunder ply was never prompted, so no answer row exists for it ...
         assert _BLUNDER_AT_THREE_PLY not in {row.ply for row in rows}
-        # ... and the composer can pick that blunder for the same user again.
-        monkeypatch.setattr(
-            blunder_check_selection, "draw_window_shape", lambda rng: WindowShape(3, 1)
-        )
+        # ... yet 250 D-17 counts it as served (the window carrying it was served), so the
+        # composer never anchors a window on that blunder for the same user again.
+        _force_own_shape(monkeypatch, WindowShape(3, 1))
         maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with maker() as session:
             windows = await blunder_check_selection.compose_windows(
                 session, user_id=s.user_id, rng=random.Random(0)
             )
-    assert [w.blunder_ply for w in windows] == [_BLUNDER_AT_THREE_PLY]
+    assert all(w.blunder_ply != _BLUNDER_AT_THREE_PLY for w in windows)
 
 
 @pytest.mark.asyncio
@@ -683,8 +691,10 @@ async def test_finish_idor_and_unknown_session_answer_404(test_engine, clock) ->
 
 @pytest.mark.asyncio
 async def test_finish_then_open_is_null_and_start_composes_a_fresh_session(
-    test_engine, clock
+    test_engine, clock, monkeypatch
 ) -> None:
+    # The fresh session needs the leftover herring runs of the own game: force own herrings.
+    _force_own_shape(monkeypatch, WindowShape(3, None))
     async with _setup(test_engine, [_HERRING_3, _BLUNDER_AT_THREE]) as s:
         await _play_cleared_and_false_alarm(s)
         assert (await _finish(s.token, s.session_id)).status_code == 200

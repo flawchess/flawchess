@@ -1,10 +1,11 @@
 """DB tests for the blunder-check session composer (Phase 249 plan 03).
 
 Coverage:
-- own_first      : D-09, own supply fills every slot and the foreign pick is never queried
-- foreign        : D-09, a user without own supply gets rating-banded, non-guest strangers' games
+- origin         : 250 D-12 / D-16, each slot is filled from the origin its drawn plan names
+- foreign        : 250 D-15, a user without own supply gets foreign blunders and herrings
 - fit            : D-03, a blunder only anchors a drawn position it fits
-- repeat         : D-10, prompted blunders and overlapping herrings are never composed again
+- repeat         : 250 D-17, served blunders (false alarm or not) and overlapping herrings are never composed again
+- facepalm       : 250 D-09, only blunders at or above FACEPALM_SCORE_MIN are composed
 - miss           : D-07, a pure miss at position 1 carries the opponent's blunder as last lead-in
 - short          : a user whose supply fits fewer windows gets a gap-free short session
 - helpers        : snapshot, key-ply legality and reference Elo
@@ -16,7 +17,9 @@ from __future__ import annotations
 
 import datetime
 import io
+import itertools
 import random
+import statistics
 from collections.abc import Sequence
 
 import chess
@@ -37,16 +40,21 @@ from app.repositories.blunder_check_repository import EloSourceRow, NewWindow
 from app.services import blunder_check_selection
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
+    FACEPALM_SCORE_MIN,
+    FOREIGN_RATING_BAND,
     LEAD_IN_PLIES,
+    SlotPlan,
     WindowShape,
 )
 from app.services.blunder_check_selection import (
-    FOREIGN_ELO_BANDS,
+    DEFAULT_USER_LEVEL_ELO,
+    REFERENCE_ELO_GAMES,
     build_snapshot,
     compose_windows,
-    reference_elo,
+    user_level_elo,
 )
 from tests.blunder_check_seed import (
+    SEED_FACEPALM_SCORE,
     SEED_PGN,
     SeedBlunder,
     delete_blunder_check_sessions,
@@ -63,11 +71,15 @@ _USER_BLUNDER_PLY = 40  # white user; 20 clean user moves precede it
 _BLUNDER_DROP_CP = 600
 _RATING = 1500
 _SEEDS = (0, 1, 2, 3, 4)
+# How far below FACEPALM_SCORE_MIN the non-qualifying fixture sits.
+LOW_SCORE_GAP = 0.2
 _START_FEN = "rnbqkbnr/pppqpppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 _TS = datetime.datetime(2026, 11, 10, 12, 0, tzinfo=datetime.timezone.utc)
-# Inside the raw-rating prefilter (band + FOREIGN_RAW_PREFILTER_MARGIN) but outside the widest
-# pinned-Elo band, so only the exact post-load band check can exclude it.
-_FOREIGN_RATING_FAR = _RATING + FOREIGN_ELO_BANDS[-1] + 200
+# Inside the raw-rating prefilter (band + FOREIGN_RAW_PREFILTER_MARGIN) but outside the pinned-Elo
+# band, so only the exact post-load band check can exclude it.
+_FOREIGN_RATING_FAR = _RATING + FOREIGN_RATING_BAND + 100
+_BLUNDER_SHAPE = WindowShape(3, 1)
+_HERRING_SHAPE = WindowShape(3, None)
 
 
 def _maker(test_engine):
@@ -166,66 +178,144 @@ async def _insert_prior_window(
 
 
 def _force_shape(monkeypatch, shape: WindowShape) -> None:
-    monkeypatch.setattr(blunder_check_selection, "draw_window_shape", lambda rng: shape)
+    """Every slot is an own slot of `shape`; redraws return the same shape."""
+    monkeypatch.setattr(
+        blunder_check_selection, "draw_slot_plan", lambda rng: SlotPlan("own", shape)
+    )
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: shape)
+    monkeypatch.setattr(blunder_check_selection, "draw_herring_shape", lambda rng: shape)
+
+
+def _force_plans(monkeypatch, plans: Sequence[SlotPlan]) -> None:
+    """Hand out `plans` in order (cycled); redraws return each kind's own shape."""
+    supply = itertools.cycle(plans)
+    monkeypatch.setattr(blunder_check_selection, "draw_slot_plan", lambda rng: next(supply))
+    monkeypatch.setattr(blunder_check_selection, "draw_blunder_shape", lambda rng: _BLUNDER_SHAPE)
+    monkeypatch.setattr(blunder_check_selection, "draw_herring_shape", lambda rng: _HERRING_SHAPE)
+
+
+async def _owners(test_engine, game_ids: Sequence[int]) -> dict[int, int]:
+    async with _maker(test_engine)() as session:
+        rows = (
+            await session.execute(select(Game.id, Game.user_id).where(Game.id.in_(game_ids)))
+        ).all()
+    return {row.id: row.user_id for row in rows}
 
 
 # ---------------------------------------------------------------------------
-# D-09 own first / foreign fallback
+# 250 D-12 / D-15 / D-16 slot origins
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_own_first_never_queries_foreign(test_engine, monkeypatch) -> None:
-    caller = await _user(test_engine, "bcs-own")
-    stranger = await _user(test_engine, "bcs-own-stranger")
-    own_ids = await _seed_games(test_engine, caller, 7)
-    foreign_ids = await _seed_games(test_engine, stranger, 8)
-
-    async def _boom(*args: object, **kwargs: object) -> list[int]:
-        raise AssertionError("the foreign pick must not run while own supply fills every slot")
-
-    monkeypatch.setattr(blunder_check_selection.repo, "pick_foreign_game_ids", _boom)
+async def test_slot_origins_follow_the_drawn_plan(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    plans = [
+        SlotPlan("own", _BLUNDER_SHAPE),
+        SlotPlan("foreign", _BLUNDER_SHAPE),
+        SlotPlan("own", _HERRING_SHAPE),
+        SlotPlan("foreign", _HERRING_SHAPE),
+    ]
+    _force_plans(monkeypatch, plans)
+    caller = await _user(test_engine, "bcs-origin")
+    stranger = await _user(test_engine, "bcs-origin-stranger")
+    own_ids = await _seed_games(test_engine, caller, 5)
+    foreign_ids = await _seed_games(test_engine, stranger, 5)
     try:
         windows = await _compose(test_engine, caller, seed=3)
+        owners = await _owners(test_engine, [w.game_id for w in windows])
+    finally:
+        await delete_games(test_engine, own_ids + foreign_ids)
+    # Six slots cycle the four plans: own B, foreign B, own H, foreign H, own B, foreign B.
+    expected = list(itertools.islice(itertools.cycle(plans), BLUNDER_CHECK_SESSION_WINDOWS))
+    assert len(windows) == BLUNDER_CHECK_SESSION_WINDOWS
+    assert [(w.is_own, w.blunder_ply is not None) for w in windows] == [
+        (plan.origin == "own", plan.shape.blunder_position is not None) for plan in expected
+    ]
+    assert len({w.game_id for w in windows}) == len(windows), "one window per game"
+    # T-250-16: is_own is True exactly when the game belongs to the caller.
+    assert all(w.is_own == (owners[w.game_id] == caller) for w in windows)
+    assert {w.game_id for w in windows if w.is_own} <= set(own_ids)
+    assert {w.game_id for w in windows if not w.is_own} <= set(foreign_ids)
+
+
+@pytest.mark.asyncio
+async def test_no_own_supply_gets_foreign_blunders_and_herrings(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE), SlotPlan("own", _HERRING_SHAPE)])
+    caller = await _user(test_engine, "bcs-noown")
+    stranger = await _user(test_engine, "bcs-noown-stranger")
+    # The caller has rated games (a level) but nothing fully evaluated: no own supply (D-15).
+    own_ids = await _seed_games(test_engine, caller, 2, full_evals=False)
+    foreign_ids = await _seed_games(test_engine, stranger, 8)
+    try:
+        windows = await _compose(test_engine, caller, seed=1)
+        owners = await _owners(test_engine, [w.game_id for w in windows])
     finally:
         await delete_games(test_engine, own_ids + foreign_ids)
     assert len(windows) == BLUNDER_CHECK_SESSION_WINDOWS
-    assert all(w.is_own for w in windows)
-    assert {w.game_id for w in windows} <= set(own_ids)
+    assert all(not w.is_own for w in windows)
+    assert all(owners[w.game_id] != caller for w in windows)
+    assert {w.game_id for w in windows} <= set(foreign_ids)
+    # Both kinds survive the conversion (D-16): the own herring slots became foreign herrings.
+    assert any(w.blunder_ply is None for w in windows)
+    assert any(w.blunder_ply is not None for w in windows)
 
 
 @pytest.mark.asyncio
-async def test_foreign_fallback_bands_by_elo_and_skips_guests(test_engine, monkeypatch) -> None:
+async def test_own_herrings_are_served_when_no_own_game_holds_a_blunder(
+    test_engine, monkeypatch
+) -> None:
+    """Own blunder supply exhausted must not strand the own herring slots (plain pick follows)."""
     monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
-    caller = await _user(test_engine, "bcs-fb")
-    stranger = await _user(test_engine, "bcs-fb-stranger")
-    guest = await _user(test_engine, "bcs-fb-guest", guest=True)
-    # The caller has recent rated games but nothing fully evaluated: reference Elo, no own supply.
+    _force_plans(monkeypatch, [SlotPlan("own", _BLUNDER_SHAPE), SlotPlan("own", _HERRING_SHAPE)])
+    caller = await _user(test_engine, "bcs-herring-own")
+    evals = with_user_blunder(flat_evals(_ROWS, 0), _USER_BLUNDER_PLY, _BLUNDER_DROP_CP)
+    # No flaw rows: the games are clean as far as the facepalm gate goes, yet supply herrings.
+    game_ids = [
+        await seed_judged_game(test_engine, user_id=caller, evals_cp=evals, blunders=[])
+        for _ in range(4)
+    ]
+    try:
+        windows = await _compose(test_engine, caller, seed=2)
+    finally:
+        await delete_games(test_engine, game_ids)
+    assert windows, "own games still supply herring runs"
+    assert all(w.is_own and w.blunder_ply is None for w in windows)
+
+
+@pytest.mark.asyncio
+async def test_foreign_games_within_rating_band_only(test_engine, monkeypatch) -> None:
+    monkeypatch.setattr(blunder_check_selection, "FOREIGN_SAMPLE_PERCENT", 100.0)
+    _force_shape(monkeypatch, _BLUNDER_SHAPE)
+    caller = await _user(test_engine, "bcs-band")
+    stranger = await _user(test_engine, "bcs-band-stranger")
+    guest = await _user(test_engine, "bcs-band-guest", guest=True)
+    # The caller has rated games (the level) but nothing fully evaluated: no own supply.
     own_ids = await _seed_games(test_engine, caller, 3, full_evals=False)
-    in_band = await _seed_games(test_engine, stranger, 2)
+    at_level = await _seed_games(test_engine, stranger, 2)
     too_strong = await _seed_games(test_engine, stranger, 6, rating=_FOREIGN_RATING_FAR)
     guest_ids = await _seed_games(test_engine, guest, 2)
-    all_ids = own_ids + in_band + too_strong + guest_ids
+    all_ids = own_ids + at_level + too_strong + guest_ids
     try:
         windows = await _compose(test_engine, caller, seed=5)
+        owners = await _owners(test_engine, [w.game_id for w in windows])
         async with _maker(test_engine)() as session:
-            owners = (
-                await session.execute(
-                    select(Game.id, Game.user_id, User.is_guest)
-                    .join(User, User.id == Game.user_id)
-                    .where(Game.id.in_([w.game_id for w in windows]))
-                )
-            ).all()
+            guests = set(
+                (await session.execute(select(User.id).where(User.is_guest.is_(True))))
+                .scalars()
+                .all()
+            )
     finally:
         await delete_games(test_engine, all_ids)
     # Only two games are in band; the six too-strong ones must not top the session up.
-    assert {w.game_id for w in windows} == set(in_band)
+    assert {w.game_id for w in windows} == set(at_level)
     assert all(not w.is_own for w in windows)
-    assert all(owner.user_id != caller and not owner.is_guest for owner in owners)
+    assert all(owners[w.game_id] != caller and owners[w.game_id] not in guests for w in windows)
     assert not {w.game_id for w in windows} & set(guest_ids + too_strong + own_ids)
     for window in windows:
         assert window.mover_elo is not None
-        assert abs(window.mover_elo - _RATING) <= FOREIGN_ELO_BANDS[-1]
+        assert abs(window.mover_elo - _RATING) <= FOREIGN_RATING_BAND
 
 
 # ---------------------------------------------------------------------------
@@ -280,13 +370,14 @@ async def test_repeat_prompted_blunder_is_never_composed_again(test_engine, monk
 
 
 @pytest.mark.asyncio
-async def test_repeat_false_alarm_before_blunder_leaves_it_eligible(
+async def test_repeat_false_alarm_before_blunder_is_never_served_again(
     test_engine, monkeypatch
 ) -> None:
     _force_shape(monkeypatch, WindowShape(3, 1))
     caller = await _user(test_engine, "bcs-rep-alarm")
     (game_id,) = await _seed_games(test_engine, caller, 1)
-    # The prior window ended on a false alarm at its first move: the blunder was never prompted.
+    # The prior window ended on a false alarm at its first move: the blunder ply was never
+    # prompted, but 250 D-17 counts it as served the moment the window was served.
     prior = await _insert_prior_window(
         test_engine,
         user_id=caller,
@@ -301,7 +392,7 @@ async def test_repeat_false_alarm_before_blunder_leaves_it_eligible(
     finally:
         await delete_blunder_check_sessions(test_engine, [prior])
         await delete_games(test_engine, [game_id])
-    assert [w.blunder_ply for w in windows] == [_USER_BLUNDER_PLY]
+    assert all(w.blunder_ply != _USER_BLUNDER_PLY for w in windows)
 
 
 @pytest.mark.asyncio
@@ -329,6 +420,34 @@ async def test_repeat_herring_never_overlaps_a_served_range(test_engine, monkeyp
     for window in windows:
         last = _last_judged_ply(window)
         assert last < served_first or window.first_ply > served_last
+
+
+# ---------------------------------------------------------------------------
+# 250 D-09 facepalm gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_facepalm_only_qualifying_blunders_are_composed(test_engine, monkeypatch) -> None:
+    _force_shape(monkeypatch, WindowShape(3, 1))
+    caller = await _user(test_engine, "bcs-facepalm")
+    evals = with_user_blunder(flat_evals(_ROWS, 0), _USER_BLUNDER_PLY, _BLUNDER_DROP_CP)
+    qualifying, below = [
+        await seed_judged_game(
+            test_engine,
+            user_id=caller,
+            evals_cp=evals,
+            blunders=[SeedBlunder(ply=_USER_BLUNDER_PLY, facepalm_score=score)],
+        )
+        for score in (SEED_FACEPALM_SCORE, FACEPALM_SCORE_MIN - LOW_SCORE_GAP)
+    ]
+    try:
+        composed = [await _compose(test_engine, caller, seed=seed) for seed in _SEEDS]
+    finally:
+        await delete_games(test_engine, [qualifying, below])
+    for windows in composed:
+        assert [w.game_id for w in windows] == [qualifying]
+        assert windows[0].blunder_ply == _USER_BLUNDER_PLY
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +486,8 @@ async def test_miss_lead_in_ends_with_the_opponents_blunder(test_engine, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_short_session_keeps_gap_free_positions(test_engine) -> None:
+async def test_short_session_keeps_gap_free_positions(test_engine, monkeypatch) -> None:
+    _force_shape(monkeypatch, _BLUNDER_SHAPE)
     caller = await _user(test_engine, "bcs-short")
     game_ids = await _seed_games(test_engine, caller, 2)
     try:
@@ -404,12 +524,54 @@ def test_build_snapshot_clamps_at_game_start_and_rejects_past_end() -> None:
     assert build_snapshot("not a pgn at all (", first_ply=4, last_ply=6) is None
 
 
-def test_reference_elo_is_the_median_pinned_elo() -> None:
-    rows = [
-        EloSourceRow(
-            platform="lichess", time_control_bucket="blitz", time_control_str="300+0", rating=r
-        )
-        for r in (1400, 1500, 1800)
-    ]
-    assert reference_elo(rows) == 1500
-    assert reference_elo([]) is None
+def _row(
+    rating: int,
+    bucket: str | None = "blitz",
+    time_control_str: str | None = "300+0",
+    platform: str = "lichess",
+) -> EloSourceRow:
+    return EloSourceRow(
+        platform=platform,
+        time_control_bucket=bucket,
+        time_control_str=time_control_str,
+        rating=rating,
+    )
+
+
+def test_user_level_picks_the_most_played_bucket_not_the_most_recent() -> None:
+    # Newest first: one recent rapid game, then four older blitz games.
+    rows = [_row(2000, "rapid", "900+0")] + [_row(r) for r in (1400, 1500, 1600, 1700)]
+    assert user_level_elo(rows) == statistics.median([1400, 1500, 1600, 1700])
+
+
+def test_user_level_count_tie_goes_to_the_bucket_with_the_newest_row() -> None:
+    rapid = [_row(1300, "rapid", "900+0"), _row(1350, "rapid", "900+0")]
+    blitz = [_row(1800), _row(1900)]
+    # Raw ratings are normalised per platform and bucket, so compare with the single-bucket level.
+    assert user_level_elo([rapid[0], blitz[0], rapid[1], blitz[1]]) == user_level_elo(rapid)
+    assert user_level_elo([blitz[0], rapid[0], blitz[1], rapid[1]]) == statistics.median(
+        [1800, 1900]
+    )
+    assert user_level_elo(rapid) != user_level_elo(blitz)
+
+
+def test_user_level_uses_at_most_reference_games_of_the_bucket() -> None:
+    newest = [_row(1500)] * REFERENCE_ELO_GAMES
+    rows = newest + [_row(2200)] * REFERENCE_ELO_GAMES
+    assert user_level_elo(rows) == 1500
+
+
+def test_user_level_ignores_correspondence_and_unbucketed_rows_for_the_bucket() -> None:
+    # Five correspondence rows outnumber the two blitz rows but never decide the bucket.
+    correspondence = [_row(1000, "classical", "1/86400") for _ in range(5)]
+    rows = correspondence + [_row(1500), _row(1700)]
+    assert user_level_elo(rows) == 1600
+
+
+def test_user_level_without_bucketed_rows_is_the_median_of_all_rows() -> None:
+    rows = [_row(1400, None, None), _row(1500, "classical", "1/86400"), _row(1800, None, None)]
+    assert user_level_elo(rows) == 1500
+
+
+def test_user_level_without_rows_is_the_named_default() -> None:
+    assert user_level_elo([]) == DEFAULT_USER_LEVEL_ELO == 1500.0

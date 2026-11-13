@@ -1,4 +1,4 @@
-"""Tests for the blunder-check calibration sampler and report (SEED-261108-dk0, Phase 248, plan 04).
+"""Tests for the blunder-check calibration sampler and report (SEED-261108-dk0, Phase 248, 250).
 
 DB-backed tests commit games through a session maker bound to the per-run test DB and delete
 them in teardown. The sampler's selector is global, so every assertion about its output is
@@ -8,6 +8,7 @@ scoped to this module's own game ids (other modules' games leak in under -n auto
 from __future__ import annotations
 
 import datetime
+import json
 import random
 import uuid
 from pathlib import Path
@@ -26,15 +27,15 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
 from app.services import maia_engine
+from app.services.blunder_check_rules import FOREIGN_RATING_BAND, SlotPlan
 from scripts.blunder_check.metrics import (
     HAZARD,
-    WINDOW_LENGTHS,
     EloBucket,
     MissCase,
     MoveJudgement,
     Provenance,
     blunder_fits_position,
-    hazard_position_weights,
+    blunder_position_marginals,
     in_band,
 )
 from scripts.blunder_check.oddness import (
@@ -47,13 +48,15 @@ from scripts.blunder_check.render import (
     ReportParams,
     render_report,
     section_eval_band,
-    section_findability_grid,
+    section_facepalm_score,
     section_herring_supply,
     section_provenance,
     section_recommended_constants,
-    section_supply_per_user,
+    level_note,
+    section_supply_by_origin,
     section_window_fit,
 )
+from scripts.blunder_check import spot_check
 from scripts.blunder_check.spot_check import (
     JudgedLine,
     SpotCheckParams,
@@ -61,12 +64,12 @@ from scripts.blunder_check.spot_check import (
     SpotWindowDetail,
     WindowShape,
     analysis_link,
-    draw_window_shape,
     fetch_window_details,
     pick_windows,
     render_spot_check,
 )
 from scripts.blunder_check.sample import (
+    CACHE_VERSION,
     PERMILLE_BASE,
     BlunderRecord,
     Collection,
@@ -95,8 +98,10 @@ HOLD_CP = 100
 GIFT_CP = 500
 OPPONENT_BLUNDER_PLY = 7
 USER_BLUNDER_PLY = 8
-BEST_PROB = 0.5
-REFUTATION_PROB = 0.1
+SEEDED_SCORE = 0.82
+SEEDED_PLAYED_PROB = 0.04
+SEEDED_SPREAD = 2.5
+SEEDED_LOSS_3 = 3
 
 MakeGame = Callable[..., Awaitable[int]]
 
@@ -133,9 +138,12 @@ async def make_game(
         white_rating: int | None = 1500,
         lichess_evals: bool = False,
         user_id: int = _TEST_USER_ID,
+        with_line: bool = True,
     ) -> int:
         evals = [HOLD_CP] * len(_SAN)
         evals[OPPONENT_BLUNDER_PLY] = GIFT_CP
+        # The stored engine line after the user's blunder sits on the row at ply + 1.
+        line_pv = {USER_BLUNDER_PLY + 1: "d7d5 e4d5 d8d5"} if with_line else {}
         async with session_factory() as session:
             game = Game(
                 user_id=user_id,
@@ -176,6 +184,7 @@ async def make_game(
                         black_hash=ply,
                         endgame_class=None,
                         move_san=_SAN[ply],
+                        pv=line_pv.get(ply),
                     )
                 )
             await session.flush()
@@ -194,10 +203,10 @@ async def make_game(
                         is_reversed=False,
                         is_squandered=False,
                         fen="",
-                        maia_best_prob=BEST_PROB if is_user_ply else None,
-                        maia_best_rank=1 if is_user_ply else None,
-                        maia_refutation_prob=REFUTATION_PROB if is_user_ply else None,
-                        maia_refutation_rank=3 if is_user_ply else None,
+                        maia_played_prob=SEEDED_PLAYED_PROB if is_user_ply else None,
+                        maia_reply_spread=SEEDED_SPREAD if is_user_ply else None,
+                        line_loss_3=SEEDED_LOSS_3 if is_user_ply else None,
+                        facepalm_score=SEEDED_SCORE if is_user_ply else None,
                     )
                 )
             await session.commit()
@@ -253,8 +262,11 @@ class TestTracer:
         assert blunder.ply == USER_BLUNDER_PLY
         assert blunder.case == "pure_miss"
         assert blunder.is_miss
-        assert blunder.maia_best_prob == pytest.approx(BEST_PROB)
-        assert blunder.maia_refutation_rank == 3
+        assert blunder.maia_played_prob == pytest.approx(SEEDED_PLAYED_PROB)
+        assert blunder.maia_reply_spread == pytest.approx(SEEDED_SPREAD)
+        assert (blunder.line_loss_3, blunder.line_mate_ply) == (SEEDED_LOSS_3, None)
+        assert blunder.facepalm_score == pytest.approx(SEEDED_SCORE)
+        assert blunder.has_line
 
         collection = Collection(
             meta=RunMeta(db_name="test", date="2026-11-09", games_sampled=1),
@@ -269,6 +281,19 @@ class TestTracer:
             "## Cases by Elo bucket",
         ):
             assert report.count(heading) == 1
+
+    @pytest.mark.asyncio
+    async def test_blunder_without_a_stored_line_is_recorded_as_such(
+        self, make_game: MakeGame, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        # has_line separates "no line" from "line too short" in the Facepalm score section.
+        with_line = await make_game(with_line=True)
+        without_line = await make_game(with_line=False)
+        async with session_factory() as session:
+            batch = await collect_records(session, [with_line, without_line])
+        by_game = {b.game_id: b for b in batch.blunders}
+        assert by_game[with_line].has_line
+        assert not by_game[without_line].has_line
 
     @pytest.mark.asyncio
     async def test_unrated_game_keeps_record_but_has_no_blunder_record(
@@ -304,7 +329,9 @@ class TestTracer:
 MID_ES = 0.5
 OUT_OF_BAND_ES = 0.97
 BUCKET: EloBucket = "1200-1599"
-PARAMS = ReportParams(refutation_threshold=0.20, miss_threshold=0.20, band_low=0.10, band_high=0.90)
+PARAMS = ReportParams(facepalm_threshold=0.70, band_low=0.10, band_high=0.90)
+QUALIFYING_SCORE = 0.9
+BELOW_SCORE = 0.4
 
 
 def _judgements(*es_values: float, good: bool = True, start_ply: int = 0) -> list[MoveJudgement]:
@@ -315,14 +342,19 @@ def _judgements(*es_values: float, good: bool = True, start_ply: int = 0) -> lis
 def _blunder(
     *,
     case: MissCase = "allowed",
-    refutation: tuple[float | None, int | None] = (None, None),
-    best: tuple[float | None, int | None] = (None, None),
+    score: float | None = QUALIFYING_SCORE,
+    played_prob: float | None = 0.05,
+    spread: float | None = 2.0,
+    loss_3: int | None = 3,
+    mate_ply: int | None = None,
+    has_line: bool = True,
     preceding: list[MoveJudgement] | None = None,
     es_before: float | None = MID_ES,
     bucket: EloBucket = BUCKET,
     provenance: Provenance = "engine",
     is_guest: bool = False,
 ) -> BlunderRecord:
+    """A user blunder; the defaults give a scored one that qualifies at PARAMS."""
     return BlunderRecord(
         game_id=1,
         ply=20,
@@ -334,14 +366,25 @@ def _blunder(
         es_before=es_before,
         es_played=0.2,
         es_ref=0.5,
-        maia_played_prob=None,
-        maia_played_rank=None,
-        maia_best_prob=best[0],
-        maia_best_rank=best[1],
-        maia_refutation_prob=refutation[0],
-        maia_refutation_rank=refutation[1],
+        maia_played_prob=played_prob,
+        maia_reply_spread=spread,
+        line_loss_3=loss_3,
+        line_mate_ply=mate_ply,
+        facepalm_score=score,
+        has_line=has_line,
         preceding=preceding or [],
     )
+
+
+def _unscored(reason: str) -> BlunderRecord:
+    """An unscored blunder for each NULL reason of the Facepalm score section."""
+    if reason == "no_spread":
+        return _blunder(score=None, spread=None, loss_3=None, has_line=True)
+    if reason == "no_line":
+        return _blunder(score=None, loss_3=None, has_line=False)
+    if reason == "line_too_short":
+        return _blunder(score=None, loss_3=None, has_line=True)
+    raise AssertionError(reason)
 
 
 def _game(
@@ -366,7 +409,12 @@ def _game(
 
 def _rows(section: str) -> list[list[str]]:
     """Parsed markdown table rows (header and separator dropped) of the first table."""
-    lines = [line for line in section.splitlines() if line.startswith("|")]
+    lines: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("|"):
+            lines.append(line)
+        elif lines:
+            break
     return [[c.strip() for c in line.strip("|").split("|")] for line in lines[2:]]
 
 
@@ -374,40 +422,72 @@ def _row(section: str, label: str) -> list[str]:
     return next(r for r in _rows(section) if r[0] == label)
 
 
-class TestFindabilityGrid:
-    def test_two_of_four_allowed_pass_at_r_020(self) -> None:
-        blunders = [
-            _blunder(refutation=(0.05, 4)),
-            _blunder(refutation=(0.10, 3)),
-            _blunder(refutation=(0.25, 2)),
-            _blunder(refutation=(0.50, 1)),
-        ]
-        section = section_findability_grid(Collection(blunders=blunders), PARAMS)
-        row = _row(section, BUCKET)
-        # columns: bucket, n scored, unscored, rank-1 only, then the grid 0.05 ... 0.50
-        assert row[1:4] == ["4", "0", "25.0% (n=4)"]
-        assert row[4 + 3] == "50.0% (n=4)"  # grid index 3 is 0.20
+class TestFacepalmScoreSection:
+    def test_counts_shares_null_reasons_and_pass_shares_per_bucket(self) -> None:
+        scored = [_blunder(score=s) for s in (0.45, 0.55, 0.65, 0.75, 0.85, 0.95)]
+        unscored = [_unscored("no_spread"), _unscored("no_line"), _unscored("line_too_short")]
+        section = section_facepalm_score(Collection(blunders=[*scored, *unscored]), PARAMS)
+        header = next(line for line in section.splitlines() if line.startswith("| Elo bucket"))
+        columns = [c.strip() for c in header.strip("|").split("|")]
+        row = dict(zip(columns, _row(section, BUCKET), strict=True))
+        assert row["user blunders"] == "9"
+        assert row["scored"] == "66.7% (n=9)"
+        assert row["no spread"] == "11.1% (n=9)"
+        assert row["no line"] == "11.1% (n=9)"
+        assert row["line too short"] == "11.1% (n=9)"
+        assert row["no played prob"] == "0.0% (n=9)"
+        # Pass shares are of the 6 scored blunders: 5 / 4 / 3 / 2 are at or above 0.5 / 0.6 / 0.7 / 0.8.
+        assert row["pass >= 0.50"] == "83.3% (n=6)"
+        assert row["pass >= 0.60"] == "66.7% (n=6)"
+        assert row["pass >= 0.70"] == "50.0% (n=6)"
+        assert row["pass >= 0.80"] == "33.3% (n=6)"
+        # Qualifying of all: 3 of the 9 user blunders reach 0.70, the unscored ones never do.
+        assert row["qualifying of all (>= 0.70)"] == "33.3% (n=9)"
+        assert row["score q1 / median / q3"] == "0.575 / 0.700 / 0.825"
 
-    def test_unscored_pairs_are_counted_and_excluded_from_denominators(self) -> None:
-        blunders = [_blunder(refutation=(0.5, 1)), _blunder(), _blunder()]
-        section = section_findability_grid(Collection(blunders=blunders), PARAMS)
-        row = _row(section, BUCKET)
-        assert row[1:3] == ["1", "2"]
-        assert row[4 + 3] == "100.0% (n=1)"
+    def test_chosen_threshold_outside_the_grid_gets_its_own_column(self) -> None:
+        params = ReportParams(facepalm_threshold=0.65)
+        section = section_facepalm_score(Collection(blunders=[_blunder(score=0.66)]), params)
+        assert "pass >= 0.65" in section
+        assert "qualifying of all (>= 0.65)" in section
+        assert _row(section, BUCKET)[-2] == "100.0% (n=1)"
 
-    def test_mixed_passes_if_either_pair_passes(self) -> None:
+    def test_pooled_row_and_guest_exclusion(self) -> None:
         blunders = [
-            _blunder(case="mixed", refutation=(0.01, 9), best=(0.6, 2)),
-            _blunder(case="mixed", refutation=(0.01, 9), best=(0.01, 9)),
+            _blunder(bucket="<800"),
+            _blunder(bucket="2400+", score=None, spread=None),
+            _blunder(is_guest=True),
         ]
-        section = section_findability_grid(Collection(blunders=blunders), PARAMS)
-        mixed_row = [r for r in _rows(section) if r[0] == BUCKET][-1]
-        assert mixed_row[4 + 3] == "50.0% (n=2)"
+        section = section_facepalm_score(Collection(blunders=blunders), PARAMS)
+        assert _row(section, "all")[1] == "2"
+        assert _row(section, "<800")[1] == "1"
+
+    def test_missing_played_prob_is_its_own_reason(self) -> None:
+        blunder = _blunder(score=None, played_prob=None)
+        section = section_facepalm_score(Collection(blunders=[blunder]), PARAMS)
+        header = next(line for line in section.splitlines() if line.startswith("| Elo bucket"))
+        columns = [c.strip() for c in header.strip("|").split("|")]
+        row = dict(zip(columns, _row(section, BUCKET), strict=True))
+        assert row["no played prob"] == "100.0% (n=1)"
+        assert row["line too short"] == "0.0% (n=1)"
+
+
+class TestQualifyingPredicate:
+    def test_null_never_qualifies_and_threshold_is_inclusive(self) -> None:
+        from scripts.blunder_check.render import qualifying_blunders
+
+        blunders = [_blunder(score=0.70), _blunder(score=0.6999), _blunder(score=None)]
+        assert [b.facepalm_score for b in qualifying_blunders(blunders, PARAMS)] == [0.70]
+
+    def test_report_has_the_facepalm_section_and_no_findability_grid(self) -> None:
+        report = render_report(Collection(blunders=[_blunder()]), PARAMS)
+        assert report.count("## Facepalm score") == 1
+        assert "## Findability grid" not in report
 
 
 class TestWindowFit:
     def test_three_good_in_band_moves_fit_positions_one_to_four_not_five(self) -> None:
-        blunder = _blunder(refutation=(0.5, 1), preceding=_judgements(MID_ES, MID_ES, MID_ES))
+        blunder = _blunder(preceding=_judgements(MID_ES, MID_ES, MID_ES))
         section = section_window_fit(Collection(blunders=[blunder]), PARAMS)
         row = _row(section, BUCKET)
         assert row[1] == "1"
@@ -418,15 +498,13 @@ class TestWindowFit:
             "100.0% (n=1)",
             "0.0% (n=1)",
         ]
-        # Hazard-weighted average with the D-16 normalized weights: 1 - 0.037 for position 5.
-        assert row[7] == "96.3% (n=1)"
+        # Window-weighted average: 1 minus the blunder-window weight of position 5 (0.0328).
+        assert row[7] == "96.7% (n=1)"
 
     def test_out_of_band_preceding_move_blocks_longer_positions(self) -> None:
         # Detects dropping the band check on the preceding judged moves.
-        fits_all = _blunder(refutation=(0.5, 1), preceding=_judgements(MID_ES, MID_ES, MID_ES))
-        fits_first_only = _blunder(
-            refutation=(0.5, 1), preceding=_judgements(MID_ES, MID_ES, OUT_OF_BAND_ES)
-        )
+        fits_all = _blunder(preceding=_judgements(MID_ES, MID_ES, MID_ES))
+        fits_first_only = _blunder(preceding=_judgements(MID_ES, MID_ES, OUT_OF_BAND_ES))
         section = section_window_fit(Collection(blunders=[fits_all, fits_first_only]), PARAMS)
         row = _row(section, BUCKET)
         assert row[2] == "100.0% (n=2)"
@@ -435,7 +513,7 @@ class TestWindowFit:
 
     def test_not_good_preceding_move_blocks_longer_positions(self) -> None:
         preceding = [MoveJudgement(14, False, MID_ES), MoveJudgement(16, True, MID_ES)]
-        blunder = _blunder(refutation=(0.5, 1), preceding=preceding)
+        blunder = _blunder(preceding=preceding)
         row = _row(section_window_fit(Collection(blunders=[blunder]), PARAMS), BUCKET)
         assert row[3] == "100.0% (n=1)"
         assert row[4] == "0.0% (n=1)"
@@ -460,8 +538,8 @@ class TestHerringSupply:
 class TestEvalBand:
     def test_share_in_band_per_candidate(self) -> None:
         blunders = [
-            _blunder(refutation=(0.5, 1), es_before=0.5),
-            _blunder(refutation=(0.5, 1), es_before=0.97),
+            _blunder(es_before=0.5),
+            _blunder(es_before=0.97),
         ]
         section = section_eval_band(Collection(blunders=blunders), PARAMS)
         rows = _rows(section)
@@ -471,9 +549,9 @@ class TestEvalBand:
         assert tight_band[-1] == "50.0% (n=2)"
 
 
-class TestSupplyPerUser:
+class TestSupplyByOrigin:
     def _collection(self) -> Collection:
-        usable = [_blunder(refutation=(0.5, 1)) for _ in range(10)]
+        usable = [_blunder() for _ in range(10)]
         groups = [
             UserGroup(1, "engine", "lichess", "blitz", 1500, games=10, user_blunders=100),
             UserGroup(2, "engine", "lichess", "blitz", 1500, games=10, user_blunders=200),
@@ -481,29 +559,138 @@ class TestSupplyPerUser:
         return Collection(blunders=usable, user_groups=groups)
 
     def test_percentiles_and_users_under_minimum(self) -> None:
-        section = section_supply_per_user(self._collection(), PARAMS)
-        # Position 1 only fits (no preceding moves): fit share = normalized weight of position 1.
+        section = section_supply_by_origin(self._collection(), PARAMS)
+        # Position 1 only fits (no preceding moves): fit share = blunder-window weight of position 1.
         assert "estimate" in section.lower()
         row = _row(section, "usable blunder windows")
-        low, high = 100 * 0.3790, 200 * 0.3790
+        low, high = 100 * 0.3837, 200 * 0.3837
         assert float(row[3]) == pytest.approx((low + high) / 2, abs=0.2)  # p50 of two users
         assert "1 of 2" in section  # user 1 (about 38 windows) is under MIN_USER_WINDOWS = 50
 
     def test_pure_misses_are_capped(self) -> None:
-        pure = [_blunder(case="pure_miss", best=(0.5, 1)) for _ in range(10)]
+        pure = [_blunder(case="pure_miss") for _ in range(10)]
         groups = [UserGroup(1, "engine", "lichess", "blitz", 1500, games=1, user_blunders=100)]
-        section = section_supply_per_user(Collection(blunders=pure, user_groups=groups), PARAMS)
+        section = section_supply_by_origin(Collection(blunders=pure, user_groups=groups), PARAMS)
         # No non-pure blunders at all: the cap on pure misses is 0 of the total.
         row = _row(section, "usable blunder windows")
         assert float(row[3]) == pytest.approx(0.0)
 
 
+class TestForeignSupplyByLevel:
+    """250 D-10, D-13: qualifying blunders of other users within +-FOREIGN_RATING_BAND of a level."""
+
+    def _game_at(self, game_id: int, elo: float, *, guest: bool = False) -> GameRecord:
+        game = _game(_judgements(MID_ES), user_id=game_id)
+        game.elo = elo
+        game.is_guest = guest
+        return game
+
+    def _at(self, game_id: int, **kwargs: Any) -> BlunderRecord:
+        blunder = _blunder(**kwargs)
+        blunder.game_id = game_id
+        return blunder
+
+    def _rows_by_level(self, collection: Collection) -> dict[str, list[str]]:
+        section = section_supply_by_origin(collection, PARAMS)
+        foreign = section.split("### Foreign supply per rating level")[1]
+        return {r[0]: r for r in _rows(foreign)}
+
+    def _collection(self, permille: int = 1000) -> Collection:
+        games = [
+            self._game_at(1, 700.0),
+            self._game_at(2, 700.0),
+            self._game_at(3, 1500.0),
+            self._game_at(4, 2450.0),
+            self._game_at(5, 1500.0, guest=True),
+        ]
+        blunders = [
+            self._at(1),
+            self._at(1),  # same game twice: one game, two blunders
+            self._at(2, es_before=OUT_OF_BAND_ES),  # qualifying but not usable
+            self._at(3),
+            self._at(3, score=BELOW_SCORE),  # below the threshold: never counted
+            self._at(3, score=None, spread=None),  # unscored: never counted
+            self._at(4),
+            self._at(5, is_guest=True),  # guest games never feed a foreign pool
+        ]
+        return Collection(meta=RunMeta(permille=permille), games=games, blunders=blunders)
+
+    def test_counts_per_level_within_the_band_with_inclusive_edge(self) -> None:
+        rows = self._rows_by_level(self._collection())
+        assert list(rows) == [str(level) for level in range(600, 2601, 200)]
+        # columns: level, band, qualifying, usable, games, sample n, note
+        assert rows["600"][1] == f"{600 - FOREIGN_RATING_BAND} to {600 + FOREIGN_RATING_BAND}"
+        assert rows["600"][2:6] == ["3", "2", "2", "3"]  # games 1 and 2: 3 blunders, 2 usable
+        assert rows["800"][2:6] == ["3", "2", "2", "3"]
+        assert rows["1000"][2:6] == ["0", "0", "0", "0"]
+        assert rows["1400"][2:6] == ["1", "1", "1", "1"]
+        assert rows["1600"][2:6] == ["1", "1", "1", "1"]
+        # 2450 sits exactly FOREIGN_RATING_BAND from 2600 and 150 from 2400 (edge is inclusive).
+        assert rows["2400"][2:6] == ["1", "1", "1", "1"]
+        assert rows["2600"][2:6] == ["1", "1", "1", "1"]
+        assert rows["2200"][2:6] == ["0", "0", "0", "0"]
+
+    def test_extremes_are_called_out(self) -> None:
+        rows = self._rows_by_level(self._collection())
+        assert rows["600"][6] == "extreme: below 800"
+        assert rows["2400"][6] == "extreme: 2400 and above"
+        assert rows["2600"][6] == "extreme: 2400 and above"
+        assert rows["800"][6] == "" and rows["2200"][6] == ""
+        assert level_note(799) != "" and level_note(800) == "" and level_note(2399) == ""
+
+    def test_counts_scale_from_the_sample_to_the_population(self) -> None:
+        rows = self._rows_by_level(self._collection(permille=250))
+        # 250 permille sampled: every sample count stands for four.
+        assert rows["600"][2:6] == ["12", "8", "8", "3"]
+        assert rows["2400"][2:6] == ["4", "4", "4", "1"]
+
+    def test_own_supply_block_is_still_there(self) -> None:
+        section = section_supply_by_origin(self._collection(), PARAMS)
+        assert section.count("## Supply by origin") == 1
+        assert "### Own supply per user" in section
+        assert "usable blunder windows" in section
+
+
+class TestWindowComposition:
+    def test_window_fit_and_herring_text_use_the_d12_shares_not_the_hazard_herring_share(
+        self,
+    ) -> None:
+        collection = Collection(
+            blunders=[_blunder(preceding=_judgements(MID_ES, MID_ES))],
+            games=[_game(_judgements(*[MID_ES] * 6))],
+        )
+        fit = section_window_fit(collection, PARAMS)
+        herring = section_herring_supply(collection, PARAMS)
+        assert "33.3%" in fit and "33.3%" in herring
+        # The 249 hazard model's herring share (0.301) no longer describes the window mix.
+        assert "0.301" not in fit and "30.1%" not in fit
+        assert "raw P(blunder at k)" not in fit
+
+    def test_position_weights_table_is_the_conditional_marginal_and_sums_to_one(self) -> None:
+        fit = section_window_fit(Collection(blunders=[_blunder()]), PARAMS)
+        rows = _rows(fit[fit.index("| position") :])
+        weights = {int(r[0]): float(r[1]) for r in rows}
+        marginals = blunder_position_marginals()
+        assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
+        for position, weight in weights.items():
+            assert weight == pytest.approx(marginals[position], abs=1e-4)
+
+    def test_arrow_oddness_reports_the_probability_auc_only(self) -> None:
+        collection = Collection(
+            meta=RunMeta(date="2026-11-13"),
+            blunders=[_scored_blunder(p) for p in BLUNDER_PROBS],
+            oddness=[_good(p) for p in GOOD_PROBS],
+        )
+        section = render_report(collection, PARAMS).split("## Arrow oddness")[1]
+        header = next(line for line in section.splitlines() if line.startswith("| Elo bucket"))
+        assert "rank" not in header.lower()
+        assert "AUC" in header
+
+
 class TestProvenance:
     def test_provenance_rows_differ(self) -> None:
-        engine = _blunder(
-            refutation=(0.5, 1), preceding=_judgements(MID_ES, MID_ES, MID_ES), provenance="engine"
-        )
-        lichess = _blunder(refutation=(0.5, 1), provenance="lichess")
+        engine = _blunder(preceding=_judgements(MID_ES, MID_ES, MID_ES), provenance="engine")
+        lichess = _blunder(provenance="lichess")
         collection = Collection(
             blunders=[engine, lichess],
             games=[
@@ -525,7 +712,8 @@ class TestCacheRoundTrip:
             games=[_game(_judgements(0.31, 0.5, 0.77))],
             blunders=[
                 _blunder(
-                    refutation=(0.123456789, 2),
+                    score=0.123456789,
+                    spread=2.718281828,
                     preceding=_judgements(MID_ES, 0.4),
                 )
             ],
@@ -537,7 +725,27 @@ class TestCacheRoundTrip:
         write_cache(collection, path)
         restored = read_cache(path)
         assert render_report(restored, PARAMS) == render_report(collection, PARAMS)
-        assert restored.blunders[0].maia_refutation_prob == 0.123456789
+        assert restored.blunders[0].facepalm_score == 0.123456789
+        assert restored.blunders[0].maia_reply_spread == 2.718281828
+        assert restored.blunders[0].has_line
+
+    def test_cache_written_with_the_new_version_round_trips(self, tmp_path: Path) -> None:
+        collection = Collection(blunders=[_blunder(), _unscored("no_line")])
+        path = tmp_path / "cache.json"
+        write_cache(collection, path)
+        assert json.loads(path.read_text())["version"] == CACHE_VERSION
+        restored = read_cache(path)
+        assert restored.blunders == collection.blunders
+
+    def test_cache_with_the_previous_version_is_refused(self, tmp_path: Path) -> None:
+        # T-250-25: a pre-250 cache holds the best / refutation pairs, not the facepalm fields.
+        path = tmp_path / "cache.json"
+        write_cache(Collection(blunders=[_blunder()]), path)
+        raw = json.loads(path.read_text())
+        raw["version"] = CACHE_VERSION - 1
+        path.write_text(json.dumps(raw))
+        with pytest.raises(ValueError, match="unsupported cache version"):
+            read_cache(path)
 
 
 class TestUserGroupAggregates:
@@ -590,41 +798,35 @@ ODDNESS_ELO = 1500.0
 
 
 def _good(
-    prob: float, rank: int = 2, *, bucket: EloBucket = BUCKET, es_before: float | None = MID_ES
+    prob: float, *, bucket: EloBucket = BUCKET, es_before: float | None = MID_ES
 ) -> GoodMoveOddness:
-    return GoodMoveOddness(
-        game_id=1, ply=0, bucket=bucket, es_before=es_before, played_prob=prob, played_rank=rank
-    )
+    return GoodMoveOddness(game_id=1, ply=0, bucket=bucket, es_before=es_before, played_prob=prob)
 
 
-def _scored_blunder(prob: float, rank: int, *, bucket: EloBucket = BUCKET) -> BlunderRecord:
-    blunder = _blunder(
-        case="allowed", refutation=(0.5, 1), bucket=bucket, preceding=_judgements(0.5, 0.5, 0.5)
+def _scored_blunder(prob: float, *, bucket: EloBucket = BUCKET) -> BlunderRecord:
+    """A qualifying blunder (default facepalm score) with the given played-move probability."""
+    return _blunder(
+        case="allowed", played_prob=prob, bucket=bucket, preceding=_judgements(0.5, 0.5, 0.5)
     )
-    blunder.maia_played_prob = prob
-    blunder.maia_played_rank = rank
-    return blunder
 
 
 class TestOddnessSummary:
-    def test_known_auc_quartiles_and_rank_one_shares(self) -> None:
-        good = [_good(p, rank=1 if p >= 0.7 else 2) for p in GOOD_PROBS]
-        blunders = [_scored_blunder(p, rank=1 if p == 0.9 else 3) for p in BLUNDER_PROBS]
+    def test_known_auc_and_quartiles(self) -> None:
+        good = [_good(p) for p in GOOD_PROBS]
+        blunders = [_scored_blunder(p) for p in BLUNDER_PROBS]
         row = summarize_oddness(good, blunders)[BUCKET]
         assert (row.n_good, row.n_blunder) == (4, 4)
         assert row.auc == pytest.approx(EXPECTED_AUC)
         assert row.good_quartiles == pytest.approx((0.575, 0.65, 0.725))
         assert row.blunder_quartiles == pytest.approx((0.175, 0.4, 0.675))
-        assert row.good_rank1_share == pytest.approx(0.5)
-        assert row.blunder_rank1_share == pytest.approx(0.25)
 
     def test_empty_side_gives_no_auc(self) -> None:
         row = summarize_oddness([_good(0.5)], [])[BUCKET]
         assert row.auc is None
         assert row.blunder_quartiles is None
 
-    def test_blunder_without_stored_pair_is_ignored(self) -> None:
-        unscored = _blunder(case="allowed")
+    def test_blunder_without_stored_probability_is_ignored(self) -> None:
+        unscored = _blunder(case="allowed", played_prob=None)
         row = summarize_oddness([_good(0.5)], [unscored])[BUCKET]
         assert row.n_blunder == 0
 
@@ -694,8 +896,8 @@ class TestOddnessScoreGoodMoves:
             board.push_san(san)
         expected = fake_full_policy(board.fen(), ODDNESS_ELO)
         assert record.played_prob == pytest.approx(expected["e1g1"])
-        ranked = sorted(expected.values(), reverse=True)
-        assert record.played_rank == 1 + ranked.index(expected["e1g1"])
+        # Probability only (250 D-10): the record carries no rank.
+        assert not hasattr(record, "played_rank")
 
     @pytest.mark.asyncio
     async def test_missing_policy_raises(
@@ -718,7 +920,7 @@ class TestArrowOddnessSection:
         out_of_band = [_good(0.01, es_before=OUT_OF_BAND_ES)]
         collection = Collection(
             meta=RunMeta(date="2026-11-09"),
-            blunders=[_scored_blunder(p, 3) for p in BLUNDER_PROBS],
+            blunders=[_scored_blunder(p) for p in BLUNDER_PROBS],
             oddness=[*in_band_good, *out_of_band],
         )
         report = render_report(collection, PARAMS)
@@ -729,18 +931,17 @@ class TestArrowOddnessSection:
         assert row[1] == "4"  # the out-of-band Good move is dropped
         assert row[-1] == f"{EXPECTED_AUC:.3f}"
 
-    def test_baseline_table_separates_band_and_findability_selection(self) -> None:
+    def test_baseline_table_separates_band_and_facepalm_selection(self) -> None:
         # Drill: the 4 usable blunders vs the 4 in-band Good moves (EXPECTED_AUC).
-        usable = [_scored_blunder(p, 3) for p in BLUNDER_PROBS]
-        # Not findable (refutation far below R) but in band: counted by "band only" only.
-        unfindable = _blunder(case="allowed", refutation=(0.01, 9))
-        unfindable.maia_played_prob, unfindable.maia_played_rank = 0.95, 1
-        # Findable but out of band: counted by "unselected" only.
-        out_of_band = _scored_blunder(0.95, 1)
+        usable = [_scored_blunder(p) for p in BLUNDER_PROBS]
+        # Below the facepalm threshold but in band: counted by "band only" only.
+        below_threshold = _blunder(case="allowed", score=BELOW_SCORE, played_prob=0.95)
+        # Qualifying but out of band: counted by "unselected" only.
+        out_of_band = _scored_blunder(0.95)
         out_of_band.es_before = OUT_OF_BAND_ES
         collection = Collection(
             meta=RunMeta(date="2026-11-10"),
-            blunders=[*usable, unfindable, out_of_band],
+            blunders=[*usable, below_threshold, out_of_band],
             oddness=[*(_good(p) for p in GOOD_PROBS), _good(0.01, es_before=OUT_OF_BAND_ES)],
         )
         section = render_report(collection, PARAMS).split("### Drill against the unselected")[1]
@@ -770,6 +971,58 @@ class TestArrowOddnessSection:
         assert render_report(restored, PARAMS) == render_report(collection, PARAMS)
 
 
+class TestCliFacepalmReport:
+    def _cache(self, tmp_path: Path) -> Path:
+        collection = Collection(
+            meta=RunMeta(db_name="x", date="2026-11-13", games_sampled=1),
+            games=[_game(_judgements(0.31, 0.5, 0.77))],
+            blunders=[_blunder(), _unscored("no_line"), _unscored("line_too_short")],
+        )
+        path = tmp_path / "cache.json"
+        write_cache(collection, path)
+        return path
+
+    def test_from_cache_renders_the_facepalm_section_and_no_findability_grid(
+        self, tmp_path: Path
+    ) -> None:
+        out_dir = tmp_path / "out"
+        code = cli_main(
+            [
+                "--from-cache",
+                str(self._cache(tmp_path)),
+                "--out-dir",
+                str(out_dir),
+                "--date",
+                "2026-11-13",
+                "--spot-check-per-bucket",
+                "0",
+                "--facepalm-threshold",
+                "0.65",
+            ]
+        )
+        assert code == 0
+        report = (out_dir / "blunder-check-calibration-2026-11-13.md").read_text()
+        assert report.count("## Facepalm score") == 1
+        assert "## Findability grid" not in report
+        assert "pass >= 0.65" in report
+
+    def test_the_retired_threshold_flags_are_gone(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            cli_main(["--from-cache", "x.json", "--refutation-threshold", "0.2"])
+        with pytest.raises(SystemExit):
+            cli_main(["--from-cache", "x.json", "--miss-threshold", "0.2"])
+        capsys.readouterr()
+        with pytest.raises(SystemExit):
+            cli_main(["--help"])
+        help_text = capsys.readouterr().out
+        assert "--facepalm-threshold" in help_text
+        assert "--refutation-threshold" not in help_text
+
+    def test_a_threshold_outside_zero_to_one_is_rejected(self) -> None:
+        with pytest.raises(SystemExit):
+            cli_main(["--from-cache", "x.json", "--facepalm-threshold", "1.5"])
+
+
 class TestCliMaiaLifecycle:
     def test_exits_3_when_maia_is_unavailable(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -788,39 +1041,24 @@ class TestCliMaiaLifecycle:
 # Plan 05: spot-check export (D-18) and Recommended constants
 # ---------------------------------------------------------------------------
 
-SHAPE_DRAWS = 20_000
-SHARE_TOLERANCE = 0.01
+MIX_WINDOWS = 300
+MIX_TOLERANCE = 0.06
+ONE_THIRD = 1 / 3
 SPOT_PER_BUCKET = 12
 PUBLIC_LINK = "https://flawchess.com/analysis?game_id=1&ply=3"
 MISSED_BEST_UCI = "d2d3"
 REPLY_UCI = "b7b5"
-BEST_RANK = 1
 
 
 def _fit_blunder(game_id: int, *, preceding_len: int, bucket: EloBucket = BUCKET) -> BlunderRecord:
-    """An allowed, findable blunder in band whose k-1 = preceding_len moves before it are Good."""
+    """A qualifying allowed blunder in band whose k-1 = preceding_len moves before it are Good."""
     blunder = _blunder(
         case="allowed",
-        refutation=(0.6, 1),
         bucket=bucket,
         preceding=_judgements(*([MID_ES] * preceding_len)),
     )
     blunder.game_id = game_id
     return blunder
-
-
-class TestDrawWindowShape:
-    def test_herring_share_and_position_shares_follow_the_hazard_model(self) -> None:
-        rng = random.Random(1)
-        shapes = [draw_window_shape(rng) for _ in range(SHAPE_DRAWS)]
-        weights = hazard_position_weights()
-        herring = sum(1 for s in shapes if s.blunder_position is None) / SHAPE_DRAWS
-        assert herring == pytest.approx(weights["herring_share"], abs=SHARE_TOLERANCE)
-        for position, raw in weights["raw"].items():
-            share = sum(1 for s in shapes if s.blunder_position == position) / SHAPE_DRAWS
-            assert share == pytest.approx(raw, abs=SHARE_TOLERANCE)
-        assert {s.length for s in shapes} == set(WINDOW_LENGTHS)
-        assert all(s.blunder_position is None or s.blunder_position <= s.length for s in shapes)
 
 
 class TestPickWindows:
@@ -879,6 +1117,74 @@ class TestPickWindows:
         assert len(pick_windows(tiny, SpotCheckParams(PARAMS, 50), random.Random(1))) == 1
 
 
+class TestSpotCheckMix:
+    """250 D-12: windows are drawn with draw_slot_plan and kind-preserving redraws."""
+
+    def _big_collection(self) -> Collection:
+        blunders = [_fit_blunder(1000 + i, preceding_len=4) for i in range(MIX_WINDOWS + 100)]
+        games = [_oddness_game(g, 12) for g in range(1, MIX_WINDOWS + 101)]
+        return Collection(games=games, blunders=blunders)
+
+    def test_about_one_third_of_the_windows_are_herrings(self) -> None:
+        params = SpotCheckParams(PARAMS, MIX_WINDOWS)
+        windows = pick_windows(self._big_collection(), params, random.Random(11))
+        assert len(windows) == MIX_WINDOWS
+        herrings = sum(1 for w in windows if w.blunder is None)
+        assert herrings / len(windows) == pytest.approx(ONE_THIRD, abs=MIX_TOLERANCE)
+
+    def test_slot_kind_comes_from_draw_slot_plan(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        params = SpotCheckParams(PARAMS, SPOT_PER_BUCKET)
+        collection = self._big_collection()
+        monkeypatch.setattr(
+            spot_check, "draw_slot_plan", lambda rng: SlotPlan("own", WindowShape(3, None))
+        )
+        assert all(w.blunder is None for w in pick_windows(collection, params, random.Random(5)))
+        monkeypatch.setattr(
+            spot_check, "draw_slot_plan", lambda rng: SlotPlan("foreign", WindowShape(3, 2))
+        )
+        windows = pick_windows(collection, params, random.Random(5))
+        assert windows and all(w.blunder is not None for w in windows)
+
+    def test_an_unfillable_blunder_shape_is_redrawn_as_a_blunder_not_swapped_for_a_herring(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Only position-1 blunders exist, but every plan asks for position 5: the redraw has to stay
+        # a blunder window or the herring share would be inflated (and the mix skewed).
+        bare = [_fit_blunder(2000 + i, preceding_len=0) for i in range(40)]
+        collection = Collection(games=[_oddness_game(g, 12) for g in range(1, 41)], blunders=bare)
+        monkeypatch.setattr(
+            spot_check, "draw_slot_plan", lambda rng: SlotPlan("foreign", WindowShape(5, 5))
+        )
+        windows = pick_windows(collection, SpotCheckParams(PARAMS, 10), random.Random(3))
+        assert windows
+        assert all(w.blunder is not None and w.shape.blunder_position == 1 for w in windows)
+
+    def test_rendered_spot_check_never_says_your_move_and_prints_score_inputs(self) -> None:
+        collection = self._big_collection()
+        windows = pick_windows(collection, SpotCheckParams(PARAMS, 40), random.Random(2))
+        assert any(w.blunder is None for w in windows)
+        assert any(w.blunder is not None for w in windows)
+        details = [
+            SpotWindowDetail(
+                window=w,
+                link=PUBLIC_LINK,
+                user_rating=1480,
+                start_fen="startfen",
+                lead_in="1... e5",
+                judged=[JudgedLine("3. Bb5", 0.52, "3... a6")],
+                answer_fen=None if w.blunder is None else "answerfen",
+                answer_move=None if w.blunder is None else "5. O-O",
+                refutation=None if w.blunder is None else "b5",
+            )
+            for w in windows
+        ]
+        text_out = render_spot_check(details, SpotCheckParams(PARAMS, 40))
+        assert "your move" not in text_out.lower()
+        assert "all safe" in text_out
+        assert text_out.count("**Score inputs:**") == sum(1 for w in windows if w.blunder)
+        assert "own game" not in text_out.lower() and "foreign" not in text_out.lower()
+
+
 def _detail(
     window_blunder: BlunderRecord | None,
     *,
@@ -923,7 +1229,14 @@ class TestAnalysisLink:
 
 class TestRenderSpotCheck:
     def test_allowed_window_prints_link_lead_in_judged_moves_answer_and_refutation(self) -> None:
-        blunder = _blunder(case="allowed", refutation=(0.31, 2))
+        blunder = _blunder(
+            case="allowed",
+            score=0.83,
+            played_prob=0.031,
+            spread=2.46,
+            loss_3=4,
+            mate_ply=None,
+        )
         text_out = render_spot_check([_detail(blunder)], SpotCheckParams(PARAMS, 20))
         for expected in (
             PUBLIC_LINK,
@@ -932,7 +1245,9 @@ class TestRenderSpotCheck:
             "4. Ba4 (Good, pre-move ES 0.49), reply 4... Nf6",
             "blunder 5. O-O",
             "`answerfen`",
-            "**Refutation:** b5 (Maia probability 0.310, rank 2)",
+            "**Refutation:** b5.",
+            "**Score inputs:** facepalm score 0.830, played prob 0.031, reply spread 2.46, "
+            "line loss 3 4, mate ply n/a.",
             "pinned Maia Elo 1500",
             "### 1200-1599",
         ):
@@ -942,9 +1257,10 @@ class TestRenderSpotCheck:
         assert text_out.index("Nf3") < text_out.index("3. Bb5") < text_out.index("blunder 5. O-O")
 
     def test_pure_miss_prints_the_missed_best_move_with_its_maia_pair(self) -> None:
-        blunder = _blunder(case="pure_miss", best=(0.5, BEST_RANK))
+        blunder = _blunder(case="pure_miss", mate_ply=3, loss_3=None)
         text_out = render_spot_check([_detail(blunder)], SpotCheckParams(PARAMS, 20))
-        assert "**Missed best move:** d3 (Maia probability 0.500, rank 1)" in text_out
+        assert "**Missed best move:** d3." in text_out
+        assert "line loss 3 n/a, mate ply 3." in text_out
         assert "**Refutation:**" not in text_out
 
     def test_herring_says_all_safe(self) -> None:
@@ -969,7 +1285,7 @@ class TestFetchWindowDetails:
                     {"b": best, "pv": pv, "g": game_id, "p": ply},
                 )
             await session.commit()
-        blunder = _blunder(case="pure_miss", best=(0.5, BEST_RANK), refutation=(0.3, 2))
+        blunder = _blunder(case="pure_miss")
         blunder.game_id = game_id
         blunder.ply = USER_BLUNDER_PLY
         window = SpotWindow(
@@ -1015,7 +1331,7 @@ class TestFetchWindowDetails:
                 {"g": game_id},
             )
             await session.commit()
-        blunder = _blunder(case="pure_miss", best=(0.5, BEST_RANK))
+        blunder = _blunder(case="pure_miss")
         blunder.game_id = game_id
         blunder.ply = USER_BLUNDER_PLY
         window = SpotWindow(BUCKET, WindowShape(1, 1), game_id, 1500.0, (), blunder)
@@ -1028,26 +1344,50 @@ class TestFetchWindowDetails:
 
 
 class TestRecommendedConstants:
-    def test_section_states_chosen_values_pass_shares_and_recommendation_only(self) -> None:
-        blunders = [
-            _scored_blunder(0.3, 2),
-            _blunder(refutation=(0.05, 4)),
-            _blunder(refutation=(0.25, 2)),
-            _blunder(refutation=(0.10, 3)),
-            _blunder(),
+    def _blunders(self) -> list[BlunderRecord]:
+        return [
+            _blunder(score=0.55, played_prob=0.02, spread=1.5, loss_3=3),
+            _blunder(score=0.65, played_prob=0.04, spread=2.5, loss_3=3),
+            _blunder(score=0.75, played_prob=0.06, spread=3.5, loss_3=1),
+            _blunder(score=0.85, played_prob=0.08, spread=4.5, loss_3=1),
+            _unscored("no_line"),
         ]
+
+    def test_states_chosen_values_and_recommendation_only(self) -> None:
         params = ReportParams(
-            refutation_threshold=0.20,
-            miss_threshold=0.30,
+            facepalm_threshold=0.65,
             band_low=0.10,
             band_high=0.90,
             spot_check_file="spot-check-2026-11-09.md",
         )
-        section = section_recommended_constants(Collection(blunders=blunders), params)
-        assert "R = 0.2" in section and "X' = 0.3" in section
+        section = section_recommended_constants(Collection(blunders=self._blunders()), params)
+        assert "Facepalm threshold **0.65**" in section
         assert "[0.10, 0.90]" in section
         assert "recommendation only" in section
         assert "spot-check-2026-11-09.md" in section
-        # The last blunder has no stored pair (unscored, left out of the denominator): of the 4
-        # scored allowed blunders the rank-1 one and the 0.25 one pass at R = 0.2.
-        assert _row(section, BUCKET)[1] == "50.0% (n=4)"
+        assert "R = " not in section and "X' = " not in section
+
+    def test_fair_share_proxies_per_threshold(self) -> None:
+        params = ReportParams(facepalm_threshold=0.65)
+        section = section_recommended_constants(Collection(blunders=self._blunders()), params)
+        rows = {r[0]: r for r in _rows(section)}
+        # Columns: threshold, pass of scored, pass of all, median played prob, median spread,
+        # mate or >= 2 points down, median usable windows per user.
+        assert set(rows) == {"0.50", "0.60", "0.65", "0.70", "0.80"}
+        assert rows["0.50"][1:6] == [
+            "100.0% (n=4)",
+            "80.0% (n=5)",
+            "0.050",
+            "3.00",
+            "50.0% (n=4)",
+        ]
+        # Only the 0.85 blunder passes 0.80: it is a single, mildly punished (loss 1) one.
+        assert rows["0.80"][1:6] == ["25.0% (n=4)", "20.0% (n=5)", "0.080", "4.50", "0.0% (n=1)"]
+        assert "89%" in section  # the owner's label anchor at 0.7
+
+    def test_threshold_with_no_passers_prints_na(self) -> None:
+        params = ReportParams(facepalm_threshold=0.99)
+        section = section_recommended_constants(Collection(blunders=self._blunders()), params)
+        row = next(r for r in _rows(section) if r[0] == "0.99")
+        assert row[1] == "0.0% (n=4)"
+        assert row[3:6] == ["n/a", "n/a", "n/a (n=0)"]

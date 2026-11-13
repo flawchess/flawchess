@@ -50,16 +50,17 @@ _PHASE_MIDDLEGAME = 1
 _BLUNDER_SEVERITY = 2
 
 
+# Comfortably above FACEPALM_SCORE_MIN, so a default seeded blunder always qualifies.
+SEED_FACEPALM_SCORE: float = 0.95
+
+
 @dataclass(frozen=True)
 class SeedBlunder:
-    """A blunder flaw row to seed (Maia values default to a 'plausible' refutation)."""
+    """A blunder flaw row to seed (the facepalm score defaults to a qualifying value)."""
 
     ply: int
     is_miss: bool = False
-    refutation_prob: float | None = 0.5
-    refutation_rank: int | None = 1
-    best_prob: float | None = 0.5
-    best_rank: int | None = 1
+    facepalm_score: float | None = SEED_FACEPALM_SCORE
 
 
 def flat_evals(count: int, cp: int) -> list[int]:
@@ -276,10 +277,7 @@ async def seed_judged_game(
                         is_reversed=False,
                         is_squandered=False,
                         fen=boards[blunder.ply].board_fen(),
-                        maia_refutation_prob=blunder.refutation_prob,
-                        maia_refutation_rank=blunder.refutation_rank,
-                        maia_best_prob=blunder.best_prob,
-                        maia_best_rank=blunder.best_rank,
+                        facepalm_score=blunder.facepalm_score,
                     )
                 )
     return game_id

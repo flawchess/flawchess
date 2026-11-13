@@ -32,11 +32,10 @@ from app.services.blunder_check_rules import (
     BLUNDER_MAX_PRE_EVAL_CP,
     BLUNDER_MIN_OPENING_PLY,
     BLUNDER_MIN_PLY,
+    FACEPALM_SCORE_MIN,
     MAX_BLUNDER_POSITION,
     WINDOW_LENGTHS,
     WindowShape,
-    draw_window_shape,
-    hazard_position_weights,
     past_early_ply_floor,
 )
 from app.services.flaws_service import _run_all_moves_pass
@@ -50,10 +49,8 @@ HOLD_CP = 100
 # pre-blunder position inside the undecided band (+/- 300).
 LEVEL_CP = 0
 GIFT_CP = 300
-HAZARD_DRAWS = 20_000
-HAZARD_TOLERANCE = 0.01
-HAZARD_SEED = 7
 FLAT_ROWS = 17
+SCORE_EPSILON = 1e-6
 
 
 @pytest.fixture(autouse=True)
@@ -71,10 +68,7 @@ class _Flaw:
     ply: int
     severity: int = BLUNDER_SEVERITY
     is_miss: bool = False
-    maia_refutation_prob: float | None = 0.9
-    maia_refutation_rank: int | None = 1
-    maia_best_prob: float | None = 0.9
-    maia_best_rank: int | None = 1
+    facepalm_score: float | None = 0.95
 
 
 def _positions(evals: list[int]) -> list[GamePosition]:
@@ -106,7 +100,7 @@ def _judge(
     *,
     user_is_white: bool = True,
     key_plies: set[int] | None = None,
-    prompted: set[int] | None = None,
+    served_plies: set[int] | None = None,
     served: list[tuple[int, int]] | None = None,
     positions: list[GamePosition] | None = None,
 ) -> GameCandidates | None:
@@ -116,7 +110,7 @@ def _judge(
         positions=positions if positions is not None else _positions(evals),
         flaws=flaws,
         key_plies=key_plies if key_plies is not None else {f.ply for f in flaws},
-        prompted_blunder_plies=prompted or set(),
+        served_blunder_plies=served_plies or set(),
         served_ply_ranges=served or [],
     )
 
@@ -151,29 +145,9 @@ def _game(
     )
 
 
-class TestHazardDraw:
-    def test_hazard_herring_share_matches_the_model(self) -> None:
-        rng = random.Random(HAZARD_SEED)
-        shapes = [draw_window_shape(rng) for _ in range(HAZARD_DRAWS)]
-        herring_share = sum(1 for s in shapes if s.blunder_position is None) / HAZARD_DRAWS
-        expected = hazard_position_weights()["herring_share"]
-        assert abs(herring_share - expected) < HAZARD_TOLERANCE
-
-    def test_hazard_position_shares_match_normalized_weights(self) -> None:
-        rng = random.Random(HAZARD_SEED)
-        shapes = [draw_window_shape(rng) for _ in range(HAZARD_DRAWS)]
-        blunder_positions = [s.blunder_position for s in shapes if s.blunder_position is not None]
-        weights = hazard_position_weights()
-        for position, normalized in weights["normalized"].items():
-            share = blunder_positions.count(position) / len(blunder_positions)
-            assert abs(share - normalized) < HAZARD_TOLERANCE
-            all_draws_share = blunder_positions.count(position) / HAZARD_DRAWS
-            assert abs(all_draws_share - weights["raw"][position]) < HAZARD_TOLERANCE
-
-
 class TestJudgeGameGoodBar:
     def test_good_bar_pure_miss_game_reaches_position_four(self) -> None:
-        result = _judge(_pure_miss_game(), [_Flaw(ply=8, is_miss=True, maia_best_prob=0.25)])
+        result = _judge(_pure_miss_game(), [_Flaw(ply=8, is_miss=True)])
         (candidate,) = _blunders(result)
         assert (candidate.case, candidate.max_position) == ("pure_miss", 4)
         assert candidate.preceding_plies == (2, 4, 6)
@@ -218,72 +192,48 @@ class TestJudgeGameBand:
             assert all(run.game_id == GAME_ID for run in runs)
 
 
-class TestFindability:
-    def test_findability_allowed_passes_on_rank_one_despite_low_probability(self) -> None:
-        flaw = _Flaw(ply=6, maia_refutation_prob=0.05, maia_refutation_rank=1)
+class TestFacepalmPredicate:
+    """250 D-01 / D-09: one score gate, the same for every blunder case."""
+
+    def test_passes_at_exactly_the_threshold(self) -> None:
+        flaw = _Flaw(ply=6, facepalm_score=FACEPALM_SCORE_MIN)
         assert len(_blunders(_judge(_allowed_game(), [flaw]))) == 1
 
-    def test_findability_allowed_fails_just_under_the_threshold(self) -> None:
-        flaw = _Flaw(ply=6, maia_refutation_prob=0.29, maia_refutation_rank=2)
+    def test_fails_just_under_the_threshold(self) -> None:
+        flaw = _Flaw(ply=6, facepalm_score=FACEPALM_SCORE_MIN - SCORE_EPSILON)
         assert _blunders(_judge(_allowed_game(), [flaw])) == ()
 
-    def test_findability_allowed_passes_at_the_threshold(self) -> None:
-        flaw = _Flaw(ply=6, maia_refutation_prob=0.3, maia_refutation_rank=2)
-        assert len(_blunders(_judge(_allowed_game(), [flaw]))) == 1
+    def test_null_score_is_excluded(self) -> None:
+        assert _blunders(_judge(_allowed_game(), [_Flaw(ply=6, facepalm_score=None)])) == ()
 
-    def test_findability_allowed_ignores_the_best_pair(self) -> None:
-        flaw = _Flaw(
-            ply=6,
-            maia_refutation_prob=0.1,
-            maia_refutation_rank=4,
-            maia_best_prob=0.9,
-            maia_best_rank=1,
-        )
-        assert _blunders(_judge(_allowed_game(), [flaw])) == ()
+    @pytest.mark.parametrize(
+        ("evals_name", "ply", "is_miss", "case"),
+        [
+            ("allowed", 6, False, "allowed"),
+            ("pure_miss", 8, True, "pure_miss"),
+            ("mixed", 8, True, "mixed"),
+        ],
+    )
+    def test_same_outcome_for_every_case(
+        self, evals_name: str, ply: int, is_miss: bool, case: str
+    ) -> None:
+        # D-01: no special case for missed punishments; the score alone decides.
+        games = {
+            "allowed": _allowed_game(),
+            "pure_miss": _pure_miss_game(),
+            "mixed": _mixed_game(),
+        }
+        evals = games[evals_name]
+        passing = _Flaw(ply=ply, is_miss=is_miss, facepalm_score=FACEPALM_SCORE_MIN)
+        failing = _Flaw(ply=ply, is_miss=is_miss, facepalm_score=FACEPALM_SCORE_MIN - SCORE_EPSILON)
+        (candidate,) = _blunders(_judge(evals, [passing]))
+        assert candidate.case == case
+        assert _blunders(_judge(evals, [failing])) == ()
 
-    def test_findability_pure_miss_uses_the_best_pair_at_point_two(self) -> None:
-        passing = _Flaw(ply=8, is_miss=True, maia_best_prob=0.2, maia_best_rank=3)
-        failing = _Flaw(ply=8, is_miss=True, maia_best_prob=0.19, maia_best_rank=3)
-        assert len(_blunders(_judge(_pure_miss_game(), [passing]))) == 1
-        assert _blunders(_judge(_pure_miss_game(), [failing])) == ()
-
-    def test_findability_mixed_passes_when_only_the_best_pair_passes(self) -> None:
-        flaw = _Flaw(
-            ply=8,
-            is_miss=True,
-            maia_refutation_prob=0.01,
-            maia_refutation_rank=7,
-            maia_best_prob=0.5,
-            maia_best_rank=1,
-        )
-        (candidate,) = _blunders(_judge(_mixed_game(), [flaw]))
-        assert candidate.case == "mixed"
-
-    def test_findability_mixed_fails_when_neither_pair_passes(self) -> None:
-        flaw = _Flaw(
-            ply=8,
-            is_miss=True,
-            maia_refutation_prob=0.01,
-            maia_refutation_rank=7,
-            maia_best_prob=0.01,
-            maia_best_rank=7,
-        )
-        assert _blunders(_judge(_mixed_game(), [flaw])) == ()
-
-    def test_findability_null_maia_values_exclude_the_blunder(self) -> None:
-        flaw = _Flaw(ply=6, maia_refutation_prob=None, maia_refutation_rank=None)
-        assert _blunders(_judge(_allowed_game(), [flaw])) == ()
-        miss = _Flaw(ply=8, is_miss=True, maia_best_prob=None, maia_best_rank=None)
-        assert _blunders(_judge(_pure_miss_game(), [miss])) == ()
-
-    def test_findability_unclassified_miss_is_excluded(self) -> None:
+    def test_unclassified_miss_is_excluded(self) -> None:
         # Black user blunders at ply 1, flagged a miss, but ply 0 has no entry so es_ref is unknown.
         flaw = _Flaw(ply=1, is_miss=True)
         assert _blunders(_judge([0, 500], [flaw], user_is_white=False)) == ()
-
-    def test_findability_does_not_apply_a_played_probability_cap(self) -> None:
-        # The flaw type has no played-probability field at all (D-06); a findable blunder is served.
-        assert len(_blunders(_judge(_allowed_game(), [_Flaw(ply=6)]))) == 1
 
 
 class TestUndecidedPosition:
@@ -386,9 +336,9 @@ class TestJudgeGameGuards:
         flaw = _Flaw(ply=6)
         assert _blunders(_judge(_allowed_game(), [flaw], key_plies=set())) == ()
 
-    def test_prompted_blunder_ply_is_excluded(self) -> None:
+    def test_served_blunder_ply_is_excluded(self) -> None:
         flaw = _Flaw(ply=6)
-        assert _blunders(_judge(_allowed_game(), [flaw], prompted={6})) == ()
+        assert _blunders(_judge(_allowed_game(), [flaw], served_plies={6})) == ()
 
     def test_herring_run_touching_a_served_range_is_excluded(self) -> None:
         result = _judge([HOLD_CP] * FLAT_ROWS, [], served=[(2, 6)])
@@ -490,7 +440,7 @@ class TestNoMissCap:
     def test_miss_at_position_one_has_the_opponents_blunder_as_last_lead_in_ply(self) -> None:
         evals = _pure_miss_game()
         all_moves = _run_all_moves_pass(_positions(evals))
-        flaw = _Flaw(ply=8, is_miss=True, maia_best_prob=0.25)
+        flaw = _Flaw(ply=8, is_miss=True)
         (candidate,) = _blunders(_judge(evals, [flaw]))
         game = _game(GAME_ID, (candidate,))
         (pick,) = assign_windows(
