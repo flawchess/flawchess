@@ -56,12 +56,13 @@ BEST_PROB_MIN: float = 0.2
 # 249 D-05 eval band: every judged and herring move must have its pre-move ES inside [low, high].
 ES_BAND_LOW: float = 0.10
 ES_BAND_HIGH: float = 0.90
-# Undecided-position rule (Phase 249 UAT): a blunder is served only if the position before it was
-# not decided yet, a Stockfish eval within +/- BLUNDER_MAX_PRE_EVAL_CP. Tested on the classifier's
-# own pre-move ES (the ES map is monotone in cp, so this is exactly the cp band); a mate maps to
-# +/- MATE_CP_EQUIVALENT and always falls outside. Applies to the blunder only: the moves before
-# it and the herrings keep the wider D-05 band. For a miss, the position before the blunder is the
-# one after the opponent's gift, so a miss of a large gift is excluded too.
+# Undecided-position rule (Phase 249 UAT): a blunder is served only if the game was not decided
+# yet, a Stockfish eval within +/- BLUNDER_MAX_PRE_EVAL_CP. Tested on the classifier's own ES (the
+# ES map is monotone in cp, so this is exactly the cp band); a mate maps to +/- MATE_CP_EQUIVALENT
+# and always falls outside. An allowed blunder is tested on the position before it. A miss is
+# tested on the position before the opponent's gift (owner: keep big missed gifts), since the
+# position right before the miss is decided by the gift itself. Applies to the blunder only: the
+# moves before it and the herrings keep the wider D-05 band.
 BLUNDER_MAX_PRE_EVAL_CP: int = 300
 BLUNDER_ES_LOW: float = eval_cp_to_expected_score(-BLUNDER_MAX_PRE_EVAL_CP, "white")
 BLUNDER_ES_HIGH: float = eval_cp_to_expected_score(BLUNDER_MAX_PRE_EVAL_CP, "white")
@@ -181,10 +182,13 @@ def in_band(es: float | None, band_low: float, band_high: float) -> bool:
     return es is not None and band_low <= es <= band_high
 
 
-def blunder_position_undecided(es_before: float | None) -> bool:
-    """Whether the position before a blunder was not decided yet (eval within
-    +/- BLUNDER_MAX_PRE_EVAL_CP, no mate)."""
-    return in_band(es_before, BLUNDER_ES_LOW, BLUNDER_ES_HIGH)
+def blunder_position_undecided(
+    is_miss: bool, es_before: float | None, es_ref: float | None
+) -> bool:
+    """Whether the game was undecided (eval within +/- BLUNDER_MAX_PRE_EVAL_CP, no mate) before
+    the blunder, or, for a miss, before the opponent's gift (es_ref)."""
+    es = es_ref if is_miss else es_before
+    return in_band(es, BLUNDER_ES_LOW, BLUNDER_ES_HIGH)
 
 
 def blunder_fits_position(

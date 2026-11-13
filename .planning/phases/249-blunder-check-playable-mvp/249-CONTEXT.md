@@ -44,8 +44,9 @@ before Phase 251 builds the schedule, reviews and leaderboards. Deliverables:
   in blunder windows and herrings. Named constants.
   - UAT addition (owner, 2026-11-13): the blunder itself must come from an undecided position, a pre-blunder
     Stockfish eval within +/- 300cp (`BLUNDER_MAX_PRE_EVAL_CP`; mate counts as decided). Blunder only; the moves
-    before it and herrings keep the [0.10, 0.90] band. For a miss this is the position after the opponent's gift,
-    so a miss of a gift worth more than +3 is not served. Carries over to Phase 250 (which replaces D-06 only).
+    before it and herrings keep the [0.10, 0.90] band. A miss is judged on the position before the opponent's
+    gift (owner: keep big missed gifts); the D-05 band still caps the gift itself at about +6. Carries over to
+    Phase 250 (which replaces D-06 only).
 - **D-06: Findability (face-palm test v2), by case** (miss classification from the seed and 248 D-13):
   - allowed (`is_miss` false): `maia_refutation_prob >= R` or `maia_refutation_rank = 1`, R = 0.3;
   - pure miss (`is_miss` and `ES_played >= ES_ref - INACCURACY_DROP`): `maia_best_prob >= X'` or

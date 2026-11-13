@@ -37,7 +37,6 @@ from app.repositories.blunder_check_repository import EloSourceRow, NewWindow
 from app.services import blunder_check_selection
 from app.services.blunder_check_rules import (
     BLUNDER_CHECK_SESSION_WINDOWS,
-    BLUNDER_MAX_PRE_EVAL_CP,
     LEAD_IN_PLIES,
     WindowShape,
 )
@@ -344,9 +343,8 @@ _MISS_PLY = 34  # the user fails to use it
 async def test_miss_lead_in_ends_with_the_opponents_blunder(test_engine, monkeypatch) -> None:
     _force_shape(monkeypatch, WindowShape(3, 1))
     caller = await _user(test_engine, "bcs-miss")
-    # The gift stays inside the undecided band (+/- 300), or the miss would not be served.
-    evals = with_opponent_gift(flat_evals(_ROWS, 0), _GIFT_PLY, BLUNDER_MAX_PRE_EVAL_CP)
-    evals = with_user_blunder(evals, _MISS_PLY, BLUNDER_MAX_PRE_EVAL_CP)
+    evals = with_opponent_gift(flat_evals(_ROWS, 0), _GIFT_PLY, 400)
+    evals = with_user_blunder(evals, _MISS_PLY, 400)
     game_id = await seed_judged_game(
         test_engine,
         user_id=caller,

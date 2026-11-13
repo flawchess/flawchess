@@ -287,7 +287,8 @@ class TestFindability:
 
 
 class TestUndecidedPosition:
-    """Phase 249 UAT: only blunders whose pre-blunder eval is within +/- 300 (no mate)."""
+    """Phase 249 UAT: only blunders from an undecided game (+/- 300, no mate); a miss is judged
+    on the position before the opponent's gift."""
 
     @staticmethod
     def _allowed_from(pre_cp: int) -> list[int]:
@@ -311,12 +312,15 @@ class TestUndecidedPosition:
         positions[5] = GamePosition(ply=5, eval_cp=None, eval_mate=3, move_san="x")
         assert _blunders(_judge([], [_Flaw(ply=6)], positions=positions)) == ()
 
-    def test_miss_of_a_large_gift_is_excluded(self) -> None:
-        # Black gifts +500: the user's pre-blunder position is decided, so the miss is not served.
+    def test_miss_of_a_large_gift_from_an_undecided_game_is_kept(self) -> None:
+        # Black gifts +500 (outside +/- 300), but the game was level before the gift.
         evals = [LEVEL_CP] * 7 + [500, LEVEL_CP]
-        flaw = _Flaw(ply=8, is_miss=True)
-        assert _blunders(_judge(evals, [flaw])) == ()
-        assert len(_blunders(_judge(_pure_miss_game(), [flaw]))) == 1
+        assert len(_blunders(_judge(evals, [_Flaw(ply=8, is_miss=True)]))) == 1
+
+    def test_miss_in_a_game_decided_before_the_gift_is_excluded(self) -> None:
+        # White already +400 before black's gift to +900; white gives it back to +400.
+        evals = [400] * 7 + [900, 400]
+        assert _blunders(_judge(evals, [_Flaw(ply=8, is_miss=True)])) == ()
 
 
 class TestEarlyPlyFloor:
