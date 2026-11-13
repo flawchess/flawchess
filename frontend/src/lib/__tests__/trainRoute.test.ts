@@ -17,6 +17,10 @@ describe('parseTrainRoute', () => {
     ['/train/archive/', { tab: 'archive', list: 'mastered' }],
     ['/train/archive/parked', { tab: 'archive', list: 'parked' }],
     ['/train/archive/parked/', { tab: 'archive', list: 'parked' }],
+    ['/train/blunder-check', { tab: 'blunder-check' }],
+    ['/train/blunder-check/', { tab: 'blunder-check' }],
+    ['/train/blunder-check/extra', null],
+    ['/train/blunder-checkx', null],
     ['/train/archive/mastered', null],
     ['/train/archive/parked/extra', null],
     ['/train/archivex', null],
@@ -31,6 +35,8 @@ describe('parseTrainRoute', () => {
     expect(parseTrainRoute(TRAIN_TAB_PATHS.today)).toEqual({ tab: 'today' });
     expect(parseTrainRoute(TRAIN_TAB_PATHS.leaderboard)).toEqual({ tab: 'leaderboard' });
     expect(parseTrainRoute(TRAIN_TAB_PATHS.archive)).toEqual({ tab: 'archive', list: 'mastered' });
+    expect(TRAIN_TAB_PATHS['blunder-check']).toBe('/train/blunder-check');
+    expect(parseTrainRoute(TRAIN_TAB_PATHS['blunder-check'])).toEqual({ tab: 'blunder-check' });
   });
 });
 

@@ -68,6 +68,7 @@ import {
   countMissedPuzzles,
   resolveRatingBand,
   displaySessionPercentage,
+  type TrainRatingBand,
   type TrainSessionScore,
 } from '@/lib/trainScore';
 
@@ -248,8 +249,11 @@ export function TrainScoreScreen({
 
 export interface TrainScoreScreenViewProps {
   score: TrainSessionScore;
-  /** Follows "Next session: ": `NextSessionWhen.line`. */
-  nextSessionLine: string;
+  /** A server-owned Score % (blunder check). Omitted: derived from `score`. */
+  percentage?: number;
+  /** Follows "Next session: ": `NextSessionWhen.line`. Null (blunder check, which has
+   * no schedule yet) hides the line. */
+  nextSessionLine: string | null;
   persona: Persona;
   /** Null until the copy is known: the bubble chrome renders without text, so nothing jumps. */
   bubbleLines: string[] | null;
@@ -263,6 +267,7 @@ export interface TrainScoreScreenViewProps {
 
 export function TrainScoreScreenView({
   score,
+  percentage: percentageOverride,
   nextSessionLine,
   persona,
   bubbleLines,
@@ -273,8 +278,8 @@ export function TrainScoreScreenView({
   reducedMotion,
   onDone,
 }: TrainScoreScreenViewProps): ReactElement {
-  const percentage = displaySessionPercentage(score);
-  const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
+  const percentage = percentageOverride ?? displaySessionPercentage(score);
+  const band = resolveViewBand(score, percentageOverride);
 
   return (
     // No extra top/bottom padding on phones — stacked
@@ -310,9 +315,11 @@ export function TrainScoreScreenView({
             Points: {score.total}/{score.max}
           </p>
           {rankLines}
-          <p className="text-sm font-semibold text-muted-foreground" data-testid="train-score-next-session">
-            Next session: {nextSessionLine}
-          </p>
+          {nextSessionLine !== null && (
+            <p className="text-sm font-semibold text-muted-foreground" data-testid="train-score-next-session">
+              Next session: {nextSessionLine}
+            </p>
+          )}
         </div>
       </div>
       {/* Remind me (left, brand-outline) then Done (right, default/primary).
@@ -341,6 +348,21 @@ export function TrainScoreScreenView({
       </div>
     </div>
   );
+}
+
+/** Whole-number percent to the 0 to 1 ratio the rating band takes. */
+const PERCENT_PER_RATIO = 100;
+
+/** The band follows a server-owned percentage when one is given, so the ring's
+ * color and its number can never disagree. */
+function resolveViewBand(
+  score: TrainSessionScore,
+  percentageOverride: number | undefined,
+): TrainRatingBand | null {
+  if (percentageOverride !== undefined) {
+    return resolveRatingBand(percentageOverride / PERCENT_PER_RATIO);
+  }
+  return score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
 }
 
 /** Reminders already on a phone leave nothing to ask for, on any device;

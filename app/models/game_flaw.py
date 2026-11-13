@@ -122,6 +122,26 @@ class GameFlaw(Base):
     maia_refutation_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
     maia_refutation_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
+    # Phase 250 facepalm-score facts (D-05). Nullable, NULL = not scored. User-side blunders
+    # only (D-06). Written only by app/services/maia_flaw_scoring.py, never by
+    # flaw_record_to_row, so a diff/upsert preserves them by omission.
+    #   maia_reply_spread = 2 ** entropy (bits) of the full Maia policy one ply after the
+    #                       blunder (opponent to move), at the blunderer's pinned Elo.
+    #   line_loss_N       = net material the blunderer is down after following the stored
+    #                       refutation line (game_positions.pv at ply + 1) for N plies;
+    #                       NULL when the line is too short to tell.
+    #   line_mate_ply     = first line ply after which the blunderer is mated; NULL = no mate.
+    #   facepalm_score    = score in [0, 1] derived from maia_played_prob, maia_reply_spread
+    #                       and the line facts; NULL when any input is missing.
+    maia_reply_spread: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    line_loss_1: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    line_loss_3: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    line_loss_5: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    line_loss_7: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    line_loss_9: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    line_mate_ply: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    facepalm_score: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+
     # PV-line blob family: write-once JSONB blobs, nullable.
     # These store the principal-variation nodes for the forcing-line tactic gate.
     # `deferred=True` is the structural leak guard: the columns are never emitted in

@@ -70,12 +70,21 @@ The files `frontend/public/engine/stockfish-18-lite-single.js` and `frontend/pub
 The files under `frontend/public/sound/` come from two sources. Check which group
 a file belongs to before assuming its license.
 
-**1. `Move.mp3`** — cut from a recording downloaded from
+**1. `Move.mp3` and `LowTime.mp3`** — `Move.mp3` is cut from a recording downloaded from
 [sounddino.com](https://sounddino.com/en/effects/chess/) on 2026-08-13:
 `/mp3/6/the-sound-of-arranging-pieces-one-by-one-on-a-chessboard.mp3`, 2nd of 9
 hits (at 2.83s). The source is a multi-hit field recording rather than a
 one-shot, so "which hit" is what makes the cut reproducible; it was isolated by
 onset detection, cut to a 90ms window from 3ms before the attack, and faded out.
+
+`LowTime.mp3` (the bot-game clock warning, a ticking clock) is from the same
+site, downloaded on 2026-08-14: `clock-stopwatch-ticking.mp3` (title tag "Clock:
+stopwatch ticking"), 6 ticks with onsets at 12.502 to 13.504s. It is not a
+straight cut: each tick was extracted as its own 90ms grain (3ms pre-roll, 20ms
+tail taper) and re-placed at 1.5x tempo, giving 7.5 ticks/s in 0.82s, which keeps
+the pitch and the click transients intact. It was replaced by a Walnut clip on
+2026-10-03 and restored from git history (commit `086099405`) on 2026-11-13. The
+license note below applies to it as well.
 
 **`Move` deliberately sits below the event sounds** (RMS ≈ 0.070 / 0.50 peak).
 The move sound fires on every single ply, so at parity with capture and check it
@@ -86,13 +95,22 @@ sounddino.com publishes no license or terms page. Its only usage statement is th
 category-page claim that the clips are royalty-free, require no attribution, and
 are free for commercial use. We rely on that claim rather than on an explicit
 per-file grant, which is a deliberate risk-based decision: this is a short generic
-clip and replacing it is a one-file swap. **Do not describe this file as AGPLv3+
+clip and replacing it is a one-file swap. **Do not describe these files as AGPLv3+
 or CC0.** If a claim is ever raised, re-cut a replacement from a CC0 source
 (Freesound filtered to CC0, or OpenGameArt) and update this section.
 
-**2. Everything else** (`Capture.mp3`, `Check.mp3`, `Checkmate.mp3`,
-`GameStart.mp3`, `LowTime.mp3`, `Defeat.mp3`, `Notify.mp3`, `FullScore.mp3`,
-`PartialScore.mp3`, `WinChime.mp3`) — the self-authored, synthesized "Walnut"
+**2. `Coin.mp3`** — the Pixabay sound effect
+[drop coin](https://pixabay.com/sound-effects/film-special-effects-drop-coin-384921/),
+downloaded on 2026-11-12 and used under the
+[Pixabay terms](https://pixabay.com/service/terms/) (Content License: free use
+including commercial, no attribution required, modification allowed). The
+download was trimmed to its first 0.45s and faded out. **Do not describe this
+file as AGPLv3+ or CC0**: the Pixabay license does not allow distributing the
+clip on its own, only as part of a larger work such as this app.
+
+**3. Everything else** (`Capture.mp3`, `Check.mp3`, `Checkmate.mp3`,
+`GameStart.mp3`, `Defeat.mp3`, `Notify.mp3`, `FullScore.mp3`,
+`PartialScore.mp3`, `WinChime.mp3`, `PotBust.mp3`) — the self-authored, synthesized "Walnut"
 set (wood clicks and marimba), released CC0 (no attribution required). Each
 clip was level-matched to the clip it replaced, so the relative loudness of the
 set is unchanged. This replaced a mix of sounddino cuts and lila `sfx` clips
@@ -103,6 +121,16 @@ win, and a Train session that finishes in the green band (≥75%). A fully solve
 single puzzle plays `FullScore.mp3` instead, so one puzzle does not sound like
 the whole session. Keep the distinction if either is re-cut: they are
 deliberately at the same level, so only the phrase separates them.
+
+The blunder-check clip `PotBust.mp3` (the pot lost) is rendered by
+`scripts/synth_pot_sounds.py`; re-run it to change it. Points landing in the pot
+play `Coin.mp3`, and banking the pot plays three of them, overlapping.
+
+`Question.mp3` (the blunder-check question) is the first two tones of the Walnut
+low-time clip that `LowTime.mp3` used to be (that pair played twice; the clip is
+in git history at commit `516a64af7`): `ffmpeg -i LowTime.mp3 -t 0.455 -af
+afade=t=out:st=0.44:d=0.015`. It is part of the Walnut set and independent of the
+current ticking `LowTime.mp3`.
 
 Note on lila's sound sets, should any be vendored again: only `sfx`, `piano`,
 `futuristic`, `nes` (Enigmahack, AGPLv3+) and `lisp` (CC BY-NC-SA 4.0,

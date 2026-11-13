@@ -37,13 +37,17 @@ import { Loader2 } from 'lucide-react';
 import { buildAnalysisFenUrl, buildTrainPuzzleAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
 import { ChessBoard } from '@/components/board/ChessBoard';
-import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainReveal } from '@/components/train/TrainReveal';
+import { TrainRevealGameFooter } from '@/components/train/TrainRevealGameFooter';
 import { TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
-import { TrainRevealActionBar } from '@/components/train/TrainRevealActionBar';
+import {
+  TrainRevealActionBar,
+  TrainRevealControlsRow,
+  TrainRevealFooter,
+} from '@/components/train/TrainRevealActionBar';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import type {
   ServerGradedMove,
@@ -57,7 +61,7 @@ import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import { useIsDesktop, useIsSmUp } from '@/hooks/useIsDesktop';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
-import type { RevealEvalReading, RevealUserMove, TrainRevealTree } from '@/hooks/useTrainRevealTree';
+import type { RevealEvalReading, RevealUserMove } from '@/hooks/useTrainRevealTree';
 import { useTrainLiveAlternatives } from '@/hooks/useTrainLiveAlternatives';
 import type { TreeSeedEval } from '@/hooks/useTreeMoveGrading';
 import { useWakeLock } from '@/hooks/useWakeLock';
@@ -71,7 +75,6 @@ import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import { useMarkPlayActive } from '@/lib/playActive';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
-import type { MobileBoardControls } from '@/lib/mobileBoardControls';
 import { playSound } from '@/lib/sounds';
 import { saveTrainRevealCache } from '@/lib/trainRevealCache';
 import { buildChipGroups, revealBestUciOf } from '@/lib/trainRevealLines';
@@ -116,13 +119,11 @@ import {
   buildChipFocusOverlay,
   buildTrainFreePlayOverlay,
   buildTrainRevealOverlay,
-  buildTrainStepMarkers,
-  buildTrainStepOverlay,
   classifyTrainMoveQuality,
   trainRootMultiPvFloor,
-  TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
-import { mergeEngineBadges } from '@/lib/engineArrowGrades';
+import { resolveOffRootOverlay } from '@/lib/trainRevealBoardOverlay';
+import type { RevealBoardOverlay, RevealOverlayTree } from '@/lib/trainRevealBoardOverlay';
 import type {
   TrainEngineOverlay,
   TrainFineMove,
@@ -242,6 +243,23 @@ const TRAIN_POINTS_FLASH_COLORS: Record<number, { bg: string; fg: string }> = {
 const TRAIN_EVAL_BAR_CHROME_PX = 28;
 
 /**
+ * The desktop game-info slot under the board: two `text-sm` lines (20px each)
+ * with their 4px gap. Held before the reveal too, so the board never resizes.
+ */
+const GAME_INFO_SLOT_CLASS = 'min-h-11 w-full';
+/**
+ * Analyze and Next, the reveal column's footer. The column stretches to the board column's
+ * full height, which ends with the game-info slot (44px) and its 12px gap, so
+ * this bottom margin puts the footer back on the board's bottom edge.
+ */
+const NEXT_FOOTER_CLASS = 'mt-auto mb-14';
+/**
+ * The desktop right column before the reveal (the bot bubble). Same box as
+ * TrainReveal's own root, which replaces it, so the board never moves.
+ */
+const PROMPT_SIDE_CLASS = 'flex w-full flex-col items-center gap-4 lg:mt-8 lg:max-w-sm';
+
+/**
  * Synthetic search depth handed to `EvalBar` for a terminal
  * (checkmate/stalemate) position, so a decisive mate clears `EvalBar`'s own
  * `depth >= 8` mate-fill gate instead of collapsing to the neutral midpoint.
@@ -265,15 +283,6 @@ function resolveTrainEvalBarReading(fen: string, reading: RevealEvalReading): Re
   return reading;
 }
 
-/** The four board props the reveal overlay decides (arrows, badges, last-move
- * square and its highlight color). */
-interface RevealBoardOverlay {
-  arrows: BoardArrow[];
-  markers: SquareMarker[];
-  lastMove: { from: string; to: string } | null;
-  lastMoveColor: string | undefined;
-}
-
 interface RevealBoardOverlayInput {
   /** The engine's arrows and badges for the shown position (drawn when no preview is anchored there). */
   offLineOverlay: TrainEngineOverlay;
@@ -281,56 +290,13 @@ interface RevealBoardOverlayInput {
   liveLines: readonly PvLine[];
   /** The Stockfish arrows setting: how many live moves a previewed position may draw. */
   liveArrowCount: number;
-  tree: Pick<
-    TrainRevealTree,
-    'isAtRoot' | 'currentNodeId' | 'chipMove' | 'preview' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor' | 'fen'
-  >;
+  tree: RevealOverlayTree;
   chips: readonly ChipGroup[];
   revealOverlay: TrainRevealOverlay;
   /** The soft root's latched live alternatives, drawn only at the puzzle position. */
   liveAlternatives: readonly TrainFineMove[];
   /** The puzzle's arrival move (the highlight at the puzzle position). */
   puzzleLastMove: { from: string; to: string } | null;
-}
-
-/**
- * The off-root branch of `resolveRevealBoardOverlay` (below the puzzle position):
- * the preview step board or the free-play engine overlay, plus the chip's first-move
- * badge or the tree's own markers, with the engine badges merged underneath.
- */
-function resolveOffRootOverlay(
-  offLineOverlay: TrainEngineOverlay,
-  liveLines: readonly PvLine[],
-  liveArrowCount: number,
-  tree: RevealBoardOverlayInput['tree'],
-  chips: readonly ChipGroup[],
-): RevealBoardOverlay {
-  const preview = tree.preview;
-  const previewNext =
-    preview !== null && preview.anchorId === tree.currentNodeId
-      ? (preview.steps[0]?.uci ?? null)
-      : null;
-  const engine =
-    previewNext !== null
-      ? buildTrainStepOverlay(previewNext, liveLines, liveArrowCount, tree.fen)
-      : offLineOverlay;
-  const chipMove = tree.chipMove;
-  if (chipMove === null) {
-    return {
-      arrows: engine.arrows,
-      markers: mergeEngineBadges(tree.boardMarkers, engine.badges),
-      lastMove: tree.lastMove,
-      lastMoveColor: tree.lastMoveColor,
-    };
-  }
-  // A chip's first move carries its chip's quality.
-  const quality = chips.find((chip) => chip.key === chipMove.line)?.quality ?? null;
-  return {
-    arrows: engine.arrows,
-    markers: mergeEngineBadges(buildTrainStepMarkers(chipMove.uci, quality, true), engine.badges),
-    lastMove: tree.lastMove,
-    lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
-  };
 }
 
 /**
@@ -752,7 +718,7 @@ export function TrainSolveScreen({
   const [pointsFlash, setPointsFlash] = useState<number | null>(null);
   // Board orientation. Defaults to the solver's own
   // color (a black-to-move puzzle starts flipped, as it always has) and is
-  // toggled by the phone bottom bar's flip button. Reset on every puzzle
+  // toggled by the desktop controls row's flip button. Reset on every puzzle
   // transition by the same effect that resets the rest of the solve state —
   // orientation is a per-position affordance, not a session preference.
   const [flipped, setFlipped] = useState(puzzle.side_to_move === 'black');
@@ -768,10 +734,11 @@ export function TrainSolveScreen({
   const screenRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef<HTMLDivElement>(null);
   const isDesktop = useIsDesktop();
-  // Exactly one reveal action bar is mounted. From `sm` up it is the in-flow
-  // bar under the board; below `sm` it is the fixed bottom bar fed by the published
-  // payload. Mounting both (one CSS-hidden) would duplicate btn-train-next /
-  // btn-train-analyze / train-reveal-action-bar testids in the DOM.
+  // Exactly one reveal action bar is mounted. On desktop it is split across
+  // the reveal column (controls row + Next footer), on tablets the in-flow bar under the board; below `sm` it
+  // is the fixed bottom bar fed by the published payload. Mounting more than
+  // one (CSS-hidden) would duplicate btn-train-next / btn-train-analyze /
+  // train-reveal-action-bar testids in the DOM.
   const isSmUp = useIsSmUp();
 
   // The played move's classified quality — derived once here and
@@ -904,7 +871,7 @@ export function TrainSolveScreen({
   /**
    * Rewind brings the board back to the puzzle position in one tap: the tree
    * rewinds to its root (the default chip is lit again) and its sidelines stay listed. The
-   * board orientation is left alone: flip is a permanent bar control, and a
+   * board orientation is left alone: flip is its own control (desktop controls row), and a
    * puzzle transition still restores the solver-colour default (per-puzzle effect).
    */
   const { goToRoot: revealGoToRoot, goBack: revealGoBack, goForward: revealGoForward } = revealTree;
@@ -1421,14 +1388,13 @@ export function TrainSolveScreen({
   const revealCanReset = !revealTree.isAtRoot;
   const revealCanGoBack = revealTree.canGoBack;
   const revealCanGoForward = revealTree.canGoForward;
-  const mobileBoardControls = useMemo<MobileBoardControls | null>(
+  const mobileBoardControls = useMemo<Parameters<typeof usePublishMobileBoardControls>[0]>(
     () =>
       verdict !== null && showReveal && !isSmUp
         ? {
             onBack: revealGoBack,
             onForward: revealGoForward,
             onReset: handleRewind,
-            onFlip: handleFlipBoard,
             canGoBack: revealCanGoBack,
             canGoForward: revealCanGoForward,
             canReset: revealCanReset,
@@ -1445,7 +1411,6 @@ export function TrainSolveScreen({
       revealGoBack,
       revealGoForward,
       handleRewind,
-      handleFlipBoard,
       revealCanGoBack,
       revealCanGoForward,
       revealCanReset,
@@ -1763,6 +1728,79 @@ export function TrainSolveScreen({
     isWarmup,
   );
 
+  // Bug fix (Phase 249 UAT): this block (the bot bubble and its engine states)
+  // used to sit under the board on desktop, with the right column existing
+  // only once the reveal opened, so the board jumped left on every reveal. On
+  // desktop it now renders in that right column, which the reveal then takes
+  // over; below `lg` it stays under the board.
+  // A landed verdict is never displaced by the engine-error or
+  // engine-loading branches. On the instant path the verdict is
+  // server-final while the background grade still runs, so a Worker error (e.g. a
+  // wasm OOM) after the verdict must not swap the bubble area for "Failed to
+  // load the grading engine" + Retry (whose restartEngine would re-grade an
+  // already-solved puzzle). Both branches apply only while there is no
+  // verdict.
+  const promptArea = engineFailed && verdict === null ? (
+        <div className="flex flex-col items-center gap-2" data-testid="train-engine-error">
+          <LoadError resource="the grading engine" />
+          <Button
+            variant="brand-outline"
+            className={TRAIN_BUTTON_CLASS}
+            data-testid="btn-train-engine-retry"
+            onClick={handleRetryEngine}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : !isReady && verdict === null ? (
+        // Defense in depth: never offer the guess/move UI before the
+        // grading engine's Worker has actually completed its UCI handshake —
+        // without this, a fast user (or one on a slow connection where the
+        // ~1-2MB WASM asset takes longer to fetch) could commit a graded move
+        // while `gradingEngine.search()` would still have fabricated a bogus
+        // result. The primary fix (queuing until ready) lives in
+        // useTrainGradingEngine.ts; this is the belt-and-suspenders UI gate.
+        <div className="flex items-center gap-2" data-testid="train-engine-loading">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-semibold text-muted-foreground">Loading engine…</p>
+        </div>
+      ) : (
+        <>
+          {/* The one chat-row bubble slot: guess prompt/buttons, intro stepper,
+              drop-nudge, move prompt and grading indicator, all from
+              `bubbleBody` (`renderTrainBotBubbleBody`), resolved outside this
+              component so growing the state machine never adds a branch here.
+              `bubbleBody` is null while settings are still loading on the
+              session's first puzzle and from the verdict on (the verdict lives
+              in TrainReveal); nothing renders in this slot then. `nudgeNonce`
+              is the bubble's own remount key: a repeated nudge must replay the
+              pulse, not be swallowed as an already-running animation. */}
+          {bubbleBody !== null && (
+            <TrainBotBubble
+              persona={bubblePersona}
+              state={bubbleState.kind}
+              nudgeNonce={nudgeNonce}
+              actions={bubbleBody.actions}
+            >
+              {bubbleBody.copy}
+            </TrainBotBubble>
+          )}
+          {gradingError && (
+            <div className="flex flex-col items-center gap-2" data-testid="train-grading-error">
+              <LoadError resource="your move grading" />
+              <Button
+                variant="brand-outline"
+                className={TRAIN_BUTTON_CLASS}
+                data-testid="btn-train-retry-grading"
+                onClick={retryGrading}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
+        </>
+      );
+
   return (
     <div
       // The board column's fitted width, published as a custom property so the
@@ -1913,15 +1951,16 @@ export function TrainSolveScreen({
           )}
         </div>
       </div>
-      {/* The reveal's action bar in the page flow under the board
-          from `sm` up (tablet and desktop; phones get the same bar in the fixed
-          bottom bar through the published payload). Desktop adds the key hint. */}
-      {verdict !== null && showReveal && isSmUp && (
+      {/* The reveal's action bar under the board on tablets (`sm` up to `lg`).
+          Phones get the same bar in the fixed bottom bar through the published
+          payload; desktop gets it as the reveal column's footer (below), so
+          nothing sits under the desktop board before or after the reveal and
+          the height-fitted board never changes size. */}
+      {verdict !== null && showReveal && isSmUp && !isDesktop && (
         <TrainRevealActionBar
           onRewind={handleRewind}
           onBack={revealGoBack}
           onForward={revealGoForward}
-          onFlip={handleFlipBoard}
           canRewind={revealCanReset}
           canGoBack={revealCanGoBack}
           canGoForward={revealCanGoForward}
@@ -1933,75 +1972,24 @@ export function TrainSolveScreen({
           className="w-full"
         />
       )}
-      </div>
-      {/* A landed verdict is never displaced by the engine-error or
-          engine-loading branches. On the instant path the verdict is
-          server-final while the background grade still runs, so a Worker error (e.g. a
-          wasm OOM) after the verdict must not swap the bubble area for "Failed to
-          load the grading engine" + Retry (whose restartEngine would re-grade an
-          already-solved puzzle). Both branches apply only while there is no
-          verdict. */}
-      {engineFailed && verdict === null ? (
-        <div className="flex flex-col items-center gap-2" data-testid="train-engine-error">
-          <LoadError resource="the grading engine" />
-          <Button
-            variant="brand-outline"
-            className={TRAIN_BUTTON_CLASS}
-            data-testid="btn-train-engine-retry"
-            onClick={handleRetryEngine}
-          >
-            Retry
-          </Button>
-        </div>
-      ) : !isReady && verdict === null ? (
-        // Defense in depth: never offer the guess/move UI before the
-        // grading engine's Worker has actually completed its UCI handshake —
-        // without this, a fast user (or one on a slow connection where the
-        // ~1-2MB WASM asset takes longer to fetch) could commit a graded move
-        // while `gradingEngine.search()` would still have fabricated a bogus
-        // result. The primary fix (queuing until ready) lives in
-        // useTrainGradingEngine.ts; this is the belt-and-suspenders UI gate.
-        <div className="flex items-center gap-2" data-testid="train-engine-loading">
-          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm font-semibold text-muted-foreground">Loading engine…</p>
-        </div>
-      ) : (
-        <>
-          {/* The one chat-row bubble slot: guess prompt/buttons, intro stepper,
-              drop-nudge, move prompt and grading indicator, all from
-              `bubbleBody` (`renderTrainBotBubbleBody`), resolved outside this
-              component so growing the state machine never adds a branch here.
-              `bubbleBody` is null while settings are still loading on the
-              session's first puzzle and from the verdict on (the verdict lives
-              in TrainReveal); nothing renders in this slot then. `nudgeNonce`
-              is the bubble's own remount key: a repeated nudge must replay the
-              pulse, not be swallowed as an already-running animation. */}
-          {bubbleBody !== null && (
-            <TrainBotBubble
-              persona={bubblePersona}
-              state={bubbleState.kind}
-              nudgeNonce={nudgeNonce}
-              actions={bubbleBody.actions}
-            >
-              {bubbleBody.copy}
-            </TrainBotBubble>
+      {/* Desktop: the game info sits under the board, not in the sidebar (Phase
+          249 UAT). The slot is always there, so the height-fitted board is the
+          same size before and after the reveal fills it. */}
+      {isDesktop && (
+        <div className={GAME_INFO_SLOT_CLASS} data-testid="train-game-info-slot">
+          {verdict !== null && showReveal && (
+            <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} />
           )}
-          {gradingError && (
-            <div className="flex flex-col items-center gap-2" data-testid="train-grading-error">
-              <LoadError resource="your move grading" />
-              <Button
-                variant="brand-outline"
-                className={TRAIN_BUTTON_CLASS}
-                data-testid="btn-train-retry-grading"
-                onClick={retryGrading}
-              >
-                Retry
-              </Button>
-            </div>
-          )}
-        </>
+        </div>
       )}
       </div>
+      {!isDesktop && promptArea}
+      </div>
+      {isDesktop && !showReveal && (
+        <div className={PROMPT_SIDE_CLASS} data-testid="train-prompt-panel">
+          {promptArea}
+        </div>
+      )}
       {showReveal && (
         <TrainReveal
           puzzle={puzzle}
@@ -2029,6 +2017,33 @@ export function TrainSolveScreen({
           expiresOn={trainSession.session?.expires_on}
           isWarmup={isWarmup}
           onStripExpand={handleStripExpand}
+          // `isSmUp` keeps the one-bar invariant explicit: the phone payload
+          // publishes exactly when it is false.
+          controlsRow={
+            verdict !== null && isDesktop && isSmUp ? (
+              <TrainRevealControlsRow
+                onRewind={handleRewind}
+                onBack={revealGoBack}
+                onForward={revealGoForward}
+                canRewind={revealCanReset}
+                canGoBack={revealCanGoBack}
+                canGoForward={revealCanGoForward}
+                onFlip={handleFlipBoard}
+              />
+            ) : undefined
+          }
+          showGameFooter={!isDesktop}
+          nextButton={
+            verdict !== null && isDesktop && isSmUp ? (
+              <TrainRevealFooter
+                onNext={handleBarNext}
+                analyzeTo={analyzeTo}
+                onAnalyzeClick={handleBarAnalyzeClick}
+                spotlightAnalyze={tourTarget === 'analyze'}
+                className={NEXT_FOOTER_CLASS}
+              />
+            ) : undefined
+          }
         />
       )}
     </div>

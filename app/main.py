@@ -24,6 +24,7 @@ from app.routers import openings, position_bookmarks, imports, auth, feedback
 from app.routers.admin import router as admin_router
 from app.routers.admin_activity import dispose_activity_engine
 from app.routers.admin_activity import router as admin_activity_router
+from app.routers.blunder_check import router as blunder_check_router
 from app.routers.bots import router as bots_router
 from app.routers.endgames import router as endgames_router
 from app.routers.insights import router as insights_router
@@ -297,6 +298,7 @@ app.include_router(eval_remote_router, prefix="/api")
 app.include_router(feedback.router, prefix="/api")
 app.include_router(bots_router, prefix="/api")
 app.include_router(train_router, prefix="/api")
+app.include_router(blunder_check_router, prefix="/api")
 app.include_router(push_router, prefix="/api")
 
 

@@ -10,8 +10,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Blunder check (beta): a new Train tab that replays short sequences from your games and asks, before each move is played, whether it is a good move or a blunder, with a 10-second timer, a points pot you lose on a missed blunder, a better-move follow-up when you catch one, and a solution screen with the engine lines.
 - Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
 - Analysis data: each of your blunders now also records how likely a player at your rating was to find the punishing reply, the next piece of groundwork for blunder-check training.
+- Analysis data: each of your blunders now records how many replies your opponent had to choose from and how much material the engine's punishing line wins, the inputs to the blunder-check selection.
+
+### Changed
+
+- Blunder check (beta): blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
 
 ### Fixed
 

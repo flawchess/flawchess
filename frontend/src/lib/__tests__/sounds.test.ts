@@ -115,6 +115,7 @@ describe('sounds', () => {
     ['game-start', 'GameStart.mp3'],
     ['score-partial', 'PartialScore.mp3'],
     ['score-full', 'FullScore.mp3'],
+    ['question', 'Question.mp3'],
   ] satisfies [SoundEvent, string][])(
     'dispatches the %s asset (%s)',
     async (event, filename) => {
@@ -180,7 +181,7 @@ describe('sounds', () => {
     // Twelve SoundEvent members; each gets its own preloaded Audio instance.
     // Twelve, not eleven, even though draw-declined and game-draw now point at
     // the same file — the cache is keyed by event, not by filename.
-    expect(instances).toHaveLength(12);
+    expect(instances).toHaveLength(15);
     for (const instance of instances) {
       expect(instance.play).toHaveBeenCalledTimes(1);
       expect(instance.pause).toHaveBeenCalledTimes(1);
@@ -225,7 +226,7 @@ describe('sounds', () => {
 
     unlockAudio();
 
-    expect(instances).toHaveLength(12);
+    expect(instances).toHaveLength(15);
     for (const instance of instances) {
       expect(instance.paused).toBeUndefined();
       expect(instance.play).toHaveBeenCalledTimes(1);
@@ -298,7 +299,7 @@ describe('sounds', () => {
       await flushDecode();
 
       expect(AudioContext).toHaveBeenCalledTimes(1);
-      expect(fetch).toHaveBeenCalledTimes(12);
+      expect(fetch).toHaveBeenCalledTimes(15);
       // Decoding does not need the context to be running.
       expect(resume).not.toHaveBeenCalled();
     });
@@ -381,7 +382,7 @@ describe('sounds', () => {
       initWebAudio();
       unlockAudio();
 
-      expect(fetch).toHaveBeenCalledTimes(12);
+      expect(fetch).toHaveBeenCalledTimes(15);
       expect(AudioContext).toHaveBeenCalledTimes(1);
     });
 

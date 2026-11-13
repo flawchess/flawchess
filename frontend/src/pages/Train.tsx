@@ -6,18 +6,20 @@
  *
  * `/train/*` is one route, so this page parses the pathname
  * (`lib/trainRoute.ts`) and renders URL-routed tabs: Today (the landing, the
- * solve loop and the score screen), Leaderboard and Archive. An unknown `/train/*` path
- * redirects to `/train`. The session, the grading Worker and the loop flags
+ * solve loop and the score screen), Leaderboard, Archive and, for beta users,
+ * Blunder check (non-beta users are redirected to Today). An unknown `/train/*`
+ * path redirects to `/train`. The session, the grading Worker and the loop flags
  * live in `useTrainLoop` (see its docstring for the session and loop rules
  * and the Today latch that keeps a Leaderboard-only visit from creating a
  * session or loading the engine).
  *
  * The tab bar shows everywhere except the immersive states (the solve loop,
- * the score screen and a cached restored reveal, from the first paint), where
+ * the score screen, a cached restored reveal and a running blunder-check drill), where
  * the solve screen needs the full page height. The wrapper keeps the same element across tabs and only swaps
  * its class, so nothing remounts.
  */
 
+import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import type { ReactElement } from 'react';
 import { useTrainLoop } from '@/hooks/useTrainLoop';
@@ -31,6 +33,7 @@ import { TrainLeaderboardCard } from '@/components/train/TrainLeaderboardCard';
 import { TrainMedalDialogHost } from '@/components/train/medals/TrainMedalDialogHost';
 import { TrainSubnav } from '@/components/train/TrainSubnav';
 import { TrainArchiveTab } from '@/components/train/TrainArchiveTab';
+import { BlunderCheckTab } from '@/components/train/blunder-check/BlunderCheckTab';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
 import { feedbackAskDays } from '@/lib/feedbackAsk';
 import { parseTrainRoute, TRAIN_TAB_PATHS } from '@/lib/trainRoute';
@@ -115,11 +118,18 @@ export default function TrainPage(): ReactElement {
   // branches on. hasImportedGames is the SAME shared zero-game predicate
   // Home.tsx uses — never re-derived here.
   const hasGames = hasImportedGames(profile);
+  // The Blunder check tab is beta-only (D-01). `beta_enabled` comes from the profile,
+  // never useAuth().user (always null, carries no beta flag).
+  const isBeta = profile?.beta_enabled === true;
+  // Set by BlunderCheckTab while a drill is on screen, so the page goes immersive like
+  // the solve loop. Declared with the other hooks, above the early returns.
+  const [blunderImmersive, setBlunderImmersive] = useState(false);
   // No /train/* handler rejects guests, so canTrain only waits for the
   // profile to resolve.
   const canTrain = profile != null;
   const loop = useTrainLoop({ isToday, canTrain });
-  const { trainSession, showLoop, showScoreScreen, restoredActive, immersive } = loop;
+  const { trainSession, showLoop, showScoreScreen, restoredActive } = loop;
+  const pageImmersive = loop.immersive || (route?.tab === 'blunder-check' && blunderImmersive);
 
   // All hooks are above: an unknown /train/* path lands on Today.
   if (route === null) {
@@ -142,6 +152,11 @@ export default function TrainPage(): ReactElement {
     );
   }
 
+  // Defense in depth: the server's beta gate is the real control (T-249-19).
+  if (route.tab === 'blunder-check' && !isBeta) {
+    return <Navigate to={TRAIN_TAB_PATHS.today} replace />;
+  }
+
   const landingActive = !(showLoop || showScoreScreen || restoredActive);
 
   return (
@@ -150,15 +165,19 @@ export default function TrainPage(): ReactElement {
     // progress row + board down — drop it below `sm`, the header's own
     // breakpoint. Otherwise the tab views share one max-w-7xl wrapper.
     <div
-      className={immersive ? trainPageClass(showLoop, restoredActive) : TRAIN_TAB_PAGE_CLASS}
+      className={
+        pageImmersive
+          ? trainPageClass(showLoop || blunderImmersive, restoredActive)
+          : TRAIN_TAB_PAGE_CLASS
+      }
       data-testid="train-page"
     >
-      {!immersive && <TrainSubnav active={route.tab} />}
+      {!pageImmersive && <TrainSubnav active={route.tab} showBlunderCheck={isBeta} />}
       {/* The layout owns the medal dialog so it opens on any tab (a Leaderboard
           deep link included). It is unmounted in the immersive views, so it
           never covers a session, and it sits at a stable position so a tab
           switch keeps its dismissed state. */}
-      {!immersive && <TrainMedalDialogHost isGuest={isGuest} />}
+      {!pageImmersive && <TrainMedalDialogHost isGuest={isGuest} />}
       {/* The landing stays mounted but hidden on the other tabs once Today has
           been visited: `TrainScheduleSettings` debounces saves by 600 ms, so an
           edit followed by a quick tab switch would otherwise lose the save, and
@@ -206,6 +225,11 @@ export default function TrainPage(): ReactElement {
       {route.tab === 'archive' && (
         <div className="mt-4" data-testid="train-archive-panel">
           <TrainArchiveTab list={route.list} />
+        </div>
+      )}
+      {route.tab === 'blunder-check' && (
+        <div className="mt-4" data-testid="train-blunder-check-panel">
+          <BlunderCheckTab onImmersiveChange={setBlunderImmersive} />
         </div>
       )}
     </div>

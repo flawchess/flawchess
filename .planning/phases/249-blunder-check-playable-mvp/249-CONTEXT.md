@@ -10,10 +10,10 @@ session; not a discuss-phase run)
 Blunder check trains the habit of checking your own move before you play it, on stretches of real games, with no
 announcement that something critical is about to happen. Phase 248 stored the findability data and calibrated the
 selection. This phase makes the drill playable end to end for beta users, so the owner can play it and tune the feel
-before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
+before Phase 251 builds the schedule, reviews and leaderboards. Deliverables:
 
 1. Window selection service (backend, SQL-first) using the Phase 248 constants.
-2. Session and window persistence (every served window and every answer), designed so Phase 250 can add spaced
+2. Session and window persistence (every served window and every answer), designed so Phase 251 can add spaced
    repetition, the shared schedule and leaderboards without a data migration of MVP rows.
 3. Session API: start a session, fetch the next window, submit answers, finish.
 4. Drill UI on a beta-only Train tab: start screen, lead-in replay, arrow prompt, timer, points and forfeits,
@@ -29,7 +29,7 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
 - **D-01: Beta-only Train tab.** A 4th tab "Blunder check" on `/train` (beside Today, Leaderboard, Archive), visible
   and reachable only for users with `beta_enabled`. A non-beta user hitting the route or the API gets the normal
   not-found/forbidden behaviour. Start screen with a Start button. No guests in the MVP (guests cannot be beta).
-- **D-02: Session size 6 windows**, a named constant (`BLUNDER_CHECK_SESSION_WINDOWS = 6`). Phase 250 turns it into a
+- **D-02: Session size 6 windows**, a named constant (`BLUNDER_CHECK_SESSION_WINDOWS = 6`). Phase 251 turns it into a
   per-mode setting. A session is not tied to the Train schedule, streak or reminders in this phase, and does not
   touch the personalized-puzzle session tables' semantics (see D-14).
 
@@ -42,6 +42,11 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
   below `INACCURACY_DROP` (the flaw pipeline's threshold). Mistakes never count as safe. The lead-in is not checked.
 - **D-05: Eval band** [0.10, 0.90] on the pre-move expected score (user's point of view) for every judged user move,
   in blunder windows and herrings. Named constants.
+  - UAT addition (owner, 2026-11-13): the blunder itself must come from an undecided position, a pre-blunder
+    Stockfish eval within +/- 300cp (`BLUNDER_MAX_PRE_EVAL_CP`; mate counts as decided). Blunder only; the moves
+    before it and herrings keep the [0.10, 0.90] band. A miss is judged on the position before the opponent's
+    gift (owner: keep big missed gifts); the D-05 band still caps the gift itself at about +6. Carries over to
+    Phase 250 (which replaces D-06 only).
 - **D-06: Findability (face-palm test v2), by case** (miss classification from the seed and 248 D-13):
   - allowed (`is_miss` false): `maia_refutation_prob >= R` or `maia_refutation_rank = 1`, R = 0.3;
   - pure miss (`is_miss` and `ES_played >= ES_ref - INACCURACY_DROP`): `maia_best_prob >= X'` or
@@ -59,9 +64,14 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
   FlawChess users' games, matched on the mover's rating at game time (band is a named constant; Claude's discretion
   on the value). Own vs foreign is recorded per window. Copy never says "your move" on a foreign game (herring-pool
   precedent).
-- **D-10: No repeats in the MVP.** A blunder or herring window already served to the user is not served again, except:
-  a blunder window that ended on a false alarm before the blunder was reached returns to the pool as unseen (herring
-  false alarms are simply dropped). Re-serving missed blunders is Phase 250's spaced repetition.
+- **D-10: No repeats.** A blunder or herring window already served to the user is not served again.
+  - *Amendment (owner, 2026-11-13; 250-CONTEXT D-17):* this is permanent, not MVP-only. The earlier exception (a
+    blunder window that ended on a false alarm before the blunder was reached returned to the pool as unseen) is
+    removed, and there is no spaced repetition of missed blunders in Phase 251. The code still implements the
+    exception until Phase 250 removes it.
+  - *UAT amendment (owner, 2026-11-12):* a false alarm's solution now shows the lines at the flagged move and the
+    Analyze button (game id and flagged ply). The window's case and blunder are still not sent, but the user can
+    reach the blunder by stepping forward in Analyze, so a re-served window may no longer be truly unseen.
 - **D-11: Session composition** is whatever the hazard model draws per window (about 30% herrings), no forced mix.
 
 ### Drill interaction and scoring (SEED decisions, owner 2026-11-09)
@@ -86,7 +96,7 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
   plus `BLUNDER_POINTS` + `BETTER_MOVE_POINTS` when it holds a blunder, including the unreached blunder after a false
   alarm).
 - **D-15: Persistence from day one.** Store sessions, served windows (game, plies, shape, case, own/foreign, answer
-  key) and per-move answers with timing and outcome, so Phase 250 can compute leaderboards, reviews and the
+  key) and per-move answers with timing and outcome, so Phase 251 can compute leaderboards, reviews and the
   cross-mode cooldown from MVP data. Own tables (SMALLINT IntEnum + CHECK for high-volume enum columns, TEXT + CHECK
   for low-volume ones, FKs with `ondelete`), not new columns on the personalized-puzzle tables, unless research shows a
   clean shared-session design; the planner decides with the reasoning written down.
@@ -165,7 +175,7 @@ before Phase 250 builds the schedule, reviews and leaderboards. Deliverables:
 </specifics>
 
 <deferred>
-## Deferred Ideas (Phase 250 or later)
+## Deferred Ideas (Phase 251 or later)
 
 - Shared Train schedule and reminders, per-mode session size with 0 allowed, session streak across both modes.
 - Spaced repetition of missed-blunder windows (4 days, re-drawn shape, unlabelled; fallback to the original window

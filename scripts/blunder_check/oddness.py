@@ -3,8 +3,9 @@
 The blunder-check shows the user an arrow for the played move. If the arrow looks odd
 (low Maia probability at the user's rating) exactly when the move is a blunder, the user can
 win by flagging odd-looking arrows without reading the position. This module measures that:
-Maia's probability and rank of the played move for a deterministic sample of judged Good user
-moves, against the stored probability and rank of qualifying blunders.
+Maia's probability of the played move for a deterministic sample of judged Good user moves,
+against the stored probability of qualifying blunders. Probability only (Phase 250 D-10): the
+played-move rank columns are dropped, so no rank is read or written here.
 
 Good moves are scored on the exact pre-move board (the games.pgn replay, never game_flaws.fen)
 at the game's pinned user Elo, through the same ``full_policy`` and ``compute_maia_flaw_stats``
@@ -24,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models.game import Game
 from app.services import maia_engine
 from app.services.maia_flaw_scoring import replay_flaw_boards
-from app.services.maia_flaw_stats import RANK_BASE, compute_maia_flaw_stats
+from app.services.maia_flaw_stats import compute_maia_flaw_stats
 from scripts.blunder_check.metrics import ELO_BUCKETS, EloBucket, auc, quartiles
 from scripts.blunder_check.sample import BlunderRecord, Collection, GoodMoveOddness
 
@@ -63,8 +64,6 @@ class OddnessRow:
     n_blunder: int
     good_quartiles: tuple[float, float, float] | None
     blunder_quartiles: tuple[float, float, float] | None
-    good_rank1_share: float | None
-    blunder_rank1_share: float | None
     auc: float | None
 
 
@@ -124,8 +123,7 @@ def _score_game(
             probs, played_uci=played_uci, best_uci=None, second_uci=None
         )
         played_prob = None if stats is None else stats["maia_played_prob"]
-        played_rank = None if stats is None else stats["maia_played_rank"]
-        if played_prob is None or played_rank is None:
+        if played_prob is None:
             skipped += 1
             continue
         records.append(
@@ -135,7 +133,6 @@ def _score_game(
                 bucket=target.bucket,
                 es_before=target.es_before,
                 played_prob=played_prob,
-                played_rank=played_rank,
             )
         )
     return ScoredGoodMoves(records, skipped)
@@ -146,7 +143,7 @@ async def score_good_moves(
     targets: Sequence[GoodMoveTarget],
     pinned_elos: Mapping[int, float],
 ) -> ScoredGoodMoves:
-    """Maia probability and rank of each target move at the game's pinned user Elo (D-17)."""
+    """Maia probability of each target move at the game's pinned user Elo (D-17)."""
     by_game: dict[int, list[GoodMoveTarget]] = defaultdict(list)
     for target in targets:
         by_game[target.game_id].append(target)
@@ -167,27 +164,17 @@ async def score_good_moves(
     return total
 
 
-def _rank1_share(ranks: Sequence[int]) -> float | None:
-    if not ranks:
-        return None
-    return sum(1 for r in ranks if r == RANK_BASE) / len(ranks)
-
-
 def summarize_group(
     good: Sequence[GoodMoveOddness], blunders: Sequence[BlunderRecord]
 ) -> OddnessRow:
-    """Compare the played-move probability of Good moves and blunders (blunders need a stored pair)."""
+    """Compare the played-move probability of Good moves and blunders (blunders need a stored one)."""
     good_probs = [g.played_prob for g in good]
-    scored = [b for b in blunders if b.maia_played_prob is not None]
-    blunder_probs = [b.maia_played_prob for b in scored if b.maia_played_prob is not None]
-    blunder_ranks = [b.maia_played_rank for b in scored if b.maia_played_rank is not None]
+    blunder_probs = [b.maia_played_prob for b in blunders if b.maia_played_prob is not None]
     return OddnessRow(
         n_good=len(good_probs),
         n_blunder=len(blunder_probs),
         good_quartiles=quartiles(good_probs),
         blunder_quartiles=quartiles(blunder_probs),
-        good_rank1_share=_rank1_share([g.played_rank for g in good]),
-        blunder_rank1_share=_rank1_share(blunder_ranks),
         auc=auc(good_probs, blunder_probs),
     )
 

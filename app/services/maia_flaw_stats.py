@@ -88,6 +88,37 @@ def null_refutation_stats() -> MaiaRefutationStats:
     return MaiaRefutationStats(maia_refutation_prob=None, maia_refutation_rank=None)
 
 
+class FacepalmStats(TypedDict):
+    """The eight Phase 250 facepalm columns of one game_flaws row (D-05)."""
+
+    maia_reply_spread: float | None
+    line_loss_1: int | None
+    line_loss_3: int | None
+    line_loss_5: int | None
+    line_loss_7: int | None
+    line_loss_9: int | None
+    line_mate_ply: int | None
+    facepalm_score: float | None
+
+
+def null_facepalm_stats() -> FacepalmStats:
+    """All eight Phase 250 values None (out of scope or not scorable).
+
+    Written for every flaw that is not a scorable user blunder, so a full re-score also
+    clears a stale value on a row since downgraded from blunder (D-06, D-08 precedent).
+    """
+    return FacepalmStats(
+        maia_reply_spread=None,
+        line_loss_1=None,
+        line_loss_3=None,
+        line_loss_5=None,
+        line_loss_7=None,
+        line_loss_9=None,
+        line_mate_ply=None,
+        facepalm_score=None,
+    )
+
+
 def _rank(probs: Mapping[str, float], uci: str) -> int:
     """RANK_BASE + number of legal moves strictly more probable than `uci`."""
     own = probs[uci]
@@ -98,6 +129,18 @@ def _effective_moves(probs: Mapping[str, float]) -> float:
     """2 ** (Shannon entropy in bits over all legal moves)."""
     entropy_bits = -sum(p * math.log2(p) for p in probs.values() if p > 0.0)
     return float(_ENTROPY_LOG_BASE**entropy_bits)
+
+
+def reply_spread(probs: Mapping[str, float]) -> float:
+    """Effective number of replies in `probs` (250 D-01): 2 ** Shannon entropy in bits.
+
+    `probs` is Maia's full policy over ALL legal moves one ply after the blunder (the
+    opponent to move) at the blunderer's pinned Elo, with no truncation. This is the
+    Phase 247 effective-moves formula applied one ply later; the go-forward hook, the
+    backfill and the score fit all call this one implementation. A policy uniform over k
+    moves gives exactly k.
+    """
+    return _effective_moves(probs)
 
 
 def _best_reason(probs: Mapping[str, float], best_uci: str | None) -> MaiaReason | None:

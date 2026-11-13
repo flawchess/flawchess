@@ -75,6 +75,23 @@ function TrainStockfishRow({
   );
 }
 
+/**
+ * Bug fix (Phase 249 UAT): on desktop the reveal's action bar sits below this list in the
+ * side column, and the Stockfish row appearing on the first step off the puzzle position
+ * pushed it (and Next) down. Desktop holds the row's height at the puzzle position too, so
+ * everything below stays put. Phones keep the collapsing row: their bar is fixed.
+ */
+function StockfishRowPlaceholder(): ReactElement | null {
+  const isDesktop = useIsDesktop();
+  const { sfLines } = useEngineDisplaySettings();
+  if (!isDesktop) return null;
+  return (
+    <div aria-hidden="true" className="invisible" data-testid="train-sf-row-placeholder">
+      <EngineLinesSkeleton rows={sfLines} />
+    </div>
+  );
+}
+
 /** The tree's preview as VariationTree's render model, or undefined without one. */
 function toVariationPreview(tree: TrainRevealTree): VariationTreePreview | undefined {
   const preview = tree.preview;
@@ -111,7 +128,11 @@ export function TrainMoveTreeList({
           preview={toVariationPreview(tree)}
         />
       </div>
-      {!tree.isAtRoot && <TrainStockfishRow tree={tree} flipped={flipped} />}
+      {tree.isAtRoot ? (
+        <StockfishRowPlaceholder />
+      ) : (
+        <TrainStockfishRow tree={tree} flipped={flipped} />
+      )}
     </div>
   );
 }

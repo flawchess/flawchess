@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, type RefObject } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, useId, type RefObject } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { arrowSortKey, NEUTRAL_ARROW_COLOR } from '../../lib/arrowColor';
 import {
@@ -24,6 +24,12 @@ export interface BoardArrow {
   /** Whether this arrow's move is currently hovered in the move list */
   isHovered?: boolean;
   /**
+   * A second fill color: the arrow is hatched in diagonal stripes of `color` and
+   * this one. The blunder-check drill draws the judged move this way (good green
+   * and blunder red: the user has yet to say which). Omitted = solid `color`.
+   */
+  hatchColor?: string;
+  /**
    * When true, the arrow's <path> gets the .animate-arrow-pulse class so it
    * pulses (opacity 0.45 → 1.0 → 0.75) for HIGHLIGHT_PULSE_ITERATIONS
    * iterations and then settles at the static ARROW_OPACITY. Used by the
@@ -31,6 +37,13 @@ export interface BoardArrow {
    * candidate move on arrival.
    */
   isHighlightPulse?: boolean;
+  /**
+   * When true, the arrow flashes twice as it first appears, then stays at its
+   * resting opacity (.animate-arrow-flash in index.css). The blunder-check
+   * drill marks the judged move's arrow this way. Callers omit it under
+   * prefers-reduced-motion.
+   */
+  isFlashIn?: boolean;
   /**
    * Optional depth-badge label rendered as an SVG <text> on the arrow's target
    * square (e.g. the tactic depth number), drawn by the shared DepthLabel
@@ -155,6 +168,50 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // Constants live in lib/highlightPulse.ts so the MoveExplorer row-pulse
 // stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
+const ARROW_FLASH_CLASS = 'animate-arrow-flash';
+// Hatched arrows (BoardArrow.hatchColor): the width of one stripe as a fraction of
+// a square, and the stripes' angle to the arrow's own direction.
+const ARROW_HATCH_STRIPE = 0.09;
+const ARROW_HATCH_ANGLE_DEG = 45;
+const RAD_TO_DEG = 180 / Math.PI;
+
+/**
+ * The two-color stripe pattern a hatched arrow is filled with. Rotated with the
+ * arrow, so the stripes cross every arrow at the same angle whatever its direction.
+ */
+function ArrowHatchPattern({
+  id,
+  arrow,
+  sqSize,
+  flipped,
+}: {
+  id: string;
+  arrow: BoardArrow;
+  sqSize: number;
+  flipped: boolean;
+}) {
+  const [x1, y1] = squareToCoords(arrow.startSquare, flipped);
+  const [x2, y2] = squareToCoords(arrow.endSquare, flipped);
+  const angle = Math.atan2(y2 - y1, x2 - x1) * RAD_TO_DEG + ARROW_HATCH_ANGLE_DEG;
+  const stripe = ARROW_HATCH_STRIPE * sqSize;
+  return (
+    <pattern
+      id={id}
+      width={stripe * 2}
+      height={stripe * 2}
+      patternUnits="userSpaceOnUse"
+      patternTransform={`rotate(${angle})`}
+    >
+      <rect width={stripe * 2} height={stripe * 2} fill={arrow.color} />
+      <rect width={stripe} height={stripe * 2} fill={arrow.hatchColor} />
+    </pattern>
+  );
+}
+
+function arrowAnimationClass(arrow: BoardArrow): string | undefined {
+  if (arrow.isHighlightPulse) return ARROW_PULSE_CLASS;
+  return arrow.isFlashIn ? ARROW_FLASH_CLASS : undefined;
+}
 // Window in which react-chessboard's own touchend onSquareClick is treated as a
 // repeat of the tap our onPointerUp workaround already handled (see
 // isDuplicateTouchTap). A real second tap on the same square comes much later.
@@ -204,9 +261,12 @@ function ArrowOverlay({
   boardWidth: number;
   flipped: boolean;
 }) {
+  // Pattern ids are document-global, and several boards can be on one page.
+  const hatchIdPrefix = `arrow-hatch-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   if (arrows.length === 0 && markers.length === 0) return null;
 
   const sqSize = boardWidth / 8;
+  const hatchId = (arrow: BoardArrow): string => `${hatchIdPrefix}-${arrowMoveKey(arrow)}`;
 
   const sortedArrows = dedupeArrowsByMove(
     [...arrows].sort((a, b) => {
@@ -227,6 +287,19 @@ function ArrowOverlay({
       style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
       data-testid="arrow-overlay"
     >
+      <defs>
+        {sortedArrows.map((arrow) =>
+          arrow.hatchColor !== undefined && arrow.startSquare !== arrow.endSquare ? (
+            <ArrowHatchPattern
+              key={hatchId(arrow)}
+              id={hatchId(arrow)}
+              arrow={arrow}
+              sqSize={sqSize}
+              flipped={flipped}
+            />
+          ) : null,
+        )}
+      </defs>
       {sortedArrows.map((arrow) => {
         // Skip degenerate arrows where start and end are the same square (causes NaN in path)
         if (arrow.startSquare === arrow.endSquare) return null;
@@ -274,12 +347,12 @@ function ArrowOverlay({
           <path
             key={arrowMoveKey(arrow)}
             d={d}
-            fill={arrow.color}
+            fill={arrow.hatchColor !== undefined ? `url(#${hatchId(arrow)})` : arrow.color}
             opacity={resolveArrowOpacity(arrow)}
             stroke={ARROW_OUTLINE_COLOR}
             strokeWidth={ARROW_OUTLINE_WIDTH}
             strokeLinejoin="round"
-            className={arrow.isHighlightPulse ? ARROW_PULSE_CLASS : undefined}
+            className={arrowAnimationClass(arrow)}
             style={pulseStyle}
           />
         );

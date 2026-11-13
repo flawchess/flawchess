@@ -1,4 +1,4 @@
-"""Read-only sampler for the blunder-check calibration report (SEED-261108-dk0, Phase 248).
+"""Read-only sampler for the blunder-check calibration report (SEED-261108-dk0, Phase 248, 250).
 
 Turns per-ply evals into per-blunder and per-game records using the flaw classifier's own
 expected-score convention (``_run_all_moves_pass``), so every number in the report is computed
@@ -22,7 +22,7 @@ from typing import Any, cast
 import sqlalchemy as sa
 from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import aliased, load_only
 
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
@@ -70,7 +70,9 @@ DEFAULT_BATCH_GAMES: int = 500
 # Rating groups for the per-user aggregates (approximation of the exact per-game Elo, D-23).
 RATING_GROUP_WIDTH: int = 50
 BLUNDER_SEVERITY: int = _SEVERITY_INT["blunder"]
-CACHE_VERSION: int = 1
+# Version 2 (Phase 250): blunder records carry the facepalm fields instead of the Maia best /
+# refutation pairs and ranks; a cache written before that no longer loads.
+CACHE_VERSION: int = 2
 # Number of user moves kept before each blunder (positions 2..MAX_BLUNDER_POSITION need k-1).
 PRECEDING_MOVES_KEPT: int = MAX_BLUNDER_POSITION - 1
 
@@ -160,7 +162,12 @@ class GameRecord:
 
 @dataclass
 class BlunderRecord:
-    """One user-side blunder of a sampled, rated game, with its ES and stored Maia values."""
+    """One user-side blunder of a sampled, rated game, with its ES and the stored facepalm inputs.
+
+    `has_line` records whether the game holds a stored engine line after the blunder (the
+    game_positions.pv of ply + 1), so a NULL score with a spread can be told apart as "no line"
+    or "line too short".
+    """
 
     game_id: int
     ply: int
@@ -173,11 +180,11 @@ class BlunderRecord:
     es_played: float | None
     es_ref: float | None
     maia_played_prob: float | None
-    maia_played_rank: int | None
-    maia_best_prob: float | None
-    maia_best_rank: int | None
-    maia_refutation_prob: float | None
-    maia_refutation_rank: int | None
+    maia_reply_spread: float | None
+    line_loss_3: int | None
+    line_mate_ply: int | None
+    facepalm_score: float | None
+    has_line: bool
     preceding: list[MoveJudgement]
 
     def to_dict(self) -> dict[str, Any]:
@@ -193,11 +200,11 @@ class BlunderRecord:
             "es_played": self.es_played,
             "es_ref": self.es_ref,
             "maia_played_prob": self.maia_played_prob,
-            "maia_played_rank": self.maia_played_rank,
-            "maia_best_prob": self.maia_best_prob,
-            "maia_best_rank": self.maia_best_rank,
-            "maia_refutation_prob": self.maia_refutation_prob,
-            "maia_refutation_rank": self.maia_refutation_rank,
+            "maia_reply_spread": self.maia_reply_spread,
+            "line_loss_3": self.line_loss_3,
+            "line_mate_ply": self.line_mate_ply,
+            "facepalm_score": self.facepalm_score,
+            "has_line": self.has_line,
             "preceding": [_judgement_to_list(j) for j in self.preceding],
         }
 
@@ -215,11 +222,11 @@ class BlunderRecord:
             es_played=raw["es_played"],
             es_ref=raw["es_ref"],
             maia_played_prob=raw["maia_played_prob"],
-            maia_played_rank=raw["maia_played_rank"],
-            maia_best_prob=raw["maia_best_prob"],
-            maia_best_rank=raw["maia_best_rank"],
-            maia_refutation_prob=raw["maia_refutation_prob"],
-            maia_refutation_rank=raw["maia_refutation_rank"],
+            maia_reply_spread=raw["maia_reply_spread"],
+            line_loss_3=raw["line_loss_3"],
+            line_mate_ply=raw["line_mate_ply"],
+            facepalm_score=raw["facepalm_score"],
+            has_line=bool(raw["has_line"]),
             preceding=[_judgement_from_list(j) for j in raw["preceding"]],
         )
 
@@ -266,7 +273,7 @@ class UserGroup:
 
 @dataclass
 class GoodMoveOddness:
-    """Maia's view of one judged Good user move at the user's pinned Elo (D-17).
+    """Maia's probability of one judged Good user move at the user's pinned Elo (D-17).
 
     Lives here (not in oddness.py) so the cached Collection can hold it without an import cycle.
     """
@@ -276,7 +283,6 @@ class GoodMoveOddness:
     bucket: EloBucket
     es_before: float | None
     played_prob: float
-    played_rank: int
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -285,7 +291,6 @@ class GoodMoveOddness:
             "bucket": self.bucket,
             "es_before": self.es_before,
             "played_prob": self.played_prob,
-            "played_rank": self.played_rank,
         }
 
     @classmethod
@@ -296,7 +301,6 @@ class GoodMoveOddness:
             bucket=raw["bucket"],
             es_before=raw["es_before"],
             played_prob=float(raw["played_prob"]),
-            played_rank=int(raw["played_rank"]),
         )
 
 
@@ -361,11 +365,11 @@ class FlawRow:
     severity: int
     is_miss: bool
     maia_played_prob: float | None
-    maia_played_rank: int | None
-    maia_best_prob: float | None
-    maia_best_rank: int | None
-    maia_refutation_prob: float | None
-    maia_refutation_rank: int | None
+    maia_reply_spread: float | None
+    line_loss_3: int | None
+    line_mate_ply: int | None
+    facepalm_score: float | None
+    has_line: bool
 
 
 @dataclass
@@ -479,18 +483,34 @@ async def _load_positions(
 
 
 async def _load_flaws(session: AsyncSession, game_ids: Sequence[int]) -> dict[int, list[FlawRow]]:
-    stmt = select(
-        GameFlaw.game_id,
-        GameFlaw.ply,
-        GameFlaw.severity,
-        GameFlaw.is_miss,
-        GameFlaw.maia_played_prob,
-        GameFlaw.maia_played_rank,
-        GameFlaw.maia_best_prob,
-        GameFlaw.maia_best_rank,
-        GameFlaw.maia_refutation_prob,
-        GameFlaw.maia_refutation_rank,
-    ).where(GameFlaw.game_id.in_(game_ids))
+    # The stored engine line after a flaw sits on the game_positions row at ply + 1 (the same
+    # join the Maia hook uses); only its presence is read, never the line itself.
+    next_position = aliased(GamePosition)
+    has_line = func.coalesce(func.length(next_position.pv), 0) > 0
+    stmt = (
+        select(
+            GameFlaw.game_id,
+            GameFlaw.ply,
+            GameFlaw.severity,
+            GameFlaw.is_miss,
+            GameFlaw.maia_played_prob,
+            GameFlaw.maia_reply_spread,
+            GameFlaw.line_loss_3,
+            GameFlaw.line_mate_ply,
+            GameFlaw.facepalm_score,
+            has_line,
+        )
+        .select_from(GameFlaw)
+        .outerjoin(
+            next_position,
+            sa.and_(
+                next_position.game_id == GameFlaw.game_id,
+                next_position.user_id == GameFlaw.user_id,
+                next_position.ply == GameFlaw.ply + 1,
+            ),
+        )
+        .where(GameFlaw.game_id.in_(game_ids))
+    )
     by_game: dict[int, list[FlawRow]] = defaultdict(list)
     for row in (await session.execute(stmt)).all():
         by_game[row[0]].append(FlawRow(*row[1:]))
@@ -545,11 +565,11 @@ def _blunder_record(
         es_played=es_played,
         es_ref=es_ref,
         maia_played_prob=flaw.maia_played_prob,
-        maia_played_rank=flaw.maia_played_rank,
-        maia_best_prob=flaw.maia_best_prob,
-        maia_best_rank=flaw.maia_best_rank,
-        maia_refutation_prob=flaw.maia_refutation_prob,
-        maia_refutation_rank=flaw.maia_refutation_rank,
+        maia_reply_spread=flaw.maia_reply_spread,
+        line_loss_3=flaw.line_loss_3,
+        line_mate_ply=flaw.line_mate_ply,
+        facepalm_score=flaw.facepalm_score,
+        has_line=flaw.has_line,
         preceding=[j for j in judgements if j.ply < flaw.ply][-PRECEDING_MOVES_KEPT:],
     )
 

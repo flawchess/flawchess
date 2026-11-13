@@ -110,6 +110,16 @@ class Game(Base):
                 "full_evals_completed_at IS NOT NULL AND blobs_completed_at IS NULL"
             ),
         ),
+        # Phase 249: backs the blunder-check per-session random pick of a user's fully
+        # evaluated games as an index-only scan (prod probe: 371 ms cold heap scan for the
+        # heaviest beta user). postgresql_where text MUST stay byte-identical to the
+        # migration's create_index call, or alembic check reports drift.
+        Index(
+            "ix_games_user_full_evals",
+            "user_id",
+            "id",
+            postgresql_where=sa.text("full_evals_completed_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -274,6 +284,17 @@ class Game(Base):
     # completed; stamped for games with zero user-side blunders too. Cleared together with
     # the 247 stamp by a reclassification (clear_maia_flaws_completed). No index on purpose.
     maia_refutation_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    # Phase 250 (D-18): per-game checkpoints of the two facepalm passes. The spread stamp
+    # marks the Maia pass (game_flaws.maia_reply_spread), the line stamp marks the line
+    # pass (line losses, mate ply, facepalm_score), which is re-runnable with a cutoff.
+    # Stamped by app/services/maia_flaw_scoring.py; cleared by a reclassification via
+    # clear_maia_flaws_completed. No index on purpose (same reasoning as the 247/248 stamps).
+    facepalm_spread_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    facepalm_line_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
     # Per-GAME rollup of a per-FLAW-PLY condition — unlike the four

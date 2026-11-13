@@ -11,7 +11,10 @@ interface BoardControlsProps {
   onBack: () => void;
   onForward: () => void;
   onReset: () => void;
-  onFlip: () => void;
+  /** Flip handler. The button renders ONLY when this is supplied: the Train
+   * solution screens supply it in the desktop controls row and omit it on phones
+   * and tablets (there the board always faces the user's side). */
+  onFlip?: () => void;
   canGoBack: boolean;
   /** Enable state for the Reset button. Defaults to `canGoBack` when omitted. */
   canReset?: boolean;
@@ -215,17 +218,19 @@ export function BoardControls({
           disabled={!canFastForward}
         />
       )}
-      <ControlButton
-        layout={layout}
-        label={label('Flip')}
-        tooltip="Flip board"
-        testId="board-btn-flip"
-        icon={<Repeat2 className={layout.iconSize} />}
-        onClick={() => {
-          onFlip();
-          trackFeature('board-tool', { target: 'flip' });
-        }}
-      />
+      {onFlip && (
+        <ControlButton
+          layout={layout}
+          label={label('Flip')}
+          tooltip="Flip board"
+          testId="board-btn-flip"
+          icon={<Repeat2 className={layout.iconSize} />}
+          onClick={() => {
+            onFlip();
+            trackFeature('board-tool', { target: 'flip' });
+          }}
+        />
+      )}
       {infoSlot}
     </div>
   );

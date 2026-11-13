@@ -249,7 +249,7 @@ Plans:
 **Goal**: A playable blunder-check drill for beta users: select face-palm windows from the user's own games with the
 Phase 248 constants, serve 6-window sessions, and run the drill (lead-in replay, arrow prompt "Safe / Blunder", 15 s
 timer, points and forfeits, better-move chain, solution screen) on a beta-only Train tab, persisting every window and
-answer so Phase 250 can build schedule, reviews and leaderboards on it. Locked decisions in 249-CONTEXT.md and
+answer so Phase 251 can build schedule, reviews and leaderboards on it. Locked decisions in 249-CONTEXT.md and
 SEED-261108-dk0.
 
 - **Selection:** hazard model (h = 0.265, L uniform 3-5), Good bar on every judged user move, eval band [0.10, 0.90]
@@ -259,45 +259,105 @@ SEED-261108-dk0.
 - **Drill:** 3-ply lead-in, ask before the move and before the reply, 1 point per correct "safe", 3 for a caught
   blunder plus 2 for finding the better move, false alarm ends the window, a missed blunder or a timeout forfeits the
   window's safe points.
-- **Out of scope (Phase 250):** shared Train schedule and per-mode counts, streak, spaced-repetition reviews,
+- **Out of scope (Phase 251):** shared Train schedule and per-mode counts, streak, spaced-repetition reviews,
   cross-mode cooldown, Points and Score % leaderboards, guests and public launch.
 
 **Depends on**: Phase 248 (refutation stats backfilled on prod, constants calibrated)
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-19)
-**Plans:** 9 plans
+**Plans:** 8/9 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 249-01-PLAN.md — Selection rules in the app: port the Phase 248 math, pure candidate judging and hazard slot assignment (wave 1)
-- [ ] 249-02-PLAN.md — Persistence (three own tables), backend beta gate, GET open session, candidate loaders and served sets (wave 1)
+- [x] 249-01-PLAN.md — Selection rules in the app: port the Phase 248 math, pure candidate judging and hazard slot assignment (wave 1)
+- [x] 249-02-PLAN.md — Persistence (three own tables), backend beta gate, GET open session, candidate loaders and served sets (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 249-03-PLAN.md — POST /sessions: own-first composition, rating-matched foreign fallback, no repeats, resume and race (wave 2)
+- [x] 249-03-PLAN.md — POST /sessions: own-first composition, rating-matched foreign fallback, no repeats, resume and race (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 249-04-PLAN.md — Drill API: window start, server-graded answers, forfeits, server timer, key secrecy, finish with Score % (wave 3)
+- [x] 249-04-PLAN.md — Drill API: window start, server-graded answers, forfeits, server timer, key secrecy, finish with Score % (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 249-05-PLAN.md — Better-move submit and solution API (false alarm withholds the blunder, foreign game info) (wave 4)
-- [ ] 249-06-PLAN.md — Frontend: beta-only tab and start screen, wire types, API client, session hook, pure drill state machine (wave 4)
+- [x] 249-05-PLAN.md — Better-move submit and solution API (false alarm withholds the blunder, foreign game info) (wave 4)
+- [x] 249-06-PLAN.md — Frontend: beta-only tab and start screen, wire types, API client, session hook, pure drill state machine (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 249-07-PLAN.md — Frontend: drill board loop, 15 s timer, points and forfeits with sounds, reload resume, end screen with Score % (wave 5)
+- [x] 249-07-PLAN.md — Frontend: drill board loop, 15 s timer, points and forfeits with sounds, reload resume, end screen with Score % (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 249-08-PLAN.md — Frontend: better-move step and solution screens (own vs foreign copy) (wave 6)
+- [x] 249-08-PLAN.md — Frontend: better-move step and solution screens (own vs foreign copy) (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 249-09-PLAN.md — Agent-run browser UAT, owner go-ahead, pre-merge gate, changelog, squash-merge, deploy, prod beta check (orchestrator-inline, wave 7)
 
-### Phase 250: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
+### Phase 250: Facepalm-Blunder Selection (SEED-261110-p7k)
+
+**Goal**: Replace the Phase 249 findability rule (D-06) with a facepalm score per user blunder (0 = no chance to see
+it at the mover's level, 1 = very careless), fitted on the owner labels from three stored facts: how rarely peers play
+the blunder (`maia_played_prob`), how obvious the opponent's reply is (reply spread, full Maia policy at ply+1) and how much
+material the stored refutation line wins within 3 plies (captures only, desperado and short-line handling, mate
+counts). Selection keeps blunders at or above one score threshold. Also change the window mix: each window is, at one
+third each, a red herring, a blunder from the user's own games, or a blunder from another user at the same level
+(mover's rating within +-150); users without analysed games get foreign blunders only. No new Stockfish searches and
+no worker lane. Locked decisions in 250-CONTEXT.md and SEED-261110-p7k.
+
+- **Store:** reply spread and the line material result per user blunder on `game_flaws`, plus the derived
+  `facepalm_score`; backfill prod; score new games in the existing post-apply Maia hook.
+- **Select:** swap the blunder-check candidate predicate onto the score (one named threshold), implement the
+  own / foreign / herring mix with herrings following the same own / foreign ratio, re-run the calibration and
+  spot-check.
+- **Clean up:** drop the nine Maia columns the score no longer reads (keep `maia_played_prob`) once the new
+  selection is live and checked on prod.
+- **Out of scope:** the library side-panel facepalm-score filter, opponent-side blunders and mistakes, refitting
+  the score on drill answers (the threshold is set a little below the precision-optimal cut so those answers also
+  cover blunders believed slightly too hard), rating-dependent line depth above 2000 (no labels there).
+
+**Status**: Un-parked (owner, 2026-11-13): build now, including the prod backfill. Nothing waits for Phase 252;
+once its prod pv repair is complete, a line-only pass recomputes the line losses, the mate ply and `facepalm_score`
+(with the score refitted on the repaired lines). 250-CONTEXT D-18.
+**Depends on**: Phase 249 (merged; this phase rewrites its selection predicate). Its final recompute pass (D-18)
+runs after Phase 252's prod pv repair
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-18)
+**Plans:** 8/11 plans executed
+
+Plans:
+**Wave 1**
+- [x] 250-01-PLAN.md — Storage columns and stamps, line material count (D-02/D-05), score formula + SQL twin, known D-04 constants
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 250-02-PLAN.md — Features builder and IRLS fit script; orchestrator pulls the label features from prod (cached lines)
+- [x] 250-03-PLAN.md — Selection predicate on facepalm_score (D-09), permanent no-repeat (D-17), qualifying-blunder picks
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 250-04-PLAN.md — Fit on the owner labels, ship the fitted constants, Window 14 check, owner confirms form / clip / threshold
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 250-05-PLAN.md — Post-apply hook: reply spread, line facts and score per user blunder, line in the fingerprint (D-07)
+- [x] 250-06-PLAN.md — Window mix: one third herring / own / foreign, herring origin ratio, foreign +-150, user level (D-12..D-16)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 250-07-PLAN.md — Backfill --mode spread (D-08) and Maia-free --mode line --cutoff (D-18 tool)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 250-08-PLAN.md — Calibration and spot-check rewrite (D-10), retire 249 findability code, pre-merge gate, changelog
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 250-09-PLAN.md — Release, prod spread backfill, prod calibration and spot-check, owner verdict (orchestrator-inline)
+
+**Wave 8** *(human-gated, independent of each other)*
+- [ ] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline)
+- [ ] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
+
+### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
 **Goal**: Turn the Phase 249 MVP into a full Train mode: shared schedule and reminders with a per-mode session size
-(0 allowed), session streak across both modes, spaced-repetition reviews of missed-blunder windows (re-drawn,
-unlabelled, 4 days), a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
+(0 allowed), session streak across both modes, a cross-mode cooldown with personalized puzzles, Points and Score % leaderboards with medals,
 and the launch decision for guests and non-beta users. To be scoped after the owner has played the MVP.
 
-**Depends on**: Phase 249
+- **No spaced repetition for blunder check** (owner, 2026-11-13): a sequence is shown to a user once and never
+  re-served, so there are no reviews of missed-blunder windows. This drops the review item from the seed's scope.
+
+**Depends on**: Phase 250
 **Requirements**: TBD
 **Plans:** 0 plans
 
@@ -312,9 +372,10 @@ a full re-evaluation; evals stay untouched unless the discuss-phase decides othe
 measure throughput. Plan, sizing and open questions in the seed (Part B).
 
 **Depends on**: nothing in the blunder-check line (runs in parallel, own worktree). Phase 250's (facepalm selection,
-numbered 250 on the phase-249 branch) prod backfill should run after this phase's pv repair step.
+numbered 250 on the phase-249 branch) first prod backfill may overlap this phase's pv repair; its line-only
+recompute pass (250-CONTEXT D-18) runs after the repair is complete.
 **Requirements**: TBD
-**Plans:** 4/9 plans executed
+**Plans:** 5/9 plans executed
 
 Plans:
 **Wave 1**
@@ -326,7 +387,7 @@ Plans:
 - [x] 252-04-PLAN.md — `feed`, `measure-flips` and `status` subcommands (D-11, D-05, D-10, D-15)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 252-05-PLAN.md — owner go-ahead, pre-merge gate, squash-merge, deploy, post-deploy baselines (orchestrator-inline)
+- [x] 252-05-PLAN.md — owner go-ahead, pre-merge gate, squash-merge, deploy, post-deploy baselines (orchestrator-inline)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 252-06-PLAN.md — prod line repair: read-only preview, one-way checkpoint, pilot then full run (orchestrator-inline)

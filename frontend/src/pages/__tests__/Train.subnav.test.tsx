@@ -39,9 +39,10 @@ import type {
   UnclaimedMedal,
 } from '@/types/train';
 import type { UserProfile } from '@/types/users';
+import type { BlunderCheckSessionResponse } from '@/types/blunderCheck';
 
 // Mutable profile flags: hasImportedGames reads `profileState.hasGames`.
-const profileState = vi.hoisted(() => ({ hasGames: true }));
+const profileState = vi.hoisted(() => ({ hasGames: true, beta: false }));
 
 /** The profile's email keys the streak snapshot; `feedback_ask` activates Hilda's ask. */
 const PROFILE_EMAIL = 'runner@example.com';
@@ -52,10 +53,12 @@ const PROFILE = {
   feedback_ask: { active: true },
   active_days: FEEDBACK_ASK_ACTIVE_DAYS,
 } as unknown as UserProfile;
+/** Stable identity (the page reads the profile every render): the beta variant of PROFILE. */
+const BETA_PROFILE = { ...PROFILE, beta_enabled: true } as UserProfile;
 
 vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({
-    data: PROFILE,
+    data: profileState.beta ? BETA_PROFILE : PROFILE,
     isPending: false,
     isError: false,
   }),
@@ -138,6 +141,20 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
 
 const composeOrResumeSession = vi.fn(async (): Promise<TrainSessionResponse> => SESSION_RESPONSE);
 const markSessionEntered = vi.fn<(sessionId: number) => Promise<void>>(async () => undefined);
+const OPEN_BLUNDER_SESSION = null;
+const BLUNDER_SESSION_RESPONSE: BlunderCheckSessionResponse = {
+  session_id: 7,
+  window_count: 6,
+  current_position: 0,
+  session_points: 0,
+  windows: [],
+};
+const blunderGetOpenSession = vi.fn(
+  async (): Promise<BlunderCheckSessionResponse | null> => OPEN_BLUNDER_SESSION,
+);
+const blunderComposeOrResume = vi.fn(
+  async (): Promise<BlunderCheckSessionResponse> => BLUNDER_SESSION_RESPONSE,
+);
 const getSettings = vi.fn(async () => SETTINGS_RESPONSE);
 const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
 const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, last_week: null };
@@ -200,6 +217,14 @@ vi.mock('@/api/client', async () => {
       getUnclaimedMedals: () => getUnclaimedMedals(),
       claimMedals: vi.fn(),
       stampOnboarding: (step: string) => stampOnboarding(step),
+    },
+    blunderCheckApi: {
+      getOpenSession: () => blunderGetOpenSession(),
+      composeOrResumeSession: () => blunderComposeOrResume(),
+      // The window request stays pending: this file only checks the tab shell.
+      startWindow: () => new Promise(() => {}),
+      answer: vi.fn(),
+      finishSession: vi.fn(),
     },
     postReviewKeepalive: vi.fn(),
     libraryApi: {
@@ -294,7 +319,10 @@ beforeAll(async () => {
 
 beforeEach(() => {
   profileState.hasGames = true;
+  profileState.beta = false;
   navigateRef.current = null;
+  blunderGetOpenSession.mockClear();
+  blunderComposeOrResume.mockClear();
   WorkerCtor = vi.fn(function (this: unknown) {
     return new FakeWorker();
   });
@@ -398,6 +426,46 @@ describe('Train layout: tabs and D-06 session rules', () => {
     clickTab('tab-train-leaderboard');
     expect(currentPath()).toBe('/train/leaderboard');
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 });
+  });
+});
+
+describe('Train layout: beta-only Blunder check tab (D-01)', () => {
+  it('a beta user sees the tab; Start composes one session and shows the counter and points', async () => {
+    profileState.beta = true;
+    renderTrainPage(['/train/blunder-check']);
+
+    await waitFor(() => expect(screen.getByTestId('train-blunder-check-panel')).not.toBeNull());
+    expect(screen.getByTestId('tab-train-blunder-check')).not.toBeNull();
+    fireEvent.click(await screen.findByTestId('blunder-check-btn-start'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('blunder-check-window-counter').textContent).toBe('1 of 6'),
+    );
+    expect(screen.getByTestId('blunder-check-points').textContent).toBe('0 pts');
+    expect(blunderComposeOrResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('a non-beta user sees three tabs and /train/blunder-check lands on /train', async () => {
+    renderTrainPage(['/train/blunder-check']);
+
+    await waitFor(() => expect(currentPath()).toBe('/train'));
+    await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
+    expect(screen.queryByTestId('tab-train-blunder-check')).toBeNull();
+    expect(screen.queryByTestId('train-blunder-check-panel')).toBeNull();
+    expect(screen.getByTestId('tab-train-archive')).not.toBeNull();
+  });
+
+  it('a beta blunder-check visit constructs no Worker and composes no Today session (Today latch)', async () => {
+    profileState.beta = true;
+    renderTrainPage(['/train/blunder-check']);
+
+    await waitFor(() => expect(screen.getByTestId('train-blunder-check-panel')).not.toBeNull());
+    await screen.findByTestId('blunder-check-btn-start');
+    await act(async () => {});
+    expect(WorkerCtor).toHaveBeenCalledTimes(0);
+    expect(composeOrResumeSession).toHaveBeenCalledTimes(0);
+    expect(blunderComposeOrResume).toHaveBeenCalledTimes(0);
+    expect(screen.queryByTestId('train-start-screen')).toBeNull();
   });
 });
 

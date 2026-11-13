@@ -336,6 +336,20 @@
   animation-fill-mode: forwards;
 }
 
+/* Arrow flash-in (BoardArrow.isFlashIn): the arrow blinks on and off twice as
+   it appears, then rests at its own opacity attribute (no 100% stop and no
+   fill-mode, so the animation hands back to the element's resting value). */
+@keyframes arrow-flash {
+  0%, 22%  { opacity: 1; }
+  28%, 47% { opacity: 0; }
+  53%, 72% { opacity: 1; }
+  78%, 94% { opacity: 0; }
+}
+
+.animate-arrow-flash {
+  animation: arrow-flash 0.7s linear;
+}
+
 /* Deep-link row-highlight pulse. Background-color is animated between three
    inline CSS variables so the keyframe is colorblind to the row's specific
    severity hex — MoveExplorer sets --row-highlight-low/high/rest from the
@@ -397,6 +411,92 @@
 
 .animate-train-points-pop {
   animation: train-points-pop 2.4s ease-in-out forwards;
+}
+
+/* Blunder-check forfeit chip (BlunderCheckPointsFlash): the "-N" of "Good"-call points taken
+   away pops in over the board, then drops and fades. Same convention as
+   train-points-pop: the centring translate is part of the keyframes and the chip ends
+   invisible (forwards fill). */
+@keyframes blunder-check-forfeit {
+  0%   { opacity: 0; transform: translate(-50%, -80%) scale(0.6); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  40%  { transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, 90%) scale(0.9); }
+}
+
+.animate-blunder-check-forfeit {
+  animation: blunder-check-forfeit 1.2s ease-in forwards;
+}
+
+/* Blunder-check pot chip and banked total (BlunderCheckScore). These elements sit in the
+   progress row's normal flow, so the keyframes carry no centring translate. The component
+   omits the classes under prefers-reduced-motion.
+   - points-fly: the board's gain badge (BlunderCheckPointsFlash) pops in at the board's
+     centre, then flies and shrinks to the pot badge; --fly-x / --fly-y are the measured
+     offset, the duration is set inline (POINTS_FLIGHT_MS) and the 92% stop is the landing
+     (POINTS_FLIGHT_LAND_MS). Like train-points-pop it carries the centring translate and
+     ends invisible.
+   - pot-gain: the pot's "+N" pops as the badge lands (the span is re-keyed per amount).
+   - pot-bust: the chip shakes as the pot is lost.
+   - pot-bank: the chip slides toward the total and ends invisible (forwards fill),
+     still holding its place so the progress bar does not jump.
+   - total-bank: the total swells as the pot arrives, delayed to the end of the slide. */
+@keyframes blunder-check-points-fly {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  16%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  26%  { transform: translate(-50%, -50%) scale(1); }
+  50%  { opacity: 1; transform: translate(-50%, -50%) scale(1); animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.6); }
+  92%  { opacity: 1; transform: translate(calc(-50% + var(--fly-x)), calc(-50% + var(--fly-y))) scale(0.45); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--fly-x)), calc(-50% + var(--fly-y))) scale(0.3); }
+}
+
+.animate-blunder-check-points-fly {
+  animation: blunder-check-points-fly 0.85s linear forwards;
+}
+
+@keyframes blunder-check-pot-gain {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+
+.animate-blunder-check-pot-gain {
+  display: inline-block;
+  animation: blunder-check-pot-gain 0.4s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+@keyframes blunder-check-pot-bust {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  15%  { transform: translateX(-5px) rotate(-3deg); }
+  30%  { transform: translateX(5px) rotate(3deg); }
+  45%  { transform: translateX(-4px) rotate(-2deg); }
+  60%  { transform: translateX(4px) rotate(2deg); }
+  80%  { transform: translateX(-2px) rotate(0); }
+}
+
+.animate-blunder-check-pot-bust {
+  animation: blunder-check-pot-bust 0.55s ease-in-out;
+}
+
+@keyframes blunder-check-pot-bank {
+  0%   { opacity: 1; transform: translateX(0) scale(1); }
+  25%  { opacity: 1; transform: translateX(0) scale(1.12); }
+  100% { opacity: 0; transform: translateX(70%) scale(0.6); }
+}
+
+.animate-blunder-check-pot-bank {
+  animation: blunder-check-pot-bank 0.5s ease-in forwards;
+}
+
+@keyframes blunder-check-total-bank {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.animate-blunder-check-total-bank {
+  transform-origin: right center;
+  animation: blunder-check-total-bank 0.45s ease-out 0.25s;
 }
 
 /* Train score-screen result badge entrance. Unlike train-points-pop above,

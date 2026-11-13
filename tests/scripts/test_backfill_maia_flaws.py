@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import io
 import json
+import signal
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +29,14 @@ from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.user import User
-from app.repositories.game_flaws_repository import MAIA_FLAW_COLUMNS, MAIA_REFUTATION_COLUMNS
+from app.repositories.game_flaws_repository import (
+    FACEPALM_COLUMNS,
+    MAIA_FLAW_COLUMNS,
+    MAIA_REFUTATION_COLUMNS,
+)
 from app.services import maia_engine, maia_flaw_scoring
+from app.services.blunder_check_rules import FACEPALM_SCORE_MIN
+from app.services.line_material import line_facts
 from scripts import backfill_maia_flaws as backfill
 from tests.services.maia_fakes import fake_full_policy
 
@@ -113,6 +121,7 @@ async def make_game(
         best: dict[int, str] | None = None,
         base_stamped: bool = False,
         seed_base: bool = False,
+        pv: dict[int, str] | None = None,
     ) -> int:
         fens = _board_fens(_PGN)
         best_by_ply = {**_BEST, **(best or {})}
@@ -154,6 +163,7 @@ async def make_game(
                         endgame_class=None,
                         move_san=None,
                         best_move=best_by_ply.get(ply),
+                        pv=(pv or {}).get(ply),
                     )
                 )
             await session.flush()
@@ -197,6 +207,7 @@ async def _run(
     limit: int | None = None,
     dry_run: bool = False,
     mode: backfill.BackfillMode = "full",
+    cutoff: datetime | None = None,
 ) -> backfill.ShardReport:
     return await backfill.run_shard(
         db="dev",
@@ -211,6 +222,7 @@ async def _run(
         run_stamp=_RUN_STAMP,
         session_maker=maker,
         mode=mode,
+        cutoff=cutoff,
     )
 
 
@@ -556,6 +568,7 @@ async def _select(
     *,
     shard: int = 0,
     num_shards: int = 1,
+    cutoff: datetime | None = None,
 ) -> list[int]:
     async with maker() as session:
         return await backfill.select_shard_game_ids(
@@ -565,6 +578,7 @@ async def _select(
             user_id=_TEST_USER_ID,
             limit=None,
             mode=mode,
+            cutoff=cutoff,
         )
 
 
@@ -730,6 +744,7 @@ async def test_full_mode_default_writes_pair_and_both_stamps(
 def test_cli_mode_choices() -> None:
     assert backfill._parse_args(["--db", "dev"]).mode == "full"
     assert backfill._parse_args(["--db", "dev", "--mode", "refutation"]).mode == "refutation"
+    assert backfill._parse_args(["--db", "dev", "--mode", "spread"]).mode == "spread"
     with pytest.raises(SystemExit):
         backfill._parse_args(["--db", "dev", "--mode", "everything"])
 
@@ -773,3 +788,513 @@ async def test_refutation_status_counts(
         "refutation_stamped_games=1 refutation_unstamped_games_with_flaws=1 "
         "user_blunders_with_refutation=1 user_blunders_total=5"
     )
+
+
+# ---------------------------------------------------------------------------
+# Spread mode (Phase 250 D-08)
+# ---------------------------------------------------------------------------
+
+_USER_BLUNDER_PLIES: tuple[int, ...] = (2, 8)
+# facepalm_score is a REAL column: a value equal to the bar round-trips just below it, so the
+# status test sets a clearly qualifying score instead.
+_ABOVE_THE_BAR = 0.1
+
+
+def _boards_by_ply(pgn: str) -> dict[int, tuple[chess.Board, str]]:
+    """Independent pre-push board + played UCI per ply (python-chess, not the module)."""
+    parsed = chess.pgn.read_game(io.StringIO(pgn))
+    assert parsed is not None
+    board = parsed.board()
+    out: dict[int, tuple[chess.Board, str]] = {}
+    for ply, node in enumerate(parsed.mainline()):
+        out[ply] = (board.copy(), node.move.uci())
+        board.push(node.move)
+    return out
+
+
+# Line after the ply-2 blunder: the game's own continuation (plies 3..8), legal by construction.
+_LINE_AFTER_PLY_2 = " ".join(_boards_by_ply(_PGN)[ply][1] for ply in range(3, 9))
+
+
+async def _facepalm_values(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> dict[int, dict[str, Any]]:
+    async with maker() as session:
+        flaws = (
+            (await session.execute(select(GameFlaw).where(GameFlaw.game_id == game_id)))
+            .scalars()
+            .all()
+        )
+    return {f.ply: {c: getattr(f, c) for c in FACEPALM_COLUMNS} for f in flaws}
+
+
+async def _facepalm_stamps(
+    maker: async_sessionmaker[AsyncSession], game_id: int
+) -> tuple[Any, Any]:
+    """(facepalm_spread_completed_at, facepalm_line_completed_at)."""
+    async with maker() as session:
+        row = (
+            await session.execute(
+                select(Game.facepalm_spread_completed_at, Game.facepalm_line_completed_at).where(
+                    Game.id == game_id
+                )
+            )
+        ).one()
+    return row[0], row[1]
+
+
+@pytest.mark.asyncio
+async def test_spread_mode_scores_and_stamps_base_stamped_game(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """Tracer (D-08): a base-stamped game gets exactly its user blunders' eight facepalm values and
+    both facepalm stamps; the base values and the refutation pair stay untouched; a rerun is a no-op."""
+    game_id = await make_game(
+        best=_REPLY_BEST,
+        base_stamped=True,
+        seed_base=True,
+        pv={3: _LINE_AFTER_PLY_2},
+    )
+    base_before = await _flaw_values(session_factory, game_id)
+    base_stamp_before = await _stamp(session_factory, game_id)
+    pairs_before = await _refutation_values(session_factory, game_id)
+
+    report = await _run(session_factory, tmp_path, mode="spread")
+
+    assert report.games_stamped == 1
+    values = await _facepalm_values(session_factory, game_id)
+    pre = _boards_by_ply(_PGN)[2]
+    expected = line_facts(pre[0], pre[1], _LINE_AFTER_PLY_2).as_columns()
+    assert any(v is not None for v in expected.values()), "the fixture line must settle a depth"
+    # Ply 2 (user blunder with a stored line): spread, line facts and score.
+    assert values[2]["maia_reply_spread"] is not None
+    assert {c: values[2][c] for c in expected} == expected
+    assert values[2]["facepalm_score"] is not None
+    # Ply 8 (user blunder, no stored line after the last ply): spread only.
+    assert values[8]["maia_reply_spread"] is not None
+    assert values[8]["facepalm_score"] is None
+    assert all(values[8][c] is None for c in expected)
+    # Ply 5 is the opponent's blunder: out of scope (D-06).
+    assert all(v is None for v in values[5].values())
+    # Base values, the pair and the base stamp are not this pass's business.
+    assert await _flaw_values(session_factory, game_id) == base_before
+    assert await _refutation_values(session_factory, game_id) == pairs_before
+    assert await _stamp(session_factory, game_id) == base_stamp_before
+    assert await _refutation_stamp(session_factory, game_id) is None
+    spread_stamp, line_stamp = await _facepalm_stamps(session_factory, game_id)
+    assert spread_stamp is not None
+    assert line_stamp is not None
+    saved = json.loads((tmp_path / f"dev-spread-{_RUN_STAMP}-shard0.json").read_text())
+    assert saved["mode"] == "spread"
+    assert saved["spreads_scored"] == len(_USER_BLUNDER_PLIES)
+    assert saved["spreads_null"] == 0
+    assert saved["scores_set"] == 1
+    assert saved["scores_null"] == 1
+    assert saved["refutations_scored"] == 0
+
+    again = await _run(session_factory, tmp_path, mode="spread")
+
+    assert again.games_selected == 0
+    assert again.games_stamped == 0
+    assert await _facepalm_values(session_factory, game_id) == values
+    assert await _facepalm_stamps(session_factory, game_id) == (spread_stamp, line_stamp)
+
+
+@pytest.mark.asyncio
+async def test_spread_mode_selector_needs_base_stamp_and_no_spread_stamp(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    eligible = await make_game(base_stamped=True)
+    await make_game()  # not base-stamped: no stored played prob to read
+    spread_done = await make_game(base_stamped=True)
+    async with session_factory() as session:
+        await session.execute(
+            update(Game)
+            .where(Game.id == spread_done)
+            .values(facepalm_spread_completed_at=func.now())
+        )
+        await session.commit()
+
+    assert await _select(session_factory, "spread") == [eligible]
+
+
+@pytest.mark.asyncio
+async def test_spread_status_counts(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exact spread counts after one of two games was scored: 2 user blunders each, one scored."""
+    await make_game(best=_REPLY_BEST, base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
+    await make_game(best=_REPLY_BEST, base_stamped=True, seed_base=True, pv={3: _LINE_AFTER_PLY_2})
+    await _run(session_factory, tmp_path, limit=1, mode="spread")
+    # Make the scored game's ply-2 score exceed the bar so the qualifying count is exercised.
+    async with session_factory() as session:
+        await session.execute(
+            update(GameFlaw)
+            .where(GameFlaw.user_id == _TEST_USER_ID, GameFlaw.facepalm_score.is_not(None))
+            .values(facepalm_score=FACEPALM_SCORE_MIN + _ABOVE_THE_BAR)
+        )
+        await session.commit()
+
+    counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "spread")
+
+    assert counts == {
+        "spread_stamped_games": 1,
+        "spread_pending_games": 1,
+        "user_blunders_total": 4,
+        "user_blunders_with_spread": 2,
+        "user_blunders_with_score": 1,
+        "user_blunders_qualifying": 1,
+    }
+    test_url = test_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
+    await backfill._print_status("dev", _TEST_USER_ID, "spread")
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    assert line == (
+        "spread_stamped_games=1 spread_pending_games=1 user_blunders_total=4 "
+        "user_blunders_with_spread=2 user_blunders_with_score=1 user_blunders_qualifying=1"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Line mode (Phase 250 D-18)
+# ---------------------------------------------------------------------------
+
+_CUTOFF = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+_BEFORE_CUTOFF = _CUTOFF - timedelta(days=1)
+_AFTER_CUTOFF = _CUTOFF + timedelta(days=1)
+_STORED_SPREAD = 3.5
+# The ply-2 line cut to four plies: still legal (a prefix of the game's continuation), but it
+# settles fewer depths than the full line.
+_SHORT_LINE_AFTER_PLY_2 = " ".join(_LINE_AFTER_PLY_2.split(" ")[:4])
+
+
+async def _set_game(maker: async_sessionmaker[AsyncSession], game_id: int, **values: Any) -> None:
+    async with maker() as session:
+        await session.execute(update(Game).where(Game.id == game_id).values(**values))
+        await session.commit()
+
+
+async def _set_flaw(
+    maker: async_sessionmaker[AsyncSession], game_id: int, ply: int, **values: Any
+) -> None:
+    async with maker() as session:
+        await session.execute(
+            update(GameFlaw)
+            .where(GameFlaw.game_id == game_id, GameFlaw.ply == ply)
+            .values(**values)
+        )
+        await session.commit()
+
+
+async def _set_line(
+    maker: async_sessionmaker[AsyncSession], game_id: int, ply: int, pv: str | None
+) -> None:
+    async with maker() as session:
+        await session.execute(
+            update(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.ply == ply)
+            .values(pv=pv)
+        )
+        await session.commit()
+
+
+async def _spread_stamped_game(
+    maker: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    *,
+    line_stamp: datetime | None,
+    pv: str | None = _LINE_AFTER_PLY_2,
+) -> int:
+    """A base- and spread-stamped game (as after the spread pass) with a stored spread on ply 2."""
+    game_id = await make_game(
+        best=_REPLY_BEST, base_stamped=True, seed_base=True, pv={3: pv} if pv else None
+    )
+    await _set_game(
+        maker,
+        game_id,
+        facepalm_spread_completed_at=func.now(),
+        facepalm_line_completed_at=line_stamp,
+    )
+    await _set_flaw(maker, game_id, 2, maia_reply_spread=_STORED_SPREAD)
+    return game_id
+
+
+def _expected_line_columns(line: str) -> dict[str, int | None]:
+    pre, played = _boards_by_ply(_PGN)[2]
+    return line_facts(pre, played, line).as_columns()
+
+
+@pytest.mark.asyncio
+async def test_line_mode_selector_rules(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """Spread-stamped games whose line stamp is NULL or older than the cutoff; nothing else."""
+    null_stamp = await _spread_stamped_game(session_factory, make_game, line_stamp=None)
+    old_stamp = await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+    await _spread_stamped_game(session_factory, make_game, line_stamp=_AFTER_CUTOFF)
+    await _spread_stamped_game(session_factory, make_game, line_stamp=_CUTOFF)
+    no_spread = await make_game(base_stamped=True)  # spread pass not done yet
+    await make_game(flaw_plies=())  # zero flaws, never selected
+
+    selected = await _select(session_factory, "line", cutoff=_CUTOFF)
+
+    assert set(selected) == {null_stamp, old_stamp}
+    assert no_spread not in selected
+
+
+@pytest.mark.asyncio
+async def test_line_mode_selector_binds_the_cutoff_never_interpolates_it(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """T-250-19: the cutoff reaches the SQL as a bound parameter, not as text."""
+    await _spread_stamped_game(session_factory, make_game, line_stamp=None)
+    recorded: list[tuple[str, dict[str, Any]]] = []
+
+    class _Recorder:
+        def __init__(self, session: AsyncSession) -> None:
+            self._session = session
+
+        async def execute(self, statement: Any, params: dict[str, Any]) -> Any:
+            recorded.append((str(statement), params))
+            return await self._session.execute(statement, params)
+
+    async with session_factory() as session:
+        await backfill.select_shard_game_ids(
+            _Recorder(session),  # ty: ignore[invalid-argument-type] -- spy wrapper
+            shard=0,
+            num_shards=1,
+            user_id=_TEST_USER_ID,
+            limit=None,
+            mode="line",
+            cutoff=_CUTOFF,
+        )
+
+    ((sql, params),) = recorded
+    assert params["cutoff"] == _CUTOFF
+    assert ":cutoff" in sql
+    assert _CUTOFF.isoformat() not in sql
+    assert str(_CUTOFF.year) not in sql
+
+
+@pytest.mark.asyncio
+async def test_line_mode_selector_requires_a_cutoff(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    with pytest.raises(ValueError, match="cutoff"):
+        await _select(session_factory, "line")
+
+
+@pytest.mark.asyncio
+async def test_line_mode_recomputes_rows_that_already_hold_values(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """D-18: a game last line-scored before the cutoff is re-scored even though its rows hold
+    values; the new line's facts and score replace the old, the spread and base stay untouched."""
+    game_id = await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+    old_facts = _expected_line_columns(_LINE_AFTER_PLY_2)
+    await _set_flaw(session_factory, game_id, 2, **old_facts, facepalm_score=0.5)
+    # A repair shortened the stored line after the last pass.
+    await _set_line(session_factory, game_id, 3, _SHORT_LINE_AFTER_PLY_2)
+    new_facts = _expected_line_columns(_SHORT_LINE_AFTER_PLY_2)
+    assert new_facts != old_facts, "the fixture lines must settle different depths"
+    base_before = await _flaw_values(session_factory, game_id)
+
+    report = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
+
+    assert report.games_stamped == 1
+    assert report.cutoff == _CUTOFF.isoformat()
+    row = (await _facepalm_values(session_factory, game_id))[2]
+    assert {c: row[c] for c in new_facts} == new_facts
+    assert row["maia_reply_spread"] == _STORED_SPREAD
+    assert row["facepalm_score"] != 0.5
+    assert await _flaw_values(session_factory, game_id) == base_before
+    _, line_stamp = await _facepalm_stamps(session_factory, game_id)
+    assert line_stamp >= _CUTOFF
+    saved = json.loads((tmp_path / f"dev-line-{_RUN_STAMP}-shard0.json").read_text())
+    assert saved["cutoff"] == _CUTOFF.isoformat()
+    assert saved["mode"] == "line"
+    assert saved["spreads_scored"] == 0
+    assert saved["scores_set"] + saved["scores_null"] == 2
+
+
+@pytest.mark.asyncio
+async def test_line_mode_blunder_without_a_line_gets_one_later(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """A blunder that had no line (NULL facts) gets facts and a score once a line is stored."""
+    game_id = await _spread_stamped_game(
+        session_factory, make_game, line_stamp=_BEFORE_CUTOFF, pv=None
+    )
+    before = (await _facepalm_values(session_factory, game_id))[2]
+    assert {c: v for c, v in before.items() if c != "maia_reply_spread"} == dict.fromkeys(
+        before.keys() - {"maia_reply_spread"}
+    )
+    await _set_line(session_factory, game_id, 3, _LINE_AFTER_PLY_2)
+
+    await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
+
+    row = (await _facepalm_values(session_factory, game_id))[2]
+    expected = _expected_line_columns(_LINE_AFTER_PLY_2)
+    assert {c: row[c] for c in expected} == expected
+    assert row["facepalm_score"] is not None
+
+
+@pytest.mark.asyncio
+async def test_line_mode_resumes_with_the_same_cutoff(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, tmp_path: Path
+) -> None:
+    """The cutoff is the checkpoint: a run cut short is finished by re-running with the SAME
+    cutoff, which skips what was done; a later cutoff selects everything again."""
+    games = [
+        await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+        for _ in range(3)
+    ]
+
+    first = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF, limit=1)
+    resumed = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
+    third = await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF)
+
+    assert first.games_stamped == 1
+    assert resumed.games_selected == 2
+    assert resumed.games_stamped == 2
+    assert third.games_selected == 0
+    for game_id in games:
+        assert (await _facepalm_stamps(session_factory, game_id))[1] >= _CUTOFF
+    # A new full recompute: a cutoff after every stamp selects all games again.
+    later = datetime.now(timezone.utc) + timedelta(minutes=1)
+    assert len(await _select(session_factory, "line", cutoff=later)) == 3
+
+
+@pytest.mark.asyncio
+async def test_line_mode_shard_never_starts_maia_and_exits_ok_without_it(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pitfall 4: no start_maia, no EXIT_MAIA_UNAVAILABLE gate, no inference; the work is done."""
+    game_id = await _spread_stamped_game(session_factory, make_game, line_stamp=None)
+
+    async def _must_not_start(**_: Any) -> None:
+        raise AssertionError("line mode must not start Maia")
+
+    def _must_not_infer(fen: str, elo: float) -> dict[str, float]:
+        raise AssertionError("line mode must not run inference")
+
+    monkeypatch.setattr(maia_engine, "start_maia", _must_not_start)
+    monkeypatch.setattr(maia_engine, "_session", None)
+    monkeypatch.setattr(maia_flaw_scoring, "full_policy", _must_not_infer)
+
+    code = await backfill._start_maia_and_run(
+        db="dev",
+        shard=0,
+        num_shards=1,
+        user_id=_TEST_USER_ID,
+        limit=None,
+        batch_games=backfill.DEFAULT_BATCH_GAMES,
+        dry_run=False,
+        throttle_ms=0,
+        report_dir=tmp_path,
+        run_stamp=_RUN_STAMP,
+        session_maker=session_factory,
+        mode="line",
+        cutoff=_CUTOFF,
+    )
+
+    assert code == backfill.EXIT_OK
+    assert (await _facepalm_stamps(session_factory, game_id))[1] >= _CUTOFF
+
+
+def test_line_mode_process_entry_threads_the_cutoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def _record(**kwargs: Any) -> int:
+        seen.append(kwargs)
+        return backfill.EXIT_OK
+
+    monkeypatch.setattr(backfill, "_start_maia_and_run", _record)
+    monkeypatch.setattr(backfill.settings, "SENTRY_DSN", "")
+    old_int = signal.getsignal(signal.SIGINT)
+    old_term = signal.getsignal(signal.SIGTERM)
+    try:
+        code = backfill._shard_process_entry(
+            db="dev",
+            shard=0,
+            num_shards=1,
+            user_id=None,
+            limit=None,
+            batch_games=backfill.DEFAULT_BATCH_GAMES,
+            dry_run=False,
+            throttle_ms=0,
+            report_dir=str(tmp_path),
+            run_stamp=_RUN_STAMP,
+            mode="line",
+            cutoff=_CUTOFF,
+        )
+    finally:
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+    assert code == backfill.EXIT_OK
+    assert seen[0]["cutoff"] == _CUTOFF
+    assert seen[0]["mode"] == "line"
+
+
+def test_cli_cutoff_rules(capsys: pytest.CaptureFixture[str]) -> None:
+    """--cutoff is required for line mode, must carry an offset, and is rejected elsewhere."""
+    ok = backfill._parse_args(
+        ["--db", "dev", "--mode", "line", "--cutoff", "2026-11-10T12:00:00+00:00"]
+    )
+    assert ok.cutoff == _CUTOFF
+    with pytest.raises(SystemExit) as no_cutoff:
+        backfill._parse_args(["--db", "dev", "--mode", "line"])
+    assert no_cutoff.value.code == 2
+    assert "--cutoff" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as naive:
+        backfill._parse_args(["--db", "dev", "--mode", "line", "--cutoff", "2026-11-10T12:00:00"])
+    assert naive.value.code == 2
+    assert "--cutoff" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as garbage:
+        backfill._parse_args(["--db", "dev", "--mode", "line", "--cutoff", "yesterday"])
+    assert garbage.value.code == 2
+    for mode in ("full", "refutation", "spread"):
+        with pytest.raises(SystemExit) as wrong_mode:
+            backfill._parse_args(
+                ["--db", "dev", "--mode", mode, "--cutoff", "2026-11-10T12:00:00+00:00"]
+            )
+        assert wrong_mode.value.code == 2
+        assert "--cutoff" in capsys.readouterr().err
+
+
+@pytest.mark.asyncio
+async def test_line_status_counts(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    tmp_path: Path,
+    test_engine: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Line status: games done since the cutoff, games pending, and the score counts."""
+    for _ in range(2):
+        await _spread_stamped_game(session_factory, make_game, line_stamp=_BEFORE_CUTOFF)
+    await _run(session_factory, tmp_path, mode="line", cutoff=_CUTOFF, limit=1)
+
+    counts = await backfill.fetch_status(session_factory, _TEST_USER_ID, "line", _CUTOFF)
+
+    assert counts["line_done_since_cutoff"] == 1
+    assert counts["line_pending_games"] == 1
+    assert counts["user_blunders_total"] == 4
+    assert counts["user_blunders_with_score"] == 1
+    assert list(counts)[:2] == ["line_done_since_cutoff", "line_pending_games"]
+    test_url = test_engine.url.render_as_string(hide_password=False)
+    monkeypatch.setattr(backfill, "db_url_for_target", lambda _target: test_url)
+    await backfill._print_status("dev", _TEST_USER_ID, "line", _CUTOFF)
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    assert line.startswith("line_done_since_cutoff=1 line_pending_games=1 ")

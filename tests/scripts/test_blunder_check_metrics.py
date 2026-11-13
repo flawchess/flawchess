@@ -13,7 +13,6 @@ from app.services.flaws_service import INACCURACY_DROP, _MoveEntry, _run_all_mov
 from scripts.blunder_check.metrics import (
     HAZARD,
     EloBucket,
-    FindabilityInputs,
     WINDOW_LENGTHS,
     MoveJudgement,
     SupplyRates,
@@ -23,13 +22,12 @@ from scripts.blunder_check.metrics import (
     count_herring_windows,
     elo_bucket,
     estimated_user_windows,
-    findable,
     flaw_control,
     herring_flags,
     quartiles,
     weighted_fit_share,
     blunder_fits_position,
-    hazard_position_weights,
+    blunder_position_marginals,
     in_band,
     miss_case,
     user_move_judgements,
@@ -140,33 +138,23 @@ class TestInBand:
         assert not in_band(None, BAND_LOW, BAND_HIGH)
 
 
-class TestHazardWeights:
-    def test_d16_numbers(self) -> None:
-        w = hazard_position_weights(0.265, (3, 4, 5))
-        expected_raw = {1: 0.265, 2: 0.1948, 3: 0.1432, 4: 0.0701, 5: 0.0258}
-        expected_norm = {1: 0.379, 2: 0.279, 3: 0.205, 4: 0.100, 5: 0.037}
-        for k in expected_raw:
-            assert w["raw"][k] == pytest.approx(expected_raw[k], abs=HAZARD_TOLERANCE)
-            assert w["normalized"][k] == pytest.approx(expected_norm[k], abs=HAZARD_TOLERANCE)
-        assert w["herring_share"] == pytest.approx(0.301, abs=HAZARD_TOLERANCE)
-        assert sum(w["normalized"].values()) == pytest.approx(1.0)
+class TestBlunderPositionMarginals:
+    def test_d12_numbers(self) -> None:
+        # Hand-derived: length uniform over 3, 4, 5 and position k within a length L weighted
+        # h * (1 - h)^(k - 1) / (1 - (1 - h)^L); only L = 5 reaches position 5, so its marginal is
+        # (1 / 3) * 0.265 * 0.735^4 / (1 - 0.735^5) = 0.0328.
+        w = blunder_position_marginals()
+        expected = {1: 0.3837, 2: 0.2820, 3: 0.2073, 4: 0.0942, 5: 0.0328}
+        for k, value in expected.items():
+            assert w[k] == pytest.approx(value, abs=HAZARD_TOLERANCE / 10)
+        assert sum(w.values()) == pytest.approx(1.0)
 
-    def test_defaults_match_constants(self) -> None:
-        assert hazard_position_weights() == hazard_position_weights(HAZARD, WINDOW_LENGTHS)
-
-
-def _row(
-    ref_prob: float | None = None,
-    ref_rank: int | None = None,
-    best_prob: float | None = None,
-    best_rank: int | None = None,
-) -> FindabilityInputs:
-    return FindabilityInputs(
-        refutation_prob=ref_prob,
-        refutation_rank=ref_rank,
-        best_prob=best_prob,
-        best_rank=best_rank,
-    )
+    def test_defaults_match_constants_and_a_single_length_is_the_conditional_weights(self) -> None:
+        assert blunder_position_marginals() == blunder_position_marginals(WINDOW_LENGTHS)
+        single = blunder_position_marginals((3,))
+        assert set(single) == {1, 2, 3}
+        assert single[1] > single[2] > single[3]
+        assert HAZARD == pytest.approx(0.265)
 
 
 class TestEloBucket:
@@ -177,39 +165,6 @@ class TestEloBucket:
         assert elo_bucket(1600.0) == "1600-1999"
         assert elo_bucket(2399.9) == "2000-2399"
         assert elo_bucket(2400.0) == "2400+"
-
-
-class TestFindable:
-    def test_allowed_threshold_is_inclusive(self) -> None:
-        row = _row(ref_prob=0.19, ref_rank=2)
-        assert not findable("allowed", row, 0.20, 0.5)
-        assert findable("allowed", row, 0.19, 0.5)
-
-    def test_top_rank_passes_regardless_of_prob(self) -> None:
-        assert findable("allowed", _row(ref_prob=0.01, ref_rank=1), 0.20, 0.5)
-
-    def test_pure_miss_uses_best_pair_not_refutation_pair(self) -> None:
-        row = _row(ref_prob=0.9, ref_rank=1, best_prob=0.01, best_rank=7)
-        assert not findable("pure_miss", row, 0.20, 0.10)
-        assert findable("allowed", row, 0.20, 0.10)
-
-    def test_mixed_passes_if_either_pair_passes(self) -> None:
-        assert findable(
-            "mixed", _row(ref_prob=0.5, ref_rank=1, best_prob=0.0, best_rank=9), 0.2, 0.1
-        )
-        assert findable(
-            "mixed", _row(ref_prob=0.0, ref_rank=9, best_prob=0.5, best_rank=1), 0.2, 0.1
-        )
-        assert not findable(
-            "mixed", _row(ref_prob=0.0, ref_rank=9, best_prob=0.0, best_rank=9), 0.2, 0.1
-        )
-
-    def test_null_pair_fails_its_test(self) -> None:
-        assert not findable("allowed", _row(best_prob=0.9, best_rank=1), 0.2, 0.1)
-        assert not findable("pure_miss", _row(ref_prob=0.9, ref_rank=1), 0.2, 0.1)
-
-    def test_unclassified_never_passes(self) -> None:
-        assert not findable("unclassified", _row(0.9, 1, 0.9, 1), 0.2, 0.1)
 
 
 class TestHerringWindows:
@@ -237,10 +192,10 @@ class TestSupply:
         assert capped_blunder_supply(70, 10, 0.30) == pytest.approx(80, abs=1e-9)
 
     def test_weighted_fit_share(self) -> None:
-        weights = hazard_position_weights()["normalized"]
+        weights = blunder_position_marginals()
         fit = {1: 1.0, 2: 0.5, 3: 0.0, 4: 0.0, 5: 0.0}
         assert weighted_fit_share(fit, weights) == pytest.approx(
-            0.379 + 0.5 * 0.279, abs=HAZARD_TOLERANCE
+            0.3837 + 0.5 * 0.2820, abs=HAZARD_TOLERANCE
         )
 
     def test_estimated_user_windows(self) -> None:

@@ -72,7 +72,10 @@ export type SoundEvent =
   | 'game-draw'
   | 'game-start'
   | 'score-partial'
-  | 'score-full';
+  | 'score-full'
+  | 'pot-gain'
+  | 'pot-bust'
+  | 'question';
 
 // ─── Named constants ─────────────────────────────────────────────────────────
 
@@ -120,6 +123,15 @@ const SOUND_FILES: Record<SoundEvent, string> = {
   // puzzle gets its own shorter phrase, level-matched to WinChime so the
   // reveal does not jump in loudness.
   'score-full': 'FullScore',
+  // The blunder-check pot (the open window's points, still at risk): points
+  // landing in it (a coin; banking the pot into the session total plays a few
+  // of them, overlapping), and the pot being lost, synthesized by
+  // `scripts/synth_pot_sounds.py`.
+  'pot-gain': 'Coin',
+  'pot-bust': 'PotBust',
+  // The blunder-check question (the judged move's arrow appearing): the first two
+  // tones of the former Walnut low-time clip (`LowTime` itself is the ticking clock again).
+  question: 'Question',
 };
 
 const SOUND_EVENTS = Object.keys(SOUND_FILES) as SoundEvent[];

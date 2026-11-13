@@ -44,6 +44,16 @@ import type {
 } from '@/types/train';
 import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type {
+  AnswerRequest,
+  AnswerResponse,
+  BetterMoveRequest,
+  BetterMoveResponse,
+  BlunderCheckSessionResponse,
+  SessionResultResponse,
+  WindowSolution,
+  WindowStartResponse,
+} from '@/types/blunderCheck';
+import type {
   DevTriggerReminderResponse,
   PushSubscribeRequest,
   PushSubscribeResponse,
@@ -366,6 +376,43 @@ export const trainApi = {
    * shared cache with no extra fetch. */
   stampOnboarding: (step: OnboardingStep) =>
     apiClient.post<TrainSettingsResponse>(`/train/onboarding/${step}`).then(r => r.data),
+};
+
+// ─── Blunder-check API ────────────────────────────────────────────────────────
+
+/** Beta-only blunder-check drill (Phase 249). The server grades every answer and owns the points. */
+export const blunderCheckApi = {
+  /** The caller's open session, or null when there is none. */
+  getOpenSession: () =>
+    apiClient.get<BlunderCheckSessionResponse | null>('/blunder-check/sessions/open').then(r => r.data),
+  /** Resumes the open session, else composes a new one (409 when nothing is composable). */
+  composeOrResumeSession: () =>
+    apiClient.post<BlunderCheckSessionResponse>('/blunder-check/sessions').then(r => r.data),
+  /** Starts (or reloads) one window; returns the lead-in, answered moves and the open prompt. */
+  startWindow: (sessionId: number, position: number) =>
+    apiClient
+      .post<WindowStartResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/start`)
+      .then(r => r.data),
+  /** Answers the open prompt; 409 `stale_prompt` means re-fetch the window via startWindow. */
+  answer: (sessionId: number, position: number, data: AnswerRequest) =>
+    apiClient
+      .post<AnswerResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/answers`, data)
+      .then(r => r.data),
+  /** Grades the better move after a caught blunder; 409 `better_move_done` / `not_caught` / `session_closed`. */
+  submitBetterMove: (sessionId: number, position: number, data: BetterMoveRequest) =>
+    apiClient
+      .post<BetterMoveResponse>(`/blunder-check/sessions/${sessionId}/windows/${position}/better-move`, data)
+      .then(r => r.data),
+  /** The solution of an ended window (409 `window_open` while it is still running). */
+  getSolution: (sessionId: number, position: number) =>
+    apiClient
+      .get<WindowSolution>(`/blunder-check/sessions/${sessionId}/windows/${position}/solution`)
+      .then(r => r.data),
+  /** Closes the session once every window has ended. */
+  finishSession: (sessionId: number) =>
+    apiClient
+      .post<SessionResultResponse>(`/blunder-check/sessions/${sessionId}/finish`)
+      .then(r => r.data),
 };
 
 /**

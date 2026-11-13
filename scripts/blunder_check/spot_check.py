@@ -2,14 +2,18 @@
 
 Automated metrics can pass while the selection is wrong in a way only a person sees, so this
 module exports a small, reproducible sample of windows drawn the way the feature would draw
-them: window length L uniform over 3 to 5 user moves, a per-move blunder hazard of 0.265, so
-about 30% of windows are herrings (every judged move Good, nothing to find).
+them (250 D-12): every slot is independently a herring (HERRING_SHARE, every judged move Good,
+nothing to find), an own blunder or a foreign blunder; blunder windows draw the length uniformly
+over 3 to 5 user moves and the position from the conditional hazard weights. Origin (own vs
+foreign) is not meaningful in a sample of everyone's games, so it is drawn but not printed.
 
-Each window shows a FlawChess game link, a 3-ply lead-in, the judged user moves with the
-opponent replies, the answer (the blunder, or "all safe") and the refutation or missed best move
-with its Maia probability and rank. The file may be shown to GM Noel Studer, so it carries only
-game links, ratings and moves: no FlawChess user ids, usernames or emails (T-248-11). FlawChess
-game deep links are public (owner decision, SEED-261108-dk0), so a game id is not personal data.
+Each window shows a FlawChess game link, the lead-in (`LEAD_IN_PLIES`), the judged user moves with the
+opponent replies, the answer (the blunder, or "all safe"), the refutation or missed best move and,
+for a blunder, the five facepalm score inputs (score, played prob, reply spread, line loss 3, mate
+ply). The file may be shown to GM Noel Studer, so it carries only game links, ratings, moves and
+numbers: no FlawChess user ids, usernames or emails, and no second-person claim about whose move it
+was (a window may come from anyone's game, T-248-11). FlawChess game deep links are public (owner decision,
+SEED-261108-dk0), so a game id is not personal data.
 """
 
 from __future__ import annotations
@@ -27,14 +31,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.services.blunder_check_rules import (
+    HERRING_SHARE,
+    LEAD_IN_PLIES,
+    WindowShape,
+    draw_blunder_shape,
+    draw_herring_shape,
+    draw_slot_plan,
+    herring_flags,
+)
+from app.services.blunder_check_selection import MAX_SHAPE_REDRAWS
 from scripts.blunder_check.metrics import (
     ELO_BUCKETS,
-    HAZARD,
-    LEAD_IN_PLIES,
     WINDOW_LENGTHS,
     EloBucket,
     MoveJudgement,
-    herring_flags,
 )
 from scripts.blunder_check.render import (
     ReportParams,
@@ -54,14 +65,6 @@ ANALYSIS_URL_BASE: str = "https://flawchess.com/analysis"
 # Separator of game_positions.pv (space-joined UCI line); its first token is the reply fallback.
 PV_SEPARATOR: str = " "
 HERRING_CASE: str = "herring"
-
-
-@dataclass(frozen=True)
-class WindowShape:
-    """A drawn window: length in user moves and the blunder position (None for a herring)."""
-
-    length: int
-    blunder_position: int | None
 
 
 @dataclass(frozen=True)
@@ -125,15 +128,6 @@ class SpotWindowDetail:
 # ---------------------------------------------------------------------------
 # Drawing
 # ---------------------------------------------------------------------------
-
-
-def draw_window_shape(rng: random.Random) -> WindowShape:
-    """L uniform over WINDOW_LENGTHS; the blunder sits at the first position whose hazard fires."""
-    length = rng.choice(WINDOW_LENGTHS)
-    for position in range(1, length + 1):
-        if rng.random() < HAZARD:
-            return WindowShape(length, position)
-    return WindowShape(length, None)
 
 
 def _herring_candidates(
@@ -227,14 +221,40 @@ def _herring_window(
     return SpotWindow(bucket, shape, chosen.game_id, chosen.elo, chosen.good_moves, None)
 
 
+def _fill_slot(
+    pools: _BucketPools,
+    shape: WindowShape,
+    used: set[int],
+    bucket: EloBucket,
+    rng: random.Random,
+) -> SpotWindow | None:
+    """Build the window for a drawn shape; an unfillable shape is redrawn as the SAME kind.
+
+    Redrawing with the kind-preserving shape draws (not a fresh slot plan) keeps the herring
+    share at HERRING_SHARE when one position or length has no candidate (250 D-12), the way the
+    app's composer redraws. Gives up after MAX_SHAPE_REDRAWS redraws.
+    """
+    is_herring = shape.blunder_position is None
+    redraw = draw_herring_shape if is_herring else draw_blunder_shape
+    build = _herring_window if is_herring else _blunder_window
+    for _ in range(MAX_SHAPE_REDRAWS + 1):
+        window = build(pools, shape, used, bucket, rng)
+        if window is not None:
+            return window
+        shape = redraw(rng)
+    return None
+
+
 def pick_windows(
     collection: Collection, params: SpotCheckParams, rng: random.Random
 ) -> list[SpotWindow]:
-    """Per Elo bucket, hazard-model windows until per_bucket is reached or candidates run out.
+    """Per Elo bucket, D-12 windows until per_bucket is reached or candidates run out.
 
-    A blunder window at position k uses only a usable blunder that fits position k at the chosen
-    band (D-16); a herring window uses L consecutive Good in-band moves of one game. A game
-    appears at most once per bucket. Candidate order is stable, so the seed fixes the sample.
+    Each slot draws herring / blunder with `draw_slot_plan` (the plan's own / foreign origin is
+    ignored: a sample has no meaningful origin). A blunder window at position k uses only a
+    usable (qualifying) blunder that fits position k at the chosen band (D-16); a herring window
+    uses L consecutive Good in-band moves of one game. A game appears at most once per bucket.
+    Candidate order is stable, so the seed fixes the sample.
     """
     chosen: list[SpotWindow] = []
     for bucket in ELO_BUCKETS:
@@ -249,9 +269,7 @@ def pick_windows(
             and attempts < params.per_bucket * MAX_DRAW_ATTEMPTS_PER_WINDOW
         ):
             attempts += 1
-            shape = draw_window_shape(bucket_rng)
-            build = _herring_window if shape.blunder_position is None else _blunder_window
-            window = build(pools, shape, used, bucket, bucket_rng)
+            window = _fill_slot(pools, draw_slot_plan(bucket_rng).shape, used, bucket, bucket_rng)
             if window is None:
                 continue
             used.add(window.game_id)
@@ -448,10 +466,10 @@ async def fetch_window_details(
 # ---------------------------------------------------------------------------
 
 
-def _fmt_prob(prob: float | None, rank: int | None) -> str:
-    if prob is None or rank is None:
-        return "Maia pair not scored"
-    return f"Maia probability {prob:.3f}, rank {rank}"
+def _fmt_value(value: float | int | None, digits: int = 3) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.{digits}f}" if isinstance(value, float) else str(value)
 
 
 def _es_text(es: float | None) -> str:
@@ -469,15 +487,16 @@ def _answer_lines(detail: SpotWindowDetail) -> list[str]:
         f"ES after {_es_text(blunder.es_played)}).",
     ]
     if blunder.case in ("allowed", "mixed"):
-        lines.append(
-            f"- **Refutation:** {detail.refutation or 'unknown'} "
-            f"({_fmt_prob(blunder.maia_refutation_prob, blunder.maia_refutation_rank)})."
-        )
+        lines.append(f"- **Refutation:** {detail.refutation or 'unknown'}.")
     if blunder.case in ("pure_miss", "mixed"):
-        lines.append(
-            f"- **Missed best move:** {detail.missed_best or 'unknown'} "
-            f"({_fmt_prob(blunder.maia_best_prob, blunder.maia_best_rank)})."
-        )
+        lines.append(f"- **Missed best move:** {detail.missed_best or 'unknown'}.")
+    lines.append(
+        f"- **Score inputs:** facepalm score {_fmt_value(blunder.facepalm_score)}, "
+        f"played prob {_fmt_value(blunder.maia_played_prob)}, "
+        f"reply spread {_fmt_value(blunder.maia_reply_spread, 2)}, "
+        f"line loss 3 {_fmt_value(blunder.line_loss_3)}, "
+        f"mate ply {_fmt_value(blunder.line_mate_ply)}."
+    )
     return lines
 
 
@@ -511,15 +530,15 @@ def render_spot_check(details: Sequence[SpotWindowDetail], params: SpotCheckPara
     header = [
         "# Blunder-check spot-check",
         "",
-        "Windows drawn the way the feature would draw them: length L uniform over "
-        f"{WINDOW_LENGTHS[0]} to {WINDOW_LENGTHS[-1]} user moves, per-move blunder hazard "
-        f"{HAZARD}, so roughly 30% are herrings (all judged moves safe). About "
+        "Windows drawn the way the feature draws them (250 D-12): each slot is independently a "
+        f"herring (about {HERRING_SHARE:.0%}, all judged moves safe) or a blunder window, with "
+        f"length L uniform over {WINDOW_LENGTHS[0]} to {WINDOW_LENGTHS[-1]} user moves. About "
         f"{params.per_bucket} windows per Elo bucket, at most one per game, drawn with a fixed "
-        "seed.",
+        "seed. A blunder window shows its facepalm score inputs after the answer.",
         "",
-        f"Thresholds: refutation R = {report.refutation_threshold}, best-move X' = "
-        f"{report.miss_threshold}, eval band [{report.band_low:.2f}, {report.band_high:.2f}] on "
-        "the pre-move ES. A recommendation only; nothing here is wired into app code.",
+        f"Thresholds: facepalm score at least {report.facepalm_threshold}, eval band "
+        f"[{report.band_low:.2f}, {report.band_high:.2f}] on the pre-move ES. A recommendation "
+        "only; nothing here is wired into app code.",
         "",
         "How to read: for each window, play through the lead-in and the judged moves on the "
         "board (the game link opens the game on FlawChess at the first judged move), decide whether the position is a fair "
