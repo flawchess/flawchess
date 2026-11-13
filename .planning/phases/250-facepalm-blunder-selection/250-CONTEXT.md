@@ -165,6 +165,16 @@ retires the Maia columns the old rule used. Deliverables:
 - Column names for the line-loss values and where the scorer module lives.
 - Whether the line loss is computed in the same hook as reply spread or at flaw-classification time.
 - Backfill shard count and pacing (prod RAM and DB are the binding constraints, not CPU).
+- Defaults for the research open questions (2026-11-13, Claude's picks; the owner may overrule):
+  - a blunder whose depth-3 line loss is NULL (line too short, no mate or recapture credit) gets a NULL score, does
+    not qualify, and is left out of the fit; D-18 re-scores it after the repair;
+  - whether the loss input gets a lower clip at 0 is decided by the fit script (compare both, pick by
+    cross-validated AUC and the fair share at the threshold);
+  - a user with no rated games gets a named default level of 1500 (the frontend's `FREE_PLAY_DEFAULT_ELO`);
+  - no widening of the +-150 band in this phase; the D-10 report measures foreign supply at the rating extremes
+    first;
+  - `games.maia_refutation_completed_at` and the backfill's refutation mode are dropped together with the nine
+    columns in the D-11 plan.
 
 </decisions>
 
