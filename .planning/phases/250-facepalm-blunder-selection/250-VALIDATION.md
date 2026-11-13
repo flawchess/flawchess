@@ -42,26 +42,29 @@ created: "2026-11-13"
 
 Task IDs are filled in by the planner. Requirement = CONTEXT decision.
 
-| Requirement | Behavior | Test Type | Automated Command | File Exists | Status |
-|-------------|----------|-----------|-------------------|-------------|--------|
-| D-02 | Line facts match the reference on #13, #35, #153, #154, #156, #165, #170, #176, #177, #184 at depths 1 to 9 | unit | `uv run pytest tests/services/test_line_material.py -x` | ❌ W0 | ⬜ pending |
-| D-02 | Mate fixtures (#34, #108, #116, #162, #168, #181, #182): mate ply is 1 | unit | same | ❌ W0 | ⬜ pending |
-| D-05 | NULL rules: no line, illegal first token, malformed UCI, short quiet line give NULL; credit and mate settle | unit | same | ❌ W0 | ⬜ pending |
-| D-01 / D-04 | Score formula, NULL propagation, cap, mate value; Python and SQL versions agree | unit + DB | `uv run pytest tests/services/test_facepalm_score.py -x` | ❌ W0 | ⬜ pending |
-| D-01 | Window 14 (game 2099808 ply 23) scores below `FACEPALM_SCORE_MIN` | unit | same | ❌ W0 | ⬜ pending |
-| D-07 | Hook: spread from the post-blunder policy, also when the reply is unusable; line facts from the ply+1 line; non-user rows NULL | DB | `uv run pytest tests/services/test_maia_flaw_scoring.py -x` | extend | ⬜ pending |
-| D-07 | A line change between read and write is detected by the fingerprint | DB | same | extend | ⬜ pending |
-| D-08 / D-18 | Spread mode selector and stamps; line mode with a cutoff re-runs over valued rows and runs without Maia | DB | `uv run pytest tests/scripts/test_backfill_maia_flaws.py -x` | extend | ⬜ pending |
-| reclassify | Survivors keep the new values, new plies NULL, new stamps cleared | DB | `uv run pytest tests/services/test_maia_flaw_scoring.py -k reclassify -x` | extend | ⬜ pending |
-| D-09 | Candidate passes at the threshold, fails just below, NULL excluded; SQL loader filters | unit + DB | `uv run pytest tests/services/test_blunder_check_candidates.py tests/repositories/test_blunder_check_repository.py -x` | rewrite | ⬜ pending |
-| D-12 | Seeded draws: source shares about one third each; herring origin follows the own / foreign ratio | unit | `uv run pytest tests/services/test_blunder_check_rules.py -x` | extend | ⬜ pending |
-| D-13 | Foreign games outside +-150 are never selected | DB | `uv run pytest tests/services/test_blunder_check_selection.py -x` | rewrite | ⬜ pending |
-| D-14 | Level = most-played time control; bot and unrated games ignored; fallback chain | unit + DB | same file + repository test | ❌ W0 | ⬜ pending |
-| D-15 / D-16 | No analysed games gives foreign blunders and foreign herrings; own slots fall back to foreign | DB | same | rewrite | ⬜ pending |
-| D-17 | A false alarm before the blunder does not make the blunder eligible again | DB | same | invert | ⬜ pending |
-| D-10 | Report sections render from a cache; facepalm section, own / foreign supply | unit | `uv run pytest tests/scripts/test_blunder_check_calibration.py -x` | rewrite | ⬜ pending |
-| D-11 | No reader of the dropped columns left; migration up and down | grep + `uv run alembic upgrade head && uv run alembic check` | — | ⬜ pending |
-| fit | The fit recovers known coefficients on synthetic data; deterministic folds | unit | `uv run pytest tests/scripts/test_fit_facepalm.py -x` | ❌ W0 | ⬜ pending |
+| Task | Requirement | Behavior | Test Type | Automated Command | File Exists | Status |
+|------|-------------|----------|-----------|-------------------|-------------|--------|
+| 250-01-T1, T2 | D-02 | Line facts match the reference on #13, #35, #153, #154, #156, #165, #170, #176, #177, #184 at depths 1 to 9 | unit | `uv run pytest tests/services/test_line_material.py -x` | ❌ W0 (created in 250-01) | ⬜ pending |
+| 250-01-T2 | D-02 | Mate fixtures (#34, #108, #116, #162, #168, #181, #182): mate ply is 1 | unit | same | ❌ W0 | ⬜ pending |
+| 250-01-T2 | D-05 | NULL rules: no line, illegal first token, malformed UCI, short quiet line give NULL; credit and mate settle | unit | same | ❌ W0 | ⬜ pending |
+| 250-01-T1 | D-05 | New columns exist, migration metadata-only, round trip of line facts through game_flaws | DB + schema | `uv run alembic upgrade head && uv run alembic check` | ❌ W0 | ⬜ pending |
+| 250-01-T3 | D-01 / D-04 | Score formula, NULL propagation, cap, mate value; Python and SQL versions agree | unit + DB | `uv run pytest tests/services/test_facepalm_score.py -x` | ❌ W0 (created in 250-01) | ⬜ pending |
+| 250-04-T1 | D-01 | Window 14 (game 2099808 ply 23) scores below `FACEPALM_SCORE_MIN` with the shipped model | unit | same | ❌ W0 | ⬜ pending |
+| 250-02-T1, T2 | fit | The fit recovers known coefficients on synthetic data; deterministic folds; Form B, clip choice, separation failure | unit | `uv run pytest tests/scripts/test_fit_facepalm.py tests/scripts/test_facepalm_features.py -x` | ❌ W0 (created in 250-02) | ⬜ pending |
+| 250-04-T1 | D-01 / D-04 | Shipped constants reproduce from the committed TSV | CLI | `uv run python scripts/blunder_check/fit_facepalm.py --features <TSV> --out temp/blunder-check/fit-check.md --check-constants` | ❌ W0 | ⬜ pending |
+| 250-05-T1, T2 | D-07 | Hook: spread from the post-blunder policy, also when the reply is unusable; line facts from the ply+1 line; non-user rows NULL | DB | `uv run pytest tests/services/test_maia_flaw_scoring.py -x` | extend | ⬜ pending |
+| 250-05-T2 | D-07 | A line change between read and write is detected by the fingerprint | DB | same | extend | ⬜ pending |
+| 250-05-T2 | reclassify | Survivors keep the new values, new plies NULL, all four stamps cleared | DB | `uv run pytest tests/services/test_maia_flaw_scoring.py -k reclassify -x` | extend | ⬜ pending |
+| 250-07-T1, T2 | D-08 / D-18 | Spread mode selector and stamps; line mode with a cutoff re-runs over valued rows and runs without Maia | DB | `uv run pytest tests/scripts/test_backfill_maia_flaws.py -x` | extend | ⬜ pending |
+| 250-03-T1, T2 | D-09 | Candidate passes at the threshold, fails just below, NULL excluded; SQL loader filters | unit + DB | `uv run pytest tests/services/test_blunder_check_candidates.py tests/repositories/test_blunder_check_repository.py -x` | rewrite | ⬜ pending |
+| 250-03-T2 | D-17 | A false alarm before the blunder does not make the blunder eligible again | DB | `uv run pytest tests/services/test_blunder_check_selection.py tests/routers/test_blunder_check_drill.py -x` | invert | ⬜ pending |
+| 250-06-T1 | D-12 | Seeded draws: source shares about one third each; herring origin follows the own / foreign ratio | unit | `uv run pytest tests/services/test_blunder_check_rules.py -x` | extend | ⬜ pending |
+| 250-06-T1 | D-15 / D-16 | No analysed games gives foreign blunders and foreign herrings; own slots fall back to foreign | DB | `uv run pytest tests/services/test_blunder_check_selection.py -x` | rewrite | ⬜ pending |
+| 250-06-T2 | D-13 | Foreign games outside +-150 are never selected | DB | same | rewrite | ⬜ pending |
+| 250-06-T2 | D-14 | Level = most-played time control; bot and unrated games ignored; fallback chain | unit + DB | same file + `tests/repositories/test_blunder_check_repository.py` | ❌ W0 | ⬜ pending |
+| 250-08-T1, T2 | D-10 | Report sections render from a cache; facepalm section, own / foreign supply | unit | `uv run pytest tests/scripts/test_blunder_check_calibration.py -x` | rewrite | ⬜ pending |
+| 250-08-T3 | gate | Full pre-merge gate, parallel and serial | full | `uv run pytest -n auto -x` (plus the CLAUDE.md gate list) | — | ⬜ pending |
+| 250-11-T1, T2 | D-11 | No reader of the dropped columns left; migration up and down | grep + schema | `uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check` | — | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

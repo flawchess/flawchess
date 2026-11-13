@@ -317,8 +317,36 @@ once its prod pv repair is complete, a line-only pass recomputes the line losses
 (with the score refitted on the repaired lines). 250-CONTEXT D-18.
 **Depends on**: Phase 249 (merged; this phase rewrites its selection predicate). Its final recompute pass (D-18)
 runs after Phase 252's prod pv repair
-**Requirements**: TBD (coverage contract = CONTEXT decisions)
-**Plans:** 0 plans
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-18)
+**Plans:** 11 plans
+
+Plans:
+**Wave 1**
+- [ ] 250-01-PLAN.md — Storage columns and stamps, line material count (D-02/D-05), score formula + SQL twin, known D-04 constants
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 250-02-PLAN.md — Features builder and IRLS fit script; orchestrator pulls the label features from prod (cached lines)
+- [ ] 250-03-PLAN.md — Selection predicate on facepalm_score (D-09), permanent no-repeat (D-17), qualifying-blunder picks
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 250-04-PLAN.md — Fit on the owner labels, ship the fitted constants, Window 14 check, owner confirms form / clip / threshold
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 250-05-PLAN.md — Post-apply hook: reply spread, line facts and score per user blunder, line in the fingerprint (D-07)
+- [ ] 250-06-PLAN.md — Window mix: one third herring / own / foreign, herring origin ratio, foreign +-150, user level (D-12..D-16)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 250-07-PLAN.md — Backfill --mode spread (D-08) and Maia-free --mode line --cutoff (D-18 tool)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 250-08-PLAN.md — Calibration and spot-check rewrite (D-10), retire 249 findability code, pre-merge gate, changelog
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 250-09-PLAN.md — Release, prod spread backfill, prod calibration and spot-check, owner verdict (orchestrator-inline)
+
+**Wave 8** *(human-gated, independent of each other)*
+- [ ] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline)
+- [ ] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
 
 ### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
