@@ -2,9 +2,10 @@
  * Facepalm filter: units, presets and API mapping.
  *
  * UNIT: the slider handles are whole percents 0..100 in steps of FACEPALM_STEP.
- * The upper handle covers its whole 5% bucket, so the API upper bound is the
- * handle plus (STEP - 1), except at 100 (D-10). The API speaks inclusive floored
- * integer percents, matching the whole percent the Facepalm chip shows.
+ * Both handles are sent to the API as they read: inclusive floored integer
+ * percents, matching the whole percent the Facepalm chip shows. Because both
+ * bounds are inclusive and land on multiples of 5, neighbouring presets share
+ * their boundary percent (a 30% blunder is in both Low and Mid).
  *
  * The 30 / 70 preset cutoffs are UI constants (D-09). They are unrelated to the
  * blunder-check drill cut.
@@ -25,10 +26,10 @@ export const FACEPALM_PCT_MAX = 100;
 /** Slider step in whole percents. */
 export const FACEPALM_STEP = 5;
 
-/** Lower edge of the Mid preset (whole percent, UI cutoff, D-09). */
+/** Low / Mid boundary, included in both (whole percent, UI cutoff, D-09). */
 const FACEPALM_MID_CUTOFF = 30;
 
-/** Lower edge of the High preset (whole percent, UI cutoff, D-09). */
+/** Mid / High boundary, included in both (whole percent, UI cutoff, D-09). */
 const FACEPALM_HIGH_CUTOFF = 70;
 
 /** Multiplier turning a 0..1 score into a percent. */
@@ -43,7 +44,7 @@ export type FacepalmPreset = 'all' | 'low' | 'mid' | 'high';
 
 /**
  * Slider handle positions in whole percents in [FACEPALM_PCT_MIN, FACEPALM_PCT_MAX].
- * min === max is valid (e.g. {40, 40} = the 40..44% bucket).
+ * min === max is valid (e.g. {40, 40} = blunders showing exactly 40%).
  */
 export interface FacepalmValue {
   min: number;
@@ -54,8 +55,8 @@ export interface FacepalmValue {
 
 export const PRESET_RANGES: Record<FacepalmPreset, FacepalmValue> = {
   all: { min: FACEPALM_PCT_MIN, max: FACEPALM_PCT_MAX },
-  low: { min: FACEPALM_PCT_MIN, max: FACEPALM_MID_CUTOFF - FACEPALM_STEP },
-  mid: { min: FACEPALM_MID_CUTOFF, max: FACEPALM_HIGH_CUTOFF - FACEPALM_STEP },
+  low: { min: FACEPALM_PCT_MIN, max: FACEPALM_MID_CUTOFF },
+  mid: { min: FACEPALM_MID_CUTOFF, max: FACEPALM_HIGH_CUTOFF },
   high: { min: FACEPALM_HIGH_CUTOFF, max: FACEPALM_PCT_MAX },
 };
 
@@ -96,14 +97,6 @@ export function sliderToRange(lo: number, hi: number): FacepalmValue {
   };
 }
 
-/**
- * Upper end of the range as shown and sent to the API: the upper handle covers its
- * whole bucket (handle + STEP - 1), except at the domain maximum where it is 100.
- */
-export function displayUpper(hi: number): number {
-  return hi >= FACEPALM_PCT_MAX ? FACEPALM_PCT_MAX : hi + FACEPALM_STEP - 1;
-}
-
 /** True unless the handles sit at the full range (All). */
 export function isFacepalmNarrowed(value: FacepalmValue): boolean {
   return value.min !== FACEPALM_PCT_MIN || value.max !== FACEPALM_PCT_MAX;
@@ -111,13 +104,12 @@ export function isFacepalmNarrowed(value: FacepalmValue): boolean {
 
 /**
  * Summary text for the active range: `All` at the full range, otherwise
- * `${min}-${upper}%` (or `${min}%` when both ends are equal) in the same units
+ * `${min}-${max}%` (or `${min}%` when both ends are equal) in the same units
  * the API receives.
  */
 export function formatFacepalmSummary(value: FacepalmValue): string {
   if (!isFacepalmNarrowed(value)) return PRESET_LABELS[FACEPALM_DEFAULT_PRESET];
-  const upper = displayUpper(value.max);
-  return value.min === upper ? `${value.min}%` : `${value.min}-${upper}%`;
+  return value.min === value.max ? `${value.min}%` : `${value.min}-${value.max}%`;
 }
 
 /**
@@ -129,7 +121,7 @@ export function facepalmToQueryParams(value: FacepalmValue): {
   max_facepalm_pct?: number;
 } {
   if (!isFacepalmNarrowed(value)) return {};
-  return { min_facepalm_pct: value.min, max_facepalm_pct: displayUpper(value.max) };
+  return { min_facepalm_pct: value.min, max_facepalm_pct: value.max };
 }
 
 /**

@@ -30,7 +30,7 @@ export interface FlawFilterState {
   tacticOrientation: TacticOrientation;
   /**
    * Inclusive tactic-depth range bounds (0-based ply, 0..11). The depth
-   * filter is always-on; the default range is the High preset / full range
+   * filter is always-on; the default range is the All preset / full range
    * {0, 11}. min === max is valid (e.g. {0, 0}).
    */
   tacticDepthMin: number;
@@ -71,9 +71,9 @@ export const DEFAULT_FLAW_FILTER: FlawFilterState = {
  * shown) and both tiers selected (also both shown) are NOT narrowing.
  *
  * CRITICAL: the depth filter is always-on. isFlawFilterNonDefault returns
- * true only when the depth RANGE differs from the High/full-range default {0, 11} —
+ * true only when the depth RANGE differs from the All/full-range default {0, 11} —
  * never merely because it is set. The filter-dot does not light at the default
- * Either + High/full-range state.
+ * Either + All/full-range state.
  *
  * Single source of truth for filter-dot indicators (Games + Flaws tabs) and the
  * games-query gate, so the default never drifts across call sites.
@@ -86,7 +86,7 @@ export function isFlawFilterNonDefault(filter: FlawFilterState): boolean {
     (filter.tacticFamilies?.length ?? 0) > 0 ||
     // Orientation non-default (not 'either') lights the dot.
     (filter.tacticOrientation ?? 'either') !== 'either' ||
-    // Depth range non-default (≠ High/full-range {0, 11}) lights the dot.
+    // Depth range non-default (≠ All/full-range {0, 11}) lights the dot.
     (filter.tacticDepthMin ?? DEFAULT_TACTIC_DEPTH_VALUE.min) !== DEFAULT_TACTIC_DEPTH_VALUE.min ||
     (filter.tacticDepthMax ?? DEFAULT_TACTIC_DEPTH_VALUE.max) !== DEFAULT_TACTIC_DEPTH_VALUE.max ||
     // Facepalm range non-default (≠ All {0, 100}) lights the dot. Optional-chained

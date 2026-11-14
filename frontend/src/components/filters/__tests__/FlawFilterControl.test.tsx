@@ -517,8 +517,8 @@ describe('filter-change tracking', () => {
         <OpponentStrengthFilter value={ANY_RANGE} onChange={vi.fn()} />
       </>,
     );
-    fireEvent.click(screen.getByTestId('filter-tactic-depth-preset-medium'));
-    expectSingleEvent({ target: 'tactic-depth', value: 'medium' });
+    fireEvent.click(screen.getByTestId('filter-tactic-depth-preset-mid'));
+    expectSingleEvent({ target: 'tactic-depth', value: 'mid' });
     track.mockClear();
     fireEvent.click(screen.getByTestId('filter-opponent-strength-preset-stronger'));
     expectSingleEvent({ target: 'opponent-strength', value: 'stronger' });
@@ -543,8 +543,8 @@ describe('filter-change tracking', () => {
         <OpponentStrengthFilter value={ANY_RANGE} onChange={vi.fn()} />
       </>,
     );
-    // DEFAULT_TACTIC_DEPTH_VALUE is the 'high' preset range.
-    fireEvent.click(screen.getByTestId('filter-tactic-depth-preset-high'));
+    // DEFAULT_TACTIC_DEPTH_VALUE is the 'all' preset range.
+    fireEvent.click(screen.getByTestId('filter-tactic-depth-preset-all'));
     fireEvent.click(screen.getByTestId('filter-opponent-strength-preset-any'));
     expect(track).not.toHaveBeenCalled();
   });
@@ -661,15 +661,25 @@ describe('TacticDepthFilter summary highlight', () => {
 
   const summary = () => screen.getByTestId('filter-tactic-depth-summary');
 
-  it('stays muted at the default (High, full range)', () => {
+  it('stays muted at the default (All, full range)', () => {
     render(<TacticDepthFilter value={DEFAULT_TACTIC_DEPTH_VALUE} onChange={vi.fn()} />);
     expect(summary().className).toContain('text-muted-foreground');
     expect(summary().className).not.toContain('text-toggle-active');
   });
 
-  it('highlights once the range narrows to Medium', () => {
-    render(<TacticDepthFilter value={presetToRange('medium')} onChange={vi.fn()} />);
+  it.each(['low', 'mid', 'high'] as const)('highlights once the range narrows to %s', (preset) => {
+    render(<TacticDepthFilter value={presetToRange(preset)} onChange={vi.fn()} />);
     expect(summary().className).toContain('text-toggle-active');
+  });
+
+  it('renders the chips in order All, Low, Mid, High with only the active one pressed', () => {
+    render(<TacticDepthFilter value={presetToRange('mid')} onChange={vi.fn()} />);
+    const chips = Array.from(
+      screen.getByTestId('filter-tactic-depth-presets').querySelectorAll('button'),
+    );
+    expect(chips.map((c) => c.textContent)).toEqual(['All', 'Low', 'Mid', 'High']);
+    expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false']);
+    expect(summary().textContent).toBe('Mid: 3-6');
   });
 });
 
@@ -697,28 +707,14 @@ describe('Facepalm section', () => {
     expect(screen.getByTestId('filter-facepalm').textContent).toContain('Facepalm Score');
   });
 
-  describe('hint (D-12)', () => {
-    it('is absent at All', () => {
-      render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
-      expect(screen.queryByTestId('filter-facepalm-hint')).toBeNull();
-    });
-
-    it.each(['low', 'mid', 'high'] as const)('shows the exact text at %s', (preset) => {
-      render(<FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />);
-      expect(screen.getByTestId('filter-facepalm-hint').textContent).toBe('Mistakes are excluded');
-    });
-
-    it('shows at a custom range', () => {
-      render(<FacepalmFilter value={{ min: 40, max: 40 }} onChange={vi.fn()} />);
-      expect(screen.getByTestId('filter-facepalm-hint').textContent).toBe('Mistakes are excluded');
-    });
-
-    it('is not rendered by TacticDepthFilter', () => {
-      const { container } = render(
-        <TacticDepthFilter value={DEFAULT_TACTIC_DEPTH_VALUE} onChange={vi.fn()} />,
-      );
-      expect(container.querySelector('[data-testid$="-hint"]')).toBeNull();
-    });
+  // The "Mistakes are excluded" note was removed: appearing only while narrowed,
+  // it made the filter panel layout jump.
+  it.each(['all', 'low', 'mid', 'high'] as const)('renders no inline hint at %s', (preset) => {
+    const { container } = render(
+      <FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />,
+    );
+    expect(container.querySelector('[data-testid$="-hint"]')).toBeNull();
+    expect(container.textContent).not.toContain('Mistakes are excluded');
   });
 
   describe('summary', () => {
@@ -730,8 +726,8 @@ describe('Facepalm section', () => {
     });
 
     it.each([
-      ['low', '0-29%'],
-      ['mid', '30-69%'],
+      ['low', '0-30%'],
+      ['mid', '30-70%'],
       ['high', '70-100%'],
     ] as const)('reads %s as %s in the active style', (preset, text) => {
       render(<FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />);
@@ -739,9 +735,9 @@ describe('Facepalm section', () => {
       expect(summary().className).toContain('text-toggle-active');
     });
 
-    it('reads handles 40/40 as 40-44%', () => {
+    it('reads handles 40/40 as 40%', () => {
       render(<FacepalmFilter value={{ min: 40, max: 40 }} onChange={vi.fn()} />);
-      expect(summary().textContent).toBe('40-44%');
+      expect(summary().textContent).toBe('40%');
       expect(summary().className).toContain('text-toggle-active');
     });
   });
@@ -761,7 +757,7 @@ describe('Facepalm section', () => {
       "How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high facepalm score means it should be easy to see, low means it's probably hard to see.",
     );
     expect(text).toContain(
-      'Low keeps 0 to 29%, Mid 30 to 69%, High 70 to 100%. Drag either handle for a custom range. Any range other than All shows blunders only.',
+      'Low keeps 0 to 30%, Mid 30 to 70%, High 70 to 100%. Drag either handle for a custom range. Any range other than All shows blunders only.',
     );
   });
 

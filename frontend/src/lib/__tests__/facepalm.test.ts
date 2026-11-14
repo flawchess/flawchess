@@ -15,7 +15,6 @@ import {
   PRESET_LABELS,
   PRESET_ORDER,
   derivePreset,
-  displayUpper,
   facepalmToQueryParams,
   formatFacepalmSummary,
   isFacepalmNarrowed,
@@ -41,8 +40,8 @@ describe('named constants', () => {
 describe('presetToRange', () => {
   it('maps the four presets to handle positions', () => {
     expect(presetToRange('all')).toEqual({ min: 0, max: 100 });
-    expect(presetToRange('low')).toEqual({ min: 0, max: 25 });
-    expect(presetToRange('mid')).toEqual({ min: 30, max: 65 });
+    expect(presetToRange('low')).toEqual({ min: 0, max: 30 });
+    expect(presetToRange('mid')).toEqual({ min: 30, max: 70 });
     expect(presetToRange('high')).toEqual({ min: 70, max: 100 });
   });
 });
@@ -56,11 +55,11 @@ describe('facepalmToQueryParams', () => {
   it('sends inclusive floored percents for the presets', () => {
     expect(facepalmToQueryParams(presetToRange('low'))).toEqual({
       min_facepalm_pct: 0,
-      max_facepalm_pct: 29,
+      max_facepalm_pct: 30,
     });
     expect(facepalmToQueryParams(presetToRange('mid'))).toEqual({
       min_facepalm_pct: 30,
-      max_facepalm_pct: 69,
+      max_facepalm_pct: 70,
     });
     expect(facepalmToQueryParams(presetToRange('high'))).toEqual({
       min_facepalm_pct: 70,
@@ -68,10 +67,10 @@ describe('facepalmToQueryParams', () => {
     });
   });
 
-  it('covers the whole 5% bucket of the upper handle for custom ranges', () => {
+  it('sends the upper handle as it reads (inclusive, a multiple of 5) for custom ranges', () => {
     expect(facepalmToQueryParams({ min: 40, max: 40 })).toEqual({
       min_facepalm_pct: 40,
-      max_facepalm_pct: 44,
+      max_facepalm_pct: 40,
     });
     expect(facepalmToQueryParams({ min: 95, max: 100 })).toEqual({
       min_facepalm_pct: 95,
@@ -80,20 +79,11 @@ describe('facepalmToQueryParams', () => {
   });
 });
 
-describe('displayUpper', () => {
-  it('adds STEP - 1 below 100 and stays 100 at the top', () => {
-    expect(displayUpper(25)).toBe(29);
-    expect(displayUpper(65)).toBe(69);
-    expect(displayUpper(95)).toBe(99);
-    expect(displayUpper(100)).toBe(100);
-  });
-});
-
 describe('derivePreset', () => {
   it('finds each preset and returns null for a custom range', () => {
     expect(derivePreset(0, 100)).toBe('all');
-    expect(derivePreset(0, 25)).toBe('low');
-    expect(derivePreset(30, 65)).toBe('mid');
+    expect(derivePreset(0, 30)).toBe('low');
+    expect(derivePreset(30, 70)).toBe('mid');
     expect(derivePreset(70, 100)).toBe('high');
     expect(derivePreset(40, 45)).toBeNull();
   });
@@ -115,15 +105,16 @@ describe('isFacepalmNarrowed', () => {
 });
 
 describe('formatFacepalmSummary', () => {
-  it('reads All, 0-29%, 30-69%, 70-100% for the presets', () => {
+  it('reads All, 0-30%, 30-70%, 70-100% for the presets', () => {
     expect(formatFacepalmSummary(presetToRange('all'))).toBe('All');
-    expect(formatFacepalmSummary(presetToRange('low'))).toBe('0-29%');
-    expect(formatFacepalmSummary(presetToRange('mid'))).toBe('30-69%');
+    expect(formatFacepalmSummary(presetToRange('low'))).toBe('0-30%');
+    expect(formatFacepalmSummary(presetToRange('mid'))).toBe('30-70%');
     expect(formatFacepalmSummary(presetToRange('high'))).toBe('70-100%');
   });
 
   it('reads custom ranges in the same units', () => {
-    expect(formatFacepalmSummary({ min: 40, max: 40 })).toBe('40-44%');
+    expect(formatFacepalmSummary({ min: 40, max: 40 })).toBe('40%');
+    expect(formatFacepalmSummary({ min: 40, max: 55 })).toBe('40-55%');
     expect(formatFacepalmSummary({ min: 100, max: 100 })).toBe('100%');
   });
 });

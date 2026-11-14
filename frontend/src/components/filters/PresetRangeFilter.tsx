@@ -52,8 +52,6 @@ interface PresetRangeFilterProps {
     onValueCommit?: (values: number[]) => void;
     thumbLabels: [string, string];
   };
-  /** One-line note under the slider, rendered only when set. */
-  hint?: string;
 }
 
 export function PresetRangeFilter({
@@ -68,7 +66,6 @@ export function PresetRangeFilter({
   summary,
   isSummaryActive,
   slider,
-  hint,
 }: PresetRangeFilterProps) {
   return (
     <div data-testid={testIdPrefix}>
@@ -130,12 +127,6 @@ export function PresetRangeFilter({
           data-testid={`${testIdPrefix}-slider`}
         />
       </div>
-
-      {hint && (
-        <p className="mt-1 text-sm text-muted-foreground" data-testid={`${testIdPrefix}-hint`}>
-          {hint}
-        </p>
-      )}
     </div>
   );
 }

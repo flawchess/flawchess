@@ -3,8 +3,9 @@
  * Presentation is delegated to the shared PresetRangeFilter; this wrapper owns only
  * the facepalm domain logic. Cloned from TacticDepthFilter.
  *
- * Any range other than All narrows to scored blunders, so a hint says mistakes are
- * excluded while narrowed (D-12).
+ * Any range other than All narrows to scored blunders; the info popover says so.
+ * There is deliberately no inline note for it: one that appeared only while the
+ * range was narrowed made the panel layout jump.
  */
 
 import { useCallback } from 'react';
@@ -21,14 +22,10 @@ import {
   PRESET_ORDER,
   derivePreset,
   formatFacepalmSummary,
-  isFacepalmNarrowed,
   presetToRange,
   sliderToRange,
 } from '@/lib/facepalm';
 import type { FacepalmPreset, FacepalmValue } from '@/lib/facepalm';
-
-/** One-line note shown under the slider while the range is not All (D-12). */
-const FACEPALM_NARROWED_HINT = 'Mistakes are excluded';
 
 interface FacepalmFilterProps {
   value: FacepalmValue;
@@ -98,7 +95,7 @@ export function FacepalmFilter({ value, onChange }: FacepalmFilterProps) {
             means it's probably hard to see.
           </p>
           <p className="mt-2">
-            Low keeps 0 to 29%, Mid 30 to 69%, High 70 to 100%. Drag either handle for a custom
+            Low keeps 0 to 30%, Mid 30 to 70%, High 70 to 100%. Drag either handle for a custom
             range. Any range other than All shows blunders only.
           </p>
         </>
@@ -119,7 +116,6 @@ export function FacepalmFilter({ value, onChange }: FacepalmFilterProps) {
         onValueCommit: handleSliderCommit,
         thumbLabels: ['Minimum facepalm score', 'Maximum facepalm score'],
       }}
-      hint={isFacepalmNarrowed(value) ? FACEPALM_NARROWED_HINT : undefined}
     />
   );
 }

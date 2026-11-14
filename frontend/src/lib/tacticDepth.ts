@@ -74,12 +74,12 @@ export function toDisplayDepthForOrientation(
   return depth + DEPTH_DISPLAY_OFFSET + anchorOffset;
 }
 
-/** Always-on depth filter; default preset is High (full range — shows everything). */
-export const DEPTH_DEFAULT_PRESET = 'high' as const;
+/** Always-on depth filter; default preset is All (full range, shows everything). */
+export const DEPTH_DEFAULT_PRESET = 'all' as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type TacticDepthPreset = 'low' | 'medium' | 'high';
+export type TacticDepthPreset = 'all' | 'low' | 'mid' | 'high';
 
 /**
  * Depth range carried through the UI and sent to the API. Both bounds are
@@ -97,22 +97,35 @@ export interface TacticDepthValue {
 // NOT shifted for the allowed +1 offset: that offset is applied per-orientation
 // inside the backend filter (and the on-screen display), so the preset domain
 // must remain the shared stored-unit scale to avoid double-counting the shift.
+//
+// The bands are disjoint and inclusive, mirroring the Facepalm filter's
+// All / Low / Mid / High: displayed 1-based they read All 1-12, Low 1-2,
+// Mid 3-6, High 7-12.
+
+/** Upper edge of the Low preset (0-based depth; displays as 2). */
+const DEPTH_LOW_MAX = 1;
+
+/** Upper edge of the Mid preset (0-based depth; displays as 6). */
+const DEPTH_MID_MAX = 5;
+
 export const PRESET_RANGES: Record<TacticDepthPreset, TacticDepthValue> = {
-  low: { min: 0, max: 1 },
-  medium: { min: 0, max: 5 },
-  high: { min: DEPTH_MIN, max: DEPTH_MAX },
+  all: { min: DEPTH_MIN, max: DEPTH_MAX },
+  low: { min: DEPTH_MIN, max: DEPTH_LOW_MAX },
+  mid: { min: DEPTH_LOW_MAX + DEPTH_STEP, max: DEPTH_MID_MAX },
+  high: { min: DEPTH_MID_MAX + DEPTH_STEP, max: DEPTH_MAX },
 };
 
 /** Short preset names shown on the chips (the depth range goes in the summary). */
 export const PRESET_LABELS: Record<TacticDepthPreset, string> = {
+  all: 'All',
   low: 'Low',
-  medium: 'Medium',
+  mid: 'Mid',
   high: 'High',
 };
 
-export const PRESET_ORDER: TacticDepthPreset[] = ['low', 'medium', 'high'];
+export const PRESET_ORDER: TacticDepthPreset[] = ['all', 'low', 'mid', 'high'];
 
-/** Default range = High / full range (0..11). */
+/** Default range = All / full range (0..11). */
 export const DEFAULT_TACTIC_DEPTH_VALUE: TacticDepthValue = PRESET_RANGES[DEPTH_DEFAULT_PRESET];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -147,7 +160,7 @@ export function sliderToRange(lo: number, hi: number): TacticDepthValue {
 
 /**
  * Summary text for the active depth range. Always shows the range using the
- * 1-based display numbers (e.g. `Medium: 1-6`); when it matches a preset,
+ * 1-based display numbers (e.g. `Mid: 3-6`); when it matches a preset,
  * the preset name is prefixed. A custom range renders bare (`3-5`, or `4` when
  * min === max). Internal values stay 0-based; only the display is offset.
  */

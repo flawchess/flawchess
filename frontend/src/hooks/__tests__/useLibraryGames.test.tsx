@@ -198,12 +198,12 @@ describe('useLibraryFlaws facepalm params', () => {
     expect(params.max_facepalm_pct).toBe(100);
   });
 
-  it('sends 0 and 29 for the Low range (handles 0/25)', async () => {
+  it('sends 0 and 30 for the Low range (handles 0/30)', async () => {
     renderHook(
       () =>
         useLibraryFlaws(
           DEFAULT_FILTERS,
-          { ...DEFAULT_FLAW_FILTER, facepalmMin: 0, facepalmMax: 25 },
+          { ...DEFAULT_FLAW_FILTER, facepalmMin: 0, facepalmMax: 30 },
           0,
           20,
         ),
@@ -213,7 +213,7 @@ describe('useLibraryFlaws facepalm params', () => {
     await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
     const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
     expect(params.min_facepalm_pct).toBe(0);
-    expect(params.max_facepalm_pct).toBe(29);
+    expect(params.max_facepalm_pct).toBe(30);
   });
 });
 
@@ -252,12 +252,12 @@ describe('useLibraryGames facepalm params', () => {
     expect(params.max_facepalm_pct).toBe(100);
   });
 
-  it('sends 30 and 69 for the Mid range (handles 30/65)', async () => {
+  it('sends 30 and 70 for the Mid range (handles 30/70)', async () => {
     renderHook(
       () =>
         useLibraryGames(
           DEFAULT_FILTERS,
-          { ...DEFAULT_FLAW_FILTER, facepalmMin: 30, facepalmMax: 65 },
+          { ...DEFAULT_FLAW_FILTER, facepalmMin: 30, facepalmMax: 70 },
           0,
           20,
         ),
@@ -267,7 +267,7 @@ describe('useLibraryGames facepalm params', () => {
     await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
     const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
     expect(params.min_facepalm_pct).toBe(30);
-    expect(params.max_facepalm_pct).toBe(69);
+    expect(params.max_facepalm_pct).toBe(70);
   });
 
   it('refetches when only the facepalm range changes (query key)', async () => {
