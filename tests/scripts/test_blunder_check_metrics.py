@@ -12,6 +12,7 @@ from app.models.game_position import GamePosition
 from app.services.flaws_service import INACCURACY_DROP, _MoveEntry, _run_all_moves_pass
 from scripts.blunder_check.metrics import (
     HAZARD,
+    MIN_MISSED_GAIN,
     EloBucket,
     WINDOW_LENGTHS,
     MoveJudgement,
@@ -29,6 +30,7 @@ from scripts.blunder_check.metrics import (
     blunder_fits_position,
     blunder_position_marginals,
     in_band,
+    material_type,
     miss_case,
     user_move_judgements,
 )
@@ -241,3 +243,38 @@ class TestFlawControl:
         }
         # severity mismatch at 3, stored-only ply 5, recomputed-only ply 8; none agree.
         assert flaw_control(all_moves, {3: 2, 5: 1}) == (0, 3)
+
+
+class TestMaterialType:
+    """Phase 254 D-13: what a blunder loses on the played line and misses on the best line."""
+
+    @pytest.mark.parametrize(
+        ("played_3", "mate_ply", "best_3", "best_mate_ply", "expected"),
+        [
+            (-5, None, 0, None, "loses"),
+            (5, None, 10, None, "misses"),
+            (-5, None, 3, None, "loses_and_misses"),
+            (0, None, 0, None, "neither"),
+            (None, 2, None, None, "loses"),  # mated within LINE_DEPTH
+            (0, None, None, 1, "misses"),  # the best line mates within LINE_DEPTH
+            (None, None, 4, None, "unknown"),  # unsettled played line, no mate
+            (None, 3, 4, None, "loses"),  # without a settled played line only a mate misses
+            (0, 5, 0, None, "neither"),  # a mate beyond LINE_DEPTH settles nothing
+            (0, None, 0, 4, "neither"),
+            (2, None, 3, None, "misses"),  # missed gain 1 is the minimum
+            (2, None, 2, None, "neither"),
+            (3, None, None, None, "neither"),  # unknown best line: nothing missed (D-18)
+        ],
+    )
+    def test_classification(
+        self,
+        played_3: int | None,
+        mate_ply: int | None,
+        best_3: int | None,
+        best_mate_ply: int | None,
+        expected: str,
+    ) -> None:
+        assert material_type(played_3, mate_ply, best_3, best_mate_ply) == expected
+
+    def test_the_minimum_missed_gain_is_one(self) -> None:
+        assert MIN_MISSED_GAIN == 1

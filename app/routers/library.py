@@ -72,6 +72,18 @@ async def get_library_games(
     tactic_orientation: TacticOrientationFilter = Query(default="either"),
     min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
     max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
+    # Inclusive whole-percent bounds on the floored facepalm score; the full range or
+    # omitted = no filter.
+    min_facepalm_pct: int | None = Query(
+        default=None,
+        ge=library_repository.FACEPALM_PCT_MIN,
+        le=library_repository.FACEPALM_PCT_MAX,
+    ),
+    max_facepalm_pct: int | None = Query(
+        default=None,
+        ge=library_repository.FACEPALM_PCT_MIN,
+        le=library_repository.FACEPALM_PCT_MAX,
+    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     opponent_gap_min: int | None = Query(default=None),
@@ -115,6 +127,8 @@ async def get_library_games(
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
         offset=offset,
         limit=limit,
         opponent_gap_min=opponent_gap_min,
@@ -320,6 +334,18 @@ async def get_library_flaws(
     tactic_orientation: TacticOrientationFilter = Query(default="either"),
     min_tactic_depth: int | None = Query(default=None, ge=0, le=11),
     max_tactic_depth: int | None = Query(default=None, ge=0, le=11),
+    # Inclusive whole-percent bounds on the floored facepalm score; the full range or
+    # omitted = no filter.
+    min_facepalm_pct: int | None = Query(
+        default=None,
+        ge=library_repository.FACEPALM_PCT_MIN,
+        le=library_repository.FACEPALM_PCT_MAX,
+    ),
+    max_facepalm_pct: int | None = Query(
+        default=None,
+        ge=library_repository.FACEPALM_PCT_MIN,
+        le=library_repository.FACEPALM_PCT_MAX,
+    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     include_pasted: bool = Query(default=False),
@@ -361,6 +387,8 @@ async def get_library_flaws(
         tactic_orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
         offset=offset,
         limit=limit,
         include_pasted=include_pasted,

@@ -77,8 +77,7 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
   );
 
   // The summary goes text-toggle-active when the range narrows from the default
-  // (High, the full range). It compared against 'medium' after the default moved
-  // to High, so the summary lit up at the default and dimmed when narrowed to Medium.
+  // (All, the full range).
   const isSummaryActive = activePreset !== DEPTH_DEFAULT_PRESET;
 
   return (
@@ -89,12 +88,11 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
       infoChildren={
         <p>
           Filters tactics by depth: how many plies into the winning line the decisive point
-          appears (1 = immediate). Low keeps depth 1 to 2; Medium 1 to 6; High the
-          full range. Drag either handle for a custom range. Forced mates obey the range too.
+          appears (1 = immediate). Low keeps depth 1 to 2, Mid 3 to 6, High 7 to 12. Drag either handle for a custom range. Forced mates obey the range too.
         </p>
       }
       presets={PRESETS}
-      gridClassName="grid-cols-3"
+      gridClassName="grid-cols-4"
       activePreset={activePreset}
       onPreset={handlePreset}
       summary={formatDepthSummary(value)}

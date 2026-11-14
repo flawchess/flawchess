@@ -22,6 +22,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
+import { FacepalmChip } from '@/components/library/FacepalmChip';
 import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { platformPlyUrl } from '@/lib/platformLinks';
 import { sanToSquares, uciToSquares } from '@/lib/sanToSquares';
@@ -339,7 +340,7 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
     return motifs;
   })();
 
-  // Tags row — severity badge, then the tactic-motif chip(s), then a second
+  // Tags row — severity badge, the Facepalm chip (scored blunders), then the tactic-motif chip(s), then a second
   // (basis-full) line carrying the family-colored context flaw-tag chips followed by a
   // single brown Tags-icon legend explaining every tag listed except severity.
   // Shared by the mobile (full-width row) and desktop
@@ -352,7 +353,12 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
         count={1}
         gameId={flaw.game_id}
         showCount={false}
+        showIcon
       />
+      {/* Facepalm chip: its own pill after the severity badge. D-17: scored blunders only. */}
+      {flaw.severity === 'blunder' && flaw.facepalm_score != null && (
+        <FacepalmChip score={flaw.facepalm_score} gameId={flaw.game_id} ply={flaw.ply} />
+      )}
 
       {/* Tactic motif chips — dual-chip matrix.
           Orientation controls which chip(s) render:

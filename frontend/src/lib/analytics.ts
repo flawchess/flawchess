@@ -22,6 +22,7 @@ import type { PlayStylePreset } from '@/lib/playStyle';
 import type { DeviceSubscribeResult } from '@/lib/push';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TacticDepthPreset } from '@/lib/tacticDepth';
+import type { FacepalmPreset } from '@/lib/facepalm';
 import type {
   MatchSide,
   OpponentStrengthPreset,
@@ -439,6 +440,7 @@ export const FILTER_TARGETS = [
   'tactic-family',
   'tactic-orientation',
   'tactic-depth',
+  'facepalm',
   'has-gem',
   'has-great',
   'reset',
@@ -480,6 +482,7 @@ export type FilterChangeProps =
   | { target: 'tactic-family'; value: TacticFamily }
   | { target: 'tactic-orientation'; value: TacticOrientation }
   | { target: 'tactic-depth'; value: TacticDepthPreset | 'custom' }
+  | { target: 'facepalm'; value: FacepalmPreset | 'custom' }
   | { target: 'has-gem' | 'has-great'; value: OnOff }
   | { target: 'reset' | 'apply' };
 

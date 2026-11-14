@@ -3,7 +3,7 @@
  *
  * The filter is a two-handle RANGE [min, max] over tactic depth (0-based ply,
  * domain 0..11). The slider domain IS the API/DB domain — no full-move ↔
- * half-ply conversion. Presets: Low 0–1, Medium 0–5, High 0–11.
+ * half-ply conversion. Presets: All 0–11, Low 0–1, Mid 2–5, High 6–11.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -39,17 +39,18 @@ describe('named constants', () => {
     expect(DEPTH_STEP).toBe(1);
   });
 
-  it('DEPTH_DEFAULT_PRESET is high (full range)', () => {
-    expect(DEPTH_DEFAULT_PRESET).toBe('high');
+  it('DEPTH_DEFAULT_PRESET is all (full range)', () => {
+    expect(DEPTH_DEFAULT_PRESET).toBe('all');
   });
 
-  it('preset ranges: Low 0–1, Medium 0–5, High 0–11', () => {
+  it('preset ranges (0-based): All 0–11, Low 0–1, Mid 2–5, High 6–11', () => {
+    expect(PRESET_RANGES.all).toEqual({ min: 0, max: 11 });
     expect(PRESET_RANGES.low).toEqual({ min: 0, max: 1 });
-    expect(PRESET_RANGES.medium).toEqual({ min: 0, max: 5 });
-    expect(PRESET_RANGES.high).toEqual({ min: 0, max: 11 });
+    expect(PRESET_RANGES.mid).toEqual({ min: 2, max: 5 });
+    expect(PRESET_RANGES.high).toEqual({ min: 6, max: 11 });
   });
 
-  it('DEFAULT_TACTIC_DEPTH_VALUE is the High/full range {0, 11}', () => {
+  it('DEFAULT_TACTIC_DEPTH_VALUE is the All/full range {0, 11}', () => {
     expect(DEFAULT_TACTIC_DEPTH_VALUE).toEqual({ min: 0, max: 11 });
   });
 
@@ -65,12 +66,20 @@ describe('derivePreset', () => {
     expect(derivePreset(0, 1)).toBe('low');
   });
 
-  it('derivePreset(0, 5) === medium', () => {
-    expect(derivePreset(0, 5)).toBe('medium');
+  it('derivePreset(2, 5) === mid', () => {
+    expect(derivePreset(2, 5)).toBe('mid');
   });
 
-  it('derivePreset(0, 11) === high', () => {
-    expect(derivePreset(0, 11)).toBe('high');
+  it('derivePreset(6, 11) === high', () => {
+    expect(derivePreset(6, 11)).toBe('high');
+  });
+
+  it('derivePreset(0, 11) === all', () => {
+    expect(derivePreset(0, 11)).toBe('all');
+  });
+
+  it('derivePreset(0, 5) === null (the old cumulative Medium is now custom)', () => {
+    expect(derivePreset(0, 5)).toBeNull();
   });
 
   it('derivePreset(2, 4) === null (custom, no preset matches)', () => {
@@ -90,7 +99,7 @@ describe('derivePreset', () => {
 
 describe('presetToRange', () => {
   it('round-trips through derivePreset for every preset', () => {
-    for (const preset of ['low', 'medium', 'high'] as const) {
+    for (const preset of ['all', 'low', 'mid', 'high'] as const) {
       const r = presetToRange(preset);
       expect(derivePreset(r.min, r.max)).toBe(preset);
     }
@@ -123,8 +132,9 @@ describe('formatDepthSummary', () => {
   // Summary shows the 1-based display number (internal value + DEPTH_DISPLAY_OFFSET).
   it('preset ranges render "Label: min-max"', () => {
     expect(formatDepthSummary({ min: 0, max: 1 })).toBe('Low: 1-2');
-    expect(formatDepthSummary({ min: 0, max: 5 })).toBe('Medium: 1-6');
-    expect(formatDepthSummary({ min: 0, max: 11 })).toBe('High: 1-12');
+    expect(formatDepthSummary({ min: 2, max: 5 })).toBe('Mid: 3-6');
+    expect(formatDepthSummary({ min: 6, max: 11 })).toBe('High: 7-12');
+    expect(formatDepthSummary({ min: 0, max: 11 })).toBe('All: 1-12');
   });
 
   it('custom ranges render a bare "a-b"', () => {

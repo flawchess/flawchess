@@ -301,6 +301,27 @@ class TestFlawMarkers:
         marker = next(m for m in flaw_markers if m.ply == 2)
         assert marker.move_san == "Qxh7", "FlawMarker must expose the flawed move's SAN"
 
+    def test_facepalm_score_populated_from_facepalm_by_ply(self) -> None:
+        """FlawMarker carries the stored facepalm score of its ply, null when absent."""
+        positions, game = self._minimal_blunder_positions(user_color="white")
+        _, scored, _ = _build_eval_series(game, positions, facepalm_by_ply={2: 0.87})
+        assert next(m for m in scored if m.ply == 2).facepalm_score == 0.87
+        _, unscored, _ = _build_eval_series(game, positions)
+        assert next(m for m in unscored if m.ply == 2).facepalm_score is None
+
+    def test_facepalm_score_dropped_on_a_non_blunder_marker(self) -> None:
+        """A stale stored score never rides on a mistake marker (253 review WR-01).
+
+        +100 -> -32 for the white mover is an expected-score drop of about 0.12:
+        a mistake, not a blunder.
+        """
+        positions = [_make_pos(0, eval_cp=0), _make_pos(1, eval_cp=100), _make_pos(2, eval_cp=-32)]
+        game = _make_game(user_color="white", result="0-1")
+        _, markers, _ = _build_eval_series(game, positions, facepalm_by_ply={2: 0.87})
+        marker = next(m for m in markers if m.ply == 2)
+        assert marker.severity == "mistake"
+        assert marker.facepalm_score is None
+
     def test_is_user_flag_opponent(self) -> None:
         """Flaw by the opponent → is_user=False."""
         # user_color="black": white mover at ply 2 is the opponent

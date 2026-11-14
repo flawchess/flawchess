@@ -170,3 +170,30 @@ describe('postReviewKeepalive', () => {
     });
   });
 });
+
+// Facepalm range: forwarded when set (a min of 0 included, so != null not truthiness),
+// omitted when undefined so the request is unchanged at All.
+describe('facepalm range params', () => {
+  beforeEach(() => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(['getGames', 'getFlaws'] as const)('%s forwards both bounds including a min of 0', async (method) => {
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+    await libraryApi[method]({ min_facepalm_pct: 0, max_facepalm_pct: 29 });
+
+    expect(lastGetParams(getSpy)).toMatchObject({ min_facepalm_pct: 0, max_facepalm_pct: 29 });
+  });
+
+  it.each(['getGames', 'getFlaws'] as const)('%s omits both keys when undefined', async (method) => {
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
+    await libraryApi[method]({ severity: ['blunder'] });
+
+    expect(lastGetParams(getSpy)).not.toHaveProperty('min_facepalm_pct');
+    expect(lastGetParams(getSpy)).not.toHaveProperty('max_facepalm_pct');
+  });
+});

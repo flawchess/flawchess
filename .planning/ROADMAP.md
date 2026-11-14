@@ -315,10 +315,12 @@ no worker lane. Locked decisions in 250-CONTEXT.md and SEED-261110-p7k.
 **Status**: Un-parked (owner, 2026-11-13): build now, including the prod backfill. Nothing waits for Phase 252;
 once its prod pv repair is complete, a line-only pass recomputes the line losses, the mate ply and `facepalm_score`
 (with the score refitted on the repaired lines). 250-CONTEXT D-18.
+Phase 250 is complete (2026-11-14): plan 250-10 was not run and is superseded by Phase 254, which does the refit and
+the line pass (254-CONTEXT D-11).
 **Depends on**: Phase 249 (merged; this phase rewrites its selection predicate). Its final recompute pass (D-18)
 runs after Phase 252's prod pv repair
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-18)
-**Plans:** 9/11 plans executed
+**Plans:** 11/11 plans closed (10 executed, 250-10 superseded by Phase 254)
 
 Plans:
 **Wave 1**
@@ -345,8 +347,8 @@ Plans:
 - [x] 250-09-PLAN.md — Release, prod spread backfill, prod calibration and spot-check, owner verdict (orchestrator-inline)
 
 **Wave 8** *(human-gated, independent of each other)*
-- [ ] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline)
-- [ ] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
+- [x] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline); superseded by Phase 254 (254-CONTEXT D-11)
+- [x] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
 
 ### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
@@ -406,6 +408,114 @@ Plans:
 
 Numbering note: 251 is taken on the phase-249 branch (schedule phase, renumbered there), so this phase is 252 on
 both lines.
+
+### Phase 253: Facepalm Score in the Library UI (SEED-261114-0ke)
+
+**Goal**: Show the Phase 250 facepalm score to users in the library. A "Facepalm" range filter in the Tags side
+panel for the Games and Flaws tabs, modelled on the tactic depth filter, and the score
+as its own chip next to the Blunder badge on Flaws-tab cards (`<tree-palm> Facepalm 94%`, popover on the chip)
+when the flaw has a score; after UAT also a mini-chip in the analysis move list and a line in the eval chart
+tooltip (253-CONTEXT.md D-20 to D-23). Decisions in the seed and 253-CONTEXT.md.
+
+- **Filter semantics** (owner, 2026-11-14): full range 0-100% = no filter; a narrowed range keeps only flaws
+  with a non-NULL `facepalm_score` in range, so mistakes, inaccuracies and blunders without a stored line drop
+  out. On the Games tab the range joins the single flaw `EXISTS`.
+- **User blunders only.** Tag filters already apply to the user's flaws only (`player_only_gate`), so no
+  opponent scoring and no backfill is needed.
+- **Not a probability** (250 D-01): the chip reads as a degree; a short popover says it is the model's judgement
+  and what a low value means. After UAT the card chip carries the word again (D-20).
+- **Out of scope:** the score in the blunder-check solution screen; facepalm rate stats and opponent scoring
+  (SEED-261114-iuv, after Phase 252).
+
+**Depends on**: Phase 250 plans 01-09 and 11 (score stored on `game_flaws` for user blunders; shipped). Built
+while Phase 250's last plan (250-10) waits for Phase 252 (owner, 2026-11-14; overrides the seed's original
+trigger). Until 250-10 the displayed values are provisional: unrepaired lines, pre-refit constants, and blunders
+with a too-short line have no score. 250-10 recomputes them; no change to this phase's code is needed then.
+**Requirements**: TBD
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1**
+- [x] 253-01-PLAN.md — Backend: min/max_facepalm_pct on the Library list endpoints, shared flaw clause, Games-tab EXISTS gate, `facepalm_score` in the Flaws payload (wave 1)
+- [x] 253-02-PLAN.md — Frontend: Facepalm range filter (All/Low/Mid/High + 5% slider) in the Tags panel on both tabs (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 253-03-PLAN.md — Frontend: score inside the Blunder badge with hover/tap/keyboard popover; CHANGELOG and full pre-merge gate (wave 2)
+
+### Phase 254: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
+
+**Goal**: Make the facepalm score see missed material gains, with a weight (the loss-aversion knob) that each
+consumer sets. Today the score only measures what the played move gives away, so an obvious missed win of
+material scores near 0 (prod: 88% of allowed hanging pieces score >= 0.70 vs 21% of missed ones, at the same
+material swing). Evidence, owner decisions and the proposed shape are in the seed; nothing below is locked
+until the discuss phase.
+
+- **Material:** `loss` as today plus `missed` (what the stored best line wins on top, depth 3, no engine);
+  score input `loss + lambda * missed`. Lambda = 0 is today's score, lambda = 1 the symmetric swing.
+- **Knob** (owner, 2026-11-14): wanted regardless. Whether blunder-check selection should be loss-averse is
+  open; the owner asks GM Noel Studer. Only the default depends on the answer. The drill already asks "Good
+  move or blunder?", so missed gains are valid items.
+- **Pre-blunder Maia inputs** (owner: "we probably should"): Maia's probability of the best move and the
+  pre-blunder policy spread, with a backfill for existing rows about the size of Phase 250's.
+- **Labels and refit:** about 50 owner labels on misses, then a refit and a recheck of `FACEPALM_SCORE_MIN` and
+  the drill pool size.
+- **To settle in discuss:** fold Phase 250's open plan 250-10 (refit on repaired lines) into this phase's
+  refit, so the score is refitted once; whether reply spread is dropped or down-weighted for pure misses.
+
+**Depends on**: Phase 250 plans 01-09 and 11 (shipped), Phase 253 (shipped). The backfill and the refit wait
+for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
+start before.
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
+**Plans:** 7/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+
+Plans:
+**Wave 1**
+- [x] 254-01-PLAN.md — Line facts for both lines (9-slot signed arrays, best line, owner miss fixtures)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 254-15-PLAN.md — Score model: D-05 missed term with lambda in both twins, every D-06/D-07/D-08 shape, callers on the new signature
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 254-02-PLAN.md — R1 migration and model columns, `facepalm_expr`, facts seeding helper
+- [x] 254-04-PLAN.md — Refit tooling: features with both lines and pre inputs, staged form selection, D-13 report sections, owner fixture inputs
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 254-16-PLAN.md — Hook dual-writes both line arrays (best-line fingerprint) and the pre-blunder Maia inputs
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 254-03-PLAN.md — Backfill `--mode pre`, the sign-flipped copy tool with parity check, line / spread key sets
+- [x] 254-05-PLAN.md — Blind stratified miss sampler (D-14, D-15)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 254-06-PLAN.md — Release R1, close 250-10 as superseded (D-11), prod-run worktree, prod copy and parity, branch and checkout map (orchestrator-inline)
+
+**Wave 7** *(blocked on Wave 6 completion; R2 cycle opened by the orchestrator)*
+- [ ] 254-07-PLAN.md — Prod pre pass with 8 shards beside Phase 252 (D-20) from the prod-run worktree, and the owner's miss labels (orchestrator-inline)
+- [ ] 254-08-PLAN.md — R2 drill readers on the expression: own / foreign predicates and the loader
+
+**Wave 8** *(blocked on 254-08)*
+- [ ] 254-18-PLAN.md — R2 library readers on the expression: filter and chip, chart and move-list markers
+
+**Wave 9** *(blocked on 254-18)*
+- [ ] 254-09-PLAN.md — R2 script readers: calibration from facts with D-13 sections, backfill counts
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 254-10-PLAN.md — Release R2, prod EXPLAIN, strict parity, revert on failure (orchestrator-inline)
+
+**Wave 11** *(human-gated: after Phase 252's prod repair is complete)*
+- [ ] 254-11-PLAN.md — 252 precondition gate, prod line pass, refit on all labels, owner sets FACEPALM_SCORE_MIN (orchestrator-inline)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+- [ ] 254-12-PLAN.md — Ship the refitted constants (constants-only deploy)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+- [ ] 254-13-PLAN.md — Stop writing `facepalm_score` and the line-loss columns; legacy column mapping removed (code, D-02, D-19)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+- [ ] 254-17-PLAN.md — No reader left in app, scripts or tests; copy tool removed; drop migration (code, D-02, D-19)
+
+**Wave 15** *(human-gated, one-way)*
+- [ ] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)
 
 ## Backlog
 

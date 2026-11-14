@@ -9,6 +9,7 @@ import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
 import { depthToQueryParams } from '@/lib/tacticDepth';
+import { DEFAULT_FACEPALM_VALUE, facepalmToQueryParams } from '@/lib/facepalm';
 import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
@@ -152,21 +153,40 @@ export function useLibraryGames(
   // selected family would keep a depth-only or orientation-only filter from ever
   // reaching the backend. The family group is sent only when ≥1 is selected. The
   // backend treats the all-inclusive default (no family, either, full range) as a
-  // no-op.
+  // no-op. The facepalm range below is applied by the backend inside the same
+  // single flaw EXISTS as severity, tags and tactics (D-06); a narrowed range makes
+  // isFlawFilterNonDefault true, which only affects severity/tags (empty by default).
   // Optional-chained: defensive against partial filter objects (e.g. test mocks),
   // matching isFlawFilterNonDefault.
   const tacticFamily =
     (flawFilter.tacticFamilies?.length ?? 0) > 0 ? flawFilter.tacticFamilies : undefined;
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
   const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
+  // Facepalm range (D-06): sent only when narrowed (unlike the always-sent depth
+  // bounds), so the common request and its cache key are unchanged at All (D-04).
+  // Optional fallbacks keep partial filter objects (test mocks) at the default.
+  const facepalmParam = facepalmToQueryParams({
+    min: flawFilter.facepalmMin ?? DEFAULT_FACEPALM_VALUE.min,
+    max: flawFilter.facepalmMax ?? DEFAULT_FACEPALM_VALUE.max,
+  });
   return useQuery({
-    queryKey: ['library-games', params, tacticFamily, tacticOrientation, depthParam, offset, limit],
+    queryKey: [
+      'library-games',
+      params,
+      tacticFamily,
+      tacticOrientation,
+      depthParam,
+      facepalmParam,
+      offset,
+      limit,
+    ],
     queryFn: () =>
       libraryApi.getGames({
         ...params,
         tactic_family: tacticFamily,
         tactic_orientation: tacticOrientation,
         ...depthParam,
+        ...facepalmParam,
         offset,
         limit,
       }),
@@ -329,7 +349,7 @@ export function useTacticLines(
 /**
  * Fetch the paginated per-flaw list for the current filter + flaw filter.
  *
- * Query key: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit]
+ * Query key: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, facepalmParam, offset, limit]
  * Both offset and limit are part of the key so page changes trigger a new fetch.
  * tactic_orientation + max_tactic_depth appended to key so changing either
  * triggers a refetch.
@@ -349,14 +369,31 @@ export function useLibraryFlaws(
   // treats the defaults as a no-op.
   const tacticOrientation = flawFilter.tacticOrientation ?? 'either';
   const depthParam = depthToQueryParams(flawFilter.tacticDepthMin, flawFilter.tacticDepthMax);
+  // Facepalm range (D-06): sent only when narrowed (unlike the always-sent depth
+  // bounds), so the common request and its cache key are unchanged at All (D-04).
+  // Optional fallbacks keep partial filter objects (test mocks) at the default.
+  const facepalmParam = facepalmToQueryParams({
+    min: flawFilter.facepalmMin ?? DEFAULT_FACEPALM_VALUE.min,
+    max: flawFilter.facepalmMax ?? DEFAULT_FACEPALM_VALUE.max,
+  });
   return useQuery({
-    queryKey: ['library-flaws', params, tacticFamily, tacticOrientation, depthParam, offset, limit],
+    queryKey: [
+      'library-flaws',
+      params,
+      tacticFamily,
+      tacticOrientation,
+      depthParam,
+      facepalmParam,
+      offset,
+      limit,
+    ],
     queryFn: () =>
       libraryApi.getFlaws({
         ...params,
         tactic_family: tacticFamily,
         tactic_orientation: tacticOrientation,
         ...depthParam,
+        ...facepalmParam,
         offset,
         limit,
       }),

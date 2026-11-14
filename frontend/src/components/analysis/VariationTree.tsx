@@ -30,6 +30,7 @@ import { BestMoveIcon } from '@/components/icons/BestMoveIcon';
 import { GoodMoveIcon } from '@/components/icons/GoodMoveIcon';
 import { BookIcon } from '@/components/icons/BookIcon';
 import { GemMoveBadge } from '@/components/analysis/GemMoveBadge';
+import { FacepalmMoveChip } from '@/components/analysis/FacepalmMoveChip';
 import { TacticLineChip } from '@/components/analysis/TacticLineChip';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
@@ -126,6 +127,15 @@ function MoveListMarker({
       />
     );
   }
+  // A scored blunder gets the Facepalm mini-chip right after its "??" glyph.
+  if (flaw?.severity === 'blunder' && flaw.facepalmScore != null) {
+    return (
+      <>
+        <Icon className={className} aria-hidden />
+        <FacepalmMoveChip score={flaw.facepalmScore} byOpponent={flaw.facepalmByOpponent} />
+      </>
+    );
+  }
   return <Icon className={className} aria-hidden />;
 }
 
@@ -178,6 +188,13 @@ export interface FlawMarkerEntry {
   /** 0-based depth of the allowed tactic (display offset applied by tacticDepthBadge). */
   allowedDepth: number | null;
   severity?: FlawSeverity;
+  /**
+   * Raw 0..1 facepalm score of this node's blunder: renders the Facepalm mini-chip
+   * after the blunder glyph. Set only from a game flaw marker that carries a score.
+   */
+  facepalmScore?: number;
+  /** True when the opponent played the scored blunder: switches the popover wording. */
+  facepalmByOpponent?: boolean;
   /**
    * True when this node's arrival move is a "gem" — renders
    * GemIcon instead of the severity glyph. Mutually exclusive with `severity` by

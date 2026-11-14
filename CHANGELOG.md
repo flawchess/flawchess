@@ -14,10 +14,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
 - Analysis data: each of your blunders now also records how likely a player at your rating was to find the punishing reply, the next piece of groundwork for blunder-check training.
 - Analysis data: each of your blunders now records how many replies your opponent had to choose from and how much material the engine's punishing line wins, the inputs to the blunder-check selection.
+- Library: a Facepalm Score filter in the Tags panel on the Games and Flaws tabs narrows your blunders by how obvious they were for a player at your level (Low, Mid, High, or any range on the slider), and each scored blunder shows its Facepalm score as a chip on the Flaws tab, in the analysis move list and in the eval chart tooltip, with a short explanation on hover or tap.
 
 ### Changed
 
+- Library filters: Tactic Depth now has the same presets as the Facepalm Score filter: All (the default, depth 1 to 12), Low (1 to 2), Mid (3 to 6) and High (7 to 12). Mid and High used to start at depth 1.
+- Library filters: the upper handle of the Facepalm Score filter now lands on multiples of 5% and the range includes both ends, so Low is 0 to 30%, Mid 30 to 70% and High 70 to 100%. The "Mistakes are excluded" note under the slider is gone, since it made the panel jump.
+- Library filters: the Tags panel now starts with Best Moves, followed by Flaws and the Facepalm Score, with a divider after Best Moves and after the Facepalm Score.
 - Blunder check (beta): blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
+- Blunder check (beta): the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
 
 ### Fixed
 

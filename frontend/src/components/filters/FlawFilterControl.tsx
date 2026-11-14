@@ -46,9 +46,12 @@ import {
   TACTIC_GROUPS,
 } from '@/lib/tacticComparisonMeta';
 import { TacticDepthFilter } from '@/components/filters/TacticDepthFilter';
+import { FacepalmFilter } from '@/components/filters/FacepalmFilter';
 import { onOff, trackFeature } from '@/lib/analytics';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
+import { DEFAULT_FACEPALM_VALUE } from '@/lib/facepalm';
+import type { FacepalmValue } from '@/lib/facepalm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,10 +76,18 @@ export interface FlawFilterControlProps {
   onOrientationChange?: (next: TacticOrientation) => void;
   /**
    * Tactic depth value.
-   * Default High (full range). Rendered above Orientation when showTacticFilter=true.
+   * Default All (full range). Rendered above Orientation when showTacticFilter=true.
    */
   tacticDepth?: TacticDepthValue;
   onTacticDepthChange?: (next: TacticDepthValue) => void;
+  /**
+   * Facepalm range (handle positions, whole percents). Default All (full range).
+   * Rendered directly under the Flaws section, above Tactic Depth,
+   * and only when onFacepalmChange is supplied (both Library tabs do;
+   * LibraryFilterPanel does not).
+   */
+  facepalm?: FacepalmValue;
+  onFacepalmChange?: (next: FacepalmValue) => void;
   /**
    * "Has gem" / "has great" toggles, independent
    * booleans narrowing the Library games list. The Gem/Great section renders
@@ -448,9 +459,11 @@ function BestMovesInfo() {
  * FlawFilterControl — severity × tag-family multi-select filter control.
  *
  * Renders (top to bottom):
- * - Severity (Blunders / Mistakes) — always on top of the panel
- * - Gem / Great — Games tab only (gated on the presence of the
- *   onHasGem/GreatToggle handlers, which only GamesTab passes)
+ * - Best Moves (Gem / Great) — Games tab only (gated on the presence of the
+ *   onHasGem/GreatToggle handlers, which only GamesTab passes), then a divider
+ * - Severity (Blunders / Mistakes)
+ * - Facepalm range (Library tabs only, gated on the onFacepalmChange handler),
+ *   then a divider
  * - Tactic Depth filter (showTacticFilter only)
  * - Orientation toggle (showTacticFilter only)
  * - Tactic Type families incl. "Advanced" (showTacticFilter only) — each a titled section
@@ -483,6 +496,8 @@ export function FlawFilterControl({
   onOrientationChange,
   tacticDepth = DEFAULT_TACTIC_DEPTH_VALUE,
   onTacticDepthChange,
+  facepalm = DEFAULT_FACEPALM_VALUE,
+  onFacepalmChange,
   hasGem = false,
   hasGreat = false,
   onHasGemToggle,
@@ -532,22 +547,6 @@ export function FlawFilterControl({
 
   return (
     <div data-testid="flaw-filter-control" className="flex flex-col gap-3">
-      {/* ── Severity (Blunders / Mistakes) — empty = both shown ──────────────
-          Pinned to the top of the panel, above Tactic Depth, on both tabs. ──── */}
-      <div className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">Flaws</p>
-        <div className="flex gap-2 flex-wrap">
-          {SEVERITY_BUTTONS.map((config) => (
-            <SeverityFilterButton
-              key={config.sev}
-              config={config}
-              selected={severity.includes(config.sev)}
-              onToggle={handleSeverityToggle}
-            />
-          ))}
-        </div>
-      </div>
-
       {/* ── Gem / Great toggles ──────────────────────────────────────────────
           Two independent booleans (not a 3-state cycle) narrowing the Library
           games list to games with a stored user-move gem/great; both on is a
@@ -584,6 +583,34 @@ export function FlawFilterControl({
             />
           </div>
         </div>
+      )}
+      {(onHasGemToggle || onHasGreatToggle) && (
+        <div className="border-t border-border/40" data-testid="filter-best-moves-divider" />
+      )}
+
+      {/* ── Severity (Blunders / Mistakes) — empty = both shown ──────────────
+          Below Best Moves (when shown), above Tactic Depth, on both tabs. ──── */}
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-muted-foreground">Flaws</p>
+        <div className="flex gap-2 flex-wrap">
+          {SEVERITY_BUTTONS.map((config) => (
+            <SeverityFilterButton
+              key={config.sev}
+              config={config}
+              selected={severity.includes(config.sev)}
+              onToggle={handleSeverityToggle}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Facepalm range (directly under Flaws, above Tactic Depth), closed by
+          a divider that ends the Flaws group. Gated on the opt-in handler like Gem/Great, not on
+          showTactics: it is not a tactic control. The severity toggles above are
+          deliberately independent of it (D-11). ──── */}
+      {onFacepalmChange && <FacepalmFilter value={facepalm} onChange={onFacepalmChange} />}
+      {onFacepalmChange && (
+        <div className="border-t border-border/40" data-testid="filter-facepalm-divider" />
       )}
 
       {/* ── Tactic depth filter ──

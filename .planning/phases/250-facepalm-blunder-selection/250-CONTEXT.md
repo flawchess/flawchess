@@ -142,6 +142,7 @@ retires the Maia columns the old rule used. Deliverables:
   losses (all depths), the mate ply and `facepalm_score` for every scored user blunder, and scores blunders that had
   no stored line before the repair. `maia_played_prob` and `maia_reply_spread` do not depend on the stored line and
   are not recomputed. Consequences for the plan:
+  - superseded by Phase 254 D-11 (2026-11-14): the refit and the line pass run there, plan 250-10 was not executed;
   - the backfill is built as two separable passes: a Maia pass (reply spread) and a line pass (line losses, mate
     ply, score). The line pass needs no Maia and no engine, must be re-runnable over rows that already hold values
     (not only NULL rows), and is the tool for D-18;

@@ -13,6 +13,7 @@ import {
 } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import type { FlawSeverity } from '@/types/library';
 
 // Badge bg = foreground at 14% alpha, border = 30% alpha.
@@ -88,6 +89,12 @@ interface SeverityBadgeProps {
    * the Library (Train Archive), where that filter does not apply. Defaults to true.
    */
   showActiveFilterRing?: boolean;
+  /**
+   * Flaws card only. Leads the badge with the move-quality glyph ("??" / "?" / "?!"
+   * in a severity-colored circle), the same icon as the move list and board markers.
+   * Defaults to false (Games card count badges stay icon-less).
+   */
+  showIcon?: boolean;
   /** Extra classes merged onto the badge span (e.g. `self-start` to size to content). */
   className?: string;
 }
@@ -112,6 +119,7 @@ export function SeverityBadge({
   onActivate,
   showCount = true,
   showActiveFilterRing = true,
+  showIcon = false,
   className,
 }: SeverityBadgeProps) {
   const [flawFilter] = useFlawFilterStore();
@@ -197,6 +205,7 @@ export function SeverityBadge({
           : undefined
       }
     >
+      {showIcon && <MoveQualityIcon quality={severity} className="h-4 w-4 shrink-0" />}
       {showCount && <span className="text-base font-bold">{count}</span>}
       <span className="text-sm font-bold">
         {showCount ? SEVERITY_LABELS[severity] : SEVERITY_LABELS_SINGULAR[severity]}

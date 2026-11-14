@@ -12,11 +12,19 @@ is the one denormalized display column that cannot be recovered without PGN repl
 
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, ForeignKey, Index, SmallInteger, String
-from sqlalchemy.dialects.postgresql import JSONB, REAL
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, SmallInteger, String
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, REAL
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+
+
+def _material_array_shape(column: str) -> str:
+    """CHECK predicate: NULL, or a one-dimensional 9-slot array starting at index 1 (D-09, D-17)."""
+    return (
+        f"{column} IS NULL OR (cardinality({column}) = 9 "
+        f"AND array_lower({column}, 1) = 1 AND array_ndims({column}) = 1)"
+    )
 
 
 class GameFlaw(Base):
@@ -26,6 +34,18 @@ class GameFlaw(Base):
         # Covers: filter by user_id + severity (set-membership) for Games-tab EXISTS
         # and Flaws-tab SELECT queries without a full table scan per user.
         Index("ix_game_flaws_user_severity", "user_id", "severity"),
+        # Phase 254 array shape checks, NOT VALID so the migration skips the table scan
+        # (metadata matches alembic/versions/..._a7d2c9e1b254_phase_254_facepalm_facts.py).
+        CheckConstraint(
+            _material_array_shape("played_line_material"),
+            name="ck_game_flaws_played_line_material_shape",
+            postgresql_not_valid=True,
+        ),
+        CheckConstraint(
+            _material_array_shape("best_line_material"),
+            name="ck_game_flaws_best_line_material_shape",
+            postgresql_not_valid=True,
+        ),
     )
 
     # Natural composite PK: (user_id, game_id, ply) — mirrors game_positions PK.
@@ -121,6 +141,33 @@ class GameFlaw(Base):
     line_loss_9: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     line_mate_ply: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     facepalm_score: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+
+    # Phase 254 facepalm facts (D-09, D-17). Nullable, NULL = not scored. The facepalm score
+    # is computed at query time from these facts (app/services/facepalm_score.py
+    # facepalm_expr), so a refit or a new lambda never rewrites rows. Written only by
+    # app/services/maia_flaw_scoring.py, never by flaw_record_to_row, so a diff/upsert
+    # preserves them by omission.
+    #   played_line_material = signed material after N plies of the played (refutation) line,
+    #                          slot N = depth N (9 slots, one-based); positive = the blunderer
+    #                          is up. Even slots are mid-exchange snapshots and may be NULL.
+    #   best_line_material   = the same along the engine's best line from the decision
+    #                          position; NULL = the best line is unknown (D-18).
+    #   best_line_mate_ply   = ply at which the best line mates the opponent, the best move
+    #                          counting as ply 0; NULL = no mate in the stored best line.
+    #   maia_best_prob       = Maia's probability for the best move at the blunderer's Elo.
+    #   maia_pre_spread      = effective number of replies (2 ** entropy) of the position
+    #                          before the blunder.
+    # The two array columns carry NOT VALID shape CHECKs (NULL or one-dimensional, 9 slots,
+    # lower bound 1), added NOT VALID so the migration stays instant.
+    played_line_material: Mapped[Optional[list[int | None]]] = mapped_column(
+        ARRAY(SmallInteger), nullable=True
+    )
+    best_line_material: Mapped[Optional[list[int | None]]] = mapped_column(
+        ARRAY(SmallInteger), nullable=True
+    )
+    best_line_mate_ply: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    maia_best_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
+    maia_pre_spread: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
 
     # PV-line blob family: write-once JSONB blobs, nullable.
     # These store the principal-variation nodes for the forcing-line tactic gate.

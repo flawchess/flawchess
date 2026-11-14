@@ -1,30 +1,32 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 250
-current_phase_name: Facepalm-Blunder Selection (SEED-261110-p7k)
+current_phase: 254
+current_phase_name: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
 status: executing
-stopped_at: Completed 250-08-PLAN.md
-last_updated: "2026-11-13T21:32:03.759Z"
-state_head: 92e7cc0d96d60a0c18eddfe30c3dab56a15dc244
+stopped_at: Phase 254 context gathered
+last_updated: "2026-11-14T21:02:48.985Z"
+last_activity: 2026-11-14
+last_activity_desc: Phase 254 execution started
+state_head: 570fe693e14edac6e0d29e484121386b11a7ad68
 progress:
-  total_phases: 6
+  total_phases: 8
   completed_phases: 63
-  total_plans: 44
-  completed_plans: 37
+  total_plans: 65
+  completed_plans: 42
 milestone_name: Train Spacing & Archive, Analysis Explain
-last_activity: 2026-11-08
-last_activity_desc: Closed milestones v2.28 (242–243) and v2.29 (244–246) with tags and GitHub releases
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 250 (Facepalm-Blunder Selection (SEED-261110-p7k)) — EXECUTING
-Plan: 9 of 11
+Phase: 254 (Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)) — EXECUTING
+Plan: 1 of 18
 
-Status: Ready to execute
+Status: Executing Phase 254
+
+Last activity: 2026-11-14 — Phase 254 execution started
 
 Open threads carried forward (not blockers):
 
@@ -1122,6 +1124,7 @@ None active.
 | 261112-j47 | Engine wrapper keeps last exact info line; schema v3 gate on 1M-node lease lanes (SEED-261112-s4v Part A backend) | 2026-11-12 | c87b90090 | [261112-j47-engine-wrapper-keep-last-exact-info-line](./quick/261112-j47-engine-wrapper-keep-last-exact-info-line/) |
 | 261112-k56 | Opening cache: 1-2 ply cached lines count as missing, are re-searched and healed (SEED-261112-s4v Part A item 3) | 2026-11-12 | 74fd92567 | [261112-k56-opening-cache-treat-1-2-ply-cached-lines](./quick/261112-k56-opening-cache-treat-1-2-ply-cached-lines/) |
 | 261112-l25 | Frontend engine hooks: bound lines never replace an exact line's moves (SEED-261112-s4v Part A item 4) | 2026-11-12 | be2e625e9 | [261112-l25-frontend-engine-hooks-bound-lines-never-](./quick/261112-l25-frontend-engine-hooks-bound-lines-never-/) |
+| 261114-p12 | Tactic Depth presets All/Low/Mid/High; Facepalm upper handle on multiples of 5%, hint removed | 2026-11-14 | cd158b2fe | [261114-p12-tactic-depth-filter-presets-all-low-mid-](./quick/261114-p12-tactic-depth-filter-presets-all-low-mid-/) |
 
 ## Deferred Items
 
@@ -1174,9 +1177,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-13T21:32:03.448Z
-**Stopped at:** Completed 250-08-PLAN.md
-**Resume file:** None
+**Last session:** 2026-11-14T18:36:19.370Z
+**Stopped at:** Phase 254 context gathered
+**Resume file:** .planning/phases/254-facepalm-score-missed-gains-and-loss-aversion-knob-seed-2611/254-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

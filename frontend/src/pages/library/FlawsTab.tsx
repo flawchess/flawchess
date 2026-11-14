@@ -35,6 +35,7 @@ import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { FlawTag, TacticOrientation } from '@/types/library';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
+import type { FacepalmValue } from '@/lib/facepalm';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -337,6 +338,10 @@ export function FlawsTab() {
         onTacticDepthChange={(next: TacticDepthValue) =>
           setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
         }
+        facepalm={{ min: pendingFlawFilter.facepalmMin, max: pendingFlawFilter.facepalmMax }}
+        onFacepalmChange={(next: FacepalmValue) =>
+          setPendingFlawFilter((prev) => ({ ...prev, facepalmMin: next.min, facepalmMax: next.max }))
+        }
       />
     </div>
   );
@@ -557,6 +562,10 @@ export function FlawsTab() {
             tacticDepth={{ min: pendingFlawFilter.tacticDepthMin, max: pendingFlawFilter.tacticDepthMax }}
             onTacticDepthChange={(next: TacticDepthValue) =>
               setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
+            }
+            facepalm={{ min: pendingFlawFilter.facepalmMin, max: pendingFlawFilter.facepalmMax }}
+            onFacepalmChange={(next: FacepalmValue) =>
+              setPendingFlawFilter((prev) => ({ ...prev, facepalmMin: next.min, facepalmMax: next.max }))
             }
           />
         </MobileFilterDrawer>

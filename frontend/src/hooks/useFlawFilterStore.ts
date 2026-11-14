@@ -3,6 +3,7 @@ import type { FlawTag } from '@/types/library';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TacticOrientation } from '@/types/library';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
+import { DEFAULT_FACEPALM_VALUE } from '@/lib/facepalm';
 
 // ─── State shape ─────────────────────────────────────────────────────────────
 
@@ -29,11 +30,17 @@ export interface FlawFilterState {
   tacticOrientation: TacticOrientation;
   /**
    * Inclusive tactic-depth range bounds (0-based ply, 0..11). The depth
-   * filter is always-on; the default range is the High preset / full range
+   * filter is always-on; the default range is the All preset / full range
    * {0, 11}. min === max is valid (e.g. {0, 0}).
    */
   tacticDepthMin: number;
   tacticDepthMax: number;
+  /**
+   * Facepalm range slider handle positions in whole percents. Default All
+   * {0, 100} filters nothing; any other range narrows to scored blunders.
+   */
+  facepalmMin: number;
+  facepalmMax: number;
   /**
    * "Has gem" / "has great" toggles — independent
    * booleans narrowing the Library games list to games containing at least one
@@ -51,6 +58,8 @@ export const DEFAULT_FLAW_FILTER: FlawFilterState = {
   tacticOrientation: 'either',
   tacticDepthMin: DEFAULT_TACTIC_DEPTH_VALUE.min,
   tacticDepthMax: DEFAULT_TACTIC_DEPTH_VALUE.max,
+  facepalmMin: DEFAULT_FACEPALM_VALUE.min,
+  facepalmMax: DEFAULT_FACEPALM_VALUE.max,
   hasGem: false,
   hasGreat: false,
 };
@@ -58,13 +67,13 @@ export const DEFAULT_FLAW_FILTER: FlawFilterState = {
 /**
  * True when the flaw filter actually narrows the result set — any tag or tactic
  * family selected, severity narrowed to exactly one tier, orientation not 'either',
- * depth range not the full default, or has-gem/has-great on. Empty severity (both
+ * depth range not the full default, facepalm range not All, or has-gem/has-great on. Empty severity (both
  * shown) and both tiers selected (also both shown) are NOT narrowing.
  *
  * CRITICAL: the depth filter is always-on. isFlawFilterNonDefault returns
- * true only when the depth RANGE differs from the High/full-range default {0, 11} —
+ * true only when the depth RANGE differs from the All/full-range default {0, 11} —
  * never merely because it is set. The filter-dot does not light at the default
- * Either + High/full-range state.
+ * Either + All/full-range state.
  *
  * Single source of truth for filter-dot indicators (Games + Flaws tabs) and the
  * games-query gate, so the default never drifts across call sites.
@@ -77,9 +86,13 @@ export function isFlawFilterNonDefault(filter: FlawFilterState): boolean {
     (filter.tacticFamilies?.length ?? 0) > 0 ||
     // Orientation non-default (not 'either') lights the dot.
     (filter.tacticOrientation ?? 'either') !== 'either' ||
-    // Depth range non-default (≠ High/full-range {0, 11}) lights the dot.
+    // Depth range non-default (≠ All/full-range {0, 11}) lights the dot.
     (filter.tacticDepthMin ?? DEFAULT_TACTIC_DEPTH_VALUE.min) !== DEFAULT_TACTIC_DEPTH_VALUE.min ||
     (filter.tacticDepthMax ?? DEFAULT_TACTIC_DEPTH_VALUE.max) !== DEFAULT_TACTIC_DEPTH_VALUE.max ||
+    // Facepalm range non-default (≠ All {0, 100}) lights the dot. Optional-chained
+    // like the depth lines: partial test mocks lacking the fields count as default.
+    (filter.facepalmMin ?? DEFAULT_FACEPALM_VALUE.min) !== DEFAULT_FACEPALM_VALUE.min ||
+    (filter.facepalmMax ?? DEFAULT_FACEPALM_VALUE.max) !== DEFAULT_FACEPALM_VALUE.max ||
     // Either "has gem" or "has great" toggle narrows the result set.
     (filter.hasGem ?? false) ||
     (filter.hasGreat ?? false)

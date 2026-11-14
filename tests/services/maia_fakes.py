@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
-from app.repositories.game_flaws_repository import FACEPALM_COLUMNS
+from app.repositories.game_flaws_repository import FACEPALM_COLUMNS, FACEPALM_PRE_COLUMNS
 from app.repositories.query_utils import mover_is_white_at_ply
 
 # game_flaws.severity value of a blunder (game_flaws_repository._SEVERITY_INT).
@@ -42,11 +42,12 @@ async def assert_maia_lane_state(
     """Post-apply hook lane assertions shared by the drain and endpoint tests (Phase 248 D-07).
 
     Phase 250 D-07: the same post-apply hook scores the facepalm values in every lane, so this
-    helper proves them. Reads the game back and checks: all three completion stamps
-    (``maia_flaws_completed_at`` and the two facepalm stamps) set, or all NULL when
+    helper proves them. Reads the game back and checks: all four completion stamps
+    (``maia_flaws_completed_at``, the spread and line stamps and the Phase 254
+    ``facepalm_pre_completed_at``) set, or all NULL when
     ``expect_stamped`` is False and nothing was written; every user-side blunder whose
     post-blunder position has a legal move has a non-NULL ``maia_reply_spread``, and every
-    other flaw has all eight facepalm columns NULL. User-side is computed with
+    other flaw has every facepalm and pre-blunder column NULL. User-side is computed with
     ``mover_is_white_at_ply`` and the game's user_color. Returns the number of user-side
     blunders carrying a reply spread; callers assert it is at least 1 when their seed
     guarantees a user-side blunder with a legal reply.
@@ -62,6 +63,7 @@ async def assert_maia_lane_state(
         game.maia_flaws_completed_at,
         game.facepalm_spread_completed_at,
         game.facepalm_line_completed_at,
+        game.facepalm_pre_completed_at,
     )
     if expect_stamped:
         assert all(stamp is not None for stamp in stamps)
@@ -77,7 +79,7 @@ async def assert_maia_lane_state(
             assert flaw.maia_reply_spread is not None, flaw.ply
             scored += 1
         elif not (expect_stamped and user_blunder):
-            for column in FACEPALM_COLUMNS:
+            for column in (*FACEPALM_COLUMNS, *FACEPALM_PRE_COLUMNS):
                 assert getattr(flaw, column) is None, (flaw.ply, column)
     return scored
 

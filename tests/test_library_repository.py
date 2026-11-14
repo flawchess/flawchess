@@ -142,6 +142,8 @@ async def _seed_game_flaw(
     missed_tactic_motif: int | None = None,
     missed_tactic_confidence: int | None = None,
     missed_tactic_depth: int | None = None,
+    facepalm_score: float | None = None,
+    is_reversed: bool = False,
 ) -> None:
     """Insert a game_flaws row directly (bypasses classifier).
 
@@ -164,9 +166,10 @@ async def _seed_game_flaw(
                 "phase": 1,  # middlegame
                 "is_miss": False,
                 "is_lucky": False,
-                "is_reversed": False,
+                "is_reversed": is_reversed,
                 "is_squandered": False,
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+                "facepalm_score": facepalm_score,
                 "allowed_tactic_motif": allowed_tactic_motif,
                 "allowed_tactic_confidence": allowed_tactic_confidence,
                 "allowed_tactic_depth": allowed_tactic_depth,
@@ -2671,3 +2674,173 @@ class TestBestMoveExistsFromTable:
         assert game_b.id not in matched_as_a, (
             "user A's has_gem query must not surface user B's game (IDOR)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Facepalm range filter (Phase 253): build_flaw_filter_clauses compile behavior
+# ---------------------------------------------------------------------------
+
+
+def _compile_facepalm_clauses(
+    min_facepalm_pct: int | None, max_facepalm_pct: int | None, *, asyncpg_dialect: bool = False
+) -> str:
+    """Compile only the facepalm clauses of build_flaw_filter_clauses to SQL text."""
+    from sqlalchemy import and_, select
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.dialects.postgresql import asyncpg as pg_asyncpg
+
+    from app.repositories.library_repository import build_flaw_filter_clauses
+
+    clauses = build_flaw_filter_clauses(
+        [],
+        [],
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
+    )
+    if not clauses:
+        return ""
+    dialect = pg_asyncpg.dialect() if asyncpg_dialect else postgresql.dialect()
+    return str(
+        select(GameFlaw.ply)
+        .where(and_(*clauses))
+        .compile(dialect=dialect, compile_kwargs={"literal_binds": False})
+    )
+
+
+class TestFacepalmBuildFlawFilterClauses:
+    """build_flaw_filter_clauses facepalm range: neutral states and band shapes (D-04, D-10)."""
+
+    @pytest.mark.parametrize(
+        ("min_pct", "max_pct"),
+        [(None, None), (0, 100), (0, None), (None, 100)],
+    )
+    def test_neutral_states_add_no_clause(self, min_pct: int | None, max_pct: int | None) -> None:
+        """None and the full 0..100 range (in any mix) add no facepalm clause (D-04)."""
+        assert "facepalm_score" not in _compile_facepalm_clauses(min_pct, max_pct)
+
+    def test_low_band_has_not_null_and_upper_bound_only(self) -> None:
+        """(0, 29): IS NOT NULL plus an upper '<' bound, no '>=' lower bound."""
+        sql = _compile_facepalm_clauses(0, 29)
+        assert "facepalm_score IS NOT NULL" in sql, sql
+        assert "facepalm_score <" in sql, sql
+        assert "facepalm_score >=" not in sql, sql
+
+    def test_high_band_has_not_null_and_lower_bound_only(self) -> None:
+        """(70, 100): IS NOT NULL plus a '>=' lower bound, no upper bound."""
+        sql = _compile_facepalm_clauses(70, 100)
+        assert "facepalm_score IS NOT NULL" in sql, sql
+        assert "facepalm_score >=" in sql, sql
+        assert "facepalm_score <" not in sql, sql
+
+    def test_mid_band_has_both_bounds(self) -> None:
+        """(30, 69): both bounds present."""
+        sql = _compile_facepalm_clauses(30, 69)
+        assert "facepalm_score >=" in sql, sql
+        assert "facepalm_score <" in sql, sql
+
+    def test_asyncpg_binds_double_thresholds_with_no_sql_floor(self) -> None:
+        """Thresholds bind as ::FLOAT (double), never REAL, and the column is never floored.
+
+        Float4 arithmetic in Postgres would disagree with the floored whole percent the
+        frontend shows (RESEARCH Pitfall 3), so the clause compares the REAL column
+        against double thresholds with no SQL floor().
+        """
+        sql = _compile_facepalm_clauses(30, 69, asyncpg_dialect=True)
+        assert sql.count("::FLOAT") == 2, sql
+        assert "::REAL" not in sql, sql
+        assert "floor" not in sql.lower(), sql
+
+
+# ---------------------------------------------------------------------------
+# Facepalm range filter (Phase 253): Games tab same-row AND semantics (D-06)
+# ---------------------------------------------------------------------------
+
+_FP_GAMES_USER_ID = 25351
+_FP_HIGH_MIN_PCT = 70
+_FP_HIGH_MAX_PCT = 100
+_FP_HIGH_SCORE = 0.95
+_FP_LOW_SCORE = 0.20
+
+
+async def _facepalm_game_ids(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    min_facepalm_pct: int | None,
+    max_facepalm_pct: int | None,
+    flaw_tags: list[str] | None = None,
+) -> set[int]:
+    """Run query_filtered_games with a facepalm range and return the matched game ids."""
+    games, _ = await query_filtered_games(
+        session,
+        user_id=user_id,
+        time_control=None,
+        platform=None,
+        rated=None,
+        opponent_type="all",
+        from_date=None,
+        to_date=None,
+        flaw_severity=None,
+        flaw_tags=flaw_tags,
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
+        offset=0,
+        limit=50,
+    )
+    return {g.id for g in games}
+
+
+class TestFacepalmGamesFilter:
+    """Facepalm range on the Games tab shares the single flaw EXISTS with the other filters."""
+
+    @pytest.mark.asyncio
+    async def test_range_and_tag_need_one_flaw_satisfying_both(
+        self, db_session: AsyncSession
+    ) -> None:
+        """G1 has a High flaw A (no tag) and a Low flaw B (reversed): High + reversed misses it.
+
+        G2 has one flaw that is both High and reversed: it matches. The two conditions
+        must hold on the SAME flaw row, exactly like the Flaws tab (D-06).
+        """
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_GAMES_USER_ID)
+        g1 = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
+        await _seed_game_flaw(db_session, game=g1, ply=2, facepalm_score=_FP_HIGH_SCORE)
+        await _seed_game_flaw(
+            db_session, game=g1, ply=4, facepalm_score=_FP_LOW_SCORE, is_reversed=True
+        )
+        g2 = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
+        await _seed_game_flaw(db_session, game=g2, ply=2, facepalm_score=0.90, is_reversed=True)
+
+        ids = await _facepalm_game_ids(
+            db_session,
+            user_id=_FP_GAMES_USER_ID,
+            min_facepalm_pct=_FP_HIGH_MIN_PCT,
+            max_facepalm_pct=_FP_HIGH_MAX_PCT,
+            flaw_tags=["reversed"],
+        )
+        assert g1.id not in ids, "High + reversed must not match across two different flaws"
+        assert g2.id in ids
+
+    @pytest.mark.asyncio
+    async def test_facepalm_only_high_excludes_unscored_only_game(
+        self, db_session: AsyncSession
+    ) -> None:
+        """A facepalm-only High range excludes a game whose only blunder is unscored (D-04)."""
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(db_session, _FP_GAMES_USER_ID)
+        scored = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
+        await _seed_game_flaw(db_session, game=scored, ply=2, facepalm_score=_FP_HIGH_SCORE)
+        unscored = await _seed_game(db_session, user_id=_FP_GAMES_USER_ID, user_color="white")
+        await _seed_game_flaw(db_session, game=unscored, ply=2, facepalm_score=None)
+
+        ids = await _facepalm_game_ids(
+            db_session,
+            user_id=_FP_GAMES_USER_ID,
+            min_facepalm_pct=_FP_HIGH_MIN_PCT,
+            max_facepalm_pct=_FP_HIGH_MAX_PCT,
+        )
+        assert scored.id in ids
+        assert unscored.id not in ids
