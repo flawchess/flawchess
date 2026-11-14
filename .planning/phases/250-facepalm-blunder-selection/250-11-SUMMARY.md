@@ -35,7 +35,7 @@ requirements-completed: [D-11]
 
 # Phase 250 Plan 11: Drop the nine unused Maia columns
 
-**The nine Maia columns and the refutation stamp are dropped on prod; one prod check (live hook) is still open.**
+**The nine Maia columns and the refutation stamp are dropped on prod, and the live hook scores new games on the reduced schema.**
 
 ## Tasks
 
@@ -56,8 +56,7 @@ requirements-completed: [D-11]
 - `maia_*` columns on `game_flaws`: exactly `maia_played_prob`, `maia_reply_spread`.
 - `games.maia_refutation_completed_at`: gone.
 - Sentry, hour after the deploy: only the known "Stale frontend build" notice (2 events); nothing from the Maia hook.
-- **Open: live hook check (O3).** No game finished full evaluation after the deploy, so the hook had nothing to score: the last completion was 10:56:45 UTC, when the only active remote worker (`amalie-pc`) stopped, 35 minutes before the deploy. The check has to be repeated once a worker runs again:
-  `SELECT count(*), count(*) FILTER (WHERE facepalm_spread_completed_at IS NOT NULL) FROM games WHERE maia_flaws_completed_at >= '2026-11-14T11:32:00Z'` (both counts equal and above 0).
+- **Live hook check (O3): passed.** No game finished evaluation in the first 77 minutes after the deploy (the only active remote worker had stopped at 10:56 UTC, before the deploy). The first game evaluated afterwards, 3287023, finished at 12:49:48 UTC and was scored by the hook within a second: all three stamps set, 5 of 5 flaws with `maia_played_prob`, 2 user blunders with a reply spread and a facepalm score.
 
 ## Deviations from Plan
 
@@ -70,4 +69,4 @@ requirements-completed: [D-11]
 
 Plan 250-10 (D-18 refit and prod line pass) is the only plan left; it waits on the Phase 252 prod line repair.
 
-## Self-Check: PASSED (code and schema); live hook check open
+## Self-Check: PASSED
