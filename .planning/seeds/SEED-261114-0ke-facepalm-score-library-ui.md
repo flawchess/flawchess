@@ -81,4 +81,6 @@ coverage.
 ## Notes
 
 Open details for discuss-phase: slider step (5% suggested), whether a narrowed range shows a hint that only
-scored blunders remain, chip placement and color on the card, chip casing (follow the other chips).
+scored blunders remain, chip placement and color on the card.
+
+Casing (owner, 2026-11-14): capitalized, `Facepalm 94%`, consistent with the other chips on the flaw card.
