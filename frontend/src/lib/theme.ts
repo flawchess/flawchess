@@ -190,6 +190,10 @@ export const FAM_IMPACT = FAM_NEUTRAL;
 export const FAM_IMPACT_BG = FAM_NEUTRAL_BG;
 export const FAM_PHASE = FAM_NEUTRAL;
 export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
+// Facepalm chips (Flaws card, analysis move list): the same neutral white as the
+// context tags, not the blunder red, so they read as a tag beside the red "??".
+export const FACEPALM_CHIP = FAM_NEUTRAL;
+export const FACEPALM_CHIP_BG = FAM_NEUTRAL_BG;
 
 // Tactic motif family colors.
 // Every tactic family renders in a single blue (indigo) so all

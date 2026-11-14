@@ -166,6 +166,7 @@ def _build_eval_series(
     tactic_by_ply: dict[int, _TacticByPlyEntry] | None = None,
     best_moves_by_ply: dict[int, GameBestMove] | None = None,
     opening_ply_count: int = 0,
+    facepalm_by_ply: dict[int, float] | None = None,
 ) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
     """Compute white-perspective ES line, flaw markers, and phase transitions.
 
@@ -196,6 +197,9 @@ def _build_eval_series(
                        Gates the best/good tiers to out-of-book plies
                        (pos.ply >= opening_ply_count) — book/theory plies never
                        get a best/good label. Defaults to 0 (no book gate).
+        facepalm_by_ply: Optional dict mapping flaw ply -> raw 0..1 facepalm score from
+                       game_flaws (scored rows only). None/missing entry ->
+                       FlawMarker.facepalm_score stays null.
 
     Returns:
         (eval_series, flaw_markers, phase_transitions) tuple where:
@@ -389,6 +393,13 @@ def _build_eval_series(
                 missed_tactic_motif=tac_missed_motif,
                 missed_tactic_confidence=tac_missed_conf,
                 missed_tactic_depth=tac_missed_depth,
+                # Bug fix (253 review WR-01): blunders only. The score is stored on the
+                # flaw row but severity here comes from the live evals, so after a
+                # re-evaluation a stale score could ride on a mistake marker until the
+                # next Maia pass clears it.
+                facepalm_score=(
+                    (facepalm_by_ply or {}).get(pos.ply) if severity == "blunder" else None
+                ),
             )
         )
 
@@ -675,6 +686,11 @@ def _build_card(
                 if entry is not None:
                     ply, tactic_entry = entry
                     tactic_by_ply[ply] = tactic_entry
+            # Facepalm scores ride on the same both-color row list; a row without a
+            # score (every non-blunder, every unscored blunder) contributes nothing.
+            facepalm_by_ply: dict[int, float] = {
+                fr.ply: fr.facepalm_score for fr in rows_for_tactic if fr.facepalm_score is not None
+            }
             # SAN mainline for client-side per-ply board reconstruction on chart
             # hover. move_san is None on the terminal position only — filter it out
             # so moves[i] aligns with ply i (positions are ply-ordered). Quick
@@ -688,6 +704,7 @@ def _build_card(
                 tactic_by_ply=tactic_by_ply if tactic_by_ply else None,
                 best_moves_by_ply=best_moves_by_ply,
                 opening_ply_count=find_opening_ply_count(moves_data) if moves_data else 0,
+                facepalm_by_ply=facepalm_by_ply or None,
             )
             eval_series_data = eval_series_val
             flaw_marker_data = flaw_marker_val
@@ -930,6 +947,8 @@ async def get_library_games(
     tactic_orientation: Literal["either", "missed", "allowed"] = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    min_facepalm_pct: int | None = None,
+    max_facepalm_pct: int | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -989,6 +1008,8 @@ async def get_library_games(
             tactic_orientation=tactic_orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
+            min_facepalm_pct=min_facepalm_pct,
+            max_facepalm_pct=max_facepalm_pct,
             offset=offset,
             limit=limit,
             opponent_gap_min=opponent_gap_min,
@@ -1275,6 +1296,8 @@ async def get_library_flaws(
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    min_facepalm_pct: int | None = None,
+    max_facepalm_pct: int | None = None,
     offset: int,
     limit: int,
     include_pasted: bool = False,
@@ -1326,6 +1349,8 @@ async def get_library_flaws(
             orientation=tactic_orientation,
             min_tactic_depth=min_tactic_depth,
             max_tactic_depth=max_tactic_depth,
+            min_facepalm_pct=min_facepalm_pct,
+            max_facepalm_pct=max_facepalm_pct,
             offset=offset,
             limit=limit,
         )

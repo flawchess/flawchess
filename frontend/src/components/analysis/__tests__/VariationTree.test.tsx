@@ -527,6 +527,37 @@ describe('VariationTree', () => {
     expect(svgs.length).toBeGreaterThan(0);
   });
 
+  it('(10b) a scored blunder shows the Facepalm mini-chip with the floored percent; unscored shows none', () => {
+    const { nodes, mainLine } = buildPvFixture();
+    const entry: FlawMarkerEntry = {
+      missedMotif: null, allowedMotif: null, missedDepth: null, allowedDepth: null, severity: 'blunder', ply: 1,
+    };
+    const { unmount } = render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, { ...entry, facepalmScore: 0.957, facepalmByOpponent: true }]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    const chips = screen.getAllByTestId('facepalm-move-popover');
+    expect(chips.length).toBeGreaterThan(0);
+    expect((chips[0] as HTMLElement).textContent).toBe('95%');
+    expect((chips[0] as HTMLElement).querySelector('svg.lucide-tree-palm')).not.toBeNull();
+    unmount();
+    render(
+      <VariationTree
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={null}
+        flawMarkerByNodeId={new Map([[2, entry]])}
+        onNodeClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('facepalm-move-popover')).toBeNull();
+  });
+
   it('(11) inaccuracy severity renders no chip and no marker', () => {
     // Use the mainLine-only fixture (no sidelines at all) so the SVG count is not
     // contaminated by a free-move block's × delete-icon — the tree renders

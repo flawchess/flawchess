@@ -15,6 +15,7 @@ and orientation="allowed" (default) references allowed_tactic_motif.
 
 import datetime
 
+import pytest
 from sqlalchemy import select
 
 from app.models.game import Game
@@ -481,3 +482,63 @@ class TestTacticDepthAndEitherFilter:
             assert "tactic_confidence" in sql, (
                 f"apply_game_filters orientation={orientation!r} must gate on confidence; got: {sql}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Facepalm range gate for apply_game_filters (Phase 253, D-06)
+# ---------------------------------------------------------------------------
+
+
+class TestFacepalmGate:
+    """The facepalm range activates the single flaw EXISTS on its own (D-04, D-06)."""
+
+    def _stmt_sql(
+        self,
+        min_facepalm_pct: int | None,
+        max_facepalm_pct: int | None,
+        user_id: int | None = 1,
+    ) -> str:
+        """Compile apply_game_filters carrying only the facepalm range."""
+        stmt = select(Game.id).where(Game.user_id == 1)
+        stmt = apply_game_filters(
+            stmt,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            user_id=user_id,
+            min_facepalm_pct=min_facepalm_pct,
+            max_facepalm_pct=max_facepalm_pct,
+        )
+        return _compile_sql(stmt)
+
+    def test_facepalm_only_range_builds_flaw_exists(self) -> None:
+        """A narrowed range alone must add the game_flaws EXISTS with the score clause.
+
+        Without the facepalm term in the activity gate a facepalm-only Games-tab filter
+        silently returns every game (the bug class the tactic depth filter once had).
+        """
+        sql = self._stmt_sql(70, 100)
+        assert "EXISTS" in sql, f"facepalm-only range must build the flaw EXISTS; got: {sql}"
+        assert "facepalm_score" in sql, f"EXISTS must reference facepalm_score; got: {sql}"
+
+    def test_full_range_adds_no_clause(self) -> None:
+        """0..100 is the neutral full range: no facepalm clause, no flaw EXISTS."""
+        sql = self._stmt_sql(0, 100)
+        assert "facepalm_score" not in sql, f"full range must add no clause; got: {sql}"
+        assert "game_flaws" not in sql, f"full range must not build the EXISTS; got: {sql}"
+
+    def test_none_range_adds_no_clause(self) -> None:
+        """Both bounds omitted: every non-library caller is unchanged."""
+        sql = self._stmt_sql(None, None)
+        assert "facepalm_score" not in sql, f"None range must add no clause; got: {sql}"
+        assert "game_flaws" not in sql, f"None range must not build the EXISTS; got: {sql}"
+
+    def test_narrowed_range_requires_user_id(self) -> None:
+        """Scoping needs user_id, so a narrowed range with user_id None raises (message unchanged)."""
+        with pytest.raises(
+            ValueError, match="flaw/tactic filter requires user_id for EXISTS scoping"
+        ):
+            self._stmt_sql(70, 100, user_id=None)

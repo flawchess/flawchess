@@ -71,6 +71,24 @@ Out of scope: the score in the blunder-check solution screen; facepalm rate stat
   non-interactive `Blunder` span, with no popover. Mistake and Inaccuracy badges never change. The Games-card
   count badges (`3 Blunders`) are untouched.
 
+### UAT revision (owner feedback, 2026-11-14, commit 20127b5cc; supersedes D-14 to D-16, D-18, D-19 where they conflict)
+- **D-20: The score is its own chip again.** On the Flaws card a `<TreePalm> Facepalm 94%` pill sits right after
+  the Blunder badge, sized and colored like the neutral context tags (`FACEPALM_CHIP*` in theme.ts), not blunder
+  red. Replaces D-14 and D-15. The chip is the popover trigger with the D-16 behavior (hover, click or tap,
+  keyboard focus). D-17 still holds: scored blunders only.
+- **D-21: Severity badges lead with the move-quality glyph** on the Flaws card (`??` / `?`, the move-list icon).
+  Games-card count badges stay icon-less.
+- **D-22: The score also shows on the analysis surfaces.** Analysis move list: a `<TreePalm> 95%` mini-chip after
+  the `??` glyph of a scored blunder, with the same explanation popover. Eval chart tooltip: a `Facepalm 95%`
+  line below the severity verdict. `FlawMarker` carries `facepalm_score` for this. No opponent scoring is added:
+  only rows that already have a score show one (wording switches to "their level" if an opponent row ever does).
+- **D-23: One shared explanation copy, filter renamed "Facepalm Score".** Replaces the D-18 and D-19 wording:
+  > How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high
+  > facepalm score means it should be easy to see, low means it's probably hard to see.
+
+  The filter popover keeps its second paragraph (band ranges). The explicit "Not a probability." sentence is
+  dropped; D-03 still bans probability wording.
+
 ### Popover copy (owner-approved wording)
 - **D-18: Blunder badge popover.** A heading line `Facepalm 94%` (the word names the icon, owner 2026-11-14),
   then:

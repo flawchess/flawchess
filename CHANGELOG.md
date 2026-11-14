@@ -14,6 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis data: every mistake and blunder now records how likely players at your rating were to play it, according to the Maia model, the groundwork for upcoming blunder-check training.
 - Analysis data: each of your blunders now also records how likely a player at your rating was to find the punishing reply, the next piece of groundwork for blunder-check training.
 - Analysis data: each of your blunders now records how many replies your opponent had to choose from and how much material the engine's punishing line wins, the inputs to the blunder-check selection.
+- Library: a Facepalm Score filter in the Tags panel on the Games and Flaws tabs narrows your blunders by how obvious they were for a player at your level (Low, Mid, High, or any range on the slider), and each scored blunder shows its Facepalm score as a chip on the Flaws tab, in the analysis move list and in the eval chart tooltip, with a short explanation on hover or tap.
 
 ### Changed
 

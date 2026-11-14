@@ -91,4 +91,31 @@ describe('SeverityBadge', () => {
       expect(badge.className).not.toContain('hover:-translate-y-px');
     });
   });
+  describe('move-quality icon (Flaws card)', () => {
+    it.each([
+      ['blunder', '??'],
+      ['mistake', '?'],
+    ] as const)('a %s badge with showIcon leads with the %s glyph', (severity, glyph) => {
+      render(<SeverityBadge severity={severity} count={1} gameId={9} showCount={false} showIcon />);
+      const badge = screen.getByTestId(`severity-${severity}-9`);
+      expect(badge.firstElementChild?.tagName.toLowerCase()).toBe('svg');
+      expect(badge.querySelector('svg text')?.textContent).toBe(glyph);
+    });
+
+    it('renders no icon by default and a count badge (Games card) is unchanged', () => {
+      render(<SeverityBadge severity="blunder" count={3} gameId={11} />);
+      const badge = screen.getByTestId('severity-blunder-11');
+      expect(badge.querySelector('svg')).toBeNull();
+      expect(badge.textContent).toBe('3Blunders');
+      expect(badge.className).not.toContain('hover:-translate-y-px');
+    });
+
+    it('never carries the facepalm score: no button, no percent', () => {
+      const { container } = render(
+        <SeverityBadge severity="blunder" count={1} gameId={12} showCount={false} showIcon />,
+      );
+      expect(container.querySelector('button')).toBeNull();
+      expect(screen.getByTestId('severity-blunder-12').textContent).toBe('??Blunder');
+    });
+  });
 });

@@ -175,6 +175,12 @@ export interface FlawMarker {
   missed_tactic_confidence: number | null;
   /** 0-based ply depth of the missed tactic; null when its motif chip is hidden. Display as depth+1. */
   missed_tactic_depth: number | null;
+  /**
+   * Raw 0..1 facepalm score of this blunder; null/absent when unscored (today the
+   * backend scores only the user's own blunders). Floor with toFacepalmPct. Mirrors
+   * backend FlawMarker.facepalm_score.
+   */
+  facepalm_score?: number | null;
 }
 
 /** First ply of middlegame and endgame phases (at most two phase lines). */
@@ -283,6 +289,12 @@ export interface FlawListItem {
   missed_tactic_depth: number | null;
   /** Engine best move FROM the pre-flaw position (UCI); null when no PV captured. */
   best_move: string | null;
+  /**
+   * Raw 0..1 facepalm score of the user's blunder (Phase 250); null when unscored.
+   * The Facepalm chip shows it floored to a whole percent. A ranking of how obvious
+   * the blunder was, not a probability. Mirrors backend FlawListItem.facepalm_score.
+   */
+  facepalm_score: number | null;
 }
 
 /** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */

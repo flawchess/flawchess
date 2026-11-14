@@ -5,6 +5,7 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { FlawFilterControl } from '../FlawFilterControl';
 import { OpponentStrengthFilter } from '../OpponentStrengthFilter';
 import { TacticDepthFilter } from '../TacticDepthFilter';
+import { FacepalmFilter } from '../FacepalmFilter';
 import { ANY_RANGE } from '@/lib/opponentStrength';
 import type { OpponentStrengthRange } from '@/types/api';
 import {
@@ -12,6 +13,11 @@ import {
   presetToRange,
   type TacticDepthValue,
 } from '@/lib/tacticDepth';
+import {
+  DEFAULT_FACEPALM_VALUE,
+  presetToRange as facepalmPresetToRange,
+  type FacepalmValue,
+} from '@/lib/facepalm';
 import type { FlawTag } from '@/types/library';
 import { SLIDER_TRACK_DEBOUNCE_MS } from '@/hooks/useDebouncedTrackFeature';
 
@@ -518,6 +524,18 @@ describe('filter-change tracking', () => {
     expectSingleEvent({ target: 'opponent-strength', value: 'stronger' });
   });
 
+  it('reports a facepalm preset change with the preset key, never bounds', () => {
+    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('filter-facepalm-preset-high'));
+    expectSingleEvent({ target: 'facepalm', value: 'high' });
+  });
+
+  it('stays silent when the already-active facepalm preset is re-clicked', () => {
+    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('filter-facepalm-preset-all'));
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it('stays silent when the already-active preset is re-clicked', () => {
     render(
       <>
@@ -599,6 +617,29 @@ describe('filter-change tracking', () => {
       expect(['any', 'stronger', 'similar', 'weaker', 'custom']).toContain(props.value);
     });
 
+    function StatefulFacepalm() {
+      const [value, setValue] = useState<FacepalmValue>(DEFAULT_FACEPALM_VALUE);
+      return <FacepalmFilter value={value} onChange={setValue} />;
+    }
+
+    it('reports a facepalm slider commit as one debounced preset-or-custom event', () => {
+      render(<StatefulFacepalm />);
+      const slider = screen.getByTestId('filter-facepalm-slider');
+      stubSliderRect(slider);
+      fireEvent.pointerDown(slider, { clientX: 100, pointerId: 1, button: 0, buttons: 1 });
+      fireEvent.pointerMove(slider, { clientX: 120, pointerId: 1, buttons: 1 });
+      expect(track).not.toHaveBeenCalled();
+      fireEvent.pointerUp(slider, { clientX: 120, pointerId: 1 });
+      expect(track).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
+      expect(track).toHaveBeenCalledTimes(1);
+      const [name, props] = track.mock.calls[0] as [string, Record<string, string>];
+      expect(name).toBe('filter-change');
+      expect(props.target).toBe('facepalm');
+      // Never the bounds: only a preset key or 'custom'.
+      expect(['all', 'low', 'mid', 'high', 'custom']).toContain(props.value);
+    });
+
     it('reports a tactic-depth slider commit as a preset or custom', () => {
       render(<StatefulDepth />);
       const slider = screen.getByTestId('filter-tactic-depth-slider');
@@ -629,5 +670,136 @@ describe('TacticDepthFilter summary highlight', () => {
   it('highlights once the range narrows to Medium', () => {
     render(<TacticDepthFilter value={presetToRange('medium')} onChange={vi.fn()} />);
     expect(summary().className).toContain('text-toggle-active');
+  });
+});
+
+describe('Facepalm section', () => {
+  afterEach(cleanup);
+
+  const summary = () => screen.getByTestId('filter-facepalm-summary');
+
+  it('renders under onFacepalmChange and emits handles 70/100 for High', () => {
+    const onFacepalmChange = vi.fn();
+    render(<FlawFilterControl {...defaultProps} onFacepalmChange={onFacepalmChange} />);
+    expect(screen.getByTestId('filter-facepalm')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('filter-facepalm-preset-high'));
+    expect(onFacepalmChange).toHaveBeenCalledTimes(1);
+    expect(onFacepalmChange).toHaveBeenCalledWith({ min: 70, max: 100 });
+  });
+
+  it('is absent without the onFacepalmChange handler', () => {
+    render(<FlawFilterControl {...defaultProps} />);
+    expect(screen.queryByTestId('filter-facepalm')).toBeNull();
+  });
+
+  it('labels the section Facepalm Score', () => {
+    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
+    expect(screen.getByTestId('filter-facepalm').textContent).toContain('Facepalm Score');
+  });
+
+  describe('hint (D-12)', () => {
+    it('is absent at All', () => {
+      render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
+      expect(screen.queryByTestId('filter-facepalm-hint')).toBeNull();
+    });
+
+    it.each(['low', 'mid', 'high'] as const)('shows the exact text at %s', (preset) => {
+      render(<FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />);
+      expect(screen.getByTestId('filter-facepalm-hint').textContent).toBe('Mistakes are excluded');
+    });
+
+    it('shows at a custom range', () => {
+      render(<FacepalmFilter value={{ min: 40, max: 40 }} onChange={vi.fn()} />);
+      expect(screen.getByTestId('filter-facepalm-hint').textContent).toBe('Mistakes are excluded');
+    });
+
+    it('is not rendered by TacticDepthFilter', () => {
+      const { container } = render(
+        <TacticDepthFilter value={DEFAULT_TACTIC_DEPTH_VALUE} onChange={vi.fn()} />,
+      );
+      expect(container.querySelector('[data-testid$="-hint"]')).toBeNull();
+    });
+  });
+
+  describe('summary', () => {
+    it('is muted and reads All at the default', () => {
+      render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
+      expect(summary().textContent).toBe('All');
+      expect(summary().className).toContain('text-muted-foreground');
+      expect(summary().className).not.toContain('text-toggle-active');
+    });
+
+    it.each([
+      ['low', '0-29%'],
+      ['mid', '30-69%'],
+      ['high', '70-100%'],
+    ] as const)('reads %s as %s in the active style', (preset, text) => {
+      render(<FacepalmFilter value={facepalmPresetToRange(preset)} onChange={vi.fn()} />);
+      expect(summary().textContent).toBe(text);
+      expect(summary().className).toContain('text-toggle-active');
+    });
+
+    it('reads handles 40/40 as 40-44%', () => {
+      render(<FacepalmFilter value={{ min: 40, max: 40 }} onChange={vi.fn()} />);
+      expect(summary().textContent).toBe('40-44%');
+      expect(summary().className).toContain('text-toggle-active');
+    });
+  });
+
+  it('renders the chips in order All, Low, Mid, High with only the active one pressed', () => {
+    render(<FacepalmFilter value={facepalmPresetToRange('mid')} onChange={vi.fn()} />);
+    const chips = Array.from(screen.getByTestId('filter-facepalm-presets').querySelectorAll('button'));
+    expect(chips.map((c) => c.textContent)).toEqual(['All', 'Low', 'Mid', 'High']);
+    expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false']);
+  });
+
+  it('holds both owner-approved info paragraphs verbatim in the popover', () => {
+    render(<FacepalmFilter value={DEFAULT_FACEPALM_VALUE} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('filter-facepalm-info'));
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(
+      "How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high facepalm score means it should be easy to see, low means it's probably hard to see.",
+    );
+    expect(text).toContain(
+      'Low keeps 0 to 29%, Mid 30 to 69%, High 70 to 100%. Drag either handle for a custom range. Any range other than All shows blunders only.',
+    );
+  });
+
+  it('sits under Flaws severity and above Best Moves and Tactic Depth (D-13)', () => {
+    render(
+      <FlawFilterControl
+        {...defaultProps}
+        showTacticFilter
+        onFacepalmChange={vi.fn()}
+        onHasGemToggle={vi.fn()}
+        onHasGreatToggle={vi.fn()}
+      />,
+    );
+    const mistake = screen.getByTestId('filter-flaw-severity-mistake');
+    const facepalm = screen.getByTestId('filter-facepalm');
+    const gem = screen.getByTestId('filter-has-gem');
+    const depth = screen.getByTestId('filter-tactic-depth');
+    const follows = (a: HTMLElement, b: HTMLElement) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(mistake, facepalm)).toBe(true);
+    expect(follows(facepalm, gem)).toBe(true);
+    expect(follows(facepalm, depth)).toBe(true);
+  });
+
+  it('leaves the severity toggles untouched by a narrowed range (D-11)', () => {
+    render(
+      <FlawFilterControl
+        {...defaultProps}
+        severity={['blunder']}
+        facepalm={{ min: 70, max: 100 }}
+        onFacepalmChange={vi.fn()}
+      />,
+    );
+    const blunder = screen.getByTestId('filter-flaw-severity-blunder');
+    const mistake = screen.getByTestId('filter-flaw-severity-mistake');
+    expect(blunder.hasAttribute('disabled')).toBe(false);
+    expect(mistake.hasAttribute('disabled')).toBe(false);
+    expect(blunder.getAttribute('aria-pressed')).toBe('true');
+    expect(mistake.getAttribute('aria-pressed')).toBe('false');
   });
 });

@@ -78,6 +78,15 @@ MIN_TACTIC_CHIP_CONFIDENCE: int = 70  # 0-100 scale matching tactic_confidence c
 _TACTIC_DEPTH_FULL_MIN: int = 0
 _TACTIC_DEPTH_FULL_MAX: int = 11
 
+# Facepalm score range filter: inclusive whole-percent bounds on the floored scale the
+# Flaws-card Facepalm chip shows. Mirrors FACEPALM_PCT_MIN / FACEPALM_PCT_MAX in
+# frontend/src/lib/facepalm.ts. Deliberately this module's own constants, independent of
+# the blunder-check drill cut, so a refit of that cut never moves the filter (D-09, D-07).
+# Public because the router uses them as Query bounds.
+FACEPALM_PCT_MIN: int = 0
+FACEPALM_PCT_MAX: int = 100
+_FACEPALM_PCT_SCALE: float = 100.0
+
 # Decision-anchored depth offset for the ALLOWED orientation.
 # missed_tactic_depth and allowed_tactic_depth both store the RAW 0-based detector
 # loop index within their own PV. The missed PV starts at the decision board
@@ -312,6 +321,35 @@ def _tactic_controls_active(
     max_active = max_tactic_depth is not None and max_tactic_depth != _TACTIC_DEPTH_FULL_MAX
     depth_active = min_active or max_active
     return families_active or orientation_active or depth_active
+
+
+def facepalm_range_active(min_pct: int | None, max_pct: int | None) -> bool:
+    """Return True when the inclusive percent range is narrower than the full 0..100.
+
+    The full range (or both bounds None) means no facepalm filter and no clause (D-04).
+    """
+    min_active = min_pct is not None and min_pct != FACEPALM_PCT_MIN
+    max_active = max_pct is not None and max_pct != FACEPALM_PCT_MAX
+    return min_active or max_active
+
+
+def _facepalm_clause(min_pct: int | None, max_pct: int | None) -> ColumnElement[bool] | None:
+    """Score clause: floor(100 * score) in [min_pct, max_pct], NULL scores excluded (D-04, D-10).
+
+    Written as two float comparisons with no floor() or multiplication on the column: the
+    stored REAL is compared against plain Python float thresholds, which asyncpg binds as
+    double precision. Float4 arithmetic in Postgres (real * integer) would disagree with the
+    floored whole percent the frontend shows, e.g. a stored 0.69999999 could round to 70.0.
+    An inverted range (min > max) is not validated and simply matches nothing.
+    """
+    if not facepalm_range_active(min_pct, max_pct):
+        return None
+    bounds: list[ColumnElement[bool]] = [GameFlaw.facepalm_score.isnot(None)]
+    if min_pct is not None and min_pct > FACEPALM_PCT_MIN:
+        bounds.append(GameFlaw.facepalm_score >= min_pct / _FACEPALM_PCT_SCALE)
+    if max_pct is not None and max_pct < FACEPALM_PCT_MAX:
+        bounds.append(GameFlaw.facepalm_score < (max_pct + 1) / _FACEPALM_PCT_SCALE)
+    return and_(*bounds)
 
 
 def tactic_slot_visible(
@@ -590,6 +628,8 @@ def build_flaw_filter_clauses(
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
     decided_lost: ColumnElement[bool] | None = None,
+    min_facepalm_pct: int | None = None,
+    max_facepalm_pct: int | None = None,
 ) -> list[ColumnElement[bool]]:
     """Return WHERE clauses filtering game_flaws rows (family-aware logic).
 
@@ -631,6 +671,10 @@ def build_flaw_filter_clauses(
                   tempo, opportunity, impact, and phase clauses are NOT gated. Callers
                   build this expression via decided_lost_sql and pass it here.
                   None (default) = no suppression (backward-compatible).
+        min_facepalm_pct / max_facepalm_pct: Inclusive whole-percent bounds on the
+                  floored facepalm score (0..100). None, or the full 0..100 range, =
+                  no facepalm clause. A narrowed range keeps only rows with a non-NULL
+                  score inside it. NOT gated by decided_lost (that gate is tactic-only).
 
     Returns:
         A list of SQLAlchemy column expressions. Empty list = no flaw filter
@@ -688,6 +732,11 @@ def build_flaw_filter_clauses(
     if tactic_clause is not None:
         clauses.append(tactic_clause)
 
+    # Facepalm score range: rides the same single flaw row as every other family (D-06).
+    facepalm_clause = _facepalm_clause(min_facepalm_pct, max_facepalm_pct)
+    if facepalm_clause is not None:
+        clauses.append(facepalm_clause)
+
     return clauses
 
 
@@ -699,17 +748,20 @@ def flaw_exists_from_table(
     orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    min_facepalm_pct: int | None = None,
+    max_facepalm_pct: int | None = None,
 ) -> ColumnElement[bool]:
     """Correlated EXISTS: True iff the game has >=1 flaw row satisfying the filter.
 
     game_flaws-backed EXISTS. Scopes to the authenticated user and the outer
     Game.id so cross-user leaks are impossible.
 
-    Returns true() when no filter family is active (severity, tags, AND tactics
-    all empty/default) — no filter = match all games, so callers that pass no
-    filter see no restriction added.
+    Returns true() when no filter family is active (severity, tags, tactics, AND the
+    facepalm range all empty/default) — no filter = match all games, so callers that
+    pass no filter see no restriction added.
 
-    All filter families (severity, context tags, AND tactic motif/orientation/depth)
+    All filter families (severity, context tags, tactic motif/orientation/depth, AND
+    the facepalm range)
     are ANDed onto the SAME game_flaws row via build_flaw_filter_clauses. This is the
     single-row AND semantics the Flaws list uses (query_flaws): a game matches only
     when ONE flaw satisfies every selected condition together — e.g. a flaw that is
@@ -725,6 +777,8 @@ def flaw_exists_from_table(
         orientation: Which tactic column set to filter on ("either"/"missed"/"allowed").
         min_tactic_depth / max_tactic_depth: Inclusive depth-range bounds on the
                  active orientation's depth column. None = unbounded that side.
+        min_facepalm_pct / max_facepalm_pct: Inclusive whole-percent facepalm range on
+                 the floored score. None or the full 0..100 = no facepalm clause.
     """
     # Decided-lost suppression: LEFT JOIN the pre-move position (ply N-1) inside the
     # EXISTS so the SQL gate has access to eval_cp/eval_mate. LEFT JOIN so ply 0/1
@@ -746,6 +800,8 @@ def flaw_exists_from_table(
         min_tactic_depth,
         max_tactic_depth,
         decided_lost=dl,
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
     )
     if not clauses:
         # No filter — match all games (caller decides whether to add to statement)
@@ -1011,6 +1067,7 @@ def _build_flaw_item(
         ),
         missed_tactic_confidence=(flaw.missed_tactic_confidence if missed_visible else None),
         missed_tactic_depth=(flaw.missed_tactic_depth if missed_visible else None),
+        facepalm_score=flaw.facepalm_score,
     )
 
 
@@ -1064,6 +1121,8 @@ async def query_flaws(
     orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    min_facepalm_pct: int | None = None,
+    max_facepalm_pct: int | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[FlawListItem], int]:
@@ -1090,6 +1149,9 @@ async def query_flaws(
         tags: FlawTag values to filter on (phase tags filter on game_flaws.phase).
         time_control / platform / rated / opponent_type / from_date / to_date /
           color: Game-metadata filters (threaded through apply_game_filters).
+        min_facepalm_pct / max_facepalm_pct: Inclusive whole-percent facepalm range on the
+          floored score. None or the full 0..100 = no filter; a narrowed range keeps only
+          the user's own scored flaws inside it (D-04, D-05).
         offset: Pagination offset (>= 0).
         limit: Page size (1..100, default 20).
 
@@ -1113,6 +1175,8 @@ async def query_flaws(
         min_tactic_depth,
         max_tactic_depth,
         decided_lost=dl_sql,
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
     )
 
     # Three aliases for game_positions:
@@ -1552,6 +1616,8 @@ async def query_filtered_games(
     tactic_orientation: TacticOrientation = "either",
     min_tactic_depth: int | None = None,
     max_tactic_depth: int | None = None,
+    min_facepalm_pct: int | None = None,
+    max_facepalm_pct: int | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -1575,6 +1641,9 @@ async def query_filtered_games(
     SAME classifier the board uses — union semantics when both are
     set. When all of flaw_severity / flaw_tags / tactic_families / has_gem /
     has_great are None/empty/False the query is a plain filtered archive (no EXISTS).
+    min_facepalm_pct / max_facepalm_pct (inclusive whole percents) join the same single
+    flaw EXISTS, so a game matches only when ONE user flaw satisfies the range together
+    with every other selected flaw condition (D-06).
 
     Returns (page_games, matched_count) where matched_count reflects ALL matching
     games before offset/limit. Ordered played_at DESC nulls last. The user_id is
@@ -1598,6 +1667,8 @@ async def query_filtered_games(
         orientation=tactic_orientation,
         min_tactic_depth=min_tactic_depth,
         max_tactic_depth=max_tactic_depth,
+        min_facepalm_pct=min_facepalm_pct,
+        max_facepalm_pct=max_facepalm_pct,
         user_id=user_id,
         has_gem=has_gem,
         has_great=has_great,

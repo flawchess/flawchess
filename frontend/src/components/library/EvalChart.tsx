@@ -34,13 +34,14 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, Cpu } from 'lucide-react';
+import { Clock, Cpu, TreePalm } from 'lucide-react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { GemIcon } from '@/components/icons/GemIcon';
 import { GreatMoveIcon } from '@/components/icons/GreatMoveIcon';
 import { bestMoveDotSpec } from '@/lib/bestMoveDot';
+import { toFacepalmPct } from '@/lib/facepalm';
 import { isUserPly } from '@/lib/plyOwnership';
 import { TAG_ICONS, getTagColor } from '@/lib/tagVisuals';
 import {
@@ -1188,6 +1189,17 @@ export function EvalChart({
                     {activeMarker.severity.charAt(0).toUpperCase() + activeMarker.severity.slice(1)}
                   </span>
                 </div>
+                {/* Facepalm score of a scored blunder, on its own line below the verdict. */}
+                {activeMarker.severity === 'blunder' && activeMarker.facepalm_score != null && (
+                  <div
+                    className="flex items-center gap-1.5"
+                    style={{ color: severityColor(activeMarker.severity) }}
+                    data-testid="eval-chart-tooltip-facepalm"
+                  >
+                    <TreePalm className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span>Facepalm {toFacepalmPct(activeMarker.facepalm_score)}%</span>
+                  </div>
+                )}
                 {(tooltipTactics.length > 0 || tooltipTags.length > 0) && (
                   <ul className="flex flex-col gap-0.5 text-muted-foreground">
                     {/* Tactic motifs listed first, each prefixed with its

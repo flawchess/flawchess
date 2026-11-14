@@ -46,9 +46,12 @@ import {
   TACTIC_GROUPS,
 } from '@/lib/tacticComparisonMeta';
 import { TacticDepthFilter } from '@/components/filters/TacticDepthFilter';
+import { FacepalmFilter } from '@/components/filters/FacepalmFilter';
 import { onOff, trackFeature } from '@/lib/analytics';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
+import { DEFAULT_FACEPALM_VALUE } from '@/lib/facepalm';
+import type { FacepalmValue } from '@/lib/facepalm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,6 +80,14 @@ export interface FlawFilterControlProps {
    */
   tacticDepth?: TacticDepthValue;
   onTacticDepthChange?: (next: TacticDepthValue) => void;
+  /**
+   * Facepalm range (handle positions, whole percents). Default All (full range).
+   * Rendered directly under the Flaws section, above Best Moves and Tactic Depth,
+   * and only when onFacepalmChange is supplied (both Library tabs do;
+   * LibraryFilterPanel does not).
+   */
+  facepalm?: FacepalmValue;
+  onFacepalmChange?: (next: FacepalmValue) => void;
   /**
    * "Has gem" / "has great" toggles, independent
    * booleans narrowing the Library games list. The Gem/Great section renders
@@ -449,6 +460,7 @@ function BestMovesInfo() {
  *
  * Renders (top to bottom):
  * - Severity (Blunders / Mistakes) — always on top of the panel
+ * - Facepalm range (Library tabs only, gated on the onFacepalmChange handler)
  * - Gem / Great — Games tab only (gated on the presence of the
  *   onHasGem/GreatToggle handlers, which only GamesTab passes)
  * - Tactic Depth filter (showTacticFilter only)
@@ -483,6 +495,8 @@ export function FlawFilterControl({
   onOrientationChange,
   tacticDepth = DEFAULT_TACTIC_DEPTH_VALUE,
   onTacticDepthChange,
+  facepalm = DEFAULT_FACEPALM_VALUE,
+  onFacepalmChange,
   hasGem = false,
   hasGreat = false,
   onHasGemToggle,
@@ -547,6 +561,12 @@ export function FlawFilterControl({
           ))}
         </div>
       </div>
+
+      {/* ── Facepalm range (D-13: directly under Flaws, above Best Moves and
+          Tactic Depth). Gated on the opt-in handler like Gem/Great, not on
+          showTactics: it is not a tactic control. The severity toggles above are
+          deliberately independent of it (D-11). ──── */}
+      {onFacepalmChange && <FacepalmFilter value={facepalm} onChange={onFacepalmChange} />}
 
       {/* ── Gem / Great toggles ──────────────────────────────────────────────
           Two independent booleans (not a 3-state cycle) narrowing the Library

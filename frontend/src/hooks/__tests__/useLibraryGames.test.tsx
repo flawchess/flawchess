@@ -25,12 +25,13 @@ vi.mock('@/api/client', async () => {
     libraryApi: {
       ...actual.libraryApi,
       getGames: vi.fn(),
+      getFlaws: vi.fn(),
     },
   };
 });
 
 import { libraryApi } from '@/api/client';
-import { useLibraryGames } from '../useLibrary';
+import { useLibraryFlaws, useLibraryGames } from '../useLibrary';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 
@@ -155,5 +156,137 @@ describe('useLibraryGames flaw-filter params', () => {
     expect(params.tactic_orientation).toEqual('missed');
     expect(params.min_tactic_depth).toBe(0);
     expect(params.max_tactic_depth).toBe(5);
+  });
+});
+
+const EMPTY_FLAWS_RESPONSE = { flaws: [], matched_count: 0, total: 0 };
+
+describe('useLibraryFlaws facepalm params', () => {
+  beforeEach(() => {
+    vi.mocked(libraryApi.getFlaws).mockReset();
+    vi.mocked(libraryApi.getFlaws).mockResolvedValue(
+      EMPTY_FLAWS_RESPONSE as unknown as Awaited<ReturnType<typeof libraryApi.getFlaws>>,
+    );
+  });
+
+  it('sends no facepalm keys at the default flaw filter (D-04)', async () => {
+    renderHook(() => useLibraryFlaws(DEFAULT_FILTERS, { ...DEFAULT_FLAW_FILTER }, 0, 20), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
+    expect('min_facepalm_pct' in params).toBe(false);
+    expect('max_facepalm_pct' in params).toBe(false);
+  });
+
+  it('sends 70 and 100 for the High range', async () => {
+    renderHook(
+      () =>
+        useLibraryFlaws(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
+    expect(params.min_facepalm_pct).toBe(70);
+    expect(params.max_facepalm_pct).toBe(100);
+  });
+
+  it('sends 0 and 29 for the Low range (handles 0/25)', async () => {
+    renderHook(
+      () =>
+        useLibraryFlaws(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, facepalmMin: 0, facepalmMax: 25 },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getFlaws)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getFlaws).mock.calls[0]![0];
+    expect(params.min_facepalm_pct).toBe(0);
+    expect(params.max_facepalm_pct).toBe(29);
+  });
+});
+
+describe('useLibraryGames facepalm params', () => {
+  beforeEach(() => {
+    vi.mocked(libraryApi.getGames).mockReset();
+    vi.mocked(libraryApi.getGames).mockResolvedValue(EMPTY_RESPONSE);
+  });
+
+  it('sends no facepalm keys at the default flaw filter (D-04)', async () => {
+    renderHook(() => useLibraryGames(DEFAULT_FILTERS, { ...DEFAULT_FLAW_FILTER }, 0, 20), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect('min_facepalm_pct' in params).toBe(false);
+    expect('max_facepalm_pct' in params).toBe(false);
+  });
+
+  it('sends 70 and 100 for the High range', async () => {
+    renderHook(
+      () =>
+        useLibraryGames(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.min_facepalm_pct).toBe(70);
+    expect(params.max_facepalm_pct).toBe(100);
+  });
+
+  it('sends 30 and 69 for the Mid range (handles 30/65)', async () => {
+    renderHook(
+      () =>
+        useLibraryGames(
+          DEFAULT_FILTERS,
+          { ...DEFAULT_FLAW_FILTER, facepalmMin: 30, facepalmMax: 65 },
+          0,
+          20,
+        ),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalled());
+    const params = vi.mocked(libraryApi.getGames).mock.calls[0]![0];
+    expect(params.min_facepalm_pct).toBe(30);
+    expect(params.max_facepalm_pct).toBe(69);
+  });
+
+  it('refetches when only the facepalm range changes (query key)', async () => {
+    // One shared client: makeWrapper() builds a fresh client per render, which would
+    // refetch on rerender regardless of the query key and make this test vacuous.
+    const sharedClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const sharedWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={sharedClient}>{children}</QueryClientProvider>
+    );
+    const { rerender } = renderHook(
+      ({ flawFilter }) => useLibraryGames(DEFAULT_FILTERS, flawFilter, 0, 20),
+      {
+        wrapper: sharedWrapper,
+        initialProps: { flawFilter: { ...DEFAULT_FLAW_FILTER } },
+      },
+    );
+
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalledTimes(1));
+    rerender({ flawFilter: { ...DEFAULT_FLAW_FILTER, facepalmMin: 70, facepalmMax: 100 } });
+    await waitFor(() => expect(vi.mocked(libraryApi.getGames)).toHaveBeenCalledTimes(2));
   });
 });

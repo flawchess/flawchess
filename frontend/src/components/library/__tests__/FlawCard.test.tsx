@@ -16,7 +16,7 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 // Stub Tooltip so tests don't need a TooltipProvider wrapper.
 vi.mock('@/components/ui/tooltip', () => ({
@@ -143,6 +143,7 @@ function makeFlaw(overrides: Partial<FlawListItem> = {}): FlawListItem {
     clock_seconds: 125,
     move_seconds: 8.4,
     best_move: null,
+    facepalm_score: null,
     // Tactic motif fields — null by default
     allowed_tactic_motif: null,
     allowed_tactic_confidence: null,
@@ -445,6 +446,60 @@ describe('FlawCard', () => {
       );
       // No Radix dialog in the chip row
       expect(container.querySelector('[role="dialog"]')).toBeNull();
+    });
+  });
+
+  describe('Facepalm chip and severity icon', () => {
+    it('shows the facepalm score in its own chip, not in the Blunder badge', () => {
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, game_id: 7, ply: 24 })} />);
+      const badge = screen.getAllByTestId('severity-blunder-7')[0] as HTMLElement;
+      expect(badge.textContent).toBe('??Blunder');
+      const chip = screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement;
+      expect(chip.textContent).toBe('Facepalm94%');
+      expect(chip.querySelector('svg.lucide-tree-palm')).not.toBeNull();
+      expect(chip.contains(badge)).toBe(false);
+    });
+
+    it('leads the Mistake badge with the "?" quality glyph', () => {
+      render(<FlawCard flaw={makeFlaw({ severity: 'mistake', game_id: 7, ply: 24 })} />);
+      const badge = screen.getAllByTestId('severity-mistake-7')[0] as HTMLElement;
+      expect(badge.querySelector('svg text')?.textContent).toBe('?');
+    });
+
+    it('renders one trigger per body copy (mobile and desktop)', () => {
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, game_id: 7, ply: 24 })} />);
+      expect(screen.getAllByTestId('facepalm-badge-7-24')).toHaveLength(2);
+    });
+
+    it('opens the Facepalm popover with the explanation on click', () => {
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.946, game_id: 7, ply: 24 })} />);
+      fireEvent.click(screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement);
+      const popover = screen.getByTestId('facepalm-badge-7-24-popover');
+      expect(popover.textContent).toContain('Facepalm 94%');
+      expect(popover.textContent).toContain(
+        "How easy it is to see for a player at your level that the move is a blunder, as estimated by our model. A high facepalm score means it should be easy to see, low means it's probably hard to see.",
+      );
+    });
+
+    it('floors 0.697 to 69%', () => {
+      render(<FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: 0.697, game_id: 7, ply: 24 })} />);
+      expect((screen.getAllByTestId('facepalm-badge-7-24')[0] as HTMLElement).textContent).toContain('69%');
+    });
+
+    it('an unscored blunder has no Facepalm chip', () => {
+      const { container } = render(
+        <FlawCard flaw={makeFlaw({ severity: 'blunder', facepalm_score: null, game_id: 7, ply: 24 })} />,
+      );
+      expect(container.querySelectorAll('[data-testid^="facepalm-badge-"]')).toHaveLength(0);
+      expect((screen.getAllByTestId('severity-blunder-7')[0] as HTMLElement).textContent).not.toContain('%');
+    });
+
+    it('a mistake with a score shows no percent and no trigger', () => {
+      const { container } = render(
+        <FlawCard flaw={makeFlaw({ severity: 'mistake', facepalm_score: 0.8, game_id: 7, ply: 24 })} />,
+      );
+      expect(container.querySelectorAll('[data-testid^="facepalm-badge-"]')).toHaveLength(0);
+      expect((screen.getAllByTestId('severity-mistake-7')[0] as HTMLElement).textContent).not.toContain('%');
     });
   });
 

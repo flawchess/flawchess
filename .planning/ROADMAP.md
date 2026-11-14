@@ -411,8 +411,9 @@ both lines.
 
 **Goal**: Show the Phase 250 facepalm score to users in the library. A "Facepalm" range filter in the Tags side
 panel for the Games and Flaws tabs, modelled on the tactic depth filter, and the score
-inside the Blunder badge on Flaws-tab cards (`Blunder <tree-palm> 94%`, popover on the badge) when the flaw has
-a score. Decisions in the seed and 253-CONTEXT.md.
+as its own chip next to the Blunder badge on Flaws-tab cards (`<tree-palm> Facepalm 94%`, popover on the chip)
+when the flaw has a score; after UAT also a mini-chip in the analysis move list and a line in the eval chart
+tooltip (253-CONTEXT.md D-20 to D-23). Decisions in the seed and 253-CONTEXT.md.
 
 - **Filter semantics** (owner, 2026-11-14): full range 0-100% = no filter; a narrowed range keeps only flaws
   with a non-NULL `facepalm_score` in range, so mistakes, inaccuracies and blunders without a stored line drop
@@ -420,7 +421,7 @@ a score. Decisions in the seed and 253-CONTEXT.md.
 - **User blunders only.** Tag filters already apply to the user's flaws only (`player_only_gate`), so no
   opponent scoring and no backfill is needed.
 - **Not a probability** (250 D-01): the chip reads as a degree; a short popover says it is the model's judgement
-  and what a low value means. On the card the icon stands without the word (owner, 2026-11-14); the popover names it.
+  and what a low value means. After UAT the card chip carries the word again (D-20).
 - **Out of scope:** the score in the blunder-check solution screen; facepalm rate stats and opponent scoring
   (SEED-261114-iuv, after Phase 252).
 
@@ -429,15 +430,15 @@ while Phase 250's last plan (250-10) waits for Phase 252 (owner, 2026-11-14; ove
 trigger). Until 250-10 the displayed values are provisional: unrepaired lines, pre-refit constants, and blunders
 with a too-short line have no score. 250-10 recomputes them; no change to this phase's code is needed then.
 **Requirements**: TBD
-**Plans:** 3 plans
+**Plans:** 3/3 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 253-01-PLAN.md — Backend: min/max_facepalm_pct on the Library list endpoints, shared flaw clause, Games-tab EXISTS gate, `facepalm_score` in the Flaws payload (wave 1)
-- [ ] 253-02-PLAN.md — Frontend: Facepalm range filter (All/Low/Mid/High + 5% slider) in the Tags panel on both tabs (wave 1)
+- [x] 253-01-PLAN.md — Backend: min/max_facepalm_pct on the Library list endpoints, shared flaw clause, Games-tab EXISTS gate, `facepalm_score` in the Flaws payload (wave 1)
+- [x] 253-02-PLAN.md — Frontend: Facepalm range filter (All/Low/Mid/High + 5% slider) in the Tags panel on both tabs (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 253-03-PLAN.md — Frontend: score inside the Blunder badge with hover/tap/keyboard popover; CHANGELOG and full pre-merge gate (wave 2)
+- [x] 253-03-PLAN.md — Frontend: score inside the Blunder badge with hover/tap/keyboard popover; CHANGELOG and full pre-merge gate (wave 2)
 
 ## Backlog
 

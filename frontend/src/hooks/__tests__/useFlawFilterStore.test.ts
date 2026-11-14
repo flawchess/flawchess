@@ -15,6 +15,27 @@ import {
   DEFAULT_FLAW_FILTER,
   isFlawFilterNonDefault,
 } from '../useFlawFilterStore';
+import type { FlawFilterState } from '../useFlawFilterStore';
+
+describe('facepalm range in the flaw filter', () => {
+  it('defaults to All {0, 100}', () => {
+    expect(DEFAULT_FLAW_FILTER.facepalmMin).toBe(0);
+    expect(DEFAULT_FLAW_FILTER.facepalmMax).toBe(100);
+  });
+
+  it('is default for an object without the facepalm fields (partial mocks)', () => {
+    const partial = { severity: [], tags: [] } as unknown as FlawFilterState;
+    expect(isFlawFilterNonDefault(partial)).toBe(false);
+  });
+
+  it('lights the dot when facepalmMin is 70', () => {
+    expect(isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, facepalmMin: 70 })).toBe(true);
+  });
+
+  it('lights the dot when facepalmMax is 25', () => {
+    expect(isFlawFilterNonDefault({ ...DEFAULT_FLAW_FILTER, facepalmMax: 25 })).toBe(true);
+  });
+});
 
 describe('DEFAULT_FLAW_FILTER', () => {
   it('includes tacticOrientation = either', () => {

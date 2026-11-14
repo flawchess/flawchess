@@ -32,6 +32,7 @@ import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TacticOrientation } from '@/types/library';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
+import type { FacepalmValue } from '@/lib/facepalm';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -354,6 +355,10 @@ export function GamesTab() {
         onTacticDepthChange={(next: TacticDepthValue) =>
           setPendingFlawFilter((prev) => ({ ...prev, tacticDepthMin: next.min, tacticDepthMax: next.max }))
         }
+        facepalm={{ min: pendingFlawFilter.facepalmMin, max: pendingFlawFilter.facepalmMax }}
+        onFacepalmChange={(next: FacepalmValue) =>
+          setPendingFlawFilter((prev) => ({ ...prev, facepalmMin: next.min, facepalmMax: next.max }))
+        }
         hasGem={pendingFlawFilter.hasGem}
         hasGreat={pendingFlawFilter.hasGreat}
         onHasGemToggle={() => setPendingFlawFilter((prev) => ({ ...prev, hasGem: !prev.hasGem }))}
@@ -540,6 +545,10 @@ export function GamesTab() {
                 tacticDepthMin: next.min,
                 tacticDepthMax: next.max,
               }))
+            }
+            facepalm={{ min: pendingFlawFilter.facepalmMin, max: pendingFlawFilter.facepalmMax }}
+            onFacepalmChange={(next: FacepalmValue) =>
+              setPendingFlawFilter((prev) => ({ ...prev, facepalmMin: next.min, facepalmMax: next.max }))
             }
             hasGem={pendingFlawFilter.hasGem}
             hasGreat={pendingFlawFilter.hasGreat}

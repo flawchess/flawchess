@@ -420,6 +420,7 @@ async def _seed_flaw_committed(
     is_lucky: bool = False,
     is_reversed: bool = False,
     is_squandered: bool = False,
+    facepalm_score: float | None = None,
     fen: str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
 ) -> None:
     """Insert and commit a GameFlaw row.
@@ -441,6 +442,7 @@ async def _seed_flaw_committed(
             is_lucky=is_lucky,
             is_reversed=is_reversed,
             is_squandered=is_squandered,
+            facepalm_score=facepalm_score,
             fen=fen,
         )
         session.add(flaw)
@@ -569,6 +571,68 @@ async def flaws_test_state(test_engine: Any) -> dict[str, Any]:
         "game_a3": game_a3,
         "game_b1": game_b1,
     }
+
+
+@pytest_asyncio.fixture(scope="module")
+async def facepalm_test_state(test_engine: Any) -> dict[str, Any]:
+    """Seed one user with scored and unscored flaws for the Facepalm range tests (Phase 253).
+
+    All three games are white-user games, so even plies are the user's moves and odd
+    plies are the opponent's (ply is 0-based, White moves on even plies).
+
+    - game1 (2026-04-03): user blunders ply 2 (0.95), ply 4 (0.40), ply 6 (unscored),
+      user mistake ply 8 (unscored), opponent blunder ply 3 (0.99).
+    - game2 (2026-04-02): user blunder ply 2 (0.20).
+    - game3 (2026-04-01): only an opponent blunder ply 3 (0.99).
+
+    Returns: headers, user_id, game1, game2, game3.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    suffix = uuid.uuid4().hex[:8]
+    headers, user_id = await _register_and_login(f"facepalm_{suffix}@example.com")
+
+    game1 = await _seed_game_committed(
+        session_maker,
+        user_id=user_id,
+        played_at=datetime.datetime(2026, 4, 3, tzinfo=datetime.timezone.utc),
+        user_color="white",
+    )
+    game2 = await _seed_game_committed(
+        session_maker,
+        user_id=user_id,
+        played_at=datetime.datetime(2026, 4, 2, tzinfo=datetime.timezone.utc),
+        user_color="white",
+    )
+    game3 = await _seed_game_committed(
+        session_maker,
+        user_id=user_id,
+        played_at=datetime.datetime(2026, 4, 1, tzinfo=datetime.timezone.utc),
+        user_color="white",
+    )
+    for game_id, ply, severity, score in (
+        (game1, 2, 2, 0.95),
+        (game1, 4, 2, 0.40),
+        (game1, 6, 2, None),
+        (game1, 8, 1, None),
+        # Opponent seed: ply is 0-based with White moving on even plies, so ply 3 in a
+        # white-user game is the opponent's move. Its exclusion under a narrowed range is
+        # what player_only_gate guarantees (D-05).
+        (game1, 3, 2, 0.99),
+        (game2, 2, 2, 0.20),
+        # Opponent seed (see above): the only scored flaw in game3 is the opponent's.
+        (game3, 3, 2, 0.99),
+    ):
+        await _seed_flaw_committed(
+            session_maker,
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            severity=severity,
+            facepalm_score=score,
+        )
+
+    return {"headers": headers, "user_id": user_id, "game1": game1, "game2": game2, "game3": game3}
 
 
 class TestGetLibraryGamesTagFilter:
@@ -1459,6 +1523,51 @@ class TestEvalSeriesPayload:
             f"Expected moves to align with eval_series minus terminal: "
             f"{len(moves)} vs {len(eval_series)}"
         )
+
+    @pytest.mark.asyncio
+    async def test_flaw_marker_carries_stored_facepalm_score(
+        self, eval_series_test_state: dict[str, Any], test_engine: Any
+    ) -> None:
+        """The stored score of a blunder row reaches its flaw marker on the Games card.
+
+        Pins the _build_card wiring (253 review WR-02): game_flaws row -> facepalm_by_ply
+        -> FlawMarker.facepalm_score. The row is removed afterwards because the fixture
+        is module-scoped.
+        """
+        from sqlalchemy import delete
+
+        from app.models.game_flaw import GameFlaw
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        user_id = eval_series_test_state["user_a_id"]
+        game_id = eval_series_test_state["game_analyzed"]
+        await _seed_flaw_committed(
+            session_maker, user_id=user_id, game_id=game_id, ply=2, facepalm_score=0.87
+        )
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/api/library/games",
+                    params={"limit": 20},
+                    headers=eval_series_test_state["headers_a"],
+                )
+        finally:
+            async with session_maker() as session:
+                await session.execute(
+                    delete(GameFlaw).where(
+                        GameFlaw.user_id == user_id, GameFlaw.game_id == game_id, GameFlaw.ply == 2
+                    )
+                )
+                await session.commit()
+
+        assert resp.status_code == 200
+        card = next(g for g in resp.json()["games"] if g["game_id"] == game_id)
+        by_ply = {m["ply"]: m for m in card["flaw_markers"]}
+        assert by_ply[2]["severity"] == "blunder"
+        assert by_ply[2]["facepalm_score"] == pytest.approx(0.87, abs=1e-6)
+        assert all(m["facepalm_score"] is None for p, m in by_ply.items() if p != 2)
 
     @pytest.mark.asyncio
     async def test_unanalyzed_game_has_null_eval_fields(
@@ -2407,3 +2516,227 @@ class TestTacticComparisonDualOrientation:
         assert [(b["family"], b["orientation"]) for b in bullets] == [
             (family, side) for family in TACTIC_FAMILIES for side in ("missed", "allowed")
         ]
+
+
+# ---------------------------------------------------------------------------
+# Facepalm range filter (Phase 253): GET /library/flaws end to end
+# ---------------------------------------------------------------------------
+
+
+class TestFacepalmFilterEndToEnd:
+    """A narrowed Facepalm range keeps only the user's in-range scored blunders (D-04, D-05, D-10)."""
+
+    @pytest.mark.asyncio
+    async def test_facepalm_high_range_flaws_end_to_end(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        """High (70..100) returns only game1 ply 2, with its raw score in the payload."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaws",
+                params={"min_facepalm_pct": 70, "max_facepalm_pct": 100},
+                headers=facepalm_test_state["headers"],
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["matched_count"] == 1
+        assert len(body["flaws"]) == 1
+        flaw = body["flaws"][0]
+        assert (flaw["game_id"], flaw["ply"]) == (facepalm_test_state["game1"], 2)
+        assert flaw["facepalm_score"] == pytest.approx(0.95, abs=1e-6)
+
+    @pytest.mark.asyncio
+    async def test_flaws_payload_carries_facepalm_score(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        """With no facepalm params every row carries the key: a float when scored, else null."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaws",
+                params={"limit": 100},
+                headers=facepalm_test_state["headers"],
+            )
+        assert resp.status_code == 200
+        by_key = {(f["game_id"], f["ply"]): f for f in resp.json()["flaws"]}
+        game1 = facepalm_test_state["game1"]
+        assert by_key[(game1, 2)]["facepalm_score"] == pytest.approx(0.95, abs=1e-6)
+        assert "facepalm_score" in by_key[(game1, 6)]
+        assert by_key[(game1, 6)]["facepalm_score"] is None
+
+
+# ---------------------------------------------------------------------------
+# Facepalm range filter (Phase 253): GET /library/games through the single flaw EXISTS
+# ---------------------------------------------------------------------------
+
+
+class TestFacepalmGamesEndToEnd:
+    """The Games tab narrows to games with an in-range scored USER blunder (D-04, D-05, D-06)."""
+
+    @staticmethod
+    async def _game_ids(headers: dict[str, str], params: dict[str, Any]) -> tuple[list[int], int]:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/games", params=params, headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        return [g["game_id"] for g in body["games"]], body["matched_count"]
+
+    @pytest.mark.asyncio
+    async def test_high_range_returns_only_game1(self, facepalm_test_state: dict[str, Any]) -> None:
+        ids, matched = await self._game_ids(
+            facepalm_test_state["headers"], {"min_facepalm_pct": 70, "max_facepalm_pct": 100}
+        )
+        assert matched == 1
+        assert ids == [facepalm_test_state["game1"]]
+
+    @pytest.mark.asyncio
+    async def test_low_range_returns_only_game2(self, facepalm_test_state: dict[str, Any]) -> None:
+        """Low (0..29): game2 (0.20) matches; game1 has 0.40/0.95 user scores only."""
+        ids, matched = await self._game_ids(
+            facepalm_test_state["headers"], {"min_facepalm_pct": 0, "max_facepalm_pct": 29}
+        )
+        assert matched == 1
+        assert ids == [facepalm_test_state["game2"]]
+
+    @pytest.mark.asyncio
+    async def test_opponent_only_game_never_matches_narrowed_range(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        """game3 holds only a scored opponent-ply blunder (0.99): excluded on every band (D-05)."""
+        for params in (
+            {"min_facepalm_pct": 70, "max_facepalm_pct": 100},
+            {"min_facepalm_pct": 0, "max_facepalm_pct": 29},
+            {"min_facepalm_pct": 30, "max_facepalm_pct": 69},
+        ):
+            ids, _ = await self._game_ids(facepalm_test_state["headers"], params)
+            assert facepalm_test_state["game3"] not in ids
+
+    @pytest.mark.asyncio
+    async def test_no_facepalm_params_returns_all_games(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        ids, matched = await self._game_ids(facepalm_test_state["headers"], {})
+        assert matched == 3
+        assert set(ids) == {
+            facepalm_test_state["game1"],
+            facepalm_test_state["game2"],
+            facepalm_test_state["game3"],
+        }
+
+
+class TestFacepalmGamesParamThreading:
+    """GET /library/games must forward the facepalm params to the service."""
+
+    @pytest.mark.asyncio
+    async def test_facepalm_params_forwarded_to_service(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        empty = LibraryGamesResponse(games=[], matched_count=0, offset=0, limit=20)
+        with patch(
+            "app.routers.library.library_service.get_library_games",
+            new=AsyncMock(return_value=empty),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/api/library/games",
+                    params={"min_facepalm_pct": 30, "max_facepalm_pct": 69},
+                    headers=facepalm_test_state["headers"],
+                )
+        assert resp.status_code == 200
+        assert spy.await_args is not None
+        kwargs = spy.await_args.kwargs
+        assert kwargs["min_facepalm_pct"] == 30
+        assert kwargs["max_facepalm_pct"] == 69
+
+    @pytest.mark.asyncio
+    async def test_facepalm_params_default_to_none_when_omitted(
+        self, facepalm_test_state: dict[str, Any]
+    ) -> None:
+        empty = LibraryGamesResponse(games=[], matched_count=0, offset=0, limit=20)
+        with patch(
+            "app.routers.library.library_service.get_library_games",
+            new=AsyncMock(return_value=empty),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    "/api/library/games", headers=facepalm_test_state["headers"]
+                )
+        assert resp.status_code == 200
+        assert spy.await_args is not None
+        kwargs = spy.await_args.kwargs
+        assert kwargs["min_facepalm_pct"] is None
+        assert kwargs["max_facepalm_pct"] is None
+
+
+class TestFacepalmParamValidation:
+    """The facepalm params are bounded 0..100 at the HTTP boundary on both list endpoints."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("endpoint", ["/api/library/flaws", "/api/library/games"])
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"min_facepalm_pct": -1},
+            {"min_facepalm_pct": 101},
+            {"max_facepalm_pct": 101},
+            {"max_facepalm_pct": -1},
+        ],
+    )
+    async def test_out_of_range_is_rejected_with_422(
+        self, facepalm_test_state: dict[str, Any], endpoint: str, params: dict[str, int]
+    ) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(endpoint, params=params, headers=facepalm_test_state["headers"])
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("endpoint", "service_fn", "response"),
+        [
+            (
+                "/api/library/flaws",
+                "get_library_flaws",
+                LibraryFlawsResponse(flaws=[], matched_count=0, offset=0, limit=20),
+            ),
+            (
+                "/api/library/games",
+                "get_library_games",
+                LibraryGamesResponse(games=[], matched_count=0, offset=0, limit=20),
+            ),
+        ],
+    )
+    async def test_explicit_zero_and_hundred_are_forwarded_unchanged(
+        self,
+        facepalm_test_state: dict[str, Any],
+        endpoint: str,
+        service_fn: str,
+        response: Any,
+    ) -> None:
+        """0 and 100 are valid bounds and reach the service as given (the repo treats them as neutral)."""
+        with patch(
+            f"app.routers.library.library_service.{service_fn}",
+            new=AsyncMock(return_value=response),
+        ) as spy:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    endpoint,
+                    params={"min_facepalm_pct": 0, "max_facepalm_pct": 100},
+                    headers=facepalm_test_state["headers"],
+                )
+        assert resp.status_code == 200
+        assert spy.await_args is not None
+        assert spy.await_args.kwargs["min_facepalm_pct"] == 0
+        assert spy.await_args.kwargs["max_facepalm_pct"] == 100
