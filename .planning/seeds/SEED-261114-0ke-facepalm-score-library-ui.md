@@ -26,10 +26,11 @@ takes scores >= `FACEPALM_SCORE_MIN`, 0.7 today), and find their most careless b
    self-directed (shown only on the user's own blunders), fits the brand ("humans play FlawChess"), is clearer
    than "Obvious" (obvious blunder or obvious best move?), reads as a degree and matches the code name. Rejected:
    Obviousness (bland, ambiguous), Blatant, Visibility, Spottable, Oversight, Avoidable, Howler.
-   - **Icon** (open, settle in a sketch): must blend in with the lucide icons. Options: the lucide `hand` icon
-     alone (reads as "stop" without a face), a lucide face icon followed by `hand` (two glyphs, wide on a chip),
-     or a custom vector in lucide style (24x24 viewBox, 2px stroke, round caps and joins, no fill). The emoji
-     U+1F926 was considered and is the least preferred (renders differently per platform).
+   - **Icon: lucide `tree-palm`** (owner, 2026-11-14), followed by the word: `<TreePalm> Facepalm 94%`. A pun
+     on "palm" that also reads as "I need a holiday break". The word carries the meaning, the icon is
+     decoration, so the chip must never show the icon without the word. Rejected: lucide `hand` alone (reads as
+     "stop"), a face icon plus `hand` (wide, two glyphs), a custom lucide-style vector (legibility risk at chip
+     size, extra work), the emoji U+1F926 (renders differently per platform).
 2. **Not a probability.** 250 D-01 holds: the score is a ranking, not calibrated across all blunders, and no copy
    may present it as a share of peers. The chip reads as a degree ("95% facepalm"). Add a short popover: the
    model's judgement of how avoidable the blunder was at your level, not a probability; say what a low value
@@ -80,5 +81,4 @@ coverage.
 ## Notes
 
 Open details for discuss-phase: slider step (5% suggested), whether a narrowed range shows a hint that only
-scored blunders remain, chip placement and color on the card, the icon (run `/gsd-sketch` on the three
-options).
+scored blunders remain, chip placement and color on the card, chip casing (follow the other chips).
