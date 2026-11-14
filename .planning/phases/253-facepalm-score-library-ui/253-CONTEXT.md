@@ -64,14 +64,16 @@ Out of scope: the score in the blunder-check solution screen; facepalm rate stat
   `Blunder <TreePalm> 94%` when the flaw has a score: the word, then the icon, then the whole percent.
 - **D-15: Badge styling unchanged.** The score inherits the Blunder badge colors (`SEV_BLUNDER*`). No neutral
   pill, no grading by band.
-- **D-16: The Blunder badge is the popover trigger** (tap on mobile, click on desktop) when it carries a score.
-  No Facepalm entry in the shared Tags legend.
+- **D-16: The Blunder badge is the popover trigger** when it carries a score: opens on hover (desktop pointer)
+  and on click or tap (owner, 2026-11-14). Keyboard focus should open it too. No Facepalm entry in the shared
+  Tags legend.
 - **D-17: Only when `facepalm_score` is non-NULL.** Without a score the badge is exactly today's plain,
   non-interactive `Blunder` span, with no popover. Mistake and Inaccuracy badges never change. The Games-card
   count badges (`3 Blunders`) are untouched.
 
 ### Popover copy (owner-approved wording)
-- **D-18: Blunder badge popover.**
+- **D-18: Blunder badge popover.** A heading line `Facepalm 94%` (the word names the icon, owner 2026-11-14),
+  then:
   > How obvious this blunder was for a player at your level, as judged by our model. High means a careless slip,
   > low means it was hard to see. Not a probability.
 - **D-19: Filter info popover.**
