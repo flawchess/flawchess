@@ -430,7 +430,7 @@ while Phase 250's last plan (250-10) waits for Phase 252 (owner, 2026-11-14; ove
 trigger). Until 250-10 the displayed values are provisional: unrepaired lines, pre-refit constants, and blunders
 with a too-short line have no score. 250-10 recomputes them; no change to this phase's code is needed then.
 **Requirements**: TBD
-**Plans:** 3/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
