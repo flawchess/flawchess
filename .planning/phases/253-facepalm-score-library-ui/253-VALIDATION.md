@@ -40,25 +40,26 @@ created: "2026-11-14"
 
 ## Per-Task Verification Map
 
-Task IDs are assigned by the planner; rows are keyed on the CONTEXT.md decision they prove.
+Task IDs follow `{phase}-{plan}-T{n}`; rows are keyed on the CONTEXT.md decision they prove.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | D-04 | — | N/A | unit (SQL compile): full range (None/None, 0/100) adds no clause, narrowed adds the `facepalm_score` predicate | `uv run pytest tests/test_library_repository.py -k facepalm` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-04, D-10 | — | N/A | integration (`query_flaws`): 0.27 → Low, 0.699 → Mid, 0.70 and 1.0 → High, NULL and a mistake excluded | `uv run pytest tests/repositories/test_library_repository.py -k facepalm` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-06 | — | N/A | integration (`query_filtered_games`): a facepalm-only range narrows games; with tags it needs the same flaw row | `uv run pytest tests/test_library_repository.py -k "facepalm and games"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-05 | — | A scored opponent-ply flaw never matches | integration | `uv run pytest tests/test_library_repository.py -k facepalm` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-06 | — | N/A | unit (SQL compile): `apply_game_filters` with only facepalm params emits the EXISTS | `uv run pytest tests/test_query_utils.py -k facepalm` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Router | — | Out-of-range params (101, -1) rejected with 422 | API | `uv run pytest tests/test_library_router.py -k facepalm` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Schema | — | N/A | integration: `FlawListItem.facepalm_score` from the row, None when NULL | `uv run pytest tests/repositories/test_library_repository.py -k facepalm` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-09, D-10 | — | N/A | unit: presets, summary, query params ({} at default; Low → max 29; Mid → 30/69; High → 70/100), `0.697 → 69` | `cd frontend && npx vitest run src/lib/__tests__/facepalm.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-08, D-12, D-13, D-19 | — | N/A | component: four presets, active summary, hint "Mistakes are excluded" only when narrowed, position after severity and before Best Moves, Umami `facepalm` with preset or `custom` | `cd frontend && npx vitest run src/components/filters/__tests__/FlawFilterControl.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Store | — | N/A | unit: defaults 0/100; `isFlawFilterNonDefault` true only when narrowed | `cd frontend && npx vitest run src/hooks/__tests__/useFlawFilterStore.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | Query wiring | — | N/A | hook: params sent only when narrowed and part of the query key | `cd frontend && npx vitest run src/hooks/__tests__/useLibraryGames.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-14, D-17 | — | N/A | component: scored blunder badge shows `Blunder`, icon, `94%`; unscored blunder, mistake, inaccuracy and the Train call site unchanged | `cd frontend && npx vitest run src/components/library/__tests__/SeverityBadge.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-16, D-18 | — | N/A | component: popover opens on click, mouse hover and keyboard focus; a touch tap leaves it open (no double toggle); heading `Facepalm 94%` plus the D-18 copy; open tracked once | `cd frontend && npx vitest run src/components/library/__tests__/SeverityBadge.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-14 | — | N/A | component: `FlawCard` passes `facepalm_score` through | `cd frontend && npx vitest run src/components/library/__tests__/FlawCard.test.tsx` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-03 | — | N/A | grep: no "avoidable" / "chance you" in the new copy | `grep -rniE "avoidable\|chance you" frontend/src/components/filters frontend/src/components/library frontend/src/lib/facepalm.ts` | — | ⬜ pending |
+| 253-01-T1 | 01 | 1 | D-04, D-14, D-17 | T-253-02 | Narrowed range returns only the user's in-range scored blunder | integration (HTTP to DB tracer): High range on GET /library/flaws returns only (game1, ply 2); every row carries `facepalm_score` or null | `uv run pytest tests/test_library_router.py -n auto -q -k facepalm` | ❌ W0 (created in 253-01-T1) | ⬜ pending |
+| 253-01-T2 | 01 | 1 | D-06 | T-253-02 | Games EXISTS stays user-scoped (ValueError without user_id) | unit (SQL compile): `apply_game_filters` with only facepalm params emits the EXISTS; 0/100 and None/None emit none | `uv run pytest tests/test_query_utils.py -n auto -q -k facepalm` | ❌ W0 (created in 253-01-T2) | ⬜ pending |
+| 253-01-T2 | 01 | 1 | D-06, D-05 | T-253-02 | Opponent-only scored game never matches | integration (HTTP to DB): High returns game1 only, Low game2 only, game3 (opponent-only) never | `uv run pytest tests/test_library_router.py -n auto -q -k "facepalm and games"` | ❌ W0 (created in 253-01-T2) | ⬜ pending |
+| 253-01-T3 | 01 | 1 | D-04 | — | N/A | unit (SQL compile): full range (None/None, 0/100, 0/None, None/100) adds no clause; narrowed adds the `facepalm_score` predicate; asyncpg binds `::FLOAT`, no floor | `uv run pytest tests/test_library_repository.py -n auto -q -k facepalm` | ❌ W0 (created in 253-01-T3) | ⬜ pending |
+| 253-01-T3 | 01 | 1 | D-04, D-10, D-11 | — | N/A | integration (`query_flaws`): 0.27 and 0.2999 → Low; 0.30, 0.699 and a seeded 0.70 (stored float4 0.6999999881, floors to 69) → Mid; 0.7001 and 1.0 → High; NULL blunder and mistake excluded; mistake-only + High → 0 rows; floor invariant on every returned row | `uv run pytest tests/repositories/test_library_repository.py -n auto -q -k facepalm` | ❌ W0 (created in 253-01-T3) | ⬜ pending |
+| 253-01-T3 | 01 | 1 | D-06, D-05 | T-253-02 | A scored opponent-ply flaw never matches | integration (`query_filtered_games`): same-row AND with a tag; unscored-only game excluded | `uv run pytest tests/test_library_repository.py -n auto -q -k "facepalm and games"` | ❌ W0 (created in 253-01-T3) | ⬜ pending |
+| 253-01-T3 | 01 | 1 | Router | T-253-01 | Out-of-range params (101, -1) rejected with 422 on both endpoints | API | `uv run pytest tests/test_library_router.py -n auto -q -k facepalm` | ❌ W0 (created in 253-01-T3) | ⬜ pending |
+| 253-02-T1, T3 | 02 | 1 | D-09, D-10 | — | N/A | unit: presets, `displayUpper`, query params ({} at default; Low → max 29; Mid → 30/69; High → 70/100; 40/40 → 40/44), summary (All, 0-29%, 30-69%, 70-100%) | `cd frontend && npx vitest run src/lib/__tests__/facepalm.test.ts` | ❌ W0 (created in 253-02-T1) | ⬜ pending |
+| 253-02-T1, T3 | 02 | 1 | D-08, D-11, D-12, D-13, D-19 | T-253-05 | Umami sends preset or `custom`, never bounds | component: High click emits 70/100; four presets; summary style; hint "Mistakes are excluded" only when narrowed; D-19 copy; position after severity and before Best Moves / Tactic Depth; severity toggles untouched; Umami `facepalm` | `cd frontend && npx vitest run src/components/filters/__tests__/FlawFilterControl.test.tsx` | ✅ extend | ⬜ pending |
+| 253-02-T1 | 02 | 1 | D-04 (dot) | — | N/A | unit: defaults 0/100; `isFlawFilterNonDefault` true only when narrowed, false for partial mocks | `cd frontend && npx vitest run src/hooks/__tests__/useFlawFilterStore.test.ts` | ✅ extend | ⬜ pending |
+| 253-02-T1, T2 | 02 | 1 | D-04, D-06 | — | N/A | hook + client: params sent only when narrowed, part of the query key, forwarded by `getGames` / `getFlaws` | `cd frontend && npx vitest run src/hooks/__tests__/useLibraryGames.test.tsx src/api/__tests__/client.test.ts` | ✅ extend | ⬜ pending |
+| 253-03-T1 | 03 | 2 | D-14, D-17 | T-253-08 | Score rendered as a floored, clamped number | component (tracer): FlawCard with `facepalm_score` 0.946 shows `Blunder`, palm icon, `94%`; click opens `Facepalm 94%` + D-18 copy; null score shows no percent | `cd frontend && npx vitest run src/components/library/__tests__/FlawCard.test.tsx src/lib/__tests__/facepalm.test.ts` | ✅ extend | ⬜ pending |
+| 253-03-T2 | 03 | 2 | D-16, D-18 | T-253-07 | Umami target is the id-free `facepalm-badge` | component: opens on mouse hover (100 ms), click and keyboard focus; keyboard re-focus opens it after an earlier click or drag-off plus blur; touch enter/leave ignored; a tap leaves it open; Escape and tab-away close; open tracked once | `cd frontend && npx vitest run src/components/library/__tests__/FacepalmBadgePopover.test.tsx` | ❌ W0 (created in 253-03-T2) | ⬜ pending |
+| 253-03-T2 | 03 | 2 | D-15, D-17 | — | N/A | component: unscored blunder, mistake, inaccuracy and count badges unchanged; scored badge keeps severity colors, testid and ring | `cd frontend && npx vitest run src/components/library/__tests__/SeverityBadge.test.tsx` | ✅ extend | ⬜ pending |
+| 253-02-T3, 253-03-T3 | 02, 03 | 1, 2 | D-03, D-07 | — | N/A | grep: no banned odds/peer-share wording and no note that values may change in the new copy | `! grep -rniE "avoidable\|chance you\|provisional" frontend/src/components/filters frontend/src/components/library frontend/src/lib/facepalm.ts` | — | ⬜ pending |
+| 253-03-T3 | 03 | 2 | all | — | N/A | full pre-merge gate (CLAUDE.md) | see 253-03-PLAN.md Task 3 | — | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -66,11 +67,13 @@ Task IDs are assigned by the planner; rows are keyed on the CONTEXT.md decision 
 
 ## Wave 0 Requirements
 
-- [ ] `frontend/src/lib/__tests__/facepalm.test.ts` — new file, D-09/D-10 pure logic
-- [ ] `tests/test_library_repository.py` `_seed_game_flaw` — add a `facepalm_score: float | None = None` kwarg
-- [ ] `tests/repositories/test_library_repository.py` seed helpers — same kwarg
-- [ ] `frontend/src/components/library/__tests__/FlawCard.test.tsx` `makeFlaw` — `facepalm_score: null` default
-- [ ] FlawsTab test fixtures — add the `facepalm_score` field
+- [ ] `frontend/src/lib/__tests__/facepalm.test.ts` — new file, D-09/D-10 pure logic (253-02-T1)
+- [ ] `tests/test_library_router.py` `_seed_flaw_committed` — `facepalm_score` kwarg, plus the `facepalm_test_state` fixture (253-01-T1)
+- [ ] `tests/test_library_repository.py` `_seed_game_flaw` — `facepalm_score` and `is_reversed` kwargs (253-01-T3)
+- [ ] `tests/repositories/test_library_repository.py` seed helpers — `facepalm_score` kwarg (253-01-T3)
+- [ ] `frontend/src/components/library/__tests__/FlawCard.test.tsx` `makeFlaw` — `facepalm_score: null` default (253-03-T1)
+- [ ] `frontend/src/components/library/__tests__/FacepalmBadgePopover.test.tsx` — new file (253-03-T2)
+- FlawsTab test fixtures: no change needed; FlawCard treats a missing `facepalm_score` as unscored (`!= null` check)
 
 No framework install needed.
 
@@ -80,7 +83,7 @@ No framework install needed.
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Mutation proof of the Games-tab gate | D-06 | A revert-and-rerun, not a standing test | Remove `facepalm_active` from the `apply_game_filters` EXISTS condition, run the facepalm-only Games-tab test, confirm it fails, restore |
+| Mutation proof of the Games-tab gate (253-01-T2, recorded in its SUMMARY) | D-06 | A revert-and-rerun, not a standing test | Remove `facepalm_active` from the `apply_game_filters` EXISTS condition, run the facepalm-only Games-tab test, confirm it fails, restore |
 | Touch behaviour of the badge popover on a real phone | D-16 | jsdom only simulates pointer types | On a phone, tap a scored Blunder badge: the popover opens once and stays open; tap outside closes it |
 | Panel layout and badge look | D-13, D-14, D-15 | Visual | Library → Flaws tab: filter sits under Blunders/Mistakes, above Best Moves; the badge reads `Blunder <palm> N%` in blunder colors |
 

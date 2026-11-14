@@ -322,7 +322,7 @@
   "next": {
     "command": "/gsd-progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 4 of 6 · executing"
+    "reason": "Phase 7 of 7 · executing"
   },
-  "updated_at": "2026-11-13T21:31:54.314Z"
+  "updated_at": "2026-11-14T14:05:22.751Z"
 }

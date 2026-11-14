@@ -429,11 +429,15 @@ while Phase 250's last plan (250-10) waits for Phase 252 (owner, 2026-11-14; ove
 trigger). Until 250-10 the displayed values are provisional: unrepaired lines, pre-refit constants, and blunders
 with a too-short line have no score. 250-10 recomputes them; no change to this phase's code is needed then.
 **Requirements**: TBD
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
+**Wave 1**
+- [ ] 253-01-PLAN.md — Backend: min/max_facepalm_pct on the Library list endpoints, shared flaw clause, Games-tab EXISTS gate, `facepalm_score` in the Flaws payload (wave 1)
+- [ ] 253-02-PLAN.md — Frontend: Facepalm range filter (All/Low/Mid/High + 5% slider) in the Tags panel on both tabs (wave 1)
 
-- [ ] TBD (run /gsd-discuss-phase 253, then /gsd-plan-phase 253)
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 253-03-PLAN.md — Frontend: score inside the Blunder badge with hover/tap/keyboard popover; CHANGELOG and full pre-merge gate (wave 2)
 
 ## Backlog
 
