@@ -191,13 +191,18 @@ async def insert_session(
 
 
 def _unserved_qualifying_blunder_exists(
-    game_id_col: SQLColumnExpression[int], user_id: int
+    game_id_col: SQLColumnExpression[int], user_id: int, *, flaw_owner_id: int | None = None
 ) -> ColumnElement[bool]:
     """EXISTS a qualifying blunder (facepalm_score >= FACEPALM_SCORE_MIN) this user was not served yet.
 
     "Served" is a window of this user on the same game whose blunder_ply is the blunder's ply
     (250 D-17). The probe uses ix_game_flaws_game_id for the flaw rows and
     ix_blunder_check_windows_user_game for the NOT EXISTS; no new index (research Q3 item 5).
+
+    `flaw_owner_id` pins game_flaws.user_id (the game owner, redundant with the game id) when
+    the caller knows it. Bug fix: without it the own-game pick had no selective predicate on
+    game_flaws, so on prod the planner hashed a sequential scan of the whole table (17.8 s for
+    one session start). With it the probe is a primary-key lookup per game (about 0.4 s).
     """
     # correlate_except: the games table (or the TABLESAMPLE alias) sits two SELECT levels up, past
     # the flaw EXISTS, so auto-correlation would pull it into this FROM list as a cross join.
@@ -210,13 +215,14 @@ def _unserved_qualifying_blunder_exists(
         )
         .correlate_except(BlunderCheckWindow)
     )
-    return exists().where(
-        and_(
-            GameFlaw.game_id == game_id_col,
-            GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
-            not_(already_served),
-        )
-    )
+    conditions: list[ColumnElement[bool]] = [
+        GameFlaw.game_id == game_id_col,
+        GameFlaw.facepalm_score >= FACEPALM_SCORE_MIN,
+        not_(already_served),
+    ]
+    if flaw_owner_id is not None:
+        conditions.append(GameFlaw.user_id == flaw_owner_id)
+    return exists().where(and_(*conditions))
 
 
 async def pick_own_game_ids(
@@ -238,7 +244,9 @@ async def pick_own_game_ids(
     if exclude_ids:
         stmt = stmt.where(Game.id.notin_(exclude_ids))
     if require_facepalm:
-        stmt = stmt.where(_unserved_qualifying_blunder_exists(Game.id, user_id))
+        stmt = stmt.where(
+            _unserved_qualifying_blunder_exists(Game.id, user_id, flaw_owner_id=user_id)
+        )
     stmt = stmt.order_by(func.random()).limit(limit)
     return [int(i) for i in (await session.execute(stmt)).scalars().all()]
 
