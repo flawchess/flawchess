@@ -1,10 +1,9 @@
 ---
 id: SEED-261114-iuv
-status: active
-promoted_to: Phase 253 (2026-11-14, owner: build while Phase 250 waits for the Phase 252 backfill)
+status: dormant
 planted: 2026-11-14
 planted_during: Phase 250 executing (facepalm-blunder selection); /gsd-explore session with the owner
-trigger_when: after SEED-261114-0ke (facepalm filter and chip) has shipped, or when library stats / "you vs opponents" flaw comparisons are next worked on. Needs Phase 250 closed and the Phase 252 backfill finished on prod
+trigger_when: after SEED-261114-0ke (facepalm filter and chip) has shipped, or when library stats / "you vs opponents" flaw comparisons are next worked on. Not before Phase 252 concludes (owner, 2026-11-14): the stats and the opponent blunder backfill wait for the repaired lines
 scope: medium. Part A (operator-run): extend facepalm scoring to opponent blunders, including a Maia backfill about the size of Phase 250's. Part B: facepalm rate in the library stats (timeline line, you vs opponents)
 ---
 

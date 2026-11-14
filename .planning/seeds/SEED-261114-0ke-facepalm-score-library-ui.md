@@ -1,6 +1,7 @@
 ---
 id: SEED-261114-0ke
-status: dormant
+status: active
+promoted_to: Phase 253 (2026-11-14, owner: build now, while Phase 250 waits for the Phase 252 backfill; overrides the trigger below)
 planted: 2026-11-14
 planted_during: Phase 250 executing (facepalm-blunder selection); /gsd-explore session with the owner
 trigger_when: Phase 250 is closed AND the Phase 252 short-engine-line repair backfill has finished on prod, so facepalm_score coverage is final

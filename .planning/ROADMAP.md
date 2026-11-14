@@ -407,26 +407,26 @@ Plans:
 Numbering note: 251 is taken on the phase-249 branch (schedule phase, renumbered there), so this phase is 252 on
 both lines.
 
-### Phase 253: Facepalm Rate in the Library Stats (SEED-261114-iuv)
+### Phase 253: Facepalm Score in the Library UI (SEED-261114-0ke)
 
-**Goal**: Show how often a player makes careless blunders, over time and against their opponents. Part A: extend
-facepalm scoring from user-side blunders to opponent blunders (lift the `_is_user_blunder` gate in the live Maia
-scoring hook, extend the spread and line backfill modes, run the prod backfill). Part B: a facepalm rate
-(blunders scoring above a cut, per game; starting cut `FACEPALM_SCORE_MIN`) as one more line in the Flaws
-Timeline and as a paired "you vs your opponents" comparison in the library stats. Named "Facepalm" with the
-lucide `tree-palm` icon. Decisions and cautions in the seed.
+**Goal**: Show the Phase 250 facepalm score to users in the library. A "Facepalm" range filter in the Tags side
+panel for the Games and Flaws tabs, modelled on the tactic depth filter, and a `Facepalm 94%` chip (lucide
+`tree-palm` icon followed by the word) on Flaws-tab cards when the flaw has a score. Decisions in the seed.
 
-- **Rate, not average score** (owner, 2026-11-14): the average is taken over blunders only.
-- **Opponent scores stay out of** drill selection and the library tag filters (both user-only).
-- **Copy states the comparison, never diagnoses** (focus, distraction, time trouble), and never presents the
-  score as a share of peers (250 D-01).
-- **Out of scope:** the Tags-panel range filter and the flaw-card chip (SEED-261114-0ke).
+- **Filter semantics** (owner, 2026-11-14): full range 0-100% = no filter; a narrowed range keeps only flaws
+  with a non-NULL `facepalm_score` in range, so mistakes, inaccuracies and blunders without a stored line drop
+  out. On the Games tab the range joins the single flaw `EXISTS`.
+- **User blunders only.** Tag filters already apply to the user's flaws only (`player_only_gate`), so no
+  opponent scoring and no backfill is needed.
+- **Not a probability** (250 D-01): the chip reads as a degree; a short popover says it is the model's judgement
+  and what a low value means. The icon never appears without the word.
+- **Out of scope:** the score in the blunder-check solution screen; facepalm rate stats and opponent scoring
+  (SEED-261114-iuv, after Phase 252).
 
-**Depends on**: Phase 250 plans 01-09 and 11 (score, columns, backfill modes, column drop; shipped). Runs while
-Phase 250's last plan (250-10) waits for Phase 252. Interactions to settle at discuss/plan time: the opponent
-spread backfill would share prod with Phase 252's line repair; 250-10's line pass (after 252) should then
-recompute opponent blunders too. Scores computed before 250-10 are provisional (unrepaired lines, pre-refit
-constants).
+**Depends on**: Phase 250 plans 01-09 and 11 (score stored on `game_flaws` for user blunders; shipped). Built
+while Phase 250's last plan (250-10) waits for Phase 252 (owner, 2026-11-14; overrides the seed's original
+trigger). Until 250-10 the displayed values are provisional: unrepaired lines, pre-refit constants, and blunders
+with a too-short line have no score. 250-10 recomputes them; no change to this phase's code is needed then.
 **Requirements**: TBD
 **Plans:** 0 plans
 
