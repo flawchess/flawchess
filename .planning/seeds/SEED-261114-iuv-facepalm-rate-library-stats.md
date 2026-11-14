@@ -1,6 +1,7 @@
 ---
 id: SEED-261114-iuv
-status: dormant
+status: active
+promoted_to: Phase 253 (2026-11-14, owner: build while Phase 250 waits for the Phase 252 backfill)
 planted: 2026-11-14
 planted_during: Phase 250 executing (facepalm-blunder selection); /gsd-explore session with the owner
 trigger_when: after SEED-261114-0ke (facepalm filter and chip) has shipped, or when library stats / "you vs opponents" flaw comparisons are next worked on. Needs Phase 250 closed and the Phase 252 backfill finished on prod

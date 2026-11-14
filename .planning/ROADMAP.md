@@ -407,6 +407,33 @@ Plans:
 Numbering note: 251 is taken on the phase-249 branch (schedule phase, renumbered there), so this phase is 252 on
 both lines.
 
+### Phase 253: Facepalm Rate in the Library Stats (SEED-261114-iuv)
+
+**Goal**: Show how often a player makes careless blunders, over time and against their opponents. Part A: extend
+facepalm scoring from user-side blunders to opponent blunders (lift the `_is_user_blunder` gate in the live Maia
+scoring hook, extend the spread and line backfill modes, run the prod backfill). Part B: a facepalm rate
+(blunders scoring above a cut, per game; starting cut `FACEPALM_SCORE_MIN`) as one more line in the Flaws
+Timeline and as a paired "you vs your opponents" comparison in the library stats. Named "Facepalm" with the
+lucide `tree-palm` icon. Decisions and cautions in the seed.
+
+- **Rate, not average score** (owner, 2026-11-14): the average is taken over blunders only.
+- **Opponent scores stay out of** drill selection and the library tag filters (both user-only).
+- **Copy states the comparison, never diagnoses** (focus, distraction, time trouble), and never presents the
+  score as a share of peers (250 D-01).
+- **Out of scope:** the Tags-panel range filter and the flaw-card chip (SEED-261114-0ke).
+
+**Depends on**: Phase 250 plans 01-09 and 11 (score, columns, backfill modes, column drop; shipped). Runs while
+Phase 250's last plan (250-10) waits for Phase 252. Interactions to settle at discuss/plan time: the opponent
+spread backfill would share prod with Phase 252's line repair; 250-10's line pass (after 252) should then
+recompute opponent blunders too. Scores computed before 250-10 are provisional (unrepaired lines, pre-refit
+constants).
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-discuss-phase 253, then /gsd-plan-phase 253)
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
