@@ -440,6 +440,32 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 253-03-PLAN.md — Frontend: score inside the Blunder badge with hover/tap/keyboard popover; CHANGELOG and full pre-merge gate (wave 2)
 
+### Phase 254: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
+
+**Goal**: Make the facepalm score see missed material gains, with a weight (the loss-aversion knob) that each
+consumer sets. Today the score only measures what the played move gives away, so an obvious missed win of
+material scores near 0 (prod: 88% of allowed hanging pieces score >= 0.70 vs 21% of missed ones, at the same
+material swing). Evidence, owner decisions and the proposed shape are in the seed; nothing below is locked
+until the discuss phase.
+
+- **Material:** `loss` as today plus `missed` (what the stored best line wins on top, depth 3, no engine);
+  score input `loss + lambda * missed`. Lambda = 0 is today's score, lambda = 1 the symmetric swing.
+- **Knob** (owner, 2026-11-14): wanted regardless. Whether blunder-check selection should be loss-averse is
+  open; the owner asks GM Noel Studer. Only the default depends on the answer. The drill already asks "Good
+  move or blunder?", so missed gains are valid items.
+- **Pre-blunder Maia inputs** (owner: "we probably should"): Maia's probability of the best move and the
+  pre-blunder policy spread, with a backfill for existing rows about the size of Phase 250's.
+- **Labels and refit:** about 50 owner labels on misses, then a refit and a recheck of `FACEPALM_SCORE_MIN` and
+  the drill pool size.
+- **To settle in discuss:** fold Phase 250's open plan 250-10 (refit on repaired lines) into this phase's
+  refit, so the score is refitted once; whether reply spread is dropped or down-weighted for pure misses.
+
+**Depends on**: Phase 250 plans 01-09 and 11 (shipped), Phase 253 (shipped). The backfill and the refit wait
+for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
+start before.
+**Requirements**: TBD
+**Plans:** 0 plans
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
