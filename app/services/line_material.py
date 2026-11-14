@@ -59,8 +59,8 @@ EN_PASSANT_VALUE: int = 1
 _SEE_KING_VALUE: int = 100
 _SEE_VALUES: Mapping[chess.PieceType, int] = {**PIECE_VALUES, chess.KING: _SEE_KING_VALUE}
 
-# Separator of the stored line; matches game_positions.pv (maia_flaw_scoring.REFUTATION_PV_SEPARATOR),
-# not imported to keep this module free of the scorer's imports.
+# Separator of the stored line; matches game_positions.pv (space-joined UCI), kept local so this
+# module stays free of the scorer's imports.
 _PV_SEPARATOR: str = " "
 
 # One ply beyond the deepest stored depth is read (the blunderer's recapture at depth + 1).

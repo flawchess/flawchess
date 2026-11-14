@@ -5,13 +5,9 @@ flaws, from boards replayed out of games.pgn (never from game_flaws.fen), throug
 shared scorer the live lanes use (app/services/maia_flaw_scoring.py), and stamps each game in
 the same transaction as its column write.
 
-Modes (Phase 248 D-10, D-22; Phase 250 D-08, D-18):
-    --mode full        (default) games with maia_flaws_completed_at NULL; writes the eight base
-                       values plus the refutation pair and the four stamps.
-    --mode refutation  games with maia_refutation_completed_at NULL that are base-stamped; scores
-                       only user-side blunders (about one inference each) and writes only
-                       maia_refutation_prob/rank plus maia_refutation_completed_at. A game with
-                       no user-side blunder is stamped without a PGN replay or any inference.
+Modes (Phase 250 D-08, D-18; the Phase 248 refutation mode was removed by D-11):
+    --mode full        (default) games with maia_flaws_completed_at NULL; writes maia_played_prob
+                       plus the eight facepalm columns and the three stamps.
     --mode spread      games that are base-stamped with facepalm_spread_completed_at NULL (the
                        Maia pass of the facepalm backfill, 250 D-08). One post-blunder inference
                        per user-side blunder yields the reply spread; the line facts and the
@@ -59,8 +55,6 @@ Usage:
     PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --workers 9
     uv run python scripts/backfill_maia_flaws.py --db prod --status
     uv run python scripts/backfill_maia_flaws.py --db dev --shard 2 --num-shards 9
-    PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --mode refutation --workers 9
-    uv run python scripts/backfill_maia_flaws.py --db prod --status --mode refutation
     PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode spread --workers 6 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode spread
     PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --mode line --cutoff <deploy time UTC> --workers 4 --throttle-ms 50
@@ -132,7 +126,7 @@ BackfillDb = Literal["dev", "benchmark", "prod"]
 BACKFILL_DB_CHOICES: tuple[str, ...] = ("dev", "benchmark", "prod")
 AbortReason = Literal["maia_unavailable", "too_many_batch_failures"]
 BackfillMode = ScoringMode
-BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "refutation", "spread", "line")
+BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line")
 DEFAULT_MODE: BackfillMode = "full"
 
 # Top 8 hex digits of md5(game id) as an unsigned 32-bit integer. Unseeded and pure, so a
@@ -169,9 +163,6 @@ _LINE_STALE_CLAUSE: str = (
 # The only mode-dependent part of the selector: one of these constants, never user input.
 _STAMP_CLAUSE_BY_MODE: dict[BackfillMode, str] = {
     "full": "g.maia_flaws_completed_at IS NULL",
-    "refutation": (
-        "g.maia_refutation_completed_at IS NULL AND g.maia_flaws_completed_at IS NOT NULL"
-    ),
     "spread": _SPREAD_PENDING_CLAUSE,
     "line": f"{_LINE_STALE_CLAUSE} AND g.facepalm_spread_completed_at IS NOT NULL",
 }
@@ -254,11 +245,6 @@ class ShardReport:
     # Flaw rows that received Maia values / that were written all-NULL (reason in `reasons`).
     flaws_scored: int = 0
     flaws_null: int = 0
-    # User-side blunders whose refutation pair was written / left NULL (reason in `reasons`);
-    # `refutations_from_pv` counts scored pairs whose reply came from the pv fallback.
-    refutations_scored: int = 0
-    refutations_null: int = 0
-    refutations_from_pv: int = 0
     # User-side blunders whose reply spread / facepalm score was written non-NULL / left NULL
     # (reason in `reasons`). The spread counters cover the modes that compute it (full, spread),
     # the score counters every mode that writes the score (full, spread, line).
@@ -270,7 +256,6 @@ class ShardReport:
     aborted_reason: str | None = None
     elapsed_s: float = 0.0
     flaws_per_s: float = 0.0
-    refutations_per_s: float = 0.0
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
@@ -308,13 +293,6 @@ def _tally_stamped(report: ShardReport, score: GameMaiaScore) -> None:
         scored = sum(1 for row in score.rows if row["maia_played_prob"] is not None)
         report.flaws_scored += scored
         report.flaws_null += len(score.rows) - scored
-    if score.mode in ("full", "refutation"):
-        # Full-mode rows carry the pair for every flaw (NULL out of scope); only user-side
-        # blunders count, so the pair is tallied over the score's own blunder count.
-        refuted = sum(1 for row in score.rows if row["maia_refutation_prob"] is not None)
-        report.refutations_scored += refuted
-        report.refutations_null += score.user_blunders - refuted
-        report.refutations_from_pv += score.refutations_from_pv
     if score.mode in ("full", "spread"):
         report.spreads_scored += score.spreads_scored
         report.spreads_null += score.user_blunders - score.spreads_scored
@@ -445,9 +423,6 @@ def _finish_report(report: ShardReport, started: float) -> None:
     report.flaws_per_s = (
         round(report.flaws_scored / report.elapsed_s, 2) if report.elapsed_s else 0.0
     )
-    report.refutations_per_s = (
-        round(report.refutations_scored / report.elapsed_s, 2) if report.elapsed_s else 0.0
-    )
 
 
 def _progress_line(report: ShardReport, done: int, started: float) -> str:
@@ -456,8 +431,6 @@ def _progress_line(report: ShardReport, done: int, started: float) -> str:
         f"shard {report.shard}/{report.num_shards}: {done}/{report.games_selected} games, "
         f"stamped={report.games_stamped} flaws_scored={report.flaws_scored} "
         f"({report.flaws_scored / elapsed:.1f} flaws/s) "
-        f"refutations_scored={report.refutations_scored} "
-        f"({report.refutations_scored / elapsed:.1f} refutations/s) "
         f"spreads_scored={report.spreads_scored} scores_set={report.scores_set}"
         + (f" cutoff={report.cutoff}" if report.cutoff else "")
     )
@@ -685,9 +658,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--mode",
         choices=list(BACKFILL_MODE_CHOICES),
         default=DEFAULT_MODE,
-        help="full: all values + the stamps. refutation: only the refutation pair of "
-        "user-side blunders, on base-stamped games (Phase 248). spread: the facepalm columns "
-        "of user-side blunders, on base-stamped games (Phase 250).",
+        help="full: all values + the stamps. spread: the facepalm columns of user-side "
+        "blunders, on base-stamped games (Phase 250). line: the Maia-free line pass (needs "
+        "--cutoff).",
     )
     parser.add_argument(
         "--cutoff",
@@ -760,22 +733,9 @@ _STATUS_QUERIES: dict[str, str] = {
 }
 
 
-_REFUTATION_STATUS_QUERIES: dict[str, str] = {
-    "refutation_stamped_games": (
-        "SELECT count(*) FROM games g WHERE g.maia_refutation_completed_at IS NOT NULL{u}"
-    ),
-    "refutation_unstamped_games_with_flaws": (
-        "SELECT count(*) FROM games g WHERE g.maia_refutation_completed_at IS NULL"
-        " AND g.maia_flaws_completed_at IS NOT NULL"
-        " AND EXISTS (SELECT 1 FROM game_flaws f WHERE f.game_id = g.id){u}"
-    ),
-}
-
-
 def _user_blunder_count_stmt(
     user_id: int | None,
     *,
-    with_refutation: bool = False,
     extra_where: Sequence[ColumnElement[bool]] = (),
 ) -> Select[Any]:
     """Count of user-side blunders (severity blunder AND NOT is_opponent_expr, D-03).
@@ -791,34 +751,11 @@ def _user_blunder_count_stmt(
             not_(is_opponent_expr(GameFlaw.ply, Game.user_color)),
         )
     )
-    if with_refutation:
-        stmt = stmt.where(GameFlaw.maia_refutation_prob.is_not(None))
     if extra_where:
         stmt = stmt.where(*extra_where)
     if user_id is not None:
         stmt = stmt.where(Game.user_id == user_id)
     return stmt
-
-
-async def _fetch_refutation_status(session: AsyncSession, user_id: int | None) -> dict[str, int]:
-    user_clause = " AND g.user_id = :user_id" if user_id is not None else ""
-    params: dict[str, Any] = {"user_id": user_id} if user_id is not None else {}
-    counts: dict[str, int] = {}
-    for key, sql in _REFUTATION_STATUS_QUERIES.items():
-        counts[key] = int(
-            (await session.execute(text(sql.format(u=user_clause)), params)).scalar_one()
-        )
-    counts["user_blunders_with_refutation"] = int(
-        (
-            await session.execute(_user_blunder_count_stmt(user_id, with_refutation=True))
-        ).scalar_one()
-    )
-    counts["user_blunders_total"] = int(
-        (
-            await session.execute(_user_blunder_count_stmt(user_id, with_refutation=False))
-        ).scalar_one()
-    )
-    return counts
 
 
 _SPREAD_STATUS_QUERIES: dict[str, str] = {
@@ -910,13 +847,10 @@ async def fetch_status(
 ) -> dict[str, int]:
     """The progress counts, SELECT-only, optionally for one user.
 
-    Full mode keeps the four 247 counts (the 247-07 monitor greps that line); refutation
-    mode returns the four Phase 248 counts; spread mode the Phase 250 stamp and value counts;
+    Full mode keeps the four 247 counts (the 247-07 monitor greps that line); spread mode
+    returns the Phase 250 stamp and value counts;
     line mode (needs `cutoff`) the games done / pending against it plus the score counts.
     """
-    if mode == "refutation":
-        async with session_maker() as session:
-            return await _fetch_refutation_status(session, user_id)
     if mode == "spread":
         async with session_maker() as session:
             return await _fetch_facepalm_status(
@@ -984,9 +918,6 @@ def _combined_total_line(reports: list[dict[str, Any]]) -> str:
         "games_score_failed",
         "flaws_scored",
         "flaws_null",
-        "refutations_scored",
-        "refutations_null",
-        "refutations_from_pv",
         "spreads_scored",
         "spreads_null",
         "scores_set",

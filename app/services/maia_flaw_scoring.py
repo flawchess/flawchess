@@ -7,27 +7,23 @@ committed, so the ~1 s of CPU per game never runs inside an eval write transacti
 Pipeline for one game, with no AsyncSession open during inference:
 
 1. ``load_game_maia_inputs``: short read session (game rating metadata plus every flaw's
-   fen, ``game_positions.best_move`` and the raw ``missed_pv_lines[0].su``).
+   fen, severity and the stored line ``game_positions.pv`` at ply + 1).
 2. ``score_game`` (sync, CPU, run in ``asyncio.to_thread``): one ``full_policy`` call per
-   scorable flaw plus one per scorable user-side blunder (the post-blunder position at the
-   blunderer's Elo). The eight D-01 values come from ``compute_maia_flaw_stats``. The
-   post-blunder policy feeds both the Phase 248 refutation pair (Maia's probability and rank
-   for Stockfish's best reply, ``compute_refutation_stats``) and the Phase 250 reply spread
-   (D-07: no extra inference). The Phase 250 line facts (``line_facts`` on the stored line at
-   ply + 1) and the facepalm score are derived from those plus the base values.
+   scorable flaw (the base value ``maia_played_prob``, via ``compute_maia_flaw_stats``) plus one
+   per scorable user-side blunder (the post-blunder position at the blunderer's Elo, which
+   yields the Phase 250 reply spread). The Phase 250 line facts (``line_facts`` on the stored
+   line at ply + 1) and the facepalm score are derived from those plus the base value.
 3. ``write_game_maia_scores``: short write session that takes
    ``pg_advisory_xact_lock`` per game (ascending key order), re-reads the inputs
-   fingerprint and writes the eighteen columns plus the four stamps only when the
+   fingerprint and writes the nine columns plus the three stamps only when the
    fingerprint is unchanged. A mismatch means a concurrent apply reshaped the flaws (or
-   changed a severity, a ply+1 best move or the stored ply+1 line); the game is left
-   unstamped for the next pass.
+   changed a severity or the stored ply+1 line); the game is left unstamped for the next pass.
 
-The stamps ``games.maia_flaws_completed_at``, ``games.maia_refutation_completed_at``,
-``games.facepalm_spread_completed_at`` and ``games.facepalm_line_completed_at`` are only
-ever set together in full mode, when a Maia session was loaded AND the pass completed
-without an exception (D-05 / D-09 guardrail, decided from ``is_maia_available()``, never
-from row counts). Games with zero user-side blunders are stamped too. Refutation mode
-(Phase 248 D-10) stamps only ``maia_refutation_completed_at``.
+The stamps ``games.maia_flaws_completed_at``, ``games.facepalm_spread_completed_at`` and
+``games.facepalm_line_completed_at`` are only ever set together in full mode, when a Maia
+session was loaded AND the pass completed without an exception (D-05 / D-09 guardrail, decided
+from ``is_maia_available()``, never from row counts). Games with zero user-side blunders are
+stamped too.
 
 Phase 250 adds two backfill-only modes (D-08, D-18) that touch user-side blunders only: spread
 mode (one post-blunder inference per blunder; writes the eight facepalm keys from the STORED
@@ -64,7 +60,6 @@ from app.repositories.game_flaws_repository import (
     mark_facepalm_line_completed,
     mark_facepalm_spread_completed,
     mark_maia_flaws_completed,
-    mark_maia_refutation_completed,
 )
 from app.repositories.query_utils import mover_is_white_at_ply
 from app.schemas.normalization import Platform, TimeControlBucket
@@ -79,12 +74,9 @@ from app.services.maia_flaw_stats import (
     FacepalmStats,
     MaiaFlawStats,
     MaiaReason,
-    MaiaRefutationStats,
     compute_maia_flaw_stats,
-    compute_refutation_stats,
     null_facepalm_stats,
     null_maia_stats,
-    null_refutation_stats,
     reply_spread,
 )
 from app.services.normalization import is_correspondence_time_control
@@ -93,21 +85,18 @@ logger = logging.getLogger(__name__)
 
 ScoringSource = Literal["full_eval_drain", "remote_eval_worker", "flaw_blob_submit", "backfill"]
 GameOutcome = Literal["stamped", "fingerprint_changed", "already_stamped", "game_missing"]
-# "full": all eighteen values per flaw plus the four stamps. "refutation" (Phase 248 D-10): only
-# the refutation pair of user-side blunders plus the refutation stamp (everything else untouched).
-# "spread" (Phase 250 D-08): the eight facepalm keys of user-side blunders from one post-blunder
-# inference each, reading the stored maia_played_prob; stamps the spread and line stamps.
+# "full": all nine values per flaw plus the three stamps. "spread" (Phase 250 D-08): the eight
+# facepalm keys of user-side blunders from one post-blunder inference each, reading the stored
+# maia_played_prob; stamps the spread and line stamps.
 # "line" (Phase 250 D-18): the six line keys plus facepalm_score of user-side blunders from the
 # stored line, played prob and spread; no Maia, stamps only the line stamp (cutoff-aware).
-ScoringMode = Literal["full", "refutation", "spread", "line"]
+ScoringMode = Literal["full", "spread", "line"]
 
-# (ply, game_flaws.fen, game_positions.best_move, raw missed_pv_lines[0].su,
-#  game_flaws.severity, refutation UCI = COALESCE(best_move, first pv token) at ply + 1,
-#  the stored line game_positions.pv at ply + 1). The line is part of the fingerprint
-# because a Phase 252 repair can rewrite it while keeping its first token, so the
-# refutation UCI alone would not notice the change (250 D-07): stale line facts must never
-# be written.
-FlawFingerprint = tuple[int, str, str | None, str | None, int, str | None, str | None]
+# (ply, game_flaws.fen, game_flaws.severity, the stored line game_positions.pv at ply + 1).
+# The line is part of the fingerprint because a Phase 252 repair can rewrite it, and the line
+# facts and the facepalm score are derived from it (250 D-07): stale line facts must never be
+# written.
+FlawFingerprint = tuple[int, str, int, str | None]
 
 # ply -> (pre-push board, played UCI)
 BoardsByPly = Mapping[int, tuple[chess.Board, str]]
@@ -115,15 +104,6 @@ BoardsByPly = Mapping[int, tuple[chess.Board, str]]
 # One write transaction holds one advisory lock per game; cap it so a batch caller can
 # never exhaust the lock table.
 MAX_GAMES_PER_WRITE_TXN: int = 50
-
-# game_flaws.missed_pv_lines[0].su, i.e. Stockfish's second-best move at the flaw ply,
-# extracted raw (no cleanup) so plan-01's D-15 rule decides what is usable.
-_MISSED_PV_FIRST_NODE_PATH: str = "0"
-_MISSED_PV_SECOND_UCI_KEY: str = "su"
-
-# game_positions.pv is a space-joined UCI line (game_position.py); its first token is the
-# refutation fallback when best_move is NULL at ply + 1 (D-20).
-REFUTATION_PV_SEPARATOR: str = " "
 
 
 class MaiaInferenceUnavailableError(RuntimeError):
@@ -134,13 +114,7 @@ class MaiaInferenceUnavailableError(RuntimeError):
 class FlawMaiaInput:
     ply: int
     fen: str
-    best_uci: str | None
-    second_uci: str | None
     severity: int
-    # Stockfish's best reply after the flaw move (D-02/D-20), None when no row carries one.
-    refutation_uci: str | None
-    # True when best_move was NULL at ply + 1 and the first pv token stood in (report only).
-    refutation_from_pv: bool
     # The stored line game_positions.pv at ply + 1 (space-separated UCI starting with the
     # opponent's reply), None when absent. Input of the Phase 250 line facts.
     refutation_pv: str | None
@@ -154,10 +128,7 @@ class FlawMaiaInput:
 
 
 def fingerprint_of(flaws: Sequence[FlawMaiaInput]) -> frozenset[FlawFingerprint]:
-    return frozenset(
-        (f.ply, f.fen, f.best_uci, f.second_uci, f.severity, f.refutation_uci, f.refutation_pv)
-        for f in flaws
-    )
+    return frozenset((f.ply, f.fen, f.severity, f.refutation_pv) for f in flaws)
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +157,6 @@ class GameMaiaScore:
     reasons: Counter[MaiaReason]
     # Counts over in-scope (user-side blunder) flaws, for the backfill report.
     user_blunders: int = 0
-    refutations_from_pv: int = 0
     # Rows that carry a reply spread / a facepalm score (spread, line and full modes).
     spreads_scored: int = 0
     scores_set: int = 0
@@ -201,43 +171,22 @@ class GameMaiaScore:
 
 def _flaw_fingerprint_select(game_ids: Sequence[int]) -> sa.Select[Any]:
     """One flaw SELECT shared by the load and the in-lock re-read (same columns, so the
-    fingerprints are comparable)."""
-    second_uci = sa.func.jsonb_extract_path_text(
-        GameFlaw.missed_pv_lines,
-        sa.literal(_MISSED_PV_FIRST_NODE_PATH, type_=sa.String),
-        sa.literal(_MISSED_PV_SECOND_UCI_KEY, type_=sa.String),
-    )
-    # Phase 248 (D-02/D-20): the refutation is the engine's best reply in the position
-    # AFTER the flaw move, stored at ply + 1 (best_move is decision-ply keyed, not shifted).
-    # best_move is NULL on a terminal row, where the refutation PV's first token stands in.
+    fingerprints are comparable).
+
+    The stored line sits at ply + 1 (game_positions.pv of the position AFTER the flaw move).
+    """
     gp_next = aliased(GamePosition)
-    refutation_uci = sa.func.coalesce(
-        gp_next.best_move,
-        sa.func.nullif(sa.func.split_part(gp_next.pv, REFUTATION_PV_SEPARATOR, 1), ""),
-    )
     return (
         sa.select(
             GameFlaw.game_id,
             GameFlaw.ply,
             GameFlaw.fen,
             GameFlaw.severity,
-            GamePosition.best_move,
-            second_uci,
-            gp_next.best_move,
-            refutation_uci,
             gp_next.pv,
             GameFlaw.maia_played_prob,
             GameFlaw.maia_reply_spread,
         )
         .select_from(GameFlaw)
-        .outerjoin(
-            GamePosition,
-            sa.and_(
-                GamePosition.game_id == GameFlaw.game_id,
-                GamePosition.user_id == GameFlaw.user_id,
-                GamePosition.ply == GameFlaw.ply,
-            ),
-        )
         .outerjoin(
             gp_next,
             sa.and_(
@@ -261,10 +210,6 @@ async def _read_flaw_inputs(
         ply,
         fen,
         severity,
-        best_move,
-        second_uci,
-        next_best,
-        refutation,
         next_pv,
         stored_played_prob,
         stored_reply_spread,
@@ -273,11 +218,7 @@ async def _read_flaw_inputs(
             FlawMaiaInput(
                 ply=ply,
                 fen=fen,
-                best_uci=best_move,
-                second_uci=second_uci,
                 severity=severity,
-                refutation_uci=refutation,
-                refutation_from_pv=next_best is None and refutation is not None,
                 refutation_pv=next_pv,
                 stored_played_prob=stored_played_prob,
                 stored_reply_spread=stored_reply_spread,
@@ -404,59 +345,31 @@ def _is_user_blunder(inputs: GameMaiaInputs, flaw: FlawMaiaInput) -> bool:
     return mover_is_white_at_ply(flaw.ply) == (inputs.user_color == "white")
 
 
-def _refutation_reason(post: chess.Board, refutation_uci: str | None) -> MaiaReason | None:
-    """Why `refutation_uci` is unusable as a reply on the post-blunder board, else None."""
-    if refutation_uci is None:
-        return "refutation_missing"
-    try:
-        refutation = chess.Move.from_uci(refutation_uci)
-    except ValueError:
-        # Worker-supplied strings land in game_positions (T-248-01): a malformed one
-        # must leave the pair NULL, not fail the whole game.
-        return "refutation_not_legal"
-    if refutation not in post.legal_moves:
-        return "refutation_not_legal"
-    return None
-
-
-def _derive_post_blunder(
-    pre_board: chess.Board,
-    played_uci: str,
-    elo: float,
-    refutation_uci: str | None,
-) -> tuple[MaiaRefutationStats, float | None, list[MaiaReason]]:
-    """Maia's view of the position after the blunder: refutation pair plus reply spread.
+def _derive_reply_spread(
+    pre_board: chess.Board, played_uci: str, elo: float
+) -> tuple[float | None, list[MaiaReason]]:
+    """Maia's reply spread in the position after the blunder (one inference).
 
     `pre_board` is the position before the blunder (blunderer to move) and `elo` the
     blunderer's pinned Elo, taken from THAT board's mover: the question is "would a player
-    of your level find this reply", so the opponent's rating never enters (248 D-04).
+    of your level find a reply", so the opponent's rating never enters (248 D-04).
     The post-blunder board is a copy with the played move pushed (248 D-05): the drain's own
     target boards are never mutated and castling / en-passant rights stay exact.
 
-    ONE full_policy call serves both outputs (250 D-07: no extra inference): the reply
-    spread is `reply_spread(probs)`, and the refutation pair is Maia's probability and rank
-    for Stockfish's best reply. The spread does not need that reply, so a missing, malformed
-    or illegal reply leaves only the pair NULL (reason `refutation_missing` /
-    `refutation_not_legal`) while the spread is still returned. An illegal played move or a
-    blunder that leaves the opponent no legal move spends no inference and returns the null
-    pair, a None spread and the reason.
+    An illegal played move or a blunder that leaves the opponent no legal move spends no
+    inference and returns a None spread plus the reason.
     """
     post = pre_board.copy(stack=False)
     played = chess.Move.from_uci(played_uci)
     if played not in post.legal_moves:
-        return null_refutation_stats(), None, ["played_not_legal"]
+        return None, ["played_not_legal"]
     post.push(played)
     if not any(post.legal_moves):
-        return null_refutation_stats(), None, ["no_legal_reply"]
+        return None, ["no_legal_reply"]
     probs = full_policy(post.fen(), elo)
     if probs is None:
         raise MaiaInferenceUnavailableError("full_policy returned None with Maia available")
-    spread = reply_spread(probs) if probs else None
-    reason = _refutation_reason(post, refutation_uci)
-    if reason is not None:
-        return null_refutation_stats(), spread, [reason]
-    refutation, pair_reason = compute_refutation_stats(probs, refutation_uci)
-    return refutation, spread, [] if pair_reason is None else [pair_reason]
+    return (reply_spread(probs) if probs else None), []
 
 
 def _facepalm_values(
@@ -507,23 +420,6 @@ def _flaw_board(flaw: FlawMaiaInput, boards: BoardsByPly) -> tuple[chess.Board, 
     return board, played_uci
 
 
-def _flaw_context(
-    inputs: GameMaiaInputs, flaw: FlawMaiaInput, boards: BoardsByPly
-) -> tuple[chess.Board, str, float] | MaiaReason:
-    """The (pre-push board, played UCI, mover Elo) of a scorable flaw, else the reason it is not.
-
-    The board / fen / rating guards shared by both modes; all run before any inference.
-    """
-    entry = _flaw_board(flaw, boards)
-    if isinstance(entry, str):
-        return entry
-    board, played_uci = entry
-    elo = _mover_elo(inputs, board)
-    if elo is None:
-        return "no_rating"
-    return board, played_uci, elo
-
-
 def _scope_facepalm(
     inputs: GameMaiaInputs,
     flaw: FlawMaiaInput,
@@ -542,44 +438,35 @@ def _derive_flaw_values(
     inputs: GameMaiaInputs,
     flaw: FlawMaiaInput,
     boards: BoardsByPly,
-) -> tuple[MaiaFlawStats | None, MaiaRefutationStats, FacepalmStats, list[MaiaReason]]:
-    """Derive the eight base values plus, for a user-side blunder, the refutation pair and
-    the eight facepalm values.
+) -> tuple[MaiaFlawStats | None, FacepalmStats, list[MaiaReason]]:
+    """Derive the base value plus, for a user-side blunder, the eight facepalm values.
 
     Exactly one full_policy call per scorable flaw (D-04) plus one per scorable user-side
-    blunder (the post-blunder position, even when its reply is unusable): the guards that
-    make a flaw unscorable all run before any inference. The board / fen guards run once and
-    feed every output. A user blunder with a board but no rating or no base stats still gets
-    its line facts (they need neither); the spread and the score need the Maia pass.
+    blunder (the post-blunder position): the guards that make a flaw unscorable all run
+    before any inference. The board / fen guards run once and feed every output. A user
+    blunder with a board but no rating or no base stats still gets its line facts (they need
+    neither); the spread and the score need the Maia pass.
     """
-    no_refutation = null_refutation_stats()
     entry = _flaw_board(flaw, boards)
     if isinstance(entry, str):
-        return None, no_refutation, null_facepalm_stats(), [entry]
+        return None, null_facepalm_stats(), [entry]
     board, played_uci = entry
     elo = _mover_elo(inputs, board)
     if elo is None:
         facepalm = _scope_facepalm(inputs, flaw, board, played_uci, None, None)
-        return None, no_refutation, facepalm, ["no_rating"]
+        return None, facepalm, ["no_rating"]
     probs = full_policy(board.fen(), elo)
     if probs is None:
         raise MaiaInferenceUnavailableError("full_policy returned None with Maia available")
-    stats, reasons = compute_maia_flaw_stats(
-        probs,
-        played_uci=played_uci,
-        best_uci=flaw.best_uci,
-        second_uci=flaw.second_uci,
-    )
+    stats, reasons = compute_maia_flaw_stats(probs, played_uci=played_uci)
     if stats is None or not _is_user_blunder(inputs, flaw):
         facepalm = _scope_facepalm(inputs, flaw, board, played_uci, None, None)
-        return stats, no_refutation, facepalm, reasons
-    refutation, spread, post_reasons = _derive_post_blunder(
-        board, played_uci, elo, flaw.refutation_uci
-    )
+        return stats, facepalm, reasons
+    spread, post_reasons = _derive_reply_spread(board, played_uci, elo)
     facepalm = _facepalm_values(
         board, played_uci, flaw.refutation_pv, stats["maia_played_prob"], spread
     )
-    return stats, refutation, facepalm, reasons + post_reasons
+    return stats, facepalm, reasons + post_reasons
 
 
 def _pk_row(inputs: GameMaiaInputs, flaw: FlawMaiaInput) -> dict[str, Any]:
@@ -593,52 +480,21 @@ def _flaw_row(
     game_reason: MaiaReason | None,
     reasons: Counter[MaiaReason],
 ) -> dict[str, Any]:
-    """One write row (PK plus all eighteen keys) for a flaw; counts its reasons.
+    """One write row (PK plus all nine keys) for a flaw; counts its reasons.
 
-    Out-of-scope and unscorable flaws carry a NULL refutation pair and NULL facepalm values,
-    so a full re-score also clears stale values on a row since downgraded from blunder
-    (D-08 precedent, 250 D-06).
+    Out-of-scope and unscorable flaws carry NULL facepalm values, so a full re-score also
+    clears stale values on a row since downgraded from blunder (D-08 precedent, 250 D-06).
     """
     stats: MaiaFlawStats | None = None
-    refutation = null_refutation_stats()
     facepalm = null_facepalm_stats()
     if game_reason is not None:
         reasons[game_reason] += 1
     else:
-        stats, refutation, facepalm, flaw_reasons = _derive_flaw_values(inputs, flaw, boards)
+        stats, facepalm, flaw_reasons = _derive_flaw_values(inputs, flaw, boards)
         reasons.update(flaw_reasons)
     row = _pk_row(inputs, flaw)
     row.update(stats if stats is not None else null_maia_stats())
-    row.update(refutation)
     row.update(facepalm)
-    return row
-
-
-def _refutation_row(
-    inputs: GameMaiaInputs,
-    flaw: FlawMaiaInput,
-    boards: BoardsByPly,
-    game_reason: MaiaReason | None,
-    reasons: Counter[MaiaReason],
-) -> dict[str, Any]:
-    """One refutation-mode row for a user-side blunder: PK plus ONLY the two refutation keys.
-
-    The eight base values and the facepalm values are deliberately absent so the write
-    leaves them untouched (D-10); the spread the shared inference also yields is dropped.
-    """
-    refutation = null_refutation_stats()
-    context: tuple[chess.Board, str, float] | MaiaReason
-    context = game_reason if game_reason is not None else _flaw_context(inputs, flaw, boards)
-    if isinstance(context, str):
-        reasons[context] += 1
-    else:
-        board, played_uci, elo = context
-        refutation, _spread, post_reasons = _derive_post_blunder(
-            board, played_uci, elo, flaw.refutation_uci
-        )
-        reasons.update(post_reasons)
-    row = _pk_row(inputs, flaw)
-    row.update(refutation)
     return row
 
 
@@ -653,9 +509,8 @@ def _spread_row(
 
     The same values the hook writes (`_facepalm_values`), but the base inference is not re-run:
     the played probability is the stored `maia_played_prob`. One post-blunder inference yields
-    the spread (its refutation pair is discarded: the pair columns are not written). The line
-    facts need no rating, so a missing rating keeps them and leaves the spread and score NULL,
-    exactly as the hook does. The base values and the refutation pair are never touched.
+    the spread. The line facts need no rating, so a missing rating keeps them and leaves the
+    spread and score NULL, exactly as the hook does. The base value is never touched.
     """
     values = null_facepalm_stats()
     entry: tuple[chess.Board, str] | MaiaReason
@@ -669,9 +524,7 @@ def _spread_row(
         if elo is None:
             reasons["no_rating"] += 1
         else:
-            _pair, spread, post_reasons = _derive_post_blunder(
-                board, played_uci, elo, flaw.refutation_uci
-            )
+            spread, post_reasons = _derive_reply_spread(board, played_uci, elo)
             reasons.update(post_reasons)
         values = _facepalm_values(
             board, played_uci, flaw.refutation_pv, flaw.stored_played_prob, spread
@@ -698,8 +551,7 @@ def _line_row(
     No Maia, no rating: the line facts come from the replayed board and the stored line, the
     score from the stored `maia_played_prob` and `maia_reply_spread` plus those facts. A flaw
     whose board cannot be rebuilt gets NULL line keys (the stored values would describe a
-    different position). `maia_reply_spread`, the base values and the refutation pair are never
-    written.
+    different position). `maia_reply_spread` and the base value are never written.
     """
     values = null_facepalm_stats()
     entry: tuple[chess.Board, str] | MaiaReason
@@ -722,7 +574,6 @@ def _line_row(
 
 # Row builders of the user-blunder-only modes (full mode scores every flaw via `_flaw_row`).
 _USER_BLUNDER_ROW_BUILDERS = {
-    "refutation": _refutation_row,
     "spread": _spread_row,
     "line": _line_row,
 }
@@ -736,7 +587,7 @@ def _score_rows(
     reasons: Counter[MaiaReason],
 ) -> tuple[list[FlawMaiaInput], list[dict[str, Any]]]:
     """(flaws in scope, one row per in-scope flaw): every flaw in full mode, user blunders only
-    in the refutation, spread and line modes."""
+    in the spread and line modes."""
     if mode == "full":
         flaws = list(inputs.flaws)
         return flaws, [_flaw_row(inputs, f, boards, game_reason, reasons) for f in flaws]
@@ -752,14 +603,12 @@ def score_game(
 
     boards None means "replay from the PGN" (callers without in-memory targets).
 
-    Full mode: every flaw yields a row carrying all eighteen keys (None for an unscorable or
+    Full mode: every flaw yields a row carrying all nine keys (None for an unscorable or
     out-of-scope value), so a re-score never leaves a stale value (D-08).
-    Refutation mode (D-10): only user-side blunders yield a row, carrying just the two
-    refutation keys; a game with none replays nothing and runs no inference (D-09), and the
-    PGN replay covers only the blunder plies (D-05).
     Spread mode (250 D-08): user-side blunders only, rows carry the eight facepalm keys; one
-    post-blunder inference each. Line mode (250 D-18): user-side blunders only, rows carry the
-    six line keys plus facepalm_score; never calls Maia.
+    post-blunder inference each (a game with none replays nothing and runs no inference, and
+    the PGN replay covers only the blunder plies). Line mode (250 D-18): user-side blunders
+    only, rows carry the six line keys plus facepalm_score; never calls Maia.
     """
     scope_plies = (
         {f.ply for f in inputs.flaws}
@@ -781,14 +630,6 @@ def score_game(
         rows=rows,
         reasons=reasons,
         user_blunders=sum(1 for f in scope_flaws if _is_user_blunder(inputs, f)),
-        # Only full and refutation rows carry the refutation key.
-        refutations_from_pv=sum(
-            1
-            for f, row in zip(scope_flaws, rows, strict=True)
-            if f.refutation_from_pv and row.get("maia_refutation_prob") is not None
-        )
-        if mode in ("full", "refutation")
-        else 0,
         spreads_scored=sum(1 for row in rows if row.get("maia_reply_spread") is not None),
         scores_set=sum(1 for row in rows if row.get("facepalm_score") is not None),
         mode=mode,
@@ -837,7 +678,6 @@ def _outcome_for(
 # The game stamp each mode checks (require_unstamped) and, in `_STAMPS_BY_MODE`, the stamps it sets.
 _STAMP_COLUMN_BY_MODE: dict[ScoringMode, Any] = {
     "full": Game.maia_flaws_completed_at,
-    "refutation": Game.maia_refutation_completed_at,
     "spread": Game.facepalm_spread_completed_at,
     "line": Game.facepalm_line_completed_at,
 }
@@ -849,8 +689,6 @@ async def _mark_stamps(session: AsyncSession, mode: ScoringMode, game_ids: Seque
         await mark_maia_flaws_completed(session, game_ids)
         await mark_facepalm_spread_completed(session, game_ids)
         await mark_facepalm_line_completed(session, game_ids)
-    if mode in ("full", "refutation"):
-        await mark_maia_refutation_completed(session, game_ids)
     if mode == "spread":
         # The spread pass writes the line facts and the score too, so it settles both stamps.
         await mark_facepalm_spread_completed(session, game_ids)
@@ -889,10 +727,8 @@ async def write_game_maia_scores(
     All scores of one call share a mode (ValueError otherwise: the modes carry different key
     sets, so one executemany cannot take two). Stamps checked and set per mode:
 
-    - full: checks maia_flaws_completed_at; sets all four stamps (the two Maia stamps and, since
-      Phase 250, the two facepalm stamps).
-    - refutation: checks and sets only maia_refutation_completed_at; never touches the base
-      columns, the facepalm columns or the other stamps (D-10).
+    - full: checks maia_flaws_completed_at; sets all three stamps (the Maia stamp and the two
+      facepalm stamps).
     - spread (250 D-08): checks facepalm_spread_completed_at; sets it and
       facepalm_line_completed_at (the pass wrote the line facts too).
     - line (250 D-18): checks facepalm_line_completed_at against `line_cutoff` (a stamp at or
@@ -1007,7 +843,6 @@ __all__ = [
     "GameOutcome",
     "MAX_GAMES_PER_WRITE_TXN",
     "MaiaInferenceUnavailableError",
-    "REFUTATION_PV_SEPARATOR",
     "ScoringMode",
     "ScoringSource",
     "boards_from_targets",

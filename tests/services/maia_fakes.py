@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
-from app.models.game_position import GamePosition
 from app.repositories.game_flaws_repository import FACEPALM_COLUMNS
 from app.repositories.query_utils import mover_is_white_at_ply
 
@@ -37,22 +36,20 @@ def fake_full_policy(fen: str, elo: float) -> dict[str, float]:
     return {uci: (n - i) / total for i, uci in enumerate(ucis)}
 
 
-async def assert_refutation_lane_state(
+async def assert_maia_lane_state(
     maker: async_sessionmaker[AsyncSession], game_id: int, *, expect_stamped: bool = True
 ) -> int:
-    """Phase 248 lane assertions shared by the drain and endpoint tests (D-07).
+    """Post-apply hook lane assertions shared by the drain and endpoint tests (Phase 248 D-07).
 
     Phase 250 D-07: the same post-apply hook scores the facepalm values in every lane, so this
-    helper also proves them. Reads the game back and checks: all four completion stamps (the
-    two Maia stamps and the two facepalm stamps) set, or all NULL when ``expect_stamped`` is
-    False and nothing was written; every user-side blunder whose ply+1 row carries a reply
-    (best_move or first pv token) has a refutation pair, and every other flaw has a NULL pair;
-    every user-side blunder whose post-blunder position has a legal move has a non-NULL
-    ``maia_reply_spread`` (reply or not: the spread does not need it), and every other flaw has
-    all eight facepalm columns NULL. User-side is computed with ``mover_is_white_at_ply`` and
-    the game's user_color. Returns the number of scored user-side blunders (those with a
-    refutation pair); callers assert it is at least 1 when their seed guarantees a user-side
-    blunder with a reply.
+    helper proves them. Reads the game back and checks: all three completion stamps
+    (``maia_flaws_completed_at`` and the two facepalm stamps) set, or all NULL when
+    ``expect_stamped`` is False and nothing was written; every user-side blunder whose
+    post-blunder position has a legal move has a non-NULL ``maia_reply_spread``, and every
+    other flaw has all eight facepalm columns NULL. User-side is computed with
+    ``mover_is_white_at_ply`` and the game's user_color. Returns the number of user-side
+    blunders carrying a reply spread; callers assert it is at least 1 when their seed
+    guarantees a user-side blunder with a legal reply.
     """
     async with maker() as session:
         game = (await session.execute(select(Game).where(Game.id == game_id))).scalar_one()
@@ -61,20 +58,8 @@ async def assert_refutation_lane_state(
             .scalars()
             .all()
         )
-        position_rows = (
-            await session.execute(
-                select(GamePosition.ply, GamePosition.best_move, GamePosition.pv).where(
-                    GamePosition.game_id == game_id
-                )
-            )
-        ).all()
-    # Refutation source (D-20): best_move, else the first pv token, at ply + 1.
-    reply_by_ply = {
-        ply: best_move or (pv.split(" ")[0] if pv else None) for ply, best_move, pv in position_rows
-    }
     stamps = (
         game.maia_flaws_completed_at,
-        game.maia_refutation_completed_at,
         game.facepalm_spread_completed_at,
         game.facepalm_line_completed_at,
     )
@@ -88,16 +73,9 @@ async def assert_refutation_lane_state(
         user_blunder = flaw.severity == _BLUNDER_SEVERITY and mover_is_white_at_ply(flaw.ply) == (
             game.user_color == "white"
         )
-        expect_pair = expect_stamped and user_blunder and reply_by_ply.get(flaw.ply + 1) is not None
-        if expect_pair:
-            assert flaw.maia_refutation_prob is not None, flaw.ply
-            assert flaw.maia_refutation_rank is not None, flaw.ply
-            scored += 1
-        else:
-            assert flaw.maia_refutation_prob is None, flaw.ply
-            assert flaw.maia_refutation_rank is None, flaw.ply
         if expect_stamped and user_blunder and _has_legal_reply(pgn_boards, flaw.ply):
             assert flaw.maia_reply_spread is not None, flaw.ply
+            scored += 1
         elif not (expect_stamped and user_blunder):
             for column in FACEPALM_COLUMNS:
                 assert getattr(flaw, column) is None, (flaw.ply, column)

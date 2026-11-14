@@ -41,7 +41,7 @@ import sqlalchemy as sa
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.services.maia_fakes import assert_refutation_lane_state
+from tests.services.maia_fakes import assert_maia_lane_state
 
 # ─── Module-level test constants ──────────────────────────────────────────────
 
@@ -3058,11 +3058,8 @@ class TestBestMoveBackfill:
             assert flaws, "the seeded evals must classify at least one flaw"
             for flaw in flaws:
                 assert flaw.maia_played_prob is not None
-                assert flaw.maia_played_rank is not None
-                assert flaw.maia_top_prob is not None
-                assert flaw.maia_effective_moves is not None
             assert stamp is not None, "a completed Maia pass must stamp the game"
-            scored = await assert_refutation_lane_state(full_drain_session_maker, game_id)
+            scored = await assert_maia_lane_state(full_drain_session_maker, game_id)
             assert scored >= 1, "the seed must hold a scored user-side blunder (ply 6)"
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
@@ -3125,21 +3122,9 @@ class TestBestMoveBackfill:
                 ).scalar_one()
             assert flaws, "the seeded evals must classify at least one flaw"
             for flaw in flaws:
-                for col in (
-                    "maia_played_prob",
-                    "maia_played_rank",
-                    "maia_best_prob",
-                    "maia_best_rank",
-                    "maia_second_prob",
-                    "maia_second_rank",
-                    "maia_top_prob",
-                    "maia_effective_moves",
-                ):
-                    assert getattr(flaw, col) is None, col
+                assert flaw.maia_played_prob is None
             assert stamp is None, "a Maia-absent apply must never stamp"
-            await assert_refutation_lane_state(
-                full_drain_session_maker, game_id, expect_stamped=False
-            )
+            await assert_maia_lane_state(full_drain_session_maker, game_id, expect_stamped=False)
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 

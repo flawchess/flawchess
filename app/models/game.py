@@ -278,19 +278,11 @@ class Game(Base):
     maia_flaws_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
-    # Phase 248: per-game marker for the blunder-check refutation pass
-    # (game_flaws.maia_refutation_* columns). Stamped by app/services/maia_flaw_scoring.py
-    # together with maia_flaws_completed_at, only when Maia was available and the pass
-    # completed; stamped for games with zero user-side blunders too. Cleared together with
-    # the 247 stamp by a reclassification (clear_maia_flaws_completed). No index on purpose.
-    maia_refutation_completed_at: Mapped[datetime.datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
-    )
     # Phase 250 (D-18): per-game checkpoints of the two facepalm passes. The spread stamp
     # marks the Maia pass (game_flaws.maia_reply_spread), the line stamp marks the line
     # pass (line losses, mate ply, facepalm_score), which is re-runnable with a cutoff.
     # Stamped by app/services/maia_flaw_scoring.py; cleared by a reclassification via
-    # clear_maia_flaws_completed. No index on purpose (same reasoning as the 247/248 stamps).
+    # clear_maia_flaws_completed. No index on purpose (same reasoning as the Phase 247 stamp).
     facepalm_spread_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
