@@ -4,9 +4,9 @@ milestone: v2.29
 current_phase: 253
 status: completed
 stopped_at: Phase 253 complete — all phases complete
-last_updated: "2026-11-14T16:54:47.642Z"
+last_updated: "2026-11-14T17:05:38.539Z"
 last_activity: 2026-11-14
-state_head: ae023309af3e0606c48b8fedf5d7c8e8ec669377
+state_head: cd158b2fe2e3ae35ce1b205d92abb24f4cd786a6
 progress:
   total_phases: 7
   completed_phases: 63
@@ -1123,6 +1123,7 @@ None active.
 | 261112-j47 | Engine wrapper keeps last exact info line; schema v3 gate on 1M-node lease lanes (SEED-261112-s4v Part A backend) | 2026-11-12 | c87b90090 | [261112-j47-engine-wrapper-keep-last-exact-info-line](./quick/261112-j47-engine-wrapper-keep-last-exact-info-line/) |
 | 261112-k56 | Opening cache: 1-2 ply cached lines count as missing, are re-searched and healed (SEED-261112-s4v Part A item 3) | 2026-11-12 | 74fd92567 | [261112-k56-opening-cache-treat-1-2-ply-cached-lines](./quick/261112-k56-opening-cache-treat-1-2-ply-cached-lines/) |
 | 261112-l25 | Frontend engine hooks: bound lines never replace an exact line's moves (SEED-261112-s4v Part A item 4) | 2026-11-12 | be2e625e9 | [261112-l25-frontend-engine-hooks-bound-lines-never-](./quick/261112-l25-frontend-engine-hooks-bound-lines-never-/) |
+| 261114-p12 | Tactic Depth presets All/Low/Mid/High; Facepalm upper handle on multiples of 5%, hint removed | 2026-11-14 | cd158b2fe | [261114-p12-tactic-depth-filter-presets-all-low-mid-](./quick/261114-p12-tactic-depth-filter-presets-all-low-mid-/) |
 
 ## Deferred Items
 
