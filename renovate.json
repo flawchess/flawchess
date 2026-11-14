@@ -82,6 +82,11 @@
       "matchPackageNames": ["js-yaml", "fast-uri"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "Throwaway GSD sketches under .planning/ load CDN scripts (e.g. chess.js 0.13) that nothing ships. PR #468 (2026-11-14) bumped one to a chess.js 1.4.0 cdnjs URL that 404s, and 1.x throws on illegal moves where the sketch expects null. A packageRule rather than ignorePaths, which would replace the preset's default ignore list.",
+      "matchFileNames": [".planning/**"],
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {
