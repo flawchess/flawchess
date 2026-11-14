@@ -761,7 +761,7 @@ describe('Facepalm section', () => {
     );
   });
 
-  it('sits under Flaws severity and above Best Moves and Tactic Depth (D-13)', () => {
+  it('orders the panel Best Moves, divider, Flaws, Facepalm, divider, Tactic Depth', () => {
     render(
       <FlawFilterControl
         {...defaultProps}
@@ -771,15 +771,29 @@ describe('Facepalm section', () => {
         onHasGreatToggle={vi.fn()}
       />,
     );
-    const mistake = screen.getByTestId('filter-flaw-severity-mistake');
-    const facepalm = screen.getByTestId('filter-facepalm');
-    const gem = screen.getByTestId('filter-has-gem');
-    const depth = screen.getByTestId('filter-tactic-depth');
+    const order = [
+      screen.getByTestId('filter-has-gem'),
+      screen.getByTestId('filter-best-moves-divider'),
+      screen.getByTestId('filter-flaw-severity-mistake'),
+      screen.getByTestId('filter-facepalm'),
+      screen.getByTestId('filter-facepalm-divider'),
+      screen.getByTestId('filter-tactic-depth'),
+    ];
     const follows = (a: HTMLElement, b: HTMLElement) =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(follows(mistake, facepalm)).toBe(true);
-    expect(follows(facepalm, gem)).toBe(true);
-    expect(follows(facepalm, depth)).toBe(true);
+    order.slice(1).forEach((el, i) => expect(follows(order[i]!, el)).toBe(true));
+  });
+
+  it('renders neither divider when Best Moves and Facepalm are not shown', () => {
+    render(<FlawFilterControl {...defaultProps} showTacticFilter />);
+    expect(screen.queryByTestId('filter-best-moves-divider')).toBeNull();
+    expect(screen.queryByTestId('filter-facepalm-divider')).toBeNull();
+  });
+
+  it('keeps the Facepalm divider on the Flaws tab, where Best Moves is absent', () => {
+    render(<FlawFilterControl {...defaultProps} showTacticFilter onFacepalmChange={vi.fn()} />);
+    expect(screen.queryByTestId('filter-best-moves-divider')).toBeNull();
+    expect(screen.getByTestId('filter-facepalm-divider')).toBeTruthy();
   });
 
   it('leaves the severity toggles untouched by a narrowed range (D-11)', () => {
