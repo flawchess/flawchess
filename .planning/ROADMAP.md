@@ -346,7 +346,7 @@ Plans:
 
 **Wave 8** *(human-gated, independent of each other)*
 - [ ] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline)
-- [ ] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
+- [x] 250-11-PLAN.md — D-11: stop computing and drop the nine Maia columns, one-way go / no-go, deploy
 
 ### Phase 251: Blunder-Check Schedule, Reviews and Leaderboards (SEED-261108-dk0)
 
