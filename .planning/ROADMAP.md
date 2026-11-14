@@ -318,7 +318,7 @@ once its prod pv repair is complete, a line-only pass recomputes the line losses
 **Depends on**: Phase 249 (merged; this phase rewrites its selection predicate). Its final recompute pass (D-18)
 runs after Phase 252's prod pv repair
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-18)
-**Plans:** 8/11 plans executed
+**Plans:** 9/11 plans executed
 
 Plans:
 **Wave 1**
@@ -342,7 +342,7 @@ Plans:
 - [x] 250-08-PLAN.md — Calibration and spot-check rewrite (D-10), retire 249 findability code, pre-merge gate, changelog
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 250-09-PLAN.md — Release, prod spread backfill, prod calibration and spot-check, owner verdict (orchestrator-inline)
+- [x] 250-09-PLAN.md — Release, prod spread backfill, prod calibration and spot-check, owner verdict (orchestrator-inline)
 
 **Wave 8** *(human-gated, independent of each other)*
 - [ ] 250-10-PLAN.md — D-18: refit on repaired lines and prod line pass, after Phase 252's pv repair (orchestrator-inline)
