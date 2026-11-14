@@ -184,3 +184,51 @@ LINE_FIXTURES: tuple[LineFixture, ...] = (
         note="1-ply mate line",
     ),
 )
+
+
+@dataclass(frozen=True)
+class OwnerMissFixture:
+    """One owner-labelled missed gain (Phase 254 D-05): both stored lines at the flaw ply.
+
+    `best_line` is game_positions.pv at the flaw ply (best move first), `refutation_line`
+    the pv at ply + 1 (the opponent's punishing reply first). Expected values are signed net
+    material at depth 3 from the blunderer's side (positive = blunderer up), the inputs of
+    the D-05 missed term.
+    """
+
+    game_id: int
+    ply: int
+    pre_fen: str
+    played_uci: str
+    best_line: str
+    refutation_line: str
+    expected_played_3: int
+    expected_best_3: int
+    note: str
+
+
+# Copied from the dev database (read-only), embedded so the tests have no DB dependency.
+OWNER_MISS_FIXTURES: tuple[OwnerMissFixture, ...] = (
+    OwnerMissFixture(
+        game_id=817357,
+        ply=24,
+        pre_fen="r1b1k2r/p1q2ppp/p3p3/2Bp4/3Qn3/2P1PN2/PP3PPP/R3K2R w KQkq - 4 13",
+        played_uci="c5a3",
+        best_line="d4g7 c7c5 g7h8 c5f8 h8d4 c8b7 f3d2 e4d6 e1g1 e8c8 f2f3 f8e7",
+        refutation_line="f7f6 e1g1 c8b7 d4d3 e8f7 f3d4 a6a5 f1c1 a8c8 d3b5 a7a6 b5a4",
+        expected_played_3=0,
+        expected_best_3=3,
+        note="played Ba3 keeps material level at depth 3, best Qxg7 wins a pawn and more: missed 3",
+    ),
+    OwnerMissFixture(
+        game_id=820181,
+        ply=65,
+        pre_fen="5r2/6bk/2p3p1/p2q1R1p/Pp6/1N1PB1Q1/1PP5/1K5R b - - 0 33",
+        played_uci="f8f5",
+        best_line="d5h1 e3c1 f8f5 b3d2 h5h4 g3e3 h1d5 d2e4 d5e5 c2c3 f5f1 b1a2",
+        refutation_line="h1g1 d5f7 g3g2 f7f6 e3d4 f6f7 d4g7 h7g7 b3d4 f5f4 d4c6 f4f2",
+        expected_played_3=5,
+        expected_best_3=10,
+        note="played Rxf5 wins a rook but the best line wins more: missed 5",
+    ),
+)

@@ -1,11 +1,14 @@
-"""Build the features table the facepalm score is fitted on (Phase 250 D-01, D-02).
+"""Build the features table the facepalm score is fitted on (Phase 250 D-01, D-02; Phase 254 D-16).
 
 One row per labelled blunder (plus optional unlabelled extra rows such as Window 14):
 the Maia played probability stored on game_flaws, the reply spread of the FULL Maia policy
-one ply after the blunder at the blunderer's pinned Elo, and the line material facts of the
-stored refutation line. Every value is computed with the app's own functions
-(``replay_flaw_boards``, ``pinned_elo_for_mover``, ``reply_spread``, ``line_facts``), so the
-fit sees exactly what the go-forward hook and the backfill will store.
+one ply after the blunder at the blunderer's pinned Elo, the line material facts of the
+stored refutation line (the played line) and, from Phase 254, the facts of the stored best
+line plus the two pre-blunder Maia inputs (the best move's probability and the reply spread
+of the position before the blunder, both from ONE pre-blunder policy call). Every value is
+computed with the app's own functions (``replay_flaw_boards``, ``pinned_elo_for_mover``,
+``reply_spread``, ``line_facts``, ``best_line_facts``), so the fit sees exactly what the
+go-forward hook and the backfill will store.
 
 The table is committed under ``reports/blunder-check/`` and ``fit_facepalm.py`` re-runs from
 it alone (no cache, no DB, no Maia).
@@ -14,7 +17,12 @@ Usage (database access is read-only, see ``make_readonly_engine``)::
 
     uv run --group maia-inference python scripts/blunder_check/facepalm_features.py \
         --db prod --labels reports/blunder-check/leg2-labels-2026-11-11.tsv \
-        --pv-cache temp/blunder-check --extra 2099808:23 --out <features.tsv>
+        --labels <miss-labels.tsv> --pv-cache temp/blunder-check \
+        --extra 2099808:23 --out <features.tsv>
+
+``--labels`` may be given more than once (the rows of every file, in argument order, then the
+``--extra`` rows). The best line always comes from the database (``game_positions.pv`` at the
+flaw ply); ``--pv-cache`` only ever covered the refutation line.
 """
 
 from __future__ import annotations
@@ -51,7 +59,12 @@ from app.schemas.normalization import Platform, TimeControlBucket  # noqa: E402
 from app.services import maia_engine  # noqa: E402
 from app.services.best_move_candidates import pinned_elo_for_mover  # noqa: E402
 from app.services.facepalm_score import loss_feature  # noqa: E402
-from app.services.line_material import LINE_LOSS_DEPTHS, LineFacts, line_facts  # noqa: E402
+from app.services.line_material import (  # noqa: E402
+    LINE_MATERIAL_DEPTHS,
+    LineFacts,
+    best_line_facts,
+    line_facts,
+)
 from app.services.maia_flaw_scoring import replay_flaw_boards  # noqa: E402
 from app.services.maia_flaw_stats import reply_spread  # noqa: E402
 from app.services.normalization import is_correspondence_time_control  # noqa: E402
@@ -63,6 +76,12 @@ from scripts.blunder_check.sample import make_readonly_engine  # noqa: E402
 
 PvSource = Literal["cache", "cache_none", "db", "db_none"]
 
+# Signed material (positive = the blunderer is up) after N plies of the played line / best line.
+PLAYED_MAT_COLUMNS: tuple[str, ...] = tuple(f"played_mat_{depth}" for depth in LINE_MATERIAL_DEPTHS)
+BEST_MAT_COLUMNS: tuple[str, ...] = tuple(f"best_mat_{depth}" for depth in LINE_MATERIAL_DEPTHS)
+
+# The facts schema (Phase 254). The committed 2026-11-13 table uses the older "legacy" schema
+# (line_loss_N columns) that fit_facepalm.py still reads.
 FEATURE_COLUMNS: tuple[str, ...] = (
     "n",
     "set",
@@ -72,14 +91,16 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "pinned_elo",
     "played_prob",
     "reply_spread",
-    "line_loss_1",
-    "line_loss_3",
-    "line_loss_5",
-    "line_loss_7",
-    "line_loss_9",
+    "best_prob",
+    "pre_spread",
+    *PLAYED_MAT_COLUMNS,
     "line_mate_ply",
+    *BEST_MAT_COLUMNS,
+    "best_mate_ply",
+    "best_uci",
     "pv_source",
     "pv_plies",
+    "best_pv_plies",
     "note",
 )
 
@@ -94,6 +115,8 @@ PV_SEPARATOR: str = " "
 NOTE_ILLEGAL_PLAYED: str = "illegal_played_move"
 NOTE_NO_ELO: str = "rating_unknown"
 NOTE_NO_POLICY: str = "no_policy"
+NOTE_NO_PRE_POLICY: str = "no_pre_policy"
+NOTE_SEPARATOR: str = ";"
 NOTE_GAME_OVER: str = "post_board_game_over"
 
 
@@ -116,14 +139,24 @@ class FeatureRow:
     pinned_elo: float | None
     played_prob: float | None
     reply_spread: float | None
+    best_prob: float | None
+    pre_spread: float | None
     facts: LineFacts
+    best_facts: LineFacts
+    best_uci: str | None
     pv_source: PvSource
     pv_plies: int
+    best_pv_plies: int
     note: str
 
 
 def _pv_plies(pv: str | None) -> int:
     return len(pv.split(PV_SEPARATOR)) if pv else 0
+
+
+def _join_notes(*notes: str) -> str:
+    """The distinct non-empty notes, in order, joined with NOTE_SEPARATOR."""
+    return NOTE_SEPARATOR.join(dict.fromkeys(note for note in notes if note))
 
 
 def _spread_for(
@@ -140,6 +173,33 @@ def _spread_for(
     return reply_spread(policy), ""
 
 
+def best_uci_of(best_pv: str | None, best_move: str | None) -> str | None:
+    """The best move: the first token of the stored best line, else game_positions.best_move.
+
+    The two disagree on a handful of rows (research Pitfall 7); the line wins so the best-move
+    probability and the best-line facts always describe the same move.
+    """
+    if best_pv:
+        return best_pv.split(PV_SEPARATOR)[0]
+    return best_move or None
+
+
+def _pre_inputs(
+    pre_board: chess.Board, best_uci: str | None, pinned_elo: float | None, policy_fn: PolicyFn
+) -> tuple[float | None, float | None, str]:
+    """(best_prob, pre_spread, note) from ONE policy call on the pre-blunder board (D-08)."""
+    if pinned_elo is None:
+        return None, None, NOTE_NO_ELO
+    policy = policy_fn(pre_board.fen(), pinned_elo)
+    if not policy:
+        return None, None, NOTE_NO_PRE_POLICY
+    best_prob = policy.get(best_uci) if best_uci else None
+    # The pre-blunder spread is the 247 effective-moves formula on the pre-blunder policy. Plan
+    # 254-16 adds `pre_blunder_spread` as a named wrapper of this same formula; until then the
+    # app's `reply_spread` is the one implementation (it is the same `_effective_moves`).
+    return best_prob, reply_spread(policy), ""
+
+
 def build_feature_row(
     label_row: LabelRow,
     *,
@@ -150,37 +210,42 @@ def build_feature_row(
     pv: str | None,
     pv_source: PvSource,
     policy_fn: PolicyFn,
+    best_pv: str | None = None,
+    best_move: str | None = None,
 ) -> FeatureRow:
-    """Compute the features of one blunder from the replayed pre-board and the stored line.
+    """Compute the features of one blunder from the replayed pre-board and the stored lines.
 
-    `pre_board` is the position before the blunder (never mutated); `pv` is the stored line from
-    the position after it. The reply spread comes from `policy_fn` on the post-blunder board at
-    `pinned_elo`; the line facts from the app's `line_facts`.
+    `pre_board` is the position before the blunder (never mutated); `pv` is the stored
+    refutation line from the position after it and `best_pv` the stored best line at the flaw
+    ply (best move first). The reply spread comes from `policy_fn` on the post-blunder board at
+    `pinned_elo`; the best-move probability and the pre-blunder spread from ONE `policy_fn`
+    call on the pre-board; the line facts from the app's `line_facts` / `best_line_facts`.
     """
+    best_uci = best_uci_of(best_pv, best_move)
+    best_prob, pre_spread, pre_note = _pre_inputs(pre_board, best_uci, pinned_elo, policy_fn)
     post_board = pre_board.copy(stack=False)
     try:
         post_board.push_uci(played_uci)
     except ValueError:
-        return FeatureRow(
-            label_row=label_row,
-            pinned_elo=pinned_elo,
-            played_prob=played_prob,
-            reply_spread=None,
-            facts=line_facts(pre_board, played_uci, None),
-            pv_source=pv_source,
-            pv_plies=_pv_plies(pv),
-            note=NOTE_ILLEGAL_PLAYED,
-        )
-    spread, note = _spread_for(post_board, pinned_elo, policy_fn)
+        spread, note = None, NOTE_ILLEGAL_PLAYED
+        facts = line_facts(pre_board, played_uci, None)
+    else:
+        spread, note = _spread_for(post_board, pinned_elo, policy_fn)
+        facts = line_facts(pre_board, played_uci, pv)
     return FeatureRow(
         label_row=label_row,
         pinned_elo=pinned_elo,
         played_prob=played_prob,
         reply_spread=spread,
-        facts=line_facts(pre_board, played_uci, pv),
+        best_prob=best_prob,
+        pre_spread=pre_spread,
+        facts=facts,
+        best_facts=best_line_facts(pre_board, best_pv or best_move),
+        best_uci=best_uci,
         pv_source=pv_source,
         pv_plies=_pv_plies(pv),
-        note=note,
+        best_pv_plies=_pv_plies(best_pv),
+        note=_join_notes(note, pre_note),
     )
 
 
@@ -194,9 +259,8 @@ def _cell(value: object) -> str:
 
 
 def feature_cells(row: FeatureRow) -> list[str]:
-    """The cells of `row` in FEATURE_COLUMNS order."""
+    """The cells of `row` in FEATURE_COLUMNS order (signed material, positive = blunderer up)."""
     label_row = row.label_row
-    loss_cells = [row.facts.loss_at(depth) for depth in LINE_LOSS_DEPTHS]
     values: list[object] = [
         label_row.n,
         label_row.set_id,
@@ -206,10 +270,16 @@ def feature_cells(row: FeatureRow) -> list[str]:
         row.pinned_elo,
         row.played_prob,
         row.reply_spread,
-        *loss_cells,
+        row.best_prob,
+        row.pre_spread,
+        *row.facts.material_array(),
         row.facts.mate_ply,
+        *row.best_facts.material_array(),
+        row.best_facts.opponent_mate_ply,
+        row.best_uci,
         row.pv_source,
         row.pv_plies,
+        row.best_pv_plies,
         row.note,
     ]
     return [_cell(value) for value in values]
@@ -266,6 +336,9 @@ class GameInputs:
     played_prob: float | None
     severity: int
     pv: str | None
+    # Stored best line (best move first) and best move at the flaw ply (Phase 254 D-16).
+    best_pv: str | None = None
+    best_move: str | None = None
 
 
 def cache_key(game_id: int, ply: int) -> str:
@@ -383,14 +456,19 @@ def resolve_feature_row(
         pv=pv,
         pv_source=pv_source,
         policy_fn=policy_fn,
+        best_pv=inputs.best_pv,
+        best_move=inputs.best_move,
     )
     if inputs.severity != BLUNDER_SEVERITY:
-        row = replace(row, note=";".join(part for part in (row.note, NOTE_NOT_A_BLUNDER) if part))
+        row = replace(row, note=_join_notes(row.note, NOTE_NOT_A_BLUNDER))
     return row, mismatch
 
 
 async def read_game_inputs(conn: AsyncConnection, game_id: int, ply: int) -> GameInputs | None:
-    """The game, its flaw row at `ply` and the stored line at ply + 1; None when a row is missing."""
+    """The game, its flaw row at `ply`, the stored lines at ply + 1 (refutation) and ply (best).
+
+    None when the game or the flaw row is missing.
+    """
     game = (
         await conn.execute(
             select(
@@ -426,6 +504,15 @@ async def read_game_inputs(conn: AsyncConnection, game_id: int, ply: int) -> Gam
             )
         )
     ).scalar_one_or_none()
+    best = (
+        await conn.execute(
+            select(GamePosition.pv, GamePosition.best_move).where(
+                GamePosition.user_id == game.user_id,
+                GamePosition.game_id == game_id,
+                GamePosition.ply == ply,
+            )
+        )
+    ).first()
     return GameInputs(
         platform=game.platform,
         time_control_bucket=game.time_control_bucket,
@@ -436,6 +523,8 @@ async def read_game_inputs(conn: AsyncConnection, game_id: int, ply: int) -> Gam
         played_prob=flaw.maia_played_prob,
         severity=flaw.severity,
         pv=pv,
+        best_pv=None if best is None else best.pv,
+        best_move=None if best is None else best.best_move,
     )
 
 
@@ -481,23 +570,44 @@ def _has_null_score_input(row: FeatureRow) -> bool:
     )
 
 
+def _best_line_unknown(row: FeatureRow) -> bool:
+    """No settled best-line fact at all: the missed term contributes 0 for this row (D-18)."""
+    return row.best_facts.opponent_mate_ply is None and all(
+        value is None for value in row.best_facts.material_array()
+    )
+
+
 def summary_line(collected: CollectedRows) -> str:
-    """One line: rows, rows per pv_source, cache mismatches, rows with a NULL score input."""
+    """One line: rows, rows per pv_source, cache mismatches, NULL score inputs, NULL best lines."""
     sources: dict[str, int] = {}
     for row in collected.rows:
         sources[row.pv_source] = sources.get(row.pv_source, 0) + 1
     per_source = ", ".join(f"{name} {count}" for name, count in sorted(sources.items()))
     null_inputs = sum(_has_null_score_input(row) for row in collected.rows)
+    null_best = sum(_best_line_unknown(row) for row in collected.rows)
     return (
         f"rows {len(collected.rows)}; pv_source: {per_source}; "
-        f"cache mismatches {len(collected.mismatches)}; rows with a NULL score input {null_inputs}"
+        f"cache mismatches {len(collected.mismatches)}; rows with a NULL score input {null_inputs}; "
+        f"rows with a NULL best line {null_best}"
     )
+
+
+def gather_labels(label_files: Sequence[Path], extras: Sequence[str]) -> list[LabelRow]:
+    """Every label file's rows in argument order, then the --extra rows."""
+    rows = [row for path in label_files for row in parse_labels(path)]
+    return [*rows, *(parse_extra(spec) for spec in extras)]
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build the facepalm features table.")
     parser.add_argument("--db", choices=DB_TARGETS, required=True, help="read-only source database")
-    parser.add_argument("--labels", type=Path, required=True, help="owner label TSV")
+    parser.add_argument(
+        "--labels",
+        type=Path,
+        action="append",
+        default=[],
+        help="owner label TSV; repeatable (the 180 existing labels plus the miss set)",
+    )
     parser.add_argument(
         "--pv-cache",
         type=Path,
@@ -509,11 +619,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--out", type=Path, required=True, help="features TSV to write")
     parser.add_argument("--maia-threads", type=int, default=DEFAULT_MAIA_THREADS)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not args.labels and not args.extra:
+        parser.error("give at least one --labels file or --extra GAME:PLY")
+    return args
 
 
 async def _run(args: argparse.Namespace) -> int:
-    labels = [*parse_labels(args.labels), *(parse_extra(spec) for spec in args.extra)]
+    labels = gather_labels(args.labels, args.extra)
     cache = load_pv_cache(args.pv_cache) if args.pv_cache else {}
     await maia_engine.start_maia(intra_op_num_threads=args.maia_threads)
     if not maia_engine.is_maia_available():

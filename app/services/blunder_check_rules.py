@@ -74,6 +74,37 @@ FACEPALM_PLAYED_COEF: float = -0.6629
 FACEPALM_SPREAD_COEF: float = -0.3304
 FACEPALM_LOSS_COEF: float = 1.1570
 FACEPALM_LOSS_FLOOR: int | None = 0
+# 254 D-06 / D-07 / D-08 shape selectors of the score model (app/services/facepalm_score.py):
+# the model holds every shape the refit may pick, so the refit is a constants-only change. The
+# values below reproduce the Phase 250 score exactly (D-12) and the Phase 254 refit replaces them.
+# D-06: one material term `loss + lam * missed` ("combined") or loss and missed as separate
+# terms ("split"); D-07: the reply-spread term on every row, only on rows that lose material,
+# or on those rows with the best move's probability standing in for pure misses.
+MaterialForm = Literal["combined", "split"]
+SpreadForm = Literal["always", "loss_only", "best_prob_for_misses"]
+FACEPALM_MATERIAL_FORM: MaterialForm = "split"
+# Coefficient of the missed term in the split form (0.0 = the term is not in the model).
+FACEPALM_MISSED_COEF: float = 0.0
+# Lower clip of the missed term (None = unclipped: a best line behind at depth 3 gives a
+# negative gain), the cap, and the value of a best-line mate within LINE_DEPTH (a missed mate
+# must not score as nothing missed).
+FACEPALM_MISSED_FLOOR: int | None = 0
+FACEPALM_MISSED_CAP: int = LOSS_CAP
+FACEPALM_MISSED_MATE: int = MATE_LOSS
+FACEPALM_SPREAD_FORM: SpreadForm = "always"
+# D-08 optional inputs (0.0 = the input is not in the model): ln(best-move probability +
+# PLAYED_PROB_OFFSET) and the reply spread of the position before the blunder.
+FACEPALM_BEST_PROB_COEF: float = 0.0
+FACEPALM_PRE_SPREAD_COEF: float = 0.0
+# 254 D-03 / D-04 loss-aversion knob: lambda multiplies the missed term only (0 = the loss-only
+# score). Two constants so the consumers can diverge: the blunder-check drill selection (D-03,
+# symmetric while GM Noel Studer's answer is pending) and the library (D-04: chip, filter,
+# analysis move list, eval chart tooltip).
+FACEPALM_DRILL_LAMBDA: float = 1.0
+FACEPALM_LIBRARY_LAMBDA: float = 1.0
+# Valid range of any lambda, enforced by both score twins.
+FACEPALM_LAMBDA_MIN: float = 0.0
+FACEPALM_LAMBDA_MAX: float = 1.0
 # 249 D-05 eval band: every judged and herring move must have its pre-move ES inside [low, high].
 ES_BAND_LOW: float = 0.10
 ES_BAND_HIGH: float = 0.90

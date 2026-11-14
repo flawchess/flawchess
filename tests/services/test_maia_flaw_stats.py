@@ -10,7 +10,9 @@ import pytest
 from app.services.maia_flaw_stats import (
     MaiaFlawStats,
     compute_maia_flaw_stats,
+    null_maia_pre_stats,
     null_maia_stats,
+    pre_blunder_spread,
     reply_spread,
 )
 from tests.services.maia_fakes import fake_full_policy
@@ -68,3 +70,15 @@ def test_fake_full_policy_deterministic() -> None:
         assert len(set(probs.values())) == len(probs)
         assert fake_full_policy(fen, 2200.0) == probs
     assert "e1g1" in fake_full_policy(_CASTLING_FEN, 1500.0)
+
+
+def test_pre_blunder_spread_uniform() -> None:
+    """The 247 effective-moves formula at the pre-blunder position: uniform over k moves gives k."""
+    uniform = {f"m{i}": 1.0 / _UNIFORM_K for i in range(_UNIFORM_K)}
+    assert pre_blunder_spread(uniform) == pytest.approx(float(_UNIFORM_K), abs=_TOL)
+    assert pre_blunder_spread({"a": 1.0}) == pytest.approx(1.0, abs=_TOL)
+    assert pre_blunder_spread(uniform) == reply_spread(uniform)
+
+
+def test_null_maia_pre_stats_has_both_keys() -> None:
+    assert null_maia_pre_stats() == {"maia_best_prob": None, "maia_pre_spread": None}

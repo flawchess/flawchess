@@ -25,6 +25,9 @@ MaiaReason = Literal[
     "ply_beyond_mainline",
     "fen_mismatch",
     "no_legal_reply",
+    # Phase 254 D-08: the best move is unknown (no pv and no best_move at the flaw ply) or is not
+    # in Maia's policy, so maia_best_prob stays NULL; the row is still scored on the loss alone.
+    "best_move_missing",
 ]
 
 
@@ -38,7 +41,8 @@ def null_maia_stats() -> MaiaFlawStats:
 
 
 class FacepalmStats(TypedDict):
-    """The eight Phase 250 facepalm columns of one game_flaws row (D-05)."""
+    """The facepalm columns of one game_flaws row: the eight Phase 250 values (D-05) plus the
+    Phase 254 signed material arrays and the best line's mate ply (D-09)."""
 
     maia_reply_spread: float | None
     line_loss_1: int | None
@@ -48,10 +52,15 @@ class FacepalmStats(TypedDict):
     line_loss_9: int | None
     line_mate_ply: int | None
     facepalm_score: float | None
+    # Phase 254 D-09: signed 9-slot material of the played / best line (None when every slot is
+    # None) and the ply after which the best line mates the opponent (0 = the best move mates).
+    played_line_material: list[int | None] | None
+    best_line_material: list[int | None] | None
+    best_line_mate_ply: int | None
 
 
 def null_facepalm_stats() -> FacepalmStats:
-    """All eight Phase 250 values None (out of scope or not scorable).
+    """All facepalm values None (out of scope or not scorable).
 
     Written for every flaw that is not a scorable user blunder, so a full re-score also
     clears a stale value on a row since downgraded from blunder (D-06, D-08 precedent).
@@ -65,7 +74,22 @@ def null_facepalm_stats() -> FacepalmStats:
         line_loss_9=None,
         line_mate_ply=None,
         facepalm_score=None,
+        played_line_material=None,
+        best_line_material=None,
+        best_line_mate_ply=None,
     )
+
+
+class MaiaPreStats(TypedDict):
+    """The two Phase 254 pre-blunder Maia inputs of one game_flaws row (D-08)."""
+
+    maia_best_prob: float | None
+    maia_pre_spread: float | None
+
+
+def null_maia_pre_stats() -> MaiaPreStats:
+    """Both pre-blunder inputs None (out of scope, not scorable, or not computed in this mode)."""
+    return MaiaPreStats(maia_best_prob=None, maia_pre_spread=None)
 
 
 def _effective_moves(probs: Mapping[str, float]) -> float:
@@ -82,6 +106,17 @@ def reply_spread(probs: Mapping[str, float]) -> float:
     Phase 247 effective-moves formula applied one ply later; the go-forward hook, the
     backfill and the score fit all call this one implementation. A policy uniform over k
     moves gives exactly k.
+    """
+    return _effective_moves(probs)
+
+
+def pre_blunder_spread(probs: Mapping[str, float]) -> float:
+    """Effective number of moves in `probs` at the PRE-blunder position (254 D-08).
+
+    `probs` is Maia's full policy at the decision position (the blunderer to move) at the
+    blunderer's pinned Elo, the same call that yields ``maia_played_prob``. Same formula as
+    `reply_spread` (the Phase 247 effective-moves formula), applied to the position the blunder
+    was played from: a policy uniform over k moves gives exactly k.
     """
     return _effective_moves(probs)
 

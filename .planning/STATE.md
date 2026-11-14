@@ -1,18 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.29
-current_phase: 253
-status: completed
-stopped_at: Phase 253 complete — all phases complete
-last_updated: "2026-11-14T17:05:38.539Z"
+current_phase: 254
+current_phase_name: Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)
+status: executing
+stopped_at: Phase 254 context gathered
+last_updated: "2026-11-14T21:02:48.985Z"
 last_activity: 2026-11-14
-state_head: cd158b2fe2e3ae35ce1b205d92abb24f4cd786a6
+last_activity_desc: Phase 254 execution started
+state_head: 570fe693e14edac6e0d29e484121386b11a7ad68
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 63
-  total_plans: 47
+  total_plans: 65
   completed_plans: 42
-  percent: 89
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -20,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 253
-Plan: Not started
+Phase: 254 (Facepalm Score Missed Gains and Loss-Aversion Knob (SEED-261114-mg7)) — EXECUTING
+Plan: 1 of 18
 
-Status: All phases complete
+Status: Executing Phase 254
 
-Last Activity: 2026-11-14
+Last activity: 2026-11-14 — Phase 254 execution started
 
 Open threads carried forward (not blockers):
 
@@ -1176,9 +1177,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-14T13:26:52.446Z
-**Stopped at:** Phase 253 complete — all phases complete
-**Resume file:** .planning/phases/253-facepalm-score-library-ui/253-CONTEXT.md
+**Last session:** 2026-11-14T18:36:19.370Z
+**Stopped at:** Phase 254 context gathered
+**Resume file:** .planning/phases/254-facepalm-score-missed-gains-and-loss-aversion-knob-seed-2611/254-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

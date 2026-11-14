@@ -289,6 +289,11 @@ class Game(Base):
     facepalm_line_completed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
     )
+    # Phase 254 (D-08): checkpoint of the pre-blunder Maia pass (game_flaws.maia_best_prob and
+    # maia_pre_spread). Same lifecycle and no-index reasoning as the stamps above.
+    facepalm_pre_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
     # Per-GAME rollup of a per-FLAW-PLY condition — unlike the four
     # completion columns above (naturally per-game), this one summarizes
     # `game_flaws.allowed_pv_lines`. The authoritative predicate is "no

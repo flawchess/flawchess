@@ -30,15 +30,18 @@ from app.models.game_position import GamePosition
 from app.models.user import User
 from app.repositories.game_flaws_repository import (
     FACEPALM_COLUMNS,
+    FACEPALM_PRE_COLUMNS,
     MAIA_FLAW_COLUMNS,
     clear_maia_flaws_completed,
 )
 from app.services.eval_apply import _classify_and_fill_oracle
 from app.services import maia_engine, maia_flaw_scoring
 from app.services.best_move_candidates import pinned_elo_for_mover
-from app.services.facepalm_score import facepalm_score
-from app.services.line_material import line_facts
+from app.services.blunder_check_rules import FACEPALM_DRILL_LAMBDA
+from app.services.facepalm_score import FacepalmFacts, facepalm_expr, facepalm_score
+from app.services.line_material import best_line_facts, line_facts
 from app.services.maia_flaw_scoring import (
+    best_move_uci,
     format_maia_backfill_reminder,
     load_game_maia_inputs,
     replay_flaw_boards,
@@ -46,7 +49,7 @@ from app.services.maia_flaw_scoring import (
     score_game_flaws_after_apply,
     write_game_maia_scores,
 )
-from app.services.maia_flaw_stats import reply_spread
+from app.services.maia_flaw_stats import pre_blunder_spread, reply_spread
 from tests.services.maia_fakes import fake_full_policy
 
 # Unique to this module (grep tests/ before changing).
@@ -144,6 +147,7 @@ async def make_game(
         user_color: str = "white",
         severities: dict[int, int] | None = None,
         pv: dict[int, str] | None = None,
+        best_moves: dict[int, str] | None = None,
     ) -> int:
         replayed = _replayed(pgn)
         async with session_factory() as session:
@@ -183,6 +187,7 @@ async def make_game(
                         endgame_class=None,
                         move_san=None,
                         pv=(pv or {}).get(ply),
+                        best_move=(best_moves or {}).get(ply),
                     )
                 )
             await session.flush()
@@ -241,11 +246,12 @@ async def _stamp(maker: async_sessionmaker[AsyncSession], game_id: int) -> Any:
         ).scalar_one_or_none()
 
 
-# The three game stamps of a full-mode pass (Phase 250 D-05, D-11).
+# The four game stamps of a full-mode pass (Phase 250 D-05, D-11; Phase 254 D-08 adds the pre stamp).
 _STAMP_COLUMNS: tuple[str, ...] = (
     "maia_flaws_completed_at",
     "facepalm_spread_completed_at",
     "facepalm_line_completed_at",
+    "facepalm_pre_completed_at",
 )
 
 
@@ -317,10 +323,13 @@ async def test_schema_maia_columns_typed_nullable(
         "maia_played_prob": "real",
         # Phase 250 D-05 reply spread (also matches the maia_ prefix of this schema scan).
         "maia_reply_spread": "real",
+        # Phase 254 D-09 facts (the best move's probability and the pre-blunder reply spread).
+        "maia_best_prob": "real",
+        "maia_pre_spread": "real",
     }
     flaw_cols = {name for (table, name) in by_name if table == "game_flaws"}
     assert flaw_cols == set(expected_types), (
-        "250 D-11: only the played probability and the reply spread remain among the maia_ columns"
+        "the maia_ columns are the played probability, the reply spread (250 D-05) and the 254 D-09 best probability and pre-blunder spread"
     )
     for name, data_type in expected_types.items():
         row = by_name[("game_flaws", name)]
@@ -378,11 +387,15 @@ async def test_facepalm_tracer_user_blunder_scored_and_three_stamps(
     )
     for column, value in columns.items():
         assert row[column] == value, column
+    stored_loss_3 = row["line_loss_3"]
     expected_score = facepalm_score(
-        played_prob=stored_prob,
-        reply_spread=row["maia_reply_spread"],
-        loss_3=row["line_loss_3"],
-        mate_ply=row["line_mate_ply"],
+        FacepalmFacts(
+            played_prob=stored_prob,
+            reply_spread=row["maia_reply_spread"],
+            played_3=None if stored_loss_3 is None else -stored_loss_3,
+            mate_ply=row["line_mate_ply"],
+        ),
+        lam=FACEPALM_DRILL_LAMBDA,
     )
     assert expected_score is not None
     assert row["facepalm_score"] == pytest.approx(expected_score, abs=_REAL_TOLERANCE)
@@ -544,8 +557,12 @@ def test_target_boards_are_never_mutated() -> None:
                 severity=2,
                 # The line walk replays the stored line on a copy of the same board.
                 refutation_pv=_mainline_line(_PGN, 2, _PGN_LAST_PLY - 2) if ply == 2 else None,
+                best_pv=None,
+                best_move=None,
                 stored_played_prob=None,
                 stored_reply_spread=None,
+                stored_best_prob=None,
+                stored_pre_spread=None,
             )
             for ply in (2, 8)
         ),
@@ -659,6 +676,10 @@ _STALE_FACEPALM: dict[str, Any] = {
     "line_loss_9": 5,
     "line_mate_ply": 3,
     "facepalm_score": 0.75,
+    # Phase 254 D-09 fact columns (nine slots each, the stored shape).
+    "played_line_material": [1, 0, -1, 2, -2, 3, 0, 1, -1],
+    "best_line_material": [0, 1, 2, 3, 2, 1, 0, 1, 2],
+    "best_line_mate_ply": 2,
 }
 
 
@@ -847,10 +868,13 @@ async def test_spread_mode_rows_carry_only_facepalm_keys(
     for column, value in facts.as_columns().items():
         assert row[column] == value, column
     expected = facepalm_score(
-        played_prob=_STORED_PLAYED_PROB,
-        reply_spread=spread,
-        loss_3=facts.loss_at(3),
-        mate_ply=facts.mate_ply,
+        FacepalmFacts(
+            played_prob=_STORED_PLAYED_PROB,
+            reply_spread=spread,
+            played_3=facts.material_at(3),
+            mate_ply=facts.mate_ply,
+        ),
+        lam=FACEPALM_DRILL_LAMBDA,
     )
     assert expected is not None, "the fixture line must settle the score"
     assert row["facepalm_score"] == pytest.approx(expected)
@@ -932,10 +956,13 @@ async def test_line_mode_never_calls_maia_and_writes_only_line_keys(
     for column, value in facts.as_columns().items():
         assert row[column] == value, column
     expected = facepalm_score(
-        played_prob=_STORED_PLAYED_PROB,
-        reply_spread=_STORED_SPREAD,
-        loss_3=facts.loss_at(3),
-        mate_ply=facts.mate_ply,
+        FacepalmFacts(
+            played_prob=_STORED_PLAYED_PROB,
+            reply_spread=_STORED_SPREAD,
+            played_3=facts.material_at(3),
+            mate_ply=facts.mate_ply,
+        ),
+        lam=FACEPALM_DRILL_LAMBDA,
     )
     assert expected is not None
     assert row["facepalm_score"] == pytest.approx(expected)
@@ -1031,6 +1058,107 @@ async def test_write_spread_mode_sets_spread_and_line_stamps_only(
     assert stamps["facepalm_spread_completed_at"] is not None
     assert stamps["facepalm_line_completed_at"] is not None
     assert stamps["maia_flaws_completed_at"] is None
+    async with session_factory() as session:
+        again = await write_game_maia_scores(session, [score], require_unstamped=True)
+    assert again == {game_id: "already_stamped"}
+
+
+# Pre mode (254 D-08): the two pre-blunder keys only, one pre-blunder inference per user blunder.
+_PRE_ROW_KEYS = _PK_KEYS | set(FACEPALM_PRE_COLUMNS)
+
+
+def _scotch_best_move() -> str:
+    """A legal move at the Scotch ply-4 decision position that is not the played move."""
+    pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    return next(m.uci() for m in sorted(pre.legal_moves, key=str) if m.uci() != played)
+
+
+async def test_pre_mode_rows_carry_only_pre_keys(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-08: user blunders only, key set = PK + the two pre keys, exactly one inference per user
+    blunder at the PRE-blunder position and the mover's pinned Elo, values as the hook derives them."""
+    best = _scotch_best_move()
+    # Ply 4 is white's blunder (user), ply 5 black's blunder (opponent), ply 2 a user mistake.
+    game_id = await make_game(
+        pgn=_SCOTCH_PGN,
+        flaw_plies=(2, _SCOTCH_FLAW_PLY, 5),
+        severities={2: 1},
+        pv={_SCOTCH_FLAW_PLY: best},
+    )
+    calls = _recording_policy(monkeypatch)
+
+    score = score_game(await _inputs(session_factory, game_id), None, "pre")
+
+    assert score.mode == "pre"
+    assert [row["ply"] for row in score.rows] == [_SCOTCH_FLAW_PLY]
+    row = score.rows[0]
+    assert set(row) == _PRE_ROW_KEYS
+    pre, _played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    assert calls == [(pre.fen(), _pinned_elo(_WHITE_RATING))]
+    probs = fake_full_policy(pre.fen(), 0.0)
+    assert row["maia_best_prob"] == pytest.approx(probs[best])
+    assert row["maia_pre_spread"] == pytest.approx(pre_blunder_spread(probs))
+    assert score.pre_scored == 1
+    assert score.user_blunders == 1
+    assert not score.reasons
+
+
+async def test_pre_mode_no_rating_skips_inference(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user blunder whose mover has no rating: both pre keys NULL, no inference, reason counted."""
+    game_id = await make_game(
+        pgn=_SCOTCH_PGN,
+        flaw_plies=(_SCOTCH_FLAW_PLY,),
+        white_rating=None,
+        pv={_SCOTCH_FLAW_PLY: _scotch_best_move()},
+    )
+    calls = _recording_policy(monkeypatch)
+
+    score = score_game(await _inputs(session_factory, game_id), None, "pre")
+
+    assert calls == []
+    assert score.rows[0]["maia_best_prob"] is None
+    assert score.rows[0]["maia_pre_spread"] is None
+    assert score.reasons["no_rating"] == 1
+    assert score.pre_scored == 0
+
+
+async def test_pre_mode_best_move_missing_keeps_the_spread(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """No best line and no stored best move: maia_best_prob NULL, best_move_missing counted, the
+    pre-blunder spread is still stored (the two inputs are independent)."""
+    game_id, _ = await _scotch_user_blunder(make_game)
+
+    score = score_game(await _inputs(session_factory, game_id), None, "pre")
+
+    row = score.rows[0]
+    assert row["maia_best_prob"] is None
+    assert row["maia_pre_spread"] is not None
+    assert score.reasons["best_move_missing"] == 1
+    assert score.pre_scored == 1
+
+
+async def test_write_pre_mode_sets_only_the_pre_stamp(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    game_id, _ = await _scotch_user_blunder(make_game)
+    score = score_game(await _inputs(session_factory, game_id), None, "pre")
+    async with session_factory() as session:
+        outcomes = await write_game_maia_scores(session, [score], require_unstamped=True)
+        await session.commit()
+    assert outcomes == {game_id: "stamped"}
+    stamps = await _stamps(session_factory, game_id)
+    assert stamps["facepalm_pre_completed_at"] is not None
+    assert stamps["maia_flaws_completed_at"] is None
+    assert stamps["facepalm_spread_completed_at"] is None
+    assert stamps["facepalm_line_completed_at"] is None
     async with session_factory() as session:
         again = await write_game_maia_scores(session, [score], require_unstamped=True)
     assert again == {game_id: "already_stamped"}
@@ -1620,12 +1748,12 @@ async def test_reclassify_unknown_game_returns_false(
         pytest.param(_STAMP_COLUMNS, id="all"),
     ],
 )
-async def test_reclassify_clear_helper_clears_all_three_stamps(
+async def test_reclassify_clear_helper_clears_all_four_stamps(
     session_factory: async_sessionmaker[AsyncSession],
     make_game: MakeGame,
     set_stamps: tuple[str, ...],
 ) -> None:
-    """D-08/D-22 + 250 D-05: one UPDATE clears all three stamps; True when ANY of them was set."""
+    """D-08/D-22 + 250 D-05 + 254 D-08: one UPDATE clears all four stamps; True when ANY was set."""
     game_id = await make_game(flaw_plies=())
     async with session_factory() as session:
         await session.execute(
@@ -1652,3 +1780,249 @@ async def test_write_rejects_batch_mixing_full_and_spread_scores(
     async with session_factory() as session:
         with pytest.raises(ValueError, match="mixing"):
             await write_game_maia_scores(session, [full, spread], require_unstamped=False)
+
+
+# ---------------------------------------------------------------------------
+# Best-line facts and the best-line fingerprint (Phase 254 D-09, T-254-05)
+# ---------------------------------------------------------------------------
+
+# A legal best line from the Scotch flaw position (white to move after 1. e4 e5 2. Nf3 Nc6):
+# Nxe5 wins a pawn, Nxe5 recaptures the knight, then two quiet moves, so the line settles depths.
+_SCOTCH_BEST_PV = "f3e5 c6e5 d2d4 e5g6 d4d5"
+_SCOTCH_BEST_MOVE = "f3e5"
+
+
+async def _best_line_user_blunder(
+    make_game: MakeGame, *, best_pv: str | None = _SCOTCH_BEST_PV, **kwargs: Any
+) -> tuple[int, str]:
+    """The Scotch user blunder with a stored played line AND a best line at the flaw ply."""
+    pv = _mainline_line(_SCOTCH_PGN, _SCOTCH_FLAW_PLY, _STORED_LINE_PLIES)
+    game_id = await make_game(
+        pgn=_SCOTCH_PGN,
+        flaw_plies=(_SCOTCH_FLAW_PLY,),
+        pv={_SCOTCH_FLAW_PLY + 1: pv, _SCOTCH_FLAW_PLY: best_pv}
+        if best_pv
+        else {_SCOTCH_FLAW_PLY + 1: pv},
+        **kwargs,
+    )
+    return game_id, pv
+
+
+async def _flaw_row_full(
+    maker: async_sessionmaker[AsyncSession], game_id: int, ply: int
+) -> GameFlaw:
+    async with maker() as session:
+        return (
+            await session.execute(
+                select(GameFlaw).where(GameFlaw.game_id == game_id, GameFlaw.ply == ply)
+            )
+        ).scalar_one()
+
+
+async def test_full_mode_writes_both_line_arrays(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-09: the hook stores both signed 9-slot arrays and both mate plies next to the legacy columns."""
+    game_id, pv = await _best_line_user_blunder(make_game)
+    assert await _score(session_factory, game_id)
+    pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    played_facts = line_facts(pre, played, pv)
+    best_facts = best_line_facts(pre, _SCOTCH_BEST_PV)
+    assert any(v is not None for v in best_facts.material_array()), "the best line must settle"
+    row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
+    assert row.played_line_material == played_facts.material_array()
+    assert row.best_line_material == best_facts.material_array()
+    assert len(row.played_line_material or []) == 9
+    assert len(row.best_line_material or []) == 9
+    assert row.line_mate_ply == played_facts.mate_ply
+    assert row.best_line_mate_ply == best_facts.opponent_mate_ply
+    # The legacy columns are still dual-written (D-09).
+    for column, value in played_facts.as_columns().items():
+        assert getattr(row, column) == value, column
+
+
+async def test_full_mode_without_best_line_keeps_best_facts_null(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """No best pv and no best_move: the best arrays and mate ply stay NULL, the row is still scored."""
+    game_id, _ = await _best_line_user_blunder(make_game, best_pv=None)
+    assert await _score(session_factory, game_id)
+    row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
+    assert row.best_line_material is None
+    assert row.best_line_mate_ply is None
+    assert row.played_line_material is not None
+    assert row.facepalm_score is not None
+
+
+@pytest.mark.parametrize("changed", ["pv", "best_move"])
+async def test_fingerprint_includes_best_line(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame, changed: str
+) -> None:
+    """T-254-05: a rewrite of the pv at the flaw ply (or the stored best move) between the read and
+    the write is fingerprint_changed: nothing is written and no stamp is set."""
+    game_id, _ = await _best_line_user_blunder(
+        make_game, best_moves={_SCOTCH_FLAW_PLY: _SCOTCH_BEST_MOVE}
+    )
+    score = score_game(await _inputs(session_factory, game_id), None)
+    new_value = "f3e5 c6e5" if changed == "pv" else "f1b5"
+    async with session_factory() as session:
+        await session.execute(
+            sa.update(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.ply == _SCOTCH_FLAW_PLY)
+            .values(**{changed: new_value})
+        )
+        await session.commit()
+    async with session_factory() as session:
+        outcomes = await write_game_maia_scores(session, [score], require_unstamped=False)
+        await session.commit()
+    assert outcomes == {game_id: "fingerprint_changed"}
+    row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
+    assert row.best_line_material is None
+    assert row.played_line_material is None
+    assert all(stamp is None for stamp in (await _stamps(session_factory, game_id)).values())
+
+
+async def test_stored_score_equals_expression(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-01: facepalm_expr(drill lambda) over the stored facts equals the dual-written score."""
+    game_id, _ = await _best_line_user_blunder(make_game)
+    assert await _score(session_factory, game_id)
+    async with session_factory() as session:
+        stored, from_expr = (
+            await session.execute(
+                select(GameFlaw.facepalm_score, facepalm_expr(FACEPALM_DRILL_LAMBDA)).where(
+                    GameFlaw.game_id == game_id
+                )
+            )
+        ).one()
+    assert stored is not None
+    assert from_expr == pytest.approx(stored, abs=_REAL_TOLERANCE)
+
+
+def test_best_move_uci_fallback() -> None:
+    """The first token of the best pv wins, else best_move, else None (254 Pitfall 7)."""
+    assert best_move_uci("e2e4 e7e5", "d2d4") == "e2e4"
+    assert best_move_uci(None, "d2d4") == "d2d4"
+    assert best_move_uci("", "d2d4") == "d2d4"
+    assert best_move_uci(None, None) is None
+    assert best_move_uci("", "") is None
+
+
+# ---------------------------------------------------------------------------
+# Pre-blunder Maia inputs from the existing policy call (Phase 254 D-08)
+# ---------------------------------------------------------------------------
+
+
+async def test_full_mode_writes_pre_inputs(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-08: maia_best_prob and maia_pre_spread equal the fake policy values at the pre-blunder board."""
+    game_id, _ = await _best_line_user_blunder(make_game)
+    assert await _score(session_factory, game_id)
+    pre, _played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    probs = fake_full_policy(pre.fen(), 0.0)
+    row = await _flaw_row_full(session_factory, game_id, _SCOTCH_FLAW_PLY)
+    assert row.maia_best_prob == pytest.approx(
+        probs[best_move_uci(_SCOTCH_BEST_PV, None) or ""], rel=_REAL_RELATIVE_TOLERANCE
+    )
+    assert row.maia_pre_spread == pytest.approx(
+        pre_blunder_spread(probs), rel=_REAL_RELATIVE_TOLERANCE
+    )
+
+
+async def test_pre_inputs_reuse_the_flaw_policy_call(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_game: MakeGame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-08: the pre inputs come from the SAME full_policy call as maia_played_prob: one call at
+    the flaw position plus one post-blunder call per scorable user blunder, as before this plan."""
+    game_id, _ = await _best_line_user_blunder(make_game)
+    calls = _recording_policy(monkeypatch)
+    score = score_game(await _inputs(session_factory, game_id), None)
+    pre, played = _replayed(_SCOTCH_PGN)[_SCOTCH_FLAW_PLY]
+    post = pre.copy()
+    post.push_uci(played)
+    assert [fen for fen, _elo in calls] == [pre.fen(), post.fen()]
+    assert score.rows[0]["maia_best_prob"] is not None
+    assert score.rows[0]["maia_pre_spread"] is not None
+
+
+async def test_best_move_missing_keeps_loss_only_score(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """No pv and no best_move at the flaw ply: best prob and best arrays NULL, reason counted,
+    the row is still scored on the loss alone and the pre spread is still stored."""
+    game_id, _ = await _best_line_user_blunder(make_game, best_pv=None)
+    score = score_game(await _inputs(session_factory, game_id), None)
+    assert score.reasons["best_move_missing"] == 1
+    row = score.rows[0]
+    assert row["maia_best_prob"] is None
+    assert row["maia_pre_spread"] is not None
+    assert row["best_line_material"] is None
+    assert row["best_line_mate_ply"] is None
+    assert row["facepalm_score"] is not None
+
+
+async def test_best_move_outside_the_policy_counts_best_move_missing(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """A stored best move the policy does not contain (not legal here) leaves best prob NULL."""
+    game_id, _ = await _best_line_user_blunder(make_game, best_pv=None)
+    async with session_factory() as session:
+        await session.execute(
+            sa.update(GamePosition)
+            .where(GamePosition.game_id == game_id, GamePosition.ply == _SCOTCH_FLAW_PLY)
+            .values(best_move="a1a8")
+        )
+        await session.commit()
+    score = score_game(await _inputs(session_factory, game_id), None)
+    assert score.reasons["best_move_missing"] == 1
+    assert score.rows[0]["maia_best_prob"] is None
+
+
+async def test_full_mode_sets_pre_stamp_with_the_others(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """D-08: full mode stamps facepalm_pre_completed_at together with the other three stamps."""
+    game_id, _ = await _best_line_user_blunder(make_game)
+    assert await _score(session_factory, game_id)
+    stamps = await _stamps(session_factory, game_id)
+    assert set(stamps) == set(_STAMP_COLUMNS)
+    assert stamps["facepalm_pre_completed_at"] is not None
+    assert all(stamp is not None for stamp in stamps.values())
+
+
+async def test_clear_maia_flaws_completed_clears_pre_stamp(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """The pre stamp alone counts as 'was stamped' and is cleared with the other three."""
+    game_id = await make_game(flaw_plies=())
+    async with session_factory() as session:
+        await session.execute(
+            sa.update(Game)
+            .where(Game.id == game_id)
+            .values(facepalm_pre_completed_at=sa.func.now())
+        )
+        await session.commit()
+    async with session_factory() as session:
+        assert await clear_maia_flaws_completed(session, game_id) is True
+        await session.commit()
+    assert (await _stamps(session_factory, game_id))["facepalm_pre_completed_at"] is None
+
+
+async def test_spread_and_line_rows_never_carry_pre_inputs(
+    session_factory: async_sessionmaker[AsyncSession], make_game: MakeGame
+) -> None:
+    """Spread and line modes write FACEPALM_COLUMNS only: the pre keys belong to full mode."""
+    game_id, _ = await _best_line_user_blunder(make_game)
+    await _store_base_values(
+        session_factory, game_id, _SCOTCH_FLAW_PLY, maia_played_prob=_STORED_PLAYED_PROB
+    )
+    inputs = await _inputs(session_factory, game_id)
+    for mode in ("spread", "line"):
+        row = score_game(inputs, None, mode).rows[0]
+        assert "maia_best_prob" not in row, mode
+        assert "maia_pre_spread" not in row, mode
+        assert row["best_line_material"] is not None, mode

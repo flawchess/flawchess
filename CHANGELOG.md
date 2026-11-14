@@ -22,6 +22,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Library filters: the upper handle of the Facepalm Score filter now lands on multiples of 5% and the range includes both ends, so Low is 0 to 30%, Mid 30 to 70% and High 70 to 100%. The "Mistakes are excluded" note under the slider is gone, since it made the panel jump.
 - Library filters: the Tags panel now starts with Best Moves, followed by Flaws and the Facepalm Score, with a divider after Best Moves and after the Facepalm Score.
 - Blunder check (beta): blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
+- Blunder check (beta): the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
 
 ### Fixed
 

@@ -5,28 +5,44 @@ flaws, from boards replayed out of games.pgn (never from game_flaws.fen), throug
 shared scorer the live lanes use (app/services/maia_flaw_scoring.py), and stamps each game in
 the same transaction as its column write.
 
-Modes (Phase 250 D-08, D-18; the Phase 248 refutation mode was removed by D-11):
-    --mode full        (default) games with maia_flaws_completed_at NULL; writes maia_played_prob
-                       plus the eight facepalm columns and the three stamps.
+Modes (Phase 250 D-08, D-18; Phase 254 D-08, D-09; the Phase 248 refutation mode was removed by D-11):
+    --mode full        (default) games with maia_flaws_completed_at NULL; writes maia_played_prob,
+                       the facepalm columns (the eight Phase 250 values plus the Phase 254 played
+                       and best line material arrays and best-line mate ply), the two pre-blunder
+                       keys and the four stamps.
     --mode spread      games that are base-stamped with facepalm_spread_completed_at NULL (the
                        Maia pass of the facepalm backfill, 250 D-08). One post-blunder inference
                        per user-side blunder yields the reply spread; the line facts and the
                        facepalm score are derived with the hook's own scorer, reading the STORED
                        maia_played_prob instead of re-running the base inference. Writes exactly
-                       the eight facepalm columns and stamps facepalm_spread_completed_at and
-                       facepalm_line_completed_at.
+                       the facepalm columns (the reply spread, both line arrays, both mate plies,
+                       the legacy line columns and the score; never the two pre-blunder keys) and
+                       stamps facepalm_spread_completed_at and facepalm_line_completed_at.
     --mode line --cutoff <ISO timestamp with offset>
                        the Maia-free, re-runnable line pass (250 D-18). Every spread-stamped game
                        whose facepalm_line_completed_at is NULL or older than the cutoff has the
-                       six line columns and facepalm_score of its user-side blunders recomputed
-                       from the stored line, maia_played_prob and maia_reply_spread, INCLUDING rows
+                       line facts of its user-side blunders recomputed from the stored lines (the
+                       played line at ply + 1 and the best line at the flaw ply): played and best
+                       line material arrays, line_mate_ply and best_line_mate_ply, the legacy line
+                       columns and facepalm_score (from maia_played_prob, maia_reply_spread and the
+                       stored pre keys), INCLUDING rows
                        that already hold values and blunders that had no line before. It never
                        starts Maia, never computes the spread and never exits 3 for a missing
                        Maia. --cutoff is required here and rejected for every other mode.
 
+    --mode pre         games that are base-stamped with facepalm_pre_completed_at NULL (Phase 254 D-08,
+                       the R1 pre-blunder inputs). ONE Maia inference at the pre-blunder position per
+                       user-side blunder fills maia_best_prob and maia_pre_spread, exactly as the hook
+                       derives them. Writes only those two columns and stamps only
+                       facepalm_pre_completed_at: never maia_played_prob, the reply spread, the line
+                       facts or the stored score. Resumable (the stamp is the checkpoint, a second
+                       run selects 0 games) and sharded by hash residue like the spread pass.
+
 Two-pass design for the facepalm columns (250 D-08, D-18): the spread pass needs Maia and is run
 once (about 2.3M user blunders on prod); the line pass needs only the DB, so it can be re-run
-whenever the stored lines change (e.g. after the Phase 252 pv repair). For the line pass the
+whenever the stored lines change (e.g. after the Phase 252 pv repair). The line pass writes both
+line material arrays, both mate plies (played and best line) and the legacy line columns (254 D-09),
+and never a Maia value; the spread pass never writes the two pre-blunder keys. For the line pass the
 CUTOFF is the checkpoint: re-run with the SAME cutoff to resume a crashed or stopped run (games
 stamped at or after it are skipped); use a NEW (later) cutoff for a new full recompute.
 
@@ -59,6 +75,9 @@ Usage:
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode spread
     PYTHONUNBUFFERED=1 uv run python scripts/backfill_maia_flaws.py --db prod --mode line --cutoff <deploy time UTC> --workers 4 --throttle-ms 50
     uv run python scripts/backfill_maia_flaws.py --db prod --status --mode line --cutoff <same cutoff>
+    PYTHONUNBUFFERED=1 uv run --group maia-inference python scripts/backfill_maia_flaws.py --db prod --mode pre --workers 8 --throttle-ms 50
+    uv run python scripts/backfill_maia_flaws.py --db prod --status --mode pre
+    (pre mode, 254 D-20: 8 shards, one connection each; the stamp is the checkpoint, re-run to resume)
 """
 
 from __future__ import annotations
@@ -126,7 +145,7 @@ BackfillDb = Literal["dev", "benchmark", "prod"]
 BACKFILL_DB_CHOICES: tuple[str, ...] = ("dev", "benchmark", "prod")
 AbortReason = Literal["maia_unavailable", "too_many_batch_failures"]
 BackfillMode = ScoringMode
-BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line")
+BACKFILL_MODE_CHOICES: tuple[str, ...] = ("full", "spread", "line", "pre")
 DEFAULT_MODE: BackfillMode = "full"
 
 # Top 8 hex digits of md5(game id) as an unsigned 32-bit integer. Unseeded and pure, so a
@@ -152,6 +171,12 @@ _SPREAD_PENDING_CLAUSE: str = (
     "g.facepalm_spread_completed_at IS NULL AND g.maia_flaws_completed_at IS NOT NULL"
 )
 
+# Games the pre pass (254 D-08) still has to do: base-stamped, pre stamp NULL. Shared by the selector
+# and the status counts, a constant and never user input.
+_PRE_PENDING_CLAUSE: str = (
+    "g.facepalm_pre_completed_at IS NULL AND g.maia_flaws_completed_at IS NOT NULL"
+)
+
 # Games whose line stamp predates the cutoff (or was never set): the line pass is re-runnable, so
 # the stamp counts only at or after the cutoff (250 D-18). The cutoff is the ONLY bound parameter
 # of the mode clauses. Shared by the selector and the status counts.
@@ -164,6 +189,7 @@ _LINE_STALE_CLAUSE: str = (
 _STAMP_CLAUSE_BY_MODE: dict[BackfillMode, str] = {
     "full": "g.maia_flaws_completed_at IS NULL",
     "spread": _SPREAD_PENDING_CLAUSE,
+    "pre": _PRE_PENDING_CLAUSE,
     "line": f"{_LINE_STALE_CLAUSE} AND g.facepalm_spread_completed_at IS NOT NULL",
 }
 
@@ -252,6 +278,10 @@ class ShardReport:
     spreads_null: int = 0
     scores_set: int = 0
     scores_null: int = 0
+    # User-side blunders whose pre-blunder spread was written non-NULL / left NULL (modes full, pre;
+    # 254 D-08, reason in `reasons`).
+    pre_scored: int = 0
+    pre_null: int = 0
     reasons: dict[str, int] = field(default_factory=dict)
     aborted_reason: str | None = None
     elapsed_s: float = 0.0
@@ -299,6 +329,9 @@ def _tally_stamped(report: ShardReport, score: GameMaiaScore) -> None:
     if score.mode in ("full", "spread", "line"):
         report.scores_set += score.scores_set
         report.scores_null += score.user_blunders - score.scores_set
+    if score.mode in ("full", "pre"):
+        report.pre_scored += score.pre_scored
+        report.pre_null += score.user_blunders - score.pre_scored
     for reason, n in score.reasons.items():
         report.reasons[reason] = report.reasons.get(reason, 0) + n
 
@@ -431,8 +464,8 @@ def _progress_line(report: ShardReport, done: int, started: float) -> str:
         f"shard {report.shard}/{report.num_shards}: {done}/{report.games_selected} games, "
         f"stamped={report.games_stamped} flaws_scored={report.flaws_scored} "
         f"({report.flaws_scored / elapsed:.1f} flaws/s) "
-        f"spreads_scored={report.spreads_scored} scores_set={report.scores_set}"
-        + (f" cutoff={report.cutoff}" if report.cutoff else "")
+        f"spreads_scored={report.spreads_scored} scores_set={report.scores_set} "
+        f"pre_scored={report.pre_scored}" + (f" cutoff={report.cutoff}" if report.cutoff else "")
     )
 
 
@@ -558,7 +591,8 @@ async def run_shard(
 
 async def _start_maia_and_run(**shard_kwargs: Any) -> int:
     # The line pass is Maia-free (250 D-18): it never starts a session and a missing Maia is not
-    # an error there, so it runs on boxes without onnxruntime or the model.
+    # an error there, so it runs on boxes without onnxruntime or the model. Every other mode, the
+    # pre pass (254 D-08) included, needs Maia and exits 3 without it.
     if shard_kwargs.get("mode") != "line":
         await maia_engine.start_maia(intra_op_num_threads=MAIA_THREADS_PER_PROCESS)
         if not maia_engine.is_maia_available():
@@ -660,7 +694,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_MODE,
         help="full: all values + the stamps. spread: the facepalm columns of user-side "
         "blunders, on base-stamped games (Phase 250). line: the Maia-free line pass (needs "
-        "--cutoff).",
+        "--cutoff). pre: the two pre-blunder Maia inputs of user-side blunders, on "
+        "base-stamped games (Phase 254).",
     )
     parser.add_argument(
         "--cutoff",
@@ -817,15 +852,24 @@ _LINE_STATUS_QUERIES: dict[str, str] = {
 }
 
 
-async def _fetch_facepalm_status(
+_PRE_STATUS_QUERIES: dict[str, str] = {
+    "pre_stamped_games": (
+        "SELECT count(*) FROM games g WHERE g.facepalm_pre_completed_at IS NOT NULL{u}"
+    ),
+    "pre_pending_games": (
+        f"SELECT count(*) FROM games g WHERE {_PRE_PENDING_CLAUSE}"
+        " AND EXISTS (SELECT 1 FROM game_flaws f WHERE f.game_id = g.id){u}"
+    ),
+}
+
+
+async def _stamp_counts(
     session: AsyncSession,
     user_id: int | None,
     queries: dict[str, str],
-    *,
     cutoff: datetime | None = None,
-    with_spread: bool,
 ) -> dict[str, int]:
-    """Stamp-count queries (`queries`) followed by the user-blunder value counts."""
+    """Run the stamp-count queries (`queries`, each with a `{u}` user clause slot)."""
     user_clause = " AND g.user_id = :user_id" if user_id is not None else ""
     params: dict[str, Any] = {"user_id": user_id} if user_id is not None else {}
     if cutoff is not None:
@@ -835,7 +879,36 @@ async def _fetch_facepalm_status(
         counts[key] = int(
             (await session.execute(text(sql.format(u=user_clause)), params)).scalar_one()
         )
+    return counts
+
+
+async def _fetch_facepalm_status(
+    session: AsyncSession,
+    user_id: int | None,
+    queries: dict[str, str],
+    *,
+    cutoff: datetime | None = None,
+    with_spread: bool,
+) -> dict[str, int]:
+    """Stamp-count queries (`queries`) followed by the user-blunder value counts."""
+    counts = await _stamp_counts(session, user_id, queries, cutoff)
     counts.update(await _fetch_facepalm_value_counts(session, user_id, with_spread=with_spread))
+    return counts
+
+
+async def _fetch_pre_status(session: AsyncSession, user_id: int | None) -> dict[str, int]:
+    """Pre pass progress (254 D-08): the stamp counts, then the user-side blunders in total and
+    with a best-move probability / a pre-blunder spread."""
+    counts = await _stamp_counts(session, user_id, _PRE_STATUS_QUERIES)
+    counts["user_blunders_total"] = await _scalar_count(session, _user_blunder_count_stmt(user_id))
+    counts["user_blunders_with_best_prob"] = await _scalar_count(
+        session,
+        _user_blunder_count_stmt(user_id, extra_where=[GameFlaw.maia_best_prob.is_not(None)]),
+    )
+    counts["user_blunders_with_pre_spread"] = await _scalar_count(
+        session,
+        _user_blunder_count_stmt(user_id, extra_where=[GameFlaw.maia_pre_spread.is_not(None)]),
+    )
     return counts
 
 
@@ -848,7 +921,7 @@ async def fetch_status(
     """The progress counts, SELECT-only, optionally for one user.
 
     Full mode keeps the four 247 counts (the 247-07 monitor greps that line); spread mode
-    returns the Phase 250 stamp and value counts;
+    returns the Phase 250 stamp and value counts; pre mode the 254 stamp and pre-input counts;
     line mode (needs `cutoff`) the games done / pending against it plus the score counts.
     """
     if mode == "spread":
@@ -856,6 +929,9 @@ async def fetch_status(
             return await _fetch_facepalm_status(
                 session, user_id, _SPREAD_STATUS_QUERIES, with_spread=True
             )
+    if mode == "pre":
+        async with session_maker() as session:
+            return await _fetch_pre_status(session, user_id)
     if mode == "line":
         if cutoff is None:
             raise ValueError("line mode status needs a cutoff")
@@ -922,6 +998,8 @@ def _combined_total_line(reports: list[dict[str, Any]]) -> str:
         "spreads_null",
         "scores_set",
         "scores_null",
+        "pre_scored",
+        "pre_null",
     )
     totals = {k: sum(int(r.get(k, 0)) for r in reports) for k in keys}
     reasons: Counter[str] = Counter()

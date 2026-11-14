@@ -9,6 +9,13 @@ Coverage:
 - null          : no line, empty line, malformed or illegal first token, illegal or malformed
                   played move give all-NULL facts and never raise
 - purity        : the caller's board (FEN and move stack) is never mutated
+- owner misses  : the two owner miss fixtures (games 817357 / 820181) give their depth-3 played
+                  and best material through line_facts and best_line_facts (Phase 254 D-05, D-09)
+- best line     : a best move that mates has opponent_mate_ply 0, an opponent mate settles the
+                  line, a malformed or empty best line gives all-None facts
+- nine slots    : material_array() is the negated loss for every 250 fixture (9 slots, even slots
+                  are mid-exchange values), best-line arrays have 9 slots, material_at_depth reads
+                  a stored array by depth (Phase 254 D-09, D-17)
 - tracer pure   : label #176, a 1-ply line settled by the static-exchange recapture credit
 - tracer storage: one real blunder's line facts round-trip through the new game_flaws columns
                   and the two new games stamps start NULL
@@ -35,9 +42,17 @@ from app.services.line_material import (
     LINE_LOSS_DEPTHS,
     LINE_MATE_PLY_COLUMN,
     LineFacts,
+    LINE_MATERIAL_SLOTS,
+    best_line_facts,
     line_facts,
+    material_at_depth,
 )
-from tests.services.line_material_fixtures import LINE_FIXTURES, LineFixture
+from tests.services.line_material_fixtures import (
+    LINE_FIXTURES,
+    OWNER_MISS_FIXTURES,
+    LineFixture,
+    OwnerMissFixture,
+)
 from tests.blunder_check_seed import (
     SEED_PGN,
     SeedBlunder,
@@ -66,6 +81,80 @@ def test_label_176_recapture_credit_settles_one_ply_line() -> None:
     facts = line_facts(chess.Board(_LABEL_176_PRE_FEN), _LABEL_176_PLAYED, _LABEL_176_LINE)
     assert [facts.loss_at(depth) for depth in LINE_LOSS_DEPTHS] == [0] * len(LINE_LOSS_DEPTHS)
     assert facts.mate_ply is None
+
+
+@pytest.mark.parametrize("fixture", OWNER_MISS_FIXTURES, ids=lambda f: f"g{f.game_id}p{f.ply}")
+def test_best_line_owner_fixtures(fixture: OwnerMissFixture) -> None:
+    pre_board = chess.Board(fixture.pre_fen)
+    played = line_facts(pre_board, fixture.played_uci, fixture.refutation_line)
+    best = best_line_facts(pre_board, fixture.best_line)
+    assert played.material_at(3) == fixture.expected_played_3
+    assert best.material_at(3) == fixture.expected_best_3
+
+
+def test_best_line_mate_by_first_move() -> None:
+    # Fool's mate: black to move, Qh4 mates at once, so the one-token best line is settled.
+    facts = best_line_facts(_board_after("f2f3 e7e5 g2g4"), "d8h4")
+    assert facts.opponent_mate_ply == 0
+    assert facts.mate_ply is None
+    assert facts.material_at(3) == 0
+
+
+def test_best_line_opponent_mated_settles() -> None:
+    # Scholar's-style: Bc4 (ply 0), ...Nf6 (ply 1), Qxf7# (ply 2) wins a pawn and mates.
+    board = _board_after("e2e4 e7e5 d1h5 b8c6")
+    facts = best_line_facts(board, "f1c4 g8f6 h5f7")
+    assert facts.opponent_mate_ply == 2
+    assert facts.material_at(3) == 1
+
+
+@pytest.mark.parametrize(
+    "best_pv",
+    [None, "", "zz99", "a1a8", "zz99 e7e5", "e2e4"],
+    ids=["none", "empty", "malformed", "illegal", "malformed_with_tail", "too_short"],
+)
+def test_best_line_bad_tokens_null(best_pv: str | None) -> None:
+    facts = best_line_facts(chess.Board(), best_pv)
+    assert facts.material_at(3) is None
+    assert facts.mate_ply is None
+    assert facts.opponent_mate_ply is None
+
+
+@pytest.mark.parametrize("fixture", LINE_FIXTURES, ids=lambda f: f"n{f.label_n}")
+def test_material_array_is_negated_loss_on_250_fixtures(fixture: LineFixture) -> None:
+    facts = line_facts(chess.Board(fixture.pre_fen), fixture.played_uci, fixture.line)
+    array = facts.material_array()
+    assert len(array) == LINE_MATERIAL_SLOTS == 9
+    for depth in range(1, LINE_MATERIAL_SLOTS + 1):
+        loss = facts.loss_at(depth)
+        assert array[depth - 1] == (None if loss is None else -loss)
+    # The legacy odd depths still carry the 250 expected values.
+    assert _losses(facts) == fixture.expected_loss
+
+
+@pytest.mark.parametrize("fixture", OWNER_MISS_FIXTURES, ids=lambda f: f"g{f.game_id}p{f.ply}")
+def test_best_line_material_array_nine_slots(fixture: OwnerMissFixture) -> None:
+    array = best_line_facts(chess.Board(fixture.pre_fen), fixture.best_line).material_array()
+    assert len(array) == LINE_MATERIAL_SLOTS
+    assert array[3 - 1] == fixture.expected_best_3
+
+
+def test_material_at_depth_reads_stored_arrays() -> None:
+    stored = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    assert material_at_depth(stored, 3) == 30
+    assert material_at_depth(stored, 9) == 90
+    assert material_at_depth(None, 3) is None
+    assert material_at_depth([], 3) is None
+    assert material_at_depth([1, 2], 3) is None
+    assert material_at_depth([1, 2, None], 3) is None
+
+
+def test_best_line_does_not_mutate_board() -> None:
+    board = _board_after("e2e4 e7e5")
+    fen_before, stack_before = board.fen(), len(board.move_stack)
+    best_line_facts(board, "g1f3 b8c6 f1c4")
+    assert board.fen() == fen_before
+    assert len(board.move_stack) == stack_before
 
 
 def _losses(facts: LineFacts) -> tuple[int | None, ...]:

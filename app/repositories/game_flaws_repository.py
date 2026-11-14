@@ -178,10 +178,11 @@ FLAW_BLOB_AND_TACTIC_COLUMNS: tuple[str, ...] = (
 # preserves them by omission (D-09).
 MAIA_FLAW_COLUMNS: tuple[str, ...] = ("maia_played_prob",)
 
-# Phase 250: the eight facepalm columns (reply spread, line losses, mate ply, score). Its OWN
-# tuple, deliberately NOT part of MAIA_FLAW_COLUMNS or FLAW_BLOB_AND_TACTIC_COLUMNS, and
-# flaw_record_to_row must never emit these keys: the diff/upsert in _classify_and_fill_oracle
-# preserves them by omission (D-05).
+# Phase 250: the eight facepalm columns (reply spread, line losses, mate ply, score), plus the
+# three Phase 254 fact columns (D-09: the signed material arrays of the played and the best line
+# and the best line's mate ply). Its OWN tuple, deliberately NOT part of MAIA_FLAW_COLUMNS or
+# FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit these keys: the
+# diff/upsert in _classify_and_fill_oracle preserves them by omission (D-05, T-254-06).
 FACEPALM_COLUMNS: tuple[str, ...] = (
     "maia_reply_spread",
     "line_loss_1",
@@ -191,6 +192,19 @@ FACEPALM_COLUMNS: tuple[str, ...] = (
     "line_loss_9",
     "line_mate_ply",
     "facepalm_score",
+    "played_line_material",
+    "best_line_material",
+    "best_line_mate_ply",
+)
+
+# Phase 254 D-08: the two pre-blunder Maia inputs (the best move's probability and the effective
+# number of moves at the decision position). Written in full mode only, from the SAME full_policy
+# call that yields maia_played_prob. Its OWN tuple, deliberately NOT part of FACEPALM_COLUMNS
+# (spread and line modes never write them) and flaw_record_to_row must never emit these keys:
+# the diff/upsert preserves them by omission (T-254-06).
+FACEPALM_PRE_COLUMNS: tuple[str, ...] = (
+    "maia_best_prob",
+    "maia_pre_spread",
 )
 
 
@@ -295,8 +309,8 @@ async def bulk_update_flaw_maia_stats(
     """Write the Maia stat columns on existing game_flaws rows (bulk update by PK).
 
     Every dict carries user_id, game_id, ply plus the SAME key set (full mode: the
-    MAIA_FLAW_COLUMNS and the eight FACEPALM_COLUMNS; None for a value that could not be
-    produced), so one executemany
+    MAIA_FLAW_COLUMNS, the FACEPALM_COLUMNS and the FACEPALM_PRE_COLUMNS; None for a value that
+    could not be produced), so one executemany
     statement compiles and a re-score never leaves a stale value behind (D-08). No-op on an
     empty list.
     """
@@ -359,13 +373,33 @@ async def mark_facepalm_line_completed(session: AsyncSession, game_ids: Sequence
     await session.execute(stmt)
 
 
+async def mark_facepalm_pre_completed(session: AsyncSession, game_ids: Sequence[int]) -> None:
+    """Stamp games.facepalm_pre_completed_at for the given games (no-op on empty ids).
+
+    Same D-05 guardrail as mark_maia_flaws_completed: callers MUST only pass games whose scoring
+    pass completed with a Maia session loaded (the pre-blunder inputs come from the Maia
+    inference at the decision position); a wrong stamp permanently hides the game from the
+    backfill selector.
+    """
+    if not game_ids:
+        return
+    games_table = Game.__table__
+    stmt = (
+        update(games_table)  # ty: ignore[invalid-argument-type]
+        .where(games_table.c.id.in_(list(game_ids)))
+        .values(facepalm_pre_completed_at=datetime.now(timezone.utc))
+    )
+    await session.execute(stmt)
+
+
 async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> bool:
-    """Clear all three stamps for one game: maia_flaws_completed_at, facepalm_spread_completed_at
-    and facepalm_line_completed_at.
+    """Clear all four stamps for one game: maia_flaws_completed_at, facepalm_spread_completed_at,
+    facepalm_line_completed_at and facepalm_pre_completed_at.
 
     A reclassification can change a game's flaw set, its Stockfish best move or its stored
-    line, so every derived value may be stale: the played-move Maia probability and the Phase 250
-    facepalm values (D-05, D-18). Clearing the three stamps in one UPDATE makes the re-runnable
+    line, so every derived value may be stale: the played-move Maia probability, the Phase 250
+    facepalm values (D-05, D-18) and the Phase 254 pre-blunder inputs (D-08). Clearing the four
+    stamps in one UPDATE makes the re-runnable
     backfills re-score the game. All five reclassify callers go through this helper. Returns True
     when any stamp was actually cleared, so callers can count games that need the backfill.
     """
@@ -378,12 +412,14 @@ async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> boo
                 games_table.c.maia_flaws_completed_at.isnot(None),
                 games_table.c.facepalm_spread_completed_at.isnot(None),
                 games_table.c.facepalm_line_completed_at.isnot(None),
+                games_table.c.facepalm_pre_completed_at.isnot(None),
             ),
         )
         .values(
             maia_flaws_completed_at=None,
             facepalm_spread_completed_at=None,
             facepalm_line_completed_at=None,
+            facepalm_pre_completed_at=None,
         )
         .returning(games_table.c.id)
     )

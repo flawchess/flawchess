@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
-from app.services.line_material import line_facts, null_line_facts
+from app.services.line_material import best_line_facts, line_facts, null_line_facts
 from app.services.maia_flaw_scoring import replay_flaw_boards
 from app.services.maia_flaw_stats import reply_spread
 from scripts.blunder_check import facepalm_features
@@ -31,8 +31,10 @@ from scripts.blunder_check.facepalm_features import (
     FeatureRow,
     GameInputs,
     LabelRow,
+    best_uci_of,
     build_feature_row,
     collect_rows,
+    gather_labels,
     load_pv_cache,
     parse_extra,
     parse_labels,
@@ -111,6 +113,11 @@ def test_tsv_header_and_spread_match_the_apps_functions(tmp_path: Path) -> None:
     assert record["game_id"] == str(1000 + TRACER_PLIES[0])
     assert record["pv_source"] == "db"
     assert float(record["reply_spread"]) == float(f"{built[0][0].reply_spread:.6g}")
+    # The signed 9-slot arrays are written slot by slot (positive = the blunderer is up).
+    first_facts = built[0][0].facts
+    for depth in range(1, 10):
+        expected = first_facts.material_at(depth)
+        assert record[f"played_mat_{depth}"] == ("" if expected is None else str(expected))
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +356,156 @@ def test_cli_success_writes_the_table_and_a_summary(
     assert "rows 1; pv_source: db 1; cache mismatches 0" in capsys.readouterr().out
 
 
+# ---------------------------------------------------------------------------
+# Phase 254 plan 04: best line, best-move probability and pre-blunder spread
+# ---------------------------------------------------------------------------
+
+
+def _best_line_for(pre_board: chess.Board, plies: int = 4) -> str:
+    """A legal best line from `pre_board`: its first `plies` moves chosen by sorted UCI."""
+    board = pre_board.copy(stack=False)
+    tokens: list[str] = []
+    for _ in range(plies):
+        move = sorted(board.legal_moves, key=lambda m: m.uci())[0]
+        tokens.append(move.uci())
+        board.push(move)
+    return " ".join(tokens)
+
+
+def test_features_reads_best_line_and_pre_inputs() -> None:
+    pre_board, played = _seed_pre_board()
+    best_pv = _best_line_for(pre_board)
+    calls: list[str] = []
+
+    def counting_policy(fen: str, elo: float) -> dict[str, float]:
+        calls.append(fen)
+        return fake_full_policy(fen, elo)
+
+    row = build_feature_row(
+        _label(),
+        pre_board=pre_board,
+        played_uci=played,
+        pinned_elo=TRACER_ELO,
+        played_prob=0.05,
+        pv=_seed_line(),
+        pv_source="db",
+        policy_fn=counting_policy,
+        best_pv=best_pv,
+        best_move="a1a1",  # ignored: the stored line wins
+    )
+
+    pre_policy = fake_full_policy(pre_board.fen(), TRACER_ELO)
+    best_uci = best_pv.split(" ")[0]
+    assert row.best_uci == best_uci
+    assert row.best_facts == best_line_facts(pre_board, best_pv)
+    assert row.best_prob == pre_policy[best_uci]
+    assert row.pre_spread == reply_spread(pre_policy)
+    assert row.best_pv_plies == 4
+    # ONE call on the pre-board, one on the post-board.
+    post_board = pre_board.copy(stack=False)
+    post_board.push_uci(played)
+    assert calls == [pre_board.fen(), post_board.fen()]
+
+
+def test_features_best_uci_falls_back_to_best_move() -> None:
+    pre_board, played = _seed_pre_board()
+    best_move = sorted(pre_board.legal_moves, key=lambda m: m.uci())[0].uci()
+
+    row = build_feature_row(
+        _label(),
+        pre_board=pre_board,
+        played_uci=played,
+        pinned_elo=TRACER_ELO,
+        played_prob=0.05,
+        pv=None,
+        pv_source="db_none",
+        policy_fn=fake_full_policy,
+        best_pv=None,
+        best_move=best_move,
+    )
+
+    assert best_uci_of(None, best_move) == best_move
+    assert best_uci_of(None, None) is None
+    assert row.best_uci == best_move
+    assert row.best_prob == fake_full_policy(pre_board.fen(), TRACER_ELO)[best_move]
+    assert row.best_pv_plies == 0
+    assert row.best_facts == best_line_facts(pre_board, best_move)
+
+
+def test_unknown_rating_leaves_the_pre_inputs_null_with_one_note() -> None:
+    pre_board, played = _seed_pre_board()
+
+    row = build_feature_row(
+        _label(),
+        pre_board=pre_board,
+        played_uci=played,
+        pinned_elo=None,
+        played_prob=0.05,
+        pv=None,
+        pv_source="db_none",
+        policy_fn=fake_full_policy,
+        best_pv=_best_line_for(pre_board),
+    )
+
+    assert (row.best_prob, row.pre_spread, row.reply_spread) == (None, None, None)
+    assert row.note == "rating_unknown"  # the same note for the pre and post calls, not twice
+
+
+def test_features_multiple_label_files(tmp_path: Path) -> None:
+    first = tmp_path / "first.tsv"
+    second = tmp_path / "second.tsv"
+    first.write_text("n\tset\telo\tmove\tlink\tlabel\n1\t1\t1500\tNd2\tx?game_id=7&ply=20\t1\n")
+    second.write_text(
+        "n\tset\telo\tmove\tlink\tlabel\n"
+        "1\t7\t1500\tNd2\tx?game_id=8&ply=30\t0\n"
+        "2\t7\t1500\tNd2\tx?game_id=9&ply=31\t1\n"
+    )
+
+    rows = gather_labels([first, second], ["99:5"])
+
+    assert [(row.set_id, row.game_id, row.ply) for row in rows] == [
+        ("1", 7, 20),
+        ("7", 8, 30),
+        ("7", 9, 31),
+        ("extra", 99, 5),
+    ]
+
+
+def test_cli_needs_labels_or_extra(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as raised:
+        facepalm_features.main(["--db", "dev", "--out", str(tmp_path / "f.tsv")])
+
+    assert raised.value.code == 2
+
+
+def test_cli_accepts_extra_alone_and_repeated_labels(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    row = _resolved_row(_seed_inputs(pv=_seed_line()))
+    _fake_run_environment(monkeypatch, CollectedRows(rows=[row], missing=[], mismatches=[]))
+    labels = tmp_path / "labels.tsv"
+    _write_label_file(labels)
+    out = tmp_path / "f.tsv"
+
+    code = facepalm_features.main(
+        [
+            "--db",
+            "dev",
+            "--labels",
+            str(labels),
+            "--labels",
+            str(labels),
+            "--extra",
+            "7:20",
+            "--out",
+            str(out),
+        ]  # fmt: skip
+    )
+
+    assert code == EXIT_OK
+    assert out.exists()
+
+
 @pytest.mark.asyncio
 async def test_read_only_database_source_end_to_end(test_engine: Any) -> None:
     """collect_rows reads a seeded game through the read-only engine and builds the row."""
@@ -358,6 +515,7 @@ async def test_read_only_database_source_end_to_end(test_engine: Any) -> None:
         test_engine, user_id=user_id, evals_cp=evals, blunders=[SeedBlunder(ply=SEED_PLY)]
     )
     line = _seed_line()
+    best_line = _best_line_for(_seed_pre_board()[0])
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
     try:
         async with maker() as session:
@@ -370,6 +528,11 @@ async def test_read_only_database_source_end_to_end(test_engine: Any) -> None:
                 update(GamePosition)
                 .where(GamePosition.game_id == game_id, GamePosition.ply == SEED_PLY + 1)
                 .values(pv=line)
+            )
+            await session.execute(
+                update(GamePosition)
+                .where(GamePosition.game_id == game_id, GamePosition.ply == SEED_PLY)
+                .values(pv=best_line, best_move=best_line.split(" ")[0])
             )
             await session.commit()
         engine = make_readonly_engine(test_engine.url.render_as_string(hide_password=False))
@@ -392,6 +555,11 @@ async def test_read_only_database_source_end_to_end(test_engine: Any) -> None:
         assert row.facts == line_facts(pre_board, played, line)
         assert row.pinned_elo is not None
         assert row.reply_spread is not None
+        # The best line comes from game_positions.pv at the flaw ply (never the pv cache).
+        assert row.best_uci == best_line.split(" ")[0]
+        assert row.best_facts == best_line_facts(pre_board, best_line)
+        assert row.best_pv_plies == 4
+        assert row.best_prob is not None and row.pre_spread is not None
     finally:
         await delete_games(test_engine, [game_id])
 

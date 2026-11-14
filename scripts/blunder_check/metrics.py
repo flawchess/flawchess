@@ -29,6 +29,7 @@ from app.services.flaws_service import _MoveEntry  # noqa: PLC2701
 from app.services.blunder_check_rules import (
     HAZARD,
     LEAD_IN_PLIES,
+    LINE_DEPTH,
     MAX_BLUNDER_POSITION,
     WINDOW_LENGTHS,
     MissCase,
@@ -50,8 +51,10 @@ __all__ = [
     "LEAD_IN_PLIES",
     "MAX_BLUNDER_POSITION",
     "MAX_MISS_SHARE",
+    "MIN_MISSED_GAIN",
     "WINDOW_LENGTHS",
     "EloBucket",
+    "MaterialType",
     "MissCase",
     "MoveJudgement",
     "Provenance",
@@ -67,6 +70,7 @@ __all__ = [
     "flaw_control",
     "herring_flags",
     "in_band",
+    "material_type",
     "miss_case",
     "quartiles",
     "user_move_judgements",
@@ -79,11 +83,17 @@ __all__ = [
 
 # Upper bound on the share of pure misses among supplied blunders (report-only, D-07 keeps it out of the app).
 MAX_MISS_SHARE: float = 0.30
+# Minimum missed gain (pawn units, `best_3 - max(0, played_3)`) that makes a blunder a miss (254).
+MIN_MISSED_GAIN: int = 1
 # Lower edges (inclusive) of the Elo buckets above the open-ended "<800" bucket.
 ELO_BUCKET_EDGES: tuple[int, ...] = (800, 1200, 1600, 2000, 2400)
 
 EloBucket = Literal["<800", "800-1199", "1200-1599", "1600-1999", "2000-2399", "2400+"]
 Provenance = Literal["engine", "lichess"]
+# What a blunder does to the material balance over LINE_DEPTH plies (254 D-13): it loses material,
+# misses a gain on the best line, both, or neither; "unknown" when the played line is too short to
+# tell. Distinct from the classifier's MissCase labels and the fit's Form A / Form B names.
+MaterialType = Literal["loses", "misses", "loses_and_misses", "neither", "unknown"]
 
 ELO_BUCKETS: tuple[EloBucket, ...] = (
     "<800",
@@ -162,6 +172,38 @@ def estimated_user_windows(
         supply = capped_blunder_supply(count * rates["non_pure_rate"], count * rates["pure_rate"])
         total += supply * rates["fit_share"]
     return total
+
+
+def material_type(
+    played_3: int | None,
+    mate_ply: int | None,
+    best_3: int | None,
+    best_mate_ply: int | None,
+) -> MaterialType:
+    """Classify a blunder by what its played line loses and what its best line gains (D-13).
+
+    `played_3` / `best_3` are the signed material (positive = the blunderer is up) after
+    LINE_DEPTH plies of the played / best line; `mate_ply` is the ply the blunderer is mated on
+    the played line, `best_mate_ply` the ply the best line mates the opponent. A blunder loses
+    when it is mated within LINE_DEPTH or ends behind; it misses when the best line mates within
+    LINE_DEPTH or gains at least MIN_MISSED_GAIN beyond what the played line kept (an unknown
+    best line misses nothing, D-18). `unknown` when the played line is unsettled and no mate
+    settles it.
+    """
+    mated = mate_ply is not None and mate_ply <= LINE_DEPTH
+    if played_3 is None and not mated:
+        return "unknown"
+    loses = mated or (played_3 is not None and played_3 < 0)
+    missed_mate = best_mate_ply is not None and best_mate_ply <= LINE_DEPTH
+    # Like `missed_feature`: without a settled played line only a best-line mate counts as a miss.
+    misses = missed_mate or (
+        played_3 is not None and best_3 is not None and best_3 - max(0, played_3) >= MIN_MISSED_GAIN
+    )
+    if loses and misses:
+        return "loses_and_misses"
+    if loses:
+        return "loses"
+    return "misses" if misses else "neither"
 
 
 # ---------------------------------------------------------------------------
