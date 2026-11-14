@@ -95,32 +95,12 @@ class GameFlaw(Base):
     missed_tactic_confidence: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
     missed_tactic_depth: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
-    # Phase 247 Maia per-flaw stats (D-01). All nullable, NULL = not scored (or Maia could
-    # not score this row). Written only by app/services/maia_flaw_scoring.py, never by
-    # flaw_record_to_row, so a delete-free diff/upsert preserves them by omission (D-09).
-    #   rank  = 1 + number of legal moves with STRICTLY higher Maia probability
-    #           (1 = Maia's top choice; ties share a rank).
-    #   played = the move actually played; best = game_positions.best_move at the flaw ply;
-    #   second = missed_pv_lines[0].su, NULL when empty / illegal / equal to best (D-15).
-    #   top_prob = probability of Maia's own most likely move.
-    #   effective_moves = 2^H with H the Shannon entropy in bits over all legal moves.
+    # Maia's probability for the move actually played, at the mover's pinned Elo. Nullable,
+    # NULL = not scored (or Maia could not score this row). Still a facepalm input (250 D-11
+    # dropped the other per-flaw Maia stats of Phase 247 / 248). Written only by
+    # app/services/maia_flaw_scoring.py, never by flaw_record_to_row, so a delete-free
+    # diff/upsert preserves it by omission.
     maia_played_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
-    maia_played_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    maia_best_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
-    maia_best_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    maia_second_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
-    maia_second_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    maia_top_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
-    maia_effective_moves: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
-
-    # Phase 248 blunder-check refutation stats (D-01). Nullable, NULL = not scored.
-    # refutation = COALESCE(game_positions.best_move, first pv token) at ply + 1 (opponent
-    # to move after the blunder); Maia prob / rank (same strict-greater rank definition as
-    # above) for that reply at the BLUNDERER's pinned Elo. Only user-side blunders
-    # (severity 2, user parity) are scored. Written only by app/services/maia_flaw_scoring.py,
-    # never by flaw_record_to_row, so a diff/upsert preserves them by omission (D-08).
-    maia_refutation_prob: Mapped[Optional[float]] = mapped_column(REAL, nullable=True)
-    maia_refutation_rank: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
     # Phase 250 facepalm-score facts (D-05). Nullable, NULL = not scored. User-side blunders
     # only (D-06). Written only by app/services/maia_flaw_scoring.py, never by

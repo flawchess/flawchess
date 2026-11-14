@@ -119,9 +119,7 @@ def _score_game(
         if probs is None:
             # The CLI starts Maia before sampling; a None here means a broken session, not data.
             raise RuntimeError("Maia policy unavailable while scoring Good moves")
-        stats, _ = compute_maia_flaw_stats(
-            probs, played_uci=played_uci, best_uci=None, second_uci=None
-        )
+        stats, _ = compute_maia_flaw_stats(probs, played_uci=played_uci)
         played_prob = None if stats is None else stats["maia_played_prob"]
         if played_prob is None:
             skipped += 1

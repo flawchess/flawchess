@@ -26,7 +26,7 @@ import pytest
 
 from app.services import maia_engine
 from app.services.maia_encoding import POLICY_VOCAB_SIZE, elo_to_input
-from app.services.maia_flaw_stats import compute_maia_flaw_stats
+from app.services.maia_flaw_stats import compute_maia_flaw_stats, reply_spread
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _MODEL_PATH = _REPO_ROOT / "frontend" / "public" / "maia" / "maia3_simplified.onnx"
@@ -130,8 +130,8 @@ async def test_score_move_returns_played_move_probability() -> None:
 
 
 async def test_full_policy_feeds_flaw_stats() -> None:
-    """Tracer: one real Maia forward pass yields all eight D-01 stats for a position
-    (full_policy -> compute_maia_flaw_stats), and agrees with score_move."""
+    """Tracer: one real Maia forward pass yields the played probability (compute_maia_flaw_stats)
+    and the reply-spread input (reply_spread), and agrees with score_move."""
     pytest.importorskip("onnxruntime")
     if not _MODEL_PATH.exists():
         pytest.skip("vendored Maia model not present")
@@ -142,27 +142,18 @@ async def test_full_policy_feeds_flaw_stats() -> None:
         await maia_engine.start_maia()
         probs = maia_engine.full_policy(entry["fen"], elo)
         assert probs is not None
-        ranked = sorted(probs, key=lambda uci: probs[uci], reverse=True)
-        stats, reasons = compute_maia_flaw_stats(
-            probs, played_uci=entry["played_uci"], best_uci=ranked[0], second_uci=ranked[1]
-        )
+        stats, reasons = compute_maia_flaw_stats(probs, played_uci=entry["played_uci"])
         scored = maia_engine.score_move(entry["fen"], elo, entry["played_uci"])
     finally:
         await maia_engine.stop_maia()
     assert reasons == []
     assert stats is not None
-    assert all(value is not None for value in stats.values())
     assert scored is not None
     played_prob = stats["maia_played_prob"]
-    top_prob = stats["maia_top_prob"]
-    effective = stats["maia_effective_moves"]
     assert played_prob is not None
-    assert top_prob is not None
-    assert effective is not None
     assert abs(played_prob - scored) <= 1e-9
-    assert stats["maia_best_rank"] == 1
-    assert top_prob >= played_prob
-    assert 1.0 <= effective <= len(probs)
+    assert max(probs.values()) >= played_prob
+    assert 1.0 <= reply_spread(probs) <= len(probs)
 
 
 # A start-like position with all four castling rights, and a position where a white

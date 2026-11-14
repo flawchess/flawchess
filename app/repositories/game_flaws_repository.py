@@ -172,27 +172,11 @@ FLAW_BLOB_AND_TACTIC_COLUMNS: tuple[str, ...] = (
 ) + TACTIC_TAG_COLUMNS
 
 
-# Phase 247: the eight per-flaw Maia stat columns (D-01 order). Its OWN tuple: it is NOT
-# part of FLAW_BLOB_AND_TACTIC_COLUMNS and flaw_record_to_row never emits these keys, so
-# the diff/upsert in _classify_and_fill_oracle preserves them by omission (D-09).
-MAIA_FLAW_COLUMNS: tuple[str, ...] = (
-    "maia_played_prob",
-    "maia_played_rank",
-    "maia_best_prob",
-    "maia_best_rank",
-    "maia_second_prob",
-    "maia_second_rank",
-    "maia_top_prob",
-    "maia_effective_moves",
-)
-
-# Phase 248: the blunder-check refutation pair. Its OWN tuple, deliberately NOT part of
-# MAIA_FLAW_COLUMNS or FLAW_BLOB_AND_TACTIC_COLUMNS, and flaw_record_to_row must never emit
-# these keys: the diff/upsert in _classify_and_fill_oracle preserves them by omission (D-08).
-MAIA_REFUTATION_COLUMNS: tuple[str, ...] = (
-    "maia_refutation_prob",
-    "maia_refutation_rank",
-)
+# Phase 247 (reduced by 250 D-11): the per-flaw Maia stat columns kept after the drop, Maia's
+# probability for the played move. Its OWN tuple: it is NOT part of FLAW_BLOB_AND_TACTIC_COLUMNS
+# and flaw_record_to_row never emits these keys, so the diff/upsert in _classify_and_fill_oracle
+# preserves them by omission (D-09).
+MAIA_FLAW_COLUMNS: tuple[str, ...] = ("maia_played_prob",)
 
 # Phase 250: the eight facepalm columns (reply spread, line losses, mate ply, score). Its OWN
 # tuple, deliberately NOT part of MAIA_FLAW_COLUMNS or FLAW_BLOB_AND_TACTIC_COLUMNS, and
@@ -310,9 +294,9 @@ async def bulk_update_flaw_maia_stats(
 ) -> None:
     """Write the Maia stat columns on existing game_flaws rows (bulk update by PK).
 
-    Every dict carries user_id, game_id, ply plus the SAME key set (full mode: the eight
-    MAIA_FLAW_COLUMNS, the two MAIA_REFUTATION_COLUMNS and, since Phase 250, the eight
-    FACEPALM_COLUMNS; None for a value that could not be produced), so one executemany
+    Every dict carries user_id, game_id, ply plus the SAME key set (full mode: the
+    MAIA_FLAW_COLUMNS and the eight FACEPALM_COLUMNS; None for a value that could not be
+    produced), so one executemany
     statement compiles and a re-score never leaves a stale value behind (D-08). No-op on an
     empty list.
     """
@@ -335,24 +319,6 @@ async def mark_maia_flaws_completed(session: AsyncSession, game_ids: Sequence[in
         update(games_table)  # ty: ignore[invalid-argument-type]
         .where(games_table.c.id.in_(list(game_ids)))
         .values(maia_flaws_completed_at=datetime.now(timezone.utc))
-    )
-    await session.execute(stmt)
-
-
-async def mark_maia_refutation_completed(session: AsyncSession, game_ids: Sequence[int]) -> None:
-    """Stamp games.maia_refutation_completed_at for the given games (no-op on empty ids).
-
-    Same D-05 guardrail as mark_maia_flaws_completed: callers MUST only pass games whose
-    scoring pass completed with a Maia session loaded; a wrong stamp permanently hides the
-    game from the backfill selector. Games with zero user-side blunders are stamped too.
-    """
-    if not game_ids:
-        return
-    games_table = Game.__table__
-    stmt = (
-        update(games_table)  # ty: ignore[invalid-argument-type]
-        .where(games_table.c.id.in_(list(game_ids)))
-        .values(maia_refutation_completed_at=datetime.now(timezone.utc))
     )
     await session.execute(stmt)
 
@@ -394,15 +360,14 @@ async def mark_facepalm_line_completed(session: AsyncSession, game_ids: Sequence
 
 
 async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> bool:
-    """Clear all four stamps for one game: maia_flaws_completed_at, maia_refutation_completed_at,
-    facepalm_spread_completed_at and facepalm_line_completed_at.
+    """Clear all three stamps for one game: maia_flaws_completed_at, facepalm_spread_completed_at
+    and facepalm_line_completed_at.
 
     A reclassification can change a game's flaw set, its Stockfish best move or its stored
-    line, so every derived value may be stale: the eight Maia stats, the Phase 248 refutation
-    pair (D-08) and the Phase 250 facepalm values (D-05, D-18). Clearing the four stamps in one
-    UPDATE makes the re-runnable backfills re-score the game. All five reclassify callers go
-    through this helper. Returns True when any stamp was actually cleared, so callers can count
-    games that need the backfill.
+    line, so every derived value may be stale: the played-move Maia probability and the Phase 250
+    facepalm values (D-05, D-18). Clearing the three stamps in one UPDATE makes the re-runnable
+    backfills re-score the game. All five reclassify callers go through this helper. Returns True
+    when any stamp was actually cleared, so callers can count games that need the backfill.
     """
     games_table = Game.__table__
     stmt = (
@@ -411,14 +376,12 @@ async def clear_maia_flaws_completed(session: AsyncSession, game_id: int) -> boo
             games_table.c.id == game_id,
             or_(
                 games_table.c.maia_flaws_completed_at.isnot(None),
-                games_table.c.maia_refutation_completed_at.isnot(None),
                 games_table.c.facepalm_spread_completed_at.isnot(None),
                 games_table.c.facepalm_line_completed_at.isnot(None),
             ),
         )
         .values(
             maia_flaws_completed_at=None,
-            maia_refutation_completed_at=None,
             facepalm_spread_completed_at=None,
             facepalm_line_completed_at=None,
         )
