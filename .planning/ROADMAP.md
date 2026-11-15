@@ -517,6 +517,28 @@ Plans:
 **Wave 15** *(human-gated, one-way)*
 - [ ] 254-14-PLAN.md — One-way go / no-go and deploy of the drop (orchestrator-inline)
 
+### Phase 255: Feature Discovery Dot Route (SEED-261115-d0t)
+
+**Goal**: One coherent strategy for the red pulsating dot. An ordered route of features with the dot in exactly
+one place at a time, moving from one unexplored feature to the next, so the same mechanism onboards new users and
+announces a new feature (first case: blunder-check training) to returning ones. One arbiter replaces the three dot
+systems that exist today (nav dots in `App.tsx`, the Openings sidebar hint chain, the re-minted Train flag).
+Evidence, owner decisions and the proposed shape are in the seed; nothing below the locked items is settled until
+the discuss phase.
+
+- **Locked (owner, 2026-11-09):** dot only, no "What's New" panel and no "New" pills; one dot at a time; the dot
+  solves the path problem (nav item first, then the subtab once the user is in the section).
+- **Locked (owner, 2026-11-15):** completion is stored server-side and follows the user across devices.
+- **To settle in discuss:** the storage shape and how existing users are bootstrapped from today's flags; what
+  happens to a step the user ignores (queue-jumping for new features, auto-skip); route order and contents;
+  interplay with the Train waiting-count badge; whether SEED-199's sticky subnav is in scope so a subtab dot stays
+  visible on long pages.
+
+**Depends on**: nothing. Mostly frontend plus one small migration; built in its own worktree while Phases 252
+and 254 wait on their prod runs (owner, 2026-11-15).
+**Requirements**: TBD
+**Plans:** 0 plans
+
 ## Backlog
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
