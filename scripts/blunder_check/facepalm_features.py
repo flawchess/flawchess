@@ -16,8 +16,8 @@ it alone (no cache, no DB, no Maia).
 Usage (database access is read-only, see ``make_readonly_engine``)::
 
     uv run --group maia-inference python scripts/blunder_check/facepalm_features.py \
-        --db prod --labels reports/blunder-check/leg2-labels-2026-11-11.tsv \
-        --labels <miss-labels.tsv> --pv-cache temp/blunder-check \
+        --db prod --labels reports/blunder-check/facepalm-labels.tsv \
+        --pv-cache temp/blunder-check \
         --extra 2099808:23 --out <features.tsv>
 
 ``--labels`` may be given more than once (the rows of every file, in argument order, then the

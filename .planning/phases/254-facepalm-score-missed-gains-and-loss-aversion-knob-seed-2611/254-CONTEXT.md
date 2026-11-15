@@ -124,6 +124,11 @@ rating-dependent line depth, the facepalm rate in stats (SEED-261114-iuv).
   have short lines today, so the refit sees a subset and the gap fill changes inputs under the fitted constants.
 
 ### Miss labels
+- **D-22 (owner, 2026-11-15, during execution): one label file under version control.**
+  `reports/blunder-check/facepalm-labels.tsv` holds sets 1-6 (the former `leg2-labels-2026-11-11.tsv`) and the
+  50 set 7 miss rows (n 191-240, value columns blank to stay blind). The owner labels set 7 in that file. Plans 07
+  and 11 that name `leg2-labels-2026-11-11.tsv` or a separate `miss-labels-<date>.tsv` mean this file (one
+  `--labels` argument).
 - **D-14: About 50 new rows, mostly pure misses, stratified.** About 40 pure misses (loss 0) spread over missed size
   (1, 3, 5, 9+) and over best-move probability, so the fit sees easy and hard misses; about 10 mixed rows (loses and
   misses). Blind as in 250: score and inputs hidden while labelling; output a TSV like `leg2-labels-2026-11-11.tsv`.
