@@ -112,7 +112,7 @@ No REQUIREMENTS.md IDs are mapped. The requirement set is D-01..D-22.
 | D-04/D-19 | Server-side, guests included, carries over | `users.prompt_state` key, guest promotion is in place (Storage) |
 | D-06/D-09/D-21 | Ordered registry, one-entry additions, "used" steps | Registry shape (Pattern 1), Train start button map |
 | D-10/D-11 | 3-active-day auto-skip without per-render writes | `current.since_days` stamp + existing `active_days` (Pattern 4) |
-| D-12 | No queue-jumping | Arbiter = first unresolved, available step in registry order |
+| D-12 | No queue-jumping | Arbiter = first unresolved, available step in registry order *(superseded by D-23: the first unresolved step; no dot and no later step while it is locked)* |
 | D-13/D-14/D-15 | Visit vs used completion, record always | Recorder in `ProtectedLayout` + control handlers (Pattern 5) |
 | D-16/D-22 | Existing users seeded with explicit set | Data migration (Pattern 6) |
 | D-17 | Badge replaces Train nav dot | `NavIndicator` precedence kept |
@@ -414,7 +414,13 @@ export function resolveRouteDot(state: FeatureRouteState | null, ctx: RouteCtx):
 
 ### Pattern 3: Locked targets (discretion item 4)
 
-Recommendation: the candidate is the first unresolved step **whose target is available**. A locked step (`requiresGames && !navUnlocked`) is passed over without being marked, gets no dot and never gets a `current` stamp, so its clock cannot run. When games arrive, the earlier steps become available again and win by order.
+> **Superseded by D-23 (owner, 2026-11-15): locked steps pause the route.** The candidate is the first unresolved
+> step; when its target is locked there is no candidate (no dot, no `current` stamp, no skip) and later steps are not
+> considered. The `find` condition in Pattern 2 changes accordingly. The pass-over text below is kept as the record
+> of the original recommendation only. How the plans implement the pause, including a step that was already current
+> when its target locks again: plan 255-02 (arbiter) and plan 255-04 (clock, assumption A-7).
+
+Original recommendation: the candidate is the first unresolved step **whose target is available**. A locked step (`requiresGames && !navUnlocked`) is passed over without being marked, gets no dot and never gets a `current` stamp, so its clock cannot run. When games arrive, the earlier steps become available again and win by order.
 
 - For the 9 launch steps this is identical to "pause on the locked step": the locked steps (3-8) are contiguous after Bots, and no available step follows them, so a zero-game account simply has no dot after Import/Train/Bots. Train and Bots are import-exempt (`IMPORT_EXEMPT_ROUTES`), and per the owner correction Train is never locked.
 - The two rules only diverge for a future step that is available without games and sits after locked ones (for example the blunder-check step). "Pass over" lets a no-games user see it; "pause" never would. This is a D-12 interpretation question: flag it in the plan check. Pass-over needs no extra state; pause would need a stored "locked since" pause interval to stop the clock, which D-11 discourages.
@@ -686,7 +692,7 @@ Recommendation: **no new Umami events.** Every completion, skip, its UTC date an
 |--------------|------------------|--------|
 | Per-device localStorage flags per email (`useUserFlag`) | Server-side set of step IDs on `users.prompt_state` | Follows the user across devices (D-04) |
 | Re-minted flag key to re-announce (`train_bots_visited`) | Append a new step ID | Announcements without key versioning |
-| Openings dot gated on visit, Endgames gated on Openings | One ordered route, locked steps passed over | Endgames no longer depends on Openings being visited first (SEED-199 complaint) |
+| Openings dot gated on visit, Endgames gated on Openings | One ordered route, locked steps passed over *(superseded by D-23: a locked step pauses the route)* | Endgames no longer depends on Openings being visited first (SEED-199 complaint) |
 | Train dot gated on `navUnlocked` | Train dot shown to zero-game accounts too | Matches Train's import exemption and warmup |
 
 ## Assumptions Log
@@ -695,7 +701,7 @@ Recommendation: **no new Umami events.** Every completion, skip, its UTC date an
 |---|-------|---------|---------------|
 | A1 | Step ID strings (`openings-played-as`, etc.) | Pattern 1, Code Examples | Cosmetic; pick once, never rename (stored in DB) |
 | A2 | Prod `users` row count is small (thousands at most), so the seed UPDATE is sub-second | Pattern 6 | If far larger, still a single UPDATE; worst case a few seconds at container start |
-| A3 | "Pass over locked steps" is acceptable under D-12 | Pattern 3 | Only matters for future steps; owner may prefer pause (needs a pause interval) |
+| A3 | "Pass over locked steps" is acceptable under D-12 *(superseded by D-23: the owner chose pause)* | Pattern 3 | Only matters for future steps; owner may prefer pause (needs a pause interval) |
 | A4 | A visit to a skipped step upgrades it to `done` | Code Examples (DONE guard) | Analytics nuance only; arbiter treats both as resolved |
 | A5 | `with_dot` field is worth storing for measurement | Code Examples | Can be dropped without affecting behaviour |
 | A6 | The Train warmup session is always composable (session_id never null in practice) | Existing Code Map 5 | Owner-confirmed; if `empty` ever shows, the dot just has no render site that day and the skip clock handles it |
@@ -703,7 +709,7 @@ Recommendation: **no new Umami events.** Every completion, skip, its UTC date an
 ## Open Questions (RESOLVED)
 
 1. **Locked-step rule for future steps (pass over vs pause).** Identical for the 9 launch steps; matters when a games-free step is appended after locked ones. Recommendation: pass over; raise in plan check.
-   **RESOLVED:** pass over (no dot, no clock, not marked). Decided under CONTEXT "Claude's Discretion" (locked targets); the plan check found it consistent with D-02, D-10 and D-14 and equivalent to pausing for the nine launch steps. It differs from a literal reading of D-12 only for a future games-free step appended after locked steps, where pass-over lets a zero-game user see the announcement. Flagged to the owner; kept visible as assumption A-1 in plan 255-02 (the arbiter).
+   **RESOLVED:** pause (owner, D-23). When the first unresolved step's target is locked, no dot is shown, the route does not advance to later steps and that step's clock does not run; the dot appears on it once the target unlocks. Implemented by the arbiter in plan 255-02 and the clock in plan 255-04 (assumption A-7 covers a step that was already current when its target locks again). The earlier pass-over answer (assumption A-1) is withdrawn.
 2. **Should the More drawer show the route dot?** Today it shows only the Library dot. Recommendation: render the same nav-level dot there (`-drawer` testid) for consistency; it is the same logical place as the bottom-bar item, so D-02 holds.
    **RESOLVED:** render the nav-level route dot in the More drawer with a `-drawer` testid (plan 255-03 Task 1).
 3. **Backend Literal vs D-09 "one entry".** Recommendation: accept one extra Literal line per new step, guarded by the paired list tests (Pitfall 7).
@@ -740,7 +746,7 @@ No missing dependencies.
 | D-16/D-22 | Migration seeds exactly the 9 IDs for existing rows incl. guests, preserves `feedback_v1`, idempotent, downgrade removes only `feature_route` | migration | `tests/test_migration_255_feature_route_seed.py` (template `tests/test_migration_240_reveal_tour_stage.py`, pick an unused user-id range) | ❌ |
 | D-06/D-12 | Arbiter order, first unresolved wins, no queue-jumping, expired step yields no dot | unit (pure) | `frontend/src/lib/__tests__/featureRoute.test.ts` | ❌ |
 | D-03 | Placement: nav outside section, subtab in section, control on page, none on a visit target | unit | same | ❌ |
-| Locked rule | `requiresGames` steps passed over when `!navUnlocked`; Train/Bots never locked | unit | same | ❌ |
+| Locked rule | `requiresGames` steps passed over when `!navUnlocked` *(superseded by D-23: a locked first unresolved step gives no dot and hides later steps)*; Train/Bots never locked | unit | same | ❌ |
 | Registry drift | Ordered ID list equals expected list on both sides | unit | vitest above + pytest `get_args` check | ❌ |
 | D-17 | Badge replaces Train nav dot; dot elsewhere coexists with badge | component | `frontend/src/App.test.tsx` (rewrite 802-891) | partial (rewrite) |
 | D-18/D-14 | Library dot only while `import` unresolved | component | `App.test.tsx` | partial (rewrite) |

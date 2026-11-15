@@ -88,6 +88,13 @@ links (the last three stay in SEED-199).
   registration.
 - **D-20:** Sticky subnav is out of scope. The subtab dot is visible at the top of the page on arrival.
 
+- **D-23:** Locked steps pause the route (owner, 2026-11-15, after the plan check; overrules the planner's
+  pass-over assumption A-1). When the first unresolved step's target is locked (`requiresGames` and the nav is
+  not unlocked), no route dot is shown anywhere, the route does not advance to later steps, and the 3-day
+  clock for that step does not run. The dot appears on that step once its target unlocks. This is the literal
+  reading of D-12: a later step, including one added in future, is reached only after the earlier steps are
+  done or skipped. Train and Bots are never locked (D-21).
+
 ### Claude's Discretion
 - Storage shape. `users.prompt_state` (JSONB, written only by atomic guarded UPDATEs) is the natural
   candidate; a separate table is acceptable if research finds a reason. Completion must be a set of step IDs
@@ -95,10 +102,9 @@ links (the last three stay in SEED-199).
 - How "the step became current" is timestamped for D-10 and D-11.
 - How D-16 identifies existing users (a launch cutoff on `users.created_at`, or a data migration that writes
   the full set).
-- Locked targets. Openings, Endgames and Library Stats need imported games (`isNavLocked`). After D-14, an
-  account without games can reach step 3 with a locked target. Suggested handling: no dot on a locked nav
-  item, and the 3-day clock does not run while the current step's target is locked. This was not asked
-  explicitly; raise it in the plan check if another handling looks better.
+- Locked targets: settled by D-23 (pause). Still open to the planner: how the pause is implemented (for
+  example, not stamping the step as current until its target unlocks) and what happens to a step that was
+  already current when its target became locked again.
 - Dot geometry on subtabs and on the sidebar controls, and the mobile path for the played-as and filters
   steps (they sit in a drawer on mobile).
 - Whether the old localStorage keys are cleaned up or just left unread.
