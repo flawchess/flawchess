@@ -24,9 +24,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Blunder check (beta): blunders are now picked by how careless they are for a player at your rating: how rarely players at your level play the move, how few replies the opponent has to choose from, and how much material the engine's punishing line wins within a few moves. Each sequence is, at about one third each, from your own games, from another player at your level, or a stretch with no blunder, and a sequence is never shown twice.
 - Blunder check (beta): the facepalm score's inputs are now stored as facts, including the material along the engine's best line, groundwork for counting missed wins (no visible change yet).
 - Facepalm score: computed on the fly from the stored facts, so the blunder check and the library always use the current model (no visible change yet).
+- Openings: the Score over time chart on each opening card now leads with your expected score from the eval after the opening over your last 100 games in that opening, with your actual score as a fainter second line. The dashed line marks the typical expected score for your colour, and the chart loads when you open it. Every chart shows at least 30% to 70%, so two openings can be compared on the same scale.
 
 ### Fixed
 
+- Analysis: forced mates now rank above any other engine line in the Stockfish card, shortest mate first, so a mate in one gets the best-move star and the solid arrow instead of sitting below a large winning eval.
 - Engine analysis: the Stockfish line saved behind each mistake and blunder (which also drives puzzle solutions and tactic tags) is no longer cut off after one or two moves for newly analyzed games, which happened in about a quarter of positions.
 - Engine analysis: opening positions whose saved Stockfish line had been cut short are now re-analyzed and repaired the next time they come up, instead of passing the short line on to newly analyzed games.
 - Analysis board and puzzle and blunder-check solutions: the Stockfish lines no longer shrink to one or two moves, or show the same move twice, when a search ends. They keep the last complete line, and the analysis board's move grades and gem badges no longer take their evaluation from a cut-off search.

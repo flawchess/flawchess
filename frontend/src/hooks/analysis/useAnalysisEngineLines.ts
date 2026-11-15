@@ -42,7 +42,7 @@
 import { useMemo } from 'react';
 import { sanToUci } from '@/lib/sanToSquares';
 import { bestSanFromPv } from '@/lib/analysisTactics';
-import { sideToMoveFromFen, evalToExpectedScore, type MoverColor } from '@/lib/liveFlaw';
+import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
 import { nearestByElo, classifyMoveQuality, type MoveGrade } from '@/lib/moveQuality';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import {
@@ -50,6 +50,7 @@ import {
   getByUci,
   getBySan,
   resolveReconciledBest,
+  compareEvalsForMover,
   rankReconciledCandidates,
 } from '@/lib/engineEvalLookup';
 import type { RankedLine } from '@/lib/engine/types';
@@ -357,10 +358,7 @@ export function useAnalysisEngineLines(
       const resolved = uci !== undefined ? getByUci(evalLookup, uci) : null;
       return resolved !== null ? { ...line, evalCp: resolved.evalCp, evalMate: resolved.evalMate } : line;
     });
-    return [...withReconciledEval].sort(
-      (a, b) =>
-        evalToExpectedScore(b.evalCp, b.evalMate, mover) - evalToExpectedScore(a.evalCp, a.evalMate, mover),
-    );
+    return [...withReconciledEval].sort((a, b) => compareEvalsForMover(a, b, mover));
   }, [engine.pvLines, evalLookup, position, reconciledBestUci, gradedCandidateUcis, reconciledTieBreakUci, sfRankCount]);
 
   // 5-bucket quality

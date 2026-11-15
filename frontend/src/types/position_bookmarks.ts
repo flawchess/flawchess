@@ -55,6 +55,9 @@ export interface TimeSeriesRequest {
   // Resolved date bounds for windowed emission (ISO YYYY-MM-DD strings)
   from_date?: string;
   to_date?: string;
+  // The per-opening chart request sets this to get the eval-expected series. The table-wide
+  // bookmark request omits it (false): the eval join is too costly to run on page load.
+  include_expected_score?: boolean;
 }
 
 export interface TimeSeriesPoint {
@@ -62,6 +65,10 @@ export interface TimeSeriesPoint {
   score: number;         // chess score (W + 0.5·D) / N, 0.0 - 1.0
   game_count: number;    // games in rolling window (1..window_size)
   window_size: number;   // configured window size (ROLLING_WINDOW_SIZE)
+  // Mean expected score from the middlegame-entry eval over the window's games that have one,
+  // 0.0 - 1.0. Null when not requested or fewer than 10 games in the window have an eval.
+  expected_score: number | null;
+  eval_game_count: number; // games in the window with a middlegame-entry eval (0 when not requested)
   per_week_games: number; // in-window games that ISO week (drives the weekly volume bars)
 }
 
@@ -84,6 +91,9 @@ export interface BookmarkTimeSeries {
   // False when the opening was last played before the colour's current-repertoire
   // cutoff (D-04): drives the "not played recently" chip.
   is_current: boolean;
+  // The colour baseline (+25 cp White / -25 cp Black) on the expected-score scale: the chart's
+  // dashed reference level (about 0.523 White, 0.477 Black).
+  expected_score_baseline: number;
 }
 
 export interface TimeSeriesResponse {

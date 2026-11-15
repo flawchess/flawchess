@@ -124,10 +124,9 @@ def test_tsv_header_and_spread_match_the_apps_functions(tmp_path: Path) -> None:
 # Task 2: labels, pv cache, row resolution, CLI exits, read-only DB source
 # ---------------------------------------------------------------------------
 
-REAL_LABELS = (
-    Path(__file__).resolve().parents[2] / "reports/blunder-check/leg2-labels-2026-11-11.tsv"
-)
-EXPECTED_LABEL_ROWS: int = 180
+REAL_LABELS = Path(__file__).resolve().parents[2] / "reports/blunder-check/facepalm-labels.tsv"
+# Sets 1-6 (180 rows) plus the 50 miss rows of set 7 (Phase 254 D-14).
+EXPECTED_LABEL_ROWS: int = 230
 SEED_PLY: int = 20
 
 
@@ -169,8 +168,9 @@ def test_parse_labels_on_the_real_label_file() -> None:
     rows = parse_labels(REAL_LABELS)
 
     assert len(rows) == EXPECTED_LABEL_ROWS
-    assert {row.label for row in rows} == {"1", "0", "0.5"}
-    assert {row.set_id for row in rows} == {"1", "2", "3", "4", "5", "6"}
+    # A row the owner has not labelled yet carries an empty label.
+    assert {row.label for row in rows} - {""} == {"1", "0", "0.5"}
+    assert {row.set_id for row in rows} == {"1", "2", "3", "4", "5", "6", "7"}
     first = rows[0]
     assert (first.n, first.game_id, first.ply, first.label) == ("1", 1940139, 21, "0")
 

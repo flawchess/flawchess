@@ -25,7 +25,12 @@ from app.repositories.openings_repository import (
     query_wdl_counts,
 )
 from app.repositories.stats_repository import query_opening_phase_entry_metrics_batch
-from app.services.opening_eval import finalize_opening_eval, resolve_eval_baseline_pawns
+from app.services.eval_utils import eval_cp_to_expected_score, eval_mate_to_expected_score
+from app.services.opening_eval import (
+    CENTIPAWNS_PER_PAWN,
+    finalize_opening_eval,
+    resolve_eval_baseline_pawns,
+)
 from app.services.repertoire_recency import is_current, resolve_current_cutoffs
 from app.services.score_confidence import (
     compute_confidence_bucket,
@@ -48,8 +53,10 @@ from app.schemas.openings import (
 
 logger = logging.getLogger(__name__)
 
-# Rolling window size for win-rate time series computation.
-ROLLING_WINDOW_SIZE = 50
+# Rolling window size for the score time series computation (actual and eval-expected).
+# 100 games (SEED-261115-sgs): the eval-expected line has about 2.5x less chance noise
+# than the score line, and signal matches noise at about 100 games.
+ROLLING_WINDOW_SIZE = 100
 
 # Minimum games in a rolling window before emitting a timeline data point.
 # Prevents noisy 0%/100% points at the start of a series.
@@ -295,36 +302,85 @@ def _rolling_score(results_so_far: Sequence[str]) -> tuple[float, int]:
     return window_score, window_total
 
 
+def _game_expected_score(
+    eval_cp: int | None, eval_mate: int | None, user_color: str
+) -> float | None:
+    """One game's expected score from its middlegame-entry eval, user perspective.
+
+    Mate takes precedence over cp and maps to exactly 0 or 1 (endgame_service's
+    entry-eval convention). Rows with |cp| >= 2000 are kept: the sigmoid is bounded,
+    unlike the cp mean of the avg-eval pillar, which trims them. None when the game
+    has no eval (no phase=1 row, or both columns NULL).
+    """
+    side: Literal["white", "black"] = "white" if user_color == "white" else "black"
+    if eval_mate is not None:
+        return eval_mate_to_expected_score(eval_mate, side)
+    if eval_cp is not None:
+        return eval_cp_to_expected_score(eval_cp, side)
+    return None
+
+
+def _rolling_expected_score(
+    expected_so_far: Sequence[float | None],
+) -> tuple[float | None, int]:
+    """Mean expected score over the trailing window's games with an eval, and their count.
+
+    Convert per game first, then average here; never convert a mean eval (SEED-261115-sgs).
+    Games without an eval (None) are skipped, so the mean rests on `eval_game_count`
+    games. Below MIN_GAMES_FOR_TIMELINE eval games the mean is None (a gap in the line).
+    """
+    with_eval = [e for e in expected_so_far[-ROLLING_WINDOW_SIZE:] if e is not None]
+    eval_count = len(with_eval)
+    if eval_count < MIN_GAMES_FOR_TIMELINE:
+        return None, eval_count
+    return sum(with_eval) / eval_count, eval_count
+
+
+def _expected_score_baseline(color: Literal["white", "black"] | None) -> float:
+    """The colour baseline (+25 cp White / -25 cp Black) on the expected-score scale.
+
+    The chart's dashed reference level. The baseline is already user-perspective, so
+    the "white" user_color below means no sign flip (SEED-261115-sgs).
+    """
+    baseline_cp = round(resolve_eval_baseline_pawns(color) * CENTIPAWNS_PER_PAWN)
+    return eval_cp_to_expected_score(baseline_cp, "white")
+
+
 def _build_bookmark_time_series(
     bookmark_id: int,
     rows: Sequence[Row[Any]],
     from_date: datetime.date | None,
     to_date: datetime.date | None,
     cutoff: datetime.datetime | None,
+    expected_score_baseline: float,
 ) -> BookmarkTimeSeries:
     """Build one bookmark's weekly rolling-score time series from its chronological rows.
 
-    `rows` are (played_at, result, user_color) tuples ordered by played_at ASC,
-    spanning full history so pre-window games warm the rolling average even
-    though only in-window points and WDL totals are emitted.
+    `rows` are (played_at, result, user_color, eval_cp, eval_mate) tuples ordered by
+    played_at ASC, spanning full history so pre-window games warm the rolling average
+    though only in-window points and WDL totals are emitted. The eval columns are NULL
+    when the eval series was not requested.
 
-    Phase 242: points are bucketed by ISO week (keyed by that week's Monday). Each
-    carries the rolling-50 score after the week's LAST in-window game and
-    `per_week_games` (in-window games that week, the ScoreChart volume bars).
-    The MIN_GAMES_FOR_TIMELINE floor still drops weeks whose rolling window is too
-    thin. The series also carries the shared score verdict fields over its in-window
-    totals (D-18) and `is_current` against the colour's repertoire cutoff (D-04).
+    Points are bucketed by ISO week (keyed by that week's Monday). Each carries the
+    rolling score after the week's LAST in-window game, the eval-expected rolling score
+    over the same window (SEED-261115-sgs), and `per_week_games` (in-window games that
+    week, the ScoreChart volume bars). The MIN_GAMES_FOR_TIMELINE floor still drops
+    weeks whose rolling window is too thin. The series also carries the shared score
+    verdict fields over its in-window totals (D-18), computed on ACTUAL score, and
+    `is_current` against the colour's repertoire cutoff (D-04).
     """
     results_so_far: list[str] = []  # "win", "draw", or "loss" per game
+    expected_so_far: list[float | None] = []  # per-game expected score, None without an eval
     outcome_counts = {"win": 0, "draw": 0, "loss": 0}
     last_played_at: datetime.datetime | None = None
     per_week_games: dict[str, int] = {}
     point_by_week: dict[str, TimeSeriesPoint] = {}
 
-    for played_at, result, user_color in rows:
+    for played_at, result, user_color, eval_cp, eval_mate in rows:
         outcome = derive_user_result(result, user_color)
-        # Every game warms the rolling window, in-window or not.
+        # Every game warms the rolling windows, in-window or not.
         results_so_far.append(outcome)
+        expected_so_far.append(_game_expected_score(eval_cp, eval_mate, user_color))
         if not _in_window(played_at, from_date, to_date):
             continue
 
@@ -333,12 +389,15 @@ def _build_bookmark_time_series(
         week = _iso_week_monday(played_at)
         per_week_games[week] = per_week_games.get(week, 0) + 1
         window_score, window_total = _rolling_score(results_so_far)
+        expected_score, eval_game_count = _rolling_expected_score(expected_so_far)
         # Later games of the same week overwrite earlier ones: last game wins.
         point_by_week[week] = TimeSeriesPoint(
             date=week,
             score=round(window_score, 4),
             game_count=window_total,
             window_size=ROLLING_WINDOW_SIZE,
+            expected_score=None if expected_score is None else round(expected_score, 4),
+            eval_game_count=eval_game_count,
             per_week_games=per_week_games[week],
         )
 
@@ -357,6 +416,7 @@ def _build_bookmark_time_series(
         total_games=total_wins + total_draws + total_losses,
         last_played_at=last_played_at,
         is_current=is_current(last_played_at, cutoff),
+        expected_score_baseline=expected_score_baseline,
         **score_verdict_fields(total_wins, total_draws, total_losses),
     )
 
@@ -377,6 +437,11 @@ async def get_time_series(
     last game, plus the number of in-window games played that week. Partial
     windows (games 1 to ROLLING_WINDOW_SIZE-1) are included from the start,
     subject to the MIN_GAMES_FOR_TIMELINE floor.
+
+    When `request.include_expected_score` is set, each point also carries the
+    eval-expected score over the same window (middlegame-entry eval converted per
+    game, then averaged; games without an eval skipped) and its eval game count.
+    Left false (the table-wide bookmark request), the eval join never runs.
 
     When from_date/to_date are set, emitted
     TimeSeriesPoints and WDL totals cover only in-window games; the rolling
@@ -424,12 +489,18 @@ async def get_time_series(
             opponent_type=request.opponent_type,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
+            include_mg_entry_eval=request.include_expected_score,
         )
         # A colour-less bookmark has no cutoff, so it reads as current.
         cutoff = cutoffs[bkm.color] if bkm.color is not None else None
         series.append(
             _build_bookmark_time_series(
-                bkm.bookmark_id, rows, request.from_date, request.to_date, cutoff
+                bkm.bookmark_id,
+                rows,
+                request.from_date,
+                request.to_date,
+                cutoff,
+                _expected_score_baseline(bkm.color),
             )
         )
 

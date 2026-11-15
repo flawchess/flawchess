@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
-import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
-import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
-import { SCORE_VERDICT_BAND } from '@/lib/openingVerdict';
-import { SCORE_OVER_TIME_LINE, VOLUME_BAR_COLOR } from '@/lib/theme';
+import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { InfoPopover } from '@/components/ui/info-popover';
+import { createDateTickFormatter, formatDateWithYear, scoreOverTimeAxis } from '@/lib/utils';
+import {
+  SCORE_OVER_TIME_ACTUAL_LINE,
+  SCORE_OVER_TIME_EXPECTED_LINE,
+  VOLUME_BAR_COLOR,
+} from '@/lib/theme';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
-import { TypicalBandWatermark, type BandShapeProps } from './TypicalBandWatermark';
-import { useTypicalBandMaskId } from '@/hooks/useTypicalBandMaskId';
 import type { BookmarkTimeSeries, TimeSeriesPoint } from '@/types/position_bookmarks';
 
 interface ScoreChartProps {
@@ -20,15 +22,15 @@ interface ScoreChartProps {
 
 /** The hidden bar axis runs [0, barMax * 5], which pins the tallest bar to the bottom 20%. */
 const VOLUME_BAR_DOMAIN_FACTOR = 5;
-const EVEN_SCORE = 0.5;
 const PERCENT_SCALE = 100;
-const SCORE_LINE_WIDTH = 2;
-const EVEN_SCORE_DASH = '4 3';
+const EXPECTED_LINE_WIDTH = 2;
+const ACTUAL_LINE_WIDTH = 1.5;
+const BASELINE_DASH = '4 3';
+const BASELINE_OPACITY = 0.3;
 const CHART_HEIGHT_CLASS = 'h-52';
 const EMPTY_MESSAGE = 'Not enough games in this opening for a score line yet.';
-// The grey typical band, the same 45-55% the score verdict bar uses.
-const TYPICAL_LOW = EVEN_SCORE - SCORE_VERDICT_BAND;
-const TYPICAL_HIGH = EVEN_SCORE + SCORE_VERDICT_BAND;
+const EXPECTED_LINE_NAME = 'Expected score from eval after opening';
+const ACTUAL_LINE_NAME = 'Actual score';
 // No left margin: with an auto-width value axis the plot starts right after the tick labels
 // instead of behind Recharts' fixed 60px axis gutter.
 const CHART_MARGIN = { top: 5, right: 5, bottom: 5, left: 0 };
@@ -38,7 +40,20 @@ function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showV
     <ChartTooltipBox>
       <div className="font-medium">Week of {formatDateWithYear(point.date)}</div>
       <div>
-        Score: {Math.round(point.score * PERCENT_SCALE)}%
+        {EXPECTED_LINE_NAME}:{' '}
+        {point.expected_score === null ? (
+          <span className="text-muted-foreground">not enough games with an eval</span>
+        ) : (
+          <>
+            {Math.round(point.expected_score * PERCENT_SCALE)}%
+            <span className="text-muted-foreground ml-1">
+              ({point.eval_game_count} games with an eval)
+            </span>
+          </>
+        )}
+      </div>
+      <div>
+        {ACTUAL_LINE_NAME}: {Math.round(point.score * PERCENT_SCALE)}%
         <span className="text-muted-foreground ml-1">(past {point.game_count} games)</span>
       </div>
       {showVolume && (
@@ -50,24 +65,65 @@ function ScoreTooltipBody({ point, showVolume }: { point: TimeSeriesPoint; showV
   );
 }
 
+function ScoreChartLegend({ testId, windowSize }: { testId: string; windowSize: number }) {
+  return (
+    <div
+      className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+      data-testid={`${testId}-legend`}
+    >
+      <span className="flex items-center gap-2" data-testid={`${testId}-legend-expected`}>
+        <span
+          className="h-0.5 w-4"
+          style={{ backgroundColor: SCORE_OVER_TIME_EXPECTED_LINE }}
+          aria-hidden="true"
+        />
+        {EXPECTED_LINE_NAME}
+      </span>
+      <span className="flex items-center gap-2 text-muted-foreground" data-testid={`${testId}-legend-actual`}>
+        <span
+          className="h-0.5 w-4"
+          style={{ backgroundColor: SCORE_OVER_TIME_ACTUAL_LINE }}
+          aria-hidden="true"
+        />
+        {ACTUAL_LINE_NAME}
+      </span>
+      <InfoPopover ariaLabel="Score over time info" testId={`${testId}-info`} side="top">
+        <p>
+          <strong>{EXPECTED_LINE_NAME}:</strong> the score the engine eval of the position you
+          reach out of the opening predicts, averaged over your last {windowSize} games in this
+          opening. The dashed line is the typical expected score for your colour.
+        </p>
+        <p className="mt-1">
+          <strong>{ACTUAL_LINE_NAME}:</strong> your real results over the same games. Noisier than
+          the expected line and a weaker sign of how the opening is going.
+        </p>
+        <p className="mt-1">
+          The expected line reflects only the position reached out of the opening, so your actual
+          score can sit above or below it.
+        </p>
+      </InfoPopover>
+    </div>
+  );
+}
+
 /**
- * Score over time for one opening: the rolling score line on an ordinal axis over active weeks
+ * Score over time for one opening: the rolling expected score from the opening eval (primary
+ * line) and the rolling actual score (fainter line) on one ordinal axis over active weeks
  * (inactivity is cut out, >90-day breaks get a palm-tree marker) and, with showVolume, grey
- * bars of the games played in it per week. The first point can be dated up to six days before
+ * bars of the games played in it per week. The dashed reference line is the colour baseline. The first point can be dated up to six days before
  * the filter's from-date because points are keyed by the ISO-week Monday; the ordinal axis
  * takes the series as it comes.
  */
 export function ScoreChart({ series, showVolume = false, testId = 'score-chart' }: ScoreChartProps) {
   const points = series.data;
-  const bandMaskId = useTypicalBandMaskId();
   const dates = useMemo(() => points.map((p) => p.date), [points]);
   const formatDateTick = useMemo(() => createDateTickFormatter(dates), [dates]);
-  // The 50% reference line and the typical band have to sit inside the axis even for a
-  // one-sided series.
-  const yAxis = useMemo(
-    () => niceWinRateAxis([...points.map((p) => p.score), TYPICAL_LOW, TYPICAL_HIGH]),
-    [points],
-  );
+  // Both lines and the baseline reference line have to sit inside the axis.
+  const baseline = series.expected_score_baseline;
+  const yAxis = useMemo(() => {
+    const expected = points.flatMap((p) => (p.expected_score === null ? [] : [p.expected_score]));
+    return scoreOverTimeAxis([...points.map((p) => p.score), ...expected, baseline]);
+  }, [points, baseline]);
   // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
   const barMax = Math.max(1, ...points.map((p) => p.per_week_games));
 
@@ -84,13 +140,6 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
       <ChartContainer config={{}} className={`w-full ${CHART_HEIGHT_CLASS}`}>
         <ComposedChart data={points} margin={CHART_MARGIN}>
           <CartesianGrid vertical={false} yAxisId="value" />
-          <ReferenceArea
-            yAxisId="value"
-            y1={TYPICAL_LOW}
-            y2={TYPICAL_HIGH}
-            ifOverflow="visible"
-            shape={(props: BandShapeProps) => <TypicalBandWatermark {...props} maskId={bandMaskId} />}
-          />
           <XAxis dataKey="date" tickFormatter={formatDateTick} />
           <YAxis
             yAxisId="value"
@@ -111,13 +160,10 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
           />
           <ReferenceLine
             yAxisId="value"
-            y={EVEN_SCORE}
+            y={baseline}
             stroke="currentColor"
-            strokeOpacity={0.3}
-            strokeDasharray={EVEN_SCORE_DASH}
-            // The 50% line runs through the middle of the band, so it shares the watermark
-            // cutout instead of striking through the letters.
-            mask={`url(#${bandMaskId})`}
+            strokeOpacity={BASELINE_OPACITY}
+            strokeDasharray={BASELINE_DASH}
           />
           {/* Inactivity-gap annotations (palm tree + label per >90-day gap) sit BEFORE the data
               series so they render behind it. dates is ascending (backend emits by week). */}
@@ -132,17 +178,31 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
               data-testid="score-chart-volume-bars"
             />
           )}
+          {/* Actual score first so the primary expected line draws on top of it. */}
           <Line
             yAxisId="value"
             type="monotone"
             dataKey="score"
-            stroke={SCORE_OVER_TIME_LINE}
-            strokeWidth={SCORE_LINE_WIDTH}
+            name={ACTUAL_LINE_NAME}
+            stroke={SCORE_OVER_TIME_ACTUAL_LINE}
+            strokeWidth={ACTUAL_LINE_WIDTH}
+            dot={false}
+            isAnimationActive={false}
+          />
+          {/* Null expected points (fewer than 10 games with an eval) leave a gap. */}
+          <Line
+            yAxisId="value"
+            type="monotone"
+            dataKey="expected_score"
+            name={EXPECTED_LINE_NAME}
+            stroke={SCORE_OVER_TIME_EXPECTED_LINE}
+            strokeWidth={EXPECTED_LINE_WIDTH}
             dot={false}
             isAnimationActive={false}
           />
         </ComposedChart>
       </ChartContainer>
+      <ScoreChartLegend testId={testId} windowSize={points[0]?.window_size ?? 0} />
     </div>
   );
 }

@@ -24,19 +24,33 @@ Coverage:
 - TestIsCurrent: current/past flag against the per-colour repertoire cutoff
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
 - TestDateWindowedTimeSeries: from_date/to_date windowing + warm-up preservation
+- TestEvalExpectedSeries: opt-in eval-expected series (SEED-261115-sgs)
+- TestMiddlegameEntryParity: the LATERAL and batch middlegame-entry selections agree
 """
 
 import datetime
+import math
 import uuid
+from collections.abc import Sequence
 from typing import Literal
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.stats_repository import (
+    middlegame_entry_lateral,
+    middlegame_entry_subquery,
+)
 from app.schemas.openings import TimeSeriesBookmarkParam, TimeSeriesRequest
+from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
+from app.services.opening_insights_constants import (
+    EVAL_BASELINE_PAWNS_BLACK,
+    EVAL_BASELINE_PAWNS_WHITE,
+)
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
     ROLLING_WINDOW_SIZE,
@@ -123,8 +137,17 @@ _USER_ROLLING = 901
 _USER_MULTI = 903
 _USER_DATE_WINDOW = 905
 _USER_WEEKLY = 906
+_USER_EVAL = 907
+_USER_EVAL_OTHER = 908
 
-_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_MULTI, _USER_DATE_WINDOW, _USER_WEEKLY]
+_ALL_TEST_USER_IDS = [
+    _USER_ROLLING,
+    _USER_MULTI,
+    _USER_DATE_WINDOW,
+    _USER_WEEKLY,
+    _USER_EVAL,
+    _USER_EVAL_OTHER,
+]
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -155,8 +178,15 @@ async def _seed_game_with_position(
     full_hash: int,
     time_control_bucket: str = "blitz",
     platform: str = "chess.com",
+    mg_evals: Sequence[tuple[int, int | None, int | None]] = (),
+    opening_phase_eval_cp: int | None = None,
 ) -> Game:
     """Seed a Game + one GamePosition (at ply=1) for the given full_hash.
+
+    ``mg_evals`` adds middlegame (phase=1) rows as (ply, eval_cp, eval_mate) at
+    distinct plies (the PK is user_id, game_id, ply); the FIRST by ply is the
+    middlegame-entry row. ``opening_phase_eval_cp`` adds a phase=0 row with that
+    eval at ply 5, which must never be picked as the middlegame-entry eval.
 
     The combination of user_color on Game and full_hash on GamePosition is
     what query_time_series matches against — the bookmark's color parameter
@@ -190,6 +220,33 @@ async def _seed_game_with_position(
         black_hash=full_hash + 2_000_000,
     )
     session.add(pos)
+    if opening_phase_eval_cp is not None:
+        session.add(
+            GamePosition(
+                game_id=game.id,
+                user_id=user_id,
+                ply=5,
+                full_hash=full_hash + 5_000_000,
+                white_hash=full_hash + 5_000_001,
+                black_hash=full_hash + 5_000_002,
+                phase=0,
+                eval_cp=opening_phase_eval_cp,
+            )
+        )
+    for ply, eval_cp, eval_mate in mg_evals:
+        session.add(
+            GamePosition(
+                game_id=game.id,
+                user_id=user_id,
+                ply=ply,
+                full_hash=full_hash + 10_000_000 + ply,
+                white_hash=full_hash + 11_000_000 + ply,
+                black_hash=full_hash + 12_000_000 + ply,
+                phase=1,
+                eval_cp=eval_cp,
+                eval_mate=eval_mate,
+            )
+        )
     await session.flush()
 
     return game
@@ -202,6 +259,7 @@ def _make_request(
     match_side: Literal["white", "black", "full"] = "full",
     from_date: datetime.date | None = None,
     to_date: datetime.date | None = None,
+    include_expected_score: bool = False,
 ) -> TimeSeriesRequest:
     """Build a minimal TimeSeriesRequest for one bookmark."""
     return TimeSeriesRequest(
@@ -215,6 +273,7 @@ def _make_request(
         ],
         from_date=from_date,
         to_date=to_date,
+        include_expected_score=include_expected_score,
     )
 
 
@@ -716,7 +775,7 @@ class TestDateWindowedTimeSeries:
         """
         uid = _USER_DATE_WINDOW
         fh = 9_500_003
-        warmup_games = ROLLING_WINDOW_SIZE  # 50 pre-window games
+        warmup_games = ROLLING_WINDOW_SIZE  # pre-window games fill exactly one window
 
         # Seed ROLLING_WINDOW_SIZE wins before the window.
         # Use 2025 so they are well before the 2026 window.
@@ -1067,3 +1126,365 @@ class TestIsCurrent:
 
         current_by_id = {s.bookmark_id: s.is_current for s in response.series}
         assert current_by_id == {71: False, 72: True, 73: True}
+
+
+# ---------------------------------------------------------------------------
+# TestEvalExpectedSeries (SEED-261115-sgs): opt-in eval-expected rolling series
+# ---------------------------------------------------------------------------
+
+# Monday of an ISO week; small seeds step in minutes so they share one weekly bucket.
+_EVAL_BASE = datetime.datetime(2026, 1, 5, 8, 0, tzinfo=datetime.timezone.utc)
+# A middlegame entry row seeded as (ply, eval_cp, eval_mate).
+_MgEval = tuple[int, int | None, int | None]
+
+
+def _sigmoid(eval_cp: int) -> float:
+    """Expected score of a white-perspective eval for a white user, from LICHESS_K."""
+    return 1.0 / (1.0 + math.exp(-LICHESS_K * eval_cp))
+
+
+async def _seed_eval_games(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    full_hash: int,
+    mg_evals_per_game: Sequence[Sequence[_MgEval]],
+    result: str = "1-0",
+    user_color: str = "white",
+    step: datetime.timedelta = datetime.timedelta(minutes=30),
+) -> None:
+    """Seed one game per entry of mg_evals_per_game (chronological, `step` apart)."""
+    for i, mg_evals in enumerate(mg_evals_per_game):
+        await _seed_game_with_position(
+            session,
+            user_id=user_id,
+            result=result,
+            user_color=user_color,
+            played_at=_EVAL_BASE + i * step,
+            full_hash=full_hash,
+            mg_evals=mg_evals,
+        )
+
+
+class TestEvalExpectedSeries:
+    """The eval-expected series: per-game conversion, then rolling average."""
+
+    @pytest.mark.asyncio
+    async def test_first_middlegame_row_by_ply_is_used(self, db_session: AsyncSession) -> None:
+        """The first phase=1 row by ply is the entry eval; later rows are ignored."""
+        fh = 9_700_001
+        games = [[(20, 100, None), (21, -300, None)]] * 12
+        await _seed_eval_games(
+            db_session, user_id=_USER_EVAL, full_hash=fh, mg_evals_per_game=games
+        )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(1, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.expected_score == pytest.approx(_sigmoid(100), abs=1e-4)
+        assert pt.eval_game_count == 12
+
+    @pytest.mark.asyncio
+    async def test_opening_phase_row_never_counts(self, db_session: AsyncSession) -> None:
+        """A phase=0 row (even at an earlier ply) is not the middlegame-entry row."""
+        fh = 9_700_002
+        for i in range(12):
+            await _seed_game_with_position(
+                db_session,
+                user_id=_USER_EVAL,
+                played_at=_EVAL_BASE + datetime.timedelta(minutes=30 * i),
+                full_hash=fh,
+                mg_evals=[(20, 100, None)],
+                opening_phase_eval_cp=900,
+            )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(2, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.expected_score == pytest.approx(_sigmoid(100), abs=1e-4)
+
+    @pytest.mark.asyncio
+    async def test_convert_then_average(self, db_session: AsyncSession) -> None:
+        """Mean of per-game expected scores, not the expected score of the mean eval."""
+        fh = 9_700_003
+        games = [[(20, 400 if i % 2 == 0 else 0, None)] for i in range(12)]
+        await _seed_eval_games(
+            db_session, user_id=_USER_EVAL, full_hash=fh, mg_evals_per_game=games
+        )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(3, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        convert_then_average = (_sigmoid(400) + _sigmoid(0)) / 2
+        average_then_convert = _sigmoid(200)
+        assert pt.expected_score == pytest.approx(convert_then_average, abs=1e-4)
+        assert abs(convert_then_average - average_then_convert) > 0.01
+
+    @pytest.mark.asyncio
+    async def test_black_user_flips_sign(self, db_session: AsyncSession) -> None:
+        """White-perspective +100 is bad for a black user."""
+        fh = 9_700_004
+        games = [[(20, 100, None)]] * 12
+        await _seed_eval_games(
+            db_session,
+            user_id=_USER_EVAL,
+            full_hash=fh,
+            mg_evals_per_game=games,
+            result="0-1",
+            user_color="black",
+        )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(4, fh, color="black", include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.expected_score == pytest.approx(eval_cp_to_expected_score(100, "black"), abs=1e-4)
+        assert pt.expected_score == pytest.approx(0.4086, abs=1e-3)
+
+    @pytest.mark.asyncio
+    async def test_mate_counts_as_win_and_beats_cp(self, db_session: AsyncSession) -> None:
+        """Mate maps to exactly 1.0 for the mating side and wins over a present eval_cp."""
+        fh_white = 9_700_005
+        fh_black = 9_700_006
+        # white user: mate +3 (white mates), cp -500 must be ignored
+        await _seed_eval_games(
+            db_session,
+            user_id=_USER_EVAL,
+            full_hash=fh_white,
+            mg_evals_per_game=[[(20, -500, 3)]] * 12,
+        )
+        # black user: mate -3 (black mates)
+        await _seed_eval_games(
+            db_session,
+            user_id=_USER_EVAL,
+            full_hash=fh_black,
+            mg_evals_per_game=[[(20, None, -3)]] * 12,
+            result="0-1",
+            user_color="black",
+        )
+
+        white = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(5, fh_white, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        black = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(6, fh_black, color="black", include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        assert white.series[0].data[-1].expected_score == 1.0
+        assert black.series[0].data[-1].expected_score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_games_without_eval_skipped_but_kept_in_actual(
+        self, db_session: AsyncSession
+    ) -> None:
+        """No phase=1 row, or a phase=1 row with both evals NULL: skipped in the expected line."""
+        fh = 9_700_007
+        games: list[Sequence[_MgEval]] = [[(20, 100, None)]] * 12
+        games += [[], [(20, None, None)], []]
+        # The eval-less games are losses, so the actual score differs from 1.0.
+        for i, mg_evals in enumerate(games):
+            await _seed_game_with_position(
+                db_session,
+                user_id=_USER_EVAL,
+                result="1-0" if i < 12 else "0-1",
+                played_at=_EVAL_BASE + datetime.timedelta(minutes=30 * i),
+                full_hash=fh,
+                mg_evals=mg_evals,
+            )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(7, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.game_count == 15
+        assert pt.eval_game_count == 12
+        assert pt.expected_score == pytest.approx(_sigmoid(100), abs=1e-4)
+        assert pt.score == pytest.approx(12 / 15, abs=1e-4)
+
+    @pytest.mark.asyncio
+    async def test_expected_floor_on_eval_game_count(self, db_session: AsyncSession) -> None:
+        """12 games with only 5 evals: point emitted, expected_score None (below the floor)."""
+        fh = 9_700_008
+        games: list[Sequence[_MgEval]] = [[(20, 100, None)]] * 5 + [[]] * 7
+        await _seed_eval_games(
+            db_session, user_id=_USER_EVAL, full_hash=fh, mg_evals_per_game=games
+        )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(8, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.game_count == 12
+        assert pt.eval_game_count == 5
+        assert pt.expected_score is None
+
+    @pytest.mark.asyncio
+    async def test_window_is_one_hundred_games(self, db_session: AsyncSession) -> None:
+        """110 games: the trailing window holds ROLLING_WINDOW_SIZE == 100."""
+        fh = 9_700_009
+        assert ROLLING_WINDOW_SIZE == 100
+        games = [[(20, 100, None)]] * 110
+        await _seed_eval_games(
+            db_session,
+            user_id=_USER_EVAL,
+            full_hash=fh,
+            mg_evals_per_game=games,
+            step=datetime.timedelta(hours=6),
+        )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(9, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.game_count == ROLLING_WINDOW_SIZE
+        assert pt.eval_game_count == ROLLING_WINDOW_SIZE
+        assert pt.window_size == ROLLING_WINDOW_SIZE
+
+    @pytest.mark.asyncio
+    async def test_default_request_skips_the_eval_series(self, db_session: AsyncSession) -> None:
+        """Flag omitted: points carry no expected score even when evals exist (no join runs)."""
+        fh = 9_700_010
+        games = [[(20, 100, None)]] * 12
+        await _seed_eval_games(
+            db_session, user_id=_USER_EVAL, full_hash=fh, mg_evals_per_game=games
+        )
+
+        response = await get_time_series(
+            db_session, _USER_EVAL, _make_request(10, fh), now_utc=_NOW_UTC
+        )
+        pt = response.series[0].data[-1]
+        assert pt.expected_score is None
+        assert pt.eval_game_count == 0
+        assert pt.game_count == 12
+
+    @pytest.mark.asyncio
+    async def test_expected_score_baseline_per_colour(self, db_session: AsyncSession) -> None:
+        """The reference level is the +25 / -25 cp colour baseline on the expected-score scale."""
+        fh_w, fh_b = 9_700_011, 9_700_012
+        request = TimeSeriesRequest(
+            bookmarks=[
+                TimeSeriesBookmarkParam(bookmark_id=11, target_hash=fh_w, color="white"),
+                TimeSeriesBookmarkParam(bookmark_id=12, target_hash=fh_b, color="black"),
+            ]
+        )
+        response = await get_time_series(db_session, _USER_EVAL, request, now_utc=_NOW_UTC)
+
+        white_cp = round(EVAL_BASELINE_PAWNS_WHITE * 100)
+        black_cp = round(EVAL_BASELINE_PAWNS_BLACK * 100)
+        by_id = {s.bookmark_id: s for s in response.series}
+        assert by_id[11].expected_score_baseline == pytest.approx(_sigmoid(white_cp), abs=1e-4)
+        assert by_id[12].expected_score_baseline == pytest.approx(_sigmoid(black_cp), abs=1e-4)
+        assert by_id[11].expected_score_baseline == pytest.approx(0.5230, abs=1e-3)
+        assert by_id[12].expected_score_baseline == pytest.approx(0.4770, abs=1e-3)
+
+    @pytest.mark.asyncio
+    async def test_other_users_evals_do_not_count(self, db_session: AsyncSession) -> None:
+        """Another user's game on the same hash, with an eval, never enters the user's series."""
+        fh = 9_700_013
+        games = [[(20, 100, None)]] * 12
+        await _seed_eval_games(
+            db_session, user_id=_USER_EVAL, full_hash=fh, mg_evals_per_game=games
+        )
+        await _seed_eval_games(
+            db_session,
+            user_id=_USER_EVAL_OTHER,
+            full_hash=fh,
+            mg_evals_per_game=[[(20, 700, None)]] * 5,
+        )
+
+        response = await get_time_series(
+            db_session,
+            _USER_EVAL,
+            _make_request(13, fh, include_expected_score=True),
+            now_utc=_NOW_UTC,
+        )
+        pt = response.series[0].data[-1]
+        assert pt.game_count == 12
+        assert pt.eval_game_count == 12
+        assert pt.expected_score == pytest.approx(_sigmoid(100), abs=1e-4)
+
+
+class TestMiddlegameEntryParity:
+    """The LATERAL selection (timeline) and the batch selection (avg-eval pillar) agree."""
+
+    @pytest.mark.asyncio
+    async def test_both_selections_pick_the_same_row_and_eval(
+        self, db_session: AsyncSession
+    ) -> None:
+        fh = 9_800_001
+        per_game: list[Sequence[_MgEval]] = [
+            [(20, 100, None), (21, -300, None)],  # first by ply wins
+            [(25, -40, None), (22, 250, None)],  # insertion order != ply order
+            [(20, -500, 3)],  # mate alongside cp: both columns come through
+            [(20, None, -4)],  # mate only
+            [(20, None, None)],  # phase=1 row with no eval
+            [],  # no phase=1 row at all
+        ]
+        game_ids: list[int] = []
+        for i, mg_evals in enumerate(per_game):
+            game = await _seed_game_with_position(
+                db_session,
+                user_id=_USER_EVAL,
+                played_at=_EVAL_BASE + datetime.timedelta(minutes=30 * i),
+                full_hash=fh,
+                mg_evals=mg_evals,
+                opening_phase_eval_cp=900,
+            )
+            game_ids.append(game.id)
+
+        lateral = middlegame_entry_lateral(_USER_EVAL, Game.id)
+        lateral_stmt = (
+            select(Game.id, lateral.c.eval_cp, lateral.c.eval_mate)
+            .select_from(Game)
+            .outerjoin(lateral, true())
+            .where(Game.id.in_(game_ids))
+        )
+        batch = middlegame_entry_subquery(select(Game.id).where(Game.id.in_(game_ids)))
+        batch_stmt = (
+            select(Game.id, batch.c.eval_cp, batch.c.eval_mate)
+            .select_from(Game)
+            .outerjoin(batch, batch.c.game_id == Game.id)
+            .where(Game.id.in_(game_ids))
+        )
+        lateral_rows = {r[0]: (r[1], r[2]) for r in (await db_session.execute(lateral_stmt)).all()}
+        batch_rows = {r[0]: (r[1], r[2]) for r in (await db_session.execute(batch_stmt)).all()}
+
+        assert lateral_rows == batch_rows
+        # Not vacuous: the shared answer is the expected one for every shape.
+        assert [lateral_rows[g] for g in game_ids] == [
+            (100, None),
+            (250, None),
+            (-500, 3),
+            (None, -4),
+            (None, None),
+            (None, None),
+        ]

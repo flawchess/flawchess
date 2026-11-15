@@ -177,6 +177,12 @@ class TimeSeriesRequest(BaseModel):
     # Resolved date bounds for windowed emission (no recency preset).
     from_date: datetime.date | None = None
     to_date: datetime.date | None = None
+    # The per-opening chart request sets this to get the eval-expected series. The
+    # table-wide bookmark request leaves it false: the middlegame-entry eval lookup is
+    # deferred to the per-opening request (OC-1; deferred by owner decision). Measured on
+    # the heaviest dev user's 5 bookmarks: about +0.9 s with the LATERAL lookup, +1.3 to
+    # +1.8 s with the earlier sorted join.
+    include_expected_score: bool = False
 
     @model_validator(mode="after")
     def _check_date_range(self) -> "TimeSeriesRequest":
@@ -196,6 +202,13 @@ class TimeSeriesPoint(BaseModel):
     score: float  # (wins + 0.5 * draws) / total in trailing window after the week's last game
     game_count: int  # total games in the window (1..window_size)
     window_size: int  # the configured window size (always ROLLING_WINDOW_SIZE)
+    # Mean per-game expected score (from the middlegame-entry eval, user perspective) over
+    # the window's games that have such an eval. None when the series was not requested
+    # (include_expected_score false) or when fewer than MIN_GAMES_FOR_TIMELINE games in
+    # the window have an eval.
+    expected_score: float | None = None
+    # Games in the window that carry a middlegame-entry eval (the expected_score basis).
+    eval_game_count: int = 0
     # In-window games through this bookmark position that ISO week. Drives the
     # grey weekly volume bars on the expanded-row ScoreChart (D-00).
     per_week_games: int
@@ -226,6 +239,9 @@ class BookmarkTimeSeries(BaseModel):
     # cutoff under the request filters (D-04): drives the "not played recently" chip.
     # Colour-less bookmarks and series without games read as current.
     is_current: bool
+    # The colour baseline (+25 cp White / -25 cp Black) on the expected-score scale:
+    # the chart's dashed reference level (about 0.523 White, 0.477 Black).
+    expected_score_baseline: float
 
 
 class TimeSeriesResponse(BaseModel):

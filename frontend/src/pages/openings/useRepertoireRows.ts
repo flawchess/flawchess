@@ -43,7 +43,7 @@ export interface RepertoireRowModel {
   evalPValue: number | null;
   evalCiLow: number | null;
   evalCiHigh: number | null;
-  /** The bookmark's score-over-time series; null for most-played rows. */
+  /** The bookmark's table-wide series (totals, verdict fields); null for most-played rows. The chart fetches its own. */
   series: BookmarkTimeSeries | null;
 }
 

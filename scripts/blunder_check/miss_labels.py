@@ -5,7 +5,7 @@ operator script draws about 50 user blunders from the database (about 40 pure mi
 the missed size and over how findable the best move was, about 10 mixed rows that both lose and
 miss material), computes both line facts and the best-move probability locally, and writes
 
-* a blind labelling sheet like ``reports/blunder-check/leg2-labels-2026-11-11.tsv`` (columns
+* a blind labelling sheet like ``reports/blunder-check/facepalm-labels.tsv`` (columns
   ``BLIND_COLUMNS``: n, set, elo, move, link and an empty label; never a score or any input), and
 * a key file with the hidden inputs and the stratum of every row, under gitignored ``temp/``.
 
@@ -116,10 +116,10 @@ DEFAULT_SAMPLE_SEED: int = 254
 # game_flaws.severity of a blunder (game_flaws_repository._SEVERITY_INT).
 BLUNDER_SEVERITY: int = 2
 
-# The blind sheet: same leading columns as leg2-labels-2026-11-11.tsv, value columns left out.
+# The blind sheet: same leading columns as facepalm-labels.tsv, value columns left out.
 BLIND_COLUMNS: tuple[str, ...] = ("n", "set", "elo", "move", "link", "label")
 LINK_TEMPLATE: str = "https://flawchess.com/analysis?game_id={game_id}&ply={ply}"
-DEFAULT_EXCLUDE_LABELS: Path = Path("reports/blunder-check/leg2-labels-2026-11-11.tsv")
+DEFAULT_EXCLUDE_LABELS: Path = Path("reports/blunder-check/facepalm-labels.tsv")
 DEFAULT_KEY_OUT: Path = Path("temp/blunder-check/miss-labels-key.json")
 
 # Material types the sheet draws from: pure misses and rows that both lose and miss.

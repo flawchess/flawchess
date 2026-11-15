@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 11/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 12/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -500,7 +500,7 @@ Plans:
 - [x] 254-09-PLAN.md — R2 script readers: calibration from facts with D-13 sections, backfill counts
 
 **Wave 10** *(blocked on Wave 9 completion)*
-- [ ] 254-10-PLAN.md — Release R2, prod EXPLAIN, strict parity, revert on failure (orchestrator-inline)
+- [x] 254-10-PLAN.md — Release R2, prod EXPLAIN, strict parity, revert on failure (orchestrator-inline)
 
 **Wave 11** *(human-gated: after Phase 252's prod repair is complete)*
 - [ ] 254-11-PLAN.md — 252 precondition gate, prod line pass, refit on all labels, owner sets FACEPALM_SCORE_MIN (orchestrator-inline)

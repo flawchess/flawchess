@@ -3,7 +3,7 @@ id: SEED-261114-iuv
 status: dormant
 planted: 2026-11-14
 planted_during: Phase 250 executing (facepalm-blunder selection); /gsd-explore session with the owner
-trigger_when: after SEED-261114-0ke (facepalm filter and chip) has shipped, or when library stats / "you vs opponents" flaw comparisons are next worked on. Not before Phase 252 concludes (owner, 2026-11-14): the stats and the opponent blunder backfill wait for the repaired lines
+trigger_when: after Phases 252 and 254 have fully run in the benchmark DB and the facepalm benchmarks by type (missed win, allowed loss) per Elo x TC exist (owner, 2026-11-15; replaces the earlier trigger). SEED-261114-0ke (facepalm filter and chip) should have shipped
 scope: medium. Part A (operator-run): extend facepalm scoring to opponent blunders, including a Maia backfill about the size of Phase 250's. Part B: facepalm rate in the library stats (timeline line, you vs opponents)
 ---
 
@@ -61,8 +61,8 @@ The opponent scores must not leak into drill selection or into the library tag f
 
 ## When to Surface
 
-**Trigger:** after SEED-261114-0ke has shipped, or when library stats or you-vs-opponent flaw comparisons are
-next worked on.
+**Trigger:** after Phases 252 and 254 have fully run in the benchmark DB and the per-type facepalm benchmarks
+exist (see the frontmatter and the 2026-11-15 extension below).
 
 ## Scope Estimate
 
@@ -90,3 +90,53 @@ Part B's timeline line for the user alone does not need Part A and could ship fi
 Open details for discuss-phase: the cut for the rate (0.7 or a separate constant), whether a benchmark zone for
 the you-vs-opponents delta is wanted (would need the benchmark DB scored too), where the comparison sits in the
 stats table.
+
+## Extension (owner, 2026-11-15, /gsd-explore): facepalm types, bias, clock matrix
+
+Phase 254 adds missed gains to the score, so a facepalm blunder (score at or above the label cut, 70%) can be
+typed, analogous to the missed / allowed tactic categories.
+
+**Decisions**
+
+1. **Type = dominant term.** Each facepalm blunder gets exactly one type: allowed loss when `loss` is the larger
+   term, missed win when `lambda * missed` is larger (254 D-05 definitions). The two types partition the facepalm
+   blunders, so their lines sum to the total. Open: the tie rule (suggestion: ties count as allowed loss, since
+   that loss happened on the board).
+2. **Wait for the benchmark DB.** Run Phases 252 and 254 fully in the benchmark DB first, then compute benchmarks
+   for the two types per Elo bucket and time control. Question to answer there: are there systematic
+   missed-vs-allowed biases, and how do they change with player level and time control?
+3. **Bias statistic, in two steps.** First within-player: the missed share of the player's own facepalm
+   blunders, read against the benchmark zone for their Elo and TC (needs no opponent scoring). Then versus
+   opponents (needs Part A on prod and on the benchmark DB). Plot the player's and the opponents' bias on the
+   same chart over time; the gap between the lines is the versus-opponent bias. Details to refine later.
+4. **Bias names: chance blindness and threat blindness.** Chance blindness = the player misses easy wins more
+   than they allow easy losses; threat blindness = the reverse. The two are the ends of one axis and name what
+   was overlooked, not why (copy must not diagnose). They apply to the statistic only; a single blunder keeps the
+   type names "missed win" and "allowed loss", matching the tactic categories.
+
+**Ideas to build on this**
+
+- Flaws Timeline: two more lines, missed-win and allowed-loss facepalm blunders per game.
+- A "Facepalm blunders" stats section like "You vs. your opponent": overall, and split by type.
+- A type-by-clock matrix like "Clock by game phase". Questions it should answer: under time pressure, do I allow
+  more obvious material wins than my opponents do? Do I miss more easy wins than they do? When unrushed, do I
+  miss more quick wins or allow more?
+- Blunder-check training: serve more of the type the player is worse at spotting.
+
+**Measurements (prod, 2026-11-15)**
+
+- Maia `pre` pass: 1,203,184 of 2,170,692 user blunders (55%). `best_line_material`: 1,114 rows (454 games, 10
+  users, apparently from the live scoring hook); the bulk line pass has not run.
+- On those rows, all blunders, lambda 1: pure allowed 291 (26%), pure missed 263 (24%), mixed 127 (12%), neither
+  419 (38%). Mixed: 31 loss-dominant, 57 missed-dominant, 39 ties (3.5% of blunders). Thin sample, indication only.
+- Not countable yet at the facepalm level: the shipped model is pre-refit (`FACEPALM_MISSED_COEF = 0.0`).
+
+**Cautions**
+
+- Phase 254 does not score opponent blunders (254-CONTEXT, "Not in this phase"); Part A above is still the
+  prerequisite for everything versus opponents.
+- The type split depends on the refit: a small missed coefficient leaves the missed-win line nearly empty.
+- Labels exist only below 2000; trends in the 2000 and 2400 buckets are extrapolated.
+- This split is by material at depth 3, the tactic missed / allowed split is by motif. They overlap but will not
+  agree row for row.
+- Facepalm blunders are rare; type x clock x side cells get thin. Check counts before designing the matrix.

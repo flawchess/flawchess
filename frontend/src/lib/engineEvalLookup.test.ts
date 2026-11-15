@@ -228,3 +228,38 @@ describe('rankReconciledCandidates', () => {
     expect(rankReconciledCandidates(lookup, ['e2e4'], 'white', null)).toEqual([]);
   });
 });
+
+describe('rankReconciledCandidates — mate ordering', () => {
+  const lookupOf = (entries: Array<[string, number | null, number | null]>): Map<string, MoveGrade> =>
+    new Map(entries.map(([uci, evalCp, evalMate]) => [uci, { evalCp, evalMate, depth: 24 }]));
+  const order = (lookup: Map<string, MoveGrade>, mover: 'white' | 'black'): string[] =>
+    rankReconciledCandidates(lookup, [...lookup.keys()], mover, null).map((c) => c.uci);
+
+  it('ranks mover mates above any cp eval, shortest mate first', () => {
+    const lookup = lookupOf([
+      ['f1f3', 1810, null],
+      ['f1f5', null, 8],
+      ['c2g6', null, 1],
+    ]);
+    expect(order(lookup, 'white')).toEqual(['c2g6', 'f1f5', 'f1f3']);
+  });
+
+  it('ranks being mated below any cp eval, longest defence first', () => {
+    const lookup = lookupOf([
+      ['a7a6', null, -1],
+      ['b7b6', -900, null],
+      ['c7c6', null, -6],
+    ]);
+    expect(order(lookup, 'white')).toEqual(['b7b6', 'c7c6', 'a7a6']);
+  });
+
+  it('reads mate sign from the mover POV for black', () => {
+    const lookup = lookupOf([
+      ['a7a6', -1500, null],
+      ['b7b6', null, -5],
+      ['c7c6', null, -2],
+      ['d7d6', null, 3],
+    ]);
+    expect(order(lookup, 'black')).toEqual(['c7c6', 'b7b6', 'a7a6', 'd7d6']);
+  });
+});

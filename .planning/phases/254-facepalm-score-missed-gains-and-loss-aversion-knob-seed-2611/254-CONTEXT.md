@@ -116,7 +116,25 @@ rating-dependent line depth, the facepalm rate in stats (SEED-261114-iuv).
   passers at several cuts, split by loss-type and miss-type, and the drill pool size per rating band, own and
   foreign.
 
+- **D-21 (owner, 2026-11-15, during execution; amends D-11 and D-12): do not wait for Phase 252.** After the prod
+  pre pass and the miss labels, plan 11 runs without the 252 precondition: the prod line pass, the refit and the
+  `FACEPALM_SCORE_MIN` decision go ahead on the lines as they are. Where a Stockfish line is too short, the
+  material gain / loss is skipped (NULL slot, D-18 behaviour), not guessed. Once 252's prod repair is done, one
+  more line pass fills only the remaining gaps. Known cost, accepted by the owner: about a third of prod blunders
+  have short lines today, so the refit sees a subset and the gap fill changes inputs under the fitted constants.
+
 ### Miss labels
+- **D-22 (owner, 2026-11-15, during execution): one label file under version control.**
+  `reports/blunder-check/facepalm-labels.tsv` holds sets 1-6 (the former `leg2-labels-2026-11-11.tsv`) and the
+  50 set 7 miss rows (n 191-240, value columns blank to stay blind). The owner labels set 7 in that file. Plans 07
+  and 11 that name `leg2-labels-2026-11-11.tsv` or a separate `miss-labels-<date>.tsv` mean this file (one
+  `--labels` argument).
+- **D-23 (owner, 2026-11-15): label meaning and the drill cut are separate.** In all seven sets, label 1 means
+  "the facepalm score should be above 70%", not only above 50%. `FACEPALM_SCORE_MIN` may still be set lower
+  (for example 50%) at the D-13 checkpoint, on purpose, so blunder-check training collects solves over a wider
+  difficulty range for later refits. The fit report must therefore show the pool and the fair share at cuts from
+  about 50% to 70%. The `comment` column of `facepalm-labels.tsv` holds the owner's expected score range for 15
+  set 7 rows; the fit report lists those rows with old and new scores.
 - **D-14: About 50 new rows, mostly pure misses, stratified.** About 40 pure misses (loss 0) spread over missed size
   (1, 3, 5, 9+) and over best-move probability, so the fit sees easy and hard misses; about 10 mixed rows (loses and
   misses). Blind as in 250: score and inputs hidden while labelling; output a TSV like `leg2-labels-2026-11-11.tsv`.

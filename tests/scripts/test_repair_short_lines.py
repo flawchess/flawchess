@@ -53,7 +53,7 @@ from scripts import repair_short_lines as repair_module
 from scripts.repair_short_lines import (
     EXIT_GATE_TRIPPED,
     MAX_COMMIT_LATENCY_RATIO,
-    MAX_CONNECTION_RISE,
+    MAX_CONNECTIONS,
     MAX_LINE_REPAIR_DAYS,
     MAX_STILL_SHORT_SHARE,
     DbHealth,
@@ -735,8 +735,9 @@ def test_connection_gate_boundary() -> None:
     def health(peak: int) -> DbHealth:
         return DbHealth(baseline_connections=_BASELINE_CONNECTIONS, peak_connections=peak)
 
-    ok = _evaluate(RepairStats(), health(_BASELINE_CONNECTIONS + MAX_CONNECTION_RISE))
-    over = _evaluate(RepairStats(), health(_BASELINE_CONNECTIONS + MAX_CONNECTION_RISE + 1))
+    # The ceiling is absolute: the baseline taken at run start does not move it.
+    ok = _evaluate(RepairStats(), health(MAX_CONNECTIONS))
+    over = _evaluate(RepairStats(), health(MAX_CONNECTIONS + 1))
     assert not _gate(ok, "connections").tripped
     assert _gate(over, "connections").tripped
 

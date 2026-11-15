@@ -346,7 +346,17 @@ describe('RepertoireList card values', () => {
 describe('RepertoireCard links and chart', () => {
   const series = {
     bookmark_id: MOST_PLAYED_ROW_SERIES_ID,
-    data: [{ date: '2026-09-28', score: 0.6, game_count: 30, window_size: 50, per_week_games: 4 }],
+    data: [
+      {
+        date: '2026-09-28',
+        score: 0.6,
+        game_count: 30,
+        window_size: 100,
+        expected_score: 0.55,
+        eval_game_count: 28,
+        per_week_games: 4,
+      },
+    ],
     total_wins: 20,
     total_draws: 5,
     total_losses: 5,
@@ -357,6 +367,7 @@ describe('RepertoireCard links and chart', () => {
     score_ci_low: 0.5,
     score_ci_high: 0.7,
     is_current: true,
+    expected_score_baseline: 0.523,
   };
 
   function bookmarkOf(id: number): PositionBookmarkResponse {
@@ -448,8 +459,29 @@ describe('RepertoireCard links and chart', () => {
     fireEvent.click(screen.getByTestId('repertoire-card-0-btn-games'));
     expect(onOpenBookmarkGames).toHaveBeenCalledWith(bookmark);
     expect(onOpenGames).not.toHaveBeenCalled();
-    // A bookmark row reuses its loaded series: no per-row request.
+    // Nothing fetches until the chart is opened: no per-row request from the closed card.
     expect(useTimeSeriesMock.mock.calls.every(([request]) => request === null)).toBe(true);
+  });
+
+  it('fetches a bookmark card series on demand when its chart opens, and shows a chart error', () => {
+    useTimeSeriesMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    renderList({
+      bookmarkRows: [
+        makeRow({ key: 'bookmark-7', kind: 'bookmark', bookmark: bookmarkOf(7), series }),
+      ],
+    });
+    expect(useTimeSeriesMock.mock.calls.every(([request]) => request === null)).toBe(true);
+
+    fireEvent.click(screen.getByTestId('repertoire-card-0-toggle'));
+
+    const request = useTimeSeriesMock.mock.calls.at(-1)?.[0];
+    expect(request.bookmarks).toEqual([
+      { bookmark_id: 7, target_hash: '99', match_side: 'full', color: 'white' },
+    ]);
+    expect(request.include_expected_score).toBe(true);
+    expect(screen.getByTestId('repertoire-card-0-chart-error').textContent).toContain(
+      'Failed to load the score chart',
+    );
   });
 
   it('creates a bookmark from a most-played card without the ECO code and with both sides', () => {
@@ -517,6 +549,7 @@ function makeSeries(bookmarkId: number, games: number): BookmarkTimeSeries {
     score_ci_low: 0.9,
     score_ci_high: 1,
     is_current: true,
+    expected_score_baseline: 0.523,
   };
 }
 
@@ -595,14 +628,36 @@ describe('useRepertoireRows', () => {
 });
 
 describe('useOpeningRowTimeSeries', () => {
-  it('returns a bookmark row\'s own series and never requests one', () => {
-    const series = makeSeries(5, 30);
-    const row = makeRow({ key: 'bookmark-5', kind: 'bookmark', series });
+  it('requests a bookmark row\'s own series on demand and returns the one matching its id', () => {
+    const frontLoaded = makeSeries(5, 30);
+    const onDemand = makeSeries(5, 32);
+    useTimeSeriesMock.mockReturnValue({
+      data: { series: [makeSeries(99, 1), onDemand] },
+      isLoading: false,
+      isError: false,
+    });
+    const bookmark: PositionBookmarkResponse = {
+      ...makeBookmark(5, 'black'),
+      target_hash: '555',
+      match_side: 'mine',
+    };
+    const row = makeRow({
+      key: 'bookmark-5',
+      kind: 'bookmark',
+      color: 'black',
+      bookmark,
+      series: frontLoaded,
+    });
     const { result } = renderHook(() =>
       useOpeningRowTimeSeries({ row, debouncedFilters: DEFAULT_FILTERS }),
     );
-    expect(result.current.series).toBe(series);
-    expect(useTimeSeriesMock).toHaveBeenCalledWith(null);
+    const request = useTimeSeriesMock.mock.calls.at(-1)?.[0];
+    // match side "mine" resolves to the row colour; the eval series is always requested.
+    expect(request.bookmarks).toEqual([
+      { bookmark_id: 5, target_hash: '555', match_side: 'black', color: 'black' },
+    ]);
+    expect(request.include_expected_score).toBe(true);
+    expect(result.current.series).toBe(onDemand);
   });
 
   it('requests one full-position series for a most-played row', () => {
@@ -616,6 +671,7 @@ describe('useOpeningRowTimeSeries', () => {
     expect(request.bookmarks).toEqual([
       { bookmark_id: MOST_PLAYED_ROW_SERIES_ID, target_hash: '777', match_side: 'full', color: 'black' },
     ]);
+    expect(request.include_expected_score).toBe(true);
     expect(result.current.series).toBe(series);
   });
 });

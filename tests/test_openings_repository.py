@@ -584,7 +584,7 @@ class TestTimeSeries:
         from collections import defaultdict
 
         by_month: dict[str, list] = defaultdict(list)
-        for month_dt, result, user_color in rows:
+        for month_dt, result, user_color, _eval_cp, _eval_mate in rows:
             key = month_dt.strftime("%Y-%m")
             by_month[key].append((result, user_color))
 
@@ -659,7 +659,7 @@ class TestTimeSeries:
         )
 
         assert len(rows) == 1
-        _, _, user_color = rows[0]
+        _, _, user_color, _, _ = rows[0]
         assert user_color == "white"
 
     @pytest.mark.asyncio
@@ -1723,7 +1723,7 @@ class TestDefaultPlatformExclusion:
             platform=None,
         )
 
-        assert {(result, user_color) for _played_at, result, user_color in rows} == {
+        assert {(result, user_color) for _played_at, result, user_color, _cp, _mate in rows} == {
             ("1-0", "white")
         }
 
@@ -1761,9 +1761,9 @@ class TestDefaultPlatformExclusion:
             color=None,
             platform=["flawchess"],
         )
-        assert {(result, user_color) for _played_at, result, user_color in time_series_rows} == {
-            ("0-1", "white")
-        }
+        assert {
+            (result, user_color) for _played_at, result, user_color, _cp, _mate in time_series_rows
+        } == {("0-1", "white")}
 
     @pytest.mark.asyncio
     async def test_explicit_all_platforms_returns_all_three_rows(
