@@ -56,9 +56,20 @@ links (the last three stay in SEED-199).
   new features: a user with earlier open steps reaches the new one after those are done or skipped.
 
 ### Completion and existing users
-- **D-13:** A page or subtab step is done when the page or subtab is opened (Import, Train, Bots, Openings,
+- **D-13:** A page or subtab step is done when the page or subtab is opened (Import, Bots, Openings,
   Openings Stats, Endgames, Library Stats). A control step is done when the control is used (played-as,
-  filters). This matches today's behaviour.
+  filters, and Train per D-21).
+- **D-21:** The Train step uses the "used" rule (owner, 2026-11-15, during planning). It is done when the user
+  clicks the start-training-session button of the personalized puzzle training on Train, Today. Opening Train
+  does not complete it. Per D-03 the dot sits on the Train nav item while the user is elsewhere and on the
+  start button once the user is on Train, Today. This changes today's behaviour (Train currently clears on
+  visit). The same rule shape is the model for a later blunder-check step in Today (D-09): a step inside a page
+  the user has already opened needs its own ID and a "used" completion rule. The start button is always
+  usable (users without imported games get a warmup session), so the Train step is never a locked target and
+  its 3-day clock never pauses.
+- **D-22:** D-16 must be stored as an explicit set of step IDs per existing user, not as a "whole route done"
+  cutoff on `users.created_at`. Otherwise a step added later would already count as done for existing users
+  and could never announce a new feature.
 - **D-14:** The Import step is done when the Library Import subtab is visited, not when games exist. Some
   users have no chess.com or lichess account and must not be stuck on it. The Import subtab is the landing
   page for an account without games, so this step normally clears on the first session.
