@@ -129,6 +129,12 @@ rating-dependent line depth, the facepalm rate in stats (SEED-261114-iuv).
   50 set 7 miss rows (n 191-240, value columns blank to stay blind). The owner labels set 7 in that file. Plans 07
   and 11 that name `leg2-labels-2026-11-11.tsv` or a separate `miss-labels-<date>.tsv` mean this file (one
   `--labels` argument).
+- **D-23 (owner, 2026-11-15): label meaning and the drill cut are separate.** In all seven sets, label 1 means
+  "the facepalm score should be above 70%", not only above 50%. `FACEPALM_SCORE_MIN` may still be set lower
+  (for example 50%) at the D-13 checkpoint, on purpose, so blunder-check training collects solves over a wider
+  difficulty range for later refits. The fit report must therefore show the pool and the fair share at cuts from
+  about 50% to 70%. The `comment` column of `facepalm-labels.tsv` holds the owner's expected score range for 15
+  set 7 rows; the fit report lists those rows with old and new scores.
 - **D-14: About 50 new rows, mostly pure misses, stratified.** About 40 pure misses (loss 0) spread over missed size
   (1, 3, 5, 9+) and over best-move probability, so the fit sees easy and hard misses; about 10 mixed rows (loses and
   misses). Blind as in 250: score and inputs hidden while labelling; output a TSV like `leg2-labels-2026-11-11.tsv`.
