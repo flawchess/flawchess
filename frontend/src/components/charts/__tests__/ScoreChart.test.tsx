@@ -73,11 +73,14 @@ function makeSeries(dates: string[], perWeekGames: number[] = []): BookmarkTimeS
     score_ci_low: 0.4,
     score_ci_high: 0.7,
     is_current: true,
+    expected_score_baseline: 0.523,
     data: dates.map((date, i) => ({
       date,
       score: 0.55,
       game_count: 10,
-      window_size: 50,
+      window_size: 100,
+      expected_score: 0.52,
+      eval_game_count: 9,
       per_week_games: perWeekGames[i] ?? 1,
     })),
   };
@@ -150,10 +153,32 @@ describe('ScoreChart empty state', () => {
   });
 });
 
-describe('ScoreChart typical band', () => {
-  it('draws the labelled grey 45-55% typical band', () => {
+describe('ScoreChart lines and legend', () => {
+  it('draws the expected-score and actual-score lines', () => {
     const { container } = render(<ScoreChart series={makeSeries(WEEKLY_DATES)} />);
-    expect(container.querySelector('.recharts-reference-area')).not.toBeNull();
-    expect(screen.getByText('typical')).toBeTruthy();
+    expect(container.querySelectorAll('.recharts-line')).toHaveLength(2);
+  });
+
+  it('draws a dashed baseline reference line and no typical band or watermark', () => {
+    const { container } = render(<ScoreChart series={makeSeries(WEEKLY_DATES)} />);
+    expect(container.querySelector('.recharts-reference-area')).toBeNull();
+    expect(screen.queryByText('typical')).toBeNull();
+    expect(container.querySelector('.recharts-reference-line')).not.toBeNull();
+  });
+
+  it('names both lines in the legend and offers the info popover', () => {
+    render(<ScoreChart series={makeSeries(WEEKLY_DATES)} />);
+    expect(screen.getByTestId('score-chart-legend')).toBeTruthy();
+    expect(screen.getByTestId('score-chart-legend-expected').textContent).toBe(
+      'Expected score from opening eval',
+    );
+    expect(screen.getByTestId('score-chart-legend-actual').textContent).toBe('Actual score');
+    expect(screen.getByTestId('score-chart-info')).toBeTruthy();
+  });
+
+  it('prefixes the legend and info testids with a custom testId', () => {
+    render(<ScoreChart series={makeSeries(WEEKLY_DATES)} testId="card-score-chart" />);
+    expect(screen.getByTestId('card-score-chart-legend')).toBeTruthy();
+    expect(screen.getByTestId('card-score-chart-info')).toBeTruthy();
   });
 });

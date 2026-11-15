@@ -516,8 +516,13 @@ export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 // passive-context reading.
 export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 
-// Rolling score line of the per-opening Score over time chart (expanded repertoire row).
-export const SCORE_OVER_TIME_LINE = 'oklch(0.80 0.05 250)';
+// Primary line of the per-opening Score over time chart (expanded repertoire row): the
+// rolling expected score from the opening eval.
+export const SCORE_OVER_TIME_EXPECTED_LINE = 'oklch(0.80 0.05 250)';
+
+// Secondary line of the same chart: the actual rolling score. Neutral grey with alpha so it
+// reads as context next to the blue primary line.
+export const SCORE_OVER_TIME_ACTUAL_LINE = 'oklch(0.75 0 0 / 0.55)';
 
 // Endgame vs Non-Endgame Score timeline.
 // Two line strokes (endgame + non-endgame) with a colored shaded band between
