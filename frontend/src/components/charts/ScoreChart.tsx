@@ -3,7 +3,7 @@ import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
+import { createDateTickFormatter, formatDateWithYear, scoreOverTimeAxis } from '@/lib/utils';
 import {
   SCORE_OVER_TIME_ACTUAL_LINE,
   SCORE_OVER_TIME_EXPECTED_LINE,
@@ -122,7 +122,7 @@ export function ScoreChart({ series, showVolume = false, testId = 'score-chart' 
   const baseline = series.expected_score_baseline;
   const yAxis = useMemo(() => {
     const expected = points.flatMap((p) => (p.expected_score === null ? [] : [p.expected_score]));
-    return niceWinRateAxis([...points.map((p) => p.score), ...expected, baseline]);
+    return scoreOverTimeAxis([...points.map((p) => p.score), ...expected, baseline]);
   }, [points, baseline]);
   // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
   const barMax = Math.max(1, ...points.map((p) => p.per_week_games));

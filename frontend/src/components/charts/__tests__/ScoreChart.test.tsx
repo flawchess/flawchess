@@ -26,6 +26,7 @@ vi.mock('recharts', async () => {
 });
 
 import { ScoreChart } from '../ScoreChart';
+import { scoreOverTimeAxis } from '@/lib/utils';
 import type { BookmarkTimeSeries } from '@/types/position_bookmarks';
 
 const CHART_HEIGHT_PX = 400;
@@ -180,5 +181,27 @@ describe('ScoreChart lines and legend', () => {
     render(<ScoreChart series={makeSeries(WEEKLY_DATES)} testId="card-score-chart" />);
     expect(screen.getByTestId('card-score-chart-legend')).toBeTruthy();
     expect(screen.getByTestId('card-score-chart-info')).toBeTruthy();
+  });
+});
+
+describe('scoreOverTimeAxis', () => {
+  it('keeps the 30-70% minimum range when the data sits inside it', () => {
+    expect(scoreOverTimeAxis([0.48, 0.56])).toEqual({
+      domain: [0.3, 0.7],
+      ticks: [0.3, 0.4, 0.5, 0.6, 0.7],
+    });
+  });
+
+  it('widens in 10-point steps on the side the data leaves the range', () => {
+    expect(scoreOverTimeAxis([0.27, 0.52]).domain).toEqual([0.2, 0.7]);
+    expect(scoreOverTimeAxis([0.5, 0.81]).domain).toEqual([0.3, 0.9]);
+  });
+
+  it('does not widen for a value exactly on the edge', () => {
+    expect(scoreOverTimeAxis([0.3, 0.7]).domain).toEqual([0.3, 0.7]);
+  });
+
+  it('never leaves 0-100%', () => {
+    expect(scoreOverTimeAxis([0, 1]).domain).toEqual([0, 1]);
   });
 });

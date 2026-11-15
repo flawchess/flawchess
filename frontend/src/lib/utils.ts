@@ -58,25 +58,27 @@ export function formatDateWithYear(d: string): string {
   });
 }
 
-/**
- * Compute a nice y-axis domain and evenly-spaced ticks for win-rate data (0–1).
- * Uses 10% steps when range ≤ 40%, otherwise 20% steps.
- */
-export function niceWinRateAxis(values: number[]): { domain: [number, number]; ticks: number[] } {
-  if (values.length === 0) return { domain: [0, 1], ticks: [0, 0.2, 0.4, 0.6, 0.8, 1] };
+// Score over time charts share at least this range, so two openings' charts are drawn on the same
+// scale and a quiet opening's wobbles are not stretched to fill the height. The axis widens in
+// whole steps only when a line (or the baseline) goes outside it.
+const Y_AXIS_MIN_RANGE_PCT: [number, number] = [30, 70];
+const Y_AXIS_STEP_PCT = 10;
+const PCT = 100;
+const Y_AXIS_ROUNDING = 1e6;
 
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
-  const step = (dataMax - dataMin) <= 0.4 ? 0.1 : 0.2;
-
-  const lo = Math.max(0, Math.floor(dataMin / step) * step);
-  const hi = Math.min(1, Math.ceil(dataMax / step) * step);
-
+/** Y-axis for score values in 0..1: at least 30-70%, widened in 10-point steps to fit the data. */
+export function scoreOverTimeAxis(values: number[]): { domain: [number, number]; ticks: number[] } {
+  const [minLo, minHi] = Y_AXIS_MIN_RANGE_PCT;
+  // Round away float error first: 0.7 * 100 is 70.00000000000001, which would ceil to 80.
+  const toSteps = (v: number): number =>
+    Math.round(v * PCT * Y_AXIS_ROUNDING) / Y_AXIS_ROUNDING / Y_AXIS_STEP_PCT;
+  const dataLo = Math.floor(toSteps(Math.min(...values, 1))) * Y_AXIS_STEP_PCT;
+  const dataHi = Math.ceil(toSteps(Math.max(...values, 0))) * Y_AXIS_STEP_PCT;
+  const lo = Math.max(0, Math.min(minLo, dataLo));
+  const hi = Math.min(PCT, Math.max(minHi, dataHi));
   const ticks: number[] = [];
-  for (let v = lo; v <= hi + step / 2; v += step) {
-    ticks.push(Math.round(v * 100) / 100);
-  }
-  return { domain: [lo, hi], ticks };
+  for (let pct = lo; pct <= hi; pct += Y_AXIS_STEP_PCT) ticks.push(pct / PCT);
+  return { domain: [lo / PCT, hi / PCT], ticks };
 }
 
 /**
