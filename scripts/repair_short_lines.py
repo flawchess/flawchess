@@ -137,8 +137,11 @@ MAX_REWALK_WEEKS: float = 8.0
 MAX_CLASSIFICATION_FLIP_SHARE: float = 0.02
 # The pilot processes the first ceil(PILOT_FRACTION x work list) games.
 PILOT_FRACTION: float = 0.01
-# pg_stat_activity connection count may rise this much above the baseline taken at run start.
-MAX_CONNECTION_RISE: int = 10
+# Absolute ceiling on the pg_stat_activity row count (client backends plus ~8 Postgres
+# background processes). Prod keeps max_connections=50, so this leaves room for the app pool.
+# It was baseline + 10 before: a run started at a quiet moment (baseline 19) then stopped
+# itself at 31 rows on ordinary app-pool growth, far from saturation.
+MAX_CONNECTIONS: int = 45
 # Rolling median commit latency may be this many times the baseline median.
 MAX_COMMIT_LATENCY_RATIO: float = 3.0
 # Commits in the baseline window and in the rolling window of the latency gate.
@@ -786,11 +789,13 @@ def _health_gates(health: DbHealth | None) -> list[GateResult]:
     gates: list[GateResult] = []
     if health is None or not health.enabled:
         return gates
-    if health.baseline_connections is not None and health.peak_connections is not None:
-        limit = health.baseline_connections + MAX_CONNECTION_RISE
+    if health.peak_connections is not None:
         gates.append(
             GateResult(
-                "connections", health.peak_connections, limit, health.peak_connections > limit
+                "connections",
+                health.peak_connections,
+                MAX_CONNECTIONS,
+                health.peak_connections > MAX_CONNECTIONS,
             )
         )
     medians = health.latency_medians()
