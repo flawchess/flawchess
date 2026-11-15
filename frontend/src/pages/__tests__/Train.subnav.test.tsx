@@ -22,6 +22,7 @@ import {
 import { useEffect } from 'react';
 import type { ComponentType } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { apiClient } from '@/api/client';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router';
 import type { NavigateFunction } from 'react-router';
 import { waitForReveal } from '@/components/train/__tests__/revealTestUtils';
@@ -38,31 +39,68 @@ import type {
   TrainSettingsResponse,
   UnclaimedMedal,
 } from '@/types/train';
-import type { UserProfile } from '@/types/users';
+import type { FeatureRouteState, UserProfile } from '@/types/users';
 import type { BlunderCheckSessionResponse } from '@/types/blunderCheck';
 
-// Mutable profile flags: hasImportedGames reads `profileState.hasGames`.
-const profileState = vi.hoisted(() => ({ hasGames: true, beta: false }));
+// Mutable profile flags: hasImportedGames reads `profileState.hasGames`; `route`
+// is the profile's stored feature route (null = no route state, no dots).
+const profileState = vi.hoisted(() => ({
+  hasGames: true,
+  beta: false,
+  route: null as FeatureRouteState | null,
+}));
 
 /** The profile's email keys the streak snapshot; `feedback_ask` activates Hilda's ask. */
 const PROFILE_EMAIL = 'runner@example.com';
 const FEEDBACK_ASK_ACTIVE_DAYS = 12;
+const ROUTE_DONE_DATE = '2026-11-01';
+const routeStep = { status: 'done', date: ROUTE_DONE_DATE, with_dot: true } as const;
+/** `import` done: `train` is the candidate step of the route. */
+const ROUTE_TRAIN_CURRENT: FeatureRouteState = { steps: { import: routeStep }, current: null };
+/** `import` and `train` done: the route has moved on to Bots. */
+const ROUTE_TRAIN_DONE: FeatureRouteState = {
+  steps: { import: routeStep, train: routeStep },
+  current: null,
+};
 const PROFILE = {
   is_guest: false,
   email: PROFILE_EMAIL,
   feedback_ask: { active: true },
   active_days: FEEDBACK_ASK_ACTIVE_DAYS,
+  impersonation: null,
+  feature_route: null,
 } as unknown as UserProfile;
-/** Stable identity (the page reads the profile every render): the beta variant of PROFILE. */
-const BETA_PROFILE = { ...PROFILE, beta_enabled: true } as UserProfile;
 
-vi.mock('@/hooks/useUserProfile', () => ({
+/** Stable identity per (beta, route) pair: the page reads the profile every render. */
+const profileCache = new Map<string, UserProfile>();
+function currentProfile(): UserProfile {
+  const key = `${profileState.beta}|${JSON.stringify(profileState.route)}`;
+  let profile = profileCache.get(key);
+  if (profile == null) {
+    profile = {
+      ...PROFILE,
+      beta_enabled: profileState.beta,
+      feature_route: profileState.route,
+    } as UserProfile;
+    profileCache.set(key, profile);
+  }
+  return profile;
+}
+
+// Partial mock: the feature-route mutation reads USER_PROFILE_QUERY_KEY from this module.
+vi.mock('@/hooks/useUserProfile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useUserProfile')>()),
   useUserProfile: () => ({
-    data: profileState.beta ? BETA_PROFILE : PROFILE,
+    data: currentProfile(),
     isPending: false,
     isError: false,
   }),
   hasImportedGames: () => profileState.hasGames,
+}));
+
+// The route arbiter unlocks nav on tier1; no real readiness request leaves the test.
+vi.mock('@/hooks/useReadiness', () => ({
+  useReadiness: () => ({ tier1: true, tier2: true }),
 }));
 
 // A hoisted spy for the feedback-ask mutation: the bubble POSTs a 'view' on mount.
@@ -265,6 +303,8 @@ class FakeWorker {
 }
 
 let WorkerCtor: ReturnType<typeof vi.fn>;
+/** Stub of the feature-route POST on the real client (the file's api mock spreads it). */
+let featureRoutePost: ReturnType<typeof vi.spyOn>;
 
 // ─── Render helper ──────────────────────────────────────────────────────────
 
@@ -320,6 +360,8 @@ beforeAll(async () => {
 beforeEach(() => {
   profileState.hasGames = true;
   profileState.beta = false;
+  profileState.route = null;
+  featureRoutePost = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: ROUTE_TRAIN_DONE });
   navigateRef.current = null;
   blunderGetOpenSession.mockClear();
   blunderComposeOrResume.mockClear();
@@ -367,6 +409,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  featureRoutePost.mockRestore();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
@@ -956,5 +999,130 @@ describe('Train layout: the Archive tab', () => {
     await act(async () => {});
     expect(composeOrResumeSession).toHaveBeenCalledTimes(0);
     expect(WorkerCtor).toHaveBeenCalledTimes(0);
+  });
+});
+
+const FEATURE_ROUTE_URL = '/users/me/feature-route';
+const START_DOT = 'train-start-notification-dot';
+const TODAY_TAB_DOT = 'train-today-notification-dot';
+
+/** The feature-route POSTs the page has issued so far. */
+function routePosts(): unknown[][] {
+  return featureRoutePost.mock.calls.filter((call) => call[0] === FEATURE_ROUTE_URL);
+}
+
+describe('Train layout: D-21 the Train step completes on Start or Resume', () => {
+  it('the dot sits inside the start button on Today, and nothing is posted on open', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    renderTrainPage(['/train']);
+    const btn = await screen.findByTestId('btn-train-start');
+
+    expect(within(btn).queryByTestId(START_DOT)).not.toBeNull();
+    expect(screen.queryByTestId(TODAY_TAB_DOT)).toBeNull();
+    // Let any would-be effect settle: opening Train must not complete it.
+    await act(async () => {});
+    expect(routePosts()).toHaveLength(0);
+  });
+
+  it('clicking Start posts done for train and still enters the solve loop', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    renderTrainPage(['/train']);
+    fireEvent.click(await screen.findByTestId('btn-train-start'));
+
+    await waitFor(() => expect(screen.getByTestId('chessboard')).not.toBeNull());
+    expect(routePosts()).toEqual([[FEATURE_ROUTE_URL, { action: 'done', step: 'train' }]]);
+  });
+
+  it('clicking Resume on an open session posts done for train', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    composeOrResumeSession.mockImplementation(async () => ({
+      ...SESSION_RESPONSE,
+      puzzle_count: 2,
+      requested_count: 2,
+      solved_count: 1,
+    }));
+    renderTrainPage(['/train']);
+    const btn = await screen.findByTestId('btn-train-resume');
+    expect(within(btn).queryByTestId(START_DOT)).not.toBeNull();
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(screen.getByTestId('chessboard')).not.toBeNull());
+    expect(routePosts()).toEqual([[FEATURE_ROUTE_URL, { action: 'done', step: 'train' }]]);
+  });
+
+  it('a profile without feature_route posts nothing on Start', async () => {
+    renderTrainPage(['/train']);
+    fireEvent.click(await screen.findByTestId('btn-train-start'));
+
+    await waitFor(() => expect(screen.getByTestId('chessboard')).not.toBeNull());
+    expect(routePosts()).toHaveLength(0);
+  });
+
+  it('D-17: the waiting-count badge leaves the start-button dot alone', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    getProgress.mockResolvedValueOnce({
+      ...DEFAULT_TRAIN_PROGRESS,
+      waiting_count: 3,
+      badge_visible: true,
+    });
+    renderTrainPage(['/train']);
+    const btn = await screen.findByTestId('btn-train-start');
+
+    expect(within(btn).queryByTestId(START_DOT)).not.toBeNull();
+  });
+});
+
+describe('Train layout: D-03 one Train dot at a time', () => {
+  it('Today: the start-button dot shows and the Today-tab dot does not', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    renderTrainPage(['/train']);
+    await screen.findByTestId('btn-train-start');
+
+    expect(screen.queryByTestId(TODAY_TAB_DOT)).toBeNull();
+    expect(screen.queryByTestId(START_DOT)).not.toBeNull();
+  });
+
+  it('train done: neither Train dot renders on any tab', async () => {
+    profileState.route = ROUTE_TRAIN_DONE;
+    renderTrainPage(['/train']);
+    await screen.findByTestId('btn-train-start');
+    expect(screen.queryByTestId(START_DOT)).toBeNull();
+    expect(screen.queryByTestId(TODAY_TAB_DOT)).toBeNull();
+
+    clickTab('tab-train-leaderboard');
+    await waitFor(() => expect(leaderboardPanelCard()).not.toBeNull());
+    expect(screen.queryByTestId(START_DOT)).toBeNull();
+    expect(screen.queryByTestId(TODAY_TAB_DOT)).toBeNull();
+  });
+
+  it('Leaderboard: the dot is on the Today tab, none on the start button', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    renderTrainPage(['/train/leaderboard']);
+    await waitFor(() => expect(leaderboardPanelCard()).not.toBeNull());
+
+    expect(within(screen.getByTestId('tab-train-today')).queryByTestId(TODAY_TAB_DOT)).not.toBeNull();
+    expect(screen.queryByTestId(START_DOT)).toBeNull();
+  });
+
+  it('Archive: the Today-tab dot shows', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    renderTrainPage(['/train/archive']);
+    await screen.findByTestId('train-archive-panel');
+
+    expect(within(screen.getByTestId('tab-train-today')).queryByTestId(TODAY_TAB_DOT)).not.toBeNull();
+    expect(screen.queryByTestId(START_DOT)).toBeNull();
+  });
+
+  it('switching from Leaderboard to Today moves the dot from the tab to the start button', async () => {
+    profileState.route = ROUTE_TRAIN_CURRENT;
+    renderTrainPage(['/train/leaderboard']);
+    await waitFor(() => expect(leaderboardPanelCard()).not.toBeNull());
+    expect(screen.queryByTestId(TODAY_TAB_DOT)).not.toBeNull();
+
+    clickTab('tab-train-today');
+    await screen.findByTestId('btn-train-start');
+
+    expect(screen.queryByTestId(TODAY_TAB_DOT)).toBeNull();
+    expect(screen.queryByTestId(START_DOT)).not.toBeNull();
   });
 });

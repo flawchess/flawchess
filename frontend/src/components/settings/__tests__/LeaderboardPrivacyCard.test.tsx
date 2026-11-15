@@ -31,6 +31,7 @@ const PROFILE: UserProfile = {
   beta_enabled: false,
   leaderboard_hidden: false,
   current_strength: null,
+  feature_route: { steps: {}, current: null },
 };
 
 const SWITCH_ID = 'settings-leaderboard-hidden-switch';

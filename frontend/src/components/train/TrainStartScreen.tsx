@@ -30,6 +30,7 @@ import type { ReactElement } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
+import { RouteDot } from '@/components/feature-route/RouteDot';
 import { FeedbackAskBubble } from '@/components/feedback/FeedbackAskBubble';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
@@ -93,6 +94,12 @@ export interface TrainStartScreenProps {
    * its pending debounced save.
    */
   isVisible: boolean;
+  /**
+   * D-21 / D-03: whether the Train step's feature-route dot sits on the start
+   * button (Start, Warmup and Resume share it). Decided by the page and passed
+   * as a prop so this component stays hook-free for its provider-less tests.
+   */
+  showRouteDot: boolean;
 }
 
 /**
@@ -389,6 +396,7 @@ export function TrainStartScreen({
   hasGames,
   feedbackAskDays,
   isVisible,
+  showRouteDot,
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
@@ -471,13 +479,14 @@ export function TrainStartScreen({
           action={
             <Button
               variant="default"
-              className={`${TRAIN_BUTTON_CLASS} w-full`}
+              className={`${TRAIN_BUTTON_CLASS} relative w-full`}
               data-testid={state.kind === 'resume' ? 'btn-train-resume' : 'btn-train-start'}
               // A re-fetch after a schedule save may replace this session.
               disabled={isLoading}
               onClick={onEnterLoop}
             >
               {buttonLabel}
+              {showRouteDot && <RouteDot testid="train-start-notification-dot" variant="corner" />}
             </Button>
           }
         />

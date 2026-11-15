@@ -24,6 +24,8 @@ import { Navigate, useLocation } from 'react-router';
 import type { ReactElement } from 'react';
 import { useTrainLoop } from '@/hooks/useTrainLoop';
 import type { UseTrainLoopResult } from '@/hooks/useTrainLoop';
+import { useRouteDot } from '@/hooks/useFeatureRoute';
+import { useRecordFeatureRoute } from '@/hooks/useRecordFeatureRoute';
 import { hasImportedGames, useUserProfile } from '@/hooks/useUserProfile';
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
@@ -129,6 +131,9 @@ export default function TrainPage(): ReactElement {
   const canTrain = profile != null;
   const loop = useTrainLoop({ isToday, canTrain });
   const { trainSession, showLoop, showScoreScreen, restoredActive } = loop;
+  const recordRouteStep = useRecordFeatureRoute();
+  const showStartRouteDot = useRouteDot('control:train-start');
+  const showTodayRouteDot = useRouteDot('subtab:train-today');
   const pageImmersive = loop.immersive || (route?.tab === 'blunder-check' && blunderImmersive);
 
   // All hooks are above: an unknown /train/* path lands on Today.
@@ -157,6 +162,15 @@ export default function TrainPage(): ReactElement {
     return <Navigate to={TRAIN_TAB_PATHS.today} replace />;
   }
 
+  // D-21: the Train step completes on Start or Resume (fresh, warmup and resume
+  // share this one handler), never on opening Train. useTrainLoop stays
+  // route-agnostic. No Umami event: drill_sessions.entered_at already records the
+  // press server-side.
+  function handleEnterLoop(): void {
+    recordRouteStep({ action: 'done', step: 'train' });
+    loop.enterLoop();
+  }
+
   const landingActive = !(showLoop || showScoreScreen || restoredActive);
 
   return (
@@ -172,7 +186,13 @@ export default function TrainPage(): ReactElement {
       }
       data-testid="train-page"
     >
-      {!pageImmersive && <TrainSubnav active={route.tab} showBlunderCheck={isBeta} />}
+      {!pageImmersive && (
+        <TrainSubnav
+          active={route.tab}
+          showBlunderCheck={isBeta}
+          showTodayRouteDot={showTodayRouteDot}
+        />
+      )}
       {/* The layout owns the medal dialog so it opens on any tab (a Leaderboard
           deep link included). It is unmounted in the immersive views, so it
           never covers a session, and it sits at a stable position so a tab
@@ -207,12 +227,13 @@ export default function TrainPage(): ReactElement {
             }
             isError={trainSession.isSessionError}
             sessionScore={trainSession.sessionScore}
-            onEnterLoop={loop.enterLoop}
+            onEnterLoop={handleEnterLoop}
             onSettingsSaved={loop.requestSessionReread}
             isGuest={isGuest}
             hasGames={hasGames}
             feedbackAskDays={feedbackAskDays(profile)}
             isVisible={isToday}
+            showRouteDot={showStartRouteDot}
           />
         </div>
       )}

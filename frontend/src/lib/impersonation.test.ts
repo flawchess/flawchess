@@ -17,6 +17,7 @@ describe('isImpersonating', () => {
     lichess_last_sync_at: null,
     impersonation: null,
     beta_enabled: false,
+    feature_route: { steps: {}, current: null },
   };
 
   it('returns true when impersonation is an object', () => {

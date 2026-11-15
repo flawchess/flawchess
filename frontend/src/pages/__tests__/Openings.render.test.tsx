@@ -25,12 +25,17 @@
  * and could otherwise collide if both are open at once.
  */
 
+import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { OpeningsPage } from '@/pages/Openings';
+import { apiClient } from '@/api/client';
+import { useFilterStore } from '@/hooks/useFilterStore';
+import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
+import type { FeatureRouteState } from '@/types/users';
 
 // ── Mock ChessBoard: jsdom has no real board-gesture layer, and board
 // mechanics are not what this test guards (mirrors Bots.test.tsx). ─────────
@@ -41,10 +46,22 @@ vi.mock('@/components/board/ChessBoard', () => ({
 // ── Single-mutable-state-object mocks for the page's data hooks (Analysis.
 // test.tsx convention). Each hook returns a fixed, minimal shape — this test
 // asserts render/testid presence, not data-driven behavior. ────────────────
-const profileState: { data: { chess_com_game_count: number; lichess_game_count: number } | undefined } = {
-  data: { chess_com_game_count: 10, lichess_game_count: 0 },
+interface TestProfile {
+  chess_com_game_count: number;
+  lichess_game_count: number;
+  feature_route?: FeatureRouteState | null;
+  impersonation: null;
+}
+const DEFAULT_PROFILE: TestProfile = {
+  chess_com_game_count: 10,
+  lichess_game_count: 0,
+  impersonation: null,
 };
-vi.mock('@/hooks/useUserProfile', () => ({
+const profileState: { data: TestProfile | undefined } = { data: DEFAULT_PROFILE };
+// Partial mock: hasImportedGames (used by the route hooks) stays real, only the
+// profile query is replaced.
+vi.mock('@/hooks/useUserProfile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useUserProfile')>()),
   useUserProfile: () => ({ data: profileState.data }),
 }));
 
@@ -94,7 +111,22 @@ vi.mock('@/api/client', () => ({
         tier2: true,
       },
     }),
-    post: vi.fn().mockResolvedValue({ data: {} }),
+    // POST bodies by endpoint: the feature-route mutation writes its response into the
+    // query cache, so it must be a valid FeatureRouteState; the Stats tab renders the
+    // insights response, so it must carry its four (empty) lists; anything else gets
+    // the generic empty body.
+    post: vi.fn().mockImplementation((url: string) => {
+      const bodies: Record<string, unknown> = {
+        '/users/me/feature-route': { steps: {}, current: null },
+        '/insights/openings': {
+          white_weaknesses: [],
+          black_weaknesses: [],
+          white_strengths: [],
+          black_strengths: [],
+        },
+      };
+      return Promise.resolve({ data: bodies[url] ?? {} });
+    }),
   },
 }));
 
@@ -129,10 +161,27 @@ if (typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = vi.fn();
 }
 
+// The filter store is module-level and survives across tests, so a handle on its setter
+// lets a case modify the filters and lets afterEach restore the defaults.
+let setStoreFilters: ReturnType<typeof useFilterStore>[1] | null = null;
+function StoreHandle() {
+  const [, set] = useFilterStore();
+  useEffect(() => {
+    setStoreFilters = set;
+  }, [set]);
+  return null;
+}
+
 afterEach(() => {
+  act(() => {
+    setStoreFilters?.({ ...DEFAULT_FILTERS });
+  });
   cleanup();
-  profileState.data = { chess_com_game_count: 10, lichess_game_count: 0 };
+  setStoreFilters = null;
+  profileState.data = DEFAULT_PROFILE;
   bookmarksState.data = [];
+  vi.mocked(apiClient.post).mockClear();
+  localStorage.clear();
 });
 
 function LocationProbe() {
@@ -149,6 +198,7 @@ function renderOpeningsPage(initialPath = '/openings/explorer') {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <LocationProbe />
+          <StoreHandle />
           <OpeningsPage />
         </TooltipProvider>
       </QueryClientProvider>
@@ -260,5 +310,231 @@ describe('OpeningsPage render characterization', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('sidebar-panel')).toBeNull();
     });
+  });
+});
+
+// ── Route dot on the Openings subtabs and controls (phase 255, D-03, D-07) ─────
+
+const ROUTE_PATH = '/users/me/feature-route';
+const STEP_RECORD = { status: 'done', date: '2026-11-01', with_dot: false } as const;
+
+/** A route state with the given steps done and no stamped current step. */
+function routeWithDone(ids: readonly string[]): FeatureRouteState {
+  return {
+    steps: Object.fromEntries(ids.map((id) => [id, STEP_RECORD])),
+    current: null,
+  };
+}
+
+/** Sets the profile route state; the profile always has games (nav unlocked once readiness answers). */
+function setRoute(featureRoute: FeatureRouteState | null): void {
+  profileState.data = { ...DEFAULT_PROFILE, feature_route: featureRoute };
+}
+
+const THROUGH_OPENINGS = ['import', 'train', 'bots', 'openings'];
+const THROUGH_PLAYED_AS = [...THROUGH_OPENINGS, 'openings-played-as'];
+const THROUGH_FILTERS = [...THROUGH_PLAYED_AS, 'openings-filters'];
+
+describe('OpeningsPage route dot on the Stats subtab', () => {
+  it('puts the openings-stats dot on the Stats tab off /openings/stats, desktop and mobile', async () => {
+    setRoute(routeWithDone(THROUGH_FILTERS));
+    renderOpeningsPage('/openings/explorer');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('tab-stats')).getByTestId('openings-stats-notification-dot'),
+      ).toBeTruthy();
+    });
+    expect(
+      within(screen.getByTestId('tab-stats-mobile')).getByTestId(
+        'openings-stats-notification-dot-mobile',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('shows no openings-stats dot on /openings/stats itself', async () => {
+    setRoute(routeWithDone(THROUGH_FILTERS));
+    renderOpeningsPage('/openings/stats');
+
+    // Readiness resolves asynchronously; give the arbiter time to unlock, then assert absence.
+    await waitFor(() => {
+      expect(screen.getByTestId('tab-stats').getAttribute('data-state')).toBe('active');
+    });
+    expect(screen.queryByTestId('openings-stats-notification-dot')).toBeNull();
+    expect(screen.queryByTestId('openings-stats-notification-dot-mobile')).toBeNull();
+  });
+});
+
+/** The `{ action, step }` bodies posted to the feature-route endpoint so far. */
+function routePosts(): unknown[] {
+  return vi
+    .mocked(apiClient.post)
+    .mock.calls.filter(([url]) => url === ROUTE_PATH)
+    .map(([, body]) => body);
+}
+
+/** Lets any fire-and-forget mutation reach the mocked client (for absence assertions). */
+async function flushMutations(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+const DONE_PLAYED_AS = { action: 'done', step: 'openings-played-as' };
+const DONE_FILTERS = { action: 'done', step: 'openings-filters' };
+
+describe('OpeningsPage played-as route step', () => {
+  it('puts the dot on the desktop strip colour button and the mobile toggle', async () => {
+    setRoute(routeWithDone(THROUGH_OPENINGS));
+    renderOpeningsPage('/openings/explorer');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('sidebar-strip-btn-color')).getByTestId('played-as-notification-dot'),
+      ).toBeTruthy();
+    });
+    expect(
+      within(screen.getByTestId('btn-toggle-played-as')).getByTestId('played-as-notification-dot-mobile'),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('filters-notification-dot')).toBeNull();
+  });
+
+  it('puts a mobile dot next to the Stats colour switch on /openings/stats', async () => {
+    setRoute(routeWithDone(THROUGH_OPENINGS));
+    renderOpeningsPage('/openings/stats');
+
+    const dot = await waitFor(() => screen.getByTestId('played-as-notification-dot-mobile'));
+    expect(screen.getByTestId('opening-color-switch-mobile').parentElement?.contains(dot)).toBe(true);
+    expect(screen.getByTestId('played-as-notification-dot')).toBeTruthy();
+  });
+
+  it('records done when the desktop strip colour button is clicked', async () => {
+    setRoute(routeWithDone(THROUGH_OPENINGS));
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('sidebar-strip-btn-color'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_PLAYED_AS));
+  });
+
+  it('records done when the mobile Moves/Games toggle is clicked', async () => {
+    setRoute(routeWithDone(THROUGH_OPENINGS));
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('btn-toggle-played-as'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_PLAYED_AS));
+  });
+
+  it('records done on a real colour switch on the mobile Stats switch', async () => {
+    setRoute(routeWithDone(THROUGH_OPENINGS));
+    renderOpeningsPage('/openings/stats');
+    fireEvent.click(screen.getByTestId('opening-color-switch-mobile-black'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_PLAYED_AS));
+    expect(screen.getByTestId('opening-color-switch-mobile-black').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('records done on a click of the already selected colour and leaves the colour alone', async () => {
+    setRoute(routeWithDone(THROUGH_OPENINGS));
+    renderOpeningsPage('/openings/stats');
+    fireEvent.click(screen.getByTestId('opening-color-switch-mobile-white'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_PLAYED_AS));
+    expect(screen.getByTestId('opening-color-switch-mobile-white').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('opening-color-switch-mobile-black').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('records the step even when the dot is on another step (D-15)', async () => {
+    setRoute(routeWithDone(['import']));
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('sidebar-strip-btn-color'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_PLAYED_AS));
+  });
+
+  it('posts nothing for a profile without feature_route', async () => {
+    setRoute(null);
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('sidebar-strip-btn-color'));
+    fireEvent.click(screen.getByTestId('btn-toggle-played-as'));
+    await flushMutations();
+    expect(routePosts()).toEqual([]);
+  });
+});
+
+describe('OpeningsPage filters route step', () => {
+  it('puts the dot on the desktop strip Filters button and the mobile Filters button', async () => {
+    setRoute(routeWithDone(THROUGH_PLAYED_AS));
+    renderOpeningsPage('/openings/explorer');
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('sidebar-strip-btn-filters')).getByTestId('filters-notification-dot'),
+      ).toBeTruthy();
+    });
+    expect(
+      within(screen.getByTestId('subnav-filter-button')).getByTestId('filters-notification-dot-mobile'),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('played-as-notification-dot')).toBeNull();
+  });
+
+  it('puts the dot on the sticky Filters button on the mobile Stats subtab', async () => {
+    setRoute(routeWithDone(THROUGH_PLAYED_AS));
+    renderOpeningsPage('/openings/stats');
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('subnav-filter-button')).getByTestId('filters-notification-dot-mobile'),
+      ).toBeTruthy();
+    });
+  });
+
+  it('the red route dot wins over the brown modified-filters dot on the mobile Filters button (D-02)', async () => {
+    setRoute(routeWithDone(THROUGH_PLAYED_AS));
+    renderOpeningsPage('/openings/explorer');
+    act(() => {
+      setStoreFilters?.({ ...DEFAULT_FILTERS, rated: false });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('filters-notification-dot-mobile')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('filters-modified-dot-mobile')).toBeNull();
+  });
+
+  it('records done when Apply is clicked in the desktop filters panel', async () => {
+    setRoute(routeWithDone(THROUGH_PLAYED_AS));
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('sidebar-strip-btn-filters'));
+    const panel = await waitFor(() => screen.getByTestId('sidebar-panel'));
+    fireEvent.click(within(panel).getByTestId('btn-filter-apply'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_FILTERS));
+  });
+
+  it('records done when Apply is clicked in the mobile filter drawer', async () => {
+    setRoute(routeWithDone(THROUGH_PLAYED_AS));
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('subnav-filter-button'));
+    const drawer = await waitFor(() => screen.getByTestId('drawer-filter-sidebar'));
+    fireEvent.click(within(drawer).getByTestId('btn-filter-apply'));
+    await waitFor(() => expect(routePosts()).toContainEqual(DONE_FILTERS));
+  });
+
+  it('posts nothing on Apply for a profile without feature_route', async () => {
+    setRoute(null);
+    renderOpeningsPage('/openings/explorer');
+    fireEvent.click(screen.getByTestId('sidebar-strip-btn-filters'));
+    const panel = await waitFor(() => screen.getByTestId('sidebar-panel'));
+    fireEvent.click(within(panel).getByTestId('btn-filter-apply'));
+    await flushMutations();
+    expect(routePosts()).toEqual([]);
+  });
+});
+
+describe('OpeningsPage bookmarks dot is gone (D-07)', () => {
+  it('renders no bookmarks notification dot in any route state', async () => {
+    // The retired localStorage hints used to unlock this dot; they must no longer matter.
+    localStorage.setItem('played-as-hint-dismissed', 'true');
+    localStorage.setItem('filters-hint-dismissed', 'true');
+    for (const route of [null, routeWithDone(THROUGH_FILTERS), routeWithDone([])]) {
+      setRoute(route);
+      const { unmount } = renderOpeningsPage('/openings/explorer');
+      await flushMutations();
+      expect(screen.queryByTestId('bookmarks-notification-dot')).toBeNull();
+      expect(screen.queryByTestId('bookmarks-notification-dot-mobile')).toBeNull();
+      unmount();
+    }
   });
 });

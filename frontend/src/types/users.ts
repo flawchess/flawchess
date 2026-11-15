@@ -30,6 +30,48 @@ export interface FeedbackAskView {
 /** Body of POST /users/me/feedback-ask. */
 export type FeedbackAskAction = 'view' | 'snooze' | 'done';
 
+/** Step IDs of the feature-discovery route in route order. Mirrors the backend
+ * FeatureRouteStepId Literal in app/schemas/feature_route.py; append-only, never
+ * renamed (a new feature is a new ID). */
+export type FeatureRouteStepId =
+  | 'import'
+  | 'train'
+  | 'bots'
+  | 'openings'
+  | 'openings-played-as'
+  | 'openings-filters'
+  | 'openings-stats'
+  | 'endgames'
+  | 'library-stats';
+
+/** Body action of POST /users/me/feature-route. */
+export type FeatureRouteAction = 'current' | 'done' | 'skip';
+
+/** One resolved step. `with_dot` records whether it was the dotted step when resolved. */
+export interface FeatureRouteStepRecord {
+  status: 'done' | 'skipped';
+  date: string;
+  with_dot: boolean;
+}
+
+/** The step the dot sits on and the active-day count when it got there. */
+export interface FeatureRouteCurrent {
+  step: string;
+  since_days: number;
+}
+
+/** Stored route state. `steps` is keyed by plain string on purpose (tolerant read). */
+export interface FeatureRouteState {
+  steps: Record<string, FeatureRouteStepRecord>;
+  current: FeatureRouteCurrent | null;
+}
+
+/** Body of POST /users/me/feature-route. */
+export interface FeatureRouteActionRequest {
+  action: FeatureRouteAction;
+  step: FeatureRouteStepId;
+}
+
 export interface UserProfile {
   email: string;
   is_superuser: boolean;
@@ -59,4 +101,7 @@ export interface UserProfile {
   active_days: number;
   // Whether Hilda's feedback ask should show right now.
   feedback_ask: FeedbackAskView;
+  // Feature-discovery route state. Null means the stored state is corrupt
+  // (fail closed: no dot, no writes).
+  feature_route: FeatureRouteState | null;
 }

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 milestone: v2.29
 current_phase: 255
-current_phase_name: Feature Discovery Dot Route (SEED-261115-d0t)
-status: executing
-stopped_at: Completed 254-09-PLAN.md
-last_updated: "2026-11-15T19:32:23.561Z"
+status: completed
+stopped_at: Phase 255 complete — all phases complete
+last_updated: "2026-11-15T22:19:10.386Z"
 last_activity: 2026-11-15
-last_activity_desc: Phase 254 execution started
-state_head: 7ad8708bb9d84dc9a5c4bb376a61c63c43168921
+last_activity_desc: Phase 255 complete
+state_head: a3a6dcd79ef43e79ba9ea96235d965db40144af6
 progress:
   total_phases: 9
   completed_phases: 63
   total_plans: 72
-  completed_plans: 55
+  completed_plans: 65
+  percent: 90
 milestone_name: Train Spacing & Archive, Analysis Explain
 ---
 
@@ -21,12 +21,12 @@ milestone_name: Train Spacing & Archive, Analysis Explain
 
 ## Current Position
 
-Phase: 255 (Feature Discovery Dot Route (SEED-261115-d0t)) — READY TO EXECUTE
-Plan: 4 of 18
+Phase: 255
+Plan: Not started
 
-Status: Ready to execute
+Status: All phases complete
 
-Last activity: 2026-11-15 — Completed quick task 261115-ntq: implement SEED-261115-sgs (opening chart eval-expected primary line)
+Last activity: 2026-11-15 — Phase 255 complete
 
 Open threads carried forward (not blockers):
 
@@ -941,6 +941,13 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 254]: 254-18: library chip and range filter share one facepalm_expr(FACEPALM_LIBRARY_LAMBDA) object per query_flaws statement (chip on the paged statement only); eval-chart markers come from fetch_page_facepalm_scores, never computed in Python
 - [Phase 254]: 254-09: BlunderRecord.facepalm_score is a cached property over the Python twin at FACEPALM_DRILL_LAMBDA and the checkout's model; calibration cache version 3 stores facts only
 - [Phase 254]: 254-09: scripts/copy_line_material.py keeps its stored-column read: it is the read-only parity check plan 10 needs, so the 'no script reads the stored score' grep prints 1
+- [Phase 255]: 255-01: step IDs are the nine D-06 strings, append-only; a visit to a skipped step upgrades it to done; with_dot records whether the step was current when resolved
+- [Phase 255]: isNavActive lives in lib/featureRoute.ts so the nav and the arbiter share one copy; FeatureRouteRecorder mounted in the main ProtectedLayout tree only
+- [Phase 255]: 255-03: More drawer reads useNavIndicators; drawer dot testid built from the row route, Train row drops its dot while the waiting badge shows (D-17)
+- [Phase 255]: 255-04: a step current when its target re-locks restarts its clock on unlock; delete_all_games_for_user removes feature_route.current (A-7)
+- [Phase 255]: 255-04: recorder forgets sent current/skip keys when the stored stamp changes so a cleared stamp can be re-posted in-session
+- [Phase 255]: 255-05: mobile Stats colour switch gets onAnyClick so a click on the selected colour completes openings-played-as; Openings.tsx no longer reads the profile
+- [Phase 255]: 255-06: Train step completes in Train.tsx handleEnterLoop (Start/Resume), route dots arrive as boolean props on hook-free TrainStartScreen and TrainSubnav
 
 ### Pending Todos
 
@@ -1184,8 +1191,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-11-15T00:43:48.308Z
-**Stopped at:** Completed 254-09-PLAN.md
+**Last session:** 2026-11-15T21:31:36.354Z
+**Stopped at:** Phase 255 complete — all phases complete
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1461,6 +1468,13 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 254 P08 | 30 min | 2 tasks | 4 files |
 | Phase 254 P18 | 35 min | 2 tasks | 6 files |
 | Phase 254 P09 | 11 min | 3 tasks | 6 files |
+| Phase 255 P01 | 20 min | 2 tasks | 6 files |
+| Phase 255 P02 | 25min | 2 tasks | 12 files |
+| Phase 255 P03 | 12 min | 2 tasks | 7 files |
+| Phase 255 P04 | 45 min | 3 tasks | 14 files |
+| Phase 255 P05 | 25 min | 2 tasks | 8 files |
+| Phase 255 P06 | 20 min | 2 tasks | 5 files |
+| Phase 255 P07 | n/a | 2 tasks | 1 files |
 
 ## Performance Metrics
 

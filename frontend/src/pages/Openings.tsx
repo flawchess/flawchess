@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate } from 'react-router';
-import { useUserProfile } from '@/hooks/useUserProfile';
+import { useRouteDot } from '@/hooks/useFeatureRoute';
+import { useRecordFeatureRoute } from '@/hooks/useRecordFeatureRoute';
+import { RouteDot } from '@/components/feature-route/RouteDot';
 import { trackFeature } from '@/lib/analytics';
 import { removeRetiredBookmarkChartKeys } from '@/lib/retiredLocalStorage';
 import { ArrowRightLeft, Swords, BarChart2, SlidersHorizontal } from 'lucide-react';
@@ -75,8 +77,22 @@ const TAB_INFO: Record<Exclude<OpeningsTab, 'stats'>, { aria: string; text: stri
 export function OpeningsPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { data: profile } = useUserProfile();
-  const hasGames = (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
+  // Route dot (phase 255, D-03): on the Stats subtab while the openings-stats step is current.
+  const showStatsTabDot = useRouteDot('subtab:openings-stats');
+  // The played-as and filters steps are "used" steps (D-07, D-13): the dot sits on the
+  // control while the step is current, and using the control records it even when the
+  // dot is on another step (D-15).
+  const showPlayedAsDot = useRouteDot('control:openings-played-as');
+  const showFiltersDot = useRouteDot('control:openings-filters');
+  const recordRouteStep = useRecordFeatureRoute();
+  const recordPlayedAs = useCallback(
+    () => recordRouteStep({ action: 'done', step: 'openings-played-as' }),
+    [recordRouteStep],
+  );
+  const recordFilters = useCallback(
+    () => recordRouteStep({ action: 'done', step: 'openings-filters' }),
+    [recordRouteStep],
+  );
 
   const needsRedirect = location.pathname === '/openings' || location.pathname === '/openings/';
   // Redirect old /openings/compare, /openings/statistics and /openings/insights URLs to
@@ -122,7 +138,7 @@ export function OpeningsPage() {
     filters,
   );
 
-  // ── Sidebar / drawer state + onboarding hint dismissal ──────────────────────
+  // ── Sidebar / drawer open state ─────────────────────────────────────────────
   const sidebar = useSidebarState();
 
   // ── Mobile drawer deferred-apply local state ───────────────────────────────
@@ -141,8 +157,8 @@ export function OpeningsPage() {
     setLocalFilters(prev => ({ ...prev, color }));
     setGamesOffset(0);
     setBoardFlipped(color === 'black');
-    sidebar.dismissPlayedAsHint();
-  }, [setFilters, setGamesOffset, sidebar]);
+    recordPlayedAs();
+  }, [setFilters, setGamesOffset, recordPlayedAs]);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
@@ -150,13 +166,6 @@ export function OpeningsPage() {
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-
-  // Onboarding hint progression (only one red dot visible at a time):
-  // played-as → filters → bookmarks. Each step unlocks the next once used.
-  const showPlayedAsHint = hasGames && !sidebar.playedAsHintDismissed;
-  const showFiltersHint = hasGames && sidebar.playedAsHintDismissed && !sidebar.filtersHintDismissed;
-  const showBookmarksHint =
-    hasGames && sidebar.playedAsHintDismissed && sidebar.filtersHintDismissed && bookmarks.length === 0;
 
   // ── Modified-filters indicator ─────────────────────────────────────────────
   // Both desktop and mobile stage filter edits and commit on Apply; the dot
@@ -260,7 +269,7 @@ export function OpeningsPage() {
     }
     setFilters(localFilters);
     setGamesOffset(0);
-    sidebar.setFiltersHintDismissed(true);
+    recordFilters();
     setBoardFlipped(localFilters.color === 'black');
     // Stats follows the Played-as colour since D-26, so only a Piece filter change leaves it.
     if (localFilters.matchSide !== filters.matchSide
@@ -268,7 +277,7 @@ export function OpeningsPage() {
       navigate('/openings/explorer');
     }
     sidebar.setSidebarOpen(null);
-  }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate]);
+  }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate, recordFilters]);
 
   const openBookmarkDialog = useCallback(() => {
     // Use currentPly, not full moveHistory length — user may have navigated back
@@ -358,7 +367,7 @@ export function OpeningsPage() {
     }
     setFilters(localFilters);
     setGamesOffset(0);
-    sidebar.setFiltersHintDismissed(true);
+    recordFilters();
     setBoardFlipped(localFilters.color === 'black');
     // Stats follows the Played-as colour since D-26, so only a Piece filter change leaves it.
     if (localFilters.matchSide !== filters.matchSide
@@ -366,7 +375,7 @@ export function OpeningsPage() {
       navigate('/openings/explorer');
     }
     sidebar.setFilterDrawerOpen(false);
-  }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate]);
+  }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate, recordFilters]);
 
   const updateMatchSide = useUpdateMatchSide();
 
@@ -509,14 +518,8 @@ export function OpeningsPage() {
   // Shared filter notification dot for the mobile filter affordances: the board
   // settings-column button (Moves/Games subtabs) and the sticky Filters button
   // (Stats subtab). Mirrors the desktop SidebarLayout notificationDot.
-  const mobileFiltersDot = showFiltersHint ? (
-    <span
-      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-      data-testid="filters-notification-dot-mobile"
-    >
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-    </span>
+  const mobileFiltersDot = showFiltersDot ? (
+    <RouteDot testid="filters-notification-dot-mobile" variant="corner" />
   ) : isFiltersModified ? (
     <span
       className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
@@ -578,13 +581,14 @@ export function OpeningsPage() {
             <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
               <BarChart2 className="mr-1.5 h-4 w-4" />
               Stats
+              {showStatsTabDot && <RouteDot testid="openings-stats-notification-dot" variant="corner" />}
             </TabsTrigger>
           </TabsList>
         <OpeningsDesktopSidebar
           localFilters={localFilters}
           setLocalFilters={setLocalFilters}
           onApplyFilters={handleDesktopFiltersApply}
-          showFiltersHint={showFiltersHint}
+          showFiltersDot={showFiltersDot}
           isFiltersModified={isFiltersModified}
           isFiltersPulsing={isFiltersPulsing}
           bookmarks={bookmarks}
@@ -592,7 +596,6 @@ export function OpeningsPage() {
           onLoadBookmark={handleLoadBookmarkFromDesktopSidebar}
           onOpenSuggestions={openSuggestions}
           onOpenBookmarkDialog={openBookmarkDialog}
-          showBookmarksHint={showBookmarksHint}
           activePanel={sidebar.sidebarOpen}
           onActivePanelChange={handleDesktopSidebarOpenChange}
           showAnalyzeButton={showAnalyzeButton}
@@ -602,11 +605,11 @@ export function OpeningsPage() {
             const next: Color = filters.color === 'white' ? 'black' : 'white';
             setFilters(prev => ({ ...prev, color: next }));
             setBoardFlipped(next === 'black');
-            sidebar.dismissPlayedAsHint();
+            recordPlayedAs();
             // Same concept as Library/Endgames played-as, so one Umami row.
             trackFeature('filter-change', { target: 'played-as', value: next });
           }}
-          showPlayedAsHint={showPlayedAsHint}
+          showPlayedAsDot={showPlayedAsDot}
         >
             <div className="flex flex-row items-start gap-6">
               <div className={getBoardContainerClassName(activeTab)} data-testid="openings-board-container">
@@ -697,6 +700,9 @@ export function OpeningsPage() {
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 <BarChart2 className="mr-1.5 h-4 w-4" />
                 Stats
+                {showStatsTabDot && (
+                  <RouteDot testid="openings-stats-notification-dot-mobile" variant="corner" />
+                )}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -707,7 +713,18 @@ export function OpeningsPage() {
               board settings column instead, so it is not rendered here. */}
           {activeTab === 'stats' && (
             <div className="sticky top-0 z-20 flex items-center justify-between gap-2 py-2 bg-background/80 backdrop-blur-sm">
-              <OpeningColorSwitch idPrefix="mobile" selected={filters.color} onSelect={handleStatsColorChange} />
+              {/* relative wrapper: the played-as route dot sits on the switch. onAnyClick records the
+                  step on a click of the already selected colour too, which the switch's own handler
+                  ignores, so the dot never survives a click on its own site. */}
+              <span className="relative inline-flex">
+                <OpeningColorSwitch
+                  idPrefix="mobile"
+                  selected={filters.color}
+                  onSelect={handleStatsColorChange}
+                  onAnyClick={recordPlayedAs}
+                />
+                {showPlayedAsDot && <RouteDot testid="played-as-notification-dot-mobile" variant="corner" />}
+              </span>
               <Button
                 variant="brand-outline"
                 // Same height as the colour buttons beside it (min-h-11 below sm, see OpeningColorSwitch).
@@ -743,18 +760,16 @@ export function OpeningsPage() {
             filterColor={filters.color}
             onTogglePlayedAs={() => {
               const newColor: Color = filters.color === 'white' ? 'black' : 'white';
-              // Change color without dismissing the filters hint — only the
-              // Played-as hint advances when the color toggle is used.
+              // Only the played-as step completes when the colour toggle is used.
               setFilters({ ...filters, color: newColor });
               setGamesOffset(0);
               setBoardFlipped(newColor === 'black');
-              sidebar.dismissPlayedAsHint();
+              recordPlayedAs();
               trackFeature('filter-change', { target: 'played-as', value: newColor });
               if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
             }}
-            showPlayedAsHint={showPlayedAsHint}
+            showPlayedAsDot={showPlayedAsDot}
             onOpenBookmarkDrawer={openBookmarkDrawer}
-            showBookmarksHint={showBookmarksHint}
             showAnalyzeButton={showAnalyzeButton}
             onAnalyzePosition={handleAnalyzePosition}
             opening={chess.opening}

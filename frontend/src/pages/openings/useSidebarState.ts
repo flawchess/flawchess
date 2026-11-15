@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 export type SidebarPanel = 'filters' | 'bookmarks';
 
@@ -11,40 +11,16 @@ export type SidebarStateApi = {
   setFilterDrawerOpen: (open: boolean) => void;
   bookmarkDrawerOpen: boolean;
   setBookmarkDrawerOpen: (open: boolean) => void;
-  // Onboarding hints (persisted in localStorage)
-  playedAsHintDismissed: boolean;
-  filtersHintDismissed: boolean;
-  setFiltersHintDismissed: (v: boolean) => void;
-  dismissPlayedAsHint: () => void;
 };
 
 /**
- * Owns sidebar/drawer open state plus the localStorage-backed onboarding
- * hint dismissal flags. Behavior preserved exactly from OpeningsPage.
+ * Owns the sidebar/drawer open state. The onboarding hint dots moved to the
+ * server-side feature route (phase 255), so no localStorage state lives here.
  */
 export function useSidebarState(): SidebarStateApi {
   const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [bookmarkDrawerOpen, setBookmarkDrawerOpen] = useState(false);
-
-  const [playedAsHintDismissed, setPlayedAsHintDismissed] = useState(
-    () => localStorage.getItem('played-as-hint-dismissed') === 'true',
-  );
-  const [filtersHintDismissed, setFiltersHintDismissedState] = useState(
-    () => localStorage.getItem('filters-hint-dismissed') === 'true',
-  );
-
-  const dismissPlayedAsHint = useCallback(() => {
-    setPlayedAsHintDismissed(true);
-    localStorage.setItem('played-as-hint-dismissed', 'true');
-  }, []);
-
-  const setFiltersHintDismissed = useCallback((v: boolean) => {
-    setFiltersHintDismissedState(v);
-    if (v) {
-      localStorage.setItem('filters-hint-dismissed', 'true');
-    }
-  }, []);
 
   return {
     sidebarOpen,
@@ -53,9 +29,5 @@ export function useSidebarState(): SidebarStateApi {
     setFilterDrawerOpen,
     bookmarkDrawerOpen,
     setBookmarkDrawerOpen,
-    playedAsHintDismissed,
-    filtersHintDismissed,
-    setFiltersHintDismissed,
-    dismissPlayedAsHint,
   };
 }

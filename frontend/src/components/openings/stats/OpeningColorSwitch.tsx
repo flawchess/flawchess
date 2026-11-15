@@ -13,6 +13,12 @@ interface OpeningColorSwitchProps {
   idPrefix: string;
   selected: Color;
   onSelect: (color: Color) => void;
+  /**
+   * Fires on every colour button click, the already selected colour included, before the
+   * selected-colour early return. Used by the feature route (phase 255) so a click on the
+   * dotted site always completes the step. Not tracked as an event.
+   */
+  onAnyClick?: () => void;
 }
 
 /**
@@ -20,8 +26,9 @@ interface OpeningColorSwitchProps {
  * (D-26); the Umami option-change event fires from a click on the other
  * colour only, never on mount or restore.
  */
-export function OpeningColorSwitch({ idPrefix, selected, onSelect }: OpeningColorSwitchProps) {
+export function OpeningColorSwitch({ idPrefix, selected, onSelect, onAnyClick }: OpeningColorSwitchProps) {
   const handleClick = (color: Color): void => {
+    onAnyClick?.();
     if (color === selected) return;
     onSelect(color);
     trackFeature('option-change', { target: 'opening-stats-color', value: color });

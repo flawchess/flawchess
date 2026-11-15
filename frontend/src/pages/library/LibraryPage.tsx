@@ -2,6 +2,8 @@ import { useNavigate, useLocation, Navigate } from 'react-router';
 import { BarChart2, Swords, DownloadIcon, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useRouteDot } from '@/hooks/useFeatureRoute';
+import { RouteDot } from '@/components/feature-route/RouteDot';
 import { ImportTab } from '@/pages/library/ImportTab';
 import { StatsTab } from '@/pages/library/StatsTab';
 import { GamesTab } from '@/pages/library/GamesTab';
@@ -16,6 +18,10 @@ export function LibraryPage({
   const { data: profile } = useUserProfile();
   const location = useLocation();
   const navigate = useNavigate();
+  // Route dot (phase 255, D-03): the Import and Stats subtabs carry it while the user is
+  // inside Library and the current step lives there. Hooks run before the redirect return.
+  const showImportDot = useRouteDot('subtab:library-import');
+  const showStatsDot = useRouteDot('subtab:library-stats');
 
   const importedGameCount =
     profile != null
@@ -60,6 +66,7 @@ export function LibraryPage({
               <TabsTrigger value="import" data-testid="tab-import" className="flex-1">
                 <DownloadIcon className="mr-1.5 h-4 w-4" />
                 Import
+                {showImportDot && <RouteDot testid="library-import-notification-dot" variant="corner" />}
               </TabsTrigger>
               <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                 <Swords className="mr-1.5 h-4 w-4" />
@@ -72,6 +79,7 @@ export function LibraryPage({
               <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                 <BarChart2 className="mr-1.5 h-4 w-4" />
                 Stats
+                {showStatsDot && <RouteDot testid="library-stats-notification-dot" variant="corner" />}
               </TabsTrigger>
             </TabsList>
             <TabsContent value="import" className="mt-4">
@@ -118,6 +126,9 @@ export function LibraryPage({
                 >
                   <DownloadIcon className="h-4 w-4" />
                   Import
+                  {showImportDot && (
+                    <RouteDot testid="library-import-notification-dot-mobile" variant="corner" />
+                  )}
                 </TabsTrigger>
                 <TabsTrigger
                   value="games"
@@ -142,6 +153,9 @@ export function LibraryPage({
                 >
                   <BarChart2 className="h-4 w-4" />
                   Stats
+                  {showStatsDot && (
+                    <RouteDot testid="library-stats-notification-dot-mobile" variant="corner" />
+                  )}
                 </TabsTrigger>
               </TabsList>
             </div>

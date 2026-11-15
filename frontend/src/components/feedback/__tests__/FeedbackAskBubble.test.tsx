@@ -55,6 +55,7 @@ function makeProfile(active: boolean): UserProfile {
     current_strength: null,
     active_days: ACTIVE_DAYS,
     feedback_ask: { active },
+    feature_route: { steps: {}, current: null },
   };
 }
 

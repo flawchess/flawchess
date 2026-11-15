@@ -43,8 +43,12 @@ import { SettingsSheet, SettingsSheetButton } from '@/components/settings/Settin
 import { SettingsDialogButton } from '@/components/settings/SettingsDialogButton';
 import { WelcomePage } from '@/pages/Welcome';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
-import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import { useReadiness } from '@/hooks/useReadiness';
+import { useNavUnlocked, useRouteDotPlacement } from '@/hooks/useFeatureRoute';
+import { FeatureRouteRecorder } from '@/components/feature-route/FeatureRouteRecorder';
+import { RouteDot } from '@/components/feature-route/RouteDot';
+import { removeRetiredDotKeys } from '@/lib/retiredLocalStorage';
+import { isNavActive, type RouteNav } from '@/lib/featureRoute';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useReminderResurfaceRedirect } from '@/hooks/useReminderResurface';
 import { useDevicePushResync } from '@/hooks/useDevicePushResync';
@@ -68,12 +72,6 @@ const TrainPage = lazy(() => import('./pages/Train'));
 // export default (like Analysis/Bots/Train).
 const ActivityPage = lazy(() => import('./pages/activity/ActivityPage'));
 
-const FLAG_OPENINGS_VISITED = 'openings_visited';
-const FLAG_ENDGAMES_VISITED = 'endgames_visited';
-// A dedicated key (not a reused older first-visit one) so every existing
-// account, including ones that already used Train, sees the dot once more and
-// gets drawn to the bot-narrated Train. Cleared on the first /train visit.
-const FLAG_TRAIN_BOTS_VISITED = 'train_bots_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
 // Waiting-count badge display cap — anything above this
 // renders as `${NAV_BADGE_MAX_DISPLAY}+` rather than the exact count.
@@ -171,26 +169,12 @@ function isNavLocked(to: string, navUnlocked: boolean): boolean {
   return !IMPORT_EXEMPT_ROUTES.has(to) && !navUnlocked;
 }
 
-// ─── Active route helper ───────────────────────────────────────────────────────
-
-function isActive(to: string, pathname: string): boolean {
-  if (to === '/library') return pathname.startsWith('/library');
-  if (to === '/train') return pathname.startsWith('/train');
-  if (to === '/bots') return pathname.startsWith('/bots');
-  if (to === '/openings') return pathname.startsWith('/openings');
-  if (to === '/endgames') return pathname.startsWith('/endgames');
-  if (to === '/analysis') return pathname.startsWith('/analysis');
-  return pathname === to;
-}
-
 // ─── Nav indicators (red dots + Train badge) ──────────────────────────────────
 
 interface NavIndicators {
   navUnlocked: boolean;
-  noGames: boolean;
-  showOpeningsDot: boolean;
-  showEndgamesDot: boolean;
-  showTrainDot: boolean;
+  /** The nav item carrying the route dot, or null when the dot is elsewhere or absent. */
+  routeNav: RouteNav | null;
   /** Rendered waiting-count label, or null when the numeric badge is hidden. */
   trainBadgeLabel: string | null;
 }
@@ -199,23 +183,12 @@ interface NavIndicators {
 // disagree about which item carries a dot or a badge.
 function useNavIndicators(): NavIndicators {
   const { data: profile } = useUserProfile();
-  const importedGameCount = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
-  const noGames = profile != null && importedGameCount === 0;
-  // Nav unlocks only once the user has games AND import phase 1 (Tier 1) is
-  // complete. tier1 alone is true for a fresh zero-game account (no job
-  // in-flight), and games alone appear mid-import before phase 1 finishes; both
-  // gates together avoid unlocking too early.
-  const { tier1 } = useReadiness();
-  const navUnlocked = importedGameCount > 0 && tier1;
-  const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
-  const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  const trainBotsVisited = useUserFlag(FLAG_TRAIN_BOTS_VISITED, profile?.email);
-  const showOpeningsDot = navUnlocked && !openingsVisited;
-  // Endgames dot is gated behind the Openings dot — we want users to discover
-  // Openings first, then Endgames after that dot is cleared.
-  const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
-  // Numeric waiting-puzzles badge; it outranks the Train dot (see showTrainDot
-  // below). Gated off for guests and locked-nav accounts: waiting_count is 0 for
+  // The one unlock rule, shared with the route arbiter.
+  const navUnlocked = useNavUnlocked();
+  const placement = useRouteDotPlacement();
+  const routeNav = placement?.slot.startsWith('nav:') ? (placement.slot.slice('nav:'.length) as RouteNav) : null;
+  // Numeric waiting-puzzles badge; it replaces the Train nav-level route dot
+  // (see NavIndicator). Gated off for guests and locked-nav accounts: waiting_count is 0 for
   // every warm-up-only account (no own blunders yet to surface), even though
   // Train itself is open to zero-game accounts.
   const trainProgressQuery = useTrainProgress({ enabled: navUnlocked && profile != null && !profile.is_guest });
@@ -229,23 +202,7 @@ function useNavIndicators(): NavIndicators {
   const trainBadgeLabel = showTrainBadge
     ? (trainWaitingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : String(trainWaitingCount))
     : null;
-  // First-visit Train dot. The numeric waiting badge wins the slot when both
-  // apply — it is already red and already says "go to Train".
-  const showTrainDot = navUnlocked && !trainBotsVisited && !showTrainBadge;
-  return { navUnlocked, noGames, showOpeningsDot, showEndgamesDot, showTrainDot, trainBadgeLabel };
-}
-
-function NavDot({ testid, mobile, ariaHidden }: { testid: string; mobile: boolean; ariaHidden?: boolean }) {
-  return (
-    <span
-      className={mobile ? 'absolute top-1.5 right-[30%] flex h-2 w-2' : 'absolute top-0.5 right-0.5 flex h-2.5 w-2.5'}
-      data-testid={testid}
-      aria-hidden={ariaHidden || undefined}
-    >
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-      <span className={cn('relative inline-flex rounded-full bg-red-500', mobile ? 'h-2 w-2' : 'h-2.5 w-2.5')} />
-    </span>
-  );
+  return { navUnlocked, routeNav, trainBadgeLabel };
 }
 
 function TrainBadge({ label, mobile }: { label: string; mobile: boolean }) {
@@ -284,21 +241,16 @@ function TrainBadge({ label, mobile }: { label: string; mobile: boolean }) {
 }
 
 // The dot or badge a nav item carries, if any. `mobile` picks the bottom-bar
-// geometry and the `-mobile` testid suffix.
+// geometry and the `-mobile` testid suffix. The Train waiting-count badge
+// replaces the Train nav-level route dot (D-17); a route dot on any other nav
+// item shows alongside it.
 function NavIndicator({ to, ind, mobile }: { to: string; ind: NavIndicators; mobile: boolean }) {
   const suffix = mobile ? '-mobile' : '';
-  if (to === '/library') {
-    return ind.noGames ? <NavDot testid={`library-notification-dot${suffix}`} mobile={mobile} ariaHidden /> : null;
+  if (to === '/train' && ind.trainBadgeLabel != null) {
+    return <TrainBadge label={ind.trainBadgeLabel} mobile={mobile} />;
   }
-  if (to === '/openings') {
-    return ind.showOpeningsDot ? <NavDot testid={`openings-notification-dot${suffix}`} mobile={mobile} /> : null;
-  }
-  if (to === '/endgames') {
-    return ind.showEndgamesDot ? <NavDot testid={`endgames-notification-dot${suffix}`} mobile={mobile} /> : null;
-  }
-  if (to !== '/train') return null;
-  if (ind.trainBadgeLabel != null) return <TrainBadge label={ind.trainBadgeLabel} mobile={mobile} />;
-  return ind.showTrainDot ? <NavDot testid={`train-notification-dot${suffix}`} mobile={mobile} /> : null;
+  if (ind.routeNav !== to) return null;
+  return <RouteDot testid={`${to.slice(1)}-notification-dot${suffix}`} variant={mobile ? 'mobile-nav' : 'corner'} />;
 }
 
 // ─── Nav header (desktop) ─────────────────────────────────────────────────────
@@ -337,7 +289,7 @@ export function NavHeader() {
                 className={cn(
                   'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
                   locked && 'opacity-40 cursor-not-allowed',
-                  isActive(to, location.pathname)
+                  isNavActive(to, location.pathname)
                     ? 'font-medium bg-white/10 text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
@@ -561,7 +513,7 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
           className={cn(
             'relative flex flex-1 flex-col items-center gap-1 py-2',
             locked && 'opacity-40 cursor-not-allowed',
-            isActive(to, location.pathname) ? 'text-primary' : 'text-muted-foreground',
+            isNavActive(to, location.pathname) ? 'text-primary' : 'text-muted-foreground',
           )}
         >
           <Icon className="h-5 w-5" aria-hidden="true" />
@@ -602,11 +554,9 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  const importedGameCount = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
-  const noGames = profile != null && importedGameCount === 0;
-  // Same unlock rule as useNavIndicators: games exist AND import phase 1 is complete.
-  const { tier1 } = useReadiness();
-  const navUnlocked = importedGameCount > 0 && tier1;
+  // Lock, route dot and Train badge come from the same hook as the header and the
+  // bottom bar, so the drawer can never disagree with them.
+  const { navUnlocked, routeNav, trainBadgeLabel } = useNavIndicators();
   // Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -641,20 +591,13 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
                     className={cn(
                       'relative flex items-center gap-2 rounded-md px-3 py-2 text-base',
                       locked && 'opacity-40 cursor-not-allowed',
-                      isActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
+                      isNavActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
                     )}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />
                     {label}
-                    {to === '/library' && noGames && (
-                      <span
-                        className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                        data-testid="library-notification-dot-drawer"
-                        aria-hidden="true"
-                      >
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                      </span>
+                    {routeNav === to && !(to === '/train' && trainBadgeLabel != null) && (
+                      <RouteDot testid={`${to.slice(1)}-notification-dot-drawer`} variant="corner" />
                     )}
                   </Link>
                 </DrawerClose>
@@ -706,8 +649,6 @@ function ProtectedLayout() {
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
-  const isEndgamesRoute = location.pathname.startsWith('/endgames');
-  const isTrainRoute = location.pathname.startsWith('/train');
   // The analysis page takes over the mobile shell (back-button header + board-controls
   // footer owned by the page), so it gets a full-height flex chain on mobile and the
   // standard mobile header / bottom nav are suppressed. Desktop (sm+) is unaffected.
@@ -747,24 +688,6 @@ function ProtectedLayout() {
     }
   }, [umamiDistinctId, umamiAccountType]);
 
-  useEffect(() => {
-    if (isOpeningsRoute && profile?.email) {
-      setUserFlag(FLAG_OPENINGS_VISITED, profile.email);
-    }
-  }, [isOpeningsRoute, profile?.email]);
-
-  useEffect(() => {
-    if (isEndgamesRoute && profile?.email) {
-      setUserFlag(FLAG_ENDGAMES_VISITED, profile.email);
-    }
-  }, [isEndgamesRoute, profile?.email]);
-
-  useEffect(() => {
-    if (isTrainRoute && profile?.email) {
-      setUserFlag(FLAG_TRAIN_BOTS_VISITED, profile.email);
-    }
-  }, [isTrainRoute, profile?.email]);
-
   // Show deferred toast from OAuth callback — checked here because ProtectedLayout
   // is the stable destination after the redirect chain (callback → / → /openings).
   useEffect(() => {
@@ -773,6 +696,13 @@ function ProtectedLayout() {
       sessionStorage.removeItem('pending_toast');
       toast.success(msg);
     }
+  }, []);
+
+  // One-time sweep of the per-device dot keys retired by the server-side feature
+  // route (D-04). Stale client state cleanup, not a tracking event (same precedent
+  // as the bookmark-key sweep in Openings.tsx).
+  useEffect(() => {
+    removeRetiredDotKeys();
   }, []);
 
   // Capture the desktop→phone QR handoff marker as early as
@@ -857,6 +787,7 @@ function ProtectedLayout() {
 
   return (
     <>
+      <FeatureRouteRecorder />
       <NavHeader />
       {!isOpeningsRoute && !playActive && (
         <>

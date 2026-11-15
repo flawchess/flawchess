@@ -23,3 +23,33 @@ export function removeRetiredBookmarkChartKeys(storage: Storage = window.localSt
     return 0;
   }
 }
+
+/** Prefix of the per-device dot flags (`user_flag:<email>:<name>`), retired in Phase 255 (D-04). */
+export const RETIRED_DOT_FLAG_KEY_PREFIX = 'user_flag:';
+
+/** The two Openings sidebar hint keys, retired in Phase 255 (D-07). */
+export const RETIRED_DOT_HINT_KEYS = ['played-as-hint-dismissed', 'filters-hint-dismissed'] as const;
+
+function isRetiredDotKey(key: string): boolean {
+  return key.startsWith(RETIRED_DOT_FLAG_KEY_PREFIX) || (RETIRED_DOT_HINT_KEYS as readonly string[]).includes(key);
+}
+
+/**
+ * One-time cleanup of the per-device dot flags retired by phase 255: the route
+ * state moved server-side (D-04) and the Openings hint keys are no longer read.
+ * Same collect-then-remove shape and best-effort error handling as
+ * removeRetiredBookmarkChartKeys; returns the number of keys removed.
+ */
+export function removeRetiredDotKeys(storage: Storage = window.localStorage): number {
+  try {
+    const retired: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key !== null && isRetiredDotKey(key)) retired.push(key);
+    }
+    for (const key of retired) storage.removeItem(key);
+    return retired.length;
+  } catch {
+    return 0;
+  }
+}

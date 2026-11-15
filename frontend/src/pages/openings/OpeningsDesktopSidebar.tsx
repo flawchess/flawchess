@@ -2,6 +2,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { Save, Sparkles, SlidersHorizontal, Bookmark, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
+import { RouteDot } from '@/components/feature-route/RouteDot';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterActions } from '@/components/filters/FilterActions';
 import { resetFilterState, type FilterState } from '@/components/filters/FilterPanel';
@@ -20,7 +21,7 @@ export type OpeningsDesktopSidebarProps = {
   localFilters: FilterState;
   setLocalFilters: Dispatch<SetStateAction<FilterState>>;
   onApplyFilters: () => void;
-  showFiltersHint: boolean;
+  showFiltersDot: boolean;
   isFiltersModified: boolean;
   isFiltersPulsing: boolean;
 
@@ -30,7 +31,6 @@ export type OpeningsDesktopSidebarProps = {
   onLoadBookmark: (bkm: PositionBookmarkResponse) => void;
   onOpenSuggestions: () => void;
   onOpenBookmarkDialog: () => void;
-  showBookmarksHint: boolean;
 
   // Strip state
   activePanel: SidebarPanel | null;
@@ -39,7 +39,7 @@ export type OpeningsDesktopSidebarProps = {
   onAnalyzePosition: () => void;
   filterColor: Color;
   onToggleColor: () => void;
-  showPlayedAsHint: boolean;
+  showPlayedAsDot: boolean;
 };
 
 /**
@@ -53,7 +53,7 @@ export function OpeningsDesktopSidebar({
   localFilters,
   setLocalFilters,
   onApplyFilters,
-  showFiltersHint,
+  showFiltersDot,
   isFiltersModified,
   isFiltersPulsing,
   bookmarks,
@@ -61,20 +61,16 @@ export function OpeningsDesktopSidebar({
   onLoadBookmark,
   onOpenSuggestions,
   onOpenBookmarkDialog,
-  showBookmarksHint,
   activePanel,
   onActivePanelChange,
   showAnalyzeButton,
   onAnalyzePosition,
   filterColor,
   onToggleColor,
-  showPlayedAsHint,
+  showPlayedAsDot,
 }: OpeningsDesktopSidebarProps) {
-  const filtersNotificationDot = showFiltersHint ? (
-    <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="filters-notification-dot">
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-    </span>
+  const filtersNotificationDot = showFiltersDot ? (
+    <RouteDot testid="filters-notification-dot" variant="corner" />
   ) : isFiltersModified ? (
     <span
       className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
@@ -85,13 +81,6 @@ export function OpeningsDesktopSidebar({
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
       )}
       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
-    </span>
-  ) : undefined;
-
-  const bookmarksNotificationDot = showBookmarksHint ? (
-    <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="bookmarks-notification-dot">
-      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
     </span>
   ) : undefined;
 
@@ -187,7 +176,6 @@ export function OpeningsDesktopSidebar({
               </div>
             </InfoPopover>
           ),
-          notificationDot: bookmarksNotificationDot,
         },
       ] satisfies SidebarPanelConfig[]}
       activePanel={activePanel}
@@ -217,12 +205,7 @@ export function OpeningsDesktopSidebar({
               data-testid="sidebar-strip-btn-color"
             >
               <span className={`inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground ${filterColor === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-              {showPlayedAsHint && (
-                <span className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5" data-testid="played-as-notification-dot">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                </span>
-              )}
+              {showPlayedAsDot && <RouteDot testid="played-as-notification-dot" variant="corner" />}
             </Button>
           </Tooltip>
         </>

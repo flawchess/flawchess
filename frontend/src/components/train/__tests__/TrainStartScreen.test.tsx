@@ -273,6 +273,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         hasGames={true}
         feedbackAskDays={null}
         isVisible={true}
+        showRouteDot={false}
         {...props}
       />
     </MemoryRouter>,
@@ -292,6 +293,7 @@ describe('TrainStartScreen — refetch after a schedule save', () => {
       hasGames: true,
       feedbackAskDays: null,
       isVisible: true,
+      showRouteDot: false,
     };
     const { rerender } = render(
       <MemoryRouter>
@@ -929,6 +931,7 @@ describe('TrainStartScreen: isVisible gates the one-shot landing children', () =
       isGuest: false,
       hasGames: true,
       feedbackAskDays: ASK_DAYS,
+      showRouteDot: false,
     };
     const { rerender } = render(
       <MemoryRouter>
@@ -946,5 +949,33 @@ describe('TrainStartScreen: isVisible gates the one-shot landing children', () =
     expect(screen.getByTestId('train-schedule-settings')).toBe(hiddenNode);
     expect(screen.getByTestId('train-landing-host')).not.toBeNull();
     expect(screen.getByTestId('train-streak-card')).not.toBeNull();
+  });
+});
+
+describe('TrainStartScreen — route dot (D-21 / D-03)', () => {
+  it('fresh: showRouteDot puts the dot inside the start button', () => {
+    renderScreen({ showRouteDot: true });
+    const btn = screen.getByTestId('btn-train-start');
+    expect(within(btn).queryByTestId('train-start-notification-dot')).not.toBeNull();
+  });
+
+  it('warmup: showRouteDot puts the dot inside the start button', () => {
+    renderScreen({ showRouteDot: true, session: { ...BASE_SESSION, is_warmup: true } });
+    const btn = screen.getByTestId('btn-train-start');
+    expect(within(btn).queryByTestId('train-start-notification-dot')).not.toBeNull();
+  });
+
+  it('resume: showRouteDot puts the dot inside the resume button', () => {
+    renderScreen({
+      showRouteDot: true,
+      session: { ...BASE_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] },
+    });
+    const btn = screen.getByTestId('btn-train-resume');
+    expect(within(btn).queryByTestId('train-start-notification-dot')).not.toBeNull();
+  });
+
+  it('showRouteDot false renders no dot', () => {
+    renderScreen({ showRouteDot: false });
+    expect(screen.queryByTestId('train-start-notification-dot')).toBeNull();
   });
 });

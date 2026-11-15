@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { SlidersHorizontal, Bookmark, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
+import { RouteDot } from '@/components/feature-route/RouteDot';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ChessBoard, type BoardArrow } from '@/components/board/ChessBoard';
 import { MoveList } from '@/components/board/MoveList';
@@ -34,9 +35,8 @@ export type OpeningsMobileBoardPanelProps = {
   filtersNotificationDot: ReactNode;
   filterColor: Color;
   onTogglePlayedAs: () => void;
-  showPlayedAsHint: boolean;
+  showPlayedAsDot: boolean;
   onOpenBookmarkDrawer: () => void;
-  showBookmarksHint: boolean;
   showAnalyzeButton: boolean;
   onAnalyzePosition: () => void;
 
@@ -76,9 +76,8 @@ export function OpeningsMobileBoardPanel({
   filtersNotificationDot,
   filterColor,
   onTogglePlayedAs,
-  showPlayedAsHint,
+  showPlayedAsDot,
   onOpenBookmarkDrawer,
-  showBookmarksHint,
   showAnalyzeButton,
   onAnalyzePosition,
   opening,
@@ -145,15 +144,7 @@ export function OpeningsMobileBoardPanel({
               aria-label={`Playing as ${filterColor}, tap to switch`}
             >
               <span className={`inline-block h-4 w-4 rounded-xs border border-muted-foreground ${filterColor === 'white' ? 'bg-white' : 'bg-zinc-900'}`} />
-              {showPlayedAsHint && (
-                <span
-                  className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                  data-testid="played-as-notification-dot-mobile"
-                >
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                </span>
-              )}
+              {showPlayedAsDot && <RouteDot testid="played-as-notification-dot-mobile" variant="corner" />}
             </Button>
           </Tooltip>
           <Tooltip content="Open bookmarks" side="left">
@@ -166,15 +157,6 @@ export function OpeningsMobileBoardPanel({
               aria-label="Open bookmarks"
             >
               <Bookmark className="h-4 w-4" />
-              {showBookmarksHint && (
-                <span
-                  className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                  data-testid="bookmarks-notification-dot-mobile"
-                >
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                </span>
-              )}
             </Button>
           </Tooltip>
           {showAnalyzeButton && (
