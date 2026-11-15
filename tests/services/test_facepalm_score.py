@@ -74,6 +74,7 @@ from app.services.facepalm_score import (
 )
 from app.services.line_material import LINE_LOSS_DEPTHS, material_at_depth
 from app.services.maia_flaw_stats import _effective_moves, reply_spread
+from tests.facepalm_models import PHASE_250_MODEL
 from tests.facepalm_seed import seed_flaw_rows
 from tests.services.maia_fakes import fake_full_policy
 
@@ -120,7 +121,8 @@ _BEST_PROB_MISSES_MODEL = replace(
 _ADDITIVE_BEST_PROB_MODEL = replace(_SPLIT_MODEL, best_prob_coef=0.4)
 _ADDITIVE_PRE_SPREAD_MODEL = replace(_SPLIT_MODEL, pre_spread_coef=-0.2)
 _MATERIAL_MODELS = (
-    pytest.param(FACEPALM_MODEL, id="pre_refit"),
+    pytest.param(PHASE_250_MODEL, id="pre_refit"),
+    pytest.param(FACEPALM_MODEL, id="shipped"),
     pytest.param(_FLOORED_MODEL, id="floor_0"),
     pytest.param(_SPLIT_MODEL, id="split_missed"),
     pytest.param(_COMBINED_MODEL, id="combined"),
@@ -135,19 +137,21 @@ _SHAPE_MODELS = (
 )
 
 # Window 14 (game 2099808, ply 23), copied from the extra row of the committed features file
-# reports/blunder-check/facepalm-features-2026-11-13.tsv. Its stored refutation line is one ply
-# long (pv_plies 1, line_loss_1 -1), so the depth-3 loss and the mate ply are NULL there.
+# reports/blunder-check/facepalm-features-2026-11-15.tsv (facts schema). Its stored refutation
+# line is one ply long (pv_plies 1), so the depth-3 played material and the mate ply are NULL.
 WINDOW_14_GAME_ID = 2099808
 WINDOW_14_PLY = 23
 WINDOW_14_PLAYED_PROB = 0.0949175
 WINDOW_14_REPLY_SPREAD = 7.75985
-WINDOW_14_LINE_LOSS_3: int | None = None
+WINDOW_14_BEST_PROB = 0.331294
+WINDOW_14_BEST_3 = 0
+WINDOW_14_PLAYED_3: int | None = None
 WINDOW_14_MATE_PLY: int | None = None
 _FEATURES_TSV = (
     Path(__file__).resolve().parents[2]
     / "reports"
     / "blunder-check"
-    / "facepalm-features-2026-11-13.tsv"
+    / "facepalm-features-2026-11-15.tsv"
 )
 
 # Parity grid of the SQL twin: NULL in every input. A stored array is None (no array), short
@@ -223,7 +227,7 @@ def _phase_250_score(
     loss_3: int | None,
     mate_ply: int | None,
 ) -> float | None:
-    """A frozen private copy of the Phase 250 formula under the shipped D-04 constants."""
+    """A frozen private copy of the Phase 250 formula under the frozen Phase 250 constants."""
     if played_prob is None or spread is None:
         return None
     if mate_ply is not None and mate_ply <= LINE_DEPTH:
@@ -231,12 +235,12 @@ def _phase_250_score(
     elif loss_3 is None:
         return None
     else:
-        loss = float(max(min(loss_3, LOSS_CAP), FACEPALM_LOSS_FLOOR or 0))
+        loss = float(max(min(loss_3, LOSS_CAP), PHASE_250_MODEL.loss_floor or 0))
     z = (
-        FACEPALM_INTERCEPT
-        + FACEPALM_PLAYED_COEF * math.log(played_prob + PLAYED_PROB_OFFSET)
-        + FACEPALM_SPREAD_COEF * spread
-        + FACEPALM_LOSS_COEF * loss
+        PHASE_250_MODEL.intercept
+        + PHASE_250_MODEL.played_coef * math.log(played_prob + PLAYED_PROB_OFFSET)
+        + PHASE_250_MODEL.spread_coef * spread
+        + PHASE_250_MODEL.loss_coef * loss
     )
     return 1.0 / (1.0 + math.exp(-z))
 
@@ -406,8 +410,9 @@ def test_missed_feature_floor_cap_unknown_and_mate() -> None:
 
 
 def test_new_twin_reproduces_phase_250_score() -> None:
-    # D-12: the shipped (pre-refit) model equals the frozen Phase 250 formula for every lambda,
-    # whatever the best-line facts say, because the missed term is not in the model yet.
+    # D-12: the frozen Phase 250 model equals the frozen Phase 250 formula for every lambda,
+    # whatever the best-line facts say, because the missed term is not in that model. Pinned
+    # explicitly: FACEPALM_MODEL is the Phase 254 refit now.
     grid = itertools.product(
         (0.0, 0.05, 0.3, None), (1.0, 4.4, None), (None, -3, 0, 2, 9), (None, 1, 3, 4)
     )
@@ -423,7 +428,7 @@ def test_new_twin_reproduces_phase_250_score() -> None:
                 best_3=10,
                 best_mate_ply=0,
             )
-            actual = facepalm_score(facts, lam=lam)
+            actual = facepalm_score(facts, lam=lam, model=PHASE_250_MODEL)
             if expected is None:
                 assert actual is None
             else:
@@ -508,7 +513,7 @@ async def test_sql_twin_parity_every_shape(
     _assert_parity(grid, await _sql_scores(test_engine, grid, model, lam), model, lam)
 
 
-@pytest.mark.parametrize("model", [FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL])
+@pytest.mark.parametrize("model", [PHASE_250_MODEL, FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL])
 async def test_zero_coefficient_input_never_unscores(
     test_engine: AsyncEngine, model: FacepalmModel
 ) -> None:
@@ -608,7 +613,7 @@ def test_reply_spread_equals_phase_247_effective_moves() -> None:
 
 def test_known_d04_constants() -> None:
     assert (FACEPALM_SCORE_MIN, PLAYED_PROB_OFFSET, LINE_DEPTH, LOSS_CAP, MATE_LOSS) == (
-        0.7,
+        0.5,
         0.01,
         3,
         5,
@@ -657,25 +662,29 @@ def test_window_14_constants_match_the_committed_features_row() -> None:
         ]
     assert len(rows) == 1
     row = rows[0]
+    assert row["n"] == "extra"
     assert float(row["played_prob"]) == WINDOW_14_PLAYED_PROB
     assert float(row["reply_spread"]) == WINDOW_14_REPLY_SPREAD
-    assert (row["line_loss_3"] or None) == WINDOW_14_LINE_LOSS_3
+    assert float(row["best_prob"]) == WINDOW_14_BEST_PROB
+    assert int(row["best_mat_3"]) == WINDOW_14_BEST_3
+    assert (row["played_mat_3"] or None) == WINDOW_14_PLAYED_3
     assert (row["line_mate_ply"] or None) == WINDOW_14_MATE_PLY
 
 
 def test_window_14_is_not_selected_by_the_shipped_model() -> None:
     # CONTEXT specifics: Window 14 must not pass FACEPALM_SCORE_MIN. Its stored line is only one
-    # ply long, so the loss input is unknown and the score is None: a NULL score fails the
-    # `score >= FACEPALM_SCORE_MIN` filter in SQL and in the pure judge, so it is not selected,
-    # but the score itself cannot be computed from the recorded inputs (see the plan 04 summary).
-    # The legacy row's line_loss_3 is the negated signed material: played_3 = -line_loss_3.
-    played_3 = None if WINDOW_14_LINE_LOSS_3 is None else -WINDOW_14_LINE_LOSS_3
+    # ply long, so the played depth-3 material is unknown and the score is None: a NULL score
+    # fails the `score >= FACEPALM_SCORE_MIN` filter in SQL and in the pure judge, so an unscored
+    # row never qualifies. Deliberately no numeric "below the cut" claim: the score cannot be
+    # computed from the recorded inputs.
     score = facepalm_score(
         _facts(
             played_prob=WINDOW_14_PLAYED_PROB,
             reply_spread=WINDOW_14_REPLY_SPREAD,
-            played_3=played_3,
+            played_3=WINDOW_14_PLAYED_3,
             mate_ply=WINDOW_14_MATE_PLY,
+            best_3=WINDOW_14_BEST_3,
+            best_prob=WINDOW_14_BEST_PROB,
         ),
         lam=FACEPALM_DRILL_LAMBDA,
     )
@@ -751,8 +760,8 @@ def _facts_of_flaw(flaw: GameFlaw) -> FacepalmFacts:
 @pytest.mark.parametrize("lam", (0.0, 1.0))
 @pytest.mark.parametrize(
     "model",
-    [FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL, _BEST_PROB_MISSES_MODEL],
-    ids=["pre_refit", "split_missed", "combined", "best_prob_misses"],
+    [PHASE_250_MODEL, FACEPALM_MODEL, _SPLIT_MODEL, _COMBINED_MODEL, _BEST_PROB_MISSES_MODEL],
+    ids=["pre_refit", "shipped", "split_missed", "combined", "best_prob_misses"],
 )
 async def test_expr_matches_python_twin_over_stored_facts(
     db_session: AsyncSession, model: FacepalmModel, lam: float
