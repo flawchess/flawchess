@@ -79,6 +79,42 @@ export function getBySan(lookup: Map<string, MoveGrade>, baseFen: string, san: s
   return getByUci(lookup, uci);
 }
 
+/** A white-POV eval pair, the subset of `MoveGrade`/`PvLine` the ranking reads. */
+interface RankableEval {
+  evalCp: number | null;
+  evalMate: number | null;
+}
+
+/** Mate-in-N from the mover's POV (positive = mover mates), or null when no mate. */
+function moverMate(evalMate: number | null, mover: MoverColor): number | null {
+  if (evalMate == null || evalMate === 0) return null;
+  return mover === 'white' ? evalMate : -evalMate;
+}
+
+/**
+ * Sort comparator (best-for-mover first) for engine lines.
+ *
+ * Bug fix: ranking by expected score alone put a big cp eval above a forced
+ * mate, because `evalToExpectedScore` maps every mate to ±MATE_CP_EQUIVALENT
+ * (1000 cp), so +18.1 outranked #1 and #1 tied with #8. Mates are now their
+ * own tiers: mover mates (shortest first) > no mate (by expected score) >
+ * mover gets mated (longest first).
+ */
+export function compareEvalsForMover(a: RankableEval, b: RankableEval, mover: MoverColor): number {
+  const mateA = moverMate(a.evalMate, mover);
+  const mateB = moverMate(b.evalMate, mover);
+  if (mateA === null && mateB === null) {
+    return evalToExpectedScore(b.evalCp, b.evalMate, mover) - evalToExpectedScore(a.evalCp, a.evalMate, mover);
+  }
+  // Tier: 1 = mover mates, 0 = no mate, -1 = mover gets mated.
+  const tierA = mateA === null ? 0 : Math.sign(mateA);
+  const tierB = mateB === null ? 0 : Math.sign(mateB);
+  if (tierA !== tierB) return tierB - tierA;
+  // Same mate tier (both non-null here). Winning: fewer moves first. Losing:
+  // more moves first. Both reduce to ascending mover-POV mate (1 < 8, -8 < -1).
+  return (mateA ?? 0) - (mateB ?? 0);
+}
+
 /** One reconciled ranked candidate: its UCI key and the grade it resolved to. */
 export interface ReconciledCandidate {
   uci: string;
@@ -93,11 +129,11 @@ export interface ReconciledCandidate {
  * argmax (`resolveReconciledBest`) is its head, so card line 1, arrow, chart
  * crown, and verdict agree by construction.
  *
- * Skips (never throws on) a UCI absent from `evalLookup`. Expected score via
- * `evalToExpectedScore` from `@/lib/liveFlaw` — the project's ONLY sigmoid,
- * never re-derived here. The sort is stable (candidate input order preserved
- * on ties), except an EXACT expected-score tie prefers `tieBreakUci` — the
- * same semantics the pre-ranking argmax loop had.
+ * Skips (never throws on) a UCI absent from `evalLookup`. Ordering via
+ * `compareEvalsForMover` (mate-aware, expected score within the no-mate
+ * tier). The sort is stable (candidate input order preserved on ties),
+ * except an EXACT tie prefers `tieBreakUci` — the same semantics the
+ * pre-ranking argmax loop had.
  */
 export function rankReconciledCandidates(
   evalLookup: Map<string, MoveGrade>,
@@ -105,19 +141,18 @@ export function rankReconciledCandidates(
   mover: MoverColor,
   tieBreakUci: string | null,
 ): ReconciledCandidate[] {
-  const resolved: Array<ReconciledCandidate & { es: number }> = [];
+  const resolved: ReconciledCandidate[] = [];
   for (const uci of candidateUcis) {
     const grade = evalLookup.get(uci);
-    if (!grade) continue;
-    resolved.push({ uci, grade, es: evalToExpectedScore(grade.evalCp, grade.evalMate, mover) });
+    if (grade) resolved.push({ uci, grade });
   }
-  resolved.sort((a, b) => {
-    if (b.es !== a.es) return b.es - a.es;
+  return resolved.sort((a, b) => {
+    const byEval = compareEvalsForMover(a.grade, b.grade, mover);
+    if (byEval !== 0) return byEval;
     if (a.uci === tieBreakUci) return -1;
     if (b.uci === tieBreakUci) return 1;
     return 0;
   });
-  return resolved.map(({ uci, grade }) => ({ uci, grade }));
 }
 
 /**
