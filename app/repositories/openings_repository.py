@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 import chess
 import chess.polyglot
-from sqlalchemy import Float, and_, case, cast, func, or_, select
+from sqlalchemy import Float, and_, case, cast, func, null, or_, select
 from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from app.models.game import Game
 from app.models.game_position import MAX_EXPLORER_PLY, GamePosition
 from app.models.opening import Opening
 from app.repositories.query_utils import apply_game_filters
+from app.repositories.stats_repository import middlegame_entry_subquery
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MAX_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_ENTRY_PLY,
@@ -114,8 +115,7 @@ def _build_base_query(
     return base
 
 
-async def query_time_series(
-    session: AsyncSession,
+def _build_time_series_stmt(
     user_id: int,
     hash_column: Any,
     target_hash: int,
@@ -126,21 +126,19 @@ async def query_time_series(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
-) -> list[Row[Any]]:
-    """Return (played_at, result, user_color) tuples for matching games, ordered chronologically.
+    *,
+    include_mg_entry_eval: bool = False,
+) -> Any:
+    """Build the time-series statement (split out so a script can EXPLAIN the real SQL).
 
-    Returns per-game rows ordered by played_at ASC so the service can compute
-    rolling window win rates over trailing games.
-
-    DISTINCT by Game.id prevents games with the target hash at multiple plies
-    from being counted more than once.  Games without played_at are excluded.
-
-    No date filter on this path — the rolling-window chart covers the
-    full game history so that context games before the window anchor rolling
-    averages correctly.
+    Columns: played_at, result, user_color, eval_cp, eval_mate, ordered by played_at ASC.
+    With ``include_mg_entry_eval`` false the two eval columns are literal NULLs and no
+    game_positions phase=1 join exists (the cheap table-wide bookmark request). With it
+    true the matched games are a CTE LEFT OUTER JOINed to the middlegame-entry row, so a
+    game without a phase=1 row keeps a row with NULL evals.
     """
-    stmt = (
-        select(Game.played_at, Game.result, Game.user_color)
+    matched = (
+        select(Game.id.label("game_id"), Game.played_at, Game.result, Game.user_color)
         .join(GamePosition, GamePosition.game_id == Game.id)
         .where(
             GamePosition.user_id == user_id,
@@ -156,8 +154,8 @@ async def query_time_series(
     # query_utils.py) so the default population excludes "flawchess"/"pgn".
     # from_date/to_date are pinned to None: this path intentionally has no date
     # bounds so the rolling-window chart has context games from before its anchor.
-    stmt = apply_game_filters(
-        stmt,
+    matched = apply_game_filters(
+        matched,
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -169,10 +167,79 @@ async def query_time_series(
         opponent_gap_max=opponent_gap_max,
     )
 
-    # Wrap in subquery so outer query can order by played_at ASC after DISTINCT ON Game.id
-    subq = stmt.subquery()
-    ordered = select(subq).order_by(subq.c.played_at.asc())
-    rows = await session.execute(ordered)
+    if not include_mg_entry_eval:
+        # Wrap in subquery so outer query can order by played_at ASC after DISTINCT ON Game.id
+        subq = matched.subquery()
+        return select(
+            subq.c.played_at,
+            subq.c.result,
+            subq.c.user_color,
+            null().label("eval_cp"),
+            null().label("eval_mate"),
+        ).order_by(subq.c.played_at.asc())
+
+    ts_matched = matched.cte("ts_matched")
+    entry = middlegame_entry_subquery(select(ts_matched.c.game_id))
+    return (
+        select(
+            ts_matched.c.played_at,
+            ts_matched.c.result,
+            ts_matched.c.user_color,
+            entry.c.eval_cp,
+            entry.c.eval_mate,
+        )
+        .select_from(ts_matched)
+        .outerjoin(entry, entry.c.game_id == ts_matched.c.game_id)
+        .order_by(ts_matched.c.played_at.asc())
+    )
+
+
+async def query_time_series(
+    session: AsyncSession,
+    user_id: int,
+    hash_column: Any,
+    target_hash: int,
+    color: str | None,
+    time_control: Sequence[str] | None = None,
+    platform: Sequence[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+    *,
+    include_mg_entry_eval: bool = False,
+) -> list[Row[Any]]:
+    """Return (played_at, result, user_color, eval_cp, eval_mate) rows, chronologically.
+
+    Returns per-game rows ordered by played_at ASC so the service can compute
+    rolling window win rates over trailing games.
+
+    eval_cp / eval_mate are the white-perspective eval of the game's middlegame-entry
+    row (``stats_repository.middlegame_entry_subquery``) when ``include_mg_entry_eval``
+    is true, NULL otherwise (the table-wide bookmark request skips the join: it cost
+    +1.3 to +1.8 s on the heaviest dev user). A game without a phase=1 row has NULLs.
+
+    DISTINCT by Game.id prevents games with the target hash at multiple plies
+    from being counted more than once.  Games without played_at are excluded.
+
+    No date filter on this path — the rolling-window chart covers the
+    full game history so that context games before the window anchor rolling
+    averages correctly.
+    """
+    stmt = _build_time_series_stmt(
+        user_id,
+        hash_column,
+        target_hash,
+        color,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        include_mg_entry_eval=include_mg_entry_eval,
+    )
+    rows = await session.execute(stmt)
     return list(rows.all())
 
 

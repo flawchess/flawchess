@@ -9,9 +9,11 @@ from sqlalchemy import (
     BigInteger,
     Column,
     Date,
+    Select,
     MetaData,
     SmallInteger,
     String,
+    Subquery,
     Table,
     Text,
     and_,
@@ -555,6 +557,32 @@ async def query_position_wdl_batch(
     }
 
 
+def middlegame_entry_subquery(game_ids: Select[Any], name: str = "phase_entry") -> Subquery:
+    """The per-game middlegame-entry row: columns game_id, eval_cp, eval_mate.
+
+    THE single definition of the middlegame-entry row (first phase=1 row by ply per
+    game), shared by the opening avg-eval pillar and the opening score-over-time
+    expected series so both read the same row. eval_cp / eval_mate are the eval
+    AFTER that move, white-perspective (callers sign-flip by user colour).
+
+    ``game_ids`` is a one-column Select of game ids to restrict the scan to. Do NOT
+    add a user_id predicate: measured slower (1.15 to 1.3 s on the heaviest dev user).
+    """
+    return (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.eval_cp.label("eval_cp"),
+            GamePosition.eval_mate.label("eval_mate"),
+        )
+        .where(
+            GamePosition.phase == 1,
+            GamePosition.game_id.in_(game_ids),
+        )
+        .distinct(GamePosition.game_id)
+        .order_by(GamePosition.game_id, GamePosition.ply)
+    ).subquery(name)
+
+
 async def query_opening_phase_entry_metrics_batch(
     session: AsyncSession,
     user_id: int,
@@ -650,19 +678,7 @@ async def query_opening_phase_entry_metrics_batch(
     # (game_id, ply) without a composite index — ~100k row scans for a heavy user).
     # Restricted to dedup's game_id set so the scan is ~10x smaller than the full
     # user partition.
-    phase_entry_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.eval_cp.label("eval_cp"),
-            GamePosition.eval_mate.label("eval_mate"),
-        )
-        .where(
-            GamePosition.phase == 1,
-            GamePosition.game_id.in_(select(dedup_subq.c.game_id)),
-        )
-        .distinct(GamePosition.game_id)
-        .order_by(GamePosition.game_id, GamePosition.ply)
-    ).subquery("phase_entry")
+    phase_entry_subq = middlegame_entry_subquery(select(dedup_subq.c.game_id))
 
     # Sign expression mirrors endgame_service._classify_endgame_bucket convention.
     sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
