@@ -466,7 +466,7 @@ until the discuss phase.
 for Phase 252's prod line repair, because the new feature reads the stored best line; discuss and plan can
 start before.
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-01..D-20)
-**Plans:** 13/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
+**Plans:** 15/18 plans executed (plans 15-18 were split out of 01, 02, 13 and 08 at plan check; numbers follow creation, waves give the order; branch and checkout map in 254-06-PLAN.md)
 
 Plans:
 **Wave 1**
@@ -503,10 +503,10 @@ Plans:
 - [x] 254-10-PLAN.md — Release R2, prod EXPLAIN, strict parity, revert on failure (orchestrator-inline)
 
 **Wave 11** *(human-gated: after Phase 252's prod repair is complete)*
-- [ ] 254-11-PLAN.md — 252 precondition gate, prod line pass, refit on all labels, owner sets FACEPALM_SCORE_MIN (orchestrator-inline)
+- [x] 254-11-PLAN.md — 252 precondition gate, prod line pass, refit on all labels, owner sets FACEPALM_SCORE_MIN (orchestrator-inline)
 
 **Wave 12** *(blocked on Wave 11 completion)*
-- [ ] 254-12-PLAN.md — Ship the refitted constants (constants-only deploy)
+- [x] 254-12-PLAN.md — Ship the refitted constants (constants-only deploy)
 
 **Wave 13** *(blocked on Wave 12 completion)*
 - [ ] 254-13-PLAN.md — Stop writing `facepalm_score` and the line-loss columns; legacy column mapping removed (code, D-02, D-19)
