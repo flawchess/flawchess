@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 import chess
 import chess.polyglot
-from sqlalchemy import Float, and_, case, cast, func, null, or_, select
+from sqlalchemy import Float, and_, case, cast, func, null, or_, select, true
 from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ from app.models.game import Game
 from app.models.game_position import MAX_EXPLORER_PLY, GamePosition
 from app.models.opening import Opening
 from app.repositories.query_utils import apply_game_filters
-from app.repositories.stats_repository import middlegame_entry_subquery
+from app.repositories.stats_repository import middlegame_entry_lateral
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MAX_ENTRY_PLY,
     OPENING_INSIGHTS_MIN_ENTRY_PLY,
@@ -133,9 +133,10 @@ def _build_time_series_stmt(
 
     Columns: played_at, result, user_color, eval_cp, eval_mate, ordered by played_at ASC.
     With ``include_mg_entry_eval`` false the two eval columns are literal NULLs and no
-    game_positions phase=1 join exists (the cheap table-wide bookmark request). With it
-    true the matched games are a CTE LEFT OUTER JOINed to the middlegame-entry row, so a
-    game without a phase=1 row keeps a row with NULL evals.
+    game_positions phase=1 access exists (the cheap table-wide bookmark request). With it
+    true the matched games are LEFT JOINed to their middlegame-entry row through a LATERAL
+    first-row lookup (``stats_repository.middlegame_entry_lateral``), so a game without
+    a phase=1 row keeps a row with NULL evals.
     """
     matched = (
         select(Game.id.label("game_id"), Game.played_at, Game.result, Game.user_color)
@@ -167,19 +168,18 @@ def _build_time_series_stmt(
         opponent_gap_max=opponent_gap_max,
     )
 
+    # Wrap in subquery so the outer query can order by played_at ASC after DISTINCT ON Game.id
+    ts_matched = matched.subquery("ts_matched")
     if not include_mg_entry_eval:
-        # Wrap in subquery so outer query can order by played_at ASC after DISTINCT ON Game.id
-        subq = matched.subquery()
         return select(
-            subq.c.played_at,
-            subq.c.result,
-            subq.c.user_color,
+            ts_matched.c.played_at,
+            ts_matched.c.result,
+            ts_matched.c.user_color,
             null().label("eval_cp"),
             null().label("eval_mate"),
-        ).order_by(subq.c.played_at.asc())
+        ).order_by(ts_matched.c.played_at.asc())
 
-    ts_matched = matched.cte("ts_matched")
-    entry = middlegame_entry_subquery(select(ts_matched.c.game_id))
+    entry = middlegame_entry_lateral(user_id, ts_matched.c.game_id)
     return (
         select(
             ts_matched.c.played_at,
@@ -189,7 +189,7 @@ def _build_time_series_stmt(
             entry.c.eval_mate,
         )
         .select_from(ts_matched)
-        .outerjoin(entry, entry.c.game_id == ts_matched.c.game_id)
+        .outerjoin(entry, true())
         .order_by(ts_matched.c.played_at.asc())
     )
 
@@ -215,9 +215,9 @@ async def query_time_series(
     rolling window win rates over trailing games.
 
     eval_cp / eval_mate are the white-perspective eval of the game's middlegame-entry
-    row (``stats_repository.middlegame_entry_subquery``) when ``include_mg_entry_eval``
-    is true, NULL otherwise (the table-wide bookmark request skips the join: it cost
-    +1.3 to +1.8 s on the heaviest dev user). A game without a phase=1 row has NULLs.
+    row (``stats_repository.middlegame_entry_lateral``) when ``include_mg_entry_eval`` is
+    true, NULL otherwise (the table-wide bookmark request skips the lookup). A game
+    without a phase=1 row has NULLs too.
 
     DISTINCT by Game.id prevents games with the target hash at multiple plies
     from being counted more than once.  Games without played_at are excluded.

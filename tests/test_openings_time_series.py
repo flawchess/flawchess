@@ -25,6 +25,7 @@ Coverage:
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
 - TestDateWindowedTimeSeries: from_date/to_date windowing + warm-up preservation
 - TestEvalExpectedSeries: opt-in eval-expected series (SEED-261115-sgs)
+- TestMiddlegameEntryParity: the LATERAL and batch middlegame-entry selections agree
 """
 
 import datetime
@@ -35,10 +36,15 @@ from typing import Literal
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.stats_repository import (
+    middlegame_entry_lateral,
+    middlegame_entry_subquery,
+)
 from app.schemas.openings import TimeSeriesBookmarkParam, TimeSeriesRequest
 from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
 from app.services.opening_insights_constants import (
@@ -1425,3 +1431,60 @@ class TestEvalExpectedSeries:
         assert pt.game_count == 12
         assert pt.eval_game_count == 12
         assert pt.expected_score == pytest.approx(_sigmoid(100), abs=1e-4)
+
+
+class TestMiddlegameEntryParity:
+    """The LATERAL selection (timeline) and the batch selection (avg-eval pillar) agree."""
+
+    @pytest.mark.asyncio
+    async def test_both_selections_pick_the_same_row_and_eval(
+        self, db_session: AsyncSession
+    ) -> None:
+        fh = 9_800_001
+        per_game: list[Sequence[_MgEval]] = [
+            [(20, 100, None), (21, -300, None)],  # first by ply wins
+            [(25, -40, None), (22, 250, None)],  # insertion order != ply order
+            [(20, -500, 3)],  # mate alongside cp: both columns come through
+            [(20, None, -4)],  # mate only
+            [(20, None, None)],  # phase=1 row with no eval
+            [],  # no phase=1 row at all
+        ]
+        game_ids: list[int] = []
+        for i, mg_evals in enumerate(per_game):
+            game = await _seed_game_with_position(
+                db_session,
+                user_id=_USER_EVAL,
+                played_at=_EVAL_BASE + datetime.timedelta(minutes=30 * i),
+                full_hash=fh,
+                mg_evals=mg_evals,
+                opening_phase_eval_cp=900,
+            )
+            game_ids.append(game.id)
+
+        lateral = middlegame_entry_lateral(_USER_EVAL, Game.id)
+        lateral_stmt = (
+            select(Game.id, lateral.c.eval_cp, lateral.c.eval_mate)
+            .select_from(Game)
+            .outerjoin(lateral, true())
+            .where(Game.id.in_(game_ids))
+        )
+        batch = middlegame_entry_subquery(select(Game.id).where(Game.id.in_(game_ids)))
+        batch_stmt = (
+            select(Game.id, batch.c.eval_cp, batch.c.eval_mate)
+            .select_from(Game)
+            .outerjoin(batch, batch.c.game_id == Game.id)
+            .where(Game.id.in_(game_ids))
+        )
+        lateral_rows = {r[0]: (r[1], r[2]) for r in (await db_session.execute(lateral_stmt)).all()}
+        batch_rows = {r[0]: (r[1], r[2]) for r in (await db_session.execute(batch_stmt)).all()}
+
+        assert lateral_rows == batch_rows
+        # Not vacuous: the shared answer is the expected one for every shape.
+        assert [lateral_rows[g] for g in game_ids] == [
+            (100, None),
+            (250, None),
+            (-500, 3),
+            (None, -4),
+            (None, None),
+            (None, None),
+        ]

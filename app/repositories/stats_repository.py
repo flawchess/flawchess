@@ -25,6 +25,9 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.engine import Row
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.selectable import LateralFromClause
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -560,9 +563,10 @@ async def query_position_wdl_batch(
 def middlegame_entry_subquery(game_ids: Select[Any], name: str = "phase_entry") -> Subquery:
     """The per-game middlegame-entry row: columns game_id, eval_cp, eval_mate.
 
-    THE single definition of the middlegame-entry row (first phase=1 row by ply per
-    game), shared by the opening avg-eval pillar and the opening score-over-time
-    expected series so both read the same row. eval_cp / eval_mate are the eval
+    The batch definition of the middlegame-entry row (first phase=1 row by ply per
+    game) used by the opening avg-eval pillar. ``middlegame_entry_lateral`` is its
+    per-game LATERAL twin used by the score-over-time expected series; keep the two
+    in step (parity test in tests/test_openings_time_series.py). eval_cp / eval_mate are the eval
     AFTER that move, white-perspective (callers sign-flip by user colour).
 
     ``game_ids`` is a one-column Select of game ids to restrict the scan to. Do NOT
@@ -581,6 +585,36 @@ def middlegame_entry_subquery(game_ids: Select[Any], name: str = "phase_entry") 
         .distinct(GamePosition.game_id)
         .order_by(GamePosition.game_id, GamePosition.ply)
     ).subquery(name)
+
+
+def middlegame_entry_lateral(
+    user_id: int, game_id: ColumnElement[int] | InstrumentedAttribute[int], name: str = "mg_entry"
+) -> LateralFromClause:
+    """LATERAL form of the middlegame-entry row: columns eval_cp, eval_mate for ONE game.
+
+    Same row and eval convention as ``middlegame_entry_subquery`` (first phase=1 row by
+    ply, eval AFTER that move, white-perspective; callers sign-flip by user colour and
+    give mate precedence over cp). The two selections are kept in step by
+    tests/test_openings_time_series.py::TestMiddlegameEntryParity. This one exists
+    because the subquery has to read and sort every phase=1 row of the matched games
+    (+1.3 to +1.8 s for the heaviest dev user), whereas this does a first-row lookup per
+    game over the (user_id, game_id, ply) primary key. Join it with ``LEFT JOIN ... ON
+    true`` so a game without a phase=1 row keeps a row with NULL evals.
+
+    The user_id predicate is what lets the primary key serve the lookup; every position
+    of a game carries the game owner's user_id, so it never changes the picked row.
+    """
+    return (
+        select(GamePosition.eval_cp.label("eval_cp"), GamePosition.eval_mate.label("eval_mate"))
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.game_id == game_id,
+            GamePosition.phase == 1,
+        )
+        .order_by(GamePosition.ply)
+        .limit(1)
+        .lateral(name)
+    )
 
 
 async def query_opening_phase_entry_metrics_batch(

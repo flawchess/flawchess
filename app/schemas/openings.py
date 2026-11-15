@@ -178,8 +178,10 @@ class TimeSeriesRequest(BaseModel):
     from_date: datetime.date | None = None
     to_date: datetime.date | None = None
     # The per-opening chart request sets this to get the eval-expected series. The
-    # table-wide bookmark request leaves it false: the middlegame-entry eval join added
-    # +1.3 to +1.8 s for the heaviest dev user (OC-1), so it only runs per opening.
+    # table-wide bookmark request leaves it false: the middlegame-entry eval lookup is
+    # deferred to the per-opening request (OC-1; deferred by owner decision). Measured on
+    # the heaviest dev user's 5 bookmarks: about +0.9 s with the LATERAL lookup, +1.3 to
+    # +1.8 s with the earlier sorted join.
     include_expected_score: bool = False
 
     @model_validator(mode="after")

@@ -23,8 +23,8 @@ interface UseOpeningRowTimeSeriesResult {
 /**
  * The score-over-time series of one repertoire row, fetched on demand with the eval-expected
  * series. Every card requests its own one-opening series, bookmark and most-played alike, because
- * the middlegame-entry eval join is too costly to front-load for all bookmarks on page load (it
- * added 1.3 to 1.8 s for the heaviest dev user). A bookmark row keeps the table-wide series only
+ * the middlegame-entry eval lookup is deferred out of the page-load request (about +0.9 s for the
+ * heaviest dev user's five bookmarks, even as a LATERAL lookup). A bookmark row keeps the table-wide series only
  * for its totals and verdict fields. Callers mount the hook only while the card's chart is open,
  * so mounting is the lazy trigger.
  */
