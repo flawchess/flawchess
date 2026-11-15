@@ -89,7 +89,11 @@ function BookmarkLink({ row, testId }: { row: RepertoireRowModel; testId: string
   );
 }
 
-/** Score over time: the rolling score line plus grey weekly game bars (D-00). */
+/**
+ * Score over time: the eval-expected rolling score (primary line) and the actual rolling score
+ * (fainter line), plus grey weekly game bars (D-00). Every card fetches its own series when the
+ * chart opens (the eval join is too costly to front-load).
+ */
 function ScoreOverTime({
   row,
   testId,
