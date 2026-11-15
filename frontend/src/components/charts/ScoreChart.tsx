@@ -29,7 +29,7 @@ const BASELINE_DASH = '4 3';
 const BASELINE_OPACITY = 0.3;
 const CHART_HEIGHT_CLASS = 'h-52';
 const EMPTY_MESSAGE = 'Not enough games in this opening for a score line yet.';
-const EXPECTED_LINE_NAME = 'Expected score from opening eval';
+const EXPECTED_LINE_NAME = 'Expected score from eval after opening';
 const ACTUAL_LINE_NAME = 'Actual score';
 // No left margin: with an auto-width value axis the plot starts right after the tick labels
 // instead of behind Recharts' fixed 60px axis gutter.

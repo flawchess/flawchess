@@ -170,7 +170,7 @@ describe('ScoreChart lines and legend', () => {
     render(<ScoreChart series={makeSeries(WEEKLY_DATES)} />);
     expect(screen.getByTestId('score-chart-legend')).toBeTruthy();
     expect(screen.getByTestId('score-chart-legend-expected').textContent).toBe(
-      'Expected score from opening eval',
+      'Expected score from eval after opening',
     );
     expect(screen.getByTestId('score-chart-legend-actual').textContent).toBe('Actual score');
     expect(screen.getByTestId('score-chart-info')).toBeTruthy();
