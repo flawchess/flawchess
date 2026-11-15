@@ -1,6 +1,6 @@
 ---
 id: SEED-261115-sgs
-status: closed. Resolved by quick task 261115-ntq (merge a41a98635 on main, 2026-11-15; unreleased). Deviation from the seed: the eval series loads on demand when the chart opens, via a LATERAL lookup.
+status: closed. Resolved by quick task 261115-ntq (merge a41a98635 on main, 2026-11-15; unreleased). Deviation from the seed: the eval series loads on demand when the chart opens, via a LATERAL lookup. Later owner changes the same day: the primary line is named "Expected score from eval after opening" (supersedes locked decision 5), and the y-axis spans at least 30 to 70% (416d495f7).
 promoted_to: quick task 261115-ntq
 promoted: 2026-11-15
 planted: 2026-11-15
