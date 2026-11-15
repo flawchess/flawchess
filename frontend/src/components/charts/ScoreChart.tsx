@@ -94,7 +94,8 @@ function ScoreChartLegend({ testId, windowSize }: { testId: string; windowSize: 
           opening. The dashed line is the typical expected score for your colour.
         </p>
         <p className="mt-1">
-          <strong>{ACTUAL_LINE_NAME}:</strong> your real results over the same games.
+          <strong>{ACTUAL_LINE_NAME}:</strong> your real results over the same games. Noisier than
+          the expected line and a weaker sign of how the opening is going.
         </p>
         <p className="mt-1">
           The expected line reflects only the position reached out of the opening, so your actual
