@@ -1,6 +1,8 @@
 ---
 id: SEED-261110-p7k
-status: active
+status: closed
+closed: 2026-11-15
+closed_reason: shipped as Phase 250 (facepalm-blunder selection); plan 250-10 (refit on repaired lines) is superseded by Phase 254 (254-CONTEXT D-11). Successor: SEED-261114-mg7
 planted: 2026-11-10
 planted_during: Phase 249 planning (owner spot-check of the Phase 248 sample)
 trigger_when: Phase 250 planning, after the Phase 252 line repair has run on prod
