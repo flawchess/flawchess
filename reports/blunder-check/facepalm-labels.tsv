@@ -1,4 +1,4 @@
-n	set	elo	move	link	engine_drop	expected_loss	reply_loss	practical_loss	played_prob	reply_spread	line_loss3	mate3	label
+n	set	elo	move	link	engine_drop	expected_loss	reply_loss	practical_loss	played_prob	reply_spread	line_loss3	mate3	label	comment
 1	1	608	Qb6	https://flawchess.com/analysis?game_id=1940139&ply=21	0.24	0.10	0.33	-0.09	0.06	7.3	0	0	0
 2	1	254	Rde8	https://flawchess.com/analysis?game_id=3251685&ply=31	0.18	0.06	0.18	0.00	0.09	4.2	3	0	1
 3	1	517	g6	https://flawchess.com/analysis?game_id=1990843&ply=13	0.31	0.03	0.29	0.01	0.01	3.2	-1	0	0
@@ -179,53 +179,53 @@ n	set	elo	move	link	engine_drop	expected_loss	reply_loss	practical_loss	played_p
 188	6	508	Nf3	https://flawchess.com/analysis?game_id=563171&ply=14					0.02	1.4	3	0	1
 189	6	235	Bxa1	https://flawchess.com/analysis?game_id=2632426&ply=25					0.07	1.9	4	0	1
 190	6	1981	Nh5+	https://flawchess.com/analysis?game_id=497688&ply=46					0.03	1.0	3	0	1
-191	7	1778	Qe3	https://flawchess.com/analysis?game_id=499686&ply=62									
-192	7	1544	Ng2	https://flawchess.com/analysis?game_id=1224022&ply=47									
-193	7	1999	Qxg7+	https://flawchess.com/analysis?game_id=699627&ply=34									
-194	7	1666	Nxc4	https://flawchess.com/analysis?game_id=3249052&ply=37									
-195	7	994	Rxb2	https://flawchess.com/analysis?game_id=1995536&ply=24									
-196	7	437	gxf3	https://flawchess.com/analysis?game_id=3058556&ply=16									
-197	7	671	Rc7	https://flawchess.com/analysis?game_id=1077995&ply=48									
-198	7	671	g6	https://flawchess.com/analysis?game_id=2721905&ply=25									
-199	7	1099	Ne2+	https://flawchess.com/analysis?game_id=2864428&ply=37									
-200	7	1114	Bb3	https://flawchess.com/analysis?game_id=2848141&ply=30									
-201	7	552	Bc5	https://flawchess.com/analysis?game_id=2865680&ply=15									
-202	7	754	bxc6	https://flawchess.com/analysis?game_id=2850554&ply=31									
-203	7	994	Rxc1	https://flawchess.com/analysis?game_id=1941695&ply=39									
-204	7	618	Bxg5	https://flawchess.com/analysis?game_id=1871792&ply=30									
-205	7	1988	Bc5	https://flawchess.com/analysis?game_id=1064041&ply=57									
-206	7	273	dxc5	https://flawchess.com/analysis?game_id=2548721&ply=41									
-207	7	1591	Kg3	https://flawchess.com/analysis?game_id=1581079&ply=66									
-208	7	1990	Nxg5	https://flawchess.com/analysis?game_id=606217&ply=66									
-209	7	1463	Ke4	https://flawchess.com/analysis?game_id=2461976&ply=34									
-210	7	175	c6	https://flawchess.com/analysis?game_id=2047830&ply=15									
-211	7	1443	Rg3	https://flawchess.com/analysis?game_id=2333333&ply=114									
-212	7	1123	O-O	https://flawchess.com/analysis?game_id=2721044&ply=15									
-213	7	230	Rxb7	https://flawchess.com/analysis?game_id=3140490&ply=60									
-214	7	598	Bg5	https://flawchess.com/analysis?game_id=2285808&ply=12									
-215	7	1685	Qe6	https://flawchess.com/analysis?game_id=3193193&ply=37									
-216	7	1164	Ke7	https://flawchess.com/analysis?game_id=1941531&ply=89									
-217	7	227	Bf7	https://flawchess.com/analysis?game_id=2218424&ply=89									
-218	7	618	Qf3	https://flawchess.com/analysis?game_id=1871792&ply=24									
-219	7	618	Kd2	https://flawchess.com/analysis?game_id=1161949&ply=24									
-220	7	618	Rxa1	https://flawchess.com/analysis?game_id=1161949&ply=26									
-221	7	1844	Rhf1	https://flawchess.com/analysis?game_id=2652587&ply=34									
-222	7	981	Bb4	https://flawchess.com/analysis?game_id=2413774&ply=13									
-223	7	987	Kf1	https://flawchess.com/analysis?game_id=2425058&ply=50									
-224	7	703	Kg7	https://flawchess.com/analysis?game_id=2474796&ply=25									
-225	7	1487	Rbxb7	https://flawchess.com/analysis?game_id=2664826&ply=74									
-226	7	980	Be6	https://flawchess.com/analysis?game_id=473003&ply=13									
-227	7	323	Kb3	https://flawchess.com/analysis?game_id=562300&ply=40									
-228	7	1558	Re4	https://flawchess.com/analysis?game_id=2952292&ply=85									
-229	7	1223	Bg4	https://flawchess.com/analysis?game_id=3239949&ply=15									
-230	7	1896	Naxc3+	https://flawchess.com/analysis?game_id=2660513&ply=35									
-231	7	1057	b3	https://flawchess.com/analysis?game_id=1066966&ply=44									
-232	7	950	Qe6	https://flawchess.com/analysis?game_id=2960887&ply=21									
-233	7	1573	Qb3	https://flawchess.com/analysis?game_id=1554612&ply=24									
-234	7	1886	O-O	https://flawchess.com/analysis?game_id=3264420&ply=25									
-235	7	696	Rd8	https://flawchess.com/analysis?game_id=3281026&ply=41									
-236	7	611	a3	https://flawchess.com/analysis?game_id=974403&ply=38									
-237	7	640	Qxh5	https://flawchess.com/analysis?game_id=2179725&ply=50									
-238	7	1752	Qa4+	https://flawchess.com/analysis?game_id=2042680&ply=14									
-239	7	381	Bb2	https://flawchess.com/analysis?game_id=2433781&ply=50									
-240	7	1711	Bg6	https://flawchess.com/analysis?game_id=2561505&ply=41									
+191	7	1778	Qe3	https://flawchess.com/analysis?game_id=499686&ply=62									0
+192	7	1544	Ng2	https://flawchess.com/analysis?game_id=1224022&ply=47									0
+193	7	1999	Qxg7+	https://flawchess.com/analysis?game_id=699627&ply=34									1
+194	7	1666	Nxc4	https://flawchess.com/analysis?game_id=3249052&ply=37									0
+195	7	994	Rxb2	https://flawchess.com/analysis?game_id=1995536&ply=24									1
+196	7	437	gxf3	https://flawchess.com/analysis?game_id=3058556&ply=16									0
+197	7	671	Rc7	https://flawchess.com/analysis?game_id=1077995&ply=48									0
+198	7	671	g6	https://flawchess.com/analysis?game_id=2721905&ply=25									1
+199	7	1099	Ne2+	https://flawchess.com/analysis?game_id=2864428&ply=37									1
+200	7	1114	Bb3	https://flawchess.com/analysis?game_id=2848141&ply=30									0
+201	7	552	Bc5	https://flawchess.com/analysis?game_id=2865680&ply=15									0
+202	7	754	bxc6	https://flawchess.com/analysis?game_id=2850554&ply=31									0
+203	7	994	Rxc1	https://flawchess.com/analysis?game_id=1941695&ply=39									0
+204	7	618	Bxg5	https://flawchess.com/analysis?game_id=1871792&ply=30									1
+205	7	1988	Bc5	https://flawchess.com/analysis?game_id=1064041&ply=57									1
+206	7	273	dxc5	https://flawchess.com/analysis?game_id=2548721&ply=41									1
+207	7	1591	Kg3	https://flawchess.com/analysis?game_id=1581079&ply=66									0
+208	7	1990	Nxg5	https://flawchess.com/analysis?game_id=606217&ply=66									1
+209	7	1463	Ke4	https://flawchess.com/analysis?game_id=2461976&ply=34									0
+210	7	175	c6	https://flawchess.com/analysis?game_id=2047830&ply=15									1
+211	7	1443	Rg3	https://flawchess.com/analysis?game_id=2333333&ply=114									1	currently 6%, should be at least 90%
+212	7	1123	O-O	https://flawchess.com/analysis?game_id=2721044&ply=15									0
+213	7	230	Rxb7	https://flawchess.com/analysis?game_id=3140490&ply=60									0
+214	7	598	Bg5	https://flawchess.com/analysis?game_id=2285808&ply=12									0
+215	7	1685	Qe6	https://flawchess.com/analysis?game_id=3193193&ply=37									1
+216	7	1164	Ke7	https://flawchess.com/analysis?game_id=1941531&ply=89									1	currently 33%, should be above 60%
+217	7	227	Bf7	https://flawchess.com/analysis?game_id=2218424&ply=89									1	currently 10%, should be above 70%
+218	7	618	Qf3	https://flawchess.com/analysis?game_id=1871792&ply=24									1
+219	7	618	Kd2	https://flawchess.com/analysis?game_id=1161949&ply=24									1	currently 23%, should be above 60%
+220	7	618	Rxa1	https://flawchess.com/analysis?game_id=1161949&ply=26									0	currently 1%, should be between 30-70%
+221	7	1844	Rhf1	https://flawchess.com/analysis?game_id=2652587&ply=34									0.5
+222	7	981	Bb4	https://flawchess.com/analysis?game_id=2413774&ply=13									0
+223	7	987	Kf1	https://flawchess.com/analysis?game_id=2425058&ply=50									0.5	currently 23%, should be between 30%-70%
+224	7	703	Kg7	https://flawchess.com/analysis?game_id=2474796&ply=25									0	currently 9%, should be 30%-70%
+225	7	1487	Rbxb7	https://flawchess.com/analysis?game_id=2664826&ply=74									1	currently 16%, should be above 80%
+226	7	980	Be6	https://flawchess.com/analysis?game_id=473003&ply=13									0
+227	7	323	Kb3	https://flawchess.com/analysis?game_id=562300&ply=40									0	currently 0%, should be above 20%
+228	7	1558	Re4	https://flawchess.com/analysis?game_id=2952292&ply=85									1	currently 30%, should be above 70%
+229	7	1223	Bg4	https://flawchess.com/analysis?game_id=3239949&ply=15									1
+230	7	1896	Naxc3+	https://flawchess.com/analysis?game_id=2660513&ply=35									0
+231	7	1057	b3	https://flawchess.com/analysis?game_id=1066966&ply=44									1
+232	7	950	Qe6	https://flawchess.com/analysis?game_id=2960887&ply=21									1	currently 11%, should be above 70%
+233	7	1573	Qb3	https://flawchess.com/analysis?game_id=1554612&ply=24									1	currently 18%, should be above 70%
+234	7	1886	O-O	https://flawchess.com/analysis?game_id=3264420&ply=25									1	currently 11%, should be above 70%
+235	7	696	Rd8	https://flawchess.com/analysis?game_id=3281026&ply=41									0
+236	7	611	a3	https://flawchess.com/analysis?game_id=974403&ply=38									1
+237	7	640	Qxh5	https://flawchess.com/analysis?game_id=2179725&ply=50									0
+238	7	1752	Qa4+	https://flawchess.com/analysis?game_id=2042680&ply=14									0
+239	7	381	Bb2	https://flawchess.com/analysis?game_id=2433781&ply=50									0	currently 0%, should be above 20%
+240	7	1711	Bg6	https://flawchess.com/analysis?game_id=2561505&ply=41									1	currently 63%, should be above 70%
